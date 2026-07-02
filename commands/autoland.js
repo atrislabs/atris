@@ -220,12 +220,13 @@ function runDigest(root, args, { forceSend = false } = {}) {
     for (const item of storied) {
       const t = byRef.get(item.ref);
       const happened = String(t.review?.landing?.happened || t.metadata?.landing_happened || '').replace(/\s+/g, ' ').slice(0, 160);
-      if (!operatorReady(happened)) continue;
+      const line = autoland.digestLine({ ...item, happened });
+      if (!operatorReady(line)) continue;
       if (!printedStoryHeader) {
         console.log('');
         printedStoryHeader = true;
       }
-      console.log(`  ${item.ref}  ${happened}`);
+      console.log(`  ${line}`);
     }
   }
   const shouldSend = (forceSend || args.includes('--send')) && policy.imessage_to;

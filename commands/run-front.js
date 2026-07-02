@@ -119,8 +119,8 @@ async function runMissionFront(args = []) {
   });
   if (!mission) {
     console.log('No objective given and no runnable mission found.');
-    console.log('Start one: atris run "<objective>" [--minutes N] [--owner <member>]');
-    console.log('Or keep going indefinitely: atris autopilot');
+    const { printOperatorNext } = require('../lib/operator-next');
+    printOperatorNext('atris run "<objective>" --owner navigator');
     return 1;
   }
   console.log(`Resuming mission ${mission.id} (${mission.status}): ${mission.objective}`);

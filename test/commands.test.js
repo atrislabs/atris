@@ -11707,7 +11707,7 @@ test('task ready default landing describes completed work for unmapped titles', 
   }
 });
 
-test('task ready and finish accept landing capability sentences', () => {
+test('task ready, finish, and done accept landing capability sentences', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -11784,6 +11784,35 @@ test('task ready and finish accept landing capability sentences', () => {
     const accepted = acceptedInLastDay([projectedFinishTask], Date.now());
     assert.equal(accepted.human.length, 1);
     assert.equal(accepted.human[0].happened, finishSentence);
+
+    const doneAdd = runCli([
+      'task', 'add', 'Done digest landing sentence',
+      '--tag', 'cli',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(doneAdd.status, 0, doneAdd.stderr);
+    const doneRef = JSON.parse(doneAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', doneRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const doneSentence = 'Users can now trust done tasks to explain the capability without opening the task.';
+    const done = runCli([
+      'task', 'done', doneRef,
+      '--proof', 'node --test test/autoland.test.js passed',
+      '--landing', doneSentence,
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(done.status, 0, done.stderr);
+    assert.equal(done.stderr, '');
+    const donePayload = JSON.parse(done.stdout);
+    assert.equal(donePayload.landing_advisory, null);
+    assert.equal(donePayload.task.review.landing.happened, doneSentence);
+
+    const doneProjection = JSON.parse(fs.readFileSync(donePayload.projection_path, 'utf8'));
+    const projectedDoneTask = doneProjection.tasks.find(task => task.id === donePayload.task_id);
+    const acceptedDone = acceptedInLastDay([projectedDoneTask], Date.now());
+    assert.equal(acceptedDone.human.length, 1);
+    assert.equal(acceptedDone.human[0].happened, doneSentence);
   } finally {
     cleanupTempDir(dir);
   }
@@ -14240,6 +14269,7 @@ test('task serve exposes a local task factory API', async () => {
 	    const weakFinishProof = await weakFinishProofResponse.json();
 	    assert.equal(weakFinishProof.reason, 'weak_proof');
 
+    const finishLanding = 'Users can now drive the task board from the API, so board updates do not wait on command-line work.';
 	    const finished = await fetch(`${base}/api/tasks/${created.task_id}/finish`, {
 	      method: 'POST',
 	      headers: { 'content-type': 'application/json' },
@@ -14248,11 +14278,14 @@ test('task serve exposes a local task factory API', async () => {
 	        proof: 'node --test test/commands.test.js passed for task serve API',
 	        lesson: 'Task factory API can drive the board',
 	        next: 'Connect the board to Swarlo leases',
+	        landing: finishLanding,
 	        createNext: true,
       }),
     }).then(r => r.json());
     assert.equal(finished.ok, true);
     assert.equal(finished.task.status, 'done');
+    assert.equal(finished.landing_advisory, null);
+    assert.equal(finished.task.review.landing.happened, finishLanding);
     assert.equal(finished.episode.career_xp.eligible, false);
     assert.equal(finished.xp_projection.total_xp, 0);
     assert.ok(finished.next_task_id);
@@ -15116,6 +15149,7 @@ test('task serve exposes a local task factory API', async () => {
       body: JSON.stringify({ actor: 'codex', proof: 'node --test test/commands.test.js passed before revise' }),
     }).then(r => r.json());
     assert.equal(apiReady.ok, true);
+    assert.match(apiReady.landing_advisory, /day-one PM could read/);
 
     const prematureApiFinishResponse = await fetch(`${base}/api/tasks/${apiReviewId}/finish`, {
       method: 'POST',
@@ -15143,6 +15177,7 @@ test('task serve exposes a local task factory API', async () => {
     const staleApiAccept = await staleApiAcceptResponse.json();
     assert.equal(staleApiAccept.reason, 'proof_required');
 
+    const freshLanding = 'Users can now review a fresh API proof, so stale proof does not block the accept step.';
     const freshApiReady = await fetch(`${base}/api/tasks/${apiReviewId}/ready`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -15151,9 +15186,12 @@ test('task serve exposes a local task factory API', async () => {
         proof: 'node --test test/commands.test.js passed after API ready',
         lesson: 'API accept keeps the ready lesson',
         next: 'Create the API follow-up task',
+        landing: freshLanding,
       }),
     }).then(r => r.json());
     assert.equal(freshApiReady.ok, true);
+    assert.equal(freshApiReady.landing_advisory, null);
+    assert.equal(freshApiReady.task.review.landing.happened, freshLanding);
 
     const apiDetail = await fetch(`${base}/api/tasks/${apiReviewId}`).then(r => r.json());
     assert.equal(apiDetail.ok, true);

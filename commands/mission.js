@@ -818,7 +818,17 @@ function missionSelfImprovementSeedAction(mission, root = process.cwd()) {
 }
 
 function missionHumanNextAction(mission, root = process.cwd(), options = {}) {
-  if (!mission) return 'Pick the next customer-facing move.';
+  if (!mission) return 'atris mission run "<goal>" --owner navigator --runner manual';
+  const id = mission.id;
+  if (mission.status === 'planning') {
+    if (!mission.task_id && !mission.task_ref) {
+      return `atris mission attach-task ${id}`;
+    }
+    if (mission.runner === 'codex_goal' || mission.runner === 'claude') {
+      return mission.next_action || `atris mission tick ${id} --summary "<what changed>"`;
+    }
+    return `atris mission tick ${id} --summary "<what changed>"`;
+  }
   if (mission.goal_chain?.pause_ready) return 'Mission feels good; review proof, then complete, revise, or choose the next goal.';
   if (mission.status === 'ready' && /^queue AgentXP review:/i.test(mission.next_action || '')) {
     return 'Ready for human review; accept in Atris if the proof looks right.';
@@ -830,8 +840,8 @@ function missionHumanNextAction(mission, root = process.cwd(), options = {}) {
   }
   if (mission.status === 'ready') return 'Review the proof, then complete the mission.';
   if (mission.status === 'complete') return 'Pick the next customer-facing move.';
-  if (mission.status === 'blocked') return 'Fix the verifier failure or revise the mission.';
-  return 'Keep running the mission.';
+  if (mission.status === 'blocked') return `atris mission status ${id}`;
+  return id ? `atris mission tick ${id} --summary "<what changed>"` : 'atris mission run "<goal>" --owner navigator --runner manual';
 }
 
 function missionLandingStepSummary(summary) {
@@ -1056,12 +1066,16 @@ function normalizeMissionReceiptResult(mission, result, receiptPath = '') {
 }
 
 function missionRunStartNextLine(mission, nextCommand, warnings = []) {
-  if (warnings.length) return 'Add a verifier before completion, then run the first proof tick.';
-  if (isCodexGoalMission(mission) && !codexNativeGoalAck(mission)) {
-    return 'Start the visible goal, then continue this mission.';
+  const id = mission?.id;
+  const typed = String(nextCommand || '').trim();
+  if (typed.startsWith('atris ')) return typed;
+  if (id && /attach-task/.test(typed)) return `atris mission attach-task ${id}`;
+  if (id && warnings.length) return `atris mission tick ${id} --summary "<what changed>"`;
+  if (isCodexGoalMission(mission) && !codexNativeGoalAck(mission) && id) {
+    return `atris mission goal ack ${id} --runtime codex --status active --objective '${mission.objective}'`;
   }
-  if (/attach-task/.test(nextCommand || '')) return 'Attach task context, then continue this mission.';
-  return 'Run the first proof tick.';
+  if (id) return `atris mission tick ${id} --summary "<what changed>"`;
+  return 'atris mission run "<goal>" --owner navigator --runner manual';
 }
 
 function missionRunTakeoffLines(mission, { warnings = [], nextCommand = '' } = {}) {

@@ -93,8 +93,9 @@ test('digest and alarm compose in plain language', () => {
     project: 'atris-cli',
     nextMoves: {
       moves: [
-        { title: 'Finish the taste filters: scores should use the role weights', owner: 'auto-improver' },
+        { title: 'Slow taste reviews cost users time: apply the role weights', owner: 'auto-improver' },
         { title: 'Give the stuck codex mission an engine or stop it', owner: null },
+        { title: 'Review the onboarding checklist and copy the latest notes into a holding page before deciding what to do next for the morning workflow owner and then because users save time', owner: null },
       ],
       unexplained: 2,
     },
@@ -105,10 +106,10 @@ test('digest and alarm compose in plain language', () => {
   // Clean-stop check-offs fold into the on-ask count; results get air between
   // them so the whole message fits a laptop screen with no scrolling.
   assert.match(digest, /\n\n- slow mission budgets/);
-  // The jargon-heavy result shows de-jargoned instead of hiding: content
-  // always ships. Held count = clean-stop fold only.
-  assert.match(digest, /- add hourly flag so users save time/);
-  assert.match(digest, /1 more result when you want them: atris autoland digest/);
+  // The jargon-heavy result is counted, not shown; source writers need to
+  // give landed work a better sentence before it earns digest space.
+  assert.doesNotMatch(digest, /add hourly flag/);
+  assert.match(digest, /2 more results when you want them: atris autoland digest/);
   // v5: no self-news ("you approved N") and no separate workers tally; each
   // result carries its author inline instead.
   assert.doesNotMatch(digest, /you approved|workers:/);
@@ -117,9 +118,10 @@ test('digest and alarm compose in plain language', () => {
   assert.match(digest, /- Send invoice \(30h\)/);
   assert.match(digest, /in the air: 2 pieces, 1 overdue/);
   assert.match(digest, /next, if you agree:/);
-  assert.match(digest, /taste filters.*\(best fit: auto-improver\)/);
+  assert.match(digest, /taste reviews cost users time.*\(best fit: auto-improver\)/);
   assert.match(digest, /stuck codex mission/);
-  assert.match(digest, /- 2 more ideas that can't explain themselves yet \(atris now\)/);
+  assert.doesNotMatch(digest, /morning workflow owner/);
+  assert.match(digest, /- 3 more ideas that can't explain themselves yet \(atris now\)/);
   // One tail pointer: the 'more results' line already names the command, so
   // the closing line only appears when nothing else pointed there.
   assert.equal((digest.match(/atris autoland digest/g) || []).length, 1);
@@ -145,6 +147,59 @@ test('digest and alarm compose in plain language', () => {
   assert.match(alarm, /CLI-9 \(30h\)/);
 });
 
+test('autoland digest landed story hides task ids and rough landing sentences', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const now = new Date().toISOString();
+    const stateDir = path.join(repo, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), `${JSON.stringify({
+      tasks: [
+        {
+          id: 'task-ready',
+          display_id: 'CLI-816',
+          title: 'Readable landed story',
+          status: 'done',
+          metadata: {
+            accepted_at: now,
+            auto_accepted_at: now,
+            landing_happened: 'Users can now trust the landing sentence because it names the result without opening the task.',
+          },
+          review: {
+            landing: {
+              happened: 'Users can now trust the landing sentence because it names the result without opening the task.',
+            },
+          },
+        },
+        {
+          id: 'task-rough',
+          display_id: 'CLI-817',
+          title: 'Add --rough flag so users save time',
+          status: 'done',
+          metadata: {
+            accepted_at: now,
+            auto_accepted_at: now,
+            landing_happened: 'Completed: Add --rough flag so users save time.',
+          },
+          review: {
+            landing: {
+              happened: 'Completed: Add --rough flag so users save time.',
+            },
+          },
+        },
+      ],
+    }, null, 2)}\n`, 'utf8');
+
+    const digest = runCli(['autoland', 'digest'], repo);
+    assert.equal(digest.status, 0, digest.stderr || digest.stdout);
+    assert.match(digest.stdout, /users can now trust the landing sentence/);
+    assert.doesNotMatch(digest.stdout, /CLI-816|CLI-817/);
+    assert.doesNotMatch(digest.stdout, /--rough|Completed: Add/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('operatorReady: a queue sentence earns its digest surface with a why, no agent jargon', () => {
   const { operatorReady } = require('../commands/autoland');
   // Carries a cost the operator can feel, no identifiers.
@@ -156,6 +211,7 @@ test('operatorReady: a queue sentence earns its digest surface with a why, no ag
   assert.ok(!operatorReady('Make codex_goal slot handoff faster for users'));
   assert.ok(!operatorReady('Add --inspect flag so users save time'));
   assert.ok(!operatorReady('CLI-788 failed because the continuation stopped'));
+  assert.ok(!operatorReady('Show atris init steps so users save time'));
 });
 
 test('alarm dedupe: a task pings once per window', () => {

@@ -115,7 +115,7 @@ atris task - durable local task state (SQLite, gitignored)
                                            Show the plain Plan before work starts
   atris task ready <id> --proof "..." [--changed "..." --checked "..." --saved "..." --try "..."]
                                            Agent proof ready; records Result if needed
-  atris task ready <id> --proof "..." [--happened "..." --checked "..." --tested "..." --decision "..."]
+  atris task ready <id> --proof "..." [--landing "..." --checked "..." --tested "..." --decision "..."]
                                            Agent proof ready; writes the human result receipt
   atris task result <id> --changed "..." --checked "..." [--saved "..."] [--try "..."]
                                            Show the plain Result and store trace on the task
@@ -156,9 +156,11 @@ atris task - durable local task state (SQLite, gitignored)
   atris task show <id> [--json]            Show a task card + dialogue
   atris task page <id> [--json]            Show the one-task page contract
   atris task step <id> [--json]            Refine chat, then advance one safe Plan/Do/Review step
-  atris task done <id> --proof "..."       Mark complete with proof
+  atris task done <id> --proof "..." --landing "..."
+                                           Mark complete with proof
   atris task done <id> --failed [--proof "..."]  Mark failed, optionally reviewed
-  atris task finish <id> --proof "..."     Legacy alias for done with proof
+  atris task finish <id> --proof "..." --landing "..."
+                                           Legacy alias for done with proof
   atris task review <id> --reward <n> [--verify "<cmd>"]
                                            Write review event + RSI episode
   atris task reviews [--all|--limit <n>] [--verbose]   Show certified Review items for human accept/revise
@@ -407,12 +409,28 @@ function landingNeedsDayOnePm(sentence, title) {
   return hasAgentJargon(text) || !operatorReady(text);
 }
 
-function warnIfLandingNeedsDayOnePm(landing, title) {
+const LANDING_DAY_ONE_PM_ADVISORY = 'Advisory: add --landing with one capability sentence a day-one PM could read, with the result in plain words and no flags or identifiers.';
+
+function landingDayOnePmAdvisory(landing, title) {
   const sentence = landing && typeof landing === 'object' ? landing.happened : '';
-  if (!landingNeedsDayOnePm(sentence, title)) return null;
-  const warning = 'Advisory: add --landing with one capability sentence a day-one PM could read, with the result in plain words and no flags or identifiers.';
+  return landingNeedsDayOnePm(sentence, title) ? LANDING_DAY_ONE_PM_ADVISORY : null;
+}
+
+function warnIfLandingNeedsDayOnePm(landing, title) {
+  const warning = landingDayOnePmAdvisory(landing, title);
+  if (!warning) return null;
   console.error(warning);
   return warning;
+}
+
+function landingFromBody(body = {}) {
+  const landing = body.landing && typeof body.landing === 'object' && !Array.isArray(body.landing) ? body.landing : {};
+  return {
+    happened: typeof body.landing === 'string' ? body.landing : (landing.happened || body.happened || body.what_happened || body.whatHappened),
+    checked: landing.checked || body.checked || body.check || body.verified,
+    tested: landing.tested || body.tested,
+    decision: landing.decision || body.decision || body.acceptance,
+  };
 }
 
 function numericFlag(args, name) {
@@ -6731,7 +6749,7 @@ function taskPageActions(task, { reviewer = 'codex-review', hasExistingReviewFol
     note_command: `atris task note ${ref} "<context>" --as ${owner}`,
     plan_command: `atris task plan ${ref} --goal ${taskCommandQuote(goal)} --exit "<exit condition>" --proof-needed "<verification command>" --first-move "<first move>"`,
     do_command: `atris task do ${ref} --as ${owner} --first-move "<first move>"`,
-    ready_command: `atris task ready ${ref} --as ${owner} --proof "<specific proof command/result>" --happened "<what happened>" --checked "<how you know>" --tested "<what you ran or inspected>" --decision "<accept/rework guidance>"`,
+    ready_command: `atris task ready ${ref} --as ${owner} --proof "<specific proof command/result>" --landing "<what someone can do now>" --checked "<how you know>" --tested "<what you ran or inspected>" --decision "<accept/rework guidance>"`,
     review_command: `atris task review ${ref} --reward 0 --as ${actor} --proof "<specific proof command/result>" --verify "<safe verifier command>"`,
   };
   if (task && task.status === 'review') {
@@ -7511,6 +7529,7 @@ function cmdDone(args) {
   }
   const failed = hasFlag(args, '--failed');
   const proof = proofFlagValue(args);
+  const landing = landingFlags(args);
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task done');
@@ -7536,6 +7555,7 @@ function cmdDone(args) {
     proof,
   });
   if (result.updated) {
+    const landingAdvisory = hasReview && !failed ? warnIfLandingNeedsDayOnePm(landing, beforeTask && beforeTask.title) : null;
     const review = hasReview ? taskDb.reviewTask(db, {
       id: taskId,
       actor,
@@ -7544,6 +7564,7 @@ function cmdDone(args) {
       nextTask: typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '',
       proof,
       careerXpEligible: false,
+      landing,
     }) : null;
     const xpProjection = refreshCareerXpAfterReview(review);
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
@@ -7556,6 +7577,7 @@ function cmdDone(args) {
         reward: review && review.episode ? review.episode.reward.value : null,
         episode: review && review.episode || null,
         xp_projection: xpProjection,
+        landing_advisory: landingAdvisory,
         projection_path: outPath,
         task: compactTaskFromProjection(projection, taskId),
       });
@@ -9679,6 +9701,8 @@ async function handleTaskApi(req, res, taskDb, db) {
     const failed = Boolean(body.failed);
     const proof = String(body.proof || '').trim();
     const shouldReview = Boolean(body.proof || body.lesson || body.next || body.reward !== undefined);
+    const landing = landingFromBody(body);
+    const landingAdvisory = shouldReview && !failed ? landingDayOnePmAdvisory(landing, currentTask && currentTask.title) : null;
     const proofIssue = meaningfulTaskProofIssue(proof, { required: !failed || shouldReview });
     if (proofIssue) return sendProofIssue(res, proof, proofIssue);
     const done = taskDb.doneTask(db, {
@@ -9701,6 +9725,7 @@ async function handleTaskApi(req, res, taskDb, db) {
         nextTask: String(body.next || ''),
         proof: String(body.proof || ''),
         careerXpEligible: false,
+        landing,
       });
       episode = reviewed.episode;
       nextCreated = body.createNext ? createNextTaskIfRequested(taskDb, db, ['--create-next'], currentTask, episode.next_task_suggestion) : null;
@@ -9714,6 +9739,7 @@ async function handleTaskApi(req, res, taskDb, db) {
       reviewed: Boolean(episode),
       episode,
       xp_projection: xpProjection,
+      landing_advisory: landingAdvisory,
       next_task_id: nextCreated ? nextCreated.id : null,
       projection_path: outPath,
       task: taskFromProjection(projection, taskId),
@@ -9725,6 +9751,7 @@ async function handleTaskApi(req, res, taskDb, db) {
     if (proofIssue) return sendProofIssue(res, proof, proofIssue);
     const nextTaskInput = normalizeReviewNextTaskInput(body.next);
     const actor = String(body.actor || DEFAULT_OWNER);
+    const landing = landingFromBody(body);
     const resultTrace = buildAutomaticResultTrace(taskDb, db, taskId, {
       actor,
       proof,
@@ -9746,20 +9773,17 @@ async function handleTaskApi(req, res, taskDb, db) {
       lesson: String(body.lesson || ''),
       nextTask: nextTaskInput.nextTask,
       resultTrace: resultTrace && resultTrace.trace,
-      landing: body.landing || {
-        happened: body.happened,
-        checked: body.checked,
-        tested: body.tested,
-        decision: body.decision,
-      },
+      landing,
     });
     if (!result.ready) return sendJson(res, 409, { ok: false, reason: result.reason });
+    const landingAdvisory = landingDayOnePmAdvisory(landing, result.row && result.row.title);
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     return sendJson(res, 200, {
       ok: true,
       action: 'ready',
       task_id: taskId,
       result_trace: resultTrace,
+      landing_advisory: landingAdvisory,
       ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
       projection_path: outPath,
       task: taskFromProjection(projection, taskId),

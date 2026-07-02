@@ -154,12 +154,36 @@ function logoutAtris() {
 }
 
 async function whoamiAtris() {
+  const { execSync } = require('child_process');
+  const { printOperatorNext } = require('../lib/operator-next');
   const { apiRequestJson } = require('../utils/api');
+
+  let gitAuthor = '';
+  try {
+    gitAuthor = execSync('git config user.email || git config user.name', {
+      encoding: 'utf8',
+      cwd: process.cwd(),
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {}
+
+  console.log('Local task owner: git identity when claiming tasks');
+  console.log(`Git author: ${gitAuthor || 'not set (configure with git config user.email)'}`);
+
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.log('Cloud account: not logged in (optional for local-only work)');
+    console.log('');
+    printOperatorNext('atris status');
+    process.exit(0);
+  }
 
   try {
     const summary = await displayAccountSummary(apiRequestJson);
     if (summary.error) {
-      console.log('\nRun "atris login" to sign in.');
+      console.log('Cloud account: saved token did not validate');
+      console.log('');
+      printOperatorNext('atris login');
       process.exit(1);
     }
     process.exit(0);

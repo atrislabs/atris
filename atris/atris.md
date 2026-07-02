@@ -80,6 +80,9 @@ The same discipline for words. Output stays sharp no matter how bloated the cont
 - **Cut filler.** Drop "it's worth noting", "in order to", "leverage", "seamless", "robust", "delve", stacked hedges, and em dashes. `atris slop` flags the prose tells (em-dash, hype-copy) too.
 - **Bound verbosity by information, not context.** Say the load-bearing thing and stop. Length tracks what the reader needs to act, nothing more.
 - **Match the register.** The operator wants the next move; a spec wants the contract; a journal wants one line. Jargon is a lever only when shared: use the reader's precise terms, define a new one once.
+- **Every queue item earns its surface.** Operator-facing titles, ticks, and landing sentences must say why the work matters, who benefits, or what cost changes.
+- **Day-one PM test.** A PM who joined this morning should understand the sentence without knowing agent ids, flags, internal commands, or code identifiers.
+- **Results are capabilities.** Write the result as "we did X, so you can now Y"; if the user cannot do anything new, say what risk or cost went down.
 
 `expected`: this is how an Atris agent writes and builds. Shipping slop or rambling is a failure smell, same as drift or a stale task.
 
@@ -101,7 +104,7 @@ atris task day
 atris task next
 atris task claim <id> --as <functional-member>
 atris task note <id> "<context, blocker, decision, or handoff>"
-atris task finish <id> --proof "<tests, screenshot, diff, or receipt>"
+atris task finish <id> --proof "<tests, screenshot, diff, or receipt>" --landing "<what someone can do now>"
 atris task review <id> --lesson "<what improved>" --next "<next task>"
 ```
 

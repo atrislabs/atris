@@ -224,16 +224,21 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
     } else {
       blockingParts.push(`Team activity has ${teamActivity.length} recent signal${teamActivity.length === 1 ? '' : 's'}.`);
     }
-    blockingParts.push(
-      todo.completed.length > 0
-        ? 'Decision: let it run unless you want cleanup debt handled first.'
-        : 'Decision: let it run.'
-    );
 
     console.log('');
     printHumanSection('Where we are:', where);
     printHumanSection('What is queued:', queueParts);
     printHumanSection('What is blocking:', blockingParts);
+    try {
+      const { collectLaunchpad } = require('./launchpad');
+      const { printOperatorNext } = require('../lib/operator-next');
+      const launchpad = collectLaunchpad(process.cwd());
+      const command = launchpad?.next_action?.command;
+      if (command) {
+        console.log('');
+        printOperatorNext(command);
+      }
+    } catch {}
     return;
   }
 

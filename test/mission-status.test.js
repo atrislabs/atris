@@ -802,7 +802,7 @@ test('mission run objective starts with product takeoff instead of runner plumbi
     assert.match(started.stdout, /Done when: verifier passes and visible goal lands\./);
     assert.match(started.stdout, /Proof: Mission state saved in \.atris\/state\/missions\.jsonl\./);
     assert.match(started.stdout, /Check: Verifier configured: node -e "process\.exit\(0\)"/);
-    assert.match(started.stdout, /Next: Start the visible goal, then continue this mission\./);
+    assert.match(started.stdout, /Next: atris mission goal ack/);
     assert.doesNotMatch(started.stdout, /^(Started mission|Owner|Runner|Atris goal|Codex goal):/m);
     assert.doesNotMatch(started.stdout, /^Landing:/m);
   } finally {
@@ -1024,7 +1024,7 @@ test('mission tick warns when summary lacks operator-ready plain why', () => {
       'tick',
       mission.id,
       '--summary',
-      'Refactor mission summary wording',
+      'Refactor buildTickPrompt so --summary flags parse via mission_state',
       '--json',
     ], { cwd: dir });
 
@@ -1032,7 +1032,7 @@ test('mission tick warns when summary lacks operator-ready plain why', () => {
     assert.match(ticked.stderr, /Warning: add the why in plain words to this tick summary/);
     const payload = JSON.parse(ticked.stdout);
     assert.equal(payload.action, 'mission_tick');
-    assert.equal(payload.tick.summary, 'Refactor mission summary wording');
+    assert.equal(payload.tick.summary, 'Refactor buildTickPrompt so --summary flags parse via mission_state');
     assert.match(payload.operator_summary_warning, /what changed, what it buys or costs/);
   } finally {
     cleanupTempDir(dir);
@@ -1044,7 +1044,7 @@ test('mission tick accepts plain recovery summary without warning', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const mission = startMission(dir, 'operator recovery summary mission');
-    const summary = 'Users who paste a mission from the wrong folder now get a clearer place to stand, saving the first recovery step.';
+    const summary = 'Users can now resume the mission from the right place, saving the first recovery step.';
 
     const ticked = runCli([
       'mission',
@@ -1075,7 +1075,7 @@ test('mission attach-task warns when generated task title lacks operator-ready p
     appendMissionState(dir, {
       id: 'mission-operator-title-warning',
       slug: 'operator-title-warning',
-      objective: 'Refactor mission task title',
+      objective: 'Refactor codex_goal task_spine handling for --json output',
       owner: 'validator',
       status: 'running',
       runner: 'codex_goal',
@@ -1234,7 +1234,7 @@ test('mission timeline reads standard result.landing from tick receipts', () => 
     assert.equal(timeline.status, 0, timeline.stderr || timeline.stdout);
     const payload = JSON.parse(timeline.stdout);
     assert.equal(payload.current_landing.changed, 'Saved a human-readable landing receipt.');
-    assert.match(payload.current_landing.next, /Keep running the mission/);
+    assert.match(payload.current_landing.next, /atris mission (tick|attach-task)/);
     assert.equal(payload.current_landing.receipt_path, JSON.parse(ticked.stdout).receipt_path);
 
     const status = runCli(['mission', 'status', mission.id], { cwd: dir });
@@ -2553,7 +2553,7 @@ test('mission run preflights messy shower input before writing the visible goal'
     assert.equal(payload.budget_contract.policy, 'spend_full_budget');
     assert.equal(payload.budget_contract.requested_seconds, 600);
     assert.equal(payload.mission.xp_task.ref, payload.codex_goal_state.goal.task_spine.task_ref);
-    assert.match(payload.mission.xp_task.operator_title_warning, /what it buys or costs/);
+    assert.equal(payload.mission.xp_task.operator_title_warning, null);
     assert.equal(payload.codex_goal_state.goal.task_spine.has_task, true);
     assert.equal(payload.codex_goal_state.goal.task_spine.current_step_command.includes('atris task current-step'), true);
     assert.equal(fs.existsSync(path.join(dir, preflight.room_receipt_path)), true);

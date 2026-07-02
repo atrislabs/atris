@@ -449,7 +449,6 @@ function showHelp() {
   console.log('  Types: code, research, CRM, reporting, events, support, business ops');
   console.log('');
   console.log('Setup:');
-  console.log('  setup      - Guided first-time setup (login, pick business, pull)');
   console.log('  init       - Initialize Atris in current project');
   console.log('  update     - Update local files to latest version');
   console.log('  upgrade    - Install latest Atris from npm');
@@ -1264,26 +1263,17 @@ async function askContextGatherer(workspaceDir) {
 }
 
 function printMapBootstrap({ userInput, prefix = 'Bootstrap required' } = {}) {
+  const { printOperatorNext } = require('../lib/operator-next');
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
   console.log(`│ ${String(prefix).toUpperCase().padEnd(60)}│`);
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
-  console.log('Atris needs a real `atris/MAP.md` so future steps are grounded in the workspace.');
-  console.log('');
-  console.log('For an agent:');
-  console.log('─────────────────────────────────────────────────────────────');
-  console.log('Read `atris/atris.md`, then generate a complete `atris/MAP.md` for this repo.');
-  console.log('Rules: include file:line refs, keep it grep-friendly, do NOT change code.');
   if (userInput) {
+    console.log(`Saved focus: ${userInput}`);
     console.log('');
-    console.log('After MAP is generated, continue with:');
-    console.log(`- ${userInput}`);
-  } else {
-    console.log('');
-    console.log('Then rerun: atris');
   }
-  console.log('─────────────────────────────────────────────────────────────');
+  printOperatorNext('atris status');
   console.log('');
 }
 
@@ -1435,13 +1425,10 @@ if (command === 'init') {
     process.exit(0);
   }
   initCmd();
-  // Flow directly into interactive prompt
-  interactiveEntry()
-    .then(() => process.exit(0))
-    .catch((error) => {
-      console.error(`✗ Error: ${error.message || error}`);
-      process.exit(1);
-    });
+  const { printOperatorNext } = require('../lib/operator-next');
+  console.log('');
+  printOperatorNext('atris status');
+  process.exit(0);
 } else if (command === '_start') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
@@ -2341,6 +2328,15 @@ if (command === 'init') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     showSetupHelp();
+    process.exit(0);
+  }
+  const atrisDir = path.join(process.cwd(), 'atris');
+  if (!fs.existsSync(atrisDir)) {
+    console.log('Setup uses local init for a new workspace.');
+    initCmd();
+    const { printOperatorNext } = require('../lib/operator-next');
+    console.log('');
+    printOperatorNext('atris status');
     process.exit(0);
   }
   require('../commands/setup').setupAtris()

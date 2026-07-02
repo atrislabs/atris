@@ -52,6 +52,7 @@
     "atris/skills/"
   ],
   "scripts": {
+    "postinstall": "node lib/postinstall-welcome.js",
     "test": "node --test",
     "lint:decks": "node scripts/lint-all-decks.js",
     "publish:release": "node scripts/publish-atris-release.js",

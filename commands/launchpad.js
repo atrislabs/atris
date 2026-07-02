@@ -287,8 +287,8 @@ function chooseNextAction({ root, actor, tasks, missions, brain, endgame }) {
 
   return {
     kind: 'ask_for_work',
-    label: 'Ask for the next concrete outcome',
-    command: 'atris',
+    label: 'Create the first task',
+    command: 'atris task new "Ship the smallest useful thing"',
     why: 'No task, mission, endgame, or brain next move is available.',
   };
 }
