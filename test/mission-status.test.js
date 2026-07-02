@@ -1119,6 +1119,64 @@ test('mission timeline reads standard result.landing from tick receipts', () => 
   }
 });
 
+test('mission timeline --json reports and applies the filters that shaped the rows', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission', 'start', 'timeline filter display',
+      '--owner', 'auto-improver', '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+
+    const firstTick = runCli(['mission', 'tick', mission.id, '--summary', 'First landing.', '--json'], { cwd: dir });
+    assert.equal(firstTick.status, 0, firstTick.stderr || firstTick.stdout);
+    const secondTick = runCli(['mission', 'tick', mission.id, '--summary', 'Second landing.', '--json'], { cwd: dir });
+    assert.equal(secondTick.status, 0, secondTick.stderr || secondTick.stdout);
+
+    // Unfiltered: filter_display advertises the recognized axes; kind/since are null.
+    const base = runCli(['mission', 'timeline', mission.id, '--json'], { cwd: dir });
+    assert.equal(base.status, 0, base.stderr || base.stdout);
+    const basePayload = JSON.parse(base.stdout);
+    assert.equal(basePayload.filter_display.mission, mission.id);
+    assert.equal(basePayload.filter_display.kind, null);
+    assert.equal(basePayload.filter_display.since, null);
+    assert.equal(basePayload.filter_display.limit, basePayload.timeline_meta.limit);
+    assert.equal(basePayload.timeline.length, 2);
+
+    // --kind matching the tick receipts keeps both rows and echoes the filter.
+    const byKind = runCli(['mission', 'timeline', mission.id, '--kind', 'mission_tick', '--json'], { cwd: dir });
+    assert.equal(byKind.status, 0, byKind.stderr || byKind.stdout);
+    const byKindPayload = JSON.parse(byKind.stdout);
+    assert.equal(byKindPayload.filter_display.kind, 'mission_tick');
+    assert.equal(byKindPayload.timeline.length, 2);
+
+    // A kind with no receipts drops every row and the display reports it.
+    const noKind = runCli(['mission', 'timeline', mission.id, '--kind', 'no_such_kind', '--json'], { cwd: dir });
+    assert.equal(noKind.status, 0, noKind.stderr || noKind.stdout);
+    const noKindPayload = JSON.parse(noKind.stdout);
+    assert.equal(noKindPayload.filter_display.kind, 'no_such_kind');
+    assert.equal(noKindPayload.timeline.length, 0);
+    assert.equal(noKindPayload.timeline_meta.shown_count, 0);
+
+    // --since in the future filters everything out; the past keeps all rows.
+    const future = runCli(['mission', 'timeline', mission.id, '--since', '2999-01-01T00:00:00.000Z', '--json'], { cwd: dir });
+    assert.equal(future.status, 0, future.stderr || future.stdout);
+    const futurePayload = JSON.parse(future.stdout);
+    assert.equal(futurePayload.filter_display.since, '2999-01-01T00:00:00.000Z');
+    assert.equal(futurePayload.timeline.length, 0);
+
+    const past = runCli(['mission', 'timeline', mission.id, '--since', '2000-01-01T00:00:00.000Z', '--json'], { cwd: dir });
+    assert.equal(past.status, 0, past.stderr || past.stdout);
+    const pastPayload = JSON.parse(past.stdout);
+    assert.equal(pastPayload.filter_display.since, '2000-01-01T00:00:00.000Z');
+    assert.equal(pastPayload.timeline.length, 2);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission tick landing describes common verifier checks plainly', () => {
   const dir = makeTempDir();
   try {
@@ -1459,8 +1517,14 @@ test('mission timeline lists saved landing changed and next lines', () => {
       label: 'Filters',
       active_label: 'Active filter',
       active: 'latest',
+      mission_label: 'Mission',
+      mission: 'landing-timeline-codex-loop',
       limit_label: 'Limit',
       limit: payload.timeline_meta.limit,
+      kind_label: 'Kind',
+      kind: null,
+      since_label: 'Since',
+      since: null,
       shown_count: payload.timeline_meta.shown_count,
       total_count: payload.timeline_meta.total_count,
       hidden_count: payload.timeline_meta.hidden_count,
@@ -1906,8 +1970,14 @@ test('mission timeline lists saved landing changed and next lines', () => {
       label: 'Filters',
       active_label: 'Active filter',
       active: 'full_history',
+      mission_label: 'Mission',
+      mission: 'landing-timeline-codex-loop',
       limit_label: 'Limit',
       limit: writtenPayload.timeline_meta.limit,
+      kind_label: 'Kind',
+      kind: null,
+      since_label: 'Since',
+      since: null,
       shown_count: writtenPayload.timeline_meta.shown_count,
       total_count: writtenPayload.timeline_meta.total_count,
       hidden_count: writtenPayload.timeline_meta.hidden_count,

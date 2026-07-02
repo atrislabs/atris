@@ -3147,7 +3147,7 @@ function missionReportTimeline(mission, root = process.cwd(), limit = 6) {
   return items.slice(Math.max(0, items.length - limit));
 }
 
-function missionLandingTimeline(mission, root = process.cwd(), limit = 12) {
+function missionLandingTimeline(mission, root = process.cwd(), limit = 12, { kind = null, since = null } = {}) {
   const paths = statePaths(root);
   let files = [];
   try {
@@ -3158,6 +3158,8 @@ function missionLandingTimeline(mission, root = process.cwd(), limit = 12) {
     files = [];
   }
 
+  const kindFilter = kind ? String(kind).trim() : null;
+  const sinceFilter = since ? String(since).trim() : null;
   const items = [];
   const seen = new Set();
   for (const file of files) {
@@ -3168,6 +3170,9 @@ function missionLandingTimeline(mission, root = process.cwd(), limit = 12) {
       continue;
     }
     if (!receipt || receipt.mission_id !== mission.id) continue;
+    const receiptKind = receipt.result && receipt.result.kind ? String(receipt.result.kind) : (receipt.kind ? String(receipt.kind) : '');
+    if (kindFilter && receiptKind !== kindFilter) continue;
+    if (sinceFilter && String(receipt.at || '') < sinceFilter) continue;
     const landing = receipt.result && receipt.result.landing;
     if (landing && landing.timeline_visible === false) continue;
     const changed = String(landing && landing.changed || '').trim();
@@ -3458,7 +3463,9 @@ function timelineMission(args) {
   const all = hasFlag(args, '--all');
   const prunePreviewRequested = hasFlag(args, '--prune-preview');
   const outputPath = readFlag(args, '--output', '') || readFlag(args, '--out', '');
-  const ref = stripKnownFlags(args, ['--limit', '--output', '--out'], ['--json', '--write', '--all', '--prune-preview'])[0] || '';
+  const kindFilter = readFlag(args, '--kind', '') || null;
+  const sinceFilter = readFlag(args, '--since', '') || null;
+  const ref = stripKnownFlags(args, ['--limit', '--output', '--out', '--kind', '--since'], ['--json', '--write', '--all', '--prune-preview'])[0] || '';
   const limit = all ? Number.MAX_SAFE_INTEGER : readPositiveIntegerFlag(args, '--limit', 12, { json: asJson });
   const missions = listMissions();
   const mission = ref
@@ -3482,7 +3489,7 @@ function timelineMission(args) {
     return;
   }
   const root = mission.worktree_root || process.cwd();
-  const timelineResult = missionLandingTimeline(mission, root, limit);
+  const timelineResult = missionLandingTimeline(mission, root, limit, { kind: kindFilter, since: sinceFilter });
   const timeline = timelineResult.items;
   const currentLanding = missionTimelineCurrentLanding(timeline);
   const timelineItemDisplay = (item) => ({
@@ -3652,8 +3659,14 @@ function timelineMission(args) {
       label: 'Filters',
       active_label: 'Active filter',
       active: all ? 'full_history' : 'latest',
+      mission_label: 'Mission',
+      mission: mission.id,
       limit_label: 'Limit',
       limit: timelineResult.meta.limit,
+      kind_label: 'Kind',
+      kind: kindFilter,
+      since_label: 'Since',
+      since: sinceFilter,
       shown_count: timelineResult.meta.shown_count,
       total_count: timelineResult.meta.total_count,
       hidden_count: timelineResult.meta.hidden_count,
