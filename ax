@@ -306,6 +306,20 @@ function formatRunProfile(profile, options = {}) {
   return rows.map(([label, value]) => formatAuxRow(label, value, options)).join('\n');
 }
 
+// Auto-routed local turns must never die on a missing local backend — a
+// consumer machine without the launchd service gets a degraded cloud chat
+// turn, not ECONNREFUSED. Probed once per process (REPL lines reuse it).
+// Explicit --local skips the downgrade so devs see the real error. Interim
+// guard until the cloud relay executes workspace tools in-process and
+// consumers stop needing a local backend at all.
+let _localBackendUp = null;
+async function localBackendReachable() {
+  if (_localBackendUp !== null) return _localBackendUp;
+  const res = await requestJson(ATRIS2_HEALTH_PATH, { timeoutMs: 1200, route: 'local' });
+  _localBackendUp = Boolean(res.ok || Number(res.status || 0) > 0);
+  return _localBackendUp;
+}
+
 async function buildRuntimeHealth(options = {}) {
   const route = options.route === 'local' || options.forceLocal ? 'local' : 'cloud';
   const healthRes = options.healthRes
@@ -2017,7 +2031,11 @@ function handleEvent(event, state, output) {
 }
 
 async function postTurn(message, options = {}) {
-  const route = options.business ? 'local' : resolveRoute(message, options);
+  let route = options.business ? 'local' : resolveRoute(message, options);
+  if (route === 'local' && !options.business && options.route !== 'local' && !options.forceLocal
+    && !(await localBackendReachable())) {
+    route = 'cloud';
+  }
   const local = route !== 'cloud';
   const endpointRoute = options.business ? 'cloud' : route;
   const token = authToken();
