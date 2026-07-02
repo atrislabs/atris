@@ -19,3 +19,8 @@ if git diff --cached --name-only --diff-filter=AM | grep -q '^atris/wiki/'; then
   echo "each workspace creates their own wiki via atris init / atris ingest."
   exit 1
 fi
+
+# Load check: staged modules must load and their destructured imports must
+# exist. Catches the silent partial-land failure (destructuring a missing
+# export is undefined, not an error) that broke master on 2026-07-02.
+node "$(git rev-parse --show-toplevel)/scripts/precommit-load-check.js" || exit 1
