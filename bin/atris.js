@@ -128,7 +128,16 @@ function isOptionValue(args, index, optionNames) {
 
 function applyRunnerFlags(args) {
   const runnerProfile = readOptionArg(args, '--runner-profile');
-  if (runnerProfile) process.env.ATRIS_RUNNER_PROFILE = runnerProfile;
+  if (runnerProfile) {
+    // Fail fast at the CLI boundary: an unknown profile otherwise stays silent
+    // until a heartbeat spawn resolves it mid-loop (silent overnight outage).
+    const { RUNNER_PROFILES, RUNNER_PROFILE_NAMES } = require('../lib/runner-command');
+    if (!Object.prototype.hasOwnProperty.call(RUNNER_PROFILES, runnerProfile)) {
+      console.error(`Unknown --runner-profile "${runnerProfile}". Known profiles: ${RUNNER_PROFILE_NAMES.join(', ')}.`);
+      process.exit(1);
+    }
+    process.env.ATRIS_RUNNER_PROFILE = runnerProfile;
+  }
   const runnerBin = readOptionArg(args, '--runner-bin');
   if (runnerBin) {
     process.env.ATRIS_RUNNER_BIN = runnerBin;
@@ -885,7 +894,7 @@ function showAutopilotHelp() {
   console.log('  --runner-bin PATH       Runner binary for this run');
   console.log('  --runner-template CMD   Runner command template for this run');
   console.log('  --runner-model MODEL    Runner model for this run');
-  console.log('  --runner-profile NAME   Runner profile for this run (e.g. atris-fast)');
+  console.log(`  --runner-profile NAME   Runner profile for this run (one of: ${require('../lib/runner-command').RUNNER_PROFILE_NAMES.join(', ')})`);
   console.log('');
   console.log('Examples:');
   console.log('  atris autopilot                        # Suggest from existing work');
@@ -1845,7 +1854,7 @@ if (command === 'init') {
     console.log('  --runner-bin PATH       Runner binary for this run');
     console.log('  --runner-template CMD   Runner command template for this run');
     console.log('  --runner-model MODEL    Runner model for this run');
-    console.log('  --runner-profile NAME   Runner profile for this run (e.g. atris-fast)');
+    console.log(`  --runner-profile NAME   Runner profile for this run (one of: ${require('../lib/runner-command').RUNNER_PROFILE_NAMES.join(', ')})`);
     console.log('  --push        Auto-push after each cycle (default: true)');
     console.log('  --no-push     Skip auto-push after each cycle');
     console.log('');

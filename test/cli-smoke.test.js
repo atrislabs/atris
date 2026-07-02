@@ -834,6 +834,42 @@ test('--help flag shows help', () => {
   }
 });
 
+test('runner-profile help lists canonical profile names only', () => {
+  const dir = makeTempDir();
+  try {
+    const run = runCli(['run', '--help'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast\)/);
+    assert.doesNotMatch(run.stdout, /atris2-fast|atris-2-fast/);
+
+    const autopilot = runCli(['autopilot', '--help'], { cwd: dir });
+    assert.equal(autopilot.status, 0, autopilot.stderr);
+    assert.match(autopilot.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast\)/);
+    assert.doesNotMatch(autopilot.stdout, /atris2-fast|atris-2-fast/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('runner-profile validation fails fast while aliases stay compatible', () => {
+  const dir = makeTempDir();
+  try {
+    const bad = runCli(['run', '--dry-run', '--runner-profile', 'atris-9'], { cwd: dir });
+    assert.equal(bad.status, 1);
+    assert.match(bad.stderr, /Unknown --runner-profile "atris-9"/);
+    assert.match(bad.stderr, /Known profiles: atris-fast/);
+    assert.doesNotMatch(bad.stderr, /atris2-fast|atris-2-fast/);
+
+    runCli(['init'], { cwd: dir, input: '\n' });
+    for (const profile of ['atris-fast', 'atris2-fast', 'atris-2-fast']) {
+      const good = runCli(['run', '--dry-run', '--runner-profile', profile], { cwd: dir });
+      assert.equal(good.status, 0, `${profile}: ${good.stderr || good.stdout}`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('status --quick reflects inbox count', () => {
   const dir = makeTempDir();
   try {

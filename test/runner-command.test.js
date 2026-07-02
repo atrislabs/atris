@@ -7,6 +7,9 @@ const {
   DEFAULT_CLAUDE_RUNNER_MODEL,
   DEFAULT_CLAUDE_RUNNER_BIN,
   RUNNER_PROFILES,
+  RUNNER_PROFILE_DEFS,
+  RUNNER_PROFILE_ALIASES,
+  RUNNER_PROFILE_NAMES,
   resolveRunnerProfile,
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
@@ -126,6 +129,26 @@ test('resolveRunnerProfile exposes the Atris Fast profile', () => {
   withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'atris-fast' }, () => {
     assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILES['atris-fast']);
   });
+});
+
+// Regression guard for profile-body-drift: aliases must reuse the ONE canonical
+// config object, and the operator-facing list must stay canonical-only. This
+// keeps a runner swap a config edit (one alias line / one def) rather than a
+// copied profile body that can silently diverge.
+test('runner profile aliases reuse the canonical config, not duplicated bodies', () => {
+  assert.deepEqual(RUNNER_PROFILE_NAMES, Object.keys(RUNNER_PROFILE_DEFS));
+  for (const [alias, target] of Object.entries(RUNNER_PROFILE_ALIASES)) {
+    // alias resolves to the SAME frozen object as its canonical target
+    assert.strictEqual(RUNNER_PROFILES[alias], RUNNER_PROFILE_DEFS[target]);
+    // aliases never leak into the operator-facing list
+    assert.ok(!RUNNER_PROFILE_NAMES.includes(alias), `${alias} must not appear in RUNNER_PROFILE_NAMES`);
+  }
+  // every alias spelling still resolves via the env-driven path
+  for (const alias of Object.keys(RUNNER_PROFILE_ALIASES)) {
+    withRunnerEnv({ ATRIS_RUNNER_PROFILE: alias }, () => {
+      assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS[RUNNER_PROFILE_ALIASES[alias]]);
+    });
+  }
 });
 
 test('Atris Fast runner profile resolves to ax --fast and atris:fast', () => {
