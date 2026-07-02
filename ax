@@ -937,88 +937,138 @@ function resetMarkdownState(state) {
   state.markdownMode = 'normal';
   state.markdownBuffer = '';
   state.markdownCarry = '';
+  state.markdownFence = false;
+  state.markdownTable = [];
 }
 
 function ensureMarkdownState(state) {
   if (!state.markdownMode) state.markdownMode = 'normal';
   if (typeof state.markdownBuffer !== 'string') state.markdownBuffer = '';
   if (typeof state.markdownCarry !== 'string') state.markdownCarry = '';
+  if (typeof state.markdownFence !== 'boolean') state.markdownFence = false;
+  if (!Array.isArray(state.markdownTable)) state.markdownTable = [];
 }
 
+function renderInlineMarkdown(text, options = {}) {
+  let rendered = String(text || '');
+  const codeSpans = [];
+  rendered = rendered.replace(/`([^`\n]+)`/g, (_, code) => {
+    const token = `\u0000CODE${codeSpans.length}\u0000`;
+    codeSpans.push(code);
+    return token;
+  });
+  rendered = rendered.replace(/\*\*([^*\n]+)\*\*/g, (_, value) => paint(value, [ANSI.bold], options));
+  rendered = rendered.replace(/__([^_\n]+)__/g, (_, value) => paint(value, [ANSI.bold], options));
+  rendered = rendered.replace(/\u0000CODE(\d+)\u0000/g, (_, index) => paint(codeSpans[Number(index)] || '', [ANSI.accent], options));
+  return rendered;
+}
+
+function renderMarkdownTable(lines, options = {}) {
+  const rows = [];
+  for (const line of lines) {
+    const trimmed = String(line || '').trim().replace(/^\|/, '').replace(/\|$/, '');
+    const cells = trimmed.split('|').map(cell => cell.trim());
+    if (cells.length && cells.every(cell => /^:?-{2,}:?$/.test(cell))) continue;
+    rows.push(cells);
+  }
+  if (!rows.length) return '';
+  const width = Math.max(...rows.map(row => row.length));
+  const plain = value => String(value || '').replace(/\x1b\[[0-9;]*m/g, '');
+  const rendered = rows.map(row => row.map(cell => renderInlineMarkdown(cell, options)));
+  const colWidths = Array.from({ length: width }, (_, col) => (
+    Math.max(...rendered.map(row => plain(row[col] || '').length))
+  ));
+  const sep = paint('│', [ANSI.muted], options);
+  return rendered.map((row, rowIndex) => {
+    const cells = Array.from({ length: width }, (_, col) => {
+      const cell = row[col] || '';
+      const pad = ' '.repeat(Math.max(0, colWidths[col] - plain(cell).length));
+      const value = `${cell}${pad}`;
+      return rowIndex === 0 ? paint(plain(value), [ANSI.bold], options) : value;
+    });
+    return `  ${cells.join(` ${sep} `)}`;
+  }).join('\n') + '\n';
+}
+
+function flushMarkdownTable(state, options = {}) {
+  if (!state.markdownTable.length) return '';
+  const table = renderMarkdownTable(state.markdownTable, options);
+  state.markdownTable = [];
+  return table;
+}
+
+function renderMarkdownLine(state, line, options = {}) {
+  const fenceMatch = /^\s*```/.test(line);
+  if (fenceMatch) {
+    state.markdownFence = !state.markdownFence;
+    const label = line.trim().slice(3).trim();
+    if (state.markdownFence && label) return `${paint(label, [ANSI.muted], options)}\n`;
+    return '';
+  }
+  if (state.markdownFence) {
+    return `  ${paint(line, [ANSI.accent], options)}\n`;
+  }
+  if (/^\s*\|/.test(line)) {
+    state.markdownTable.push(line);
+    return '';
+  }
+  let out = flushMarkdownTable(state, options);
+  const header = line.match(/^(#{1,6})\s+(.*)$/);
+  if (header) {
+    const codes = header[1].length <= 2 ? [ANSI.bold, ANSI.accent] : [ANSI.bold];
+    return `${out}${paint(renderInlineMarkdown(header[2], options).replace(/\x1b\[[0-9;]*m/g, ''), codes, options)}\n`;
+  }
+  if (/^\s*(?:-{3,}|_{3,}|\*{3,})\s*$/.test(line)) {
+    return `${out}${paint('─'.repeat(36), [ANSI.muted], options)}\n`;
+  }
+  const bullet = line.match(/^(\s*)[-*]\s+(.*)$/);
+  if (bullet) {
+    return `${out}${bullet[1]}${paint('•', [ANSI.bold], options)} ${renderInlineMarkdown(bullet[2], options)}\n`;
+  }
+  const quote = line.match(/^\s*>\s?(.*)$/);
+  if (quote) {
+    return `${out}${paint('│', [ANSI.muted], options)} ${paint(renderInlineMarkdown(quote[1], options).replace(/\x1b\[[0-9;]*m/g, ''), [ANSI.muted], options)}\n`;
+  }
+  return `${out}${renderInlineMarkdown(line, options)}\n`;
+}
+
+// Line-buffered streaming renderer: deltas accumulate until a full line
+// exists, then the line renders with block context (fences, tables, headers,
+// bullets). Whole-line buffering is what makes split delimiters and
+// multi-line constructs safe; the cost is line-at-a-time streaming, which is
+// how every serious terminal agent renders anyway.
 function renderStreamingMarkdown(state, text, options = {}) {
   ensureMarkdownState(state);
   const input = `${state.markdownCarry || ''}${String(text || '')}`;
   state.markdownCarry = '';
+  const parts = input.split('\n');
+  state.markdownCarry = parts.pop() || '';
   let out = '';
-
-  for (let i = 0; i < input.length;) {
-    const char = input[i];
-    const next = input[i + 1];
-
-    if (state.markdownMode === 'normal') {
-      if (char === '*' && next === undefined) {
-        state.markdownCarry = '*';
-        break;
-      }
-      if (char === '*' && next === '*') {
-        state.markdownMode = 'bold';
-        state.markdownBuffer = '';
-        i += 2;
-        continue;
-      }
-      if (char === '`') {
-        state.markdownMode = 'code';
-        state.markdownBuffer = '';
-        i += 1;
-        continue;
-      }
-      out += char;
-      i += 1;
-      continue;
-    }
-
-    if (state.markdownMode === 'bold') {
-      if (char === '*' && next === undefined) {
-        state.markdownCarry = '*';
-        break;
-      }
-      if (char === '*' && next === '*') {
-        out += paint(state.markdownBuffer, [ANSI.bold], options);
-        state.markdownMode = 'normal';
-        state.markdownBuffer = '';
-        i += 2;
-        continue;
-      }
-      state.markdownBuffer += char;
-      i += 1;
-      continue;
-    }
-
-    if (state.markdownMode === 'code') {
-      if (char === '`') {
-        out += paint(state.markdownBuffer, [ANSI.accent], options);
-        state.markdownMode = 'normal';
-        state.markdownBuffer = '';
-        i += 1;
-        continue;
-      }
-      state.markdownBuffer += char;
-      i += 1;
-      continue;
-    }
+  for (const line of parts) {
+    out += renderMarkdownLine(state, line, options);
   }
-
   return out;
 }
 
 function flushStreamingMarkdown(state, output) {
   ensureMarkdownState(state);
-  let out = state.markdownCarry || '';
-  if (state.markdownMode === 'bold' && state.markdownBuffer) {
-    out += paint(state.markdownBuffer, [ANSI.bold], output);
-  } else if (state.markdownMode === 'code' && state.markdownBuffer) {
-    out += paint(state.markdownBuffer, [ANSI.accent], output);
+  let out = '';
+  const carry = state.markdownCarry || '';
+  state.markdownCarry = '';
+  if (carry) {
+    if (/^\s*```/.test(carry)) {
+      // A fence marker with no trailing newline is a block boundary, not code.
+      state.markdownFence = !state.markdownFence;
+    } else if (state.markdownFence) {
+      out += `  ${paint(carry, [ANSI.accent], output)}`;
+    } else if (/^\s*\|/.test(carry)) {
+      state.markdownTable.push(carry);
+    } else {
+      out += flushMarkdownTable(state, output);
+      out += renderInlineMarkdown(carry, output);
+    }
   }
+  out += flushMarkdownTable(state, output);
   resetMarkdownState(state);
   if (out) output.write(out);
   return out;

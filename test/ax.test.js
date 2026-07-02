@@ -682,11 +682,30 @@ test('ax renders basic markdown for terminal output', () => {
 });
 
 test('ax streaming markdown handles split bold delimiters', () => {
-  const state = { markdownMode: 'normal', markdownBuffer: '', markdownCarry: '' };
+  // Line-buffered: partial lines hold until a newline arrives, so delimiters
+  // split across deltas can never shred.
+  const state = {};
   const options = { color: false, isTTY: true };
-  assert.equal(ax.renderStreamingMarkdown(state, 'This is *', options), 'This is ');
+  assert.equal(ax.renderStreamingMarkdown(state, 'This is *', options), '');
   assert.equal(ax.renderStreamingMarkdown(state, '*bold', options), '');
-  assert.equal(ax.renderStreamingMarkdown(state, '** now', options), 'bold now');
+  assert.equal(ax.renderStreamingMarkdown(state, '** now\n', options), 'This is bold now\n');
+});
+
+test('ax streaming markdown renders headers, tables, fences, and bullets', () => {
+  const state = {};
+  const options = { color: false, isTTY: true };
+  let out = '';
+  out += ax.renderStreamingMarkdown(state, '## Plan\n- do **one** thing\n', options);
+  out += ax.renderStreamingMarkdown(state, '| name | value |\n|---|---|\n| speed | 2s |\nafter\n', options);
+  out += ax.renderStreamingMarkdown(state, '```js\nconst x = 1;\n```\n', options);
+
+  assert.match(out, /^Plan\n/);
+  assert.match(out, /• do one thing/);
+  assert.match(out, /name +│ value/);
+  assert.match(out, /speed +│ 2s/);
+  assert.doesNotMatch(out, /\|---\|/);
+  assert.match(out, /  const x = 1;/);
+  assert.doesNotMatch(out, /```/);
 });
 
 test('ax renders connector result when no text delta was emitted', () => {

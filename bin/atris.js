@@ -605,7 +605,7 @@ function showHelp() {
   console.log('  accounts   - Manage accounts (list, add, remove)');
   console.log('');
   console.log('Integrations:');
-  console.log('  gmail      - Email commands (inbox, read)');
+  console.log('  gmail      - Email commands (inbox, read, archive)');
   console.log('  calendar   - Calendar commands (today, week)');
   console.log('  twitter    - Twitter commands (post)');
   console.log('  slack      - Slack commands (channels)');

@@ -124,6 +124,32 @@ async function gmailRead(messageId) {
   console.log(msg.body || msg.snippet || '(no body)');
 }
 
+async function gmailArchive(messageIds) {
+  const ids = (messageIds || []).map(id => String(id || '').trim()).filter(Boolean);
+  if (!ids.length) {
+    console.error('Usage: atris gmail archive <message_id> [<message_id> ...]');
+    process.exit(1);
+  }
+
+  const token = await getAuthToken();
+
+  console.log(`Archiving ${ids.length} message${ids.length === 1 ? '' : 's'}...`);
+
+  const result = await apiRequestJson('/integrations/gmail/messages/batch-archive', {
+    method: 'POST',
+    token,
+    body: { message_ids: ids },
+  });
+
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to archive'}`);
+    process.exit(1);
+  }
+
+  const archived = result.data?.archived ?? result.data?.count ?? ids.length;
+  console.log(`Archived ${archived} message${archived === 1 ? '' : 's'}. They stay searchable in All Mail.`);
+}
+
 async function gmailCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'inbox':
@@ -133,10 +159,14 @@ async function gmailCommand(subcommand, ...args) {
     case 'read':
       await gmailRead(args[0]);
       break;
+    case 'archive':
+      await gmailArchive(args);
+      break;
     default:
       console.log('Gmail commands:');
       console.log('  atris gmail inbox       - List recent emails');
       console.log('  atris gmail read <id>   - Read specific email');
+      console.log('  atris gmail archive <id> [...] - Archive messages (reversible, All Mail keeps them)');
   }
 }
 
