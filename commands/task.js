@@ -15,6 +15,7 @@ const {
   normalizeOwnerSlug,
   resolveFunctionalOwner: resolveFunctionalTaskOwner,
 } = require('../lib/functional-owner');
+const { operatorReady } = require('./autoland');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -88,6 +89,14 @@ function getTaskDb() {
     }
     throw e;
   }
+}
+
+function warnIfTaskTitleNeedsOperatorWhy(title) {
+  const text = String(title || '').trim();
+  if (!text || operatorReady(text)) return null;
+  const warning = 'Warning: add the why in plain words to this task title: what it buys or costs, who benefits, and no flags or identifiers.';
+  console.error(warning);
+  return warning;
 }
 
 function taskUsageText() {
@@ -599,18 +608,19 @@ function buildPendingReviewChatPredicate(taskDb, db, workspaceRoot) {
 function createReviewNextTask(taskDb, db, currentTask, title) {
   const nextTitle = String(title || '').trim();
   if (!nextTitle) return null;
+  const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(nextTitle);
   const currentMetadata = currentTask && currentTask.metadata && typeof currentTask.metadata === 'object'
     ? currentTask.metadata
     : {};
   const existing = findExistingReviewNextTask(taskDb, db, currentTask, nextTitle);
-  if (existing) return { id: existing.id, inserted: false };
+  if (existing) return { id: existing.id, inserted: false, operator_title_warning: operatorTitleWarning };
   const goalId = currentMetadata.goal_id || currentMetadata.goalId || null;
   const parentId = currentTask && currentTask.id || null;
   const sourceKey = parentId && typeof taskDb.sourceKey === 'function'
     ? taskDb.sourceKey(`task_review_next:${parentId}`, nextTitle)
     : null;
   try {
-    return taskDb.addTask(db, {
+    const created = taskDb.addTask(db, {
       title: nextTitle,
       tag: currentTask && currentTask.tag || null,
       workspaceRoot: taskDb.workspaceRoot(),
@@ -621,10 +631,11 @@ function createReviewNextTask(taskDb, db, currentTask, title) {
         source: 'task_review_next',
       },
     });
+    return { ...created, operator_title_warning: operatorTitleWarning };
   } catch (error) {
     if (sourceKey && /constraint|unique/i.test(String(error && (error.code || error.message) || error))) {
       const racedExisting = findExistingReviewNextTask(taskDb, db, currentTask, nextTitle);
-      if (racedExisting) return { id: racedExisting.id, inserted: false };
+      if (racedExisting) return { id: racedExisting.id, inserted: false, operator_title_warning: operatorTitleWarning };
     }
     throw error;
   }
@@ -4887,6 +4898,7 @@ function cmdAdd(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
+  const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title);
   // Generation throttle — the named root cause is generation > human-review rate. An AGENT cannot keep
   // minting tasks while a wall of certified-but-unaccepted work waits; that treadmill is what accept-group
   // only drains. Humans and --force bypass. Closes the tap instead of just enlarging the bucket.
@@ -4912,6 +4924,7 @@ function cmdAdd(args) {
       action: 'created',
       task_id: result.id,
       inserted: result.inserted !== false,
+      operator_title_warning: operatorTitleWarning,
       projection_path: outPath,
       task,
     });
@@ -4954,6 +4967,7 @@ function cmdDelegate(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
+  const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title);
   const ownerResolution = resolveFunctionalTaskOwner({
     requestedOwner: requestedOwner && requestedOwner !== true ? requestedOwner : null,
     title,
@@ -5009,6 +5023,7 @@ function cmdDelegate(args) {
       executed_by: executedBy || null,
       via,
       handoff,
+      operator_title_warning: operatorTitleWarning,
       projection_path: outPath,
       task,
     });
@@ -5273,6 +5288,7 @@ function buildEndgameTaskSeed({ slug, horizon, owner }) {
 
 function createEndgameSeedTask(taskDb, db, seed, owner) {
   const taskOwner = String(owner || DEFAULT_OWNER);
+  const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(seed.title);
   const result = taskDb.addTask(db, {
     title: seed.title,
     tag: seed.tag,
@@ -5296,6 +5312,7 @@ function createEndgameSeedTask(taskDb, db, seed, owner) {
     ok: true,
     task_id: result.id,
     inserted: result.inserted !== false,
+    operator_title_warning: operatorTitleWarning,
     note_version: note.event.version,
   };
 }
@@ -5369,6 +5386,7 @@ function cmdNext(args) {
             handoff,
             next_agent_action: nextAgentAction,
             note_version: created.note_version,
+            operator_title_warning: created.operator_title_warning || null,
             task: createdTask,
             review_task: reviewTask,
           });
@@ -5490,6 +5508,7 @@ function continueWorkForReviewTask(taskDb, db, taskId, { owner = DEFAULT_OWNER }
     parent_task_id: taskId,
     next_task_id: nextCreated ? nextCreated.id : null,
     created: Boolean(nextCreated && nextCreated.inserted !== false),
+    operator_title_warning: nextCreated ? nextCreated.operator_title_warning || null : null,
     owner: String(owner || DEFAULT_OWNER),
     projection_path: outPath,
     parent,
@@ -9393,13 +9412,14 @@ async function handleTaskApi(req, res, taskDb, db) {
     const body = await readJsonBody(req);
     const title = String(body.title || '').trim();
     if (!title) return sendJson(res, 400, { ok: false, reason: 'missing_title', detail: 'title required' });
+    const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title);
     const result = taskDb.addTask(db, {
       title,
       tag: body.tag ? String(body.tag) : 'tasks',
       workspaceRoot: taskDb.workspaceRoot(),
     });
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
-    return sendJson(res, 200, { ok: true, action: 'created', task_id: result.id, projection_path: outPath, task: taskFromProjection(projection, result.id) });
+    return sendJson(res, 200, { ok: true, action: 'created', task_id: result.id, operator_title_warning: operatorTitleWarning, projection_path: outPath, task: taskFromProjection(projection, result.id) });
   }
   if (req.method === 'POST' && url.pathname === '/api/tasks/clear-plan') {
     const body = await readJsonBody(req);

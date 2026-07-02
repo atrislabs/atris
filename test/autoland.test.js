@@ -80,8 +80,9 @@ test('digest and alarm compose in plain language', () => {
   const digest = autoland.composeDigest({
     accepted: {
       auto: [
-        { ref: 'CLI-1', title: 'Mission XP: Fix mission budget inference', happened: 'Fixed full-duration mission budget inference.' },
-        { ref: 'CLI-2', title: 'Add hourly member loop' },
+        { ref: 'CLI-1', title: 'Mission XP: Fix mission budget inference', happened: 'Slow mission budgets cost users trust, so long runs now keep using the promised time.' },
+        { ref: 'CLI-2', title: 'Manual member checks waste users time: hourly loops keep work moving' },
+        { ref: 'CLI-6', title: 'Add --hourly flag so users save time' },
         { ref: 'CLI-4', title: 'Mission XP: Decide and start the next useful mission after: x', happened: 'Stopped with reason: no concrete follow-up mission found.' },
         { ref: 'CLI-5', title: 'Mission XP: Decide and start the next useful mission after: y', happened: 'The continuation did not start fake work.' },
       ],
@@ -99,12 +100,12 @@ test('digest and alarm compose in plain language', () => {
     },
   });
   assert.match(digest, /landed on their own \(verified twice, proof on file\)/);
-  assert.match(digest, /- fixed full-duration mission budget inference/);
-  assert.match(digest, /- add hourly member loop/);
+  assert.match(digest, /- slow mission budgets cost users trust/);
+  assert.match(digest, /- manual member checks waste users time/);
   // Clean-stop check-offs fold into the on-ask count; results get air between
   // them so the whole message fits a laptop screen with no scrolling.
-  assert.match(digest, /\n\n- fixed full-duration/);
-  assert.match(digest, /1 more result when you want them: atris autoland digest/);
+  assert.match(digest, /\n\n- slow mission budgets/);
+  assert.match(digest, /2 more results when you want them: atris autoland digest/);
   assert.match(digest, /you approved 1 piece yourself/);
   assert.match(digest, /waiting on you: 1 \(oldest 30h\)/);
   assert.match(digest, /in the air: 2 pieces, 1 overdue/);
@@ -113,7 +114,7 @@ test('digest and alarm compose in plain language', () => {
   assert.match(digest, /stuck codex mission/);
   assert.match(digest, /- 2 more ideas that can't explain themselves yet \(atris now\)/);
   assert.match(digest, /the full story: atris autoland digest/);
-  assert.doesNotMatch(digest, /branch|worktree|ttl|certif(?!ied)/i);
+  assert.doesNotMatch(digest, /branch|worktree|ttl|certif(?!ied)|--hourly/i);
 
   const quiet = autoland.composeDigest({
     accepted: { auto: [], human: [] },

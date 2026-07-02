@@ -6,6 +6,7 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 
 const autoland = require('../lib/autoland');
+const { operatorReady, hasAgentJargon } = autoland;
 
 function repoRoot(cwd = process.cwd()) {
   const result = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' });
@@ -15,22 +16,6 @@ function repoRoot(cwd = process.cwd()) {
 
 function projectName(root) {
   return path.basename(root);
-}
-
-// A queue item earns its digest surface only if its sentence carries a why an
-// operator can use: a cost, a benefit, or a named beneficiary. Identifier-speak
-// (snake_case, camelCase, --flags, task ids) is agent vocabulary and fails
-// regardless — the reader should never have to know the codebase to care.
-const OPERATOR_WHY = /\b(sav(?:e|es|ing)|burn(?:s|ing)?|wast(?:e|es|ing)|cost(?:s|ing)?|prevent\w*|stop(?:s|ping)?|break(?:s|ing)?|fail(?:s|ing)?|slow(?:s|er)?|faster|cheaper|easier|clearer|safer|simpler|trust|revenue|users?|customers?|so that|because)\b/i;
-const AGENT_JARGON = /[a-z0-9]_[a-z0-9]|\b[a-z]+[A-Z]\w*|--[a-z]|\bCLI-\d+/;
-
-function operatorReady(title) {
-  const text = String(title || '');
-  return OPERATOR_WHY.test(text) && !AGENT_JARGON.test(text);
-}
-
-function hasAgentJargon(text) {
-  return AGENT_JARGON.test(String(text || ''));
 }
 
 // The digest's "next, if you agree" section: top candidate moves from Atris
@@ -231,10 +216,15 @@ function runDigest(root, args, { forceSend = false } = {}) {
     return t && (t.review?.landing?.happened || t.metadata?.landing_happened);
   });
   if (storied.length > 0) {
-    console.log('');
+    let printedStoryHeader = false;
     for (const item of storied) {
       const t = byRef.get(item.ref);
       const happened = String(t.review?.landing?.happened || t.metadata?.landing_happened || '').replace(/\s+/g, ' ').slice(0, 160);
+      if (!operatorReady(happened)) continue;
+      if (!printedStoryHeader) {
+        console.log('');
+        printedStoryHeader = true;
+      }
       console.log(`  ${item.ref}  ${happened}`);
     }
   }

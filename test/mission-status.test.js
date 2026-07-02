@@ -1024,7 +1024,7 @@ test('mission tick warns when summary lacks operator-ready plain why', () => {
       'tick',
       mission.id,
       '--summary',
-      'Add --inspect flag so users save time',
+      'Refactor mission summary wording',
       '--json',
     ], { cwd: dir });
 
@@ -1032,8 +1032,67 @@ test('mission tick warns when summary lacks operator-ready plain why', () => {
     assert.match(ticked.stderr, /Warning: add the why in plain words to this tick summary/);
     const payload = JSON.parse(ticked.stdout);
     assert.equal(payload.action, 'mission_tick');
-    assert.equal(payload.tick.summary, 'Add --inspect flag so users save time');
+    assert.equal(payload.tick.summary, 'Refactor mission summary wording');
     assert.match(payload.operator_summary_warning, /what changed, what it buys or costs/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission tick accepts plain recovery summary without warning', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const mission = startMission(dir, 'operator recovery summary mission');
+    const summary = 'Users who paste a mission from the wrong folder now get a clearer place to stand, saving the first recovery step.';
+
+    const ticked = runCli([
+      'mission',
+      'tick',
+      mission.id,
+      '--summary',
+      summary,
+      '--json',
+    ], { cwd: dir });
+
+    assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
+    assert.doesNotMatch(ticked.stderr, /Warning: add the why in plain words to this tick summary/);
+    const payload = JSON.parse(ticked.stdout);
+    assert.equal(payload.action, 'mission_tick');
+    assert.equal(payload.tick.summary, summary);
+    assert.equal(payload.operator_summary_warning, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission attach-task warns when generated task title lacks operator-ready plain why', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-operator-title-warning',
+      slug: 'operator-title-warning',
+      objective: 'Refactor mission task title',
+      owner: 'validator',
+      status: 'running',
+      runner: 'codex_goal',
+      lane: 'code',
+      verifier: 'node --test test/autoland.test.js',
+      always_on: false,
+      xp_task_enabled: true,
+      created_at: '2026-07-02T00:00:00.000Z',
+      updated_at: '2026-07-02T00:00:00.000Z',
+    });
+
+    const attached = runCli(['mission', 'attach-task', 'mission-operator-title-warning', '--json'], { cwd: dir, env });
+    assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    assert.match(attached.stderr, /Warning: add the why in plain words to this task title/);
+    const payload = JSON.parse(attached.stdout);
+    assert.equal(payload.action, 'mission_task_spine_attached');
+    assert.match(payload.mission.xp_task.operator_title_warning, /what it buys or costs/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2472,7 +2531,7 @@ test('mission run preflights messy shower input before writing the visible goal'
     const rawObjective = 'ok lets try atris mission run for 10 minutes while i shower: messy input should become the right mission input, visible goal, task spine, proof receipt, and next action; use the whole 10 minutes';
     const run = runCli(['mission', 'run', rawObjective, '--owner', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
-    assert.equal(run.stderr, '');
+    assert.match(run.stderr, /Warning: add the why in plain words to this task title/);
     const payload = JSON.parse(run.stdout);
     const preflight = payload.mission.mission_run_preflight;
 
@@ -2494,6 +2553,7 @@ test('mission run preflights messy shower input before writing the visible goal'
     assert.equal(payload.budget_contract.policy, 'spend_full_budget');
     assert.equal(payload.budget_contract.requested_seconds, 600);
     assert.equal(payload.mission.xp_task.ref, payload.codex_goal_state.goal.task_spine.task_ref);
+    assert.match(payload.mission.xp_task.operator_title_warning, /what it buys or costs/);
     assert.equal(payload.codex_goal_state.goal.task_spine.has_task, true);
     assert.equal(payload.codex_goal_state.goal.task_spine.current_step_command.includes('atris task current-step'), true);
     assert.equal(fs.existsSync(path.join(dir, preflight.room_receipt_path)), true);

@@ -90,6 +90,14 @@ release/publish work; clean old merged worktrees with `atris worktree cleanup`.
 
 If the task produces durable project knowledge, update `atris/wiki/` or run the local wiki flow (`atris ingest`, `atris query`, `atris lint`).
 
+## How to Report
+
+The human approves work by reading, so how you report IS the product.
+
+- **Results are capabilities.** State what someone can do now that they couldn't before, then what it means for them or the business. Tests are one word ("verified"). Shape: "We did X, so you can now Y." Detail stays under the hood; the reader asks if they want more.
+- **Three results, air between them, rest on ask.** A report fits one screen with no scrolling.
+- **Stake first, then the move.** "Agents burn tokens hand-rolling parsers: add one shared view." Flags, ids, and identifiers belong in the body, never the headline.
+
 ## Rules (Non‑Negotiable)
 
 - Plan = ASCII visualization + approval gate. Do not execute during planning.

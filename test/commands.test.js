@@ -6660,6 +6660,32 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
   }
 });
 
+test('task add warns when title lacks operator-ready plain why', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const warned = runCli(['task', 'add', 'Refactor task title warning', '--json'], { cwd: dir, env });
+    assert.equal(warned.status, 0, warned.stderr);
+    assert.match(warned.stderr, /Warning: add the why in plain words to this task title/);
+    const warnedPayload = JSON.parse(warned.stdout);
+    assert.equal(warnedPayload.action, 'created');
+    assert.match(warnedPayload.operator_title_warning, /what it buys or costs/);
+
+    const quiet = runCli(['task', 'add', 'Slow setup costs users time: cache the workspace scan', '--json'], { cwd: dir, env });
+    assert.equal(quiet.status, 0, quiet.stderr);
+    assert.equal(quiet.stderr, '');
+    const quietPayload = JSON.parse(quiet.stdout);
+    assert.equal(quietPayload.action, 'created');
+    assert.equal(quietPayload.operator_title_warning, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task display refs use semantic IDs and collision-safe legacy prefixes', () => {
   if (!hasNodeSqlite()) return;
   const taskDb = require('../lib/task-db');

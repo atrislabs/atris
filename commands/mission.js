@@ -99,6 +99,14 @@ function warnIfSummaryNeedsOperatorWhy(summary) {
   return warning;
 }
 
+function warnIfTaskTitleNeedsOperatorWhy(title) {
+  const text = String(title || '').trim();
+  if (!text || operatorReady(text)) return null;
+  const warning = 'Warning: add the why in plain words to this task title: what it buys or costs, who benefits, and no flags or identifiers.';
+  console.error(warning);
+  return warning;
+}
+
 function readPositiveIntegerFlag(args, name, fallback = null, options = {}) {
   const raw = readFlag(args, name, '');
   if (!raw) return fallback;
@@ -337,6 +345,7 @@ function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
   const db = taskDb.open();
   const workspaceRoot = taskDb.workspaceRoot(root);
   const title = `Mission XP: ${mission.objective}`;
+  const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title);
   const ownerResolution = resolveMissionOwner(mission, workspaceRoot);
   const owner = ownerResolution.owner;
   const metadata = {
@@ -380,6 +389,7 @@ function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
     task_id: result.id,
     ref: missionTaskRef(task) || result.id,
     title,
+    operator_title_warning: operatorTitleWarning,
     status: task?.status || 'claimed',
     assigned_to: owner,
     owner_resolution: ownerResolution.reason,

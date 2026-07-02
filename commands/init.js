@@ -660,6 +660,20 @@ Do not rely on chat context. Put the task, file pointers, and proof on disk.
 Do not write new operating doctrine here first; add it to Atris policy, skills,
 wiki, or \`atris/atris.md\`, then regenerate this adapter if needed.
 
+## How to Report
+
+The human approves work by reading, so how you report IS the product. Rules:
+
+- **Results are capabilities.** State what someone can do now that they
+  couldn't before, then what it means for them or the business. Tests are one
+  word ("verified"); the meaning is the sentence. Shape: "We did X, so you can
+  now Y." Detail stays under the hood; the reader asks if they want more.
+- **Three results, air between them, rest on ask.** A report fits one screen
+  with no scrolling. Reading it is one glance.
+- **Stake first, then the move.** "Agents burn tokens hand-rolling parsers:
+  add one shared view." Plain words; flags, ids, and identifiers belong in the
+  body, never the headline.
+
 Native goals and task approval are separate gates:
 
 \`\`\`text
