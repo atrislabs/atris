@@ -157,6 +157,9 @@ function pickSlug(args) {
 
 function printHelp() {
   console.log('Usage:');
+  console.log('  Live scan (no login needed):');
+  console.log('    atris aeo scan <url> [--vs <competitor-url>] [--json]');
+  console.log('');
   console.log('  Backend / EC2:');
   console.log('    atris aeo init   [--workspace <slug>]');
   console.log('    atris aeo draft  "<topic>" [--workspace <slug>] [--queries q1,q2] [--slug X] [--url URL]');
@@ -176,6 +179,54 @@ function printHelp() {
   console.log('  atris aeo packet <slug>');
   console.log('  atris aeo status');
   console.log('  atris aeo discover https://atris.ai/aeo --canonical-url https://atris.ai/aeo');
+}
+
+const FREE_SCAN_BASE = process.env.ATRIS_API_BASE || 'https://api.atris.ai';
+
+async function aeoScan(args) {
+  const asJson = args.includes('--json');
+  const vs = readArg(args, '--vs');
+  const url = args.filter((a) => !a.startsWith('--') && a !== vs)[0];
+  if (!url) {
+    console.error('Usage: atris aeo scan <url> [--vs <competitor-url>] [--json]');
+    process.exit(1);
+  }
+  const target = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+  const qs = new URLSearchParams({ url: target });
+  if (vs) qs.set('vs', /^https?:\/\//i.test(vs) ? vs : `https://${vs}`);
+  const endpoint = `${FREE_SCAN_BASE}/api/business/aeo/free-scan?${qs}`;
+  let data;
+  try {
+    const res = await fetch(endpoint, { signal: AbortSignal.timeout(60000) });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error(`Scan failed (${res.status}): ${body.slice(0, 200)}`);
+      process.exit(1);
+    }
+    data = await res.json();
+  } catch (e) {
+    console.error(`Scan failed: ${e.message}`);
+    process.exit(1);
+  }
+  if (asJson) { console.log(JSON.stringify(data, null, 2)); return; }
+  console.log(`\n  ${data.name || target}`);
+  console.log(`  Score: ${data.score}/100 (${data.grade}) — ${data.status}`);
+  if (data.gap_statement) console.log(`\n  ${data.gap_statement}`);
+  const gaps = data.gaps || [];
+  if (gaps.length) {
+    console.log('\n  Gaps:');
+    for (const g of gaps) console.log(`   ✗ ${g.title || g.key}: ${g.fix || ''}`);
+  }
+  const comp = data.competitors || [];
+  if (comp.length) {
+    console.log('\n  Head-to-head:');
+    for (const c of comp) console.log(`   ${pad(String(c.score ?? '?'), 4)} ${c.url || c.name}`);
+  }
+  if (data.draft_llms_txt) {
+    console.log('\n  Draft llms.txt included — save it with:');
+    console.log(`   atris aeo scan ${url} --json | jq -r .draft_llms_txt > llms.txt`);
+  }
+  console.log('');
 }
 
 async function aeoInit(args) {
@@ -545,6 +596,7 @@ async function run(args = []) {
   const sub = args[0];
   if (!sub || sub === 'help' || sub === '--help' || sub === '-h') return printHelp();
   const rest = args.slice(1);
+  if (sub === 'scan') return aeoScan(rest);
   if (sub === 'init') return aeoInit(rest);
   if (sub === 'draft') return aeoDraft(rest);
   if (sub === 'log') return aeoLog(rest);
