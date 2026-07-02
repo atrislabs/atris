@@ -114,7 +114,9 @@ function printRoster(root) {
 // pass/fail. A dead login, missing binary, or hung spawn is a one-command
 // diagnosis instead of a failed overnight flight. `name` is canonical.
 const PROBE_PROMPT = 'Reply with exactly the two characters: OK';
-const PROBE_DEFAULT_TIMEOUT_MS = 30000;
+// Real engines think before replying: cursor measured at ~68s for a one-word
+// answer on 2026-07-02. 30s produced a false FAIL on a healthy engine.
+const PROBE_DEFAULT_TIMEOUT_MS = 120000;
 
 function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS } = {}) {
   const def = RUNNER_PROFILE_DEFS[name];
