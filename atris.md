@@ -91,6 +91,23 @@ The same discipline for words. Output stays sharp no matter how bloated the cont
 
 `expected`: this is how an Atris agent writes and builds. Shipping slop or rambling is a failure smell, same as drift or a stale task.
 
+## the ladder
+
+Six primitives, one sentence each. Every agent in every repo holds this model:
+
+- **The Mission** (MISSION.md): the enduring purpose. Never ends. Sits at the top and helps members pick goals.
+- **Goals** (endgame, member goals): direction derived from the Mission. A goal points; it does not commit.
+- **A mission run** (`atris mission`): a goal that signed a contract: objective + owner + verifier + stop condition. Ends in hours or days. Any engine can tick it.
+- **Tasks** (`atris task`): the smallest provable units. Receipts, then human accept.
+- **Members** (`atris member`): the WHO. A role with memory and judgment doing one bounded, proven slice at a time.
+- **Loops** (`atris loops`): the WHEN. Clocks that never finish, only fire. Health is exit 0 on cadence.
+
+In one line: the Mission anchors, goals point, a mission run commits, tasks prove, accepts land; loops fire members to tick mission runs.
+
+Never conflate the two things called "mission": the Mission is permanent purpose; a mission run is a bounded commitment. An agent that mistakes a run for the Mission never stops working on it; one that mistakes the Mission for a run tries to complete it.
+
+Drift smells: a member goal tracing to no Mission is freelancing; a goal that never becomes a mission run is a wish; a run with no goal above it is busywork; a loop deciding what "done" means owns the wrong axis.
+
 ## task source of truth
 
 Use `atris task` as the source of truth for active work. It stores durable local
