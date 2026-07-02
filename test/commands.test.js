@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
-const { acceptedInLastDay } = require('../lib/autoland');
+const { acceptedInLastDay, writePolicy: writeAutolandPolicy } = require('../lib/autoland');
 const taskStore = require('../lib/task-db');
 const { branchName, cleanupWorktrees, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
@@ -12063,7 +12063,7 @@ test('task proof-only agent env blocks acceptance verbs', () => {
   }
 });
 
-test('task auto-accept-certified requires explicit human confirmation', () => {
+test('task auto-accept-certified requires explicit human confirmation when autoland is off', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -12085,6 +12085,7 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
       '--as', 'validator',
       '--proof', 'node --test test/commands.test.js passed and diff inspected',
     ], { cwd: dir, env }).status, 0);
+    writeAutolandPolicy(dir, { enabled: false, enabled_by: 'keshav' });
 
     const unconfirmed = runCli(['task', 'auto-accept-certified', '--json'], { cwd: dir, env });
     assert.equal(unconfirmed.status, 2);
