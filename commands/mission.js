@@ -4341,6 +4341,16 @@ function missionIsRunnable(mission) {
     && !missionHasHumanAsks(mission);
 }
 
+// Fresh goal selection: moving work outranks review-parked work. A ready
+// mission stays selectable (its next action is native-goal completion /
+// review), but it must never beat a running or planning mission on recency.
+const GOAL_SELECTION_STATUS_RANK = { running: 0, planning: 1, ready: 2 };
+
+function missionGoalSelectionRank(mission) {
+  const rank = GOAL_SELECTION_STATUS_RANK[String(mission?.status || '')];
+  return Number.isFinite(rank) ? rank : 3;
+}
+
 function missionSortTime(mission) {
   return Date.parse(mission?.updated_at || mission?.created_at || '') || 0;
 }
@@ -4395,6 +4405,10 @@ function selectCodexGoalMission(root = process.cwd(), options = {}, now = new Da
   }
 
   candidates.sort((a, b) => {
+    const aRank = missionGoalSelectionRank(a);
+    const bRank = missionGoalSelectionRank(b);
+    if (aRank !== bRank) return aRank - bRank;
+
     const aCaller = runnerUsesCallerSession(a.runner) ? 1 : 0;
     const bCaller = runnerUsesCallerSession(b.runner) ? 1 : 0;
     if (aCaller !== bCaller) return bCaller - aCaller;
@@ -4422,6 +4436,10 @@ function selectAtrisGoalMission(root = process.cwd(), options = {}, now = new Da
     if (exact) return { mission: exact, reason: 'selected' };
   }
   runnable.sort((a, b) => {
+    const aRank = missionGoalSelectionRank(a);
+    const bRank = missionGoalSelectionRank(b);
+    if (aRank !== bRank) return aRank - bRank;
+
     const aDue = effectiveMissionVerifier(a) && missionDueAt(a, now) ? 1 : 0;
     const bDue = effectiveMissionVerifier(b) && missionDueAt(b, now) ? 1 : 0;
     if (aDue !== bDue) return bDue - aDue;

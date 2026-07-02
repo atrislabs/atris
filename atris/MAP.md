@@ -769,8 +769,9 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Both commands are thin front doors over the mission runtime (2026-07-01). `atris run` = one bounded pursuit: start a mission from the objective or resume the most logical runnable mission, tick it, complete on pass, exit. `atris autopilot` = keep the workspace moving: each leg picks a runnable mission, else a member choosing useful work, else a self-chosen mission, and loops until stopped.
 
-- **Run front door:** `commands/run-front.js` (`runMissionFront`, `pickRunnableMission` — running > planning, newest first, skips ready + continuation placeholders)
-- **Autopilot front door:** `commands/autopilot-front.js` (`autopilotFront` main loop; `legPlan` selection; `driveLeg` spawns one bounded `mission run`/`member run` leg and polls the stop file every 2s so `atris autopilot stop` kills the running leg fast; fast-fail backoff stops after 5 quick failures)
+- **Run front door:** `commands/run-front.js` (`runMissionFront`, `pickRunnableMission` — running > planning, newest first; skips ready, continuation placeholders, and session-bound runners — only claude/atris2 are headless-drivable)
+- **Autopilot front door:** `commands/autopilot-front.js` (`autopilotFront` main loop; `legPlan` selection — member legs force `--runner atris2`; `driveLeg` spawns one bounded `mission run`/`member run` leg and polls the stop file every 2s so `atris autopilot stop` kills the running leg fast; any leg under 30s counts toward the 5-in-a-row no-progress/failure halt)
+- **Goal-selection rank:** `commands/mission.js` `missionGoalSelectionRank` — fresh goal selection in `selectAtrisGoalMission`/`selectCodexGoalMission` ranks running < planning < ready before recency, so review-parked missions never outrank moving work
 - **Stop/status:** `atris autopilot stop` / `atris autopilot status`; state in `.atris/state/autopilot.json`, stop marker `.atris/state/autopilot.stop`
 - **Dispatch:** `bin/atris.js` `command === 'run'` and `command === 'autopilot'` branches — default routes to the fronts, `--legacy` routes to the old loops below
 - **Regression:** `test/front-doors.test.js`

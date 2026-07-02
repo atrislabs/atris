@@ -49,6 +49,11 @@ function runObjective(args = []) {
   return words.join(' ').trim();
 }
 
+// Runners a spawned `mission run` can actually drive. Session-bound runners
+// (codex_goal, manual, caller_session, current_agent) wait for a live agent —
+// a headless front door ticking them just records no-op receipts forever.
+const HEADLESS_DRIVABLE_RUNNERS = new Set(['claude', 'atris2']);
+
 // Most logical mission: a moving one beats a planned one, newer beats older.
 // ready is excluded — it waits for review, not for another worker pass.
 function pickRunnableMission(root = process.cwd(), missionMap = null) {
@@ -58,6 +63,7 @@ function pickRunnableMission(root = process.cwd(), missionMap = null) {
   }
   const candidates = Array.from(map.values())
     .filter((mission) => mission && (mission.status === 'running' || mission.status === 'planning'))
+    .filter((mission) => HEADLESS_DRIVABLE_RUNNERS.has(String(mission?.runner || '').trim().toLowerCase()))
     .filter((mission) => !/^decide and start the next useful mission after:/i.test(String(mission?.objective || '')))
     .sort((a, b) => {
       if (a.status !== b.status) return a.status === 'running' ? -1 : 1;

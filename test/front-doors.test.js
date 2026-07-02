@@ -49,17 +49,28 @@ test('runTickBudget: timed runs are loop contracts, untimed default small', () =
 
 test('pickRunnableMission prefers running over planning, newest first, skips ready', () => {
   const map = new Map([
-    ['m1', { id: 'm1', status: 'planning', objective: 'older plan', updated_at: '2026-07-01T01:00:00Z' }],
-    ['m2', { id: 'm2', status: 'running', objective: 'old run', updated_at: '2026-07-01T02:00:00Z' }],
-    ['m3', { id: 'm3', status: 'running', objective: 'new run', updated_at: '2026-07-01T03:00:00Z' }],
-    ['m4', { id: 'm4', status: 'ready', objective: 'waiting on review', updated_at: '2026-07-01T04:00:00Z' }],
+    ['m1', { id: 'm1', status: 'planning', runner: 'atris2', objective: 'older plan', updated_at: '2026-07-01T01:00:00Z' }],
+    ['m2', { id: 'm2', status: 'running', runner: 'atris2', objective: 'old run', updated_at: '2026-07-01T02:00:00Z' }],
+    ['m3', { id: 'm3', status: 'running', runner: 'claude', objective: 'new run', updated_at: '2026-07-01T03:00:00Z' }],
+    ['m4', { id: 'm4', status: 'ready', runner: 'atris2', objective: 'waiting on review', updated_at: '2026-07-01T04:00:00Z' }],
   ]);
   assert.equal(pickRunnableMission(process.cwd(), map).id, 'm3');
 });
 
+test('pickRunnableMission skips session-bound runners a headless loop cannot drive', () => {
+  const map = new Map([
+    ['m1', { id: 'm1', status: 'running', runner: 'codex_goal', objective: 'waits for a live codex session', updated_at: '2026-07-01T06:00:00Z' }],
+    ['m2', { id: 'm2', status: 'running', runner: 'manual', objective: 'waits for a human', updated_at: '2026-07-01T07:00:00Z' }],
+    ['m3', { id: 'm3', status: 'running', runner: 'atris2', objective: 'headless drivable', updated_at: '2026-07-01T01:00:00Z' }],
+  ]);
+  assert.equal(pickRunnableMission(process.cwd(), map).id, 'm3');
+  map.delete('m3');
+  assert.equal(pickRunnableMission(process.cwd(), map), null);
+});
+
 test('pickRunnableMission skips continuation placeholders and empty maps', () => {
   const map = new Map([
-    ['m1', { id: 'm1', status: 'running', objective: 'decide and start the next useful mission after: x', updated_at: '2026-07-01T05:00:00Z' }],
+    ['m1', { id: 'm1', status: 'running', runner: 'atris2', objective: 'decide and start the next useful mission after: x', updated_at: '2026-07-01T05:00:00Z' }],
   ]);
   assert.equal(pickRunnableMission(process.cwd(), map), null);
   assert.equal(pickRunnableMission(process.cwd(), new Map()), null);
