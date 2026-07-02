@@ -5396,7 +5396,7 @@ test('mission goal skips agent-certified mission tasks waiting for human accept'
   }
 });
 
-test('whole-budget active mission stays due while certified task waits for human accept', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
+test('whole-budget active mission holds due slot while certified task waits for cadence', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
   const dir = makeTempDir();
   const previousDb = process.env.ATRIS_TASKS_DB;
   let taskDb = null;
@@ -5489,22 +5489,28 @@ test('whole-budget active mission stays due while certified task waits for human
     });
 
     const due = selectDueMission(dir, now);
-    assert.equal(due.id, 'active-budget-codex');
+    assert.equal(due, null);
     const selected = selectCodexGoalMission(dir, {}, now);
     assert.equal(selected.mission.id, 'active-budget-codex');
 
-    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
+    const goal = runCli(['mission', 'goal', '--heartbeat', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
     const goalPayload = JSON.parse(goal.stdout);
-    assert.equal(goalPayload.action, 'codex_goal_candidate');
+    assert.equal(goalPayload.action, 'codex_goal_heartbeat');
     assert.equal(goalPayload.goal.mission_id, 'active-budget-codex');
+    assert.equal(goalPayload.goal.reason, 'active');
+    assert.equal(goalPayload.heartbeat.due, false);
     assert.notEqual(goalPayload.goal.reason, 'next_move_continuation_seeded');
 
     const run = runCli(['mission', 'run', '--due', '--no-claude', '--no-drain', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const runPayload = JSON.parse(run.stdout);
-    assert.equal(runPayload.mission.id, 'active-budget-codex');
-    assert.equal(runPayload.continuation_goal, null);
+    assert.equal(runPayload.action, 'run_skipped');
+    assert.equal(runPayload.reason, 'no_due_mission');
+
+    const afterCadence = new Date(Date.parse(lastTickAt) + (13 * 60 * 1000) + 1000);
+    const dueAfterCadence = selectDueMission(dir, afterCadence);
+    assert.equal(dueAfterCadence.id, 'active-budget-codex');
   } finally {
     if (taskDb) taskDb.close();
     if (previousDb === undefined) delete process.env.ATRIS_TASKS_DB;

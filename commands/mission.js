@@ -4583,7 +4583,6 @@ function missionVerifierPassed(mission) {
 
 function missionDueAt(mission, now = new Date()) {
   const cadenceSeconds = parseCadenceSeconds(mission.cadence);
-  if (missionFullBudgetOpen(mission, now)) return true;
   if (!mission.last_tick_at) return true;
   if (cadenceSeconds === 0) return !(mission.always_on && missionVerifierPassed(mission));
   const lastTickAt = Date.parse(mission.last_tick_at);
@@ -4678,12 +4677,36 @@ function missionSortTime(mission) {
   return Date.parse(mission?.updated_at || mission?.created_at || '') || 0;
 }
 
+function missionDueCandidate(mission, now = new Date()) {
+  return missionIsRunnable(mission)
+    && !(mission.always_on && missionVerifierPassed(mission) && !missionDueAt(mission, now) && !missionFullBudgetOpen(mission, now))
+    && (!missionTaskHumanAcceptWaiting(mission) || missionFullBudgetOpen(mission, now))
+    && (effectiveMissionVerifier(mission) || callerSessionMissionReadyForDue(mission))
+    && (mission.always_on || !missionVerifierPassed(mission) || missionFullBudgetOpen(mission, now));
+}
+
+function missionHoldsDueSlot(mission, now = new Date()) {
+  return missionFullBudgetOpen(mission, now)
+    && runnerUsesCallerSession(mission?.runner)
+    && Boolean(codexNativeGoalAck(mission))
+    && missionDueCandidate(mission, now);
+}
+
 function selectDueMission(root = process.cwd(), now = new Date()) {
-  const candidates = listMissions(root)
-    .filter((mission) => missionSelectableForLoop(mission, now))
-    .filter((mission) => !missionTaskHumanAcceptWaiting(mission) || missionFullBudgetOpen(mission, now))
-    .filter((mission) => effectiveMissionVerifier(mission) || callerSessionMissionReadyForDue(mission))
-    .filter((mission) => mission.always_on || !missionVerifierPassed(mission) || missionFullBudgetOpen(mission, now))
+  const missions = listMissions(root);
+  const activeBudgetHolders = missions
+    .filter((mission) => missionHoldsDueSlot(mission, now))
+    .sort((a, b) => {
+      const aAck = Date.parse(a.native_goal_ack?.acknowledged_at || '') || 0;
+      const bAck = Date.parse(b.native_goal_ack?.acknowledged_at || '') || 0;
+      if (aAck !== bAck) return bAck - aAck;
+      return missionSortTime(b) - missionSortTime(a);
+    });
+  const holder = activeBudgetHolders[0] || null;
+  if (holder && !missionDueAt(holder, now)) return null;
+
+  const candidates = missions
+    .filter((mission) => missionDueCandidate(mission, now))
     .filter((mission) => missionDueAt(mission, now));
 
   candidates.sort((a, b) => {
