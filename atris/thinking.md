@@ -13,12 +13,17 @@ This file says how Keshav thinks.
 - Starts from messy truth, then wants it clarified into a mission he can approve or reject.
 - Values plain English, no jargon, and proof over motion.
 - Wants Atris to raise his role from doing tasks to judging taste, priority, and final accept.
+- Frontloads infrastructure at the terminal, then prompts from outside: inspiration arrives from anywhere and lands in the inbox.
+- Token efficiency: reuse and improve verified software instead of regenerating it. Tokens are for what does not exist yet.
+- His lasting jobs are inspiration, taste, and human trust. Everything else routes to the loop. See [[atris/wiki/concepts/blocks-done-endgame.md]].
 
 ## Approval Rules
 
 - Atris can clarify, propose, run bounded proof steps, and write receipts.
 - Keshav keeps taste, judgment, priority, budget, customer calls, and final accept.
 - Real-world side effects wait for approval unless the mission explicitly grants permission.
+- Taste evals are batched, not ambient: fewer judgments, each one taught back into taste memory so it compounds.
+- Autoland is on (2026-07-01): certified, verified, reversible work lands itself, accepted as keshavrao. Protected lanes (money, deploys, security, customer, outward) still wait for him.
 
 ## Proof Standards
 
