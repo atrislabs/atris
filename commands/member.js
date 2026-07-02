@@ -611,16 +611,48 @@ function startMemberRunMission(name, missionText, args = []) {
   }
 }
 
-// atris member ping <name> "<message>" — talk to an always-on member mid-run.
-// Finds the member's most recently touched live mission (including --worktree
-// missions in sibling checkouts) and leaves the note its next tick consumes.
+// atris member ping <name> "<message>" — talk to a busy member mid-run.
+// Two delivery lanes: the member's most recently touched live mission
+// (including --worktree missions in sibling checkouts), whose next tick
+// consumes the note, and the member's claimed task dialogue, which task-loop
+// agents re-read every step without ever ticking a mission. The ping lands on
+// every lane that exists and errors only when neither does.
+function pingClaimedTaskDialogue(name, text, from) {
+  let taskDb;
+  try {
+    taskDb = require('../lib/task-db');
+  } catch {
+    return null;
+  }
+  try {
+    const db = taskDb.open();
+    const local = taskDb.listTasks(db, { workspaceRoot: taskDb.workspaceRoot(), status: 'claimed', claimedBy: name });
+    const pool = local.length ? local : taskDb.listTasks(db, { status: 'claimed', claimedBy: name });
+    if (!pool.length) return null;
+    const task = [...pool].sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))[0];
+    const result = taskDb.noteTask(db, { id: task.id, actor: from, content: text });
+    if (!result.noted) return null;
+    return { task_id: task.id, title: task.title };
+  } catch {
+    return null;
+  }
+}
+
 function memberPing(name, ...args) {
   if (!name || name === '--help' || name === '-h') {
-    console.log('Usage: atris member ping <name> "<message>" [--json]');
-    console.log('Leaves a note on the member\'s active mission; the next tick reads it as operator direction.');
+    console.log('Usage: atris member ping <name> "<message>" [--from <who>] [--json]');
+    console.log('Leaves the note on the member\'s active mission and claimed task dialogue; whichever loop the member runs reads it next.');
     return;
   }
-  const text = args.filter((a) => !a.startsWith('--')).join(' ').trim();
+  const asJson = args.includes('--json');
+  const rest = args.filter((a) => a !== '--json');
+  let from = process.env.USER || 'operator';
+  const fromIdx = rest.indexOf('--from');
+  if (fromIdx !== -1) {
+    from = rest[fromIdx + 1] || from;
+    rest.splice(fromIdx, 2);
+  }
+  const text = rest.filter((a) => !a.startsWith('--')).join(' ').trim();
   if (!text) {
     console.error('atris member ping: message required');
     process.exit(2);
@@ -633,12 +665,33 @@ function memberPing(name, ...args) {
   ]
     .filter((m) => m && m.owner === name && !terminal.has(m.status))
     .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
-  if (!candidates.length) {
-    console.error(`atris member ping: no live mission owned by "${name}". Start one: atris member run ${name} "<objective>"`);
+
+  const taskNote = pingClaimedTaskDialogue(name, text, from);
+
+  if (!candidates.length && !taskNote) {
+    console.error(`atris member ping: no live mission or claimed task for "${name}". Start one: atris member run ${name} "<objective>"`);
     process.exit(1);
   }
-  const passthrough = args.filter((a) => a.startsWith('--'));
-  return missionMod.pingMission([candidates[0].id, text, ...passthrough]);
+
+  const mission = candidates.length
+    ? missionMod.pingMission([candidates[0].id, text, '--from', from], { silent: true })
+    : null;
+  const pendingPings = mission ? (mission.pings || []).filter((p) => p && !p.consumed_at).length : null;
+
+  if (asJson) {
+    console.log(JSON.stringify({
+      ok: true,
+      action: 'member_ping',
+      member: name,
+      mission_id: mission ? mission.id : null,
+      pending_pings: pendingPings,
+      task_id: taskNote ? taskNote.task_id : null,
+    }));
+  } else {
+    if (mission) console.log(`pinged ${mission.id} — the next tick reads it (${pendingPings} unread).`);
+    if (taskNote) console.log(`pinged task ${taskNote.task_id} dialogue — ${name} reads it on the next step.`);
+  }
+  return { mission, task_note: taskNote };
 }
 
 function memberRun(name, ...args) {
