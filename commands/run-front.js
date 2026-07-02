@@ -14,6 +14,7 @@ const RUN_VALUE_FLAGS = new Set([
   '--hours',
   '--max-ticks',
   '--max-wall',
+  '--runner',
   '--runner-bin',
   '--runner-template',
   '--runner-model',
@@ -49,21 +50,31 @@ function runObjective(args = []) {
   return words.join(' ').trim();
 }
 
-// Runners a spawned `mission run` can actually drive. Session-bound runners
-// (codex_goal, manual, caller_session, current_agent) wait for a live agent;
-// a headless front door ticking them just records no-op receipts forever.
+// Runners a spawned `mission run` can drive unattended.
 const HEADLESS_DRIVABLE_RUNNERS = new Set(['claude', 'atris2']);
+const CALLER_SESSION_RUNNERS = new Set(['codex_goal', 'caller_session', 'current_agent']);
+
+function liveCodexSession(env = process.env) {
+  return Boolean(String(env.CODEX_THREAD_ID || '').trim());
+}
+
+function runnerDrivableForFrontDoor(runner, options = {}) {
+  const normalized = String(runner || '').trim().toLowerCase();
+  if (HEADLESS_DRIVABLE_RUNNERS.has(normalized)) return true;
+  if (options.allowCallerSessionRunners && CALLER_SESSION_RUNNERS.has(normalized)) return true;
+  return false;
+}
 
 // Most logical mission: a moving one beats a planned one, newer beats older.
 // ready is excluded — it waits for review, not for another worker pass.
-function pickRunnableMission(root = process.cwd(), missionMap = null) {
+function pickRunnableMission(root = process.cwd(), missionMap = null, options = {}) {
   let map = missionMap;
   if (!map) {
     try { map = require('./mission').loadMissionMap(root); } catch { return null; }
   }
   const candidates = Array.from(map.values())
     .filter((mission) => mission && (mission.status === 'running' || mission.status === 'planning'))
-    .filter((mission) => HEADLESS_DRIVABLE_RUNNERS.has(String(mission?.runner || '').trim().toLowerCase()))
+    .filter((mission) => runnerDrivableForFrontDoor(mission?.runner, options))
     .filter((mission) => !/^decide and start the next useful mission after:/i.test(String(mission?.objective || '')))
     .sort((a, b) => {
       if (a.status !== b.status) return a.status === 'running' ? -1 : 1;
@@ -103,7 +114,9 @@ async function runMissionFront(args = []) {
     return result.ok ? 0 : 1;
   }
 
-  const mission = pickRunnableMission();
+  const mission = pickRunnableMission(process.cwd(), null, {
+    allowCallerSessionRunners: liveCodexSession(),
+  });
   if (!mission) {
     console.log('No objective given and no runnable mission found.');
     console.log('Start one: atris run "<objective>" [--minutes N] [--owner <member>]');
@@ -123,6 +136,8 @@ async function runMissionFront(args = []) {
 module.exports = {
   runMissionFront,
   pickRunnableMission,
+  liveCodexSession,
+  runnerDrivableForFrontDoor,
   runObjective,
   runBudgetSeconds,
   runTickBudget,

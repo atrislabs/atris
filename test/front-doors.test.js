@@ -32,6 +32,7 @@ function runCli(args, options = {}) {
 
 test('runObjective keeps words, drops flags and their values', () => {
   assert.equal(runObjective(['Fix', 'the', 'login', 'bug', '--minutes', '30', '--json']), 'Fix the login bug');
+  assert.equal(runObjective(['--runner', 'codex_goal', '--minutes', '30']), '');
   assert.equal(runObjective(['--owner', 'growth', '--max-ticks', '4']), '');
 });
 
@@ -66,6 +67,15 @@ test('pickRunnableMission skips session-bound runners a headless loop cannot dri
   assert.equal(pickRunnableMission(process.cwd(), map).id, 'm3');
   map.delete('m3');
   assert.equal(pickRunnableMission(process.cwd(), map), null);
+});
+
+test('pickRunnableMission can select caller-session runners when live Codex opts in', () => {
+  const map = new Map([
+    ['m1', { id: 'm1', status: 'running', runner: 'atris2', objective: 'headless drivable', updated_at: '2026-07-01T01:00:00Z' }],
+    ['m2', { id: 'm2', status: 'running', runner: 'codex_goal', objective: 'live codex drivable', updated_at: '2026-07-01T07:00:00Z' }],
+  ]);
+  assert.equal(pickRunnableMission(process.cwd(), map).id, 'm1');
+  assert.equal(pickRunnableMission(process.cwd(), map, { allowCallerSessionRunners: true }).id, 'm2');
 });
 
 test('pickRunnableMission skips continuation placeholders and empty maps', () => {
