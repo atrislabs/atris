@@ -1475,17 +1475,19 @@ function renderMissionStatus(root = process.cwd()) {
     lines.push('No missions yet.', '');
   } else {
     for (const mission of missions.slice(0, 12)) {
-      const taskSpine = missionTaskSpine(mission);
-      lines.push(`- **${mission.id}** ${mission.objective}`);
-      lines.push(`  - owner: ${mission.owner}`);
-      lines.push(`  - state: ${mission.status}`);
-      lines.push(`  - next: ${mission.next_action || 'tick or verify'}`);
+      const view = missionStatusView(mission);
+      const taskSpine = view.task_spine || missionTaskSpine(view);
+      lines.push(`- **${view.id}** ${view.objective}`);
+      lines.push(`  - owner: ${view.owner}`);
+      lines.push(`  - state: ${view.status}`);
+      lines.push(`  - next: ${view.next_action || 'tick or verify'}`);
       if (taskSpine?.task_ref) lines.push(`  - task: ${taskSpine.task_ref}`);
       if (taskSpine?.current_step_command) lines.push(`  - task next: ${taskSpine.current_step_command}`);
       if (taskSpine && !taskSpine.has_task && taskSpine.ensure_task_command) lines.push(`  - task setup: ${taskSpine.ensure_task_command}`);
-      if (mission.xp_task?.ref) lines.push(`  - AgentXP task: ${mission.xp_task.ref}`);
-      if (mission.receipt_path) lines.push(`  - proof: ${mission.receipt_path}`);
-      const gateLabel = completionGateLabel(mission.completion_gate);
+      if (view.xp_task?.ref) lines.push(`  - AgentXP task: ${view.xp_task.ref}`);
+      if (view.proof_needed) lines.push(`  - proof needed: ${view.proof_needed}`);
+      if (view.receipt_path) lines.push(`  - proof: ${view.receipt_path}`);
+      const gateLabel = completionGateLabel(view.completion_gate);
       if (gateLabel) lines.push(`  - gate: ${gateLabel}`);
     }
     lines.push('');
@@ -1500,6 +1502,23 @@ function missionXpTaskRefFromMission(mission) {
   if (mission?.xp_task?.ref) return mission.xp_task.ref;
   if (mission?.xp_task_enabled && mission?.task_ids?.[0]) return mission.task_ids[0];
   return '';
+}
+
+function missionRequiresZeroPapercutEndToEnd(mission) {
+  const text = [
+    mission?.objective,
+    mission?.stop_condition,
+    mission?.next_action,
+    mission?.xp_task?.title,
+  ].filter(Boolean).join(' ');
+  return Boolean(mission?.xp_task_enabled || mission?.xp_task || missionXpTaskRefFromMission(mission))
+    && /\b(?:golden[- ]path|zero[- ]knowledge|zero\s+new\s+papercuts?|fresh[- ]environment|fresh[- ]laptop|self[- ]landed)\b/i.test(text);
+}
+
+function missionProofPlaceholder(mission) {
+  return missionRequiresZeroPapercutEndToEnd(mission)
+    ? '<zero-papercut end-to-end receipt>'
+    : '<proof>';
 }
 
 function resolveMissionOwner(mission, root = process.cwd()) {
@@ -1547,7 +1566,7 @@ function missionXpReadyAction(mission, receiptPath) {
   const ref = missionXpTaskRefFromMission(mission);
   if (!ref || !receiptPath) return null;
   const owner = resolveMissionOwner(mission).owner;
-  return `queue AgentXP review: atris task current-step --goal-id ${mission.id} --as ${owner} --proof "${receiptPath}" --json`;
+  return `queue AgentXP review: atris task current-step --goal-id ${mission.id} --as ${owner} --proof "${missionProofPlaceholder(mission)}" --json`;
 }
 
 function missionTaskSpine(mission) {
@@ -1578,7 +1597,7 @@ function missionTaskSpine(mission) {
     task_ref: taskRef,
     has_task: Boolean(taskId || taskRef),
     current_step_command: taskId || taskRef
-      ? `atris task current-step --goal-id ${taskScopeRef} --as ${owner} --proof "<proof>" --json`
+      ? `atris task current-step --goal-id ${taskScopeRef} --as ${owner} --proof "${missionProofPlaceholder(mission)}" --json`
       : null,
     ensure_task_command: taskId || taskRef
       ? null
@@ -1589,12 +1608,20 @@ function missionTaskSpine(mission) {
 function missionStatusView(mission) {
   const taskSpine = missionTaskSpine(mission);
   if (!taskSpine) return mission;
+  const needsEndToEndProof = missionRequiresZeroPapercutEndToEnd(mission);
+  const safeNextAction = needsEndToEndProof && /^queue AgentXP review:/i.test(String(mission.next_action || ''))
+    ? missionXpReadyAction(mission, mission.receipt_path) || mission.next_action
+    : mission.next_action;
   const requestedOwner = taskSpine.requested_owner
     || mission.requested_owner
     || (mission.owner && mission.owner !== taskSpine.owner ? mission.owner : null);
   return {
     ...mission,
     owner: taskSpine.owner,
+    next_action: safeNextAction,
+    proof_needed: needsEndToEndProof
+      ? 'zero-papercut end-to-end fresh-laptop receipt; latest mission/tick receipt alone is not enough'
+      : mission.proof_needed || null,
     functional_owner: taskSpine.owner,
     requested_owner: requestedOwner,
     owner_resolution: taskSpine.owner_resolution,
@@ -3150,6 +3177,7 @@ function statusMission(args) {
 	        ...(mission.task_spine?.task_ref ? [`  task: ${mission.task_spine.task_ref}`] : []),
         ...(mission.task_spine?.current_step_command ? [`  task next: ${mission.task_spine.current_step_command}`] : []),
         ...(!mission.task_spine?.has_task && mission.task_spine?.ensure_task_command ? [`  task setup: ${mission.task_spine.ensure_task_command}`] : []),
+        ...(mission.proof_needed ? [`  proof needed: ${mission.proof_needed}`] : []),
         ...(mission.receipt_path ? [`  proof: ${mission.receipt_path}`] : []),
         ...missionStatusLandingLines(mission.last_landing),
         ...(completionGateLabel(mission.completion_gate) ? [`  gate: ${completionGateLabel(mission.completion_gate)}`] : []),

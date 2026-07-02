@@ -303,6 +303,47 @@ test('mission status and tick hint when mission id lives in a sibling workspace'
   }
 });
 
+test('mission status requires end-to-end proof placeholder for golden-path AgentXP receipts', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-golden-path',
+      slug: 'golden-path',
+      objective: 'Golden path zero-knowledge fresh-laptop pass',
+      owner: 'onboarding',
+      status: 'ready',
+      xp_task_enabled: true,
+      xp_task: {
+        task_id: 'task-golden-path',
+        ref: 'CLI-801',
+        title: 'Mission XP: Golden path zero-knowledge fresh-laptop pass',
+      },
+      task_ids: ['task-golden-path'],
+      stop_condition: 'a full fresh-environment pass completes with zero new papercuts',
+      receipt_path: 'atris/runs/bookkeeping.json',
+      next_action: 'queue AgentXP review: atris task current-step --goal-id mission-golden-path --as onboarding --proof "atris/runs/bookkeeping.json" --json',
+      updated_at: '2026-07-02T00:00:00.000Z',
+    });
+
+    const status = runCli(['mission', 'status', 'mission-golden-path'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /proof needed: zero-papercut end-to-end fresh-laptop receipt/);
+    assert.match(status.stdout, /--proof "<zero-papercut end-to-end receipt>"/);
+    assert.doesNotMatch(status.stdout, /--proof "atris\/runs\/bookkeeping\.json"/);
+
+    const jsonStatus = runCli(['mission', 'status', 'mission-golden-path', '--json'], { cwd: dir });
+    assert.equal(jsonStatus.status, 0, jsonStatus.stderr);
+    const payload = JSON.parse(jsonStatus.stdout);
+    const mission = payload.missions[0];
+    assert.equal(mission.proof_needed, 'zero-papercut end-to-end fresh-laptop receipt; latest mission/tick receipt alone is not enough');
+    assert.equal(mission.task_spine.current_step_command, 'atris task current-step --goal-id mission-golden-path --as onboarding --proof "<zero-papercut end-to-end receipt>" --json');
+    assert.doesNotMatch(mission.next_action, /atris\/runs\/bookkeeping\.json/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission doctor flags no-verifier, help, stale ready receipts, and blocked always-on loops', () => {
   const dir = makeTempDir();
   try {

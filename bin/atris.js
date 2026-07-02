@@ -1099,9 +1099,8 @@ async function interactiveEntry(userInput) {
   if (state.state === 'fresh') {
     console.log('\nNo atris/ folder found.');
     console.log('');
-    console.log('Start here:');
-    console.log('  atris init       if Atris is installed globally');
-    console.log('  npx atris init   if Atris was installed in this project');
+    console.log('Next: atris init');
+    console.log('Local project install instead? Run: npx atris init');
     return;
   }
 
