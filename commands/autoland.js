@@ -44,9 +44,11 @@ function flag(args, name, fallback = '') {
 }
 
 function runOwnCli(root, cliArgs) {
-  const bin = path.join(root, 'bin', 'atris.js');
-  const argv = fs.existsSync(bin) ? [process.execPath, [bin, ...cliArgs]] : ['atris', [cliArgs].flat()];
-  const result = spawnSync(argv[0], argv[1], { cwd: root, encoding: 'utf8', timeout: 300000 });
+  // Always spawn the bin this module shipped with. Resolving through the
+  // target root or a global `atris` breaks whenever the tick runs a project
+  // that isn't the CLI repo on a machine without a global install (CI, cron).
+  const bin = path.resolve(__dirname, '..', 'bin', 'atris.js');
+  const result = spawnSync(process.execPath, [bin, ...cliArgs], { cwd: root, encoding: 'utf8', timeout: 300000 });
   return { status: result.status, stdout: String(result.stdout || ''), stderr: String(result.stderr || '') };
 }
 
