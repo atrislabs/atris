@@ -86,10 +86,13 @@ test('digest and alarm compose in plain language', () => {
     waiting: [{ ref: 'CLI-9', title: 'Send invoice', tag: 'billing', hours: 30 }],
     landed: { branches: 2, due: 1 },
     project: 'atris-cli',
-    nextMoves: [
-      { title: 'Finish the taste filters: scores should use the role weights', owner: 'auto-improver' },
-      { title: 'Give the stuck codex mission an engine or stop it', owner: null },
-    ],
+    nextMoves: {
+      moves: [
+        { title: 'Finish the taste filters: scores should use the role weights', owner: 'auto-improver' },
+        { title: 'Give the stuck codex mission an engine or stop it', owner: null },
+      ],
+      unexplained: 2,
+    },
   });
   assert.match(digest, /landed on their own \(verified twice, proof on file\)/);
   assert.match(digest, /- fixed full-duration mission budget inference/);
@@ -101,6 +104,7 @@ test('digest and alarm compose in plain language', () => {
   assert.match(digest, /next, if you agree:/);
   assert.match(digest, /taste filters.*\(best fit: auto-improver\)/);
   assert.match(digest, /stuck codex mission/);
+  assert.match(digest, /- 2 more ideas that can't explain themselves yet \(atris now\)/);
   assert.match(digest, /the full story: atris autoland digest/);
   assert.doesNotMatch(digest, /branch|worktree|ttl|certif(?!ied)/i);
 
@@ -121,6 +125,19 @@ test('digest and alarm compose in plain language', () => {
   });
   assert.match(alarm, /1 piece of finished work has been waiting on you for over 24h/);
   assert.match(alarm, /CLI-9 \(30h\)/);
+});
+
+test('operatorReady: a queue sentence earns its digest surface with a why, no agent jargon', () => {
+  const { operatorReady } = require('../commands/autoland');
+  // Carries a cost the operator can feel, no identifiers.
+  assert.ok(operatorReady('Agents burn tokens hand-rolling state parsers: add one shared inspect view'));
+  assert.ok(operatorReady('Slow boot makes every demo start with an apology: cache the workspace scan'));
+  // No why an operator can use.
+  assert.ok(!operatorReady('Novel goal-chain demo: prove 4 child goals can validate a mission'));
+  // Why present but written in agent vocabulary (snake_case, flags, ids).
+  assert.ok(!operatorReady('Make codex_goal slot handoff faster for users'));
+  assert.ok(!operatorReady('Add --inspect flag so users save time'));
+  assert.ok(!operatorReady('CLI-788 failed because the continuation stopped'));
 });
 
 test('alarm dedupe: a task pings once per window', () => {

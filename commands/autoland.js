@@ -17,19 +17,34 @@ function projectName(root) {
   return path.basename(root);
 }
 
+// A queue item earns its digest surface only if its sentence carries a why an
+// operator can use: a cost, a benefit, or a named beneficiary. Identifier-speak
+// (snake_case, camelCase, --flags, task ids) is agent vocabulary and fails
+// regardless — the reader should never have to know the codebase to care.
+const OPERATOR_WHY = /\b(sav(?:e|es|ing)|burn(?:s|ing)?|wast(?:e|es|ing)|cost(?:s|ing)?|prevent\w*|stop(?:s|ping)?|break(?:s|ing)?|fail(?:s|ing)?|slow(?:s|er)?|faster|cheaper|easier|clearer|safer|simpler|trust|revenue|users?|customers?|so that|because)\b/i;
+const AGENT_JARGON = /[a-z0-9]_[a-z0-9]|\b[a-z]+[A-Z]\w*|--[a-z]|\bCLI-\d+/;
+
+function operatorReady(title) {
+  const text = String(title || '');
+  return OPERATOR_WHY.test(text) && !AGENT_JARGON.test(text);
+}
+
 // The digest's "next, if you agree" section: top candidate moves from Atris
-// state, each with the member best suited to own it. Never blocks the digest.
+// state, each with the member best suited to own it. Moves that can't explain
+// themselves are counted, not shown. Never blocks the digest.
 function digestNextMoves(root) {
   try {
     const { nextMoves } = require('../lib/next-moves');
     const { resolveFunctionalOwner } = require('../lib/functional-owner');
-    return (nextMoves(root, 3) || []).map((move) => {
+    const all = (nextMoves(root, 5) || []).filter((move) => move && move.title);
+    const ready = all.filter((move) => operatorReady(move.title)).slice(0, 3).map((move) => {
       let owner = null;
       try { owner = resolveFunctionalOwner({ title: move.title, root })?.owner || null; } catch {}
       return { title: move.title, owner };
     });
+    return { moves: ready, unexplained: all.length - ready.length };
   } catch {
-    return [];
+    return { moves: [], unexplained: 0 };
   }
 }
 
@@ -349,4 +364,4 @@ function autolandCommand(args = []) {
   return 1;
 }
 
-module.exports = { autolandCommand };
+module.exports = { autolandCommand, operatorReady };
