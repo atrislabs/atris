@@ -672,7 +672,11 @@ function resolveRoute(message, options = {}) {
   // always win. One carve-out: GitHub-connector phrasing prefers the cloud
   // GitHub API lane unless it names local-checkout work.
   const text = String(message || '');
-  if (/\bgithub\b/i.test(text) && !/\b(commits?|branch(?:es)?|checkout|merge|rebase|changes?|diff)\b/i.test(text)) return 'cloud';
+  // Local-checkout work includes every git mutation verb: cloud chat can only
+  // read the GitHub connector, so "do a quick github push" through the cloud
+  // lane dead-ends in a write-blocked upsell (live miss 2026-07-02). Inside a
+  // workspace the local tool loop just runs git.
+  if (/\bgithub\b/i.test(text) && !/\b(commits?|branch(?:es)?|checkout|merge|rebase|changes?|diff|push(?:es|ed|ing)?|pull(?:s|ed|ing)?|fetch|clone|stash|tags?)\b/i.test(text)) return 'cloud';
   if (insideWorkspaceCwd(options.cwd)) return 'local';
   return 'cloud';
 }
@@ -3390,7 +3394,14 @@ async function main() {
     console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
   } catch (error) {
     console.error(`x ${error.message}`);
-    printBackendHint({ route: route === 'auto' ? undefined : route });
+    // Only name a lane when the user picked one. An auto-routed turn that
+    // failed locally must not claim "Atris cloud did not respond" (seen live
+    // 2026-07-02 after a local workspace-root rejection).
+    if (route === 'auto') {
+      console.error('\nRetry, or run ax --doctor to check the runtime.');
+    } else {
+      printBackendHint({ route });
+    }
     process.exit(1);
   }
 }

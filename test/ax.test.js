@@ -502,12 +502,17 @@ test('ax routes GitHub repo mutations to cloud outside a workspace, local tools 
   assert.equal(ax.resolveRoute('commit a tiny proof change and push to github', { cwd: NON_WORKSPACE_CWD }), 'cloud');
   assert.equal(ax.resolveRoute('open a pull request for this branch on github', { cwd: NON_WORKSPACE_CWD }), 'cloud');
 
-  // Inside a workspace the workspace-intent detector claims repo-shaped work
-  // for local tools when the wording overlaps (change/branch); pure connector
-  // phrasing stays cloud.
+  // Inside a workspace every git mutation verb claims local tools: cloud chat
+  // can only read the GitHub connector, so routing a push there dead-ends in
+  // a write-blocked upsell (live miss 2026-07-02). Pure connector reads and
+  // API-side writes (issues) stay cloud.
   const repoCwd = path.join(__dirname, '..');
-  assert.equal(ax.resolveRoute('push something to github', { cwd: repoCwd }), 'cloud');
+  assert.equal(ax.resolveRoute('push something to github', { cwd: repoCwd }), 'local');
+  assert.equal(ax.resolveRoute('want to do a quick github push just for testing?', { cwd: repoCwd }), 'local');
+  assert.equal(ax.resolveRoute('pull the latest from github', { cwd: repoCwd }), 'local');
   assert.equal(ax.resolveRoute('commit a tiny proof change and push to github', { cwd: repoCwd }), 'local');
+  assert.equal(ax.resolveRoute('what github repos do I have?', { cwd: repoCwd }), 'cloud');
+  assert.equal(ax.resolveRoute('create a github issue for this bug', { cwd: repoCwd }), 'cloud');
 
   assert.equal(ax.resolveRoute('push something to github', { route: 'local' }), 'local');
 });
