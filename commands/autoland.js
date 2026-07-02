@@ -43,11 +43,37 @@ function flag(args, name, fallback = '') {
   return args[idx + 1] || fallback;
 }
 
+function currentCliBin() {
+  const current = process.argv[1] ? path.resolve(process.argv[1]) : '';
+  if (current && fs.existsSync(current)) return current;
+  const packageBin = path.resolve(__dirname, '..', 'bin', 'atris.js');
+  if (fs.existsSync(packageBin)) return packageBin;
+  return null;
+}
+
 function runOwnCli(root, cliArgs) {
-  const bin = path.join(root, 'bin', 'atris.js');
-  const argv = fs.existsSync(bin) ? [process.execPath, [bin, ...cliArgs]] : ['atris', [cliArgs].flat()];
-  const result = spawnSync(argv[0], argv[1], { cwd: root, encoding: 'utf8', timeout: 300000 });
+  const workspaceBin = path.join(root, 'bin', 'atris.js');
+  const bin = currentCliBin() || (fs.existsSync(workspaceBin) ? workspaceBin : null);
+  const argv = bin ? [process.execPath, [bin, ...cliArgs]] : ['atris', [cliArgs].flat()];
+  const env = {
+    ...process.env,
+    ATRIS_SKIP_UPDATE_CHECK: '1',
+    ATRIS_AGENT_PROOF_ONLY: '0',
+  };
+  const result = spawnSync(argv[0], argv[1], { cwd: root, encoding: 'utf8', timeout: 300000, env });
   return { status: result.status, stdout: String(result.stdout || ''), stderr: String(result.stderr || '') };
+}
+
+function parseJsonOutput(stdout) {
+  const text = String(stdout || '').trim();
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start !== -1 && end > start) return JSON.parse(text.slice(start, end + 1));
+    throw err;
+  }
 }
 
 function readProjection(root) {
@@ -73,7 +99,7 @@ function evaluateQueue(root, { strictVerify }) {
   if (strictVerify) cliArgs.push('--strict-verify');
   const result = runOwnCli(root, cliArgs);
   try {
-    const parsed = JSON.parse(result.stdout);
+    const parsed = parseJsonOutput(result.stdout);
     return Array.isArray(parsed.results) ? parsed.results : [];
   } catch (err) {
     return [];
@@ -254,7 +280,7 @@ function runTick(root, args) {
   if (policy.drain_reviews !== false) {
     const certify = runOwnCli(root, ['task', 'certify-verified', '--json']);
     try {
-      const parsed = JSON.parse(certify.stdout);
+      const parsed = parseJsonOutput(certify.stdout);
       receipt.reviews_certified = parsed.certified ?? 0;
       if (parsed.ok !== true) receipt.certify_error = 'certify-verified failed';
     } catch {
@@ -267,7 +293,7 @@ function runTick(root, args) {
   if (policy.strict_verify !== false) cliArgs.push('--strict-verify');
   const accept = runOwnCli(root, cliArgs);
   try {
-    const parsed = JSON.parse(accept.stdout);
+    const parsed = parseJsonOutput(accept.stdout);
     receipt.landed = (parsed.results || []).filter((r) => r.action === 'accepted').map((r) => r.ref);
   } catch (err) {
     receipt.accept_error = accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
@@ -310,7 +336,7 @@ function runTick(root, args) {
     // into the manifest and drop unreferenced clutter, newest 200 kept.
     const prune = runOwnCli(root, ['mission', 'prune-runs', '--apply', '--days', '14', '--keep-newest', '200', '--json']);
     try {
-      const pruned = JSON.parse(prune.stdout);
+      const pruned = parseJsonOutput(prune.stdout);
       receipt.receipts_pruned = pruned.pruned_count ?? pruned.pruned ?? pruned.removed ?? 0;
     } catch {
       receipt.receipts_pruned = null;
