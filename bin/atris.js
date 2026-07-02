@@ -449,7 +449,7 @@ function showHelp() {
   console.log('  plan       - Create build spec with visualization');
   console.log('  do         - Execute tasks');
   console.log('  review     - Validate work (tests, safety checks, docs)');
-  console.log('  run        - Auto-chain plan→do→review (autonomous loop, auto-pushes)');
+  console.log('  run        - One bounded mission pursuit: start or resume, tick, complete');
   console.log('  run logs   - Browse glass run logs (phase reasoning persisted to disk)');
   console.log('  run search - Search phase reasoning across all run logs');
   console.log('  pulse      - Durable overnight self-improvement heartbeat (OS cron, install/status/tick)');
@@ -483,7 +483,7 @@ function showHelp() {
   console.log('');
   console.log('Optional helpers:');
   console.log('  brainstorm - Explore ideas conversationally before planning');
-  console.log('  autopilot  - Guided loop that can clarify TODOs and run plan → do → review');
+  console.log('  autopilot  - Keep the workspace moving: mission/member loop until you stop it');
   console.log('  improve    - Run one paid RL tick (POST /api/improve, deducts credits)');
   console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
   console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
@@ -1831,23 +1831,25 @@ if (command === 'init') {
   }
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     console.log('');
-    console.log('Usage: atris run [options]');
+    console.log('Usage: atris run ["objective"] [options]');
     console.log('');
-    console.log('Auto-chain plan → do → review cycles autonomously.');
-    console.log('Reads inbox ideas, creates tasks, builds them, validates, repeats.');
+    console.log('One bounded mission pursuit: start a mission from the objective');
+    console.log('(or resume the most logical runnable mission), tick it through the');
+    console.log('mission runtime, complete on pass, then exit.');
+    console.log('For an ongoing loop, use: atris autopilot');
     console.log('');
     console.log('Options:');
-    console.log('  --cycles=N    Max cycles (default: 5)');
-    console.log('  --once        Single plan→do→review cycle');
-    console.log('  --verbose     Show configured runner output');
-    console.log('  --dry-run     Preview without executing');
-    console.log('  --timeout=N   Phase timeout in seconds (default: 600)');
-    console.log('  --runner-bin PATH       Runner binary for this run');
-    console.log('  --runner-template CMD   Runner command template for this run');
-    console.log('  --runner-model MODEL    Runner model for this run');
-    console.log('  --runner-profile NAME   Runner profile for this run (e.g. atris-fast)');
-    console.log('  --push        Auto-push after each cycle (default: true)');
-    console.log('  --no-push     Skip auto-push after each cycle');
+    console.log('  --owner NAME      Mission owner (default: mission-lead)');
+    console.log('  --minutes N | --hours N   Time budget for the pursuit');
+    console.log('  --max-ticks N     Override the tick budget');
+    console.log('  --max-wall N      Override the wall clock in seconds');
+    console.log('  --cadence C       Mission cadence (e.g. 15m)');
+    console.log('  --no-complete     Skip auto-complete after a passing run');
+    console.log('  --legacy          Old plan→do→review loop (claude -p cycles)');
+    console.log('');
+    console.log('Legacy options (with --legacy):');
+    console.log('  --cycles=N --once --verbose --dry-run --timeout=N --no-push');
+    console.log('  --runner-bin / --runner-template / --runner-model / --runner-profile');
     console.log('');
     console.log('Subcommands:');
     console.log('  atris run logs [--tail N] [--cat FILE] [--json]  Browse glass run logs');
@@ -1860,62 +1862,79 @@ if (command === 'init') {
     process.exit(0);
   }
 
-  const verbose = args.includes('--verbose') || args.includes('-v');
-  const dryRun = args.includes('--dry-run');
-  const once = args.includes('--once');
-  const push = !args.includes('--no-push');
-  applyRunnerFlags(args);
-  const cyclesArg = args.find(a => a.startsWith('--cycles='));
-  const maxCycles = cyclesArg ? parseInt(cyclesArg.split('=')[1]) : 5;
-  const timeoutArg = args.find(a => a.startsWith('--timeout='));
-  const timeout = timeoutArg ? parseInt(timeoutArg.split('=')[1]) * 1000 : undefined;
+  if (args.includes('--legacy')) {
+    const legacyArgs = args.filter(a => a !== '--legacy');
+    const verbose = legacyArgs.includes('--verbose') || legacyArgs.includes('-v');
+    const dryRun = legacyArgs.includes('--dry-run');
+    const once = legacyArgs.includes('--once');
+    const push = !legacyArgs.includes('--no-push');
+    applyRunnerFlags(legacyArgs);
+    const cyclesArg = legacyArgs.find(a => a.startsWith('--cycles='));
+    const maxCycles = cyclesArg ? parseInt(cyclesArg.split('=')[1]) : 5;
+    const timeoutArg = legacyArgs.find(a => a.startsWith('--timeout='));
+    const timeout = timeoutArg ? parseInt(timeoutArg.split('=')[1]) * 1000 : undefined;
 
-  require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, push, timeout })
-    .then(() => process.exit(0))
-    .catch((error) => {
-      console.error(`\u2717 Run failed: ${error.message || error}`);
-      process.exit(1);
-    });
+    require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, push, timeout })
+      .then(() => process.exit(0))
+      .catch((error) => {
+        console.error(`\u2717 Run failed: ${error.message || error}`);
+        process.exit(1);
+      });
+  } else {
+    require('../commands/run-front').runMissionFront(args)
+      .then((code) => process.exit(code || 0))
+      .catch((error) => {
+        console.error(`\u2717 Run failed: ${error.message || error}`);
+        process.exit(1);
+      });
+  }
 } else if (command === 'launchpad') {
   const code = require('../commands/launchpad').launchpadCommand(process.argv.slice(3));
   process.exit(code);
 } else if (command === 'autopilot') {
   const args = process.argv.slice(3);
-  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    showAutopilotHelp();
-    process.exit(0);
+  if (args.includes('--legacy')) {
+    const legacyArgs = args.filter(a => a !== '--legacy');
+    if (legacyArgs.includes('--help') || legacyArgs.includes('-h') || legacyArgs[0] === 'help') {
+      showAutopilotHelp();
+      process.exit(0);
+    }
+
+    // Parse options
+    const verbose = legacyArgs.includes('--verbose') || legacyArgs.includes('-v');
+    const dryRun = legacyArgs.includes('--dry-run');
+    const auto = legacyArgs.includes('--auto');
+    applyRunnerFlags(legacyArgs);
+    const maxIterationsArg = legacyArgs.find(a => a.startsWith('--iterations='));
+    const maxIterations = maxIterationsArg ? parseInt(maxIterationsArg.split('=')[1]) : undefined;
+    const durationArg = legacyArgs.find(a => a.startsWith('--duration='));
+    const duration = durationArg ? durationArg.split('=')[1] : null;
+
+    // Get description (non-flag args)
+    const description = legacyArgs.filter((a, i) => !a.startsWith('-') && !isOptionValue(legacyArgs, i, RUNNER_FLAG_NAMES)).join(' ').trim() || null;
+
+    const options = {
+      ...(maxIterations !== undefined && { maxIterations }),
+      verbose,
+      dryRun,
+      auto,
+      duration
+    };
+
+    require('../commands/autopilot').autopilotAtris(description, options)
+      .then(() => process.exit(0))
+      .catch((error) => {
+        console.error(`✗ Autopilot failed: ${error.message || error}`);
+        process.exit(1);
+      });
+  } else {
+    Promise.resolve(require('../commands/autopilot-front').autopilotFront(args))
+      .then((code) => process.exit(code || 0))
+      .catch((error) => {
+        console.error(`✗ Autopilot failed: ${error.message || error}`);
+        process.exit(1);
+      });
   }
-
-  // Parse options
-  const verbose = args.includes('--verbose') || args.includes('-v');
-  const dryRun = args.includes('--dry-run');
-  const auto = args.includes('--auto');
-  applyRunnerFlags(args);
-  const maxIterationsArg = args.find(a => a.startsWith('--iterations='));
-  const maxIterations = maxIterationsArg ? parseInt(maxIterationsArg.split('=')[1]) : undefined;
-  const durationArg = args.find(a => a.startsWith('--duration='));
-  const duration = durationArg ? durationArg.split('=')[1] : null;
-
-  // Get description (non-flag args)
-  const description = args.filter((a, i) => !a.startsWith('-') && !isOptionValue(args, i, RUNNER_FLAG_NAMES)).join(' ').trim() || null;
-
-  const options = {
-    ...(maxIterations !== undefined && { maxIterations }),
-    verbose,
-    dryRun,
-    auto,
-    duration
-  };
-
-  let promise;
-  promise = require('../commands/autopilot').autopilotAtris(description, options);
-
-  promise
-    .then(() => process.exit(0))
-    .catch((error) => {
-      console.error(`✗ Autopilot failed: ${error.message || error}`);
-      process.exit(1);
-    });
 } else if (command === 'brainstorm') {
   require('../commands/brainstorm').brainstormAtris()
     .then(() => process.exit(0))
@@ -2912,6 +2931,20 @@ async function atrisFastChat() {
   const missionIntent = missionRunIntentFromFastMessage(message);
   if (missionIntent) {
     process.exit(await runLocalFastMission(missionIntent));
+  }
+
+  // One routing brain: `atris fast` defers to ax's AX Context Standard. A
+  // workspace-shaped question asked from inside a workspace needs local tools
+  // (this lane is a tool-less cloud one-shot and confabulates on repo
+  // questions — SwapBench 2026-07-02), so delegate the whole turn to ax.
+  try {
+    const axModule = require('../ax');
+    if (axModule.resolveRoute(message) === 'local') {
+      const run = spawnSync(process.execPath, [path.join(__dirname, '..', 'ax'), '--fast', message], { stdio: 'inherit' });
+      process.exit(run.status || 0);
+    }
+  } catch {
+    // ax unavailable: fall through to the plain cloud one-shot.
   }
 
   printAtrisGoalBanner(process.cwd());

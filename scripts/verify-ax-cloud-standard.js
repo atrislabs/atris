@@ -1,61 +1,99 @@
 #!/usr/bin/env node
 'use strict';
 
+// AX Context Standard verifier (2026-07-02, supersedes the Cloud-First
+// Standard). The cloud lane is for chat and cloud workspaces; a
+// workspace-shaped prompt asked from INSIDE a local workspace routes local so
+// the cloud model gets workspace tools. Before this, resolveRoute never
+// consulted workspaceIntent and `ax --fast` confabulated repo answers from the
+// tool-less chat lane (SwapBench 2026-07-02: 1/6 vs 6/6 with tools). The old
+// privacy guarantee is preserved where it matters: a non-workspace cwd NEVER
+// exposes workspace_path, no matter what the prompt says.
+
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
 const ax = require('../ax');
 
 const repoRoot = path.resolve(__dirname, '..');
 const memberPath = path.join(repoRoot, 'atris', 'team', 'codex-executor', 'MEMBER.md');
 
-function assertCloudPrompt(message) {
-  assert.equal(ax.resolveRoute(message), 'cloud', `${message} should default to cloud`);
-  const payload = ax.buildPayload(message, {
-    mode: 'fast',
-    cwd: '/tmp/ax-cloud-standard',
-  });
-  assert.equal(payload.model, 'atris:fast');
-  assert.equal(payload.workspace_path, undefined, `${message} should not expose local workspace_path by default`);
-  assert.equal(payload.max_turns, 1, `${message} should use one cloud turn by default`);
-}
+// A guaranteed non-workspace cwd: a real temp dir with no .git/atris markers
+// above it (assert that, so a stray /tmp/.git can't silently flip the gate).
+const bareCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-context-standard-'));
 
-for (const message of [
-  'write an essay about the product',
+const WORKSPACE_PROMPTS = [
   'what files are here?',
   'search src for the input component',
   'fix the xp game tests',
-  'push something to github',
-]) {
-  assertCloudPrompt(message);
+  'commit a tiny proof change and push to github',
+];
+// GitHub connector phrasing stays cloud even inside a workspace — only
+// local-checkout wording (commit/branch/change) claims the local lane.
+assert.equal(ax.resolveRoute('what github repos do I have?', { cwd: repoRoot }), 'cloud');
+assert.equal(ax.resolveRoute('push something to github', { cwd: repoRoot }), 'cloud');
+const CHAT_PROMPTS = [
+  'write an essay about the product',
+  'plan my morning',
+  'what is the capital of france?',
+];
+
+// 1) Chat prompts route cloud from ANYWHERE — even inside a workspace.
+for (const message of CHAT_PROMPTS) {
+  for (const cwd of [bareCwd, repoRoot]) {
+    assert.equal(ax.resolveRoute(message, { cwd }), 'cloud', `chat prompt should stay cloud (${message}, cwd=${cwd})`);
+  }
+  const payload = ax.buildPayload(message, { mode: 'fast', cwd: repoRoot });
+  assert.equal(payload.model, 'atris:fast');
+  assert.equal(payload.workspace_path, undefined, `${message} should not expose workspace_path`);
+  assert.equal(payload.max_turns, 1, `${message} should use one cloud turn`);
 }
 
-const localPayload = ax.buildPayload('what files are here?', {
-  mode: 'fast',
-  route: 'local',
-  cwd: '/tmp/ax-cloud-standard',
-});
-assert.equal(ax.resolveRoute('what files are here?', { route: 'local' }), 'local');
-assert.equal(localPayload.workspace_path, '/tmp/ax-cloud-standard');
-assert.equal(localPayload.max_turns, 8);
+// 2) Workspace prompts from a NON-workspace cwd stay cloud — the privacy line.
+for (const message of WORKSPACE_PROMPTS) {
+  assert.equal(ax.resolveRoute(message, { cwd: bareCwd }), 'cloud', `${message} from a bare cwd should stay cloud`);
+  const payload = ax.buildPayload(message, { mode: 'fast', cwd: bareCwd });
+  assert.equal(payload.workspace_path, undefined, `${message} must never expose workspace_path from a bare cwd`);
+  assert.equal(payload.max_turns, 1);
+}
 
-const cloudProfile = ax.buildRunProfile({
-  mode: 'fast',
-  cwd: '/tmp/ax-cloud-standard',
-});
+// 3) Workspace prompts from INSIDE a workspace route local with tools.
+for (const message of WORKSPACE_PROMPTS) {
+  assert.equal(ax.resolveRoute(message, { cwd: repoRoot }), 'local', `${message} from a workspace should route local`);
+}
+const fastLocal = ax.buildPayload('what files are here?', { mode: 'fast', cwd: repoRoot });
+assert.equal(fastLocal.workspace_path, repoRoot, 'local fast payload carries the checkout as workspace_path');
+assert.equal(fastLocal.max_turns, 8, 'local fast turns get the tool loop');
+const proLocal = ax.buildPayload('fix the xp game tests', { mode: 'pro', cwd: repoRoot });
+assert.equal(proLocal.model, 'atris:pro');
+assert.equal(proLocal.max_turns, 14, 'local pro turns get the deeper tool loop');
+
+// 4) Explicit flags always win, both directions.
+assert.equal(ax.resolveRoute('what files are here?', { route: 'cloud', cwd: repoRoot }), 'cloud');
+assert.equal(ax.resolveRoute('what files are here?', { route: 'local', cwd: bareCwd }), 'local');
+const forcedLocal = ax.buildPayload('what files are here?', { mode: 'fast', route: 'local', cwd: bareCwd });
+assert.equal(forcedLocal.workspace_path, bareCwd);
+assert.equal(forcedLocal.max_turns, 8);
+
+// 5) Run profile from a bare cwd stays a cloud profile.
+const cloudProfile = ax.buildRunProfile({ mode: 'fast', cwd: bareCwd });
 assert.equal(cloudProfile.route, 'cloud');
 assert.equal(cloudProfile.workspace_path, 'cloud');
 assert.match(cloudProfile.runtime, /cloud/i);
 
+// 6) The member contract names the standard and this verifier.
 const member = fs.readFileSync(memberPath, 'utf8');
-assert.match(member, /AX Cloud-First Standard/);
-assert.match(member, /default route is cloud/i);
+assert.match(member, /AX Context Standard/);
+assert.match(member, /INSIDE a workspace/);
 assert.match(member, /--local/);
+assert.match(member, /--cloud/);
 assert.match(member, /scripts\/verify-ax-cloud-standard\.js/);
 
-console.log('AX Cloud-First Standard');
-console.log('- default prose/workspace/code prompts route to cloud');
-console.log('- cloud payloads avoid local workspace_path and run one cloud turn');
-console.log('- explicit --local keeps local workspace behavior available');
+console.log('AX Context Standard');
+console.log('- chat prompts route cloud from anywhere, one turn, no workspace_path');
+console.log('- workspace prompts from a bare cwd stay cloud (privacy line holds)');
+console.log('- workspace prompts inside a workspace route local with tools (fast=8, pro=14 turns)');
+console.log('- explicit --cloud/--local always win; run profile from bare cwd is cloud');
 console.log('- codex-executor member contract names the standard and verifier');

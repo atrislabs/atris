@@ -31,11 +31,19 @@ Claude plans and reviews; Codex executes. Mechanical build steps (write code per
 
 ---
 
-## AX Cloud-First Standard
+## AX Context Standard
 
-`ax` is cloud-first by default. The default route is cloud: prose, workspace, file, code, repo, and GitHub prompts use the authenticated Atris cloud lane unless the operator explicitly passes `--local`.
+`ax` routes by context (2026-07-02, supersedes Cloud-First — SwapBench showed the
+cloud default confabulating repo answers with no tools, 1/6 vs 6/6). The rule:
 
-Use `--local` only when the task truly needs this Mac workspace path or a local backend. Cloud payloads must not expose `workspace_path`; local payloads may use the current checkout.
+- Prose/chat prompts route cloud from anywhere: one turn, no `workspace_path`.
+- A workspace-shaped prompt asked from OUTSIDE a workspace stays cloud — the
+  local filespace is never exposed from a non-workspace cwd.
+- A workspace-shaped prompt asked from INSIDE a workspace (a cwd with `.git`,
+  `atris/`, or `atris.md` above it) routes local: the cloud model gets local
+  workspace tools and `workspace_path` is the current checkout.
+- Explicit `--cloud` / `--local` always win. Cloud workspaces (EC2/business
+  relays) keep their own `--business` lane.
 
 Verifier:
 
