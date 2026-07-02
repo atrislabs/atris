@@ -239,6 +239,7 @@ const MISSION_RUN_BOOLEAN_FLAGS = [
   '--no-room-auto-run',
   '--allow-native-goal-supersede',
   '--supersede-paused-native-goal',
+  '--take-goal-slot',
   '--always-on',
   '--xp-task',
   '--agent-xp',
@@ -1631,7 +1632,7 @@ function missionFromArgs(args) {
     '--native-goal-objective',
     '--visible-goal-status',
     '--visible-goal-objective',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal']).join(' ').trim();
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot']).join(' ').trim();
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }
@@ -2807,6 +2808,9 @@ function startMission(args) {
   const warnings = [missingVerifierWarning(mission)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective });
+  const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
+    ? takeCodexGoalSlotForMission(saved, process.cwd())
+    : null;
   const memberState = renderMemberMissionState(saved.owner);
   const logPath = appendMemberLog(saved.owner, 'Mission started', {
     mission: saved.objective,
@@ -2817,7 +2821,7 @@ function startMission(args) {
   });
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
   printJsonOrText(
-    { ok: true, action: 'mission_started', mission: saved, warnings, state_path: statePaths().missionsJsonl, member_state: memberState, log_path: logPath, worktree_baseline: worktreeBaseline ? { path: path.relative(process.cwd(), missionBaselinePath(saved.id)), dirty_count: worktreeBaseline.dirty_count, dirty_hash: worktreeBaseline.dirty_hash } : null },
+    { ok: true, action: 'mission_started', mission: saved, warnings, goal_slot_handoff: goalSlotHandoff, state_path: statePaths().missionsJsonl, member_state: memberState, log_path: logPath, worktree_baseline: worktreeBaseline ? { path: path.relative(process.cwd(), missionBaselinePath(saved.id)), dirty_count: worktreeBaseline.dirty_count, dirty_hash: worktreeBaseline.dirty_hash } : null },
     [
       `Started mission: ${saved.objective}`,
       `Owner: ${saved.owner}`,
@@ -2932,6 +2936,9 @@ function startMissionFromRunObjective(objective, args) {
     ...(nativeGoalObjective ? { nativeGoalObjective } : {}),
     ...(hasFlag(args, '--allow-native-goal-supersede') || hasFlag(args, '--supersede-paused-native-goal') ? { allowNativeGoalSupersede: true } : {}),
   };
+  const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
+    ? takeCodexGoalSlotForMission(saved, process.cwd(), nativeGoalOptions)
+    : null;
   const atrisGoalState = refreshAtrisGoalController(process.cwd(), { missionId: saved.id });
   const codexGoalState = runnerUsesCallerSession(saved.runner)
     ? refreshCodexGoalController(process.cwd(), { missionId: saved.id, ...nativeGoalOptions })
@@ -2956,6 +2963,7 @@ function startMissionFromRunObjective(objective, args) {
       } : null,
       completed_continuation_goal: completedContinuationGoal,
       direct_goal_request: directGoalRequest,
+      goal_slot_handoff: goalSlotHandoff,
       atris_goal_state: atrisGoalState,
       codex_goal_state: codexGoalState,
       requires_native_goal_start: codexGoalState?.requires_native_goal_start === true || codexGoalState?.goal?.requires_native_goal_start === true,
@@ -4623,11 +4631,11 @@ function codexGoalObjective(mission) {
   return mission.objective;
 }
 
-function codexNativeGoalAck(mission, objective = codexGoalObjective(mission)) {
+function codexNativeGoalAck(mission) {
   const ack = mission?.native_goal_ack || null;
   if (!ack || String(ack.runtime || '').toLowerCase() !== 'codex') return null;
   if (ack.status !== 'active') return null;
-  if (String(ack.objective || '') !== String(objective || '')) return null;
+  if (ack.mission_id && String(ack.mission_id) !== String(mission?.id || '')) return null;
   return ack;
 }
 
@@ -4831,6 +4839,33 @@ function activeCodexVisibleGoalOwner(root = process.cwd(), excludeId = '', now =
     return missionSortTime(b) - missionSortTime(a);
   });
   return candidates[0] || null;
+}
+
+function pauseMissionRecord(mission, reason, root = process.cwd()) {
+  const next = {
+    ...mission,
+    status: 'paused',
+    paused_at: stampIso(),
+    stop_reason: reason,
+    next_action: `resume with: atris mission tick ${mission.id}`,
+  };
+  const { mission: saved } = saveMission(next, root, 'mission_paused', { reason, source: 'goal_slot_handoff' });
+  appendMemberLog(saved.owner, 'Mission paused', { mission: saved.objective, reason });
+  return saved;
+}
+
+function takeCodexGoalSlotForMission(newMission, root = process.cwd(), options = {}) {
+  if (!newMission || !isCodexGoalMission(newMission)) return null;
+  const runtimeGoalState = codexRuntimeGoalStateFromOptions(options);
+  const activeOwner = activeCodexVisibleGoalOwner(root, newMission.id, new Date(), runtimeGoalState);
+  if (!activeOwner) return null;
+  const reason = `visible goal replaced by ${newMission.id}`;
+  const paused = pauseMissionRecord(activeOwner, reason, root);
+  return {
+    paused_mission_id: paused.id,
+    paused_mission: missionStatusView(paused),
+    reason,
+  };
 }
 
 function codexGoalActiveConflictPayload(newMission, activeMission, request = null, heartbeatMode = false, runtimeGoalState = null) {
@@ -5131,7 +5166,7 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
   const taskSpine = missionTaskSpine(mission);
   const missionView = missionStatusView(mission);
   const objective = codexGoalObjective(mission);
-  const ack = codexNativeGoalAck(mission, objective);
+  const ack = codexNativeGoalAck(mission);
   const runtimeNeedsReplace = !ack && codexRuntimeGoalNeedsReplace(runtimeGoalState, objective);
   const nativeGoalAction = ack
     ? null
@@ -6750,16 +6785,15 @@ function ackMissionGoal(args) {
       releaseMissionLock(lock);
       exitMissionError(`Mission "${ref}" uses runner=${mission.runner || 'manual'}; native Codex goal ack is only for runner=codex_goal.`, 2, asJson);
     }
-    const expectedObjective = codexGoalObjective(mission);
-    const objective = readFlag(args, '--objective', expectedObjective);
-    if (objective !== expectedObjective) {
-      releaseMissionLock(lock);
-      exitMissionError(`Native goal objective mismatch. Expected: ${expectedObjective}`, 2, asJson);
-    }
+    const canonicalObjective = codexGoalObjective(mission);
+    const reportedObjective = readFlag(args, '--objective', canonicalObjective);
+    const objective = canonicalObjective;
     const ack = {
       runtime: 'codex',
       status: 'active',
+      mission_id: mission.id,
       objective,
+      ...(reportedObjective && reportedObjective !== objective ? { reported_objective: reportedObjective } : {}),
       acknowledged_at: stampIso(),
     };
     const nextMission = {
@@ -6875,7 +6909,7 @@ function help() {
   console.log(`
 atris mission - durable goal + loop + owner + proof state
 
-  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--xp-task] [--worktree]
+  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--xp-task] [--worktree] [--take-goal-slot]
                       [--runner manual|claude|atris2|codex_goal] [--model <id>]
                       (runner claude spawns local claude -p per tick, --model passes through;
                        runner atris2 runs each tick as one /atris2/turn on the AtrisOS backend,
@@ -6900,7 +6934,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
   atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
-                                [--native-goal-status active|paused] [--native-goal-objective "..."] [--allow-native-goal-supersede]
+                                [--native-goal-status active|paused] [--native-goal-objective "..."] [--allow-native-goal-supersede] [--take-goal-slot]
                                 [--spend-full-budget|--use-whole-budget|--stop-when-done] [--room-preflight|--no-room-preflight]
                                 [--room-auto-run|--no-room-auto-run]
                                 [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--create-next] [--json]
