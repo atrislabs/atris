@@ -98,6 +98,38 @@ test('diffWorkspaceSnapshots detects commits in any checkout and excludes pre-ex
   assert.deepStrictEqual(diff.changedRoots, ['/repo-wt/m1']);
 });
 
+test('diffWorkspaceSnapshots ignores the loop\'s own bookkeeping files', () => {
+  const before = { '/repo': { head: 'aaa', dirty: [] } };
+  const after = {
+    '/repo': { head: 'aaa', dirty: ['atris/runs/mission-x-receipt.json', '.atris/state/missions.jsonl', 'atris/logs/2026/2026-07-03.md', 'atris/status/now.md'] },
+  };
+  const diff = pulse.diffWorkspaceSnapshots('/repo', before, after);
+  assert.deepStrictEqual(diff.changedFiles, [], 'receipts/state/logs are not work');
+  assert.deepStrictEqual(diff.changedRoots, []);
+  // real work alongside bookkeeping still counts
+  after['/repo'].dirty.push('src/real-change.js');
+  const diff2 = pulse.diffWorkspaceSnapshots('/repo', before, after);
+  assert.deepStrictEqual(diff2.changedFiles, ['src/real-change.js']);
+});
+
+test('verifyOutcome treats a missing test script as unverifiable, not failed', () => {
+  const outcome = pulse.verifyOutcome({ status: 1, stdout: '', stderr: 'npm error Missing script: "test"' });
+  assert.strictEqual(outcome.passed, null);
+  assert.strictEqual(outcome.reason, 'verifier_missing');
+  // scoreTick: unverifiable work scores 0, never -1
+  assert.strictEqual(pulse.scoreTick({ verifyPassed: outcome.passed, producedWork: true }), 0);
+});
+
+test('verifyOutcome keeps an output tail for real failures and none for passes', () => {
+  const fail = pulse.verifyOutcome({ status: 1, stdout: 'x'.repeat(400) + '\n2 tests failed', stderr: '' });
+  assert.strictEqual(fail.passed, false);
+  assert.match(fail.detail, /2 tests failed/);
+  assert.ok(fail.detail.length <= 300);
+  const pass = pulse.verifyOutcome({ status: 0, stdout: 'all green', stderr: '' });
+  assert.strictEqual(pass.passed, true);
+  assert.strictEqual(pass.detail, null);
+});
+
 test('scoreTick punishes verify failure with -1', () => {
   assert.equal(pulse.scoreTick({ verifyPassed: false, producedWork: true }), -1);
 });

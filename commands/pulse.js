@@ -198,7 +198,8 @@ function runVerify(root, verifyCmd, timeoutMs = 600000) {
     timeout: timeoutMs,
     env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_AGENT_PROOF_ONLY: '0' },
   });
-  return { passed: r.status === 0, cmd: verifyCmd, status: r.status };
+  const outcome = pulse.verifyOutcome({ status: r.status, stdout: r.stdout, stderr: r.stderr });
+  return { passed: outcome.passed, cmd: verifyCmd, status: r.status, reason: outcome.reason, detail: outcome.detail };
 }
 
 // --- atris pulse tick ---
@@ -291,6 +292,7 @@ function tickCommand(args, root = process.cwd()) {
       actorDetail: engine.ok ? null : engine.detail || null,
       verifyCmd: verify.cmd,
       verifyPassed: verify.passed,
+      verifyDetail: verify.passed === true ? null : verify.detail || null,
       changedFiles,
       what,
       elapsedMs,
@@ -321,6 +323,7 @@ function tickCommand(args, root = process.cwd()) {
       actor_reason: engine.reason,
       actor_detail: engine.ok ? null : engine.detail || null,
       verify_passed: verify.passed,
+      verify_detail: verify.passed === true ? null : verify.detail || null,
       reward,
       scorecard_written: scorecardWritten,
       changed_files: changedFiles,
