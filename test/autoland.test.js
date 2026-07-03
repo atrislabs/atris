@@ -379,6 +379,32 @@ test('two passes from one actor cannot land until the tick independently re-runs
   }
 });
 
+test('tick drains the landing daily: landed branches reap themselves, once per day', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    // a branch with no commits ahead of master is residue — the exact thing
+    // that piles into "N overdue" on the boot banner when no human reaps
+    runGit(['branch', 'residue-branch'], repo);
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.reaped.branches, 1);
+    const branches = runGit(['branch', '--list', 'residue-branch'], repo);
+    assert.equal(branches.stdout.trim(), '');
+
+    // same day, second tick: the date gate holds, no second reap
+    const again = runCli(['autoland', 'tick', '--json'], repo);
+    const receipt2 = JSON.parse(again.stdout.trim().split('\n').pop());
+    assert.equal(receipt2.reaped, undefined);
+    const state = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'autoland.json'), 'utf8'));
+    assert.equal(state.last_reap_date, new Date().toISOString().slice(0, 10));
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('tick is a no-op when the policy is off', () => {
   const { base, repo } = makeTempRepo();
   try {

@@ -335,11 +335,34 @@ function runTick(root, args) {
       receipt.receipts_pruned = null;
     }
   }
+  // 6. once a day, drain the landing itself: back up (bundle + patches into
+  // .atris/salvage/) then clear branches already landed or past TTL, and
+  // their worktrees. Local-only — remote branches may back open PRs, and
+  // closing those is a human call. Its own date gate, not the digest hour,
+  // so a machine asleep at digest time still drains on its next tick.
+  // Without this the board grows until a human runs `atris land --reap`,
+  // which is exactly the chore autoland exists to remove.
+  if (state.last_reap_date !== today) {
+    try {
+      const { reap } = require('./land');
+      const reaped = reap(root, { remote: false, includeDetached: false });
+      receipt.reaped = {
+        branches: reaped.deletedBranches.length,
+        worktrees: reaped.removedWorktrees.length,
+        bundle: reaped.bundle,
+        patches: reaped.patches.length,
+      };
+    } catch (err) {
+      receipt.reap_error = String((err && err.message) || err).slice(0, 200);
+    }
+    state.last_reap_date = today;
+  }
   autoland.writeState(root, state);
 
   if (json) console.log(JSON.stringify(receipt));
   else {
-    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}`);
+    const reapNote = receipt.reaped ? `, reaped ${receipt.reaped.branches} landed/overdue branches` : '';
+    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}`);
   }
   return 0;
 }

@@ -149,12 +149,15 @@ function remoteHeads(root) {
 // Reap: salvage then delete everything landed (residue) or past TTL.
 // Salvage first, always: unlanded commits go into a git bundle, dirty
 // worktrees into patch files, so a reap is never a loss of work.
-function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRun = false, remote = true } = {}) {
+// includeDetached: detached-HEAD worktrees have no branch, so the salvage
+// bundle cannot cover their commits — unattended reaps (autoland) pass false
+// and leave them for a human reap.
+function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true } = {}) {
   const board = collectBoard(root, { ttlDays, base: baseOverride });
   const targets = board.branches.filter((b) => b.state === 'landed' || b.state === 'due');
   const targetNames = new Set(targets.map((b) => b.name));
   const worktreeTargets = board.worktrees.filter(
-    (w) => targetNames.has(w.branch) || w.state === 'detached' || (typeof w.ageDays === 'number' && w.ageDays > ttlDays)
+    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached') || (typeof w.ageDays === 'number' && w.ageDays > ttlDays)
   );
   for (const w of worktreeTargets) {
     if (w.branch && !targetNames.has(w.branch)) targetNames.add(w.branch);
