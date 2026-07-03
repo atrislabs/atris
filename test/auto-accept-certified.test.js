@@ -19,7 +19,7 @@ function reviewTask(overrides = {}) {
       agent_certified: true,
       agent_review_pass_count: 2,
       latest_agent_proof: 'npm run test:team-overall passed; git diff --check passed',
-      verify: 'npm run test:team-overall',
+      verify: 'node --check lib/auto-accept-certified.js',
       ...overrides.metadata,
     },
     review: {
@@ -40,20 +40,20 @@ function reviewTask(overrides = {}) {
 test('accepts certified review with two actors and meaningful proof', () => {
   const result = evaluateAutoAccept(reviewTask());
   assert.equal(result.eligible, true);
-  assert.equal(result.policy, '2_actors_2_passes');
+  assert.equal(result.policy, 'strict_verify');
 });
 
 test('strict verify missing points agents back to review chat', () => {
   const result = evaluateAutoAccept(reviewTask({
     metadata: { verify: '' },
-  }), { strictVerify: true });
+  }));
   assert.equal(result.eligible, false);
   assert.equal(result.reason, 'strict_verify_missing');
   assert.match(result.next_action, /metadata\.verify/);
   assert.equal(result.review_chat_command, 'atris task review-chat OBL-TEST --as codex-review');
 });
 
-test('accepts third pass even with one actor', () => {
+test('rejects three passes from a single actor: passes alone never land work', () => {
   const base = reviewTask();
   const result = evaluateAutoAccept({
     ...base,
@@ -61,8 +61,9 @@ test('accepts third pass even with one actor', () => {
     review: { ...base.review, agent_review_pass_count: 3 },
     events: [{ event_type: 'proof_ready', actor: 'codex' }],
   });
-  assert.equal(result.eligible, true);
-  assert.equal(result.policy, '3_passes');
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'needs_independent_reviewer');
+  assert.equal(result.builder, 'codex');
 });
 
 test('rejects denied tags and weak proof', () => {
@@ -124,10 +125,13 @@ test('allows merged proof that explains the rejected PR boundary terms', () => {
   const result = evaluateAutoAccept(reviewTask({
     metadata: { latest_agent_proof: proof, agent_review_pass_count: 3 },
     review: { proof, agent_review_pass_count: 3 },
-    events: [{ event_type: 'proof_ready', actor: 'codex' }],
+    events: [
+      { event_type: 'proof_ready', actor: 'codex' },
+      { event_type: 'reviewed', actor: 'validator' },
+    ],
   }));
   assert.equal(result.eligible, true);
-  assert.equal(result.policy, '3_passes');
+  assert.equal(result.policy, 'strict_verify');
 });
 
 test('rejects single actor with only two passes', () => {
@@ -135,7 +139,18 @@ test('rejects single actor with only two passes', () => {
     events: [{ event_type: 'proof_ready', actor: 'codex' }],
   }));
   assert.equal(result.eligible, false);
-  assert.match(result.reason, /second_reviewer_or_third_pass/);
+  assert.equal(result.reason, 'needs_independent_reviewer');
+});
+
+test('casing and spacing tricks do not fake a second reviewer', () => {
+  const result = evaluateAutoAccept(reviewTask({
+    events: [
+      { event_type: 'proof_ready', actor: 'codex' },
+      { event_type: 'reviewed', actor: ' Codex ' },
+    ],
+  }));
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'needs_independent_reviewer');
 });
 
 test('strict verify rejects compound shell commands', () => {

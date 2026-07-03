@@ -11,6 +11,7 @@ const { taskProofState, buildVerifiedProof } = require('../lib/task-proof');
 const { evaluateAutoAccept, parseVerifyCommand, runVerifyCommand, DENIED_TAGS } = require('../lib/auto-accept-certified');
 const { extractReceiptEvidence } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
+const reviewIntegrity = require('../lib/review-integrity');
 const {
   normalizeOwnerSlug,
   resolveFunctionalOwner: resolveFunctionalTaskOwner,
@@ -692,6 +693,9 @@ function certifiedReviewNextAction(nextTaskTitle) {
 }
 
 function proofBoundaryBlockedEvaluation(task) {
+  // strictVerify stays off here: this is a render-path probe for the boundary
+  // reason only, and the default-true strict mode would spawn the verify
+  // subprocess for every certified row just to draw the desk.
   const evaluation = evaluateAutoAccept(task, { strictVerify: false, minPasses: 0 });
   return evaluation && evaluation.reason === 'proof_unmerged_or_draft_pr_boundary'
     ? evaluation
@@ -5270,12 +5274,33 @@ function cmdList(args) {
   }
 }
 
+// judge != worker support: reserved system names (autoland-verifier and co)
+// can never be assumed via --as, and unknown names warn by default or fail
+// under ATRIS_ACTOR_VALIDATION=enforce. Only explicit --as values are
+// checked; the DEFAULT_OWNER fallback stays silent.
+function guardExplicitActor(command, value) {
+  if (typeof value !== 'string' || !value.trim()) return;
+  const check = reviewIntegrity.validateActor(value, { root: process.cwd() });
+  if (!check.ok) {
+    if (check.reason === 'reserved_actor') {
+      console.error(`${command}: reserved_actor: '${value}' is a system actor and cannot be used with --as`);
+    } else {
+      console.error(`${command}: actor_not_on_roster: '${value}' is not a workspace member or engine (actor validation is enforced)`);
+    }
+    process.exit(1);
+  }
+  if (check.reason === 'actor_not_on_roster' && check.mode === 'warn') {
+    console.error(`Warning: '${value}' is not a workspace member or engine; reviews under unknown names weaken the audit trail.`);
+  }
+}
+
 function cmdClaim(args) {
   const pos = positional(args);
   const id = pos[0];
   if (!id) {
     failTask('atris task claim', 'missing_id', 'id required');
   }
+  guardExplicitActor('atris task claim', flag(args, '--as'));
   const owner = flag(args, '--as') || DEFAULT_OWNER;
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -7879,6 +7904,7 @@ function cmdReady(args) {
   const lesson = flag(args, '--lesson') || '';
   const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
   const landing = landingFlags(args);
+  guardExplicitActor('atris task ready', flag(args, '--as'));
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
   const resultFields = {
     changed: textFlag(args, ['--changed', '--result', '--done']),
@@ -8183,6 +8209,7 @@ function stampCertifyVerifyMetadata(taskDb, db, taskId, actor, verify) {
   metadata.verify = metadata.verify || verify;
   metadata.certified_verified_at = new Date().toISOString();
   metadata.certified_verified_by = actor;
+  metadata.machine_verified = true;
   db.prepare(`
     UPDATE tasks
        SET metadata = ?,
@@ -8234,14 +8261,26 @@ function cmdCertifyVerified(args) {
     // something an executed second-actor check cannot cure. A row with two
     // passes from ONE actor is exactly what this command exists to cure —
     // "certified" alone is not landable.
+    // strictVerify stays off in this eligibility probe: certify-verified runs
+    // the check itself right below, and strict mode here would execute it a
+    // second time per row before the real run.
     const evaluation = evaluateAutoAccept(task, { strictVerify: false });
     if (evaluation.eligible) {
       results.push({ ref, action: 'skipped', reason: 'already_landable' });
       continue;
     }
-    const curable = ['not_agent_certified', 'needs_second_reviewer_or_third_pass', 'insufficient_review_passes'];
+    // proof_not_executed is curable by definition: this command re-runs the
+    // named check and replaces the free-text claim with executed evidence.
+    const curable = ['not_agent_certified', 'needs_independent_reviewer', 'needs_second_reviewer_or_third_pass', 'insufficient_review_passes', 'proof_not_executed'];
     if (!curable.includes(evaluation.reason)) {
       results.push({ ref, action: 'skipped', reason: evaluation.reason });
+      continue;
+    }
+    // judge != worker: the re-run only counts as an independent check when
+    // its actor is not the builder of the row it is judging.
+    const builder = reviewIntegrity.taskBuilder(task);
+    if (builder && reviewIntegrity.normalizeActor(actor) === builder) {
+      results.push({ ref, action: 'skipped', reason: 'verifier_is_builder' });
       continue;
     }
     const verify = certifyVerifyCandidate(task);
@@ -8324,7 +8363,7 @@ function cmdLanding(args) {
 
 function cmdAutoAcceptCertified(args) {
   const dryRun = hasFlag(args, '--dry-run');
-  const strictVerify = hasFlag(args, '--strict-verify');
+  const strictVerify = !hasFlag(args, '--no-strict-verify');
   const actorFlag = flag(args, '--as');
   const hasHumanActor = validHumanActorFlag(actorFlag);
   const confirmedHumanAccept = hasFlag(args, '--confirm-human-accept');
@@ -8507,6 +8546,7 @@ function cmdReview(args) {
   if (clearNextTask || (typeof nextTaskFlag === 'string' && !String(nextTaskFlag).trim())) clearedFields.push('next_task');
   const proof = proofFlagValue(args);
   const verify = textFlag(args, ['--verify']);
+  guardExplicitActor('atris task review', flag(args, '--as'));
   const actor = flag(args, '--as') || DEFAULT_OWNER;
   const rewardValue = reward === true || reward === null ? 0 : reward;
   if (agentProofOnlyMode() && Number(rewardValue) > 0) {
@@ -8544,7 +8584,11 @@ function cmdReview(args) {
     clearedFields,
   });
   if (!result.reviewed) {
-    console.error(`review failed: ${result.reason}`);
+    if (result.reason === 'judge_equals_worker') {
+      console.error(`review failed: judge_equals_worker: ${result.builder} built this task and cannot judge it. Hand off: atris task review ${id} --reward 1 --as <another member>`);
+    } else {
+      console.error(`review failed: ${result.reason}`);
+    }
     process.exit(1);
   }
   const nextCreated = createNextTaskIfRequested(taskDb, db, args, currentTask, result.episode.next_task_suggestion);

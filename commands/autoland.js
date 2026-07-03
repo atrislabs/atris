@@ -72,7 +72,7 @@ function landSummarySafe(root) {
 
 function evaluateQueue(root, { strictVerify }) {
   const cliArgs = ['task', 'auto-accept-certified', '--dry-run', '--json', '--limit', '50'];
-  if (strictVerify) cliArgs.push('--strict-verify');
+  if (strictVerify === false) cliArgs.push('--no-strict-verify');
   const result = runOwnCli(root, cliArgs);
   try {
     const parsed = JSON.parse(result.stdout);
@@ -92,6 +92,9 @@ function plainReason(reason) {
     denied_tag_feedback: 'customer feedback — yours to approve',
     denied_tag_voice: 'voice/comms — yours to approve',
     needs_second_reviewer_or_third_pass: 'needs one more independent check first',
+    needs_independent_reviewer: 'built and judged by the same actor, needs an independent check',
+    verifier_is_builder: 'the re-check actor built this row, another actor must re-check',
+    judge_equals_worker: 'built and judged by the same actor, hand the review to someone else',
     not_agent_certified: 'not certified yet',
     insufficient_review_passes: 'not enough review passes yet',
     strict_verify_missing: 'no recorded check command to re-run',
@@ -254,20 +257,18 @@ function runTick(root, args) {
   // each Review proof as a second actor. Without this the tick only lands rows
   // some always-on mission happened to certify, and everything else waits on a
   // human who never needed to look. Denied lanes and check-less proofs still wait.
-  if (policy.drain_reviews !== false) {
-    const certify = runOwnCli(root, ['task', 'certify-verified', '--json']);
-    try {
-      const parsed = JSON.parse(certify.stdout);
-      receipt.reviews_certified = parsed.certified ?? 0;
-      if (parsed.ok !== true) receipt.certify_error = 'certify-verified failed';
-    } catch {
-      receipt.certify_error = certify.stderr.slice(0, 200) || 'certify-verified output unreadable';
-    }
+  const certify = runOwnCli(root, ['task', 'certify-verified', '--json']);
+  try {
+    const parsed = JSON.parse(certify.stdout);
+    receipt.reviews_certified = parsed.certified ?? 0;
+    if (parsed.ok !== true) receipt.certify_error = 'certify-verified failed';
+  } catch {
+    receipt.certify_error = certify.stderr.slice(0, 200) || 'certify-verified output unreadable';
   }
 
   // 2. land what is eligible — the policy is the standing authorization
   const cliArgs = ['task', 'auto-accept-certified', '--json', '--limit', '12'];
-  if (policy.strict_verify !== false) cliArgs.push('--strict-verify');
+  if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
   const accept = runOwnCli(root, cliArgs);
   try {
     const parsed = JSON.parse(accept.stdout);

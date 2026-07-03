@@ -4336,6 +4336,12 @@ function resolveVerifierCommand(command) {
   return `${leading}${shellQuote(process.execPath)} ${shellQuote(cliPath)}${trimmed.slice('atris'.length)}`;
 }
 
+function missionVerifierTimeoutMs(env = process.env) {
+  const parsed = Number(env.ATRIS_MISSION_VERIFIER_TIMEOUT_MS);
+  if (Number.isFinite(parsed) && parsed >= 1000) return Math.floor(parsed);
+  return 120000;
+}
+
 function runVerifier(command, root = process.cwd()) {
   if (!command) return null;
   const resolvedCommand = resolveVerifierCommand(command);
@@ -4343,7 +4349,7 @@ function runVerifier(command, root = process.cwd()) {
     cwd: root,
     shell: true,
     encoding: 'utf8',
-    timeout: 120000,
+    timeout: missionVerifierTimeoutMs(),
     env: process.env,
   });
   return {
@@ -5706,6 +5712,25 @@ function consecutiveSameReasonErrors(ticks) {
   return { reason: last.reason, count };
 }
 
+function isTransientAtris2BackendError(error) {
+  const text = String(error || '');
+  if (!text) return false;
+  return /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT|EPIPE)\b/i.test(text)
+    || /\b(?:socket hang up|request timeout|no response headers|stream stalled)\b/i.test(text)
+    || /\bHTTP\s+(?:502|503|504|522|523|524)\b/i.test(text)
+    // A stopped AtrisOS computer answers 409 "Computer must be running": the
+    // backend will come back, so the mission keeps waiting instead of pausing.
+    || (/\bHTTP\s+409\b/i.test(text) && /computer must be running/i.test(text));
+}
+
+function atris2TurnErrorReason(error) {
+  return isTransientAtris2BackendError(error) ? 'atris2-backend-unavailable' : 'atris2-error';
+}
+
+function missionRunKeepsRetryingError(reason) {
+  return reason === 'atris2-backend-unavailable';
+}
+
 function isWithinActiveHours(activeHours, now = new Date()) {
   if (!activeHours || !activeHours.start || !activeHours.end) return true;
   const tz = activeHours.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -6272,12 +6297,13 @@ async function runMission(args) {
           unsupported: turn.unsupported,
           duration_ms: turn.duration_ms,
           error: turn.error,
+          backend_unavailable: isTransientAtris2BackendError(turn.error) || undefined,
           receipt_text: String(turn.text || '').slice(0, 4000),
         };
         if (controller.signal.aborted) { pauseReason = 'aborted-during-atris2'; break; }
         if (turn.error === 'not-logged-in') { pauseReason = 'auth-required'; break; }
         if (!turn.ok || !String(turn.text || '').trim()) {
-          result = { ...result, status: 'errored', reason: 'atris2-error' };
+          result = { ...result, status: 'errored', reason: atris2TurnErrorReason(turn.error) };
         } else {
           result = { ...result, status: 'ran', reason: 'tick-ok', ran: true };
         }
@@ -6498,7 +6524,9 @@ async function runMission(args) {
       // is the same trap one step less deterministic: keep retrying and the loop burns every
       // tick + cron firing on it. Halt at two-in-a-row and surface the reason for a human.
       const errStreak = consecutiveSameReasonErrors(ticks);
-      if (errStreak.count >= 2) { pauseReason = `repeated-error:${errStreak.reason}`; break; }
+      // Sleeping Atris2 backends are different: leave the mission running so the
+      // next tick or heartbeat can catch the backend after it wakes.
+      if (errStreak.count >= 2 && !missionRunKeepsRetryingError(errStreak.reason)) { pauseReason = `repeated-error:${errStreak.reason}`; break; }
 
       // Sleep until next tick
       let sleepMs = 0;
@@ -6521,7 +6549,7 @@ async function runMission(args) {
 
     if (!pauseReason && ticks.length >= effectiveMaxTicks) {
       const lastTick = ticks[ticks.length - 1];
-      if (lastTick && lastTick.status !== 'ran') pauseReason = 'max-ticks-reached';
+      if (lastTick && lastTick.status !== 'ran' && !missionRunKeepsRetryingError(lastTick.reason)) pauseReason = 'max-ticks-reached';
     }
 
     if (pauseReason && !['complete', 'ready', 'max-wall-reached'].includes(pauseReason)) {
@@ -7666,4 +7694,5 @@ module.exports = {
   releaseMissionLock,
   lockHolderIsDead,
   consecutiveSameReasonErrors,
+  missionVerifierTimeoutMs,
 };

@@ -147,3 +147,41 @@ test('boot panel falls back to TODO.md parse when no task DB exists', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('boot panel shows rot counts for stale worktrees and unresolved lessons', () => {
+  const base = makeTempDir();
+  const dir = path.join(base, 'myrepo');
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(base, '.agent-worktrees', 'myrepo', 'agent-one'), { recursive: true });
+    fs.mkdirSync(path.join(base, '.agent-worktrees', 'myrepo', 'agent-two'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'lessons.md'), [
+      '- **[2026-04-01] open-lesson** — fail — Still broken.',
+      '- **[2026-04-02] closed-lesson** — pass — [resolved] Fixed.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const boot = runCli(['atris.md'], { cwd: dir });
+    assert.equal(boot.status, 0, boot.stderr);
+    assert.match(boot.stdout, /rot:\s+2 stale worktrees, 1 unresolved lesson/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('boot panel hides rot line when worktrees and lessons are clean', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'lessons.md'), [
+      '- **[2026-04-02] closed-lesson** — pass — [resolved] Fixed.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const boot = runCli(['atris.md'], { cwd: dir });
+    assert.equal(boot.status, 0, boot.stderr);
+    assert.doesNotMatch(boot.stdout, /rot:/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

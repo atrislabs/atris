@@ -606,6 +606,11 @@ function showHelp() {
   console.log('  accounts   - Manage accounts (list, add, remove)');
   console.log('');
   console.log('Integrations:');
+  console.log('  github    - github cli wrapper (doctor, auth, pr list/create/checks/view)');
+  console.log('  vercel    - vercel cli wrapper (doctor, auth, deploy/ls/logs/inspect)');
+  console.log('  supabase  - supabase cli wrapper (doctor, auth, status/db/functions)');
+  console.log('  linear    - linear cli wrapper (doctor, auth, issue list/create/view/update)');
+  console.log('  stripe    - stripe cli wrapper (doctor, auth, listen/trigger/products)');
   console.log('  gmail      - Email commands (inbox, read, archive)');
   console.log('  calendar   - Calendar commands (today, week)');
   console.log('  twitter    - Twitter commands (post)');
@@ -975,7 +980,7 @@ const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'stat
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
-                       'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
+                       'github', 'vercel', 'supabase', 'linear', 'stripe', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -1435,6 +1440,41 @@ function showWelcomeVisualization() {
     if (landInfo && landInfo.branches > 0) {
       const landText = `${landInfo.branches} in the air, ${landInfo.due} overdue`;
       console.log(`    │   🛬 Land:    ${landText.padEnd(26)}│`);
+    }
+    let rotInfo = null;
+    try {
+      const { parseLessons } = require('../lib/memory-view');
+      const resolved = path.resolve(cwd);
+      const parent = path.dirname(resolved);
+      const grandparent = path.dirname(parent);
+      let worktreeDir;
+      if (path.basename(grandparent) === '.agent-worktrees') {
+        worktreeDir = parent;
+      } else {
+        worktreeDir = path.join(path.dirname(resolved), '.agent-worktrees', path.basename(resolved));
+      }
+      let worktrees = 0;
+      if (fs.existsSync(worktreeDir)) {
+        worktrees = fs.readdirSync(worktreeDir, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory()).length;
+      }
+      let lessonsText = '';
+      try {
+        lessonsText = fs.readFileSync(path.join(atrisDir, 'lessons.md'), 'utf8');
+      } catch (err) {
+        lessonsText = '';
+      }
+      const unresolvedLessons = parseLessons(lessonsText)
+        .filter((lesson) => !lesson.resolved && !/\[resolved\]/i.test(lesson.text)).length;
+      if (worktrees > 0 || unresolvedLessons > 0) {
+        rotInfo = { worktrees, lessons: unresolvedLessons };
+      }
+    } catch (err) {
+      rotInfo = null;
+    }
+    if (rotInfo) {
+      const rotText = `${rotInfo.worktrees} stale worktree${rotInfo.worktrees === 1 ? '' : 's'}, ${rotInfo.lessons} unresolved lesson${rotInfo.lessons === 1 ? '' : 's'}`;
+      console.log(`    │   🧹 rot:      ${rotText.padEnd(26)}│`);
     }
     console.log(`    │   📝 Journal: ${(journalEntries + ' entries today').padEnd(26)}│`);
     if (endgameState.slug !== 'unset' && endgameState.horizon) {
@@ -2126,6 +2166,21 @@ if (command === 'init') {
   require('../commands/gm').gmCommand(...process.argv.slice(3))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'github') {
+  const status = require('../commands/github').githubCommand(process.argv.slice(3));
+  process.exit(status);
+} else if (command === 'vercel') {
+  const status = require('../commands/vercel').vercelCommand(process.argv.slice(3));
+  process.exit(status);
+} else if (command === 'supabase') {
+  const status = require('../commands/supabase').supabaseCommand(process.argv.slice(3));
+  process.exit(status);
+} else if (command === 'linear') {
+  const status = require('../commands/linear').linearCommand(process.argv.slice(3));
+  process.exit(status);
+} else if (command === 'stripe') {
+  const status = require('../commands/stripe').stripeCommand(process.argv.slice(3));
+  process.exit(status);
 } else if (command === 'gmail') {
   const { gmailCommand } = require('../commands/integrations');
   const subcommand = process.argv[3];

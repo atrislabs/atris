@@ -158,6 +158,29 @@ test('operatorReady: a queue sentence earns its digest surface with a why, no ag
   assert.ok(!operatorReady('CLI-788 failed because the continuation stopped'));
 });
 
+test('clarify: the gate strips agent jargon and closes the thought before an operator reads it', () => {
+  const { clarify } = autoland;
+  // Flag dashes, task ids, and snake_case are what an operator cannot act on;
+  // the gate removes them so a borrowed title reads as plain language.
+  const cleaned = clarify('CLI-844 add --inspect flag so agent_state parsers stop burning tokens');
+  assert.doesNotMatch(cleaned, /CLI-\d+/);
+  assert.doesNotMatch(cleaned, /--[a-z]/);
+  assert.doesNotMatch(cleaned, /[a-z]_[a-z]/);
+  assert.match(cleaned, /inspect flag/);
+  assert.match(cleaned, /agent state parsers/);
+  // A cleaned title with a real why now passes the operator gate it failed raw.
+  assert.ok(!autoland.operatorReady('Add --inspect flag so users save time'));
+  assert.ok(autoland.operatorReady(clarify('Add --inspect flag so users save time')));
+  // Long lines close on a whole clause inside the budget: the sentence ends at
+  // its last complete clause, reads whole, and drops no ellipsis mid-thought.
+  const long = clarify('Cache the workspace scan so slow boot stops making every demo start with an apology, which costs trust', 95);
+  assert.ok(long.endsWith('apology'), long);
+  assert.doesNotMatch(long, /which costs trust/);
+  assert.doesNotMatch(long, /\.\.\.$/);
+  // A clean sentence passes through untouched.
+  assert.equal(clarify('Slow boot makes every demo start with an apology'), 'Slow boot makes every demo start with an apology');
+});
+
 test('live update: a landing texts its capability sentence the moment it lands', () => {
   const tasks = [
     { display_id: 'CLI-1', title: 'Fix onboarding', claimed_by: 'onboarding', metadata: { landing_happened: 'A new user now reaches task setup before any proof tick, so Atris avoids a fake first receipt.' } },
@@ -332,12 +355,32 @@ test('tick certifies proof-backed reviews by re-running their check, then lands 
   }
 });
 
-test('two passes from one actor still get the independent check and land', () => {
+test('tick still certifies when policy contains drain_reviews false', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const id = proofBackedTask(repo, 'Drain reviews ignored', { tag: 'code' });
+    autoland.writePolicy(repo, {
+      enabled: true,
+      enabled_by: 'keshav',
+      strict_verify: false,
+      drain_reviews: false,
+    });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.reviews_certified, 1);
+    assert.deepEqual(receipt.landed, [id]);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('two passes from one actor cannot land until the tick independently re-runs the check', () => {
   const { base, repo } = makeTempRepo();
   try {
     const id = proofBackedTask(repo, 'Same reviewer twice', { tag: 'code' });
-    // second pass by the SAME actor: certified-looking but not landable
-    // (needs_second_reviewer_or_third_pass) until a distinct actor re-runs the check
+    // second pass by the SAME actor: not certified and not landable
+    // (needs_independent_reviewer) until a distinct actor re-runs the check
     const proof = 'Command passed: git diff --check. Evidence inspected: clean tree, change verified in place.';
     assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'builder'], repo).status, 0);
 

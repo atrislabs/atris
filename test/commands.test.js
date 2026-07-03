@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
-const { acceptedInLastDay, writePolicy: writeAutolandPolicy } = require('../lib/autoland');
+const { acceptedInLastDay, writePolicy, writePolicy: writeAutolandPolicy } = require('../lib/autoland');
 const taskStore = require('../lib/task-db');
 const { branchName, cleanupWorktrees, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
@@ -12070,6 +12070,7 @@ test('task auto-accept-certified requires explicit human confirmation when autol
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    writePolicy(dir, { enabled: false, enabled_by: 'test' });
     const add = runCli(['task', 'add', 'Auto accept still needs a human', '--tag', 'agent-xp', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;
@@ -12104,27 +12105,19 @@ test('task auto-accept-certified requires explicit human confirmation when autol
     assert.equal(preview.status, 0, preview.stderr);
     const previewPayload = JSON.parse(preview.stdout);
     assert.equal(previewPayload.action, 'auto_accept_certified_dry_run');
-    assert.equal(previewPayload.summary.would_accept, 1);
+    assert.equal(previewPayload.summary.would_accept, 0);
     assert.equal(previewPayload.scanned, previewPayload.summary.scanned);
     assert.equal(previewPayload.accepted, previewPayload.summary.accepted);
     assert.equal(previewPayload.would_accept, previewPayload.summary.would_accept);
     assert.equal(previewPayload.skipped, previewPayload.summary.skipped);
     assert.equal(previewPayload.failed, previewPayload.summary.failed);
-    assert.equal(previewPayload.results[0].action, 'would_accept');
+    assert.equal(previewPayload.results[0].action, 'skipped');
+    assert.equal(previewPayload.results[0].reason, 'strict_verify_missing');
+    assert.match(previewPayload.results[0].next_action, /metadata\.verify/);
+    assert.equal(previewPayload.results[0].review_chat_command, `atris task review-chat ${ref} --as codex-review`);
     assert.equal(JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout).status, 'review');
 
-    const strictPreview = runCli(['task', 'auto-accept-certified', '--dry-run', '--strict-verify', '--json'], { cwd: dir, env });
-    assert.equal(strictPreview.status, 0, strictPreview.stderr);
-    const strictPayload = JSON.parse(strictPreview.stdout);
-    assert.equal(strictPayload.summary.would_accept, 0);
-    assert.equal(strictPayload.summary.skipped, 1);
-    assert.equal(strictPayload.would_accept, 0);
-    assert.equal(strictPayload.skipped, 1);
-    assert.equal(strictPayload.results[0].reason, 'strict_verify_missing');
-    assert.match(strictPayload.results[0].next_action, /metadata\.verify/);
-    assert.equal(strictPayload.results[0].review_chat_command, `atris task review-chat ${ref} --as codex-review`);
-
-    const strictText = runCli(['task', 'auto-accept-certified', '--dry-run', '--strict-verify'], { cwd: dir, env });
+    const strictText = runCli(['task', 'auto-accept-certified', '--dry-run'], { cwd: dir, env });
     assert.equal(strictText.status, 0, strictText.stderr);
     assert.match(strictText.stdout, /SKIPPED .*strict_verify_missing/);
     assert.match(strictText.stdout, /next_action=.*metadata\.verify/);
