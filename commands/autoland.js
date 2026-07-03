@@ -218,6 +218,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
     landed: landSummarySafe(root),
     project: projectName(root),
     nextMoves: digestNextMoves(root),
+    acceptAll: Boolean(policy.accept_all),
   });
   console.log(text);
   // the full story: what each piece actually was, in its own words
@@ -324,6 +325,7 @@ function runTick(root, args) {
       landed: landSummarySafe(root),
       project: projectName(root),
       nextMoves: digestNextMoves(root),
+      acceptAll: Boolean(policy.accept_all),
     });
     if (policy.imessage_to) {
       const sent = autoland.sendImessage(root, policy.imessage_to, text);
