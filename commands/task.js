@@ -8,7 +8,7 @@ const http = require('http');
 const path = require('path');
 const os = require('os');
 const { taskProofState, buildVerifiedProof } = require('../lib/task-proof');
-const { evaluateAutoAccept, parseVerifyCommand, runVerifyCommand, DENIED_TAGS } = require('../lib/auto-accept-certified');
+const { evaluateAutoAccept, isAgentCertified, parseVerifyCommand, runVerifyCommand, DENIED_TAGS } = require('../lib/auto-accept-certified');
 const { extractReceiptEvidence } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const reviewIntegrity = require('../lib/review-integrity');
@@ -8333,7 +8333,17 @@ function cmdAutoAcceptCertified(args) {
     : { ok: false };
   const actor = String(actorFlag || (policyAuth.ok ? policyAuth.actor : 'auto-accept-certified'));
   const limitRaw = flag(args, '--limit');
-  const max = limitRaw && limitRaw !== true ? Math.max(1, Number(limitRaw) || 12) : 12;
+  const hasExplicitLimit = Boolean(limitRaw) && limitRaw !== true;
+  // --all means sweep the full certified backlog, not just the first page of
+  // it. Before this fix `max` was hard-capped at 12 even under --all, so a
+  // real backlog (78 certified rows observed live) only ever drained 12/run —
+  // an invisible undercount the autoland heartbeat repeated every hour.
+  // AUTO_ACCEPT_ALL_SWEEP_CAP is a safety ceiling, not a target: a well-formed
+  // --all run should always scan fewer rows than this.
+  const AUTO_ACCEPT_ALL_SWEEP_CAP = 500;
+  const max = hasExplicitLimit
+    ? Math.max(1, Number(limitRaw) || 12)
+    : (acceptAll ? AUTO_ACCEPT_ALL_SWEEP_CAP : 12);
   const parsedReward = parseAcceptReward(flag(args, '--reward'));
   if (!parsedReward.ok) {
     console.error('atris task auto-accept-certified: reward must be a positive number');
@@ -8364,11 +8374,17 @@ function cmdAutoAcceptCertified(args) {
   const db = taskDb.open();
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const queue = taskReviewQueue(projection, ['--limit', String(max)]);
+  const pendingReview = (projection.tasks || [])
+    .filter((t) => t && t.status === 'review' && t.review && t.review.approval_status === 'pending');
+  // Honest denominator for the summary line below: how many rows the
+  // projection actually certified, independent of any scan cap. If `scanned`
+  // ever comes in under `certified`, the undercount is visible instead of
+  // silent (the exact failure mode this fix closes).
+  const certifiedTotal = pendingReview.filter((t) => isAgentCertified(t)).length;
   // The review queue only surfaces certified rows. Under --all the bar is
   // the protected lanes, not certification, so scan every pending review.
   const pool = acceptAll
-    ? (projection.tasks || [])
-      .filter((t) => t && t.status === 'review' && t.review && t.review.approval_status === 'pending')
+    ? pendingReview
       .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
       .slice(0, max)
     : queue.items;
@@ -8413,11 +8429,17 @@ function cmdAutoAcceptCertified(args) {
 
   const { projection: finalProjection, outPath: finalPath } = writeDefaultProjection(taskDb, db);
   const summary = {
+    certified: certifiedTotal,
     scanned: pool.length,
     accepted: results.filter(row => row.action === 'accepted').length,
     would_accept: results.filter(row => row.action === 'would_accept').length,
     skipped: results.filter(row => row.action === 'skipped').length,
     failed: results.filter(row => row.action === 'accept_failed').length,
+    // Visible undercount flag: true only if the pool was cut short by `max`
+    // while certified rows still existed beyond it. --all uses a high safety
+    // cap (AUTO_ACCEPT_ALL_SWEEP_CAP), so this should stay false in practice;
+    // if it ever flips true, the cap itself needs raising, not silence.
+    undercounted: certifiedTotal > pool.length,
   };
   if (wantsJson(args)) {
     printJson({
@@ -8434,7 +8456,7 @@ function cmdAutoAcceptCertified(args) {
     return;
   }
   console.log(`AUTO-ACCEPT CERTIFIED (${dryRun ? 'dry-run' : 'execute'})`);
-  console.log(`${summary.accepted || summary.would_accept} accepted / ${summary.skipped} skipped / ${summary.failed} failed / ${summary.scanned} scanned`);
+  console.log(`${summary.certified} certified, ${summary.scanned} scanned, ${summary.accepted || summary.would_accept} accepted, ${summary.skipped} skipped${summary.failed ? `, ${summary.failed} failed` : ''}${summary.undercounted ? ' (UNDERCOUNTED — raise --limit or the sweep cap)' : ''}`);
   for (const row of results) {
     const nextAction = row.next_action ? ` next_action=${row.next_action}` : '';
     const reviewChat = row.review_chat_command ? ` review_chat=${row.review_chat_command}` : '';

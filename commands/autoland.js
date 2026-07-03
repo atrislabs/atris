@@ -272,14 +272,23 @@ function runTick(root, args) {
     receipt.certify_error = certify.stderr.slice(0, 200) || 'certify-verified output unreadable';
   }
 
-  // 2. land what is eligible — the policy is the standing authorization
-  const cliArgs = ['task', 'auto-accept-certified', '--json', '--limit', '12'];
+  // 2. land what is eligible — the policy is the standing authorization.
+  // No hardcoded --limit here: a fixed low cap (this used to be 12) silently
+  // undercounts a real backlog every single tick — 12/hour forever even with
+  // 78 certified rows waiting. Let `atris task auto-accept-certified` apply
+  // its own default (12 without --all, a high safety cap under --all) so a
+  // policy with accept_all:true actually drains the full certified set.
+  const cliArgs = ['task', 'auto-accept-certified', '--json'];
   if (policy.accept_all) cliArgs.push('--all');
   else if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
   const accept = runOwnCli(root, cliArgs);
   try {
     const parsed = JSON.parse(accept.stdout);
     receipt.landed = (parsed.results || []).filter((r) => r.action === 'accepted').map((r) => r.ref);
+    receipt.certified = parsed.certified ?? null;
+    receipt.scanned = parsed.scanned ?? null;
+    receipt.skipped = parsed.skipped ?? null;
+    receipt.undercounted = Boolean(parsed.undercounted);
   } catch (err) {
     receipt.accept_error = accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
   }
