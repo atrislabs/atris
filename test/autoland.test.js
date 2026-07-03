@@ -405,6 +405,32 @@ test('tick drains the landing daily: landed branches reap themselves, once per d
   }
 });
 
+test('accept_all policy: uncertified work lands on the tick, protected lanes wait', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    // one pass, one actor, no runnable check — never lands under the certified bar
+    const created = runCli(['task', 'new', 'Loose bar lands this', '--tag', 'code', '--json'], repo);
+    const id = String(JSON.parse(created.stdout).task?.display_id);
+    assert.equal(runCli(['task', 'claim', id, '--as', 'builder'], repo).status, 0);
+    assert.equal(runCli(['task', 'ready', id, '--proof', 'Receipt saved at atris/runs/demo-receipt.json, reviewed the rendered output end to end.', '--as', 'builder'], repo).status, 0);
+    const billingTask = certifiedTask(repo, 'Wire the vendor payment', { tag: 'billing' });
+
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', accept_all: true });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.ok(receipt.landed.includes(id), `expected ${id} in ${JSON.stringify(receipt.landed)}`);
+    assert.ok(!receipt.landed.includes(billingTask));
+
+    const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    const byRef = Object.fromEntries(projection.tasks.map((t) => [t.display_id, t]));
+    assert.equal(byRef[id].status, 'done');
+    assert.equal(byRef[billingTask].status, 'review');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('tick is a no-op when the policy is off', () => {
   const { base, repo } = makeTempRepo();
   try {

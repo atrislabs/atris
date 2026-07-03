@@ -134,7 +134,7 @@ atris task - durable local task state (SQLite, gitignored)
                                            Human accepts proof, marks done; --public also publishes AgentXP
   atris task certify-verified [--dry-run] [--limit <n>] [--as <actor>]
                                            Re-run the runnable check named in each Review proof as a second actor; passing rows certify (denied lanes and check-less rows wait for a human)
-  atris task auto-accept-certified --dry-run [--strict-verify] [--limit <n>]
+  atris task auto-accept-certified --dry-run [--strict-verify] [--all] [--limit <n>]
                                            Preview certified Review rows; live accept needs --confirm-human-accept --as <human>
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
@@ -8319,7 +8319,8 @@ function cmdLanding(args) {
 
 function cmdAutoAcceptCertified(args) {
   const dryRun = hasFlag(args, '--dry-run');
-  const strictVerify = !hasFlag(args, '--no-strict-verify');
+  const acceptAll = hasFlag(args, '--all');
+  const strictVerify = !hasFlag(args, '--no-strict-verify') && !acceptAll;
   const actorFlag = flag(args, '--as');
   const hasHumanActor = validHumanActorFlag(actorFlag);
   const confirmedHumanAccept = hasFlag(args, '--confirm-human-accept');
@@ -8363,16 +8364,24 @@ function cmdAutoAcceptCertified(args) {
   const db = taskDb.open();
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const queue = taskReviewQueue(projection, ['--limit', String(max)]);
+  // The review queue only surfaces certified rows. Under --all the bar is
+  // the protected lanes, not certification, so scan every pending review.
+  const pool = acceptAll
+    ? (projection.tasks || [])
+      .filter((t) => t && t.status === 'review' && t.review && t.review.approval_status === 'pending')
+      .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
+      .slice(0, max)
+    : queue.items;
   const results = [];
 
-  for (const item of queue.items) {
+  for (const item of pool) {
     const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
     const task = fullProjection.tasks[0] || null;
     if (!task) {
       results.push({ ref: item.display_id || item.id, eligible: false, reason: 'task_not_found', action: 'skipped' });
       continue;
     }
-    const evaluation = evaluateAutoAccept(task, strictVerify ? {} : { strictVerify: false });
+    const evaluation = evaluateAutoAccept(task, { strictVerify, acceptAll });
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped' });
       continue;
@@ -8404,7 +8413,7 @@ function cmdAutoAcceptCertified(args) {
 
   const { projection: finalProjection, outPath: finalPath } = writeDefaultProjection(taskDb, db);
   const summary = {
-    scanned: queue.items.length,
+    scanned: pool.length,
     accepted: results.filter(row => row.action === 'accepted').length,
     would_accept: results.filter(row => row.action === 'would_accept').length,
     skipped: results.filter(row => row.action === 'skipped').length,
@@ -8415,6 +8424,7 @@ function cmdAutoAcceptCertified(args) {
       ok: true,
       action: dryRun ? 'auto_accept_certified_dry_run' : 'auto_accept_certified',
       strict_verify: strictVerify,
+      accept_all: acceptAll,
       summary,
       ...summary,
       results,

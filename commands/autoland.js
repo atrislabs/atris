@@ -70,9 +70,10 @@ function landSummarySafe(root) {
   }
 }
 
-function evaluateQueue(root, { strictVerify }) {
+function evaluateQueue(root, { strictVerify, acceptAll }) {
   const cliArgs = ['task', 'auto-accept-certified', '--dry-run', '--json', '--limit', '50'];
-  if (strictVerify === false) cliArgs.push('--no-strict-verify');
+  if (acceptAll) cliArgs.push('--all');
+  else if (strictVerify === false) cliArgs.push('--no-strict-verify');
   const result = runOwnCli(root, cliArgs);
   try {
     const parsed = JSON.parse(result.stdout);
@@ -109,7 +110,8 @@ function showStatus(root, args) {
   const policy = autoland.readPolicy(root);
   const enabled = Boolean(policy && policy.enabled);
   const strictVerify = policy ? policy.strict_verify !== false : true;
-  const results = evaluateQueue(root, { strictVerify })
+  const acceptAll = Boolean(policy && policy.accept_all);
+  const results = evaluateQueue(root, { strictVerify, acceptAll })
     .filter((r) => r.reason !== 'not_in_review');
   const wouldLand = results.filter((r) => r.action === 'would_accept');
   const blocked = results.filter((r) => r.action !== 'would_accept');
@@ -132,6 +134,7 @@ function showStatus(root, args) {
   console.log(`autoland — certified work lands itself; you keep the irreversible calls`);
   console.log('');
   console.log(`  policy: ${enabled ? (policy.default ? `on by default (accepting as ${policy.enabled_by}; opt out: atris autoland off)` : `on (flipped by ${policy.enabled_by}${policy.enabled_at ? ` on ${String(policy.enabled_at).slice(0, 10)}` : ''})`) : 'off — everything waits for you'}`);
+  if (enabled && acceptAll) console.log('  bar: everything lands except the protected lanes (money, deploys, security, customer, outward)');
   console.log(`  heartbeat: ${autoland.cronInstalled(root) ? 'running hourly' : 'not installed'}`);
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
   console.log('');
@@ -166,6 +169,7 @@ function turnOn(root, args) {
   const to = flag(args, '--to', '');
   const digestHour = Number(flag(args, '--digest-hour', autoland.DEFAULT_DIGEST_HOUR));
   const alarmHours = Number(flag(args, '--alarm-hours', autoland.DEFAULT_ALARM_HOURS));
+  const acceptAll = args.includes('--all');
   const policy = autoland.writePolicy(root, {
     enabled: true,
     enabled_by: owner,
@@ -174,11 +178,13 @@ function turnOn(root, args) {
     digest_hour: Number.isFinite(digestHour) ? digestHour : autoland.DEFAULT_DIGEST_HOUR,
     alarm_hours: Number.isFinite(alarmHours) && alarmHours > 0 ? alarmHours : autoland.DEFAULT_ALARM_HOURS,
     strict_verify: !args.includes('--no-strict-verify'),
+    accept_all: acceptAll,
   });
   const cronOk = autoland.installCron(root);
   console.log('');
   console.log('autoland is on.');
-  console.log(`  certified, verified, reversible work now lands itself, accepted as ${owner}.`);
+  if (acceptAll) console.log(`  everything in review now lands itself, accepted as ${owner} — only the protected lanes wait.`);
+  else console.log(`  certified, verified, reversible work now lands itself, accepted as ${owner}.`);
   console.log('  protected lanes (money, deploys, security, customer, outward) still wait for you.');
   console.log(`  heartbeat: ${cronOk ? 'installed, runs hourly' : 'could not install cron — run atris autoland tick yourself'}`);
   if (policy.imessage_to) {
@@ -267,7 +273,8 @@ function runTick(root, args) {
 
   // 2. land what is eligible — the policy is the standing authorization
   const cliArgs = ['task', 'auto-accept-certified', '--json', '--limit', '12'];
-  if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
+  if (policy.accept_all) cliArgs.push('--all');
+  else if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
   const accept = runOwnCli(root, cliArgs);
   try {
     const parsed = JSON.parse(accept.stdout);
@@ -379,6 +386,9 @@ function showHelp() {
   console.log('  atris autoland on [--to <phone>]   flip it on: hourly heartbeat, daily');
   console.log('                                     message, ping when something waits');
   console.log('                                     on you past 24h');
+  console.log('  atris autoland on --all            lower the bar: everything lands except');
+  console.log('                                     the protected lanes; a failing recorded');
+  console.log('                                     check still blocks');
   console.log('  atris autoland off                 back to approving every item');
   console.log('  atris autoland digest [--send]     the daily message, now');
   console.log('  atris autoland tick [--json]       one heartbeat (what the hourly cron runs)');
