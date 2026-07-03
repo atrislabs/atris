@@ -1,0 +1,40 @@
+{
+  "action_type": "local_command",
+  "approval_id": "appr_20260702T112902Z_f35ecd1a",
+  "created_at": "2026-07-02T11:29:02.957091+00:00",
+  "decision": {
+    "approval_text": "",
+    "approved": false,
+    "approved_at": "",
+    "approved_by": ""
+  },
+  "integrity": {
+    "signature": "64a7c9ab5cc3baa0b9f6b77d4f1268945a14163144c53335d3e042ca56630441",
+    "signature_alg": "hmac-sha256",
+    "signed": true,
+    "signed_fields": [
+      "schema",
+      "approval_id",
+      "status",
+      "action_type",
+      "summary",
+      "payload",
+      "safety",
+      "decision",
+      "created_at"
+    ]
+  },
+  "payload": {
+    "command": "atris gmail archive 19f228fe5c4678dc 19f22629aecd11f3 19f225f605c33ad5 19f225e3b504ba31 19f213d14c4aee13 19f211a25c0ef736 19f21177d7b84ad7 19f210b7fca64d07 19f21093a714e957 19f20e39c73b0389",
+    "workspace": "/Users/keshavrao/arena/atris-cli"
+  },
+  "safety": {
+    "execute_in_this_runtime": false,
+    "external_side_effect": true,
+    "requires_exact_user_approval": true
+  },
+  "schema": "atris.local_approval.v1",
+  "status": "executed",
+  "summary": "Archive all 10 inbox messages via `atris gmail archive`",
+  "executed_at": "2026-07-02T11:29:23.796Z"
+}

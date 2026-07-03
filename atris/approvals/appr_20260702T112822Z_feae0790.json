@@ -1,0 +1,44 @@
+{
+  "action_type": "calendar_create",
+  "approval_id": "appr_20260702T112822Z_feae0790",
+  "created_at": "2026-07-02T11:28:22.337103+00:00",
+  "decision": {
+    "approval_text": "",
+    "approved": false,
+    "approved_at": "",
+    "approved_by": ""
+  },
+  "integrity": {
+    "signature": "ca639573af99c656438c14ddbcdd9a8681b633e9ff0b72a994b0a2a65d08dfc5",
+    "signature_alg": "hmac-sha256",
+    "signed": true,
+    "signed_fields": [
+      "schema",
+      "approval_id",
+      "status",
+      "action_type",
+      "summary",
+      "payload",
+      "safety",
+      "decision",
+      "created_at"
+    ]
+  },
+  "payload": {
+    "date": "2026-07-02",
+    "end_time": "14:00",
+    "location": "",
+    "notes": "Added via Atris",
+    "start_time": "12:00",
+    "timezone": "America/Los_Angeles",
+    "title": "Lunch and Workout"
+  },
+  "safety": {
+    "execute_in_this_runtime": false,
+    "external_side_effect": true,
+    "requires_exact_user_approval": true
+  },
+  "schema": "atris.local_approval.v1",
+  "status": "pending",
+  "summary": "Create calendar event \"Lunch and Workout\" on Thu Jul 2 2026, 12:00 PM \u2013 2:00 PM PDT"
+}
