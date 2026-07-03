@@ -11,6 +11,8 @@ const {
   isLessonResolvedLegacy,
   pickUnresolvedFailLesson
 } = require('../commands/autopilot');
+const { autoResolveLessons } = require('../commands/lesson');
+const { parseLessons: parseLessonsView, buildMemorySpec } = require('../lib/memory-view');
 
 function makeTempRepo() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-typed-'));
@@ -219,6 +221,109 @@ test('pickUnresolvedFailLesson still picks status:open even with detector showin
     assert.equal(picked.slug, 'still-open');
     assert.equal(picked.detector, 'exit 1');
     assert.equal(picked.typed, true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('autoResolveLessons retires a fail lesson once its detector passes', () => {
+  const dir = makeTempRepo();
+  try {
+    writeLessonsMd(dir, '# lessons.md\n\n- **[2026-04-01] bug-x** — fail — Bug in `commands/foo.js:1`.\n');
+    writeLessonsJson(dir, { 'bug-x': { detector: 'exit 0', status: 'open' } });
+
+    const res = autoResolveLessons(dir);
+    assert.deepEqual(res.checked, ['bug-x']);
+    assert.deepEqual(res.resolved, ['bug-x']);
+
+    // sidecar stamped resolved, detector preserved
+    const meta = loadLessonMetadata(dir);
+    assert.equal(meta['bug-x'].status, 'resolved');
+    assert.equal(meta['bug-x'].detector, 'exit 0');
+    assert.match(meta['bug-x'].resolved_at, /^\d{4}-\d{2}-\d{2}$/);
+
+    // lessons.md tagged [resolved] and parsers agree
+    const md = fs.readFileSync(path.join(dir, 'atris', 'lessons.md'), 'utf8');
+    assert.match(md, /\[resolved\]/);
+    assert.equal(parseLessons(dir)[0].resolvedTag, true);
+
+    // retired lesson is no longer re-picked by self-heal
+    assert.equal(pickUnresolvedFailLesson(dir), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('autoResolveLessons leaves a lesson open when its detector still fails', () => {
+  const dir = makeTempRepo();
+  try {
+    writeLessonsMd(dir, '- **[2026-04-01] bug-y** — fail — Still broken in `commands/foo.js:1`.\n');
+    writeLessonsJson(dir, { 'bug-y': { detector: 'exit 1', status: 'open' } });
+
+    const res = autoResolveLessons(dir);
+    assert.deepEqual(res.checked, ['bug-y']);
+    assert.deepEqual(res.resolved, []);
+    assert.equal(loadLessonMetadata(dir)['bug-y'].status, 'open');
+    assert.doesNotMatch(fs.readFileSync(path.join(dir, 'atris', 'lessons.md'), 'utf8'), /\[resolved\]/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('autoResolveLessons dry-run reports resolvable lessons without writing', () => {
+  const dir = makeTempRepo();
+  try {
+    writeLessonsMd(dir, '- **[2026-04-01] bug-z** — fail — In `commands/foo.js:1`.\n');
+    writeLessonsJson(dir, { 'bug-z': { detector: 'exit 0', status: 'open' } });
+
+    const res = autoResolveLessons(dir, { dryRun: true });
+    assert.deepEqual(res.resolved, ['bug-z']);
+    // nothing persisted
+    assert.equal(loadLessonMetadata(dir)['bug-z'].status, 'open');
+    assert.doesNotMatch(fs.readFileSync(path.join(dir, 'atris', 'lessons.md'), 'utf8'), /\[resolved\]/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('autoResolveLessons never auto-resolves observed or prose-only lessons', () => {
+  const dir = makeTempRepo();
+  try {
+    writeLessonsMd(dir, [
+      '- **[2026-04-01] observed-rule** — fail — Process note about `commands/foo.js:1`.',
+      '- **[2026-04-02] prose-only** — fail — No detector, in `commands/foo.js:1`.',
+      ''
+    ].join('\n'));
+    // observed has a passing detector but must be skipped; prose-only has none
+    writeLessonsJson(dir, { 'observed-rule': { detector: 'exit 0', status: 'observed' } });
+
+    const res = autoResolveLessons(dir);
+    assert.deepEqual(res.checked, [], 'neither lesson is even detector-checked');
+    assert.deepEqual(res.resolved, []);
+    assert.equal(loadLessonMetadata(dir)['observed-rule'].status, 'observed');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('memory view retires [resolved] lessons from the open count', () => {
+  const md = [
+    '- **[2026-04-01] bug-x** — fail — [resolved] Was broken, now fixed.',
+    '- **[2026-04-02] bug-y** — fail — Still open bug.',
+    ''
+  ].join('\n');
+  const parsed = parseLessonsView(md);
+  assert.equal(parsed[0].resolved, true);
+  assert.equal(parsed[0].text, 'Was broken, now fixed.', 'tag stripped from text');
+  assert.equal(parsed[1].resolved, false);
+
+  const dir = makeTempRepo();
+  try {
+    writeLessonsMd(dir, md);
+    const spec = buildMemorySpec(dir);
+    const big = spec.slides.find((s) => s.type === 'bignumber');
+    assert.equal(big.number, '1', 'only the open lesson counts');
+    assert.match(big.label, /retired/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
