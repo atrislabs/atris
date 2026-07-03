@@ -115,7 +115,10 @@ function runMissionEngine(root, { noClaude = false, timeoutMs = 600000 } = {}) {
 // mission is due, instead of idling.
 function runAutopilotTick(root, { timeoutMs = 600000 } = {}) {
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
-  const args = ['autopilot', '--auto', '--iterations=1'];
+  // --once + a leg wall under our own timeout: the child stops itself cleanly
+  // instead of being SIGTERMed mid-work (the front door ignores the legacy
+  // --auto/--iterations flags this used to pass).
+  const args = pulse.autopilotTickArgs(timeoutMs);
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd: root,
     encoding: 'utf8',

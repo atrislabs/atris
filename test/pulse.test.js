@@ -51,6 +51,13 @@ test('buildPulseReceipt carries the failed actor detail', () => {
   assert.strictEqual(clean.actor_detail, null);
 });
 
+test('autopilotTickArgs runs one bounded leg that fits inside the spawn timeout', () => {
+  const args = pulse.autopilotTickArgs(600000);
+  assert.deepStrictEqual(args, ['autopilot', '--once', '--leg-wall', '480']);
+  // never below the 60s floor, even for tiny timeouts
+  assert.deepStrictEqual(pulse.autopilotTickArgs(30000), ['autopilot', '--once', '--leg-wall', '60']);
+});
+
 test('scoreTick punishes verify failure with -1', () => {
   assert.equal(pulse.scoreTick({ verifyPassed: false, producedWork: true }), -1);
 });
