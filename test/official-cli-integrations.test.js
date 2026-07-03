@@ -254,3 +254,65 @@ test('supabase db push forwards to supabase', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('linear help is workspace-free', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['linear', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /usage: atris linear <command> \[args\]/);
+    assert.match(res.stdout, /issue list/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('linear reports a missing official cli with install hint', () => {
+  const dir = makeTempDir();
+  try {
+    const emptyPath = path.join(dir, 'empty-bin');
+    fs.mkdirSync(emptyPath);
+    const res = runCli(['linear', 'auth'], { cwd: dir, env: { PATH: emptyPath } });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /linear cli not found/);
+    assert.match(res.stderr, /install the linear cli/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('linear auth checks linear auth status', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'linear.log');
+    const binDir = writeFakeBinary(dir, 'linear');
+    const res = runCli(['linear', 'auth'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /auth: ok/);
+    assert.deepEqual(readLog(logPath), ['--version', 'auth status']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('linear issue list forwards to linear', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'linear.log');
+    const binDir = writeFakeBinary(dir, 'linear');
+    const res = runCli(['linear', 'issue', 'list', '--team', 'ENG'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.deepEqual(readLog(logPath), ['--version', 'issue list --team ENG']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
