@@ -100,7 +100,30 @@ async function driveCommand(argv) {
       fixed.push({ mission_id: f.mission_id, action: 'would_verify_tick', objective: f.objective });
       continue;
     }
+    // No verifier and stale (planning >24h old, or already paused): park it.
+    // A paused mission is reversible; a zombie in planning is a permanent disengagement.
+    if (f.code === 'missing_verifier' && f.mission_id && isParkable(f)) {
+      if (dryRun) {
+        fixed.push({ mission_id: f.mission_id, action: 'would_park', objective: f.objective });
+        continue;
+      }
+      const stop = runAtris(['mission', 'stop', f.mission_id, '--pause', '--reason', 'drive: no verifier + stale, auto-parked (restart with a --verify to resume)'], cwd);
+      if (stop.code === 0) {
+        fixed.push({ mission_id: f.mission_id, action: 'parked', objective: f.objective });
+        continue;
+      }
+      disengagements.push({ ...pick(f), reason: 'park_failed' });
+      continue;
+    }
     disengagements.push({ ...pick(f), reason: f.code });
+  }
+
+  function isParkable(f) {
+    if (f.status === 'paused') return true;
+    if (f.status !== 'planning') return false;
+    const m = /^mission-(\d{4}-\d{2}-\d{2})-/.exec(f.mission_id || '');
+    if (!m) return false;
+    return (Date.now() - new Date(m[1] + 'T00:00:00Z').getTime()) > 24 * 3600 * 1000;
   }
 
   function pick(f) {
