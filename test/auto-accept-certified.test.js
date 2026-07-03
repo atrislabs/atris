@@ -250,3 +250,30 @@ test('acceptAll: only protected lanes and hard evidence block; certification doe
   assert.equal(failing.eligible, false);
   assert.equal(failing.reason, 'verify_failed');
 });
+
+test('denied lanes match tag variants: plurals, compounds, whitespace', () => {
+  for (const [tag, lane] of [['deploys', 'deploy'], ['infra-deploy', 'deploy'], [' Billing ', 'billing'], ['customer-facing', 'customer']]) {
+    const loose = evaluateAutoAccept({ ...reviewTask(), tag }, { acceptAll: true });
+    assert.equal(loose.eligible, false, `acceptAll should deny tag '${tag}'`);
+    assert.equal(loose.reason, `denied_tag_${lane}`);
+    const strict = evaluateAutoAccept({ ...reviewTask(), tag });
+    assert.equal(strict.eligible, false, `certified mode should deny tag '${tag}'`);
+    assert.equal(strict.reason, `denied_tag_${lane}`);
+  }
+  // an unrelated compound is not swallowed by the word matcher
+  const fine = evaluateAutoAccept({ ...reviewTask(), tag: 'self-improve' }, { acceptAll: true });
+  assert.equal(fine.eligible, true);
+});
+
+test('acceptAll: a check pointing at a vanished worktree blocks; an un-runnable check does not', () => {
+  const gone = evaluateAutoAccept(reviewTask({
+    metadata: { verify: 'git -C reaped-away-worktree diff --check' },
+  }), { acceptAll: true });
+  assert.equal(gone.eligible, false);
+  assert.equal(gone.reason, 'verify_worktree_missing');
+
+  const notAllowed = evaluateAutoAccept(reviewTask({
+    metadata: { verify: 'pytest tests/' },
+  }), { acceptAll: true });
+  assert.equal(notAllowed.eligible, true);
+});

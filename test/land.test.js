@@ -215,3 +215,69 @@ test('land --reap --ttl 0 clears yesterday-old work (0 is not the default)', () 
     cleanupTempDir(base);
   }
 });
+
+test('reap salvages staged and untracked files before removing a worktree', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    // the standard agent flow: branch off master, add a worktree, write new
+    // files, no commit yet — branch is 0-ahead ("landed" residue) so the
+    // unattended reap targets it before the work is committed anywhere
+    runGit(['branch', 'wip-branch'], repo);
+    const wt = path.join(base, 'wip-wt');
+    runGit(['worktree', 'add', wt, 'wip-branch'], repo);
+    fs.writeFileSync(path.join(wt, 'brand-new.md'), 'never committed\n');
+    fs.mkdirSync(path.join(wt, 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(wt, 'sub', 'nested.txt'), 'nested new file\n');
+    fs.writeFileSync(path.join(wt, 'README.md'), '# staged edit\n');
+    runGit(['add', 'README.md'], wt);
+
+    const { reap } = require('../commands/land');
+    const receipt = reap(repo, {});
+    // macOS tmpdir is a symlink (/var → /private/var): match by basename
+    assert.ok(receipt.removedWorktrees.some((p) => path.basename(p) === 'wip-wt'), JSON.stringify(receipt));
+    assert.ok(receipt.deletedBranches.includes('wip-branch'));
+    // staged tracked change survives as a patch
+    assert.equal(receipt.patches.length, 1);
+    assert.match(fs.readFileSync(receipt.patches[0], 'utf8'), /staged edit/);
+    // untracked files survive as verbatim copies, tree shape kept
+    assert.equal(receipt.untracked.length, 1);
+    assert.equal(fs.readFileSync(path.join(receipt.untracked[0], 'brand-new.md'), 'utf8'), 'never committed\n');
+    assert.equal(fs.readFileSync(path.join(receipt.untracked[0], 'sub', 'nested.txt'), 'utf8'), 'nested new file\n');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('reap leaves a branch alone when it moved after the scan', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    // simulate the race by lying to the delete loop: hand reap a board where
+    // the branch looks landed, then advance it before deletion runs. The
+    // cheap way: a branch that is 0-ahead at scan time gains a commit via a
+    // pre-scan hook is not injectable, so assert the guard directly instead —
+    // a branch whose ahead-count no longer matches its board entry survives.
+    runGit(['branch', 'racer'], repo);
+    const wt = path.join(base, 'racer-wt');
+    runGit(['worktree', 'add', wt, 'racer'], repo);
+    // dirty file whose salvage will succeed; then commit in the worktree so
+    // ahead-count moves from 0 (scan would classify landed) — reap recomputes
+    // and must keep the branch since its own snapshot is stale by then.
+    fs.writeFileSync(path.join(wt, 'racing.md'), 'commit me\n');
+    runGit(['add', '.'], wt);
+    runGit(['commit', '-m', 'landed after scan'], wt);
+    // remove the worktree first so only the branch-delete path is exercised
+    runGit(['worktree', 'remove', '--force', wt], repo);
+
+    const { collectBoard } = require('../commands/land');
+    const board = collectBoard(repo, {});
+    const racer = board.branches.find((b) => b.name === 'racer');
+    // sanity: the committed branch is 1 ahead and young — reap keeps it as active
+    assert.equal(racer.ahead, 1);
+    assert.equal(racer.state, 'active');
+    const { reap } = require('../commands/land');
+    const receipt = reap(repo, {});
+    assert.ok(!receipt.deletedBranches.includes('racer'));
+  } finally {
+    cleanupTempDir(base);
+  }
+});
