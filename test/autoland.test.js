@@ -336,12 +336,12 @@ test('tick still certifies when policy contains drain_reviews false', () => {
   }
 });
 
-test('two passes from one actor still get the independent check and land', () => {
+test('two passes from one actor cannot land until the tick independently re-runs the check', () => {
   const { base, repo } = makeTempRepo();
   try {
     const id = proofBackedTask(repo, 'Same reviewer twice', { tag: 'code' });
-    // second pass by the SAME actor: certified-looking but not landable
-    // (needs_second_reviewer_or_third_pass) until a distinct actor re-runs the check
+    // second pass by the SAME actor: not certified and not landable
+    // (needs_independent_reviewer) until a distinct actor re-runs the check
     const proof = 'Command passed: git diff --check. Evidence inspected: clean tree, change verified in place.';
     assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'builder'], repo).status, 0);
 

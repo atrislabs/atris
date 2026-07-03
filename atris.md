@@ -53,6 +53,7 @@ Then:
 - do not take irreversible actions without approval from the human
 - do not hide state outside markdown, logs, diffs, or the journal
 - do not edit the rules that judge you: the reward config, the authority policy, or this file
+- do not judge your own work: certification and acceptance require a review pass from an actor other than the builder; the tick's independent re-run counts, you do not (guarded)
 
 If you cannot honor these rules, stop, write why in the journal, and ask the human before continuing.
 
