@@ -53,7 +53,7 @@ test('strict verify missing points agents back to review chat', () => {
   assert.equal(result.review_chat_command, 'atris task review-chat OBL-TEST --as codex-review');
 });
 
-test('accepts third pass even with one actor', () => {
+test('rejects three passes from a single actor: passes alone never land work', () => {
   const base = reviewTask();
   const result = evaluateAutoAccept({
     ...base,
@@ -61,8 +61,9 @@ test('accepts third pass even with one actor', () => {
     review: { ...base.review, agent_review_pass_count: 3 },
     events: [{ event_type: 'proof_ready', actor: 'codex' }],
   });
-  assert.equal(result.eligible, true);
-  assert.equal(result.policy, 'strict_verify');
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'needs_independent_reviewer');
+  assert.equal(result.builder, 'codex');
 });
 
 test('rejects denied tags and weak proof', () => {
@@ -124,7 +125,10 @@ test('allows merged proof that explains the rejected PR boundary terms', () => {
   const result = evaluateAutoAccept(reviewTask({
     metadata: { latest_agent_proof: proof, agent_review_pass_count: 3 },
     review: { proof, agent_review_pass_count: 3 },
-    events: [{ event_type: 'proof_ready', actor: 'codex' }],
+    events: [
+      { event_type: 'proof_ready', actor: 'codex' },
+      { event_type: 'reviewed', actor: 'validator' },
+    ],
   }));
   assert.equal(result.eligible, true);
   assert.equal(result.policy, 'strict_verify');
@@ -135,7 +139,18 @@ test('rejects single actor with only two passes', () => {
     events: [{ event_type: 'proof_ready', actor: 'codex' }],
   }));
   assert.equal(result.eligible, false);
-  assert.match(result.reason, /second_reviewer_or_third_pass/);
+  assert.equal(result.reason, 'needs_independent_reviewer');
+});
+
+test('casing and spacing tricks do not fake a second reviewer', () => {
+  const result = evaluateAutoAccept(reviewTask({
+    events: [
+      { event_type: 'proof_ready', actor: 'codex' },
+      { event_type: 'reviewed', actor: ' Codex ' },
+    ],
+  }));
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'needs_independent_reviewer');
 });
 
 test('strict verify rejects compound shell commands', () => {
