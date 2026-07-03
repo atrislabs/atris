@@ -2353,11 +2353,22 @@ function handleEvent(event, state, output) {
     return;
   }
 
-  if (event.type === 'result' && event.result && !state.output) {
+  if (event.type === 'result' && event.result) {
     const content = String(event.result || '');
-    state.output += content;
-    if (output && output.isTTY) writeStreamingText(state, output, content);
-    else state.pendingText += content;
+    // `result` is the backend's authoritative final answer for the turn.
+    // Local tool-loop turns stream throwaway narration via text_delta before
+    // the model actually does the work ("Acknowledged, let me check that...")
+    // — remember the true final text separately so callers (runHeadlessTurn's
+    // JSON `output`, and chat()'s conversation history) get the real answer
+    // instead of whichever fragment happened to stream first. Terminal
+    // rendering keeps its existing de-dupe: only print `result` live when
+    // nothing was already streamed (avoids double-printing a duplicate).
+    state.resultOutput = content;
+    if (!state.output) {
+      state.output += content;
+      if (output && output.isTTY) writeStreamingText(state, output, content);
+      else state.pendingText += content;
+    }
     return;
   }
 
@@ -2497,6 +2508,11 @@ async function postTurn(message, options = {}) {
         }
 
         flushPendingText(state, output);
+        // Terminal display already streamed/de-duped above; the RETURNED
+        // output must be the backend's authoritative final answer, not
+        // whichever text_delta fragment happened to arrive first (see the
+        // `result` branch in handleEvent).
+        if (state.resultOutput) state.output = state.resultOutput;
         finish(null, state);
       });
     });
