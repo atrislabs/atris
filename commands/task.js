@@ -692,7 +692,7 @@ function certifiedReviewNextAction(nextTaskTitle) {
 }
 
 function proofBoundaryBlockedEvaluation(task) {
-  const evaluation = evaluateAutoAccept(task, { strictVerify: false, minPasses: 0 });
+  const evaluation = evaluateAutoAccept(task, { minPasses: 0 });
   return evaluation && evaluation.reason === 'proof_unmerged_or_draft_pr_boundary'
     ? evaluation
     : null;
@@ -8196,7 +8196,7 @@ function cmdCertifyVerified(args) {
     // something an executed second-actor check cannot cure. A row with two
     // passes from ONE actor is exactly what this command exists to cure —
     // "certified" alone is not landable.
-    const evaluation = evaluateAutoAccept(task, { strictVerify: false });
+    const evaluation = evaluateAutoAccept(task);
     if (evaluation.eligible) {
       results.push({ ref, action: 'skipped', reason: 'already_landable' });
       continue;
@@ -8280,7 +8280,7 @@ function cmdLanding(args) {
 
 function cmdAutoAcceptCertified(args) {
   const dryRun = hasFlag(args, '--dry-run');
-  const strictVerify = hasFlag(args, '--strict-verify');
+  const strictVerify = true;
   const actorFlag = flag(args, '--as');
   const hasHumanActor = validHumanActorFlag(actorFlag);
   const confirmedHumanAccept = hasFlag(args, '--confirm-human-accept');
@@ -8333,7 +8333,7 @@ function cmdAutoAcceptCertified(args) {
       results.push({ ref: item.display_id || item.id, eligible: false, reason: 'task_not_found', action: 'skipped' });
       continue;
     }
-    const evaluation = evaluateAutoAccept(task, { strictVerify });
+    const evaluation = evaluateAutoAccept(task);
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped' });
       continue;
