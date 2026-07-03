@@ -1,11 +1,11 @@
 ---
-last_compiled: 2026-06-30
+last_compiled: 2026-07-03
 sources:
   - commands/loop.js:1-114 (report builder, dry-run/json/limit, STATUS/log writes)
   - commands/wiki.js:549-557 (wiki loop alias)
   - lib/wiki.js:436-619 (page reads, stale checks, orphan checks)
   - lib/wiki.js:620-704 (suggested sources, STATUS, log)
-  - bin/atris.js:832-849 (showLoopHelp)
+  - bin/atris.js:890-908 (showLoopHelp)
   - bin/atris.js:1835-1843 (top-level loop route)
   - test/commands.test.js:14430 (loop help coverage)
   - test/commands.test.js:15982-16051 (loop stale/suggest coverage)

@@ -114,8 +114,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Universal entry point - accepts any input and routes intelligently
 
-- **Entry point:** `bin/atris.js:922-933` (knownCommands dispatch)
-- **Cold-start handler:** `bin/atris.js:1035` (`interactiveEntry`; active missions/work outrank completed history)
+- **Entry point:** `bin/atris.js:980-991` (knownCommands dispatch)
+- **Cold-start handler:** `bin/atris.js:1095` (`interactiveEntry`; active missions/work outrank completed history)
 - **Regression:** `test/commands.test.js:4974-4987` covers parseable JSON errors for unknown top-level commands
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
@@ -400,8 +400,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 **Purpose:** Provide durable local task state for agents while keeping `atris/TODO.md` as the human-readable regenerated project board.
 
 - **Entry point:** command routing in `bin/atris.js:803`
-- **Handler:** `commands/task.js:9670` (`run` dispatch)
-- **Store:** `lib/task-db.js:358` (`addTask`), `lib/task-db.js:405` (`listTasks`), `lib/task-db.js:441` (`claimTask`), `lib/task-db.js:472` (`doneTask`)
+- **Handler:** `commands/task.js:10191` (`run` dispatch)
+- **Store:** `lib/task-db.js:358` (`addTask`), `lib/task-db.js:405` (`listTasks`), `lib/task-db.js:441` (`claimTask`), `lib/task-db.js:510` (`doneTask`)
 - **TODO shim:** `lib/todo.js:19` (`dbToShimRow`) preserves imported `Verify:` metadata when `ATRIS_TASK_DB=1`
 - **How it works:**
 - `atris task` opens the compact task desk and refreshes `.atris/state/tasks.projection.json`
@@ -445,9 +445,9 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 **Purpose:** Register the current directory as a live local AI Computer session so cloud agents can apply bounded file operations.
 
 - **Known command:** `bin/atris.js:637-642` includes `serve`, so the explicit branch is reachable before natural-language fallback
-- **Help:** `bin/atris.js:818-830` (`showServeHelp`) prints usage without auth checks or bridge startup
+- **Help:** `bin/atris.js:876-888` (`showServeHelp`) prints usage without auth checks or bridge startup
 - **Dispatch:** `bin/atris.js:1122-1143` routes `serve --help`, `serve -h`, and `serve help` before parsing bridge options; normal runs call `serveAtris`
-- **Handler:** `commands/serve.js:275-356` (`serveAtris`) registers the session and subscribes for operations
+- **Handler:** `commands/serve.js:288-389` (`serveAtris`) registers the session and subscribes for operations
 - **Safety core:** `commands/serve.js:55-78` (`safePath`) and `commands/serve.js:83-176` (`applyOp`) constrain file operations
 - **Regression:** `test/commands.test.js:4293-4305` covers `serve --help` without planner fallback, bridge startup, login checks, or auth-state creation
 
@@ -553,7 +553,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 **Purpose:** Quick visibility into system state - supports parallel work
 
 - **Entry point:** `commands/status.js:79-334` (statusAtris function)
-- **Help:** `bin/atris.js:650-663` (`showStatusHelp`) and `bin/atris.js:1455-1460` short-circuit `status --help` before workspace or business-status reads
+- **Help:** `bin/atris.js:708-721` (`showStatusHelp`) and `bin/atris.js:1455-1460` short-circuit `status --help` before workspace or business-status reads
 - **Regression:** `test/commands.test.js:4287-4302` covers `status --help` without `atris/` or `$HOME/.atris`
 - **Signature:** `statusAtris(isQuick = false, jsonMode = false, verbose = false)`
 - **Reads:**
@@ -566,7 +566,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `--verbose` / `-v`: Legacy visual task board
 - `--quick` / `-q`: One-line emoji summary
 - `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team)
-- **Routing:** `bin/atris.js:1962-1966` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
+- **Routing:** `bin/atris.js:2111-2115` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
 - **Value:** Parallel work visibility + machine-readable output for scripting
 
 **Search:** `rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js`
@@ -580,8 +580,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Ranking:** `commands/launchpad.js:201` (`chooseNextAction`) — own-claimed task > mission needing a tick > proof needing agent review > certified human-accept queue > open claim > endgame seed > brain next move > ask-for-work; `taskIsHumanGatedClaimed` skips claimed work gated on human accept
 - **Suggestions:** `commands/launchpad.js:373` (`suggestedNextMoves`) returns up to 3 plain-language moves
 - **Render:** `commands/launchpad.js:575` (`renderLaunchpad`) draws the ASCII card; `commands/launchpad.js:609` (`showLaunchpadHelp`)
-- **Help:** `bin/atris.js:464` help line; **Routing:** `bin/atris.js:1856-1857` dispatch, `bin/atris.js:922` `knownCommands`
-- **Regression:** `test/commands.test.js:7588` (actor-claimed first), `test/commands.test.js:15225` (clean queue → endgame seed), `test/commands.test.js:102` (verifier mission when no claimed task); `--help` smoke at `test/commands.test.js:14915`
+- **Help:** `bin/atris.js:464` help line; **Routing:** `bin/atris.js:1856-1857` dispatch, `bin/atris.js:980` `knownCommands`
+- **Regression:** `test/commands.test.js:8154` (actor-claimed first), `test/commands.test.js:16054` (clean queue → endgame seed), `test/commands.test.js:102` (verifier mission when no claimed task); `--help` smoke at `test/commands.test.js:14915`
 - **Value:** Answers "who is doing what, what needs review, what is blocked, what should start next" in one card without cloud auth
 
 **Search:** `rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggestedNextMoves|atris.launchpad.v1" commands/launchpad.js bin/atris.js test/commands.test.js`
@@ -591,7 +591,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 **Purpose:** Housekeeping — find stale tasks, heal broken refs, detect stale wiki pages, archive old journals
 
 - **Dispatch:** `bin/atris.js:1924` handles `--help`, `--dry-run`, and `--json` before routing to `cleanAtris`
-- **Help:** `bin/atris.js:852` (`showCleanHelp`) prints usage without touching workspace state
+- **Help:** `bin/atris.js:910` (`showCleanHelp`) prints usage without touching workspace state
 - **Entry point:** `commands/clean.js:12` (cleanAtris function)
 - **JSON payload:** `commands/clean.js:162` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, and manual actions without text chrome
 - **Helpers:**
@@ -652,7 +652,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 - **Entry points:** `bin/atris.js` (`loop` help + routing), `commands/wiki.js` (`wiki loop` alias)
 - **Handlers:** `commands/loop.js` (report builder + STATUS/log refresh), `lib/wiki.js` (stale/orphan/suggestion helpers)
-- **Help:** `bin/atris.js:832-850` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
+- **Help:** `bin/atris.js:890-908` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
 - **Dispatch:** `bin/atris.js:1502-1510` routes `loop --help`, `loop -h`, and `loop help` before `loopAtris`
 - **How it works:**
 - `atris loop` ensures the wiki scaffold exists, analyzes current pages, then rewrites `atris/wiki/STATUS.md`
@@ -672,7 +672,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 **Purpose:** Validate work is actually done - tests pass, MAP.md updated, changes exist
 
 - **Entry point:** `commands/verify.js:13-35` (verifyAtris function)
-- **Help:** `bin/atris.js:701-713` (showVerifyHelp) and `bin/atris.js:701-713` (showVerifyHelp short-circuit)
+- **Help:** `bin/atris.js:759-771` (showVerifyHelp) and `bin/atris.js:759-771` (showVerifyHelp short-circuit)
 - **Rubric runner:** `commands/verify.js:495-529` (verifyRubric)
 - **Regression:** `test/commands.test.js:4323-4338` covers `verify --help` without verifier execution
 - **Modes:**
@@ -727,7 +727,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 **Purpose:** Productivity insights from existing journal data
 
 - **Entry point:** `commands/analytics.js:4-147` (analyticsAtris function)
-- **Help:** `bin/atris.js:665-675` (`showAnalyticsHelp`) and `bin/atris.js:1472-1478` short-circuit `analytics --help` before workspace reads
+- **Help:** `bin/atris.js:723-733` (`showAnalyticsHelp`) and `bin/atris.js:1472-1478` short-circuit `analytics --help` before workspace reads
 - **Regression:** `test/commands.test.js:4287-4302` covers `analytics --help` without `atris/` or `$HOME/.atris`
 - **Pareto insight:** No new instrumentation - parses existing markdown
 - **Data sources:**
@@ -837,21 +837,21 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Prompt builder:** `commands/run.js:120-213` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
 - **Phase executor:** `commands/run.js:218-255` (executePhase function) — runs `buildRunnerCommand()` with prompt, executes via spawnSync in a detached process group, sweeps the configured runner tree on timeout/kill, and handles output
 - **Glass run logs:** `commands/run.js:31-37` (getRunLogDir, getRunLogPath, writePhaseToRunLog) — persists plan/do/review phase reasoning to `atris/logs/runs/YYYY-MM-DD-<stamp>-cycle-N.md` as inspectable material; failed phases also logged as ERROR sections
-- **Run log browser:** `commands/run.js:641-727` (listRunLogs function) — `atris run logs [--tail N] [--cat FILE] [--json]` subcommand for browsing glass run logs
-- **Run log pruning:** `commands/run.js:735-779` (pruneRunLogs function) — `atris run prune-logs [--keep N] [--dry-run]` subcommand for cleaning up old run logs
-- **Run log search:** `commands/run.js:788-875` (searchRunLogs function) — `atris run search <keyword> [--phase P] [--limit N]` subcommand for searching phase reasoning
-- **Run log stats:** `commands/run.js:880-931` (statsRunLogs function) — `atris run stats` subcommand showing phase counts and avg durations
-- **Run log export:** `commands/run.js:938-982` (exportRunLogs function) — `atris run export [--out FILE]` subcommand for JSON bundle export
+- **Run log browser:** `commands/run.js:644-730` (listRunLogs function) — `atris run logs [--tail N] [--cat FILE] [--json]` subcommand for browsing glass run logs
+- **Run log pruning:** `commands/run.js:738-782` (pruneRunLogs function) — `atris run prune-logs [--keep N] [--dry-run]` subcommand for cleaning up old run logs
+- **Run log search:** `commands/run.js:791-878` (searchRunLogs function) — `atris run search <keyword> [--phase P] [--limit N]` subcommand for searching phase reasoning
+- **Run log stats:** `commands/run.js:883-934` (statsRunLogs function) — `atris run stats` subcommand showing phase counts and avg durations
+- **Run log export:** `commands/run.js:941-985` (exportRunLogs function) — `atris run export [--out FILE]` subcommand for JSON bundle export
 - **Run log diff:** `commands/run.js:988-1063` (diffRunLogs function) — `atris run diff <file1> <file2>` subcommand for comparing two run logs
 - **Work detector:** `commands/run.js:297-299` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
 - **Journal logger:** `commands/run.js:333-361` (logRunCompletion function) — appends run summary (cycles, duration, per-phase timings) to journal ## Notes
 - **Phase timing:** `commands/run.js:254-255,268` — collects `{plan, do, review}` ms per cycle, stored in `cycleTimings` array
-- **Summary table:** `commands/run.js:428` (cycleTimings forEach) — per-cycle phase duration table
-- **Post-cycle clean:** `commands/run.js:549` (cleanAtris call) — self-heal MAP.md refs
+- **Summary table:** `commands/run.js:431` (cycleTimings forEach) — per-cycle phase duration table
+- **Post-cycle clean:** `commands/run.js:552` (cleanAtris call) — self-heal MAP.md refs
 - **Post-cycle push:** `commands/run.js:386` (execSync git push) — disabled with `--no-push`
 - **Routing:** `bin/atris.js:113-138` (command dispatch + flag parsing)
-- **Help text:** `bin/atris.js:414` (showHelp function)
-- **Known commands:** `bin/atris.js:922` (knownCommands array)
+- **Help text:** `bin/atris.js:458` (showHelp function)
+- **Known commands:** `bin/atris.js:980` (knownCommands array)
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
 - **Flags:**
   - `--once` — Single plan→do→review cycle
@@ -938,7 +938,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `logoutAtris` (lines 125-136): Delete credentials
 - `whoamiAtris` (lines 138-152): Show auth status via `displayAccountSummary`
 - **Auth (canonical):** `utils/auth.js` + `utils/api.js` — all auth logic consolidated, no inline duplicates
-- **Help:** `bin/atris.js:756-792` (`showAuthHelp`) prints login/logout/whoami/switch/use/accounts usage before auth workers can prompt, create state, delete credentials, or touch session/profile dirs
+- **Help:** `bin/atris.js:814-850` (`showAuthHelp`) prints login/logout/whoami/switch/use/accounts usage before auth workers can prompt, create state, delete credentials, or touch session/profile dirs
 - **Dispatch:** `bin/atris.js:1198-1239` routes login/logout/whoami/switch/use/accounts `--help`, `-h`, and bare `help` before calling `commands/auth.js`
 - **Regression:** `test/commands.test.js:4249-4294` covers auth/account help without login prompts, status output, `.atris` creation, session/profile dir creation, or credential deletion
 - JWT helpers: `decodeJwtClaims` (bin:59-74), `shouldRefreshToken` (bin:85-92)
@@ -966,7 +966,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 **Purpose:** First-time setup checks Node.js, login state, businesses, and optional business pull.
 
 - **Entry point:** `commands/setup.js:6-178` (`setupAtris`)
-- **Help:** `bin/atris.js:806-816` (`showSetupHelp`) prints setup usage without entering setup
+- **Help:** `bin/atris.js:864-874` (`showSetupHelp`) prints setup usage without entering setup
 - **Dispatch:** `bin/atris.js:1491-1499` routes `setup --help`, `setup -h`, and `setup help` before login, business fetch, or pull flow
 - **Regression:** `test/commands.test.js:4279-4290` covers setup help without setup banner, login prompt, or `.atris` creation
 - **Value:** Gives first-run guidance while keeping help safe in temp homes and automation.
@@ -987,7 +987,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:2313-2365` (upgradeAtris function)
+- **Entry point:** `bin/atris.js:2508-2560` (upgradeAtris function)
 - **Dispatch/help:** `bin/atris.js:1432-1438` handles `upgrade --help` before npm checks or global installs
 - **Logic:**
 - Shows current version
@@ -1038,7 +1038,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:2606-2663` (chatAtris function)
+- **Entry point:** `bin/atris.js:2801-2889` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
@@ -1054,7 +1054,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 - **Entry point:** `commands/activate.js:6-129` (activateAtris function)
 - **Routing:** `bin/atris.js:1153-1159`
-- **Help:** `bin/atris.js:677-687` (`showActivateHelp`) prints usage before context loading or journal creation
+- **Help:** `bin/atris.js:735-745` (`showActivateHelp`) prints usage before context loading or journal creation
 - **Regression:** `test/commands.test.js:4310-4324` covers activate help without context panels or temp state creation
 - **Logic:**
 - Detects workspace state via `lib/state-detection.js`
@@ -1068,7 +1068,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Search journal history for keywords across all log files
 
-- **Entry point:** `bin/atris.js:308-311` (`showSearchHelp` + `searchJournal`)
+- **Entry point:** `bin/atris.js:352-355` (`showSearchHelp` + `searchJournal`)
 - **Routing:** `bin/atris.js:757`
 - **Logic:**
 - `--help` and `-h` short-circuit before `atris/logs` checks; regression: `test/commands.test.js:3714-3728`
@@ -1118,8 +1118,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Auto-advance to next workflow step based on journal state
 
-- **Entry point:** `bin/atris.js:1035` (interactiveEntry function)
-- **Help:** `bin/atris.js:689-699` (`showNextHelp`) and `bin/atris.js:1366-1373` route `next --help` before `interactiveEntry`
+- **Entry point:** `bin/atris.js:1095` (interactiveEntry function)
+- **Help:** `bin/atris.js:747-757` (`showNextHelp`) and `bin/atris.js:1366-1373` route `next --help` before `interactiveEntry`
 - **Regression:** `test/commands.test.js:4310-4324` covers next help without context panels or temp state creation
 - **Logic:** Same as natural language entry - loads context, detects state, advances
 - **Value:** Single-command workflow progression without typing a description
@@ -1136,7 +1136,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Known command:** `bin/atris.js:983` (`github`)
 - **Routing:** `bin/atris.js:2134` (`command === 'github'`)
 - **Subcommands:** `commands/github.js:12` (`pr list`), `commands/github.js:18` (`pr create`), `commands/github.js:24` (`pr checks`), `commands/github.js:30` (`pr view`)
-- **Regression:** `test/official-cli-integrations.test.js:56` (workspace-free help), `test/official-cli-integrations.test.js:71` (missing `gh` install hint), `test/official-cli-integrations.test.js:85` (auth status), `test/official-cli-integrations.test.js:102` (passthrough args)
+- **Regression:** `test/official-cli-integrations.test.js:56` (workspace-free help), `test/official-cli-integrations.test.js:71` (missing `gh` install hint), `test/official-cli-integrations.test.js:85` (auth status), `test/official-cli-integrations.test.js:102` (pr list forwards to gh)
 
 **Search:** `rg "githubCommand|github cli wrapper|github help is workspace-free" bin/atris.js commands/github.js test/official-cli-integrations.test.js`
 
@@ -1150,7 +1150,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Known command:** `bin/atris.js:983` (`vercel`)
 - **Routing:** `bin/atris.js:2137` (`command === 'vercel'`)
 - **Subcommands:** `commands/vercel.js:12` (`deploy`), `commands/vercel.js:18` (`ls`), `commands/vercel.js:24` (`logs`), `commands/vercel.js:30` (`inspect`)
-- **Regression:** `test/official-cli-integrations.test.js:118` (workspace-free help), `test/official-cli-integrations.test.js:133` (missing `vercel` install hint), `test/official-cli-integrations.test.js:147` (auth status), `test/official-cli-integrations.test.js:164` (passthrough args)
+- **Regression:** `test/official-cli-integrations.test.js:118` (workspace-free help), `test/official-cli-integrations.test.js:133` (missing `vercel` install hint), `test/official-cli-integrations.test.js:147` (auth status), `test/official-cli-integrations.test.js:164` (deploy forwards to vercel)
 
 **Search:** `rg "vercelCommand|vercel cli wrapper|vercel help is workspace-free" bin/atris.js commands/vercel.js test/official-cli-integrations.test.js`
 
@@ -1162,7 +1162,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Shared wrapper:** `lib/official-cli-integration.js:139` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:611` (`supabase cli wrapper`)
 - **Known command:** `bin/atris.js:983` (`supabase`)
-- **Routing:** `bin/atris.js:2140` (`command === 'supabase'`)
+- **Routing:** `bin/atris.js:111` (`command === 'supabase'`)
 - **Subcommands:** `commands/supabase.js:13` (`status`), `commands/supabase.js:19` (`db push`), `commands/supabase.js:25` (`functions list`), `commands/supabase.js:31` (`functions deploy`)
 - **Regression:** `test/official-cli-integrations.test.js:180` (workspace-free help), `test/official-cli-integrations.test.js:195` (missing `supabase` install hint), `test/official-cli-integrations.test.js:209` (auth status), `test/official-cli-integrations.test.js:226` (status passthrough), `test/official-cli-integrations.test.js:242` (db passthrough)
 
@@ -1176,9 +1176,9 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Shared wrapper:** `lib/official-cli-integration.js:139` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:612` (`linear cli wrapper`)
 - **Known command:** `bin/atris.js:983` (`linear`)
-- **Routing:** `bin/atris.js:2143` (`command === 'linear'`)
+- **Routing:** `bin/atris.js:111` (`command === 'linear'`)
 - **Subcommands:** `commands/linear.js:12` (`issue list`), `commands/linear.js:18` (`issue create`), `commands/linear.js:24` (`issue view`), `commands/linear.js:30` (`issue update`)
-- **Regression:** `test/official-cli-integrations.test.js:258` (workspace-free help), `test/official-cli-integrations.test.js:273` (missing `linear` install hint), `test/official-cli-integrations.test.js:287` (auth status), `test/official-cli-integrations.test.js:304` (passthrough args)
+- **Regression:** `test/official-cli-integrations.test.js:258` (workspace-free help), `test/official-cli-integrations.test.js:273` (missing `linear` install hint), `test/official-cli-integrations.test.js:287` (auth status), `test/official-cli-integrations.test.js:304` (issue list forwards to linear)
 
 **Search:** `rg "linearCommand|linear cli wrapper|linear help is workspace-free" bin/atris.js commands/linear.js test/official-cli-integrations.test.js`
 
@@ -1190,7 +1190,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Shared wrapper:** `lib/official-cli-integration.js:139` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:613` (`stripe cli wrapper`)
 - **Known command:** `bin/atris.js:983` (`stripe`)
-- **Routing:** `bin/atris.js:2146` (`command === 'stripe'`)
+- **Routing:** `bin/atris.js:111` (`command === 'stripe'`)
 - **Subcommands:** `commands/stripe.js:12` (`listen`), `commands/stripe.js:18` (`trigger`), `commands/stripe.js:24` (`products list`), `commands/stripe.js:30` (`products create`)
 - **Regression:** `test/official-cli-integrations.test.js:320` (workspace-free help), `test/official-cli-integrations.test.js:335` (missing `stripe` install hint), `test/official-cli-integrations.test.js:349` (auth status), `test/official-cli-integrations.test.js:366` (listen passthrough), `test/official-cli-integrations.test.js:382` (products passthrough)
 
@@ -1209,7 +1209,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `atris integrations` (lines 298-338): Show status of all integrations
 - **Auth:** Uses `getAuthToken()` (line 16) from `~/.atris/credentials.json`
 - **Routing:** `bin/atris.js:760-792`
-- **Help:** `bin/atris.js:794-804` (`showIntegrationsHelp`) and `bin/atris.js:1467-1472` route `integrations --help` before auth/session state or backend status checks
+- **Help:** `bin/atris.js:852-862` (`showIntegrationsHelp`) and `bin/atris.js:1467-1472` route `integrations --help` before auth/session state or backend status checks
 - **Regression:** `test/commands.test.js:4279-4294` covers integrations help without login errors or `.atris` creation
 - **Value:** Manage external services without leaving the CLI
 
@@ -1237,7 +1237,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** First `atris` contact asks for human context before planning or agent bootstrap, then persists the answer and creates a starter onboarding task.
 
-- **Entry point:** `bin/atris.js:1035` (`interactiveEntry`)
+- **Entry point:** `bin/atris.js:1095` (`interactiveEntry`)
 - **Helper:** `lib/context-gatherer.js`
 - **State:** `.atris/state/context_profile.json`
 - **Regression:** `test/context-gatherer.test.js`, `test/cli-smoke.test.js`

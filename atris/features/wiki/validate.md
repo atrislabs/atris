@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-06-30
+last_compiled: 2026-07-03
 sources:
   - lib/wiki.js:15-25 (public/private wiki root getters)
   - lib/wiki.js:192-217 (wiki and context scaffold)
@@ -10,7 +10,7 @@ sources:
   - commands/wiki.js:511-560 (lint, search, log, verify)
   - commands/wiki.js:484-583 (wiki dispatch and help)
   - commands/loop.js:1-114 (local wiki upkeep loop)
-  - commands/init.js:371-374 (wiki scaffold during init)
+  - commands/init.js:373-375 (wiki scaffold during init)
   - commands/activate.js:141-158 (session-start wiki status)
   - commands/pull.js:225 (wiki prefix normalization)
   - commands/push.js:307 (wiki prefix normalization)

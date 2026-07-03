@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-06-30
+last_compiled: 2026-07-03
 sources:
   - commands/member.js:211-223 (memberPaths and MISSION.md wiring)
   - commands/member.js:422-452 (member run bridge to Mission Runtime)
@@ -9,8 +9,8 @@ sources:
   - commands/member.js:6734-6758 (wake decision and receipts)
   - commands/member.js:6765-7077 (member loop)
   - commands/member.js:7079-7319 (tick, review, block, status)
-  - commands/member.js:7588-7676 (member command dispatch and help)
-  - commands/mission.js:412-443 (renderMemberNowMarkdown — member now.md rendering)
+  - commands/member.js:8112-8237 (member command dispatch and help)
+  - commands/mission.js:718-753 (renderMemberNowMarkdown — member now.md rendering)
   - bin/atris.js:1742 (member command route)
   - atris/team/_template/MEMBER.md
   - atris/features/team-member-standard/idea.md

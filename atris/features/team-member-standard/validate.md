@@ -1,8 +1,8 @@
 ---
-last_compiled: 2026-06-30
+last_compiled: 2026-07-03
 sources:
-  - commands/member.js:7588-7676 (member command dispatch and help)
-  - commands/mission.js:412-443 (renderMemberNowMarkdown — member now.md rendering)
+  - commands/member.js:8112-8237 (member command dispatch and help)
+  - commands/mission.js:718-753 (renderMemberNowMarkdown — member now.md rendering)
   - test/commands.test.js:144 (member create, goal, wake, loop, status coverage starts here)
 ---
 

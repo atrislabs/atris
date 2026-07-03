@@ -1,9 +1,9 @@
 ---
-last_compiled: 2026-06-30
+last_compiled: 2026-07-03
 validated_by: executor
 validation_notes: Re-verified 2026-06-30. Reconciled the top-level help against the current AI-computer front door, mission/task/brain context commands, business/cloud sections, and durable TODO rendering. TODO.md remains a readable board regenerated from durable task state, not ownership truth.
 sources:
-  - bin/atris.js:414-596 (showHelp function — quick start, setup, workflow, context/tracking, sync, business, cloud agents, skills, team)
+  - bin/atris.js:458-654 (showHelp function — quick start, setup, workflow, context/tracking, sync, business, cloud agents, skills, team)
   - commands/init.js:416-441 (TODO.md placeholder creation via fs.writeFileSync)
   - commands/workflow.js:411-413 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
   - commands/workflow.js:619-633 (planAtris — include TODO.md in user prompt)
