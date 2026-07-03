@@ -6253,8 +6253,10 @@ test('mission lock busy errors are JSON-readable', () => {
     const mission = startMission(dir, 'lock busy mission');
     const lockPath = path.join(dir, '.atris', 'state', `mission-${mission.id}.lock`);
     fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    // The holder must be verifiably ALIVE: locks with dead holder pids are
+    // broken and re-acquired now, so a made-up pid no longer stays busy.
     fs.writeFileSync(lockPath, JSON.stringify({
-      pid: 12345,
+      pid: process.pid,
       started_at: '2026-05-09T00:00:00.000Z',
     }), 'utf8');
 

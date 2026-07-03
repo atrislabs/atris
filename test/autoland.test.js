@@ -297,7 +297,17 @@ test('live auto-accept refuses without policy, lands with it, blocks denied lane
 test('tick explains why strict autoland landed nothing', () => {
   const { base, repo } = makeTempRepo();
   try {
-    certifiedTask(repo, 'Needs recorded verifier before strict landing', { tag: 'code' });
+    // The proof must name NO runnable command: certify-verified now cures
+    // proof_not_executed rows by re-running the command the proof names, so a
+    // "Command passed: git diff --check" fixture gets cured and lands. Only a
+    // hand-inspection proof leaves strict accept with nothing to re-run.
+    const created = runCli(['task', 'new', 'Needs recorded verifier before strict landing', '--tag', 'code', '--json'], repo);
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const id = String(JSON.parse(created.stdout).task?.display_id || JSON.parse(created.stdout).task?.id);
+    assert.equal(runCli(['task', 'claim', id, '--as', 'builder'], repo).status, 0);
+    const proof = 'Receipt saved at atris/runs/manual-review-2026-07-03.json; rendered output inspected by hand.';
+    assert.equal(runCli(['task', 'ready', id, '--proof', proof, '--as', 'builder'], repo).status, 0);
+    assert.equal(runCli(['task', 'ready', id, '--proof', proof, '--as', 'codex-review'], repo).status, 0);
 
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
