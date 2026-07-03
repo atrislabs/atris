@@ -5727,6 +5727,21 @@ function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
 }
 
+// True only when the lock names a pid that verifiably no longer runs (ESRCH).
+// EPERM means alive-but-not-ours → busy. A lock without a parseable pid is
+// never broken here — guessing on corrupt data risks breaking a live run.
+function lockHolderIsDead(holder) {
+  const pid = Number(holder && holder.pid);
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (pid === process.pid) return false;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (e) {
+    return e.code === 'ESRCH';
+  }
+}
+
 function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
   const dir = path.join(root, '.atris', 'state');
   fs.mkdirSync(dir, { recursive: true });
@@ -5743,6 +5758,15 @@ function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
       if (e.code === 'EEXIST') {
         let info = {};
         try { info = JSON.parse(fs.readFileSync(lockFile, 'utf8') || '{}'); } catch {}
+        // A crashed holder never unlinks its lock, and every later run (cron
+        // firings included) then errors "lock busy" forever. The pid is in the
+        // lock for exactly this: if it no longer runs, the lock is stale —
+        // break it and retry the wx open (losers of the retry race just see
+        // the winner's fresh lock and report busy with a live holder).
+        if (lockHolderIsDead(info)) {
+          try { fs.unlinkSync(lockFile); } catch {}
+          continue;
+        }
         if (deadline && Date.now() < deadline) {
           sleepSync(Math.min(25, deadline - Date.now()));
           continue;
@@ -7638,5 +7662,8 @@ module.exports = {
   detectUnavailableModel,
   detectAuthExpired,
   missionPauseNextAction,
+  acquireMissionLock,
+  releaseMissionLock,
+  lockHolderIsDead,
   consecutiveSameReasonErrors,
 };
