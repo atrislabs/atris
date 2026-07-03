@@ -176,3 +176,81 @@ test('vercel deploy forwards to vercel', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('supabase help is workspace-free', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['supabase', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /usage: atris supabase <command> \[args\]/);
+    assert.match(res.stdout, /db push/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('supabase reports a missing official cli with install hint', () => {
+  const dir = makeTempDir();
+  try {
+    const emptyPath = path.join(dir, 'empty-bin');
+    fs.mkdirSync(emptyPath);
+    const res = runCli(['supabase', 'auth'], { cwd: dir, env: { PATH: emptyPath } });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /supabase cli not found/);
+    assert.match(res.stderr, /install: https:\/\/supabase\.com\/docs\/guides\/cli/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('supabase auth checks supabase projects list', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'supabase.log');
+    const binDir = writeFakeBinary(dir, 'supabase');
+    const res = runCli(['supabase', 'auth'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /auth: ok/);
+    assert.deepEqual(readLog(logPath), ['--version', 'projects list']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('supabase status forwards to supabase status', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'supabase.log');
+    const binDir = writeFakeBinary(dir, 'supabase');
+    const res = runCli(['supabase', 'status'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.deepEqual(readLog(logPath), ['--version', 'status']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('supabase db push forwards to supabase', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'supabase.log');
+    const binDir = writeFakeBinary(dir, 'supabase');
+    const res = runCli(['supabase', 'db', 'push', '--linked'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.deepEqual(readLog(logPath), ['--version', 'db push --linked']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
