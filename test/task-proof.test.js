@@ -104,8 +104,8 @@ test('non-strict auto-accept rejects free-text test-passed claims until proof wa
 
   const accepted = evaluateAutoAccept(certifiedReviewTaskWithProof(executed), { strictVerify: false });
   assert.equal(accepted.eligible, true);
-  assert.equal(accepted.reason, 'certified_multi_actor');
-  assert.equal(accepted.policy, '2_actors_2_passes');
+  assert.equal(accepted.reason, 'certified_independent_review');
+  assert.equal(accepted.policy, 'independent_reviewer');
 });
 
 test('buildVerifiedProof turns a passing command into executed proof', () => {

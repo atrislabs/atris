@@ -8231,7 +8231,9 @@ function cmdCertifyVerified(args) {
       results.push({ ref, action: 'skipped', reason: 'already_landable' });
       continue;
     }
-    const curable = ['not_agent_certified', 'needs_independent_reviewer', 'needs_second_reviewer_or_third_pass', 'insufficient_review_passes'];
+    // proof_not_executed is curable by definition: this command re-runs the
+    // named check and replaces the free-text claim with executed evidence.
+    const curable = ['not_agent_certified', 'needs_independent_reviewer', 'needs_second_reviewer_or_third_pass', 'insufficient_review_passes', 'proof_not_executed'];
     if (!curable.includes(evaluation.reason)) {
       results.push({ ref, action: 'skipped', reason: evaluation.reason });
       continue;
