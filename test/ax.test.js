@@ -41,6 +41,50 @@ test('ax routes workspace questions local inside a workspace, cloud outside', ()
   assert.equal(localPayload.max_turns, 8);
 });
 
+test('ax headless turn runs a bounded prompt and returns structured result', async () => {
+  const calls = [];
+  const payload = await ax.runHeadlessTurn('bounded prompt', {
+    mode: 'fast',
+    cwd: '/workspace/demo',
+    route: 'local',
+    verify: 'npm test',
+    turnFunction: async (message, options) => {
+      calls.push({ message, options });
+      options.output.write('aux text that must not become the answer');
+      return { output: 'bounded answer', durationMs: 12, events: [] };
+    },
+  });
+
+  assert.deepEqual(payload, {
+    ok: true,
+    model: ax.modelForMode('fast'),
+    output: 'bounded answer',
+    durationMs: 12,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].message, 'bounded prompt');
+  assert.equal(calls[0].options.cwd, '/workspace/demo');
+  assert.equal(calls[0].options.route, 'local');
+  assert.equal(calls[0].options.verify, 'npm test');
+  assert.equal(calls[0].options.showProgress, false);
+  assert.equal(calls[0].options.output.isTTY, false);
+});
+
+test('ax headless turn returns structured failure result', async () => {
+  const payload = await ax.runHeadlessTurn('bounded prompt', {
+    mode: 'fast',
+    turnFunction: async () => {
+      throw new Error('backend unavailable');
+    },
+  });
+
+  assert.equal(payload.ok, false);
+  assert.equal(payload.model, ax.modelForMode('fast'));
+  assert.equal(payload.output, '');
+  assert.equal(Number.isInteger(payload.durationMs), true);
+  assert.match(payload.error, /backend unavailable/);
+});
+
 test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
   assert.equal(ax.modelForMode('max'), 'atris:max');
 

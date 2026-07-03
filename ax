@@ -116,6 +116,7 @@ function formatUsage() {
     '',
     'Usage:',
     '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] <message>',
+    '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] --print <message>',
     '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] --chat',
     '  ax [--max|--pro|--fast] --business <slug> [<message>|--chat]',
     '  ax [--max|--pro|--fast|--code-fast] --doctor',
@@ -132,6 +133,7 @@ function formatUsage() {
     '  --code-fast  Atris Code Fast public lane',
     '  --local opt into local backend/workspace tools',
     '  --cloud force authenticated cloud connectors/chat',
+    '  --print  headless JSON result: { ok, model, output, durationMs }',
     '  --business <slug>  run tools on that business cloud workspace (EC2)',
     '  --verify <cmd>  gate the turn on this command passing (default: no verifier)',
     '',
@@ -2622,6 +2624,39 @@ function turnFunctionForMode(mode) {
   return normalizeMode(mode) === 'code-fast' ? postCodeFastTurn : postTurn;
 }
 
+async function runHeadlessTurn(message, options = {}) {
+  const mode = normalizeMode(options.mode || 'fast');
+  const startedAt = Date.now();
+  const sink = options.output || bufferedOutput();
+  const turnFunction = options.turnFunction || turnFunctionForMode(mode);
+
+  try {
+    const result = await turnFunction(message, {
+      mode,
+      cwd: options.cwd || process.cwd(),
+      route: options.route,
+      business: options.business,
+      verify: options.verify,
+      output: sink,
+      showProgress: false,
+    });
+    return {
+      ok: true,
+      model: modelForMode(mode),
+      output: String((result && result.output) || '').trim(),
+      durationMs: Number((result && result.durationMs) || 0) || (Date.now() - startedAt),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      model: modelForMode(mode),
+      output: '',
+      durationMs: Date.now() - startedAt,
+      error: String((error && error.message) || error || 'headless turn failed'),
+    };
+  }
+}
+
 async function chat(options = {}) {
   let mode = normalizeMode(options.mode);
   const cwd = options.cwd || process.cwd();
@@ -3600,6 +3635,7 @@ async function main() {
   const selfTest = args.includes('--self-test');
   const benchmark = args.includes('--benchmark');
   const approvals = args.includes('--approvals');
+  const printMode = args.includes('--print') || args.includes('--headless');
   const forceCloud = args.includes('--cloud');
   const forceLocal = args.includes('--local');
 
@@ -3627,11 +3663,11 @@ async function main() {
 
   const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
   const prompt = args
-    .filter(arg => !['--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--local', '--cloud', '--help', '-h'].includes(arg))
+    .filter(arg => !['--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h'].includes(arg))
     .join(' ')
     .trim();
 
-  const missionIntent = missionRunIntentFromMessage(prompt);
+  const missionIntent = printMode ? null : missionRunIntentFromMessage(prompt);
   if (missionIntent) {
     const result = await runLocalMission(missionIntent, {
       cwd: process.cwd(),
@@ -3677,7 +3713,7 @@ async function main() {
       executor: makeCloudExecutor({ token: creds.token, businessId: biz.businessId, workspaceId: biz.workspaceId, slug: businessSlug }),
       postToolResult
     };
-    console.log(`cloud workspace: ${biz.businessName || businessSlug}`);
+    if (!printMode) console.log(`cloud workspace: ${biz.businessName || businessSlug}`);
   }
 
   try {
@@ -3718,6 +3754,14 @@ async function main() {
       const record = denyStoredApproval(denyId);
       console.log(`Cancelled pending approval ${record.id}.`);
       return;
+    }
+
+    if (printMode) {
+      const payload = prompt
+        ? await runHeadlessTurn(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify })
+        : { ok: false, model: modelForMode(mode), output: '', durationMs: 0, error: 'missing prompt' };
+      console.log(JSON.stringify(payload));
+      process.exit(payload.ok ? 0 : 1);
     }
 
     if (!prompt || args.includes('--chat')) {
@@ -3824,6 +3868,7 @@ module.exports = {
   renderStreamingMarkdown,
   renderTerminalMarkdown,
   resolveRoute,
+  runHeadlessTurn,
   runBenchmark,
   runSelfTest,
   runtimeReadyForChat,

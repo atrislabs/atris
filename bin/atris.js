@@ -2740,8 +2740,19 @@ async function agentAtris() {
 async function chatAtris() {
   // Get message from command line args; --agent forces the legacy cloud-agent lane
   const rawArgs = process.argv.slice(3);
-  const agentLane = rawArgs.includes('--agent');
-  const message = rawArgs.filter(arg => arg !== '--agent').join(' ').trim();
+  const fastLaneFlags = [];
+  const messageArgs = [];
+  let agentLane = false;
+  for (const arg of rawArgs) {
+    if (arg === '--agent') {
+      agentLane = true;
+    } else if (arg === '--print' || arg === '--headless') {
+      fastLaneFlags.push(arg);
+    } else {
+      messageArgs.push(arg);
+    }
+  }
+  const message = messageArgs.join(' ').trim();
 
   // Respect -h / --help before any auth/state checks
   if (message === '-h' || message === '--help' || message === 'help') {
@@ -2752,6 +2763,7 @@ async function chatAtris() {
     console.log('');
     console.log('  atris chat                  Interactive chat (ax --fast --chat)');
     console.log('  atris chat "what now?"      One-shot message (ax --fast)');
+    console.log('  atris chat --print "..."    Headless JSON result (ax --fast --print)');
     console.log('  atris chat --agent [...]    Legacy cloud-agent lane (needs `atris agent`)');
     process.exit(0);
   }
@@ -2763,7 +2775,7 @@ async function chatAtris() {
     process.exit(1);
   }
 
-  const missionIntent = missionRunIntentFromFastMessage(message);
+  const missionIntent = fastLaneFlags.length ? null : missionRunIntentFromFastMessage(message);
   if (missionIntent) {
     process.exit(await runLocalFastMission(missionIntent));
   }
@@ -2776,7 +2788,7 @@ async function chatAtris() {
   if (!agentLane) {
     try {
       const axPath = path.join(__dirname, '..', 'ax');
-      const axArgs = message ? ['--fast', message] : ['--fast', '--chat'];
+      const axArgs = message || fastLaneFlags.length ? ['--fast', ...fastLaneFlags, message].filter(Boolean) : ['--fast', '--chat'];
       const run = spawnSync(process.execPath, [axPath, ...axArgs], { stdio: 'inherit' });
       process.exit(run.status || 0);
     } catch {
