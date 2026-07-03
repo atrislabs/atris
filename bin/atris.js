@@ -1460,7 +1460,7 @@ function showWelcomeVisualization() {
         lessonsText = '';
       }
       const unresolvedLessons = parseLessons(lessonsText)
-        .filter((lesson) => !/\[resolved\]/i.test(lesson.text)).length;
+        .filter((lesson) => !lesson.resolved && !/\[resolved\]/i.test(lesson.text)).length;
       if (worktrees > 0 || unresolvedLessons > 0) {
         rotInfo = { worktrees, lessons: unresolvedLessons };
       }
