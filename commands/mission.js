@@ -6825,14 +6825,14 @@ function completeMission(args) {
   const force = hasFlag(args, '--force');
   const proof = readFlag(args, '--proof', '');
   const ref = stripKnownFlags(args, ['--proof'], ['--json', '--force'])[0] || '';
-  const root = process.cwd();
   if (!ref || !proof) {
     exitMissionError('Usage: atris mission complete <id> --proof "..."', 1, asJson);
   }
-  const mission = resolveMission(ref);
-  if (!mission) {
+  const found = findMissionAcrossWorktrees(ref);
+  if (!found) {
     exitMissingMission(ref, 1, asJson);
   }
+  const { mission, root } = found;
   const gate = missionCompletionGate(mission, proof, root);
   if (!gate.ok && !force) {
     exitMissionError(`[mission complete] ${gate.reason}. Run: atris mission tick ${mission.id} --verify (or override as operator with --force)`, 2, asJson);
@@ -6905,23 +6905,27 @@ function stopMission(args) {
   if (!ref) {
     exitMissionError('Usage: atris mission stop <id> [--pause] [--reason "..."]', 1, asJson);
   }
-  const mission = resolveMission(ref);
-  if (!mission) {
+  // Worktree-held missions are stoppable too: status and doctor roll them up,
+  // so a stop that only resolves locally shows the operator a mission it then
+  // claims not to find. State writes go to the mission's own root.
+  const found = findMissionAcrossWorktrees(ref);
+  if (!found) {
     exitMissingMission(ref, 1, asJson);
   }
+  const { mission, root: missionRoot } = found;
   const status = pause ? 'paused' : 'stopped';
   // Full stops abandon work, so leave evidence: snapshot the worktree against
   // the mission baseline (what did this mission leave dirty?) before pruning it.
   let receiptPath = null;
   if (!pause) {
-    const snapshot = gitWorktreeSnapshot(process.cwd());
+    const snapshot = gitWorktreeSnapshot(missionRoot);
     const worktree = worktreeReceipt(snapshot, snapshot, {
       verifier: mission.verifier,
-      baseline: loadMissionWorktreeBaseline(mission.id, process.cwd()),
+      baseline: loadMissionWorktreeBaseline(mission.id, missionRoot),
     });
-    receiptPath = writeReceipt(mission, { kind: 'mission_stop', reason, worktree });
+    receiptPath = writeReceipt(mission, { kind: 'mission_stop', reason, worktree }, missionRoot);
   }
-  const baselineSummary = pause ? null : pruneMissionWorktreeBaseline(mission, process.cwd());
+  const baselineSummary = pause ? null : pruneMissionWorktreeBaseline(mission, missionRoot);
   const next = {
     ...mission,
     status,
@@ -6932,8 +6936,8 @@ function stopMission(args) {
     worktree_baseline: baselineSummary || mission.worktree_baseline || null,
     next_action: status === 'paused' ? `resume with: atris mission tick ${mission.id}` : 'mission stopped',
   };
-  const { mission: saved } = saveMission(next, process.cwd(), pause ? 'mission_paused' : 'mission_stopped', { reason, receipt_path: receiptPath });
-  const directGoalRequestCleared = pause ? false : clearDirectRunCodexGoalRequestForMission(saved.id, process.cwd());
+  const { mission: saved } = saveMission(next, missionRoot, pause ? 'mission_paused' : 'mission_stopped', { reason, receipt_path: receiptPath });
+  const directGoalRequestCleared = pause ? false : clearDirectRunCodexGoalRequestForMission(saved.id, missionRoot);
   const logPath = appendMemberLog(saved.owner, pause ? 'Mission paused' : 'Mission stopped', { mission: saved.objective, reason });
   printJsonOrText(
     { ok: true, action: pause ? 'mission_paused' : 'mission_stopped', mission: saved, receipt_path: receiptPath, log_path: logPath, direct_goal_request_cleared: directGoalRequestCleared },
@@ -6956,10 +6960,11 @@ function resumeMission(args) {
   if (!ref) {
     exitMissionError('Usage: atris mission resume <id> [--reason "..."]', 1, asJson);
   }
-  const mission = resolveMission(ref);
-  if (!mission) {
+  const found = findMissionAcrossWorktrees(ref);
+  if (!found) {
     exitMissingMission(ref, 1, asJson);
   }
+  const { mission, root: missionRoot } = found;
   if (TERMINAL_STATUSES.has(mission.status)) {
     exitMissionError(`Mission ${mission.id} is ${mission.status}; only paused missions resume.`, 1, asJson);
   }
@@ -6979,7 +6984,7 @@ function resumeMission(args) {
     stop_reason: null,
     next_action: `run with: atris mission run ${mission.id}`,
   };
-  const { mission: saved } = saveMission(next, process.cwd(), 'mission_resumed', { reason });
+  const { mission: saved } = saveMission(next, missionRoot, 'mission_resumed', { reason });
   const logPath = appendMemberLog(saved.owner, 'Mission resumed', { mission: saved.objective, reason });
   printJsonOrText(
     { ok: true, action: 'mission_resumed', mission: saved, log_path: logPath },

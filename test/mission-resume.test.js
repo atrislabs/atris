@@ -115,6 +115,37 @@ test('mission resume on a live mission is a safe no-op', () => {
   }
 });
 
+test('worktree-held missions can be paused, resumed, and stopped from the main checkout', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const res = runCli(['mission', 'start', 'worktree lifecycle mission', '--owner', 'mission-lead', '--worktree', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const mission = JSON.parse(res.stdout).mission;
+    assert.ok(mission.worktree?.path, 'mission must be bound to a worktree');
+
+    // status/doctor roll worktree missions up; stop/resume/complete must too
+    const paused = runCli(['mission', 'stop', mission.id, '--pause', '--json'], { cwd: dir });
+    assert.equal(paused.status, 0, paused.stderr || paused.stdout);
+    assert.equal(JSON.parse(paused.stdout).mission.status, 'paused');
+
+    const resumed = runCli(['mission', 'resume', mission.id, '--json'], { cwd: dir });
+    assert.equal(resumed.status, 0, resumed.stderr || resumed.stdout);
+    assert.equal(JSON.parse(resumed.stdout).mission.status, 'ready');
+
+    const stopped = runCli(['mission', 'stop', mission.id, '--reason', 'budget elapsed', '--json'], { cwd: dir });
+    assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
+    assert.equal(JSON.parse(stopped.stdout).mission.status, 'stopped');
+
+    // the state write must land in the mission's own root, not fork into the main one
+    const mainState = path.join(dir, '.atris', 'state', 'missions.jsonl');
+    const mainRows = fs.existsSync(mainState) ? fs.readFileSync(mainState, 'utf8') : '';
+    assert.ok(!mainRows.includes(mission.id), 'worktree mission state must not fork into the main checkout');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission resume refuses stopped missions', () => {
   const dir = makeTempDir();
   try {
