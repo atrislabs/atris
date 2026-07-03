@@ -95,12 +95,14 @@ function runMissionEngine(root, { noClaude = false, timeoutMs = 600000 } = {}) {
     payload = JSON.parse(result.stdout || '{}');
   } catch {}
   // Map the mission-run result to a normalized actor outcome.
+  const failure = result.status === 0 ? null : pulse.classifyActorFailure(result);
   const reason = payload && payload.reason ? payload.reason
-    : (result.status === 0 ? 'completed' : 'error');
+    : (result.status === 0 ? 'completed' : failure.reason);
   return {
     actor: 'mission_run_due',
     ok: result.status === 0,
-    reason, // 'completed' | 'no_due_mission' | 'error' | ...
+    reason, // 'completed' | 'no_due_mission' | 'auth-required' | 'timeout' | 'error' | ...
+    detail: failure ? (payload && payload.error ? String(payload.error).slice(-300) : failure.detail) : null,
     status: result.status,
     payload,
     stdout: String(result.stdout || '').slice(-2000),
@@ -120,10 +122,12 @@ function runAutopilotTick(root, { timeoutMs = 600000 } = {}) {
     timeout: timeoutMs,
     env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
   });
+  const failure = result.status === 0 ? null : pulse.classifyActorFailure(result);
   return {
     actor: 'autopilot',
     ok: result.status === 0,
-    reason: result.status === 0 ? 'completed' : 'error',
+    reason: result.status === 0 ? 'completed' : failure.reason,
+    detail: failure ? failure.detail : null,
     status: result.status,
     stdout: String(result.stdout || '').slice(-2000),
     stderr: String(result.stderr || '').slice(-2000),
@@ -263,6 +267,7 @@ function tickCommand(args, root = process.cwd()) {
       actor: engine.actor,
       actorOk: engine.ok,
       actorReason: engine.reason,
+      actorDetail: engine.ok ? null : engine.detail || null,
       verifyCmd: verify.cmd,
       verifyPassed: verify.passed,
       changedFiles,
@@ -293,6 +298,7 @@ function tickCommand(args, root = process.cwd()) {
       tick_index: tickIndex,
       actor: engine.actor,
       actor_reason: engine.reason,
+      actor_detail: engine.ok ? null : engine.detail || null,
       verify_passed: verify.passed,
       reward,
       scorecard_written: scorecardWritten,

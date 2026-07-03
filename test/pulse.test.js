@@ -16,6 +16,41 @@ function tmpRoot() {
 
 // --- scoreTick: reward gating mirrors the improve.js tick-5 lesson ---
 
+test('classifyActorFailure names a logged-out claude instead of a bare error', () => {
+  const { reason, detail } = pulse.classifyActorFailure({
+    status: 1,
+    signal: null,
+    stdout: 'Not logged in · Please run /login',
+    stderr: '',
+  });
+  assert.strictEqual(reason, 'auth-required');
+  assert.match(detail, /Not logged in/);
+});
+
+test('classifyActorFailure names a spawn timeout', () => {
+  const { reason } = pulse.classifyActorFailure({ status: null, signal: 'SIGTERM', stdout: '', stderr: '' });
+  assert.strictEqual(reason, 'timeout');
+});
+
+test('classifyActorFailure keeps a stderr tail as detail for plain errors', () => {
+  const { reason, detail } = pulse.classifyActorFailure({
+    status: 1,
+    signal: null,
+    stdout: '',
+    stderr: 'x'.repeat(500) + '\nEADDRINUSE: port already bound',
+  });
+  assert.strictEqual(reason, 'error');
+  assert.match(detail, /EADDRINUSE/);
+  assert.ok(detail.length <= 300);
+});
+
+test('buildPulseReceipt carries the failed actor detail', () => {
+  const receipt = pulse.buildPulseReceipt({ actor: 'autopilot', actorOk: false, actorReason: 'error', actorDetail: 'boom' });
+  assert.strictEqual(receipt.actor_detail, 'boom');
+  const clean = pulse.buildPulseReceipt({ actor: 'autopilot', actorOk: true, actorReason: 'completed' });
+  assert.strictEqual(clean.actor_detail, null);
+});
+
 test('scoreTick punishes verify failure with -1', () => {
   assert.equal(pulse.scoreTick({ verifyPassed: false, producedWork: true }), -1);
 });
