@@ -6880,6 +6880,52 @@ function stopMission(args) {
   );
 }
 
+// Symmetry partner to `mission stop --pause`. Without this, `atris mission resume <id>`
+// falls through to the natural-language mission creator and spawns a junk mission whose
+// objective is literally "resume <id>".
+function resumeMission(args) {
+  const asJson = wantsJson(args);
+  const reason = readFlag(args, '--reason', 'resumed by operator');
+  const ref = stripKnownFlags(args, ['--reason'], ['--json'])[0] || '';
+  if (!ref) {
+    exitMissionError('Usage: atris mission resume <id> [--reason "..."]', 1, asJson);
+  }
+  const mission = resolveMission(ref);
+  if (!mission) {
+    exitMissingMission(ref, 1, asJson);
+  }
+  if (TERMINAL_STATUSES.has(mission.status)) {
+    exitMissionError(`Mission ${mission.id} is ${mission.status}; only paused missions resume.`, 1, asJson);
+  }
+  if (mission.status !== 'paused') {
+    printJsonOrText(
+      { ok: true, action: 'mission_resume_noop', mission },
+      [`Mission is already ${mission.status}: ${mission.objective}`],
+      asJson,
+    );
+    return;
+  }
+  const next = {
+    ...mission,
+    status: 'ready',
+    paused_at: null,
+    resumed_at: stampIso(),
+    stop_reason: null,
+    next_action: `run with: atris mission run ${mission.id}`,
+  };
+  const { mission: saved } = saveMission(next, process.cwd(), 'mission_resumed', { reason });
+  const logPath = appendMemberLog(saved.owner, 'Mission resumed', { mission: saved.objective, reason });
+  printJsonOrText(
+    { ok: true, action: 'mission_resumed', mission: saved, log_path: logPath },
+    [
+      `Resumed mission: ${saved.objective}`,
+      `Reason: ${reason}`,
+      `Next: atris mission run ${saved.id}`,
+    ],
+    asJson,
+  );
+}
+
 function goalMission(args) {
   const asJson = wantsJson(args);
   if (args[0] === 'ack') {
@@ -7138,6 +7184,7 @@ atris mission - durable goal + loop + owner + proof state
                        (mission-run completions seed the next visible goal: decide and start the next useful mission)
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]
+  atris mission resume <id> [--reason "..."]   Flip a paused mission back to ready (partner to stop --pause)
 
 Autonomy recipe:
   1. Pick an owner member: atris member create <member>  (if missing)
@@ -7541,6 +7588,9 @@ function missionCommand(args) {
     case 'stop':
     case 'pause':
       return stopMission(subcommand === 'pause' ? ['--pause', ...rest] : rest);
+    case 'resume':
+    case 'unpause':
+      return resumeMission(rest);
     case 'help':
     case '--help':
     case '-h':
