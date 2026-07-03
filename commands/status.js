@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo, getTeamActivity } = require('../lib/todo');
+const { clarify } = require('../lib/autoland');
 
 // Box drawing helpers
 const W = 64; // inner width
@@ -184,7 +185,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
     if (endgame.slug) {
       where.push(`The active horizon is ${endgame.slug}.`);
       if (endgame.horizon) {
-        where.push(...compactWrappedText(endgame.horizon, 74, 2));
+        where.push(...compactWrappedText(clarify(endgame.horizon), 74, 2));
       }
     } else {
       where.push('No active endgame is set.');
@@ -198,12 +199,12 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
 
     const queueParts = [];
     if (todo.inProgress[0]) {
-      queueParts.push(...compactWrappedText(`In progress: ${todo.inProgress[0].title}.`, 74, 2));
+      queueParts.push(...compactWrappedText(`In progress: ${clarify(todo.inProgress[0].title)}.`, 74, 2));
     } else {
       queueParts.push('In progress: none.');
     }
     if (todo.backlog[0]) {
-      queueParts.push(...compactWrappedText(`Next backlog item: ${todo.backlog[0].title}.`, 74, 2));
+      queueParts.push(...compactWrappedText(`Next backlog item: ${clarify(todo.backlog[0].title)}.`, 74, 2));
     } else {
       queueParts.push('Next backlog item: none.');
     }
