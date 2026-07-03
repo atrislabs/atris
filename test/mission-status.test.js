@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
@@ -194,6 +195,64 @@ console.log(JSON.stringify({
     assert.match(payload.ticks[0].claude.receipt_text, /## Receipt/);
     assert.match(payload.ticks[0].claude.receipt_text, /Next tick: monitor payout surfaces only/);
   } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run keeps sleeping Atris2 backend missions running for retry', async () => {
+  const dir = makeTempDir();
+  let server = null;
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    server = http.createServer((req, res) => {
+      if (req.url === '/api/atris2/turn') {
+        res.writeHead(503, { 'Content-Type': 'text/plain' });
+        res.end('backend warming');
+        return;
+      }
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('not found');
+    });
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const { port } = server.address();
+
+    appendMissionState(dir, {
+      id: 'sleeping-atris2-backend',
+      slug: 'sleeping-atris2-backend',
+      objective: 'sleeping atris2 backend mission',
+      status: 'running',
+      runner: 'atris2',
+      verifier: 'true',
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const run = await runCliAsync(['mission', 'run', 'sleeping-atris2-backend', '--max-ticks', '1', '--json'], {
+      cwd: dir,
+      env: {
+        ATRIS_TOKEN: 'fake-token',
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      },
+    });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.pause_reason, null);
+    assert.equal(payload.mission.status, 'running');
+    assert.equal(payload.ticks.length, 1);
+    assert.equal(payload.ticks[0].status, 'errored');
+    assert.equal(payload.ticks[0].reason, 'atris2-backend-unavailable');
+    assert.equal(payload.ticks[0].atris2.backend_unavailable, true);
+
+    const status = runCli(['mission', 'status', '--status', 'running', '--json'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    const stored = JSON.parse(status.stdout).missions.find((mission) => mission.id === 'sleeping-atris2-backend');
+    assert.equal(stored.status, 'running');
+    assert.equal(stored.stop_reason, null);
+  } finally {
+    if (server?.listening) await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(dir);
   }
 });
