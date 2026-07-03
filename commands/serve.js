@@ -345,6 +345,29 @@ async function serveAtris(options = {}) {
       reconnectDelay = RECONNECT_DELAY_MS; // reset on clean disconnect
     } catch (err) {
       if (shuttingDown) break;
+      // Server restarts wipe the in-memory session store — a dead session id
+      // 404s forever, so re-register instead of retrying the corpse.
+      if (/session not found|404/i.test(err.message || '')) {
+        try {
+          const result = await apiRequestJson('/cli/sessions', {
+            method: 'POST',
+            token,
+            body: {
+              working_directory: workingDir,
+              agent_id: agentId,
+              allow_bash: allowBash,
+            },
+          });
+          if (result.ok && result.data && result.data.session_id) {
+            session = result.data;
+            console.log(`  ✓ Session expired server-side — re-registered as ${session.session_id}`);
+            reconnectDelay = RECONNECT_DELAY_MS;
+            continue;
+          }
+        } catch {
+          // fall through to normal backoff
+        }
+      }
       console.error(`  ⚠ Stream error: ${err.message}, reconnecting in ${reconnectDelay / 1000}s...`);
       await new Promise((r) => setTimeout(r, reconnectDelay));
       reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
