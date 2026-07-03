@@ -130,6 +130,39 @@ test('verifyOutcome keeps an output tail for real failures and none for passes',
   assert.strictEqual(pass.detail, null);
 });
 
+test('pulse workspace scoping: two repos get distinct state homes and cron markers', () => {
+  assert.strictEqual(pulse.pulseWorkspaceKey('/Users/x/arena/atris-cli'), 'atris-cli');
+  assert.strictEqual(pulse.pulseWorkspaceKey('/Users/x/arena/AtrisOS Backend!'), 'atrisos-backend');
+  assert.notStrictEqual(
+    pulse.pulseWorkspaceMarker('/a/repo-one'),
+    pulse.pulseWorkspaceMarker('/a/repo-two'),
+    'two workspaces must not share a cron marker',
+  );
+});
+
+test('crontabLineBelongsToWorkspace: own scoped line and legacy bare line match, others survive', () => {
+  const mine = `*/13 * * * * /home/u/.atris/overnight/repo-a-self-improve/tick.sh # ${pulse.PULSE_MARKER}:repo-a`;
+  const theirs = `*/13 * * * * /home/u/.atris/overnight/repo-b-self-improve/tick.sh # ${pulse.PULSE_MARKER}:repo-b`;
+  const legacy = `*/13 * * * * /home/u/.atris/overnight/atris-cli-self-improve/tick.sh # ${pulse.PULSE_MARKER}`;
+  assert.strictEqual(pulse.crontabLineBelongsToWorkspace(mine, '/x/repo-a'), true);
+  assert.strictEqual(pulse.crontabLineBelongsToWorkspace(theirs, '/x/repo-a'), false, 'must not kill another workspace heartbeat');
+  assert.strictEqual(pulse.crontabLineBelongsToWorkspace(legacy, '/x/repo-a'), true, 'legacy shared-singleton lines migrate away');
+});
+
+test('buildCrontabLine and buildTickScript carry the workspace-scoped marker', () => {
+  const marker = pulse.pulseWorkspaceMarker('/x/repo-a');
+  const line = pulse.buildCrontabLine({ cron: '*/13 * * * *', scriptPath: '/tmp/tick.sh', marker });
+  assert.ok(line.endsWith(`# ${marker}`));
+  const script = pulse.buildTickScript({
+    root: '/x/repo-a',
+    atrisBin: '/usr/local/bin/atris',
+    stateHome: '/home/u/.atris/overnight/repo-a-self-improve',
+    deadlineEpoch: 2000000000,
+    marker,
+  });
+  assert.ok(script.includes(`MARKER="${marker}"`), 'tick.sh must self-remove only its own scoped line');
+});
+
 test('scoreTick punishes verify failure with -1', () => {
   assert.equal(pulse.scoreTick({ verifyPassed: false, producedWork: true }), -1);
 });

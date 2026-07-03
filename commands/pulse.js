@@ -76,7 +76,14 @@ function emit(obj, asJson) {
   return obj;
 }
 
+// Legacy shared path — kept only so old installs remain findable; new installs
+// get a per-workspace home via pulseStateHome (two repos used to fight over
+// this one directory, overwriting each other's tick.sh).
 const STATE_HOME = path.join(os.homedir(), '.atris', 'overnight', 'atris-cli-self-improve');
+
+function pulseStateHome(root) {
+  return path.join(os.homedir(), '.atris', 'overnight', `${pulse.pulseWorkspaceKey(root)}-self-improve`);
+}
 
 // --- engine: run one mission-run-due tick via the real CLI ---
 
@@ -466,15 +473,17 @@ function installCommand(args, root = process.cwd()) {
   const runnerCommandTemplate = readFlag(args, '--runner-template', process.env.ATRIS_RUNNER_COMMAND_TEMPLATE || process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE || '');
   const deadlineEpoch = Math.floor(Date.now() / 1000) + expiry.seconds;
 
-  fs.mkdirSync(STATE_HOME, { recursive: true });
-  const scriptPath = path.join(STATE_HOME, 'tick.sh');
+  const stateHome = pulseStateHome(root);
+  const marker = pulse.pulseWorkspaceMarker(root);
+  fs.mkdirSync(stateHome, { recursive: true });
+  const scriptPath = path.join(stateHome, 'tick.sh');
   // Resolve the real bin dirs the engine spawns by bare name, so cron's minimal
   // PATH doesn't silently break the worker spawn (claude lives in ~/.local/bin).
   const pathDirs = resolveEngineBinDirs([runnerBin]);
   const script = pulse.buildTickScript({
     root,
     atrisBin: resolveAtrisBin(),
-    stateHome: STATE_HOME,
+    stateHome,
     deadlineEpoch,
     model,
     runnerProfile,
@@ -482,14 +491,17 @@ function installCommand(args, root = process.cwd()) {
     runnerCommandTemplate,
     verifyCmd,
     pathDirs,
+    marker,
   });
   fs.writeFileSync(scriptPath, script, { mode: 0o755 });
 
-  const line = pulse.buildCrontabLine({ cron, scriptPath });
-  // Append our line to the existing crontab (idempotent: strip any prior marker first).
+  const line = pulse.buildCrontabLine({ cron, scriptPath, marker });
+  // Append our line to the existing crontab. Idempotent per WORKSPACE: strip
+  // this workspace's prior line (and any legacy shared-singleton line), but
+  // leave other workspaces' heartbeats running.
   const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
   const prior = existing.status === 0 ? String(existing.stdout || '') : '';
-  const cleaned = prior.split('\n').filter((l) => l && !l.includes(pulse.PULSE_MARKER)).join('\n');
+  const cleaned = prior.split('\n').filter((l) => l && !pulse.crontabLineBelongsToWorkspace(l, root)).join('\n');
   const next = `${cleaned ? cleaned + '\n' : ''}${line}\n`;
   const apply = spawnSync('crontab', ['-'], { input: next, encoding: 'utf8', timeout: 10000 });
 
@@ -522,7 +534,7 @@ function installCommand(args, root = process.cwd()) {
   return emit(out, asJson);
 }
 
-function uninstallCommand(args) {
+function uninstallCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
   const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
   if (existing.status !== 0) {
@@ -531,11 +543,15 @@ function uninstallCommand(args) {
     return emit(out, asJson);
   }
   const prior = String(existing.stdout || '');
-  const had = prior.includes(pulse.PULSE_MARKER);
-  const cleaned = prior.split('\n').filter((l) => l && !l.includes(pulse.PULSE_MARKER)).join('\n');
+  // Remove this workspace's heartbeat (and any legacy shared line); other
+  // workspaces' scoped heartbeats stay installed. --all clears every pulse line.
+  const removeAll = hasFlag(args, '--all');
+  const matches = (l) => (removeAll ? l.includes(pulse.PULSE_MARKER) : pulse.crontabLineBelongsToWorkspace(l, root));
+  const had = prior.split('\n').some((l) => l && matches(l));
+  const cleaned = prior.split('\n').filter((l) => l && !matches(l)).join('\n');
   const apply = spawnSync('crontab', ['-'], { input: cleaned ? cleaned + '\n' : '', encoding: 'utf8', timeout: 10000 });
-  const out = { ok: apply.status === 0, action: 'pulse_uninstall', removed: had };
-  if (!asJson) process.stdout.write(had ? 'pulse uninstalled (crontab line removed).\n' : 'pulse: no heartbeat line found.\n');
+  const out = { ok: apply.status === 0, action: 'pulse_uninstall', removed: had, scope: removeAll ? 'all' : pulse.pulseWorkspaceKey(root) };
+  if (!asJson) process.stdout.write(had ? 'pulse uninstalled (crontab line removed).\n' : 'pulse: no heartbeat line found for this workspace (remove every pulse line: atris pulse uninstall --all).\n');
   return emit(out, asJson);
 }
 
