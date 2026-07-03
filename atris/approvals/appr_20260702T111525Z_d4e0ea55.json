@@ -1,0 +1,44 @@
+{
+  "action_type": "git_push",
+  "approval_id": "appr_20260702T111525Z_d4e0ea55",
+  "created_at": "2026-07-02T11:15:25.902050+00:00",
+  "decision": {
+    "approval_text": "",
+    "approved": false,
+    "approved_at": "",
+    "approved_by": ""
+  },
+  "integrity": {
+    "signature": "1afe231d85cb3458aa041fdde31c201b2e02edc267b4b8f275456ba15d5a115f",
+    "signature_alg": "hmac-sha256",
+    "signed": true,
+    "signed_fields": [
+      "schema",
+      "approval_id",
+      "status",
+      "action_type",
+      "summary",
+      "payload",
+      "safety",
+      "decision",
+      "created_at"
+    ]
+  },
+  "payload": {
+    "branch": "master",
+    "command": "git push origin master",
+    "commits_ahead": 3,
+    "head_commit": "6bb4411",
+    "new_commit": "6bb4411 docs(readme): add Quick Start section and wiki/ to critical files",
+    "remote": "origin",
+    "workspace": "/Users/keshavrao/arena/atris-cli"
+  },
+  "safety": {
+    "execute_in_this_runtime": false,
+    "external_side_effect": true,
+    "requires_exact_user_approval": true
+  },
+  "schema": "atris.local_approval.v1",
+  "status": "pending",
+  "summary": "Push 3 commits on master to origin (GitHub). New commit: \"docs(readme): add Quick Start section and wiki/ to critical files\" (6bb4411), plus 2 prior unpushed commits: \"docs(golden-path): record install and init papercuts\" (308aeb0) and \"fix(worktree): include legacy agent worktree wrapper\" (02434b6). Note: unstaged changes to atris/GOLDEN_PATH_PAPERCUTS.md will NOT be pushed."
+}

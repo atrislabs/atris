@@ -1,0 +1,40 @@
+{
+  "action_type": "local_command",
+  "approval_id": "appr_20260702T113502Z_fc1da685",
+  "created_at": "2026-07-02T11:35:02.613158+00:00",
+  "decision": {
+    "approval_text": "",
+    "approved": false,
+    "approved_at": "",
+    "approved_by": ""
+  },
+  "integrity": {
+    "signature": "1a8fce1dd5e3e895fae2f7f3e76b8dc5fa35a35fe2f16a08a907b30fb24519e9",
+    "signature_alg": "hmac-sha256",
+    "signed": true,
+    "signed_fields": [
+      "schema",
+      "approval_id",
+      "status",
+      "action_type",
+      "summary",
+      "payload",
+      "safety",
+      "decision",
+      "created_at"
+    ]
+  },
+  "payload": {
+    "command": "atris calendar add \"Lunch and Workout\" --date 2026-07-02 --from 12:00 --to 14:00",
+    "workspace": "/Users/keshavrao/arena/atris-cli"
+  },
+  "safety": {
+    "execute_in_this_runtime": false,
+    "external_side_effect": true,
+    "requires_exact_user_approval": true
+  },
+  "schema": "atris.local_approval.v1",
+  "status": "executed",
+  "summary": "Add calendar event \"Lunch and Workout\" today (2026-07-02) from 12:00 PM to 2:00 PM",
+  "executed_at": "2026-07-02T11:35:22.589Z"
+}

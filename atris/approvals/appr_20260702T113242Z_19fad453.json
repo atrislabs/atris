@@ -1,0 +1,40 @@
+{
+  "action_type": "slack_send_dm",
+  "approval_id": "appr_20260702T113242Z_19fad453",
+  "created_at": "2026-07-02T11:32:42.018686+00:00",
+  "decision": {
+    "approval_text": "",
+    "approved": false,
+    "approved_at": "",
+    "approved_by": ""
+  },
+  "integrity": {
+    "signature": "edfcfa36afb4531c89f8caae509105afa869ac019d72293575f0586ac04f7301",
+    "signature_alg": "hmac-sha256",
+    "signed": true,
+    "signed_fields": [
+      "schema",
+      "approval_id",
+      "status",
+      "action_type",
+      "summary",
+      "payload",
+      "safety",
+      "decision",
+      "created_at"
+    ]
+  },
+  "payload": {
+    "channel": "self-DM",
+    "message": "Test message from Atris runtime \u2014 please ignore",
+    "target": "self (DM to yourself)"
+  },
+  "safety": {
+    "execute_in_this_runtime": false,
+    "external_side_effect": true,
+    "requires_exact_user_approval": true
+  },
+  "schema": "atris.local_approval.v1",
+  "status": "pending",
+  "summary": "Send a test Slack DM to yourself (self-DM) for testing purposes"
+}
