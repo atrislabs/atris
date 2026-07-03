@@ -19,7 +19,7 @@ function reviewTask(overrides = {}) {
       agent_certified: true,
       agent_review_pass_count: 2,
       latest_agent_proof: 'npm run test:team-overall passed; git diff --check passed',
-      verify: 'npm run test:team-overall',
+      verify: 'node --check lib/auto-accept-certified.js',
       ...overrides.metadata,
     },
     review: {
@@ -40,13 +40,13 @@ function reviewTask(overrides = {}) {
 test('accepts certified review with two actors and meaningful proof', () => {
   const result = evaluateAutoAccept(reviewTask());
   assert.equal(result.eligible, true);
-  assert.equal(result.policy, '2_actors_2_passes');
+  assert.equal(result.policy, 'strict_verify');
 });
 
 test('strict verify missing points agents back to review chat', () => {
   const result = evaluateAutoAccept(reviewTask({
     metadata: { verify: '' },
-  }), { strictVerify: true });
+  }));
   assert.equal(result.eligible, false);
   assert.equal(result.reason, 'strict_verify_missing');
   assert.match(result.next_action, /metadata\.verify/);
@@ -62,7 +62,7 @@ test('accepts third pass even with one actor', () => {
     events: [{ event_type: 'proof_ready', actor: 'codex' }],
   });
   assert.equal(result.eligible, true);
-  assert.equal(result.policy, '3_passes');
+  assert.equal(result.policy, 'strict_verify');
 });
 
 test('rejects denied tags and weak proof', () => {
@@ -127,7 +127,7 @@ test('allows merged proof that explains the rejected PR boundary terms', () => {
     events: [{ event_type: 'proof_ready', actor: 'codex' }],
   }));
   assert.equal(result.eligible, true);
-  assert.equal(result.policy, '3_passes');
+  assert.equal(result.policy, 'strict_verify');
 });
 
 test('rejects single actor with only two passes', () => {

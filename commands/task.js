@@ -692,6 +692,9 @@ function certifiedReviewNextAction(nextTaskTitle) {
 }
 
 function proofBoundaryBlockedEvaluation(task) {
+  // strictVerify stays off here: this is a render-path probe for the boundary
+  // reason only, and the default-true strict mode would spawn the verify
+  // subprocess for every certified row just to draw the desk.
   const evaluation = evaluateAutoAccept(task, { strictVerify: false, minPasses: 0 });
   return evaluation && evaluation.reason === 'proof_unmerged_or_draft_pr_boundary'
     ? evaluation
@@ -8196,6 +8199,9 @@ function cmdCertifyVerified(args) {
     // something an executed second-actor check cannot cure. A row with two
     // passes from ONE actor is exactly what this command exists to cure —
     // "certified" alone is not landable.
+    // strictVerify stays off in this eligibility probe: certify-verified runs
+    // the check itself right below, and strict mode here would execute it a
+    // second time per row before the real run.
     const evaluation = evaluateAutoAccept(task, { strictVerify: false });
     if (evaluation.eligible) {
       results.push({ ref, action: 'skipped', reason: 'already_landable' });
@@ -8280,7 +8286,7 @@ function cmdLanding(args) {
 
 function cmdAutoAcceptCertified(args) {
   const dryRun = hasFlag(args, '--dry-run');
-  const strictVerify = hasFlag(args, '--strict-verify');
+  const strictVerify = !hasFlag(args, '--no-strict-verify');
   const actorFlag = flag(args, '--as');
   const hasHumanActor = validHumanActorFlag(actorFlag);
   const confirmedHumanAccept = hasFlag(args, '--confirm-human-accept');
@@ -8333,7 +8339,7 @@ function cmdAutoAcceptCertified(args) {
       results.push({ ref: item.display_id || item.id, eligible: false, reason: 'task_not_found', action: 'skipped' });
       continue;
     }
-    const evaluation = evaluateAutoAccept(task, { strictVerify });
+    const evaluation = evaluateAutoAccept(task, strictVerify ? {} : { strictVerify: false });
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped' });
       continue;
