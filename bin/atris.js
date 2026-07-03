@@ -1436,6 +1436,41 @@ function showWelcomeVisualization() {
       const landText = `${landInfo.branches} in the air, ${landInfo.due} overdue`;
       console.log(`    │   🛬 Land:    ${landText.padEnd(26)}│`);
     }
+    let rotInfo = null;
+    try {
+      const { parseLessons } = require('../lib/memory-view');
+      const resolved = path.resolve(cwd);
+      const parent = path.dirname(resolved);
+      const grandparent = path.dirname(parent);
+      let worktreeDir;
+      if (path.basename(grandparent) === '.agent-worktrees') {
+        worktreeDir = parent;
+      } else {
+        worktreeDir = path.join(path.dirname(resolved), '.agent-worktrees', path.basename(resolved));
+      }
+      let worktrees = 0;
+      if (fs.existsSync(worktreeDir)) {
+        worktrees = fs.readdirSync(worktreeDir, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory()).length;
+      }
+      let lessonsText = '';
+      try {
+        lessonsText = fs.readFileSync(path.join(atrisDir, 'lessons.md'), 'utf8');
+      } catch (err) {
+        lessonsText = '';
+      }
+      const unresolvedLessons = parseLessons(lessonsText)
+        .filter((lesson) => !/\[resolved\]/i.test(lesson.text)).length;
+      if (worktrees > 0 || unresolvedLessons > 0) {
+        rotInfo = { worktrees, lessons: unresolvedLessons };
+      }
+    } catch (err) {
+      rotInfo = null;
+    }
+    if (rotInfo) {
+      const rotText = `${rotInfo.worktrees} stale worktree${rotInfo.worktrees === 1 ? '' : 's'}, ${rotInfo.lessons} unresolved lesson${rotInfo.lessons === 1 ? '' : 's'}`;
+      console.log(`    │   🧹 rot:      ${rotText.padEnd(26)}│`);
+    }
     console.log(`    │   📝 Journal: ${(journalEntries + ' entries today').padEnd(26)}│`);
     if (endgameState.slug !== 'unset' && endgameState.horizon) {
       const endgameLine = endgameState.slug + ' — ' + endgameState.horizon;
