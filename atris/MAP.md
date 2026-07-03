@@ -85,6 +85,7 @@ rg "addTask|claimTask|doneTask|appendTaskCompletionLogs|listTasks|workspaceRoot"
 rg "codexGoalCommand|thread_goals|confirm-complete-goal-reset" commands/codex-goal.js test/codex-goal.test.js  # Native Codex /goal status/reset bridge
 rg "gmailCommand|integrationsStatus|showIntegrationsHelp|integrations --help" bin/atris.js commands/integrations.js test/commands.test.js # Integration commands + non-mutating status help
 rg "githubCommand|createOfficialCliCommand|github cli wrapper|github help is workspace-free" bin/atris.js commands/github.js lib/official-cli-integration.js test/official-cli-integrations.test.js # github official cli wrapper: gh binary/auth detection plus pr list/create/checks/view passthrough
+rg "vercelCommand|vercel cli wrapper|vercel help is workspace-free" bin/atris.js commands/vercel.js test/official-cli-integrations.test.js # vercel official cli wrapper: vercel binary/auth detection plus deploy/ls/logs/inspect passthrough
 rg "memberCommand|memberGoal|memberTick|collectWakeEvidence|collectProblemDiscoveryEvidence|configuredProblemSignalSources|seedAutonomousProblemGoal|scoredWakeCandidates|proposalForGoal|memberStatus|memberBlock|memberReview|memberPush|memberPull" commands/member.js  # Team member identity, autonomous problem discovery, configurable external signal roots/files, adaptive wake evidence/scoring, optional Atris2 proposal generation, status/block/review, and cloud sync
 rg "pullAtris|pullBusiness" commands/pull.js  # Cloud pull (journals + businesses)
 rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|claimed_task|canonical_mirror_hash" scripts/atris-labs-cloud-next-sync.js test/cloud-next-sync.test.js  # Atris Labs cloud next-work mirror sync: local task state -> /workspace/work/next -> cloud self-improve receipt; claimed codex work beats human-accept waits; stable digest sidecar detects unchanged mirror state
@@ -1129,12 +1130,26 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Command:** `commands/github.js:3` (`githubCommand`)
 - **Shared wrapper:** `lib/official-cli-integration.js:139` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:609` (`github cli wrapper`)
-- **Known command:** `bin/atris.js:979` (`github`)
-- **Routing:** `bin/atris.js:2130` (`command === 'github'`)
+- **Known command:** `bin/atris.js:980` (`github`)
+- **Routing:** `bin/atris.js:2131` (`command === 'github'`)
 - **Subcommands:** `commands/github.js:12` (`pr list`), `commands/github.js:18` (`pr create`), `commands/github.js:24` (`pr checks`), `commands/github.js:30` (`pr view`)
 - **Regression:** `test/official-cli-integrations.test.js:56` (workspace-free help), `test/official-cli-integrations.test.js:71` (missing `gh` install hint), `test/official-cli-integrations.test.js:85` (auth status), `test/official-cli-integrations.test.js:102` (passthrough args)
 
 **Search:** `rg "githubCommand|github cli wrapper|github help is workspace-free" bin/atris.js commands/github.js test/official-cli-integrations.test.js`
+
+### Feature: vercel cli integration (`atris vercel`)
+
+**Purpose:** Agent-friendly wrapper for the official `vercel` cli with binary detection, auth status, and deployment operations.
+
+- **Command:** `commands/vercel.js:3` (`vercelCommand`)
+- **Shared wrapper:** `lib/official-cli-integration.js:139` (`createOfficialCliCommand`)
+- **Help line:** `bin/atris.js:610` (`vercel cli wrapper`)
+- **Known command:** `bin/atris.js:980` (`vercel`)
+- **Routing:** `bin/atris.js:2134` (`command === 'vercel'`)
+- **Subcommands:** `commands/vercel.js:12` (`deploy`), `commands/vercel.js:18` (`ls`), `commands/vercel.js:24` (`logs`), `commands/vercel.js:30` (`inspect`)
+- **Regression:** `test/official-cli-integrations.test.js:118` (workspace-free help), `test/official-cli-integrations.test.js:133` (missing `vercel` install hint), `test/official-cli-integrations.test.js:147` (auth status), `test/official-cli-integrations.test.js:164` (passthrough args)
+
+**Search:** `rg "vercelCommand|vercel cli wrapper|vercel help is workspace-free" bin/atris.js commands/vercel.js test/official-cli-integrations.test.js`
 
 ### Feature: Integrations (`atris gmail/calendar/twitter/slack/integrations`)
 

@@ -114,3 +114,65 @@ test('github pr list forwards to gh', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('vercel help is workspace-free', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['vercel', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /usage: atris vercel <command> \[args\]/);
+    assert.match(res.stdout, /deploy/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('vercel reports a missing official cli with install hint', () => {
+  const dir = makeTempDir();
+  try {
+    const emptyPath = path.join(dir, 'empty-bin');
+    fs.mkdirSync(emptyPath);
+    const res = runCli(['vercel', 'auth'], { cwd: dir, env: { PATH: emptyPath } });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /vercel cli not found/);
+    assert.match(res.stderr, /install: https:\/\/vercel\.com\/docs\/cli/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('vercel auth checks vercel whoami', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'vercel.log');
+    const binDir = writeFakeBinary(dir, 'vercel');
+    const res = runCli(['vercel', 'auth'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /auth: ok/);
+    assert.deepEqual(readLog(logPath), ['--version', 'whoami']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('vercel deploy forwards to vercel', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'vercel.log');
+    const binDir = writeFakeBinary(dir, 'vercel');
+    const res = runCli(['vercel', 'deploy', '--prod'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.deepEqual(readLog(logPath), ['--version', 'deploy --prod']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
