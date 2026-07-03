@@ -3,9 +3,22 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const http = require('node:http');
 const { Readable } = require('node:stream');
 
 const ax = require('../ax');
+
+function listenLocal(server) {
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve(server.address().port));
+  });
+}
+
+function closeServer(server) {
+  return new Promise((resolve, reject) => {
+    server.close((err) => (err ? reject(err) : resolve()));
+  });
+}
 
 // A cwd with no .git/atris/atris.md marker anywhere up its (nonexistent) tree.
 // os.tmpdir() and /tmp are not safe here — a stray /tmp/atris turns them into
@@ -39,6 +52,129 @@ test('ax routes workspace questions local inside a workspace, cloud outside', ()
   });
   assert.equal(localPayload.workspace_path, '/tmp/project');
   assert.equal(localPayload.max_turns, 8);
+});
+
+test('ax headless turn runs a bounded prompt and returns structured result', async () => {
+  const calls = [];
+  const payload = await ax.runHeadlessTurn('bounded prompt', {
+    mode: 'fast',
+    cwd: '/workspace/demo',
+    route: 'local',
+    verify: 'npm test',
+    turnFunction: async (message, options) => {
+      calls.push({ message, options });
+      options.output.write('aux text that must not become the answer');
+      return { output: 'bounded answer', durationMs: 12, events: [] };
+    },
+  });
+
+  assert.deepEqual(payload, {
+    ok: true,
+    model: ax.modelForMode('fast'),
+    output: 'bounded answer',
+    durationMs: 12,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].message, 'bounded prompt');
+  assert.equal(calls[0].options.cwd, '/workspace/demo');
+  assert.equal(calls[0].options.route, 'local');
+  assert.equal(calls[0].options.verify, 'npm test');
+  assert.equal(calls[0].options.showProgress, false);
+  assert.equal(calls[0].options.output.isTTY, false);
+});
+
+test('ax headless turn returns structured failure result', async () => {
+  const payload = await ax.runHeadlessTurn('bounded prompt', {
+    mode: 'fast',
+    turnFunction: async () => {
+      throw new Error('backend unavailable');
+    },
+  });
+
+  assert.equal(payload.ok, false);
+  assert.equal(payload.model, ax.modelForMode('fast'));
+  assert.equal(payload.output, '');
+  assert.equal(Number.isInteger(payload.durationMs), true);
+  assert.match(payload.error, /backend unavailable/);
+});
+
+test('ax headless turn sends the verbatim prompt over the real HTTP transport', async () => {
+  // The two tests above stub `turnFunction` entirely, which bypasses
+  // postTurn/buildPayload and the real wire request — they cannot catch a
+  // regression where the prompt is lost or mutated before it reaches the
+  // backend. This one runs runHeadlessTurn -> postTurn -> buildPayload for
+  // real against a local HTTP stub and inspects the actual outbound body.
+  const prompt = 'grep for runHeadlessTurn in /Users/keshavrao/arena/atris-cli/ax and quote the exact line where it is defined';
+  let requestBody = '';
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      requestBody = body;
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.end('data: ' + JSON.stringify({ type: 'text_delta', content: 'stub final answer' }) + '\n\n');
+    });
+  });
+  const port = await listenLocal(server);
+  const previousBackendUrl = process.env.AX_BACKEND_URL;
+  process.env.AX_BACKEND_URL = `http://127.0.0.1:${port}/api/atris2/turn`;
+
+  try {
+    const payload = await ax.runHeadlessTurn(prompt, {
+      mode: 'fast',
+      cwd: path.join(__dirname, '..'),
+      route: 'local',
+    });
+
+    assert.equal(payload.ok, true);
+    assert.equal(payload.output, 'stub final answer');
+    assert.deepEqual(JSON.parse(requestBody).message, prompt);
+  } finally {
+    if (previousBackendUrl === undefined) delete process.env.AX_BACKEND_URL;
+    else process.env.AX_BACKEND_URL = previousBackendUrl;
+    await closeServer(server);
+  }
+});
+
+test('ax headless turn surfaces the backend result event as output, not leftover tool-loop narration', async () => {
+  // Root cause: local tool-loop turns stream throwaway narration via
+  // text_delta before the model actually does the work ("Acknowledged, let
+  // me check that...") and only produce the real answer in the final
+  // `result` event. handleEvent's old `!state.output` guard meant the first
+  // text_delta permanently blocked the authoritative `result` from ever
+  // overwriting it, so headless --print (and chat) silently returned the
+  // narration instead of the answer.
+  const prompt = 'grep for runHeadlessTurn in /Users/keshavrao/arena/atris-cli/ax and quote the exact line where it is defined';
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('data: ' + JSON.stringify({ type: 'text_delta', content: "Acknowledged. I'm ready. What would you like me to look up?" }) + '\n\n');
+      res.write('data: ' + JSON.stringify({ type: 'assistant_blocks', blocks: [{ type: 'tool_use', tool: 'grep', input: { pattern: 'runHeadlessTurn' } }] }) + '\n\n');
+      res.write('data: ' + JSON.stringify({ type: 'tool_results', results: [{ output: 'ax:2627' }] }) + '\n\n');
+      res.end('data: ' + JSON.stringify({ type: 'result', result: 'It is defined at ax:2627 — `async function runHeadlessTurn(message, options = {}) {`' }) + '\n\n');
+    });
+  });
+  const port = await listenLocal(server);
+  const previousBackendUrl = process.env.AX_BACKEND_URL;
+  process.env.AX_BACKEND_URL = `http://127.0.0.1:${port}/api/atris2/turn`;
+
+  try {
+    const payload = await ax.runHeadlessTurn(prompt, {
+      mode: 'fast',
+      cwd: path.join(__dirname, '..'),
+      route: 'local',
+    });
+
+    assert.equal(payload.ok, true);
+    assert.equal(payload.output, 'It is defined at ax:2627 — `async function runHeadlessTurn(message, options = {}) {`');
+    assert.doesNotMatch(payload.output, /Acknowledged\. I'm ready/);
+  } finally {
+    if (previousBackendUrl === undefined) delete process.env.AX_BACKEND_URL;
+    else process.env.AX_BACKEND_URL = previousBackendUrl;
+    await closeServer(server);
+  }
 });
 
 test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {

@@ -976,7 +976,7 @@ const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'stat
                        'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
-                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines'];
+                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -2361,6 +2361,12 @@ if (command === 'init') {
   Promise.resolve(require('../commands/moves').movesCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'feed') {
+  // Feed: read and post the business group feed — receipts and state changes only.
+  // Sets exitCode instead of process.exit() so large --json output flushes fully.
+  Promise.resolve(require('../commands/feed').feedCommand(process.argv.slice(3)))
+    .then((code) => { process.exitCode = typeof code === 'number' ? code : 0; })
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exitCode = 1; });
 } else if (command === 'clarity') {
   // Clarity: interview yourself once; agents read how you work so you stop repeating it.
   Promise.resolve(require('../commands/clarity').clarityCommand(process.argv.slice(3)))
@@ -2734,8 +2740,19 @@ async function agentAtris() {
 async function chatAtris() {
   // Get message from command line args; --agent forces the legacy cloud-agent lane
   const rawArgs = process.argv.slice(3);
-  const agentLane = rawArgs.includes('--agent');
-  const message = rawArgs.filter(arg => arg !== '--agent').join(' ').trim();
+  const fastLaneFlags = [];
+  const messageArgs = [];
+  let agentLane = false;
+  for (const arg of rawArgs) {
+    if (arg === '--agent') {
+      agentLane = true;
+    } else if (arg === '--print' || arg === '--headless') {
+      fastLaneFlags.push(arg);
+    } else {
+      messageArgs.push(arg);
+    }
+  }
+  const message = messageArgs.join(' ').trim();
 
   // Respect -h / --help before any auth/state checks
   if (message === '-h' || message === '--help' || message === 'help') {
@@ -2746,6 +2763,7 @@ async function chatAtris() {
     console.log('');
     console.log('  atris chat                  Interactive chat (ax --fast --chat)');
     console.log('  atris chat "what now?"      One-shot message (ax --fast)');
+    console.log('  atris chat --print "..."    Headless JSON result (ax --fast --print)');
     console.log('  atris chat --agent [...]    Legacy cloud-agent lane (needs `atris agent`)');
     process.exit(0);
   }
@@ -2757,7 +2775,7 @@ async function chatAtris() {
     process.exit(1);
   }
 
-  const missionIntent = missionRunIntentFromFastMessage(message);
+  const missionIntent = fastLaneFlags.length ? null : missionRunIntentFromFastMessage(message);
   if (missionIntent) {
     process.exit(await runLocalFastMission(missionIntent));
   }
@@ -2770,7 +2788,7 @@ async function chatAtris() {
   if (!agentLane) {
     try {
       const axPath = path.join(__dirname, '..', 'ax');
-      const axArgs = message ? ['--fast', message] : ['--fast', '--chat'];
+      const axArgs = message || fastLaneFlags.length ? ['--fast', ...fastLaneFlags, message].filter(Boolean) : ['--fast', '--chat'];
       const run = spawnSync(process.execPath, [axPath, ...axArgs], { stdio: 'inherit' });
       process.exit(run.status || 0);
     } catch {
