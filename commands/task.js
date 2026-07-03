@@ -692,7 +692,10 @@ function certifiedReviewNextAction(nextTaskTitle) {
 }
 
 function proofBoundaryBlockedEvaluation(task) {
-  const evaluation = evaluateAutoAccept(task, { minPasses: 0 });
+  // strictVerify stays off here: this is a render-path probe for the boundary
+  // reason only, and the default-true strict mode would spawn the verify
+  // subprocess for every certified row just to draw the desk.
+  const evaluation = evaluateAutoAccept(task, { strictVerify: false, minPasses: 0 });
   return evaluation && evaluation.reason === 'proof_unmerged_or_draft_pr_boundary'
     ? evaluation
     : null;
@@ -8196,7 +8199,10 @@ function cmdCertifyVerified(args) {
     // something an executed second-actor check cannot cure. A row with two
     // passes from ONE actor is exactly what this command exists to cure —
     // "certified" alone is not landable.
-    const evaluation = evaluateAutoAccept(task);
+    // strictVerify stays off in this eligibility probe: certify-verified runs
+    // the check itself right below, and strict mode here would execute it a
+    // second time per row before the real run.
+    const evaluation = evaluateAutoAccept(task, { strictVerify: false });
     if (evaluation.eligible) {
       results.push({ ref, action: 'skipped', reason: 'already_landable' });
       continue;
