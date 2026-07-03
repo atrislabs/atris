@@ -4231,6 +4231,12 @@ function resolveVerifierCommand(command) {
   return `${leading}${shellQuote(process.execPath)} ${shellQuote(cliPath)}${trimmed.slice('atris'.length)}`;
 }
 
+function missionVerifierTimeoutMs(env = process.env) {
+  const parsed = Number(env.ATRIS_MISSION_VERIFIER_TIMEOUT_MS);
+  if (Number.isFinite(parsed) && parsed >= 1000) return Math.floor(parsed);
+  return 120000;
+}
+
 function runVerifier(command, root = process.cwd()) {
   if (!command) return null;
   const resolvedCommand = resolveVerifierCommand(command);
@@ -4238,7 +4244,7 @@ function runVerifier(command, root = process.cwd()) {
     cwd: root,
     shell: true,
     encoding: 'utf8',
-    timeout: 120000,
+    timeout: missionVerifierTimeoutMs(),
     env: process.env,
   });
   return {
@@ -7444,4 +7450,5 @@ module.exports = {
   detectUnavailableModel,
   missionPauseNextAction,
   consecutiveSameReasonErrors,
+  missionVerifierTimeoutMs,
 };

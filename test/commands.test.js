@@ -12070,7 +12070,7 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    writePolicy(dir, { enabled: false, enabled_by: 'keshav' });
+    writePolicy(dir, { enabled: false, enabled_by: 'test' });
     const add = runCli(['task', 'add', 'Auto accept still needs a human', '--tag', 'agent-xp', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;

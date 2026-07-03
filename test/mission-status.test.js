@@ -12,6 +12,7 @@ const {
   selectAtrisGoalMission,
   selectCodexGoalMission,
   usefulClaudeReceiptSummary,
+  missionVerifierTimeoutMs,
 } = require('../commands/mission');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -75,6 +76,12 @@ function hasNodeSqlite() {
   });
   return result.status === 0;
 }
+
+test('mission verifier timeout can be extended for long suites', () => {
+  assert.equal(missionVerifierTimeoutMs({}), 120000);
+  assert.equal(missionVerifierTimeoutMs({ ATRIS_MISSION_VERIFIER_TIMEOUT_MS: '300000' }), 300000);
+  assert.equal(missionVerifierTimeoutMs({ ATRIS_MISSION_VERIFIER_TIMEOUT_MS: 'bad' }), 120000);
+});
 
 function startMission(dir, title) {
   const res = runCli(['mission', 'start', title, '--owner', 'mission-lead', '--json'], { cwd: dir });
