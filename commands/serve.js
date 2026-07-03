@@ -208,8 +208,21 @@ function streamSession(token, sessionId, workingDir) {
 
       console.log(`● Bridge active — listening for ops on session ${sessionId.slice(0, 8)}...`);
 
+      // Ping watchdog: the server pings every ~30s. Silence past 3 intervals
+      // means the socket died without a FIN (server redeploy, NAT drop) —
+      // kill it so the outer loop reconnects/re-registers instead of zombieing.
+      let lastSeen = Date.now();
+      const watchdog = setInterval(() => {
+        if (Date.now() - lastSeen > HEARTBEAT_INTERVAL_MS * 3) {
+          clearInterval(watchdog);
+          res.destroy(new Error('stream silent >90s, assuming dead socket'));
+        }
+      }, HEARTBEAT_INTERVAL_MS);
+      res.on('close', () => clearInterval(watchdog));
+
       let buffer = '';
       res.on('data', async (chunk) => {
+        lastSeen = Date.now();
         buffer += chunk.toString();
         const messages = buffer.split('\n\n');
         buffer = messages.pop() || '';
@@ -345,6 +358,29 @@ async function serveAtris(options = {}) {
       reconnectDelay = RECONNECT_DELAY_MS; // reset on clean disconnect
     } catch (err) {
       if (shuttingDown) break;
+      // Server restarts wipe the in-memory session store — a dead session id
+      // 404s forever, so re-register instead of retrying the corpse.
+      if (/session not found|404/i.test(err.message || '')) {
+        try {
+          const result = await apiRequestJson('/cli/sessions', {
+            method: 'POST',
+            token,
+            body: {
+              working_directory: workingDir,
+              agent_id: agentId,
+              allow_bash: allowBash,
+            },
+          });
+          if (result.ok && result.data && result.data.session_id) {
+            session = result.data;
+            console.log(`  ✓ Session expired server-side — re-registered as ${session.session_id}`);
+            reconnectDelay = RECONNECT_DELAY_MS;
+            continue;
+          }
+        } catch {
+          // fall through to normal backoff
+        }
+      }
       console.error(`  ⚠ Stream error: ${err.message}, reconnecting in ${reconnectDelay / 1000}s...`);
       await new Promise((r) => setTimeout(r, reconnectDelay));
       reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);

@@ -8,7 +8,7 @@ const http = require('http');
 const path = require('path');
 const os = require('os');
 const { taskProofState, buildVerifiedProof } = require('../lib/task-proof');
-const { evaluateAutoAccept, parseVerifyCommand, runVerifyCommand, DENIED_TAGS } = require('../lib/auto-accept-certified');
+const { evaluateAutoAccept, isAgentCertified, parseVerifyCommand, runVerifyCommand, DENIED_TAGS } = require('../lib/auto-accept-certified');
 const { extractReceiptEvidence } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const reviewIntegrity = require('../lib/review-integrity');
@@ -134,7 +134,7 @@ atris task - durable local task state (SQLite, gitignored)
                                            Human accepts proof, marks done; --public also publishes AgentXP
   atris task certify-verified [--dry-run] [--limit <n>] [--as <actor>]
                                            Re-run the runnable check named in each Review proof as a second actor; passing rows certify (denied lanes and check-less rows wait for a human)
-  atris task auto-accept-certified --dry-run [--strict-verify] [--limit <n>]
+  atris task auto-accept-certified --dry-run [--strict-verify] [--all] [--limit <n>]
                                            Preview certified Review rows; live accept needs --confirm-human-accept --as <human>
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
@@ -8363,7 +8363,8 @@ function cmdLanding(args) {
 
 function cmdAutoAcceptCertified(args) {
   const dryRun = hasFlag(args, '--dry-run');
-  const strictVerify = !hasFlag(args, '--no-strict-verify');
+  const acceptAll = hasFlag(args, '--all');
+  const strictVerify = !hasFlag(args, '--no-strict-verify') && !acceptAll;
   const actorFlag = flag(args, '--as');
   const hasHumanActor = validHumanActorFlag(actorFlag);
   const confirmedHumanAccept = hasFlag(args, '--confirm-human-accept');
@@ -8376,7 +8377,17 @@ function cmdAutoAcceptCertified(args) {
     : { ok: false };
   const actor = String(actorFlag || (policyAuth.ok ? policyAuth.actor : 'auto-accept-certified'));
   const limitRaw = flag(args, '--limit');
-  const max = limitRaw && limitRaw !== true ? Math.max(1, Number(limitRaw) || 12) : 12;
+  const hasExplicitLimit = Boolean(limitRaw) && limitRaw !== true;
+  // --all means sweep the full certified backlog, not just the first page of
+  // it. Before this fix `max` was hard-capped at 12 even under --all, so a
+  // real backlog (78 certified rows observed live) only ever drained 12/run —
+  // an invisible undercount the autoland heartbeat repeated every hour.
+  // AUTO_ACCEPT_ALL_SWEEP_CAP is a safety ceiling, not a target: a well-formed
+  // --all run should always scan fewer rows than this.
+  const AUTO_ACCEPT_ALL_SWEEP_CAP = 500;
+  const max = hasExplicitLimit
+    ? Math.max(1, Number(limitRaw) || 12)
+    : (acceptAll ? AUTO_ACCEPT_ALL_SWEEP_CAP : 12);
   const parsedReward = parseAcceptReward(flag(args, '--reward'));
   if (!parsedReward.ok) {
     console.error('atris task auto-accept-certified: reward must be a positive number');
@@ -8396,10 +8407,18 @@ function cmdAutoAcceptCertified(args) {
       'live auto-accept requires --as <human> so XP has an explicit human acceptance actor',
     );
   }
-  if (agentProofOnlyMode() && !dryRun) {
+  // The standing autoland policy clears this gate too, same as the two
+  // per-run human gates above: the owner flipped the policy, accepts run as
+  // that owner, and the cron tick would land the same rows an hour later
+  // anyway. Without this exception `atris autoland tick` was blind whenever
+  // invoked from an agent session (CLAUDECODE etc. in env): the spawned
+  // sweep failTask'd with no summary and the tick receipt showed nulls.
+  // A per-run --confirm-human-accept claim from an agent is still refused —
+  // policyAuth is only consulted when no per-run confirmation is passed.
+  if (agentProofOnlyMode() && !dryRun && !policyAuth.ok) {
     failAgentProofOnly(
       'atris task auto-accept-certified',
-      'Agent proof-only mode can preview certified rows with --dry-run, but cannot live-accept them.',
+      'Agent proof-only mode can preview certified rows with --dry-run, but cannot live-accept them without the standing autoland policy.',
     );
   }
 
@@ -8407,9 +8426,23 @@ function cmdAutoAcceptCertified(args) {
   const db = taskDb.open();
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const queue = taskReviewQueue(projection, ['--limit', String(max)]);
+  const pendingReview = (projection.tasks || [])
+    .filter((t) => t && t.status === 'review' && t.review && t.review.approval_status === 'pending');
+  // Honest denominator for the summary line below: how many rows the
+  // projection actually certified, independent of any scan cap. If `scanned`
+  // ever comes in under `certified`, the undercount is visible instead of
+  // silent (the exact failure mode this fix closes).
+  const certifiedTotal = pendingReview.filter((t) => isAgentCertified(t)).length;
+  // The review queue only surfaces certified rows. Under --all the bar is
+  // the protected lanes, not certification, so scan every pending review.
+  const pool = acceptAll
+    ? pendingReview
+      .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
+      .slice(0, max)
+    : queue.items;
   const results = [];
 
-  for (const item of queue.items) {
+  for (const item of pool) {
     const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
     const task = fullProjection.tasks[0] || null;
     if (!task) {
@@ -8419,7 +8452,7 @@ function cmdAutoAcceptCertified(args) {
     // Dry-run previews never execute verify commands: presence + allowlist
     // parse is enough to say "would accept", and executing dozens of recorded
     // checks made status renders hang on large review queues.
-    const evaluation = evaluateAutoAccept(task, { strictVerify, executeVerify: !dryRun });
+    const evaluation = evaluateAutoAccept(task, { strictVerify, executeVerify: !dryRun, acceptAll });
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped' });
       continue;
@@ -8451,17 +8484,24 @@ function cmdAutoAcceptCertified(args) {
 
   const { projection: finalProjection, outPath: finalPath } = writeDefaultProjection(taskDb, db);
   const summary = {
-    scanned: queue.items.length,
+    certified: certifiedTotal,
+    scanned: pool.length,
     accepted: results.filter(row => row.action === 'accepted').length,
     would_accept: results.filter(row => row.action === 'would_accept').length,
     skipped: results.filter(row => row.action === 'skipped').length,
     failed: results.filter(row => row.action === 'accept_failed').length,
+    // Visible undercount flag: true only if the pool was cut short by `max`
+    // while certified rows still existed beyond it. --all uses a high safety
+    // cap (AUTO_ACCEPT_ALL_SWEEP_CAP), so this should stay false in practice;
+    // if it ever flips true, the cap itself needs raising, not silence.
+    undercounted: certifiedTotal > pool.length,
   };
   if (wantsJson(args)) {
     printJson({
       ok: true,
       action: dryRun ? 'auto_accept_certified_dry_run' : 'auto_accept_certified',
       strict_verify: strictVerify,
+      accept_all: acceptAll,
       summary,
       ...summary,
       results,
@@ -8471,7 +8511,7 @@ function cmdAutoAcceptCertified(args) {
     return;
   }
   console.log(`AUTO-ACCEPT CERTIFIED (${dryRun ? 'dry-run' : 'execute'})`);
-  console.log(`${summary.accepted || summary.would_accept} accepted / ${summary.skipped} skipped / ${summary.failed} failed / ${summary.scanned} scanned`);
+  console.log(`${summary.certified} certified, ${summary.scanned} scanned, ${summary.accepted || summary.would_accept} accepted, ${summary.skipped} skipped${summary.failed ? `, ${summary.failed} failed` : ''}${summary.undercounted ? ' (UNDERCOUNTED — raise --limit or the sweep cap)' : ''}`);
   for (const row of results) {
     const nextAction = row.next_action ? ` next_action=${row.next_action}` : '';
     const reviewChat = row.review_chat_command ? ` review_chat=${row.review_chat_command}` : '';

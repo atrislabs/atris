@@ -533,6 +533,7 @@ function showHelp() {
   console.log('  improve    - Run one paid RL tick (POST /api/improve, deducts credits)');
   console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
   console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
+  console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
   console.log('  autoland   - Approve the policy once; certified work lands itself, you keep irreversible calls');
   console.log('  engine     - Bring any intelligence: roster of installed coding CLIs, default engine, --engine per run, `engine test` preflight');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
@@ -979,7 +980,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
-                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
+                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
                        'github', 'vercel', 'supabase', 'linear', 'stripe', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed'];
 
@@ -1588,6 +1589,11 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'land') {
   Promise.resolve(require('../commands/land').landCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'drive') {
+  // Drive: one self-driving tick — mission doctor -> auto-fix safe findings -> count disengagements.
+  Promise.resolve(require('../commands/drive').driveCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'radar' || command === 'ctop') {

@@ -240,3 +240,61 @@ test('strict verify previews still reject unparsable commands', () => {
   assert.equal(preview.eligible, false);
   assert.equal(preview.reason, 'verify_command_not_allowed');
 });
+
+test('acceptAll: only protected lanes and hard evidence block; certification does not', () => {
+  // no certification, one actor, weak proof, no verify command — lands
+  const bare = reviewTask({
+    metadata: { agent_certified: false, agent_review_pass_count: 1, latest_agent_proof: '', verify: undefined },
+    review: { agent_certified: false, agent_review_pass_count: 1, proof: '' },
+  });
+  delete bare.metadata.verify;
+  const landed = evaluateAutoAccept(bare, { acceptAll: true });
+  assert.equal(landed.eligible, true);
+  assert.equal(landed.policy, 'all_but_protected');
+
+  // protected lane still waits for a human
+  const billing = evaluateAutoAccept({ ...bare, tag: 'billing' }, { acceptAll: true });
+  assert.equal(billing.eligible, false);
+  assert.equal(billing.reason, 'denied_tag_billing');
+
+  // a proof naming an unmerged draft PR still blocks
+  const draft = evaluateAutoAccept(reviewTask({
+    metadata: { latest_agent_proof: 'Opened PR #42, currently open draft awaiting review.', verify: undefined },
+  }), { acceptAll: true });
+  assert.equal(draft.eligible, false);
+  assert.equal(draft.reason, 'proof_unmerged_or_draft_pr_boundary');
+
+  // a recorded check that FAILS still blocks (absence of one does not)
+  const failing = evaluateAutoAccept(reviewTask({
+    metadata: { verify: 'node --check does-not-exist.js' },
+  }), { acceptAll: true });
+  assert.equal(failing.eligible, false);
+  assert.equal(failing.reason, 'verify_failed');
+});
+
+test('denied lanes match tag variants: plurals, compounds, whitespace', () => {
+  for (const [tag, lane] of [['deploys', 'deploy'], ['infra-deploy', 'deploy'], [' Billing ', 'billing'], ['customer-facing', 'customer']]) {
+    const loose = evaluateAutoAccept({ ...reviewTask(), tag }, { acceptAll: true });
+    assert.equal(loose.eligible, false, `acceptAll should deny tag '${tag}'`);
+    assert.equal(loose.reason, `denied_tag_${lane}`);
+    const strict = evaluateAutoAccept({ ...reviewTask(), tag });
+    assert.equal(strict.eligible, false, `certified mode should deny tag '${tag}'`);
+    assert.equal(strict.reason, `denied_tag_${lane}`);
+  }
+  // an unrelated compound is not swallowed by the word matcher
+  const fine = evaluateAutoAccept({ ...reviewTask(), tag: 'self-improve' }, { acceptAll: true });
+  assert.equal(fine.eligible, true);
+});
+
+test('acceptAll: a check pointing at a vanished worktree blocks; an un-runnable check does not', () => {
+  const gone = evaluateAutoAccept(reviewTask({
+    metadata: { verify: 'git -C reaped-away-worktree diff --check' },
+  }), { acceptAll: true });
+  assert.equal(gone.eligible, false);
+  assert.equal(gone.reason, 'verify_worktree_missing');
+
+  const notAllowed = evaluateAutoAccept(reviewTask({
+    metadata: { verify: 'pytest tests/' },
+  }), { acceptAll: true });
+  assert.equal(notAllowed.eligible, true);
+});

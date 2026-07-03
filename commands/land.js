@@ -146,15 +146,49 @@ function remoteHeads(root) {
   return heads;
 }
 
+// Everything a force-remove would destroy: staged + unstaged tracked changes
+// (git diff HEAD) and untracked files (copied verbatim). Returns false if any
+// piece could not be saved — the caller then keeps the worktree.
+function salvageWorktree(w, dir, receipt) {
+  try {
+    const diff = runGit(['diff', 'HEAD'], { cwd: w.path, check: false });
+    if (diff.status !== 0) return false;
+    if (diff.stdout.trim()) {
+      const patchPath = path.join(dir, `${path.basename(w.path)}.dirty.patch`);
+      fs.writeFileSync(patchPath, diff.stdout);
+      receipt.patches.push(patchPath);
+    }
+    const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z'], { cwd: w.path, check: false });
+    if (untracked.status !== 0) return false;
+    const files = untracked.stdout.split('\0').filter(Boolean);
+    if (files.length > 0) {
+      const destRoot = path.join(dir, `${path.basename(w.path)}.untracked`);
+      for (const rel of files) {
+        const dest = path.join(destRoot, rel);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(path.join(w.path, rel), dest);
+      }
+      receipt.untracked.push(destRoot);
+    }
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
 // Reap: salvage then delete everything landed (residue) or past TTL.
 // Salvage first, always: unlanded commits go into a git bundle, dirty
-// worktrees into patch files, so a reap is never a loss of work.
-function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRun = false, remote = true } = {}) {
+// worktrees into patch files + untracked-file copies, so a reap is never
+// a loss of work — and when a backup cannot be written, the work stays.
+// includeDetached: detached-HEAD worktrees have no branch, so the salvage
+// bundle cannot cover their commits — unattended reaps (autoland) pass false
+// and leave them for a human reap.
+function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true } = {}) {
   const board = collectBoard(root, { ttlDays, base: baseOverride });
   const targets = board.branches.filter((b) => b.state === 'landed' || b.state === 'due');
   const targetNames = new Set(targets.map((b) => b.name));
   const worktreeTargets = board.worktrees.filter(
-    (w) => targetNames.has(w.branch) || w.state === 'detached' || (typeof w.ageDays === 'number' && w.ageDays > ttlDays)
+    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached') || (typeof w.ageDays === 'number' && w.ageDays > ttlDays)
   );
   for (const w of worktreeTargets) {
     if (w.branch && !targetNames.has(w.branch)) targetNames.add(w.branch);
@@ -165,7 +199,11 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
     ttlDays,
     dryRun,
     bundle: null,
+    bundleError: null,
     patches: [],
+    untracked: [],
+    keptWorktrees: [],
+    keptMovedBranches: [],
     removedWorktrees: [],
     deletedBranches: [],
     deletedRemote: [],
@@ -190,22 +228,37 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
       check: false,
     });
     if (result.status === 0) receipt.bundle = bundlePath;
+    else {
+      // Salvage-first is a hard promise: no bundle, no deletion of unlanded
+      // work. These branches (and their worktrees) survive until a reap can
+      // actually back them up.
+      receipt.bundleError = String(result.stderr || result.stdout || 'bundle failed').trim().slice(0, 200);
+      for (const name of withCommits) targetNames.delete(name);
+    }
   }
 
-  for (const w of worktreeTargets) {
-    if (w.dirty > 0) {
-      const diff = runGit(['diff'], { cwd: w.path, check: false });
-      if (diff.status === 0 && diff.stdout.trim()) {
-        const patchPath = path.join(dir, `${path.basename(w.path)}.dirty.patch`);
-        fs.writeFileSync(patchPath, diff.stdout);
-        receipt.patches.push(patchPath);
-      }
+  const survivingWorktreeTargets = worktreeTargets.filter(
+    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached')
+  );
+  for (const w of survivingWorktreeTargets) {
+    if (w.dirty > 0 && !salvageWorktree(w, dir, receipt)) {
+      // could not fully back up what force-remove would destroy — keep it
+      receipt.keptWorktrees.push(w.path);
+      continue;
     }
     const removed = runGit(['worktree', 'remove', '--force', w.path], { cwd: root, check: false });
     if (removed.status === 0) receipt.removedWorktrees.push(w.path);
   }
 
   for (const name of targetNames) {
+    const entry = board.branches.find((b) => b.name === name);
+    // the board is a snapshot; an agent may have committed since it was
+    // taken. A branch that moved is left alone — the next reap sees the
+    // new truth and bundles it before touching it.
+    if (!entry || aheadCount(root, board.base, name) !== entry.ahead) {
+      receipt.keptMovedBranches.push(name);
+      continue;
+    }
     const deleted = runGit(['branch', '-D', name], { cwd: root, check: false });
     if (deleted.status === 0) receipt.deletedBranches.push(name);
   }
@@ -359,7 +412,11 @@ function printReceipt(receipt) {
   } else {
     console.log(`landing cleanup done — ${receipt.deletedBranches.length} pieces cleared, ${receipt.removedWorktrees.length} side copies removed`);
     if (receipt.bundle) console.log(`  backed up first, nothing lost: ${receipt.bundle}`);
+    if (receipt.bundleError) console.log(`  backup failed — unlanded work left in place: ${receipt.bundleError}`);
     for (const p of receipt.patches) console.log(`  unsaved edits saved: ${p}`);
+    for (const u of receipt.untracked || []) console.log(`  new files saved: ${u}`);
+    for (const k of receipt.keptWorktrees || []) console.log(`  could not back up, left alone: ${k}`);
+    for (const m of receipt.keptMovedBranches || []) console.log(`  moved since scan, left alone: ${m}`);
     if (receipt.deletedRemote.length > 0) console.log(`  also cleared on github: ${receipt.deletedRemote.length}`);
   }
   console.log(`  still flying (recent work, left alone): ${receipt.kept.length}`);

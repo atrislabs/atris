@@ -12213,6 +12213,51 @@ test('task ready --verify feeds strict task landing by default', () => {
   }
 });
 
+test('task auto-accept-certified --all sweeps past the old 12-row cap', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  const ROW_COUNT = 20; // more than the old hardcoded max of 12
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    writePolicy(dir, { enabled: false, enabled_by: 'test' });
+    for (let i = 0; i < ROW_COUNT; i += 1) {
+      const add = runCli(['task', 'add', `Row ${i} lands under --all`, '--tag', 'code', '--json'], { cwd: dir, env });
+      assert.equal(add.status, 0, add.stderr);
+      const ref = JSON.parse(add.stdout).task.display_id;
+      assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+      assert.equal(runCli([
+        'task', 'ready', ref,
+        '--proof', `Row ${i}: node --test test/commands.test.js passed and diff inspected end to end`,
+        '--as', 'codex',
+      ], { cwd: dir, env }).status, 0);
+    }
+
+    // Without --all, the certified-only queue is unchanged: none of these
+    // rows carry a second review pass, so the default path certifies none.
+    const defaultScan = runCli(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env });
+    assert.equal(defaultScan.status, 0, defaultScan.stderr);
+    assert.equal(JSON.parse(defaultScan.stdout).summary.scanned, 0);
+
+    // Under --all with no explicit --limit, the sweep must cover every
+    // pending row, not just the first 12 — the bug this fix closes.
+    const allScan = runCli(['task', 'auto-accept-certified', '--dry-run', '--all', '--json'], { cwd: dir, env });
+    assert.equal(allScan.status, 0, allScan.stderr);
+    const allPayload = JSON.parse(allScan.stdout);
+    assert.equal(allPayload.summary.scanned, ROW_COUNT);
+    assert.equal(allPayload.summary.would_accept, ROW_COUNT);
+    assert.equal(allPayload.summary.undercounted, false);
+
+    // An explicit --limit still wins over the --all safety cap.
+    const limitedAllScan = runCli(['task', 'auto-accept-certified', '--dry-run', '--all', '--limit', '5', '--json'], { cwd: dir, env });
+    assert.equal(limitedAllScan.status, 0, limitedAllScan.stderr);
+    assert.equal(JSON.parse(limitedAllScan.stdout).summary.scanned, 5);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review after acceptance cannot mint duplicate AgentXP', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
