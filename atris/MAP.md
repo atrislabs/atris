@@ -88,6 +88,7 @@ rg "githubCommand|createOfficialCliCommand|github cli wrapper|github help is wor
 rg "vercelCommand|vercel cli wrapper|vercel help is workspace-free" bin/atris.js commands/vercel.js test/official-cli-integrations.test.js # vercel official cli wrapper: vercel binary/auth detection plus deploy/ls/logs/inspect passthrough
 rg "supabaseCommand|supabase cli wrapper|supabase help is workspace-free" bin/atris.js commands/supabase.js test/official-cli-integrations.test.js # supabase official cli wrapper: supabase binary/auth detection plus status/db push/functions passthrough
 rg "linearCommand|linear cli wrapper|linear help is workspace-free" bin/atris.js commands/linear.js test/official-cli-integrations.test.js # linear official cli wrapper: linear binary/auth detection plus issue list/create/view/update passthrough
+rg "stripeCommand|stripe cli wrapper|stripe help is workspace-free" bin/atris.js commands/stripe.js test/official-cli-integrations.test.js # stripe official cli wrapper: stripe binary/auth detection plus listen/trigger/products passthrough
 rg "memberCommand|memberGoal|memberTick|collectWakeEvidence|collectProblemDiscoveryEvidence|configuredProblemSignalSources|seedAutonomousProblemGoal|scoredWakeCandidates|proposalForGoal|memberStatus|memberBlock|memberReview|memberPush|memberPull" commands/member.js  # Team member identity, autonomous problem discovery, configurable external signal roots/files, adaptive wake evidence/scoring, optional Atris2 proposal generation, status/block/review, and cloud sync
 rg "pullAtris|pullBusiness" commands/pull.js  # Cloud pull (journals + businesses)
 rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|claimed_task|canonical_mirror_hash" scripts/atris-labs-cloud-next-sync.js test/cloud-next-sync.test.js  # Atris Labs cloud next-work mirror sync: local task state -> /workspace/work/next -> cloud self-improve receipt; claimed codex work beats human-accept waits; stable digest sidecar detects unchanged mirror state
@@ -1132,8 +1133,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Command:** `commands/github.js:3` (`githubCommand`)
 - **Shared wrapper:** `lib/official-cli-integration.js:139` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:609` (`github cli wrapper`)
-- **Known command:** `bin/atris.js:982` (`github`)
-- **Routing:** `bin/atris.js:2133` (`command === 'github'`)
+- **Known command:** `bin/atris.js:983` (`github`)
+- **Routing:** `bin/atris.js:2134` (`command === 'github'`)
 - **Subcommands:** `commands/github.js:12` (`pr list`), `commands/github.js:18` (`pr create`), `commands/github.js:24` (`pr checks`), `commands/github.js:30` (`pr view`)
 - **Regression:** `test/official-cli-integrations.test.js:56` (workspace-free help), `test/official-cli-integrations.test.js:71` (missing `gh` install hint), `test/official-cli-integrations.test.js:85` (auth status), `test/official-cli-integrations.test.js:102` (passthrough args)
 
@@ -1146,8 +1147,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Command:** `commands/vercel.js:3` (`vercelCommand`)
 - **Shared wrapper:** `lib/official-cli-integration.js:139` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:610` (`vercel cli wrapper`)
-- **Known command:** `bin/atris.js:982` (`vercel`)
-- **Routing:** `bin/atris.js:2136` (`command === 'vercel'`)
+- **Known command:** `bin/atris.js:983` (`vercel`)
+- **Routing:** `bin/atris.js:2137` (`command === 'vercel'`)
 - **Subcommands:** `commands/vercel.js:12` (`deploy`), `commands/vercel.js:18` (`ls`), `commands/vercel.js:24` (`logs`), `commands/vercel.js:30` (`inspect`)
 - **Regression:** `test/official-cli-integrations.test.js:118` (workspace-free help), `test/official-cli-integrations.test.js:133` (missing `vercel` install hint), `test/official-cli-integrations.test.js:147` (auth status), `test/official-cli-integrations.test.js:164` (passthrough args)
 
@@ -1160,8 +1161,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Command:** `commands/supabase.js:3` (`supabaseCommand`)
 - **Shared wrapper:** `lib/official-cli-integration.js:139` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:611` (`supabase cli wrapper`)
-- **Known command:** `bin/atris.js:982` (`supabase`)
-- **Routing:** `bin/atris.js:2139` (`command === 'supabase'`)
+- **Known command:** `bin/atris.js:983` (`supabase`)
+- **Routing:** `bin/atris.js:2140` (`command === 'supabase'`)
 - **Subcommands:** `commands/supabase.js:13` (`status`), `commands/supabase.js:19` (`db push`), `commands/supabase.js:25` (`functions list`), `commands/supabase.js:31` (`functions deploy`)
 - **Regression:** `test/official-cli-integrations.test.js:180` (workspace-free help), `test/official-cli-integrations.test.js:195` (missing `supabase` install hint), `test/official-cli-integrations.test.js:209` (auth status), `test/official-cli-integrations.test.js:226` (status passthrough), `test/official-cli-integrations.test.js:242` (db passthrough)
 
@@ -1174,12 +1175,26 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Command:** `commands/linear.js:3` (`linearCommand`)
 - **Shared wrapper:** `lib/official-cli-integration.js:139` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:612` (`linear cli wrapper`)
-- **Known command:** `bin/atris.js:982` (`linear`)
-- **Routing:** `bin/atris.js:2142` (`command === 'linear'`)
+- **Known command:** `bin/atris.js:983` (`linear`)
+- **Routing:** `bin/atris.js:2143` (`command === 'linear'`)
 - **Subcommands:** `commands/linear.js:12` (`issue list`), `commands/linear.js:18` (`issue create`), `commands/linear.js:24` (`issue view`), `commands/linear.js:30` (`issue update`)
 - **Regression:** `test/official-cli-integrations.test.js:258` (workspace-free help), `test/official-cli-integrations.test.js:273` (missing `linear` install hint), `test/official-cli-integrations.test.js:287` (auth status), `test/official-cli-integrations.test.js:304` (passthrough args)
 
 **Search:** `rg "linearCommand|linear cli wrapper|linear help is workspace-free" bin/atris.js commands/linear.js test/official-cli-integrations.test.js`
+
+### Feature: stripe cli integration (`atris stripe`)
+
+**Purpose:** Agent-friendly wrapper for the official `stripe` cli with binary detection, auth status, and webhook/product operations.
+
+- **Command:** `commands/stripe.js:3` (`stripeCommand`)
+- **Shared wrapper:** `lib/official-cli-integration.js:139` (`createOfficialCliCommand`)
+- **Help line:** `bin/atris.js:613` (`stripe cli wrapper`)
+- **Known command:** `bin/atris.js:983` (`stripe`)
+- **Routing:** `bin/atris.js:2146` (`command === 'stripe'`)
+- **Subcommands:** `commands/stripe.js:12` (`listen`), `commands/stripe.js:18` (`trigger`), `commands/stripe.js:24` (`products list`), `commands/stripe.js:30` (`products create`)
+- **Regression:** `test/official-cli-integrations.test.js:320` (workspace-free help), `test/official-cli-integrations.test.js:335` (missing `stripe` install hint), `test/official-cli-integrations.test.js:349` (auth status), `test/official-cli-integrations.test.js:366` (listen passthrough), `test/official-cli-integrations.test.js:382` (products passthrough)
+
+**Search:** `rg "stripeCommand|stripe cli wrapper|stripe help is workspace-free" bin/atris.js commands/stripe.js test/official-cli-integrations.test.js`
 
 ### Feature: Integrations (`atris gmail/calendar/twitter/slack/integrations`)
 

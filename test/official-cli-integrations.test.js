@@ -316,3 +316,81 @@ test('linear issue list forwards to linear', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('stripe help is workspace-free', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['stripe', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /usage: atris stripe <command> \[args\]/);
+    assert.match(res.stdout, /products list/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('stripe reports a missing official cli with install hint', () => {
+  const dir = makeTempDir();
+  try {
+    const emptyPath = path.join(dir, 'empty-bin');
+    fs.mkdirSync(emptyPath);
+    const res = runCli(['stripe', 'auth'], { cwd: dir, env: { PATH: emptyPath } });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /stripe cli not found/);
+    assert.match(res.stderr, /install: https:\/\/docs\.stripe\.com\/stripe-cli/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('stripe auth checks stripe config list', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'stripe.log');
+    const binDir = writeFakeBinary(dir, 'stripe');
+    const res = runCli(['stripe', 'auth'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /auth: ok/);
+    assert.deepEqual(readLog(logPath), ['--version', 'config --list']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('stripe listen forwards to stripe', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'stripe.log');
+    const binDir = writeFakeBinary(dir, 'stripe');
+    const res = runCli(['stripe', 'listen', '--forward-to', 'localhost:3000/webhook'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.deepEqual(readLog(logPath), ['--version', 'listen --forward-to localhost:3000/webhook']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('stripe products list forwards to stripe', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'stripe.log');
+    const binDir = writeFakeBinary(dir, 'stripe');
+    const res = runCli(['stripe', 'products', 'list', '--limit', '3'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.deepEqual(readLog(logPath), ['--version', 'products list --limit 3']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

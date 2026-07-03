@@ -610,6 +610,7 @@ function showHelp() {
   console.log('  vercel    - vercel cli wrapper (doctor, auth, deploy/ls/logs/inspect)');
   console.log('  supabase  - supabase cli wrapper (doctor, auth, status/db/functions)');
   console.log('  linear    - linear cli wrapper (doctor, auth, issue list/create/view/update)');
+  console.log('  stripe    - stripe cli wrapper (doctor, auth, listen/trigger/products)');
   console.log('  gmail      - Email commands (inbox, read, archive)');
   console.log('  calendar   - Calendar commands (today, week)');
   console.log('  twitter    - Twitter commands (post)');
@@ -979,7 +980,7 @@ const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'stat
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
-                       'github', 'vercel', 'supabase', 'linear', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
+                       'github', 'vercel', 'supabase', 'linear', 'stripe', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -2176,6 +2177,9 @@ if (command === 'init') {
   process.exit(status);
 } else if (command === 'linear') {
   const status = require('../commands/linear').linearCommand(process.argv.slice(3));
+  process.exit(status);
+} else if (command === 'stripe') {
+  const status = require('../commands/stripe').stripeCommand(process.argv.slice(3));
   process.exit(status);
 } else if (command === 'gmail') {
   const { gmailCommand } = require('../commands/integrations');
