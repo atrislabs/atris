@@ -4,7 +4,8 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { spawnSync } = require('node:child_process');
-const { taskProofLooksMeaningful, taskProofState, buildVerifiedProof } = require('../lib/task-proof');
+const { taskProofLooksMeaningful, taskProofLooksExecuted, taskProofState, taskProofExecutionState, buildVerifiedProof } = require('../lib/task-proof');
+const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const CLI = path.join(__dirname, '..', 'bin', 'atris.js');
@@ -28,6 +29,32 @@ function runCli(args, { cwd, env = {} } = {}) {
     },
     encoding: 'utf8',
   });
+}
+
+function certifiedReviewTaskWithProof(proof) {
+  return {
+    id: 'task-1',
+    display_id: 'CLI-843',
+    status: 'review',
+    tag: 'code',
+    workspace_root: process.cwd(),
+    metadata: {
+      approval_status: 'pending',
+      agent_certified: true,
+      agent_review_pass_count: 2,
+      latest_agent_proof: proof,
+    },
+    review: {
+      approval_status: 'pending',
+      agent_certified: true,
+      agent_review_pass_count: 2,
+      proof,
+    },
+    events: [
+      { event_type: 'proof_ready', actor: 'codex' },
+      { event_type: 'reviewed', actor: 'validator' },
+    ],
+  };
 }
 
 test('task proof helper rejects generic or vague completion proof', () => {
@@ -55,6 +82,30 @@ test('task proof helper accepts commands, verifier results, receipts, and human 
     assert.equal(taskProofLooksMeaningful(proof), true, `${JSON.stringify(proof)} should be accepted`);
   }
   assert.equal(taskProofLooksMeaningful('node bin/atris.js clean --json passed'), false);
+});
+
+test('non-strict auto-accept rejects free-text test-passed claims until proof was executed', () => {
+  const claimed = 'node --test test/task-proof.test.js passed';
+  assert.equal(taskProofLooksMeaningful(claimed), true);
+  assert.equal(taskProofLooksExecuted(claimed), false);
+  assert.equal(taskProofExecutionState(claimed).reason, 'proof_not_executed');
+
+  const blocked = evaluateAutoAccept(certifiedReviewTaskWithProof(claimed), { strictVerify: false });
+  assert.equal(blocked.eligible, false);
+  assert.equal(blocked.reason, 'proof_not_executed');
+  assert.match(blocked.next_action, /ready --verify/);
+
+  const executed = buildVerifiedProof('node --test test/task-proof.test.js', 'regression covered', () => ({
+    status: 0,
+    stdout: 'ok 1\n',
+    stderr: '',
+  })).proof;
+  assert.equal(taskProofLooksExecuted(executed), true);
+
+  const accepted = evaluateAutoAccept(certifiedReviewTaskWithProof(executed), { strictVerify: false });
+  assert.equal(accepted.eligible, true);
+  assert.equal(accepted.reason, 'certified_multi_actor');
+  assert.equal(accepted.policy, '2_actors_2_passes');
 });
 
 test('buildVerifiedProof turns a passing command into executed proof', () => {
