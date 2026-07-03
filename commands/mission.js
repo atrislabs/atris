@@ -4210,6 +4210,27 @@ function collectMissionDoctorFindings(root = process.cwd(), options = {}) {
         { next: `atris mission run ${mission.id} --max-ticks 1` },
       );
     }
+    // A mission still "in flight" long past its promised wall budget is a dead
+    // run, not a slow one: mission run enforces max_wall itself, so a
+    // planning/running row at 2x its budget means the runner died without
+    // closing out — and it silently blocks pickers, dedupe, and goal slots.
+    if (status === 'planning' || status === 'running') {
+      const budgetSeconds = Number(mission?.budget_contract?.requested_seconds || mission?.max_wall_seconds || 0);
+      const startedMs = Date.parse(mission.started_at || mission.created_at || '');
+      if (budgetSeconds > 0 && Number.isFinite(startedMs)) {
+        const elapsedSeconds = (Date.now() - startedMs) / 1000;
+        if (elapsedSeconds >= budgetSeconds * 2) {
+          const label = mission?.budget_contract?.budget_label || `${Math.round(budgetSeconds / 60)}m`;
+          add(
+            mission,
+            'budget_elapsed',
+            `Mission promised ${label} and has sat ${Math.round(elapsedSeconds / 3600)}h in ${status} — the run likely died without closing out.`,
+            'high',
+            { next: `atris mission stop ${mission.id} --reason "budget elapsed" (or complete it with proof)` },
+          );
+        }
+      }
+    }
   }
 
   findings.sort((a, b) => {

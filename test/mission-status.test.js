@@ -419,6 +419,47 @@ test('mission status and tick hint when mission id lives in a sibling workspace'
   }
 });
 
+test('mission doctor flags in-flight missions far past their wall budget', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-budget-dead',
+      slug: 'mission-budget-dead',
+      objective: 'one hour of work, abandoned in planning',
+      status: 'planning',
+      verifier: 'node -e "process.exit(0)"',
+      max_wall_seconds: 3600,
+      budget_contract: { schema: 'atris.mission_budget_contract.v1', requested_seconds: 3600, budget_label: '1 hour' },
+      created_at: new Date(Date.now() - 18 * 3600 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 18 * 3600 * 1000).toISOString(),
+    });
+    // Same budget but still inside 2x its wall: a slow run, not a dead one.
+    appendMissionState(dir, {
+      id: 'mission-budget-live',
+      slug: 'mission-budget-live',
+      objective: 'one hour of work, still inside its window',
+      status: 'running',
+      verifier: 'node -e "process.exit(0)"',
+      max_wall_seconds: 3600,
+      created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+    });
+
+    const doctor = runCli(['mission', 'doctor', '--local', '--json'], { cwd: dir });
+    assert.equal(doctor.status, 1);
+    const payload = JSON.parse(doctor.stdout);
+    const budgetFindings = payload.findings.filter((finding) => finding.code === 'budget_elapsed');
+    assert.equal(budgetFindings.length, 1);
+    assert.equal(budgetFindings[0].mission_id, 'mission-budget-dead');
+    assert.match(budgetFindings[0].message, /promised 1 hour/);
+    assert.match(budgetFindings[0].message, /18h in planning/);
+    assert.match(budgetFindings[0].next, /mission stop mission-budget-dead/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission doctor flags no-verifier, help, stale ready receipts, and blocked always-on loops', () => {
   const dir = makeTempDir();
   try {
