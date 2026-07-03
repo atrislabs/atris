@@ -5566,7 +5566,10 @@ function isTransientAtris2BackendError(error) {
   if (!text) return false;
   return /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT|EPIPE)\b/i.test(text)
     || /\b(?:socket hang up|request timeout|no response headers|stream stalled)\b/i.test(text)
-    || /\bHTTP\s+(?:502|503|504|522|523|524)\b/i.test(text);
+    || /\bHTTP\s+(?:502|503|504|522|523|524)\b/i.test(text)
+    // A stopped AtrisOS computer answers 409 "Computer must be running": the
+    // backend will come back, so the mission keeps waiting instead of pausing.
+    || (/\bHTTP\s+409\b/i.test(text) && /computer must be running/i.test(text));
 }
 
 function atris2TurnErrorReason(error) {

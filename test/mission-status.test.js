@@ -257,6 +257,56 @@ test('mission run keeps sleeping Atris2 backend missions running for retry', asy
   }
 });
 
+test('mission run treats a stopped AtrisOS computer (409) as a sleeping backend', async () => {
+  const dir = makeTempDir();
+  let server = null;
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    server = http.createServer((req, res) => {
+      if (req.url === '/api/atris2/turn') {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Computer must be running' }));
+        return;
+      }
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('not found');
+    });
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const { port } = server.address();
+
+    appendMissionState(dir, {
+      id: 'stopped-computer-atris2',
+      slug: 'stopped-computer-atris2',
+      objective: 'stopped computer atris2 mission',
+      status: 'running',
+      runner: 'atris2',
+      verifier: 'true',
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const run = await runCliAsync(['mission', 'run', 'stopped-computer-atris2', '--max-ticks', '1', '--json'], {
+      cwd: dir,
+      env: {
+        ATRIS_TOKEN: 'fake-token',
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      },
+    });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.pause_reason, null);
+    assert.equal(payload.mission.status, 'running');
+    assert.equal(payload.ticks[0].reason, 'atris2-backend-unavailable');
+    assert.equal(payload.ticks[0].atris2.backend_unavailable, true);
+  } finally {
+    if (server?.listening) await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission status filters by status and limits list output', () => {
   const dir = makeTempDir();
   try {
