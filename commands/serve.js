@@ -208,8 +208,21 @@ function streamSession(token, sessionId, workingDir) {
 
       console.log(`● Bridge active — listening for ops on session ${sessionId.slice(0, 8)}...`);
 
+      // Ping watchdog: the server pings every ~30s. Silence past 3 intervals
+      // means the socket died without a FIN (server redeploy, NAT drop) —
+      // kill it so the outer loop reconnects/re-registers instead of zombieing.
+      let lastSeen = Date.now();
+      const watchdog = setInterval(() => {
+        if (Date.now() - lastSeen > HEARTBEAT_INTERVAL_MS * 3) {
+          clearInterval(watchdog);
+          res.destroy(new Error('stream silent >90s, assuming dead socket'));
+        }
+      }, HEARTBEAT_INTERVAL_MS);
+      res.on('close', () => clearInterval(watchdog));
+
       let buffer = '';
       res.on('data', async (chunk) => {
+        lastSeen = Date.now();
         buffer += chunk.toString();
         const messages = buffer.split('\n\n');
         buffer = messages.pop() || '';
