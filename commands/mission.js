@@ -4061,7 +4061,11 @@ function collectMissionDoctorFindings(root = process.cwd(), options = {}) {
     const status = String(mission.status || '');
     const active = !TERMINAL_STATUSES.has(status);
     const objective = String(mission.objective || '').trim();
-    if (active && !effectiveMissionVerifier(mission)) {
+    // A paused mission is already parked — that IS the resolution for a
+    // no-verifier zombie. Re-flagging it here is the loop that stops drive's
+    // parking from ever sticking: park -> paused -> re-flagged -> re-parked
+    // forever. Treat paused as settled for the verifier check.
+    if (active && status !== 'paused' && !effectiveMissionVerifier(mission)) {
       add(
         mission,
         'missing_verifier',
