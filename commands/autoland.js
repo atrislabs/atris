@@ -284,6 +284,12 @@ function runTick(root, args) {
   const accept = runOwnCli(root, cliArgs);
   try {
     const parsed = JSON.parse(accept.stdout);
+    // A refused sweep (ok:false — a guard tripped, policy race) carries no
+    // summary fields. Name the reason instead of leaving nulls that read as
+    // "no work": a blind heartbeat must say WHY it is blind.
+    if (parsed.ok === false) {
+      receipt.accept_error = String(parsed.reason || 'auto-accept refused');
+    }
     receipt.landed = (parsed.results || []).filter((r) => r.action === 'accepted').map((r) => r.ref);
     receipt.certified = parsed.certified ?? null;
     receipt.scanned = parsed.scanned ?? null;

@@ -35,7 +35,7 @@ function runGit(args, cwd) {
 // Live accepts refuse to run inside an agent session, so the fixture CLI
 // runs with the agent env markers stripped — same as a cron tick. The task
 // db is isolated per fixture repo (the real one lives in ~/.atris).
-function runCli(args, cwd) {
+function runCli(args, cwd, extraEnv = null) {
   const env = {
     ...process.env,
     ATRIS_SKIP_UPDATE_CHECK: '1',
@@ -49,6 +49,7 @@ function runCli(args, cwd) {
   delete env.CURSOR_AGENT;
   delete env.DEVIN_SESSION_ID;
   delete env.ATRIS_AGENT_PROOF_ONLY;
+  if (extraEnv) Object.assign(env, extraEnv);
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
@@ -334,6 +335,44 @@ test('tick certifies proof-backed reviews by re-running their check, then lands 
     assert.equal(byRef[securityTask].review.agent_certified, false);
     assert.equal(byRef[noCheckTask].status, 'review');
     assert.equal(byRef[noCheckTask].review.agent_certified, false);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('tick from an agent session lands under the standing policy with a real-number receipt', () => {
+  const { base, repo } = makeTempRepo();
+  const agentEnv = { CLAUDECODE: '1' };
+  try {
+    // a proof-backed row: runnable check, NOT yet agent_certified — the tick
+    // must certify it via strict verify and land it in one heartbeat
+    const codeTask = proofBackedTask(repo, 'Agent-session landing', { tag: 'code' });
+
+    // guard intact: without the standing policy, an agent env cannot
+    // live-accept even with a per-run human-confirmation claim
+    const refused = runCli(['task', 'auto-accept-certified', '--confirm-human-accept', '--as', 'keshavrao', '--json'], repo, agentEnv);
+    assert.equal(JSON.parse(refused.stdout).reason, 'agent_proof_only_human_accept_blocked');
+
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    // the tick invoked WITH agent markers (a Claude session running
+    // `atris autoland tick`): before the fix, the spawned sweep failTask'd
+    // on agentProofOnlyMode and the receipt showed landed:[] with null
+    // certified/scanned — a blind heartbeat that looked like "no work".
+    const tick = runCli(['autoland', 'tick', '--json'], repo, agentEnv);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.accept_error, undefined, JSON.stringify(receipt));
+    assert.deepEqual(receipt.landed, [codeTask]);
+    // the receipt carries the sweep's real numbers, never nulls when rows exist
+    assert.equal(typeof receipt.certified, 'number');
+    assert.equal(typeof receipt.scanned, 'number');
+    assert.ok(receipt.scanned >= 1, JSON.stringify(receipt));
+
+    const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    const byRef = Object.fromEntries(projection.tasks.map((t) => [t.display_id, t]));
+    assert.equal(byRef[codeTask].status, 'done');
+    // the accept actor is the policy owner, not the agent
+    assert.equal(byRef[codeTask].metadata.accepted_by, 'keshav');
   } finally {
     cleanupTempDir(base);
   }

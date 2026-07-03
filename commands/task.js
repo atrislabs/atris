@@ -8363,10 +8363,18 @@ function cmdAutoAcceptCertified(args) {
       'live auto-accept requires --as <human> so XP has an explicit human acceptance actor',
     );
   }
-  if (agentProofOnlyMode() && !dryRun) {
+  // The standing autoland policy clears this gate too, same as the two
+  // per-run human gates above: the owner flipped the policy, accepts run as
+  // that owner, and the cron tick would land the same rows an hour later
+  // anyway. Without this exception `atris autoland tick` was blind whenever
+  // invoked from an agent session (CLAUDECODE etc. in env): the spawned
+  // sweep failTask'd with no summary and the tick receipt showed nulls.
+  // A per-run --confirm-human-accept claim from an agent is still refused —
+  // policyAuth is only consulted when no per-run confirmation is passed.
+  if (agentProofOnlyMode() && !dryRun && !policyAuth.ok) {
     failAgentProofOnly(
       'atris task auto-accept-certified',
-      'Agent proof-only mode can preview certified rows with --dry-run, but cannot live-accept them.',
+      'Agent proof-only mode can preview certified rows with --dry-run, but cannot live-accept them without the standing autoland policy.',
     );
   }
 
