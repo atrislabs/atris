@@ -8280,7 +8280,7 @@ function cmdLanding(args) {
 
 function cmdAutoAcceptCertified(args) {
   const dryRun = hasFlag(args, '--dry-run');
-  const strictVerify = true;
+  const strictVerify = !hasFlag(args, '--no-strict-verify');
   const actorFlag = flag(args, '--as');
   const hasHumanActor = validHumanActorFlag(actorFlag);
   const confirmedHumanAccept = hasFlag(args, '--confirm-human-accept');
@@ -8333,7 +8333,7 @@ function cmdAutoAcceptCertified(args) {
       results.push({ ref: item.display_id || item.id, eligible: false, reason: 'task_not_found', action: 'skipped' });
       continue;
     }
-    const evaluation = evaluateAutoAccept(task);
+    const evaluation = evaluateAutoAccept(task, strictVerify ? {} : { strictVerify: false });
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped' });
       continue;

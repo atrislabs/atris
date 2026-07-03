@@ -316,6 +316,26 @@ test('tick certifies proof-backed reviews by re-running their check, then lands 
   }
 });
 
+test('tick still certifies when policy contains drain_reviews false', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const id = proofBackedTask(repo, 'Drain reviews ignored', { tag: 'code' });
+    autoland.writePolicy(repo, {
+      enabled: true,
+      enabled_by: 'keshav',
+      strict_verify: false,
+      drain_reviews: false,
+    });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.reviews_certified, 1);
+    assert.deepEqual(receipt.landed, [id]);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('two passes from one actor still get the independent check and land', () => {
   const { base, repo } = makeTempRepo();
   try {
