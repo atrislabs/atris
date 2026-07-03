@@ -58,6 +58,46 @@ test('autopilotTickArgs runs one bounded leg that fits inside the spawn timeout'
   assert.deepStrictEqual(pulse.autopilotTickArgs(30000), ['autopilot', '--once', '--leg-wall', '60']);
 });
 
+test('diffWorkspaceSnapshots credits work that landed in a worktree', () => {
+  const before = {
+    '/repo': { head: 'aaa', dirty: ['pre-existing.txt'] },
+    '/repo-wt/m1': { head: 'aaa', dirty: [] },
+  };
+  const after = {
+    '/repo': { head: 'aaa', dirty: ['pre-existing.txt'] },
+    '/repo-wt/m1': { head: 'aaa', dirty: ['src/fix.js'] },
+  };
+  const diff = pulse.diffWorkspaceSnapshots('/repo', before, after);
+  assert.deepStrictEqual(diff.changedFiles, ['m1:src/fix.js']);
+  assert.strictEqual(diff.committed, false);
+  assert.deepStrictEqual(diff.changedRoots, ['/repo-wt/m1']);
+});
+
+test('diffWorkspaceSnapshots counts a worktree created by the tick as its contribution', () => {
+  const before = { '/repo': { head: 'aaa', dirty: [] } };
+  const after = {
+    '/repo': { head: 'aaa', dirty: [] },
+    '/repo-wt/new': { head: 'aaa', dirty: ['atris/state.json'] },
+  };
+  const diff = pulse.diffWorkspaceSnapshots('/repo', before, after);
+  assert.deepStrictEqual(diff.changedFiles, ['new:atris/state.json']);
+});
+
+test('diffWorkspaceSnapshots detects commits in any checkout and excludes pre-existing dirt', () => {
+  const before = {
+    '/repo': { head: 'aaa', dirty: ['noise.md'] },
+    '/repo-wt/m1': { head: 'bbb', dirty: [] },
+  };
+  const after = {
+    '/repo': { head: 'aaa', dirty: ['noise.md'] },
+    '/repo-wt/m1': { head: 'ccc', dirty: [] },
+  };
+  const diff = pulse.diffWorkspaceSnapshots('/repo', before, after);
+  assert.strictEqual(diff.committed, true);
+  assert.deepStrictEqual(diff.changedFiles, []);
+  assert.deepStrictEqual(diff.changedRoots, ['/repo-wt/m1']);
+});
+
 test('scoreTick punishes verify failure with -1', () => {
   assert.equal(pulse.scoreTick({ verifyPassed: false, producedWork: true }), -1);
 });

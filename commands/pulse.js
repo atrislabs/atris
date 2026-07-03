@@ -170,7 +170,23 @@ function gitSnapshot(root) {
     const r = spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8', timeout: 15000 });
     if (r.status === 0) head = String(r.stdout || '').trim();
   } catch {}
-  return { head, dirty: new Set(gitChangedFiles(root)) };
+  return { head, dirty: gitChangedFiles(root) };
+}
+
+// Work can land in the main checkout OR an agent worktree — missions bind to
+// their own checkout, so a scorer that only diffs the main tree records
+// productive worktree ticks as reward-0 no-ops and never runs their verifier.
+// Snapshot every checkout of this repo, keyed by path.
+function workspaceSnapshots(root) {
+  const snaps = { [root]: gitSnapshot(root) };
+  let entries = [];
+  try { entries = require('./worktree').listWorktrees(root) || []; } catch {}
+  for (const entry of entries) {
+    const p = entry && entry.path;
+    if (!p || snaps[p] || !fs.existsSync(p)) continue;
+    snaps[p] = gitSnapshot(p);
+  }
+  return snaps;
 }
 
 function runVerify(root, verifyCmd, timeoutMs = 600000) {
@@ -237,18 +253,20 @@ function tickCommand(args, root = process.cwd()) {
   let engine;
   let verify = { passed: null, cmd: verifyCmd };
   try {
-    const before = gitSnapshot(root);
+    const before = workspaceSnapshots(root);
     engine = runEngine(root, { noClaude, autopilotFallback: !hasFlag(args, '--no-autopilot') });
-    const after = gitSnapshot(root);
-    // This tick's ACTUAL contribution: files it newly dirtied, or a new commit.
-    // Pre-existing dirt is excluded so reward isn't re-credited every tick.
-    const changedFiles = [...after.dirty].filter((f) => !before.dirty.has(f));
-    const committed = Boolean(before.head && after.head && before.head !== after.head);
+    const after = workspaceSnapshots(root);
+    // This tick's ACTUAL contribution across every checkout: files it newly
+    // dirtied, or a new commit. Pre-existing dirt is excluded so reward isn't
+    // re-credited every tick.
+    const { changedFiles, committed, changedRoots } = pulse.diffWorkspaceSnapshots(root, before, after);
     const producedWork = committed || changedFiles.length > 0;
 
     // Verify only matters when the tick produced work; a no-op tick skips it.
+    // Run it where the work actually landed when that is unambiguous.
     if (producedWork && verifyCmd) {
-      verify = runVerify(root, verifyCmd);
+      const verifyRoot = changedRoots.length === 1 ? changedRoots[0] : root;
+      verify = runVerify(verifyRoot, verifyCmd);
     } else if (verifyCmd) {
       verify = { passed: null, cmd: verifyCmd, skipped: true };
     }
