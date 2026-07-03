@@ -606,6 +606,7 @@ function showHelp() {
   console.log('  accounts   - Manage accounts (list, add, remove)');
   console.log('');
   console.log('Integrations:');
+  console.log('  github    - github cli wrapper (doctor, auth, pr list/create/checks/view)');
   console.log('  gmail      - Email commands (inbox, read, archive)');
   console.log('  calendar   - Calendar commands (today, week)');
   console.log('  twitter    - Twitter commands (post)');
@@ -975,7 +976,7 @@ const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'stat
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
-                       'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
+                       'github', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -2161,6 +2162,9 @@ if (command === 'init') {
   require('../commands/gm').gmCommand(...process.argv.slice(3))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'github') {
+  const status = require('../commands/github').githubCommand(process.argv.slice(3));
+  process.exit(status);
 } else if (command === 'gmail') {
   const { gmailCommand } = require('../commands/integrations');
   const subcommand = process.argv[3];
