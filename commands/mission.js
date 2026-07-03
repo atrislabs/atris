@@ -5849,12 +5849,26 @@ function detectUnavailableModel(text) {
   return null;
 }
 
+// A logged-out claude CLI answers every -p prompt with "Not logged in · Please
+// run /login" — in the RESULT text with exit code 0-ish plumbing and an empty
+// stderr, so a stderr-only check misses it and the run loop grinds cron
+// firings on 'claude-error' forever (each one burning the mission tick budget).
+// Check both streams and the phrasings the CLI actually emits.
+function detectAuthExpired(stderrText, resultText) {
+  const s = `${String(stderrText || '')}\n${String(resultText || '')}`;
+  return /not logged in|please run \/login|not authenticated|please log in|login required|auth(?:entication)? expired/i.test(s);
+}
+
 // Human-facing guidance written to a paused mission's next_action. Most pauses just
 // need a resume; a model-unavailable pause is a config error a bare resume won't fix,
 // so name the dead id and the two knobs that change it.
 function missionPauseNextAction(pauseReason, missionId, deadModel = null, lastErrorReason = null) {
   if (pauseReason === 'model-unavailable' && deadModel) {
     return `model "${deadModel}" is unavailable — set a live model (mission.model, ATRIS_RUNNER_MODEL, or legacy ATRIS_CLAUDE_MODEL), then: atris mission run ${missionId}`;
+  }
+  // A bare resume re-errors until a human logs the claude CLI back in.
+  if (pauseReason === 'auth-required') {
+    return `claude CLI is logged out — run "claude /login" in a terminal, then: atris mission run ${missionId}`;
   }
   if (typeof pauseReason === 'string' && pauseReason.startsWith('repeated-error:')) {
     const reason = pauseReason.slice('repeated-error:'.length);
@@ -5950,7 +5964,7 @@ function spawnClaudeTick(mission, opts) {
       if (signal) signal.removeEventListener?.('abort', onAbort);
       const ok = code === 0 && !isError && !timedOut && !aborted;
       const errStr = stderr.slice(-2000);
-      const authExpired = /not authenticated|please log in|login required|auth(?:entication)? expired/i.test(errStr);
+      const authExpired = detectAuthExpired(errStr, finalText);
       resolve({
         ok,
         timedOut,
@@ -7622,6 +7636,7 @@ module.exports = {
   resolveClaudeRunnerBin,
   businessIdForAtris2Mission,
   detectUnavailableModel,
+  detectAuthExpired,
   missionPauseNextAction,
   consecutiveSameReasonErrors,
 };
