@@ -19,7 +19,7 @@ if (!knownCommands.includes(command)) {}
 test('extractKnownCommands reads the real bin/atris.js and includes the safety surface', () => {
   const cmds = extractKnownCommands(fs.readFileSync(path.join(__dirname, '..', 'bin', 'atris.js'), 'utf8'));
   assert.ok(cmds.length > 50);
-  for (const c of ['deck', 'card', 'reel', 'slop', 'site', 'theme', 'signup', 'clarity', 'moves', 'security-review']) {
+  for (const c of ['deck', 'card', 'reel', 'slop', 'site', 'theme', 'signup', 'clarity', 'moves', 'unknowns', 'security-review']) {
     assert.ok(cmds.includes(c), `knownCommands should include ${c}`);
   }
 });
