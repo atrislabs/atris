@@ -533,3 +533,33 @@ test('a failed daily sweep is not a secret: receipt, state, status, digest all c
     cleanupTempDir(outer);
   }
 });
+
+test('daily tick expires missions parked for a week, keeps fresh and running ones', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', accept_all: true });
+    const stateDir = path.join(repo, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    const old = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    const missions = [
+      // updated_at fresh on purpose: machine re-saves bump it daily, so
+      // expiry must key off last_tick_at/created_at, never updated_at.
+      { schema: 'atris.mission.v1', id: 'mission-old-paused', owner: 'neo', objective: 'ancient smoke test', status: 'paused', created_at: old, last_tick_at: old, updated_at: new Date().toISOString() },
+      { schema: 'atris.mission.v1', id: 'mission-old-running', owner: 'neo', objective: 'long haul, still ticking', status: 'running', created_at: old, updated_at: old },
+      { schema: 'atris.mission.v1', id: 'mission-fresh-paused', owner: 'neo', objective: 'paused yesterday', status: 'paused', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    ];
+    fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), missions.map((m) => JSON.stringify(m)).join('\n') + '\n');
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.mission_expiry_error, undefined);
+    assert.equal(receipt.expired_missions, 1);
+    const { loadMissionMap } = require('../commands/mission');
+    const map = loadMissionMap(repo);
+    assert.equal(map.get('mission-old-paused').status, 'stopped');
+    assert.match(map.get('mission-old-paused').stop_reason, /expired after 7\+ idle days/);
+    assert.equal(map.get('mission-old-running').status, 'running');
+    assert.equal(map.get('mission-fresh-paused').status, 'paused');
+  } finally {
+    cleanupTempDir(base);
+  }
+});

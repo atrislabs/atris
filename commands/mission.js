@@ -6806,6 +6806,45 @@ function stopMission(args) {
   );
 }
 
+// A mission parked in paused/planning/ready and untouched for a week is
+// abandoned in practice — nobody resumes it, and each one is a line the
+// operator re-reads forever. The daily autoland tick expires them to
+// stopped with a revive hint; running missions and anything touched
+// recently are never aged out, and a tick on an expired id revives it.
+const MISSION_IDLE_EXPIRY_DAYS = 7;
+const EXPIRABLE_STATUSES = new Set(['paused', 'planning', 'ready']);
+
+function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXPIRY_DAYS, dryRun = false } = {}) {
+  const cutoff = Date.now() - idleDays * 24 * 60 * 60 * 1000;
+  const expired = [];
+  for (const mission of listMissions(root)) {
+    const status = String(mission.status || '').toLowerCase();
+    if (!EXPIRABLE_STATUSES.has(status)) continue;
+    // updated_at and paused_at are machine-polluted — status renders and
+    // goal controllers re-save parked missions daily, so a mission nobody
+    // has run since May reads as "touched today". Real activity is the
+    // last tick (or creation, for missions that never ran).
+    const touched = Math.max(
+      Date.parse(mission.last_tick_at || '') || 0,
+      Date.parse(mission.created_at || '') || 0,
+    );
+    if (!touched || touched > cutoff) continue;
+    const reason = `expired after ${idleDays}+ idle days (was ${status}); revive with: atris mission tick ${mission.id}`;
+    if (!dryRun) {
+      const next = {
+        ...mission,
+        status: 'stopped',
+        stopped_at: stampIso(),
+        stop_reason: reason,
+      };
+      const { mission: saved } = saveMission(next, root, 'mission_expired', { reason, previous_status: status, idle_days: idleDays });
+      appendMemberLog(saved.owner, 'Mission expired', { mission: saved.objective, reason }, root);
+    }
+    expired.push({ id: mission.id, owner: mission.owner, previous_status: status, objective: String(mission.objective || '').slice(0, 120) });
+  }
+  return expired;
+}
+
 function goalMission(args) {
   const asJson = wantsJson(args);
   if (args[0] === 'ack') {
@@ -7473,6 +7512,7 @@ function missionCommand(args) {
 module.exports = {
   missionCommand,
   inspectMission,
+  expireStaleMissions,
   missionHeartbeatLines,
   listMissions,
   listWorktreeRollupMissions,
