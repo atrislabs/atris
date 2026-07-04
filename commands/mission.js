@@ -594,6 +594,8 @@ function exitMissingMission(ref, code = 1, asJson = false) {
     if (hints.length) {
       console.error(`Workspace hint: mission ${hints[0].id} exists in ${hints[0].workspace_root}.`);
       console.error(`Run: ${hints[0].command}`);
+    } else {
+      console.error('Mission ids are workspace-local — run this from the workspace that created the mission.');
     }
   }
   process.exit(code);
@@ -673,6 +675,14 @@ function memberMissionFile(owner, root = process.cwd()) {
   const dir = memberDir(owner, root);
   if (!dir) return null;
   return path.join(dir, 'MISSION.md');
+}
+
+function missingOwnerMemberWarning(owner, root = process.cwd()) {
+  if (!owner || fs.existsSync(path.join(root, 'atris', 'team', owner))) return null;
+  return {
+    code: 'missing_owner_member',
+    message: `owner "${owner}" has no atris/team/${owner}/ member. Create it (atris member create ${owner}) or pick an existing member (ls atris/team/).`,
+  };
 }
 
 function ensureMemberMissionFile(owner, root = process.cwd(), objective = '') {
@@ -2910,7 +2920,17 @@ function startMission(args) {
   // whose objective is the literal flag text.
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help') return help();
   const asJson = wantsJson(args);
+  if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    console.log('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--runner manual|claude|atris2|codex_goal]');
+    console.log('Run `atris mission --help` for the full option list.');
+    process.exit(0);
+  }
   const mission = missionFromArgs(args);
+  // A flag-looking or empty objective is a typo, not a mission.
+  const rawObjective = String(mission.objective || '').trim();
+  if (!rawObjective || rawObjective.startsWith('-')) {
+    exitMissionError(`mission start needs a quoted objective (got ${rawObjective ? `"${rawObjective}"` : 'nothing'}). Usage: atris mission start "<objective>" --owner <member>`, 1, asJson);
+  }
   // Pasting a mission id where an objective goes is an id mismatch, not a new
   // mission: recover the existing record or explain where it actually lives.
   const idLikeObjective = String(mission.objective || '').trim();
@@ -2969,7 +2989,7 @@ function startMission(args) {
       mission.next_action = `work task then run: atris task current-step --goal-id ${mission.id} --as ${mission.owner} --proof "<proof>" --json`;
     }
   }
-  const warnings = [missingVerifierWarning(mission)].filter(Boolean);
+  const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective });
   const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
@@ -3082,7 +3102,7 @@ function startMissionFromRunObjective(objective, args) {
     mission.xp_task = xpTask;
     mission.task_ids = Array.from(new Set([...(mission.task_ids || []), xpTask.task_id]));
   }
-  const warnings = [missingVerifierWarning(mission)].filter(Boolean);
+  const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective, source: 'mission_run_objective' });
   const directGoalRequest = writeDirectRunCodexGoalRequest(saved, process.cwd());

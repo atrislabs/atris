@@ -247,7 +247,16 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
       continue;
     }
     const removed = runGit(['worktree', 'remove', '--force', w.path], { cwd: root, check: false });
-    if (removed.status === 0) receipt.removedWorktrees.push(w.path);
+    if (removed.status === 0) {
+      receipt.removedWorktrees.push(w.path);
+    } else {
+      // A locked worktree fails here and, unreported, reap re-salvages the
+      // same patches every pass forever. Say what blocked it so a human can
+      // unlock (or a dead lock can be challenged) instead of looping.
+      const reason = String(removed.stderr || removed.stdout || 'remove failed').trim().slice(0, 160);
+      receipt.keptWorktrees.push(`${w.path} (${reason})`);
+      if (w.branch) targetNames.delete(w.branch);
+    }
   }
 
   for (const name of targetNames) {
@@ -415,7 +424,7 @@ function printReceipt(receipt) {
     if (receipt.bundleError) console.log(`  backup failed — unlanded work left in place: ${receipt.bundleError}`);
     for (const p of receipt.patches) console.log(`  unsaved edits saved: ${p}`);
     for (const u of receipt.untracked || []) console.log(`  new files saved: ${u}`);
-    for (const k of receipt.keptWorktrees || []) console.log(`  could not back up, left alone: ${k}`);
+    for (const k of receipt.keptWorktrees || []) console.log(`  ✋ kept, needs a human: ${k}`);
     for (const m of receipt.keptMovedBranches || []) console.log(`  moved since scan, left alone: ${m}`);
     if (receipt.deletedRemote.length > 0) console.log(`  also cleared on github: ${receipt.deletedRemote.length}`);
   }
