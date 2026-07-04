@@ -594,6 +594,8 @@ function exitMissingMission(ref, code = 1, asJson = false) {
     if (hints.length) {
       console.error(`Workspace hint: mission ${hints[0].id} exists in ${hints[0].workspace_root}.`);
       console.error(`Run: ${hints[0].command}`);
+    } else {
+      console.error('Mission ids are workspace-local — run this from the workspace that created the mission.');
     }
   }
   process.exit(code);
@@ -2808,7 +2810,17 @@ function findActiveTwinMission(objective, owner, root = process.cwd()) {
 
 function startMission(args) {
   const asJson = wantsJson(args);
+  if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    console.log('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--runner manual|claude|atris2|codex_goal]');
+    console.log('Run `atris mission --help` for the full option list.');
+    process.exit(0);
+  }
   const mission = missionFromArgs(args);
+  // A flag-looking or empty objective is a typo, not a mission.
+  const rawObjective = String(mission.objective || '').trim();
+  if (!rawObjective || rawObjective.startsWith('-')) {
+    exitMissionError(`mission start needs a quoted objective (got ${rawObjective ? `"${rawObjective}"` : 'nothing'}). Usage: atris mission start "<objective>" --owner <member>`, 1, asJson);
+  }
   // Pasting a mission id where an objective goes is an id mismatch, not a new
   // mission: recover the existing record or explain where it actually lives.
   const idLikeObjective = String(mission.objective || '').trim();
