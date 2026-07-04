@@ -58,6 +58,56 @@ test('ensureNowFile creates atris/now.md as the workspace front door', () => {
   }
 });
 
+test('ensureNowFile refreshes a generated now.md whose day-scoped counters went stale', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n- **T1:** Ship it\n', 'utf8');
+    // Yesterday's generated file: day-scoped Signals must not be served as today's truth.
+    fs.writeFileSync(path.join(dir, 'atris', 'now.md'), [
+      '# now',
+      '',
+      '> Current operating truth for this workspace.',
+      '',
+      'Last updated: 2020-01-01',
+      '',
+      '## Signals',
+      '',
+      '- Open TODO items: 99',
+      '- Completed receipts today: 42',
+      '',
+      '## Receipts',
+      '',
+    ].join('\n'), 'utf8');
+
+    const result = ensureNowFile(dir);
+    const content = fs.readFileSync(path.join(dir, 'atris', 'now.md'), 'utf8');
+    assert.equal(result.refreshed, true);
+    assert.doesNotMatch(content, /Last updated: 2020-01-01/);
+    assert.doesNotMatch(content, /Completed receipts today: 42/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('ensureNowFile never overwrites a hand-edited now.md, stale or not', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+    const handWritten = '# now\n\nLast updated: 2020-01-01\n\nMy own operating notes, not generated.\n';
+    fs.writeFileSync(path.join(dir, 'atris', 'now.md'), handWritten, 'utf8');
+
+    const result = ensureNowFile(dir);
+    assert.notEqual(result.refreshed, true);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'now.md'), 'utf8'), handWritten);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('refreshNowFile regenerates now.md from current local signals', () => {
   const dir = makeTempDir();
   try {

@@ -336,6 +336,19 @@ function ensureNowFile(root = process.cwd()) {
     fs.writeFileSync(nowPath, content, 'utf8');
     return { created: true, path: nowPath };
   }
+  // A generated now.md carries day-scoped Signals ("Completed receipts
+  // today"). Serving yesterday's counters as current truth is exactly what
+  // its own Watchouts forbid — refresh generated files on a new day.
+  // Hand-edited files are never overwritten.
+  try {
+    const current = fs.readFileSync(nowPath, 'utf8');
+    const dateMatch = current.match(/^Last updated:\s*(\d{4}-\d{2}-\d{2})/m);
+    if (isGeneratedNowFile(current) && dateMatch && dateMatch[1] !== todayIso()) {
+      const content = isWorkspace ? renderDefaultNow(root) : renderPortfolioNow(root);
+      fs.writeFileSync(nowPath, content, 'utf8');
+      return { created: false, refreshed: true, path: nowPath };
+    }
+  } catch { /* unreadable file: leave it alone */ }
   return { created: false, path: nowPath };
 }
 

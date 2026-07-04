@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { countTaskReceiptsToday, countJournalCompletedReceipts } = require('./now');
 
 function analyticsAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
@@ -34,16 +35,24 @@ function analyticsAtris() {
     const dateFormatted = `${year}-${month}-${day}`;
     const logPath = path.join(targetDir, 'logs', year.toString(), `${dateFormatted}.md`);
 
+    // Durable task receipts are the completion truth in the task-db era;
+    // journal C# entries remain the legacy fallback. Same precedence as
+    // `atris now`, so the two surfaces report the same number.
+    const receiptCount = countTaskReceiptsToday(process.cwd(), date);
+
     if (!fs.existsSync(logPath)) {
-      completionsByDay[dateFormatted] = 0;
+      completionsByDay[dateFormatted] = receiptCount;
+      totalCompletions += receiptCount;
+      if (index === 0) todayCompletions = receiptCount;
       return;
     }
 
     const content = fs.readFileSync(logPath, 'utf8');
 
-    // Count completions (C# pattern)
-    const completionMatches = content.match(/- \*\*C\d+:/g);
-    const completionCount = completionMatches ? completionMatches.length : 0;
+    // Same precedence chain as `atris now`: durable receipts, then the shared
+    // journal heuristic (Proof: lines, then C# entries) — so the two surfaces
+    // report the same completion number by construction.
+    const completionCount = receiptCount || countJournalCompletedReceipts(logPath);
     completionsByDay[dateFormatted] = completionCount;
     totalCompletions += completionCount;
 
