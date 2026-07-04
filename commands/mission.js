@@ -677,6 +677,14 @@ function memberMissionFile(owner, root = process.cwd()) {
   return path.join(dir, 'MISSION.md');
 }
 
+function missingOwnerMemberWarning(owner, root = process.cwd()) {
+  if (!owner || fs.existsSync(path.join(root, 'atris', 'team', owner))) return null;
+  return {
+    code: 'missing_owner_member',
+    message: `owner "${owner}" has no atris/team/${owner}/ member. Create it (atris member create ${owner}) or pick an existing member (ls atris/team/).`,
+  };
+}
+
 function ensureMemberMissionFile(owner, root = process.cwd(), objective = '') {
   const missionPath = memberMissionFile(owner, root);
   if (!missionPath || fs.existsSync(missionPath)) return missionPath;
@@ -2879,7 +2887,7 @@ function startMission(args) {
       mission.next_action = `work task then run: atris task current-step --goal-id ${mission.id} --as ${mission.owner} --proof "<proof>" --json`;
     }
   }
-  const warnings = [missingVerifierWarning(mission)].filter(Boolean);
+  const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective });
   const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
@@ -2989,7 +2997,7 @@ function startMissionFromRunObjective(objective, args) {
     mission.xp_task = xpTask;
     mission.task_ids = Array.from(new Set([...(mission.task_ids || []), xpTask.task_id]));
   }
-  const warnings = [missingVerifierWarning(mission)].filter(Boolean);
+  const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective, source: 'mission_run_objective' });
   const directGoalRequest = writeDirectRunCodexGoalRequest(saved, process.cwd());
