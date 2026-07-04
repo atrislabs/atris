@@ -99,6 +99,56 @@ test('atris task archive refuses without --reason and refuses done/failed tasks'
     assert.equal(runCli(['task', 'done', task.display_id, '--failed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     const archiveFailed = runCli(['task', 'archive', task.display_id, '--reason', 'too late', '--json'], { cwd: dir, env });
     assert.notEqual(archiveFailed.status, 0);
+    assert.equal(JSON.parse(archiveFailed.stdout).reason, 'already_failed');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris task archive --from-failed opts in to failed→archived but never touches done', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    // failed + --from-failed succeeds and records the prior status.
+    const orphan = runCli(['task', 'new', 'Loop tick: duplicate orphan', '--tag', 'archive-test', '--json'], { cwd: dir, env });
+    const orphanTask = JSON.parse(orphan.stdout).task;
+    assert.equal(runCli(['task', 'claim', orphanTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'done', orphanTask.display_id, '--failed', '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    // Without the flag it still errors (default stays safe).
+    const withoutFlag = runCli(['task', 'archive', orphanTask.display_id, '--reason', 'duplicate loop-tick orphan', '--json'], { cwd: dir, env });
+    assert.notEqual(withoutFlag.status, 0);
+    assert.equal(JSON.parse(withoutFlag.stdout).reason, 'already_failed');
+
+    const withFlag = runCli(['task', 'archive', orphanTask.display_id, '--reason', 'duplicate loop-tick orphan', '--from-failed', '--json'], { cwd: dir, env });
+    assert.equal(withFlag.status, 0, withFlag.stderr);
+    const payload = JSON.parse(withFlag.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.task.status, 'archived');
+    assert.equal(payload.archived_from, 'failed');
+
+    const shown = runCli(['task', 'show', orphanTask.display_id, '--json'], { cwd: dir, env });
+    const shownPayload = JSON.parse(shown.stdout);
+    assert.equal(shownPayload.status, 'archived');
+    assert.equal(shownPayload.metadata.archived_from, 'failed');
+
+    // done + --from-failed still errors: accepted work is never archivable.
+    const doneTask = runCli(['task', 'new', 'Genuinely completed work', '--tag', 'archive-test', '--json'], { cwd: dir, env });
+    const doneTaskRef = JSON.parse(doneTask.stdout).task;
+    assert.equal(runCli(['task', 'claim', doneTaskRef.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Simulate a human completion: lift agent proof-only mode for this call
+    // (the test process may run inside an agent session with CLAUDECODE set).
+    const humanEnv = { ...env, ATRIS_AGENT_PROOF_ONLY: '0' };
+    const markedDone = runCli(['task', 'done', doneTaskRef.display_id, '--as', 'codex', '--proof', 'ran node --test test/task-archive-status.test.js; 4/4 pass'], { cwd: dir, env: humanEnv });
+    assert.equal(markedDone.status, 0, markedDone.stderr || markedDone.stdout);
+    const archiveDone = runCli(['task', 'archive', doneTaskRef.display_id, '--reason', 'should never work', '--from-failed', '--json'], { cwd: dir, env });
+    assert.notEqual(archiveDone.status, 0);
+    assert.equal(JSON.parse(archiveDone.stdout).reason, 'already_done');
+    const stillDone = runCli(['task', 'show', doneTaskRef.display_id, '--json'], { cwd: dir, env });
+    assert.equal(JSON.parse(stillDone.stdout).status, 'done');
   } finally {
     cleanupTempDir(dir);
   }

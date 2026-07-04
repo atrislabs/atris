@@ -171,7 +171,9 @@ atris task - durable local task state (SQLite, gitignored)
   atris task step <id> [--json]            Refine chat, then advance one safe Plan/Do/Review step
   atris task done <id> --proof "..."       Mark complete with proof
   atris task done <id> --failed [--proof "..."]  Mark failed, optionally reviewed
-  atris task archive <id> --reason "..."   Sweep off-roadmap/duplicate work as archived (not failed)
+  atris task archive <id> --reason "..." [--from-failed]
+                                           Sweep off-roadmap/duplicate work as archived (not failed);
+                                           --from-failed opts in to relabel a fail-closed row (never done)
   atris task relabel-archived [--dry-run|--apply]
                                            One-time OBL-1622 migration: relabel June-10 backlog-reset rows failed -> archived
   atris task finish <id> --proof "..."     Legacy alias for done with proof
@@ -7885,7 +7887,11 @@ function cmdArchive(args) {
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task archive');
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
-  const result = taskDb.archiveTask(db, { id: taskId, actor, reason });
+  // Explicit opt-in for sanctioned failed→archived cleanup (e.g. duplicate
+  // loop-tick orphans fail-closed before 'archived' existed). Without the
+  // flag, failed rows stay failed; done rows are never archivable.
+  const fromFailed = hasFlag(args, '--from-failed');
+  const result = taskDb.archiveTask(db, { id: taskId, actor, reason, fromFailed });
   if (result.archived) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     if (wantsJson(args)) {
@@ -7894,14 +7900,21 @@ function cmdArchive(args) {
         action: 'archived',
         task_id: taskId,
         reason,
+        archived_from: result.row && result.row.metadata && result.row.metadata.archived_from || null,
         projection_path: outPath,
         task: compactTaskFromProjection(projection, taskId),
       });
       return;
     }
-    console.log(`archived ${taskRef(compactTaskFromProjection(projection, taskId))}: ${reason}`);
+    const fromNote = result.row && result.row.metadata && result.row.metadata.archived_from
+      ? ` (was ${result.row.metadata.archived_from})`
+      : '';
+    console.log(`archived ${taskRef(compactTaskFromProjection(projection, taskId))}${fromNote}: ${reason}`);
   } else {
-    const detail = `archive failed: ${taskId} ${result.reason}`;
+    const hint = result.reason === 'already_failed'
+      ? ' (use --from-failed to archive a fail-closed duplicate/off-roadmap row)'
+      : '';
+    const detail = `archive failed: ${taskId} ${result.reason}${hint}`;
     if (wantsJson(args)) {
       printJson({ ok: false, command: 'atris task archive', reason: result.reason, task_id: taskId, detail });
       process.exit(1);
