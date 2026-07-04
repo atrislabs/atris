@@ -107,9 +107,34 @@ function taskScopeLine(scope) {
   return `${taskScopeLabel(scope)} (${scope.workspace_root})`;
 }
 
+const PARKED_DAYS = 30;
+
+// One git call: every feature dir touched in the last PARKED_DAYS.
+// An unproven feature nobody has edited in a month is a parked idea
+// packet, not work-in-progress — counting it as "unproven" buries the
+// handful of live lanes that actually need a proof receipt.
+function recentlyTouchedFeatureDirs(cwd) {
+  try {
+    const out = execFileSync(
+      'git',
+      ['log', `--since=${PARKED_DAYS}.days`, '--format=', '--name-only', '--', 'atris/features'],
+      { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    const dirs = new Set();
+    for (const line of out.split('\n')) {
+      const m = line.match(/^atris\/features\/([^/]+)\//);
+      if (m) dirs.add(m[1]);
+    }
+    return dirs;
+  } catch {
+    return null; // no git history to judge by: nothing reads as parked
+  }
+}
+
 function loadFeatures(cwd) {
   const dir = path.join(cwd, 'atris', 'features');
   if (!fs.existsSync(dir)) return [];
+  const recent = recentlyTouchedFeatureDirs(cwd);
   const out = [];
   for (const name of fs.readdirSync(dir)) {
     if (name.startsWith('_')) continue;
@@ -134,6 +159,7 @@ function loadFeatures(cwd) {
     if (/blocked/i.test(status || '')) verdict = 'blocked';
     else if (proofAgeDays != null && proofAgeDays <= STALE_DAYS) verdict = 'proven';
     else if (proofAgeDays != null) verdict = 'stale';
+    else if (recent && !recent.has(name)) verdict = 'parked';
     else verdict = 'unproven';
     out.push({ lane: name, status: status || '-', verdict, proofAgeDays });
   }
@@ -199,7 +225,7 @@ function truthCommand(args = []) {
 
   const line = (s) => console.log(s);
   if (summary) {
-    line(`truth [${taskScopeLabel(scope)}]: features ${featureTally.proven || 0} proven / ${featureTally.stale || 0} stale / ${featureTally.blocked || 0} blocked / ${featureTally.unproven || 0} unproven · loops ${loopTally.proven || 0} live / ${(loopTally.stale || 0) + (loopTally['never-ran'] || 0)} stale / ${loopTally.blocked || 0} failing · missions ${missions.length} active`);
+    line(`truth [${taskScopeLabel(scope)}]: features ${featureTally.proven || 0} proven / ${featureTally.stale || 0} stale / ${featureTally.blocked || 0} blocked / ${featureTally.unproven || 0} unproven / ${featureTally.parked || 0} parked · loops ${loopTally.proven || 0} live / ${(loopTally.stale || 0) + (loopTally['never-ran'] || 0)} stale / ${loopTally.blocked || 0} failing · missions ${missions.length} active`);
     return 0;
   }
 
@@ -214,7 +240,7 @@ function truthCommand(args = []) {
   }
 
   line(`\nFeature lanes (${features.length}):`);
-  const order = { blocked: 0, stale: 1, unproven: 2, proven: 3 };
+  const order = { blocked: 0, stale: 1, unproven: 2, proven: 3, parked: 4 };
   for (const f of features.sort((a, b) => (order[a.verdict] ?? 9) - (order[b.verdict] ?? 9))) {
     line(`  ${f.verdict.padEnd(9)} ${fmtAge(f.proofAgeDays).padStart(6)}  ${f.lane}`);
   }
@@ -224,7 +250,7 @@ function truthCommand(args = []) {
     line(`  ${h.verdict.padEnd(9)} ${fmtAge(h.lastRunAgeDays).padStart(6)}  ${h.id}${h.fails ? `  fails=${h.fails}` : ''}`);
   }
 
-  line(`\nVerdict key: proven = receipt within ${STALE_DAYS}d · stale = receipt older · unproven = no receipt ever · blocked = failing now`);
+  line(`\nVerdict key: proven = receipt within ${STALE_DAYS}d · stale = receipt older · unproven = no receipt, edited within ${PARKED_DAYS}d · parked = no receipt, untouched ${PARKED_DAYS}d+ · blocked = failing now`);
   return 0;
 }
 

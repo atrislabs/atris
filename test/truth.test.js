@@ -171,3 +171,43 @@ test('truth resolves isolated git worktrees to the shared task workspace', () =>
     cleanupTempDir(dir);
   }
 });
+
+test('truth splits unproven features into live lanes and parked idea packets', () => {
+  if (!hasNodeSqlite() || !hasGit()) return;
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  const repo = path.join(dir, 'repo');
+  try {
+    fs.mkdirSync(home, { recursive: true });
+    const featureDir = (name) => path.join(repo, 'atris', 'features', name);
+    for (const name of ['live-lane', 'old-idea']) {
+      fs.mkdirSync(featureDir(name), { recursive: true });
+      fs.writeFileSync(path.join(featureDir(name), 'validate.md'), 'status: packet-created\n', 'utf8');
+    }
+    runGit(['init'], { cwd: repo });
+    const commit = (msg, when) => {
+      runGit(['add', '.'], { cwd: repo });
+      const result = spawnSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-m', msg], {
+        cwd: repo,
+        encoding: 'utf8',
+        env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when },
+      });
+      assert.equal(result.status, 0, result.stderr);
+    };
+    // both features born 60 days ago; only live-lane edited since
+    const old = new Date(Date.now() - 60 * 86400000).toISOString();
+    commit('seed features', old);
+    fs.appendFileSync(path.join(featureDir('live-lane'), 'validate.md'), 'notes: in flight\n');
+    commit('work on live lane', new Date().toISOString());
+
+    const result = runCli(['truth', '--json'], { cwd: repo, env: { HOME: home, ATRIS_TASKS_DB: path.join(dir, 'tasks.db') } });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    const byLane = Object.fromEntries(payload.feature_rows.map((f) => [f.lane, f.verdict]));
+    assert.equal(byLane['live-lane'], 'unproven');
+    assert.equal(byLane['old-idea'], 'parked');
+    assert.deepEqual(payload.features, { unproven: 1, parked: 1 });
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
