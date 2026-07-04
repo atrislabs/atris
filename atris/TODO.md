@@ -4,7 +4,7 @@
 
 ## Backlog
 
-(Empty)
+- **[CLI-174]** First useful step: chat-scan [onboarding]
 
 ## In Progress
 
