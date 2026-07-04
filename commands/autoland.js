@@ -137,6 +137,8 @@ function showStatus(root, args) {
   if (enabled && acceptAll) console.log('  bar: everything lands except the protected lanes (money, deploys, security, customer, outward)');
   console.log(`  heartbeat: ${autoland.cronInstalled(root) ? 'running hourly' : 'not installed'}`);
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
+  const reapTrouble = autoland.readState(root).last_reap_error;
+  if (reapTrouble) console.log(`  cleanup trouble: daily sweep failed on ${reapTrouble.date} (${reapTrouble.error}) — run: atris land --reap`);
   console.log('');
   if (wouldLand.length > 0) {
     console.log(`  ready to land on their own: ${wouldLand.length}`);
@@ -219,6 +221,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
     project: projectName(root),
     nextMoves: digestNextMoves(root),
     acceptAll: Boolean(policy.accept_all),
+    reapError: autoland.readState(root).last_reap_error?.error || null,
   });
   console.log(text);
   // the full story: what each piece actually was, in its own words
@@ -249,6 +252,15 @@ function runDigest(root, args, { forceSend = false } = {}) {
   return 0;
 }
 
+function pidAlive(pid) {
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function runTick(root, args) {
   const json = args.includes('--json');
   const policy = autoland.readPolicy(root);
@@ -258,6 +270,34 @@ function runTick(root, args) {
     else console.log('autoland is off; tick did nothing.');
     return 0;
   }
+
+  // One live tick at a time: verify re-runs can take minutes each, and a
+  // second hourly cron firing into the same snapshot double-accepts,
+  // double-alarms, and double-digests. A stale lock (dead pid or >55min)
+  // never wedges the loop.
+  const lockPath = path.join(root, '.atris', 'state', 'autoland.tick.lock');
+  try {
+    const prev = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    const fresh = Date.now() - Number(prev.at || 0) < 55 * 60 * 1000;
+    if (fresh && pidAlive(prev.pid)) {
+      receipt.skipped_reason = 'tick_already_running';
+      if (json) console.log(JSON.stringify(receipt));
+      else console.log('autoland tick: another tick is still running; skipped.');
+      return 0;
+    }
+  } catch {}
+  try {
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, at: Date.now() }));
+  } catch {}
+  try {
+    return runTickBody(root, { json, policy, receipt });
+  } finally {
+    try { fs.unlinkSync(lockPath); } catch {}
+  }
+}
+
+function runTickBody(root, { json, policy, receipt }) {
 
   // 1. certify what has executable proof — re-run the runnable check named in
   // each Review proof as a second actor. Without this the tick only lands rows
@@ -341,6 +381,7 @@ function runTick(root, args) {
       project: projectName(root),
       nextMoves: digestNextMoves(root),
       acceptAll: Boolean(policy.accept_all),
+      reapError: state.last_reap_error?.error || null,
     });
     if (policy.imessage_to) {
       const sent = autoland.sendImessage(root, policy.imessage_to, text);
@@ -376,10 +417,16 @@ function runTick(root, args) {
         bundle: reaped.bundle,
         patches: reaped.patches.length,
       };
+      if (reaped.bundleError) receipt.reap_error = `backup failed, unlanded work kept in place: ${reaped.bundleError}`;
     } catch (err) {
       receipt.reap_error = String((err && err.message) || err).slice(0, 200);
     }
     state.last_reap_date = today;
+    // a failed sweep must not be a secret: status and the next digest carry
+    // it until a sweep succeeds. The date gate above still holds so a broken
+    // repo errors once a day, not hourly.
+    if (receipt.reap_error) state.last_reap_error = { date: today, error: receipt.reap_error };
+    else delete state.last_reap_error;
   }
   autoland.writeState(root, state);
 

@@ -484,3 +484,52 @@ test('tick is a no-op when the policy is off', () => {
     cleanupTempDir(base);
   }
 });
+
+test('tick lock: a live concurrent tick is skipped, a stale lock is not', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', accept_all: true });
+    const lockPath = path.join(repo, '.atris', 'state', 'autoland.tick.lock');
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    // live: this test process's pid, fresh timestamp
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, at: Date.now() }));
+    const skipped = runCli(['autoland', 'tick', '--json'], repo);
+    const receipt = JSON.parse(skipped.stdout.trim().split('\n').pop());
+    assert.equal(receipt.skipped_reason, 'tick_already_running');
+    assert.deepEqual(receipt.landed, []);
+    // stale: same pid but an hour old — the tick runs and clears the lock
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, at: Date.now() - 60 * 60 * 1000 }));
+    const ran = runCli(['autoland', 'tick', '--json'], repo);
+    const receipt2 = JSON.parse(ran.stdout.trim().split('\n').pop());
+    assert.equal(receipt2.skipped_reason, undefined);
+    assert.equal(fs.existsSync(lockPath), false);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('a failed daily sweep is not a secret: receipt, state, status, digest all carry it', () => {
+  const outer = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-autoland-test-'));
+  const repo = path.join(outer, 'repo');
+  fs.mkdirSync(repo, { recursive: true });
+  runGit(['init', '-b', 'trunk'], repo); // no master/main: the sweep throws
+  runGit(['config', 'user.email', 'test@example.com'], repo);
+  runGit(['config', 'user.name', 'Test'], repo);
+  fs.writeFileSync(path.join(repo, 'README.md'), '# fixture\n');
+  runGit(['add', '.'], repo);
+  runGit(['commit', '-m', 'init'], repo);
+  try {
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', accept_all: true });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.match(String(receipt.reap_error), /master|main/);
+    const state = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'autoland.json'), 'utf8'));
+    assert.match(state.last_reap_error.error, /master|main/);
+    const status = runCli(['autoland', 'status'], repo);
+    assert.match(status.stdout, /cleanup trouble/);
+    const digest = runCli(['autoland', 'digest'], repo);
+    assert.match(digest.stdout, /cleanup trouble: the daily sweep failed/);
+  } finally {
+    cleanupTempDir(outer);
+  }
+});
