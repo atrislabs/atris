@@ -158,6 +158,9 @@ test('boot panel shows rot counts for stale worktrees and unresolved lessons', (
     fs.writeFileSync(path.join(dir, 'atris', 'lessons.md'), [
       '- **[2026-04-01] open-lesson** — fail — Still broken.',
       '- **[2026-04-02] closed-lesson** — pass — [resolved] Fixed.',
+      // knowledge, not rot: a pass lesson has nothing to resolve
+      '- **[2026-04-03] worked-lesson** — pass — This approach worked.',
+      '- **[2026-04-04] fixed-fail** — fail — [resolved] Bug fixed, detector passed.',
       '',
     ].join('\n'), 'utf8');
 
