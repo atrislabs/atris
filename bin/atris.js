@@ -980,7 +980,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
-                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
+                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'interview', 'moves', 'unknowns',
                        'github', 'vercel', 'supabase', 'linear', 'stripe', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed'];
 
@@ -2474,6 +2474,11 @@ if (command === 'init') {
   Promise.resolve(require('../commands/moves').movesCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'unknowns') {
+  // Unknowns: blindspot pass from local territory context into the SQLite ledger.
+  Promise.resolve(require('../commands/unknowns').unknownsCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'feed') {
   // Feed: read and post the business group feed — receipts and state changes only.
   // Sets exitCode instead of process.exit() so large --json output flushes fully.
@@ -2483,6 +2488,11 @@ if (command === 'init') {
 } else if (command === 'clarity') {
   // Clarity: interview yourself once; agents read how you work so you stop repeating it.
   Promise.resolve(require('../commands/clarity').clarityCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'interview') {
+  // Interview: the interlinked 1-on-1 — live interview that extracts judgment into a member file.
+  Promise.resolve(require('../commands/interview').interviewCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'deck') {
