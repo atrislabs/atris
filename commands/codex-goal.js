@@ -99,11 +99,35 @@ function chmodPrivate(filePath) {
   }
 }
 
-function runSqliteJson(dbPath, sql, { readonly = true } = {}) {
+function runSqliteOnce(dbPath, sql, readonly) {
   const sqliteArgs = [];
   if (readonly) sqliteArgs.push('-readonly');
   sqliteArgs.push('-json', dbPath, sql);
-  const result = spawnSync('sqlite3', sqliteArgs, { encoding: 'utf8' });
+  return spawnSync('sqlite3', sqliteArgs, { encoding: 'utf8' });
+}
+
+function runSqliteJson(dbPath, sql, { readonly = true } = {}) {
+  let result = runSqliteOnce(dbPath, sql, readonly);
+  // Codex DBs are WAL-mode. `sqlite3 -readonly` cannot open a WAL db unless a
+  // writer already holds the -shm/-wal sidecars open (error 14 with no Codex
+  // running). Fall back to reading a private snapshot copy of db+wal.
+  const walLocked =
+    readonly &&
+    result.status !== 0 &&
+    /unable to open database file/i.test(String(result.stderr || result.stdout || ''));
+  if (walLocked) {
+    const snapDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-codex-goal-'));
+    const snapDb = path.join(snapDir, path.basename(dbPath));
+    try {
+      fs.copyFileSync(dbPath, snapDb);
+      for (const ext of ['-wal', '-shm']) {
+        if (fs.existsSync(dbPath + ext)) fs.copyFileSync(dbPath + ext, snapDb + ext);
+      }
+      result = runSqliteOnce(snapDb, sql, false);
+    } finally {
+      fs.rmSync(snapDir, { recursive: true, force: true });
+    }
+  }
   if (result.error) throw new Error(`sqlite3 failed: ${result.error.message}`);
   if (result.status !== 0) {
     const detail = (result.stderr || result.stdout || '').trim();
