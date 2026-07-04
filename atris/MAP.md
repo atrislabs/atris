@@ -116,7 +116,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 - **Entry point:** `bin/atris.js:980-991` (knownCommands dispatch)
 - **Cold-start handler:** `bin/atris.js:1095` (`interactiveEntry`; active missions/work outrank completed history)
-- **Regression:** `test/commands.test.js:4974-4987` covers parseable JSON errors for unknown top-level commands
+- **Typo guard:** `bin/atris.js` `suggestKnownCommand` — a single command-shaped token near a real command (edit distance ≤2, or known-command+hyphen like `chat-scan`) exits 2 with the suggestion BEFORE the NL flow saves state
+- **Regression:** `test/commands.test.js:4974-4987` covers parseable JSON errors for unknown top-level commands; `test/command-typo-guard.test.js` covers the typo guard (4 typo shapes, no state written, real commands untouched)
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
 - With args → Hot start (treats input as task description)
@@ -321,6 +322,17 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Search:** `rg "autolandCommand|liveAcceptAuthorization|composeDigest" commands/autoland.js lib/autoland.js commands/task.js`
 
+### Feature: Drive (`atris drive`)
+
+**Purpose:** Self-driving tick over the mission plane — run mission doctor, auto-execute the safe fixes it prescribes, log everything still needing a human as an explicit disengagement (metric: disengagements per tick → zero).
+
+- **Implementation:** `commands/drive.js` (tick loop, doctor-fix dispatch, disengagement log)
+- **State:** `.atris/state/drive.jsonl` (one append-only line per tick)
+- **Doctor findings it consumes:** `commands/mission.js` collectMissionDoctorFindings (missing_verifier, stale_ready_receipt, blocked_always_on_loop, budget_elapsed)
+- **Value:** the doctor stops being advice and starts being an actuator, with a human-visible disengagement trail
+
+**Search:** `rg "driveCommand|disengagement" commands/drive.js`
+
 ### Feature: Landing Contract (`atris land`)
 
 **Purpose:** Work is merged or reaped, never limbo — the board shows every unlanded branch/worktree; `--reap` salvages then deletes anything landed or past TTL
@@ -476,7 +488,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `atris task lineage <id> [--json]` — endgame → parents → target → children chain + commits grepped by display refs (`cmdLineage` in `commands/task.js`; test: `test/commands.test.js` 'task lineage')
 - `atris member history <name> [--limit N] [--json]` — git log per identity file (MEMBER.md/SOUL.md) (`memberHistory` in `commands/member.js`; test: `test/member-history.test.js`)
 - `atris lesson sweep [--dry-run] [--json]` — contradiction detection (opposite outcomes, dead file refs) → idempotent dissolve tasks (`lib/lesson-contradiction.js`, `commands/lesson.js`; test: `test/lesson-sweep.test.js`)
-- Boot impression: welcome panel renders active endgame slug+horizon verbatim (`bin/atris.js` showWelcomeVisualization); `listTasks` ranks `tag='endgame'` first within status (`lib/task-db.js`; test: `test/boot-impression.test.js`)
+- Boot impression: welcome panel renders active endgame slug+horizon verbatim (`bin/atris.js` showWelcomeVisualization); `listTasks` ranks `tag='endgame'` first within status (`lib/task-db.js`; test: `test/boot-impression.test.js`); boot panel task/review/land counts read DB lane truth with TODO.md fallback (test: `test/boot-panel-counts.test.js`)
 - Layer receipts: every mission tick stores `layer`/`layer_source` (explicit `layer: x` receipt line or path-class fallback) + `last_tick_layer` on the mission; heartbeat shows it (`extractLayerFromReceiptText`/`classifyPathsByLayer` in `commands/mission.js`; test: `test/mission-layer-receipts.test.js`)
 
 ### Feature: Task Production Readiness

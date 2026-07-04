@@ -97,7 +97,9 @@ test('mission start preserves dynamic verifier when quoted by caller', () => {
 test('always-on mission start without a verifier is blocked unless --no-verify opts out', () => {
   const dir = makeTempDir();
   try {
-    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // The owner has a real member dir so this test asserts ONLY the verifier
+    // contract — no missing_owner_member warning in the way.
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'mission-lead'), { recursive: true });
     const blocked = runCli([
       'mission',
       'start',

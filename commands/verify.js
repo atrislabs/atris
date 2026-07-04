@@ -282,16 +282,24 @@ function runTests(cwd) {
 
   result.run = true;
 
-  // Run tests
+  // Run tests. The old 60s cap made verify structurally lie on any repo whose
+  // suite runs longer (this one takes ~5min): the kill surfaced as a generic
+  // "Exit code 1" failure for a suite that passes. Give suites 10 minutes and
+  // name a timeout as what it is instead of a fake exit code.
   const [cmd, ...args] = testCmd.split(' ');
   const proc = spawnSync(cmd, args, {
     cwd,
     stdio: 'pipe',
-    timeout: 60000
+    timeout: 600000,
+    maxBuffer: 64 * 1024 * 1024,
   });
 
-  result.pass = proc.status === 0;
-  result.summary = result.pass ? 'All tests passed' : `Exit code ${proc.status}`;
+  const timedOut = Boolean(proc.error && proc.error.code === 'ETIMEDOUT');
+  result.timedOut = timedOut;
+  result.pass = !timedOut && proc.status === 0;
+  result.summary = timedOut
+    ? `Timed out after 600s — run \`${testCmd}\` directly for results`
+    : (result.pass ? 'All tests passed' : `Exit code ${proc.status}`);
 
   return result;
 }

@@ -2649,7 +2649,10 @@ test('mission run terminal skips are JSON-readable when mission is explicit', ()
 test('mission run with an objective starts a visible-goal mission', () => {
   const dir = makeTempDir();
   try {
-    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // Default owner gets a member dir so warnings.length === 0 keeps asserting
+    // "a clean start emits no warnings" rather than fighting the (correct)
+    // missing_owner_member nudge.
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'mission-lead'), { recursive: true });
 
     const run = runCli(['mission', 'run', 'atris mission run', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);

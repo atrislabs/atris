@@ -1085,9 +1085,19 @@ function normalizeMissionReceiptResult(mission, result, receiptPath = '') {
 }
 
 function missionRunStartNextLine(mission, nextCommand, warnings = []) {
-  if (warnings.length) return 'Add a verifier before completion, then run the first proof tick.';
+  // Each warning names its own cure: "add a verifier" only fits the
+  // missing_verifier warning. A blanket warnings.length check told operators
+  // to add a verifier they had already configured whenever any OTHER warning
+  // (e.g. missing_owner_member) fired.
+  const warningCodes = new Set(warnings.map((w) => w && w.code).filter(Boolean));
+  if (warningCodes.has('missing_verifier')) {
+    return 'Add a verifier before completion, then run the first proof tick.';
+  }
   if (isCodexGoalMission(mission) && !codexNativeGoalAck(mission)) {
     return 'Start the visible goal, then continue this mission.';
+  }
+  if (warningCodes.has('missing_owner_member')) {
+    return `Create the owner member (atris member create ${mission.owner || '<owner>'}), then run the first proof tick.`;
   }
   if (/attach-task/.test(nextCommand || '')) return 'Attach task context, then continue this mission.';
   return 'Run the first proof tick.';
