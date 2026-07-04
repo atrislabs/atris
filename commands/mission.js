@@ -2809,6 +2809,24 @@ function findActiveTwinMission(objective, owner, root = process.cwd()) {
 function startMission(args) {
   const asJson = wantsJson(args);
   const mission = missionFromArgs(args);
+  // Pasting a mission id where an objective goes is an id mismatch, not a new
+  // mission: recover the existing record or explain where it actually lives.
+  const idLikeObjective = String(mission.objective || '').trim();
+  if (/^mission-\d{4}-\d{2}-\d{2}-/.test(idLikeObjective)) {
+    const existing = resolveMission(idLikeObjective);
+    if (existing) {
+      printJsonOrText(
+        { ok: true, action: 'mission_recovered', recovered: true, mission: existing, note: 'objective looked like a mission id; recovered the existing mission instead of creating a new one' },
+        [
+          `That's a mission id, not an objective — recovered ${existing.id} (${existing.status}).`,
+          `Resume: atris mission run ${existing.id}`,
+        ],
+        asJson,
+      );
+      return;
+    }
+    exitMissingMission(idLikeObjective, 1, asJson);
+  }
   if (!hasFlag(args, '--duplicate')) {
     const twin = findActiveTwinMission(mission.objective, mission.owner);
     if (twin) {
@@ -5950,7 +5968,8 @@ async function runMission(args) {
     return;
   }
   if (!mission) {
-    exitMissionError(ref ? `Mission "${ref}" not found.` : 'Usage: atris mission run <id|objective> [--max-ticks 4] [--max-wall 3600]', 1, asJson);
+    if (ref) exitMissingMission(ref, 1, asJson);
+    exitMissionError('Usage: atris mission run <id|objective> [--max-ticks 4] [--max-wall 3600]', 1, asJson);
   }
   if (!maxWallFlag && Number(mission.budget_contract?.requested_seconds) > 0) {
     maxWallSeconds = Math.max(60, Number(mission.budget_contract.requested_seconds));
