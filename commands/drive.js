@@ -84,7 +84,18 @@ async function driveCommand(argv) {
   const fixed = [];
   const disengagements = [];
 
+  // Missions the doctor says have no verifier. A verify-tick physically cannot
+  // pass without one, so promising to verify-tick such a mission is a phantom
+  // fix that never sticks — count it as a wheel-grab instead.
+  const noVerifier = new Set(
+    report.findings.filter((f) => f.code === 'missing_verifier' && f.mission_id).map((f) => f.mission_id),
+  );
+
   for (const f of report.findings) {
+    if (f.code === 'stale_ready_receipt' && f.mission_id && noVerifier.has(f.mission_id)) {
+      disengagements.push({ ...pick(f), reason: 'ready_without_verifier' });
+      continue;
+    }
     if (f.code === 'stale_ready_receipt' && f.mission_id && !dryRun) {
       const tick = runAtris(['mission', 'tick', f.mission_id, '--verify', '--complete-on-pass', '--json'], cwd);
       const result = parseJsonLoose(tick.stdout);
@@ -117,6 +128,20 @@ async function driveCommand(argv) {
     }
     disengagements.push({ ...pick(f), reason: f.code });
   }
+
+  // One stuck mission is one wheel-grab, even if it trips several findings.
+  // Count disengagements per mission so the metric tracks "how many missions
+  // still need a human", not "how many symptoms did we print".
+  const dedupedDisengagements = [];
+  const seenDisengaged = new Set();
+  for (const d of disengagements) {
+    const key = d.mission_id || `${d.reason}:${d.objective || ''}`;
+    if (seenDisengaged.has(key)) continue;
+    seenDisengaged.add(key);
+    dedupedDisengagements.push(d);
+  }
+  disengagements.length = 0;
+  disengagements.push(...dedupedDisengagements);
 
   function isParkable(f) {
     if (f.status === 'paused') return true;

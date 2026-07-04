@@ -197,3 +197,36 @@ test('mission dedupe dry-runs and stops duplicate active missions', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('mission doctor stops flagging a paused no-verifier mission (parking sticks)', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const started = runCli([
+      'mission', 'start', 'parked zombie', '--owner', 'mission-lead', '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const missionId = JSON.parse(started.stdout).mission.id;
+
+    const flaggedBefore = JSON.parse(
+      runCli(['mission', 'doctor', '--local', '--json'], { cwd: dir }).stdout,
+    ).findings.filter((f) => f.code === 'missing_verifier').map((f) => f.mission_id);
+    assert.ok(flaggedBefore.includes(missionId), 'active no-verifier mission should be flagged');
+
+    const paused = runCli([
+      'mission', 'stop', missionId, '--pause', '--reason', 'parked for test',
+    ], { cwd: dir });
+    assert.equal(paused.status, 0, paused.stderr || paused.stdout);
+
+    const flaggedAfter = JSON.parse(
+      runCli(['mission', 'doctor', '--local', '--json'], { cwd: dir }).stdout,
+    ).findings.filter((f) => f.code === 'missing_verifier').map((f) => f.mission_id);
+    assert.ok(
+      !flaggedAfter.includes(missionId),
+      'paused mission is parked/settled and must not be re-flagged as missing_verifier',
+    );
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
