@@ -136,6 +136,7 @@ atris task - durable local task state (SQLite, gitignored)
                                            Re-run the runnable check named in each Review proof as a second actor; passing rows certify (denied lanes and check-less rows wait for a human)
   atris task auto-accept-certified --dry-run [--strict-verify] [--all] [--limit <n>]
                                            Preview certified Review rows; live accept needs --confirm-human-accept --as <human>
+  atris task sweep --auto-accept [--json]   Auto-accept low-stakes Review rows with passing verifier receipts
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
   atris task add "<title>" [--tag <tag>] [--goal-id <id>]  Create a task
@@ -8254,7 +8255,7 @@ function stampAutoAcceptMetadata(taskDb, db, taskId, actor, policy) {
   `).run(JSON.stringify(metadata), Date.now(), taskId);
 }
 
-function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '', nextTask = '' }) {
+function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '', nextTask = '', autoAccepted = false }) {
   const done = taskDb.doneTask(db, {
     id: taskId,
     status: 'done',
@@ -8262,6 +8263,7 @@ function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '
     allowReview: true,
     action: 'accepted',
     proof,
+    autoAccepted,
   });
   if (!done.updated) {
     return { ok: false, reason: 'not_open_claimed_or_review' };
@@ -8274,6 +8276,7 @@ function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '
     nextTask,
     proof,
     careerXpEligible: true,
+    autoAccepted,
   });
   return { ok: true, reviewed };
 }
@@ -8583,6 +8586,7 @@ function cmdAutoAcceptCertified(args) {
       reward: parsedReward.value,
       lesson: String(task.review?.lesson || task.metadata?.latest_agent_lesson || ''),
       nextTask: String(task.review?.next_task || task.metadata?.latest_agent_next_task || ''),
+      autoAccepted: true,
     });
     if (!accepted.ok) {
       results.push({ ...evaluation, action: 'accept_failed', reason: accepted.reason });
@@ -8632,6 +8636,227 @@ function cmdAutoAcceptCertified(args) {
     const nextAction = row.next_action ? ` next_action=${row.next_action}` : '';
     const reviewChat = row.review_chat_command ? ` review_chat=${row.review_chat_command}` : '';
     console.log(`${row.action.toUpperCase()} ${row.ref}: ${row.reason}${row.reward ? ` reward=${row.reward}` : ''}${nextAction}${reviewChat}`);
+  }
+}
+
+const SWEEP_AUTO_ACCEPT_STAKES_DENY = new Set(['costly', 'burnable-once', 'burnable_once']);
+const SWEEP_AUTO_ACCEPT_SAFE_STAKES = new Set(['reversible', 'low', 'low-stakes', 'low_stakes']);
+const SWEEP_AUTO_ACCEPT_ALLOWLIST_RE = /(^|[^a-z0-9])(?:docs?|test|tests?|refresh|render)(?:[\/:_-]|[^a-z0-9]|$)/i;
+
+function autoAcceptSweepLabelValues(task) {
+  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+  const tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+  return [
+    task && task.tag,
+    task && task.lane,
+    metadata.tag,
+    metadata.stakes,
+    metadata.risk,
+    metadata.lane,
+    metadata.mission_lane,
+    metadata.stage,
+    ...tags,
+  ].filter(value => value !== undefined && value !== null && String(value).trim());
+}
+
+function autoAcceptSweepNormalizedTokens(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  if (!normalized) return [];
+  return [normalized, ...normalized.split(/[^a-z0-9-]+/).filter(Boolean)];
+}
+
+function autoAcceptSweepDeniedReason(task) {
+  for (const value of autoAcceptSweepLabelValues(task)) {
+    const tokens = autoAcceptSweepNormalizedTokens(value);
+    for (const token of tokens) {
+      if (SWEEP_AUTO_ACCEPT_STAKES_DENY.has(token)) {
+        return `denied_stakes_${token.replace(/-/g, '_')}`;
+      }
+    }
+    const protectedLane = [...DENIED_TAGS].find((denied) =>
+      tokens.some((token) => token === denied || token.replace(/s$/, '') === denied)
+    );
+    if (protectedLane) return `protected_lane_${protectedLane}`;
+  }
+  return null;
+}
+
+function autoAcceptSweepHasExplicitSafeStakes(task) {
+  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+  for (const value of [task && task.stakes, metadata.stakes, metadata.risk]) {
+    const tokens = autoAcceptSweepNormalizedTokens(value);
+    if (tokens.some((token) => SWEEP_AUTO_ACCEPT_SAFE_STAKES.has(token))) return true;
+  }
+  return false;
+}
+
+function autoAcceptSweepAllowlistMatch(task) {
+  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+  const candidates = [
+    task && task.title,
+    task && task.tag,
+    task && task.lane,
+    metadata.lane,
+    metadata.mission_lane,
+    metadata.stage,
+  ].filter(value => value !== undefined && value !== null);
+  return candidates.some((value) => SWEEP_AUTO_ACCEPT_ALLOWLIST_RE.test(String(value).toLowerCase()));
+}
+
+function autoAcceptSweepLatestProof(task) {
+  const metadata = task && task.metadata || {};
+  const review = task && task.review || {};
+  return String(review.proof || metadata.latest_agent_proof || '').trim();
+}
+
+function autoAcceptSweepVerifierEvidence(proof, root) {
+  const evidence = extractReceiptEvidence(proof, root);
+  if (!evidence || !evidence.receipts || !evidence.receipts.length) {
+    return { ok: false, reason: 'no_passing_verifier', evidence: evidence || null };
+  }
+  if (evidence.missing && evidence.missing.length) {
+    return { ok: false, reason: 'receipt_missing', evidence };
+  }
+  const passing = evidence.receipts.filter((receipt) => receipt.verifier_passed === true);
+  if (!passing.length) {
+    return { ok: false, reason: 'no_passing_verifier', evidence };
+  }
+  const notPassed = evidence.receipts.find((receipt) => receipt.verifier_passed !== true);
+  if (notPassed) {
+    return { ok: false, reason: 'receipt_verifier_not_passed', evidence };
+  }
+  return {
+    ok: true,
+    evidence,
+    passing,
+    proved_by: passing.map((receipt) => `${receipt.path} verifier_passed=true`),
+  };
+}
+
+function autoAcceptSweepHappened(task) {
+  const review = task && task.review || {};
+  return clipStatusText(
+    review.landing?.happened
+      || review.result?.changed
+      || task?.title
+      || 'accepted low-stakes verified task',
+    180,
+  );
+}
+
+function evaluateSweepAutoAccept(task, root) {
+  const ref = taskRef(task);
+  if (!task) return { eligible: false, ref, reason: 'task_not_found' };
+  if (task.status !== 'review') return { eligible: false, ref, reason: 'not_in_review' };
+  const metadata = task.metadata || {};
+  const review = task.review || {};
+  const approval = String(review.approval_status || metadata.approval_status || 'pending').toLowerCase();
+  if (approval !== 'pending') return { eligible: false, ref, reason: `approval_${approval}` };
+  if (metadata.auto_accepted_at) return { eligible: false, ref, reason: 'already_auto_accepted' };
+  const denied = autoAcceptSweepDeniedReason(task);
+  if (denied) return { eligible: false, ref, reason: denied };
+  const lowStakesPolicy = autoAcceptSweepHasExplicitSafeStakes(task)
+    ? 'explicit_safe_stakes'
+    : (autoAcceptSweepAllowlistMatch(task) ? 'allowlisted_title_or_lane' : null);
+  if (!lowStakesPolicy) return { eligible: false, ref, reason: 'not_low_stakes_allowlisted' };
+  const proof = autoAcceptSweepLatestProof(task);
+  if (!proof) return { eligible: false, ref, reason: 'no_proof' };
+  const verifier = autoAcceptSweepVerifierEvidence(proof, root);
+  if (!verifier.ok) {
+    return {
+      eligible: false,
+      ref,
+      reason: verifier.reason,
+      evidence: verifier.evidence,
+    };
+  }
+  return {
+    eligible: true,
+    ref,
+    reason: 'low_stakes_verified_receipt',
+    policy: `sweep_auto_accept_${lowStakesPolicy}`,
+    proof,
+    evidence: verifier.evidence,
+    proved_by: verifier.proved_by,
+    happened: autoAcceptSweepHappened(task),
+  };
+}
+
+function cmdSweep(args) {
+  if (!hasFlag(args, '--auto-accept')) {
+    failTask(
+      'atris task sweep',
+      'missing_auto_accept',
+      'atris task sweep currently requires --auto-accept for the explicit low-stakes accept policy',
+    );
+  }
+  const actor = String(flag(args, '--as') || 'orb-autoaccept');
+  const parsedReward = parseAcceptReward(flag(args, '--reward'));
+  if (!parsedReward.ok) {
+    failTask('atris task sweep', 'invalid_reward', 'atris task sweep --auto-accept reward must be a positive number');
+  }
+  const limitRaw = flag(args, '--limit');
+  const explicitLimit = limitRaw && limitRaw !== true ? Math.max(1, Number(limitRaw) || 0) : null;
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const { projection } = writeDefaultProjection(taskDb, db);
+  const root = projection.workspace_root || process.cwd();
+  let pendingReview = (projection.tasks || [])
+    .filter((task) => task && task.status === 'review' && task.review && task.review.approval_status === 'pending')
+    .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0));
+  if (explicitLimit) pendingReview = pendingReview.slice(0, explicitLimit);
+  const results = [];
+  for (const item of pendingReview) {
+    const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
+    const task = fullProjection.tasks[0] || null;
+    const evaluation = evaluateSweepAutoAccept(task, root);
+    if (!evaluation.eligible) {
+      results.push({ ...evaluation, action: 'skipped', task_id: task?.id || item.id || null });
+      continue;
+    }
+    const accepted = acceptReviewTask(taskDb, db, task.id, {
+      actor,
+      proof: evaluation.proof,
+      reward: parsedReward.value,
+      lesson: String(task.review?.lesson || task.metadata?.latest_agent_lesson || ''),
+      nextTask: String(task.review?.next_task || task.metadata?.latest_agent_next_task || ''),
+      autoAccepted: true,
+    });
+    if (!accepted.ok) {
+      results.push({ ...evaluation, action: 'accept_failed', task_id: task.id, reason: accepted.reason });
+      continue;
+    }
+    stampAutoAcceptMetadata(taskDb, db, task.id, actor, evaluation.policy);
+    refreshCareerXpAfterReview(accepted.reviewed);
+    results.push({
+      ...evaluation,
+      action: 'accepted',
+      task_id: task.id,
+      reward: accepted.reviewed.episode.reward.value,
+    });
+  }
+  const { outPath } = writeDefaultProjection(taskDb, db);
+  const summary = {
+    scanned: pendingReview.length,
+    accepted: results.filter((row) => row.action === 'accepted').length,
+    skipped: results.filter((row) => row.action === 'skipped').length,
+    failed: results.filter((row) => row.action === 'accept_failed').length,
+  };
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'sweep_auto_accept',
+      actor,
+      summary,
+      ...summary,
+      results,
+      projection_path: outPath,
+    });
+    return;
+  }
+  console.log(`TASK SWEEP AUTO-ACCEPT: ${summary.accepted} accepted / ${summary.scanned} scanned / ${summary.skipped} skipped${summary.failed ? ` / ${summary.failed} failed` : ''}`);
+  for (const row of results.filter((item) => item.action === 'accepted')) {
+    console.log(`ACCEPTED ${row.ref}: ${row.happened} | proved by ${row.proved_by.join(', ')}`);
   }
 }
 
@@ -10393,6 +10618,8 @@ async function run(args) {
     case 'auto-accept-certified':
     case 'auto-accept':
       return cmdAutoAcceptCertified(rest);
+    case 'sweep':
+      return cmdSweep(rest);
     case 'certify-verified':
       return cmdCertifyVerified(rest);
     case 'accept-group':
