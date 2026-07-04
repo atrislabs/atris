@@ -171,6 +171,11 @@ atris task - durable local task state (SQLite, gitignored)
   atris task step <id> [--json]            Refine chat, then advance one safe Plan/Do/Review step
   atris task done <id> --proof "..."       Mark complete with proof
   atris task done <id> --failed [--proof "..."]  Mark failed, optionally reviewed
+  atris task archive <id> --reason "..." [--from-failed]
+                                           Sweep off-roadmap/duplicate work as archived (not failed);
+                                           --from-failed opts in to relabel a fail-closed row (never done)
+  atris task relabel-archived [--dry-run|--apply]
+                                           One-time OBL-1622 migration: relabel June-10 backlog-reset rows failed -> archived
   atris task finish <id> --proof "..."     Legacy alias for done with proof
   atris task review <id> --reward <n> [--verify "<cmd>"]
                                            Write review event + RSI episode
@@ -4953,7 +4958,7 @@ function workspaceRefRows(taskDb, db, all = false) {
 
 function renderTaskDesk(rows, refRows = rows) {
   const displayRows = getTaskDb().withTaskDisplayRefs(rows, refRows);
-  const active = displayRows.filter(r => r.status !== 'done');
+  const active = displayRows.filter(r => r.status !== 'done' && r.status !== 'archived');
   const done = displayRows.filter(r => r.status === 'done');
   if (rows.length === 0) {
     console.log('No tasks yet.');
@@ -7871,6 +7876,117 @@ function cmdFinish(args) {
   console.log(`finished ${taskRef(compactTaskFromProjection(projection, taskId))}`);
 }
 
+// Distinct from `done --failed`: a bulk sweep of duplicates/off-roadmap work
+// closes the task without ever claiming it did or didn't succeed. Writing
+// 'failed' here would corrupt the reward signal readers rely on (see
+// atris/reports/failed-tasks-analysis-2026-07-03.md, cluster 2, OBL-1622).
+function cmdArchive(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) {
+    failTask('atris task archive', 'missing_id', 'id required');
+  }
+  const reason = textFlag(args, ['--reason']);
+  if (!reason) {
+    failTask('atris task archive', 'missing_reason', 'atris task archive requires --reason "<why this is being swept, not failed>"');
+  }
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task archive');
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  // Explicit opt-in for sanctioned failed→archived cleanup (e.g. duplicate
+  // loop-tick orphans fail-closed before 'archived' existed). Without the
+  // flag, failed rows stay failed; done rows are never archivable.
+  const fromFailed = hasFlag(args, '--from-failed');
+  const result = taskDb.archiveTask(db, { id: taskId, actor, reason, fromFailed });
+  if (result.archived) {
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: 'archived',
+        task_id: taskId,
+        reason,
+        archived_from: result.row && result.row.metadata && result.row.metadata.archived_from || null,
+        projection_path: outPath,
+        task: compactTaskFromProjection(projection, taskId),
+      });
+      return;
+    }
+    const fromNote = result.row && result.row.metadata && result.row.metadata.archived_from
+      ? ` (was ${result.row.metadata.archived_from})`
+      : '';
+    console.log(`archived ${taskRef(compactTaskFromProjection(projection, taskId))}${fromNote}: ${reason}`);
+  } else {
+    const hint = result.reason === 'already_failed'
+      ? ' (use --from-failed to archive a fail-closed duplicate/off-roadmap row)'
+      : '';
+    const detail = `archive failed: ${taskId} ${result.reason}${hint}`;
+    if (wantsJson(args)) {
+      printJson({ ok: false, command: 'atris task archive', reason: result.reason, task_id: taskId, detail });
+      process.exit(1);
+    }
+    console.error(detail);
+    process.exit(1);
+  }
+}
+
+// One-time migration for OBL-1622: the 2026-06-10 "first-principles backlog
+// reset" archived ~125 certified, proof-backed tasks by writing status
+// 'failed' (no distinct archived status existed yet). This relabels exactly
+// the rows that carry that reset's metadata marker, using the same
+// UPDATE+appendTaskEvent write path as every other status transition in
+// lib/task-db.js — never a raw projection-JSON edit.
+function cmdRelabelArchived(args) {
+  const apply = hasFlag(args, '--apply');
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const workspaceRoot = taskDb.workspaceRoot();
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const result = taskDb.relabelArchivedTasks(db, { workspaceRoot, apply, actor });
+  if (apply && result.count > 0) {
+    appendRelabelArchivedJournalReceipt(workspaceRoot, { actor, count: result.count, ids: result.ids });
+  }
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: apply ? 'relabeled' : 'preview',
+      dry_run: !apply,
+      workspace_root: workspaceRoot,
+      ...result,
+    });
+    return;
+  }
+  if (!apply) {
+    console.log(`relabel-archived (dry-run): ${result.count} failed task(s) match the June 10 backlog-reset marker.`);
+    for (const s of result.sample) console.log(`  - ${s.id} ${s.title}`);
+    if (result.count > result.sample.length) console.log(`  ...and ${result.count - result.sample.length} more`);
+    console.log('Run with --apply --as <you> to relabel these failed -> archived.');
+    return;
+  }
+  console.log(`relabeled ${result.count} task(s) failed -> archived (June 10 backlog reset, OBL-1622).`);
+}
+
+function appendRelabelArchivedJournalReceipt(workspaceRoot, { actor, count, ids }) {
+  if (!workspaceRoot || !fs.existsSync(path.join(workspaceRoot, 'atris'))) return null;
+  const now = new Date();
+  const logName = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.md`;
+  const stamp = now.toTimeString().slice(0, 5);
+  const projectDir = path.join(workspaceRoot, 'atris', 'logs', logName.slice(0, 4));
+  fs.mkdirSync(projectDir, { recursive: true });
+  const logPath = path.join(projectDir, logName);
+  const idPreview = ids.slice(0, 10).join(', ') + (ids.length > 10 ? `, ...(+${ids.length - 10} more)` : '');
+  fs.appendFileSync(logPath, [
+    `## ${stamp} · Task relabel: failed -> archived (OBL-1622)`,
+    `- count: ${count}`,
+    `- reason: June 10 backlog-reset rows mislabeled failed; relabeled to archived`,
+    `- actor: ${actor}`,
+    `- ids: ${idPreview}`,
+    '',
+  ].join('\n'), 'utf8');
+  return logPath;
+}
+
 function cmdReady(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -10285,6 +10401,8 @@ async function run(args) {
     case 'done':   return cmdDone(rest);
     case 'finish': return cmdFinish(rest);
     case 'fail':   return cmdDone([...rest, '--failed']);
+    case 'archive': return cmdArchive(rest);
+    case 'relabel-archived': return cmdRelabelArchived(rest);
     case 'review': return cmdReview(rest);
     case 'reviews':
     case 'review-queue':

@@ -432,6 +432,16 @@ function runTickBody(root, { json, policy, receipt }) {
     } catch (err) {
       receipt.reap_error = String((err && err.message) || err).slice(0, 200);
     }
+    // Missions rot the same way branches do: paused/planning/ready and
+    // untouched for a week means abandoned. Age them out under the same
+    // daily gate so `mission list` shows work, not archaeology.
+    try {
+      const { expireStaleMissions } = require('./mission');
+      const expiredMissions = expireStaleMissions(root);
+      if (expiredMissions.length > 0) receipt.expired_missions = expiredMissions.length;
+    } catch (err) {
+      receipt.mission_expiry_error = String((err && err.message) || err).slice(0, 200);
+    }
     state.last_reap_date = today;
     // a failed sweep must not be a secret: status and the next digest carry
     // it until a sweep succeeds. The date gate above still holds so a broken

@@ -220,6 +220,24 @@ function streamSession(token, sessionId, workingDir) {
       }, HEARTBEAT_INTERVAL_MS);
       res.on('close', () => clearInterval(watchdog));
 
+      // Registry check: a rolling deploy can leave this stream alive on an
+      // old instance while new instances answer API calls from an empty
+      // in-memory session store — pings keep flowing so the silence watchdog
+      // never fires, but dispatchers can't find us. Ask the registry
+      // directly; if it forgot this session, reconnect and re-register.
+      const registryCheck = setInterval(async () => {
+        try {
+          const result = await apiRequestJson('/cli/sessions', { method: 'GET', token });
+          if (!result.ok) return; // transient API errors don't kill a live stream
+          const sessions = (result.data && result.data.sessions) || [];
+          if (!sessions.some((s) => s.id === sessionId)) {
+            clearInterval(registryCheck);
+            res.destroy(new Error('session missing from server registry, re-registering'));
+          }
+        } catch { /* network blips are the silence watchdog's job */ }
+      }, HEARTBEAT_INTERVAL_MS * 4);
+      res.on('close', () => clearInterval(registryCheck));
+
       let buffer = '';
       res.on('data', async (chunk) => {
         lastSeen = Date.now();
