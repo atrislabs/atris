@@ -390,6 +390,53 @@ test('worktree guide prints the agent mission ship recipe', () => {
   }
 });
 
+test('worktree cleanup detects squash-merged branches by patch identity', () => {
+  const dir = makeTempDir();
+  let squashedWorktree;
+  let unmergedWorktree;
+  try {
+    const runGit = (args, cwd = dir) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    runGit(['init', '-q', '-b', 'main']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(dir, 'README.md'), 'hello\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+
+    // feature branch with one commit, then squash-merge it into main:
+    // the branch head is NOT an ancestor of main, but its patch landed.
+    squashedWorktree = path.join(dir, '..', `${path.basename(dir)}-squashed-worktree`);
+    runGit(['worktree', 'add', '-q', '-b', 'feature-squashed', squashedWorktree, 'HEAD']);
+    fs.writeFileSync(path.join(squashedWorktree, 'feature.txt'), 'landed content\n');
+    runGit(['add', '.'], squashedWorktree);
+    runGit(['commit', '-qm', 'feature work'], squashedWorktree);
+    runGit(['merge', '--squash', 'feature-squashed']);
+    runGit(['commit', '-qm', 'feature work (squashed)']);
+
+    // control: a branch whose commit never landed anywhere
+    unmergedWorktree = path.join(dir, '..', `${path.basename(dir)}-unmerged-worktree`);
+    runGit(['worktree', 'add', '-q', '-b', 'feature-unmerged', unmergedWorktree, 'HEAD~1']);
+    fs.writeFileSync(path.join(unmergedWorktree, 'other.txt'), 'unlanded content\n');
+    runGit(['add', '.'], unmergedWorktree);
+    runGit(['commit', '-qm', 'unlanded work'], unmergedWorktree);
+
+    const dryRun = cleanupWorktrees({ root: dir, base: 'main' });
+    const squashed = dryRun.candidates.find((item) => fs.realpathSync(item.path) === fs.realpathSync(squashedWorktree));
+    assert.ok(squashed, 'squash-merged worktree must become a cleanup candidate');
+    assert.equal(squashed.reason, 'squash_merged_into_base');
+    assert(dryRun.kept.some((item) => fs.realpathSync(item.path) === fs.realpathSync(unmergedWorktree) && item.reason === 'unmerged'));
+  } finally {
+    for (const worktree of [squashedWorktree, unmergedWorktree]) {
+      if (worktree && fs.existsSync(worktree)) fs.rmSync(worktree, { recursive: true, force: true });
+    }
+    cleanupTempDir(dir);
+  }
+});
+
 test('worktree cleanup removes only clean merged sibling worktrees', () => {
   const dir = makeTempDir();
   let cleanWorktree;

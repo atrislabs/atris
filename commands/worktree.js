@@ -499,11 +499,23 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       continue;
     }
     const merged = runGit(['merge-base', '--is-ancestor', wt.head, base], { cwd: root, check: false }).status === 0;
-    if (!merged) {
+    // Squash merges leave the branch head outside base's ancestry while every
+    // change already landed — ancestry alone kept dozens of long-landed PR
+    // worktrees forever. git cherry marks commits whose patch already exists
+    // in base with '-'; a branch whose every own commit is '-' is landed
+    // work. Removing the worktree keeps the branch, so a patch-id match is a
+    // safe-enough signal for checkout cleanup.
+    const squashMerged = !merged && (() => {
+      const cherry = runGit(['cherry', base, wt.head], { cwd: root, check: false });
+      if (cherry.status !== 0) return false;
+      const lines = String(cherry.stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
+      return lines.length > 0 && lines.every((l) => l.startsWith('-'));
+    })();
+    if (!merged && !squashMerged) {
       kept.push({ ...item, reason: 'unmerged' });
       continue;
     }
-    const candidate = { ...item, reason: 'merged_into_base' };
+    const candidate = { ...item, reason: merged ? 'merged_into_base' : 'squash_merged_into_base' };
     candidates.push(candidate);
     if (!apply) continue;
     const removedResult = runGit(['worktree', 'remove', wt.path], { cwd: root, check: false });
