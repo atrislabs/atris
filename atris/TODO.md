@@ -8,9 +8,6 @@
 
 ## In Progress
 
-- **[CLI-169]** Mission XP: Find and ship one verified overnight improvement to atris-cli [agent-xp]
-  **Claimed by:** mission-lead
-  **Verify:** node --test test/pulse.test.js test/loop-front.test.js
 - **[CLI-165]** Fix provider seed recert wedge [benchmark]
   **Claimed by:** executor
 - **[CLI-156]** Audit and close next runner-agnostic heartbeat gap [runner]
@@ -22,6 +19,8 @@
   **Verify:** git diff --check
 - **[CLI-172]** Fix autoland agent accept guard [cli]
 - **[CLI-171]** Mission XP: Try the new v3.34.0 features for 10 minutes and report what works, what breaks, and what should be fixed next [agent-xp]
+- **[CLI-169]** Mission XP: Find and ship one verified overnight improvement to atris-cli [agent-xp]
+  **Verify:** node --test test/mission-resume.test.js
 - **[CLI-167]** Fix AX checker for local GitHub push route [ax]
 - **[CLI-164]** Push committed master and clean checkout [maintenance]
 - **[CLI-163]** Pull latest origin/master safely [maintenance]
