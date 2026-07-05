@@ -6,6 +6,8 @@ Owner: Keshav. Read this before picking overnight work. This is the goal the loo
 
 `atris mission run "<intent>"` becomes the dream product: one command turns messy intent into a visible mission, a functional team, a proof-backed change, a human-readable landing, and the next move. The loop keeps going until the product is obviously useful, tasteful, and self-improving, with no stale proof and no slop in durable memory.
 
+The horizon: this loop gets strong enough that a lab can point it at cancer research and a founder can point it at building a billion-dollar company, and it just runs.
+
 ## Three jobs (everything fits under these)
 
 1. Draw out clarity (the front door, the real magic)
@@ -47,20 +49,12 @@ Small, bounded tasks the loop pulls one at a time when idle (top first), and
 Epics live below in "Big jobs" and are NOT loop-seedable, so an unattended
 cycle never chases something too vague to finish.
 
-- [x] `atris loop status --json` emits one combined machine-readable summary (pulse + local runs) (shipped)
-- [x] clean the em dashes in commands/run.js (output + the coupled Run Log Cycle header and its 3 regexes) (shipped)
-- [x] fix the em dash in the canonical journal title in lib/journal.js (shipped)
-- [x] `atris moves --kill/--approve` resolves a stable move id, not just a position (shipped)
-- [x] point `pulse` help at `atris loop start` (shipped)
-- [x] add `atris/CLARITY.md` to the boot-load list in `atris.md` (shipped)
-- [x] `atris loop status` summarizes local runs, not just pulse (shipped)
-- [x] wire ROADMAP open items into the loop planner (shipped: hasWork + idle seed pull the top item into the inbox)
-- [x] atris clarity: interview the user for style and workflow, write a durable profile (shipped)
-- [x] Valhalla gate: make `atris mission run` print one dream-product landing from intent to proof to next move, with no internal runner plumbing
-- [x] Valhalla gate: add a mission doctor that flags no-verifier missions, accidental help missions, stale ready receipts, and blocked always-on loops
-- [x] Valhalla gate: make review acceptance update XP, brain scorecards, and next mission routing in one visible receipt
-- [x] Valhalla gate: collapse ROADMAP, Endgame, and active missions into one ranked next-move source for `atris loop`
-- [x] Valhalla gate: write the remote-computer acceptance test for mission parity between local and cloud execution
+- [ ] fleet dispatch survives an engine outage: when the dispatched engine dies on usage limits (codex credit-out, 2026-07-05 live failure), restaff the flight to the next installed engine automatically and note the swap in the receipt. Done: a stubbed dispatcher test proves the fallback. Check: node --test test/fleet.test.js test/engine-dispatch.test.js.
+- [ ] boot surfaces the clarity profile: `atris activate` prints a one-line summary from atris/CLARITY.md when it exists, so agents stop re-asking how the operator works. Done: activation card shows the line, test pins it. Check: node --test test/activate.test.js.
+- [ ] `atris report week`: first weekly report block: last 7 days of journal completions, landings, and XP rendered as one on-brand markdown block (reuse the recap/html theme path). Done: command exists with a test on real journal fixtures. Check: node --test test/report.test.js.
+- [ ] land board hygiene: `atris land status` (no args) prints the full in-air board; today it answers "nothing called 'status' is in the air". Done: bare subcommand renders the board, test covers arg parsing. Check: node --test test/land.test.js.
+
+(Shipped items are pruned on completion; git history is the archive.)
 
 ## Big jobs (epics, not loop-seedable)
 
@@ -83,49 +77,15 @@ Stage-only. The overnight loop may fix, build, test, and prepare a release, and 
 
 Also: no junk commits. Every commit message must say what changed in plain English. The "fix: overnight loop tick N" pattern is banned.
 
-## Status (updated by the loop)
+## Status (updated by the loop, last: 2026-07-05)
 
-- branch `feat/pulse-self-improve-loop` is at v3.17.0 while master/npm is at v3.25.1 (51 ahead, 6 behind). Reconcile before any release work; do not publish from this branch.
+- master is at v3.35.0. The old `feat/pulse-self-improve-loop` divergence is resolved: loop/moves/clarity all route on master, and `atris run`/`autopilot` front doors sit on the mission runtime.
+- Foundation gate 1 (green means green): met for real. `npm test` in a fresh worktree exits 0 with 1988/1988 (2026-07-05 receipt); the old "green" was `| tail` masking exit codes: verify gates now run unpiped.
+- Foundation gate 2 (one front door): `atris loop` is the entry; run/autopilot help converge on it.
+- Autonomy live: autoland accepts certified work, `atris land` enforces merged-or-salvaged, `atris mission run --fleet` dispatches parallel engines, and every dispatched engine prompt now carries the fable-method kernel (unpiped verify, receipts, caller sweeps, smallest diff).
+- Open loop items above are the seedable queue; when it runs dry, the loop stalls: keep it stocked.
 
-### foundation task 1 (flakes): met on this branch, with proof
+### archived detail
 
-The suite is deterministically green here. Evidence: 6 consecutive full-suite runs at 1356 pass / 0 fail (`CI=true`, ambient agent env, and 3x repeat). The two historical flake causes are handled:
-- agent-marker leak (`CLAUDECODE=1` etc. flipping the CLI into proof-only mode): fixed by `scrubAgentEnv` (`test/helpers/agent-env.js`) pulling `AGENT_ENV_MARKERS` from `commands/task.js`. A full run with every marker set still passes 1356/0.
-- live-workspace collision: the only tests that spawn the CLI against the real repo (`cli-smoke`, `commands`, `xp`) load source code, not mutable state, so fleet journal-writing cannot flake them.
+Older per-task status narratives (flake forensics, loop front-door build log, clarity slices) were pruned 2026-07-05; they live in git history and atris/logs.
 
-Honest verdict: the flakes do not reproduce on this branch. They came from running the suite while a live fleet mutated the same workspace (count drifted 1427->1355). Operational rule, not a code bug: run the trustable gate in a clean checkout (`atris worktree`) or in CI, not in a workspace the fleet is editing. Do not manufacture fixes for non-reproducing flakes.
-
-Note: the "fix: overnight loop tick N" junk commit messages + `Co-Authored-By: Devin` trailers come from the external Devin runner, not this repo's code. Fix that in the runner config, not here.
-
-### foundation task 2 (one-command loop): first slice shipped
-
-`atris loop` is now the single front door, delegating to the engines that already exist (no seventh engine):
-- `atris loop` -> home: status + the next moves (alive onboarding)
-- `atris loop start` -> run now, local (-> `run.js`)
-- `atris loop start --overnight` -> durable heartbeat (-> `pulse.js`)
-- `atris loop status` / `atris loop stop` -> `pulse.js`
-- `atris loop wiki` -> wiki upkeep (the old `loop`; `wiki loop` also works)
-
-Built: `commands/loop-front.js` (pure `routeLoop` + executor), rewired dispatch + help in `bin/atris.js`, `test/loop-front.test.js` (9 tests), migrated 3 wiki tests to `loop wiki`. Full suite green.
-
-Done since: `run` and `autopilot` help now point at `atris loop` (the six doors converge on one, discoverably).
-
-Next on this task, in order:
-1. **Wire this ROADMAP into the loop's planner.** Today the loop's `hasWork()` (`commands/run.js`) reads inbox + backlog only; it does not read ROADMAP.md, so "the overnight loop reads from ROADMAP" is still aspirational. Make the Navigator seed tasks from the unchecked items here when inbox/backlog are empty, and make `hasWork()` return true when ROADMAP has open items. Verify with a real `atris loop start --once` run (not a mock), confirming it picks a ROADMAP item. Do this when the branch is not being concurrently churned by the Devin runner.
-2. Point `pulse` help at `atris loop` too (finish convergence).
-3. A real `--cloud` that reaches remote computers (atrisos-backend); `--overnight` today is a local OS-cron heartbeat, not remote cloud.
-
-Branch hygiene: this work sits on the stale `feat/pulse-self-improve-loop` (v3.17.0). The loop front door should be rebased/cherry-picked onto master (v3.25.x) before any release. The health-report fixes (now atris/reports/2026-06-25-cli-health-report.md) are already on master via 3.25.x.
-
-### job 1 (draw out clarity): first slices shipped
-
-- `atris moves` (alive onboarding): reads the goal (ROADMAP open items), work in flight (task projection), and fresh inbox; shows the 3 highest-leverage next moves; approve one (seeds it into today's inbox, which the loop's `hasWork()` already reads, so onboarding feeds the loop), kill one (suppressed), or skip. Pure ranking in `lib/next-moves.js`, thin CLI in `commands/moves.js`, 8 tests.
-- `atris clarity` (the interview): a short, high-signal interview (focus, voice, cadence, done, leash), one question at a time, writing `.atris/clarity.json` + readable `atris/CLARITY.md` that agents read so the human stops repeating how they work. `lib/clarity.js` + `commands/clarity.js`, 7 tests.
-- `atris activate` now surfaces the 3 next moves + a clarity nudge on boot, so onboarding is alive, not a static MAP/TODO wall.
-
-Next on this job: have the boot contract and agents actually read `atris/CLARITY.md` (wire into the activation card / persona load); interactive idea-at-a-time modes for writing and feature shaping.
-
-### still open (the big multi-day jobs)
-
-- Job 2 (set up anything fast / integrations on demand): not started; needs atrisos-backend integration work, too large to fake overnight.
-- Job 3 (loop provably self-improving, running overnight on remote computers): the local engines exist (`run`, `pulse`); the gaps are (a) the planner reading ROADMAP, (b) real remote `--cloud`. Both queued above. Not safe to half-wire the autonomous core unverified while the Devin runner churns this branch.
