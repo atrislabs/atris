@@ -22,6 +22,12 @@ function runCli(args, cwd) {
   return spawnSync(process.execPath, [cliPath, ...args], { cwd, encoding: 'utf8', env });
 }
 
+function runGit(args, cwd) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result;
+}
+
 // Born 2026-07-02: an hourly alive loop started six identical missions in one
 // day. Same objective + same active owner must reuse, never clone.
 test('mission start reuses an active twin instead of cloning it', () => {
@@ -69,6 +75,93 @@ test('a stopped or completed mission is not a twin — restart is allowed', () =
 
     const again = runCli(['mission', 'start', 'improve the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
     assert.equal(JSON.parse(again.stdout).action, 'mission_started', 'stopped twin must not block a fresh start');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// Retroactive cleanup: twins and stale planning rows born before the start-time
+// gate existed still clutter mission status until dedupe sweeps them.
+test('mission dedupe stops duplicate twins and stale planning missions', () => {
+  const { base, repo } = makeRepo();
+  try {
+    const first = runCli(['mission', 'start', 'improve the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    const olderId = JSON.parse(first.stdout).mission.id;
+    const forced = runCli(['mission', 'start', 'improve the widget pipeline', '--owner', 'auto-improver', '--duplicate', '--json'], repo);
+    assert.equal(forced.status, 0, forced.stderr || forced.stdout);
+    // Equal status: the newest twin is the keeper, the older one is clutter.
+    const keeperId = JSON.parse(forced.stdout).mission.id;
+
+    // A planning mission nobody touched for weeks, appended straight to state.
+    const staleStamp = new Date(Date.now() - 30 * 86400000).toISOString();
+    const staleId = 'mission-stale-planning-row';
+    fs.appendFileSync(path.join(repo, '.atris', 'state', 'missions.jsonl'), JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: staleId,
+      objective: 'ancient planning mission',
+      owner: 'auto-improver',
+      status: 'planning',
+      created_at: staleStamp,
+      updated_at: staleStamp,
+    }) + '\n');
+
+    const preview = runCli(['mission', 'dedupe', '--json'], repo);
+    assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+    const previewPayload = JSON.parse(preview.stdout);
+    assert.equal(previewPayload.action, 'mission_dedupe_dry_run');
+    const previewIds = previewPayload.targets.map((t) => t.id);
+    assert.ok(previewIds.includes(staleId), 'stale planning row must be flagged');
+    assert.equal(previewPayload.stopped.length, 0, 'dry-run must not stop anything');
+
+    const applied = runCli(['mission', 'dedupe', '--apply', '--json'], repo);
+    assert.equal(applied.status, 0, applied.stderr || applied.stdout);
+    const appliedPayload = JSON.parse(applied.stdout);
+    assert.ok(appliedPayload.stopped.length >= 2, `expected twin + stale stopped, got ${JSON.stringify(appliedPayload.stopped)}`);
+    assert.ok(!appliedPayload.stopped.includes(keeperId), 'the keeper twin must survive');
+    assert.ok(appliedPayload.stopped.includes(olderId), 'the older twin must be stopped');
+
+    const status = runCli(['mission', 'status', '--status', 'active', '--json'], repo);
+    const active = JSON.parse(status.stdout).missions;
+    assert.equal(active.length, 1, `expected one active mission, got ${active.map((m) => m.id).join(', ')}`);
+    assert.equal(active[0].id, keeperId);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('mission dedupe includes duplicate missions from sibling worktrees', () => {
+  const { base, repo } = makeRepo();
+  try {
+    runGit(['config', 'user.email', 'test@example.com'], repo);
+    runGit(['config', 'user.name', 'Atris Test'], repo);
+    fs.writeFileSync(path.join(repo, 'README.md'), 'test\n');
+    runGit(['add', 'README.md'], repo);
+    runGit(['commit', '-q', '-m', 'init'], repo);
+    const sibling = path.join(base, 'sibling');
+    runGit(['worktree', 'add', '-q', '-b', 'sibling', sibling], repo);
+
+    const keeper = runCli(['mission', 'start', 'same worktree mission', '--owner', 'auto-improver', '--json'], repo);
+    assert.equal(keeper.status, 0, keeper.stderr || keeper.stdout);
+    const keeperId = JSON.parse(keeper.stdout).mission.id;
+    const rolled = runCli(['mission', 'start', 'same worktree mission', '--owner', 'auto-improver', '--duplicate', '--json'], sibling);
+    assert.equal(rolled.status, 0, rolled.stderr || rolled.stdout);
+
+    const preview = runCli(['mission', 'dedupe', '--json'], repo);
+    assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+    const previewPayload = JSON.parse(preview.stdout);
+    assert.equal(previewPayload.targets.length, 1);
+    assert.equal(previewPayload.targets[0].rolled, true);
+    assert.match(previewPayload.targets[0].root, /sibling$/);
+
+    const applied = runCli(['mission', 'dedupe', '--apply', '--json'], repo);
+    assert.equal(applied.status, 0, applied.stderr || applied.stdout);
+    const appliedPayload = JSON.parse(applied.stdout);
+    assert.deepEqual(appliedPayload.stopped, [previewPayload.targets[0].id]);
+
+    const active = JSON.parse(runCli(['mission', 'status', '--status', 'active', '--json'], repo).stdout).missions;
+    assert.equal(active.length, 1);
+    assert.equal(active[0].id, keeperId);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

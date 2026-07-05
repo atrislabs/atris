@@ -7,6 +7,7 @@ const {
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
   detectUnavailableModel,
+  detectAuthExpired,
   missionPauseNextAction,
   consecutiveSameReasonErrors,
 } = require('../commands/mission');
@@ -95,6 +96,24 @@ test('detectUnavailableModel returns null for ordinary tick output', () => {
   assert.equal(detectUnavailableModel(null), null);
 });
 
+// --- detectAuthExpired: a logged-out claude answers in the RESULT text with empty stderr ---
+
+test('detectAuthExpired catches "Not logged in · Please run /login" in the result text', () => {
+  assert.equal(detectAuthExpired('', 'Not logged in · Please run /login'), true);
+});
+
+test('detectAuthExpired still catches the legacy stderr phrasings', () => {
+  assert.equal(detectAuthExpired('Error: not authenticated', null), true);
+  assert.equal(detectAuthExpired('please log in to continue', null), true);
+  assert.equal(detectAuthExpired('authentication expired', null), true);
+});
+
+test('detectAuthExpired returns false for ordinary tick output', () => {
+  assert.equal(detectAuthExpired('', 'Shipped one verified change to review. npm test 958/958.'), false);
+  assert.equal(detectAuthExpired('', ''), false);
+  assert.equal(detectAuthExpired(null, null), false);
+});
+
 // --- missionPauseNextAction: a model-unavailable pause must point at the fix, not a bare resume ---
 
 test('missionPauseNextAction names the dead model and the knobs that change it', () => {
@@ -114,6 +133,13 @@ test('missionPauseNextAction falls back to a bare resume for ordinary pauses', (
     missionPauseNextAction('model-unavailable', 'mission-abc', null),
     'resume with: atris mission run mission-abc'
   );
+});
+
+test('missionPauseNextAction tells the human to log claude back in on auth-required', () => {
+  const action = missionPauseNextAction('auth-required', 'mission-abc');
+  assert.match(action, /logged out/);
+  assert.match(action, /claude \/login/);
+  assert.match(action, /atris mission run mission-abc/);
 });
 
 test('missionPauseNextAction names the failing reason for a repeated-error pause', () => {

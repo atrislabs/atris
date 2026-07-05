@@ -86,6 +86,31 @@ test('pickRunnableMission skips continuation placeholders and empty maps', () =>
   assert.equal(pickRunnableMission(process.cwd(), new Map()), null);
 });
 
+test('pickRunnableMission surfaces worktree-held missions the main map cannot see', () => {
+  const map = new Map(); // main checkout has nothing runnable
+  const worktreeMissions = [
+    { id: 'wt1', status: 'planning', runner: 'atris2', objective: 'worktree-held work', updated_at: '2026-07-03T01:00:00Z', worktree_root: '/tmp/wt1' },
+  ];
+  const picked = pickRunnableMission(process.cwd(), map, { worktreeMissions });
+  assert.equal(picked.id, 'wt1');
+  assert.equal(picked.worktree_root, '/tmp/wt1');
+  // without the rollup, the same map yields nothing — the old deadlock shape
+  assert.equal(pickRunnableMission(process.cwd(), map), null);
+});
+
+test('pickRunnableMission applies the same runner/status rules to worktree missions', () => {
+  const map = new Map([
+    ['m1', { id: 'm1', status: 'planning', runner: 'atris2', objective: 'main plan', updated_at: '2026-07-01T01:00:00Z' }],
+  ]);
+  const worktreeMissions = [
+    { id: 'wt-codex', status: 'running', runner: 'codex_goal', objective: 'needs live codex', updated_at: '2026-07-03T09:00:00Z', worktree_root: '/tmp/a' },
+    { id: 'wt-ready', status: 'ready', runner: 'atris2', objective: 'waits on review', updated_at: '2026-07-03T09:00:00Z', worktree_root: '/tmp/b' },
+    { id: 'wt-run', status: 'running', runner: 'atris2', objective: 'moving work', updated_at: '2026-07-02T01:00:00Z', worktree_root: '/tmp/c' },
+  ];
+  // running beats planning even across checkouts; undrivable/ready rows are skipped
+  assert.equal(pickRunnableMission(process.cwd(), map, { worktreeMissions }).id, 'wt-run');
+});
+
 test('autopilot stop/state files round-trip', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-front-doors-'));
   try {

@@ -984,6 +984,46 @@ const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'stat
                        'github', 'vercel', 'supabase', 'linear', 'stripe', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed'];
 
+// A single command-shaped token that nearly matches a real command is a typo,
+// not a thought. The natural-language flow SAVES state (context profile,
+// focus direction), so a mistyped command must never silently become saved
+// direction — suggest the real command and stop instead.
+function commandEditDistance(a, b) {
+  const m = a.length;
+  const n = b.length;
+  if (Math.abs(m - n) > 2) return 3; // early out: beyond any threshold we use
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const row = [i];
+    for (let j = 1; j <= n; j++) {
+      row.push(Math.min(
+        prev[j] + 1,
+        row[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      ));
+    }
+    prev = row;
+  }
+  return prev[n];
+}
+
+function suggestKnownCommand(input, known) {
+  // "chat-scan" → known command + hyphenated subcommand → "chat scan"
+  const dashIdx = input.indexOf('-');
+  if (dashIdx > 0) {
+    const head = input.slice(0, dashIdx);
+    if (known.includes(head)) return `${head} ${input.slice(dashIdx + 1).replace(/-/g, ' ')}`;
+  }
+  let best = null;
+  for (const cmd of known) {
+    if (cmd.startsWith('_')) continue;
+    const threshold = cmd.length >= 5 ? 2 : 1;
+    const d = commandEditDistance(input, cmd);
+    if (d > 0 && d <= threshold && (!best || d < best.d)) best = { cmd, d };
+  }
+  return best ? best.cmd : null;
+}
+
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
   if (!cmd) return false;
@@ -1070,6 +1110,15 @@ if (!command || !knownCommands.includes(command)) {
 
   // Warn if this looks like a mistyped single-word command (no spaces)
   if (command && !userInput.includes(' ')) {
+    // Near-miss of a real command: stop before the NL flow saves state.
+    if (/^[a-z][a-z0-9-]*$/.test(command)) {
+      const suggestion = suggestKnownCommand(command, knownCommands);
+      if (suggestion) {
+        console.log(`✗ Unknown command: "${command}". Did you mean: atris ${suggestion}`);
+        console.log('  (meant it as natural language? add words or quotes: atris "…")');
+        process.exit(2);
+      }
+    }
     console.log(`⚠ Unknown command: "${command}". Run "atris help" for available commands.`);
     console.log('  Treating as natural language input...\n');
   }

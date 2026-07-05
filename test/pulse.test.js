@@ -16,6 +16,153 @@ function tmpRoot() {
 
 // --- scoreTick: reward gating mirrors the improve.js tick-5 lesson ---
 
+test('classifyActorFailure names a logged-out claude instead of a bare error', () => {
+  const { reason, detail } = pulse.classifyActorFailure({
+    status: 1,
+    signal: null,
+    stdout: 'Not logged in · Please run /login',
+    stderr: '',
+  });
+  assert.strictEqual(reason, 'auth-required');
+  assert.match(detail, /Not logged in/);
+});
+
+test('classifyActorFailure names a spawn timeout', () => {
+  const { reason } = pulse.classifyActorFailure({ status: null, signal: 'SIGTERM', stdout: '', stderr: '' });
+  assert.strictEqual(reason, 'timeout');
+});
+
+test('classifyActorFailure keeps a stderr tail as detail for plain errors', () => {
+  const { reason, detail } = pulse.classifyActorFailure({
+    status: 1,
+    signal: null,
+    stdout: '',
+    stderr: 'x'.repeat(500) + '\nEADDRINUSE: port already bound',
+  });
+  assert.strictEqual(reason, 'error');
+  assert.match(detail, /EADDRINUSE/);
+  assert.ok(detail.length <= 300);
+});
+
+test('buildPulseReceipt carries the failed actor detail', () => {
+  const receipt = pulse.buildPulseReceipt({ actor: 'autopilot', actorOk: false, actorReason: 'error', actorDetail: 'boom' });
+  assert.strictEqual(receipt.actor_detail, 'boom');
+  const clean = pulse.buildPulseReceipt({ actor: 'autopilot', actorOk: true, actorReason: 'completed' });
+  assert.strictEqual(clean.actor_detail, null);
+});
+
+test('autopilotTickArgs runs one bounded leg that fits inside the spawn timeout', () => {
+  const args = pulse.autopilotTickArgs(600000);
+  assert.deepStrictEqual(args, ['autopilot', '--once', '--leg-wall', '480']);
+  // never below the 60s floor, even for tiny timeouts
+  assert.deepStrictEqual(pulse.autopilotTickArgs(30000), ['autopilot', '--once', '--leg-wall', '60']);
+});
+
+test('diffWorkspaceSnapshots credits work that landed in a worktree', () => {
+  const before = {
+    '/repo': { head: 'aaa', dirty: ['pre-existing.txt'] },
+    '/repo-wt/m1': { head: 'aaa', dirty: [] },
+  };
+  const after = {
+    '/repo': { head: 'aaa', dirty: ['pre-existing.txt'] },
+    '/repo-wt/m1': { head: 'aaa', dirty: ['src/fix.js'] },
+  };
+  const diff = pulse.diffWorkspaceSnapshots('/repo', before, after);
+  assert.deepStrictEqual(diff.changedFiles, ['m1:src/fix.js']);
+  assert.strictEqual(diff.committed, false);
+  assert.deepStrictEqual(diff.changedRoots, ['/repo-wt/m1']);
+});
+
+test('diffWorkspaceSnapshots counts a worktree created by the tick as its contribution', () => {
+  const before = { '/repo': { head: 'aaa', dirty: [] } };
+  const after = {
+    '/repo': { head: 'aaa', dirty: [] },
+    '/repo-wt/new': { head: 'aaa', dirty: ['atris/state.json'] },
+  };
+  const diff = pulse.diffWorkspaceSnapshots('/repo', before, after);
+  assert.deepStrictEqual(diff.changedFiles, ['new:atris/state.json']);
+});
+
+test('diffWorkspaceSnapshots detects commits in any checkout and excludes pre-existing dirt', () => {
+  const before = {
+    '/repo': { head: 'aaa', dirty: ['noise.md'] },
+    '/repo-wt/m1': { head: 'bbb', dirty: [] },
+  };
+  const after = {
+    '/repo': { head: 'aaa', dirty: ['noise.md'] },
+    '/repo-wt/m1': { head: 'ccc', dirty: [] },
+  };
+  const diff = pulse.diffWorkspaceSnapshots('/repo', before, after);
+  assert.strictEqual(diff.committed, true);
+  assert.deepStrictEqual(diff.changedFiles, []);
+  assert.deepStrictEqual(diff.changedRoots, ['/repo-wt/m1']);
+});
+
+test('diffWorkspaceSnapshots ignores the loop\'s own bookkeeping files', () => {
+  const before = { '/repo': { head: 'aaa', dirty: [] } };
+  const after = {
+    '/repo': { head: 'aaa', dirty: ['atris/runs/mission-x-receipt.json', '.atris/state/missions.jsonl', 'atris/logs/2026/2026-07-03.md', 'atris/status/now.md'] },
+  };
+  const diff = pulse.diffWorkspaceSnapshots('/repo', before, after);
+  assert.deepStrictEqual(diff.changedFiles, [], 'receipts/state/logs are not work');
+  assert.deepStrictEqual(diff.changedRoots, []);
+  // real work alongside bookkeeping still counts
+  after['/repo'].dirty.push('src/real-change.js');
+  const diff2 = pulse.diffWorkspaceSnapshots('/repo', before, after);
+  assert.deepStrictEqual(diff2.changedFiles, ['src/real-change.js']);
+});
+
+test('verifyOutcome treats a missing test script as unverifiable, not failed', () => {
+  const outcome = pulse.verifyOutcome({ status: 1, stdout: '', stderr: 'npm error Missing script: "test"' });
+  assert.strictEqual(outcome.passed, null);
+  assert.strictEqual(outcome.reason, 'verifier_missing');
+  // scoreTick: unverifiable work scores 0, never -1
+  assert.strictEqual(pulse.scoreTick({ verifyPassed: outcome.passed, producedWork: true }), 0);
+});
+
+test('verifyOutcome keeps an output tail for real failures and none for passes', () => {
+  const fail = pulse.verifyOutcome({ status: 1, stdout: 'x'.repeat(400) + '\n2 tests failed', stderr: '' });
+  assert.strictEqual(fail.passed, false);
+  assert.match(fail.detail, /2 tests failed/);
+  assert.ok(fail.detail.length <= 300);
+  const pass = pulse.verifyOutcome({ status: 0, stdout: 'all green', stderr: '' });
+  assert.strictEqual(pass.passed, true);
+  assert.strictEqual(pass.detail, null);
+});
+
+test('pulse workspace scoping: two repos get distinct state homes and cron markers', () => {
+  assert.strictEqual(pulse.pulseWorkspaceKey('/Users/x/arena/atris-cli'), 'atris-cli');
+  assert.strictEqual(pulse.pulseWorkspaceKey('/Users/x/arena/AtrisOS Backend!'), 'atrisos-backend');
+  assert.notStrictEqual(
+    pulse.pulseWorkspaceMarker('/a/repo-one'),
+    pulse.pulseWorkspaceMarker('/a/repo-two'),
+    'two workspaces must not share a cron marker',
+  );
+});
+
+test('crontabLineBelongsToWorkspace: own scoped line and legacy bare line match, others survive', () => {
+  const mine = `*/13 * * * * /home/u/.atris/overnight/repo-a-self-improve/tick.sh # ${pulse.PULSE_MARKER}:repo-a`;
+  const theirs = `*/13 * * * * /home/u/.atris/overnight/repo-b-self-improve/tick.sh # ${pulse.PULSE_MARKER}:repo-b`;
+  const legacy = `*/13 * * * * /home/u/.atris/overnight/atris-cli-self-improve/tick.sh # ${pulse.PULSE_MARKER}`;
+  assert.strictEqual(pulse.crontabLineBelongsToWorkspace(mine, '/x/repo-a'), true);
+  assert.strictEqual(pulse.crontabLineBelongsToWorkspace(theirs, '/x/repo-a'), false, 'must not kill another workspace heartbeat');
+  assert.strictEqual(pulse.crontabLineBelongsToWorkspace(legacy, '/x/repo-a'), true, 'legacy shared-singleton lines migrate away');
+});
+
+test('buildCrontabLine and buildTickScript carry the workspace-scoped marker', () => {
+  const marker = pulse.pulseWorkspaceMarker('/x/repo-a');
+  const line = pulse.buildCrontabLine({ cron: '*/13 * * * *', scriptPath: '/tmp/tick.sh', marker });
+  assert.ok(line.endsWith(`# ${marker}`));
+  const script = pulse.buildTickScript({
+    root: '/x/repo-a',
+    atrisBin: '/usr/local/bin/atris',
+    stateHome: '/home/u/.atris/overnight/repo-a-self-improve',
+    deadlineEpoch: 2000000000,
+    marker,
+  });
+  assert.ok(script.includes(`MARKER="${marker}"`), 'tick.sh must self-remove only its own scoped line');
+});
+
 test('scoreTick punishes verify failure with -1', () => {
   assert.equal(pulse.scoreTick({ verifyPassed: false, producedWork: true }), -1);
 });

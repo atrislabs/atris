@@ -72,7 +72,16 @@ function pickRunnableMission(root = process.cwd(), missionMap = null, options = 
   if (!map) {
     try { map = require('./mission').loadMissionMap(root); } catch { return null; }
   }
-  const candidates = Array.from(map.values())
+  // Worktree-held missions are runnable too: `mission run <id>` resolves them
+  // and the twin dedupe sees them when refusing to start a clone. A picker
+  // blind to them deadlocks the autopilot loop — every leg falls through to
+  // `member run`, which re-prints "Resume: atris mission run <id>" for a
+  // mission this picker never surfaces, and the loop dies on fast-fails.
+  let rolled = Array.isArray(options.worktreeMissions) ? options.worktreeMissions : null;
+  if (!rolled && options.includeWorktrees) {
+    try { rolled = require('./mission').listWorktreeRollupMissions(root); } catch { rolled = []; }
+  }
+  const candidates = [...Array.from(map.values()), ...(rolled || [])]
     .filter((mission) => mission && (mission.status === 'running' || mission.status === 'planning'))
     .filter((mission) => runnerDrivableForFrontDoor(mission?.runner, options))
     .filter((mission) => !/^decide and start the next useful mission after:/i.test(String(mission?.objective || '')))

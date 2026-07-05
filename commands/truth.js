@@ -182,8 +182,24 @@ function loadHeartbeats() {
     else if (lastRun == null) verdict = 'never-ran';
     else if (ageDays > Math.max(expectedDays, 0.05)) verdict = 'stale';
     else verdict = 'proven';
-    return { id: j.id, verdict, lastRunAgeDays: ageDays, fails: s.consecutive_fails || 0 };
+    return { id: j.id, verdict, lastRunAgeDays: ageDays, fails: s.consecutive_fails || 0, source: 'heartbeat' };
   });
+}
+
+// launchd agents are loops too - `atris loops` shows them, so truth must count
+// them or the two views disagree ("loops: 0" while com.atris.* jobs run).
+function loadLaunchdLoops() {
+  let agents = [];
+  try {
+    agents = require('./loops').listLaunchdAgents();
+  } catch { return []; }
+  return agents.map((agent) => ({
+    id: agent.label,
+    verdict: agent.running || agent.lastExit === '0' ? 'proven' : 'blocked',
+    lastRunAgeDays: null,
+    fails: agent.running || agent.lastExit === '0' ? 0 : 1,
+    source: 'launchd',
+  }));
 }
 
 function truthCommand(args = []) {
@@ -199,7 +215,7 @@ function truthCommand(args = []) {
     : { kind: 'workspace', workspace_root: taskCounts.workspaceRoot };
   const tasks = taskCounts.counts;
   const features = loadFeatures(cwd);
-  const heartbeats = loadHeartbeats();
+  const heartbeats = [...loadHeartbeats(), ...loadLaunchdLoops()];
 
   const featureTally = {};
   for (const f of features) featureTally[f.verdict] = (featureTally[f.verdict] || 0) + 1;
@@ -247,7 +263,8 @@ function truthCommand(args = []) {
 
   line(`\nLoops (${heartbeats.length}):`);
   for (const h of heartbeats) {
-    line(`  ${h.verdict.padEnd(9)} ${fmtAge(h.lastRunAgeDays).padStart(6)}  ${h.id}${h.fails ? `  fails=${h.fails}` : ''}`);
+    const age = h.source === 'launchd' ? 'launchd' : fmtAge(h.lastRunAgeDays);
+    line(`  ${h.verdict.padEnd(9)} ${age.padStart(7)}  ${h.id}${h.fails ? `  fails=${h.fails}` : ''}`);
   }
 
   line(`\nVerdict key: proven = receipt within ${STALE_DAYS}d · stale = receipt older · unproven = no receipt, edited within ${PARKED_DAYS}d · parked = no receipt, untouched ${PARKED_DAYS}d+ · blocked = failing now`);

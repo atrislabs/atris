@@ -1591,6 +1591,7 @@ function taskReviewCommandLooksSpecific(command) {
   if (/^(?:git|gh|rg|curl|bash|sh|tsc)\s+(?:tests?|checks?)$/i.test(text)) return false;
   if (/\s+(?:and|then)\s+\S+/i.test(taskReviewWithoutQuotedSegments(text))) return false;
   if (/^node\s+(?!-|\S*(?:[/.]))/i.test(text)) return false;
+  if (/^node\s+--test\s+(?:suites?|tests?|checks?)$/i.test(text)) return false;
   if (/^node\s+--test\s+[\w-]+(?:\s+[\w-]+)+$/i.test(text)) return false;
   return true;
 }
@@ -1654,10 +1655,16 @@ function taskReviewTrimTrailingOutsideQuote(text) {
 function taskReviewCleanEvidenceCommand(command) {
   let clean = String(command || '');
   const tailPatterns = [
+    // Prose connectors: a dash or an explanatory clause never belongs
+    // to the command itself ("npm test to confirm the loader works").
+    /\s+[\u2014\u2013]\s?.*$/,
+    /\s+to\s+(?:confirm|verify|prove|check|ensure|validate|exercise|show|demonstrate|cover|guard|make\s+sure)\b.*$/i,
+    /\s+(?:which|because|so\s+that|so\s+the|so\s+it|proving|confirming|verifying|ensuring|covering|demonstrating|exercising)\b.*$/i,
     /\s+from\s+[^,;]*(?:showed|shows|showing|returned|returns|printed|prints|wrote|writes|reported|reports)\b.*$/i,
     /\s+(?:showed|shows|showing|returned|returns|printed|prints|wrote|writes|reported|reports)\b.*$/i,
     /\.\s+(?:Reward remains|No human|Human accept|AgentXP|XP)\b.*$/i,
     /\s+with\s+\d+\s+(?:passing\s+)?(?:tests?|checks?|passes|passed|pass|ok|clean)\b.*$/i,
+    /\s+\(?\d+\s+(?:passes|passed|pass|tests?|checks?),\s*\d+\s+(?:fails?|failed|failures?)\)?$/i,
     /\s+\((?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\)$/i,
     /\s+\(?(?:exit|status|code)\s+\d+\)?$/i,
     /\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\s+\d+\/\d+(?:[,.]\s+.*)?$/i,
@@ -8049,6 +8056,17 @@ function cmdReady(args) {
     console.error(`ready failed: ${result.reason}`);
     process.exit(1);
   }
+  // The check just ran and passed; record it where strict autoland looks
+  // (metadata.verify) so the executed proof counts there too, not only in the
+  // proof text. Commands outside the strict allowlist can't be re-run by
+  // autoland, so those are noted instead of recorded.
+  let strictVerifyRecorded = null;
+  if (typeof verifyFlag === 'string' && verifyFlag.trim()) {
+    strictVerifyRecorded = stampReadyVerifyMetadata(taskDb, db, taskId, verifyFlag.trim());
+    if (!strictVerifyRecorded && !wantsJson(args)) {
+      console.log(`note: \`${verifyFlag.trim()}\` is not on the strict autoland allowlist, so autoland cannot re-run it (recorded in proof only)`);
+    }
+  }
   const landingAdvisory = warnIfLandingNeedsDayOnePm(landing, result.row && result.row.title);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const agentCertified = result.event.payload.agent_certified === true;
@@ -8092,6 +8110,7 @@ function cmdReady(args) {
       handoff,
       result_trace: resultTrace,
       landing_advisory: landingAdvisory,
+      ...(strictVerifyRecorded === null ? {} : { strict_verify_recorded: strictVerifyRecorded }),
       ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
@@ -8283,6 +8302,25 @@ function certifyVerifyCandidate(task) {
   return null;
 }
 
+// After `task ready --verify` executes its check, persist the command to
+// metadata.verify (the field strict autoland re-runs) - but only when the
+// command is on the strict allowlist, since autoland refuses anything else.
+function stampReadyVerifyMetadata(taskDb, db, taskId, verify) {
+  if (!parseVerifyCommand(verify).ok) return false;
+  const row = taskDb.getTask(db, taskId);
+  if (!row) return false;
+  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
+  metadata.verify = verify;
+  metadata.verify_recorded_at = new Date().toISOString();
+  db.prepare(`
+    UPDATE tasks
+       SET metadata = ?,
+           updated_at = ?
+     WHERE id = ?
+  `).run(JSON.stringify(metadata), Date.now(), taskId);
+  return true;
+}
+
 function stampCertifyVerifyMetadata(taskDb, db, taskId, actor, verify) {
   const row = taskDb.getTask(db, taskId);
   if (!row) return;
@@ -8425,7 +8463,12 @@ function cmdCertifyVerified(args) {
 // keeps human accept as the one gate without making it N gates.
 function cmdLanding(args) {
   if (hasFlag(args, '--accept')) {
-    const passthrough = args.filter(arg => arg !== '--accept');
+    // Strict by default: the one-gesture accept re-runs each row's recorded
+    // check before landing it. --no-strict-verify is the explicit opt-out.
+    const passthrough = args.filter(arg => arg !== '--accept' && arg !== '--no-strict-verify');
+    if (!hasFlag(args, '--no-strict-verify') && !passthrough.includes('--strict-verify')) {
+      passthrough.push('--strict-verify');
+    }
     if (!passthrough.includes('--confirm-human-accept')) passthrough.push('--confirm-human-accept');
     return cmdAutoAcceptCertified(passthrough);
   }
@@ -8433,7 +8476,8 @@ function cmdLanding(args) {
   console.log('');
   console.log('land everything certified above in one gesture:');
   console.log('  atris task landing --accept --as <you>');
-  console.log('(items needing one more check stay in review; only certified work lands)');
+  console.log('(strict by default: each row\'s recorded check re-runs before it lands;');
+  console.log(' items needing one more check stay in review. opt out: --no-strict-verify)');
 }
 
 function cmdAutoAcceptCertified(args) {
@@ -8524,7 +8568,10 @@ function cmdAutoAcceptCertified(args) {
       results.push({ ref: item.display_id || item.id, eligible: false, reason: 'task_not_found', action: 'skipped' });
       continue;
     }
-    const evaluation = evaluateAutoAccept(task, { strictVerify, acceptAll });
+    // Dry-run previews never execute verify commands: presence + allowlist
+    // parse is enough to say "would accept", and executing dozens of recorded
+    // checks made status renders hang on large review queues.
+    const evaluation = evaluateAutoAccept(task, { strictVerify, executeVerify: !dryRun, acceptAll });
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped' });
       continue;

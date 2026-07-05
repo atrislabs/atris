@@ -81,11 +81,14 @@ function newestMissionOwner(root) {
 }
 
 function legPlan(root, legWallSeconds) {
-  const mission = pickRunnableMission(root);
+  const mission = pickRunnableMission(root, null, { includeWorktrees: true });
   if (mission) {
     return {
       kind: 'mission',
       label: `mission ${mission.id}: ${mission.objective}`,
+      // A worktree-held mission runs inside its own checkout so its state,
+      // receipts, and file changes land there — not in the main tree.
+      cwd: mission.worktree_root || null,
       args: ['mission', 'run', mission.id, '--max-ticks', String(LEG_TICKS), '--max-wall', String(legWallSeconds), '--complete-on-pass'],
     };
   }
@@ -113,9 +116,9 @@ function legPlan(root, legWallSeconds) {
   };
 }
 
-function driveLeg(root, legArgs, current) {
+function driveLeg(root, plan, current) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [CLI_PATH, ...legArgs], { cwd: root, stdio: 'inherit' });
+    const child = spawn(process.execPath, [CLI_PATH, ...plan.args], { cwd: plan.cwd || root, stdio: 'inherit' });
     current.child = child;
     // Stop fast: a stop file written by `atris autopilot stop` in another
     // terminal terminates the running leg, not just the loop between legs.
@@ -229,7 +232,7 @@ async function autopilotFront(args = []) {
     console.log(`\nautopilot leg ${state.legs}: ${plan.label}`);
 
     const legStarted = Date.now();
-    const code = await driveLeg(root, plan.args, current);
+    const code = await driveLeg(root, plan, current);
     state.last_exit = code;
     writeState(root, state);
 

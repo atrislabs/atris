@@ -220,6 +220,27 @@ test('strict verify runtime blocks git -C outside the workspace parent', () => {
   assert.equal(denied.reason, 'verify_command_not_allowed');
 });
 
+test('strict verify previews validate the command without executing it', () => {
+  // A command that parses (allowlisted) but would fail if actually run: the
+  // file does not exist. Previews must not pay the execution cost.
+  const task = reviewTask({ metadata: { verify: 'node --check no-such-file-anywhere.js' } });
+  const preview = evaluateAutoAccept(task, { strictVerify: true, executeVerify: false });
+  assert.equal(preview.eligible, true);
+  assert.equal(preview.verify_executed, false);
+  assert.equal(preview.policy, 'strict_verify');
+
+  const live = evaluateAutoAccept(task, { strictVerify: true });
+  assert.equal(live.eligible, false);
+  assert.equal(live.reason, 'verify_failed');
+});
+
+test('strict verify previews still reject unparsable commands', () => {
+  const task = reviewTask({ metadata: { verify: 'rm -rf / && echo done' } });
+  const preview = evaluateAutoAccept(task, { strictVerify: true, executeVerify: false });
+  assert.equal(preview.eligible, false);
+  assert.equal(preview.reason, 'verify_command_not_allowed');
+});
+
 test('acceptAll: only protected lanes and hard evidence block; certification does not', () => {
   // no certification, one actor, weak proof, no verify command — lands
   const bare = reviewTask({

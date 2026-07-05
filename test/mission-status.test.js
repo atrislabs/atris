@@ -419,6 +419,47 @@ test('mission status and tick hint when mission id lives in a sibling workspace'
   }
 });
 
+test('mission doctor flags in-flight missions far past their wall budget', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-budget-dead',
+      slug: 'mission-budget-dead',
+      objective: 'one hour of work, abandoned in planning',
+      status: 'planning',
+      verifier: 'node -e "process.exit(0)"',
+      max_wall_seconds: 3600,
+      budget_contract: { schema: 'atris.mission_budget_contract.v1', requested_seconds: 3600, budget_label: '1 hour' },
+      created_at: new Date(Date.now() - 18 * 3600 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 18 * 3600 * 1000).toISOString(),
+    });
+    // Same budget but still inside 2x its wall: a slow run, not a dead one.
+    appendMissionState(dir, {
+      id: 'mission-budget-live',
+      slug: 'mission-budget-live',
+      objective: 'one hour of work, still inside its window',
+      status: 'running',
+      verifier: 'node -e "process.exit(0)"',
+      max_wall_seconds: 3600,
+      created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+    });
+
+    const doctor = runCli(['mission', 'doctor', '--local', '--json'], { cwd: dir });
+    assert.equal(doctor.status, 1);
+    const payload = JSON.parse(doctor.stdout);
+    const budgetFindings = payload.findings.filter((finding) => finding.code === 'budget_elapsed');
+    assert.equal(budgetFindings.length, 1);
+    assert.equal(budgetFindings[0].mission_id, 'mission-budget-dead');
+    assert.match(budgetFindings[0].message, /promised 1 hour/);
+    assert.match(budgetFindings[0].message, /18h in planning/);
+    assert.match(budgetFindings[0].next, /mission stop mission-budget-dead/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission doctor flags no-verifier, help, stale ready receipts, and blocked always-on loops', () => {
   const dir = makeTempDir();
   try {
@@ -2608,7 +2649,10 @@ test('mission run terminal skips are JSON-readable when mission is explicit', ()
 test('mission run with an objective starts a visible-goal mission', () => {
   const dir = makeTempDir();
   try {
-    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // Default owner gets a member dir so warnings.length === 0 keeps asserting
+    // "a clean start emits no warnings" rather than fighting the (correct)
+    // missing_owner_member nudge.
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'mission-lead'), { recursive: true });
 
     const run = runCli(['mission', 'run', 'atris mission run', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
@@ -3923,6 +3967,22 @@ test('mission run --help prints help instead of starting a mission', () => {
     assert.equal(run.stderr, '');
     assert.match(run.stdout, /atris mission run/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal-loop --help prints help instead of running the loop', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const help = runCli(['mission', 'goal-loop', '--help'], { cwd: dir });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.equal(help.stderr, '');
+    assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);
+    assert.doesNotMatch(help.stdout, /Codex goal loop iterations/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'codex_goal.json')), false);
   } finally {
     cleanupTempDir(dir);
   }
@@ -5496,6 +5556,129 @@ test('mission goal skips agent-certified mission tasks waiting for human accept'
   }
 });
 
+test('whole-budget active mission holds due slot while certified task waits for cadence', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
+  const dir = makeTempDir();
+  const previousDb = process.env.ATRIS_TASKS_DB;
+  let taskDb = null;
+  try {
+    const taskDbPath = path.join(dir, '.atris', 'tasks.db');
+    process.env.ATRIS_TASKS_DB = taskDbPath;
+    taskDb = require('../lib/task-db');
+    taskDb.close();
+
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const db = taskDb.open();
+    const task = taskDb.addTask(db, {
+      title: 'Mission XP: keep dogfooding for two hours',
+      status: 'review',
+      claimedBy: 'mission-lead',
+      tag: 'agent-xp',
+      workspaceRoot: taskDb.workspaceRoot(dir),
+      metadata: {
+        approval_status: 'pending',
+        agent_review_pass_count: 2,
+        agent_certified: true,
+        goal_id: 'active-budget-codex',
+        mission_id: 'active-budget-codex',
+      },
+    });
+
+    const now = new Date();
+    const createdAt = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+    const lastTickAt = new Date(now.getTime() - 60 * 1000).toISOString();
+    const newerAt = new Date(now.getTime() + 1000).toISOString();
+
+    appendMissionState(dir, {
+      id: 'newer-due-codex',
+      slug: 'newer-due-codex',
+      objective: 'newer due codex mission',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'true',
+      always_on: true,
+      cadence: '13m',
+      created_at: newerAt,
+      updated_at: newerAt,
+    });
+    appendMissionState(dir, {
+      id: 'active-budget-codex',
+      slug: 'active-budget-codex',
+      objective: 'keep dogfooding for 2 hours',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'true',
+      always_on: true,
+      cadence: '13m',
+      continue_on_complete: true,
+      task_id: task.id,
+      current_task_id: task.id,
+      task_ids: [task.id],
+      xp_task: {
+        task_id: task.id,
+        ref: 'CLI-2000',
+      },
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        mission_id: 'active-budget-codex',
+        objective: 'keep dogfooding for 2 hours',
+        acknowledged_at: createdAt,
+      },
+      budget_contract: {
+        schema: 'atris.mission_budget_contract.v1',
+        requested_seconds: 7200,
+        budget_label: '2 hours',
+        policy: 'spend_full_budget',
+        plain_language: 'Use the whole time.',
+        stop_rule: 'Use the whole 2 hours; keep picking the next useful move until time is up, unless blocked or unsafe.',
+      },
+      max_wall_seconds: 7200,
+      last_tick_at: lastTickAt,
+      last_tick_status: 'ran',
+      last_tick_index: 1,
+      verifier_result: {
+        command: 'true',
+        status: 0,
+        signal: null,
+        passed: true,
+        stdout: '',
+        stderr: '',
+      },
+      created_at: createdAt,
+      updated_at: createdAt,
+    });
+
+    const due = selectDueMission(dir, now);
+    assert.equal(due, null);
+    const selected = selectCodexGoalMission(dir, {}, now);
+    assert.equal(selected.mission.id, 'active-budget-codex');
+
+    const goal = runCli(['mission', 'goal', '--heartbeat', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.equal(goalPayload.action, 'codex_goal_heartbeat');
+    assert.equal(goalPayload.goal.mission_id, 'active-budget-codex');
+    assert.equal(goalPayload.goal.reason, 'active');
+    assert.equal(goalPayload.heartbeat.due, false);
+    assert.notEqual(goalPayload.goal.reason, 'next_move_continuation_seeded');
+
+    const run = runCli(['mission', 'run', '--due', '--no-claude', '--no-drain', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const runPayload = JSON.parse(run.stdout);
+    assert.equal(runPayload.action, 'run_skipped');
+    assert.equal(runPayload.reason, 'no_due_mission');
+
+    const afterCadence = new Date(Date.parse(lastTickAt) + (13 * 60 * 1000) + 1000);
+    const dueAfterCadence = selectDueMission(dir, afterCadence);
+    assert.equal(dueAfterCadence.id, 'active-budget-codex');
+  } finally {
+    if (taskDb) taskDb.close();
+    if (previousDb === undefined) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = previousDb;
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission goal seeds next-move continuation after certified mission waits for human accept', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
   const dir = makeTempDir();
   const previousDb = process.env.ATRIS_TASKS_DB;
@@ -6035,6 +6218,7 @@ test('always-on missions become due again after cadence even after verifier pass
     ], { cwd: dir });
     assert.equal(started.status, 0, started.stderr || started.stdout);
     const mission = JSON.parse(started.stdout).mission;
+    assert.equal(mission.budget_contract, undefined);
     ackNativeCodexGoal(dir, mission);
 
     const firstRun = runCli(['mission', 'run', '--due', '--no-claude', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });
@@ -6113,8 +6297,10 @@ test('mission lock busy errors are JSON-readable', () => {
     const mission = startMission(dir, 'lock busy mission');
     const lockPath = path.join(dir, '.atris', 'state', `mission-${mission.id}.lock`);
     fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    // The holder must be verifiably ALIVE: locks with dead holder pids are
+    // broken and re-acquired now, so a made-up pid no longer stays busy.
     fs.writeFileSync(lockPath, JSON.stringify({
-      pid: 12345,
+      pid: process.pid,
       started_at: '2026-05-09T00:00:00.000Z',
     }), 'utf8');
 

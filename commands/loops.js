@@ -209,4 +209,4 @@ function loopsCommand(subcommand, ...args) {
   }
 }
 
-module.exports = { loopsCommand, showBoard };
+module.exports = { loopsCommand, showBoard, listLaunchdAgents };

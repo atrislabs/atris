@@ -76,7 +76,14 @@ function emit(obj, asJson) {
   return obj;
 }
 
+// Legacy shared path — kept only so old installs remain findable; new installs
+// get a per-workspace home via pulseStateHome (two repos used to fight over
+// this one directory, overwriting each other's tick.sh).
 const STATE_HOME = path.join(os.homedir(), '.atris', 'overnight', 'atris-cli-self-improve');
+
+function pulseStateHome(root) {
+  return path.join(os.homedir(), '.atris', 'overnight', `${pulse.pulseWorkspaceKey(root)}-self-improve`);
+}
 
 // --- engine: run one mission-run-due tick via the real CLI ---
 
@@ -95,12 +102,14 @@ function runMissionEngine(root, { noClaude = false, timeoutMs = 600000 } = {}) {
     payload = JSON.parse(result.stdout || '{}');
   } catch {}
   // Map the mission-run result to a normalized actor outcome.
+  const failure = result.status === 0 ? null : pulse.classifyActorFailure(result);
   const reason = payload && payload.reason ? payload.reason
-    : (result.status === 0 ? 'completed' : 'error');
+    : (result.status === 0 ? 'completed' : failure.reason);
   return {
     actor: 'mission_run_due',
     ok: result.status === 0,
-    reason, // 'completed' | 'no_due_mission' | 'error' | ...
+    reason, // 'completed' | 'no_due_mission' | 'auth-required' | 'timeout' | 'error' | ...
+    detail: failure ? (payload && payload.error ? String(payload.error).slice(-300) : failure.detail) : null,
     status: result.status,
     payload,
     stdout: String(result.stdout || '').slice(-2000),
@@ -113,17 +122,22 @@ function runMissionEngine(root, { noClaude = false, timeoutMs = 600000 } = {}) {
 // mission is due, instead of idling.
 function runAutopilotTick(root, { timeoutMs = 600000 } = {}) {
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
-  const args = ['autopilot', '--auto', '--iterations=1'];
+  // --once + a leg wall under our own timeout: the child stops itself cleanly
+  // instead of being SIGTERMed mid-work (the front door ignores the legacy
+  // --auto/--iterations flags this used to pass).
+  const args = pulse.autopilotTickArgs(timeoutMs);
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd: root,
     encoding: 'utf8',
     timeout: timeoutMs,
     env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
   });
+  const failure = result.status === 0 ? null : pulse.classifyActorFailure(result);
   return {
     actor: 'autopilot',
     ok: result.status === 0,
-    reason: result.status === 0 ? 'completed' : 'error',
+    reason: result.status === 0 ? 'completed' : failure.reason,
+    detail: failure ? failure.detail : null,
     status: result.status,
     stdout: String(result.stdout || '').slice(-2000),
     stderr: String(result.stderr || '').slice(-2000),
@@ -163,7 +177,23 @@ function gitSnapshot(root) {
     const r = spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8', timeout: 15000 });
     if (r.status === 0) head = String(r.stdout || '').trim();
   } catch {}
-  return { head, dirty: new Set(gitChangedFiles(root)) };
+  return { head, dirty: gitChangedFiles(root) };
+}
+
+// Work can land in the main checkout OR an agent worktree — missions bind to
+// their own checkout, so a scorer that only diffs the main tree records
+// productive worktree ticks as reward-0 no-ops and never runs their verifier.
+// Snapshot every checkout of this repo, keyed by path.
+function workspaceSnapshots(root) {
+  const snaps = { [root]: gitSnapshot(root) };
+  let entries = [];
+  try { entries = require('./worktree').listWorktrees(root) || []; } catch {}
+  for (const entry of entries) {
+    const p = entry && entry.path;
+    if (!p || snaps[p] || !fs.existsSync(p)) continue;
+    snaps[p] = gitSnapshot(p);
+  }
+  return snaps;
 }
 
 function runVerify(root, verifyCmd, timeoutMs = 600000) {
@@ -175,7 +205,8 @@ function runVerify(root, verifyCmd, timeoutMs = 600000) {
     timeout: timeoutMs,
     env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_AGENT_PROOF_ONLY: '0' },
   });
-  return { passed: r.status === 0, cmd: verifyCmd, status: r.status };
+  const outcome = pulse.verifyOutcome({ status: r.status, stdout: r.stdout, stderr: r.stderr });
+  return { passed: outcome.passed, cmd: verifyCmd, status: r.status, reason: outcome.reason, detail: outcome.detail };
 }
 
 // --- atris pulse tick ---
@@ -230,18 +261,20 @@ function tickCommand(args, root = process.cwd()) {
   let engine;
   let verify = { passed: null, cmd: verifyCmd };
   try {
-    const before = gitSnapshot(root);
+    const before = workspaceSnapshots(root);
     engine = runEngine(root, { noClaude, autopilotFallback: !hasFlag(args, '--no-autopilot') });
-    const after = gitSnapshot(root);
-    // This tick's ACTUAL contribution: files it newly dirtied, or a new commit.
-    // Pre-existing dirt is excluded so reward isn't re-credited every tick.
-    const changedFiles = [...after.dirty].filter((f) => !before.dirty.has(f));
-    const committed = Boolean(before.head && after.head && before.head !== after.head);
+    const after = workspaceSnapshots(root);
+    // This tick's ACTUAL contribution across every checkout: files it newly
+    // dirtied, or a new commit. Pre-existing dirt is excluded so reward isn't
+    // re-credited every tick.
+    const { changedFiles, committed, changedRoots } = pulse.diffWorkspaceSnapshots(root, before, after);
     const producedWork = committed || changedFiles.length > 0;
 
     // Verify only matters when the tick produced work; a no-op tick skips it.
+    // Run it where the work actually landed when that is unambiguous.
     if (producedWork && verifyCmd) {
-      verify = runVerify(root, verifyCmd);
+      const verifyRoot = changedRoots.length === 1 ? changedRoots[0] : root;
+      verify = runVerify(verifyRoot, verifyCmd);
     } else if (verifyCmd) {
       verify = { passed: null, cmd: verifyCmd, skipped: true };
     }
@@ -263,8 +296,10 @@ function tickCommand(args, root = process.cwd()) {
       actor: engine.actor,
       actorOk: engine.ok,
       actorReason: engine.reason,
+      actorDetail: engine.ok ? null : engine.detail || null,
       verifyCmd: verify.cmd,
       verifyPassed: verify.passed,
+      verifyDetail: verify.passed === true ? null : verify.detail || null,
       changedFiles,
       what,
       elapsedMs,
@@ -293,7 +328,9 @@ function tickCommand(args, root = process.cwd()) {
       tick_index: tickIndex,
       actor: engine.actor,
       actor_reason: engine.reason,
+      actor_detail: engine.ok ? null : engine.detail || null,
       verify_passed: verify.passed,
+      verify_detail: verify.passed === true ? null : verify.detail || null,
       reward,
       scorecard_written: scorecardWritten,
       changed_files: changedFiles,
@@ -436,15 +473,17 @@ function installCommand(args, root = process.cwd()) {
   const runnerCommandTemplate = readFlag(args, '--runner-template', process.env.ATRIS_RUNNER_COMMAND_TEMPLATE || process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE || '');
   const deadlineEpoch = Math.floor(Date.now() / 1000) + expiry.seconds;
 
-  fs.mkdirSync(STATE_HOME, { recursive: true });
-  const scriptPath = path.join(STATE_HOME, 'tick.sh');
+  const stateHome = pulseStateHome(root);
+  const marker = pulse.pulseWorkspaceMarker(root);
+  fs.mkdirSync(stateHome, { recursive: true });
+  const scriptPath = path.join(stateHome, 'tick.sh');
   // Resolve the real bin dirs the engine spawns by bare name, so cron's minimal
   // PATH doesn't silently break the worker spawn (claude lives in ~/.local/bin).
   const pathDirs = resolveEngineBinDirs([runnerBin]);
   const script = pulse.buildTickScript({
     root,
     atrisBin: resolveAtrisBin(),
-    stateHome: STATE_HOME,
+    stateHome,
     deadlineEpoch,
     model,
     runnerProfile,
@@ -452,14 +491,17 @@ function installCommand(args, root = process.cwd()) {
     runnerCommandTemplate,
     verifyCmd,
     pathDirs,
+    marker,
   });
   fs.writeFileSync(scriptPath, script, { mode: 0o755 });
 
-  const line = pulse.buildCrontabLine({ cron, scriptPath });
-  // Append our line to the existing crontab (idempotent: strip any prior marker first).
+  const line = pulse.buildCrontabLine({ cron, scriptPath, marker });
+  // Append our line to the existing crontab. Idempotent per WORKSPACE: strip
+  // this workspace's prior line (and any legacy shared-singleton line), but
+  // leave other workspaces' heartbeats running.
   const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
   const prior = existing.status === 0 ? String(existing.stdout || '') : '';
-  const cleaned = prior.split('\n').filter((l) => l && !l.includes(pulse.PULSE_MARKER)).join('\n');
+  const cleaned = prior.split('\n').filter((l) => l && !pulse.crontabLineBelongsToWorkspace(l, root)).join('\n');
   const next = `${cleaned ? cleaned + '\n' : ''}${line}\n`;
   const apply = spawnSync('crontab', ['-'], { input: next, encoding: 'utf8', timeout: 10000 });
 
@@ -492,7 +534,7 @@ function installCommand(args, root = process.cwd()) {
   return emit(out, asJson);
 }
 
-function uninstallCommand(args) {
+function uninstallCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
   const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
   if (existing.status !== 0) {
@@ -501,11 +543,15 @@ function uninstallCommand(args) {
     return emit(out, asJson);
   }
   const prior = String(existing.stdout || '');
-  const had = prior.includes(pulse.PULSE_MARKER);
-  const cleaned = prior.split('\n').filter((l) => l && !l.includes(pulse.PULSE_MARKER)).join('\n');
+  // Remove this workspace's heartbeat (and any legacy shared line); other
+  // workspaces' scoped heartbeats stay installed. --all clears every pulse line.
+  const removeAll = hasFlag(args, '--all');
+  const matches = (l) => (removeAll ? l.includes(pulse.PULSE_MARKER) : pulse.crontabLineBelongsToWorkspace(l, root));
+  const had = prior.split('\n').some((l) => l && matches(l));
+  const cleaned = prior.split('\n').filter((l) => l && !matches(l)).join('\n');
   const apply = spawnSync('crontab', ['-'], { input: cleaned ? cleaned + '\n' : '', encoding: 'utf8', timeout: 10000 });
-  const out = { ok: apply.status === 0, action: 'pulse_uninstall', removed: had };
-  if (!asJson) process.stdout.write(had ? 'pulse uninstalled (crontab line removed).\n' : 'pulse: no heartbeat line found.\n');
+  const out = { ok: apply.status === 0, action: 'pulse_uninstall', removed: had, scope: removeAll ? 'all' : pulse.pulseWorkspaceKey(root) };
+  if (!asJson) process.stdout.write(had ? 'pulse uninstalled (crontab line removed).\n' : 'pulse: no heartbeat line found for this workspace (remove every pulse line: atris pulse uninstall --all).\n');
   return emit(out, asJson);
 }
 

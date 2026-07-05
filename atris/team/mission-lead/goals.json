@@ -1,12 +1,12 @@
 {
   "schema": "atris.member_goals.v1",
   "member": "mission-lead",
-  "updated_at": "2026-06-28T21:14:08.931Z",
+  "updated_at": "2026-07-02T17:48:53.460Z",
   "goals": [
     {
       "id": "goal-2026-05-07-fbee1969",
-      "title": "Open-world self-improvement game loop: mission creates focused member goals, splits...",
-      "status": "active",
+      "title": "Decide and start the next useful mission after: - try all the new featuers ou get the new...",
+      "status": "superseded",
       "cadence": "manual",
       "why": "Find and ship one real, verifiable improvement to `atris-cli` per overnight tick — bug fix, UX polish, or doc/code drift correction. Push immediately. Don't sit on green commits.",
       "acceptance": [
@@ -17,7 +17,7 @@
       "source": "mission",
       "mission_file": "atris/team/mission-lead/MISSION.md",
       "now_file": "atris/team/mission-lead/now.md",
-      "mission_id": "mission-2026-06-28-open-world-self-improvement--73264f05",
+      "mission_id": "mission-2026-07-02-decide-and-start-the-next-us-c6340934",
       "mission_north_star": "Find and ship one real, verifiable improvement to `atris-cli` per overnight tick — bug fix, UX polish, or doc/code drift correction. Push immediately. Don't sit on green commits.",
       "created_at": "2026-05-07T09:03:15.315Z",
       "experiments": [],
@@ -33,39 +33,56 @@
           "event": "goal_from_mission_reused",
           "mission_id": "mission-2026-06-28-open-world-self-improvement--73264f05",
           "mission_status": "complete"
+        },
+        {
+          "at": "2026-07-02T17:48:28.304Z",
+          "event": "goal_from_mission_reused",
+          "mission_id": "mission-2026-07-02-decide-and-start-the-next-us-c6340934",
+          "mission_status": "stopped"
+        },
+        {
+          "at": "2026-07-02T17:49:00.000Z",
+          "event": "goal_superseded",
+          "reason": "Stopped mission pointer blocked overnight worker progress."
         }
       ],
-      "task_context": {
-        "ref": "CLI-507",
-        "title": "Activate member /goal from mission-owned task context",
-        "status": "claimed",
-        "owner": "mission-lead",
-        "goal_id": "mission-2026-06-28-open-world-self-improvement--73264f05",
-        "command": "atris task current-step --goal-id mission-2026-06-28-open-world-self-improvement--73264f05 --as mission-lead --proof \"<proof>\" --json"
-      },
+      "task_context": null,
       "native_goal": {
         "schema": "atris.native_goal.v1",
         "owner": "mission-lead",
         "runner": "coding-agent",
-        "objective": "mission-lead: complete CLI-507 - Activate member /goal from mission-owned task context",
-        "slash_goal": "mission-lead: complete CLI-507 - Activate member /goal from mission-owned task context",
+        "objective": "mission-lead: Decide and start the next useful mission after: - try all the new featuers ou get the new...",
+        "slash_goal": "mission-lead: Decide and start the next useful mission after: - try all the new featuers ou get the new...",
         "member_goal_id": "goal-2026-05-07-fbee1969",
-        "mission_id": "mission-2026-06-28-open-world-self-improvement--73264f05",
-        "task": {
-          "ref": "CLI-507",
-          "title": "Activate member /goal from mission-owned task context",
-          "status": "claimed",
-          "owner": "mission-lead",
-          "goal_id": "mission-2026-06-28-open-world-self-improvement--73264f05",
-          "command": "atris task current-step --goal-id mission-2026-06-28-open-world-self-improvement--73264f05 --as mission-lead --proof \"<proof>\" --json"
-        },
+        "mission_id": "mission-2026-07-02-decide-and-start-the-next-us-c6340934",
+        "task": null,
         "acceptance": [
-          "Move CLI-507 to Review with a human-readable Result receipt.",
-          "Record the verifier/proof used to check the work.",
-          "Stop only when the task is in Review, blocked with a human ask, or accepted by a human."
+          "One bounded next move is proposed from MISSION.md, not hand-fed by the human.",
+          "The move has verifier/proof target, stop rule, and human-ask condition.",
+          "A receipt or log entry records what changed and what remains uncertain."
         ],
-        "next_command": "atris task current-step --goal-id mission-2026-06-28-open-world-self-improvement--73264f05 --as mission-lead --proof \"<proof>\" --json"
+        "next_command": "atris member tick mission-lead --goal goal-2026-05-07-fbee1969"
       }
+    },
+    {
+      "id": "goal-2026-07-02-847d55ec",
+      "title": "Ship one verified overnight improvement to atris-cli",
+      "status": "active",
+      "cadence": "manual",
+      "why": "Overnight should wake without a human, choose bounded work, verify it, and leave proof.",
+      "acceptance": [
+        "Pick one small real issue from the repo state.",
+        "Make or advance a proof-backed change.",
+        "Leave a receipt with commands run and next move."
+      ],
+      "created_at": "2026-07-02T17:48:53.460Z",
+      "experiments": [],
+      "history": [
+        {
+          "at": "2026-07-02T17:48:53.460Z",
+          "event": "goal_created"
+        }
+      ]
     }
   ]
 }

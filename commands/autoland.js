@@ -100,6 +100,7 @@ function plainReason(reason) {
     insufficient_review_passes: 'not enough review passes yet',
     strict_verify_missing: 'no recorded check command to re-run',
     verify_failed: 'its check command failed on re-run',
+    verify_command_not_allowed: 'its recorded check is not on the safe re-run allowlist',
     proof_unmerged_or_draft_pr_boundary: 'its proof points at an unmerged draft',
   };
   return map[reason] || reason.replace(/_/g, ' ');
@@ -330,11 +331,21 @@ function runTickBody(root, { json, policy, receipt }) {
     if (parsed.ok === false) {
       receipt.accept_error = String(parsed.reason || 'auto-accept refused');
     }
-    receipt.landed = (parsed.results || []).filter((r) => r.action === 'accepted').map((r) => r.ref);
+    const rows = parsed.results || [];
+    receipt.landed = rows.filter((r) => r.action === 'accepted').map((r) => r.ref);
     receipt.certified = parsed.certified ?? null;
     receipt.scanned = parsed.scanned ?? null;
     receipt.skipped = parsed.skipped ?? null;
     receipt.undercounted = Boolean(parsed.undercounted);
+    // Why nothing landed, in the receipt: count held rows by reason so a
+    // do-nothing tick explains itself instead of just saying "0 landed".
+    const held = {};
+    for (const r of rows) {
+      if (r.action === 'accepted') continue;
+      const reason = String(r.reason || r.action || 'unknown');
+      held[reason] = (held[reason] || 0) + 1;
+    }
+    if (Object.keys(held).length > 0) receipt.held = held;
   } catch (err) {
     receipt.accept_error = accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
   }
@@ -444,6 +455,16 @@ function runTickBody(root, { json, policy, receipt }) {
   else {
     const reapNote = receipt.reaped ? `, reaped ${receipt.reaped.branches} landed/overdue branches` : '';
     console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}`);
+    if (receipt.landed.length === 0) {
+      if (receipt.accept_error) {
+        console.log(`  nothing landed: ${receipt.accept_error}`);
+      } else if (receipt.held && Object.keys(receipt.held).length > 0) {
+        const top = Object.entries(receipt.held).sort((a, b) => b[1] - a[1]).slice(0, 4);
+        console.log(`  nothing landed: ${top.map(([reason, n]) => `${n} ${plainReason(reason)}`).join('; ')}`);
+      } else if ((receipt.scanned ?? 0) === 0) {
+        console.log('  nothing landed: review queue is empty.');
+      }
+    }
   }
   return 0;
 }

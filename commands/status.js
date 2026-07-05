@@ -195,7 +195,15 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
     const cpCount = todo.completed.length;
     const ipWord = ipCount === 1 ? 'task' : 'tasks';
     const verb = ipCount === 1 ? 'is' : 'are';
-    where.push(`There ${verb} ${ipCount} ${ipWord} in progress, ${bkCount} queued, and ${cpCount} completed items still sitting in TODO.`);
+    // DB-backed views and the regenerated TODO.md keep recent done rows as
+    // history by design; only a hand-maintained legacy markdown TODO
+    // accumulates completed items as cleanup debt.
+    let renderedTodo = false;
+    try { renderedTodo = fs.readFileSync(todoFile, 'utf8').includes('Regenerated from durable Atris task state'); } catch {}
+    const completedIsDebt = todo.source !== 'db' && !renderedTodo && cpCount > 0;
+    where.push(completedIsDebt
+      ? `There ${verb} ${ipCount} ${ipWord} in progress, ${bkCount} queued, and ${cpCount} completed items still sitting in TODO.`
+      : `There ${verb} ${ipCount} ${ipWord} in progress, ${bkCount} queued, and ${cpCount} recently completed.`);
 
     const queueParts = [];
     if (todo.inProgress[0]) {
@@ -213,7 +221,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
       : 'Inbox is empty.');
 
     const blockingParts = [];
-    if (todo.completed.length > 0) {
+    if (completedIsDebt) {
       blockingParts.push(`Main drag: ${todo.completed.length} completed item${todo.completed.length === 1 ? '' : 's'} should be cleared from TODO.`);
     } else {
       blockingParts.push('No cleanup debt is visible in TODO.');
@@ -226,7 +234,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
       blockingParts.push(`Team activity has ${teamActivity.length} recent signal${teamActivity.length === 1 ? '' : 's'}.`);
     }
     blockingParts.push(
-      todo.completed.length > 0
+      completedIsDebt
         ? 'Decision: let it run unless you want cleanup debt handled first.'
         : 'Decision: let it run.'
     );

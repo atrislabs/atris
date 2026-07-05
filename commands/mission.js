@@ -1085,9 +1085,19 @@ function normalizeMissionReceiptResult(mission, result, receiptPath = '') {
 }
 
 function missionRunStartNextLine(mission, nextCommand, warnings = []) {
-  if (warnings.length) return 'Add a verifier before completion, then run the first proof tick.';
+  // Each warning names its own cure: "add a verifier" only fits the
+  // missing_verifier warning. A blanket warnings.length check told operators
+  // to add a verifier they had already configured whenever any OTHER warning
+  // (e.g. missing_owner_member) fired.
+  const warningCodes = new Set(warnings.map((w) => w && w.code).filter(Boolean));
+  if (warningCodes.has('missing_verifier')) {
+    return 'Add a verifier before completion, then run the first proof tick.';
+  }
   if (isCodexGoalMission(mission) && !codexNativeGoalAck(mission)) {
     return 'Start the visible goal, then continue this mission.';
+  }
+  if (warningCodes.has('missing_owner_member')) {
+    return `Create the owner member (atris member create ${mission.owner || '<owner>'}), then run the first proof tick.`;
   }
   if (/attach-task/.test(nextCommand || '')) return 'Attach task context, then continue this mission.';
   return 'Run the first proof tick.';
@@ -1320,6 +1330,13 @@ function missionFullBudgetRemainingSeconds(mission, nowMs = Date.now()) {
   const startedMs = Date.parse(mission.started_at || mission.created_at || mission.updated_at || '');
   if (!Number.isFinite(startedMs)) return 0;
   return Math.max(0, Math.ceil((startedMs + budgetSeconds * 1000 - nowMs) / 1000));
+}
+
+function missionFullBudgetOpen(mission, now = new Date()) {
+  const nowMs = now instanceof Date
+    ? now.getTime()
+    : (typeof now === 'number' ? now : Date.parse(String(now || '')));
+  return missionFullBudgetRemainingSeconds(mission, Number.isFinite(nowMs) ? nowMs : Date.now()) > 0;
 }
 
 function missionGoalChainIntent(text) {
@@ -1642,7 +1659,7 @@ function missionFromArgs(args) {
     '--native-goal-objective',
     '--visible-goal-status',
     '--visible-goal-objective',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot']).join(' ').trim();
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--no-verify', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot']).join(' ').trim();
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }
@@ -1663,10 +1680,21 @@ function missionFromArgs(args) {
   const owner = ownerResolution.owner;
   const verifier = readFlag(args, '--verify', '');
   assertMissionVerifier(verifier, wantsJson(args));
+  const alwaysOn = hasFlag(args, '--always-on');
+  const scheduledLoop = cadence && cadence !== 'manual';
+  // Autonomous loops need a witness. Manual missions can still be started for
+  // human-proof work, but always-on/scheduled work must either carry a verifier
+  // or opt out explicitly.
+  if (!verifier && (alwaysOn || scheduledLoop) && !hasFlag(args, '--no-verify')) {
+    exitMissionError(
+      'Autonomous mission loops need a verifier: pass --verify "<cmd>" so ticks can prove progress, or --no-verify to start without one (it will only complete by human proof).',
+      2,
+      wantsJson(args),
+    );
+  }
   const stopCondition = readFlag(args, '--stop', budgetStopCondition(budgetContract) || (verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof'));
   const taskIds = readRepeatedFlag(args, '--task');
   const humanAsks = readRepeatedFlag(args, '--ask');
-  const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
   const businessBinding = readBusinessBinding(process.cwd());
   const id = missionId(objective);
@@ -1799,7 +1827,7 @@ function sleepLengthBudgetIntent(requestedSeconds, text = '') {
 }
 
 function inferRunObjectiveBudgetContract(objective, args = []) {
-  const text = `${objective || ''} ${Array.isArray(args) ? args.join(' ') : ''}`;
+  const objectiveText = String(objective || '');
   const explicitHours = Number(readFlag(args, '--hours', ''));
   const explicitMinutes = Number(readFlag(args, '--minutes', ''));
   const explicitMaxWall = Number(readFlag(args, '--max-wall', ''));
@@ -1808,8 +1836,9 @@ function inferRunObjectiveBudgetContract(objective, args = []) {
     : (Number.isFinite(explicitMinutes) && explicitMinutes > 0
       ? Math.round(explicitMinutes * 60)
       : (Number.isFinite(explicitMaxWall) && explicitMaxWall > 0 ? Math.round(explicitMaxWall) : null));
-  const requestedSeconds = explicitSeconds || durationSecondsFromText(text);
-  const overnight = /\bovernight\b/i.test(text);
+  const text = explicitSeconds ? `${objectiveText} ${durationLabel(explicitSeconds)}` : objectiveText;
+  const requestedSeconds = explicitSeconds || durationSecondsFromText(objectiveText);
+  const overnight = /\bovernight\b/i.test(objectiveText);
   if (!requestedSeconds && !overnight) return null;
   const spendBudget = !hasFlag(args, '--stop-when-done')
     && (wantsFullBudget(text, args) || sleepLengthBudgetIntent(requestedSeconds, text));
@@ -2670,6 +2699,7 @@ function completeActiveContinuationForStartedMission(nextMission, root = process
 function missionCanSeedContinuation(parent) {
   if (!parent) return false;
   if (parent.status === 'complete') return true;
+  if (missionFullBudgetOpen(parent)) return false;
   return GOAL_LOOP_STATUSES.has(String(parent.status || '')) && missionTaskHumanAcceptWaiting(parent);
 }
 
@@ -2791,7 +2821,7 @@ function inheritedWorktreeBase(cwd) {
 // Dedup gate: the same objective + owner already active anywhere in the
 // workspace family (this store or any worktree's) is reused, never cloned.
 // Born 2026-07-02: an hourly alive loop spawned six identical auto-improver
-// missions in six fresh worktrees in one day — pure token burn. --duplicate
+// missions in six fresh worktrees in one day - pure token burn. --duplicate
 // is the explicit escape hatch.
 const TWIN_ACTIVE_STATUSES = new Set(['planning', 'ready', 'running']);
 
@@ -2816,7 +2846,89 @@ function findActiveTwinMission(objective, owner, root = process.cwd()) {
   return null;
 }
 
+// Retroactive sweep for the clutter the start-time dedupe gate can't reach:
+// active twins born before the gate existed, and planning missions nobody has
+// touched in weeks. Dry-run by default; --apply stops them with a reason.
+function dedupeMissions(args) {
+  const asJson = wantsJson(args);
+  const apply = hasFlag(args, '--apply');
+  const localOnly = hasFlag(args, '--local');
+  const staleDays = readPositiveIntegerFlag(args, '--stale-days', 14, { json: asJson });
+  const missionRows = listMissions().map((mission) => ({ mission, root: process.cwd(), rolled: false }));
+  if (!localOnly) {
+    for (const rolled of listWorktreeRollupMissions()) {
+      const { worktree_root: worktreeRoot, worktree_branch: worktreeBranch, ...mission } = rolled;
+      missionRows.push({ mission, root: worktreeRoot, rolled: true, worktree_branch: worktreeBranch });
+    }
+  }
+  const active = missionRows.filter((row) => row.mission && TWIN_ACTIVE_STATUSES.has(row.mission.status));
+  const groups = new Map();
+  for (const row of active) {
+    const m = row.mission;
+    const key = `${normalizedObjective(m.objective)}::${String(m.owner || '').trim().toLowerCase()}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const statusRank = { running: 0, ready: 1, planning: 2 };
+  const targets = new Map();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const sorted = [...group].sort((a, b) => (statusRank[a.mission.status] ?? 9) - (statusRank[b.mission.status] ?? 9)
+      || Number(a.rolled) - Number(b.rolled)
+      || String(b.mission.updated_at || b.mission.created_at || '').localeCompare(String(a.mission.updated_at || a.mission.created_at || '')));
+    const keeper = sorted[0].mission;
+    for (const twin of sorted.slice(1)) {
+      targets.set(twin.mission.id, { ...twin, reason: `duplicate of ${keeper.id}` });
+    }
+  }
+  const cutoff = Date.now() - staleDays * 86400000;
+  for (const row of active) {
+    const m = row.mission;
+    if (targets.has(m.id) || m.status !== 'planning') continue;
+    const touched = Date.parse(m.updated_at || m.created_at || '');
+    if (Number.isFinite(touched) && touched < cutoff) {
+      targets.set(m.id, { ...row, reason: `stale planning mission, untouched for ${staleDays}+ days` });
+    }
+  }
+  const rows = [...targets.values()];
+  const stopped = [];
+  if (apply) {
+    for (const { mission, root, reason } of rows) {
+      const { mission: saved } = saveMission({
+        ...mission,
+        status: 'stopped',
+        stopped_at: stampIso(),
+        stop_reason: `mission dedupe: ${reason}`,
+        next_action: 'mission stopped',
+      }, root, 'mission_stopped', { reason: `mission dedupe: ${reason}` });
+      stopped.push(saved.id);
+    }
+  }
+  printJsonOrText(
+    {
+      ok: true,
+      action: apply ? 'mission_dedupe' : 'mission_dedupe_dry_run',
+      scanned: active.length,
+      local_only: localOnly,
+      stale_days: staleDays,
+      targets: rows.map(({ mission, root, rolled, worktree_branch: worktreeBranch, reason }) => ({ id: mission.id, status: mission.status, owner: mission.owner, objective: mission.objective, root, rolled, worktree_branch: worktreeBranch || null, reason })),
+      stopped,
+    },
+    rows.length
+      ? [
+        `${apply ? 'Stopped' : 'Would stop'} ${rows.length} of ${active.length} active missions:`,
+        ...rows.map(({ mission, rolled, reason }) => `  ${mission.id}  (${mission.status}, ${mission.owner || '?'})${rolled ? ' [worktree]' : ''} - ${reason}`),
+        ...(apply ? [] : ['Apply: atris mission dedupe --apply']),
+      ]
+      : [`Nothing to clean: ${active.length} active missions, no twins, no planning rows older than ${staleDays}d.`],
+    asJson,
+  );
+}
+
 function startMission(args) {
+  // Help is read-only: `mission start --help` must never create a mission
+  // whose objective is the literal flag text.
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help') return help();
   const asJson = wantsJson(args);
   if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--runner manual|claude|atris2|codex_goal]');
@@ -2854,7 +2966,7 @@ function startMission(args) {
         { ok: true, action: 'mission_reused', reused: true, mission: twin, note: 'an active mission with this objective and owner already exists; resumed instead of cloning (pass --duplicate to force a second one)' },
         [
           `Already active: ${twin.id} (${twin.status})`,
-          `Same objective, same owner — reusing it instead of starting a clone.`,
+          `Same objective, same owner - reusing it instead of starting a clone.`,
           `Resume: atris mission run ${twin.id}`,
           `Really want a second one: re-run with --duplicate`,
         ],
@@ -2961,6 +3073,9 @@ function startMissionFromRunObjective(objective, args) {
     stopCondition,
   ];
   if (verifier) startArgs.push('--verify', verifier);
+  // Forward the caller's explicit opt-out; otherwise an always-on run objective
+  // with no inferable verifier hits the autonomous-loop verifier gate.
+  else if (hasFlag(args, '--no-verify')) startArgs.push('--no-verify');
   const model = readFlag(args, '--model', '');
   if (model) startArgs.push('--model', model);
   if (hasFlag(args, '--always-on') || inferredLoop.wantsLongRun) startArgs.push('--always-on');
@@ -4147,6 +4262,27 @@ function collectMissionDoctorFindings(root = process.cwd(), options = {}) {
         { next: `atris mission run ${mission.id} --max-ticks 1` },
       );
     }
+    // A mission still "in flight" long past its promised wall budget is a dead
+    // run, not a slow one: mission run enforces max_wall itself, so a
+    // planning/running row at 2x its budget means the runner died without
+    // closing out — and it silently blocks pickers, dedupe, and goal slots.
+    if (status === 'planning' || status === 'running') {
+      const budgetSeconds = Number(mission?.budget_contract?.requested_seconds || mission?.max_wall_seconds || 0);
+      const startedMs = Date.parse(mission.started_at || mission.created_at || '');
+      if (budgetSeconds > 0 && Number.isFinite(startedMs)) {
+        const elapsedSeconds = (Date.now() - startedMs) / 1000;
+        if (elapsedSeconds >= budgetSeconds * 2) {
+          const label = mission?.budget_contract?.budget_label || `${Math.round(budgetSeconds / 60)}m`;
+          add(
+            mission,
+            'budget_elapsed',
+            `Mission promised ${label} and has sat ${Math.round(elapsedSeconds / 3600)}h in ${status} — the run likely died without closing out.`,
+            'high',
+            { next: `atris mission stop ${mission.id} --reason "budget elapsed" (or complete it with proof)` },
+          );
+        }
+      }
+    }
   }
 
   findings.sort((a, b) => {
@@ -4620,15 +4756,47 @@ function missionSortTime(mission) {
   return Date.parse(mission?.updated_at || mission?.created_at || '') || 0;
 }
 
+function missionDueCandidate(mission, now = new Date()) {
+  return missionIsRunnable(mission)
+    && !(mission.always_on && missionVerifierPassed(mission) && !missionDueAt(mission, now) && !missionFullBudgetOpen(mission, now))
+    && (!missionTaskHumanAcceptWaiting(mission) || missionFullBudgetOpen(mission, now))
+    && (effectiveMissionVerifier(mission) || callerSessionMissionReadyForDue(mission))
+    && (mission.always_on || !missionVerifierPassed(mission) || missionFullBudgetOpen(mission, now));
+}
+
+function missionHoldsDueSlot(mission, now = new Date()) {
+  return missionFullBudgetOpen(mission, now)
+    && runnerUsesCallerSession(mission?.runner)
+    && Boolean(codexNativeGoalAck(mission))
+    && missionDueCandidate(mission, now);
+}
+
 function selectDueMission(root = process.cwd(), now = new Date()) {
-  const candidates = listMissions(root)
-    .filter((mission) => missionSelectableForLoop(mission, now))
-    .filter((mission) => !missionTaskHumanAcceptWaiting(mission))
-    .filter((mission) => effectiveMissionVerifier(mission) || callerSessionMissionReadyForDue(mission))
-    .filter((mission) => mission.always_on || !missionVerifierPassed(mission))
+  const missions = listMissions(root);
+  const activeBudgetHolders = missions
+    .filter((mission) => missionHoldsDueSlot(mission, now))
+    .sort((a, b) => {
+      const aAck = Date.parse(a.native_goal_ack?.acknowledged_at || '') || 0;
+      const bAck = Date.parse(b.native_goal_ack?.acknowledged_at || '') || 0;
+      if (aAck !== bAck) return bAck - aAck;
+      return missionSortTime(b) - missionSortTime(a);
+    });
+  const holder = activeBudgetHolders[0] || null;
+  if (holder && !missionDueAt(holder, now)) return null;
+
+  const candidates = missions
+    .filter((mission) => missionDueCandidate(mission, now))
     .filter((mission) => missionDueAt(mission, now));
 
   candidates.sort((a, b) => {
+    const aAck = codexNativeGoalAck(a) ? 1 : 0;
+    const bAck = codexNativeGoalAck(b) ? 1 : 0;
+    if (aAck !== bAck) return bAck - aAck;
+
+    const aBudgetOpen = missionFullBudgetOpen(a, now) ? 1 : 0;
+    const bBudgetOpen = missionFullBudgetOpen(b, now) ? 1 : 0;
+    if (aBudgetOpen !== bBudgetOpen) return bBudgetOpen - aBudgetOpen;
+
     const aCaller = runnerUsesCallerSession(a.runner) ? 1 : 0;
     const bCaller = runnerUsesCallerSession(b.runner) ? 1 : 0;
     if (aCaller !== bCaller) return bCaller - aCaller;
@@ -4649,7 +4817,7 @@ function callerSessionMissionReadyForDue(mission) {
 
 function missionSelectableForCodexGoal(mission, now = new Date()) {
   if (!missionIsRunnable(mission)) return false;
-  if (missionTaskHumanAcceptWaiting(mission)) return false;
+  if (missionTaskHumanAcceptWaiting(mission) && !missionFullBudgetOpen(mission, now)) return false;
   if (mission.always_on && missionVerifierPassed(mission) && !missionDueAt(mission, now)) {
     return parseCadenceSeconds(mission.cadence) > 0;
   }
@@ -4670,6 +4838,14 @@ function selectCodexGoalMission(root = process.cwd(), options = {}, now = new Da
   }
 
   candidates.sort((a, b) => {
+    const aAck = codexNativeGoalAck(a) ? 1 : 0;
+    const bAck = codexNativeGoalAck(b) ? 1 : 0;
+    if (aAck !== bAck) return bAck - aAck;
+
+    const aBudgetOpen = missionFullBudgetOpen(a, now) ? 1 : 0;
+    const bBudgetOpen = missionFullBudgetOpen(b, now) ? 1 : 0;
+    if (aBudgetOpen !== bBudgetOpen) return bBudgetOpen - aBudgetOpen;
+
     const aRank = missionGoalSelectionRank(a);
     const bRank = missionGoalSelectionRank(b);
     if (aRank !== bRank) return aRank - bRank;
@@ -5649,6 +5825,21 @@ function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
 }
 
+// True only when the lock names a pid that verifiably no longer runs (ESRCH).
+// EPERM means alive-but-not-ours → busy. A lock without a parseable pid is
+// never broken here — guessing on corrupt data risks breaking a live run.
+function lockHolderIsDead(holder) {
+  const pid = Number(holder && holder.pid);
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (pid === process.pid) return false;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (e) {
+    return e.code === 'ESRCH';
+  }
+}
+
 function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
   const dir = path.join(root, '.atris', 'state');
   fs.mkdirSync(dir, { recursive: true });
@@ -5665,6 +5856,15 @@ function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
       if (e.code === 'EEXIST') {
         let info = {};
         try { info = JSON.parse(fs.readFileSync(lockFile, 'utf8') || '{}'); } catch {}
+        // A crashed holder never unlinks its lock, and every later run (cron
+        // firings included) then errors "lock busy" forever. The pid is in the
+        // lock for exactly this: if it no longer runs, the lock is stale —
+        // break it and retry the wx open (losers of the retry race just see
+        // the winner's fresh lock and report busy with a live holder).
+        if (lockHolderIsDead(info)) {
+          try { fs.unlinkSync(lockFile); } catch {}
+          continue;
+        }
         if (deadline && Date.now() < deadline) {
           sleepSync(Math.min(25, deadline - Date.now()));
           continue;
@@ -5771,12 +5971,26 @@ function detectUnavailableModel(text) {
   return null;
 }
 
+// A logged-out claude CLI answers every -p prompt with "Not logged in · Please
+// run /login" — in the RESULT text with exit code 0-ish plumbing and an empty
+// stderr, so a stderr-only check misses it and the run loop grinds cron
+// firings on 'claude-error' forever (each one burning the mission tick budget).
+// Check both streams and the phrasings the CLI actually emits.
+function detectAuthExpired(stderrText, resultText) {
+  const s = `${String(stderrText || '')}\n${String(resultText || '')}`;
+  return /not logged in|please run \/login|not authenticated|please log in|login required|auth(?:entication)? expired/i.test(s);
+}
+
 // Human-facing guidance written to a paused mission's next_action. Most pauses just
 // need a resume; a model-unavailable pause is a config error a bare resume won't fix,
 // so name the dead id and the two knobs that change it.
 function missionPauseNextAction(pauseReason, missionId, deadModel = null, lastErrorReason = null) {
   if (pauseReason === 'model-unavailable' && deadModel) {
     return `model "${deadModel}" is unavailable — set a live model (mission.model, ATRIS_RUNNER_MODEL, or legacy ATRIS_CLAUDE_MODEL), then: atris mission run ${missionId}`;
+  }
+  // A bare resume re-errors until a human logs the claude CLI back in.
+  if (pauseReason === 'auth-required') {
+    return `claude CLI is logged out — run "claude /login" in a terminal, then: atris mission run ${missionId}`;
   }
   if (typeof pauseReason === 'string' && pauseReason.startsWith('repeated-error:')) {
     const reason = pauseReason.slice('repeated-error:'.length);
@@ -5872,7 +6086,7 @@ function spawnClaudeTick(mission, opts) {
       if (signal) signal.removeEventListener?.('abort', onAbort);
       const ok = code === 0 && !isError && !timedOut && !aborted;
       const errStr = stderr.slice(-2000);
-      const authExpired = /not authenticated|please log in|login required|auth(?:entication)? expired/i.test(errStr);
+      const authExpired = detectAuthExpired(errStr, finalText);
       resolve({
         ok,
         timedOut,
@@ -6685,14 +6899,14 @@ function completeMission(args) {
   const force = hasFlag(args, '--force');
   const proof = readFlag(args, '--proof', '');
   const ref = stripKnownFlags(args, ['--proof'], ['--json', '--force'])[0] || '';
-  const root = process.cwd();
   if (!ref || !proof) {
     exitMissionError('Usage: atris mission complete <id> --proof "..."', 1, asJson);
   }
-  const mission = resolveMission(ref);
-  if (!mission) {
+  const found = findMissionAcrossWorktrees(ref);
+  if (!found) {
     exitMissingMission(ref, 1, asJson);
   }
+  const { mission, root } = found;
   const gate = missionCompletionGate(mission, proof, root);
   if (!gate.ok && !force) {
     exitMissionError(`[mission complete] ${gate.reason}. Run: atris mission tick ${mission.id} --verify (or override as operator with --force)`, 2, asJson);
@@ -6765,23 +6979,27 @@ function stopMission(args) {
   if (!ref) {
     exitMissionError('Usage: atris mission stop <id> [--pause] [--reason "..."]', 1, asJson);
   }
-  const mission = resolveMission(ref);
-  if (!mission) {
+  // Worktree-held missions are stoppable too: status and doctor roll them up,
+  // so a stop that only resolves locally shows the operator a mission it then
+  // claims not to find. State writes go to the mission's own root.
+  const found = findMissionAcrossWorktrees(ref);
+  if (!found) {
     exitMissingMission(ref, 1, asJson);
   }
+  const { mission, root: missionRoot } = found;
   const status = pause ? 'paused' : 'stopped';
   // Full stops abandon work, so leave evidence: snapshot the worktree against
   // the mission baseline (what did this mission leave dirty?) before pruning it.
   let receiptPath = null;
   if (!pause) {
-    const snapshot = gitWorktreeSnapshot(process.cwd());
+    const snapshot = gitWorktreeSnapshot(missionRoot);
     const worktree = worktreeReceipt(snapshot, snapshot, {
       verifier: mission.verifier,
-      baseline: loadMissionWorktreeBaseline(mission.id, process.cwd()),
+      baseline: loadMissionWorktreeBaseline(mission.id, missionRoot),
     });
-    receiptPath = writeReceipt(mission, { kind: 'mission_stop', reason, worktree });
+    receiptPath = writeReceipt(mission, { kind: 'mission_stop', reason, worktree }, missionRoot);
   }
-  const baselineSummary = pause ? null : pruneMissionWorktreeBaseline(mission, process.cwd());
+  const baselineSummary = pause ? null : pruneMissionWorktreeBaseline(mission, missionRoot);
   const next = {
     ...mission,
     status,
@@ -6792,8 +7010,8 @@ function stopMission(args) {
     worktree_baseline: baselineSummary || mission.worktree_baseline || null,
     next_action: status === 'paused' ? `resume with: atris mission tick ${mission.id}` : 'mission stopped',
   };
-  const { mission: saved } = saveMission(next, process.cwd(), pause ? 'mission_paused' : 'mission_stopped', { reason, receipt_path: receiptPath });
-  const directGoalRequestCleared = pause ? false : clearDirectRunCodexGoalRequestForMission(saved.id, process.cwd());
+  const { mission: saved } = saveMission(next, missionRoot, pause ? 'mission_paused' : 'mission_stopped', { reason, receipt_path: receiptPath });
+  const directGoalRequestCleared = pause ? false : clearDirectRunCodexGoalRequestForMission(saved.id, missionRoot);
   const logPath = appendMemberLog(saved.owner, pause ? 'Mission paused' : 'Mission stopped', { mission: saved.objective, reason });
   printJsonOrText(
     { ok: true, action: pause ? 'mission_paused' : 'mission_stopped', mission: saved, receipt_path: receiptPath, log_path: logPath, direct_goal_request_cleared: directGoalRequestCleared },
@@ -6801,6 +7019,53 @@ function stopMission(args) {
       `${pause ? 'Paused' : 'Stopped'} mission: ${saved.objective}`,
       `Reason: ${reason}`,
       ...(receiptPath ? [`Receipt: ${receiptPath}`] : []),
+    ],
+    asJson,
+  );
+}
+
+// Symmetry partner to `mission stop --pause`. Without this, `atris mission resume <id>`
+// falls through to the natural-language mission creator and spawns a junk mission whose
+// objective is literally "resume <id>".
+function resumeMission(args) {
+  const asJson = wantsJson(args);
+  const reason = readFlag(args, '--reason', 'resumed by operator');
+  const ref = stripKnownFlags(args, ['--reason'], ['--json'])[0] || '';
+  if (!ref) {
+    exitMissionError('Usage: atris mission resume <id> [--reason "..."]', 1, asJson);
+  }
+  const found = findMissionAcrossWorktrees(ref);
+  if (!found) {
+    exitMissingMission(ref, 1, asJson);
+  }
+  const { mission, root: missionRoot } = found;
+  if (TERMINAL_STATUSES.has(mission.status)) {
+    exitMissionError(`Mission ${mission.id} is ${mission.status}; only paused missions resume.`, 1, asJson);
+  }
+  if (mission.status !== 'paused') {
+    printJsonOrText(
+      { ok: true, action: 'mission_resume_noop', mission },
+      [`Mission is already ${mission.status}: ${mission.objective}`],
+      asJson,
+    );
+    return;
+  }
+  const next = {
+    ...mission,
+    status: 'ready',
+    paused_at: null,
+    resumed_at: stampIso(),
+    stop_reason: null,
+    next_action: `run with: atris mission run ${mission.id}`,
+  };
+  const { mission: saved } = saveMission(next, missionRoot, 'mission_resumed', { reason });
+  const logPath = appendMemberLog(saved.owner, 'Mission resumed', { mission: saved.objective, reason });
+  printJsonOrText(
+    { ok: true, action: 'mission_resumed', mission: saved, log_path: logPath },
+    [
+      `Resumed mission: ${saved.objective}`,
+      `Reason: ${reason}`,
+      `Next: atris mission run ${saved.id}`,
     ],
     asJson,
   );
@@ -6980,6 +7245,7 @@ function ackMissionGoal(args) {
 }
 
 async function goalLoopMission(args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h')) return help();
   const asJson = wantsJson(args);
   const noClaude = hasFlag(args, '--no-claude');
   const dryRun = hasFlag(args, '--dry-run');
@@ -7063,7 +7329,9 @@ function help() {
   console.log(`
 atris mission - durable goal + loop + owner + proof state
 
-  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--xp-task] [--worktree] [--take-goal-slot]
+  atris mission start "<objective>" --owner <member> [--verify "..."] [--no-verify] [--always-on] [--xp-task] [--worktree] [--take-goal-slot]
+                      (always-on and scheduled-cadence missions require --verify; --no-verify is the
+                       explicit opt-out - the mission then only completes by human proof)
                       [--runner manual|claude|atris2|codex_goal] [--model <id>]
                       (runner claude spawns local claude -p per tick, --model passes through;
                        runner atris2 runs each tick as one /atris2/turn on the AtrisOS backend,
@@ -7081,6 +7349,7 @@ atris mission - durable goal + loop + owner + proof state
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
   atris mission room "<messy input>" [--owner <member>] [--room-auto-run] [--json]   Create a Mission Room card and shareable receipt from messy intent
   atris mission prune-runs [--apply] [--days <n>] [--keep-newest <n>] [--json]   Compress old run receipts into a manifest and prune unreferenced clutter
+  atris mission dedupe [--apply] [--local] [--stale-days <n>] [--json]   Stop duplicate active twins and stale planning missions (dry-run by default)
   atris mission goal [--runtime codex|atris] [--heartbeat] [--native-goal-status active|paused] [--native-goal-objective "..."] [--allow-native-goal-supersede] [--json]
   atris mission goal ack <id> --runtime codex --status active --objective "<objective>" --json
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
@@ -7099,6 +7368,7 @@ atris mission - durable goal + loop + owner + proof state
                        (mission-run completions seed the next visible goal: decide and start the next useful mission)
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]
+  atris mission resume <id> [--reason "..."]   Flip a paused mission back to ready (partner to stop --pause)
 
 Autonomy recipe:
   1. Pick an owner member: atris member create <member>  (if missing)
@@ -7449,6 +7719,9 @@ function missionCommand(args) {
     case 'create':
     case 'new':
       return startMission(rest);
+    case 'dedupe':
+    case 'tidy':
+      return dedupeMissions(rest);
     case 'status':
     case 'list':
     case 'ls':
@@ -7499,6 +7772,9 @@ function missionCommand(args) {
     case 'stop':
     case 'pause':
       return stopMission(subcommand === 'pause' ? ['--pause', ...rest] : rest);
+    case 'resume':
+    case 'unpause':
+      return resumeMission(rest);
     case 'help':
     case '--help':
     case '-h':
@@ -7531,7 +7807,11 @@ module.exports = {
   resolveClaudeRunnerBin,
   businessIdForAtris2Mission,
   detectUnavailableModel,
+  detectAuthExpired,
   missionPauseNextAction,
+  acquireMissionLock,
+  releaseMissionLock,
+  lockHolderIsDead,
   consecutiveSameReasonErrors,
   missionVerifierTimeoutMs,
 };
