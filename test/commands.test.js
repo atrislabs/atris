@@ -1523,6 +1523,61 @@ test('member wake returns one finite decision and refuses to pile onto open work
   }
 });
 
+test('member wake treats member-generated goals and logs as non-blocking bookkeeping', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'aeo', '--description="Own AEO proof loops"'], { cwd: dir }).status, 0);
+    assert.equal(runCli([
+      'mission', 'start', 'Keep AEO moving',
+      '--owner', 'aeo',
+      '--json',
+    ], { cwd: dir }).status, 0);
+    const goal = runCli(['member', 'goal-from-mission', 'aeo', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+
+    const logsDir = path.join(dir, 'atris', 'team', 'aeo', 'logs');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const logPath = path.join(logsDir, '2026-07-05.md');
+    fs.writeFileSync(logPath, '# generated baseline\n', 'utf8');
+
+    const runGitOk = (args) => {
+      const result = spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+    };
+    runGitOk(['init', '-q']);
+    runGitOk(['config', 'user.email', 'test@example.com']);
+    runGitOk(['config', 'user.name', 'Test User']);
+    runGitOk(['add', '.']);
+    runGitOk(['commit', '-qm', 'baseline']);
+
+    const goalsPath = path.join(dir, 'atris', 'team', 'aeo', 'goals.json');
+    const goals = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    goals.generated_bookkeeping = { touched_at: '2026-07-05T00:00:00.000Z' };
+    fs.writeFileSync(goalsPath, `${JSON.stringify(goals, null, 2)}\n`, 'utf8');
+    fs.appendFileSync(logPath, '\n## generated wake bookkeeping\n', 'utf8');
+
+    const wake = runCli(['member', 'wake', 'aeo', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'tick');
+    assert.equal(payload.workspace.clean_for_member, true);
+    assert.equal(payload.workspace.dirty_count_in_scope, 0);
+    assert.deepEqual(payload.workspace.dirty_in_scope_sample, []);
+
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'aeo', 'operator-note.md'), 'real unlanded member work\n', 'utf8');
+    const blocked = runCli(['member', 'wake', 'aeo', '--json'], { cwd: dir });
+    assert.equal(blocked.status, 0, blocked.stderr || blocked.stdout);
+    const blockedPayload = JSON.parse(blocked.stdout);
+    assert.equal(blockedPayload.decision, 'wait');
+    assert.equal(blockedPayload.reason, 'workspace_dirty_in_member_scope');
+    assert.equal(blockedPayload.workspace.clean_for_member, false);
+    assert.match(blockedPayload.workspace.dirty_in_scope_sample.join('\n'), /operator-note\.md/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member wake can change direction from scoped steering memory', () => {
   const dir = makeTempDir();
   try {
