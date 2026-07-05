@@ -31,7 +31,19 @@ test('buildFleetPrompt is generated, bounded, and carries the contract', () => {
   assert.match(prompt, /atris worktree guard/);
   assert.doesNotMatch(prompt, /atris worktree start/);
   assert.match(prompt, /Stage ONLY files you changed/);
+  assert.match(prompt, /real exit code/);
+  assert.match(prompt, /Done requires a receipt/);
+  assert.match(prompt, /grep the whole repo for its callers/);
   assert.match(prompt, /Final report/);
+});
+
+test('METHOD_KERNEL is exported and fully present in the prompt', () => {
+  assert.ok(Array.isArray(fleet.METHOD_KERNEL));
+  assert.ok(fleet.METHOD_KERNEL.length >= 6);
+  const prompt = fleet.buildFleetPrompt({ display_id: 'CLI-1', title: 'x' });
+  for (const rule of fleet.METHOD_KERNEL) {
+    assert.ok(prompt.includes(`- ${rule}`), `kernel rule missing from prompt: ${rule}`);
+  }
 });
 
 test('assertIsolatedWorktree refuses missing and primary checkout paths', () => {
