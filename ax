@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const { Readable } = require('stream');
 const permissionGrants = require(path.join(__dirname, 'lib', 'permission-grants.js'));
 const { loadCredentials } = require('./utils/auth');
+const { apiRequestJson, getApiBaseUrl } = require('./utils/api');
 const missionRuntime = require('./lib/mission-runtime-loop');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
@@ -30,6 +31,8 @@ const CONNECTION_CAPABILITIES_PATH = '/api/atris2/connection-capabilities';
 const ATRIS2_CONNECTION_STATUS_PATH = '/api/atris2/connection-status';
 const ATRIS2_HEALTH_PATH = '/api/atris2/health';
 const APPROVAL_EXECUTE_PATH = '/api/atris2/approvals/execute';
+const BACKEND_API_TOOL_NAME = 'backend_api';
+const BACKEND_API_TOOL_RESULT_PATH = '/api/atris2/turn/tool-result';
 const DEFAULT_APPROVAL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const CONNECTOR_NAMES = {
   gmail: 'Gmail',
@@ -71,6 +74,18 @@ const ANSI = {
 };
 
 const TIER_COLORS = { fast: '\x1b[32m', pro: '\x1b[36m', max: '\x1b[35m' };
+
+// Extend backend_api by adding one row here. Keep mutating endpoints narrow;
+// any non-get method is approval-gated before the HTTP request is made.
+const BACKEND_API_ALLOWLIST = [
+  { method: 'GET', endpoint: '/api/atris2/health', description: 'Atris2 health' },
+  { method: 'GET', endpoint: '/api/atris2/connection-status', description: 'connection status' },
+  { method: 'GET', endpoint: '/api/atris2/connection-capabilities', description: 'connection capabilities' },
+  { method: 'GET', endpoint: '/api/integrations/status', description: 'integration status' },
+  { method: 'GET', endpoint: '/api/ai-computer/user/status', description: 'personal computer status' },
+  { method: 'GET', endpoint: '/api/business', description: 'business list' },
+  { method: 'POST', endpoint: '/api/improve', description: 'run one improve tick' },
+];
 
 function tierColor(mode) {
   return TIER_COLORS[mode] || ANSI.accent;
@@ -499,6 +514,201 @@ function postJson(pathname, body, { token = authToken(), timeoutMs = 30000, rout
     req.write(postData);
     req.end();
   });
+}
+
+function compactSingleLine(value) {
+  return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+}
+
+function truncateSingleLine(value, limit = 120) {
+  const text = compactSingleLine(value);
+  if (text.length <= limit) return text;
+  if (limit <= 3) return text.slice(0, limit);
+  return `${text.slice(0, limit - 3)}...`;
+}
+
+function canonicalBackendApiPath(pathname) {
+  let value = String(pathname || '').trim();
+  if (!value) return '';
+  if (!value.startsWith('/')) value = `/${value}`;
+  value = value.replace(/\/{2,}/g, '/');
+  if (value !== '/' && value.endsWith('/')) value = value.replace(/\/+$/, '');
+  return value;
+}
+
+function normalizeBackendApiMethod(method) {
+  return String(method || 'GET').trim().toUpperCase() || 'GET';
+}
+
+function normalizeBackendApiEndpoint(endpoint) {
+  const raw = String(endpoint || '').trim();
+  if (!raw || /^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return null;
+  const parsed = new URL(raw.startsWith('/') ? raw : `/${raw}`, 'https://ax.local');
+  const pathOnly = canonicalBackendApiPath(parsed.pathname);
+  const displayPath = pathOnly === '/api' || pathOnly.startsWith('/api/')
+    ? pathOnly
+    : canonicalBackendApiPath(`/api${pathOnly}`);
+  return {
+    endpoint: `${displayPath}${parsed.search}`,
+    pathname: displayPath,
+    search: parsed.search,
+  };
+}
+
+function backendApiAllowlistEntry(method, endpointPathname) {
+  const normalizedMethod = normalizeBackendApiMethod(method);
+  const normalizedPath = canonicalBackendApiPath(endpointPathname);
+  return BACKEND_API_ALLOWLIST.find(row =>
+    row.method === normalizedMethod && canonicalBackendApiPath(row.endpoint) === normalizedPath
+  ) || null;
+}
+
+function apiRequestPathForBackendEndpoint(displayEndpoint, baseUrl = getApiBaseUrl()) {
+  const parsed = new URL(displayEndpoint, 'https://ax.local');
+  let pathname = canonicalBackendApiPath(parsed.pathname);
+  const base = String(baseUrl || '').replace(/\/+$/, '');
+  if (base.endsWith('/api') && pathname.startsWith('/api/')) {
+    pathname = pathname.slice('/api'.length) || '/';
+  }
+  return `${pathname}${parsed.search}`;
+}
+
+function summarizeBackendApiPayload(payload) {
+  if (payload === undefined || payload === null) return 'none';
+  if (typeof payload === 'string') return truncateSingleLine(payload, 120);
+  try {
+    return truncateSingleLine(JSON.stringify(payload), 120);
+  } catch (_) {
+    return truncateSingleLine(String(payload), 120);
+  }
+}
+
+function summarizeBackendApiResponse(response) {
+  if (!response) return '';
+  if (response.data !== undefined && response.data !== null) {
+    try {
+      return truncateSingleLine(JSON.stringify(response.data), 120);
+    } catch (_) {
+      return truncateSingleLine(String(response.data), 120);
+    }
+  }
+  return truncateSingleLine(response.text || response.error || '', 120);
+}
+
+function formatBackendApiReceipt(call) {
+  return `backend_api ${String(call.method || 'get').toLowerCase()} ${call.endpoint} status ${call.status}: ${truncateSingleLine(call.summary, 120)}`;
+}
+
+function formatBackendApiApprovalPrompt(call) {
+  return `approve backend_api ${String(call.method || 'post').toLowerCase()} ${call.endpoint} payload ${summarizeBackendApiPayload(call.payload)}? yes/no: `;
+}
+
+function messageApprovesBackendApi(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[.!?]+$/g, '');
+  return normalized === 'yes' || normalized === 'y';
+}
+
+async function requestBackendApiApproval(call, options = {}) {
+  const prompt = formatBackendApiApprovalPrompt(call);
+  if (typeof options.approveBackendApi === 'function') {
+    if (options.output && typeof options.output.write === 'function') {
+      options.output.write(`${prompt}\n`);
+    }
+    const decision = await options.approveBackendApi({ ...call, prompt });
+    return decision === true || messageApprovesBackendApi(decision);
+  }
+
+  const input = options.input || process.stdin;
+  const output = options.output || process.stdout;
+  if (!input || !input.isTTY) return false;
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input, output });
+    rl.question(prompt, (answer) => {
+      rl.close();
+      resolve(messageApprovesBackendApi(answer));
+    });
+  });
+}
+
+function backendApiToolDescriptor() {
+  return {
+    name: BACKEND_API_TOOL_NAME,
+    description: 'Call allowlisted AtrisOS backend API endpoints through ax. get calls run directly; non-get calls require explicit user approval.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        method: { type: 'string', description: 'HTTP method, for example get or post' },
+        endpoint: { type: 'string', description: 'Allowlisted endpoint such as /api/atris2/health or /api/improve' },
+        payload: { type: 'object', description: 'JSON payload for non-get calls' },
+      },
+      required: ['endpoint'],
+    },
+    allowlist: BACKEND_API_ALLOWLIST.map(row => ({ method: row.method, endpoint: row.endpoint, description: row.description })),
+  };
+}
+
+async function executeBackendApiTool(args = {}, options = {}) {
+  const method = normalizeBackendApiMethod(args.method || args.verb);
+  const normalizedEndpoint = normalizeBackendApiEndpoint(args.endpoint || args.path || args.url);
+  if (!normalizedEndpoint) {
+    return { status: 'error', error: 'backend_api refused: missing or invalid endpoint' };
+  }
+
+  const allowlisted = backendApiAllowlistEntry(method, normalizedEndpoint.pathname);
+  if (!allowlisted) {
+    return {
+      status: 'error',
+      error: `backend_api refused: ${method.toLowerCase()} ${normalizedEndpoint.endpoint} is not allowlisted`,
+    };
+  }
+
+  const payload = args.payload !== undefined ? args.payload : args.body;
+  const call = { method, endpoint: normalizedEndpoint.endpoint, payload };
+  if (method !== 'GET') {
+    const approved = await requestBackendApiApproval(call, options);
+    if (!approved) {
+      return {
+        status: 'error',
+        error: `backend_api refused: ${method.toLowerCase()} ${normalizedEndpoint.endpoint} was not approved`,
+      };
+    }
+  }
+
+  const loadCreds = options.loadCredentials || loadCredentials;
+  const credentials = loadCreds();
+  const token = credentials && credentials.token ? credentials.token : '';
+  if (!token) {
+    return { status: 'error', error: 'backend_api refused: not logged in' };
+  }
+
+  const apiFn = options.apiRequestJson || apiRequestJson;
+  const baseFn = options.getApiBaseUrl || getApiBaseUrl;
+  const requestPath = apiRequestPathForBackendEndpoint(normalizedEndpoint.endpoint, baseFn());
+  const response = await apiFn(requestPath, {
+    method,
+    token,
+    ...(method === 'GET' ? {} : { body: payload === undefined ? {} : payload }),
+    timeoutMs: options.timeoutMs || 30000,
+  });
+  const summary = summarizeBackendApiResponse(response);
+  const receipt = formatBackendApiReceipt({
+    method,
+    endpoint: normalizedEndpoint.endpoint,
+    status: response && typeof response.status === 'number' ? response.status : 0,
+    summary,
+  });
+  return {
+    status: response && response.ok ? 'ok' : 'error',
+    method: method.toLowerCase(),
+    endpoint: normalizedEndpoint.endpoint,
+    status_code: response && typeof response.status === 'number' ? response.status : 0,
+    summary,
+    receipt,
+    response: response && response.data !== undefined && response.data !== null
+      ? response.data
+      : truncateSingleLine(response && response.text, 4000),
+    ...(response && response.ok ? {} : { error: (response && response.error) || summary || 'request failed' }),
+  };
 }
 
 function defaultAuthority(id) {
@@ -2242,7 +2452,8 @@ function buildPayload(message, options = {}) {
     message: buildMessage(message, options.history || []),
     model: modelForMode(mode),
     max_turns: local ? (mode === 'fast' ? 16 : 24) : 1,
-    verify_command: verifyCommand || 'true'
+    verify_command: verifyCommand || 'true',
+    local_tools: [backendApiToolDescriptor()]
   };
   if (previousMessages.length) {
     payload.previous_messages = previousMessages;
@@ -2371,7 +2582,15 @@ function handleEvent(event, state, output) {
       state.relay.chain = state.relay.chain
         .then(() => state.relay.execute(event.name, args))
         .catch((err) => ({ status: 'error', error: String(err.message || err).slice(0, 500) }))
-        .then((result) => state.relay.post(event.call_id, result))
+        .then((result) => {
+          if (result && result.receipt) {
+            flushPendingText(state, output);
+            writeAuxLine(state, output, formatAuxRow('receipt', result.receipt, output));
+            state.lastAux = 'receipt';
+          }
+          return result;
+        })
+        .then((result) => state.relay.post(event.call_id || event.id, result))
         .catch((err) => state.errors.push(`tool relay failed: ${err.message}`));
     }
     return;
@@ -2476,11 +2695,34 @@ async function postTurn(message, options = {}) {
     markdownMode: 'normal',
     markdownBuffer: '',
     markdownCarry: '',
-    relay: options.business ? {
+    relay: {
       chain: Promise.resolve(),
-      execute: options.business.executor,
-      post: (callId, result) => options.business.postToolResult(callId, result, backendBaseUrl({ route: 'cloud' }))
-    } : null
+      execute: async (name, args) => {
+        if (name === BACKEND_API_TOOL_NAME) {
+          return executeBackendApiTool(args, {
+            input: options.input,
+            output,
+            approveBackendApi: options.approveBackendApi,
+            apiRequestJson: options.apiRequestJson,
+            loadCredentials: options.loadCredentials,
+            getApiBaseUrl: options.getApiBaseUrl,
+            timeoutMs: options.backendApiTimeoutMs,
+          });
+        }
+        if (options.business) return options.business.executor(name, args);
+        return { status: 'error', error: `unsupported relayed tool: ${name || '?'}` };
+      },
+      post: (callId, result) => {
+        if (options.business) {
+          return options.business.postToolResult(callId, result, backendBaseUrl({ route: 'cloud' }));
+        }
+        return postJson(BACKEND_API_TOOL_RESULT_PATH, { call_id: callId, result }, {
+          token,
+          route: endpointRoute,
+          timeoutMs: 30000,
+        });
+      }
+    }
   };
 
   return new Promise((resolve, reject) => {
@@ -2884,7 +3126,22 @@ async function chat(options = {}) {
       lastCompactionNotice = compactedTurns;
       output.write(`${paint(`· context: ${compactedTurns} earlier turn${compactedTurns === 1 ? '' : 's'} compacted into a digest`, [ANSI.muted], output)}\n`);
     }
-    const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId, turnId });
+    const result = await turnFunction(trimmed, {
+      mode,
+      cwd,
+      history,
+      input,
+      output,
+      route,
+      business: options.business,
+      verify: options.verify,
+      conversationId,
+      turnId,
+      approveBackendApi: options.approveBackendApi,
+      apiRequestJson: options.apiRequestJson,
+      loadCredentials: options.loadCredentials,
+      getApiBaseUrl: options.getApiBaseUrl,
+    });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
     const approvalExecution = normalizeMode(mode) === 'code-fast'
       ? null
@@ -3951,6 +4208,8 @@ module.exports = {
   listWorkspaceApprovals,
   pendingWorkspaceApprovalsSince,
   backendBaseUrl,
+  backendApiAllowlistEntry,
+  backendApiToolDescriptor,
   backendStartCommand,
   backendUrl,
   buildCodeFastPayload,
@@ -3973,6 +4232,9 @@ module.exports = {
   denyStoredApproval,
   executeApprovalRequest,
   executeApprovalFromState,
+  executeBackendApiTool,
+  formatBackendApiApprovalPrompt,
+  formatBackendApiReceipt,
   formatDoneLine,
   formatDuration,
   formatApprovalExecutionResult,
