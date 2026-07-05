@@ -490,6 +490,48 @@ test('mission doctor flags no-verifier, help, stale ready receipts, and blocked 
   }
 });
 
+test('mission doctor skips drive-parked no-verifier missions but flags stale paused ones', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-drive-parked',
+      slug: 'mission-drive-parked',
+      objective: 'drive parked no verifier mission',
+      status: 'paused',
+      verifier: '',
+      paused_at: '2026-06-30T00:00:00.000Z',
+      stop_reason: 'drive: no verifier + stale, auto-parked (restart with a --verify to resume)',
+      created_at: '2026-06-30T00:00:00.000Z',
+      updated_at: '2026-06-30T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'mission-stale-paused',
+      slug: 'mission-stale-paused',
+      objective: 'stale paused mission still needs a verifier',
+      status: 'paused',
+      verifier: '',
+      paused_at: '2026-06-30T00:01:00.000Z',
+      stop_reason: 'paused without verifier for later',
+      created_at: '2026-06-30T00:01:00.000Z',
+      updated_at: '2026-06-30T00:01:00.000Z',
+    });
+
+    const doctor = runCli(['mission', 'doctor', '--local', '--json'], { cwd: dir });
+    assert.equal(doctor.status, 1);
+    assert.equal(doctor.stderr, '');
+    const payload = JSON.parse(doctor.stdout);
+    assert.equal(payload.checked_count, 2);
+    assert.equal(payload.finding_count, 1);
+    const missingVerifierIds = payload.findings
+      .filter((finding) => finding.code === 'missing_verifier')
+      .map((finding) => finding.mission_id);
+    assert.deepEqual(missingVerifierIds, ['mission-stale-paused']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission doctor passes clean terminal and fresh ready missions', () => {
   const dir = makeTempDir();
   try {

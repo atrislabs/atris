@@ -497,6 +497,42 @@ function runTickBody(root, { json, policy, receipt }) {
     }
   }
 
+  // 3b. janitor, every tick: a mission left paused past 48h and a worktree
+  // already merged into base are the same rot pattern as an unlanded branch —
+  // left alone they accumulate until a human runs `mission stop` and
+  // `worktree cleanup --apply` by hand, which is exactly the chore autoland
+  // exists to remove. Off switch: policy.janitor === false (default on, the
+  // same absent-means-on convention as live_updates/strict_verify). Counts
+  // accumulate in state so the daily digest reports the day's total, not
+  // just the last tick's.
+  receipt.missions_stopped = 0;
+  receipt.worktrees_reaped = 0;
+  if (policy.janitor !== false) {
+    try {
+      const { reapPausedMissions } = require('./mission');
+      const stopped = reapPausedMissions(root);
+      receipt.missions_stopped = stopped.length;
+      if (stopped.length > 0) receipt.missions_stopped_refs = stopped.map((m) => m.id);
+    } catch (err) {
+      receipt.janitor_mission_error = String((err && err.message) || err).slice(0, 200);
+    }
+    try {
+      const { cleanupWorktrees } = require('./worktree');
+      const cleaned = cleanupWorktrees({ root, apply: true });
+      receipt.worktrees_reaped = cleaned.removed.length;
+      if (cleaned.removed.length > 0) receipt.worktrees_reaped_paths = cleaned.removed.map((w) => w.path);
+    } catch (err) {
+      receipt.janitor_worktree_error = String((err && err.message) || err).slice(0, 200);
+    }
+    if (receipt.missions_stopped || receipt.worktrees_reaped) {
+      const tally = state.janitor && typeof state.janitor === 'object' ? state.janitor : {};
+      state.janitor = {
+        missions_stopped: (Number(tally.missions_stopped) || 0) + receipt.missions_stopped,
+        worktrees_reaped: (Number(tally.worktrees_reaped) || 0) + receipt.worktrees_reaped,
+      };
+    }
+  }
+
   // 4. daily digest at the configured hour
   const today = new Date().toISOString().slice(0, 10);
   const digestHour = Number(policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR);
@@ -509,6 +545,7 @@ function runTickBody(root, { json, policy, receipt }) {
       nextMoves: digestNextMoves(root),
       acceptAll: Boolean(policy.accept_all),
       reapError: state.last_reap_error?.error || null,
+      janitor: state.janitor || null,
     });
     if (policy.imessage_to) {
       const sent = autoland.sendImessage(root, policy.imessage_to, text);
@@ -516,6 +553,7 @@ function runTickBody(root, { json, policy, receipt }) {
     }
     receipt.digest_text = text;
     state.last_digest_date = today;
+    delete state.janitor;
 
     // 5. once a day, keep the receipt shelf lean: compress old run receipts
     // into the manifest and drop unreferenced clutter, newest 200 kept.
@@ -577,7 +615,8 @@ function runTickBody(root, { json, policy, receipt }) {
   if (json) console.log(JSON.stringify(receipt));
   else {
     const reapNote = receipt.reaped ? `, reaped ${receipt.reaped.branches} landed/overdue branches` : '';
-    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}`);
+    const janitorNote = `, janitor stopped ${receipt.missions_stopped} mission${receipt.missions_stopped === 1 ? '' : 's'} + reaped ${receipt.worktrees_reaped} worktree${receipt.worktrees_reaped === 1 ? '' : 's'}`;
+    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}${janitorNote}`);
   }
   return 0;
 }
