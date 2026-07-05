@@ -15901,6 +15901,8 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['integrations', '--help'],
     ['skill', '--help'],
     ['member', '--help'],
+    ['business', 'init', '--help'],
+    ['business', 'create', '--help'],
     ['plugin', '--help'],
     ['experiments', '--help'],
     ['receipt', '--help'],

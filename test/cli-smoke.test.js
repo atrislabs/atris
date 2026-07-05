@@ -678,6 +678,21 @@ test('skill create rejects flag-shaped names instead of making a junk folder', (
   }
 });
 
+test('business create rejects help flags instead of making a ghost business', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  try {
+    const res = runCli(['business', 'init', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Usage: atris business/);
+    assert.doesNotMatch(res.stdout + res.stderr, /Creating business/);
+    assert.equal(fs.existsSync(path.join(home, '.atris', 'businesses.json')), false);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
 test('align --help prints usage even when a business is bound', () => {
   const dir = makeTempDir();
   try {
