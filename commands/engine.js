@@ -276,11 +276,8 @@ function runDispatchCommand(args, root) {
     console.error(`engine dispatch: --engine must be one of ${FLEET_CAPABLE.join(', ')}`);
     return 2;
   }
-  const def = RUNNER_PROFILE_DEFS[canonical];
-  if (!binInstalled(def.bin)) {
-    console.error(`engine dispatch: ${canonical} CLI (${def.bin}) is not installed here`);
-    return 2;
-  }
+  // Argument-shape errors surface before environment errors: --prompt-file
+  // with multiple ids is wrong on any machine, installed CLI or not.
   let promptOverride = '';
   if (promptFile) {
     if (taskIds.length > 1) {
@@ -293,6 +290,11 @@ function runDispatchCommand(args, root) {
       console.error(`engine dispatch: could not read --prompt-file ${promptFile}: ${err.message}`);
       return 2;
     }
+  }
+  const def = RUNNER_PROFILE_DEFS[canonical];
+  if (!binInstalled(def.bin)) {
+    console.error(`engine dispatch: ${canonical} CLI (${def.bin}) is not installed here`);
+    return 2;
   }
   return runDispatchFlight({ root, taskIds, engine: canonical, prompt: promptOverride }).then((flight) => {
     if (json) console.log(JSON.stringify(flight, null, 2));
