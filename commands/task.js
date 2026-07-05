@@ -112,6 +112,13 @@ function taskUsageText() {
   return `
 atris task - durable local task state (SQLite, gitignored)
 
+  golden path (zero human turns):
+    atris task delegate "fix the login bug" --to <member>
+    atris task claim <id> --as <member>
+    ... build ...
+    atris task ready <id> --verify
+    atris autoland tick   # second check runs, task lands
+
   atris task                              Show the task desk
   atris task new "<title>"                Create a task
   atris task next [--tag <tag>] [--create-next]

@@ -512,6 +512,12 @@ function showHelp() {
   console.log('  harvest    - Find bugs and next actions from receipts, run logs, and thinking');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
   console.log('  task       - Local agent task plane (atomic claims, TODO import)');
+  console.log('  golden path (zero human turns):');
+  console.log('    atris task delegate "fix the login bug" --to <member>');
+  console.log('    atris task claim <id> --as <member>');
+  console.log('    ... build ...');
+  console.log('    atris task ready <id> --verify');
+  console.log('    atris autoland tick   # second check runs, task lands');
   console.log('  mission    - Goal + loop + member owner + verifier + receipt');
   console.log('  release    - Tag release, bump version, create GitHub release, draft /launch');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
