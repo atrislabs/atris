@@ -7,6 +7,7 @@ const {
   runBench,
   taskMetadata,
 } = require('../lib/bench/runner');
+const { buildBenchReport, renderBenchReportText } = require('../lib/bench/report');
 
 function hasFlag(args, name) {
   return args.includes(name);
@@ -41,6 +42,7 @@ function printHelp() {
   console.log('Usage: atris bench results [--last N] [--json]');
   console.log('Usage: atris bench tasks [--pack <id>] [--json]');
   console.log('Usage: atris bench packs [--json]');
+  console.log('Usage: atris bench report [--pack agents-v1] [--json]');
 }
 
 function printRunText(record) {
@@ -140,6 +142,31 @@ function resultsCommand(args) {
   return 0;
 }
 
+function reportCommand(args) {
+  const pack = readFlag(args, '--pack') || undefined;
+  const asJson = hasFlag(args, '--json');
+  try {
+    const report = buildBenchReport({ pack, stateRoot: process.cwd() });
+    if (asJson) {
+      console.log(JSON.stringify(report));
+      return 0;
+    }
+    console.log(renderBenchReportText(report));
+    return 0;
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    if (asJson) {
+      console.log(JSON.stringify({
+        schema: 'atris.bench.error.v1',
+        error: message,
+      }));
+    } else {
+      console.error(`atris bench: ${message}`);
+    }
+    return 2;
+  }
+}
+
 async function benchCommand(args = []) {
   const subcommand = args[0] || 'run';
   const rest = args.slice(1);
@@ -151,6 +178,7 @@ async function benchCommand(args = []) {
   if (subcommand === 'tasks') return tasksCommand(rest);
   if (subcommand === 'packs') return packsCommand(rest);
   if (subcommand === 'results') return resultsCommand(rest);
+  if (subcommand === 'report') return reportCommand(rest);
   printHelp();
   return 2;
 }
