@@ -111,6 +111,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 ## By-Feature Map
 
+- **atris report:** `commands/report.js` renders a weekly operator block from landings, journals, and Career XP with coverage in `test/report.test.js`.
+
 ### Feature: Natural Language Interface (`atris [anything]`)
 
 **Purpose:** Universal entry point - accepts any input and routes intelligently
