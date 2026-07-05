@@ -505,6 +505,7 @@ function showHelp() {
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
   console.log('  recap      - What your AI team did, in plain English (--share for paste-ready)');
+  console.log('  report     - Weekly block: landings, journal completions, and Career XP');
   console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');
   console.log('  search     - Search journal history (atris search <keyword>)');
@@ -986,7 +987,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
-                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'write', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'interview', 'moves', 'unknowns',
+                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'write', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'report', 'signup', 'clarity', 'interview', 'moves', 'unknowns',
                        'github', 'vercel', 'supabase', 'linear', 'stripe', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed'];
 
@@ -2220,6 +2221,14 @@ if (command === 'init') {
   require('../commands/xp').xpCommand(...process.argv.slice(3))
     .then(() => { process.exitCode = 0; })
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'report') {
+  const args = process.argv.slice(3);
+  const { reportCommand, showReportHelp } = require('../commands/report');
+  if (args.includes('--help') || args.includes('-h')) {
+    showReportHelp();
+    process.exit(0);
+  }
+  process.exit(reportCommand(args));
 } else if (command === 'play') {
   require('../commands/play').playCommand(...process.argv.slice(3))
     .then(() => process.exit(0))
