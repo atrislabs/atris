@@ -2,7 +2,7 @@
 
 <!-- Generated from goals.json. Edit with `atris member goal/tick/review` when possible. -->
 
-## Open-world self-improvement game loop: mission creates focused member goals, splits...
+## build the dashboard
 
 - id: goal-2026-05-07-fbee1969
 - status: active

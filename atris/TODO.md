@@ -3,7 +3,6 @@
 > Regenerated from durable Atris task state. Do not treat this file as truth.
 
 ## Backlog
-
 - **[CLI-762]** Ship npm auto-update for packaged installs (git checkouts stay manual) [update]
 - **[CLI-761]** Ship ax connector turn isolation and Gmail receipt previews [ax]
 - **[CLI-760]** Close runner-agnostic heartbeat gap: verify autopilot/run use shared runner-command flags [runner]
