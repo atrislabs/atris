@@ -468,6 +468,7 @@ function runTickBody(root, { json, policy, receipt }) {
     receipt.landed = (parsed.results || []).filter((r) => r.action === 'accepted').map((r) => r.ref);
     receipt.certified = parsed.certified ?? null;
     receipt.scanned = parsed.scanned ?? null;
+    receipt.revised = parsed.revised ?? null;
     receipt.skipped = parsed.skipped ?? null;
     receipt.undercounted = Boolean(parsed.undercounted);
   } catch (err) {
