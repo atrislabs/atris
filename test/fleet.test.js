@@ -37,6 +37,16 @@ test('buildFleetPrompt is generated, bounded, and carries the contract', () => {
   assert.match(prompt, /Final report/);
 });
 
+test('buildFleetPrompt yolo asks the engine to land itself', () => {
+  const prompt = fleet.buildFleetPrompt(TASK, { worktreePath: '/wt/x', yolo: true });
+  assert.match(prompt, /atris worktree guard/);
+  assert.match(prompt, /atris\/MAP\.md first/);
+  assert.match(prompt, /plain-English message/);
+  assert.match(prompt, /atris worktree ship --message "<msg>" --verify "<your focused node --test command>" --merge/);
+  assert.match(prompt, /never resolve conflicts yourself/);
+  assert.doesNotMatch(prompt, /Do not push\. Do not create branches\./);
+});
+
 test('METHOD_KERNEL is exported and fully present in the prompt', () => {
   assert.ok(Array.isArray(fleet.METHOD_KERNEL));
   assert.ok(fleet.METHOD_KERNEL.length >= 6);
@@ -167,6 +177,20 @@ test('landArrival rebases clean arrivals and pauses on conflict without resolvin
   assert.equal(paused.stage, 'rebase_conflict');
   assert.deepEqual(paused.conflicts, ['commands/mission.js']);
   assert.ok(log.includes('rebase --abort'), 'conflict must be aborted, never auto-resolved');
+});
+
+test('defaultSelfLandCheck fetches the target ref and checks HEAD ancestry', () => {
+  const calls = [];
+  const result = fleet.defaultSelfLandCheck({
+    worktreePath: '/wt',
+    git: (args) => {
+      calls.push(args);
+      return { status: 0, stdout: '', stderr: '' };
+    },
+  });
+  assert.deepEqual(calls[0], ['fetch', 'origin', 'master:refs/remotes/origin/master']);
+  assert.deepEqual(calls[1], ['merge-base', '--is-ancestor', 'HEAD', 'origin/master']);
+  assert.deepEqual(result, { ok: true, stage: 'self_landed', target: 'origin/master' });
 });
 
 test('runFleetFlight dry-run staffs from the projection without dispatching', async () => {

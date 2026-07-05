@@ -253,6 +253,7 @@ function parseDispatchArgs(args) {
   let promptFile = '';
   let base = '';
   let json = false;
+  let yolo = false;
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
     if (a === '--engine') { engine = args[i + 1] || ''; i += 1; continue; }
@@ -262,16 +263,17 @@ function parseDispatchArgs(args) {
     if (a === '--base') { base = args[i + 1] || ''; i += 1; continue; }
     if (a.startsWith('--base=')) { base = a.slice('--base='.length); continue; }
     if (a === '--json') { json = true; continue; }
+    if (a === '--yolo') { yolo = true; continue; }
     if (a.startsWith('--')) continue;
     taskIds.push(a);
   }
-  return { taskIds, engine, promptFile, base, json };
+  return { taskIds, engine, promptFile, base, json, yolo };
 }
 
 function runDispatchCommand(args, root) {
-  const { taskIds, engine, promptFile, base, json } = parseDispatchArgs(args);
+  const { taskIds, engine, promptFile, base, json, yolo } = parseDispatchArgs(args);
   if (!taskIds.length || !engine) {
-    console.error('usage: atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>]');
+    console.error('usage: atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]');
     return 2;
   }
   const canonical = canonicalEngineName(engine);
@@ -299,7 +301,7 @@ function runDispatchCommand(args, root) {
     console.error(`engine dispatch: ${canonical} CLI (${def.bin}) is not installed here`);
     return 2;
   }
-  return runDispatchFlight({ root, taskIds, engine: canonical, prompt: promptOverride, ...(base ? { checkoutBase: base } : {}) }).then((flight) => {
+  return runDispatchFlight({ root, taskIds, engine: canonical, prompt: promptOverride, yolo, ...(base ? { checkoutBase: base } : {}) }).then((flight) => {
     if (json) console.log(JSON.stringify(flight, null, 2));
     return flight.paused.length ? 1 : 0;
   });
@@ -338,7 +340,7 @@ function engineCommand(args = []) {
   }
 
   if (sub === 'help') {
-    console.log('\n  atris engine            roster + current default\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+    console.log('\n  atris engine            roster + current default\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
     return 0;
   }
 
