@@ -2628,6 +2628,30 @@ function findHotspot(cwd) {
  *
  * @returns {boolean} true on success, false on malformed sidecar or write error
  */
+function upsertLessonMeta(cwd, slug, patch = {}) {
+  if (!slug || typeof slug !== 'string') return false;
+  const metaPath = path.join(cwd, 'atris', 'lessons.json');
+  let meta = {};
+  if (fs.existsSync(metaPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+      if (parsed && typeof parsed === 'object') meta = parsed;
+    } catch { return false; }
+  }
+  if (!meta[slug] || typeof meta[slug] !== 'object') meta[slug] = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    if (key === 'detector' && value === null) delete meta[slug].detector;
+    else meta[slug][key] = value;
+  }
+  try {
+    const atrisDir = path.join(cwd, 'atris');
+    if (!fs.existsSync(atrisDir)) fs.mkdirSync(atrisDir, { recursive: true });
+    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n');
+    return true;
+  } catch { return false; }
+}
+
 function markLessonAttempted(cwd, slug, reason) {
   if (!slug || typeof slug !== 'string') return false;
   const metaPath = path.join(cwd, 'atris', 'lessons.json');
@@ -3728,6 +3752,7 @@ module.exports = {
   isLessonResolvedLegacy,
   loadLessonMetadata,
   markLessonAttempted,
+  upsertLessonMeta,
   parseLessons,
   pickUnresolvedFailLesson,
   runLessonDetector,

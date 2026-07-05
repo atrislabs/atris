@@ -814,3 +814,44 @@ test('daily tick verifies planning missions after all linked repair tasks close'
     cleanupTempDir(base);
   }
 });
+
+test('daily experiment hook runs when policy allows', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', daily_experiment: true });
+    autoland.writeState(repo, {
+      alerts: {},
+      last_reap_date: new Date().toISOString().slice(0, 10),
+      last_digest_date: new Date().toISOString().slice(0, 10),
+    });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.ok(receipt.daily_experiment);
+    assert.equal(receipt.daily_experiment_skipped, undefined);
+    assert.equal(receipt.daily_experiment.result.reason, 'queue_empty');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('daily experiment hook is skipped when daily_experiment is false', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', daily_experiment: false });
+    autoland.writeState(repo, {
+      alerts: {},
+      last_reap_date: new Date().toISOString().slice(0, 10),
+      last_digest_date: new Date().toISOString().slice(0, 10),
+    });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.daily_experiment_skipped, true);
+    assert.equal(receipt.daily_experiment, undefined);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
