@@ -276,8 +276,10 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
     // copies bank everything force-remove would destroy. The fresh-worktree
     // grace was already applied when candidates were selected.
     if (w.dirty > 0 && !salvageWorktree(w, dir, receipt)) {
-      // could not fully back up what force-remove would destroy — keep it
-      receipt.keptWorktrees.push(w.path);
+      // could not fully back up what force-remove would destroy — keep it,
+      // and say why: a bare path in the receipt reads as an unexplained
+      // no-op (the exact silence BCK-1232 was about).
+      receipt.keptWorktrees.push(`${w.path} (salvage incomplete — patch/copy failed, kept to avoid losing work)`);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
@@ -304,7 +306,15 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
       continue;
     }
     const deleted = runGit(['branch', '-D', name], { cwd: root, check: false });
-    if (deleted.status === 0) receipt.deletedBranches.push(name);
+    if (deleted.status === 0) {
+      receipt.deletedBranches.push(name);
+    } else {
+      // Same silence class as the worktree-remove path: a branch checked
+      // out in a side copy the board never saw makes -D refuse, and an
+      // unreported refusal reads as "cleanup done" with nothing cleared.
+      const reason = String(deleted.stderr || deleted.stdout || 'branch delete failed').trim().slice(0, 160);
+      receipt.keptWorktrees.push(`branch ${name} (${reason})`);
+    }
   }
 
   if (remote && receipt.deletedBranches.length > 0) {
