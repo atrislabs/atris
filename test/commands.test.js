@@ -13429,8 +13429,12 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(payload.queue.counts.review, 2);
     assert.equal(payload.queue.counts.certified, 1);
     assert.equal(payload.queue.counts.blocking, 1);
-    assert.equal(payload.queue.items.length, 1);
+    assert.equal(payload.queue.items.length, 2);
     assert.equal(payload.queue.items[0].display_id, certifiedTask.display_id);
+    const blockedQueueItem = payload.queue.items.find(item => item.display_id === blockingTask.display_id);
+    assert.equal(blockedQueueItem.queue_role, 'blocked');
+    assert.equal(blockedQueueItem.reason, 'needs_second_actor_review');
+    assert.equal(blockedQueueItem.next_command, `atris task review-chat ${blockingTask.display_id} --as codex-review`);
 	    assert.deepEqual(payload.queue.items[0].landing, {
 	      happened: 'Certified proof packet is ready for human approval.',
 	      reason: 'Human approval queue shows a compact certified packet without stale objective text.',
@@ -13464,6 +13468,7 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.match(text.stdout, /What I tested: I ran the focused review queue test\./);
     assert.match(text.stdout, /Saved: Result is ready for human approval as .*?\./);
     assert.match(text.stdout, /Decision: Accept if the packet is readable; rework if proof is vague\./);
+    assert.match(text.stdout, new RegExp(`blocked: ${blockingTask.display_id}: needs_second_actor_review; next: atris task review-chat ${blockingTask.display_id} --as codex-review`));
     assert.doesNotMatch(text.stdout, /   details:/);
     assert.doesNotMatch(text.stdout, /   receipt:/);
     assert.doesNotMatch(text.stdout, /   \/codex:/);
