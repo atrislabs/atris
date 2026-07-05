@@ -1583,6 +1583,10 @@ if (command === 'init') {
   Promise.resolve(require('../commands/probe').probeCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'search') {
+  Promise.resolve(require('../commands/search').searchCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'worktree') {
   Promise.resolve(require('../commands/worktree').worktreeCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))

@@ -112,6 +112,9 @@ function atrisCliCommand(args) {
     } else if (op === 'slack_search') {
       const query = String(args.query || '');
       if (query) argv = ['slack', 'search', query, '--limit', '20'];
+    } else if (op === 'atris_search') {
+      const query = String(args.query || '');
+      if (query) argv = ['search', query, '--limit', '20', '--json'];
     }
   }
   if (!argv) return null;
