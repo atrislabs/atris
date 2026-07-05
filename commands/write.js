@@ -25,7 +25,16 @@ const { spawnSync } = require('child_process');
 const { scanFile, RULES, loadProjectRules } = require('./slop');
 
 const WRITING_DIR = path.join('atris', 'writing');
-const DEFAULT_BEATS = ['Hook', 'Thesis', 'Evidence', 'Counterpunch', 'Landing'];
+// Beats are question-shaped (Pollan: "almost everything I write is a quest to
+// answer a question"). The piece has suspense built in structurally: each beat
+// exists to answer its question, and the reader wonders if you will.
+const DEFAULT_BEATS = [
+  { title: 'Hook', q: 'What is the moment this became a question for you? Start naive: wonder on page one, never lecture.' },
+  { title: 'Thesis', q: 'What is the question this piece exists to answer? Pose it so the reader has to know.' },
+  { title: 'Evidence', q: 'What did you actually see happen? The specific thing, not the category. Spread facts thin so the story never sags.' },
+  { title: 'Counterpunch', q: 'What would a smart skeptic say back? Steelman it, then answer in your own words.' },
+  { title: 'Landing', q: 'Did you answer the question you posed? Say what the reader should do or believe now, and stop.' },
+];
 const STATE_ICON = { ' ': '·', '~': '◐', x: '●' };
 const STATE_WORD = { ' ': 'empty', '~': 'drafted', x: 'passed' };
 
@@ -54,14 +63,19 @@ function resolveSlug(maybeSlug, root = process.cwd()) {
   return sessions.length ? sessions[0].slug : null;
 }
 
-// Parse plan.md → { topic, beats: [{ n, state, title }] }
+// Parse plan.md → { topic, beats: [{ n, state, title, q }] }
+// A beat line may be followed by an indented `? question` line: the question that beat answers.
 function readPlan(slug, root = process.cwd()) {
   const text = fs.readFileSync(path.join(sessionDir(slug, root), 'plan.md'), 'utf8');
   const topic = (text.match(/^# plan: (.+)$/m) || [, slug])[1];
   const beats = [];
-  const re = /^- \[([ ~x])\] (\d+)\. (.+)$/gm;
-  let m;
-  while ((m = re.exec(text)) !== null) beats.push({ state: m[1], n: +m[2], title: m[3].trim() });
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^- \[([ ~x])\] (\d+)\. (.+)$/);
+    if (!m) continue;
+    const qm = (lines[i + 1] || '').match(/^\s+\? (.+)$/);
+    beats.push({ state: m[1], n: +m[2], title: m[3].trim(), q: qm ? qm[1].trim() : null });
+  }
   return { topic, beats, text };
 }
 
@@ -116,7 +130,9 @@ function start(argv, root = process.cwd()) {
   const flag = (name) => { const i = argv.indexOf(name); return i !== -1 ? argv[i + 1] : null; };
   const dump = flag('--dump');
   const beatsArg = flag('--beats');
-  const beats = beatsArg ? beatsArg.split('|').map((s) => s.trim()).filter(Boolean) : DEFAULT_BEATS;
+  const beats = beatsArg
+    ? beatsArg.split('|').map((s) => s.trim()).filter(Boolean).map((t) => ({ title: t, q: GENERIC_QUESTION(t) }))
+    : DEFAULT_BEATS;
 
   const slug = slugify(topic);
   const dir = sessionDir(slug, root);
@@ -128,12 +144,13 @@ function start(argv, root = process.cwd()) {
     `# plan: ${topic}`, '',
     '## Dump', ...dumpLines, '',
     '## Outline',
-    ...beats.map((b, i) => `- [ ] ${i + 1}. ${b}`), '',
+    ...beats.flatMap((b, i) => [`- [ ] ${i + 1}. ${b.title}`, `      ? ${b.q}`]), '',
     '## Gate',
     '- review: atris write review runs the taste checklist + slop scan',
-    '- pass: you call `atris write pass <n>` when a beat holds up — the AI never calls it', '',
+    '- pass: you call `atris write pass <n>` when a beat holds up. The AI never calls it.',
+    '- inflow: once drafting starts, no new research. Work with what you have.', '',
   ].join('\n');
-  const draft = [`# ${topic}`, '', ...beats.flatMap((b) => [`## ${b}`, '']), ''].join('\n');
+  const draft = [`# ${topic}`, '', ...beats.flatMap((b) => [`## ${b.title}`, '']), ''].join('\n');
 
   fs.writeFileSync(path.join(dir, 'plan.md'), plan);
   fs.writeFileSync(path.join(dir, 'draft.md'), draft);
@@ -141,8 +158,9 @@ function start(argv, root = process.cwd()) {
   console.log(`\n  ✓ session started: ${slug}`);
   console.log(`    plan:  ${path.relative(root, path.join(dir, 'plan.md'))}`);
   console.log(`    draft: ${path.relative(root, path.join(dir, 'draft.md'))}  ← you write here, every word`);
-  console.log(`\n  beats: ${beats.join(' → ')}`);
-  console.log(`  next: open the draft, land a beat, then \`atris write status\`\n`);
+  console.log(`\n  beats: ${beats.map((b) => b.title).join(' → ')}`);
+  console.log(`  first question: ${beats[0].q}`);
+  console.log(`  next: open the draft, answer under "## ${beats[0].title}", then \`atris write\`\n`);
   return 0;
 }
 
@@ -161,7 +179,7 @@ function status(argv, root = process.cwd()) {
     console.log(`  ${STATE_ICON[b.state]} ${String(b.n).padStart(2)}. ${b.title.padEnd(24)} ${STATE_WORD[b.state].padEnd(8)} ${words ? `${words} words` : ''}`);
   }
   const next = beats.find((b) => b.state === ' ') || beats.find((b) => b.state === '~');
-  if (next) console.log(`\n  next: ${next.state === ' ' ? 'write' : 'review'} "${next.title}"${next.state === '~' ? ` — then \`atris write pass ${next.n}\` if it holds` : ''}\n`);
+  if (next) console.log(`\n  next: ${next.state === ' ' ? `answer "${beatQuestion(next)}"` : `review "${next.title}", then \`atris write pass ${next.n}\` if it holds`}\n`);
   else console.log(`\n  all beats passed. run \`atris write review\` for the final gate.\n`);
   return 0;
 }
@@ -233,15 +251,21 @@ function list(root = process.cwd()) {
 
 // ---- coach: intelligent, proactive, gets the writer going. Never writes prose. ----
 
-// Deterministic question bank: the offline coach. One pointed question beats a blank page.
-const BEAT_QUESTIONS = {
-  hook: 'What is the moment this became a problem for you? Start there, in one sentence.',
-  thesis: 'Say your point out loud in one sentence, like you are telling a friend. Type exactly that.',
-  evidence: 'What did you actually see happen? Name the specific thing, not the category.',
-  counterpunch: 'What would a smart skeptic say back? Steelman it, then answer in your own words.',
-  landing: 'What should the reader do or believe differently now? Say it plainly and stop.',
-};
-const GENERIC_QUESTION = (title) => `What is the one thing "${title}" has to say for the piece to work? Answer in your own words.`;
+const GENERIC_QUESTION = (title) => `What question does "${title}" answer for the reader? Answer it in your own words.`;
+
+function beatQuestion(beat) {
+  return beat.q || GENERIC_QUESTION(beat.title);
+}
+
+// Pollan: re-edit the whole piece before writing anything new. It primes the pump
+// and loads the draft back into short-term memory. Fires when you return to a
+// session on a later day.
+function isReturningSession(slug, root) {
+  try {
+    const m = fs.statSync(path.join(sessionDir(slug, root), 'draft.md')).mtime;
+    return m.toDateString() !== new Date().toDateString();
+  } catch { return false; }
+}
 
 function dumpSeeds(planText) {
   const m = planText.match(/## Dump\n([\s\S]*?)(\n## |$)/);
@@ -268,6 +292,12 @@ function coachPrompt({ topic, beats, counts, findings, planText, draftText, curr
     '- You NEVER write, rewrite, or suggest replacement prose for the draft. Not one sentence.',
     '- You coach: point at what the writer did well IN THEIR OWN WORDS, ask one question, teach one style lesson.',
     '- Be warm and direct. No em dashes. No hype words. Sentence case. Under 140 words total.',
+    '',
+    'Coaching doctrine (Pollan):',
+    '- Every beat answers a question. Suspense comes from whether the writer answers it.',
+    '- Idiot on page one: the hook should wonder, never lecture. Voice starts naive, sophisticates as it goes.',
+    '- Narrative depends on conflict; spread exposition thin or the story sags.',
+    '- Once drafting starts, no new information: work with what the writer has and what they remember.',
     '',
     'Output EXACTLY these three sections:',
     'CHEER: quote the writer\'s single best sentence from the draft verbatim and say specifically why it works. If the draft is empty, cheer the strongest dump line instead.',
@@ -298,6 +328,12 @@ function coach(argv, root = process.cwd()) {
   console.log(`\n  coach · ${topic}`);
   console.log(`  ${beats.map((b) => STATE_ICON[b.state]).join(' ')}   ${totalWords} words in, ${done}/${beats.length} beats passed\n`);
 
+  // Day-two ritual: prime the pump before anything new lands.
+  if (totalWords > 0 && isReturningSession(slug, root)) {
+    console.log('  welcome back. before anything new: read the whole draft, top to bottom, and touch it up.');
+    console.log('  it loads the piece back into your head, and it quietly makes your opening the best part.\n');
+  }
+
   if (!offline && claudeAvailable()) {
     const prompt = coachPrompt({ topic, beats, counts, findings, planText, draftText, currentBeat: current.title });
     const res = spawnSync('claude', ['-p', prompt], { encoding: 'utf8', timeout: 120000, maxBuffer: 1024 * 1024 });
@@ -315,14 +351,13 @@ function coach(argv, root = process.cwd()) {
   // Offline coach: still proactive, still gets you going. Seeds + one question.
   const seeds = dumpSeeds(planText);
   if (totalWords > 0) {
-    console.log(`  you have ${totalWords} words down. that is a draft in motion, keep it moving.`);
+    console.log(`  you have ${totalWords} words down. inflow is closed: work with what you have and what you remember.`);
   } else if (seeds.length) {
     console.log('  your raw material (pick the line with the most heat and start there):');
     for (const s of seeds.slice(0, 4)) console.log(`    · ${s}`);
   }
-  const q = BEAT_QUESTIONS[current.title.toLowerCase()] || GENERIC_QUESTION(current.title);
   console.log(`\n  next beat: ${current.title}`);
-  console.log(`  question: ${q}`);
+  console.log(`  question: ${beatQuestion(current)}`);
   if (findings.length) console.log(`\n  while you are in there: ${findings.length} slop tell${findings.length === 1 ? '' : 's'} to fix in your own words (atris write review for the list)`);
   console.log(`\n  your move: answer under "## ${current.title}" in draft.md, then \`atris write status\`\n`);
   return 0;

@@ -125,3 +125,43 @@ test('dumpSeeds extracts raw dump lines from the plan', () => {
   const plan = readPlan('seeds', root);
   assert.deepEqual(dumpSeeds(plan.text), ['first idea.', 'second idea.']);
 });
+
+test('beats are question-shaped: plan stores a question per beat', () => {
+  const root = tmpRoot();
+  start(['Questions'], root);
+  const plan = readPlan('questions', root);
+  assert.ok(plan.beats.every((b) => b.q && b.q.includes('?')), 'every default beat carries a question');
+  assert.match(plan.beats[0].q, /wonder|question/i);
+});
+
+test('custom beats get a generic question', () => {
+  const root = tmpRoot();
+  start(['Custom Q', '--beats', 'Open | Close'], root);
+  const plan = readPlan('custom-q', root);
+  assert.match(plan.beats[0].q, /What question does "Open" answer/);
+});
+
+test('day-two coach runs the prime-the-pump ritual on a returning session', () => {
+  const root = tmpRoot();
+  start(['Return'], root);
+  const file = draftPath(root, 'return');
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('## Hook\n', '## Hook\nWords from yesterday.\n'));
+  const yesterday = new Date(Date.now() - 26 * 3600 * 1000);
+  fs.utimesSync(file, yesterday, yesterday);
+  const logs = [];
+  const orig = console.log; console.log = (...a) => logs.push(a.join(' '));
+  try { coach(['return', '--offline'], root); } finally { console.log = orig; }
+  assert.ok(logs.some((l) => /read the whole draft, top to bottom/.test(l)), 'ritual message shown');
+});
+
+test('same-day coach skips the ritual and closes the inflow', () => {
+  const root = tmpRoot();
+  start(['Today'], root);
+  const file = draftPath(root, 'today');
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('## Hook\n', '## Hook\nFresh words today.\n'));
+  const logs = [];
+  const orig = console.log; console.log = (...a) => logs.push(a.join(' '));
+  try { coach(['today', '--offline'], root); } finally { console.log = orig; }
+  assert.ok(!logs.some((l) => /read the whole draft/.test(l)), 'no ritual same day');
+  assert.ok(logs.some((l) => /inflow is closed/.test(l)), 'inflow closes once drafting starts');
+});
