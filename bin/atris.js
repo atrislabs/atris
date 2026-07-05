@@ -503,6 +503,7 @@ function showHelp() {
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
+  console.log('  brief      - one local html page of recent agent activity');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
   console.log('  recap      - What your AI team did, in plain English (--share for paste-ready)');
   console.log('  report     - Weekly block: landings, journal completions, and Career XP');
@@ -989,7 +990,7 @@ const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'stat
                        'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'write', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'report', 'signup', 'clarity', 'interview', 'moves', 'unknowns',
                        'github', 'vercel', 'supabase', 'linear', 'stripe', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
-                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed'];
+                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed', 'brief'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -2534,6 +2535,11 @@ if (command === 'init') {
 } else if (command === 'card') {
   // Card: one line of text into an on-brand image (uses your theme + the design system).
   Promise.resolve(require('../commands/card').run(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'brief') {
+  // Brief: one on-brand local HTML page of recent agent activity.
+  Promise.resolve(require('../commands/brief').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'reel') {
