@@ -8,6 +8,7 @@ const path = require('path');
 const readline = require('readline');
 const crypto = require('crypto');
 const { Readable } = require('stream');
+const permissionGrants = require(path.join(__dirname, 'lib', 'permission-grants.js'));
 const { loadCredentials } = require('./utils/auth');
 const missionRuntime = require('./lib/mission-runtime-loop');
 
@@ -123,6 +124,9 @@ function formatUsage() {
     '  ax --approvals',
     '  ax --approve <approval-id>',
     '  ax --deny <approval-id>',
+    '  ax --grant <approval-id>      approve and remember this exact command (this workspace)',
+    '  ax --grants                   list active permission grants',
+    '  ax --revoke-grant <grant-id>',
     '  ax --self-test',
     '  ax [--max|--fast] --benchmark',
     '',
@@ -1772,10 +1776,56 @@ async function approveWorkspaceApproval(ref, options = {}) {
   return { response, executed };
 }
 
+// A persistent grant (ax --grant) lets an exact approved command pattern
+// redeem itself on later turns instead of re-asking; anything unmatched
+// falls through to the normal hint. Store: ~/.atris/permission-grants.json.
+async function autoRedeemGrantedApprovals(cwd, sinceMs, options = {}) {
+  const redeemed = [];
+  for (const item of pendingWorkspaceApprovalsSince(cwd, sinceMs)) {
+    const record = item.record;
+    if (String(record.action_type || '') !== 'local_command') continue;
+    const command = record.payload && record.payload.command;
+    const grant = permissionGrants.matchGrant({ command, workspaceRoot: cwd });
+    if (!grant) continue;
+    const output = options.output || process.stdout;
+    output.write(`${formatAuxRow('grant', `auto-approved via ${grant.grant_id}: ${grant.pattern.display}`, output)}\n`);
+    try {
+      await approveWorkspaceApproval(record.approval_id, { ...options, cwd, output });
+      permissionGrants.recordUse(grant.grant_id);
+      redeemed.push(record.approval_id);
+    } catch {
+      // Redemption failed: leave the artifact pending so the hint still shows.
+    }
+  }
+  return redeemed;
+}
+
 function writeWorkspaceApprovalHints(cwd, sinceMs, output) {
   for (const item of pendingWorkspaceApprovalsSince(cwd, sinceMs)) {
     output.write(`${formatAuxRow('approve', formatApprovalCommand(item.record.approval_id), output)}\n`);
   }
+}
+
+function deferWriteWorkspaceApprovalHints(cwd, sinceMs, output) {
+  setImmediate(() => {
+    Promise.resolve()
+      .then(() => writeWorkspaceApprovalHints(cwd, sinceMs, output))
+      .catch(() => {});
+  });
+}
+
+function deferPersistPendingApproval(receipt, approvalRequest, options = {}) {
+  setImmediate(() => {
+    Promise.resolve()
+      .then(() => persistPendingApproval(receipt, approvalRequest, options))
+      .catch(() => {});
+  });
+}
+
+function estimateHistoryContext(history = []) {
+  const turns = history.filter(row => row && row.role === 'user').length;
+  const chars = history.reduce((total, row) => total + String((row && row.content) || '').length, 0);
+  return { turns, chars, tokens: Math.ceil(chars / 4) };
 }
 
 function formatStoredApprovals(store, options = {}) {
@@ -3668,6 +3718,31 @@ async function main() {
     args.splice(approveIdx, 2);
   }
 
+  let grantId = '';
+  const grantIdx = args.indexOf('--grant');
+  if (grantIdx !== -1) {
+    grantId = String(args[grantIdx + 1] || '').trim();
+    if (!grantId) {
+      console.error('Usage: ax --grant <approval-id>');
+      process.exit(1);
+    }
+    args.splice(grantIdx, 2);
+  }
+
+  const listGrants = args.includes('--grants');
+  if (listGrants) args.splice(args.indexOf('--grants'), 1);
+
+  let revokeGrantId = '';
+  const revokeGrantIdx = args.indexOf('--revoke-grant');
+  if (revokeGrantIdx !== -1) {
+    revokeGrantId = String(args[revokeGrantIdx + 1] || '').trim();
+    if (!revokeGrantId) {
+      console.error('Usage: ax --revoke-grant <grant-id>');
+      process.exit(1);
+    }
+    args.splice(revokeGrantIdx, 2);
+  }
+
   let denyId = '';
   const denyIdx = args.indexOf('--deny');
   if (denyIdx !== -1) {
@@ -3774,6 +3849,46 @@ async function main() {
       return;
     }
 
+    if (grantId) {
+      const found = findWorkspaceApproval(grantId, process.cwd());
+      if (!found) {
+        console.error(`Pending approval not found: ${grantId}`);
+        process.exit(1);
+      }
+      const command = found.record.payload && found.record.payload.command;
+      const added = permissionGrants.addGrant({ command, workspaceRoot: process.cwd() });
+      if (!added.ok) {
+        console.error(`Not grantable: ${added.reason}`);
+        process.exit(1);
+      }
+      console.log(`granted ${added.grant.grant_id}: ${added.grant.pattern.display} (this workspace, expires ${added.grant.constraints.expires_at.slice(0, 10)})`);
+      await approveWorkspaceApproval(grantId, { cwd: process.cwd(), mode, output: process.stdout });
+      return;
+    }
+
+    if (listGrants) {
+      const store = permissionGrants.loadGrants();
+      const rows = store.grants.filter(g => g.status === 'active');
+      if (!rows.length) {
+        console.log('no active grants');
+      } else {
+        for (const g of rows) {
+          console.log(`${g.grant_id}  ${g.pattern.display}  ${g.scope.workspace_root}  uses:${g.audit?.use_count || 0}  expires:${String(g.constraints?.expires_at || '').slice(0, 10)}`);
+        }
+      }
+      return;
+    }
+
+    if (revokeGrantId) {
+      const revoked = permissionGrants.revokeGrant(revokeGrantId);
+      if (!revoked.ok) {
+        console.error(revoked.reason);
+        process.exit(1);
+      }
+      console.log(`revoked ${revoked.grant.grant_id}: ${revoked.grant.pattern.display}`);
+      return;
+    }
+
     if (printMode) {
       const payload = prompt
         ? await runHeadlessTurn(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify })
@@ -3799,7 +3914,9 @@ async function main() {
       : null;
     if (approvalRecord) console.log(formatAuxRow('approve', formatApprovalCommand(approvalRecord.id), process.stdout));
     // A one-shot has no next turn, so "reply yes to approve" is a dead end;
-    // surface the exact redeem command for anything the turn staged on disk.
+    // granted patterns redeem themselves, everything else gets the exact
+    // redeem command for what the turn staged on disk.
+    await autoRedeemGrantedApprovals(process.cwd(), turnStartedAt, { mode, output: process.stdout });
     writeWorkspaceApprovalHints(process.cwd(), turnStartedAt, process.stdout);
     console.log('');
     console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
@@ -3829,6 +3946,7 @@ module.exports = {
   approvalStorePath,
   approveStoredApproval,
   approveWorkspaceApproval,
+  autoRedeemGrantedApprovals,
   findWorkspaceApproval,
   listWorkspaceApprovals,
   pendingWorkspaceApprovalsSince,
