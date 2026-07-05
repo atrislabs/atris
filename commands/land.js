@@ -8,8 +8,8 @@ const DEFAULT_TTL_DAYS = 7;
 const WORKTREE_REAP_GRACE_MS = 60 * 60 * 1000;
 const PROTECTED_BRANCHES = new Set(['main', 'master']);
 
-function runGit(args, { cwd = process.cwd(), check = true } = {}) {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+function runGit(args, { cwd = process.cwd(), check = true, maxBuffer } = {}) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8', ...(maxBuffer ? { maxBuffer } : {}) });
   if (check && result.status !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${(result.stderr || result.stdout || '').trim()}`);
   }
@@ -165,14 +165,18 @@ function remoteHeads(root) {
 // piece could not be saved — the caller then keeps the worktree.
 function salvageWorktree(w, dir, receipt) {
   try {
-    const diff = runGit(['diff', 'HEAD'], { cwd: w.path, check: false });
-    if (diff.status !== 0) return false;
-    if (diff.stdout.trim()) {
-      const patchPath = path.join(dir, `${path.basename(w.path)}.dirty.patch`);
-      fs.writeFileSync(patchPath, diff.stdout);
-      receipt.patches.push(patchPath);
+    // git writes the patch file itself: routing the diff through spawnSync
+    // stdout hits Node's 1MB default maxBuffer, so any worktree more than
+    // ~1MB dirty read as "salvage failed" and was kept on every reap pass.
+    const patchPath = path.join(dir, `${path.basename(w.path)}.dirty.patch`);
+    const diff = runGit(['diff', 'HEAD', `--output=${patchPath}`], { cwd: w.path, check: false });
+    if (diff.status !== 0) {
+      fs.rmSync(patchPath, { force: true });
+      return false;
     }
-    const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z'], { cwd: w.path, check: false });
+    if (fs.statSync(patchPath).size > 0) receipt.patches.push(patchPath);
+    else fs.rmSync(patchPath, { force: true });
+    const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z'], { cwd: w.path, check: false, maxBuffer: 64 * 1024 * 1024 });
     if (untracked.status !== 0) return false;
     const files = untracked.stdout.split('\0').filter(Boolean);
     if (files.length > 0) {

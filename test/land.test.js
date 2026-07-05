@@ -317,3 +317,30 @@ test('reap leaves a branch alone when it moved after the scan', () => {
     cleanupTempDir(base);
   }
 });
+
+test('reap salvages a worktree whose dirty diff exceeds the 1MB spawn buffer', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    commitOnBranch(repo, 'big-work', 'big.txt', { backdate: '2026-05-01T00:00:00' });
+    const wtPath = path.join(base, 'wt-big');
+    runGit(['worktree', 'add', wtPath, 'big-work'], repo);
+    fs.writeFileSync(path.join(wtPath, 'big.txt'), `uncommitted ${'x'.repeat(2 * 1024 * 1024)}\n`);
+    // age the worktree past the fresh-worktree grace window
+    const staleStamp = new Date(Date.now() - 61 * 60 * 1000);
+    fs.utimesSync(wtPath, staleStamp, staleStamp);
+
+    const result = runCli(['land', '--reap', '--json'], repo);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const receipt = JSON.parse(result.stdout);
+
+    // macOS reports /var/... worktrees back as /private/var/...
+    const normalize = (p) => p.replace(/^\/private\//, '/');
+    assert.deepEqual(receipt.removedWorktrees.map(normalize), [normalize(wtPath)]);
+    assert.ok(receipt.deletedBranches.includes('big-work'));
+    assert.equal(receipt.patches.length, 1);
+    assert.ok(fs.statSync(receipt.patches[0]).size > 1024 * 1024, 'patch must hold the full oversized diff');
+    assert.ok(!fs.existsSync(wtPath));
+  } finally {
+    cleanupTempDir(base);
+  }
+});
