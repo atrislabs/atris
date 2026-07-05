@@ -7,6 +7,9 @@ const { spawnSync } = require('child_process');
 
 const autoland = require('../lib/autoland');
 const { operatorReady, hasAgentJargon } = autoland;
+const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
+const CLOSED_TASK_STATUSES = new Set(['done', 'archived']);
+const MAX_MISSION_AUTO_VERIFY_PER_TICK = 3;
 
 function repoRoot(cwd = process.cwd()) {
   const result = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' });
@@ -60,6 +63,130 @@ function readProjection(root) {
   } catch (err) {
     return [];
   }
+}
+
+function compactId(value) {
+  return String(value || '').trim();
+}
+
+function taskIdentityRefs(task) {
+  return [
+    task?.id,
+    task?.display_id,
+    task?.legacy_ref,
+    task?.ref,
+    task?.task_id,
+    task?.metadata?.task_id,
+    task?.metadata?.display_id,
+    task?.metadata?.ref,
+  ].map(compactId).filter(Boolean);
+}
+
+function taskGoalRefs(task) {
+  return [
+    task?.goal_id,
+    task?.goalId,
+    task?.mission_id,
+    task?.missionId,
+    task?.metadata?.goal_id,
+    task?.metadata?.goalId,
+    task?.metadata?.mission_id,
+    task?.metadata?.missionId,
+    task?.metadata?.goal?.id,
+  ].map(compactId).filter(Boolean);
+}
+
+function missionTaskRefs(mission) {
+  return [
+    ...(Array.isArray(mission?.task_ids) ? mission.task_ids : []),
+    mission?.task_id,
+    mission?.current_task_id,
+    mission?.task_ref,
+    mission?.xp_task?.task_id,
+    mission?.xp_task?.ref,
+  ].map(compactId).filter(Boolean);
+}
+
+function attachedTasksForMission(mission, tasks) {
+  const missionId = compactId(mission?.id);
+  const taskRefs = new Set(missionTaskRefs(mission));
+  return (tasks || []).filter((task) => {
+    if (missionId && taskGoalRefs(task).includes(missionId)) return true;
+    if (taskRefs.size === 0) return false;
+    return taskIdentityRefs(task).some((ref) => taskRefs.has(ref));
+  });
+}
+
+function taskIsClosed(task) {
+  return CLOSED_TASK_STATUSES.has(String(task?.status || '').trim().toLowerCase());
+}
+
+function missionHasVerifier(mission) {
+  return Boolean(String(mission?.verifier || mission?.effective_verifier || '').trim());
+}
+
+function missionReadyForClosedTaskVerify(mission, tasks) {
+  const status = String(mission?.status || '').trim().toLowerCase();
+  if (!MISSION_AUTO_VERIFY_STATUSES.has(status)) return false;
+  if (!missionHasVerifier(mission)) return false;
+  if (mission?.verifier_result?.passed === true) return false;
+  const attached = attachedTasksForMission(mission, tasks);
+  return attached.length > 0 && attached.every(taskIsClosed);
+}
+
+function parseMissionVerifyResult(id, result) {
+  let payload = null;
+  try {
+    payload = JSON.parse(result.stdout || '{}');
+  } catch {}
+  const verifier = payload?.verifier_result || null;
+  const passed = verifier ? verifier.passed === true : null;
+  return {
+    id,
+    result: passed === true ? 'passed' : passed === false ? 'failed' : (payload?.action || (result.status === 0 ? 'tick_recorded' : 'tick_failed')),
+    status: payload?.mission?.status || null,
+    receipt_path: payload?.receipt_path || null,
+    exit_status: result.status,
+  };
+}
+
+function verifyClosedTaskMissions(root, tasks, { limit = MAX_MISSION_AUTO_VERIFY_PER_TICK } = {}) {
+  const verified = [];
+  const errors = [];
+  let candidates = [];
+  try {
+    const { listMissions } = require('./mission');
+    candidates = listMissions(root).filter((mission) => missionReadyForClosedTaskVerify(mission, tasks)).slice(0, limit);
+  } catch (err) {
+    return {
+      verified,
+      errors: [{ error: String((err && err.message) || err).slice(0, 200) }],
+    };
+  }
+
+  for (const mission of candidates) {
+    const result = runOwnCli(root, [
+      'mission',
+      'tick',
+      mission.id,
+      '--verify',
+      '--summary',
+      'All linked repair tasks are closed; autoland re-ran the mission verifier.',
+      '--json',
+    ]);
+    const outcome = parseMissionVerifyResult(mission.id, result);
+    verified.push(outcome);
+    if (result.status !== 0 || outcome.result === 'failed' || outcome.result === 'tick_failed') {
+      errors.push({
+        id: mission.id,
+        result: outcome.result,
+        status: result.status,
+        stderr: String(result.stderr || '').slice(0, 200),
+        stdout: String(result.stdout || '').slice(-500),
+      });
+    }
+  }
+  return { verified, errors };
 }
 
 function landSummarySafe(root) {
@@ -431,6 +558,13 @@ function runTickBody(root, { json, policy, receipt }) {
     } catch (err) {
       receipt.mission_expiry_error = String((err && err.message) || err).slice(0, 200);
     }
+    try {
+      const missionVerify = verifyClosedTaskMissions(root, readProjection(root));
+      if (missionVerify.verified.length > 0) receipt.verified_missions = missionVerify.verified;
+      if (missionVerify.errors.length > 0) receipt.mission_verify_errors = missionVerify.errors;
+    } catch (err) {
+      receipt.mission_verify_errors = [{ error: String((err && err.message) || err).slice(0, 200) }];
+    }
     state.last_reap_date = today;
     // a failed sweep must not be a secret: status and the next digest carry
     // it until a sweep succeeds. The date gate above still holds so a broken
@@ -490,4 +624,11 @@ function autolandCommand(args = []) {
   return 1;
 }
 
-module.exports = { autolandCommand, operatorReady, hasAgentJargon };
+module.exports = {
+  autolandCommand,
+  attachedTasksForMission,
+  missionReadyForClosedTaskVerify,
+  operatorReady,
+  hasAgentJargon,
+  verifyClosedTaskMissions,
+};

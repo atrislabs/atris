@@ -201,6 +201,25 @@ function countTaskReceiptsToday(root = process.cwd(), date = new Date()) {
   return seen.size;
 }
 
+function compactLine(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function currentMissionMoveLine(root = process.cwd()) {
+  try {
+    const { selectCodexGoalMission, codexGoalNextCommand } = require('./mission');
+    const selected = selectCodexGoalMission(root);
+    const mission = selected?.mission || null;
+    if (!mission) return null;
+    const objective = compactLine(mission.objective);
+    const next = compactLine(codexGoalNextCommand(mission));
+    if (!objective || !next) return null;
+    return `The move: ${objective} — next: ${next}`;
+  } catch {
+    return null;
+  }
+}
+
 function currentJournalPath(root = process.cwd()) {
   const now = new Date();
   const year = String(now.getFullYear());
@@ -218,6 +237,10 @@ function renderDefaultNow(root = process.cwd()) {
   const taskReceiptCount = countTaskReceiptsToday(root);
   const completedCount = taskReceiptCount || countJournalCompletedReceipts(journalPath);
   const generated = todayIso();
+  const moveLine = currentMissionMoveLine(root);
+  const whatMattersNow = moveLine
+    ? `${moveLine}\n\n- Decide the next useful move before opening more context.`
+    : '- Decide the next useful move before opening more context.';
 
   return `# now
 
@@ -228,7 +251,7 @@ Last updated: ${generated}
 
 ## What Matters Now
 
-- Decide the next useful move before opening more context.
+${whatMattersNow}
 
 ## Current Priority
 
@@ -425,6 +448,7 @@ module.exports = {
   countOpenWorkItems,
   countOpenTodoItems,
   countTaskReceiptsToday,
+  currentMissionMoveLine,
   findChildWorkspaces,
   isGeneratedNowFile,
   nowAtris,

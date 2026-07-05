@@ -7524,6 +7524,7 @@ module.exports = {
   selectDueMission,
   selectAtrisGoalMission,
   selectCodexGoalMission,
+  codexGoalNextCommand,
   usefulClaudeReceiptSummary,
   cappedClaudeReceiptText,
   extractLayerFromReceiptText,

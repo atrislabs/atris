@@ -563,3 +563,67 @@ test('daily tick expires missions parked for a week, keeps fresh and running one
     cleanupTempDir(base);
   }
 });
+
+test('daily tick verifies planning missions after all linked repair tasks close', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const missionId = 'mission-closed-task-planning';
+    fs.writeFileSync(path.join(repo, 'proof.txt'), 'verifier can pass\n', 'utf8');
+    const add = runCli([
+      'task',
+      'add',
+      'Repair the golden path blocker',
+      '--tag',
+      'golden-path',
+      '--goal-id',
+      missionId,
+      '--json',
+    ], repo);
+    assert.equal(add.status, 0, add.stderr || add.stdout);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'builder'], repo).status, 0);
+    assert.equal(runCli([
+      'task',
+      'ready',
+      ref,
+      '--proof',
+      'Command passed: git diff --check. Evidence inspected: repair task can close before the mission verifier re-runs.',
+      '--as',
+      'builder',
+      '--json',
+    ], repo).status, 0);
+
+    const stateDir = path.join(repo, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), `${JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: missionId,
+      owner: 'onboarding',
+      objective: 'Golden path closure smoke',
+      status: 'planning',
+      runner: 'manual',
+      cadence: 'manual',
+      verifier: 'test -f proof.txt',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })}\n`);
+
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', accept_all: true });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.deepEqual(receipt.verified_missions.map((mission) => mission.id), [missionId]);
+    assert.equal(receipt.verified_missions[0].result, 'passed');
+    assert.equal(receipt.mission_verify_errors, undefined, JSON.stringify(receipt.mission_verify_errors));
+
+    const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    const repairTask = projection.tasks.find((task) => task.display_id === ref);
+    assert.equal(repairTask.status, 'done');
+    const { loadMissionMap } = require('../commands/mission');
+    const mission = loadMissionMap(repo).get(missionId);
+    assert.equal(mission.status, 'ready');
+    assert.equal(mission.verifier_result.passed, true);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
