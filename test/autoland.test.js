@@ -487,7 +487,7 @@ test('tick drains the landing daily: landed branches reap themselves, once per d
   }
 });
 
-test('tick janitor keeps fresh or dirty worktrees and reaps old clean residue', () => {
+test('tick janitor keeps fresh worktrees; old residue is salvaged and reaped', () => {
   const { base, repo } = makeTempRepo();
   try {
     const freshWt = path.join(base, 'fresh-wt');
@@ -505,19 +505,37 @@ test('tick janitor keeps fresh or dirty worktrees and reaps old clean residue', 
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
-    // old-wt is reaped by whichever path reaches it first (janitor
-    // cleanupWorktrees or the daily land reap), so assert the total and
-    // pin the end state below.
+    // Contract: within the 1h grace a worktree is untouchable (the live
+    // engine race); past it, clean residue is reaped and dirty residue is
+    // salvaged into patches first (land.js: "salvage first, always"), so
+    // nothing survives as limbo but no work is lost either. old-wt and
+    // dirty-wt are reaped by whichever path reaches them first, so assert
+    // the total and pin the end state.
     const totalReapedWorktrees = (Number(receipt.worktrees_reaped) || 0)
       + ((receipt.reaped && Number(receipt.reaped.worktrees)) || 0);
-    assert.equal(totalReapedWorktrees, 1);
-    assert.equal(receipt.reaped.branches, 1);
+    assert.equal(totalReapedWorktrees, 2);
     assert.equal(fs.existsSync(freshWt), true);
     assert.equal(fs.existsSync(oldWt), false);
-    assert.equal(fs.existsSync(dirtyWt), true);
+    assert.equal(fs.existsSync(dirtyWt), false);
     assert.match(runGit(['branch', '--list', 'fresh-residue'], repo).stdout, /fresh-residue/);
     assert.equal(runGit(['branch', '--list', 'old-residue'], repo).stdout.trim(), '');
-    assert.match(runGit(['branch', '--list', 'dirty-residue'], repo).stdout, /dirty-residue/);
+    assert.equal(runGit(['branch', '--list', 'dirty-residue'], repo).stdout.trim(), '');
+    // the dirty scratch file was banked as an untracked-file copy or patch
+    const salvageRoot = path.join(repo, '.atris', 'salvage');
+    const salvaged = [];
+    const walk = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(p);
+        else salvaged.push(p);
+      }
+    };
+    walk(salvageRoot);
+    assert.ok(
+      salvaged.some((p) => p.endsWith('scratch.txt') || p.endsWith('.dirty.patch')),
+      `expected salvage of scratch.txt under ${salvageRoot}, got: ${salvaged.join(', ')}`
+    );
   } finally {
     cleanupTempDir(base);
   }
