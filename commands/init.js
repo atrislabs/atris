@@ -249,10 +249,11 @@ function initAtris() {
   // shouldn't have file-system side effects.
   const args = process.argv.slice(3);
   if (args[0] === '-h' || args[0] === '--help' || args[0] === 'help') {
-    console.log('Usage: atris init [--force]');
+    console.log('Usage: atris init [--force] [--yes|-y]');
     console.log('');
     console.log('  Scaffold the atris/ workspace in the current directory.');
     console.log('  Refuses to run inside an existing atris/ folder unless --force is passed.');
+    console.log('  Use --yes or -y to skip the interactive context gatherer after scaffolding.');
     return;
   }
   // GUARD: Refuse nested init.

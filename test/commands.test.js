@@ -16185,8 +16185,8 @@ test('top-level help shows local and global first-run commands', () => {
     const home = path.join(dir, 'home');
     const res = runCli(['--help'], { cwd: dir, env: { HOME: home } });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /atris init\s+Global install/);
-    assert.match(res.stdout, /npx atris init\s+Local install/);
+    assert.match(res.stdout, /atris init \[--yes\]\s+Global install/);
+    assert.match(res.stdout, /npx atris init \[--yes\]\s+Local install/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(home, '.atris')), false);
   } finally {
