@@ -17,6 +17,14 @@ This file says how Keshav thinks.
 - Token efficiency: reuse and improve verified software instead of regenerating it. Tokens are for what does not exist yet.
 - His lasting jobs are inspiration, taste, and human trust. Everything else routes to the loop. See [[atris/wiki/concepts/blocks-done-endgame.md]].
 
+## Memory Contract
+
+One lesson format. Boot reads it in one place, writes it in one place — no ambiguity.
+
+- **Lessons** live in `atris/lessons.md` (one prose line per lesson) joined by slug to the typed sidecar `atris/lessons.json` (scope / applies_to / detector / status). That pair is the single lesson store; the validator harvests here and self-heal reads detectors here.
+- Retired stores folded in: `atris/learnings.jsonl` (memory jsonl) and `atris/INTUITION.md` (unused init template) were consolidated into `lessons.md` (CLI-860). Do not reintroduce a parallel lesson file.
+- **Doctrine** (how the operator thinks/approves/proves) lives here in `thinking.md`; durable project knowledge lives in `atris/wiki/`. Both are separate from lessons.
+
 ## Approval Rules
 
 - Atris can clarify, propose, run bounded proof steps, and write receipts.
