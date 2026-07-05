@@ -182,6 +182,8 @@ test('runDispatchFlight happy path: claims, builds, re-verifies for real, ships,
 
     assert.deepEqual(flight.landed.map((l) => l.task), ['CLI-900']);
     assert.equal(flight.paused.length, 0);
+    assert.equal(flight.results[0].engine, 'cursor');
+    assert.equal(flight.results[0].restaffed, undefined);
     assert.equal(verifyCalls.length, 1);
     assert.equal(verifyCalls[0].command, 'node --test test/widget.test.js');
     assert.equal(verifyCalls[0].cwd, '/wt/dispatch-cli-900');
@@ -193,6 +195,115 @@ test('runDispatchFlight happy path: claims, builds, re-verifies for real, ships,
     assert.match(readyCall, /Check re-run: node --test test\/widget\.test\.js/);
     assert.match(readyCall, /# pass 3/, 'proof must carry the real verify output, not just prose');
     assert.ok(fleet.landArrival, 'sanity: shared land primitive still exported');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight restaffs once when usage-limit output kills the first engine', async () => {
+  const tmpRoot = makeTempRoot();
+  try {    const { cli, calls } = ownCliFake({
+      tasks: { 'CLI-900': TASK },
+      worktreeFor: (t) => `/wt/${t}`,
+    });
+    assert.deepEqual(fleet.DEAD_ENGINE_OUTPUT_PATTERNS, ['usage limit', 'purchase more credits', 'rate limit']);
+    const dispatchEngines = [];
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'codex',
+      installedEngines: ['codex', 'cursor'],
+      ownCli: cli,
+      dispatcher: (entry) => {
+        dispatchEngines.push(entry.engine);
+        if (entry.engine === 'codex') {
+          return Promise.resolve({ exitCode: 1, stderr: 'Usage limit reached. Purchase more credits.' });
+        }
+        return Promise.resolve({ exitCode: 0, report: 'cursor finished the same prompt' });
+      },
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+    });
+
+    assert.deepEqual(dispatchEngines, ['codex', 'cursor']);
+    assert.deepEqual(flight.results[0].restaffed, { from: 'codex', to: 'cursor', reason: 'usage_limit' });
+    assert.equal(flight.results[0].engine, 'cursor');
+    assert.equal(flight.landed[0].engine, 'cursor');
+    assert.deepEqual(flight.landed[0].restaffed, { from: 'codex', to: 'cursor', reason: 'usage_limit' });
+    assert.equal(flight.paused.length, 0);
+    const readyCall = calls.find((c) => c.startsWith('task ready CLI-900'));
+    assert.match(readyCall, /Built by cursor engine/);
+    assert.match(readyCall, /Restaffed from codex to cursor \(usage_limit\)/);
+    assert.ok(!calls.some((c) => c.startsWith('task ready CLI-900') && /fleet-codex/.test(c)), 'ready attribution must move to the fallback engine');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('a green build whose report mentions a dead-engine pattern never restaffs', async () => {
+  const tmpRoot = makeTempRoot();
+  try {    const { cli } = ownCliFake({
+      tasks: { 'CLI-900': TASK },
+      worktreeFor: (t) => `/wt/${t}`,
+    });
+    const dispatchEngines = [];
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'codex',
+      installedEngines: ['codex', 'cursor'],
+      ownCli: cli,
+      dispatcher: (entry) => {
+        dispatchEngines.push(entry.engine);
+        return Promise.resolve({ exitCode: 0, report: 'added rate limit handling; usage limit docs updated' });
+      },
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+    });
+
+    assert.deepEqual(dispatchEngines, ['codex']);
+    assert.equal(flight.results[0].restaffed, undefined);
+    assert.equal(flight.results[0].engine, 'codex');
+    assert.equal(flight.landed[0].engine, 'codex');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight fails the flight when the fallback engine also fails', async () => {
+  const tmpRoot = makeTempRoot();
+  try {    const { cli, calls } = ownCliFake({
+      tasks: { 'CLI-900': TASK },
+      worktreeFor: (t) => `/wt/${t}`,
+    });
+    const verifyCalls = [];
+    const dispatchEngines = [];
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'codex',
+      installedEngines: ['codex', 'cursor'],
+      ownCli: cli,
+      dispatcher: (entry) => {
+        dispatchEngines.push(entry.engine);
+        if (entry.engine === 'codex') return Promise.resolve({ exitCode: 1, stderr: 'rate limit' });
+        return Promise.resolve({ exitCode: 2, stderr: 'cursor failed too' });
+      },
+      verifier: () => {
+        verifyCalls.push('verify');
+        return { status: 0, stdout: '', stderr: '' };
+      },
+    });
+
+    assert.deepEqual(dispatchEngines, ['codex', 'cursor']);
+    assert.equal(flight.landed.length, 0);
+    assert.equal(flight.paused.length, 1);
+    assert.equal(flight.paused[0].stage, 'build');
+    assert.equal(flight.paused[0].engine, 'cursor');
+    assert.deepEqual(flight.paused[0].restaffed, { from: 'codex', to: 'cursor', reason: 'usage_limit' });
+    assert.deepEqual(flight.results[0].restaffed, { from: 'codex', to: 'cursor', reason: 'usage_limit' });
+    assert.deepEqual(verifyCalls, []);
+    assert.ok(!calls.some((c) => c.startsWith('task ready')), 'failed fallback must not mark the task ready');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
