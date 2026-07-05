@@ -78,6 +78,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
       tasks: [
         { display_id: 'BCK-298', title: 'Backend old open task', status: 'open', workspace_root: otherRoot },
         { display_id: 'BCK-294', title: 'Backend lease safety', status: 'claimed', workspace_root: otherRoot, claimed_by: 'computer-lead' },
+        { display_id: 'BCK-291', title: 'Audio lane cleanup', status: 'claimed', workspace_root: otherRoot, claimed_by: 'audio-lead' },
       ],
     })],
     [missionFile, `${JSON.stringify({
@@ -100,6 +101,20 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     [memberFile, '# Mission Lead\n'],
     [memberGoalsFile, JSON.stringify({ updated_at: '2026-05-18T12:00:00.000Z', goals: [{ status: 'active', title: 'Keep loops healthy' }] })],
     [memberNowFile, '# Now\n'],
+    [path.join(otherRoot, '.atris', 'state', 'member-loops', 'computer-lead.lock.json'), JSON.stringify({
+      schema: 'atris.member_loop_lease.v1',
+      member: 'computer-lead',
+      pid: 223,
+      run_id: 'run-codex',
+      expires_at_ms: Date.parse('2026-05-19T00:00:00.000Z'),
+    })],
+    [path.join(otherRoot, '.atris', 'state', 'member-loops', 'audio-lead.lock.json'), JSON.stringify({
+      schema: 'atris.member_loop_lease.v1',
+      member: 'audio-lead',
+      pid: 222,
+      run_id: 'run-claude',
+      expires_at_ms: Date.parse('2026-05-19T00:00:00.000Z'),
+    })],
   ]);
   const dirs = new Set([
     path.join(root, 'atris'),
@@ -113,6 +128,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     teamDir,
     path.join(teamDir, 'mission-lead'),
     path.join(root, '.atris', 'state', 'operator-scorecards'),
+    path.join(otherRoot, '.atris', 'state', 'member-loops'),
   ]);
   const psOutput = '110 1 0.1 0.2 S Mon May 18 12:00:00 2026 node /opt/homebrew/bin/codex\n'
     + '111 110 0.1 0.2 S Mon May 18 12:00:00 2026 /opt/codex/codex exec\n'
@@ -152,6 +168,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     readdirSync: dir => {
       if (dir === teamDir) return ['mission-lead'];
       if (dir === path.join(root, '.atris', 'state', 'operator-scorecards')) return ['keshav.json'];
+      if (dir === path.join(otherRoot, '.atris', 'state', 'member-loops')) return ['computer-lead.lock.json', 'audio-lead.lock.json'];
       if (dir === ingestDir) return ['2026-05-18-onboarding'];
       if (dir === briefsDir) return ['cashmere-ai-starter-brief.md'];
       if (dir === conceptsDir) return ['cashmere-ai-first-loop.md'];
@@ -185,10 +202,15 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.agents[0].task, 'CLI-95');
   assert.equal(data.agents[0].task_source, 'repo_task_projection');
   assert.equal(data.agents[0].task_scope, 'repo');
-  assert.equal(data.agents[1].task, 'BCK-294');
-  assert.equal(data.agents[1].task_workspace, 'tmp/other');
-  assert.equal(data.agents[1].task_source, 'repo_task_projection');
-  assert.equal(data.agents[2].task, 'BCK-294');
+  const claudeAgent = data.agents.find(agent => agent.pid === '222');
+  const codexOther = data.agents.find(agent => agent.pid === '223');
+  assert.equal(claudeAgent.task, 'BCK-291');
+  assert.equal(claudeAgent.owner, 'audio-lead');
+  assert.equal(claudeAgent.task_source, 'member_loop_lock');
+  assert.equal(codexOther.task, 'BCK-294');
+  assert.equal(codexOther.owner, 'computer-lead');
+  assert.equal(codexOther.task_source, 'member_loop_lock');
+  assert.equal(codexOther.task_workspace, 'tmp/other');
   const untaskedAgent = data.agents.find(agent => agent.task === '-');
   assert.equal(untaskedAgent.task_reason, 'no task projection');
   assert.equal(untaskedAgent.task_action, 'inspect /tmp/no-proj for missing Atris task plane or close pid 333 only with operator approval if idle');
@@ -212,25 +234,23 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(top, /MEM/);
   assert.match(top, /CLI-95/);
   assert.match(top, /BCK-294/);
+  assert.match(top, /BCK-291/);
   assert.match(top, /1 untasked/);
-  assert.match(top, /Next: inspect 2 sessions on BCK-294 \(4\.0% CPU; repo projection; verify ownership\)/);
-  assert.match(top, /Task binding: repo projection; verify ownership before assuming every session owns the displayed task/);
+  assert.match(top, /Next: close or hand off 1 session still bound to review task CLI-95/);
+  assert.doesNotMatch(top, /inspect 2 sessions on BCK-294/);
   assert.match(top, /Untasked: 1 sessions \(1 no task projection\)/);
   assert.match(top, /333 .*no task projection -> inspect \/tmp\/no-proj for missing Atris task plane or close pid 333 only with operator approval if idle/);
-  assert.match(top, /Task load: 1 pileup, 1 review-bound task/);
-  assert.match(top, /BCK-294: 2 sessions, 4\.0% CPU, claimed, tmp\/other/);
+  assert.doesNotMatch(top, /Task load: 1 pileup/);
   assert.match(top, /CLI-95: 1 sessions, 0\.1% CPU, review, tmp\/atris-radar/);
   assert.ok(top.indexOf('222') < top.indexOf('111'), 'higher CPU agent should sort first');
   const payload = agentTopPayload(data);
-  assert.equal(payload.summary.task_pileups, 1);
+  assert.equal(payload.summary.task_pileups, 0);
   assert.equal(payload.summary.review_bound_tasks, 1);
-  assert.deepEqual(payload.task_load.map(row => [row.task, row.sessions, row.attention]).slice(0, 2), [
-    ['BCK-294', 2, true],
+  assert.deepEqual(payload.task_load.filter(row => row.attention).map(row => [row.task, row.sessions, row.attention]), [
     ['CLI-95', 1, true],
   ]);
-  assert.deepEqual(payload.task_load[0].task_sources, ['repo_task_projection']);
-  assert.deepEqual(payload.task_load[0].task_scopes, ['repo']);
-  assert.match(payload.next_action, /inspect 2 sessions on BCK-294 \(4\.0% CPU; repo projection; verify ownership\)/);
+  assert.deepEqual(payload.task_load.filter(row => !row.attention).map(row => row.task).sort(), ['BCK-291', 'BCK-294']);
+  assert.match(payload.next_action, /close or hand off 1 session still bound to review task CLI-95/);
 });
 
 test('renderAgentTop explains workspaces with no active task', () => {
@@ -314,6 +334,114 @@ test('collectRadar marks owner-gated tasks as owner action required', () => {
   assert.match(top, /Next: owner-gated repo projection covers 1 session on BCK-292; verify ownership, wait for owner action, avoid duplicate work, close only with operator approval/);
   assert.match(top, /Owner-gated projection: 1 session verify ownership and wait on human\/owner action; do not start duplicate work/);
   assert.match(top, /owner-gated BCK-292; wait for owner action, do not start duplicate work; close pid 900 only with operator approval/);
+});
+
+test('collectRadar binds each claude process to distinct member task claims', () => {
+  const root = '/tmp/radar-claude-identity';
+  const taskFile = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  const missionFile = path.join(root, '.atris', 'state', 'missions.jsonl');
+  const memberLoopsDir = path.join(root, '.atris', 'state', 'member-loops');
+  const sessionA = '11111111-1111-4111-8111-111111111111';
+  const sessionB = '22222222-2222-4222-8222-222222222222';
+  const files = new Map([
+    [taskFile, JSON.stringify({
+      tasks: [
+        { display_id: 'CLI-825', title: 'Radar identity', status: 'claimed', workspace_root: root, claimed_by: 'mission-lead' },
+        { display_id: 'CLI-826', title: 'Radar session lane', status: 'claimed', workspace_root: root, claimed_by: 'audio-lead' },
+      ],
+    })],
+    [missionFile, `${JSON.stringify({
+      id: 'mission-audio',
+      status: 'running',
+      owner: 'audio-lead',
+      claude_session_id: sessionB,
+      task_spine: { task_ref: 'CLI-826' },
+    })}\n`],
+    [path.join(memberLoopsDir, 'mission-lead.lock.json'), JSON.stringify({
+      schema: 'atris.member_loop_lease.v1',
+      member: 'mission-lead',
+      pid: 501,
+      run_id: 'run-a',
+      expires_at_ms: Date.parse('2026-05-19T00:00:00.000Z'),
+    })],
+  ]);
+  const psOutput = [
+    `501 1 1.0 0.1 S Mon May 19 09:00:00 2026 claude -p run --session-id ${sessionA}`,
+    `502 1 0.5 0.1 S Mon May 19 09:01:00 2026 claude -p run --session-id ${sessionB}`,
+  ].join('\n') + '\n';
+
+  function execFileSync(cmd, args) {
+    if (cmd === 'ps') return psOutput;
+    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'git' && args[2] === 'branch') return 'main\n';
+    if (cmd === 'git' && args[2] === 'worktree') {
+      return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/main', ''].join('\n');
+    }
+    if (cmd === 'git' && args[2] === 'status') return '';
+    throw new Error(`unexpected command ${cmd} ${args.join(' ')}`);
+  }
+
+  const data = collectRadar({
+    root,
+    platform: 'darwin',
+    nowMs: Date.parse('2026-05-19T16:00:00.000Z'),
+    execFileSync,
+    existsSync: file => files.has(file) || file === taskFile || file === missionFile || file === memberLoopsDir,
+    readFileSync: file => files.get(file),
+    readdirSync: dir => (dir === memberLoopsDir ? ['mission-lead.lock.json'] : []),
+  });
+
+  const byPid = Object.fromEntries(data.agents.map(agent => [agent.pid, agent]));
+  assert.equal(byPid['501'].task, 'CLI-825');
+  assert.equal(byPid['501'].owner, 'mission-lead');
+  assert.equal(byPid['501'].task_source, 'member_loop_lock');
+  assert.equal(byPid['502'].task, 'CLI-826');
+  assert.equal(byPid['502'].owner, 'audio-lead');
+  assert.equal(byPid['502'].session_id, sessionB);
+  assert.equal(byPid['502'].task_source, 'claude_session');
+  assert.notEqual(byPid['501'].task, byPid['502'].task);
+  assert.notEqual(byPid['501'].owner, byPid['502'].owner);
+});
+
+test('collectRadar never mislabels interactive claude sessions with repo projection tasks', () => {
+  const root = '/tmp/radar-interactive-claude';
+  const taskFile = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  const files = new Map([
+    [taskFile, JSON.stringify({
+      tasks: [
+        { display_id: 'CLI-900', title: 'Only claimed task', status: 'claimed', workspace_root: root, claimed_by: 'mission-lead' },
+      ],
+    })],
+  ]);
+  const psOutput = '777 1 0.2 0.1 S Mon May 19 09:00:00 2026 claude\n';
+
+  function execFileSync(cmd, args) {
+    if (cmd === 'ps') return psOutput;
+    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'git' && args[2] === 'branch') return 'main\n';
+    if (cmd === 'git' && args[2] === 'worktree') {
+      return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/main', ''].join('\n');
+    }
+    if (cmd === 'git' && args[2] === 'status') return '';
+    throw new Error(`unexpected command ${cmd} ${args.join(' ')}`);
+  }
+
+  const data = collectRadar({
+    root,
+    platform: 'darwin',
+    nowMs: Date.parse('2026-05-19T16:00:00.000Z'),
+    execFileSync,
+    existsSync: file => files.has(file) || file === taskFile,
+    readFileSync: file => files.get(file),
+    readdirSync: () => [],
+  });
+
+  assert.equal(data.agents.length, 1);
+  assert.equal(data.agents[0].task, '-');
+  assert.equal(data.agents[0].owner, 'interactive');
+  assert.equal(data.agents[0].task_source, 'interactive_session');
+  assert.equal(data.agents[0].task_reason, 'interactive session');
+  assert.match(data.agents[0].task_action, /interactive claude session/);
 });
 
 test('collectRadar prefers the task owned by the live process agent', () => {

@@ -100,6 +100,7 @@ function collectAgents(deps) {
       return {
         pid: row.pid,
         agent: row.agent,
+        command: row.command,
         status: row.stat.includes('Z') ? 'zombie' : row.stat.includes('T') ? 'stopped' : 'active',
         cwd,
         repo: repoLabel(cwd),
@@ -148,7 +149,8 @@ function loadTasksCached(root, deps, cache) {
   return cache.get(root);
 }
 
-function untaskedReason(agent, taskWorkspaceRoot, tasks) {
+function untaskedReason(agent, taskWorkspaceRoot, tasks, binding = null) {
+  if (binding?.interactive) return 'interactive session';
   if (!agent.cwd) return 'cwd unknown';
   if (!taskWorkspaceRoot) return 'no task projection';
   if (!tasks.length) return 'empty task projection';
@@ -159,10 +161,11 @@ function shellQuote(value) {
   return `'${String(value || '').replace(/'/g, "'\\''")}'`;
 }
 
-function untaskedAction(agent, taskWorkspaceRoot, tasks) {
-  const reason = untaskedReason(agent, taskWorkspaceRoot, tasks);
+function untaskedAction(agent, taskWorkspaceRoot, tasks, binding = null) {
+  const reason = untaskedReason(agent, taskWorkspaceRoot, tasks, binding);
   const pid = agent.pid || '?';
   const actor = agent.agent || 'agent';
+  if (reason === 'interactive session') return `inspect pid ${pid} interactive claude session; bind via member lock, worktree sidecar, or branch identity before assuming a repo task`;
   if (reason === 'cwd unknown') return `inspect pid ${pid} cwd with lsof`;
   if (reason === 'no active task') return `cd ${shellQuote(taskWorkspaceRoot)} && atris task next --as ${actor}`;
   if (reason === 'empty task projection') return `cd ${shellQuote(taskWorkspaceRoot)} && atris task new "<small concrete title>" --tag ops`;
@@ -410,6 +413,213 @@ function taskRef(task) {
   return task ? (task.display_id || task.legacy_ref || task.id || '-') : '-';
 }
 
+function isInteractiveClaudeCommand(command) {
+  const cmd = String(command || '');
+  if (!/(^|\s|\/)claude(\s|$)/.test(cmd) || /Claude\.app/.test(cmd)) return false;
+  return !/(^|\s)-p(\s|$)/.test(cmd) && !/(^|\s)--print(\s|$)/.test(cmd);
+}
+
+function parseSessionIdFromCommand(command) {
+  const parts = String(command || '').split(/\s+/);
+  for (let i = 0; i < parts.length; i += 1) {
+    if ((parts[i] === '--session-id' || parts[i] === '--resume') && parts[i + 1]) return parts[i + 1];
+    const inline = parts[i].match(/^--session-id=(.+)$/);
+    if (inline) return inline[1];
+  }
+  return null;
+}
+
+function loadAgentWorktreeSidecar(cwd, deps) {
+  if (!cwd) return null;
+  let current = path.resolve(cwd);
+  for (let depth = 0; depth < 8; depth += 1) {
+    const payload = readJsonFile(path.join(current, '.atris', 'agent-worktree.json'), deps, null);
+    if (payload) return payload;
+    const parent = path.dirname(current);
+    if (!parent || parent === current) break;
+    current = parent;
+  }
+  return null;
+}
+
+function branchIdentityAtCwd(cwd, execFile) {
+  if (!cwd) return null;
+  try {
+    const branch = String(execFile('git', ['-C', cwd, 'branch', '--show-current'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] })).trim();
+    if (!branch) return null;
+    const owner = String(execFile('git', ['-C', cwd, 'config', '--get', `branch.${branch}.atris-owner`], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] })).trim();
+    const taskHint = String(execFile('git', ['-C', cwd, 'config', '--get', `branch.${branch}.atris-task`], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] })).trim();
+    if (!owner) return null;
+    return { owner, task_hint: taskHint || null, branch };
+  } catch {
+    return null;
+  }
+}
+
+function loadMissionLocks(stateDir, deps) {
+  const locks = [];
+  for (const name of listNames(stateDir, deps)) {
+    const match = name.match(/^mission-(.+)\.lock$/);
+    if (!match) continue;
+    const payload = readJsonFile(path.join(stateDir, name), deps, null);
+    if (!payload || payload.pid == null) continue;
+    locks.push({
+      ...payload,
+      mission_id: payload.mission_id || match[1],
+      lock_file: name,
+    });
+  }
+  return locks;
+}
+
+function loadMemberLoopLocks(stateDir, deps) {
+  const dir = path.join(stateDir, 'member-loops');
+  const locks = [];
+  for (const name of listNames(dir, deps)) {
+    if (!name.endsWith('.lock.json')) continue;
+    const payload = readJsonFile(path.join(dir, name), deps, null);
+    if (!payload || payload.pid == null) continue;
+    locks.push({
+      ...payload,
+      member: payload.member || name.replace(/\.lock\.json$/, ''),
+    });
+  }
+  return locks;
+}
+
+function loadWorkspaceIdentity(root, deps, cache, nowMs) {
+  if (!root) return { missions: [], missionLocks: [], memberLocks: [] };
+  if (cache.has(root)) return cache.get(root);
+  const stateDir = path.join(root, '.atris', 'state');
+  const bundle = {
+    missions: loadMissions(root, deps, nowMs),
+    missionLocks: loadMissionLocks(stateDir, deps),
+    memberLocks: loadMemberLoopLocks(stateDir, deps),
+  };
+  cache.set(root, bundle);
+  return bundle;
+}
+
+function taskOwnerValues(task) {
+  return [
+    task?.assigned_to,
+    task?.claimed_by,
+    task?.metadata?.assigned_to,
+    task?.metadata?.claimed_by,
+    task?.metadata?.owner,
+  ].filter(Boolean).map(value => String(value));
+}
+
+function taskMatchesOwner(task, owner) {
+  if (!task || !owner) return false;
+  const want = String(owner).toLowerCase();
+  return taskOwnerValues(task).some(value => value.toLowerCase() === want);
+}
+
+function findTaskByRef(tasks, ref) {
+  if (!ref) return null;
+  return tasks.find(task => taskRef(task) === ref) || null;
+}
+
+function taskForOwner(tasks, owner, statuses = ['claimed', 'open', 'review']) {
+  if (!owner) return null;
+  for (const status of statuses) {
+    const matches = tasks.filter(task => task.status === status && taskMatchesOwner(task, owner));
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) return matches[0];
+  }
+  return null;
+}
+
+function resolveAgentTaskBinding(context) {
+  const {
+    agent,
+    tasks,
+    missions,
+    missionLocks,
+    memberLocks,
+    sidecar,
+    branchIdentity,
+    sessionId,
+    interactive,
+    taskWorkspaceRoot,
+  } = context;
+  const pid = String(agent?.pid || '');
+
+  const missionLock = missionLocks.find(row => String(row.pid) === pid);
+  if (missionLock) {
+    const mission = missions.find(row => row.id === missionLock.mission_id);
+    const task = findTaskByRef(tasks, mission?.task_spine?.task_ref) || taskForOwner(tasks, mission?.owner);
+    return {
+      task,
+      owner: mission?.owner || ownerForTask(task),
+      member: mission?.owner || sidecar?.member || null,
+      session_id: mission?.claude_session_id || sessionId || null,
+      mission_id: mission?.id || missionLock.mission_id,
+      ...taskBinding('mission_lock', 'process'),
+    };
+  }
+
+  const memberLock = memberLocks.find(row => String(row.pid) === pid);
+  if (memberLock) {
+    const task = taskForOwner(tasks, memberLock.member);
+    return {
+      task,
+      owner: memberLock.member,
+      member: memberLock.member,
+      session_id: sessionId || null,
+      ...taskBinding('member_loop_lock', 'process'),
+    };
+  }
+
+  if (sessionId) {
+    const mission = missions.find(row => row.claude_session_id === sessionId || row.pending_session_id === sessionId);
+    if (mission) {
+      const task = findTaskByRef(tasks, mission.task_spine?.task_ref) || taskForOwner(tasks, mission.owner);
+      return {
+        task,
+        owner: mission.owner || ownerForTask(task),
+        member: mission.owner || sidecar?.member || null,
+        session_id: sessionId,
+        mission_id: mission.id,
+        ...taskBinding('claude_session', 'process'),
+      };
+    }
+  }
+
+  const ownerHint = sidecar?.owner || sidecar?.member || branchIdentity?.owner || null;
+  if (ownerHint) {
+    const task = taskForOwner(tasks, ownerHint);
+    return {
+      task,
+      owner: ownerHint,
+      member: sidecar?.member || ownerHint,
+      session_id: sessionId || null,
+      ...taskBinding(sidecar ? 'agent_worktree' : 'branch_identity', 'process'),
+    };
+  }
+
+  if (interactive) {
+    return {
+      task: null,
+      owner: 'interactive',
+      member: null,
+      session_id: sessionId || null,
+      interactive: true,
+      ...taskBinding('interactive_session', 'process'),
+    };
+  }
+
+  const fallbackTask = taskForCwd(tasks, agent?.cwd, taskWorkspaceRoot, agent);
+  return {
+    task: fallbackTask,
+    owner: ownerForTask(fallbackTask),
+    member: null,
+    session_id: sessionId || null,
+    ...(fallbackTask ? taskBinding('repo_task_projection', 'repo') : taskBinding(null, null)),
+  };
+}
+
 function taskOwnerMatchesAgent(task, agent) {
   const actor = String(agent?.agent || '').toLowerCase();
   if (!actor) return false;
@@ -438,15 +648,22 @@ function taskForCwd(tasks, cwd, workspaceRoot = cwd, agent = null) {
     || null;
 }
 
+function taskBinding(source, scope = null) {
+  if (!source) return { task_source: null, task_scope: null };
+  return { task_source: source, task_scope: scope };
+}
+
 function taskBindingForProjection(task) {
-  if (!task) return { task_source: null, task_scope: null };
-  return {
-    task_source: 'repo_task_projection',
-    task_scope: 'repo',
-  };
+  return task ? taskBinding('repo_task_projection', 'repo') : taskBinding(null, null);
 }
 
 function taskSourceLabel(sources = []) {
+  if (sources.includes('member_loop_lock')) return 'member loop lock';
+  if (sources.includes('mission_lock')) return 'mission lock';
+  if (sources.includes('claude_session')) return 'claude session id';
+  if (sources.includes('agent_worktree')) return 'agent worktree sidecar';
+  if (sources.includes('branch_identity')) return 'branch identity';
+  if (sources.includes('interactive_session')) return 'interactive session';
   if (sources.includes('repo_task_projection')) return 'repo projection; verify ownership';
   return sources.filter(Boolean).join(', ');
 }
@@ -556,23 +773,45 @@ function collectRadar(options = {}) {
   const nowMs = options.nowMs || Date.now();
   const tasks = loadTasks(root, deps);
   const taskCache = new Map([[root, tasks]]);
+  const identityCache = new Map();
   const missions = loadMissions(root, deps, nowMs);
+  identityCache.set(root, { missions, missionLocks: loadMissionLocks(path.join(root, '.atris', 'state'), deps), memberLocks: loadMemberLoopLocks(path.join(root, '.atris', 'state'), deps) });
   const worktrees = loadWorktrees(root, deps);
   const agents = collectAgents(deps).map(agent => {
     const taskWorkspaceRoot = findTaskWorkspaceRoot(agent.cwd, deps);
     const agentTasks = taskWorkspaceRoot ? loadTasksCached(taskWorkspaceRoot, deps, taskCache) : [];
-    const task = taskForCwd(agentTasks, agent.cwd, taskWorkspaceRoot, agent);
-    const taskReason = task ? taskSessionReason(task) : untaskedReason(agent, taskWorkspaceRoot, agentTasks);
-    const taskBinding = taskBindingForProjection(task);
+    const identity = taskWorkspaceRoot ? loadWorkspaceIdentity(taskWorkspaceRoot, deps, identityCache, nowMs) : { missions: [], missionLocks: [], memberLocks: [] };
+    const sidecar = loadAgentWorktreeSidecar(agent.cwd, deps);
+    const branchIdentity = branchIdentityAtCwd(agent.cwd, deps.execFile);
+    const sessionId = parseSessionIdFromCommand(agent.command);
+    const interactive = agent.agent === 'claude' && isInteractiveClaudeCommand(agent.command);
+    const resolved = resolveAgentTaskBinding({
+      agent,
+      tasks: agentTasks,
+      missions: identity.missions,
+      missionLocks: identity.missionLocks,
+      memberLocks: identity.memberLocks,
+      sidecar,
+      branchIdentity,
+      sessionId,
+      interactive,
+      taskWorkspaceRoot,
+    });
+    const task = resolved.task;
+    const taskReason = task ? taskSessionReason(task) : untaskedReason(agent, taskWorkspaceRoot, agentTasks, resolved);
+    const binding = { task_source: resolved.task_source, task_scope: resolved.task_scope };
     return {
       ...agent,
       task: taskRef(task),
       task_status: task?.status || null,
-      owner: ownerForTask(task),
+      owner: resolved.owner || ownerForTask(task),
+      member: resolved.member || null,
+      session_id: resolved.session_id || null,
+      mission_id: resolved.mission_id || null,
       task_workspace: taskWorkspaceRoot ? repoLabel(taskWorkspaceRoot) : null,
-      ...taskBinding,
+      ...binding,
       task_reason: taskReason,
-      task_action: task ? taskSessionAction(agent, task, taskWorkspaceRoot) : untaskedAction(agent, taskWorkspaceRoot, agentTasks),
+      task_action: task ? taskSessionAction(agent, task, taskWorkspaceRoot) : untaskedAction(agent, taskWorkspaceRoot, agentTasks, resolved),
     };
   });
   const osState = {
@@ -949,10 +1188,16 @@ function radarCommand(args = [], options = {}) {
 module.exports = {
   agentTypeForCommand,
   agentTopPayload,
+  branchIdentityAtCwd,
   collectRadar,
+  isInteractiveClaudeCommand,
+  loadAgentWorktreeSidecar,
   parsePsOutput,
+  parseSessionIdFromCommand,
   parseWorktrees,
   radarCommand,
   renderAgentTop,
   renderRadar,
+  resolveAgentTaskBinding,
+  taskForOwner,
 };
