@@ -481,7 +481,9 @@ function showHelp() {
   console.log('in the air, and this shows it so nothing quietly dies.');
   console.log('');
   console.log('  atris land                     show everything still in the air');
+  console.log('  atris land status              show everything still in the air');
   console.log('  atris land <name>              the story of one piece: what it tried,');
+  console.log('  atris land status <name>       same story lookup from status mode');
   console.log('                                 whether it landed some other way, what');
   console.log('                                 would be lost by clearing it');
   console.log('  atris land --reap              back up, then clear anything overdue');
@@ -517,7 +519,8 @@ function landCommand(args = []) {
     return 0;
   }
 
-  const name = args.find((a) => !a.startsWith('-') && a !== readFlag(args, '--ttl') && a !== readFlag(args, '--base'));
+  const lookupArgs = args[0] === 'status' ? args.slice(1) : args;
+  const name = lookupArgs.find((a) => !a.startsWith('-') && a !== readFlag(lookupArgs, '--ttl') && a !== readFlag(lookupArgs, '--base'));
   if (name) {
     const story = collectStory(root, name, { base });
     if (!story) {
