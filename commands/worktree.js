@@ -89,6 +89,25 @@ function currentBranch(root = repoRoot()) {
   return runGit(['branch', '--show-current'], { cwd: root, check: false }).stdout.trim();
 }
 
+function detachedShipBranch(root) {
+  return `codex/${path.basename(root)}`;
+}
+
+function createDetachedShipBranch(root, branch) {
+  if (refExists(root, `refs/heads/${branch}`) || refExists(root, `refs/remotes/origin/${branch}`)) {
+    console.error(`blocked: detached head branch already exists: ${branch}`);
+    return false;
+  }
+  const created = runGit(['switch', '-c', branch], { cwd: root, check: false });
+  if (created.status !== 0) {
+    console.error(`blocked: detached head branch create failed: ${branch}`);
+    console.error((created.stderr || created.stdout || '').trim());
+    return false;
+  }
+  console.log(`ship: detached head, created branch ${branch}`);
+  return true;
+}
+
 function currentUpstream(root) {
   const result = runGit(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { cwd: root, check: false });
   return result.status === 0 ? result.stdout.trim() : '';
@@ -369,12 +388,20 @@ function shipWorktree(args) {
   const merge = hasFlag(args, '--merge');
   const message = readFlag(args, '--message') || readFlag(args, '-m');
   const verify = readFlag(args, '--verify');
-  const branch = currentBranch(root);
+  let branch = currentBranch(root);
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path;
   const targetRef = normalizeTargetRef(root, readFlag(args, '--target') || defaultShipTarget(root));
 
-  if (!branch || branch === 'master' || branch === 'main') {
+  if (!branch && path.resolve(root) === path.resolve(primary)) {
+    console.error('blocked: detached head on the primary checkout');
+    return 2;
+  }
+  if (!branch) {
+    branch = detachedShipBranch(root);
+    if (!createDetachedShipBranch(root, branch)) return 2;
+  }
+  if (branch === 'master' || branch === 'main') {
     console.error('blocked: ship from a feature worktree branch, not master/main');
     return 2;
   }
