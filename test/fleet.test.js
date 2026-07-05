@@ -235,6 +235,107 @@ test('runFleetFlight full loop: claims, dispatches in parallel, lands serially, 
   }
 });
 
+// CLI-881: a flight launched from a long-lived feature-branch checkout must
+// not cut its build worktrees from that branch — rebase-before-ship would then
+// replay every feature commit onto master and pause at rebase_conflict. Fleet
+// and dispatch both pass --base origin/master to `worktree start` by default.
+function baseAfter(call) {
+  const i = call.indexOf('--base');
+  return i > -1 ? call[i + 1] : null;
+}
+
+test('runFleetFlight cuts build worktrees from origin/master by default', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-base-'));
+  try {
+    const stateDir = path.join(root, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({
+      tasks: [{ display_id: 'F-1', status: 'open', title: 'edits lib/a.js Done: x. Check: node --test test/a.test.js.' }],
+    }));
+    const startCalls = [];
+    const ownCli = (args) => {
+      if (args[0] === 'worktree' && args[1] === 'start') {
+        startCalls.push(args);
+        return { status: 0, stdout: `next: cd ${root}/wt\n`, stderr: '' };
+      }
+      return { status: 0, stdout: 'done: worktree shipped\n', stderr: '' };
+    };
+    await fleet.runFleetFlight({
+      root,
+      engines: ['codex'],
+      log: () => {},
+      ownCli,
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'ok', stderr: '' }),
+      lander: () => ({ ok: true, stage: 'shipped' }),
+    });
+    assert.equal(startCalls.length, 1);
+    assert.equal(baseAfter(startCalls[0]), 'origin/master', 'default fleet worktree must cut from origin/master');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runFleetFlight keeps launcher-HEAD only when checkoutBase is explicit', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-base-'));
+  try {
+    const stateDir = path.join(root, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({
+      tasks: [{ display_id: 'F-1', status: 'open', title: 'edits lib/a.js Done: x. Check: node --test test/a.test.js.' }],
+    }));
+    const startCalls = [];
+    const ownCli = (args) => {
+      if (args[0] === 'worktree' && args[1] === 'start') {
+        startCalls.push(args);
+        return { status: 0, stdout: `next: cd ${root}/wt\n`, stderr: '' };
+      }
+      return { status: 0, stdout: 'done: worktree shipped\n', stderr: '' };
+    };
+    await fleet.runFleetFlight({
+      root,
+      engines: ['codex'],
+      log: () => {},
+      ownCli,
+      checkoutBase: 'HEAD',
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'ok', stderr: '' }),
+      lander: () => ({ ok: true, stage: 'shipped' }),
+    });
+    assert.equal(baseAfter(startCalls[0]), 'HEAD', 'explicit checkoutBase overrides the origin/master default');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight cuts its worktree from origin/master by default', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatch-base-'));
+  try {
+    const startCalls = [];
+    const ownCli = (args) => {
+      if (args[0] === 'task' && args[1] === 'show') {
+        return { status: 0, stdout: JSON.stringify({ display_id: 'D-1', status: 'open', title: 'edits lib/a.js Done: x. Check: node --test test/a.test.js.' }), stderr: '' };
+      }
+      if (args[0] === 'worktree' && args[1] === 'start') {
+        startCalls.push(args);
+        return { status: 0, stdout: `next: cd ${root}/wt\n`, stderr: '' };
+      }
+      return { status: 0, stdout: 'done: worktree shipped\n', stderr: '' };
+    };
+    await fleet.runDispatchFlight({
+      root,
+      taskIds: ['D-1'],
+      engine: 'codex',
+      log: () => {},
+      ownCli,
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'ok', stderr: '' }),
+      lander: () => ({ ok: true, stage: 'shipped', check: 'node --test test/a.test.js', verifyOutput: 'ok' }),
+    });
+    assert.equal(startCalls.length, 1);
+    assert.equal(baseAfter(startCalls[0]), 'origin/master', 'default dispatch worktree must cut from origin/master');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('fleet landings ship with an explicit master target, never the launcher branch base', () => {
   const args = fleet.fleetShipArgs(
     { task: { display_id: 'F-9', title: 'fix the thing. Done: x.' }, engine: 'cursor' },
