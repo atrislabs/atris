@@ -6332,15 +6332,10 @@ async function runMission(args) {
   if (autoAck) mission = autoAck.saved;
   maybeBlockUntilCodexNativeGoalStarted(runtimeView(mission), asJson, { manualAck });
 
-  const preLockRunner = String(runtimeView(mission).runner || '').trim().toLowerCase();
-  const preLockCallerSession = runnerUsesCallerSession(runtimeView(mission).runner);
-  if (!skipClaude && !preLockCallerSession && preLockRunner !== 'atris2') {
-    const probe = probeClaudeBinary();
-    if (!probe.ok) {
-      console.error(`[mission run] claude probe failed: ${probe.error}`);
-      process.exit(2);
-    }
-  }
+  // No pre-lock claude probe here: the runner profile isn't applied yet, so
+  // probing would test the default claude bin even when the effective runner
+  // (e.g. --engine cursor) never invokes claude. The in-lock probe below runs
+  // after applyMissionRunnerProfile and checks the right binary.
 
   const lock = acquireMissionLock(mission.id);
   if (!lock.ok) {
