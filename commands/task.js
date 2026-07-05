@@ -1067,11 +1067,65 @@ function taskReviewSavedText(task, review = {}, ref = taskRef(task)) {
   return `Work record saved as ${ref}.`;
 }
 
+function cleanReviewProofText(value) {
+  const text = String(value || '').trim();
+  return text || null;
+}
+
+function reviewMessageLooksLikeProof(value) {
+  const text = cleanReviewProofText(value);
+  return Boolean(text && /\b(?:proof|verified|verifier|passed|receipt|git diff --check|node --test|npm test|pnpm test|yarn test|pytest|typecheck)\b/i.test(text));
+}
+
+function taskReviewEventProof(task) {
+  const events = Array.isArray(task.events) ? task.events : [];
+  for (const event of events.slice().reverse()) {
+    const payload = event && event.payload && typeof event.payload === 'object' ? event.payload : {};
+    const explicit = cleanReviewProofText(payload.proof || payload.verify);
+    if (explicit) return explicit;
+    const message = cleanReviewProofText(payload.content || payload.chat_packet || payload.stage_packet);
+    if (message && reviewMessageLooksLikeProof(message)) return message;
+  }
+  const messages = Array.isArray(task.messages) ? task.messages : [];
+  for (const message of messages.slice().reverse()) {
+    const content = cleanReviewProofText(message && message.content);
+    if (content && reviewMessageLooksLikeProof(content)) return content;
+  }
+  return null;
+}
+
+function taskReviewProofFallback(task, payload = {}) {
+  if (!task || task.status !== 'review') return null;
+  const metadata = task.metadata || {};
+  return cleanReviewProofText(metadata.latest_agent_proof)
+    || cleanReviewProofText(payload.proof)
+    || cleanReviewProofText(metadata.proof)
+    || cleanReviewProofText(metadata.verify)
+    || cleanReviewProofText(metadata.latest_agent_verify)
+    || cleanReviewProofText(payload.verify)
+    || taskReviewEventProof(task);
+}
+
+function reviewReceiptPath(proofText, root) {
+  const evidence = extractReceiptEvidence(proofText, root);
+  if (!evidence) return null;
+  return evidence.receipts?.[0]?.path || evidence.missing?.[0] || null;
+}
+
+function withReviewReceiptPath(review, root) {
+  if (!review) return null;
+  return {
+    ...review,
+    receipt_path: reviewReceiptPath(review.proof, root),
+  };
+}
+
 function taskReviewSummary(task) {
   const reviewed = (task.events || []).slice().reverse().find(e => e.event_type === 'reviewed' || e.event_type === 'proof_ready' || e.event_type === 'revision_requested');
   const payload = reviewed && reviewed.payload || {};
   const metadata = task.metadata || {};
-  if (!reviewed && !metadata.approval_status && !metadata.agent_review_pass_count && !metadata.human_revision_count && !metadata.agent_certified) return null;
+  const fallbackProof = taskReviewProofFallback(task, payload);
+  if (!reviewed && !metadata.approval_status && !metadata.agent_review_pass_count && !metadata.human_revision_count && !metadata.agent_certified && !fallbackProof) return null;
   if (reviewed && reviewed.event_type === 'revision_requested') {
     const review = {
       summary: reviewSummary(task, payload),
@@ -1111,7 +1165,7 @@ function taskReviewSummary(task) {
   const review = {
     summary: reviewSummary(task, payload),
     reward: reviewed && reviewed.event_type === 'reviewed' && payload.reward !== undefined ? payload.reward : null,
-    proof: readyField('proof', 'latest_agent_proof'),
+    proof: readyField('proof', 'latest_agent_proof') || fallbackProof,
     lesson: readyField('lesson', 'latest_agent_lesson'),
     next_task: readyField('next_task', 'latest_agent_next_task'),
     approval_status: metadata.approval_status || (task.status === 'review' ? 'pending' : null),
@@ -1142,6 +1196,7 @@ function taskReviewInspectMetadata(task) {
     human_revision_count: review.human_revision_count || null,
     human_revision_note: review.human_revision_note || null,
     reward: review.reward ?? null,
+    receipt_path: review.receipt_path || null,
   };
 }
 
@@ -1327,7 +1382,7 @@ function enrichTaskProjection(projection) {
       const parentLinkType = parentFromParentId ? 'parent_task_id' : parentFromGoalId ? 'goal_id' : null;
       const parentId = parent ? parent.id : metadata.parent_task_id || null;
       const childTasks = children.get(task.id) || [];
-      const review = taskReviewSummary(task);
+      const review = withReviewReceiptPath(taskReviewSummary(task), root);
       return {
         ...task,
         objective: taskObjective(task, parent, goalSource.goals, { parentLinkType, baseObjectives }),
@@ -1990,6 +2045,7 @@ function compactTaskForStatus(task) {
     if (task.review.proof) review.proof = clipStatusText(task.review.proof, 180);
     if (task.review.lesson) review.lesson = clipStatusText(task.review.lesson, 180);
     if (task.review.next_task) review.next_task = clipStatusText(task.review.next_task, 140);
+    if (Object.prototype.hasOwnProperty.call(task.review, 'receipt_path')) review.receipt_path = task.review.receipt_path || null;
     if (task.review.approval_status) review.approval_status = task.review.approval_status;
     if (task.review.agent_review_pass_count) review.agent_review_pass_count = task.review.agent_review_pass_count;
     if (task.review.agent_certified) review.agent_certified = task.review.agent_certified;

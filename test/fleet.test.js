@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const fleet = require('../lib/fleet');
+const { listWorktrees } = require('../commands/worktree');
 
 const TASK = {
   display_id: 'CLI-900',
@@ -21,13 +22,52 @@ test('parseDoneCheck extracts the task spec from board convention text', () => {
 
 test('buildFleetPrompt is generated, bounded, and carries the contract', () => {
   const prompt = fleet.buildFleetPrompt(TASK, { worktreePath: '/wt/x' });
+  assert.equal(prompt.split('\n')[0], 'First, run `atris worktree guard`; if it fails, stop immediately, report back, and do not edit anything. Do this before any file edit.');
   assert.match(prompt, /CLI-900/);
   assert.match(prompt, /isolated git worktree at \/wt\/x/);
   assert.match(prompt, /NEVER push/);
   assert.match(prompt, /Done criteria: widget renders once/);
   assert.match(prompt, /atris\/MAP\.md first/);
+  assert.match(prompt, /atris worktree guard/);
+  assert.doesNotMatch(prompt, /atris worktree start/);
   assert.match(prompt, /Stage ONLY files you changed/);
   assert.match(prompt, /Final report/);
+});
+
+test('assertIsolatedWorktree refuses missing and primary checkout paths', () => {
+  const primaryRoot = fs.realpathSync(listWorktrees(process.cwd())[0].path);
+  assert.throws(
+    () => fleet.assertIsolatedWorktree('', process.cwd()),
+    /worktreePath is required/
+  );
+  assert.throws(
+    () => fleet.assertIsolatedWorktree(primaryRoot, process.cwd()),
+    /primary repo checkout/
+  );
+});
+
+test('assertIsolatedWorktree allows a real non-primary worktree path', () => {
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-isolated-wt-'));
+  try {
+    assert.doesNotThrow(() => fleet.assertIsolatedWorktree(wt, process.cwd()));
+  } finally {
+    fs.rmSync(wt, { recursive: true, force: true });
+  }
+});
+
+test('dispatchToEngine refuses to run from the primary checkout', () => {
+  const primaryRoot = fs.realpathSync(listWorktrees(process.cwd())[0].path);
+  let runnerCalled = false;
+  assert.throws(
+    () => fleet.dispatchToEngine({
+      task: { ...TASK, display_id: 'CLI-PRIMARY-GUARD' },
+      engine: 'cursor',
+      worktreePath: primaryRoot,
+      runner: () => { runnerCalled = true; return { status: 0, stdout: '', stderr: '' }; },
+    }),
+    /primary repo checkout/
+  );
+  assert.equal(runnerCalled, false);
 });
 
 test('buildEngineCommand rides runner profiles per engine', () => {

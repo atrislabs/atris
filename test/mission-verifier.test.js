@@ -98,6 +98,9 @@ test('mission start warns when no verifier is attached', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // Create the owner member so the unrelated missing_owner_member warning
+    // does not fire; this test is about the missing_verifier warning only.
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'mission-lead'), { recursive: true });
     const res = runCli([
       'mission',
       'start',
