@@ -107,3 +107,21 @@ test('listSessions finds sessions newest-first', () => {
   const slugs = listSessions(root).map((s) => s.slug);
   assert.ok(slugs.includes('first') && slugs.includes('second'));
 });
+
+const { coach, dumpSeeds } = require('../commands/write');
+
+test('offline coach asks a beat question and surfaces dump seeds, never edits the draft', () => {
+  const root = tmpRoot();
+  start(['Coach Me', '--dump', 'the seed with heat. another idea.'], root);
+  const before = fs.readFileSync(draftPath(root, 'coach-me'), 'utf8');
+  const code = coach(['coach-me', '--offline'], root);
+  assert.equal(code, 0);
+  assert.equal(fs.readFileSync(draftPath(root, 'coach-me'), 'utf8'), before, 'coach never touches the draft');
+});
+
+test('dumpSeeds extracts raw dump lines from the plan', () => {
+  const root = tmpRoot();
+  start(['Seeds', '--dump', 'first idea. second idea.'], root);
+  const plan = readPlan('seeds', root);
+  assert.deepEqual(dumpSeeds(plan.text), ['first idea.', 'second idea.']);
+});

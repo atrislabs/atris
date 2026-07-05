@@ -21,6 +21,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { scanFile, RULES, loadProjectRules } = require('./slop');
 
 const WRITING_DIR = path.join('atris', 'writing');
@@ -230,11 +231,109 @@ function list(root = process.cwd()) {
   return 0;
 }
 
+// ---- coach: intelligent, proactive, gets the writer going. Never writes prose. ----
+
+// Deterministic question bank: the offline coach. One pointed question beats a blank page.
+const BEAT_QUESTIONS = {
+  hook: 'What is the moment this became a problem for you? Start there, in one sentence.',
+  thesis: 'Say your point out loud in one sentence, like you are telling a friend. Type exactly that.',
+  evidence: 'What did you actually see happen? Name the specific thing, not the category.',
+  counterpunch: 'What would a smart skeptic say back? Steelman it, then answer in your own words.',
+  landing: 'What should the reader do or believe differently now? Say it plainly and stop.',
+};
+const GENERIC_QUESTION = (title) => `What is the one thing "${title}" has to say for the piece to work? Answer in your own words.`;
+
+function dumpSeeds(planText) {
+  const m = planText.match(/## Dump\n([\s\S]*?)(\n## |$)/);
+  if (!m) return [];
+  return m[1].split('\n').map((l) => l.replace(/^- /, '').trim()).filter((l) => l && !l.startsWith('(dump'));
+}
+
+function coachLogPath(slug, root) { return path.join(sessionDir(slug, root), 'coach.md'); }
+
+function appendCoachNote(slug, note, root = process.cwd()) {
+  const file = coachLogPath(slug, root);
+  const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const header = fs.existsSync(file) ? '' : `# coach log\n\nStyle lessons and session notes. This is the training data for your voice.\n`;
+  fs.appendFileSync(file, `${header}\n## ${stamp}\n${note.trim()}\n`);
+}
+
+function claudeAvailable() {
+  try { return spawnSync('claude', ['--version'], { timeout: 8000 }).status === 0; } catch { return false; }
+}
+
+function coachPrompt({ topic, beats, counts, findings, planText, draftText, currentBeat }) {
+  return [
+    'You are a writing coach inside atris write. HARD RULES:',
+    '- You NEVER write, rewrite, or suggest replacement prose for the draft. Not one sentence.',
+    '- You coach: point at what the writer did well IN THEIR OWN WORDS, ask one question, teach one style lesson.',
+    '- Be warm and direct. No em dashes. No hype words. Sentence case. Under 140 words total.',
+    '',
+    'Output EXACTLY these three sections:',
+    'CHEER: quote the writer\'s single best sentence from the draft verbatim and say specifically why it works. If the draft is empty, cheer the strongest dump line instead.',
+    `QUESTION: one pointed question to get the next words out for the beat "${currentBeat}". A question they answer in their own voice.`,
+    'LESSON: one concrete, reusable style observation about THIS writer (pattern you see in their words, good or fixable). One sentence.',
+    '',
+    `Topic: ${topic}`,
+    `Beats: ${beats.map((b) => `${b.title}(${STATE_WORD[b.state]},${counts.get(b.n) || 0}w)`).join(' ')}`,
+    findings.length ? `Slop findings: ${findings.map((f) => `${f.rule}@${f.line}`).join(', ')}` : 'Slop scan: clean',
+    '',
+    '--- plan.md ---', planText,
+    '--- draft.md ---', draftText || '(empty)',
+  ].join('\n');
+}
+
+function coach(argv, root = process.cwd()) {
+  const offline = argv.includes('--offline');
+  const slug = resolveSlug(argv.find((a) => !a.startsWith('-')), root);
+  if (!slug) { console.error('  no writing session found. start one: atris write start "<topic>"'); return 2; }
+  const { topic, beats, counts, text: planText } = syncStates(slug, root);
+  const draftFile = path.join(sessionDir(slug, root), 'draft.md');
+  let draftText = ''; try { draftText = fs.readFileSync(draftFile, 'utf8'); } catch {}
+  const findings = scanFile(draftFile, RULES.concat(loadProjectRules(root)));
+  const current = beats.find((b) => b.state === ' ') || beats.find((b) => b.state === '~') || beats[beats.length - 1];
+  const done = beats.filter((b) => b.state === 'x').length;
+  const totalWords = [...counts.values()].reduce((a, b) => a + b, 0);
+
+  console.log(`\n  coach · ${topic}`);
+  console.log(`  ${beats.map((b) => STATE_ICON[b.state]).join(' ')}   ${totalWords} words in, ${done}/${beats.length} beats passed\n`);
+
+  if (!offline && claudeAvailable()) {
+    const prompt = coachPrompt({ topic, beats, counts, findings, planText, draftText, currentBeat: current.title });
+    const res = spawnSync('claude', ['-p', prompt], { encoding: 'utf8', timeout: 120000, maxBuffer: 1024 * 1024 });
+    const out = (res.stdout || '').trim();
+    if (res.status === 0 && /QUESTION:/.test(out)) {
+      console.log(out.split('\n').map((l) => `  ${l}`).join('\n'));
+      const lesson = (out.match(/LESSON:\s*([\s\S]*?)$/m) || [])[1];
+      if (lesson) appendCoachNote(slug, `- lesson: ${lesson.trim()}`, root);
+      console.log(`\n  your move: answer under "## ${current.title}" in draft.md, then \`atris write status\`\n`);
+      return 0;
+    }
+    console.log('  (claude coach unavailable, falling back to the offline coach)\n');
+  }
+
+  // Offline coach: still proactive, still gets you going. Seeds + one question.
+  const seeds = dumpSeeds(planText);
+  if (totalWords > 0) {
+    console.log(`  you have ${totalWords} words down. that is a draft in motion, keep it moving.`);
+  } else if (seeds.length) {
+    console.log('  your raw material (pick the line with the most heat and start there):');
+    for (const s of seeds.slice(0, 4)) console.log(`    · ${s}`);
+  }
+  const q = BEAT_QUESTIONS[current.title.toLowerCase()] || GENERIC_QUESTION(current.title);
+  console.log(`\n  next beat: ${current.title}`);
+  console.log(`  question: ${q}`);
+  if (findings.length) console.log(`\n  while you are in there: ${findings.length} slop tell${findings.length === 1 ? '' : 's'} to fix in your own words (atris write review for the list)`);
+  console.log(`\n  your move: answer under "## ${current.title}" in draft.md, then \`atris write status\`\n`);
+  return 0;
+}
+
 function help() {
   console.log(`
   atris write — guided writing sessions (you write every word; atris structures + reviews)
 
     atris write start "<topic>" [--dump "..."] [--beats "a | b | c"]
+    atris write coach [slug]      the coach: cheers your best line, asks the next question (--offline for no-LLM)
     atris write status [slug]     progress against the outline (beats landed)
     atris write review [slug]     taste gate: slop scan + writing-policy passes (read-only)
     atris write pass <n> [slug]   mark beat n passed — the human calls it
@@ -249,6 +348,7 @@ function help() {
 function writeCommand(argv) {
   const sub = argv[0];
   if (sub === 'start') return start(argv.slice(1));
+  if (sub === 'coach' || sub === 'kick') return coach(argv.slice(1));
   if (sub === 'status') return status(argv.slice(1));
   if (sub === 'review') return review(argv.slice(1));
   if (sub === 'pass') return pass(argv.slice(1));
@@ -259,4 +359,4 @@ function writeCommand(argv) {
   return start(argv);
 }
 
-module.exports = { writeCommand, start, status, review, pass, listSessions, readPlan, draftWordCounts, syncStates, slugify };
+module.exports = { writeCommand, start, status, review, pass, coach, dumpSeeds, listSessions, readPlan, draftWordCounts, syncStates, slugify };
