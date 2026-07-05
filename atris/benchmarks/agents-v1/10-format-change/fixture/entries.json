@@ -1,0 +1,4 @@
+[
+  { "sku": "A1", "qty": 3, "priceCents": 250 },
+  { "sku": "B2", "qty": 1, "priceCents": 900 }
+]
