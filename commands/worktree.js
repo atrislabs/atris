@@ -494,6 +494,19 @@ function prune(args) {
 
 const PROTECTED_BRANCHES = new Set(['main', 'master']);
 
+// A worktree fresh off `worktree start` is merged into base by definition
+// (zero commits yet), so without a grace window the janitor reaps it while
+// the engine that requested it is still booting inside.
+const WORKTREE_REAP_GRACE_MS = 60 * 60 * 1000;
+
+function worktreeWithinReapGrace(worktreePath, now = Date.now()) {
+  try {
+    return now - fs.statSync(worktreePath).mtimeMs < WORKTREE_REAP_GRACE_MS;
+  } catch {
+    return false;
+  }
+}
+
 function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = false } = {}) {
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
@@ -539,6 +552,10 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     const merged = runGit(['merge-base', '--is-ancestor', wt.head, base], { cwd: root, check: false }).status === 0;
     if (!merged) {
       kept.push({ ...item, reason: 'unmerged' });
+      continue;
+    }
+    if (worktreeWithinReapGrace(wtPath)) {
+      kept.push({ ...item, reason: 'fresh_worktree_grace' });
       continue;
     }
     const candidate = { ...item, reason: 'merged_into_base' };

@@ -412,6 +412,10 @@ test('worktree cleanup removes only clean merged sibling worktrees', () => {
     runGit(['worktree', 'add', '-q', '-b', 'clean-done', cleanWorktree, 'HEAD']);
     runGit(['worktree', 'add', '-q', '-b', 'dirty-done', dirtyWorktree, 'HEAD']);
     fs.writeFileSync(path.join(dirtyWorktree, 'dirty.txt'), 'keep me\n');
+    // age both past the fresh-worktree grace window so cleanup may consider them
+    const staleStamp = new Date(Date.now() - 61 * 60 * 1000);
+    fs.utimesSync(cleanWorktree, staleStamp, staleStamp);
+    fs.utimesSync(dirtyWorktree, staleStamp, staleStamp);
 
     const dryRun = cleanupWorktrees({ root: dir, base: 'HEAD' });
     assert.deepEqual(dryRun.candidates.map(item => fs.realpathSync(item.path)), [fs.realpathSync(cleanWorktree)]);

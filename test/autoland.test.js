@@ -474,7 +474,12 @@ test('tick janitor keeps fresh or dirty worktrees and reaps old clean residue', 
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
-    assert.equal(receipt.reaped.worktrees, 1);
+    // old-wt is reaped by whichever path reaches it first (janitor
+    // cleanupWorktrees or the daily land reap), so assert the total and
+    // pin the end state below.
+    const totalReapedWorktrees = (Number(receipt.worktrees_reaped) || 0)
+      + ((receipt.reaped && Number(receipt.reaped.worktrees)) || 0);
+    assert.equal(totalReapedWorktrees, 1);
     assert.equal(receipt.reaped.branches, 1);
     assert.equal(fs.existsSync(freshWt), true);
     assert.equal(fs.existsSync(oldWt), false);
@@ -625,9 +630,12 @@ test('janitor: a zombie paused mission and a merged worktree disappear on the ne
       { schema: 'atris.mission.v1', id: 'mission-alive', owner: 'neo', objective: 'still running', status: 'running', created_at: threeDaysAgo, updated_at: threeDaysAgo },
     ];
     fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), missions.map((m) => JSON.stringify(m)).join('\n') + '\n');
-    // a clean worktree whose head is already merged into base
+    // a clean worktree whose head is already merged into base, backdated
+    // past the fresh-worktree grace window so the janitor may reap it
     const wtPath = path.join(base, 'merged-wt');
     runGit(['worktree', 'add', '-b', 'task/merged-fixture', wtPath], repo);
+    const staleStamp = new Date(Date.now() - 61 * 60 * 1000);
+    fs.utimesSync(wtPath, staleStamp, staleStamp);
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
