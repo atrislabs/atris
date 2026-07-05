@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { buildWeekReportData, renderWeekReport } = require('../commands/report');
+const { buildWeekReportData, renderWeekReport, reportCommand } = require('../commands/report');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = new Date('2026-07-05T12:00:00Z').getTime();
@@ -15,6 +15,30 @@ function makeTempDir() {
 
 function cleanup(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function captureStdout(fn) {
+  const originalLog = console.log;
+  let out = '';
+  console.log = (...args) => {
+    out += `${args.join(' ')}\n`;
+  };
+  try {
+    const code = fn();
+    return { code, out };
+  } finally {
+    console.log = originalLog;
+  }
+}
+
+function withCwd(dir, fn) {
+  const original = process.cwd();
+  process.chdir(dir);
+  try {
+    return fn();
+  } finally {
+    process.chdir(original);
+  }
 }
 
 function ensureDir(dir) {
@@ -143,4 +167,59 @@ test('renderWeekReport includes title line and no em dash', () => {
   assert.match(out, /^week in review: 1 landed, 1 completions, 3 xp/);
   assert.match(out, /landings: 1 tasks, known from task projection/);
   assert.equal(out.includes('—'), false);
+});
+
+test('reportCommand --html includes landing panel markup and xp bignumber', () => {
+  const dir = makeTempDir();
+  try {
+    const now = new Date().toISOString();
+    seedProjection(dir, [
+      { id: 'fresh-id', display_id: 'CLI-1', title: 'ship weekly report html', status: 'done', done_at: now },
+    ]);
+    seedXp(dir, [
+      {
+        receipt_id: 'task_review:fresh',
+        outcome: 'accepted',
+        xp: 12,
+        title: 'accepted html work',
+        accepted_at: now,
+      },
+    ]);
+    const { code, out } = withCwd(dir, () => captureStdout(() => reportCommand(['week', '--html'])));
+    assert.equal(code, 0);
+    assert.match(out, /^<!doctype html>/);
+    assert.match(out, /data-atris-block="panel"/);
+    assert.match(out, /CLI-1: ship weekly report html/);
+    assert.match(out, /data-atris-block="bignumber"/);
+    assert.match(out, /<div class="num">12<\/div>/);
+    assert.equal(out.includes('—'), false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('reportCommand --html --out writes a standalone html file', () => {
+  const dir = makeTempDir();
+  try {
+    const outFile = path.join(dir, 'out', 'week.html');
+    const { code, out } = withCwd(dir, () => captureStdout(() => reportCommand(['week', '--html', '--out', outFile])));
+    assert.equal(code, 0);
+    assert.equal(out.trim(), `wrote ${outFile}`);
+    const html = fs.readFileSync(outFile, 'utf8');
+    assert.match(html, /^(<!doctype|<html)/i);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('reportCommand --html empty week renders week in review page', () => {
+  const dir = makeTempDir();
+  try {
+    const { code, out } = withCwd(dir, () => captureStdout(() => reportCommand(['week', '--html'])));
+    assert.equal(code, 0);
+    assert.match(out, /week in review/);
+    assert.match(out, /quiet week/);
+  } finally {
+    cleanup(dir);
+  }
 });

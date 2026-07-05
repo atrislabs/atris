@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { getLogPath } = require('../lib/file-ops');
+const { renderHtml } = require('../lib/html-render');
 const { parseJournalSections } = require('../lib/journal');
 const { isDoneSection } = require('../lib/todo-sections');
 const { parseSection } = require('../lib/todo-fallback');
@@ -45,6 +46,14 @@ function inlineText(value, fallback = 'untitled') {
 function formatXp(value) {
   const number = Number(value) || 0;
   return Number.isInteger(number) ? String(number) : String(Math.round(number * 100) / 100);
+}
+
+function plural(count, singular, pluralForm = `${singular}s`) {
+  return Number(count) === 1 ? singular : pluralForm;
+}
+
+function lowerText(value, fallback = 'untitled') {
+  return inlineText(value, fallback).toLowerCase();
 }
 
 function localDateKey(value) {
@@ -243,8 +252,91 @@ function renderWeekReport(data) {
   return lines.join('\n');
 }
 
+function panelRows(rows, emptyTitle, emptySub) {
+  return rows.length ? rows : [{ title: emptyTitle, sub: emptySub, sev: 2 }];
+}
+
+function buildWeekReportHtmlSpec(data) {
+  const landings = Array.isArray(data?.landings) ? data.landings : [];
+  const completions = Array.isArray(data?.completions) ? data.completions : [];
+  const xp = data?.xp && typeof data.xp === 'object' ? data.xp : { total: 0, receipts: [] };
+  const receipts = Array.isArray(xp.receipts) ? xp.receipts : [];
+  const days = data?.days || DEFAULT_DAYS;
+  const blocks = [
+    {
+      type: 'title',
+      headline: 'week in review',
+      sub: `last ${days} ${plural(days, 'day')} across tasks, journal completions, and career xp`,
+    },
+    {
+      type: 'bignumber',
+      number: formatXp(xp.total),
+      label: 'career xp earned',
+      sub: `${receipts.length} ${plural(receipts.length, 'receipt')} in this window`,
+    },
+    {
+      type: 'panel',
+      heading: 'landings',
+      sub: 'done tasks from the local task projection',
+      panel: {
+        header: {
+          title: 'task landings',
+          meta: `${landings.length} ${plural(landings.length, 'task')}`,
+        },
+        rows: panelRows(
+          landings.map((landing) => ({
+            title: `${inlineText(landing.id, 'task')}: ${lowerText(landing.title, 'untitled task')}`,
+            sub: lowerText(landing.source || landing.id, 'task'),
+            sev: 0,
+          })),
+          'no task landings found',
+          'task projection had no done items in this window'
+        ),
+      },
+    },
+    {
+      type: 'panel',
+      heading: 'journal completions',
+      sub: 'completed items from daily logs',
+      panel: {
+        header: {
+          title: 'journal completions',
+          meta: `${completions.length} ${plural(completions.length, 'item')}`,
+        },
+        rows: panelRows(
+          completions.map((completion) => ({
+            title: `${inlineText(completion.date, 'journal')}: ${lowerText(completion.title, 'completed item')}`,
+            sub: lowerText(completion.source, 'journal'),
+            sev: 1,
+          })),
+          'no journal completions found',
+          'daily logs had no completed items in this window'
+        ),
+      },
+    },
+  ];
+
+  if (data?.empty) {
+    blocks.push({
+      type: 'statement',
+      text: 'quiet week',
+      sub: `no landings, journal completions, or xp receipts found in the last ${days} ${plural(days, 'day')}`,
+    });
+  }
+
+  return {
+    theme: 'atris',
+    brand: { name: 'atris' },
+    blocks,
+  };
+}
+
+function renderWeekReportHtml(data) {
+  return renderHtml(buildWeekReportHtmlSpec(data), { title: 'week in review' });
+}
+
 function showReportHelp() {
-  console.log('Usage: atris report [week] [--days=N] [--json]');
+  console.log('Usage: atris report [week] [--days=N] [--json] [--html] [--out <file>]');
   console.log('Shows landings, journal completions, and Career XP for the last N days.');
 }
 
@@ -261,7 +353,7 @@ function positionalArgs(args) {
   const positionals = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === '--days') {
+    if (arg === '--days' || arg === '--out') {
       index += 1;
       continue;
     }
@@ -269,6 +361,15 @@ function positionalArgs(args) {
     positionals.push(arg);
   }
   return positionals;
+}
+
+function readOutFlag(args) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--out') return args[index + 1] || null;
+    if (arg.startsWith('--out=')) return arg.slice('--out='.length) || null;
+  }
+  return null;
 }
 
 function reportCommand(args = []) {
@@ -289,6 +390,18 @@ function reportCommand(args = []) {
     console.log(JSON.stringify(data, null, 2));
     return 0;
   }
+  if (argv.includes('--html')) {
+    const html = renderWeekReportHtml(data);
+    const outFile = readOutFlag(argv);
+    if (outFile) {
+      fs.mkdirSync(path.dirname(outFile), { recursive: true });
+      fs.writeFileSync(outFile, html, 'utf8');
+      console.log(`wrote ${outFile}`);
+      return 0;
+    }
+    console.log(html);
+    return 0;
+  }
   console.log(renderWeekReport(data));
   return 0;
 }
@@ -296,6 +409,7 @@ function reportCommand(args = []) {
 module.exports = {
   buildWeekReportData,
   renderWeekReport,
+  renderWeekReportHtml,
   reportCommand,
   showReportHelp,
 };
