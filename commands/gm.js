@@ -6,6 +6,8 @@ const path = require('path');
 
 const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
 const AGENTXP_GLOBAL_SYNC_RULE = 'Run atris login, then sync. Owner-provided sync tokens are guided-demo fallback only.';
+const GM_WATCH_DEFAULT_INTERVAL_SECONDS = 10;
+const GM_WATCH_CONTENT_LIMIT = 180;
 
 const ROLE_PLAYERS_TO_IGNORE = new Set([
   'game-manager',
@@ -21,17 +23,21 @@ const ROLE_PLAYERS_TO_IGNORE = new Set([
 function showHelp() {
   console.log('');
   console.log('Usage: atris gm [--manager <id>] [--player <id>] [--workspace <path>] [--json]');
+  console.log('       atris gm --watch [--interval 10]');
   console.log('');
   console.log('Description:');
   console.log('  Enter AgentXP General Manager mode for the current Atris workspace.');
   console.log('  Shows local players, active missions, review queue, and the next command');
   console.log('  that moves the same AgentXP game loop forward.');
+  console.log('  Watch mode keeps that first board, then appends new mission, review, and feed events.');
   console.log('');
   console.log('Options:');
   console.log('  --manager <id>    Manager id. Defaults to game-manager when present.');
   console.log('  --as <id>         Alias for --player.');
   console.log('  --player <id>     Preferred player when seeding a first local mission.');
   console.log('  --workspace <p>   Read missions from another Atris workspace.');
+  console.log('  --watch           Append new GM events until Ctrl+C.');
+  console.log('  --interval <sec>  Watch polling interval. Defaults to 10.');
   console.log('  --no-seed         Do not create a starter player mission.');
   console.log('  --json            Print machine-readable mode state.');
   console.log('  --help, -h        Show this help.');
@@ -294,17 +300,25 @@ function nextCommands({ seeded, reviewQueue, missions, players, manager }) {
   return ['atris gm --player <player>'];
 }
 
-function gmState(args = []) {
+function readGmTaskRows(args = []) {
   const taskDb = require('../lib/task-db');
   const workspaceArg = flag(args, '--workspace') || flag(args, '--root') || process.cwd();
   const workspaceRoot = taskDb.workspaceRoot(path.resolve(workspaceArg));
   const db = taskDb.open();
-  let tasks = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, {
+  const tasks = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, {
     workspaceRoot,
     limit: 500,
   }));
+  return { taskDb, db, workspaceRoot, tasks };
+}
+
+function gmState(args = [], options = {}) {
+  const { taskDb, db, workspaceRoot, tasks: initialTasks } = readGmTaskRows(args);
+  let tasks = initialTasks;
   const detected = inferManager(workspaceRoot, args);
-  const starter = ensureStarterMission(taskDb, db, workspaceRoot, tasks, args);
+  const starter = options.seed === false
+    ? { tasks, seeded: null }
+    : ensureStarterMission(taskDb, db, workspaceRoot, tasks, args);
   tasks = starter.tasks;
 
   const missions = activeAgentXpTasks(tasks).map(compactTask);
@@ -335,6 +349,247 @@ function gmState(args = []) {
     global_sync_rule: AGENTXP_GLOBAL_SYNC_RULE,
     leaderboard_url: AGENTXP_LEADERBOARD_URL,
   };
+}
+
+function watchIntervalSeconds(args = []) {
+  const raw = flag(args, '--interval');
+  const parsed = parseInt(raw || String(GM_WATCH_DEFAULT_INTERVAL_SECONDS), 10);
+  return Number.isFinite(parsed) ? Math.max(1, parsed) : GM_WATCH_DEFAULT_INTERVAL_SECONDS;
+}
+
+function watchStamp(value) {
+  const date = value ? new Date(value) : new Date();
+  const safe = Number.isFinite(date.getTime()) ? date : new Date();
+  return safe.toTimeString().slice(0, 5);
+}
+
+function eventMs(value) {
+  const ms = value ? Date.parse(value) : NaN;
+  return Number.isFinite(ms) ? ms : Date.now();
+}
+
+function watchLine(event) {
+  const name = String(event.name || event.kind || 'event').replace(/\s+/g, ' ').trim();
+  const content = clip(event.content || '', GM_WATCH_CONTENT_LIMIT);
+  return `[${watchStamp(event.at)}] [${event.kind}] ${name}: ${content}`;
+}
+
+function missionShortId(mission) {
+  const id = String(mission && mission.id || '');
+  if (!id) return 'mission';
+  return id.length > 20 ? `...${id.slice(-8)}` : id;
+}
+
+function missionFingerprint(mission) {
+  return [
+    mission && mission.status,
+    mission && mission.last_tick_at,
+    mission && mission.last_tick_index,
+    mission && mission.receipt_path,
+  ].join('|');
+}
+
+function missionEvent(mission) {
+  let heartbeat = '';
+  try {
+    const { missionHeartbeatLines } = require('./mission');
+    heartbeat = missionHeartbeatLines(mission).map(line => line.trim()).join(', ');
+  } catch {
+    heartbeat = '';
+  }
+  const title = mission.objective || mission.slug || mission.id || 'mission';
+  return {
+    id: `mission:${mission.id}`,
+    kind: 'mission',
+    name: mission.owner || mission.slug || 'mission',
+    at: mission.last_tick_at || mission.updated_at || mission.created_at,
+    content: [
+      missionShortId(mission),
+      `[${mission.status || 'unknown'}]`,
+      heartbeat || null,
+      clip(title, 100),
+    ].filter(Boolean).join(' - '),
+    fingerprint: missionFingerprint(mission),
+  };
+}
+
+function taskMissionFingerprint(task) {
+  return [
+    task && task.status,
+    task && task.updated_at,
+    task && task.claimed_by,
+    task && task.done_at,
+  ].join('|');
+}
+
+function taskMissionEvent(task) {
+  const player = taskAssignee(task) || task.claimed_by || 'unassigned';
+  return {
+    id: `task:${task.id}`,
+    kind: 'mission',
+    name: player,
+    at: task.updated_at ? new Date(Number(task.updated_at)).toISOString() : null,
+    content: `${taskRef(task)} [${task.status || 'unknown'}] ${task.title || 'untitled task'}`,
+    fingerprint: taskMissionFingerprint(task),
+  };
+}
+
+function reviewEvent(task) {
+  const player = task.assigned_to || taskAssignee(task) || task.claimed_by || 'review';
+  return {
+    id: task.id,
+    kind: 'review',
+    name: player,
+    at: task.updated_at ? new Date(Number(task.updated_at)).toISOString() : null,
+    content: `${task.ref || taskRef(task)} ready - ${task.title || 'untitled task'}`,
+  };
+}
+
+function feedPostId(post) {
+  return String(post.id || post.post_id || `${post.created_at || ''}:${post.author_id || ''}:${post.content || ''}`);
+}
+
+function credentialsFileExists() {
+  return fs.existsSync(path.join(os.homedir(), '.atris', 'credentials.json'));
+}
+
+async function fetchFeedEvents(workspaceRoot) {
+  if (!credentialsFileExists()) return [];
+  let feed;
+  let loadCredentials;
+  try {
+    feed = require('./feed');
+    loadCredentials = require('../utils/auth').loadCredentials;
+  } catch {
+    return [];
+  }
+  if (
+    typeof feed.findBusiness !== 'function'
+    || typeof feed.fetchPosts !== 'function'
+    || typeof feed.authorLabel !== 'function'
+  ) {
+    return [];
+  }
+  const business = feed.findBusiness(workspaceRoot);
+  if (!business) return [];
+  const credentials = loadCredentials();
+  if (!credentials || !credentials.token) return [];
+  const aliases = typeof feed.loadAuthorAliases === 'function' ? feed.loadAuthorAliases(business.root) : {};
+  const posts = await feed.fetchPosts(business.businessId, credentials.token, 20);
+  return posts.map((post) => {
+    const id = feedPostId(post);
+    return {
+      id,
+      kind: 'feed',
+      name: feed.authorLabel(post, aliases, credentials.user_id, credentials.email),
+      at: post.created_at,
+      content: String(post.content || '').replace(/\s+/g, ' ').trim(),
+    };
+  });
+}
+
+function collectLocalWatchState(args = []) {
+  const { workspaceRoot, tasks } = readGmTaskRows(args);
+  const taskMissions = activeAgentXpTasks(tasks);
+  const reviewQueue = taskMissions.filter(task => task.status === 'review');
+  return { workspaceRoot, taskMissions, reviewQueue };
+}
+
+function listDurableMissions(workspaceRoot) {
+  try {
+    const { listMissions } = require('./mission');
+    if (typeof listMissions !== 'function') return [];
+    return listMissions(workspaceRoot);
+  } catch {
+    return [];
+  }
+}
+
+async function gmWatchSnapshot(args) {
+  const local = collectLocalWatchState(args);
+  const durableMissions = listDurableMissions(local.workspaceRoot);
+  const feedEvents = await fetchFeedEvents(local.workspaceRoot);
+  return {
+    reviewEvents: local.reviewQueue.map(reviewEvent),
+    missionEvents: [
+      ...local.taskMissions.map(taskMissionEvent),
+      ...durableMissions.map(missionEvent),
+    ],
+    feedEvents,
+  };
+}
+
+function markSnapshotSeen(snapshot, seen) {
+  for (const event of snapshot.missionEvents) seen.missions.set(event.id, event.fingerprint);
+  for (const event of snapshot.reviewEvents) seen.reviews.add(event.id);
+  for (const event of snapshot.feedEvents) seen.feed.add(event.id);
+}
+
+function newWatchEvents(snapshot, seen) {
+  const events = [];
+  for (const event of snapshot.missionEvents) {
+    const previous = seen.missions.get(event.id);
+    if (previous !== event.fingerprint) {
+      events.push(event);
+      seen.missions.set(event.id, event.fingerprint);
+    }
+  }
+  for (const event of snapshot.reviewEvents) {
+    if (!seen.reviews.has(event.id)) {
+      events.push(event);
+      seen.reviews.add(event.id);
+    }
+  }
+  for (const event of snapshot.feedEvents) {
+    if (!seen.feed.has(event.id)) {
+      events.push(event);
+      seen.feed.add(event.id);
+    }
+  }
+  return events.sort((a, b) => eventMs(a.at) - eventMs(b.at));
+}
+
+async function gmWatch(args = []) {
+  const intervalSeconds = watchIntervalSeconds(args);
+  const seen = {
+    missions: new Map(),
+    reviews: new Set(),
+    feed: new Set(),
+  };
+  try {
+    markSnapshotSeen(await gmWatchSnapshot(args), seen);
+  } catch {
+    // Watch mode is append-only; transient read failures should not redraw or exit.
+  }
+
+  console.log('');
+  console.log(`Watching GM events every ${intervalSeconds}s. Ctrl+C to stop.`);
+  console.log('');
+
+  let polling = false;
+  const poll = async () => {
+    if (polling) return;
+    polling = true;
+    try {
+      const events = newWatchEvents(await gmWatchSnapshot(args, seen), seen);
+      for (const event of events) console.log(watchLine(event));
+    } catch {
+      // Match fleet watch: quiet on transient poll failures.
+    } finally {
+      polling = false;
+    }
+  };
+
+  const interval = setInterval(poll, intervalSeconds * 1000);
+  return new Promise((resolve) => {
+    const onSigint = () => {
+      clearInterval(interval);
+      process.off('SIGINT', onSigint);
+      console.log('\nStopped watching.\n');
+      resolve();
+    };
+    process.on('SIGINT', onSigint);
+  });
 }
 
 function render(state) {
@@ -386,9 +641,13 @@ async function gmCommand(...args) {
     return;
   }
   render(state);
+  if (hasFlag(args, '--watch')) {
+    await gmWatch(args);
+  }
 }
 
 module.exports = {
   gmCommand,
   gmState,
+  gmWatchSnapshot,
 };

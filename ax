@@ -869,6 +869,8 @@ function formatGoalStatusLine(goal, options = {}) {
   const status = String(goal.mission_status || '').toLowerCase();
   if (!['active', 'running', 'planning', 'in_progress', 'ready'].includes(status)) return '';
   const elapsed = goalElapsedSeconds(goal);
+  // A goal "running" for >24h is stale state, not a live goal — hide it.
+  if (elapsed !== null && elapsed > 86400) return '';
   const objective = String(goal.objective).length > 64
     ? `${String(goal.objective).slice(0, 61)}...`
     : String(goal.objective);
@@ -2189,7 +2191,7 @@ function buildPayload(message, options = {}) {
   const payload = {
     message: buildMessage(message, options.history || []),
     model: modelForMode(mode),
-    max_turns: local ? (mode === 'fast' ? 8 : 14) : 1,
+    max_turns: local ? (mode === 'fast' ? 16 : 24) : 1,
     verify_command: verifyCommand || 'true'
   };
   if (previousMessages.length) {
@@ -2402,7 +2404,7 @@ async function postTurn(message, options = {}) {
   // SSE traffic in between, so the socket-idle timeout needs more headroom.
   const baseTimeoutMs = payload.model === 'atris:max' ? 300000 : payload.model === 'atris:pro' ? 180000 : 60000;
   let timeoutMs = options.business ? Math.max(baseTimeoutMs, 180000) : baseTimeoutMs;
-  // Local workspace tool loops (max_turns 8/14) legitimately run past the fast
+  // Local workspace tool loops (max_turns 16/24) legitimately run past the fast
   // lane's 60s chat wall — SwapBench 2026-07-02: three tool-loop tasks died at
   // ~60s as "Atris cloud did not respond". Same headroom as business relays.
   if (local) timeoutMs = Math.max(timeoutMs, 180000);

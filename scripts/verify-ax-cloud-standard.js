@@ -78,17 +78,17 @@ for (const message of WORKSPACE_PROMPTS) {
 }
 const fastLocal = ax.buildPayload('what files are here?', { mode: 'fast', cwd: repoRoot });
 assert.equal(fastLocal.workspace_path, repoRoot, 'local fast payload carries the checkout as workspace_path');
-assert.equal(fastLocal.max_turns, 8, 'local fast turns get the tool loop');
+assert.equal(fastLocal.max_turns, 16, 'local fast turns get the tool loop');
 const proLocal = ax.buildPayload('fix the xp game tests', { mode: 'pro', cwd: repoRoot });
 assert.equal(proLocal.model, 'atris:pro');
-assert.equal(proLocal.max_turns, 14, 'local pro turns get the deeper tool loop');
+assert.equal(proLocal.max_turns, 24, 'local pro turns get the deeper tool loop');
 
 // 4) Explicit flags always win, both directions.
 assert.equal(ax.resolveRoute('what files are here?', { route: 'cloud', cwd: repoRoot }), 'cloud');
 assert.equal(ax.resolveRoute('what files are here?', { route: 'local', cwd: bareCwd }), 'local');
 const forcedLocal = ax.buildPayload('what files are here?', { mode: 'fast', route: 'local', cwd: bareCwd });
 assert.equal(forcedLocal.workspace_path, bareCwd);
-assert.equal(forcedLocal.max_turns, 8);
+assert.equal(forcedLocal.max_turns, 16);
 
 // 5) Run profile from a bare cwd stays a cloud profile.
 const cloudProfile = ax.buildRunProfile({ mode: 'fast', cwd: bareCwd });
