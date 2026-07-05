@@ -943,6 +943,7 @@ test('mission run objective starts with product takeoff instead of runner plumbi
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'mission-lead'), { recursive: true });
     const started = runCli([
       'mission',
       'run',
@@ -2651,6 +2652,7 @@ test('mission run with an objective starts a visible-goal mission', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'mission-lead'), { recursive: true });
 
     const run = runCli(['mission', 'run', 'atris mission run', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);

@@ -1085,7 +1085,8 @@ function normalizeMissionReceiptResult(mission, result, receiptPath = '') {
 }
 
 function missionRunStartNextLine(mission, nextCommand, warnings = []) {
-  if (warnings.length) return 'Add a verifier before completion, then run the first proof tick.';
+  const missingVerifier = warnings.some((warning) => warning && warning.code === 'missing_verifier');
+  if (missingVerifier) return 'Add a verifier before completion, then run the first proof tick.';
   if (isCodexGoalMission(mission) && !codexNativeGoalAck(mission)) {
     return 'Start the visible goal, then continue this mission.';
   }
