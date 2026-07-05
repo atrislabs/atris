@@ -3336,7 +3336,11 @@ function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {}, h
   if (reviewNeedsAgent) return { task: reviewNeedsAgent, reason: 'review_needs_agent_verification' };
   const reviewProofBoundaryBlocked = columns.review.find(task => reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp })?.next_action === PROOF_BOUNDARY_BLOCKED_ACTION);
   if (reviewProofBoundaryBlocked) return { task: reviewProofBoundaryBlocked, reason: 'review_proof_boundary_blocked' };
-  const planQueue = normalizedScope.goal_id ? sortTasksOldestFirst(columns.plan) : columns.plan;
+  // Scoped selection (goal_id, tag, status, or review_state) implies a sequenced
+  // work stream (e.g. golden-path "pass 1a" before "pass 2"): earlier-created
+  // tasks must win over newer ones, not the newest-first default used for the
+  // unscoped desk view.
+  const planQueue = !taskQueueScopeIsEmpty(normalizedScope) ? sortTasksOldestFirst(columns.plan) : columns.plan;
   const planReady = planQueue[0];
   if (planReady) return { task: planReady, reason: 'plan_ready' };
   const backlogIdea = columns.backlog[0];

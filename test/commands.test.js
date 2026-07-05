@@ -6763,6 +6763,56 @@ test('task next and list honor tag scope before mutating tasks', () => {
   }
 });
 
+test('task current picks earlier golden-path pass step over a later one touched more recently', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const pass1aCreated = runCli([
+      'task',
+      'new',
+      'Golden path pass 1a: fresh install prints one next command',
+      '--tag',
+      'golden-path',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(pass1aCreated.status, 0, pass1aCreated.stderr);
+    const pass1aTask = JSON.parse(pass1aCreated.stdout).task;
+
+    const pass1aPlanned = runCli(['task', 'plan', pass1aTask.display_id, '--goal', 'ship pass 1a', '--exit', 'pass 1a lands', '--proof-needed', 'node --test', '--as', 'onboarding', '--json'], { cwd: dir, env });
+    assert.equal(pass1aPlanned.status, 0, pass1aPlanned.stderr);
+
+    const pass2Created = runCli([
+      'task',
+      'new',
+      'Golden path pass 2: mission tick recovery is actionable',
+      '--tag',
+      'golden-path',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(pass2Created.status, 0, pass2Created.stderr);
+    const pass2Task = JSON.parse(pass2Created.stdout).task;
+
+    // Plan the later pass step *after* pass 1a, so it has a newer updated_at.
+    // This mirrors the real report: a later pass step gets planned/re-touched
+    // after the fact and would win under newest-first ordering.
+    const pass2Planned = runCli(['task', 'plan', pass2Task.display_id, '--goal', 'ship pass 2', '--exit', 'pass 2 lands', '--proof-needed', 'node --test', '--as', 'onboarding', '--json'], { cwd: dir, env });
+    assert.equal(pass2Planned.status, 0, pass2Planned.stderr);
+
+    const scopedCurrent = runCli(['task', 'current', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
+    assert.equal(scopedCurrent.status, 0, scopedCurrent.stderr);
+    const scopedPayload = JSON.parse(scopedCurrent.stdout);
+    assert.equal(scopedPayload.current.selected_reason, 'plan_ready');
+    assert.equal(scopedPayload.current.selected_task_id, pass1aTask.id);
+    assert.equal(scopedPayload.current.selected_ref, pass1aTask.display_id);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task add warns when title lacks operator-ready plain why', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
