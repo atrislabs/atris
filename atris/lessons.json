@@ -9,88 +9,118 @@
     },
     "note": "If a lesson has no detector, self-heal falls back to keyword grep and never auto-promotes status. Observation-only lessons (process rules, not fixable bugs) should carry status:observed and no detector."
   },
-
   "diminishing-returns-cluster": {
     "scope": "atris-cli",
-    "applies_to": ["commands/member.js"],
+    "applies_to": [
+      "commands/member.js"
+    ],
     "status": "observed",
     "notes": "Process rule, not a code-detectable state. CLI-275..279 were 5 consecutive micro-tweaks to one scanner function (near-zero marginal value). At orient time, if the last 3 task titles share a prefix and the same file is in every recent diff, stop the cluster and diversify."
   },
-
   "gate-saturation-regime": {
     "scope": "atris-cli",
-    "applies_to": ["atris/team/auto-improver"],
+    "applies_to": [
+      "atris/team/auto-improver"
+    ],
     "status": "observed",
     "notes": "Whole-loop regime rule (broader than diminishing-returns-cluster). When the codebase has hardened (rising suite, surfaces verify clean) AND the human accept gate has saturated (verified work piling certified-but-unaccepted, growing ~1/tick), shipping another change is ~0 marginal value — the bottleneck is downstream. Priority: (1) depth/consolidation that deletes bug-classes over breadth of new pins; (2) surface the gate as THE bottleneck, prefer fewer higher-impact changes; (3) never manufacture pins to keep tick-count up. Proposals outpacing acceptance by ~30+ means throughput is not the constraint."
   },
-
   "staleness-shell-injection-guard": {
     "scope": "atris-cli",
-    "applies_to": ["commands/autopilot.js"],
+    "applies_to": [
+      "commands/autopilot.js"
+    ],
     "detector": "! grep -qE 'grep \"\\$\\{|--grep=\"\\$\\{' commands/autopilot.js && grep -q \"execFileSync('grep'\" commands/autopilot.js",
     "status": "resolved",
     "last_detected": "2026-06-13"
   },
-
   "inbox-parser-hr-guard": {
     "scope": "atris-cli",
-    "applies_to": ["commands/run.js", "commands/autopilot.js", "commands/workflow.js"],
+    "applies_to": [
+      "commands/run.js",
+      "commands/autopilot.js",
+      "commands/workflow.js"
+    ],
     "detector": "grep -q \"startsWith('- ') && t.length > 2\" commands/run.js && grep -q \"startsWith('- ') && t.length > 2\" commands/autopilot.js && grep -q \"startsWith('- ') && t.length > 2\" commands/workflow.js",
     "status": "resolved",
     "last_detected": "2026-06-13"
   },
-
   "parallel-paths-drift": {
     "scope": "atris-cli",
-    "applies_to": ["commands/mission.js"],
+    "applies_to": [
+      "commands/mission.js"
+    ],
     "detector": "test $(grep -c 'extractLayerFromReceiptText(' commands/mission.js) -ge 3",
     "status": "resolved",
     "last_detected": "2026-06-13"
   },
-
   "error-grind-guards-compose": {
     "scope": "atris-cli",
-    "applies_to": ["commands/mission.js"],
+    "applies_to": [
+      "commands/mission.js"
+    ],
     "detector": "grep -q \"pauseReason = 'model-unavailable'\" commands/mission.js && grep -q 'consecutiveSameReasonErrors(ticks)' commands/mission.js && grep -q 'max-ticks-reached' commands/mission.js && grep -q 'missionSelectableForLoop' commands/mission.js",
     "status": "resolved",
     "last_detected": "2026-06-13"
   },
-
   "clean-absolute-source-paths": {
     "scope": "atris-cli",
-    "applies_to": ["commands/clean.js"],
+    "applies_to": [
+      "commands/clean.js"
+    ],
     "detector": "grep -q 'path.isAbsolute' commands/clean.js",
     "status": "resolved",
     "last_detected": "2026-04-20"
   },
-
   "benchmark-prompt-paths": {
     "scope": "atris-cli",
-    "applies_to": ["test/experiments.test.js"],
+    "applies_to": [
+      "test/experiments.test.js"
+    ],
     "detector": "grep -q 'assert.match(prompt' test/experiments.test.js",
     "status": "resolved",
     "last_detected": "2026-04-20"
   },
-
   "map-line-drift": {
     "scope": "atris-cli",
-    "applies_to": ["commands/workflow.js", "commands/init.js", "commands/brainstorm.js"],
+    "applies_to": [
+      "commands/workflow.js",
+      "commands/init.js",
+      "commands/brainstorm.js"
+    ],
     "status": "observed",
     "notes": "Process rule, not a fixable code state. clean.js healer partially mitigates but end-line drift still needs human verification post-feature."
   },
-
   "human-output-t21-fail": {
     "scope": "atris-cli",
-    "applies_to": ["commands/autopilot.js", "commands/status.js", "commands/workflow.js"],
+    "applies_to": [
+      "commands/autopilot.js",
+      "commands/status.js",
+      "commands/workflow.js"
+    ],
     "status": "observed",
     "notes": "Output-budget rule. Needs a real end-to-end runner to turn into a detector; deferring to v3.9."
   },
-
   "escape-regexp-single-home": {
     "scope": "atris-cli",
-    "applies_to": ["lib/escape-regexp.js", "commands/verify.js", "commands/task.js", "commands/brain.js", "commands/clean.js", "lib/state-detection.js", "lib/file-ops.js", "lib/journal.js", "lib/todo-fallback.js", "lib/policy-lessons.js"],
+    "applies_to": [
+      "lib/escape-regexp.js",
+      "commands/verify.js",
+      "commands/task.js",
+      "commands/brain.js",
+      "commands/clean.js",
+      "lib/state-detection.js",
+      "lib/file-ops.js",
+      "lib/journal.js",
+      "lib/todo-fallback.js",
+      "lib/policy-lessons.js"
+    ],
     "detector": "! grep -R -F 'replace(/[.*+?^${}()|[\\]\\\\]/g' commands lib --include='*.js' | grep -v 'lib/escape-regexp.js' && grep -q 'function escapeRegExp' lib/escape-regexp.js",
     "status": "resolved",
     "last_detected": "2026-06-13"
+  },
+  "experiment-tick-prompt-cot-oneliner": {
+    "status": "observed",
+    "scope": "atris-cli"
   }
 }

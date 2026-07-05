@@ -4,6 +4,8 @@
 
 ---
 
+- **[2026-07-05] experiment-tick-prompt-cot-oneliner** — fail — Daily experiment tick-prompt-cot-oneliner reverted (apply_failed).
+
 - **[2026-05-08] narrow-grep-hides-matches** — fail — When operator says X exists in our code and a single-pattern grep returns 0 hits, do NOT conclude it does not exist. Run wider `grep -rn` first (whole backend/, not one subdir) before doubting. 2026-05-08: grepped `gpt-5\.5|gpt5\.5|gpt-5p5` in clients/ only, missed 20+ matches in routers/atris2_router.py + tests/, told operator gpt-5.5 was not wired — operator was right. (Folded from the retired `atris/learnings.jsonl` store so lessons.md is the single lesson format.)
 
 - **[2026-06-24] outbound-artifacts-must-render-before-send** — fail — Justin received raw HTML because the send path treated "HTML email" as content instead of final transport format, and no receiver-side preview gate caught it. Rule: before any team/customer send, record the recipient, intended rendered format, exact final body, approval packet, and send receipt; HTML or visual artifacts need render proof before approval. Detector: `scripts/outbound-artifact-gate.js` fails raw HTML in plain bodies, rendered-source fences sent as copy, missing render proof for HTML/visual sends, and anti-slop terms.
