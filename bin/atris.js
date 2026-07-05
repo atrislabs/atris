@@ -503,7 +503,7 @@ function showHelp() {
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
-  console.log('  brief      - one local html page of recent agent activity');
+  console.log('  brief      - Show one plain page of recent team progress');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
   console.log('  recap      - What your AI team did, in plain English (--share for paste-ready)');
   console.log('  report     - Weekly block: landings, journal completions, and Career XP');

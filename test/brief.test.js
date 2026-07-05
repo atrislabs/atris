@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { briefOperatorGate } = require('../commands/brief');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-brief-test-'));
@@ -26,31 +27,36 @@ function seedState(dir) {
       {
         id: 'task-1',
         display_id: 'CLI-1',
-        title: 'ship <script>alert(1)</script> brief',
+        title: 'CLI-991 fix `node --test` 01HZY3ZX4QJBPXG6NQ9M7K2T1P commands/brief.js:44 so the operator can read it.',
         status: 'done',
         claimed_by: 'agent-one',
         updated_at: new Date(now).toISOString(),
         done_at: new Date(now).toISOString(),
         metadata: {
-          latest_agent_proof: 'rendered proof at https://example.com/proof?x=1&y=2',
+          latest_agent_proof: [
+            'node --test test/brief.test.js -> pass 12/12.',
+            'npm test passed.',
+            'PR https://github.com/atrislabs/atris-cli/pull/123 merged.',
+          ].join(' '),
           agent_certified: true,
         },
       },
       {
         id: 'task-2',
         display_id: 'CLI-2',
-        title: 'review the handoff',
+        title: 'review the handoff so the launch does not wait',
         status: 'review',
         claimed_by: 'agent-two',
         updated_at: new Date(now).toISOString(),
         metadata: {
           assigned_to: 'agent-two',
+          latest_agent_proof: 'verified after review',
         },
       },
       {
         id: 'task-3',
         display_id: 'CLI-3',
-        title: 'keep the board moving',
+        title: 'keep the board moving so the team stays unblocked',
         status: 'claimed',
         updated_at: new Date(now).toISOString(),
         metadata: {
@@ -63,7 +69,7 @@ function seedState(dir) {
     id: 'mission-1',
     owner: 'mission-lead',
     runner: 'codex',
-    objective: 'keep the operator current',
+    objective: 'CLI-555 keep the operator current through commands/brief.js:91',
     status: 'running',
   })}\n`);
 }
@@ -103,7 +109,7 @@ test('brief --json groups recent tasks by agent and bucket', () => {
   }
 });
 
-test('brief writes escaped html with linked proof urls', () => {
+test('brief writes operator html without raw ids, paths, commands, or proof dumps', () => {
   const dir = makeTempDir();
   try {
     seedState(dir);
@@ -112,13 +118,24 @@ test('brief writes escaped html with linked proof urls', () => {
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.ok(fs.existsSync(out));
     const html = fs.readFileSync(out, 'utf8');
+    assert.match(html, /what your team did/);
     assert.match(html, /agent-one/);
-    assert.match(html, /agent-two/);
-    assert.match(html, /review the handoff/);
-    assert.match(html, /<a href="https:\/\/example\.com\/proof\?x=1&amp;y=2"/);
-    assert.match(html, /ship &lt;script&gt;alert\(1\)&lt;\/script&gt; brief/);
-    assert.doesNotMatch(html, /ship <script>alert\(1\)<\/script> brief/);
+    assert.match(html, /the operator can read it/);
+    assert.match(html, /<a href="https:\/\/github\.com\/atrislabs\/atris-cli\/pull\/123"[^>]*>pr #123<\/a>/);
+    assert.match(html, />verified</);
+    assert.doesNotMatch(html, /[0-9A-HJKMNP-TV-Z]{20}/);
+    assert.doesNotMatch(html, /\b[A-Z]{2,4}-\d+\b/);
+    assert.doesNotMatch(html, /node --test/);
+    assert.doesNotMatch(html, /npm test/);
+    assert.doesNotMatch(html, /\.js:/);
+    assert.doesNotMatch(html, /--/);
   } finally {
     cleanup(dir);
   }
+});
+
+test('briefOperatorGate blocks raw operator jargon as a hard error', () => {
+  assert.throws(() => briefOperatorGate(['CLI-991 leaked']), /ticket id/);
+  assert.throws(() => briefOperatorGate(['node --test leaked']), /shell fragment/);
+  assert.throws(() => briefOperatorGate(['commands/brief.js:44 leaked']), /file path/);
 });
