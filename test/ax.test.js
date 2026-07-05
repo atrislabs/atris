@@ -51,7 +51,7 @@ test('ax routes workspace questions local inside a workspace, cloud outside', ()
     cwd: '/tmp/project',
   });
   assert.equal(localPayload.workspace_path, '/tmp/project');
-  assert.equal(localPayload.max_turns, 8);
+  assert.equal(localPayload.max_turns, 16);
 });
 
 test('ax headless turn runs a bounded prompt and returns structured result', async () => {
@@ -194,7 +194,7 @@ test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
     cwd: '/tmp/project',
   });
   assert.equal(localPayload.workspace_path, '/tmp/project');
-  assert.equal(localPayload.max_turns, 14);
+  assert.equal(localPayload.max_turns, 24);
 
   const cloudWrite = ax.buildPayload('send a slack message to the team', {
     mode: 'max',

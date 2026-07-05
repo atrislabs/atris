@@ -321,7 +321,7 @@ test('ax is a self-contained Atris2 local/cloud agent script', () => {
   assert.match(ax, /function modelForMode/);
   assert.match(ax, /function buildRunProfile/);
   assert.match(ax, /function formatSystemInit/);
-  assert.match(ax, /max_turns:\s*local \? \(mode === 'fast' \? 8 : 14\) : 1/);
+  assert.match(ax, /max_turns:\s*local \? \(mode === 'fast' \? 16 : 24\) : 1/);
   assert.match(ax, /'atris:max'/);
   assert.match(ax, /Accept:\s*'text\/event-stream'/);
   assert.match(ax, /async function chat/);
