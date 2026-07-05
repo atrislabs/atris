@@ -6166,3 +6166,37 @@ test('mission help documents status filters', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('mission start/run/tick help variants print usage, exit 0, and create no state', () => {
+  if (!hasNodeSqlite()) return;
+  const cases = [
+    ['mission', 'start', '--help'],
+    ['mission', 'start', '-h'],
+    ['mission', 'start', 'help'],
+    ['mission', 'run', '--help'],
+    ['mission', 'tick', '--help'],
+  ];
+  for (const args of cases) {
+    const dir = makeTempDir();
+    const dbPath = path.join(dir, 'tasks.db');
+    try {
+      fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+      fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+      const result = runCli(args, { cwd: dir, env: { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' } });
+      assert.equal(result.status, 0, `${args.join(' ')} exit: ${result.stderr || result.stdout}`);
+      assert.match(result.stdout, /atris mission/, `${args.join(' ')} stdout: ${result.stdout}`);
+
+      const missionsPath = path.join(dir, '.atris', 'state', 'missions.jsonl');
+      assert.equal(fs.existsSync(missionsPath) && fs.statSync(missionsPath).size > 0, false, `${args.join(' ')} created mission state`);
+
+      if (fs.existsSync(dbPath)) {
+        const db = taskStore.open(dbPath);
+        const tasks = taskStore.listTasks(db, { workspaceRoot: taskStore.workspaceRoot(dir) });
+        taskStore.close();
+        assert.equal(tasks.length, 0, `${args.join(' ')} created task rows`);
+      }
+    } finally {
+      cleanupTempDir(dir);
+    }
+  }
+});

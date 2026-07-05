@@ -2818,7 +2818,7 @@ function findActiveTwinMission(objective, owner, root = process.cwd()) {
 
 function startMission(args) {
   const asJson = wantsJson(args);
-  if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
     console.log('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--runner manual|claude|atris2|codex_goal]');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
@@ -6471,6 +6471,11 @@ async function runMission(args) {
 
 function tickMission(args) {
   const asJson = wantsJson(args);
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission tick <id> [--verify] [--summary "..."] [--complete-on-pass]');
+    console.log('Run `atris mission --help` for the full option list.');
+    process.exit(0);
+  }
   const verify = hasFlag(args, '--verify');
   const verifyOverride = readFlag(args, '--verify', '');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
