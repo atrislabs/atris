@@ -6474,6 +6474,11 @@ async function runMission(args) {
 
 function tickMission(args) {
   const asJson = wantsJson(args);
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission tick <id> [--verify] [--summary "..."] [--complete-on-pass]');
+    console.log('Run `atris mission --help` for the full option list.');
+    process.exit(0);
+  }
   const verify = hasFlag(args, '--verify');
   const verifyOverride = readFlag(args, '--verify', '');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
