@@ -199,10 +199,29 @@ function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', out
   ].join('\n'));
 
   let redactedChars = 0;
+  let logBuffer = '';
+  let logFlushTimer = null;
+  const flushLogBuffer = () => {
+    if (logFlushTimer) {
+      clearTimeout(logFlushTimer);
+      logFlushTimer = null;
+    }
+    if (!logBuffer) return;
+    fs.appendFileSync(logPath, logBuffer);
+    logBuffer = '';
+  };
+  const scheduleLogFlush = () => {
+    if (logFlushTimer) return;
+    logFlushTimer = setTimeout(() => {
+      logFlushTimer = null;
+      flushLogBuffer();
+    }, 500);
+  };
   const writeLog = (chunk) => {
     const text = stripAnsi(chunk);
     if (fullTranscript) {
-      fs.appendFileSync(logPath, text);
+      logBuffer += text;
+      scheduleLogFlush();
       return;
     }
     redactedChars += text.length;
@@ -222,6 +241,7 @@ function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', out
     output: teeOutput,
     write: writeLog,
     close(exitCode = 0) {
+      flushLogBuffer();
       if (!fullTranscript) {
         fs.appendFileSync(logPath, `redacted_chars: ${redactedChars}\n`);
         fs.appendFileSync(logPath, 'note: full transcript disabled by default; set AX_LOG_FULL=1 to opt in.\n');
@@ -229,6 +249,7 @@ function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', out
         return;
       }
       writeLog(`\nexit_code: ${exitCode}\nfinished_at: ${new Date().toISOString()}\n`);
+      flushLogBuffer();
     }
   };
 }
@@ -907,7 +928,11 @@ function normalizeMode(mode) {
 function formatPrompt(mode, options = {}) {
   if (!mode) return '› ';
   const tier = normalizeMode(mode);
-  return `${paint(tier, [ANSI.bold, tierColor(tier)], options)} › `;
+  const label = paint(tier, [ANSI.bold, tierColor(tier)], options);
+  if (options.approveMode === 'auto') {
+    return `${label} ${paint('[auto-approve]', [ANSI.muted], options)} › `;
+  }
+  return `${label} › `;
 }
 
 const TIER_COMMANDS = new Map([
@@ -924,6 +949,8 @@ const CHAT_COMMANDS = [
   ['/fast', 'quick answers, lowest latency'],
   ['/pro', 'deeper tool loop for real work'],
   ['/max', 'highest reasoning for the hardest jobs'],
+  ['/clear', 'wipe chat history and reset conversation id'],
+  ['/context', 'show turn count and rough token estimate'],
   ['/help', 'show this menu'],
   ['exit', 'leave chat'],
 ];
@@ -2977,7 +3004,9 @@ async function chat(options = {}) {
   const output = logger ? logger.output : baseOutput;
   const history = [];
   let lastCompactionNotice = 0;
-  const conversationId = options.conversationId || `ax-${process.pid}-${Date.now().toString(36)}`;
+  let conversationId = options.conversationId || `ax-${process.pid}-${Date.now().toString(36)}`;
+  const session = { approveMode: 'stage' };
+  let turnInFlight = false;
 
   output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
@@ -3021,6 +3050,19 @@ async function chat(options = {}) {
       mode = tier;
       if (logger) logger.write(`${trimmed}\n`);
       output.write(`${paint(`· ${tierLabel(mode)}`, [tierColor(mode)], output)}\n\n`);
+      return false;
+    }
+
+    if (trimmed === '/clear') {
+      history.length = 0;
+      conversationId = `ax-${process.pid}-${Date.now().toString(36)}`;
+      output.write(`${paint('context cleared', [ANSI.muted], output)}\n\n`);
+      return false;
+    }
+
+    if (trimmed === '/context') {
+      const ctx = estimateHistoryContext(history);
+      output.write(`${paint(`· ${ctx.turns} turn${ctx.turns === 1 ? '' : 's'} · ~${ctx.chars} chars · ~${ctx.tokens} tokens`, [ANSI.muted], output)}\n\n`);
       return false;
     }
 

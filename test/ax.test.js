@@ -473,7 +473,7 @@ test('ax chat renders claude-style blocks and a slash menu', () => {
   assert.doesNotMatch(menu, /atris:|gpt-|kimi|fable|composer/i);
 
   assert.deepEqual(ax.chatCompleter('/f'), [['/fast'], '/f']);
-  assert.deepEqual(ax.chatCompleter('/'), [['/fast', '/pro', '/max', '/help'], '/']);
+  assert.deepEqual(ax.chatCompleter('/'), [['/fast', '/pro', '/max', '/clear', '/context', '/help'], '/']);
   assert.deepEqual(ax.chatCompleter('hello'), [[], 'hello']);
 });
 
