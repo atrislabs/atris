@@ -45,6 +45,10 @@ function setupRepo(dir) {
   git(['config', 'user.email', 'test@example.com']);
   git(['config', 'user.name', 'Test User']);
   fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
+  fs.writeFileSync(path.join(repo, '.gitignore'), '.atris/\n');
+  fs.writeFileSync(path.join(repo, 'AGENTS.md'), 'agent instructions\n');
+  fs.writeFileSync(path.join(repo, 'CLAUDE.md'), 'claude instructions\n');
+  fs.writeFileSync(path.join(repo, 'GEMINI.md'), 'gemini instructions\n');
   git(['add', '.']);
   git(['commit', '-qm', 'init']);
   git(['branch', '-M', 'master']);
@@ -97,6 +101,130 @@ test('worktree ship creates and pushes a branch from detached head', () => {
       git(['--git-dir', remote, 'show-ref', '--verify', `refs/heads/${branch}`], dir),
       new RegExp(`refs/heads/${branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
     );
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree ship skips unstaged adapter churn while committing real work', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const { repo, git } = setupRepo(dir);
+    worktreePath = path.join(dir, 'skip-adapter-worktree');
+    const start = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-shipper',
+      '--task',
+      'Skip Adapter',
+      '--path',
+      worktreePath,
+    ], { cwd: repo });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+
+    fs.appendFileSync(path.join(worktreePath, 'AGENTS.md'), 'regenerated\n');
+    fs.appendFileSync(path.join(worktreePath, 'README.md'), 'real change\n');
+
+    const shipped = runCli([
+      'worktree',
+      'ship',
+      '--message',
+      'ship real file',
+      '--verify',
+      'git status --short',
+      '--no-pr',
+    ], { cwd: worktreePath });
+
+    assert.equal(shipped.status, 0, shipped.stderr || shipped.stdout);
+    assert.match(shipped.stdout, /ship: skipped regenerated adapter churn: AGENTS\.md/);
+    assert.equal(fs.readFileSync(path.join(worktreePath, 'AGENTS.md'), 'utf8'), 'agent instructions\n');
+    assert.equal(git(['status', '--short'], worktreePath), '');
+    assert.equal(git(['show', '--name-only', '--format=', 'HEAD'], worktreePath), 'README.md');
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree ship respects explicitly staged adapter files', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const { repo, git } = setupRepo(dir);
+    worktreePath = path.join(dir, 'staged-adapter-worktree');
+    const start = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-shipper',
+      '--task',
+      'Staged Adapter',
+      '--path',
+      worktreePath,
+    ], { cwd: repo });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+
+    fs.appendFileSync(path.join(worktreePath, 'AGENTS.md'), 'intentional adapter change\n');
+    git(['add', 'AGENTS.md'], worktreePath);
+
+    const shipped = runCli([
+      'worktree',
+      'ship',
+      '--message',
+      'ship intentional adapter update',
+      '--verify',
+      'git status --short',
+      '--no-pr',
+    ], { cwd: worktreePath });
+
+    assert.equal(shipped.status, 0, shipped.stderr || shipped.stdout);
+    assert.doesNotMatch(shipped.stdout, /skipped regenerated adapter churn/);
+    assert.equal(git(['status', '--short'], worktreePath), '');
+    assert.equal(git(['show', '--name-only', '--format=', 'HEAD'], worktreePath), 'AGENTS.md');
+    assert.match(git(['show', 'HEAD:AGENTS.md'], worktreePath), /intentional adapter change/);
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree ship treats adapter-only churn as clean after restore', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const { repo, git } = setupRepo(dir);
+    worktreePath = path.join(dir, 'adapter-only-worktree');
+    const start = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-shipper',
+      '--task',
+      'Adapter Only',
+      '--path',
+      worktreePath,
+    ], { cwd: repo });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+
+    fs.appendFileSync(path.join(worktreePath, 'AGENTS.md'), 'regenerated only\n');
+
+    const shipped = runCli([
+      'worktree',
+      'ship',
+      '--verify',
+      'git status --short',
+      '--no-pr',
+    ], { cwd: worktreePath });
+
+    assert.equal(shipped.status, 0, shipped.stderr || shipped.stdout);
+    assert.match(shipped.stdout, /ship: skipped regenerated adapter churn: AGENTS\.md/);
+    assert.match(shipped.stdout, /commit: skipped \(no local changes\)/);
+    assert.equal(fs.readFileSync(path.join(worktreePath, 'AGENTS.md'), 'utf8'), 'agent instructions\n');
+    assert.equal(git(['status', '--short'], worktreePath), '');
+    assert.equal(git(['rev-list', '--count', 'HEAD'], worktreePath), '1');
   } finally {
     if (worktreePath) cleanupTempDir(worktreePath);
     cleanupTempDir(dir);

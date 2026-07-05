@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
+
 function runGit(args, { cwd = process.cwd(), check = true } = {}) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
   if (check && result.status !== 0) {
@@ -184,7 +186,7 @@ function baseBranchName(ref) {
   return String(ref || '').replace(/^refs\/heads\//, '').replace(/^origin\//, '');
 }
 
-function statusCounts(root) {
+function statusCounts(root, { ignoredUnstagedFiles = new Set() } = {}) {
   if (!fs.existsSync(root)) return null;
   const result = runGit(['status', '--porcelain'], { cwd: root, check: false });
   if (result.status !== 0) return null;
@@ -192,6 +194,8 @@ function statusCounts(root) {
   let unstaged = 0;
   let untracked = 0;
   for (const line of result.stdout.split(/\r?\n/).filter(Boolean)) {
+    const file = line.slice(3);
+    if (ignoredUnstagedFiles.has(file) && line[0] === ' ' && line[1] !== ' ') continue;
     if (line.startsWith('??')) {
       untracked += 1;
       continue;
@@ -200,6 +204,25 @@ function statusCounts(root) {
     if (line[1] !== ' ') unstaged += 1;
   }
   return { staged, unstaged, untracked };
+}
+
+function changedFiles(root, args) {
+  const result = runGit([...args, '--', ...REGEN_ADAPTER_FILES], { cwd: root, check: false });
+  if (result.status !== 0) return new Set();
+  return new Set(result.stdout.split(/\r?\n/).filter(Boolean));
+}
+
+function restoreRegeneratedAdapterChurn(root, message, { dryRun = false } = {}) {
+  const unstaged = changedFiles(root, ['diff', '--name-only']);
+  const staged = changedFiles(root, ['diff', '--cached', '--name-only']);
+  const commitMessage = String(message || '');
+  const skipped = REGEN_ADAPTER_FILES.filter(
+    (file) => unstaged.has(file) && !staged.has(file) && !commitMessage.includes(file)
+  );
+  if (!skipped.length) return [];
+  console.log(`ship: skipped regenerated adapter churn: ${skipped.join(', ')}`);
+  if (!dryRun) runGit(['checkout', '--', ...skipped], { cwd: root });
+  return skipped;
 }
 
 function readFlag(args, name, fallback = '') {
@@ -387,6 +410,7 @@ function shipHelp() {
   console.log('Usage: atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>]');
   console.log('');
   console.log('  --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
+  console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
 }
 
 function shipWorktree(args) {
@@ -423,7 +447,9 @@ function shipWorktree(args) {
   }
 
   refreshRemoteRef(root, targetRef);
-  const counts = statusCounts(root) || { staged: 0, unstaged: 0, untracked: 0 };
+  const skippedAdapters = restoreRegeneratedAdapterChurn(root, message, { dryRun });
+  const ignoredUnstagedFiles = dryRun ? new Set(skippedAdapters) : new Set();
+  const counts = statusCounts(root, { ignoredUnstagedFiles }) || { staged: 0, unstaged: 0, untracked: 0 };
   const dirty = counts.staged || counts.unstaged || counts.untracked;
   if (dirty && !message) {
     console.error('blocked: --message is required when there are local changes to commit');
@@ -710,7 +736,9 @@ module.exports = {
   defaultWorktreePath,
   listWorktrees,
   parseWorktrees,
+  REGEN_ADAPTER_FILES,
   normalizeTargetRef,
+  restoreRegeneratedAdapterChurn,
   prMergeRef,
   slugify,
   statusCounts,
