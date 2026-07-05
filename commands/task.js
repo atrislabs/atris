@@ -112,6 +112,13 @@ function taskUsageText() {
   return `
 atris task - durable local task state (SQLite, gitignored)
 
+  golden path (zero human turns):
+    atris task delegate "fix the login bug" --to <member>
+    atris task claim <id> --as <member>
+    ... build ...
+    atris task ready <id> --verify
+    atris autoland tick   # second check runs, task lands
+
   atris task                              Show the task desk
   atris task new "<title>"                Create a task
   atris task next [--tag <tag>] [--create-next]
@@ -8161,13 +8168,18 @@ function cmdReady(args) {
     nextTask: nextTaskInput.nextTask,
   });
   const reviewChat = taskReviewChatHandoff(verifierTask, { reviewer: 'codex-review' });
+  const autolandOn = require('../lib/autoland').liveAcceptAuthorization(taskDb.workspaceRoot()).ok;
   const handoff = {
     native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
     career_xp_status: 'pending_human_accept',
     next_action: agentCertified ? certifiedReviewNextAction(nextTaskInput.nextTask) : 'agent_review_again',
-    rule: agentCertified
-      ? 'Double-check complete; ready to keep moving. XP is awarded only after the human approves the task.'
-      : 'Proof is ready; one more agent check before human approval. XP waits for the human.',
+    rule: autolandOn
+      ? (agentCertified
+        ? 'double-check complete; autoland will accept this on the next tick.'
+        : 'proof is ready; autoland runs the second check and lands it on the next tick.')
+      : (agentCertified
+        ? 'double-check complete; ready to keep moving. XP is awarded only after the human approves the task.'
+        : 'proof is ready; one more agent check before human approval. XP waits for the human.'),
   };
   if (reviewChat) {
     handoff.review_chat_command = reviewChat.command;
