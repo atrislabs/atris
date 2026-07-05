@@ -28,6 +28,42 @@ function isHelpToken(arg) {
   return arg === '--help' || arg === '-h' || arg === 'help' || arg === '-?';
 }
 
+const BUSINESS_CREATE_USAGE = 'Usage: atris business create <name> [--description "..."] [--workspace] [--here|--root <dir>]';
+
+function isAccidentalHelpBusiness(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (isHelpToken(raw)) return true;
+  const normalized = slugify(raw);
+  if (normalized === 'help') return true;
+  if (/^help-\d+$/.test(normalized)) return true;
+  return false;
+}
+
+function validateBusinessCreateName(name) {
+  if (!name || !String(name).trim()) {
+    return { ok: false, usage: BUSINESS_CREATE_USAGE };
+  }
+  if (isHelpToken(name)) {
+    return { ok: false, usage: BUSINESS_CREATE_USAGE };
+  }
+  if (String(name).startsWith('-')) {
+    return {
+      ok: false,
+      usage: BUSINESS_CREATE_USAGE,
+      detail: `Refusing to create a business named "${name}" — looks like a flag, not a name.`,
+    };
+  }
+  if (isAccidentalHelpBusiness(name)) {
+    return {
+      ok: false,
+      usage: BUSINESS_CREATE_USAGE,
+      detail: `Refusing to create a business named "${name}" — looks like accidental help output, not a real business.`,
+    };
+  }
+  return { ok: true };
+}
+
 function loadBusinesses() {
   const p = getBusinessConfigPath();
   if (!fs.existsSync(p)) return {};
@@ -308,14 +344,46 @@ function analyzeBusinessDoctor({ cache = {}, cloudBusinesses = [], folderBinding
     }
   }
 
+  const cacheRemovals = [];
+  for (const business of cloudBusinesses || []) {
+    if (!isAccidentalHelpBusiness(business?.name) && !isAccidentalHelpBusiness(business?.slug)) continue;
+    const label = business.slug || business.name || business.id;
+    issues.push({
+      level: 'warn',
+      code: 'accidental-help-business',
+      subject: label,
+      message: `${label} looks like an accidental help business (April 2026 ghost rows)`,
+      fixable: true,
+    });
+  }
+
+  for (const [key, entry] of Object.entries(cache || {})) {
+    const active = findActiveMatch(key, entry);
+    const accidental = isAccidentalHelpBusiness(key)
+      || isAccidentalHelpBusiness(entry?.name)
+      || isAccidentalHelpBusiness(entry?.slug)
+      || (active && (isAccidentalHelpBusiness(active.name) || isAccidentalHelpBusiness(active.slug)));
+    if (!accidental) continue;
+    issues.push({
+      level: 'warn',
+      code: 'accidental-help-cache',
+      subject: key,
+      message: `${key} is cached for an accidental help business`,
+      fixable: true,
+    });
+    if (!cacheRemovals.includes(key)) cacheRemovals.push(key);
+  }
+
   return {
     issues,
     cacheUpdates,
+    cacheRemovals,
     stats: {
       cache_entries: Object.keys(cache || {}).length,
       cloud_active: cloudBusinesses.length,
       folders: folderBindings.length,
       fixable_cache_entries: Object.keys(cacheUpdates).length,
+      accidental_help_cache_removals: cacheRemovals.length,
     },
   };
 }
@@ -2191,11 +2259,20 @@ async function businessDoctor(...args) {
   });
 
   const cacheUpdateKeys = Object.keys(analysis.cacheUpdates);
+  const cacheRemovalKeys = analysis.cacheRemovals || [];
   let fixed = [];
-  if (options.fix && cacheUpdateKeys.length > 0) {
-    cache = { ...cache, ...analysis.cacheUpdates };
+  if (options.fix && (cacheUpdateKeys.length > 0 || cacheRemovalKeys.length > 0)) {
+    if (cacheUpdateKeys.length > 0) {
+      cache = { ...cache, ...analysis.cacheUpdates };
+    }
+    for (const key of cacheRemovalKeys) {
+      delete cache[key];
+      fixed.push(`removed:${key}`);
+    }
+    if (cacheUpdateKeys.length > 0) {
+      fixed.push(...cacheUpdateKeys);
+    }
     saveBusinesses(cache);
-    fixed = cacheUpdateKeys;
     analysis = analyzeBusinessDoctor({
       cache,
       cloudBusinesses: listResult.data,
@@ -2237,11 +2314,10 @@ async function businessDoctor(...args) {
 }
 
 async function createBusinessInternal(name, flags = [], mode = 'auto') {
-  if (!name || isHelpToken(name) || String(name).startsWith('-')) {
-    console.error('Usage: atris business create <name> [--description "..."] [--workspace] [--here|--root <dir>]');
-    if (name && String(name).startsWith('-') && !isHelpToken(name)) {
-      console.error(`\n  Refusing to create a business named "${name}" — looks like a flag, not a name.`);
-    }
+  const validation = validateBusinessCreateName(name);
+  if (!validation.ok) {
+    console.error(validation.usage);
+    if (validation.detail) console.error(`\n  ${validation.detail}`);
     process.exit(1);
   }
 
@@ -2897,6 +2973,11 @@ async function businessCommand(subcommand, ...args) {
     printBusinessHelp();
     return;
   }
+  const nameTakingSubcommands = new Set(['create', 'new', 'init', 'workspace']);
+  if (nameTakingSubcommands.has(subcommand) && args.some(isHelpToken)) {
+    printBusinessHelp();
+    return;
+  }
   if (args.length > 0 && isHelpToken(args[0]) && subcommand !== 'doctor') {
     printBusinessHelp();
     return;
@@ -2999,6 +3080,8 @@ module.exports = {
   saveBusinesses,
   getBusinessConfigPath,
   businessMatchesSlug,
+  isAccidentalHelpBusiness,
+  validateBusinessCreateName,
   analyzeBusinessDoctor,
   readBusinessFolderBindings,
   createCanonicalBusinessWorkspace,
