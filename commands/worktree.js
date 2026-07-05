@@ -137,15 +137,27 @@ function normalizeTargetRef(root, target) {
   return value;
 }
 
-function defaultStartBase(root) {
-  const upstream = currentUpstream(root);
-  if (upstream && refExists(root, upstream)) return upstream;
+function defaultMainlineBase(root) {
   const head = remoteHead(root);
   if (head && refExists(root, head)) return head;
   for (const candidate of ['origin/master', 'origin/main']) {
     if (refExists(root, candidate)) return candidate;
   }
   return 'HEAD';
+}
+
+function defaultStartBase(root) {
+  const upstream = currentUpstream(root);
+  const mainline = defaultMainlineBase(root);
+  if (!upstream || !refExists(root, upstream)) return mainline;
+  if (mainline === 'HEAD' || mainline === upstream) return upstream;
+  // A launcher upstream that is behind the mainline is a stale cut point
+  // (2026-07-05: a stale origin/task branch sent two flights into rebase
+  // conflicts). Start from the mainline unless the upstream carries new work.
+  refreshRemoteRef(root, upstream);
+  refreshRemoteRef(root, mainline);
+  const behind = runGit(['merge-base', '--is-ancestor', upstream, mainline], { cwd: root, check: false });
+  return behind.status === 0 ? mainline : upstream;
 }
 
 function defaultShipTarget(root) {
