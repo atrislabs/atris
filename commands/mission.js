@@ -1623,7 +1623,7 @@ function missionStatusView(mission) {
 }
 
 function missionFromArgs(args) {
-  const objective = stripKnownFlags(args, [
+  const objectiveParts = stripKnownFlags(args, [
     '--owner',
     '--cadence',
     '--loop',
@@ -1642,7 +1642,9 @@ function missionFromArgs(args) {
     '--native-goal-objective',
     '--visible-goal-status',
     '--visible-goal-objective',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot']).join(' ').trim();
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot'])
+    .filter((part) => String(part || '').trim() !== '...');
+  const objective = objectiveParts.join(' ').trim();
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }

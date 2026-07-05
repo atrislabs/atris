@@ -3928,6 +3928,47 @@ test('mission run --help prints help instead of starting a mission', () => {
   }
 });
 
+test('mission start --help prints help instead of starting a mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'start', '--help'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    assert.equal(run.stderr, '');
+    assert.match(run.stdout, /Usage: atris mission start/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission start ignores literal ellipsis placeholders when reusing active twins', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'onboarding'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'onboarding', 'MEMBER.md'), '# Onboarding\n', 'utf8');
+    const objective = 'Golden path: zero-knowledge onboarding walk';
+    const first = runCli(['mission', 'start', objective, '--owner', 'onboarding', '--json'], { cwd: dir });
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    const firstPayload = JSON.parse(first.stdout);
+
+    const second = runCli(['mission', 'start', objective, '--owner', 'onboarding', '...', '--json'], { cwd: dir });
+    assert.equal(second.status, 0, second.stderr || second.stdout);
+    const secondPayload = JSON.parse(second.stdout);
+    assert.equal(secondPayload.action, 'mission_reused');
+    assert.equal(secondPayload.mission.id, firstPayload.mission.id);
+
+    const missionRows = fs.readFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), 'utf8')
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean);
+    assert.equal(missionRows.length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run accepts owner prefix before fuzzy intent', () => {
   const dir = makeTempDir();
   try {
