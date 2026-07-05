@@ -140,7 +140,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
   atris task add "<title>" [--tag <tag>] [--goal-id <id>]  Create a task
-  atris task delegate "<title>" [--to <member>] [--executed-by <engine>] [--goal-id <id>]  Create assigned work
+  atris task delegate "<title>" [--to <member>] [--executed-by <engine>] [--goal-id <id>] [--tag <tag>]  Create assigned work
   atris task plan <id> --goal "..." --exit "..." --proof-needed "..."
                                            Record a task-owned Plan stage
   atris task do <id> --as <owner> --first-move "..."
