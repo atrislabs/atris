@@ -456,6 +456,42 @@ test('tick drains the landing daily: landed branches reap themselves, once per d
   }
 });
 
+test('tick janitor keeps fresh or dirty worktrees and reaps old clean residue', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const freshWt = path.join(base, 'fresh-wt');
+    const oldWt = path.join(base, 'old-wt');
+    const dirtyWt = path.join(base, 'dirty-wt');
+    runGit(['worktree', 'add', '-b', 'fresh-residue', freshWt, 'master'], repo);
+    runGit(['worktree', 'add', '-b', 'old-residue', oldWt, 'master'], repo);
+    runGit(['worktree', 'add', '-b', 'dirty-residue', dirtyWt, 'master'], repo);
+    fs.writeFileSync(path.join(dirtyWt, 'scratch.txt'), 'unsaved\n');
+    const oldStamp = new Date(Date.now() - 61 * 60 * 1000);
+    fs.utimesSync(oldWt, oldStamp, oldStamp);
+    fs.utimesSync(dirtyWt, oldStamp, oldStamp);
+
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    // old-wt is reaped by whichever path reaches it first (janitor
+    // cleanupWorktrees or the daily land reap), so assert the total and
+    // pin the end state below.
+    const totalReapedWorktrees = (Number(receipt.worktrees_reaped) || 0)
+      + ((receipt.reaped && Number(receipt.reaped.worktrees)) || 0);
+    assert.equal(totalReapedWorktrees, 1);
+    assert.equal(receipt.reaped.branches, 1);
+    assert.equal(fs.existsSync(freshWt), true);
+    assert.equal(fs.existsSync(oldWt), false);
+    assert.equal(fs.existsSync(dirtyWt), true);
+    assert.match(runGit(['branch', '--list', 'fresh-residue'], repo).stdout, /fresh-residue/);
+    assert.equal(runGit(['branch', '--list', 'old-residue'], repo).stdout.trim(), '');
+    assert.match(runGit(['branch', '--list', 'dirty-residue'], repo).stdout, /dirty-residue/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('accept_all policy: uncertified work lands on the tick, protected lanes wait', () => {
   const { base, repo } = makeTempRepo();
   try {
@@ -594,9 +630,12 @@ test('janitor: a zombie paused mission and a merged worktree disappear on the ne
       { schema: 'atris.mission.v1', id: 'mission-alive', owner: 'neo', objective: 'still running', status: 'running', created_at: threeDaysAgo, updated_at: threeDaysAgo },
     ];
     fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), missions.map((m) => JSON.stringify(m)).join('\n') + '\n');
-    // a clean worktree whose head is already merged into base
+    // a clean worktree whose head is already merged into base, backdated
+    // past the fresh-worktree grace window so the janitor may reap it
     const wtPath = path.join(base, 'merged-wt');
     runGit(['worktree', 'add', '-b', 'task/merged-fixture', wtPath], repo);
+    const staleStamp = new Date(Date.now() - 61 * 60 * 1000);
+    fs.utimesSync(wtPath, staleStamp, staleStamp);
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
