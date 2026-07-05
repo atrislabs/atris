@@ -1,13 +1,16 @@
+'use strict';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const autoland = require('../lib/autoland');
+const { briefOperatorGate } = require('../commands/brief');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-const { briefOperatorGate } = require('../commands/brief');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-brief-test-'));
@@ -138,4 +141,86 @@ test('briefOperatorGate blocks raw operator jargon as a hard error', () => {
   assert.throws(() => briefOperatorGate(['CLI-991 leaked']), /ticket id/);
   assert.throws(() => briefOperatorGate(['node --test leaked']), /shell fragment/);
   assert.throws(() => briefOperatorGate(['commands/brief.js:44 leaked']), /file path/);
+});
+
+test('brief prefers stored result sentences over task titles', () => {
+  const digest = autoland.composeDigest({
+    accepted: {
+      auto: [{
+        ref: 'CLI-1',
+        title: 'Add --brief-result flag to commands/task.js',
+        result: 'Operators can now approve finished work faster because each row names the human result.',
+        member: 'codex',
+      }],
+      human: [],
+    },
+    waiting: [],
+    landed: null,
+    project: 'atris-cli',
+  });
+  assert.match(digest, /operators can now approve finished work faster/);
+  assert.doesNotMatch(digest, /brief-result|commands\/task\.js/);
+  assert.match(digest, /1 landed \(1 explained\)/);
+});
+
+test('brief hides jargon-only landed titles and counts unexplained work', () => {
+  const digest = autoland.composeDigest({
+    accepted: {
+      auto: [
+        { ref: 'CLI-1', title: 'Add --json flag to commands/task.js', member: 'codex' },
+        { ref: 'CLI-2', title: 'CLI-123 repair task_result_projection', member: 'codex' },
+      ],
+      human: [],
+    },
+    waiting: [],
+    landed: null,
+    project: 'atris-cli',
+  });
+  assert.match(digest, /2 landed \(0 explained\)/);
+  assert.match(digest, /2 more landed from codex that could not explain themselves yet/);
+  assert.doesNotMatch(digest, /commands\/task\.js|task_result_projection|--json|CLI-123/);
+});
+
+test('brief hides jargon-only review titles and counts unexplained review work', () => {
+  const digest = autoland.composeDigest({
+    accepted: { auto: [], human: [] },
+    waiting: [
+      { ref: 'CLI-3', title: 'Wire --accept-all to task_result_projection', member: 'validator', hours: 4 },
+    ],
+    landed: null,
+    project: 'atris-cli',
+  });
+  assert.match(digest, /waiting on you \(0 explained\/1 total/);
+  assert.match(digest, /1 more in review from validator that could not explain themselves yet/);
+  assert.doesNotMatch(digest, /task_result_projection|--accept-all/);
+});
+
+test('mission brief line uses visible goal before objective', () => {
+  const line = autoland.missionDigestLine({
+    objective: 'CLI-888 run mission_status_sync',
+    visible_goal: {
+      desired_objective: 'Operators can now see the mission result faster because the goal is written plainly.',
+    },
+  });
+  assert.equal(line, 'Operators can now see the mission result faster because the goal is written plainly.');
+});
+
+test('brief truncation drops dangling fragments', () => {
+  const digest = autoland.composeDigest({
+    accepted: {
+      auto: [{
+        ref: 'CLI-4',
+        title: 'Operators save time because the brief keeps readable context (with an unfinished fragment that would otherwise trail and',
+      }],
+      human: [],
+    },
+    waiting: [],
+    landed: null,
+    project: 'atris-cli',
+  });
+  for (const line of digest.split('\n').map((entry) => entry.trim()).filter(Boolean)) {
+    assert.doesNotMatch(line, /\($/);
+    assert.doesNotMatch(line, /\b(after|with|and|or|to|for)[.!?]?$/i);
+    assert.ok(!(line.includes('(') && !line.includes(')')), `dangling open paren in: ${line}`);
+  }
 });

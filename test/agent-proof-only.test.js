@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { DEFAULT_TASK_RESULT_SENTENCE, withTaskReadyResult } = require('./helpers/task-result');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -32,7 +33,7 @@ function baseEnv() {
 }
 
 function runCli(args, { cwd, input, env } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
+  const result = spawnSync(process.execPath, [cliPath, ...withTaskReadyResult(args)], {
     cwd,
     input,
     encoding: 'utf8',
@@ -87,7 +88,7 @@ test('ATRIS_AGENT_PROOF_ONLY=0 overrides agent env detection for human accept', 
       env: { CLAUDECODE: '1', ATRIS_AGENT_PROOF_ONLY: '0' },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /accepted/);
+    assert.match(res.stdout, new RegExp(DEFAULT_TASK_RESULT_SENTENCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   } finally {
     cleanupTempDir(dir);
   }

@@ -105,6 +105,8 @@ atris task finish <id> --proof "<tests, screenshot, diff, or receipt>"
 atris task review <id> --lesson "<what improved>" --next "<next task>"
 ```
 
+`atris task ready` carries `--result`, the day-one PM sentence of what the human gained; the CLI refuses agent-speak.
+
 Headless agents should add `--json` where available and read
 `.atris/state/tasks.projection.json` for a compact board view.
 

@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const autoland = require('../lib/autoland');
+const { withTaskReadyResult } = require('./helpers/task-result');
 
 function makeTempRepo() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-autoland-test-'));
@@ -50,7 +51,7 @@ function runCli(args, cwd, extraEnv = null) {
   delete env.DEVIN_SESSION_ID;
   delete env.ATRIS_AGENT_PROOF_ONLY;
   if (extraEnv) Object.assign(env, extraEnv);
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
+  const result = spawnSync(process.execPath, [cliPath, ...withTaskReadyResult(args)], {
     cwd,
     encoding: 'utf8',
     timeout: 30000,
@@ -100,22 +101,23 @@ test('digest and alarm compose in plain language', () => {
       unexplained: 2,
     },
   });
-  assert.match(digest, /landed on their own \(verified twice, proof on file\)/);
+  assert.match(digest, /5 landed \(3 explained\), verified twice with proof on file/);
   assert.match(digest, /- slow mission budgets cost users trust/);
   assert.match(digest, /- manual member checks waste users time/);
   // Clean-stop check-offs fold into the on-ask count; results get air between
   // them so the whole message fits a laptop screen with no scrolling.
   assert.match(digest, /\n\n- slow mission budgets/);
-  // The jargon-heavy result shows de-jargoned instead of hiding: content
-  // always ships. Held count = clean-stop fold only.
+  // The readable result still shows, but unexplained rows are hidden behind
+  // a count until they carry a day-one PM sentence.
   assert.match(digest, /- add hourly flag so users save time/);
   assert.match(digest, /1 more result when you want them: atris autoland digest/);
   // v5: no self-news ("you approved N") and no separate workers tally; each
   // result carries its author inline instead.
   assert.doesNotMatch(digest, /you approved|workers:/);
-  // Waiting items are the ask, so they carry names, not counts.
-  assert.match(digest, /waiting on you \(approve or bounce: atris task reviews\):/);
-  assert.match(digest, /- Send invoice \(30h\)/);
+  // Waiting items only render when they can explain themselves.
+  assert.match(digest, /waiting on you \(0 explained\/1 total; approve or bounce: atris task reviews\):/);
+  assert.match(digest, /- 1 more in review that could not explain themselves yet/);
+  assert.doesNotMatch(digest, /Send invoice/);
   assert.match(digest, /in the air: 2 pieces, 1 overdue/);
   assert.match(digest, /next, if you agree:/);
   assert.match(digest, /taste filters.*\(best fit: auto-improver\)/);

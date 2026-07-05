@@ -6,7 +6,7 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 
 const autoland = require('../lib/autoland');
-const { operatorReady, hasAgentJargon } = autoland;
+const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
 const CLOSED_TASK_STATUSES = new Set(['done', 'archived']);
 const MAX_MISSION_AUTO_VERIFY_PER_TICK = 3;
@@ -693,6 +693,7 @@ function autolandCommand(args = []) {
 module.exports = {
   autolandCommand,
   attachedTasksForMission,
+  explainResult,
   missionReadyForClosedTaskVerify,
   operatorReady,
   hasAgentJargon,

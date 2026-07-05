@@ -76,6 +76,7 @@ const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const FIXTURE_RESULT_SENTENCE = 'Operators can now understand completed test work faster because the result is named.';
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-cmd-test-'));
@@ -126,8 +127,16 @@ function seedBusinessOsState(dir) {
   }, null, 2));
 }
 
+function withFixtureReadyResult(args) {
+  if (Array.isArray(args) && args[0] === 'task' && args[1] === 'ready' && !args.includes('--result')) {
+    return [...args, '--result', FIXTURE_RESULT_SENTENCE];
+  }
+  return args;
+}
+
 function runCli(args, { cwd, input, env } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
+  const cliArgs = withFixtureReadyResult(args);
+  const result = spawnSync(process.execPath, [cliPath, ...cliArgs], {
     cwd,
     input,
     encoding: 'utf8',
@@ -8924,7 +8933,7 @@ test('play mode makes a plain folder playable on first run', () => {
     assert.equal(body.mission.assigned_to, 'justin');
     assert.deepEqual(body.next_commands.slice(0, 2), [
       `atris task claim ${body.mission.ref} --as justin`,
-      `atris task ready ${body.mission.ref} --as justin --proof "AGENTXP_PROOF.md + test -s AGENTXP_PROOF.md passed"`,
+      `atris task ready ${body.mission.ref} --as justin --proof "AGENTXP_PROOF.md + test -s AGENTXP_PROOF.md passed" --result "Players can now claim AgentXP proof faster because the verifier names the finished artifact."`,
     ]);
     assert.match(body.proof_recipe.artifact, /AGENTXP_PROOF\.md/);
     assert.equal(body.next_commands.includes('atris xp sync --local --token <owner-provided-token>'), true);
@@ -12138,20 +12147,20 @@ test('task review summary does not treat incidental XP wording as AgentXP work',
     const readyPayload = JSON.parse(ready.stdout);
     assert.equal(readyPayload.task.review.summary, 'clean stale claimed task queue after XP review: review the completed result, then approve or ask for rework.');
     assert.deepEqual(readyPayload.task.review.landing, {
-      happened: 'Cleaned stale claimed task queue after XP review.',
+      happened: FIXTURE_RESULT_SENTENCE,
       reason: 'It turns the task title into a concrete result the human can approve.',
       checked: 'I ran the validation check.',
       tested: 'I attached the proof below.',
       decision: 'Needs one more check; ask for rework if the receipt misses the point.',
     });
-    assert.equal(readyPayload.task.review.result.changed, 'Cleaned stale claimed task queue after XP review.');
+    assert.equal(readyPayload.task.review.result.changed, FIXTURE_RESULT_SENTENCE);
     assert.equal(readyPayload.task.review.result.checked, 'I ran the validation check.');
     assert.equal(readyPayload.task.review.proof, 'closed stale duplicate scheduler claims; validation passed reward 0');
 
     const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(readyShow.status, 0, readyShow.stderr);
     assert.match(readyShow.stdout, /Result:/);
-    assert.match(readyShow.stdout, /What happened: Cleaned stale claimed task queue after XP review\./);
+    assert.match(readyShow.stdout, new RegExp(`What happened: ${FIXTURE_RESULT_SENTENCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     assert.match(readyShow.stdout, /How I checked: I ran the validation check\./);
     assert.match(readyShow.stdout, /What I tested: I attached the proof below\./);
     assert.match(readyShow.stdout, /Why it matters: It turns the task title into a concrete result the human can approve\./);
@@ -12189,12 +12198,12 @@ test('task ready default landing describes completed work for unmapped titles', 
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
     const readyPayload = JSON.parse(ready.stdout);
-    assert.equal(readyPayload.task.review.landing.happened, 'Completed: Explore review landing output.');
-    assert.equal(readyPayload.task.review.result.changed, 'Completed: Explore review landing output.');
+    assert.equal(readyPayload.task.review.landing.happened, FIXTURE_RESULT_SENTENCE);
+    assert.equal(readyPayload.task.review.result.changed, FIXTURE_RESULT_SENTENCE);
 
     const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(readyShow.status, 0, readyShow.stderr);
-    assert.match(readyShow.stdout, /What happened: Completed: Explore review landing output\./);
+    assert.match(readyShow.stdout, new RegExp(`What happened: ${FIXTURE_RESULT_SENTENCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     assert.doesNotMatch(readyShow.stdout, /Explore review landing output is ready to review/);
   } finally {
     cleanupTempDir(dir);

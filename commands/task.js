@@ -23,7 +23,7 @@ const {
   normalizeOwnerSlug,
   resolveFunctionalOwner: resolveFunctionalTaskOwner,
 } = require('../lib/functional-owner');
-const { operatorReady, hasAgentJargon } = require('./autoland');
+const { operatorReady, hasAgentJargon, explainResult } = require('./autoland');
 const {
   TASK_INSPECT_FIELDS,
   readFieldsFlag,
@@ -46,6 +46,7 @@ const REVIEW_LANE_RUN_MAX_RUNS = 20;
 const PENDING_REVIEW_CHAT_STOP_REASON = 'pending_review_chat_waiting_for_agent_review';
 const PROOF_BOUNDARY_BLOCKED_ACTION = 'proof_boundary_blocked';
 const PROOF_BOUNDARY_BLOCKED_REASON = 'proof_boundary_blocked_requires_revision';
+const READY_RESULT_TEACHING = 'ready needs --result: one sentence a day-one pm gets. say what someone can do now and why it matters. no ids, no paths, no commands. example: operators can now read the whole team day on one page instead of scrolling raw logs.';
 
 const STATUS_PLAN_TAGS = new Set([
   'agent',
@@ -133,16 +134,19 @@ atris task - durable local task state (SQLite, gitignored)
   atris task continue-work <id>           Create/reuse a certified Review follow-up task
   atris task say <id> "<message>"         Add context to a task
   atris task chat <id> "<message>" [--goal "..."]  Refine a task chat + working goal
-  atris task ready <id> --proof "..."      Agent proof ready; native goal can complete
-  atris task ready <id> --verify "<cmd>"   Run <cmd>; only ready if it exits 0 (executed proof)
+  atris task ready <id> --proof "..." --result "<sentence>"
+                                           Agent proof ready; native goal can complete
+  atris task ready <id> --verify "<cmd>" --result "<sentence>"
+                                           Run <cmd>; only ready if it exits 0 (executed proof)
                                            Writes atris/runs/ receipt (pass or fail), folds path into proof
   atris task receipt <id> --verify "<cmd>" Run <cmd> and write an atris/runs/ receipt without going to ready
   atris task plan-preview "<purpose>" [--tag <tag>] [--owner <member>] [--task <id>]
                                            Show the plain Plan before work starts
-  atris task ready <id> --proof "..." [--changed "..." --checked "..." --saved "..." --try "..."]
+  atris task ready <id> --proof "..." --result "<sentence>" [--changed "..." --checked "..." --saved "..." --try "..."]
                                            Agent proof ready; records Result if needed
-  atris task ready <id> --proof "..." [--happened "..." --checked "..." --tested "..." --decision "..."]
+  atris task ready <id> --proof "..." --result "<sentence>" [--happened "..." --checked "..." --tested "..." --decision "..."]
                                            Agent proof ready; writes the human result receipt
+  atris task result <id> "<sentence>"       Set or replace the day-one PM result sentence
   atris task result <id> --changed "..." --checked "..." [--saved "..."] [--try "..."]
                                            Show the plain Result and store trace on the task
   atris task review-chat <id> [--as <owner>]  Start a task-owned /codex verification chat
@@ -425,6 +429,22 @@ function failTask(label, reason, detail, exitCode = 2) {
 function proofFlagValue(args) {
   const proof = flag(args, '--proof');
   return typeof proof === 'string' ? proof.trim() : '';
+}
+
+function resultSentenceIssue(value) {
+  const check = explainResult(value);
+  return check.ok ? null : check.reason;
+}
+
+function readyResultDetail(reason) {
+  return reason ? `${READY_RESULT_TEACHING}\n${reason}` : READY_RESULT_TEACHING;
+}
+
+function requireResultSentence(label, value, { ready = false } = {}) {
+  const issue = resultSentenceIssue(value);
+  if (!issue) return String(value || '').replace(/\s+/g, ' ').trim();
+  const detail = ready ? readyResultDetail(issue) : issue;
+  failTask(label, 'weak_result', detail);
 }
 
 function textFlag(args, names) {
@@ -1055,7 +1075,7 @@ function taskReviewLanding(task, review = {}, payload = {}) {
   const agentCertified = review.agent_certified === true || metadata.agent_certified === true;
   const approvalStatus = review.approval_status || metadata.approval_status || null;
   const explicitHappened = landingPayloadValue(payload, metadata, 'happened')
-    || payload.changed || metadata.result_changed || metadata.human_changed || metadata.changed;
+    || payload.result || metadata.result || payload.changed || metadata.result_changed || metadata.human_changed || metadata.changed;
   const explicitChecked = landingPayloadValue(payload, metadata, 'checked')
     || payload.checked || metadata.result_checked || metadata.human_checked || metadata.checked;
   const explicitTested = landingPayloadValue(payload, metadata, 'tested');
@@ -2103,6 +2123,7 @@ function compactTaskForStatus(task) {
     display_id: task.display_id || null,
     legacy_ref: task.legacy_ref || taskRef(task.id),
     title: clipStatusText(task.title, 140),
+    result: clipStatusText(task.result || metadata.result, 180) || null,
     status: task.status,
     updated_at: task.updated_at,
   };
@@ -2156,7 +2177,7 @@ function compactTaskFromProjection(projection, id) {
 function compactEventPayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
   const out = {};
-  for (const key of ['title', 'status', 'tag', 'content', 'goal', 'summary', 'proof', 'lesson', 'reward', 'next_task']) {
+  for (const key of ['title', 'status', 'tag', 'content', 'goal', 'summary', 'proof', 'lesson', 'reward', 'next_task', 'result']) {
     if (payload[key] !== undefined && payload[key] !== null && payload[key] !== '') out[key] = payload[key];
   }
   return Object.keys(out).length ? out : null;
@@ -7084,9 +7105,38 @@ function cmdResult(args) {
   const pos = positional(args);
   const id = pos[0];
   if (!id) failTask('atris task result', 'missing_id', 'id required');
+  const sentence = pos.slice(1).join(' ').trim();
+  if (sentence) {
+    const resultSentence = requireResultSentence('atris task result', sentence);
+    const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+    const taskDb = getTaskDb();
+    const db = taskDb.open();
+    const taskId = requireTaskId(taskDb, db, id, 'atris task result');
+    const saved = taskDb.setTaskResult(db, {
+      id: taskId,
+      actor,
+      result: resultSentence,
+    });
+    if (!saved.saved) failTask('atris task result', saved.reason || 'result_failed', `result failed: ${saved.reason || 'result_failed'}`, 1);
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: 'result',
+        task_id: taskId,
+        version: saved.event.version,
+        result: resultSentence,
+        projection_path: outPath,
+        task: compactTaskFromProjection(projection, taskId),
+      });
+      return;
+    }
+    console.log(`result saved ${taskRef(compactTaskFromProjection(projection, taskId))}: ${resultSentence}`);
+    return;
+  }
   const fields = {
     purpose: textFlag(args, ['--purpose', '--goal', '--objective']),
-    changed: textFlag(args, ['--changed', '--result', '--done']),
+    changed: textFlag(args, ['--changed', '--done']),
     checked: textFlag(args, ['--checked', '--check', '--verified']),
     passed: textFlag(args, ['--passed', '--pass']),
     failed: textFlag(args, ['--failed', '--fail']),
@@ -7196,7 +7246,7 @@ function taskPageActions(task, { reviewer = 'codex-review', hasExistingReviewFol
     note_command: `atris task note ${ref} "<context>" --as ${owner}`,
     plan_command: `atris task plan ${ref} --goal ${taskCommandQuote(goal)} --exit "<exit condition>" --proof-needed "<verification command>" --first-move "<first move>"`,
     do_command: `atris task do ${ref} --as ${owner} --first-move "<first move>"`,
-    ready_command: `atris task ready ${ref} --as ${owner} --proof "<specific proof command/result>" --happened "<what happened>" --checked "<how you know>" --tested "<what you ran or inspected>" --decision "<accept/rework guidance>"`,
+    ready_command: `atris task ready ${ref} --as ${owner} --proof "<specific proof command/result>" --result "<one day-one PM sentence>" --happened "<what happened>" --checked "<how you know>" --tested "<what you ran or inspected>" --decision "<accept/rework guidance>"`,
     review_command: `atris task review ${ref} --reward 0 --as ${actor} --proof "<specific proof command/result>" --verify "<safe verifier command>"`,
   };
   if (task && task.status === 'review') {
@@ -7985,7 +8035,7 @@ function cmdDone(args) {
   if (agentProofOnlyMode() && !failed) {
     failAgentProofOnly(
       'atris task done',
-      'Agent proof-only mode cannot mark tasks done. Use `atris task ready <id> --proof "..."` or `atris task review <id> --reward 0 --proof "..."`.',
+      'Agent proof-only mode cannot mark tasks done. Use `atris task ready <id> --proof "..." --result "<day-one PM sentence>"` or `atris task review <id> --reward 0 --proof "..."`.',
     );
   }
   const canComplete = beforeTask && (beforeTask.status === 'open' || beforeTask.status === 'claimed');
@@ -8067,7 +8117,7 @@ function cmdFinish(args) {
   if (agentProofOnlyMode() && !failed) {
     failAgentProofOnly(
       'atris task finish',
-      'Agent proof-only mode cannot finish tasks. Use `atris task ready <id> --proof "..."` or `atris task review <id> --reward 0 --proof "..."`.',
+      'Agent proof-only mode cannot finish tasks. Use `atris task ready <id> --proof "..." --result "<day-one PM sentence>"` or `atris task review <id> --reward 0 --proof "..."`.',
     );
   }
   const canComplete = currentTask && (currentTask.status === 'open' || currentTask.status === 'claimed');
@@ -8272,6 +8322,7 @@ function cmdReady(args) {
   // turning a claim into executed evidence. --verify can carry an optional --proof note.
   const proofFlag = flag(args, '--proof');
   const verifyFlag = flag(args, '--verify');
+  const resultSentence = requireResultSentence('atris task ready', textFlag(args, ['--result']), { ready: true });
   const usedVerify = typeof verifyFlag === 'string' ? verifyFlag.trim() : '';
   let proof = typeof proofFlag === 'string' ? proofFlag : '';
   const verifyAutoCertifyAllowed = !usedVerify || isAutoCertifyVerifyCommandAllowed(verifyFlag);
@@ -8304,7 +8355,7 @@ function cmdReady(args) {
   guardExplicitActor('atris task ready', flag(args, '--as'));
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
   const resultFields = {
-    changed: textFlag(args, ['--changed', '--result', '--done']),
+    changed: textFlag(args, ['--changed', '--done']),
     checked: textFlag(args, ['--checked', '--check', '--verified']),
     passed: textFlag(args, ['--passed', '--pass']),
     failed: textFlag(args, ['--failed', '--fail']),
@@ -8322,6 +8373,7 @@ function cmdReady(args) {
     actor,
     proof: String(proof),
     ...resultFields,
+    changed: resultFields.changed || resultSentence,
   });
   const result = taskDb.readyTask(db, {
     id: taskId,
@@ -8331,6 +8383,7 @@ function cmdReady(args) {
     nextTask: nextTaskInput.nextTask,
     resultTrace: resultTrace && resultTrace.trace,
     landing,
+    result: resultSentence,
   });
   if (!result.ready) {
     console.error(`ready failed: ${result.reason}`);
@@ -8443,7 +8496,7 @@ function cmdTaskReceipt(args) {
   }
   if (receipt.passed) {
     console.log(`receipt written: ${receipt.receiptPath} (exit 0)`);
-    console.log(`use: atris task ready ${taskId} --proof "Receipt: ${receipt.receiptPath}"`);
+    console.log(`use: atris task ready ${taskId} --proof "Receipt: ${receipt.receiptPath}" --result "<what someone can do now and why it matters>"`);
   } else {
     console.error(`verifier failed (exit ${receipt.exit}); receipt written: ${receipt.receiptPath}`);
     if (receipt.output) console.error(receipt.output);
@@ -10733,10 +10786,15 @@ async function handleTaskApi(req, res, taskDb, db) {
     if (proofIssue) return sendProofIssue(res, proof, proofIssue);
     const nextTaskInput = normalizeReviewNextTaskInput(body.next);
     const actor = String(body.actor || DEFAULT_OWNER);
+    const resultText = String(body.result || '').replace(/\s+/g, ' ').trim();
+    if (resultText) {
+      const resultIssue = resultSentenceIssue(resultText);
+      if (resultIssue) return sendJson(res, 400, { ok: false, reason: 'weak_result', detail: resultIssue });
+    }
     const resultTrace = buildAutomaticResultTrace(taskDb, db, taskId, {
       actor,
       proof,
-      changed: body.changed || body.result || body.done,
+      changed: body.changed || resultText || body.done,
       checked: body.checked || body.check || body.verified,
       passed: body.passed || body.pass,
       failed: body.failed || body.fail,
@@ -10754,6 +10812,7 @@ async function handleTaskApi(req, res, taskDb, db) {
       lesson: String(body.lesson || ''),
       nextTask: nextTaskInput.nextTask,
       resultTrace: resultTrace && resultTrace.trace,
+      result: resultText,
       landing: body.landing || {
         happened: body.happened,
         checked: body.checked,
