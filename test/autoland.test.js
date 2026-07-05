@@ -227,6 +227,18 @@ test('policy file gates live accept authorization', () => {
   }
 });
 
+test('status presents default autoland owner as inferred, not configured state', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const status = runCli(['autoland', 'status'], repo);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.doesNotMatch(status.stdout, /accepting as Test/);
+    assert.match(status.stdout, /policy: on by default for this workspace \(no policy set; would accept as Test\)\. set it: atris autoland on/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('cron line is labeled and removable', () => {
   const line = autoland.buildCronLine('/tmp/some-project');
   assert.match(line, /# ATRIS_AUTOLAND_SOME_PROJECT$/);

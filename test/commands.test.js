@@ -7421,6 +7421,8 @@ test('task help flags never render the live desk', () => {
     assert.match(rootHelp.stdout, /atris task review-lane-act \[--json\]/);
     assert.match(rootHelp.stdout, /atris task review-lane-loop \[--json\]/);
     assert.match(rootHelp.stdout, /atris task review-lane-run \[--json\]/);
+    assert.match(rootHelp.stdout, /atris task list \[--all\] \[--everywhere\] \[--status <s>\]/);
+    assert.match(rootHelp.stdout, /--all stays in this workspace; --everywhere spans workspaces/);
     assert.match(rootHelp.stdout, /atris task reviews \[--all\|--limit <n>\] \[--verbose\]/);
     assert.match(rootHelp.stdout, /atris task current .*--review-state <lane>/);
     assert.match(rootHelp.stdout, /atris task queue .*--review-state <lane>/);
@@ -7431,6 +7433,7 @@ test('task help flags never render the live desk', () => {
     const eventsHelp = runCli(['task', 'events', '--help'], { cwd: dir });
     assert.equal(eventsHelp.status, 0, eventsHelp.stderr);
     assert.match(eventsHelp.stdout, /atris task events --all/);
+    assert.match(eventsHelp.stdout, /atris task events --everywhere/);
     assert.doesNotMatch(eventsHelp.stdout, /TASK EVENTS/);
   } finally {
     cleanupTempDir(dir);

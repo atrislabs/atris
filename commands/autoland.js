@@ -260,7 +260,13 @@ function showStatus(root, args) {
   console.log('');
   console.log(`autoland — certified work lands itself; you keep the irreversible calls`);
   console.log('');
-  console.log(`  policy: ${enabled ? (policy.default ? `on by default (accepting as ${policy.enabled_by}; opt out: atris autoland off)` : `on (flipped by ${policy.enabled_by}${policy.enabled_at ? ` on ${String(policy.enabled_at).slice(0, 10)}` : ''})`) : 'off — everything waits for you'}`);
+  const policyOwner = String(policy?.enabled_by || 'unknown').trim() || 'unknown';
+  const policyText = enabled
+    ? (policy.default
+      ? `on by default for this workspace (no policy set; would accept as ${policyOwner}). set it: atris autoland on`
+      : `on (flipped by ${policyOwner}${policy.enabled_at ? ` on ${String(policy.enabled_at).slice(0, 10)}` : ''})`)
+    : 'off - everything waits for you';
+  console.log(`  policy: ${policyText}`);
   if (enabled && acceptAll) console.log('  bar: everything lands except the protected lanes (money, deploys, security, customer, outward)');
   console.log(`  heartbeat: ${autoland.cronInstalled(root) ? 'running hourly' : 'not installed'}`);
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);

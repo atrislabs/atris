@@ -156,8 +156,10 @@ atris task - durable local task state (SQLite, gitignored)
                                            Start task-owned Do work from the plan
   atris task backlog <id> [--reason "..."] Move a planned open task back to Backlog
   atris task clear-plan --yes              Move all planned open tasks back to Backlog
-  atris task day [--json]                  Show today's owner-grouped task list
-  atris task list [--all] [--status <s>]   List tasks (default: this workspace)
+  atris task day [--all] [--everywhere] [--json]  show today's owner-grouped task list
+                                           --all stays in this workspace; --everywhere spans workspaces
+  atris task list [--all] [--everywhere] [--status <s>]
+                                           list tasks in this workspace; --everywhere spans workspaces
   atris task claim <id> [--as <owner>]     Atomic claim
   atris task release <id> [--as <owner>]   Release your own mistaken claim back to open
   atris task capabilities [--json]         Read-only task CLI/API capability contract
@@ -199,10 +201,13 @@ atris task - durable local task state (SQLite, gitignored)
   atris task sync --dry-run                Plan cloud/Swarlo task sync writes
   atris task import <file>                 One-shot import from TODO.md
   atris task lineage <id> [--json]          Show endgame -> tasks -> commits chain
-  atris task events [id] [--limit <n>]     Print recent task events
-  atris task events --all                  Print the full append-only ledger
-  atris task export [--out <file>]         Write web/desktop JSON projection
-  atris task render [--out <file>]         Regenerate compact TODO.md view from state
+  atris task events [id] [--limit <n>]     print recent task events
+  atris task events --all                  print the full current-workspace ledger
+  atris task events --everywhere           print the full ledger across workspaces
+  atris task export [--all] [--everywhere] [--out <file>]
+                                           write web/desktop JSON projection
+  atris task render [--all] [--everywhere] [--out <file>]
+                                           regenerate compact TODO.md view from state
   atris task where                          Print db path + workspace scope
   atris task help                           This help
 
@@ -240,6 +245,15 @@ function flag(args, name) {
 
 function hasFlag(args, name) {
   return args.indexOf(name) !== -1;
+}
+
+function taskScopeEverywhere(args = [], options = {}) {
+  if (options.everywhere !== undefined) return Boolean(options.everywhere);
+  return hasFlag(args, '--everywhere');
+}
+
+function scopedWorkspaceRoot(taskDb, args = [], options = {}) {
+  return taskScopeEverywhere(args, options) ? null : taskDb.workspaceRoot();
 }
 
 function hasEmptyFlagValue(args, name) {
@@ -478,10 +492,11 @@ function positional(args) {
   });
 }
 
-function writeDefaultProjection(taskDb, db, { all = false } = {}) {
+function writeDefaultProjection(taskDb, db, options = {}) {
+  const workspaceRoot = scopedWorkspaceRoot(taskDb, [], options);
   const projection = enrichTaskProjection(taskDb.taskProjection(db, {
-    workspaceRoot: all ? null : taskDb.workspaceRoot(),
-    limit: 500,
+    workspaceRoot,
+    limit: options.all ? null : 500,
   }));
   const outPath = path.resolve(path.join('.atris', 'state', 'tasks.projection.json'));
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -3130,6 +3145,7 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
   const owner = options.owner || flag(args, '--as') || flag(args, '--owner') || DEFAULT_OWNER;
   const reviewer = reviewActor(options.reviewer || flag(args, '--reviewer') || flag(args, '--as-reviewer') || 'codex-review');
   const all = options.all !== undefined ? Boolean(options.all) : hasFlag(args, '--all');
+  const everywhere = taskScopeEverywhere(args, options);
   const limit = options.limit !== undefined ? options.limit : taskQueueLimit(args);
   const scope = normalizeTaskQueueScope(options.scope || taskQueueScopeFromArgs(args));
   const standalone = taskCapabilitiesContract();
@@ -3137,6 +3153,7 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
     owner,
     reviewer,
     all,
+    everywhere,
     limit,
     scope,
   });
@@ -3471,18 +3488,20 @@ function buildTaskCurrent(taskDb, db, args = [], options = {}) {
   const owner = options.owner || flag(args, '--as') || flag(args, '--owner') || DEFAULT_OWNER;
   const reviewer = reviewActor(options.reviewer || flag(args, '--reviewer') || flag(args, '--as-reviewer') || 'codex-review');
   const all = options.all !== undefined ? Boolean(options.all) : hasFlag(args, '--all');
+  const everywhere = taskScopeEverywhere(args, options);
+  const workspaceRoot = scopedWorkspaceRoot(taskDb, args, { everywhere });
   const limit = options.limit !== undefined ? options.limit : taskQueueLimit(args);
   const scope = normalizeTaskQueueScope(options.scope || taskQueueScopeFromArgs(args));
-  const { projection, outPath } = writeDefaultProjection(taskDb, db, { all });
+  const { projection, outPath } = writeDefaultProjection(taskDb, db, { all, everywhere });
   const hasExistingReviewFollowUp = buildReviewFollowUpChildPredicate(
     taskDb,
     db,
-    all ? null : taskDb.workspaceRoot(),
+    workspaceRoot,
   );
   const hasPendingReviewChat = buildPendingReviewChatPredicate(
     taskDb,
     db,
-    all ? null : taskDb.workspaceRoot(),
+    workspaceRoot,
   );
   return {
     projection,
@@ -3755,12 +3774,14 @@ function taskReviewLaneDrainReport(taskDb, db, args = [], options = {}) {
   const owner = options.owner || flag(args, '--as') || flag(args, '--owner') || DEFAULT_OWNER;
   const reviewer = reviewActor(options.reviewer || flag(args, '--reviewer') || flag(args, '--as-reviewer') || 'codex-review');
   const all = options.all !== undefined ? Boolean(options.all) : hasFlag(args, '--all');
+  const everywhere = taskScopeEverywhere(args, options);
   const limit = options.limit !== undefined ? options.limit : taskQueueLimit(args);
   const scope = normalizeTaskQueueScope(options.scope || taskQueueScopeFromArgs(args));
   const capabilitiesCheck = taskCapabilitiesCheckReport(taskDb, db, [], {
     owner,
     reviewer,
     all,
+    everywhere,
     limit,
     scope,
   });
@@ -3768,6 +3789,7 @@ function taskReviewLaneDrainReport(taskDb, db, args = [], options = {}) {
     owner,
     reviewer,
     all,
+    everywhere,
     limit,
     scope,
     excludeTaskIds: options.excludeTaskIds,
@@ -3828,6 +3850,7 @@ function taskReviewLaneActOptionsFromArgs(args = []) {
     owner: flag(args, '--as') || flag(args, '--owner') || DEFAULT_OWNER,
     reviewer: reviewActor(flag(args, '--reviewer') || flag(args, '--as-reviewer') || 'codex-review'),
     all: hasFlag(args, '--all'),
+    everywhere: hasFlag(args, '--everywhere'),
     limit: taskQueueLimit(args),
     scope: taskQueueScopeFromArgs(args),
     dryRun: hasFlag(args, '--dry-run'),
@@ -3845,6 +3868,7 @@ function taskReviewLaneActOptionsFromBody(body = {}, searchParams = new URLSearc
     owner: String(queryOwner || body.owner || body.as || body.actor || DEFAULT_OWNER),
     reviewer: reviewActor(queryReviewer || body.reviewer || body.review_actor || body.reviewActor || 'codex-review'),
     all: searchParams.get('all') === '1' || searchParams.get('all') === 'true' || Boolean(body.all),
+    everywhere: searchParams.get('everywhere') === '1' || searchParams.get('everywhere') === 'true' || Boolean(body.everywhere),
     limit: Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 8,
     scope: mergeTaskQueueScopes(queryScope, bodyScope),
     dryRun: searchParams.get('dry_run') === '1'
@@ -3910,6 +3934,7 @@ function taskReviewLaneAct(taskDb, db, options = {}) {
     owner,
     reviewer,
     all: Boolean(options.all),
+    everywhere: Boolean(options.everywhere),
     limit: options.limit !== undefined ? options.limit : 8,
     scope,
     excludeTaskIds: options.excludeTaskIds,
@@ -4148,6 +4173,7 @@ function taskReviewLaneLoop(taskDb, db, options = {}) {
 	      owner,
 	      reviewer,
 	      all: Boolean(options.all),
+	      everywhere: Boolean(options.everywhere),
 	      limit: options.limit !== undefined ? options.limit : 8,
 	      scope,
 	      excludeTaskIds,
@@ -4200,6 +4226,7 @@ function taskReviewLaneLoop(taskDb, db, options = {}) {
 	      owner,
 	      reviewer,
 	      all: Boolean(options.all),
+	      everywhere: Boolean(options.everywhere),
 	      limit: options.limit !== undefined ? options.limit : 8,
 	      scope,
 	      excludeTaskIds,
@@ -4387,6 +4414,7 @@ function taskReviewLaneRun(taskDb, db, options = {}) {
 	      owner,
 	      reviewer,
 	      all: Boolean(options.all),
+	      everywhere: Boolean(options.everywhere),
 	      limit: options.limit !== undefined ? options.limit : 8,
 	      scope,
 	      excludeTaskIds,
@@ -4946,19 +4974,21 @@ function formatTaskLine(task) {
 
 function cmdStatus(args) {
   const all = hasFlag(args, '--all');
+  const everywhere = taskScopeEverywhere(args);
   const history = hasFlag(args, '--history');
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  const compact = writeDefaultProjection(taskDb, db, { all });
+  const workspaceRoot = scopedWorkspaceRoot(taskDb, args, { everywhere });
+  const compact = writeDefaultProjection(taskDb, db, { all, everywhere });
   const projection = history
     ? enrichTaskProjection(taskDb.taskProjection(db, {
-      workspaceRoot: all ? null : taskDb.workspaceRoot(),
-      limit: 500,
+      workspaceRoot,
+      limit: all ? null : 500,
       includeHistory: true,
     }))
     : compact.projection;
   const outPath = compact.outPath;
-  const hasExistingReviewFollowUp = buildReviewFollowUpChildPredicate(taskDb, db, all ? null : taskDb.workspaceRoot());
+  const hasExistingReviewFollowUp = buildReviewFollowUpChildPredicate(taskDb, db, workspaceRoot);
   const status = taskStatusSummary(projection, { history, hasExistingReviewFollowUp });
   if (wantsJson(args)) {
     printJson({
@@ -5015,8 +5045,8 @@ function requireTaskId(taskDb, db, ref, label) {
   }
 }
 
-function workspaceRefRows(taskDb, db, all = false) {
-  return taskDb.listTasks(db, { workspaceRoot: all ? null : taskDb.workspaceRoot() });
+function workspaceRefRows(taskDb, db, options = {}) {
+  return taskDb.listTasks(db, { workspaceRoot: scopedWorkspaceRoot(taskDb, [], options) });
 }
 
 function renderTaskDesk(rows, refRows = rows) {
@@ -5237,9 +5267,10 @@ function taskDayGroups(tasks, { now = Date.now() } = {}) {
 
 function cmdDay(args) {
   const all = hasFlag(args, '--all');
+  const everywhere = taskScopeEverywhere(args);
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  const { projection, outPath } = writeDefaultProjection(taskDb, db, { all });
+  const { projection, outPath } = writeDefaultProjection(taskDb, db, { all, everywhere });
   const { groups, staleFailed } = taskDayGroups(projection.tasks || []);
   const counts = {
     active: groups.reduce((sum, group) => sum + group.tasks.length, 0),
@@ -5291,13 +5322,15 @@ function cmdDay(args) {
 
 function cmdHome(args) {
   const all = hasFlag(args, '--all');
+  const everywhere = taskScopeEverywhere(args);
   const taskDb = getTaskDb();
   const db = taskDb.open();
+  const workspaceRoot = scopedWorkspaceRoot(taskDb, args, { everywhere });
   const rows = taskDb.listTasks(db, {
-    workspaceRoot: all ? null : taskDb.workspaceRoot(),
-    limit: 200,
+    workspaceRoot,
+    limit: all ? null : 200,
   });
-  const { projection, outPath } = writeDefaultProjection(taskDb, db, { all });
+  const { projection, outPath } = writeDefaultProjection(taskDb, db, { all, everywhere });
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -5314,18 +5347,20 @@ function cmdHome(args) {
 
 function cmdList(args) {
   const all = hasFlag(args, '--all');
+  const everywhere = taskScopeEverywhere(args);
   const status = flag(args, '--status');
   const scope = taskQueueScopeFromArgs(args);
   const scoped = !taskQueueScopeIsEmpty(scope);
   const taskDb = getTaskDb();
   const db = taskDb.open();
+  const workspaceRoot = scopedWorkspaceRoot(taskDb, args, { everywhere });
   const rawRows = taskDb.listTasks(db, {
-    workspaceRoot: all ? null : taskDb.workspaceRoot(),
+    workspaceRoot,
     status: typeof status === 'string' ? status : null,
-    limit: scoped ? null : 200,
+    limit: scoped || all ? null : 200,
   });
   const rows = filterTasksByScope(rawRows, scope);
-  const displayRows = taskDb.withTaskDisplayRefs(rows, workspaceRefRows(taskDb, db, all));
+  const displayRows = taskDb.withTaskDisplayRefs(rows, workspaceRefRows(taskDb, db, { everywhere }));
   if (wantsJson(args)) {
     printJson({ ok: true, action: 'list', scope: normalizeTaskQueueScope(scope), tasks: displayRows });
     return;
@@ -9221,21 +9256,23 @@ function cmdEvents(args) {
   const pos = positional(args);
   let taskId = pos[0] || null;
   const all = hasFlag(args, '--all');
+  const everywhere = taskScopeEverywhere(args);
   const rawLimit = flag(args, '--limit');
   const explicitLimit = rawLimit && rawLimit !== true ? Number(rawLimit) : null;
   const defaultRecentLimit = 24;
-  const limit = explicitLimit || (taskId ? 500 : (all ? null : defaultRecentLimit));
+  const limit = explicitLimit || (taskId ? 500 : (all || everywhere ? null : defaultRecentLimit));
   const taskDb = getTaskDb();
   const db = taskDb.open();
   if (taskId) taskId = requireTaskId(taskDb, db, taskId, 'atris task events');
+  const workspaceRoot = scopedWorkspaceRoot(taskDb, args, { everywhere });
   const events = taskDb.listTaskEvents(db, {
     taskId,
-    workspaceRoot: all || taskId ? null : taskDb.workspaceRoot(),
+    workspaceRoot: taskId ? null : workspaceRoot,
     limit,
-    order: taskId || all ? 'asc' : 'desc',
+    order: taskId || all || everywhere ? 'asc' : 'desc',
   });
   const refRows = taskDb.listTasks(db, {
-    workspaceRoot: all ? null : (taskId ? (taskDb.getTask(db, taskId) || {}).workspace_root : taskDb.workspaceRoot()),
+    workspaceRoot: everywhere ? null : (taskId ? (taskDb.getTask(db, taskId) || {}).workspace_root : workspaceRoot),
   });
   const refById = taskDb.taskDisplayRefMap(refRows);
   if (wantsJson(args)) {
@@ -9243,7 +9280,7 @@ function cmdEvents(args) {
       ok: true,
       action: 'events',
       task_id: taskId,
-      mode: taskId ? 'task' : (all ? 'ledger' : 'recent'),
+      mode: taskId ? 'task' : (everywhere ? 'ledger_everywhere' : (all ? 'ledger' : 'recent')),
       limit,
       events,
     });
@@ -9253,7 +9290,7 @@ function cmdEvents(args) {
     console.log('(no task events)');
     return;
   }
-  if (!taskId && !all) {
+  if (!taskId && !all && !everywhere) {
     console.log('TASK EVENTS');
     console.log(`recent ${events.length} event${events.length === 1 ? '' : 's'} (use --all for the full ledger, --limit N to adjust)`);
     console.log('');
@@ -9354,12 +9391,13 @@ function cmdLineage(args) {
 function cmdExport(args) {
   const out = flag(args, '--out') || path.join('.atris', 'state', 'tasks.projection.json');
   const all = hasFlag(args, '--all');
+  const everywhere = taskScopeEverywhere(args);
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const outPath = path.resolve(String(out));
   const projection = enrichTaskProjection(taskDb.taskProjection(db, {
-    workspaceRoot: all ? null : taskDb.workspaceRoot(),
-    limit: 500,
+    workspaceRoot: scopedWorkspaceRoot(taskDb, args, { everywhere }),
+    limit: all ? null : 500,
   }));
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(projection, null, 2) + '\n', 'utf8');
@@ -9539,18 +9577,20 @@ function taskRenderSummaryLine(counts) {
 function cmdRender(args) {
   const out = flag(args, '--out') || path.join('atris', 'TODO.md');
   const all = hasFlag(args, '--all');
+  const everywhere = taskScopeEverywhere(args);
   const doneLimitRaw = flag(args, '--done-limit');
   const doneLimit = doneLimitRaw && doneLimitRaw !== true ? Number(doneLimitRaw) : undefined;
   const failedLimitRaw = flag(args, '--failed-limit');
   const failedLimit = failedLimitRaw && failedLimitRaw !== true ? Number(failedLimitRaw) : undefined;
   const taskDb = getTaskDb();
   const db = taskDb.open();
+  const workspaceRoot = scopedWorkspaceRoot(taskDb, args, { everywhere });
   const rows = taskDb.listTasks(db, {
-    workspaceRoot: all ? null : taskDb.workspaceRoot(),
-    limit: 500,
+    workspaceRoot,
+    limit: all ? null : 500,
   });
   const refRows = taskDb.listTasks(db, {
-    workspaceRoot: all ? null : taskDb.workspaceRoot(),
+    workspaceRoot,
   });
   const outPath = path.resolve(String(out));
   const existingTodo = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf8') : '';
@@ -10159,6 +10199,7 @@ async function handleTaskApi(req, res, taskDb, db) {
       owner,
       reviewer,
       all: url.searchParams.get('all') === '1' || url.searchParams.get('all') === 'true',
+      everywhere: url.searchParams.get('everywhere') === '1' || url.searchParams.get('everywhere') === 'true',
       limit: Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 8,
       scope,
     });
@@ -10174,6 +10215,7 @@ async function handleTaskApi(req, res, taskDb, db) {
       owner,
       reviewer,
       all: url.searchParams.get('all') === '1' || url.searchParams.get('all') === 'true',
+      everywhere: url.searchParams.get('everywhere') === '1' || url.searchParams.get('everywhere') === 'true',
       limit: Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 8,
       scope,
     });
@@ -10204,6 +10246,7 @@ async function handleTaskApi(req, res, taskDb, db) {
       owner,
       reviewer,
       all: url.searchParams.get('all') === '1' || url.searchParams.get('all') === 'true',
+      everywhere: url.searchParams.get('everywhere') === '1' || url.searchParams.get('everywhere') === 'true',
       limit: Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 8,
       scope,
     });
