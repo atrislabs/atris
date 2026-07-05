@@ -464,8 +464,8 @@ function showHelp() {
   console.log('  3. Atris acts with context, memory, tools, and a review loop');
   console.log('');
   console.log('Common invocations:');
-  console.log('  atris init                Global install: initialize this project');
-  console.log('  npx atris init            Local install: initialize this project');
+  console.log('  atris init [--yes]        Global install: initialize this project');
+  console.log('  npx atris init [--yes]    Local install: initialize this project');
   console.log('  atris computer');
   console.log('  atris business init "My Company"');
   console.log('  atris run');
@@ -482,7 +482,7 @@ function showHelp() {
   console.log('');
   console.log('Setup:');
   console.log('  setup      - Guided first-time setup (login, pick business, pull)');
-  console.log('  init       - Initialize Atris in current project');
+  console.log('  init       - Initialize Atris in current project (--yes skips prompts)');
   console.log('  update     - Update local files to latest version');
   console.log('  upgrade    - Install latest Atris from npm');
   console.log('');
@@ -1092,6 +1092,19 @@ function printAtrisOverview() {
   console.log('');
 }
 
+function useInteractiveAtrisUi() {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.ATRIS_NO_INTERACTIVE);
+}
+
+function initNonInteractiveFlag() {
+  const args = process.argv.slice(2);
+  return args.includes('--yes') || args.includes('-y');
+}
+
+function shouldSkipContextGatherer() {
+  return !useInteractiveAtrisUi() || initNonInteractiveFlag();
+}
+
 async function interactiveEntry(userInput) {
   const workspaceDir = process.cwd();
   const state = detectWorkspaceState(workspaceDir);
@@ -1180,33 +1193,62 @@ async function interactiveEntry(userInput) {
     backlogCount,
     inboxCount,
   })) {
-    const answer = String(userInput || '').trim() || await askContextGatherer(workspaceDir);
-    if (isAtrisMetaQuestion(answer)) {
-      printAtrisOverview();
-      return;
-    }
-    if (!answer.trim()) {
+    const hotAnswer = String(userInput || '').trim();
+    if (hotAnswer) {
+      const answer = hotAnswer;
+      if (isAtrisMetaQuestion(answer)) {
+        printAtrisOverview();
+        return;
+      }
+      const profile = saveContextProfile(workspaceDir, answer, { source: 'hot_start' });
+      const starter = createStarterTask(workspaceDir, answer);
       console.log('');
-      console.log('No problem. When you are ready, answer in normal words.');
-      console.log('Example: "help me organize college applications" or "help me build a small website".');
+      console.log('Got it. I saved your first direction.');
+      console.log(`Focus: ${profile.first_answer}`);
+      if (starter && starter.display_id) {
+        console.log(`First task: ${starter.display_id} — ${starter.title}`);
+      } else if (starter && starter.title) {
+        console.log(`First task: ${starter.title}`);
+      }
+      if (mapStatus !== 'ready') {
+        printMapBootstrap({ userInput: answer, prefix: 'Next setup step' });
+        return;
+      }
+      await planCmd(answer);
       return;
     }
-    const profile = saveContextProfile(workspaceDir, answer, { source: userInput ? 'hot_start' : 'cold_start' });
-    const starter = createStarterTask(workspaceDir, answer);
-    console.log('');
-    console.log('Got it. I saved your first direction.');
-    console.log(`Focus: ${profile.first_answer}`);
-    if (starter && starter.display_id) {
-      console.log(`First task: ${starter.display_id} — ${starter.title}`);
-    } else if (starter && starter.title) {
-      console.log(`First task: ${starter.title}`);
-    }
-    if (mapStatus !== 'ready') {
-      printMapBootstrap({ userInput: answer, prefix: 'Next setup step' });
+    if (shouldSkipContextGatherer()) {
+      console.log('');
+      console.log("context gatherer skipped (non-interactive). run 'atris plan' when you're ready.");
+    } else {
+      const answer = await askContextGatherer(workspaceDir);
+      if (isAtrisMetaQuestion(answer)) {
+        printAtrisOverview();
+        return;
+      }
+      if (!answer.trim()) {
+        console.log('');
+        console.log('No problem. When you are ready, answer in normal words.');
+        console.log('Example: "help me organize college applications" or "help me build a small website".');
+        return;
+      }
+      const profile = saveContextProfile(workspaceDir, answer, { source: 'cold_start' });
+      const starter = createStarterTask(workspaceDir, answer);
+      console.log('');
+      console.log('Got it. I saved your first direction.');
+      console.log(`Focus: ${profile.first_answer}`);
+      if (starter && starter.display_id) {
+        console.log(`First task: ${starter.display_id} — ${starter.title}`);
+      } else if (starter && starter.title) {
+        console.log(`First task: ${starter.title}`);
+      }
+      if (mapStatus !== 'ready') {
+        printMapBootstrap({ userInput: answer, prefix: 'Next setup step' });
+        return;
+      }
+      await planCmd(answer);
       return;
     }
-    await planCmd(answer);
-    return;
   }
 
   if (mapStatus !== 'ready') {
