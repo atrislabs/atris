@@ -35,11 +35,12 @@ test('dispatchCheck falls back to the full Check: text when it is not a node --t
 });
 
 test('parseDispatchArgs separates positional task ids from --engine/--prompt-file values', () => {
-  const parsed = engine.parseDispatchArgs(['CLI-1', 'CLI-2', '--engine', 'cursor', '--prompt-file', 'p.md', '--json']);
+  const parsed = engine.parseDispatchArgs(['CLI-1', 'CLI-2', '--engine', 'cursor', '--prompt-file', 'p.md', '--json', '--yolo']);
   assert.deepEqual(parsed.taskIds, ['CLI-1', 'CLI-2']);
   assert.equal(parsed.engine, 'cursor');
   assert.equal(parsed.promptFile, 'p.md');
   assert.equal(parsed.json, true);
+  assert.equal(parsed.yolo, true);
 });
 
 test('parseDispatchArgs supports --flag=value form', () => {
@@ -47,6 +48,20 @@ test('parseDispatchArgs supports --flag=value form', () => {
   assert.deepEqual(parsed.taskIds, ['CLI-1']);
   assert.equal(parsed.engine, 'codex');
   assert.equal(parsed.promptFile, '/tmp/p.md');
+  assert.equal(parsed.yolo, false);
+});
+
+test('buildEngineCommand pins yolo flags for codex and claude engines', () => {
+  assert.equal(fleet.YOLO_ENGINE_FLAGS.codex, '--dangerously-bypass-approvals-and-sandbox');
+  assert.equal(fleet.YOLO_ENGINE_FLAGS.claude, '--dangerously-skip-permissions');
+
+  const codex = fleet.buildEngineCommand('codex', '/tmp/p.md', { yolo: true });
+  assert.match(codex, /^codex exec --dangerously-bypass-approvals-and-sandbox /);
+  assert.doesNotMatch(fleet.buildEngineCommand('codex', '/tmp/p.md'), /dangerously-bypass-approvals-and-sandbox/);
+
+  const claude = fleet.buildEngineCommand('claude', '/tmp/p.md', { yolo: true });
+  assert.match(claude, /--dangerously-skip-permissions$/);
+  assert.doesNotMatch(fleet.buildEngineCommand('claude', '/tmp/p.md'), /dangerously-skip-permissions/);
 });
 
 test('runDispatchCommand refuses without a task id or engine', () => {
@@ -304,6 +319,85 @@ test('runDispatchFlight fails the flight when the fallback engine also fails', a
     assert.deepEqual(flight.results[0].restaffed, { from: 'codex', to: 'cursor', reason: 'usage_limit' });
     assert.deepEqual(verifyCalls, []);
     assert.ok(!calls.some((c) => c.startsWith('task ready')), 'failed fallback must not mark the task ready');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+
+test('runDispatchFlight yolo records self-landed tasks and receipt state', async () => {
+  const tmpRoot = makeTempRoot();
+  try {    const { cli, calls } = ownCliFake({
+      tasks: { 'CLI-900': TASK },
+      worktreeFor: (t) => `/wt/${t}`,
+    });
+    const checks = [];
+    let landerCalled = false;
+    let verifierCalled = false;
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'codex',
+      yolo: true,
+      ownCli: cli,
+      log: () => {},
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'self landed in PR https://example.test/pr/1' }),
+      lander: () => { landerCalled = true; return { ok: true, stage: 'shipped' }; },
+      verifier: () => { verifierCalled = true; return { status: 0, stdout: '', stderr: '' }; },
+      selfLandCheck: (input) => {
+        checks.push(input);
+        return { ok: true, target: input.targetRef };
+      },
+    });
+
+    assert.equal(flight.yolo, true);
+    assert.equal(flight.landed.length, 1);
+    assert.equal(flight.landed[0].landing, 'self');
+    assert.equal(flight.landed[0].target, fleet.DISPATCH_SELF_LAND_TARGET);
+    assert.equal(flight.paused.length, 0);
+    assert.equal(checks.length, 1);
+    assert.equal(checks[0].worktreePath, '/wt/dispatch-cli-900');
+    assert.equal(landerCalled, false);
+    assert.equal(verifierCalled, false);
+    assert.ok(!calls.some((c) => c.startsWith('worktree ship')), 'outer dispatch must not ship in yolo mode');
+    assert.ok(!calls.some((c) => c.startsWith('task ready')), 'outer dispatch must not ready a self-landed task');
+
+    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.equal(receipt.yolo, true);
+    assert.equal(receipt.landed[0].landing, 'self');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight yolo pauses when the engine did not land its work', async () => {
+  const tmpRoot = makeTempRoot();
+  try {    const { cli, calls } = ownCliFake({
+      tasks: { 'CLI-900': TASK },
+      worktreeFor: (t) => `/wt/${t}`,
+    });
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'codex',
+      yolo: true,
+      ownCli: cli,
+      log: () => {},
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'done but not merged' }),
+      lander: () => { throw new Error('lander should not run in yolo mode'); },
+      verifier: () => { throw new Error('verifier should not run in yolo mode'); },
+      selfLandCheck: () => ({ ok: false, stage: 'self_land_missing', target: fleet.DISPATCH_SELF_LAND_TARGET, detail: 'not merged' }),
+    });
+
+    assert.equal(flight.landed.length, 0);
+    assert.equal(flight.paused.length, 1);
+    assert.equal(flight.paused[0].stage, 'self_land_missing');
+    assert.equal(flight.paused[0].target, fleet.DISPATCH_SELF_LAND_TARGET);
+    assert.ok(!calls.some((c) => c.startsWith('worktree ship')), 'outer dispatch must not ship in yolo mode');
+
+    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.equal(receipt.yolo, true);
+    assert.equal(receipt.paused[0].stage, 'self_land_missing');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
