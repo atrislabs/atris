@@ -24,8 +24,16 @@ function taskIdsFromDirectories() {
 test('agents-v1 tasks fail under null and pass under solution', async () => {
   const taskIds = taskIdsFromDirectories();
   assert.deepEqual(taskIds, [
+    'count-cli-commands',
     'find-the-bug-line',
+    'config-precedence',
+    'dead-code-hunt',
+    'import-chain',
     'fix-failing-test',
+    'rename-symbol',
+    'off-by-one-repair',
+    'null-guard',
+    'format-change',
     'no-commit-rule',
     'one-file-only',
     'receipt-format',
@@ -37,6 +45,8 @@ test('agents-v1 tasks fail under null and pass under solution', async () => {
     'input-validation',
     'tiny-parser',
     'merge-conflict',
+    'syntax-triage',
+    'broken-imports',
     'revert-bad-change',
     'flaky-quarantine',
   ]);

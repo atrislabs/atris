@@ -23,7 +23,12 @@ function sh(cmd, args, opts = {}) {
 
 function stagedJsFiles(repoRoot) {
   const out = sh('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR'], { cwd: repoRoot });
-  return out.split('\n').map((l) => l.trim()).filter((f) => f.endsWith('.js') || f.endsWith('.mjs'));
+  return out.split('\n').map((l) => l.trim())
+    .filter((f) => f.endsWith('.js') || f.endsWith('.mjs'))
+    // Benchmark fixtures are test data, not modules: some are broken by
+    // design (syntax-triage, broken-imports) so agents can be scored on
+    // repairing them. Loading them here would block committing the pack.
+    .filter((f) => !f.startsWith('atris/benchmarks/'));
 }
 
 // Drop block comments and full-line // comments so documentation examples of

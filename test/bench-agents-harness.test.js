@@ -49,7 +49,7 @@ test('bench pack discovery lists core-v1 and agents-v1', () => {
   const packs = packMetadata({ repoRoot });
   const byId = new Map(packs.map((pack) => [pack.id, pack]));
   assert.equal(byId.get('core-v1').default, true);
-  assert.equal(byId.get('agents-v1').taskCount, 15);
+  assert.equal(byId.get('agents-v1').taskCount, 25);
 });
 
 test('agents-v1 result records include pack and engine fields', async () => {
