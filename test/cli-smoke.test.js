@@ -678,6 +678,21 @@ test('skill create rejects flag-shaped names instead of making a junk folder', (
   }
 });
 
+test('business create rejects help flags instead of making a ghost business', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  try {
+    const res = runCli(['business', 'init', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Usage: atris business/);
+    assert.doesNotMatch(res.stdout + res.stderr, /Creating business/);
+    assert.equal(fs.existsSync(path.join(home, '.atris', 'businesses.json')), false);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
 test('align --help prints usage even when a business is bound', () => {
   const dir = makeTempDir();
   try {
@@ -839,12 +854,12 @@ test('runner-profile help lists canonical profile names only', () => {
   try {
     const run = runCli(['run', '--help'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr);
-    assert.match(run.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, devin\)/);
+    assert.match(run.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, devin, hermes\)/);
     assert.doesNotMatch(run.stdout, /atris2-fast|atris-2-fast/);
 
     const autopilot = runCli(['autopilot', '--legacy', '--help'], { cwd: dir });
     assert.equal(autopilot.status, 0, autopilot.stderr);
-    assert.match(autopilot.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, devin\)/);
+    assert.match(autopilot.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, devin, hermes\)/);
     assert.doesNotMatch(autopilot.stdout, /atris2-fast|atris-2-fast/);
   } finally {
     cleanupTempDir(dir);

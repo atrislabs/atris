@@ -1623,7 +1623,7 @@ function missionStatusView(mission) {
 }
 
 function missionFromArgs(args) {
-  const objective = stripKnownFlags(args, [
+  const objectiveParts = stripKnownFlags(args, [
     '--owner',
     '--cadence',
     '--loop',
@@ -1642,7 +1642,9 @@ function missionFromArgs(args) {
     '--native-goal-objective',
     '--visible-goal-status',
     '--visible-goal-objective',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot']).join(' ').trim();
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot'])
+    .filter((part) => String(part || '').trim() !== '...');
+  const objective = objectiveParts.join(' ').trim();
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }
@@ -2818,7 +2820,8 @@ function findActiveTwinMission(objective, owner, root = process.cwd()) {
 
 function startMission(args) {
   const asJson = wantsJson(args);
-  if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
+  const firstArg = String(args[0] || '').trim().toLowerCase();
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || firstArg === 'help') {
     console.log('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--runner manual|claude|atris2|codex_goal]');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
@@ -6471,6 +6474,11 @@ async function runMission(args) {
 
 function tickMission(args) {
   const asJson = wantsJson(args);
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission tick <id> [--verify] [--summary "..."] [--complete-on-pass]');
+    console.log('Run `atris mission --help` for the full option list.');
+    process.exit(0);
+  }
   const verify = hasFlag(args, '--verify');
   const verifyOverride = readFlag(args, '--verify', '');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
@@ -7522,6 +7530,7 @@ module.exports = {
   selectDueMission,
   selectAtrisGoalMission,
   selectCodexGoalMission,
+  codexGoalNextCommand,
   usefulClaudeReceiptSummary,
   cappedClaudeReceiptText,
   extractLayerFromReceiptText,

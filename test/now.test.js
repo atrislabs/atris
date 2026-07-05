@@ -89,6 +89,46 @@ test('refreshNowFile regenerates now.md from current local signals', () => {
   }
 });
 
+test('renderDefaultNow leads with active mission move when codex goal selection has one', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: 'mission-now-move',
+      objective: 'Make the golden path obvious',
+      owner: 'onboarding',
+      status: 'running',
+      runner: 'codex_goal',
+      cadence: 'manual',
+      verifier: 'git diff --check',
+      task_ids: ['CLI-1'],
+      task_id: 'CLI-1',
+      task_ref: 'CLI-1',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        mission_id: 'mission-now-move',
+        objective: 'Make the golden path obvious',
+        acknowledged_at: '2026-07-04T00:00:00.000Z',
+      },
+      created_at: '2026-07-04T00:00:00.000Z',
+      updated_at: '2026-07-04T00:00:00.000Z',
+    })}\n`, 'utf8');
+
+    const content = renderDefaultNow(dir);
+    const section = content.split('## What Matters Now\n\n')[1].split('\n\n## Current Priority')[0];
+
+    assert.equal(section.split('\n')[0], 'The move: Make the golden path obvious — next: atris mission run --due --max-ticks 1 --complete-on-pass');
+    assert.match(section, /- Decide the next useful move before opening more context\./);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('countOpenTodoItems ignores rendered blocked and completed task rows', () => {
   const dir = makeTempDir();
   try {

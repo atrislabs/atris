@@ -3928,6 +3928,62 @@ test('mission run --help prints help instead of starting a mission', () => {
   }
 });
 
+test('mission start --help prints help instead of starting a mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'start', '--help'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    assert.equal(run.stderr, '');
+    assert.match(run.stdout, /Usage: atris mission start/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission start help prints help instead of starting a mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'start', 'help'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    assert.equal(run.stderr, '');
+    assert.match(run.stdout, /Usage: atris mission start/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission start ignores literal ellipsis placeholders when reusing active twins', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'onboarding'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'onboarding', 'MEMBER.md'), '# Onboarding\n', 'utf8');
+    const objective = 'Golden path: zero-knowledge onboarding walk';
+    const first = runCli(['mission', 'start', objective, '--owner', 'onboarding', '--json'], { cwd: dir });
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    const firstPayload = JSON.parse(first.stdout);
+
+    const second = runCli(['mission', 'start', objective, '--owner', 'onboarding', '...', '--json'], { cwd: dir });
+    assert.equal(second.status, 0, second.stderr || second.stdout);
+    const secondPayload = JSON.parse(second.stdout);
+    assert.equal(secondPayload.action, 'mission_reused');
+    assert.equal(secondPayload.mission.id, firstPayload.mission.id);
+
+    const missionRows = fs.readFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), 'utf8')
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean);
+    assert.equal(missionRows.length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run accepts owner prefix before fuzzy intent', () => {
   const dir = makeTempDir();
   try {
@@ -6164,5 +6220,39 @@ test('mission help documents status filters', () => {
     assert.match(help.stdout, /--status active shows planning\/running\/ready\/paused\/blocked missions/);
   } finally {
     cleanupTempDir(dir);
+  }
+});
+
+test('mission start/run/tick help variants print usage, exit 0, and create no state', () => {
+  if (!hasNodeSqlite()) return;
+  const cases = [
+    ['mission', 'start', '--help'],
+    ['mission', 'start', '-h'],
+    ['mission', 'start', 'help'],
+    ['mission', 'run', '--help'],
+    ['mission', 'tick', '--help'],
+  ];
+  for (const args of cases) {
+    const dir = makeTempDir();
+    const dbPath = path.join(dir, 'tasks.db');
+    try {
+      fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+      fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+      const result = runCli(args, { cwd: dir, env: { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' } });
+      assert.equal(result.status, 0, `${args.join(' ')} exit: ${result.stderr || result.stdout}`);
+      assert.match(result.stdout, /atris mission/, `${args.join(' ')} stdout: ${result.stdout}`);
+
+      const missionsPath = path.join(dir, '.atris', 'state', 'missions.jsonl');
+      assert.equal(fs.existsSync(missionsPath) && fs.statSync(missionsPath).size > 0, false, `${args.join(' ')} created mission state`);
+
+      if (fs.existsSync(dbPath)) {
+        const db = taskStore.open(dbPath);
+        const tasks = taskStore.listTasks(db, { workspaceRoot: taskStore.workspaceRoot(dir) });
+        taskStore.close();
+        assert.equal(tasks.length, 0, `${args.join(' ')} created task rows`);
+      }
+    } finally {
+      cleanupTempDir(dir);
+    }
   }
 });
