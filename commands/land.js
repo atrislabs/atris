@@ -5,6 +5,7 @@ const { spawnSync } = require('child_process');
 const { listWorktrees, statusCounts } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
+const WORKTREE_REAP_GRACE_MS = 60 * 60 * 1000;
 const PROTECTED_BRANCHES = new Set(['main', 'master']);
 
 function runGit(args, { cwd = process.cwd(), check = true } = {}) {
@@ -34,6 +35,19 @@ function baseBranch(root, override = '') {
 
 function ageDays(unixSeconds, now = Date.now()) {
   return Math.floor((now / 1000 - Number(unixSeconds)) / 86400);
+}
+
+function worktreeMtimeMs(worktreePath) {
+  try {
+    return fs.statSync(worktreePath).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+function worktreeWithinReapGrace(worktreePath, now = Date.now()) {
+  const mtime = worktreeMtimeMs(worktreePath);
+  return typeof mtime === 'number' && now - mtime < WORKTREE_REAP_GRACE_MS;
 }
 
 function listBranches(root) {
@@ -187,9 +201,25 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
   const board = collectBoard(root, { ttlDays, base: baseOverride });
   const targets = board.branches.filter((b) => b.state === 'landed' || b.state === 'due');
   const targetNames = new Set(targets.map((b) => b.name));
-  const worktreeTargets = board.worktrees.filter(
+  const candidateWorktrees = board.worktrees.filter(
     (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached') || (typeof w.ageDays === 'number' && w.ageDays > ttlDays)
   );
+  const protectedWorktrees = [];
+  const worktreeTargets = [];
+  for (const w of candidateWorktrees) {
+    if (w.dirty > 0) {
+      protectedWorktrees.push({ ...w, reason: 'dirty' });
+      continue;
+    }
+    if (worktreeWithinReapGrace(w.path)) {
+      protectedWorktrees.push({ ...w, reason: 'fresh_worktree_grace' });
+      continue;
+    }
+    worktreeTargets.push(w);
+  }
+  for (const w of protectedWorktrees) {
+    if (w.branch) targetNames.delete(w.branch);
+  }
   for (const w of worktreeTargets) {
     if (w.branch && !targetNames.has(w.branch)) targetNames.add(w.branch);
   }
@@ -202,7 +232,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
     bundleError: null,
     patches: [],
     untracked: [],
-    keptWorktrees: [],
+    keptWorktrees: protectedWorktrees.map((w) => `${w.path} (${w.reason})`),
     keptMovedBranches: [],
     removedWorktrees: [],
     deletedBranches: [],
@@ -241,9 +271,16 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
     (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached')
   );
   for (const w of survivingWorktreeTargets) {
-    if (w.dirty > 0 && !salvageWorktree(w, dir, receipt)) {
-      // could not fully back up what force-remove would destroy — keep it
-      receipt.keptWorktrees.push(w.path);
+    const latestCounts = statusCounts(w.path) || { staged: 0, unstaged: 0, untracked: 0 };
+    const latestDirty = latestCounts.staged + latestCounts.unstaged + latestCounts.untracked;
+    if (latestDirty > 0) {
+      receipt.keptWorktrees.push(`${w.path} (dirty)`);
+      if (w.branch) targetNames.delete(w.branch);
+      continue;
+    }
+    if (worktreeWithinReapGrace(w.path)) {
+      receipt.keptWorktrees.push(`${w.path} (fresh_worktree_grace)`);
+      if (w.branch) targetNames.delete(w.branch);
       continue;
     }
     const removed = runGit(['worktree', 'remove', '--force', w.path], { cwd: root, check: false });

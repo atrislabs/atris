@@ -456,6 +456,37 @@ test('tick drains the landing daily: landed branches reap themselves, once per d
   }
 });
 
+test('tick janitor keeps fresh or dirty worktrees and reaps old clean residue', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const freshWt = path.join(base, 'fresh-wt');
+    const oldWt = path.join(base, 'old-wt');
+    const dirtyWt = path.join(base, 'dirty-wt');
+    runGit(['worktree', 'add', '-b', 'fresh-residue', freshWt, 'master'], repo);
+    runGit(['worktree', 'add', '-b', 'old-residue', oldWt, 'master'], repo);
+    runGit(['worktree', 'add', '-b', 'dirty-residue', dirtyWt, 'master'], repo);
+    fs.writeFileSync(path.join(dirtyWt, 'scratch.txt'), 'unsaved\n');
+    const oldStamp = new Date(Date.now() - 61 * 60 * 1000);
+    fs.utimesSync(oldWt, oldStamp, oldStamp);
+    fs.utimesSync(dirtyWt, oldStamp, oldStamp);
+
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.reaped.worktrees, 1);
+    assert.equal(receipt.reaped.branches, 1);
+    assert.equal(fs.existsSync(freshWt), true);
+    assert.equal(fs.existsSync(oldWt), false);
+    assert.equal(fs.existsSync(dirtyWt), true);
+    assert.match(runGit(['branch', '--list', 'fresh-residue'], repo).stdout, /fresh-residue/);
+    assert.equal(runGit(['branch', '--list', 'old-residue'], repo).stdout.trim(), '');
+    assert.match(runGit(['branch', '--list', 'dirty-residue'], repo).stdout, /dirty-residue/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('accept_all policy: uncertified work lands on the tick, protected lanes wait', () => {
   const { base, repo } = makeTempRepo();
   try {
