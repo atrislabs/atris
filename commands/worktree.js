@@ -329,7 +329,17 @@ function prMergeRef(prOutput) {
   return text.split(/\s+/)[0];
 }
 
+function shipHelp() {
+  console.log('Usage: atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>]');
+  console.log('');
+  console.log('  --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
+}
+
 function shipWorktree(args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help') {
+    shipHelp();
+    return 0;
+  }
   const root = repoRoot();
   const dryRun = hasFlag(args, '--dry-run');
   const noPr = hasFlag(args, '--no-pr');
@@ -560,7 +570,8 @@ function guide() {
   console.log('   atris mission tick <id> --verify --complete-on-pass');
   console.log('');
   console.log('4. Ship only from the isolated worktree:');
-  console.log('   atris worktree ship --message "<commit>" --verify "<cmd>" --merge');
+  console.log('   atris worktree ship --message "<commit>" --verify "<cmd>" --merge [--target <ref>]');
+  console.log('   --target <ref> overrides the default landing target (default: branch atris-base, else origin default branch)');
   console.log('');
   console.log('5. Clean merged worktrees:');
   console.log('   atris worktree cleanup');
@@ -576,7 +587,8 @@ function help() {
   console.log('');
   console.log('  atris worktree guide');
   console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim]');
-  console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge]');
+  console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>]');
+  console.log('    --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');

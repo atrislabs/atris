@@ -7,7 +7,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const os = require('os');
-const { taskProofState, buildVerifiedProof } = require('../lib/task-proof');
+const { taskProofState } = require('../lib/task-proof');
 const { evaluateAutoAccept, isAgentCertified, parseVerifyCommand, runVerifyCommand, DENIED_TAGS } = require('../lib/auto-accept-certified');
 const { extractReceiptEvidence } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
@@ -121,6 +121,8 @@ atris task - durable local task state (SQLite, gitignored)
   atris task chat <id> "<message>" [--goal "..."]  Refine a task chat + working goal
   atris task ready <id> --proof "..."      Agent proof ready; native goal can complete
   atris task ready <id> --verify "<cmd>"   Run <cmd>; only ready if it exits 0 (executed proof)
+                                           Writes atris/runs/ receipt (pass or fail), folds path into proof
+  atris task receipt <id> --verify "<cmd>" Run <cmd> and write an atris/runs/ receipt without going to ready
   atris task plan-preview "<purpose>" [--tag <tag>] [--owner <member>] [--task <id>]
                                            Show the plain Plan before work starts
   atris task ready <id> --proof "..." [--changed "..." --checked "..." --saved "..." --try "..."]
@@ -136,7 +138,7 @@ atris task - durable local task state (SQLite, gitignored)
                                            Re-run the runnable check named in each Review proof as a second actor; passing rows certify (denied lanes and check-less rows wait for a human)
   atris task auto-accept-certified --dry-run [--strict-verify] [--all] [--limit <n>]
                                            Preview certified Review rows; live accept needs --confirm-human-accept --as <human>
-  atris task sweep --auto-accept [--json]   Auto-accept low-stakes Review rows with passing verifier receipts
+  atris task sweep --auto-accept [--json]   Auto-accept verified Review rows; protected lanes wait for human
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
   atris task add "<title>" [--tag <tag>] [--goal-id <id>]  Create a task
@@ -8055,16 +8057,22 @@ function cmdReady(args) {
   const verifyFlag = flag(args, '--verify');
   let proof = typeof proofFlag === 'string' ? proofFlag : '';
   if (typeof verifyFlag === 'string' && verifyFlag.trim()) {
-    const verified = buildVerifiedProof(verifyFlag, proof, undefined, { cwd: process.cwd() });
-    if (!verified.ok) {
-      const detail = verified.exit != null ? ` (exit ${verified.exit})` : (verified.signal ? ` (signal ${verified.signal})` : '');
+    // Run the verifier once and write a receipt (pass or fail) so the review
+    // gate in lib/receipt-evidence.js can validate the exact path named in
+    // the proof, not just trust the prose.
+    const { writeTaskReceipt } = require('../lib/task-receipt');
+    const receipt = writeTaskReceipt({ taskId: id, command: verifyFlag, root: process.cwd() });
+    if (!receipt.passed) {
+      const detail = receipt.exit != null ? ` (exit ${receipt.exit})` : (receipt.signal ? ` (signal ${receipt.signal})` : '');
       console.error(`atris task ready: verifier failed${detail}: ${verifyFlag}`);
-      if (verified.output) console.error(verified.output);
-      else if (verified.error) console.error(verified.error);
+      if (receipt.output) console.error(receipt.output);
+      else if (receipt.error) console.error(receipt.error);
+      if (receipt.receiptPath) console.error(`receipt: ${receipt.receiptPath}`);
       process.exit(1);
     }
-    proof = verified.proof;
-    if (!wantsJson(args)) console.log(`✓ verified: \`${verifyFlag}\` exited 0`);
+    const base = proof.trim();
+    proof = `[verified] \`${verifyFlag}\` passed (exit 0)${base ? ` — ${base}` : ''}${receipt.output ? `\n${receipt.output}` : ''}\nReceipt: ${receipt.receiptPath}`;
+    if (!wantsJson(args)) console.log(`✓ verified: \`${verifyFlag}\` exited 0 (receipt ${receipt.receiptPath})`);
   }
   if (!proof) {
     console.error('atris task ready: --proof or --verify required');
@@ -8163,6 +8171,50 @@ function cmdReady(args) {
   console.log(handoff.rule);
   for (const hint of policyHints) {
     console.log(`policy (${hint.id}): ${hint.hint}`);
+  }
+}
+
+// Standalone receipt writer: runs a verifier for a task and writes atris/runs/
+// evidence without moving the task to ready. Useful when you want a receipt
+// on record before or independent of a ready call, or to record a failed
+// verifier run for the audit trail. `atris task ready --verify` calls the
+// same writer inline and folds the resulting path into the proof.
+function cmdTaskReceipt(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) {
+    console.error('atris task receipt: id required');
+    process.exit(2);
+  }
+  const verifyFlag = flag(args, '--verify');
+  if (typeof verifyFlag !== 'string' || !verifyFlag.trim()) {
+    console.error('atris task receipt: --verify "<cmd>" required');
+    process.exit(2);
+  }
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task receipt');
+  const { writeTaskReceipt } = require('../lib/task-receipt');
+  const receipt = writeTaskReceipt({ taskId, command: verifyFlag, root: process.cwd() });
+  if (wantsJson(args)) {
+    printJson({
+      ok: receipt.passed,
+      task_id: taskId,
+      command: verifyFlag,
+      receipt_path: receipt.receiptPath,
+      exit: receipt.exit,
+      passed: receipt.passed,
+    });
+    if (!receipt.passed) process.exit(1);
+    return;
+  }
+  if (receipt.passed) {
+    console.log(`receipt written: ${receipt.receiptPath} (exit 0)`);
+    console.log(`use: atris task ready ${taskId} --proof "Receipt: ${receipt.receiptPath}"`);
+  } else {
+    console.error(`verifier failed (exit ${receipt.exit}); receipt written: ${receipt.receiptPath}`);
+    if (receipt.output) console.error(receipt.output);
+    process.exit(1);
   }
 }
 
@@ -8652,9 +8704,9 @@ function cmdAutoAcceptCertified(args) {
   }
 }
 
-const SWEEP_AUTO_ACCEPT_STAKES_DENY = new Set(['costly', 'burnable-once', 'burnable_once']);
-const SWEEP_AUTO_ACCEPT_SAFE_STAKES = new Set(['reversible', 'low', 'low-stakes', 'low_stakes']);
-const SWEEP_AUTO_ACCEPT_ALLOWLIST_RE = /(^|[^a-z0-9])(?:docs?|test|tests?|refresh|render)(?:[\/:_-]|[^a-z0-9]|$)/i;
+const SWEEP_AUTO_ACCEPT_PROTECTED = new Set([
+  'money', 'deploy', 'release', 'publish', 'security', 'customer', 'outward',
+]);
 
 function autoAcceptSweepLabelValues(task) {
   const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
@@ -8663,8 +8715,6 @@ function autoAcceptSweepLabelValues(task) {
     task && task.tag,
     task && task.lane,
     metadata.tag,
-    metadata.stakes,
-    metadata.risk,
     metadata.lane,
     metadata.mission_lane,
     metadata.stage,
@@ -8682,38 +8732,16 @@ function autoAcceptSweepDeniedReason(task) {
   for (const value of autoAcceptSweepLabelValues(task)) {
     const tokens = autoAcceptSweepNormalizedTokens(value);
     for (const token of tokens) {
-      if (SWEEP_AUTO_ACCEPT_STAKES_DENY.has(token)) {
-        return `denied_stakes_${token.replace(/-/g, '_')}`;
+      if (token === 'needs-human' || token === 'needshuman') {
+        return 'needs_human';
       }
+      const protectedLane = [...SWEEP_AUTO_ACCEPT_PROTECTED].find((denied) =>
+        token === denied || token.replace(/s$/, '') === denied
+      );
+      if (protectedLane) return 'protected_lane';
     }
-    const protectedLane = [...DENIED_TAGS].find((denied) =>
-      tokens.some((token) => token === denied || token.replace(/s$/, '') === denied)
-    );
-    if (protectedLane) return `protected_lane_${protectedLane}`;
   }
   return null;
-}
-
-function autoAcceptSweepHasExplicitSafeStakes(task) {
-  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
-  for (const value of [task && task.stakes, metadata.stakes, metadata.risk]) {
-    const tokens = autoAcceptSweepNormalizedTokens(value);
-    if (tokens.some((token) => SWEEP_AUTO_ACCEPT_SAFE_STAKES.has(token))) return true;
-  }
-  return false;
-}
-
-function autoAcceptSweepAllowlistMatch(task) {
-  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
-  const candidates = [
-    task && task.title,
-    task && task.tag,
-    task && task.lane,
-    metadata.lane,
-    metadata.mission_lane,
-    metadata.stage,
-  ].filter(value => value !== undefined && value !== null);
-  return candidates.some((value) => SWEEP_AUTO_ACCEPT_ALLOWLIST_RE.test(String(value).toLowerCase()));
 }
 
 function autoAcceptSweepLatestProof(task) {
@@ -8752,7 +8780,7 @@ function autoAcceptSweepHappened(task) {
     review.landing?.happened
       || review.result?.changed
       || task?.title
-      || 'accepted low-stakes verified task',
+      || 'accepted verified task',
     180,
   );
 }
@@ -8768,10 +8796,6 @@ function evaluateSweepAutoAccept(task, root) {
   if (metadata.auto_accepted_at) return { eligible: false, ref, reason: 'already_auto_accepted' };
   const denied = autoAcceptSweepDeniedReason(task);
   if (denied) return { eligible: false, ref, reason: denied };
-  const lowStakesPolicy = autoAcceptSweepHasExplicitSafeStakes(task)
-    ? 'explicit_safe_stakes'
-    : (autoAcceptSweepAllowlistMatch(task) ? 'allowlisted_title_or_lane' : null);
-  if (!lowStakesPolicy) return { eligible: false, ref, reason: 'not_low_stakes_allowlisted' };
   const proof = autoAcceptSweepLatestProof(task);
   if (!proof) return { eligible: false, ref, reason: 'no_proof' };
   const verifier = autoAcceptSweepVerifierEvidence(proof, root);
@@ -8786,8 +8810,8 @@ function evaluateSweepAutoAccept(task, root) {
   return {
     eligible: true,
     ref,
-    reason: 'low_stakes_verified_receipt',
-    policy: `sweep_auto_accept_${lowStakesPolicy}`,
+    reason: 'verified_receipt',
+    policy: 'sweep_auto_accept_verified',
     proof,
     evidence: verifier.evidence,
     proved_by: verifier.proved_by,
@@ -8800,7 +8824,7 @@ function cmdSweep(args) {
     failTask(
       'atris task sweep',
       'missing_auto_accept',
-      'atris task sweep currently requires --auto-accept for the explicit low-stakes accept policy',
+      'atris task sweep currently requires --auto-accept for the explicit verified accept policy',
     );
   }
   const actor = String(flag(args, '--as') || 'orb-autoaccept');
@@ -10623,6 +10647,7 @@ async function run(args) {
     case 'chat-review':
       return cmdReviewChat(rest);
     case 'ready':  return cmdReady(rest);
+    case 'receipt': return cmdTaskReceipt(rest);
     case 'result': return cmdResult(rest);
     case 'accept': return cmdAccept(rest);
     case 'landing':

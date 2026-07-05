@@ -5,6 +5,7 @@ const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 
 const PACKAGE_NAME = 'atris';
+const NPM_SELF_UPDATE_COMMAND = `npm install -g ${PACKAGE_NAME}@latest`;
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 const ATRIS_DIR = path.join(os.homedir(), '.atris');
 const CACHE_FILE = path.join(ATRIS_DIR, '.update-check');
@@ -217,13 +218,31 @@ async function checkForUpdates(force = false) {
   return null;
 }
 
-function showUpdateNotification(updateInfo) {
+function isGitCheckout(packageRoot = path.join(__dirname, '..')) {
+  return fs.existsSync(path.join(path.resolve(packageRoot), '.git'));
+}
+
+function getNpmSelfUpdateCommand() {
+  return NPM_SELF_UPDATE_COMMAND;
+}
+
+function getNpmSelfUpdateSpawnArgs() {
+  return {
+    command: 'npm',
+    args: ['install', '-g', `${PACKAGE_NAME}@latest`],
+  };
+}
+
+function showUpdateNotification(updateInfo, options = {}) {
   if (!updateInfo || !updateInfo.needsUpdate) return;
 
-  // Single yellow warning line — non-intrusive
+  const packageRoot = options.packageRoot || path.join(__dirname, '..');
   const yellow = '\x1b[33m';
   const reset = '\x1b[0m';
-  console.log(`${yellow}Update available: ${updateInfo.installed} → ${updateInfo.latest}. Run: atris upgrade${reset}`);
+  const installHint = isGitCheckout(packageRoot)
+    ? 'run: atris upgrade'
+    : `run: ${NPM_SELF_UPDATE_COMMAND}`;
+  console.log(`${yellow}update available: ${updateInfo.installed} -> ${updateInfo.latest}. ${installHint}${reset}`);
 }
 
 function inspectInstallGitState(packageRoot = path.join(__dirname, '..')) {
@@ -288,9 +307,8 @@ function shouldAutoUpdate(updateInfo, state, env = process.env) {
   if (mode === 'off') return false;
   if (mode === 'force') return true;
 
-  // Packaged npm installs are not git repositories. Git checkouts may be linked
-  // dev installs, where a global npm install would not update the code on PATH.
-  return !(state && state.isGitRepo);
+  const packageRoot = state && state.root ? state.root : path.join(__dirname, '..');
+  return !isGitCheckout(packageRoot);
 }
 
 function autoUpdate(updateInfo, options = {}) {
@@ -331,4 +349,7 @@ module.exports = {
   shouldAutoUpdate,
   inspectInstallGitState,
   formatInstallGitWarning,
+  isGitCheckout,
+  getNpmSelfUpdateCommand,
+  getNpmSelfUpdateSpawnArgs,
 };

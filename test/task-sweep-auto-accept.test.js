@@ -74,7 +74,7 @@ function setupReadyTask(dir, env, { title, tag = 'test', proof }) {
   return task;
 }
 
-test('task sweep --auto-accept accepts eligible low-stakes verified receipt tasks with event flags', () => {
+test('task sweep --auto-accept accepts verified non-protected review tasks with event flags', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const env = {
@@ -88,21 +88,21 @@ test('task sweep --auto-accept accepts eligible low-stakes verified receipt task
       verifier_result: { passed: true },
     });
     const task = setupReadyTask(dir, env, {
-      title: 'docs/render refresh preview',
-      tag: 'docs',
+      title: 'Ship production approval flow',
+      tag: 'agent',
       proof: verifiedProof(receiptRel),
     });
 
     const sweep = runCli(['task', 'sweep', '--auto-accept'], { cwd: dir, env });
     assert.equal(sweep.status, 0, sweep.stderr);
     assert.match(sweep.stdout, /TASK SWEEP AUTO-ACCEPT: 1 accepted \/ 1 scanned \/ 0 skipped/);
-    assert.match(sweep.stdout, new RegExp(`ACCEPTED ${task.display_id}: Rendered docs/render refresh preview`));
+    assert.match(sweep.stdout, new RegExp(`ACCEPTED ${task.display_id}: Rendered Ship production approval flow`));
     assert.match(sweep.stdout, /proved by atris\/runs\/sweep-pass-receipt\.json verifier_passed=true/);
 
     const accepted = JSON.parse(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).stdout);
     assert.equal(accepted.status, 'done');
     assert.equal(accepted.review.approval_status, 'accepted');
-    assert.equal(accepted.metadata.auto_accept_policy, 'sweep_auto_accept_allowlisted_title_or_lane');
+    assert.equal(accepted.metadata.auto_accept_policy, 'sweep_auto_accept_verified');
 
     const events = JSON.parse(runCli(['task', 'events', task.display_id, '--json'], { cwd: dir, env }).stdout).events;
     const completed = events.find((event) => event.event_type === 'completed');
@@ -114,7 +114,7 @@ test('task sweep --auto-accept accepts eligible low-stakes verified receipt task
   }
 });
 
-test('task sweep --auto-accept skips costly and non-allowlisted review tasks', () => {
+test('task sweep --auto-accept skips protected-lane review tasks', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const env = {
@@ -124,17 +124,12 @@ test('task sweep --auto-accept skips costly and non-allowlisted review tasks', (
   };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const receiptRel = writeReceipt(dir, 'sweep-safe-receipt.json', {
+    const receiptRel = writeReceipt(dir, 'sweep-deploy-receipt.json', {
       tick: { verifier_passed: true },
     });
-    const costly = setupReadyTask(dir, env, {
-      title: 'docs/refresh costly runbook',
-      tag: 'costly',
-      proof: verifiedProof(receiptRel),
-    });
-    const ineligible = setupReadyTask(dir, env, {
-      title: 'Ship production approval flow',
-      tag: 'agent',
+    const task = setupReadyTask(dir, env, {
+      title: 'deploy backend release gate',
+      tag: 'deploy',
       proof: verifiedProof(receiptRel),
     });
 
@@ -142,18 +137,48 @@ test('task sweep --auto-accept skips costly and non-allowlisted review tasks', (
     assert.equal(sweep.status, 0, sweep.stderr);
     const payload = JSON.parse(sweep.stdout);
     assert.equal(payload.summary.accepted, 0);
-    assert.equal(payload.summary.skipped, 2);
-    const byRef = Object.fromEntries(payload.results.map((row) => [row.ref, row]));
-    assert.equal(byRef[costly.display_id].reason, 'denied_stakes_costly');
-    assert.equal(byRef[ineligible.display_id].reason, 'not_low_stakes_allowlisted');
-    assert.equal(JSON.parse(runCli(['task', 'show', costly.display_id, '--json'], { cwd: dir, env }).stdout).status, 'review');
-    assert.equal(JSON.parse(runCli(['task', 'show', ineligible.display_id, '--json'], { cwd: dir, env }).stdout).status, 'review');
+    assert.equal(payload.summary.skipped, 1);
+    assert.equal(payload.results[0].ref, task.display_id);
+    assert.equal(payload.results[0].reason, 'protected_lane');
+    assert.equal(JSON.parse(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).stdout).status, 'review');
   } finally {
     cleanupTempDir(dir);
   }
 });
 
-test('task sweep --auto-accept skips allowlisted tasks without verifier receipt proof', () => {
+test('task sweep --auto-accept skips needs-human review tasks', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = {
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    NODE_NO_WARNINGS: '1',
+    ATRIS_AGENT_PROOF_ONLY: '0',
+  };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const receiptRel = writeReceipt(dir, 'sweep-needs-human-receipt.json', {
+      tick: { verifier_passed: true },
+    });
+    const task = setupReadyTask(dir, env, {
+      title: 'refresh onboarding copy',
+      tag: 'needs-human',
+      proof: verifiedProof(receiptRel),
+    });
+
+    const sweep = runCli(['task', 'sweep', '--auto-accept', '--json'], { cwd: dir, env });
+    assert.equal(sweep.status, 0, sweep.stderr);
+    const payload = JSON.parse(sweep.stdout);
+    assert.equal(payload.summary.accepted, 0);
+    assert.equal(payload.summary.skipped, 1);
+    assert.equal(payload.results[0].ref, task.display_id);
+    assert.equal(payload.results[0].reason, 'needs_human');
+    assert.equal(JSON.parse(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).stdout).status, 'review');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task sweep --auto-accept skips review tasks without verifier receipt proof', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const env = {
