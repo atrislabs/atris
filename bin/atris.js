@@ -29,7 +29,6 @@ try {
 const {
   checkForUpdates,
   showUpdateNotification,
-  autoUpdate,
   inspectInstallGitState,
   formatInstallGitWarning,
 } = require('../utils/update-check');
@@ -91,14 +90,10 @@ const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.e
 if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update'].includes(updateCommand)))) {
   updateCheckPromise = checkForUpdates()
     .then((updateInfo) => {
-      // Show notification if update available (after command completes)
       if (updateInfo) {
-        const autoUpdateStarted = autoUpdate(updateInfo, {
+        showUpdateNotification(updateInfo, {
           packageRoot: path.join(__dirname, '..'),
         });
-        if (!autoUpdateStarted) {
-          showUpdateNotification(updateInfo);
-        }
       }
       return updateInfo;
     })
@@ -773,7 +768,8 @@ function showVerifyHelp() {
 
 function showUpdateHelp(commandName = 'update') {
   console.log('');
-  console.log(`Usage: atris ${commandName} [--all] [--dry-run] [--force]`);
+  const selfFlag = commandName === 'update' ? ' [--self]' : '';
+  console.log(`Usage: atris ${commandName} [--all] [--dry-run] [--force]${selfFlag}`);
   console.log('');
   console.log('Description:');
   console.log('  Sync Atris workspace files from the installed CLI templates.');
@@ -782,6 +778,9 @@ function showUpdateHelp(commandName = 'update') {
   console.log('  --all        Update Atris files across projects under the current tree.');
   console.log('  --dry-run    Preview update work without writing files.');
   console.log('  --force      Overwrite existing template files where supported.');
+  if (commandName === 'update') {
+    console.log('  --self       Update the installed atris cli from npm (packaged installs only).');
+  }
   console.log('  --help, -h       Show this help.');
   console.log('');
 }
@@ -1692,6 +1691,11 @@ if (command === 'init') {
   if ((args.includes('--help') || args.includes('-h') || args[0] === 'help') && !isBusinessSync) {
     showUpdateHelp(command);
     process.exit(0);
+  }
+  if (command === 'update' && args.includes('--self')) {
+    const { updateSelf } = require('../commands/update');
+    const result = updateSelf({ packageRoot: path.join(__dirname, '..') });
+    process.exit(result.ok ? 0 : 1);
   }
   if (isBusinessSync) {
     Promise.resolve(require('../commands/business-sync').businessSync(process.argv.slice(3)))
