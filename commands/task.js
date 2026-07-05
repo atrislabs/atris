@@ -8053,8 +8053,9 @@ function cmdReady(args) {
   // turning a claim into executed evidence. --verify can carry an optional --proof note.
   const proofFlag = flag(args, '--proof');
   const verifyFlag = flag(args, '--verify');
+  const usedVerify = typeof verifyFlag === 'string' ? verifyFlag.trim() : '';
   let proof = typeof proofFlag === 'string' ? proofFlag : '';
-  if (typeof verifyFlag === 'string' && verifyFlag.trim()) {
+  if (usedVerify) {
     const verified = buildVerifiedProof(verifyFlag, proof, undefined, { cwd: process.cwd() });
     if (!verified.ok) {
       const detail = verified.exit != null ? ` (exit ${verified.exit})` : (verified.signal ? ` (signal ${verified.signal})` : '');
@@ -8109,6 +8110,11 @@ function cmdReady(args) {
     console.error(`ready failed: ${result.reason}`);
     process.exit(1);
   }
+  // Store the exact verifier command on the task itself (not just baked into
+  // proof prose) so sweep --auto-accept and certify-verified can re-run it
+  // live against the current checkout later, instead of re-deriving it from
+  // text or trusting a receipt file that may no longer exist.
+  if (usedVerify) stampReadyVerifyMetadata(taskDb, db, taskId, usedVerify);
   const landingAdvisory = warnIfLandingNeedsDayOnePm(landing, result.row && result.row.title);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const agentCertified = result.event.payload.agent_certified === true;
@@ -8351,6 +8357,24 @@ function stampCertifyVerifyMetadata(taskDb, db, taskId, actor, verify) {
   metadata.certified_verified_at = new Date().toISOString();
   metadata.certified_verified_by = actor;
   metadata.machine_verified = true;
+  db.prepare(`
+    UPDATE tasks
+       SET metadata = ?,
+           updated_at = ?
+     WHERE id = ?
+  `).run(JSON.stringify(metadata), Date.now(), taskId);
+}
+
+// `atris task ready --verify "<cmd>"` already runs the command live and
+// gates on exit 0, but that alone leaves no machine re-runnable trace once
+// the proof text scrolls out of easy reach: storing the exact command on
+// metadata.verify is what lets sweep --auto-accept (and certify-verified)
+// re-run it later against the current checkout instead of re-parsing prose.
+function stampReadyVerifyMetadata(taskDb, db, taskId, verify) {
+  const row = taskDb.getTask(db, taskId);
+  if (!row) return;
+  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
+  metadata.verify = verify;
   db.prepare(`
     UPDATE tasks
        SET metadata = ?,
@@ -8746,25 +8770,72 @@ function evaluateSweepAutoAccept(task, root) {
   if (denied) return { eligible: false, ref, reason: denied };
   const proof = autoAcceptSweepLatestProof(task);
   if (!proof) return { eligible: false, ref, reason: 'no_proof' };
-  const verifier = autoAcceptSweepVerifierEvidence(proof, root);
-  if (!verifier.ok) {
+
+  // 1. An explicit, stored verifier (`atris task ready --verify`, or a prior
+  // certify-verified stamp) is the strongest signal: re-run it live, right
+  // now, against the current checkout, and let it decide outright. This is
+  // what unblocks CLI-762/CLI-861-shaped proofs: a real green test cited (or
+  // executed) in the proof, but the older receipt-path check below could not
+  // find file evidence for it once `ready --verify` stopped writing a
+  // receipt file and started embedding the executed result into proof text.
+  const storedVerify = typeof metadata.verify === 'string' ? metadata.verify.trim() : '';
+  if (storedVerify) {
+    const result = runVerifyCommand(storedVerify, root);
+    if (!result.ok) return { eligible: false, ref, reason: result.reason, verify: storedVerify };
     return {
-      eligible: false,
+      eligible: true,
       ref,
-      reason: verifier.reason,
-      evidence: verifier.evidence,
+      reason: 'verified_command',
+      policy: 'sweep_auto_accept_verified_command',
+      proof,
+      verify: storedVerify,
+      proved_by: [`${storedVerify} exited 0`],
+      happened: autoAcceptSweepHappened(task),
     };
   }
-  return {
-    eligible: true,
-    ref,
-    reason: 'verified_receipt',
-    policy: 'sweep_auto_accept_verified',
-    proof,
-    evidence: verifier.evidence,
-    proved_by: verifier.proved_by,
-    happened: autoAcceptSweepHappened(task),
-  };
+
+  // 2. Legacy path: a receipt file explicitly named in proof text.
+  const verifier = autoAcceptSweepVerifierEvidence(proof, root);
+  if (verifier.ok) {
+    return {
+      eligible: true,
+      ref,
+      reason: 'verified_receipt',
+      policy: 'sweep_auto_accept_verified',
+      proof,
+      evidence: verifier.evidence,
+      proved_by: verifier.proved_by,
+      happened: autoAcceptSweepHappened(task),
+    };
+  }
+
+  // 3. No stored verifier and no receipt was even cited: try deriving a
+  // safe, runnable command straight from the proof text itself (same
+  // extractor certify-verified uses) and re-run it live. Only reached when
+  // there is nothing else to go on, so a proof that legitimately cites a
+  // real receipt keeps taking the receipt path above rather than racing an
+  // unrelated command mentioned in the same sentence.
+  if (verifier.reason === 'no_passing_verifier') {
+    const derived = certifyVerifyCandidate(task);
+    if (derived) {
+      const result = runVerifyCommand(derived, root);
+      if (result.ok) {
+        return {
+          eligible: true,
+          ref,
+          reason: 'verified_derived_command',
+          policy: 'sweep_auto_accept_verified_derived',
+          proof,
+          verify: derived,
+          proved_by: [`${derived} exited 0`],
+          happened: autoAcceptSweepHappened(task),
+        };
+      }
+      return { eligible: false, ref, reason: result.reason, verify: derived };
+    }
+  }
+
+  return { eligible: false, ref, reason: verifier.reason, evidence: verifier.evidence };
 }
 
 function cmdSweep(args) {
