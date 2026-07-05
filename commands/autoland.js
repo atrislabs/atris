@@ -305,6 +305,7 @@ function turnOn(root, args) {
   const digestHour = Number(flag(args, '--digest-hour', autoland.DEFAULT_DIGEST_HOUR));
   const alarmHours = Number(flag(args, '--alarm-hours', autoland.DEFAULT_ALARM_HOURS));
   const acceptAll = args.includes('--all');
+  const previous = autoland.readPolicy(root);
   const policy = autoland.writePolicy(root, {
     enabled: true,
     enabled_by: owner,
@@ -314,6 +315,7 @@ function turnOn(root, args) {
     alarm_hours: Number.isFinite(alarmHours) && alarmHours > 0 ? alarmHours : autoland.DEFAULT_ALARM_HOURS,
     strict_verify: !args.includes('--no-strict-verify'),
     accept_all: acceptAll,
+    daily_experiment: previous.daily_experiment !== false,
   });
   const cronOk = autoland.installCron(root);
   console.log('');
@@ -571,6 +573,25 @@ function runTickBody(root, { json, policy, receipt }) {
       receipt.receipts_pruned = null;
     }
   }
+
+  // 5b. daily keep/revert experiment — self-gated inside experiments daily;
+  // hourly ticks are harmless no-ops after the first run each day.
+  if (policy.daily_experiment !== false) {
+    const daily = runOwnCli(root, ['experiments', 'daily', '--json']);
+    receipt.daily_experiment = {
+      status: daily.status,
+      stdout: daily.stdout.trim(),
+      stderr: daily.stderr.slice(0, 200) || null,
+    };
+    try {
+      receipt.daily_experiment.result = JSON.parse(daily.stdout.trim());
+    } catch {
+      receipt.daily_experiment.result = null;
+    }
+  } else {
+    receipt.daily_experiment_skipped = true;
+  }
+
   // 6. once a day, drain the landing itself: back up (bundle + patches into
   // .atris/salvage/) then clear branches already landed or past TTL, and
   // their worktrees. Local-only — remote branches may back open PRs, and

@@ -17,6 +17,7 @@ const {
   summarizeReview,
   writeArtifact,
 } = require('../lib/endstate');
+const daily = require('../lib/experiments/daily');
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ROOT_FILES = ['README.md', 'validate.py', 'benchmark_validate.py', 'benchmark_runtime.py'];
@@ -520,8 +521,31 @@ function experimentsReplay(target = 'endstate') {
   experimentsCompare('endstate');
 }
 
+function experimentsDaily(...args) {
+  ensureAtrisWorkspace();
+  const code = daily.runDaily(process.cwd(), args);
+  if (code) process.exit(code);
+}
+
+function experimentsQueue(subcommand, ...args) {
+  ensureAtrisWorkspace();
+  const root = process.cwd();
+  let code = 1;
+  if (subcommand === 'add') code = daily.queueAdd(root, args);
+  else if (subcommand === 'list') code = daily.queueList(root, args);
+  else {
+    console.error('Usage: atris experiments queue <add|list> ...');
+    code = 1;
+  }
+  if (code) process.exit(code);
+}
+
 function experimentsCommand(subcommand, ...args) {
   switch (subcommand) {
+    case 'daily':
+      return experimentsDaily(...args);
+    case 'queue':
+      return experimentsQueue(args[0], ...args.slice(1));
     case 'init':
     case 'new':
       return experimentsInit(args[0]);
@@ -546,6 +570,8 @@ function experimentsCommand(subcommand, ...args) {
       console.log('  compare endstate     Compare the latest baseline and stack receipts');
       console.log('  replay endstate      Validate, dry-run, and compare the public benchmark flow');
       console.log('  benchmark [mode]     Run validate/runtime/all benchmark harness');
+      console.log('  daily [--dry-run] [--force] [--json]');
+      console.log('  queue add|list       Manage the daily experiment queue');
       console.log('');
       console.log('Examples:');
       console.log('  atris experiments init');
@@ -564,4 +590,6 @@ module.exports = {
   ensureExperimentsFramework,
   buildBenchmarkArtifact,
   parseRunOptions,
+  experimentsDaily,
+  experimentsQueue,
 };
