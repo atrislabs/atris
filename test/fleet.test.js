@@ -194,3 +194,15 @@ test('runFleetFlight full loop: claims, dispatches in parallel, lands serially, 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('fleet landings ship with an explicit master target, never the launcher branch base', () => {
+  const args = fleet.fleetShipArgs(
+    { task: { display_id: 'F-9', title: 'fix the thing. Done: x.' }, engine: 'cursor' },
+    'node --test test/a.test.js'
+  );
+  const target = args.indexOf('--target');
+  assert.ok(target > -1, 'ship args must carry --target');
+  assert.equal(args[target + 1], 'origin/master');
+  assert.ok(args.includes('--merge'));
+  assert.ok(args.join(' ').includes('(F-9, built by cursor)'));
+});
