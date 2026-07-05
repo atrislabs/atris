@@ -49,7 +49,6 @@ Small, bounded tasks the loop pulls one at a time when idle (top first), and
 Epics live below in "Big jobs" and are NOT loop-seedable, so an unattended
 cycle never chases something too vague to finish.
 
-- [ ] codex yolo lane: `atris engine dispatch --yolo` runs the engine with CODEX_COMPANION_SANDBOX=danger-full-access and a land-it-yourself prompt contract (engine commits, ships via worktree ship --merge, reports the PR). Done: flag exists, prompt contract switches, receipt records yolo. Check: node --test test/engine-dispatch.test.js.
 - [ ] `atris report week --html`: render the weekly block as a standalone on-brand page via lib/html-render renderHtml (panel for landings, bignumber for xp), with --out FILE. Done: flag renders a themed page, test pins the html contains the panel. Check: node --test test/report.test.js.
 
 (Shipped items are pruned on completion; git history is the archive.)
