@@ -39,10 +39,15 @@ function getAuth() {
   return { token: creds.token, email: creds.email || 'unknown' };
 }
 
+function rejectMissingFeedbackMessage() {
+  console.error('Error: feedback message is required.');
+  printHelp(console.error);
+  process.exit(1);
+}
+
 async function submitFeedback(message, opts = {}) {
-  if (!message) {
-    console.error('Usage: atris feedback "your message here" [--business <slug|id>]');
-    process.exit(1);
+  if (!message || !String(message).trim()) {
+    rejectMissingFeedbackMessage();
   }
 
   const { token } = getAuth();
@@ -65,15 +70,20 @@ async function submitFeedback(message, opts = {}) {
     body,
   });
 
-  if (!result.ok) {
-    console.error(`Error: ${result.error || 'Failed to submit feedback'}`);
+  if (!result.ok || !result.data?.feedback_id) {
+    const parts = [];
+    if (result.error) parts.push(result.error);
+    if (result.data && typeof result.data === 'object') {
+      const serverMsg = result.data.detail || result.data.error || result.data.message;
+      if (serverMsg && serverMsg !== result.error) parts.push(String(serverMsg));
+    }
+    if (result.text && !result.data) parts.push(result.text.trim());
+    if (!parts.length) parts.push('Failed to submit feedback (no feedback_id returned)');
+    console.error(`Error: ${parts.join(' — ')}`);
     process.exit(1);
   }
 
-  console.log('Feedback submitted.');
-  if (result.data?.feedback_id) {
-    console.log(`  ID: ${result.data.feedback_id}`);
-  }
+  console.log(`Feedback submitted. ID: ${result.data.feedback_id}`);
 }
 
 async function fetchFeedbackItems({ token, businessId, limit = 100, status = null } = {}) {
@@ -279,7 +289,7 @@ function directFeedbackMessage(args) {
 }
 
 function rejectUnknownFeedbackCommand(subcommand) {
-  console.error(`Unknown feedback command: ${subcommand || '(empty)'}`);
+  fs.writeSync(2, `Unknown feedback command: ${subcommand || '(empty)'}\n`);
   printHelp(console.error);
   process.exit(1);
 }
@@ -293,9 +303,14 @@ async function feedbackCommand() {
     process.exit(1);
   }
 
+  if (args.length === 0) {
+    await listFeedback();
+    return;
+  }
+
   const subcommand = args[0];
 
-  if (!subcommand || subcommand === 'list') {
+  if (subcommand === 'list') {
     await listFeedback();
     return;
   }
@@ -306,7 +321,10 @@ async function feedbackCommand() {
   }
 
   if (subcommand === 'submit') {
-    const message = args.slice(1).join(' ');
+    const message = args.slice(1).join(' ').trim();
+    if (!message) {
+      rejectMissingFeedbackMessage();
+    }
     await submitFeedback(message, { businessId });
     return;
   }
@@ -326,6 +344,10 @@ async function feedbackCommand() {
   if (subcommand === 'delete') {
     await deleteFeedback(args[1]);
     return;
+  }
+
+  if (args.length === 1 && !String(args[0]).trim()) {
+    rejectMissingFeedbackMessage();
   }
 
   const message = directFeedbackMessage(args);
