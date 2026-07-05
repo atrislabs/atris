@@ -50,8 +50,6 @@ Epics live below in "Big jobs" and are NOT loop-seedable, so an unattended
 cycle never chases something too vague to finish.
 
 
-- [ ] ship stages only intended work: atris worktree ship does git add -A, which swept regenerated adapter files (AGENTS.md, CLAUDE.md, GEMINI.md) into PR #254 and needed a manual restore PR #255. Make ship stage tracked modifications the build actually touched (or exclude regenerated-identical files), with a test. Done: a worktree with adapter churn ships only the intended files. Check: node --test test/worktree-ship-detached.test.js.
-
 (Shipped items are pruned on completion; git history is the archive.)
 
 ## Big jobs (epics, not loop-seedable)
