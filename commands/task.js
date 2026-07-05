@@ -136,7 +136,7 @@ atris task - durable local task state (SQLite, gitignored)
                                            Re-run the runnable check named in each Review proof as a second actor; passing rows certify (denied lanes and check-less rows wait for a human)
   atris task auto-accept-certified --dry-run [--strict-verify] [--all] [--limit <n>]
                                            Preview certified Review rows; live accept needs --confirm-human-accept --as <human>
-  atris task sweep --auto-accept [--json]   Auto-accept low-stakes Review rows with passing verifier receipts
+  atris task sweep --auto-accept [--json]   Auto-accept verified Review rows; protected lanes wait for human
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
   atris task add "<title>" [--tag <tag>] [--goal-id <id>]  Create a task
@@ -8596,9 +8596,9 @@ function cmdAutoAcceptCertified(args) {
   }
 }
 
-const SWEEP_AUTO_ACCEPT_STAKES_DENY = new Set(['costly', 'burnable-once', 'burnable_once']);
-const SWEEP_AUTO_ACCEPT_SAFE_STAKES = new Set(['reversible', 'low', 'low-stakes', 'low_stakes']);
-const SWEEP_AUTO_ACCEPT_ALLOWLIST_RE = /(^|[^a-z0-9])(?:docs?|test|tests?|refresh|render)(?:[\/:_-]|[^a-z0-9]|$)/i;
+const SWEEP_AUTO_ACCEPT_PROTECTED = new Set([
+  'money', 'deploy', 'release', 'publish', 'security', 'customer', 'outward',
+]);
 
 function autoAcceptSweepLabelValues(task) {
   const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
@@ -8607,8 +8607,6 @@ function autoAcceptSweepLabelValues(task) {
     task && task.tag,
     task && task.lane,
     metadata.tag,
-    metadata.stakes,
-    metadata.risk,
     metadata.lane,
     metadata.mission_lane,
     metadata.stage,
@@ -8626,38 +8624,16 @@ function autoAcceptSweepDeniedReason(task) {
   for (const value of autoAcceptSweepLabelValues(task)) {
     const tokens = autoAcceptSweepNormalizedTokens(value);
     for (const token of tokens) {
-      if (SWEEP_AUTO_ACCEPT_STAKES_DENY.has(token)) {
-        return `denied_stakes_${token.replace(/-/g, '_')}`;
+      if (token === 'needs-human' || token === 'needshuman') {
+        return 'needs_human';
       }
+      const protectedLane = [...SWEEP_AUTO_ACCEPT_PROTECTED].find((denied) =>
+        token === denied || token.replace(/s$/, '') === denied
+      );
+      if (protectedLane) return 'protected_lane';
     }
-    const protectedLane = [...DENIED_TAGS].find((denied) =>
-      tokens.some((token) => token === denied || token.replace(/s$/, '') === denied)
-    );
-    if (protectedLane) return `protected_lane_${protectedLane}`;
   }
   return null;
-}
-
-function autoAcceptSweepHasExplicitSafeStakes(task) {
-  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
-  for (const value of [task && task.stakes, metadata.stakes, metadata.risk]) {
-    const tokens = autoAcceptSweepNormalizedTokens(value);
-    if (tokens.some((token) => SWEEP_AUTO_ACCEPT_SAFE_STAKES.has(token))) return true;
-  }
-  return false;
-}
-
-function autoAcceptSweepAllowlistMatch(task) {
-  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
-  const candidates = [
-    task && task.title,
-    task && task.tag,
-    task && task.lane,
-    metadata.lane,
-    metadata.mission_lane,
-    metadata.stage,
-  ].filter(value => value !== undefined && value !== null);
-  return candidates.some((value) => SWEEP_AUTO_ACCEPT_ALLOWLIST_RE.test(String(value).toLowerCase()));
 }
 
 function autoAcceptSweepLatestProof(task) {
@@ -8696,7 +8672,7 @@ function autoAcceptSweepHappened(task) {
     review.landing?.happened
       || review.result?.changed
       || task?.title
-      || 'accepted low-stakes verified task',
+      || 'accepted verified task',
     180,
   );
 }
@@ -8712,10 +8688,6 @@ function evaluateSweepAutoAccept(task, root) {
   if (metadata.auto_accepted_at) return { eligible: false, ref, reason: 'already_auto_accepted' };
   const denied = autoAcceptSweepDeniedReason(task);
   if (denied) return { eligible: false, ref, reason: denied };
-  const lowStakesPolicy = autoAcceptSweepHasExplicitSafeStakes(task)
-    ? 'explicit_safe_stakes'
-    : (autoAcceptSweepAllowlistMatch(task) ? 'allowlisted_title_or_lane' : null);
-  if (!lowStakesPolicy) return { eligible: false, ref, reason: 'not_low_stakes_allowlisted' };
   const proof = autoAcceptSweepLatestProof(task);
   if (!proof) return { eligible: false, ref, reason: 'no_proof' };
   const verifier = autoAcceptSweepVerifierEvidence(proof, root);
@@ -8730,8 +8702,8 @@ function evaluateSweepAutoAccept(task, root) {
   return {
     eligible: true,
     ref,
-    reason: 'low_stakes_verified_receipt',
-    policy: `sweep_auto_accept_${lowStakesPolicy}`,
+    reason: 'verified_receipt',
+    policy: 'sweep_auto_accept_verified',
     proof,
     evidence: verifier.evidence,
     proved_by: verifier.proved_by,
@@ -8744,7 +8716,7 @@ function cmdSweep(args) {
     failTask(
       'atris task sweep',
       'missing_auto_accept',
-      'atris task sweep currently requires --auto-accept for the explicit low-stakes accept policy',
+      'atris task sweep currently requires --auto-accept for the explicit verified accept policy',
     );
   }
   const actor = String(flag(args, '--as') || 'orb-autoaccept');
