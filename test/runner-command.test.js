@@ -165,6 +165,41 @@ test('Atris Fast runner profile resolves to ax --fast and atris:fast', () => {
   });
 });
 
+test('compat runner profiles resolve to concrete runner configs', () => {
+  const cases = [
+    {
+      profile: 'fable',
+      bin: 'claude',
+      model: DEFAULT_CLAUDE_RUNNER_MODEL,
+      template: '',
+      command: /claude -p .*--model claude-opus-4-8\b/,
+    },
+    {
+      profile: 'composer',
+      bin: 'ax',
+      model: 'composer-2-5-fast',
+      template: '{bin} --fast {prompt}',
+      command: /^ax --fast "\$\(cat \/tmp\/p\.tmp\)"$/,
+    },
+    {
+      profile: 'haiku',
+      bin: 'claude',
+      model: 'claude-haiku-4-5',
+      template: '',
+      command: /claude -p .*--model claude-haiku-4-5\b/,
+    },
+  ];
+  for (const entry of cases) {
+    withRunnerEnv({ ATRIS_RUNNER_PROFILE: entry.profile }, () => {
+      assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS[entry.profile]);
+      assert.equal(resolveClaudeRunnerBin(), entry.bin);
+      assert.equal(resolveClaudeRunnerModel({}), entry.model);
+      assert.equal(resolveClaudeRunnerCommandTemplate(), entry.template);
+      assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), entry.command);
+    });
+  }
+});
+
 test('generic runner env overrides the Atris Fast profile', () => {
   withRunnerEnv({
     ATRIS_RUNNER_PROFILE: 'atris-fast',
