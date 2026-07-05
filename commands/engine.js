@@ -23,6 +23,7 @@ const {
   RUNNER_PROFILE_NAMES,
   buildRunnerCommand,
 } = require('../lib/runner-command');
+const { FLEET_CAPABLE, runDispatchFlight } = require('../lib/fleet');
 
 const HOUSE_ENGINE = 'atris-fast';
 
@@ -240,11 +241,74 @@ function runEngineTest(targets, { json, root } = {}) {
   return failures.length ? 1 : 0;
 }
 
+// One-command dispatch: claim -> worktree start -> bounded prompt -> engine
+// -> re-run Check: -> ship -> task ready, in one call instead of the 6
+// hand-rolled Bash calls per task the manual version took. Task ids are
+// positional; --engine/--prompt-file are the only flags, so parse by hand
+// instead of the generic "anything starting with --" split used above (that
+// split would swallow an --engine value like "cursor" as a task id).
+function parseDispatchArgs(args) {
+  const taskIds = [];
+  let engine = '';
+  let promptFile = '';
+  let json = false;
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    if (a === '--engine') { engine = args[i + 1] || ''; i += 1; continue; }
+    if (a.startsWith('--engine=')) { engine = a.slice('--engine='.length); continue; }
+    if (a === '--prompt-file') { promptFile = args[i + 1] || ''; i += 1; continue; }
+    if (a.startsWith('--prompt-file=')) { promptFile = a.slice('--prompt-file='.length); continue; }
+    if (a === '--json') { json = true; continue; }
+    if (a.startsWith('--')) continue;
+    taskIds.push(a);
+  }
+  return { taskIds, engine, promptFile, json };
+}
+
+function runDispatchCommand(args, root) {
+  const { taskIds, engine, promptFile, json } = parseDispatchArgs(args);
+  if (!taskIds.length || !engine) {
+    console.error('usage: atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>]');
+    return 2;
+  }
+  const canonical = canonicalEngineName(engine);
+  if (!canonical || !FLEET_CAPABLE.includes(canonical)) {
+    console.error(`engine dispatch: --engine must be one of ${FLEET_CAPABLE.join(', ')}`);
+    return 2;
+  }
+  const def = RUNNER_PROFILE_DEFS[canonical];
+  if (!binInstalled(def.bin)) {
+    console.error(`engine dispatch: ${canonical} CLI (${def.bin}) is not installed here`);
+    return 2;
+  }
+  let promptOverride = '';
+  if (promptFile) {
+    if (taskIds.length > 1) {
+      console.error('engine dispatch: --prompt-file only supports a single task id');
+      return 2;
+    }
+    try {
+      promptOverride = fs.readFileSync(promptFile, 'utf8');
+    } catch (err) {
+      console.error(`engine dispatch: could not read --prompt-file ${promptFile}: ${err.message}`);
+      return 2;
+    }
+  }
+  return runDispatchFlight({ root, taskIds, engine: canonical, prompt: promptOverride }).then((flight) => {
+    if (json) console.log(JSON.stringify(flight, null, 2));
+    return flight.paused.length ? 1 : 0;
+  });
+}
+
 function engineCommand(args = []) {
+  const root = process.cwd();
+  if ((args[0] || '').trim() === 'dispatch') {
+    return runDispatchCommand(args.slice(1), root);
+  }
+
   const json = args.includes('--json');
   const positional = args.filter((a) => !a.startsWith('--'));
   const sub = (positional[0] || '').trim();
-  const root = process.cwd();
 
   if (sub === 'test') {
     return runEngineTest(positional.slice(1), { json, root });
@@ -269,7 +333,7 @@ function engineCommand(args = []) {
   }
 
   if (sub === 'help') {
-    console.log('\n  atris engine            roster + current default\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+    console.log('\n  atris engine            roster + current default\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
     return 0;
   }
 
@@ -295,5 +359,7 @@ module.exports = {
   roster,
   probeEngine,
   runEngineTest,
+  parseDispatchArgs,
+  runDispatchCommand,
   HOUSE_ENGINE,
 };

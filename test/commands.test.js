@@ -7,7 +7,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
 const { acceptedInLastDay, writePolicy } = require('../lib/autoland');
 const taskStore = require('../lib/task-db');
-const { branchName, cleanupWorktrees, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
+const { branchName, cleanupWorktrees, createOrFindPr, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
 const { formatLocalDate } = require('../commands/now');
 const {
@@ -767,6 +767,120 @@ test('worktree ship commits verifies and pushes an isolated branch', () => {
       runGit(['--git-dir', remote, 'show-ref', '--verify', `refs/heads/${branch}`], dir),
       new RegExp(`refs/heads/${branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
     );
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+// A worktree branch reused across more than one `worktree ship` call (the
+// exact shape of this session: several commits landed one at a time from the
+// same worktree) hits a real `gh` quirk: `gh pr view` with no --state filter
+// returns ANY pr for the branch name, including one already MERGED or
+// CLOSED, and `gh pr merge <already-merged-pr>` exits 0 with just a warning
+// instead of failing. Together those silently no-op the landing of new
+// commits while `worktree ship` still reports success. This fake `gh`
+// stands in for the real CLI so the state-filter fix is provable without a
+// live GitHub repo.
+function makeFakeGh(dir, { viewState = 'OPEN', viewNumber = 42, createNumber = 99, mergeAlreadyMerged = false } = {}) {
+  const binDir = path.join(dir, 'fake-bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  const ghPath = path.join(binDir, 'gh');
+  fs.writeFileSync(ghPath, `#!/bin/sh
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  echo "${viewNumber} https://example.com/pull/${viewNumber} ${viewState}"
+  exit 0
+fi
+if [ "$1" = "pr" ] && [ "$2" = "create" ]; then
+  echo "https://example.com/pull/${createNumber}"
+  exit 0
+fi
+if [ "$1" = "pr" ] && [ "$2" = "merge" ]; then
+  if [ "${mergeAlreadyMerged}" = "true" ]; then
+    echo "! Pull request already merged" 1>&2
+    exit 0
+  fi
+  echo "merged"
+  exit 0
+fi
+exit 1
+`, { mode: 0o755 });
+  return binDir;
+}
+
+test('createOrFindPr ignores a stale MERGED pr for this branch and opens a fresh one', () => {
+  const dir = makeTempDir();
+  try {
+    const binDir = makeFakeGh(dir, { viewState: 'MERGED', viewNumber: 42, createNumber: 99 });
+    const prevPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${prevPath}`;
+    try {
+      const pr = createOrFindPr(dir, 'codex/reused-branch', 'origin/master', 'reused branch title', false);
+      assert.match(pr, /pull\/99/, 'a merged PR must never be reused; a fresh one must be created');
+      assert.doesNotMatch(pr, /pull\/42/);
+    } finally {
+      process.env.PATH = prevPath;
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('createOrFindPr reuses a real OPEN pr for this branch instead of opening a duplicate', () => {
+  const dir = makeTempDir();
+  try {
+    const binDir = makeFakeGh(dir, { viewState: 'OPEN', viewNumber: 7 });
+    const prevPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${prevPath}`;
+    try {
+      const pr = createOrFindPr(dir, 'codex/open-branch', 'origin/master', 'open branch title', false);
+      assert.match(pr, /pull\/7/);
+    } finally {
+      process.env.PATH = prevPath;
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree ship refuses to report success when gh pr merge silently no-ops an already-merged pr', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const remote = path.join(dir, 'remote.git');
+    const repo = path.join(dir, 'repo');
+    const runGit = (args, cwd = repo) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    fs.mkdirSync(repo);
+    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['branch', '-M', 'master']);
+    runGit(['remote', 'add', 'origin', remote]);
+    runGit(['push', '-u', 'origin', 'master']);
+    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+
+    worktreePath = path.join(dir, 'ship-worktree');
+    const start = runCli(['worktree', 'start', '--agent', 'codex-shipper', '--task', 'Ship Smoke', '--path', worktreePath], { cwd: repo });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    fs.appendFileSync(path.join(worktreePath, 'README.md'), 'changed\n');
+
+    const binDir = makeFakeGh(dir, { viewState: 'OPEN', viewNumber: 7, mergeAlreadyMerged: true });
+    const shipped = runCli(
+      ['worktree', 'ship', '--message', 'ship smoke', '--verify', 'git status --short', '--merge'],
+      { cwd: worktreePath, env: { PATH: `${binDir}:${process.env.PATH}` } }
+    );
+
+    assert.notEqual(shipped.status, 0, 'a no-op merge must never be reported as a successful ship');
+    assert.doesNotMatch(shipped.stdout, /done: worktree shipped/);
+    assert.match(`${shipped.stdout}${shipped.stderr}`, /already merged/i);
   } finally {
     if (worktreePath) cleanupTempDir(worktreePath);
     cleanupTempDir(dir);

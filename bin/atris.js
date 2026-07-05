@@ -531,7 +531,7 @@ function showHelp() {
   console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
   console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
   console.log('  autoland   - Approve the policy once; certified work lands itself, you keep irreversible calls');
-  console.log('  engine     - Bring any intelligence: roster of installed coding CLIs, default engine, --engine per run, `engine test` preflight');
+  console.log('  engine     - Bring any intelligence: roster of installed coding CLIs, default engine, --engine per run, `engine test` preflight, `engine dispatch <task-id> --engine <name>` one-command claim/build/verify/ship');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('  youtube    - Process YouTube videos with timestamped transcript-first analysis');
@@ -2395,10 +2395,13 @@ if (command === 'init') {
 } else if (command === 'engine' || command === 'engines') {
   // Engine: bring any intelligence — roster of installed coding CLIs, default
   // engine per workspace, --engine <name> rides any loop for one run.
-  try {
-    const engineArgs = command === 'engines' && process.argv.length <= 3 ? [] : process.argv.slice(3);
-    process.exit(require('../commands/engine').engineCommand(engineArgs) || 0);
-  } catch (err) { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); }
+  // `engine dispatch` runs an async claim -> build -> ship flight, so the
+  // return value may be a promise or a plain number; Promise.resolve handles
+  // both (mirrors the `compile` command dispatch just above).
+  const engineArgs = command === 'engines' && process.argv.length <= 3 ? [] : process.argv.slice(3);
+  Promise.resolve(require('../commands/engine').engineCommand(engineArgs))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'sign') {
   // Sign: prepare-commit-msg hook that credits Atris as co-author on commits in atris workspaces.
   try { process.exit(require('../commands/sign').signCommand(process.argv[3]) || 0); }
