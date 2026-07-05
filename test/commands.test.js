@@ -10486,6 +10486,7 @@ test('task ready holds work in review until human accept', () => {
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    writePolicy(dir, { enabled: false, enabled_by: 'keshavrao' });
 
     const add = runCli([
       'task', 'add', 'Approve autonomous work before XP',
@@ -10521,7 +10522,7 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(readyPayload.handoff.career_xp_status, 'pending_human_accept');
     assert.equal(readyPayload.handoff.next_action, 'agent_review_again');
     assert.equal(readyPayload.handoff.review_chat_command, `atris task review-chat ${ref} --as codex-review`);
-    assert.equal(readyPayload.handoff.rule, 'Proof is ready; one more agent check before human approval. XP waits for the human.');
+    assert.equal(readyPayload.handoff.rule, 'proof is ready; one more agent check before human approval. XP waits for the human.');
     assert.match(readyPayload.handoff.codex_prompt, new RegExp(`/codex review ${ref}`));
     assert.match(readyPayload.handoff.codex_prompt, /Approve autonomous work before XP/);
     assert.match(readyPayload.handoff.codex_prompt, /Proof: typecheck passed and diff reviewed/);
@@ -10623,7 +10624,7 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(certifiedPayload.handoff.review_chat_command, undefined);
     assert.equal(certifiedPayload.handoff.codex_prompt, undefined);
     assert.equal(certifiedPayload.handoff.verification_focus, undefined);
-    assert.equal(certifiedPayload.handoff.rule, 'Double-check complete; ready to keep moving. XP is awarded only after the human approves the task.');
+    assert.equal(certifiedPayload.handoff.rule, 'double-check complete; ready to keep moving. XP is awarded only after the human approves the task.');
     assert.equal(certifiedPayload.task.status, 'review');
     assert.equal(certifiedPayload.task.review.approval_status, 'pending');
     assert.equal(certifiedPayload.task.review.agent_review_pass_count, 3);
@@ -10698,7 +10699,7 @@ test('task ready holds work in review until human accept', () => {
     ], { cwd: dir, env });
     assert.equal(readyText.status, 0, readyText.stderr);
     assert.match(readyText.stdout, /ready for approval .*/);
-    assert.match(readyText.stdout, /Proof is ready; one more agent check before human approval\. XP waits for the human\./);
+    assert.match(readyText.stdout, /proof is ready; one more agent check before human approval\. XP waits for the human\./);
 
     const accept = runCli([
       'task', 'accept', ref,
@@ -10762,6 +10763,58 @@ test('task ready holds work in review until human accept', () => {
 	    const eventTypes = JSON.parse(events.stdout).events.map(event => event.event_type);
 	    assert.deepEqual(eventTypes.slice(0, 6), ['created', 'claimed', 'proof_ready', 'message', 'reviewed', 'proof_ready']);
 	    assert.deepEqual(eventTypes.slice(-2), ['completed', 'reviewed']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task ready uses autoland-aware handoff copy when policy is on', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    writePolicy(dir, { enabled: true, enabled_by: 'keshavrao' });
+
+    const add = runCli([
+      'task', 'add', 'Autoland ready messaging',
+      '--tag', 'agent',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const ready = runCli([
+      'task', 'ready', ref,
+      '--proof', 'typecheck passed and diff reviewed',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+    const readyPayload = JSON.parse(ready.stdout);
+    assert.equal(
+      readyPayload.handoff.rule,
+      'proof is ready; autoland runs the second check and lands it on the next tick.',
+    );
+    assert.notEqual(
+      readyPayload.handoff.rule,
+      'proof is ready; one more agent check before human approval. XP waits for the human.',
+    );
+
+    const textAdd = runCli(['task', 'add', 'Autoland ready text copy', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(textAdd.status, 0, textAdd.stderr);
+    const textRef = JSON.parse(textAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', textRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const readyText = runCli([
+      'task', 'ready', textRef,
+      '--proof', 'second validation pass',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(readyText.status, 0, readyText.stderr);
+    assert.match(readyText.stdout, /proof is ready; autoland runs the second check and lands it on the next tick\./);
+    assert.doesNotMatch(readyText.stdout, /one more agent check before human approval/);
   } finally {
     cleanupTempDir(dir);
   }
