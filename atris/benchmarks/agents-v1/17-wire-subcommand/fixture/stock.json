@@ -1,0 +1,4 @@
+[
+  { "sku": "apple", "qty": 3 },
+  { "sku": "banana", "qty": 5 }
+]

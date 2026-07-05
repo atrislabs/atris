@@ -27,8 +27,18 @@ test('agents-v1 tasks fail under null and pass under solution', async () => {
     'find-the-bug-line',
     'fix-failing-test',
     'no-commit-rule',
+    'one-file-only',
+    'receipt-format',
+    'deny-list',
+    'stop-at-boundary',
     'add-json-flag',
+    'wire-subcommand',
+    'implement-from-test',
+    'input-validation',
+    'tiny-parser',
     'merge-conflict',
+    'revert-bad-change',
+    'flaky-quarantine',
   ]);
 
   for (const id of taskIds) {
