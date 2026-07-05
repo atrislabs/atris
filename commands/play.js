@@ -328,6 +328,7 @@ function playWorkspaceRoot(taskDb, workspaceArg) {
 
 function nextCommands(task, player) {
   const helper = player || 'player';
+  const readyResult = 'Players can now claim AgentXP proof faster because the verifier names the finished artifact.';
   if (!task) {
     return [
       `atris task delegate "AgentXP first rep: one proof-backed mission" --to ${player} --tag agent-xp`,
@@ -339,7 +340,7 @@ function nextCommands(task, player) {
   if (task.status === 'open') {
     return [
       `atris task claim ${ref} --as ${helper}`,
-      `atris task ready ${ref} --as ${helper} --proof "AGENTXP_PROOF.md + test -s AGENTXP_PROOF.md passed"`,
+      `atris task ready ${ref} --as ${helper} --proof "AGENTXP_PROOF.md + test -s AGENTXP_PROOF.md passed" --result "${readyResult}"`,
       `atris task accept ${ref} --as ${player} --proof "<human review>"`,
       'atris xp card --local',
       ...globalSyncCommands(player),
@@ -349,7 +350,7 @@ function nextCommands(task, player) {
   if (task.status === 'claimed') {
     const actor = task.claimed_by || helper;
     return [
-      `atris task ready ${ref} --as ${actor} --proof "AGENTXP_PROOF.md + test -s AGENTXP_PROOF.md passed"`,
+      `atris task ready ${ref} --as ${actor} --proof "AGENTXP_PROOF.md + test -s AGENTXP_PROOF.md passed" --result "${readyResult}"`,
       `atris task accept ${ref} --as ${player} --proof "<human review>"`,
       'atris xp card --local',
       ...globalSyncCommands(player),

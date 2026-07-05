@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 const { taskProofLooksMeaningful, taskProofLooksExecuted, taskProofState, taskProofExecutionState, buildVerifiedProof } = require('../lib/task-proof');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { scrubAgentEnv } = require('./helpers/agent-env');
+const { withTaskReadyResult } = require('./helpers/task-result');
 
 const CLI = path.join(__dirname, '..', 'bin', 'atris.js');
 
@@ -19,7 +20,7 @@ function cleanupTempDir(dir) {
 }
 
 function runCli(args, { cwd, env = {} } = {}) {
-  return spawnSync(process.execPath, [CLI, ...args], {
+  return spawnSync(process.execPath, [CLI, ...withTaskReadyResult(args)], {
     cwd,
     env: {
       ...scrubAgentEnv(),

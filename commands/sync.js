@@ -242,7 +242,7 @@ function renderBusinessAgentAdapter(bizMeta = {}, targetRoot = '.') {
     '- Check `atris/MAP.md` before broad code or file search.',
     '- Use `atris task` for ownership, notes, proof, and review state.',
     '- Use `atris mission` when work should survive the current chat.',
-    '- Put completed agent work in Review with `atris task ready <id> --proof "<receipt>".`',
+    '- Put completed agent work in Review with `atris task ready <id> --proof "<receipt>" --result "<day-one PM sentence>".`',
     '- Do not run `atris task accept` or claim XP unless a human approved the proof.',
     '- Do not mix another business into this workspace.',
     '- No external sends, spend, or launches without operator approval.',

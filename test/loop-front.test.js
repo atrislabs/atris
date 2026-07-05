@@ -168,6 +168,7 @@ test('loopReport groups roadmap state and renders without an em dash', () => {
 
 test('loop ranked source combines roadmap, active missions, and endgame', () => {
   const dir = makeTempDir();
+  const visibleMission = 'Operators can now see active mission outcomes faster because the goal is human-readable.';
   try {
     fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'atris', 'brain'), { recursive: true });
@@ -177,6 +178,7 @@ test('loop ranked source combines roadmap, active missions, and endgame', () => 
       schema: 'atris.mission.v1',
       id: 'mission-ranked',
       objective: 'active mission gate',
+      visible_goal: { desired_objective: visibleMission },
       owner: 'mission-lead',
       status: 'planning',
       runner: 'codex_goal',
@@ -190,7 +192,7 @@ test('loop ranked source combines roadmap, active missions, and endgame', () => 
 
     const moves = require('../lib/next-moves').nextMoves(dir, 3);
     assert.deepEqual(moves.map((move) => move.source), ['roadmap', 'mission', 'endgame']);
-    assert.deepEqual(moves.map((move) => move.title), ['roadmap gate', 'active mission gate', 'endgame gate']);
+    assert.deepEqual(moves.map((move) => move.title), ['roadmap gate', visibleMission, 'endgame gate']);
 
     const status = loopStatusJson(dir);
     assert.deepEqual(status.next_moves.map((move) => move.source).slice(0, 3), ['roadmap', 'mission', 'endgame']);
@@ -198,7 +200,8 @@ test('loop ranked source combines roadmap, active missions, and endgame', () => 
     assert.deepEqual(report.next_moves.map((move) => move.source).slice(0, 3), ['roadmap', 'mission', 'endgame']);
     const home = renderLoopHome({ action: 'home' }, moves);
     assert.match(home, /\[roadmap\] roadmap gate/);
-    assert.match(home, /\[mission\] active mission gate/);
+    assert.match(home, new RegExp(`\\[mission\\] ${visibleMission.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.doesNotMatch(home, /\[mission\] active mission gate/);
     assert.match(home, /\[endgame\] endgame gate/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

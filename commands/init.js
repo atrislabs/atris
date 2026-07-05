@@ -665,7 +665,7 @@ Every agent should leave four artifacts another agent can trust:
 | Objective | \`atris task note <id> "Goal / files / done / check"\` |
 | Navigation | \`atris/MAP.md\` when a new route or file location is learned |
 | Change | Small git diff in declared files only |
-| Proof ready | \`atris task ready <id> --proof "<commands or receipt>"\` |
+| Proof ready | \`atris task ready <id> --proof "<commands or receipt>" --result "<day-one PM sentence>"\` |
 | Human accept | \`atris task accept <id>\` |
 
 Do not rely on chat context. Put the task, file pointers, and proof on disk.
@@ -748,7 +748,7 @@ member -> mission start --verify -> status --status active -> one bounded step -
 - [ ] Check MAP.md before touching code
 - [ ] Run \`atris task list\` or \`atris task next\` before picking work
 - [ ] Claim tasks with \`atris task claim <id> --as <functional-member>\`
-- [ ] Move agent-completed work to Review via \`atris task ready <id> --proof "..."\`
+- [ ] Move agent-completed work to Review via \`atris task ready <id> --proof "..." --result "<day-one PM sentence>"\`
 - [ ] Complete native Codex/Claude goals after proof is in Review, so always-on work can continue
 - [ ] Only use \`atris task accept <id>\` when the human has approved the proof
 - [ ] Keep durable learning in Atris-owned policy/skill/wiki/task state; keep \`AGENTS.md\` as a generated/pointer layer
