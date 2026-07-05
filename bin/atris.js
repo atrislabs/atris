@@ -549,6 +549,7 @@ function showHelp() {
   console.log('  experiments validate        - Validate experiment packs');
   console.log('  experiments run <slug>      - Execute a pack or record an Endstate receipt');
   console.log('  experiments benchmark [m]   - Run validate/runtime experiment benchmarks');
+  console.log('  bench      - run core benchmark gates');
   console.log('');
   console.log('Compile loop (learn like AI, run like code):');
   console.log('  compile record <name>       - Append an execution record (--input/--output)');
@@ -987,7 +988,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
+                       'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'bench', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'write', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'report', 'signup', 'clarity', 'interview', 'moves', 'unknowns',
                        'github', 'vercel', 'supabase', 'linear', 'stripe', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed', 'brief'];
@@ -1618,6 +1619,10 @@ if (command === 'init') {
   Promise.resolve(require('../commands/task').run(process.argv.slice(3)))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'bench') {
+  Promise.resolve(require('../commands/bench').benchCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(2); });
 } else if (command === 'mission') {
   Promise.resolve(require('../commands/mission').missionCommand(process.argv.slice(3)))
     .then(() => process.exit(process.exitCode || 0))
