@@ -137,6 +137,9 @@ test('land --reap removes a stale dirty worktree and saves its diff as a patch',
     const wtPath = path.join(base, 'wt-stale');
     runGit(['worktree', 'add', wtPath, 'stale-work'], repo);
     fs.writeFileSync(path.join(wtPath, 'stale.txt'), 'uncommitted edit\n');
+    // age the worktree past the fresh-worktree grace window
+    const staleStamp = new Date(Date.now() - 61 * 60 * 1000);
+    fs.utimesSync(wtPath, staleStamp, staleStamp);
 
     const result = runCli(['land', '--reap', '--json'], repo);
     assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -230,6 +233,9 @@ test('reap salvages staged and untracked files before removing a worktree', () =
     fs.writeFileSync(path.join(wt, 'sub', 'nested.txt'), 'nested new file\n');
     fs.writeFileSync(path.join(wt, 'README.md'), '# staged edit\n');
     runGit(['add', 'README.md'], wt);
+    // age the worktree past the fresh-worktree grace window
+    const graceStamp = new Date(Date.now() - 61 * 60 * 1000);
+    fs.utimesSync(wt, graceStamp, graceStamp);
 
     const { reap } = require('../commands/land');
     const receipt = reap(repo, {});

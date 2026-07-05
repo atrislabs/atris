@@ -207,10 +207,11 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
   const protectedWorktrees = [];
   const worktreeTargets = [];
   for (const w of candidateWorktrees) {
-    if (w.dirty > 0) {
-      protectedWorktrees.push({ ...w, reason: 'dirty' });
-      continue;
-    }
+    // Only the fresh-worktree grace protects here. Dirty worktrees are NOT
+    // skipped: reap's salvage (bundle + patches + untracked copies below)
+    // exists precisely so dirty residue can be cleared loss-free. Blanket
+    // dirty protection lives in the janitor's cleanupWorktrees, which has
+    // no salvage machinery.
     if (worktreeWithinReapGrace(w.path)) {
       protectedWorktrees.push({ ...w, reason: 'fresh_worktree_grace' });
       continue;
@@ -271,15 +272,12 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
     (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached')
   );
   for (const w of survivingWorktreeTargets) {
-    const latestCounts = statusCounts(w.path) || { staged: 0, unstaged: 0, untracked: 0 };
-    const latestDirty = latestCounts.staged + latestCounts.unstaged + latestCounts.untracked;
-    if (latestDirty > 0) {
-      receipt.keptWorktrees.push(`${w.path} (dirty)`);
-      if (w.branch) targetNames.delete(w.branch);
-      continue;
-    }
-    if (worktreeWithinReapGrace(w.path)) {
-      receipt.keptWorktrees.push(`${w.path} (fresh_worktree_grace)`);
+    // Salvage-then-remove, never keep-because-dirty: patches + untracked
+    // copies bank everything force-remove would destroy. The fresh-worktree
+    // grace was already applied when candidates were selected.
+    if (w.dirty > 0 && !salvageWorktree(w, dir, receipt)) {
+      // could not fully back up what force-remove would destroy — keep it
+      receipt.keptWorktrees.push(w.path);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
