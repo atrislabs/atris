@@ -118,7 +118,7 @@ test('mission start warns when no verifier is attached', () => {
   }
 });
 
-test('mission doctor stops flagging a paused no-verifier mission (parking sticks)', () => {
+test('mission doctor stops flagging a drive-parked no-verifier mission (parking sticks)', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -135,7 +135,7 @@ test('mission doctor stops flagging a paused no-verifier mission (parking sticks
     assert.ok(flaggedBefore.includes(missionId), 'active no-verifier mission should be flagged');
 
     const paused = runCli([
-      'mission', 'stop', missionId, '--pause', '--reason', 'parked for test',
+      'mission', 'stop', missionId, '--pause', '--reason', 'drive: no verifier + stale, auto-parked (restart with a --verify to resume)',
     ], { cwd: dir });
     assert.equal(paused.status, 0, paused.stderr || paused.stdout);
 
@@ -144,7 +144,7 @@ test('mission doctor stops flagging a paused no-verifier mission (parking sticks
     ).findings.filter((f) => f.code === 'missing_verifier').map((f) => f.mission_id);
     assert.ok(
       !flaggedAfter.includes(missionId),
-      'paused mission is parked/settled and must not be re-flagged as missing_verifier',
+      'drive-parked mission is settled and must not be re-flagged as missing_verifier',
     );
   } finally {
     cleanupTempDir(dir);

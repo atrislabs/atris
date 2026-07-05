@@ -4071,6 +4071,12 @@ function missionReceiptHealth(mission, root = process.cwd()) {
   return { ok: true, reason: 'verifier_passed', receipt_path: receiptPath };
 }
 
+function missionIsDriveParked(mission) {
+  if (String(mission?.status || '').toLowerCase() !== 'paused') return false;
+  const reason = String(mission?.stop_reason || '').toLowerCase();
+  return reason.startsWith('drive:') && reason.includes('auto-parked');
+}
+
 function collectMissionDoctorFindings(root = process.cwd(), options = {}) {
   const localOnly = options.localOnly === true;
   let missions = listMissions(root);
@@ -4102,11 +4108,10 @@ function collectMissionDoctorFindings(root = process.cwd(), options = {}) {
     const status = String(mission.status || '');
     const active = !TERMINAL_STATUSES.has(status);
     const objective = String(mission.objective || '').trim();
-    // A paused mission is already parked — that IS the resolution for a
-    // no-verifier zombie. Re-flagging it here is the loop that stops drive's
-    // parking from ever sticking: park -> paused -> re-flagged -> re-parked
-    // forever. Treat paused as settled for the verifier check.
-    if (active && status !== 'paused' && !effectiveMissionVerifier(mission)) {
+    // Only drive's explicit auto-park reason settles a no-verifier mission.
+    // Other paused no-verifier missions still need a verifier or a deliberate
+    // park, otherwise doctor and drive silently disagree about stale work.
+    if (active && !missionIsDriveParked(mission) && !effectiveMissionVerifier(mission)) {
       add(
         mission,
         'missing_verifier',
