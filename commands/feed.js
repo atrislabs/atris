@@ -75,8 +75,9 @@ async function fetchPosts(businessId, token, want) {
       `/business/${businessId}/feed?limit=${pageSize}&offset=${offset}`,
       { token, timeoutMs: 20000 }
     );
-    if (res.statusCode && res.statusCode >= 400) {
-      throw new Error(`Feed fetch failed (${res.statusCode}): ${JSON.stringify(res.data)}`);
+    const statusCode = res.statusCode || res.status;
+    if (statusCode && statusCode >= 400) {
+      throw new Error(`Feed fetch failed (${statusCode}): ${JSON.stringify(res.data)}`);
     }
     const page = Array.isArray(res.data?.posts) ? res.data.posts : Array.isArray(res.data) ? res.data : [];
     all = all.concat(page);
@@ -191,4 +192,11 @@ async function feedCommand(args = []) {
   return 0;
 }
 
-module.exports = { feedCommand };
+module.exports = {
+  feedCommand,
+  findBusiness,
+  loadAuthorAliases,
+  parseSince,
+  authorLabel,
+  fetchPosts,
+};
