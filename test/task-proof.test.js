@@ -31,6 +31,12 @@ function runCli(args, { cwd, env = {} } = {}) {
   });
 }
 
+function runGit(args, cwd) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 15000 });
+  assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr || result.stdout}`);
+  return result;
+}
+
 function certifiedReviewTaskWithProof(proof) {
   return {
     id: 'task-1',
@@ -156,6 +162,44 @@ test('task ready --verify runs the command and gates on its exit code', () => {
     assert.equal(okReady.status, 0, okReady.stderr);
     const okTask = JSON.parse(okReady.stdout).task;
     assert.match(okTask.review.proof, /\[verified\] `true` passed \(exit 0\)/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task ready --verify warns when autoland cannot re-run the verifier', () => {
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const add = runCli(['task', 'add', 'Warn on unsafe verifier', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+
+    const ready = runCli(['task', 'ready', ref, '--verify', 'true'], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+    assert.match(ready.stdout, /note: this verify command is outside the auto-certify allowlist/);
+    assert.match(ready.stdout, new RegExp(`atris task review-chat ${ref} --as <reviewer>`));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task ready --verify stays quiet for git diff --check', () => {
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    runGit(['init'], dir);
+    const add = runCli(['task', 'add', 'No warning on safe verifier', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+
+    const ready = runCli(['task', 'ready', ref, '--verify', 'git diff --check'], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+    assert.doesNotMatch(ready.stdout, /outside the auto-certify allowlist/);
   } finally {
     cleanupTempDir(dir);
   }

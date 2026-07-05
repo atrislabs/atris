@@ -8,7 +8,14 @@ const http = require('http');
 const path = require('path');
 const os = require('os');
 const { taskProofState } = require('../lib/task-proof');
-const { evaluateAutoAccept, isAgentCertified, parseVerifyCommand, runVerifyCommand, DENIED_TAGS } = require('../lib/auto-accept-certified');
+const {
+  evaluateAutoAccept,
+  isAgentCertified,
+  isAutoCertifyVerifyCommandAllowed,
+  parseVerifyCommand,
+  runVerifyCommand,
+  DENIED_TAGS,
+} = require('../lib/auto-accept-certified');
 const { extractReceiptEvidence } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const reviewIntegrity = require('../lib/review-integrity');
@@ -1591,6 +1598,44 @@ function latestTaskEvent(task) {
   return events.length ? events[events.length - 1] : null;
 }
 
+function verifiedProofCommand(proof) {
+  const match = String(proof || '').match(/\[verified\]\s+`([^`]+)`\s+passed\s+\(exit 0\)/i);
+  return match ? String(match[1] || '').trim() : '';
+}
+
+function autoCertifyCommandCandidatesForTask(task) {
+  const metadata = task && task.metadata || {};
+  const review = task && task.review || {};
+  const proof = String(review.proof || metadata.latest_agent_proof || '');
+  const candidates = [
+    metadata.verify,
+    metadata.latest_agent_verify,
+    verifiedProofCommand(review.proof),
+    verifiedProofCommand(metadata.latest_agent_proof),
+    ...taskReviewEvidenceCommands(proof),
+  ].map(value => String(value || '').trim()).filter(Boolean);
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    const key = candidate.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function reviewBlockerForTask(task) {
+  const ref = taskRef(task);
+  const candidates = autoCertifyCommandCandidatesForTask(task);
+  const safe = candidates.find(command => isAutoCertifyVerifyCommandAllowed(command));
+  const unsafe = candidates.find(command => !isAutoCertifyVerifyCommandAllowed(command));
+  const reason = !safe && unsafe ? 'verify_command_not_allowed' : 'needs_second_actor_review';
+  return {
+    reason,
+    verify_command: (!safe && unsafe) ? unsafe : (safe || candidates[0] || null),
+    next_command: `atris task review-chat ${ref} --as codex-review`,
+  };
+}
+
 function reviewHandoffForTask(task, { suppressExistingFollowUp = false, hasExistingReviewFollowUp = null } = {}) {
   const review = task && task.review || {};
   if (task && task.status !== 'review') return null;
@@ -1611,6 +1656,11 @@ function reviewHandoffForTask(task, { suppressExistingFollowUp = false, hasExist
     handoff.reason = proofBoundary.reason;
     handoff.next_action_detail = proofBoundary.next_action || null;
     handoff.revise_command = `atris task revise ${taskRef(task)} --note "<replace stale PR proof with merged proof or move back to Do>"`;
+  } else if (!agentCertified) {
+    const blocker = reviewBlockerForTask(task);
+    handoff.reason = blocker.reason;
+    handoff.next_action_detail = blocker.verify_command || null;
+    handoff.review_chat_command = blocker.next_command;
   } else if (agentCertified && nextTask && !hasExistingFollowUp) {
     handoff.next_task = nextTask;
     handoff.continue_work_command = continueWorkCommandForTask(task);
@@ -4595,6 +4645,19 @@ function reviewQueueItem(task, root = process.cwd(), evidence = undefined) {
   return item;
 }
 
+function blockedReviewQueueItem(task, root = process.cwd()) {
+  const item = reviewQueueItem(task, root);
+  const blocker = reviewBlockerForTask(task);
+  item.queue_role = 'blocked';
+  item.reason = blocker.reason;
+  item.blocked_reason = blocker.reason;
+  item.next_command = blocker.next_command;
+  item.verify_command = blocker.verify_command;
+  item.accept_command = null;
+  item.land_command = null;
+  return item;
+}
+
 function reviewQueueHygiene(tasks) {
   const genericContinuations = (tasks || []).map(task => {
     const issues = genericContinuationIssues(task);
@@ -4633,7 +4696,10 @@ function taskReviewQueue(projection, args = []) {
   const ordered = [...certified].sort((a, b) =>
     evidenceRiskRank(evidenceByTaskId.get(b.id)) - evidenceRiskRank(evidenceByTaskId.get(a.id))
     || Number(b.updated_at || 0) - Number(a.updated_at || 0));
-  const items = ordered.slice(0, limit).map((task) => reviewQueueItem(task, root, evidenceByTaskId.get(task.id)));
+  const certifiedItems = ordered.slice(0, limit).map((task) => reviewQueueItem(task, root, evidenceByTaskId.get(task.id)));
+  const blockedLimit = reviewQueueLimit(args, blocking.length);
+  const blockedItems = blocking.slice(0, blockedLimit).map((task) => blockedReviewQueueItem(task, root));
+  const items = [...certifiedItems, ...blockedItems];
   return {
     schema: 'atris.task_review_queue.v1',
     generated_at: projection.generated_at,
@@ -4644,7 +4710,8 @@ function taskReviewQueue(projection, args = []) {
       evidence_passing: certified.filter((task) => evidenceByTaskId.get(task.id)?.all_passing).length,
       blocking: blocking.length,
       proof_boundary_blocked: proofBoundaryBlocked.length,
-      shown: items.length,
+      shown: certifiedItems.length,
+      blocking_shown: blockedItems.length,
     },
     hygiene: reviewQueueHygiene(reviewTasks),
     items,
@@ -4742,11 +4809,13 @@ function cmdReviews(args) {
   }
   console.log('READY FOR APPROVAL');
   console.log(`${queue.counts.certified} ready for approval / ${queue.counts.blocking} need one more check / ${queue.counts.review} total waiting`);
-  if (!queue.items.length) {
+  const approvalItems = queue.items.filter(item => item.queue_role !== 'blocked');
+  const blockedItems = queue.items.filter(item => item.queue_role === 'blocked');
+  if (!approvalItems.length && !blockedItems.length) {
     console.log('Nothing is ready for approval.');
     return;
   }
-  queue.items.forEach((item, index) => {
+  approvalItems.forEach((item, index) => {
     const tag = item.tag ? ` [${item.tag}]` : '';
     const passes = item.review_pass_count ? ` (${item.review_pass_count} reviews)` : '';
     const badge = item.evidence?.all_passing ? ' [evidence:passing]' : '';
@@ -4776,6 +4845,10 @@ function cmdReviews(args) {
     else if (item.blocked_accept_reason) console.log(`   approve: blocked (${item.blocked_accept_reason})`);
     console.log(`   rework: ${item.revise_command}`);
   });
+  for (const item of blockedItems) {
+    console.log('');
+    console.log(`blocked: ${item.display_id || taskRef(item.id)}: ${item.reason}; next: ${item.next_command}`);
+  }
   if (queue.counts.shown < queue.counts.certified) {
     console.log('');
     console.log(`Showing ${queue.counts.shown}/${queue.counts.certified}; rerun with --all for every row or --verbose for proof details.`);
@@ -8125,6 +8198,7 @@ function cmdReady(args) {
   const verifyFlag = flag(args, '--verify');
   const usedVerify = typeof verifyFlag === 'string' ? verifyFlag.trim() : '';
   let proof = typeof proofFlag === 'string' ? proofFlag : '';
+  const verifyAutoCertifyAllowed = !usedVerify || isAutoCertifyVerifyCommandAllowed(verifyFlag);
   if (usedVerify) {
     // Run the verifier once and write a receipt (pass or fail) so the review
     // gate in lib/receipt-evidence.js can validate the exact path named in
@@ -8248,6 +8322,10 @@ function cmdReady(args) {
   console.log(`ready for approval ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
   if (resultTrace) console.log('Result trace recorded.');
   console.log(handoff.rule);
+  if (!verifyAutoCertifyAllowed) {
+    const ref = taskRef(compactTaskFromProjection(projection, taskId) || result.row || taskId);
+    console.log(`note: this verify command is outside the auto-certify allowlist, so autoland cannot run the second check itself. use a test command like node --test <file> or git diff --check, or have a second agent run: atris task review-chat ${ref} --as <reviewer>`);
+  }
   for (const hint of policyHints) {
     console.log(`policy (${hint.id}): ${hint.hint}`);
   }
@@ -8726,7 +8804,7 @@ function cmdAutoAcceptCertified(args) {
     ? pendingReview
       .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
       .slice(0, max)
-    : queue.items;
+    : queue.items.filter(item => item.queue_role !== 'blocked');
   const results = [];
 
   for (const item of pool) {

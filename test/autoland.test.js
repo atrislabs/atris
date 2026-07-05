@@ -352,6 +352,37 @@ test('tick certifies proof-backed reviews by re-running their check, then lands 
   }
 });
 
+test('auto-accept-certified json includes unsafe verify blockers with a reason', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const created = runCli(['task', 'new', 'Unsafe verify blocker', '--tag', 'code', '--json'], repo);
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const ref = String(JSON.parse(created.stdout).task?.display_id);
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'builder'], repo).status, 0);
+    const ready = runCli(['task', 'ready', ref, '--verify', 'true', '--as', 'builder'], repo);
+    assert.equal(ready.status, 0, ready.stderr || ready.stdout);
+
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.reviews_certified, 0);
+    assert.deepEqual(receipt.landed, []);
+
+    const preview = runCli(['task', 'auto-accept-certified', '--json'], repo);
+    assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+    const payload = JSON.parse(preview.stdout);
+    const item = payload.queue.items.find(row => row.display_id === ref);
+    assert.ok(item, JSON.stringify(payload.queue));
+    assert.equal(item.queue_role, 'blocked');
+    assert.equal(item.reason, 'verify_command_not_allowed');
+    assert.equal(item.verify_command, 'true');
+    assert.equal(item.next_command, `atris task review-chat ${ref} --as codex-review`);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('tick from an agent session lands under the standing policy with a real-number receipt', () => {
   const { base, repo } = makeTempRepo();
   const agentEnv = { CLAUDECODE: '1' };
