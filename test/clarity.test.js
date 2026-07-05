@@ -111,15 +111,56 @@ test('`atris clarity` is non-interactive-safe (no hang, prints profile + guidanc
   }
 });
 
-test('atris activate surfaces the clarity profile so agents read it', () => {
+test('atris activate surfaces a one-line clarity profile from clarity.json', () => {
   const root = tmp();
   try {
     runCli(['init'], root);
-    runCli(['clarity', '--set', 'voice=plain, terse'], root);
+    fs.mkdirSync(path.join(root, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'clarity.json'), JSON.stringify({
+      focus: 'ship atris',
+      voice: 'plain',
+      leash: 'proceed and report',
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(root, 'atris', 'CLARITY.md'), clarity.renderClarityMd({
+      focus: 'ship atris',
+      voice: 'plain',
+      leash: 'proceed and report',
+    }), 'utf8');
     const res = runCli(['activate'], root);
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /How you work \(atris clarity\)/);
-    assert.match(res.stdout, /voice: plain, terse/);
+    assert.match(res.stdout, /clarity: focus ship atris, voice plain, leash proceed and report \(see atris\/CLARITY\.md\)/);
+    assert.doesNotMatch(res.stdout, /How you work \(atris clarity\)/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('atris activate keeps the existing clarity nudge when no profile exists', () => {
+  const root = tmp();
+  try {
+    runCli(['init'], root);
+    const res = runCli(['activate'], root);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Tip: run atris clarity once so agents learn how you work\./);
+    assert.doesNotMatch(res.stdout, /clarity:/);
+    assert.doesNotMatch(res.stdout, /atris\/CLARITY\.md/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('atris activate skips corrupt clarity json without crashing', () => {
+  const root = tmp();
+  try {
+    runCli(['init'], root);
+    fs.mkdirSync(path.join(root, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'clarity.json'), '{ not valid json', 'utf8');
+    fs.writeFileSync(path.join(root, 'atris', 'CLARITY.md'), clarity.renderClarityMd({ voice: 'plain' }), 'utf8');
+    const res = runCli(['activate'], root);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Tip: run atris clarity once so agents learn how you work\./);
+    assert.doesNotMatch(res.stdout, /clarity:/);
+    assert.doesNotMatch(res.stdout, /voice plain/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
