@@ -597,6 +597,119 @@ test('worktree start defaults to upstream remote base and records ship metadata'
   }
 });
 
+test('worktree start ships agent/member worktrees to origin/master even when the launcher checkout is on a feature branch', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const remote = path.join(dir, 'remote.git');
+    const repo = path.join(dir, 'repo');
+    const runGit = (args, cwd = repo) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    fs.mkdirSync(repo);
+    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['branch', '-M', 'master']);
+    runGit(['remote', 'add', 'origin', remote]);
+    runGit(['push', '-u', 'origin', 'master']);
+    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+
+    // The launcher checkout is on its own feature branch, tracking that
+    // branch on origin: the exact live shape that false-landed two PRs.
+    runGit(['checkout', '-qb', 'task/feature-work']);
+    fs.appendFileSync(path.join(repo, 'README.md'), 'feature work in progress\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'feature work']);
+    runGit(['push', '-u', 'origin', 'task/feature-work']);
+
+    assert.equal(defaultStartBase(repo), 'origin/task/feature-work', 'sanity: launcher upstream is the feature branch');
+
+    worktreePath = path.join(dir, 'agent-worktree');
+    const res = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-shipper',
+      '--task',
+      'Ship Smoke',
+      '--path',
+      worktreePath,
+    ], { cwd: repo });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /base: origin\/master/, 'ship target must default to master, not the launcher branch');
+    const branch = runGit(['branch', '--show-current'], worktreePath);
+    assert.equal(runGit(['config', '--get', `branch.${branch}.atris-base`], worktreePath), 'origin/master');
+    // The checkout point still starts from the launcher's own work (unchanged
+    // behavior); only the ship-target metadata changed.
+    assert.match(runGit(['log', '-1', '--oneline'], worktreePath), /feature work/);
+
+    const sidecar = JSON.parse(fs.readFileSync(path.join(worktreePath, '.atris', 'agent-worktree.json'), 'utf8'));
+    assert.equal(sidecar.base, 'origin/master');
+    assert.equal(sidecar.checkout_base, 'origin/task/feature-work');
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree start honors an explicit --target for both the checkout point and the ship target', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const remote = path.join(dir, 'remote.git');
+    const repo = path.join(dir, 'repo');
+    const runGit = (args, cwd = repo) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    fs.mkdirSync(repo);
+    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['branch', '-M', 'master']);
+    runGit(['remote', 'add', 'origin', remote]);
+    runGit(['push', '-u', 'origin', 'master']);
+    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+    runGit(['checkout', '-qb', 'release/cut']);
+    runGit(['push', '-u', 'origin', 'release/cut']);
+
+    worktreePath = path.join(dir, 'agent-worktree');
+    const res = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-shipper',
+      '--task',
+      'Ship Smoke',
+      '--path',
+      worktreePath,
+      '--target',
+      'release/cut',
+    ], { cwd: repo });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /base: origin\/release\/cut/, '--target overrides the ship target too');
+    const branch = runGit(['branch', '--show-current'], worktreePath);
+    assert.equal(runGit(['config', '--get', `branch.${branch}.atris-base`], worktreePath), 'origin/release/cut');
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
 test('worktree ship commits verifies and pushes an isolated branch', () => {
   const dir = makeTempDir();
   let worktreePath;
