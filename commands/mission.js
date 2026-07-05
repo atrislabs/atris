@@ -8,6 +8,11 @@ const { spawn, spawnSync } = require('child_process');
 const {
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
+  resolveClaudeRunnerCommandTemplate,
+  buildRunnerCommand,
+  RUNNER_PROFILE_DEFS,
+  RUNNER_PROFILE_ALIASES,
+  RUNNER_PROFILE_NAMES,
 } = require('../lib/runner-command');
 const {
   FUNCTIONAL_MEMBER_TOPICS,
@@ -92,6 +97,76 @@ function readFlag(args, name, fallback = '') {
     if (arg.startsWith(prefix)) return unquote(arg.slice(prefix.length));
   }
   return fallback;
+}
+
+const MISSION_NATIVE_RUNNER_NAMES = Object.freeze(['manual', 'claude', 'atris2', 'codex_goal', 'caller_session', 'current_agent']);
+const MISSION_NATIVE_RUNNER_SET = new Set(MISSION_NATIVE_RUNNER_NAMES);
+
+function canonicalEngineName(name) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return '';
+  if (RUNNER_PROFILE_DEFS[trimmed]) return trimmed;
+  if (RUNNER_PROFILE_ALIASES[trimmed]) return RUNNER_PROFILE_ALIASES[trimmed];
+  return '';
+}
+
+function knownMissionRunnerText() {
+  return `Known runners: ${MISSION_NATIVE_RUNNER_NAMES.join(', ')}. Known engines: ${RUNNER_PROFILE_NAMES.join(', ')}`;
+}
+
+function resolveMissionRunnerSelection(value, options = {}) {
+  const raw = String(value || '').trim();
+  const asJson = options.asJson === true;
+  const engineOnly = options.engineOnly === true;
+  if (!raw) {
+    exitMissionError(`${options.label || 'runner'} is required. ${knownMissionRunnerText()}.`, 2, asJson);
+  }
+  const engine = canonicalEngineName(raw);
+  if (engine) {
+    return { requested: raw, runner: engine, engine, kind: 'engine' };
+  }
+  const runner = raw.toLowerCase();
+  if (!engineOnly && MISSION_NATIVE_RUNNER_SET.has(runner)) {
+    return { requested: raw, runner, engine: null, kind: 'runner' };
+  }
+  const noun = engineOnly ? 'engine' : 'runner';
+  exitMissionError(`Unknown ${noun} "${raw}". ${knownMissionRunnerText()}.`, 2, asJson);
+}
+
+function runnerModelPatch(runner, model) {
+  const explicitModel = String(model || '').trim();
+  if (explicitModel) return { model: explicitModel };
+  if (String(runner || '').trim().toLowerCase() === 'atris2') return { model: 'atris:fast' };
+  return {};
+}
+
+function missionRunRuntimeView(mission, runnerOverride = null, modelOverride = '') {
+  if (!runnerOverride) return mission;
+  const next = {
+    ...mission,
+    runner: runnerOverride.runner,
+    run_runner_override: {
+      requested: runnerOverride.requested,
+      runner: runnerOverride.runner,
+      stored_runner: mission.runner || null,
+      stored_model: mission.model || null,
+    },
+  };
+  delete next.model;
+  Object.assign(next, runnerModelPatch(runnerOverride.runner, modelOverride));
+  if (next.model) next.run_runner_override.model = next.model;
+  return next;
+}
+
+function applyMissionRunnerProfile(runner) {
+  const engine = canonicalEngineName(runner);
+  if (!engine) return () => {};
+  const previous = process.env.ATRIS_RUNNER_PROFILE;
+  process.env.ATRIS_RUNNER_PROFILE = engine;
+  return () => {
+    if (previous === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
+    else process.env.ATRIS_RUNNER_PROFILE = previous;
+  };
 }
 
 function exitMissionError(message, code = 1, asJson = false) {
@@ -215,6 +290,7 @@ const MISSION_RUN_VALUE_FLAGS = [
   '--verify',
   '--stop',
   '--model',
+  '--engine',
   '--native-goal-status',
   '--native-goal-objective',
   '--visible-goal-status',
@@ -3193,6 +3269,74 @@ function attachMissionTask(args) {
   }
 }
 
+function setMissionRunner(args) {
+  const asJson = wantsJson(args);
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission set-runner <id> <runner|engine> [--model <id>] [--json]');
+    console.log(knownMissionRunnerText());
+    return;
+  }
+  const positionals = stripKnownFlags(args, ['--model'], ['--json']);
+  const ref = String(positionals[0] || '').trim();
+  const runnerArg = String(positionals[1] || '').trim();
+  if (!ref || !runnerArg) {
+    exitMissionError(`Usage: atris mission set-runner <id> <runner|engine> [--model <id>]. ${knownMissionRunnerText()}.`, 1, asJson);
+  }
+
+  const selection = resolveMissionRunnerSelection(runnerArg, { asJson, label: 'runner' });
+  const model = readFlag(args, '--model', '');
+  let mission = resolveMission(ref);
+  if (!mission) exitMissingMission(ref, 1, asJson);
+
+  const lock = acquireMissionLock(mission.id);
+  if (!lock.ok) {
+    exitMissionError(`[mission set-runner] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`, 3, asJson);
+  }
+
+  try {
+    mission = resolveMission(mission.id) || mission;
+    const previous = { runner: mission.runner || null, model: mission.model || null };
+    const nextMission = {
+      ...mission,
+      runner: selection.runner,
+      next_action: mission.next_action || `run: atris mission run ${mission.id}`,
+    };
+    delete nextMission.model;
+    Object.assign(nextMission, runnerModelPatch(selection.runner, model));
+
+    const { mission: saved, event } = saveMission(
+      nextMission,
+      process.cwd(),
+      'mission_runner_changed',
+      {
+        previous_runner: previous.runner,
+        previous_model: previous.model,
+        runner: nextMission.runner,
+        requested_runner: selection.requested,
+        kind: selection.kind,
+        model: nextMission.model || null,
+      },
+    );
+    const logPath = appendMemberLog(saved.owner, 'Mission runner changed', {
+      mission: saved.objective,
+      previous_runner: previous.runner || undefined,
+      runner: saved.runner,
+      model: saved.model || undefined,
+    });
+    printJsonOrText(
+      { ok: true, action: 'mission_runner_changed', mission: saved, event, log_path: logPath },
+      [
+        `Mission runner changed: ${saved.id}`,
+        `Runner: ${previous.runner || 'none'} -> ${saved.runner}${saved.model ? ` (${saved.model})` : ''}`,
+        `Next: atris mission run ${saved.id}`,
+      ],
+      asJson,
+    );
+  } finally {
+    releaseMissionLock(lock);
+  }
+}
+
 function statusMission(args) {
   const asJson = wantsJson(args);
   const localOnly = hasFlag(args, '--local');
@@ -5693,6 +5837,11 @@ function releaseMissionLock(lock) {
 
 function probeClaudeBinary() {
   const runnerBin = resolveClaudeRunnerBin();
+  if (resolveClaudeRunnerCommandTemplate()) {
+    const probe = spawnSync('sh', ['-c', `command -v ${shellQuote(runnerBin)}`], { encoding: 'utf8', timeout: 8000 });
+    if (probe.status !== 0) return { ok: false, error: `${runnerBin} CLI not found` };
+    return { ok: true };
+  }
   const help = spawnSync(runnerBin, ['--help'], { encoding: 'utf8', timeout: 8000 });
   if (help.status !== 0) return { ok: false, error: `${runnerBin} --help failed` };
   const text = String(help.stdout || '');
@@ -5799,7 +5948,91 @@ function missionPauseNextAction(pauseReason, missionId, deadModel = null, lastEr
   return `resume with: atris mission run ${missionId}`;
 }
 
+function writeRunnerPromptFile(cwd, missionId, prompt) {
+  const dir = path.join(cwd, '.atris', 'state', 'runner-prompts');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${missionId || 'mission'}-${Date.now()}-${crypto.randomUUID()}.md`);
+  fs.writeFileSync(file, prompt, 'utf8');
+  return file;
+}
+
+function spawnGenericRunnerTick(mission, opts) {
+  const { sessionId, cwd, signal, timeoutMs, prompt, model } = opts;
+  return new Promise((resolve) => {
+    let promptFile = null;
+    let cmd = '';
+    try {
+      promptFile = writeRunnerPromptFile(cwd, mission.id, prompt);
+      cmd = buildRunnerCommand({ promptFile, model });
+    } catch (e) {
+      resolve({ ok: false, error: e.message, sessionIds: [], aborted: false, timedOut: false, authExpired: false });
+      return;
+    }
+
+    const startedAt = Date.now();
+    const proc = spawn('sh', ['-lc', cmd], { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    let aborted = false;
+
+    const cleanupPrompt = () => {
+      try { if (promptFile) fs.unlinkSync(promptFile); } catch {}
+    };
+    const kill = () => {
+      const killGroup = (sig) => {
+        try { process.kill(-proc.pid, sig); } catch { try { proc.kill(sig); } catch {} }
+      };
+      killGroup('SIGTERM');
+      setTimeout(() => killGroup('SIGKILL'), 3000).unref();
+    };
+    const timer = setTimeout(() => { timedOut = true; kill(); }, timeoutMs);
+    const onAbort = () => { aborted = true; kill(); };
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      cleanupPrompt();
+      if (signal) signal.removeEventListener?.('abort', onAbort);
+      const finalText = String(stdout || '').trim();
+      const errStr = String(stderr || '').slice(-2000);
+      const ok = code === 0 && !timedOut && !aborted;
+      const authExpired = /not authenticated|please log in|login required|auth(?:entication)? expired/i.test(errStr);
+      resolve({
+        ok,
+        timedOut,
+        aborted,
+        authExpired,
+        exitCode: code,
+        sessionIds: sessionId ? [sessionId] : [],
+        result: finalText,
+        summary: usefulClaudeReceiptSummary(finalText || errStr, ok ? 'no-text' : 'error'),
+        receipt_text: cappedClaudeReceiptText(finalText || errStr),
+        duration_total_ms: Date.now() - startedAt,
+        num_turns: null,
+        stop_reason: null,
+        stderr: errStr,
+        parse_errors: 0,
+      });
+    });
+
+    proc.on('error', (e) => {
+      clearTimeout(timer);
+      cleanupPrompt();
+      if (signal) signal.removeEventListener?.('abort', onAbort);
+      resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });
+    });
+  });
+}
+
 function spawnClaudeTick(mission, opts) {
+  if (resolveClaudeRunnerCommandTemplate()) return spawnGenericRunnerTick(mission, opts);
   const { sessionMode, sessionId, cwd, signal, timeoutMs, prompt, model } = opts;
   return new Promise((resolve) => {
     const args = [
@@ -5970,6 +6203,12 @@ async function runMission(args) {
   const maxWallFlag = readFlag(args, '--max-wall', '');
   let maxWallSeconds = Math.max(60, Number(maxWallFlag) || MISSION_RUN_DEFAULTS.maxWallSeconds);
   const cadenceOverride = readFlag(args, '--cadence', '');
+  const engineOverrideRaw = readFlag(args, '--engine', '');
+  const runnerOverride = engineOverrideRaw
+    ? resolveMissionRunnerSelection(engineOverrideRaw, { asJson, engineOnly: true, label: 'engine' })
+    : null;
+  const modelOverride = readFlag(args, '--model', '');
+  const runtimeView = (baseMission) => missionRunRuntimeView(baseMission, runnerOverride, modelOverride);
   const input = missionRunInputFromArgs(args);
   const ref = input.ref;
   const runArgs = input.args;
@@ -6016,17 +6255,7 @@ async function runMission(args) {
     process.exit(0);
   }
 
-  maybeBlockUntilCodexNativeGoalStarted(mission, asJson);
-
-  const preLockRunner = String(mission.runner || '').trim().toLowerCase();
-  const preLockCallerSession = runnerUsesCallerSession(mission.runner);
-  if (!skipClaude && !preLockCallerSession && preLockRunner !== 'atris2') {
-    const probe = probeClaudeBinary();
-    if (!probe.ok) {
-      console.error(`[mission run] claude probe failed: ${probe.error}`);
-      process.exit(2);
-    }
-  }
+  maybeBlockUntilCodexNativeGoalStarted(runtimeView(mission), asJson);
 
   const lock = acquireMissionLock(mission.id);
   if (!lock.ok) {
@@ -6041,6 +6270,7 @@ async function runMission(args) {
   let ranTicks = 0;
   const ticks = [];
   let onSig = null;
+  let restoreRunnerProfile = null;
 
   try {
     const cwd = process.cwd();
@@ -6054,11 +6284,12 @@ async function runMission(args) {
     // Derive sessionId, pendingSessionId, and the frozen contract from the fresh record
     // so a fast tick's writes can't be silently overwritten by this run loop.
     mission = resolveMission(mission.id) || mission;
+    let runtimeMission = runtimeView(mission);
     if (['complete', 'stopped'].includes(mission.status)) {
       console.error(`Mission ${mission.id} is ${mission.status}; nothing to run.`);
       return;
     }
-    if (returnIfCodexNativeGoalNotStarted(mission, asJson)) return;
+    if (returnIfCodexNativeGoalNotStarted(runtimeMission, asJson)) return;
     if (mission.status === 'paused') {
       mission = saveMission({
         ...mission,
@@ -6068,17 +6299,29 @@ async function runMission(args) {
         stop_reason: null,
         next_action: `running: atris mission run ${mission.id}`,
       }, cwd, 'mission_run_resumed', { reason: 'operator-resume' }).mission;
+      runtimeMission = runtimeView(mission);
     }
     sessionId = mission.claude_session_id || null;
     pendingSessionId = mission.pending_session_id || null;
-    const callerSessionRunner = runnerUsesCallerSession(mission.runner);
-    const atris2Runner = String(mission.runner || '').trim().toLowerCase() === 'atris2';
+    restoreRunnerProfile = applyMissionRunnerProfile(runtimeMission.runner);
+    const callerSessionRunner = runnerUsesCallerSession(runtimeMission.runner);
+    const atris2Runner = String(runtimeMission.runner || '').trim().toLowerCase() === 'atris2';
     const skipWorker = skipClaude || callerSessionRunner;
+    if (!skipClaude && !callerSessionRunner && !atris2Runner) {
+      const probe = probeClaudeBinary();
+      if (!probe.ok) {
+        console.error(`[mission run] claude probe failed: ${probe.error}`);
+        process.exit(2);
+      }
+    }
 
     // Freeze run-start contract (verifier, lane). Stored on receipts, not the mission record.
     const frozen = {
       verifier: effectiveMissionVerifier(mission),
       lane: mission.lane || 'workspace',
+      runner: runtimeMission.runner || 'manual',
+      model: runtimeMission.model || null,
+      ...(runnerOverride ? { stored_runner: mission.runner || null, stored_model: mission.model || null } : {}),
       started_at: stampIso(),
     };
     const runWorktreeBefore = gitWorktreeSnapshot(cwd);
@@ -6093,6 +6336,7 @@ async function runMission(args) {
     if (!skipWorker && !atris2Runner && !sessionId && !pendingSessionId) {
       pendingSessionId = crypto.randomUUID();
       mission = saveMission({ ...mission, pending_session_id: pendingSessionId }, cwd, 'mission_session_pending', { session_id: pendingSessionId }).mission;
+      runtimeMission = runtimeView(mission);
     }
 
     const startedAt = Date.now();
@@ -6103,7 +6347,7 @@ async function runMission(args) {
     const sessionLabel = skipWorker
       ? 'caller-session'
       : atris2Runner
-        ? `atris2 (${mission.model || 'atris:fast'})`
+        ? `atris2 (${runtimeMission.model || 'atris:fast'})`
         : (sessionId || `pending=${pendingSessionId}`);
     if (!asJson) {
       console.error(`[mission run] ${mission.id}\n  objective: ${mission.objective}\n  lane: ${frozen.lane}\n  cadence: ${cadence} (${cadenceSeconds}s)\n  max_ticks: ${effectiveMaxTicks}, max_wall: ${maxWallSeconds}s\n  session: ${sessionLabel}`);
@@ -6117,6 +6361,7 @@ async function runMission(args) {
 
       // Re-read mission, detect mutation of frozen fields
       mission = resolveMission(mission.id) || mission;
+      runtimeMission = runtimeView(mission);
       if (['complete', 'stopped', 'paused'].includes(mission.status)) { pauseReason = mission.status; break; }
       if (effectiveMissionVerifier(mission) !== frozen.verifier) { pauseReason = 'verifier-mutated'; break; }
       if ((mission.lane || 'workspace') !== frozen.lane) { pauseReason = 'lane-mutated'; break; }
@@ -6148,12 +6393,13 @@ async function runMission(args) {
       } else if (atris2Runner) {
         const pingDrain = consumeMissionPings(mission, cwd);
         mission = pingDrain.mission;
-        const prompt = buildTickPrompt(mission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
+        runtimeMission = runtimeView(mission);
+        const prompt = buildTickPrompt(runtimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
         const { runAtris2Turn } = require('./probe');
-        const businessId = businessIdForAtris2Mission(mission, cwd);
+        const businessId = businessIdForAtris2Mission(runtimeMission, cwd);
         const turn = await runAtris2Turn({
           prompt,
-          model: mission.model || 'atris:fast',
+          model: runtimeMission.model || 'atris:fast',
           business: businessId,
           maxTurns: 16,
           signal: controller.signal,
@@ -6161,7 +6407,7 @@ async function runMission(args) {
         result.atris2 = {
           ok: turn.ok,
           engine: turn.engine,
-          model: mission.model || 'atris:fast',
+          model: runtimeMission.model || 'atris:fast',
           tools_run: turn.tools_run,
           unsupported: turn.unsupported,
           duration_ms: turn.duration_ms,
@@ -6181,11 +6427,12 @@ async function runMission(args) {
         const useId = sessionId || pendingSessionId;
         const pingDrain = consumeMissionPings(mission, cwd);
         mission = pingDrain.mission;
-        const prompt = buildTickPrompt(mission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
-        const claudeResult = await spawnClaudeTick(mission, {
+        runtimeMission = runtimeView(mission);
+        const prompt = buildTickPrompt(runtimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
+        const claudeResult = await spawnClaudeTick(runtimeMission, {
           sessionMode, sessionId: useId, cwd, signal: controller.signal,
           timeoutMs: MISSION_RUN_DEFAULTS.claudeTimeoutMs, prompt,
-          model: resolveClaudeRunnerModel(mission),
+          model: resolveClaudeRunnerModel(runtimeMission),
         });
         result.claude = {
           ok: claudeResult.ok,
@@ -6281,7 +6528,7 @@ async function runMission(args) {
       const finishedAt = stampIso();
       const tickRecord = { ...result, started_at: tickStart, finished_at: finishedAt, worktree: tickWorktree };
       ticks.push(tickRecord);
-      receiptPath = writeReceipt(mission, {
+      receiptPath = writeReceipt(runtimeMission, {
         kind: 'mission_run_tick',
         tick: tickRecord,
         frozen,
@@ -6446,7 +6693,8 @@ async function runMission(args) {
       next: missionRunCreatedNextLine(createdNext, continuationGoal, mission),
     };
     landingSummary.reason = missionHumanReasonText(mission, landingSummary.changed);
-    const finalReceipt = writeReceipt(mission, {
+    const finalRuntimeMission = runtimeView(mission);
+    const finalReceipt = writeReceipt(finalRuntimeMission, {
       kind: 'mission_run_summary',
       frozen,
       pause_reason: pauseReason,
@@ -6465,7 +6713,7 @@ async function runMission(args) {
     const codexGoalState = refreshCodexGoalController(cwd);
 
     printJsonOrText(
-      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: mission.budget_contract || null, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext },
+      { ok: true, action: 'mission_run', mission, runner_override: runnerOverride ? finalRuntimeMission.run_runner_override : null, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: mission.budget_contract || null, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext },
       missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal, ticks, createdNext),
       asJson,
     );
@@ -6473,6 +6721,9 @@ async function runMission(args) {
     if (onSig) {
       try { process.removeListener('SIGINT', onSig); } catch {}
       try { process.removeListener('SIGTERM', onSig); } catch {}
+    }
+    if (restoreRunnerProfile) {
+      try { restoreRunnerProfile(); } catch {}
     }
     releaseMissionLock(lock);
   }
@@ -7114,10 +7365,12 @@ atris mission - durable goal + loop + owner + proof state
   atris mission goal ack <id> --runtime codex --status active --objective "<objective>" --json
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
   atris mission tick <id> [--verify ["cmd"]] [--complete-on-pass] [--summary "..."] [--json]
+  atris mission set-runner <id> <runner|engine> [--model <id>] [--json]
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
   atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
                                 [--native-goal-status active|paused] [--native-goal-objective "..."] [--allow-native-goal-supersede] [--take-goal-slot]
+                                [--engine <name>]
                                 [--spend-full-budget|--use-whole-budget|--stop-when-done] [--room-preflight|--no-room-preflight]
                                 [--room-auto-run|--no-room-auto-run]
                                 [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--create-next] [--json]
@@ -7520,6 +7773,9 @@ function missionCommand(args) {
       return inspectMission(rest);
     case 'tick':
       return tickMission(rest);
+    case 'set-runner':
+    case 'runner':
+      return setMissionRunner(rest);
     case 'run':
       return runMission(rest);
     case 'complete':
