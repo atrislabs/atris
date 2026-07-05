@@ -141,6 +141,7 @@ function formatUsage() {
     '  ax --deny <approval-id>',
     '  ax --grant <approval-id>      approve and remember this exact command (this workspace)',
     '  ax --grants                   list active permission grants',
+    '  ax --sync-grants              push/pull grants with atrisos-web',
     '  ax --revoke-grant <grant-id>',
     '  ax --self-test',
     '  ax [--max|--fast] --benchmark',
@@ -3989,6 +3990,9 @@ async function main() {
   const listGrants = args.includes('--grants');
   if (listGrants) args.splice(args.indexOf('--grants'), 1);
 
+  const syncGrantsFlag = args.includes('--sync-grants');
+  if (syncGrantsFlag) args.splice(args.indexOf('--sync-grants'), 1);
+
   let revokeGrantId = '';
   const revokeGrantIdx = args.indexOf('--revoke-grant');
   if (revokeGrantIdx !== -1) {
@@ -4143,6 +4147,17 @@ async function main() {
         process.exit(1);
       }
       console.log(`revoked ${revoked.grant.grant_id}: ${revoked.grant.pattern.display}`);
+      return;
+    }
+
+    if (syncGrantsFlag) {
+      const { apiRequestJson } = require('./utils/api');
+      const result = await permissionGrants.syncGrants({ apiRequestJson, token: authToken() });
+      if (!result.ok) {
+        console.error(`grant sync failed: ${result.reason}`);
+        process.exit(1);
+      }
+      console.log(`synced grants: pushed:${result.pushed} pulled:${result.pulled} revoked:${result.revoked}${result.rejected ? ` rejected:${result.rejected}` : ''}`);
       return;
     }
 
