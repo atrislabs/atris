@@ -81,6 +81,36 @@ test('land board classifies active, due, and landed branches', () => {
   }
 });
 
+test('land status renders the board instead of looking up status as a name', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    commitOnBranch(repo, 'fresh-work', 'fresh.txt');
+
+    const result = runCli(['land', 'status'], repo);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /the landing/);
+    assert.match(result.stdout, /fresh-work/);
+    assert.doesNotMatch(result.stderr, /nothing called 'status'/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('land status <name> still looks up a real work item', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    commitOnBranch(repo, 'fresh-work', 'fresh.txt');
+
+    const result = runCli(['land', 'status', 'fresh-work', '--json'], repo);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const story = JSON.parse(result.stdout);
+    assert.equal(story.name, 'fresh-work');
+    assert.equal(story.uniqueChanges, 1);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('land --reap salvages then deletes due and landed branches, keeps active', () => {
   const { base, repo } = makeTempRepo();
   try {
