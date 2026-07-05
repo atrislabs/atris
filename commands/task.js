@@ -7,7 +7,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const os = require('os');
-const { taskProofState, buildVerifiedProof } = require('../lib/task-proof');
+const { taskProofState } = require('../lib/task-proof');
 const { evaluateAutoAccept, isAgentCertified, parseVerifyCommand, runVerifyCommand, DENIED_TAGS } = require('../lib/auto-accept-certified');
 const { extractReceiptEvidence } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
@@ -121,6 +121,8 @@ atris task - durable local task state (SQLite, gitignored)
   atris task chat <id> "<message>" [--goal "..."]  Refine a task chat + working goal
   atris task ready <id> --proof "..."      Agent proof ready; native goal can complete
   atris task ready <id> --verify "<cmd>"   Run <cmd>; only ready if it exits 0 (executed proof)
+                                           Writes atris/runs/ receipt (pass or fail), folds path into proof
+  atris task receipt <id> --verify "<cmd>" Run <cmd> and write an atris/runs/ receipt without going to ready
   atris task plan-preview "<purpose>" [--tag <tag>] [--owner <member>] [--task <id>]
                                            Show the plain Plan before work starts
   atris task ready <id> --proof "..." [--changed "..." --checked "..." --saved "..." --try "..."]
@@ -8082,16 +8084,22 @@ function cmdReady(args) {
   const usedVerify = typeof verifyFlag === 'string' ? verifyFlag.trim() : '';
   let proof = typeof proofFlag === 'string' ? proofFlag : '';
   if (usedVerify) {
-    const verified = buildVerifiedProof(verifyFlag, proof, undefined, { cwd: process.cwd() });
-    if (!verified.ok) {
-      const detail = verified.exit != null ? ` (exit ${verified.exit})` : (verified.signal ? ` (signal ${verified.signal})` : '');
+    // Run the verifier once and write a receipt (pass or fail) so the review
+    // gate in lib/receipt-evidence.js can validate the exact path named in
+    // the proof, not just trust the prose.
+    const { writeTaskReceipt } = require('../lib/task-receipt');
+    const receipt = writeTaskReceipt({ taskId: id, command: verifyFlag, root: process.cwd() });
+    if (!receipt.passed) {
+      const detail = receipt.exit != null ? ` (exit ${receipt.exit})` : (receipt.signal ? ` (signal ${receipt.signal})` : '');
       console.error(`atris task ready: verifier failed${detail}: ${verifyFlag}`);
-      if (verified.output) console.error(verified.output);
-      else if (verified.error) console.error(verified.error);
+      if (receipt.output) console.error(receipt.output);
+      else if (receipt.error) console.error(receipt.error);
+      if (receipt.receiptPath) console.error(`receipt: ${receipt.receiptPath}`);
       process.exit(1);
     }
-    proof = verified.proof;
-    if (!wantsJson(args)) console.log(`✓ verified: \`${verifyFlag}\` exited 0`);
+    const base = proof.trim();
+    proof = `[verified] \`${verifyFlag}\` passed (exit 0)${base ? ` — ${base}` : ''}${receipt.output ? `\n${receipt.output}` : ''}\nReceipt: ${receipt.receiptPath}`;
+    if (!wantsJson(args)) console.log(`✓ verified: \`${verifyFlag}\` exited 0 (receipt ${receipt.receiptPath})`);
   }
   if (!proof) {
     console.error('atris task ready: --proof or --verify required');
@@ -8195,6 +8203,50 @@ function cmdReady(args) {
   console.log(handoff.rule);
   for (const hint of policyHints) {
     console.log(`policy (${hint.id}): ${hint.hint}`);
+  }
+}
+
+// Standalone receipt writer: runs a verifier for a task and writes atris/runs/
+// evidence without moving the task to ready. Useful when you want a receipt
+// on record before or independent of a ready call, or to record a failed
+// verifier run for the audit trail. `atris task ready --verify` calls the
+// same writer inline and folds the resulting path into the proof.
+function cmdTaskReceipt(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) {
+    console.error('atris task receipt: id required');
+    process.exit(2);
+  }
+  const verifyFlag = flag(args, '--verify');
+  if (typeof verifyFlag !== 'string' || !verifyFlag.trim()) {
+    console.error('atris task receipt: --verify "<cmd>" required');
+    process.exit(2);
+  }
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task receipt');
+  const { writeTaskReceipt } = require('../lib/task-receipt');
+  const receipt = writeTaskReceipt({ taskId, command: verifyFlag, root: process.cwd() });
+  if (wantsJson(args)) {
+    printJson({
+      ok: receipt.passed,
+      task_id: taskId,
+      command: verifyFlag,
+      receipt_path: receipt.receiptPath,
+      exit: receipt.exit,
+      passed: receipt.passed,
+    });
+    if (!receipt.passed) process.exit(1);
+    return;
+  }
+  if (receipt.passed) {
+    console.log(`receipt written: ${receipt.receiptPath} (exit 0)`);
+    console.log(`use: atris task ready ${taskId} --proof "Receipt: ${receipt.receiptPath}"`);
+  } else {
+    console.error(`verifier failed (exit ${receipt.exit}); receipt written: ${receipt.receiptPath}`);
+    if (receipt.output) console.error(receipt.output);
+    process.exit(1);
   }
 }
 
@@ -10692,6 +10744,7 @@ async function run(args) {
     case 'chat-review':
       return cmdReviewChat(rest);
     case 'ready':  return cmdReady(rest);
+    case 'receipt': return cmdTaskReceipt(rest);
     case 'result': return cmdResult(rest);
     case 'accept': return cmdAccept(rest);
     case 'landing':
