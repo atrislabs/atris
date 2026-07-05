@@ -3943,6 +3943,21 @@ test('mission start --help prints help instead of starting a mission', () => {
   }
 });
 
+test('mission start help prints help instead of starting a mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'start', 'help'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    assert.equal(run.stderr, '');
+    assert.match(run.stdout, /Usage: atris mission start/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission start ignores literal ellipsis placeholders when reusing active twins', () => {
   const dir = makeTempDir();
   try {
