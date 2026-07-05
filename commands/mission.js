@@ -7894,6 +7894,7 @@ module.exports = {
   listMissions,
   listWorktreeRollupMissions,
   pingMission,
+  buildTickPrompt,
   loadMissionMap,
   renderMissionStatus,
   selectDueMission,
