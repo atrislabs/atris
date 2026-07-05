@@ -4,6 +4,55 @@ const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journa
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
 const { readWikiStatus } = require('../lib/wiki');
 
+const CLARITY_FIELDS = [
+  { key: 'focus', label: 'Focus' },
+  { key: 'voice', label: 'Voice' },
+  { key: 'cadence', label: 'Cadence' },
+  { key: 'done', label: 'Done means' },
+  { key: 'leash', label: 'Leash' },
+];
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function readClarityMarkdownProfile(mdPath) {
+  try {
+    const content = fs.readFileSync(mdPath, 'utf8');
+    const profile = {};
+    for (const { key, label } of CLARITY_FIELDS) {
+      const match = content.match(new RegExp(`^- ${escapeRegExp(label)}: (.+)$`, 'm'));
+      if (match?.[1]?.trim()) profile[key] = match[1].trim();
+    }
+    return profile;
+  } catch {
+    return {};
+  }
+}
+
+function readActivationClarityProfile(root, profilePaths) {
+  const paths = profilePaths(root);
+  if (fs.existsSync(paths.json)) {
+    try {
+      return { profile: JSON.parse(fs.readFileSync(paths.json, 'utf8')), mdPath: paths.md };
+    } catch {
+      return { profile: {}, mdPath: paths.md };
+    }
+  }
+  if (fs.existsSync(paths.md)) {
+    return { profile: readClarityMarkdownProfile(paths.md), mdPath: paths.md };
+  }
+  return { profile: {}, mdPath: paths.md };
+}
+
+function formatClarityLine(profile, mdRelPath) {
+  const parts = CLARITY_FIELDS
+    .map(({ key }) => (profile?.[key] ? `${key} ${profile[key]}` : null))
+    .filter(Boolean);
+  if (!parts.length) return null;
+  return `clarity: ${parts.join(', ')} (see ${mdRelPath})`;
+}
+
 function activateAtris() {
   const workspaceDir = process.cwd();
   const targetDir = path.join(workspaceDir, 'atris');
@@ -160,7 +209,7 @@ function activateAtris() {
   console.log('');
   try {
     const { nextMoves } = require('../lib/next-moves');
-    const { readProfile, isEmptyProfile } = require('../lib/clarity');
+    const { isEmptyProfile, profilePaths } = require('../lib/clarity');
     const root = process.cwd();
     const moves = nextMoves(root, 3);
     console.log('Your next moves:');
@@ -170,15 +219,13 @@ function activateAtris() {
     } else {
       console.log('  none queued. add to ROADMAP.md under "## Open loop items", or jot one with atris log');
     }
-    const profile = readProfile(root);
+    const { profile, mdPath } = readActivationClarityProfile(root, profilePaths);
+    const clarityLine = formatClarityLine(profile, rel(mdPath));
     console.log('');
     if (isEmptyProfile(profile)) {
       console.log('Tip: run atris clarity once so agents learn how you work.');
     } else {
-      console.log('How you work (atris clarity):');
-      ['focus', 'voice', 'cadence', 'done', 'leash']
-        .filter((k) => profile[k])
-        .forEach((k) => console.log(`  ${k}: ${profile[k]}`));
+      console.log(clarityLine);
     }
     console.log('');
   } catch { /* alive onboarding is best-effort; never block activate */ }
