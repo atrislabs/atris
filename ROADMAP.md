@@ -49,10 +49,7 @@ Small, bounded tasks the loop pulls one at a time when idle (top first), and
 Epics live below in "Big jobs" and are NOT loop-seedable, so an unattended
 cycle never chases something too vague to finish.
 
-- [ ] fleet dispatch survives an engine outage: when the dispatched engine dies on usage limits (codex credit-out, 2026-07-05 live failure), restaff the flight to the next installed engine automatically and note the swap in the receipt. Done: a stubbed dispatcher test proves the fallback. Check: node --test test/fleet.test.js test/engine-dispatch.test.js.
-- [ ] boot surfaces the clarity profile: `atris activate` prints a one-line summary from atris/CLARITY.md when it exists, so agents stop re-asking how the operator works. Done: activation card shows the line, test pins it. Check: node --test test/activate.test.js.
 - [ ] `atris report week`: first weekly report block: last 7 days of journal completions, landings, and XP rendered as one on-brand markdown block (reuse the recap/html theme path). Done: command exists with a test on real journal fixtures. Check: node --test test/report.test.js.
-- [ ] land board hygiene: `atris land status` (no args) prints the full in-air board; today it answers "nothing called 'status' is in the air". Done: bare subcommand renders the board, test covers arg parsing. Check: node --test test/land.test.js.
 
 (Shipped items are pruned on completion; git history is the archive.)
 
