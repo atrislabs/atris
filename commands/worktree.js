@@ -312,12 +312,21 @@ function startWorktree(args) {
 
 function createOrFindPr(root, branch, targetRef, title, dryRun) {
   const targetBranch = baseBranchName(targetRef);
-  const existing = spawnSync('gh', ['pr', 'view', '--json', 'number,url', '--jq', '"\\(.number) \\(.url)"'], {
+  // `gh pr view` (no --state filter) returns ANY PR for this branch name,
+  // including one already MERGED or CLOSED. A worktree branch that ships
+  // more than once (this same branch, more commits, another `worktree ship`)
+  // would then reuse the dead PR number: `gh pr merge <dead pr> --merge`
+  // exits 0 with just a warning (never fails), so the new commits silently
+  // never land while the ship command still reports success. Only reuse a
+  // PR that is still OPEN; anything else gets a fresh one.
+  const existing = spawnSync('gh', ['pr', 'view', '--json', 'number,url,state', '--jq', '"\\(.number) \\(.url) \\(.state)"'], {
     cwd: root,
     encoding: 'utf8',
   });
   if (existing.status === 0 && existing.stdout.trim()) {
-    return existing.stdout.trim();
+    const parts = existing.stdout.trim().split(/\s+/);
+    const state = parts.pop();
+    if (state === 'OPEN') return parts.join(' ');
   }
   const body = [
     'Automated Atris worktree ship.',
@@ -423,6 +432,11 @@ function shipWorktree(args) {
         mergeArgs.push('--merge');
         const merged = spawnSync('gh', mergeArgs, { cwd: root, encoding: 'utf8' });
         if (merged.status !== 0) throw new Error((merged.stderr || merged.stdout || 'gh pr merge failed').trim());
+        // `gh pr merge` on an already-merged PR exits 0 with a warning
+        // instead of failing, which would otherwise report a false landing.
+        if (/already merged/i.test(`${merged.stdout}${merged.stderr}`)) {
+          throw new Error(`gh pr merge reported the PR was already merged (stale PR reused): ${(merged.stdout || merged.stderr).trim()}`);
+        }
         console.log('merge: merged');
         const deleted = runGit(['push', 'origin', '--delete', branch], { cwd: root, check: false });
         if (deleted.status === 0) {
@@ -621,6 +635,7 @@ function worktreeCommand(args = []) {
 module.exports = {
   branchName,
   createAgentWorktree,
+  createOrFindPr,
   cleanupWorktrees,
   defaultShipTarget,
   defaultStartBase,
