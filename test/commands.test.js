@@ -18619,6 +18619,106 @@ test('status default mode renders human summary', () => {
   }
 });
 
+test('status counts completed tasks from db without task db todo shim flag', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const todoPath = path.join(dir, 'atris', 'TODO.md');
+    fs.writeFileSync(todoPath, [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '(Empty)',
+      '',
+      '## In Progress',
+      '',
+      '(Empty)',
+      '',
+      '## Completed',
+      '',
+      '(Empty)',
+    ].join('\n'), 'utf8');
+
+    const db = taskStore.open(dbPath);
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const created = taskStore.addTask(db, {
+      title: 'Accepted task should count in status',
+      tag: 'status',
+      workspaceRoot,
+    });
+    const done = taskStore.doneTask(db, {
+      id: created.id,
+      status: 'done',
+      actor: 'keshavrao',
+      proof: 'status db count test passed',
+    });
+    assert.equal(done.updated, true);
+    taskStore.close();
+    fs.chmodSync(dbPath, 0o444);
+
+    const res = runCli(['status'], { cwd: dir, env });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /0 tasks in progress, 0 queued, and 1 completed items still\s+sitting in TODO\./);
+  } finally {
+    taskStore.close();
+    cleanupTempDir(dir);
+  }
+});
+
+test('task accept refreshes existing rendered todo view', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const todoPath = path.join(dir, 'atris', 'TODO.md');
+    fs.writeFileSync(todoPath, [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '(Empty)',
+      '',
+      '## In Progress',
+      '',
+      '(Empty)',
+      '',
+      '## Completed',
+      '',
+      '(Empty)',
+    ].join('\n'), 'utf8');
+
+    const add = runCli(['task', 'add', 'Refresh todo after accept', '--tag', 'status', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    const ready = runCli([
+      'task',
+      'ready',
+      ref,
+      '--as',
+      'codex',
+      '--proof',
+      'todo refresh accept test passed',
+    ], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+
+    const accept = runCli(['task', 'accept', ref, '--reward', '1', '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(accept.status, 0, accept.stderr);
+
+    const { parseTodoFile } = require('../lib/todo-fallback');
+    const parsed = parseTodoFile(todoPath);
+    assert.equal(parsed.completed.length, 1);
+    assert.equal(parsed.completed[0].title, 'Refresh todo after accept');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('status verbose mode keeps the legacy task board', () => {
   const dir = makeTempDir();
   try {

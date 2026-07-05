@@ -77,6 +77,50 @@ function readEndgameMeta(todoFile) {
   return { slug, horizon };
 }
 
+function todoItemFromTaskRow(row) {
+  const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  return {
+    id: row.display_id || row.id,
+    title: row.title,
+    tag: row.tag || null,
+    tags: row.tag ? [row.tag] : [],
+    claimed: row.claimed_by || metadata.claimed || null,
+    stage: row.status === 'claimed' ? 'in_progress' : (metadata.stage || null),
+    verify: typeof metadata.verify === 'string' && metadata.verify.trim()
+      ? metadata.verify.trim()
+      : null,
+    _source: 'db',
+  };
+}
+
+function parseStatusTodo(todoFile) {
+  try {
+    const taskDb = require('../lib/task-db');
+    const { DatabaseSync } = require('node:sqlite');
+    const dbPath = taskDb.getDbPath();
+    if (!dbPath || !fs.existsSync(dbPath)) return parseTodo(todoFile);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const workspaceRoot = taskDb.workspaceRoot();
+      const rows = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot, limit: 500 }));
+      const todo = { backlog: [], inProgress: [], review: [], completed: [] };
+      for (const row of rows) {
+        const item = todoItemFromTaskRow(row);
+        if (row.status === 'open') todo.backlog.push(item);
+        else if (row.status === 'claimed') todo.inProgress.push(item);
+        else if (row.status === 'review') todo.review.push(item);
+        else if (row.status === 'done') todo.completed.push(item);
+      }
+      return todo;
+    } finally {
+      db.close();
+    }
+  } catch (e) {
+    if (process.env.ATRIS_DEBUG) console.error('[status] task db read failed:', e.message);
+    return parseTodo(todoFile);
+  }
+}
+
 function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   const targetDir = path.join(process.cwd(), 'atris');
 
@@ -89,9 +133,9 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
     process.exit(1);
   }
 
-  // Parse TODO.md
+  // Load task board state.
   const todoFile = path.join(targetDir, 'TODO.md');
-  const todo = parseTodo(todoFile);
+  const todo = parseStatusTodo(todoFile);
 
   // Read journal for inbox and completions
   const { logFile, dateFormatted } = getLogPath();

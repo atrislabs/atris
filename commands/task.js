@@ -8375,6 +8375,7 @@ async function cmdAccept(args) {
   const xpProjection = refreshCareerXpAfterReview(reviewed);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const workspaceRoot = projection.workspace_root || process.cwd();
+  refreshExistingTodoMarkdown(taskDb, db, workspaceRoot);
   const brainScorecards = refreshBrainScorecardsAfterAccept(workspaceRoot);
   const nextMissionRoute = nextMissionRouteAfterAccept(workspaceRoot);
   // Inform the gate, never block it: show what the receipts named in the proof
@@ -8450,6 +8451,8 @@ function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '
     careerXpEligible: true,
     autoAccepted,
   });
+  const acceptedRow = taskDb.getTask(db, taskId);
+  refreshExistingTodoMarkdown(taskDb, db, acceptedRow && acceptedRow.workspace_root);
   return { ok: true, reviewed };
 }
 
@@ -9572,6 +9575,25 @@ function taskRenderSummaryLine(counts) {
     `Blocked: ${taskRenderCountLabel(counts.blocked)}`,
     `Done saved: ${taskRenderCountLabel(counts.done)}`,
   ].join('; ');
+}
+
+function refreshExistingTodoMarkdown(taskDb, db, workspaceRoot) {
+  const ws = workspaceRoot || taskDb.workspaceRoot();
+  const outPath = path.join(ws, 'atris', 'TODO.md');
+  if (!fs.existsSync(outPath)) return null;
+  const rows = taskDb.listTasks(db, { workspaceRoot: ws, limit: 500 });
+  const refRows = taskDb.listTasks(db, { workspaceRoot: ws });
+  const existingTodo = fs.readFileSync(outPath, 'utf8');
+  const preservedSections = [];
+  const endgameSection = extractTodoSectionMarkdown(existingTodo, 'Endgame');
+  if (endgameSection) preservedSections.push(endgameSection);
+  const markdownRows = markdownRowsForRender(taskDb, outPath, rows, refRows);
+  const markdown = taskDb.renderTodoMarkdown([...rows, ...markdownRows], {
+    refRows,
+    preservedSections,
+  });
+  fs.writeFileSync(outPath, markdown, 'utf8');
+  return outPath;
 }
 
 function cmdRender(args) {
