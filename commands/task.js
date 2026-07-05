@@ -183,6 +183,9 @@ atris task - durable local task state (SQLite, gitignored)
                                            Advance the scoped current task one safe step
                                            review-state lanes: needs-agent, continue-work, human-accept-waiting, certified
   atris task note <id> "<message>"         Append dialogue/context to a task
+  atris task tag <id> --add <tag> [--remove <tag>]
+                                           Update tags on an existing task (e.g. --add needs-human to hold it
+                                           from sweep + fleet staffing); logs a task_tags_updated event
   atris task show <id> [--json]            Show a task card + dialogue
   atris task inspect <id> --fields review,status,title [--json]
                                            Field-selectable task state (review metadata, status, title, owner, tag)
@@ -5958,6 +5961,79 @@ function cmdNote(args) {
   console.log(`noted ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
 }
 
+// Collect EVERY value for a repeatable flag (flag() only returns the first),
+// so `--add a --add b` and `--add a,b` both work.
+function collectFlagValues(args, name) {
+  const values = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === name && i + 1 < args.length && !String(args[i + 1]).startsWith('--')) {
+      values.push(args[i + 1]);
+    }
+  }
+  return values
+    .flatMap((value) => String(value).split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function cmdTag(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) failTask('atris task tag', 'missing_id', 'task id required');
+  const add = collectFlagValues(args, '--add');
+  const remove = collectFlagValues(args, '--remove');
+  if (!add.length && !remove.length) {
+    failTask('atris task tag', 'missing_tags', 'at least one --add <tag> or --remove <tag> required');
+  }
+  const actor = flag(args, '--as') || DEFAULT_OWNER;
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task tag');
+  const result = taskDb.tagTask(db, { id: taskId, actor: String(actor), add, remove });
+  if (!result.tagged) {
+    if (result.reason === 'no_changes') {
+      const { projection, outPath } = writeDefaultProjection(taskDb, db);
+      const task = compactTaskFromProjection(projection, taskId);
+      if (wantsJson(args)) {
+        printJson({
+          ok: true,
+          action: 'unchanged',
+          task_id: taskId,
+          added: [],
+          removed: [],
+          tags: result.tags || [],
+          projection_path: outPath,
+          task,
+        });
+        return;
+      }
+      console.log(`no change ${taskRef(task)} tags [${(result.tags || []).join(', ')}]`);
+      return;
+    }
+    failTask('atris task tag', result.reason || 'tag_failed', `tag failed: ${result.reason || 'unknown'}`, 1);
+  }
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const task = compactTaskFromProjection(projection, taskId);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'tagged',
+      task_id: taskId,
+      added: result.added,
+      removed: result.removed,
+      tags: result.tags,
+      version: result.event.version,
+      projection_path: outPath,
+      task,
+    });
+    return;
+  }
+  const parts = [];
+  if (result.added.length) parts.push(`+${result.added.join(' +')}`);
+  if (result.removed.length) parts.push(`-${result.removed.join(' -')}`);
+  console.log(`tagged ${taskRef(task)} ${parts.join(' ')} -> [${result.tags.join(', ')}] v${result.event.version}`);
+}
+
 function cmdChat(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -10891,6 +10967,9 @@ async function run(args) {
       return cmdPlanPreview(rest);
     case 'note':   return cmdNote(rest);
     case 'say':    return cmdNote(rest);
+    case 'tag':
+    case 'tags':
+      return cmdTag(rest);
     case 'show':   return cmdShow(rest);
     case 'inspect': return cmdInspect(rest);
     case 'page':   return cmdPage(rest);
