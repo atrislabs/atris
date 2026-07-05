@@ -202,6 +202,8 @@ test('runner appends results, writes baseline pointer, and preserves JSON contra
     assert.equal(exitCode, 0);
     assert.deepEqual(Object.keys(record), [
       'schema',
+      'pack',
+      'engine',
       'label',
       'experiment',
       'started',

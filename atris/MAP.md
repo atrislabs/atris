@@ -195,19 +195,21 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 ### Feature: Bench (`atris bench`)
 
-**Purpose:** Run the fixed `core-v1` yardstick pack serially in hermetic temp workspaces, append benchmark receipts, and expose task metadata for the daily keep/revert gate.
+**Purpose:** Run fixed benchmark packs serially in hermetic temp workspaces, append benchmark receipts, expose task metadata for the daily keep/revert gate, and measure coding agents through directory task packs.
 
 - **Entry point:** `bin/atris.js` command routing for `bench`
-- **Handler:** `commands/bench.js:53` (`runCommand`), `commands/bench.js:83` (`tasksCommand`), `commands/bench.js:99` (`resultsCommand`), `commands/bench.js:121` (`benchCommand`)
-- **Runner:** `lib/bench/runner.js:46` (`loadTaskSpecs`), `lib/bench/runner.js:121` (`runTaskSpec`), `lib/bench/runner.js:195` (`runTaskSpecs`), `lib/bench/runner.js:257` (`runBench`), `lib/bench/runner.js:288` (`taskMetadata`)
-- **Hermetic context:** `lib/bench/context.js:27` (`hermeticEnv`), `lib/bench/context.js:57` (`createBenchContext`), `lib/bench/context.js:114` (`withBenchContext`)
-- **Task pack:** `atris/benchmarks/core-v1/` (10 task specs plus `README.md`)
+- **Handler:** `commands/bench.js` (`runCommand`, `tasksCommand`, `packsCommand`, `resultsCommand`, `benchCommand`)
+- **Runner:** `lib/bench/runner.js` (`discoverPacks`, `loadTaskSpecs`, `runTaskSpec`, `runBench`, `taskMetadata`, `packMetadata`)
+- **Engine adapters:** `lib/bench/engines.js` (`codex`, `cursor`, `claude`, `atris-fast`, `null`, `solution`)
+- **Hermetic context:** `lib/bench/context.js` (`hermeticEnv`, `createBenchContext`, `withBenchContext`)
+- **Task packs:** `atris/benchmarks/core-v1/` (legacy `.js` specs), `atris/benchmarks/agents-v1/` (directory task specs)
 - **How it works:**
-- `atris bench run [--task <id> ...] [--label baseline|candidate] [--experiment <id>] [--update-baseline] [--json]` runs serial task specs and appends `.atris/state/bench/results.jsonl`
+- `atris bench run [--pack <id>] [--engine <name>] [--task <id> ...] [--label baseline|candidate] [--experiment <id>] [--update-baseline] [--json]` runs serial task specs and appends `.atris/state/bench/results.jsonl`
+- `atris bench packs [--json]` lists benchmark packs under `atris/benchmarks/`
 - `atris bench results [--last N] [--json]` reads persisted run receipts
-- `atris bench tasks [--json]` lists pack metadata from the task specs
-- **Regression:** `test/bench-runner.test.js`, `test/bench-tasks.test.js`, `test/mission-tick-prompt.test.js`
-- **Search:** `rg "benchCommand|runBench|taskMetadata|withBenchContext" commands/bench.js lib/bench/runner.js lib/bench/context.js`
+- `atris bench tasks [--pack <id>] [--json]` lists pack metadata from the task specs
+- **Regression:** `test/bench-runner.test.js`, `test/bench-tasks.test.js`, `test/bench-agents.test.js`, `test/bench-agents-harness.test.js`, `test/mission-tick-prompt.test.js`
+- **Search:** `rg "benchCommand|runBench|taskMetadata|withBenchContext|ENGINE_NAMES" commands/bench.js lib/bench/runner.js lib/bench/context.js lib/bench/engines.js`
 
 ### Feature: Experiments (`atris experiments`)
 

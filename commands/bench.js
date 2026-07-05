@@ -2,6 +2,7 @@
 
 const {
   BenchInfraError,
+  packMetadata,
   readResultRecords,
   runBench,
   taskMetadata,
@@ -36,9 +37,10 @@ function readRepeatedFlag(args, name) {
 }
 
 function printHelp() {
-  console.log('Usage: atris bench run [--task <id> ...] [--label baseline|candidate] [--experiment <id>] [--update-baseline] [--json]');
+  console.log('Usage: atris bench run [--pack <id>] [--engine <name>] [--task <id> ...] [--label baseline|candidate] [--experiment <id>] [--update-baseline] [--json]');
   console.log('Usage: atris bench results [--last N] [--json]');
-  console.log('Usage: atris bench tasks [--json]');
+  console.log('Usage: atris bench tasks [--pack <id>] [--json]');
+  console.log('Usage: atris bench packs [--json]');
 }
 
 function printRunText(record) {
@@ -54,6 +56,8 @@ async function runCommand(args) {
   const asJson = hasFlag(args, '--json');
   try {
     const result = await runBench({
+      pack: readFlag(args, '--pack') || undefined,
+      engine: readFlag(args, '--engine') || undefined,
       taskIds: readRepeatedFlag(args, '--task'),
       label: readFlag(args, '--label'),
       experiment: readFlag(args, '--experiment'),
@@ -81,10 +85,12 @@ async function runCommand(args) {
 }
 
 function tasksCommand(args) {
-  const tasks = taskMetadata();
+  const pack = readFlag(args, '--pack') || undefined;
+  const tasks = taskMetadata({ pack });
   if (hasFlag(args, '--json')) {
     console.log(JSON.stringify({
       schema: 'atris.bench.tasks.v1',
+      pack: pack || 'core-v1',
       tasks,
     }));
     return 0;
@@ -92,6 +98,22 @@ function tasksCommand(args) {
   for (const task of tasks) {
     const py = task.needsPython ? ' needs-python' : '';
     console.log(`${task.id} - ${task.title}${py}`);
+  }
+  return 0;
+}
+
+function packsCommand(args) {
+  const packs = packMetadata();
+  if (hasFlag(args, '--json')) {
+    console.log(JSON.stringify({
+      schema: 'atris.bench.packs.v1',
+      packs,
+    }));
+    return 0;
+  }
+  for (const pack of packs) {
+    const mark = pack.default ? ' default' : '';
+    console.log(`${pack.id} - ${pack.taskCount} tasks${mark}`);
   }
   return 0;
 }
@@ -127,6 +149,7 @@ async function benchCommand(args = []) {
   }
   if (subcommand === 'run') return runCommand(rest);
   if (subcommand === 'tasks') return tasksCommand(rest);
+  if (subcommand === 'packs') return packsCommand(rest);
   if (subcommand === 'results') return resultsCommand(rest);
   printHelp();
   return 2;
