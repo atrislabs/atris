@@ -1,0 +1,29 @@
+# Atris
+
+> An operating system for agent work: the folder is the brain, proof lives on disk.
+
+## 60-second start
+
+Install once:
+
+```bash
+npm install -g atris
+```
+
+Or initialize from anywhere:
+
+```bash
+npx -y atris init
+```
+
+Then run:
+
+```bash
+atris
+```
+
+## Links
+
+- [For Agents](FOR_AGENTS.md)
+- [Protocol](atris.md)
+- [Readme](README.md)

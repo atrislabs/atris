@@ -26,7 +26,7 @@ test('engine roster lists every profile with detection state', () => {
     assert.equal(res.status, 0, res.stderr);
     const parsed = JSON.parse(res.stdout);
     const names = parsed.engines.map((e) => e.name);
-    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'devin']);
+    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'devin', 'hermes']);
     for (const entry of parsed.engines) {
       assert.equal(typeof entry.installed, 'boolean');
       assert.ok(entry.bin);
@@ -84,7 +84,7 @@ test('--engine flag rides a loop for one run and validates at the boundary', () 
     const bad = runCli(['run', '--legacy', '--dry-run', '--engine', 'gpt-11'], dir);
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /Unknown --engine "gpt-11"/);
-    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, devin/);
+    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, devin, hermes/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -118,8 +118,26 @@ test('house default is atris-fast and profile templates stay engine-shaped', () 
   assert.match(RUNNER_PROFILES['atris-fast'].commandTemplate, /--fast/);
   assert.match(RUNNER_PROFILES.cursor.commandTemplate, /--trust -p/);
   assert.match(RUNNER_PROFILES.devin.commandTemplate, /-p --/);
+  assert.match(RUNNER_PROFILES.hermes.commandTemplate, /-p --/);
   // claude rides the default claude-shaped spawn, no template needed
   assert.equal(RUNNER_PROFILES.claude.commandTemplate, '');
+});
+
+test('hermes resolves through the shared engine and runner profile lookup', () => {
+  const { RUNNER_PROFILE_DEFS, RUNNER_PROFILES, buildRunnerCommand } = require('../lib/runner-command');
+  assert.equal(engine.canonicalEngineName('hermes'), 'hermes');
+  assert.equal(engine.canonicalEngineName('hermes-agent'), 'hermes');
+  assert.strictEqual(RUNNER_PROFILES['hermes-agent'], RUNNER_PROFILE_DEFS.hermes);
+
+  const prev = process.env.ATRIS_RUNNER_PROFILE;
+  process.env.ATRIS_RUNNER_PROFILE = 'hermes';
+  try {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.md' });
+    assert.equal(cmd, 'hermes -p -- "$(cat /tmp/p.md)"');
+  } finally {
+    if (prev === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
+    else process.env.ATRIS_RUNNER_PROFILE = prev;
+  }
 });
 
 function makeBinDir() {
