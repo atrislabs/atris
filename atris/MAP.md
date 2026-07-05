@@ -747,6 +747,17 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Search:** `rg "analyticsAtris|showAnalyticsHelp|status and analytics --help" bin/atris.js commands/analytics.js test/commands.test.js`
 
+### Feature: Brief (`atris brief`)
+
+**Purpose:** Operator voice HTML page for recent team progress. It keeps JSON agent data stable, but gates the page so ids, paths, commands, and test tallies do not reach the operator.
+
+- **Entry point:** `commands/brief.js` (`buildBriefData`, `renderBriefHtml`, `briefOperatorGate`, `run`)
+- **Routing:** `bin/atris.js` (`command === 'brief'` branch, `knownCommands` list, Context & tracking help line)
+- **Data sources:** `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, landing board summary when available
+- **Regression:** `test/brief.test.js` (JSON shape, proof links, operator jargon gate)
+
+**Search:** `rg "buildBriefData|renderBriefHtml|briefOperatorGate|command === 'brief'" commands/brief.js bin/atris.js test/brief.test.js`
+
 ### Feature: Recap (`atris recap`)
 
 **Purpose:** Plain-English report of what the AI team did — for the operator, or paste-ready for a customer. Receipts made legible; zero internal jargon in output.
