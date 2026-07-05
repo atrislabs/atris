@@ -39,10 +39,12 @@ Load these first:
 - `atris/brain/STATUS.md`
 - `atris/brain/self_improvement_ledger.md`
 - `.atris/state/chat_scan.latest.json`
+- `atris/wiki/concepts/agent-activation-contract.md`
 - `atris/skills/atris/SKILL.md`
 - `atris/PERSONA.md`
 - `atris/MAP.md`
 - `atris/TODO.md`
+- `atris/wiki/index.md`
 
 First-message rule: lead with the move before writing to the operator.
 Purpose: optimize for decision-speed; lead with the move, then use descriptions only when they help the operator act.
