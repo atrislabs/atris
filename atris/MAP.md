@@ -193,6 +193,22 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Tests:** `test/compile.test.js` (20 tests: records, deep-equal, backtest, promote gate, stale-version guard, drift, async runners, runner command, prompt contract)
 - **Search:** `rg "runBacktest|promoteProcess|executeBuild" commands/compile.js`
 
+### Feature: Bench (`atris bench`)
+
+**Purpose:** Run the fixed `core-v1` yardstick pack serially in hermetic temp workspaces, append benchmark receipts, and expose task metadata for the daily keep/revert gate.
+
+- **Entry point:** `bin/atris.js` command routing for `bench`
+- **Handler:** `commands/bench.js:53` (`runCommand`), `commands/bench.js:83` (`tasksCommand`), `commands/bench.js:99` (`resultsCommand`), `commands/bench.js:121` (`benchCommand`)
+- **Runner:** `lib/bench/runner.js:46` (`loadTaskSpecs`), `lib/bench/runner.js:121` (`runTaskSpec`), `lib/bench/runner.js:195` (`runTaskSpecs`), `lib/bench/runner.js:257` (`runBench`), `lib/bench/runner.js:288` (`taskMetadata`)
+- **Hermetic context:** `lib/bench/context.js:27` (`hermeticEnv`), `lib/bench/context.js:57` (`createBenchContext`), `lib/bench/context.js:114` (`withBenchContext`)
+- **Task pack:** `atris/benchmarks/core-v1/` (10 task specs plus `README.md`)
+- **How it works:**
+- `atris bench run [--task <id> ...] [--label baseline|candidate] [--experiment <id>] [--update-baseline] [--json]` runs serial task specs and appends `.atris/state/bench/results.jsonl`
+- `atris bench results [--last N] [--json]` reads persisted run receipts
+- `atris bench tasks [--json]` lists pack metadata from the task specs
+- **Regression:** `test/bench-runner.test.js`, `test/bench-tasks.test.js`, `test/mission-tick-prompt.test.js`
+- **Search:** `rg "benchCommand|runBench|taskMetadata|withBenchContext" commands/bench.js lib/bench/runner.js lib/bench/context.js`
+
 ### Feature: Experiments (`atris experiments`)
 
 **Purpose:** Scaffold, validate, run, compare, and rehearse bounded experiment packs inside `atris/experiments/`, including Endstate benchmark receipts
@@ -200,6 +216,9 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Entry point:** `bin/atris.js` command routing for `experiments`
 - **Handler:** `commands/experiments.js`
 - **Core functions:** `commands/experiments.js:55` (`ensureExperimentsFramework`), `commands/experiments.js:310` (`buildBenchmarkArtifact`), `commands/experiments.js:409` (`experimentsRun`), `commands/experiments.js:469` (`experimentsCompare`), `commands/experiments.js:501` (`experimentsReplay`)
+- **Daily loop:** `commands/experiments.js:524` (`experimentsDaily`), `commands/experiments.js:530` (`experimentsQueue`), `commands/experiments.js:543` (`experimentsCommand` routes `daily` and `queue`)
+- **Daily engine:** `lib/experiments/daily.js:18` (`queuePath`), `lib/experiments/daily.js:53` (`readQueue`), `lib/experiments/daily.js:69` (`appendQueueEntry`), `lib/experiments/daily.js:227` (`evaluateKeepRule`), `lib/experiments/daily.js:259` (`runApplyScript`), `lib/experiments/daily.js:390` (`runDaily`), `lib/experiments/daily.js:578` (`queueAdd`), `lib/experiments/daily.js:598` (`queueList`)
+- **Autoland hook:** `commands/autoland.js:577` runs `atris experiments daily --json` during `autoland tick` when policy `daily_experiment` is not false
 - **How it works:**
 - `atris init` now prepares `atris/experiments/` with packaged validators, fixtures, templates, and smoke examples
 - `atris experiments init [slug]` scaffolds a new bounded experiment pack
@@ -209,6 +228,9 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `atris experiments replay endstate` validates both packs, emits fresh dry-run receipts, then compares the latest result in one command
 - Endstate packs pin runner profiles in `runner.json` (`baseline-single` vs `stack-coordinated`) so baseline and stack resolve different live prompt strategies
 - `atris experiments benchmark [validate|runtime]` proves the validator and keep/revert example still work
+- `atris experiments daily [--dry-run] [--force] [--json]` runs the first untried queue entry through bench-gated keep/revert
+- `atris experiments queue add <id> --target <file>[,<file>] --apply <script> [--verify "<cmd>"] [--note "..."]` appends to `atris/experiments/daily/queue.jsonl`
+- `atris experiments queue list [--json]` prints the daily queue
 - **Endstate helper:** `lib/endstate.js:94-259` scores artifacts, reads the latest receipt, compares baseline vs stack, writes artifact files, and appends `results.tsv` rows
 - **Workspace assets:**
 - `atris/experiments/README.md`
@@ -217,9 +239,11 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `atris/experiments/benchmark_runtime.py`
 - `atris/experiments/_template/pack/`
 - `atris/experiments/_examples/smoke-keep-revert/`
+- `atris/experiments/daily/queue.jsonl`
+- `atris/experiments/daily/apply/`
 - **Value:** Makes self-improvement loops and scoreable benchmark runs first-class Atris CLI concepts instead of repo-local convention
 
-**Search:** `rg "experimentsCommand|experimentsRun|experimentsCompare|experimentsReplay|buildBenchmarkArtifact|ensureExperimentsFramework" commands/experiments.js commands/init.js`
+**Search:** `rg "experimentsCommand|experimentsRun|experimentsCompare|experimentsReplay|buildBenchmarkArtifact|ensureExperimentsFramework|experimentsDaily|experimentsQueue" commands/experiments.js commands/init.js lib/experiments/daily.js commands/autoland.js`
 
 ### Feature: Receipts (`atris receipt`)
 
@@ -315,6 +339,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 **Purpose:** The owner approves the policy once; certified work lands itself with receipts. Money, deploys, security, customer, and outward lanes always wait for the human.
 
 - **Implementation:** `commands/autoland.js` (status/on/off/tick/digest) + `lib/autoland.js` (policy, heartbeat cron, digest/alarm composition)
+- **Daily experiment hook:** `commands/autoland.js:49` (`runOwnCli` resolves the local CLI), `commands/autoland.js:577` (`autoland tick` daily experiment block), `commands/autoland.js:579` (`daily_experiment` policy gate), `commands/autoland.js:580` (`experiments daily --json`)
 - **Authorization bridge:** `commands/task.js` cmdAutoAcceptCertified consults `liveAcceptAuthorization()` — the policy file is the standing human confirmation
 - **Eligibility engine:** `lib/auto-accept-certified.js` evaluateAutoAccept (2 passes + 2 actors or 3 passes, denied tags, proof checks, strict verify re-run)
 - **Policy file:** `.atris/policy/autoland.json`; state (alarm dedupe, digest date): `.atris/state/autoland.json`
