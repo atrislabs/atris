@@ -17,6 +17,11 @@
 
 const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
+const {
+  assertOutboundSendAllowedOrExit,
+  extractOutboundGateOptions,
+  prepareOutboundSendTextOrExit,
+} = require('../lib/outbound-send-gate');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -593,9 +598,9 @@ async function calendarCommand(subcommand, ...args) {
 // TWITTER
 // ============================================================================
 
-async function twitterPost(text) {
-  const token = await getAuthToken();
-
+async function twitterPost(args = []) {
+  const outbound = prepareOutboundSendTextOrExit('twitter', args);
+  let text = outbound.body;
   if (!text) {
     const readline = require('readline');
     const rl = readline.createInterface({
@@ -609,12 +614,15 @@ async function twitterPost(text) {
         resolve(answer.trim());
       });
     });
+    text = assertOutboundSendAllowedOrExit('twitter', text).body;
   }
 
   if (!text) {
     console.error('Tweet text is required');
     process.exit(1);
   }
+
+  const token = await getAuthToken();
 
   console.log('\n🐦 Posting tweet...');
 
@@ -646,7 +654,7 @@ async function twitterCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'post':
     case 'tweet':
-      await twitterPost(args.join(' '));
+      await twitterPost(args);
       break;
     default:
       console.log('Twitter commands:');
@@ -826,7 +834,7 @@ async function slackSearch(query, args = []) {
 
 async function slackSend(channel, textParts) {
   const target = String(channel || '').trim();
-  const text = (textParts || []).join(' ').trim();
+  const text = prepareOutboundSendTextOrExit('slack', textParts).body;
   if (!target || !text) {
     console.error('Usage: atris slack send <channel> "<message>"');
     process.exit(1);
@@ -852,7 +860,7 @@ async function slackSend(channel, textParts) {
 
 async function slackDm(userId, textParts) {
   const target = String(userId || '').trim();
-  const text = (textParts || []).join(' ').trim();
+  const text = prepareOutboundSendTextOrExit('slack', textParts).body;
   if (!target || !text) {
     console.error('Usage: atris slack dm <slack_user_id> "<message>"');
     process.exit(1);
@@ -1370,16 +1378,18 @@ function imessageLookup(args = []) {
 }
 
 function parseImessageSendArgs(args) {
+  const outbound = extractOutboundGateOptions(args);
   const options = {
     approved: false,
     json: false,
     receipt: false,
     to: '',
     text: '',
+    outboundGate: outbound.gate,
   };
   const positional = [];
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i];
+  for (let i = 0; i < outbound.args.length; i += 1) {
+    const arg = outbound.args[i];
     if (arg === '--approved' || arg === '--confirm-approved') {
       options.approved = true;
     } else if (arg === '--json') {
@@ -1387,10 +1397,10 @@ function parseImessageSendArgs(args) {
     } else if (arg === '--receipt') {
       options.receipt = true;
     } else if (arg === '--to' || arg === '--handle') {
-      options.to = args[i + 1] || '';
+      options.to = outbound.args[i + 1] || '';
       i += 1;
     } else if (arg === '--text' || arg === '--message') {
-      options.text = args[i + 1] || '';
+      options.text = outbound.args[i + 1] || '';
       i += 1;
     } else {
       positional.push(arg);
@@ -1450,7 +1460,7 @@ function imessageSend(args = []) {
     approved: options.approved,
   };
 
-  if (!options.to || !options.text) {
+  if (!options.to || (!options.text && !options.outboundGate.bodyFile)) {
     printImessageSendPayload({
       ...basePayload,
       error: 'Usage: atris imessage send --to <phone-or-email> --text <message> --approved [--json] [--receipt]',
@@ -1462,6 +1472,20 @@ function imessageSend(args = []) {
     printImessageSendPayload({
       ...basePayload,
       error: 'Refusing to send without --approved after the exact recipient and exact text are confirmed.',
+    }, options.json);
+    process.exit(1);
+  }
+
+  const gateResult = assertOutboundSendAllowedOrExit('imessage', options.text, options.outboundGate, {
+    json: options.json,
+    payload: basePayload,
+  });
+  options.text = gateResult.body;
+  basePayload.text = options.text;
+  if (!options.text) {
+    printImessageSendPayload({
+      ...basePayload,
+      error: 'Usage: atris imessage send --to <phone-or-email> --text <message> --approved [--json] [--receipt]',
     }, options.json);
     process.exit(1);
   }
@@ -1597,8 +1621,12 @@ module.exports = {
   gmailCommand,
   calendarCommand,
   twitterCommand,
+  twitterPost,
   slackCommand,
+  slackSend,
+  slackDm,
   imessageCommand,
+  imessageSend,
   imessageDoctor,
   integrationsStatus,
   parseCalendarSearchArgs,
