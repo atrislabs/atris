@@ -6827,12 +6827,16 @@ function stopMission(args) {
 const MISSION_IDLE_EXPIRY_DAYS = 7;
 const EXPIRABLE_STATUSES = new Set(['paused', 'planning', 'ready']);
 
-function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXPIRY_DAYS, dryRun = false } = {}) {
-  const cutoff = Date.now() - idleDays * 24 * 60 * 60 * 1000;
+function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXPIRY_DAYS, idleHours = null, dryRun = false, statuses = EXPIRABLE_STATUSES } = {}) {
+  const windowMs = idleHours != null ? idleHours * 60 * 60 * 1000 : idleDays * 24 * 60 * 60 * 1000;
+  const windowLabel = idleHours != null
+    ? `${idleHours}+ idle hour${idleHours === 1 ? '' : 's'}`
+    : `${idleDays}+ idle day${idleDays === 1 ? '' : 's'}`;
+  const cutoff = Date.now() - windowMs;
   const expired = [];
   for (const mission of listMissions(root)) {
     const status = String(mission.status || '').toLowerCase();
-    if (!EXPIRABLE_STATUSES.has(status)) continue;
+    if (!statuses.has(status)) continue;
     // updated_at and paused_at are machine-polluted — status renders and
     // goal controllers re-save parked missions daily, so a mission nobody
     // has run since May reads as "touched today". Real activity is the
@@ -6842,7 +6846,7 @@ function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXP
       Date.parse(mission.created_at || '') || 0,
     );
     if (!touched || touched > cutoff) continue;
-    const reason = `expired after ${idleDays}+ idle days (was ${status}); revive with: atris mission tick ${mission.id}`;
+    const reason = `expired after ${windowLabel} (was ${status}); revive with: atris mission tick ${mission.id}`;
     if (!dryRun) {
       const next = {
         ...mission,
@@ -6850,12 +6854,23 @@ function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXP
         stopped_at: stampIso(),
         stop_reason: reason,
       };
-      const { mission: saved } = saveMission(next, root, 'mission_expired', { reason, previous_status: status, idle_days: idleDays });
+      const { mission: saved } = saveMission(next, root, 'mission_expired', { reason, previous_status: status, idle_days: idleDays, idle_hours: idleHours });
       appendMemberLog(saved.owner, 'Mission expired', { mission: saved.objective, reason }, root);
     }
     expired.push({ id: mission.id, owner: mission.owner, previous_status: status, objective: String(mission.objective || '').slice(0, 120) });
   }
   return expired;
+}
+
+// Zombie-mission reap: a mission left paused past a short leash (48h default)
+// is dead in practice long before the 7-day general idle expiry ever fires —
+// nobody is coming back to it inside a session, and it just sits on
+// `mission list` as noise. Narrower than expireStaleMissions on purpose: only
+// `paused`, never planning/ready, so the weekly cadence for those is unchanged.
+const MISSION_PAUSED_REAP_HOURS = 48;
+
+function reapPausedMissions(root = process.cwd(), { hours = MISSION_PAUSED_REAP_HOURS, dryRun = false } = {}) {
+  return expireStaleMissions(root, { idleHours: hours, dryRun, statuses: new Set(['paused']) });
 }
 
 function goalMission(args) {
@@ -7526,6 +7541,7 @@ module.exports = {
   missionCommand,
   inspectMission,
   expireStaleMissions,
+  reapPausedMissions,
   missionHeartbeatLines,
   listMissions,
   listWorktreeRollupMissions,

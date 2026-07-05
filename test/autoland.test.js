@@ -552,16 +552,103 @@ test('daily tick expires missions parked for a week, keeps fresh and running one
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     assert.equal(receipt.mission_expiry_error, undefined);
-    assert.equal(receipt.expired_missions, 1);
+    // the hourly janitor (48h paused leash) reaches the old paused mission
+    // before the daily 7-day expiry does
+    assert.equal(receipt.missions_stopped, 1);
     const { loadMissionMap } = require('../commands/mission');
     const map = loadMissionMap(repo);
     assert.equal(map.get('mission-old-paused').status, 'stopped');
-    assert.match(map.get('mission-old-paused').stop_reason, /expired after 7\+ idle days/);
+    assert.match(map.get('mission-old-paused').stop_reason, /expired after 48\+ idle hours/);
+    assert.match(map.get('mission-old-paused').stop_reason, /revive with: atris mission tick/);
     assert.equal(map.get('mission-old-running').status, 'running');
     assert.equal(map.get('mission-fresh-paused').status, 'paused');
   } finally {
     cleanupTempDir(base);
   }
+});
+
+// CLI-810: the janitor folds `mission stop` (paused > 48h) and
+// `worktree cleanup --apply` (merged into base) into every hourly tick,
+// with counts on the tick line and an off switch in the policy json.
+test('janitor: a zombie paused mission and a merged worktree disappear on the next tick', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', accept_all: true });
+    const stateDir = path.join(repo, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    const missions = [
+      { schema: 'atris.mission.v1', id: 'mission-zombie', owner: 'neo', objective: 'left paused', status: 'paused', created_at: threeDaysAgo, last_tick_at: threeDaysAgo, updated_at: new Date().toISOString() },
+      { schema: 'atris.mission.v1', id: 'mission-alive', owner: 'neo', objective: 'still running', status: 'running', created_at: threeDaysAgo, updated_at: threeDaysAgo },
+    ];
+    fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), missions.map((m) => JSON.stringify(m)).join('\n') + '\n');
+    // a clean worktree whose head is already merged into base
+    const wtPath = path.join(base, 'merged-wt');
+    runGit(['worktree', 'add', '-b', 'task/merged-fixture', wtPath], repo);
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.janitor_mission_error, undefined);
+    assert.equal(receipt.janitor_worktree_error, undefined);
+    assert.equal(receipt.missions_stopped, 1);
+    assert.deepEqual(receipt.missions_stopped_refs, ['mission-zombie']);
+    assert.equal(receipt.worktrees_reaped, 1);
+    const { loadMissionMap } = require('../commands/mission');
+    const map = loadMissionMap(repo);
+    assert.equal(map.get('mission-zombie').status, 'stopped');
+    assert.match(map.get('mission-zombie').stop_reason, /expired after 48\+ idle hours \(was paused\)/);
+    assert.equal(map.get('mission-alive').status, 'running');
+    assert.equal(fs.existsSync(wtPath), false, 'merged worktree should be removed');
+    // counts accumulate for the daily digest
+    const state = autoland.readState(repo);
+    assert.equal(state.janitor.missions_stopped, 1);
+    assert.equal(state.janitor.worktrees_reaped, 1);
+    // human tick line carries both counts
+    const plain = runCli(['autoland', 'tick'], repo);
+    assert.match(plain.stdout, /janitor stopped \d+ missions? \+ reaped \d+ worktrees?/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('janitor: policy janitor:false leaves the zombie mission and merged worktree alone', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', accept_all: true, janitor: false });
+    const stateDir = path.join(repo, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), JSON.stringify(
+      { schema: 'atris.mission.v1', id: 'mission-zombie', owner: 'neo', objective: 'left paused', status: 'paused', created_at: threeDaysAgo, last_tick_at: threeDaysAgo, updated_at: threeDaysAgo }
+    ) + '\n');
+    const wtPath = path.join(base, 'merged-wt');
+    runGit(['worktree', 'add', '-b', 'task/merged-fixture', wtPath], repo);
+    // pin today's daily land-reap as already done, so only the janitor is under test
+    autoland.writeState(repo, { alerts: {}, last_reap_date: new Date().toISOString().slice(0, 10) });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.missions_stopped, 0);
+    assert.equal(receipt.worktrees_reaped, 0);
+    const { loadMissionMap } = require('../commands/mission');
+    assert.equal(loadMissionMap(repo).get('mission-zombie').status, 'paused');
+    assert.equal(fs.existsSync(wtPath), true, 'worktree must survive with janitor off');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('digest carries the janitor tally in plain language, silent when it did nothing', () => {
+  const baseArgs = {
+    accepted: { auto: [], human: [] },
+    waiting: [],
+    landed: null,
+    project: 'demo',
+  };
+  const withTally = autoland.composeDigest({ ...baseArgs, janitor: { missions_stopped: 2, worktrees_reaped: 1 } });
+  assert.match(withTally, /tidied up: 2 stale missions stopped, 1 merged worktree cleared/);
+  const without = autoland.composeDigest({ ...baseArgs, janitor: null });
+  assert.doesNotMatch(without, /tidied up/);
 });
 
 test('daily tick verifies planning missions after all linked repair tasks close', () => {
