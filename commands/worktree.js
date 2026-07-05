@@ -215,17 +215,30 @@ function printStatus() {
 // Programmatic core shared by `atris worktree start` and `atris mission start
 // --worktree`: creates the branch + isolated checkout + identity sidecar and
 // returns the facts. Throws on failure; callers own messaging and next steps.
+//
+// checkoutBase (what the branch is cut from) and shipBase (what `atris
+// worktree ship` targets, recorded as branch.<branch>.atris-base) are kept
+// separate on purpose. checkoutBase defaults to the launcher's own
+// upstream/default remote base, so the agent starts from current work.
+// shipBase defaults to origin/master for agent/member worktrees regardless of
+// what branch the launcher happened to have checked out. recording the
+// launcher's own feature branch as the ship target false-landed two PRs on
+// 2026-07-04 (ship merged into the launcher's branch, never reached master).
+// --base/--target still overrides both when the caller wants a different
+// checkout point and ship target on purpose.
 function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task, branch: branchOverride, path: pathOverride, base: baseOverride, now = new Date() } = {}) {
   const owner = member || agent;
   if (!owner || !task) throw new Error('createAgentWorktree: owner (member/agent) and task required');
   const branch = branchOverride || branchName(owner, task, now);
   const target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
-  const base = normalizeTargetRef(root, baseOverride || defaultStartBase(root));
+  const explicitBase = Boolean(baseOverride);
+  const checkoutBase = normalizeTargetRef(root, baseOverride || defaultStartBase(root));
+  const shipBase = explicitBase ? checkoutBase : normalizeTargetRef(root, 'origin/master');
   if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  refreshRemoteRef(root, base);
-  runGit(['worktree', 'add', '-b', branch, target, base], { cwd: root });
-  runGit(['config', `branch.${branch}.atris-base`, base], { cwd: target, check: false });
+  refreshRemoteRef(root, checkoutBase);
+  runGit(['worktree', 'add', '-b', branch, target, checkoutBase], { cwd: root });
+  runGit(['config', `branch.${branch}.atris-base`, shipBase], { cwd: target, check: false });
   runGit(['config', `branch.${branch}.atris-owner`, owner], { cwd: target, check: false });
   runGit(['config', `branch.${branch}.atris-task`, task], { cwd: target, check: false });
   fs.mkdirSync(path.join(target, '.atris'), { recursive: true });
@@ -237,13 +250,14 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
       owner,
       task,
       branch,
-      base,
+      base: shipBase,
+      checkout_base: checkoutBase,
       workspace_root: root,
       created_at: now.toISOString(),
     }, null, 2) + '\n',
     'utf8'
   );
-  return { path: target, branch, base, owner };
+  return { path: target, branch, base: shipBase, checkoutBase, owner };
 }
 
 function startWorktree(args) {
@@ -298,12 +312,21 @@ function startWorktree(args) {
 
 function createOrFindPr(root, branch, targetRef, title, dryRun) {
   const targetBranch = baseBranchName(targetRef);
-  const existing = spawnSync('gh', ['pr', 'view', '--json', 'number,url', '--jq', '"\\(.number) \\(.url)"'], {
+  // `gh pr view` (no --state filter) returns ANY PR for this branch name,
+  // including one already MERGED or CLOSED. A worktree branch that ships
+  // more than once (this same branch, more commits, another `worktree ship`)
+  // would then reuse the dead PR number: `gh pr merge <dead pr> --merge`
+  // exits 0 with just a warning (never fails), so the new commits silently
+  // never land while the ship command still reports success. Only reuse a
+  // PR that is still OPEN; anything else gets a fresh one.
+  const existing = spawnSync('gh', ['pr', 'view', '--json', 'number,url,state', '--jq', '"\\(.number) \\(.url) \\(.state)"'], {
     cwd: root,
     encoding: 'utf8',
   });
   if (existing.status === 0 && existing.stdout.trim()) {
-    return existing.stdout.trim();
+    const parts = existing.stdout.trim().split(/\s+/);
+    const state = parts.pop();
+    if (state === 'OPEN') return parts.join(' ');
   }
   const body = [
     'Automated Atris worktree ship.',
@@ -419,6 +442,11 @@ function shipWorktree(args) {
         mergeArgs.push('--merge');
         const merged = spawnSync('gh', mergeArgs, { cwd: root, encoding: 'utf8' });
         if (merged.status !== 0) throw new Error((merged.stderr || merged.stdout || 'gh pr merge failed').trim());
+        // `gh pr merge` on an already-merged PR exits 0 with a warning
+        // instead of failing, which would otherwise report a false landing.
+        if (/already merged/i.test(`${merged.stdout}${merged.stderr}`)) {
+          throw new Error(`gh pr merge reported the PR was already merged (stale PR reused): ${(merged.stdout || merged.stderr).trim()}`);
+        }
         console.log('merge: merged');
         const deleted = runGit(['push', 'origin', '--delete', branch], { cwd: root, check: false });
         if (deleted.status === 0) {
@@ -619,6 +647,7 @@ function worktreeCommand(args = []) {
 module.exports = {
   branchName,
   createAgentWorktree,
+  createOrFindPr,
   cleanupWorktrees,
   defaultShipTarget,
   defaultStartBase,

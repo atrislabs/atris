@@ -7,7 +7,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
 const { acceptedInLastDay, writePolicy } = require('../lib/autoland');
 const taskStore = require('../lib/task-db');
-const { branchName, cleanupWorktrees, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
+const { branchName, cleanupWorktrees, createOrFindPr, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
 const { formatLocalDate } = require('../commands/now');
 const {
@@ -597,6 +597,119 @@ test('worktree start defaults to upstream remote base and records ship metadata'
   }
 });
 
+test('worktree start ships agent/member worktrees to origin/master even when the launcher checkout is on a feature branch', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const remote = path.join(dir, 'remote.git');
+    const repo = path.join(dir, 'repo');
+    const runGit = (args, cwd = repo) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    fs.mkdirSync(repo);
+    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['branch', '-M', 'master']);
+    runGit(['remote', 'add', 'origin', remote]);
+    runGit(['push', '-u', 'origin', 'master']);
+    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+
+    // The launcher checkout is on its own feature branch, tracking that
+    // branch on origin: the exact live shape that false-landed two PRs.
+    runGit(['checkout', '-qb', 'task/feature-work']);
+    fs.appendFileSync(path.join(repo, 'README.md'), 'feature work in progress\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'feature work']);
+    runGit(['push', '-u', 'origin', 'task/feature-work']);
+
+    assert.equal(defaultStartBase(repo), 'origin/task/feature-work', 'sanity: launcher upstream is the feature branch');
+
+    worktreePath = path.join(dir, 'agent-worktree');
+    const res = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-shipper',
+      '--task',
+      'Ship Smoke',
+      '--path',
+      worktreePath,
+    ], { cwd: repo });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /base: origin\/master/, 'ship target must default to master, not the launcher branch');
+    const branch = runGit(['branch', '--show-current'], worktreePath);
+    assert.equal(runGit(['config', '--get', `branch.${branch}.atris-base`], worktreePath), 'origin/master');
+    // The checkout point still starts from the launcher's own work (unchanged
+    // behavior); only the ship-target metadata changed.
+    assert.match(runGit(['log', '-1', '--oneline'], worktreePath), /feature work/);
+
+    const sidecar = JSON.parse(fs.readFileSync(path.join(worktreePath, '.atris', 'agent-worktree.json'), 'utf8'));
+    assert.equal(sidecar.base, 'origin/master');
+    assert.equal(sidecar.checkout_base, 'origin/task/feature-work');
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree start honors an explicit --target for both the checkout point and the ship target', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const remote = path.join(dir, 'remote.git');
+    const repo = path.join(dir, 'repo');
+    const runGit = (args, cwd = repo) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    fs.mkdirSync(repo);
+    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['branch', '-M', 'master']);
+    runGit(['remote', 'add', 'origin', remote]);
+    runGit(['push', '-u', 'origin', 'master']);
+    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+    runGit(['checkout', '-qb', 'release/cut']);
+    runGit(['push', '-u', 'origin', 'release/cut']);
+
+    worktreePath = path.join(dir, 'agent-worktree');
+    const res = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-shipper',
+      '--task',
+      'Ship Smoke',
+      '--path',
+      worktreePath,
+      '--target',
+      'release/cut',
+    ], { cwd: repo });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /base: origin\/release\/cut/, '--target overrides the ship target too');
+    const branch = runGit(['branch', '--show-current'], worktreePath);
+    assert.equal(runGit(['config', '--get', `branch.${branch}.atris-base`], worktreePath), 'origin/release/cut');
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
 test('worktree ship commits verifies and pushes an isolated branch', () => {
   const dir = makeTempDir();
   let worktreePath;
@@ -654,6 +767,120 @@ test('worktree ship commits verifies and pushes an isolated branch', () => {
       runGit(['--git-dir', remote, 'show-ref', '--verify', `refs/heads/${branch}`], dir),
       new RegExp(`refs/heads/${branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
     );
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+// A worktree branch reused across more than one `worktree ship` call (the
+// exact shape of this session: several commits landed one at a time from the
+// same worktree) hits a real `gh` quirk: `gh pr view` with no --state filter
+// returns ANY pr for the branch name, including one already MERGED or
+// CLOSED, and `gh pr merge <already-merged-pr>` exits 0 with just a warning
+// instead of failing. Together those silently no-op the landing of new
+// commits while `worktree ship` still reports success. This fake `gh`
+// stands in for the real CLI so the state-filter fix is provable without a
+// live GitHub repo.
+function makeFakeGh(dir, { viewState = 'OPEN', viewNumber = 42, createNumber = 99, mergeAlreadyMerged = false } = {}) {
+  const binDir = path.join(dir, 'fake-bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  const ghPath = path.join(binDir, 'gh');
+  fs.writeFileSync(ghPath, `#!/bin/sh
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  echo "${viewNumber} https://example.com/pull/${viewNumber} ${viewState}"
+  exit 0
+fi
+if [ "$1" = "pr" ] && [ "$2" = "create" ]; then
+  echo "https://example.com/pull/${createNumber}"
+  exit 0
+fi
+if [ "$1" = "pr" ] && [ "$2" = "merge" ]; then
+  if [ "${mergeAlreadyMerged}" = "true" ]; then
+    echo "! Pull request already merged" 1>&2
+    exit 0
+  fi
+  echo "merged"
+  exit 0
+fi
+exit 1
+`, { mode: 0o755 });
+  return binDir;
+}
+
+test('createOrFindPr ignores a stale MERGED pr for this branch and opens a fresh one', () => {
+  const dir = makeTempDir();
+  try {
+    const binDir = makeFakeGh(dir, { viewState: 'MERGED', viewNumber: 42, createNumber: 99 });
+    const prevPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${prevPath}`;
+    try {
+      const pr = createOrFindPr(dir, 'codex/reused-branch', 'origin/master', 'reused branch title', false);
+      assert.match(pr, /pull\/99/, 'a merged PR must never be reused; a fresh one must be created');
+      assert.doesNotMatch(pr, /pull\/42/);
+    } finally {
+      process.env.PATH = prevPath;
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('createOrFindPr reuses a real OPEN pr for this branch instead of opening a duplicate', () => {
+  const dir = makeTempDir();
+  try {
+    const binDir = makeFakeGh(dir, { viewState: 'OPEN', viewNumber: 7 });
+    const prevPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${prevPath}`;
+    try {
+      const pr = createOrFindPr(dir, 'codex/open-branch', 'origin/master', 'open branch title', false);
+      assert.match(pr, /pull\/7/);
+    } finally {
+      process.env.PATH = prevPath;
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree ship refuses to report success when gh pr merge silently no-ops an already-merged pr', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const remote = path.join(dir, 'remote.git');
+    const repo = path.join(dir, 'repo');
+    const runGit = (args, cwd = repo) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    fs.mkdirSync(repo);
+    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['branch', '-M', 'master']);
+    runGit(['remote', 'add', 'origin', remote]);
+    runGit(['push', '-u', 'origin', 'master']);
+    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+
+    worktreePath = path.join(dir, 'ship-worktree');
+    const start = runCli(['worktree', 'start', '--agent', 'codex-shipper', '--task', 'Ship Smoke', '--path', worktreePath], { cwd: repo });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    fs.appendFileSync(path.join(worktreePath, 'README.md'), 'changed\n');
+
+    const binDir = makeFakeGh(dir, { viewState: 'OPEN', viewNumber: 7, mergeAlreadyMerged: true });
+    const shipped = runCli(
+      ['worktree', 'ship', '--message', 'ship smoke', '--verify', 'git status --short', '--merge'],
+      { cwd: worktreePath, env: { PATH: `${binDir}:${process.env.PATH}` } }
+    );
+
+    assert.notEqual(shipped.status, 0, 'a no-op merge must never be reported as a successful ship');
+    assert.doesNotMatch(shipped.stdout, /done: worktree shipped/);
+    assert.match(`${shipped.stdout}${shipped.stderr}`, /already merged/i);
   } finally {
     if (worktreePath) cleanupTempDir(worktreePath);
     cleanupTempDir(dir);
@@ -12773,6 +13000,83 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(missingPayload.ok, false);
     assert.equal(missingPayload.command, 'atris task show');
     assert.equal(missingPayload.reason, 'not_found');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// CLI-865: claiming an already-done task burns a whole dispatch when a
+// rendered view (atris/TODO.md) is stale, as it did twice live: the agent
+// claims, builds, then discovers the work was already done. On an
+// already_done claim failure, point straight at a real open task from the
+// live projection instead of just reporting the failure.
+test('claiming an already-done task suggests the next open task from the same tag, in JSON and human output', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const doneTask = runCli(['task', 'add', 'Ship the widget', '--tag', 'speedy', '--json'], { cwd: dir, env });
+    assert.equal(doneTask.status, 0, doneTask.stderr);
+    const doneRef = JSON.parse(doneTask.stdout).task.display_id;
+    const sameTagOpen = runCli(['task', 'add', 'Ship the other widget', '--tag', 'speedy', '--json'], { cwd: dir, env });
+    assert.equal(sameTagOpen.status, 0, sameTagOpen.stderr);
+    const sameTagRef = JSON.parse(sameTagOpen.stdout).task.display_id;
+    const otherTagOpen = runCli(['task', 'add', 'Unrelated open task', '--tag', 'other', '--json'], { cwd: dir, env });
+    assert.equal(otherTagOpen.status, 0, otherTagOpen.stderr);
+
+    assert.equal(runCli(['task', 'claim', doneRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const finish = runCli(['task', 'finish', doneRef, '--proof', 'node --test', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(finish.status, 0, finish.stderr);
+    assert.equal(JSON.parse(finish.stdout).task.status, 'done');
+
+    // Stale render: an agent still holding an old atris/TODO.md tries to
+    // claim the now-done task.
+    const claimJson = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
+    assert.equal(claimJson.status, 1);
+    const claimPayload = JSON.parse(claimJson.stdout);
+    assert.equal(claimPayload.ok, false);
+    assert.equal(claimPayload.reason, 'already_done');
+    assert.ok(claimPayload.next_claimable, 'already_done must suggest a next claimable task');
+    assert.equal(claimPayload.next_claimable.ref, sameTagRef, 'same tag beats a different-tag open task');
+
+    const claimHuman = runCli(['task', 'claim', doneRef, '--as', 'sonnet'], { cwd: dir, env });
+    assert.equal(claimHuman.status, 1);
+    assert.match(claimHuman.stderr, /claim failed: already_done/);
+    assert.match(claimHuman.stderr, new RegExp(`next claimable: ${sameTagRef} .*atris task claim ${sameTagRef} --as sonnet`));
+
+    // Once the same-tag task is also gone, fall back to any open task.
+    assert.equal(runCli(['task', 'claim', sameTagRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const finish2 = runCli(['task', 'finish', sameTagRef, '--proof', 'node --test', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(finish2.status, 0, finish2.stderr);
+    const claimFallback = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
+    const fallbackPayload = JSON.parse(claimFallback.stdout);
+    assert.equal(fallbackPayload.next_claimable.ref, JSON.parse(otherTagOpen.stdout).task.display_id);
+
+    // Once every task is claimed/done, there is nothing left to suggest.
+    assert.equal(runCli(['task', 'claim', JSON.parse(otherTagOpen.stdout).task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const claimNoneLeft = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
+    assert.equal(JSON.parse(claimNoneLeft.stdout).next_claimable, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('claiming a task that is only already_claimed (not already_done) never suggests a next task', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const created = runCli(['task', 'add', 'Ship the widget', '--tag', 'speedy', '--json'], { cwd: dir, env });
+    const ref = JSON.parse(created.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const conflict = runCli(['task', 'claim', ref, '--as', 'sonnet', '--json'], { cwd: dir, env });
+    assert.equal(JSON.parse(conflict.stdout).reason, 'already_claimed');
+    assert.equal(JSON.parse(conflict.stdout).next_claimable, null);
   } finally {
     cleanupTempDir(dir);
   }

@@ -178,7 +178,7 @@ test('task sweep --auto-accept skips needs-human review tasks', () => {
   }
 });
 
-test('task sweep --auto-accept skips review tasks without verifier receipt proof', () => {
+test('task sweep --auto-accept re-derives a node --test command from proof text, but a re-run failure (file does not exist here) still blocks', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const env = {
@@ -199,8 +199,133 @@ test('task sweep --auto-accept skips review tasks without verifier receipt proof
     const payload = JSON.parse(sweep.stdout);
     assert.equal(payload.summary.accepted, 0);
     assert.equal(payload.results[0].ref, task.display_id);
+    // The cited path does not exist under this temp fixture's cwd, so the
+    // derived command is attempted and genuinely fails (not "nothing to
+    // check"): a derivable-but-failing verifier still blocks outright.
+    assert.equal(payload.results[0].reason, 'verify_failed');
+    assert.equal(JSON.parse(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).stdout).status, 'review');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task sweep --auto-accept skips review tasks with no verifier, no receipt, and no derivable command', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = {
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    NODE_NO_WARNINGS: '1',
+    ATRIS_AGENT_PROOF_ONLY: '0',
+  };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const task = setupReadyTask(dir, env, {
+      title: 'test/refresh proof display',
+      tag: 'test',
+      // Passes taskProofState's meaningful-proof gate (human approval is one
+      // of its accepted evidence shapes) but names no command and no
+      // receipt path, so there is nothing for sweep to run or find.
+      proof: `${'context '.repeat(35)}Human approved this change after reviewing the diff by hand.`,
+    });
+
+    const sweep = runCli(['task', 'sweep', '--auto-accept', '--json'], { cwd: dir, env });
+    assert.equal(sweep.status, 0, sweep.stderr);
+    const payload = JSON.parse(sweep.stdout);
+    assert.equal(payload.summary.accepted, 0);
     assert.equal(payload.results[0].reason, 'no_passing_verifier');
     assert.equal(JSON.parse(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).stdout).status, 'review');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// CLI-862: `atris task ready --verify` stores the exact command on
+// metadata.verify (lib/task-db readyTask + stampReadyVerifyMetadata in
+// commands/task.js). Sweep must prefer re-running that stored command live
+// over hunting for a receipt file, so a task readied with --verify
+// auto-accepts on the very next sweep with no receipt involved at all.
+test('a task readied with --verify auto-accepts on the next sweep via the stored metadata.verify command', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = {
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    NODE_NO_WARNINGS: '1',
+    ATRIS_AGENT_PROOF_ONLY: '0',
+  };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'test'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'test', 'always-pass.test.js'), `
+      const test = require('node:test');
+      test('always passes', () => {});
+    `, 'utf8');
+
+    const created = runCli(['task', 'new', 'Ship the always-pass regression', '--tag', 'test', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const ready = runCli([
+      'task', 'ready', task.display_id,
+      '--verify', 'node --test test/always-pass.test.js',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+
+    const shown = JSON.parse(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(shown.metadata.verify, 'node --test test/always-pass.test.js');
+
+    const sweep = runCli(['task', 'sweep', '--auto-accept', '--json'], { cwd: dir, env });
+    assert.equal(sweep.status, 0, sweep.stderr);
+    const payload = JSON.parse(sweep.stdout);
+    assert.equal(payload.summary.accepted, 1, JSON.stringify(payload.results));
+    assert.equal(payload.results[0].reason, 'verified_command');
+    assert.equal(payload.results[0].verify, 'node --test test/always-pass.test.js');
+
+    const accepted = JSON.parse(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(accepted.status, 'done');
+    assert.equal(accepted.metadata.auto_accept_policy, 'sweep_auto_accept_verified_command');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// CLI-862: when no verifier is stored and the proof cites no receipt at all,
+// sweep derives a safe runnable command from the proof text itself (the
+// same extractor certify-verified already uses) and re-runs it live.
+test('a proof citing a real, passing node --test path with no receipt at all auto-accepts by deriving the command', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = {
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    NODE_NO_WARNINGS: '1',
+    ATRIS_AGENT_PROOF_ONLY: '0',
+  };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'test'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'test', 'always-pass.test.js'), `
+      const test = require('node:test');
+      test('always passes', () => {});
+    `, 'utf8');
+
+    const task = setupReadyTask(dir, env, {
+      title: 'Ship the always-pass regression, take two',
+      tag: 'test',
+      proof: `${'context '.repeat(35)}Checks: node --test test/always-pass.test.js passed. No receipt file was attached.`,
+    });
+
+    const sweep = runCli(['task', 'sweep', '--auto-accept', '--json'], { cwd: dir, env });
+    assert.equal(sweep.status, 0, sweep.stderr);
+    const payload = JSON.parse(sweep.stdout);
+    assert.equal(payload.summary.accepted, 1, JSON.stringify(payload.results));
+    assert.equal(payload.results[0].reason, 'verified_derived_command');
+    assert.equal(payload.results[0].verify, 'node --test test/always-pass.test.js');
+
+    const accepted = JSON.parse(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(accepted.status, 'done');
+    assert.equal(accepted.metadata.auto_accept_policy, 'sweep_auto_accept_verified_derived');
   } finally {
     cleanupTempDir(dir);
   }
