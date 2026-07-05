@@ -35,6 +35,7 @@ test('worktree ship --help documents --target without touching the repo', () => 
     assert.match(res.stdout, /--target <ref>/);
     assert.match(res.stdout, /override the default landing target/);
     assert.match(res.stdout, /branch atris-base, else origin default branch/);
+    assert.match(res.stdout, /unstaged regenerated adapter files are skipped unless staged first or named in --message/);
   } finally {
     cleanupTempDir(dir);
   }
