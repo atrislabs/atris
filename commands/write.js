@@ -332,6 +332,7 @@ function help() {
   console.log(`
   atris write — guided writing sessions (you write every word; atris structures + reviews)
 
+    atris write                   the coach: knows where you are, gets you going
     atris write start "<topic>" [--dump "..."] [--beats "a | b | c"]
     atris write coach [slug]      the coach: cheers your best line, asks the next question (--offline for no-LLM)
     atris write status [slug]     progress against the outline (beats landed)
@@ -353,8 +354,9 @@ function writeCommand(argv) {
   if (sub === 'review') return review(argv.slice(1));
   if (sub === 'pass') return pass(argv.slice(1));
   if (sub === 'list') return list();
-  if (!sub) return listSessions().length ? status([]) : help();
-  if (sub === 'help' || sub.startsWith('-')) return help();
+  // bare `atris write` (flags allowed) IS the coach: one door, it knows where you are and gets you going
+  if (!sub || sub.startsWith('-')) return listSessions().length ? coach(argv) : help();
+  if (sub === 'help') return help();
   // `atris write "some topic"` sugar → start
   return start(argv);
 }
