@@ -8718,6 +8718,32 @@ function stampReadyVerifyMetadata(taskDb, db, taskId, verify) {
   `).run(JSON.stringify(metadata), Date.now(), taskId);
 }
 
+function landingVerifyFailureNote(verify, result) {
+  const exit = result && result.status != null ? result.status : 'unknown';
+  return `Autoland re-ran allowlisted verify at landing and it failed: ${verify} (exit ${exit}).`;
+}
+
+function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier' } = {}) {
+  const verify = certifyVerifyCandidate(task);
+  if (!verify) return { ok: true, verify: null };
+  const result = runVerifyCommand(verify, task.workspace_root || process.cwd());
+  if (result.ok) return { ok: true, verify, result };
+  const note = landingVerifyFailureNote(verify, result);
+  const revised = taskDb.reviseTask(db, {
+    id: task.id,
+    actor,
+    note,
+  });
+  return {
+    ok: false,
+    verify,
+    result,
+    note,
+    revised: revised.revised === true,
+    revise_reason: revised.reason || null,
+  };
+}
+
 function cmdCertifyVerified(args) {
   const dryRun = hasFlag(args, '--dry-run');
   const asJson = wantsJson(args);
@@ -8952,6 +8978,20 @@ function cmdAutoAcceptCertified(args) {
       results.push({ ...evaluation, action: 'would_accept', reward: parsedReward.value });
       continue;
     }
+    const landingVerify = reverifyBeforeLanding(taskDb, db, task);
+    if (!landingVerify.ok) {
+      results.push({
+        ...evaluation,
+        eligible: false,
+        action: landingVerify.revised ? 'revised' : 'revise_failed',
+        reason: landingVerify.result.reason || landingVerify.revise_reason || 'verify_failed',
+        verify: landingVerify.verify,
+        exit_code: landingVerify.result.status,
+        revision_note: landingVerify.note,
+        task_id: task.id,
+      });
+      continue;
+    }
     const accepted = acceptReviewTask(taskDb, db, task.id, {
       actor,
       proof: evaluation.proof,
@@ -8980,8 +9020,9 @@ function cmdAutoAcceptCertified(args) {
     scanned: pool.length,
     accepted: results.filter(row => row.action === 'accepted').length,
     would_accept: results.filter(row => row.action === 'would_accept').length,
+    revised: results.filter(row => row.action === 'revised').length,
     skipped: results.filter(row => row.action === 'skipped').length,
-    failed: results.filter(row => row.action === 'accept_failed').length,
+    failed: results.filter(row => row.action === 'accept_failed' || row.action === 'revise_failed').length,
     // Visible undercount flag: true only if the pool was cut short by `max`
     // while certified rows still existed beyond it. --all uses a high safety
     // cap (AUTO_ACCEPT_ALL_SWEEP_CAP), so this should stay false in practice;
@@ -9003,7 +9044,7 @@ function cmdAutoAcceptCertified(args) {
     return;
   }
   console.log(`AUTO-ACCEPT CERTIFIED (${dryRun ? 'dry-run' : 'execute'})`);
-  console.log(`${summary.certified} certified, ${summary.scanned} scanned, ${summary.accepted || summary.would_accept} accepted, ${summary.skipped} skipped${summary.failed ? `, ${summary.failed} failed` : ''}${summary.undercounted ? ' (UNDERCOUNTED — raise --limit or the sweep cap)' : ''}`);
+  console.log(`${summary.certified} certified, ${summary.scanned} scanned, ${summary.accepted || summary.would_accept} accepted, ${summary.skipped} skipped${summary.revised ? `, ${summary.revised} revised` : ''}${summary.failed ? `, ${summary.failed} failed` : ''}${summary.undercounted ? ' (UNDERCOUNTED — raise --limit or the sweep cap)' : ''}`);
   for (const row of results) {
     const nextAction = row.next_action ? ` next_action=${row.next_action}` : '';
     const reviewChat = row.review_chat_command ? ` review_chat=${row.review_chat_command}` : '';

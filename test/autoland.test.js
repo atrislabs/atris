@@ -61,6 +61,11 @@ function runCli(args, cwd, extraEnv = null) {
   return result;
 }
 
+function projectionByRef(repo) {
+  const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+  return Object.fromEntries(projection.tasks.map((t) => [t.display_id, t]));
+}
+
 // Create a task and walk it to certified: proof from the builder, then a
 // second proof pass from an independent reviewer (2 passes, 2 actors).
 function certifiedTask(repo, title, { tag = 'code' } = {}) {
@@ -75,6 +80,22 @@ function certifiedTask(repo, title, { tag = 'code' } = {}) {
   const proof = 'Command passed: git diff --check. Evidence inspected: clean tree, change verified in place.';
   assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'builder'], repo).status, 0);
   assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'codex-review'], repo).status, 0);
+  return String(id);
+}
+
+function certifiedVerifiedTask(repo, title, { verify, tag = 'code' } = {}) {
+  const created = runCli(['task', 'new', title, '--tag', tag, '--json'], repo);
+  assert.equal(created.status, 0, created.stderr || created.stdout);
+  const id = JSON.parse(created.stdout).task?.display_id
+    || JSON.parse(created.stdout).task?.id
+    || JSON.parse(created.stdout).display_id
+    || JSON.parse(created.stdout).id;
+  assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
+  assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
+  const builderReady = runCli(['task', 'ready', String(id), '--verify', verify, '--as', 'builder'], repo);
+  assert.equal(builderReady.status, 0, builderReady.stderr || builderReady.stdout);
+  const reviewerReady = runCli(['task', 'ready', String(id), '--verify', verify, '--as', 'codex-review'], repo);
+  assert.equal(reviewerReady.status, 0, reviewerReady.stderr || reviewerReady.stdout);
   return String(id);
 }
 
@@ -349,6 +370,81 @@ test('tick certifies proof-backed reviews by re-running their check, then lands 
     assert.equal(byRef[securityTask].review.agent_certified, false);
     assert.equal(byRef[noCheckTask].status, 'review');
     assert.equal(byRef[noCheckTask].review.agent_certified, false);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('tick revises certified stale allowlisted verify instead of awarding reward', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    fs.writeFileSync(path.join(repo, 'stale-proof.js'), 'const ok = 1;\n');
+    const codeTask = certifiedVerifiedTask(repo, 'Stale proof must not land', {
+      verify: 'node --check stale-proof.js',
+    });
+    fs.writeFileSync(path.join(repo, 'stale-proof.js'), 'function nope {\n');
+
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.deepEqual(receipt.landed, []);
+    assert.equal(receipt.revised, 1);
+
+    const byRef = projectionByRef(repo);
+    assert.equal(byRef[codeTask].status, 'claimed');
+    assert.equal(byRef[codeTask].metadata.auto_accepted_at, undefined);
+    assert.equal(byRef[codeTask].metadata.accepted_at, undefined);
+    assert.match(byRef[codeTask].metadata.human_revision_note, /node --check stale-proof\.js \(exit 1\)/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('tick lands certified allowlisted verify when the landing re-run passes', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    fs.writeFileSync(path.join(repo, 'fresh-proof.js'), 'const ok = 1;\n');
+    const codeTask = certifiedVerifiedTask(repo, 'Fresh proof can land', {
+      verify: 'node --check fresh-proof.js',
+    });
+
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.deepEqual(receipt.landed, [codeTask]);
+    assert.equal(receipt.revised, 0);
+
+    const byRef = projectionByRef(repo);
+    assert.equal(byRef[codeTask].status, 'done');
+    assert.ok(byRef[codeTask].metadata.auto_accepted_at);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('tick keeps non-allowlisted verify behavior and never executes it at landing', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const script = path.join(repo, 'unsafe-verify.sh');
+    fs.writeFileSync(script, '#!/usr/bin/env bash\nexit 0\n');
+    fs.chmodSync(script, 0o755);
+    const codeTask = certifiedVerifiedTask(repo, 'Unsafe proof keeps existing landing behavior', {
+      verify: 'bash unsafe-verify.sh',
+    });
+    fs.writeFileSync(script, '#!/usr/bin/env bash\nexit 9\n');
+
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.deepEqual(receipt.landed, [codeTask]);
+    assert.equal(receipt.revised, 0);
+
+    const byRef = projectionByRef(repo);
+    assert.equal(byRef[codeTask].status, 'done');
+    assert.ok(byRef[codeTask].metadata.auto_accepted_at);
   } finally {
     cleanupTempDir(base);
   }
