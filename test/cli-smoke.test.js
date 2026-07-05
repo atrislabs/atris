@@ -854,12 +854,12 @@ test('runner-profile help lists canonical profile names only', () => {
   try {
     const run = runCli(['run', '--help'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr);
-    assert.match(run.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, devin, hermes\)/);
+    assert.match(run.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, fable, composer, haiku, devin, hermes\)/);
     assert.doesNotMatch(run.stdout, /atris2-fast|atris-2-fast/);
 
     const autopilot = runCli(['autopilot', '--legacy', '--help'], { cwd: dir });
     assert.equal(autopilot.status, 0, autopilot.stderr);
-    assert.match(autopilot.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, devin, hermes\)/);
+    assert.match(autopilot.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, fable, composer, haiku, devin, hermes\)/);
     assert.doesNotMatch(autopilot.stdout, /atris2-fast|atris-2-fast/);
   } finally {
     cleanupTempDir(dir);

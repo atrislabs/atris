@@ -26,7 +26,7 @@ test('engine roster lists every profile with detection state', () => {
     assert.equal(res.status, 0, res.stderr);
     const parsed = JSON.parse(res.stdout);
     const names = parsed.engines.map((e) => e.name);
-    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'devin', 'hermes']);
+    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'hermes']);
     for (const entry of parsed.engines) {
       assert.equal(typeof entry.installed, 'boolean');
       assert.ok(entry.bin);
@@ -84,7 +84,7 @@ test('--engine flag rides a loop for one run and validates at the boundary', () 
     const bad = runCli(['run', '--legacy', '--dry-run', '--engine', 'gpt-11'], dir);
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /Unknown --engine "gpt-11"/);
-    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, devin, hermes/);
+    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, fable, composer, haiku, devin, hermes/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -948,6 +948,7 @@ test('mission run objective starts with product takeoff instead of runner plumbi
       'mission',
       'run',
       'human started takeoff',
+      '--no-preflight',
       '--owner',
       'mission-lead',
       '--runner',
@@ -1689,7 +1690,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
       command: 'atris mission run landing-timeline-codex-loop --create-next',
     });
 
-    const run = runCli(['mission', 'run', 'landing-timeline-codex-loop', '--no-drain', '--create-next'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'landing-timeline-codex-loop', '--no-preflight', '--no-drain', '--create-next'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     assert.match(run.stdout, /Changed: Created and claimed next task:/);
 
@@ -1978,7 +1979,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
     assert.match(payload.timeline[0].next, /Created next task:/);
     assert.match(payload.timeline[0].receipt_path, /^atris\/runs\/mission-/);
 
-    const secondRun = runCli(['mission', 'run', 'landing-timeline-codex-loop', '--no-drain', '--create-next'], { cwd: dir });
+    const secondRun = runCli(['mission', 'run', 'landing-timeline-codex-loop', '--no-preflight', '--no-drain', '--create-next'], { cwd: dir });
     assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
     assert.match(secondRun.stdout, /Changed: Kept active task:/);
 
@@ -2648,13 +2649,35 @@ test('mission run terminal skips are JSON-readable when mission is explicit', ()
   }
 });
 
-test('mission run with an objective starts a visible-goal mission', () => {
+test('mission run preflights a plain objective by default', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const rawObjective = 'ship the ack fix';
+    const run = runCli(['mission', 'run', rawObjective, '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.mission.raw_objective, rawObjective);
+    assert.notEqual(payload.mission.objective, rawObjective);
+    assert.equal(payload.mission.objective, payload.mission.mission_run_preflight.shaped_objective);
+    assert.equal(payload.mission.mission_run_preflight.raw_objective, rawObjective);
+    assert.match(payload.mission.objective, /Mission Room with mission-lead/);
+    assert.equal(payload.codex_goal_state.goal.objective, payload.mission.mission_run_preflight.visible_goal_objective);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run with an objective starts a visible-goal mission when preflight is disabled', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'atris', 'team', 'mission-lead'), { recursive: true });
 
-    const run = runCli(['mission', 'run', 'atris mission run', '--json'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'atris mission run', '--no-preflight', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     assert.equal(run.stderr, '');
     const payload = JSON.parse(run.stdout);
@@ -2680,6 +2703,71 @@ test('mission run with an objective starts a visible-goal mission', () => {
     assert.equal(payload.codex_goal_state.goal.requires_native_goal_start, true);
     assert.equal(payload.codex_goal_state.goal.native_goal_action.tool, 'create_goal');
     assert.match(payload.codex_goal_state.goal.native_goal_ack_command, /mission goal ack/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run auto-acks when Codex runtime goal already matches objective', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli([
+      'mission',
+      'run',
+      'auto ack visible goal',
+      '--no-preflight',
+      '--native-goal-status',
+      'active',
+      '--native-goal-objective',
+      'auto ack visible goal',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.mission.native_goal_ack.status, 'active');
+    assert.equal(payload.mission.native_goal_ack.objective, 'auto ack visible goal');
+    assert.equal(payload.requires_native_goal_start, false);
+    assert.equal(payload.native_goal_action, null);
+    assert.equal(payload.codex_goal_state.auto_native_goal_ack.native_goal_ack.objective, 'auto ack visible goal');
+    assert.equal(payload.codex_goal_state.goal.requires_native_goal_start, false);
+    assert.equal(payload.codex_goal_state.goal.visible_goal.status, 'active');
+    assert.doesNotMatch(payload.next_command, /mission goal ack/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal ack skips native ack for non-Codex runtime', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'run', 'non codex ack skip', '--runner', 'atris2', '--no-preflight', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const mission = JSON.parse(run.stdout).mission;
+
+    const ack = runCli([
+      'mission',
+      'goal',
+      'ack',
+      mission.id,
+      '--runtime',
+      'atris',
+      '--status',
+      'active',
+      '--objective',
+      'non codex ack skip',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
+    const payload = JSON.parse(ack.stdout);
+    assert.equal(payload.action, 'native_goal_ack_skipped');
+    assert.equal(payload.reason, 'runtime_not_codex');
+    assert.equal(payload.requires_native_goal_start, false);
+    assert.equal(payload.mission.runner, 'atris2');
   } finally {
     cleanupTempDir(dir);
   }
@@ -2738,6 +2826,7 @@ test('mission run reports replace action when a paused native-only goal blocks c
       'mission',
       'run',
       'edited paused goal test',
+      '--no-preflight',
       '--native-goal-status',
       'paused',
       '--native-goal-objective',
@@ -2803,6 +2892,7 @@ test('mission run reports replace action when a paused native-only goal blocks c
       'mission',
       'run',
       'approved paused goal test',
+      '--no-preflight',
       '--native-goal-status',
       'paused',
       '--native-goal-objective',
@@ -2836,7 +2926,7 @@ test('mission run objective reports active visible-goal conflict instead of hidi
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const oldRun = runCli(['mission', 'run', 'old visible goal', '--json'], { cwd: dir });
+    const oldRun = runCli(['mission', 'run', 'old visible goal', '--no-preflight', '--json'], { cwd: dir });
     assert.equal(oldRun.status, 0, oldRun.stderr || oldRun.stdout);
     const oldMission = JSON.parse(oldRun.stdout).mission;
     ackNativeCodexGoal(dir, oldMission);
@@ -2845,6 +2935,7 @@ test('mission run objective reports active visible-goal conflict instead of hidi
       'mission',
       'run',
       'runtime paused new goal',
+      '--no-preflight',
       '--native-goal-status',
       'paused',
       '--native-goal-objective',
@@ -2865,7 +2956,7 @@ test('mission run objective reports active visible-goal conflict instead of hidi
     assert.equal(pausedRuntimePayload.codex_goal_state.active_goal_conflict.native_goal_resolution.action, 'replace_visible_goal');
     assert.match(pausedRuntimePayload.next_command, /Resume the paused Codex goal/);
 
-    const newRun = runCli(['mission', 'run', 'new urgent goal', '--json'], { cwd: dir });
+    const newRun = runCli(['mission', 'run', 'new urgent goal', '--no-preflight', '--json'], { cwd: dir });
     assert.equal(newRun.status, 0, newRun.stderr || newRun.stdout);
     const runPayload = JSON.parse(newRun.stdout);
     const newMission = runPayload.mission;
@@ -2989,7 +3080,7 @@ test('mission goal ack supersedes stale older Codex native acks', () => {
       },
     });
 
-    const run = runCli(['mission', 'run', 'new handoff goal', '--json'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'new handoff goal', '--no-preflight', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const runPayload = JSON.parse(run.stdout);
     const newMission = runPayload.mission;
@@ -3041,12 +3132,12 @@ test('mission run --take-goal-slot pauses slot owner in one move', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const oldRun = runCli(['mission', 'run', 'old slot owner goal', '--json'], { cwd: dir });
+    const oldRun = runCli(['mission', 'run', 'old slot owner goal', '--no-preflight', '--json'], { cwd: dir });
     assert.equal(oldRun.status, 0, oldRun.stderr || oldRun.stdout);
     const oldMission = JSON.parse(oldRun.stdout).mission;
     ackNativeCodexGoal(dir, oldMission);
 
-    const newRun = runCli(['mission', 'run', 'new slot taker goal', '--take-goal-slot', '--json'], { cwd: dir });
+    const newRun = runCli(['mission', 'run', 'new slot taker goal', '--no-preflight', '--take-goal-slot', '--json'], { cwd: dir });
     assert.equal(newRun.status, 0, newRun.stderr || newRun.stdout);
     const runPayload = JSON.parse(newRun.stdout);
     const newMission = runPayload.mission;
@@ -3445,12 +3536,12 @@ test('mission prune-runs previews and deletes only old unreferenced run clutter'
   }
 });
 
-test('mission run blocks Codex-goal work until native goal ack', () => {
+test('mission run preserves native goal ack block behind --manual-ack', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const run = runCli(['mission', 'run', 'handshake test', '--json'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'handshake test', '--no-preflight', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const started = JSON.parse(run.stdout);
     const id = started.mission.id;
@@ -3463,7 +3554,7 @@ test('mission run blocks Codex-goal work until native goal ack', () => {
     assert.equal(blockedTickPayload.native_goal_action.tool, 'create_goal');
     assert.match(blockedTickPayload.next_action, /mission goal ack/);
 
-    const blockedRun = runCli(['mission', 'run', id, '--json', '--no-claude'], { cwd: dir });
+    const blockedRun = runCli(['mission', 'run', id, '--json', '--no-claude', '--manual-ack'], { cwd: dir });
     assert.equal(blockedRun.status, 2, blockedRun.stderr || blockedRun.stdout);
     assert.equal(JSON.parse(blockedRun.stdout).code, 'native_goal_not_started');
 
@@ -3727,6 +3818,7 @@ test('mission run can plan and advance a validated child-goal chain', () => {
       'mission',
       'run',
       'show me 3 or 4 goals done towards a novel mission that is validated and understandable',
+      '--no-preflight',
       '--owner',
       'auto-improver',
       '--json',
@@ -3793,6 +3885,7 @@ test('mission run recognizes set-accomplish-next wording as a child-goal chain',
       'mission',
       'run',
       rawObjective,
+      '--no-preflight',
       '--owner',
       'architect',
       '--json',
@@ -3814,7 +3907,7 @@ test('mission run accepts one-word fuzzy intent as a new mission', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const run = runCli(['mission', 'run', 'improve', '--json'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'improve', '--no-preflight', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.action, 'mission_run_started');
@@ -3831,7 +3924,7 @@ test('mission run with atris2 runner writes Atris-owned goal state without Codex
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const run = runCli(['mission', 'run', 'ax fast visible goal', '--runner', 'atris2', '--json'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'ax fast visible goal', '--runner', 'atris2', '--no-preflight', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.action, 'mission_run_started');
@@ -3870,7 +3963,7 @@ test('mission objective shorthand starts a visible-goal mission', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const run = runCli(['mission', 'fix', 'the', 'issue', '--json'], { cwd: dir });
+    const run = runCli(['mission', 'fix', 'the', 'issue', '--no-preflight', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.action, 'mission_run_started');
@@ -3902,6 +3995,7 @@ test('remote-computer mission run preserves the local mission spine contract', (
       'mission',
       'run',
       'mission parity acceptance',
+      '--no-preflight',
       '--owner',
       'mission-lead',
       '--runner',
@@ -3917,6 +4011,7 @@ test('remote-computer mission run preserves the local mission spine contract', (
       'mission',
       'run',
       'mission parity acceptance remote',
+      '--no-preflight',
       '--owner',
       'mission-lead',
       '--runner',
@@ -4034,7 +4129,7 @@ test('mission run accepts owner prefix before fuzzy intent', () => {
     fs.mkdirSync(path.join(dir, 'atris', 'team', 'validator'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'team', 'validator', 'MEMBER.md'), '# Validator\n', 'utf8');
 
-    const run = runCli(['mission', 'run', 'validator', 'check proof', '--json'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'validator', 'check proof', '--no-preflight', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.action, 'mission_run_started');
@@ -4055,6 +4150,7 @@ test('completed mission run seeds the next useful goal', () => {
       'mission',
       'run',
       'ship fuzzy intent',
+      '--no-preflight',
       '--owner',
       'mission-lead',
       '--verify',
@@ -4092,6 +4188,7 @@ test('completed mission run seeds the next useful goal', () => {
       'mission',
       'run',
       'make the next mission real',
+      '--no-preflight',
       '--owner',
       'mission-lead',
       '--json',
@@ -4173,7 +4270,7 @@ test('continuation mission chooses next mission instead of passing on inherited 
     assert.match(ack.codex_goal_state.goal.next_command, /atris mission run 'Make the concrete follow-up real' --owner mission-lead/);
     assert.doesNotMatch(ack.codex_goal_state.goal.next_command, /<next useful mission>/);
 
-    const next = runCli(['mission', 'run', 'Make the concrete follow-up real', '--owner', 'mission-lead', '--json'], { cwd: dir });
+    const next = runCli(['mission', 'run', 'Make the concrete follow-up real', '--owner', 'mission-lead', '--no-preflight', '--json'], { cwd: dir });
     assert.equal(next.status, 0, next.stderr || next.stdout);
     const nextPayload = JSON.parse(next.stdout);
     assert.equal(nextPayload.mission.objective, 'Make the concrete follow-up real');
@@ -5023,7 +5120,7 @@ test('explicit caller-session mission run exits after one recorded tick', () => 
       updated_at: '2026-05-02T00:00:00.000Z',
     });
 
-    const run = runCli(['mission', 'run', 'explicit-codex-loop', '--no-drain', '--json'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'explicit-codex-loop', '--no-preflight', '--no-drain', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     assert.equal(run.stderr, '');
     const payload = JSON.parse(run.stdout);
@@ -5040,7 +5137,7 @@ test('explicit caller-session mission run exits after one recorded tick', () => 
     assert.equal(payload.ticks[0].verifier_passed, true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'mission-explicit-codex-loop.lock')), false);
 
-    const humanRun = runCli(['mission', 'run', 'explicit-codex-loop', '--no-drain'], { cwd: dir });
+    const humanRun = runCli(['mission', 'run', 'explicit-codex-loop', '--no-preflight', '--no-drain'], { cwd: dir });
     assert.equal(humanRun.status, 0, humanRun.stderr || humanRun.stdout);
     assert.match(humanRun.stdout, /Changed: Recorded a proof heartbeat for this always-on mission\./);
     assert.doesNotMatch(humanRun.stdout, /Changed: explicit codex loop is ready for review\./);
@@ -5073,7 +5170,7 @@ test('mission run landing points to self-improvement seed when no task is queued
       updated_at: '2026-05-02T00:00:00.000Z',
     });
 
-    const run = runCli(['mission', 'run', 'seeded-codex-loop', '--no-drain'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'seeded-codex-loop', '--no-preflight', '--no-drain'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     assert.match(run.stdout, /Next: Create the next proof-backed self-improvement task\./);
     assert.doesNotMatch(run.stdout, /Next: Run the next proof step\./);
@@ -5112,7 +5209,7 @@ test('mission run landing uses evidence-backed self-improvement target', () => {
       updated_at: '2026-05-02T00:00:00.000Z',
     });
 
-    const run = runCli(['mission', 'run', 'evidence-codex-loop', '--no-drain'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'evidence-codex-loop', '--no-preflight', '--no-drain'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     assert.match(run.stdout, /Next: Add a command that creates and claims the suggested self-improvement task from the loop seed\./);
     assert.doesNotMatch(run.stdout, /Next: Run the next proof step\./);
@@ -5151,7 +5248,7 @@ test('mission run --create-next materializes the evidence-backed task', () => {
       updated_at: '2026-05-02T00:00:00.000Z',
     });
 
-    const run = runCli(['mission', 'run', 'create-next-codex-loop', '--no-drain', '--create-next'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'create-next-codex-loop', '--no-preflight', '--no-drain', '--create-next'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
     const task = projection.tasks.find((row) => row.title === 'Add mission run create-next so a heartbeat can materialize the suggested loop task');
@@ -5213,7 +5310,7 @@ test('mission run --create-next names the active task when duplicate protection 
     assert.equal(created.status, 0, created.stderr || created.stdout);
     const task = JSON.parse(created.stdout).task;
 
-    const run = runCli(['mission', 'run', 'create-next-active-codex-loop', '--no-drain', '--create-next'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'create-next-active-codex-loop', '--no-preflight', '--no-drain', '--create-next'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     assert.ok(
       run.stdout.includes(`Changed: Kept active task: ${task.display_id} ${task.title}. No duplicate was created.`),
@@ -6249,10 +6346,11 @@ test('mission help documents status filters', () => {
     assert.match(help.stdout, /mission report \[id\] \[--limit <n>\] \[--local\] \[--json\]/);
     assert.match(help.stdout, /mission timeline \[id\] \[--limit <n>\] \[--all\] \[--prune-preview\] \[--write\] \[--json\]/);
     assert.match(help.stdout, /rolls up sibling git-worktree missions/);
-    assert.match(help.stdout, /mission goal \[--runtime codex\|atris\] \[--heartbeat\] \[--native-goal-status active\|paused\] \[--native-goal-objective "\.\.\."\] \[--allow-native-goal-supersede\] \[--json\]/);
+    assert.match(help.stdout, /mission goal \[--runtime codex\|atris\] \[--heartbeat\] \[--native-goal-status active\|paused\] \[--native-goal-objective "\.\.\."\] \[--manual-ack\] \[--allow-native-goal-supersede\] \[--json\]/);
     assert.match(help.stdout, /mission goal ack <id> --runtime codex --status active --objective "<objective>" --json/);
     assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);
     assert.match(help.stdout, /--spend-full-budget\|--use-whole-budget\|--stop-when-done/);
+    assert.match(help.stdout, /--preflight\|--no-preflight\|--room-preflight\|--no-room-preflight/);
     assert.match(help.stdout, /short time like "20 minutes" means finish early/);
     assert.match(help.stdout, /long\/sleep time like "5 hours" keeps using the budget/);
     assert.match(help.stdout, /Autonomy recipe:/);
