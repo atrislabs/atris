@@ -13005,6 +13005,83 @@ test('task headless JSON contract supports create, claim, note, finish, and even
   }
 });
 
+// CLI-865: claiming an already-done task burns a whole dispatch when a
+// rendered view (atris/TODO.md) is stale, as it did twice live: the agent
+// claims, builds, then discovers the work was already done. On an
+// already_done claim failure, point straight at a real open task from the
+// live projection instead of just reporting the failure.
+test('claiming an already-done task suggests the next open task from the same tag, in JSON and human output', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const doneTask = runCli(['task', 'add', 'Ship the widget', '--tag', 'speedy', '--json'], { cwd: dir, env });
+    assert.equal(doneTask.status, 0, doneTask.stderr);
+    const doneRef = JSON.parse(doneTask.stdout).task.display_id;
+    const sameTagOpen = runCli(['task', 'add', 'Ship the other widget', '--tag', 'speedy', '--json'], { cwd: dir, env });
+    assert.equal(sameTagOpen.status, 0, sameTagOpen.stderr);
+    const sameTagRef = JSON.parse(sameTagOpen.stdout).task.display_id;
+    const otherTagOpen = runCli(['task', 'add', 'Unrelated open task', '--tag', 'other', '--json'], { cwd: dir, env });
+    assert.equal(otherTagOpen.status, 0, otherTagOpen.stderr);
+
+    assert.equal(runCli(['task', 'claim', doneRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const finish = runCli(['task', 'finish', doneRef, '--proof', 'node --test', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(finish.status, 0, finish.stderr);
+    assert.equal(JSON.parse(finish.stdout).task.status, 'done');
+
+    // Stale render: an agent still holding an old atris/TODO.md tries to
+    // claim the now-done task.
+    const claimJson = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
+    assert.equal(claimJson.status, 1);
+    const claimPayload = JSON.parse(claimJson.stdout);
+    assert.equal(claimPayload.ok, false);
+    assert.equal(claimPayload.reason, 'already_done');
+    assert.ok(claimPayload.next_claimable, 'already_done must suggest a next claimable task');
+    assert.equal(claimPayload.next_claimable.ref, sameTagRef, 'same tag beats a different-tag open task');
+
+    const claimHuman = runCli(['task', 'claim', doneRef, '--as', 'sonnet'], { cwd: dir, env });
+    assert.equal(claimHuman.status, 1);
+    assert.match(claimHuman.stderr, /claim failed: already_done/);
+    assert.match(claimHuman.stderr, new RegExp(`next claimable: ${sameTagRef} .*atris task claim ${sameTagRef} --as sonnet`));
+
+    // Once the same-tag task is also gone, fall back to any open task.
+    assert.equal(runCli(['task', 'claim', sameTagRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const finish2 = runCli(['task', 'finish', sameTagRef, '--proof', 'node --test', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(finish2.status, 0, finish2.stderr);
+    const claimFallback = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
+    const fallbackPayload = JSON.parse(claimFallback.stdout);
+    assert.equal(fallbackPayload.next_claimable.ref, JSON.parse(otherTagOpen.stdout).task.display_id);
+
+    // Once every task is claimed/done, there is nothing left to suggest.
+    assert.equal(runCli(['task', 'claim', JSON.parse(otherTagOpen.stdout).task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const claimNoneLeft = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
+    assert.equal(JSON.parse(claimNoneLeft.stdout).next_claimable, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('claiming a task that is only already_claimed (not already_done) never suggests a next task', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const created = runCli(['task', 'add', 'Ship the widget', '--tag', 'speedy', '--json'], { cwd: dir, env });
+    const ref = JSON.parse(created.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const conflict = runCli(['task', 'claim', ref, '--as', 'sonnet', '--json'], { cwd: dir, env });
+    assert.equal(JSON.parse(conflict.stdout).reason, 'already_claimed');
+    assert.equal(JSON.parse(conflict.stdout).next_claimable, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task status gives web and Swarlo a compact live contract', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();

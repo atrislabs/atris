@@ -5353,6 +5353,22 @@ function guardExplicitActor(command, value) {
   }
 }
 
+// A claim against an already-done task burns a whole dispatch when a
+// rendered view (atris/TODO.md) is stale: the agent claims, builds, then
+// discovers the work was already done. Point straight at a real open task
+// instead of just reporting the failure, straight from the live projection
+// (never the rendered file), preferring the same tag when one is open.
+function suggestNextClaimableTask(projection, { excludeId = null, tag = '' } = {}) {
+  const open = (projection && projection.tasks || []).filter((t) => t && t.status === 'open' && t.id !== excludeId);
+  if (!open.length) return null;
+  const normalizedTag = String(tag || '').trim().toLowerCase();
+  if (normalizedTag) {
+    const sameTag = open.find((t) => String(t.tag || '').trim().toLowerCase() === normalizedTag);
+    if (sameTag) return sameTag;
+  }
+  return open[0];
+}
+
 function cmdClaim(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -5383,6 +5399,12 @@ function cmdClaim(args) {
     const recoveryCommand = result.reason === 'already_claimed' && result.claimed_by
       ? `atris task release ${id} --as ${result.claimed_by}`
       : null;
+    let nextClaimable = null;
+    if (result.reason === 'already_done') {
+      const doneRow = taskDb.getTask(db, taskId);
+      const { projection } = writeDefaultProjection(taskDb, db);
+      nextClaimable = suggestNextClaimableTask(projection, { excludeId: taskId, tag: doneRow && doneRow.tag });
+    }
     if (wantsJson(args)) {
       printJson({
         ok: false,
@@ -5390,12 +5412,16 @@ function cmdClaim(args) {
         reason: result.reason,
         claimed_by: result.claimed_by || null,
         recovery_command: recoveryCommand,
+        next_claimable: nextClaimable ? { id: nextClaimable.id, ref: taskRef(nextClaimable), tag: nextClaimable.tag || null, title: nextClaimable.title } : null,
         detail: `claim failed: ${result.reason}${result.claimed_by ? ` (held by ${result.claimed_by})` : ''}`,
       });
       process.exit(1);
     }
     console.error(`claim failed: ${result.reason}${result.claimed_by ? ` (held by ${result.claimed_by})` : ''}`);
     if (recoveryCommand) console.error(`Recovery: ${recoveryCommand}`);
+    if (nextClaimable) {
+      console.error(`next claimable: ${taskRef(nextClaimable)} ${String(nextClaimable.title || '').slice(0, 80)} (atris task claim ${taskRef(nextClaimable)} --as ${owner})`);
+    }
     process.exit(1);
   }
 }
