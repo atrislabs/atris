@@ -50,7 +50,6 @@ Epics live below in "Big jobs" and are NOT loop-seedable, so an unattended
 cycle never chases something too vague to finish.
 
 - [ ] worktree start cuts stale bases: atris worktree start prints base: origin/master but cut a ref 71 commits behind it on 2026-07-05 (two codex flights died on rebase conflicts from it). Find where the base ref is resolved in commands/worktree.js, fetch origin master first (or resolve the remote tip), and pin with a test. Done: fresh worktree HEAD equals the true remote master tip. Check: node --test test/worktree.test.js.
-- [ ] `atris report week --html`: render the weekly block as a standalone on-brand page via lib/html-render renderHtml (panel for landings, bignumber for xp), with --out FILE. Done: flag renders a themed page, test pins the html contains the panel. Check: node --test test/report.test.js.
 
 (Shipped items are pruned on completion; git history is the archive.)
 
