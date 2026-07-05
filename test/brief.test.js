@@ -5,12 +5,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const autoland = require('../lib/autoland');
-const { briefOperatorGate } = require('../commands/brief');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const {
+  buildBriefData,
+  briefCommand,
+  handleBriefAnswer,
+  renderBrief,
+  renderBriefHtml,
+  shouldPromptBrief,
+} = require('../commands/brief');
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const NOW = new Date('2026-07-05T12:00:00Z').getTime();
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-brief-test-'));
@@ -20,207 +26,203 @@ function cleanup(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function seedState(dir) {
-  const now = Date.now();
+function ensureDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function seedProjection(dir, tasks) {
   const stateDir = path.join(dir, '.atris', 'state');
-  fs.mkdirSync(stateDir, { recursive: true });
-  fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({
-    schema: 'atris.task_projection.v1',
-    tasks: [
+  ensureDir(stateDir);
+  fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({ tasks }, null, 2), 'utf8');
+}
+
+function seedRoadmap(dir, items) {
+  fs.writeFileSync(
+    path.join(dir, 'ROADMAP.md'),
+    `# Roadmap\n\n## Open loop items\n\n${items.map(item => `- [ ] ${item}`).join('\n')}\n`,
+    'utf8'
+  );
+}
+
+function captureStdout(fn) {
+  const originalLog = console.log;
+  let out = '';
+  console.log = (...args) => {
+    out += `${args.join(' ')}\n`;
+  };
+  return Promise.resolve()
+    .then(fn)
+    .then((code) => ({ code, out }))
+    .finally(() => {
+      console.log = originalLog;
+    });
+}
+
+test('empty workspace renders a friendly brief', () => {
+  const dir = makeTempDir();
+  try {
+    const data = buildBriefData(dir, { now: NOW });
+    const out = renderBrief(data);
+    assert.match(out, /atris brief: 0 landed, 0 waiting, 0 next moves/);
+    assert.match(out, /landed: nothing finished yet/);
+    assert.match(out, /waiting on you: nothing waiting/);
+    assert.match(out, /next moves: nothing ranked/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('seeded done task inside 24h appears in landed with proof pointer', () => {
+  const dir = makeTempDir();
+  try {
+    seedProjection(dir, [
       {
-        id: 'task-1',
+        id: 'done-1',
         display_id: 'CLI-1',
-        title: 'CLI-991 fix `node --test` 01HZY3ZX4QJBPXG6NQ9M7K2T1P commands/brief.js:44 so the operator can read it.',
+        title: 'Ship atris brief for fast operator review',
         status: 'done',
-        claimed_by: 'agent-one',
-        updated_at: new Date(now).toISOString(),
-        done_at: new Date(now).toISOString(),
+        done_at: new Date(NOW - 2 * 60 * 60 * 1000).toISOString(),
         metadata: {
-          latest_agent_proof: [
-            'node --test test/brief.test.js -> pass 12/12.',
-            'npm test passed.',
-            'PR https://github.com/atrislabs/atris-cli/pull/123 merged.',
-          ].join(' '),
-          agent_certified: true,
+          latest_agent_proof: 'verified with receipt atris/runs/brief-proof.json',
         },
       },
       {
-        id: 'task-2',
+        id: 'old-1',
         display_id: 'CLI-2',
-        title: 'review the handoff so the launch does not wait',
-        status: 'review',
-        claimed_by: 'agent-two',
-        updated_at: new Date(now).toISOString(),
-        metadata: {
-          assigned_to: 'agent-two',
-          latest_agent_proof: 'verified after review',
-        },
+        title: 'Old done task',
+        status: 'done',
+        done_at: new Date(NOW - 2 * DAY_MS).toISOString(),
       },
+    ]);
+    const data = buildBriefData(dir, { now: NOW });
+    assert.equal(data.landed.length, 1);
+    assert.equal(data.landed[0].id, 'CLI-1');
+    assert.equal(data.landed[0].proof, 'atris/runs/brief-proof.json');
+    assert.match(renderBrief(data), /atris\/runs\/brief-proof\.json/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('seeded review task appears in waiting', () => {
+  const dir = makeTempDir();
+  try {
+    seedProjection(dir, [
       {
-        id: 'task-3',
+        id: 'review-1',
         display_id: 'CLI-3',
-        title: 'keep the board moving so the team stays unblocked',
-        status: 'claimed',
-        updated_at: new Date(now).toISOString(),
-        metadata: {
-          assigned_to: 'agent-one',
-        },
+        title: 'Approve the brief so operators can keep shipping',
+        status: 'review',
+        tag: 'customer',
+        updated_at: new Date(NOW - 5 * 60 * 60 * 1000).toISOString(),
       },
-    ],
-  }, null, 2));
-  fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), `${JSON.stringify({
-    id: 'mission-1',
-    owner: 'mission-lead',
-    runner: 'codex',
-    objective: 'CLI-555 keep the operator current through commands/brief.js:91',
-    status: 'running',
-  })}\n`);
-}
-
-function runCli(args, cwd) {
-  return spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 20000,
-    env: {
-      ...process.env,
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      ATRIS_BRIEF_NO_OPEN: '1',
-    },
-  });
-}
-
-test('brief --json groups recent tasks by agent and bucket', () => {
-  const dir = makeTempDir();
-  try {
-    seedState(dir);
-    const result = runCli(['brief', '--json'], dir);
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    const data = JSON.parse(result.stdout);
-    const agents = Object.fromEntries(data.agents.map(agent => [agent.agent, agent]));
-    assert.equal(agents['agent-one'].buckets.landed.length, 1);
-    assert.equal(agents['agent-one'].buckets.working_now.length, 1);
-    assert.equal(agents['agent-two'].buckets.in_review.length, 1);
-    assert.equal(data.waiting_on_you.length, 1);
-    assert.equal(data.missions.length, 1);
-    assert.equal(data.totals.landed, 1);
-    assert.equal(data.totals.in_review, 1);
-    assert.equal(data.totals.working, 1);
-    assert.equal(data.totals.active_missions, 1);
+    ]);
+    const data = buildBriefData(dir, { now: NOW });
+    assert.equal(data.waiting.length, 1);
+    assert.equal(data.waiting[0].id, 'CLI-3');
+    assert.equal(data.waiting[0].why, 'protected customer lane');
+    assert.match(renderBrief(data), /waiting on you: review work needs a decision/);
   } finally {
     cleanup(dir);
   }
 });
 
-test('brief writes operator html without raw ids, paths, commands, or proof dumps', () => {
+test('--json shape is stable', async () => {
   const dir = makeTempDir();
   try {
-    seedState(dir);
-    const out = path.join(dir, 'b.html');
-    const result = runCli(['brief', '--out', out], dir);
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.ok(fs.existsSync(out));
-    const html = fs.readFileSync(out, 'utf8');
-    assert.match(html, /what your team did/);
-    assert.match(html, /agent-one/);
-    assert.match(html, /the operator can read it/);
-    assert.match(html, /<a href="https:\/\/github\.com\/atrislabs\/atris-cli\/pull\/123"[^>]*>pr #123<\/a>/);
-    assert.match(html, />verified</);
-    assert.doesNotMatch(html, /[0-9A-HJKMNP-TV-Z]{20}/);
-    assert.doesNotMatch(html, /\b[A-Z]{2,4}-\d+\b/);
-    assert.doesNotMatch(html, /node --test/);
-    assert.doesNotMatch(html, /npm test/);
-    assert.doesNotMatch(html, /\.js:/);
-    assert.doesNotMatch(html, /--/);
+    seedProjection(dir, [
+      {
+        id: 'done-1',
+        display_id: 'CLI-1',
+        title: 'Ship json brief',
+        status: 'done',
+        done_at: new Date(NOW).toISOString(),
+      },
+    ]);
+    const { code, out } = await captureStdout(() => briefCommand(['--json'], dir, {
+      stdin: { isTTY: false },
+      stdout: { isTTY: false },
+    }));
+    assert.equal(code, 0);
+    const data = JSON.parse(out);
+    assert.deepEqual(Object.keys(data), ['schema', 'days', 'landed', 'waiting', 'moves', 'week']);
+    assert.equal(data.schema, 'atris.brief.v1');
+    assert.equal(data.days, 1);
+    assert.equal(data.landed.length, 1);
+    assert.deepEqual(data.waiting, []);
+    assert.deepEqual(data.moves, []);
+    assert.match(data.week, /^week in review:/);
   } finally {
     cleanup(dir);
   }
 });
 
-test('briefOperatorGate blocks raw operator jargon as a hard error', () => {
-  assert.throws(() => briefOperatorGate(['CLI-991 leaked']), /ticket id/);
-  assert.throws(() => briefOperatorGate(['node --test leaked']), /shell fragment/);
-  assert.throws(() => briefOperatorGate(['commands/brief.js:44 leaked']), /file path/);
+test('html contains the waiting panel', () => {
+  const dir = makeTempDir();
+  try {
+    seedProjection(dir, [
+      {
+        id: 'review-1',
+        display_id: 'CLI-4',
+        title: 'Review the brief html',
+        status: 'review',
+        updated_at: new Date(NOW).toISOString(),
+      },
+    ]);
+    const html = renderBriefHtml(buildBriefData(dir, { now: NOW }));
+    assert.match(html, /^<!doctype html>/);
+    assert.match(html, /data-atris-block="panel"/);
+    assert.match(html, /waiting on you/);
+    assert.match(html, /review lane/);
+  } finally {
+    cleanup(dir);
+  }
 });
 
-test('brief prefers stored result sentences over task titles', () => {
-  const digest = autoland.composeDigest({
-    accepted: {
-      auto: [{
-        ref: 'CLI-1',
-        title: 'Add --brief-result flag to commands/task.js',
-        result: 'Operators can now approve finished work faster because each row names the human result.',
-        member: 'codex',
-      }],
-      human: [],
-    },
-    waiting: [],
-    landed: null,
-    project: 'atris-cli',
+test('renderBrief output has no em dash character', () => {
+  const out = renderBrief({
+    schema: 'atris.brief.v1',
+    days: 1,
+    landed: [{ id: 'CLI-1', title: 'Finished work', proof: 'proof on file', age: '1h' }],
+    waiting: [{ id: 'CLI-2', title: 'Review work', why: 'review lane', age: '2h' }],
+    moves: [{ id: 'm_1', title: 'Next move', why: 'roadmap item', source: 'roadmap' }],
+    week: 'week in review: 1 landed, 0 completions, 0 xp',
   });
-  assert.match(digest, /operators can now approve finished work faster/);
-  assert.doesNotMatch(digest, /brief-result|commands\/task\.js/);
-  assert.match(digest, /1 landed \(1 explained\)/);
+  assert.equal(out.includes('\u2014'), false);
 });
 
-test('brief hides jargon-only landed titles and counts unexplained work', () => {
-  const digest = autoland.composeDigest({
-    accepted: {
-      auto: [
-        { ref: 'CLI-1', title: 'Add --json flag to commands/task.js', member: 'codex' },
-        { ref: 'CLI-2', title: 'CLI-123 repair task_result_projection', member: 'codex' },
-      ],
-      human: [],
-    },
-    waiting: [],
-    landed: null,
-    project: 'atris-cli',
-  });
-  assert.match(digest, /2 landed \(0 explained\)/);
-  assert.match(digest, /2 more landed from codex that could not explain themselves yet/);
-  assert.doesNotMatch(digest, /commands\/task\.js|task_result_projection|--json|CLI-123/);
-});
+test('non-tty branch does not prompt and one-shot answer handling is factored', async () => {
+  const dir = makeTempDir();
+  try {
+    seedProjection(dir, [
+      {
+        id: 'review-1',
+        display_id: 'CLI-5',
+        title: 'Review the waiting item',
+        status: 'review',
+        updated_at: new Date(NOW).toISOString(),
+      },
+    ]);
+    seedRoadmap(dir, ['approve the next loop move']);
+    const data = buildBriefData(dir, { now: NOW });
+    assert.equal(shouldPromptBrief({
+      flags: {},
+      stdin: { isTTY: false },
+      stdout: { isTTY: true },
+      data,
+    }), false);
 
-test('brief hides jargon-only review titles and counts unexplained review work', () => {
-  const digest = autoland.composeDigest({
-    accepted: { auto: [], human: [] },
-    waiting: [
-      { ref: 'CLI-3', title: 'Wire --accept-all to task_result_projection', member: 'validator', hours: 4 },
-    ],
-    landed: null,
-    project: 'atris-cli',
-  });
-  assert.match(digest, /waiting on you \(0 explained\/1 total/);
-  assert.match(digest, /1 more in review from validator that could not explain themselves yet/);
-  assert.doesNotMatch(digest, /task_result_projection|--accept-all/);
-});
+    const accepted = handleBriefAnswer(dir, data, 'a 1', {
+      acceptTask: (id) => ({ ok: true, output: `accepted ${id}` }),
+    });
+    assert.deepEqual(accepted, { ok: true, message: 'accepted CLI-5' });
 
-test('mission brief line uses visible goal before objective', () => {
-  const line = autoland.missionDigestLine({
-    objective: 'CLI-888 run mission_status_sync',
-    visible_goal: {
-      desired_objective: 'Operators can now see the mission result faster because the goal is written plainly.',
-    },
-  });
-  assert.equal(line, 'Operators can now see the mission result faster because the goal is written plainly.');
-});
-
-test('brief truncation drops dangling fragments', () => {
-  const digest = autoland.composeDigest({
-    accepted: {
-      auto: [{
-        ref: 'CLI-4',
-        title: 'Operators save time because the brief keeps readable context (with an unfinished fragment that would otherwise trail and',
-      }],
-      human: [],
-    },
-    waiting: [],
-    landed: null,
-    project: 'atris-cli',
-  });
-  for (const line of digest.split('\n').map((entry) => entry.trim()).filter(Boolean)) {
-    assert.doesNotMatch(line, /\($/);
-    assert.doesNotMatch(line, /\b(after|with|and|or|to|for)[.!?]?$/i);
-    assert.ok(!(line.includes('(') && !line.includes(')')), `dangling open paren in: ${line}`);
+    const moved = handleBriefAnswer(dir, data, 'm 1', {
+      approveMove: () => ({ alreadyPresent: false }),
+    });
+    assert.equal(moved.ok, true);
+    assert.match(moved.message, /seeded into the loop/);
+  } finally {
+    cleanup(dir);
   }
 });

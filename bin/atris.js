@@ -503,7 +503,7 @@ function showHelp() {
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
-  console.log('  brief      - Show one plain page of recent team progress');
+  console.log('  brief      - Show the one-glance operator brief');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
   console.log('  recap      - What your AI team did, in plain English (--share for paste-ready)');
   console.log('  report     - Weekly block: landings, journal completions, and Career XP');
@@ -2543,7 +2543,7 @@ if (command === 'init') {
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'brief') {
-  // Brief: one on-brand local HTML page of recent agent activity.
+  // Brief: one-glance operator surface for landings, waits, and next moves.
   Promise.resolve(require('../commands/brief').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });

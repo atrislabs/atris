@@ -112,6 +112,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 ## By-Feature Map
 
 - **atris report:** `commands/report.js` renders a weekly operator block from landings, journals, and Career XP with coverage in `test/report.test.js`.
+- **atris brief:** `commands/brief.js` renders the one-glance operator brief from done tasks, review waits, next moves, and the weekly report line with coverage in `test/brief.test.js`.
 
 ### Feature: Natural Language Interface (`atris [anything]`)
 
@@ -776,14 +777,14 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 ### Feature: Brief (`atris brief`)
 
-**Purpose:** Operator voice HTML page for recent team progress. It keeps JSON agent data stable, but gates the page so ids, paths, commands, and test tallies do not reach the operator.
+**Purpose:** One-glance operator surface: what landed with proof, what waits on the human, and the next ranked moves.
 
-- **Entry point:** `commands/brief.js` (`buildBriefData`, `renderBriefHtml`, `briefOperatorGate`, `run`)
+- **Entry point:** `commands/brief.js` (`buildBriefData`, `renderBrief`, `renderBriefHtml`, `briefCommand`)
 - **Routing:** `bin/atris.js` (`command === 'brief'` branch, `knownCommands` list, Context & tracking help line)
-- **Data sources:** `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, landing board summary when available
-- **Regression:** `test/brief.test.js` (JSON shape, proof links, operator jargon gate)
+- **Data sources:** `.atris/state/tasks.projection.json`, `lib/next-moves.js`, and `commands/report.js`
+- **Regression:** `test/brief.test.js` (empty state, landed proof, review waits, JSON, HTML panel, no em dash, non-TTY prompt)
 
-**Search:** `rg "buildBriefData|renderBriefHtml|briefOperatorGate|command === 'brief'" commands/brief.js bin/atris.js test/brief.test.js`
+**Search:** `rg "buildBriefData|renderBrief|briefCommand|command === 'brief'" commands/brief.js bin/atris.js test/brief.test.js`
 
 ### Feature: Recap (`atris recap`)
 

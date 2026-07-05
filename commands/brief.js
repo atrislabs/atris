@@ -1,608 +1,521 @@
+'use strict';
+
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const readline = require('readline');
+const { spawnSync } = require('child_process');
 
-const { clarify } = require('../lib/autoland');
+const autoland = require('../lib/autoland');
+const { DENIED_TAGS } = require('../lib/auto-accept-certified');
+const { renderHtml } = require('../lib/html-render');
+const { nextMoves, recordDecision, seedInboxFromMove } = require('../lib/next-moves');
+const { buildWeekReportData, renderWeekReport } = require('./report');
 
-const HOUR_MS = 60 * 60 * 1000;
-const DEFAULT_HOURS = 24;
-const DEFAULT_OUT = path.join('.atris', 'state', 'brief.html');
-const ACTIVE_MISSION_STATUSES = new Set(['ready', 'running', 'planning']);
-const HTTPS_URL_RE = /https:\/\/[^\s<>"')]+/g;
-const GITHUB_PULL_RE = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/(\d+)/i;
-const SCRUB_ULID_RE = /[0-9A-HJKMNP-TV-Z]{20,}/g;
-const SCRUB_TICKET_RE = /\b[A-Z]{2,4}-\d+\b/g;
-const SCRUB_BACKTICK_RE = /`[^`]*`/g;
-const SCRUB_PATH_RE = /\S+\.(?:js|md|py|json|ts)(?::\d+)?/gi;
-const SHELL_WORD_RE = /\b(?:npm|node|grep|git)\s+/gi;
-const SHELL_MARK_RE = /--|->/g;
-const GUARD_RULES = [
-  { name: 'raw work id', re: /[0-9A-HJKMNP-TV-Z]{20,}/ },
-  { name: 'ticket id', re: /\b[A-Z]{2,4}-\d+\b/ },
-  { name: 'shell fragment', re: /--|->|\bnpm\s+|\bnode\s+|\bgrep\s+|\bgit\s+/i },
-  { name: 'file path', re: /\S+\.(?:js|md|py|json|ts)(?::\d+)?/i },
-  { name: 'test tally', re: /\b\d+\s*\/\s*\d+\b|\b\d+\s+(?:tests?|checks?)\b/i },
-];
-
-function parseFlags(argv = []) {
-  const flags = {
-    hours: DEFAULT_HOURS,
-    out: DEFAULT_OUT,
-    open: false,
-    json: false,
-    theme: 'atris',
-    help: false,
-  };
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (arg === '--help' || arg === '-h' || arg === 'help') {
-      flags.help = true;
-    } else if (arg === '--open') {
-      flags.open = true;
-    } else if (arg === '--json') {
-      flags.json = true;
-    } else if (arg === '--hours') {
-      const value = Number(argv[i + 1]);
-      if (Number.isFinite(value) && value > 0) flags.hours = value;
-      i += 1;
-    } else if (arg === '--out') {
-      if (argv[i + 1]) flags.out = argv[i + 1];
-      i += 1;
-    } else if (arg === '--theme') {
-      if (argv[i + 1]) flags.theme = argv[i + 1];
-      i += 1;
-    }
-  }
-  return flags;
-}
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TASK_PROJECTION_FILE = path.join('.atris', 'state', 'tasks.projection.json');
+const NEEDS_HUMAN_TAGS = new Set(['needs-human', 'human-review', 'human', 'manual', 'protected', 'denied']);
 
 function readProjection(root) {
-  const projectionPath = path.join(root, '.atris', 'state', 'tasks.projection.json');
-  if (!fs.existsSync(projectionPath)) return null;
+  const projectionPath = path.join(root, TASK_PROJECTION_FILE);
+  if (!fs.existsSync(projectionPath)) return [];
   try {
     const parsed = JSON.parse(fs.readFileSync(projectionPath, 'utf8'));
-    return Array.isArray(parsed.tasks) ? parsed.tasks : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function timeMs(value) {
-  if (value == null || value === '') return null;
-  if (typeof value === 'number' && Number.isFinite(value)) return value < 100000000000 ? value * 1000 : value;
-  const numeric = Number(value);
-  if (Number.isFinite(numeric) && String(value).trim() !== '') return numeric < 100000000000 ? numeric * 1000 : numeric;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function taskInsideWindow(task, sinceMs) {
-  const updated = timeMs(task.updated_at);
-  const done = timeMs(task.done_at);
-  return (updated != null && updated >= sinceMs) || (done != null && done >= sinceMs);
-}
-
-function agentForTask(task) {
-  const meta = task.metadata || {};
-  return String(task.claimed_by || meta.assigned_to || 'unassigned').trim() || 'unassigned';
-}
-
-function displayTaskId(task) {
-  return String(task.display_id || task.id || '').trim();
-}
-
-function flatText(value) {
-  return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
-}
-
-function proofText(task) {
-  const meta = task.metadata || {};
-  return flatText(meta.latest_agent_proof || '');
-}
-
-function bucketName(status) {
-  if (status === 'done') return 'landed';
-  if (status === 'review') return 'in_review';
-  if (status === 'open' || status === 'claimed') return 'working_now';
-  return null;
-}
-
-function emptyAgent(name) {
-  return {
-    agent: name,
-    buckets: {
-      landed: [],
-      in_review: [],
-      working_now: [],
-    },
-  };
-}
-
-function summarizeTasks(tasks) {
-  const agents = new Map();
-  const waitingOnYou = [];
-  const totals = {
-    landed: 0,
-    in_review: 0,
-    working: 0,
-  };
-
-  for (const task of tasks) {
-    const status = String(task.status || '').toLowerCase();
-    const bucket = bucketName(status);
-    if (!bucket) continue;
-    const agent = agentForTask(task);
-    if (!agents.has(agent)) agents.set(agent, emptyAgent(agent));
-    const item = {
-      id: task.id || null,
-      display_id: displayTaskId(task),
-      title: task.title || '',
-      status,
-      claimed_by: task.claimed_by || null,
-      assigned_to: task.metadata && task.metadata.assigned_to || null,
-      updated_at: task.updated_at || null,
-      done_at: task.done_at || null,
-      proof: proofText(task),
-      agent_certified: Boolean(task.metadata && task.metadata.agent_certified),
-      landing_branch: task.metadata && task.metadata.landing_branch || null,
-      landing_pr: task.metadata && task.metadata.landing_pr || null,
-      landing_url: task.metadata && task.metadata.landing_url || null,
-    };
-    agents.get(agent).buckets[bucket].push(item);
-    if (bucket === 'landed') totals.landed += 1;
-    if (bucket === 'in_review') {
-      totals.in_review += 1;
-      waitingOnYou.push(item);
-    }
-    if (bucket === 'working_now') totals.working += 1;
-  }
-
-  return {
-    agents: [...agents.values()].sort((a, b) => a.agent.localeCompare(b.agent)),
-    waiting_on_you: waitingOnYou,
-    totals,
-  };
-}
-
-function readActiveMissions(root) {
-  try {
-    const file = path.join(root, '.atris', 'state', 'missions.jsonl');
-    if (!fs.existsSync(file)) return [];
-    const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
-    const seen = new Map();
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      let rec;
-      try { rec = JSON.parse(lines[i]); } catch { continue; }
-      const id = rec.id || rec.mission_id;
-      if (!id || seen.has(id)) continue;
-      seen.set(id, rec);
-    }
-    const live = [];
-    for (const mission of seen.values()) {
-      const status = String(mission.status || '');
-      if (!ACTIVE_MISSION_STATUSES.has(status)) continue;
-      live.push({
-        id: mission.id || mission.mission_id,
-        owner: mission.owner || '?',
-        runner: mission.runner || null,
-        objective: mission.objective || '',
-        status,
-      });
-    }
-    return live;
+    return Array.isArray(parsed.tasks) ? parsed.tasks : [];
   } catch {
     return [];
   }
 }
 
-function collectLandings(root) {
-  try {
-    const land = require('./land');
-    if (!land || typeof land.collectBoard !== 'function') {
-      return { status: 'unavailable', note: 'landings: unavailable' };
-    }
-    const board = land.collectBoard(root);
-    return {
-      status: 'available',
-      summary: {
-        unlanded: board.summary && Number(board.summary.unlanded) || 0,
-        due: board.summary && Number(board.summary.due) || 0,
-        landed: board.summary && Number(board.summary.landed) || 0,
-      },
-    };
-  } catch {
-    return { status: 'unavailable', note: 'landings: unavailable' };
+function timestampMs(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
   }
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && String(value).trim() !== '') {
+    return numeric < 100000000000 ? numeric * 1000 : numeric;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-function buildBriefData(root = process.cwd(), options = {}) {
-  const hours = Number.isFinite(Number(options.hours)) && Number(options.hours) > 0
-    ? Number(options.hours)
-    : DEFAULT_HOURS;
-  const nowMs = options.nowMs || Date.now();
-  const sinceMs = nowMs - hours * HOUR_MS;
-  const projectionTasks = readProjection(root) || [];
-  const windowTasks = projectionTasks.filter(task => taskInsideWindow(task, sinceMs));
-  const taskSummary = summarizeTasks(windowTasks);
-  const missions = readActiveMissions(root);
-  return {
-    schema: 'atris.brief.v1',
-    generated_at: new Date(nowMs).toISOString(),
-    window: {
-      hours,
-      since: new Date(sinceMs).toISOString(),
-      until: new Date(nowMs).toISOString(),
-    },
-    totals: {
-      ...taskSummary.totals,
-      active_missions: missions.length,
-    },
-    agents: taskSummary.agents,
-    waiting_on_you: taskSummary.waiting_on_you,
-    missions,
-    landings: collectLandings(root),
-  };
+function normalizeNow(now) {
+  return timestampMs(now) || Date.now();
 }
 
-function escapeHtml(value) {
-  return String(value == null ? '' : value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function firstSentence(text) {
-  const clean = flatText(text);
-  if (!clean) return '';
-  const match = clean.match(/^.*?[.!?](?:\s|$)/);
-  return match ? match[0].trim() : clean;
-}
-
-function scrubOperatorText(text) {
-  return flatText(text)
-    .replace(SCRUB_BACKTICK_RE, ' ')
-    .replace(SCRUB_ULID_RE, ' ')
-    .replace(SCRUB_TICKET_RE, ' ')
-    .replace(SCRUB_PATH_RE, ' ')
-    .replace(SHELL_WORD_RE, ' ')
-    .replace(SHELL_MARK_RE, ' ')
+function inlineText(value, fallback = 'untitled') {
+  const text = String(value || '')
+    .replace(/[\u2014\u2013]/g, '-')
     .replace(/\s+/g, ' ')
     .trim();
+  return text || fallback;
 }
 
-function operatorSentence(text, max = 110, fallback = 'Work moved forward.') {
-  const cleaned = scrubOperatorText(text);
-  const line = firstSentence(clarify(cleaned, max));
-  const finished = clarify(line, max)
-    .replace(/\b(?:through|via|with|from|in|at|on|for|to|by)$/i, '')
-    .replace(/[,\s]+$/, '');
-  return finished || fallback;
+function outputText(value, fallback = '') {
+  return inlineText(value, fallback).toLowerCase();
 }
 
-function plural(n, word, pluralWord = `${word}s`) {
-  return `${n} ${n === 1 ? word : pluralWord}`;
+function finishText(value, max = 150) {
+  const clean = inlineText(value, '');
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max);
+  const sentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('! '));
+  if (sentence > max * 0.35) return cut.slice(0, sentence + 1).trim();
+  const clause = Math.max(cut.lastIndexOf('; '), cut.lastIndexOf(', '), cut.lastIndexOf(': '));
+  if (clause > max * 0.45) return cut.slice(0, clause).trim();
+  const space = cut.lastIndexOf(' ');
+  return cut.slice(0, space > max * 0.55 ? space : max).trim();
 }
 
-function headlineSub(data) {
-  const parts = [
-    `${data.totals.landed} landed`,
-    `${data.totals.in_review} needs you`,
-    `${data.totals.working} working`,
-    `${plural(data.totals.active_missions, 'loop')} running`,
-    `last ${data.window.hours} hours`,
+function operatorTitle(value, max = 140) {
+  const raw = inlineText(value, '');
+  const plumbing = /`|(?:^|\s)(?:node|npm|git|rg|grep)\s+|\S+\.(?:js|md|json|ts|py|sh)(?::\d+)?|\b[A-Z]{2,5}-\d+\b|\bpr\s*#?\s*\d+\b/i;
+  const source = plumbing.test(raw) && raw.includes(':') ? raw.split(':')[0] : raw;
+  const scrubbed = source
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/\b(?:done|check|verify|proof):\s+.*$/i, ' ')
+    .replace(/\b(?:node|npm|git|rg|grep)\s+[^\.;,]+/gi, ' ')
+    .replace(/\S+\.(?:js|md|json|ts|py|sh)(?::\d+)?/gi, ' ')
+    .replace(/\b[A-Z]{2,5}-\d+\b/g, ' ')
+    .replace(/\bpr\s*#?\s*\d+\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\([^a-z0-9]*\)/gi, ' ')
+    .replace(/,\s*,+/g, ',')
+    .replace(/\s+([,.;:])/g, '$1')
+    .replace(/([:(])\s*([,.;:)]|$)/g, '')
+    .replace(/\s+\)/g, ')')
+    .trim();
+  return finishText(scrubbed || value, max);
+}
+
+function taskId(task) {
+  return inlineText(task.display_id || task.legacy_ref || task.task_ref || task.id, 'task');
+}
+
+function taskTime(task, keys) {
+  for (const key of keys) {
+    const value = key.split('.').reduce((obj, part) => (obj && obj[part] !== undefined ? obj[part] : undefined), task);
+    const ms = timestampMs(value);
+    if (ms !== null) return ms;
+  }
+  return null;
+}
+
+function taskTags(task) {
+  const values = [
+    task.tag,
+    task.metadata && task.metadata.tag,
+    ...(Array.isArray(task.tags) ? task.tags : []),
+    ...(Array.isArray(task.metadata && task.metadata.tags) ? task.metadata.tags : []),
   ];
-  return parts.join(', ');
+  return values
+    .filter(Boolean)
+    .flatMap((tag) => String(tag).toLowerCase().split(/[^a-z0-9-]+/))
+    .filter(Boolean);
 }
 
-function relativeTime(value, nowMs = Date.now()) {
-  const ms = timeMs(value);
-  if (ms == null) return '';
+function deniedTagForTask(task) {
+  const tags = taskTags(task);
+  for (const tag of tags) {
+    for (const denied of DENIED_TAGS) {
+      if (tag === denied || tag.replace(/s$/, '') === denied) return denied;
+    }
+  }
+  return null;
+}
+
+function needsHumanTag(task) {
+  return taskTags(task).find((tag) => NEEDS_HUMAN_TAGS.has(tag)) || null;
+}
+
+function extractPointer(text) {
+  const value = inlineText(text, '');
+  if (!value) return '';
+  const url = value.match(/https?:\/\/[^\s<>"')]+/i);
+  if (url) return url[0].replace(/[.,;]+$/, '');
+  const pathMatch = value.match(/(?:^|\s)((?:\.atris|atris)\/[^\s,;:)]+)/i);
+  if (pathMatch) return pathMatch[1].replace(/[.,;]+$/, '');
+  const pr = value.match(/\bpr\s*#?\s*\d+\b/i);
+  if (pr) return pr[0].replace(/\s+/g, ' ');
+  return /\b(pass(?:ed)?|verified|green|merged|ok)\b/i.test(value) ? 'proof on file' : '';
+}
+
+function proofPointer(task) {
+  const metadata = task.metadata || {};
+  const review = task.review || {};
+  const landing = review.landing || {};
+  const candidates = [
+    metadata.receipt_path,
+    metadata.receipt,
+    metadata.receipt_file,
+    metadata.landing_receipt,
+    metadata.landing_url,
+    metadata.landing_pr,
+    landing.receipt,
+    landing.proof,
+    metadata.latest_agent_proof,
+    metadata.proof,
+    metadata.verify,
+  ];
+  for (const candidate of candidates) {
+    const pointer = extractPointer(candidate);
+    if (pointer) return pointer;
+  }
+  return 'task projection';
+}
+
+function formatAge(start, nowMs) {
+  const ms = timestampMs(start);
+  if (ms === null) return 'age unknown';
   const delta = Math.max(0, nowMs - ms);
   const minutes = Math.floor(delta / 60000);
   if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
-function proofLinkLabel(url) {
-  const match = String(url || '').match(GITHUB_PULL_RE);
-  return match ? `pr #${match[1]}` : 'proof';
+function waitingReason(task) {
+  const approval = String(task.review?.approval_status || task.metadata?.approval_status || '').toLowerCase();
+  if (approval && approval !== 'pending') return `review lane is ${approval}`;
+  const denied = deniedTagForTask(task);
+  if (denied) return `protected ${denied} lane`;
+  if (needsHumanTag(task)) return 'needs human lane';
+  return 'review lane';
 }
 
-function proofDisplay(proof, links) {
-  const flat = flatText(proof);
-  const match = flat.match(HTTPS_URL_RE);
-  if (match && match[0]) {
-    const label = proofLinkLabel(match[0]);
-    const token = `__BRIEF_PROOF_LINK_${links.length}__`;
-    links.push({ token, href: match[0], label });
-    return { html: token, visible: label };
-  }
-  if (/\b(pass(?:ed)?|verified|merged|green|ok)\b/i.test(flat)) {
-    return { html: 'verified', visible: 'verified' };
-  }
-  return { html: 'receipt on file', visible: 'receipt on file' };
+function isWaitingTask(task) {
+  const status = String(task.status || '').toLowerCase();
+  if (status === 'done' || status === 'failed' || status === 'cancelled') return false;
+  return status === 'review' || Boolean(deniedTagForTask(task) || needsHumanTag(task));
 }
 
-function rowForTask(item, value, links, nowMs) {
-  const proof = proofDisplay(item.proof, links);
-  return {
-    title: operatorSentence(item.title),
-    sub: proof.html,
-    subVisible: proof.visible,
-    value,
-    valueSub: relativeTime(item.done_at || item.updated_at, nowMs),
-  };
+function buildLanded(tasks, cutoffMs, nowMs) {
+  return tasks
+    .filter((task) => String(task.status || '').toLowerCase() === 'done')
+    .map((task) => {
+      const doneMs = taskTime(task, ['done_at', 'metadata.accepted_at', 'updated_at', 'created_at']);
+      return { task, doneMs };
+    })
+    .filter(({ doneMs }) => doneMs !== null && doneMs >= cutoffMs)
+    .sort((a, b) => b.doneMs - a.doneMs)
+    .map(({ task, doneMs }) => ({
+      id: taskId(task),
+      title: inlineText(task.title, 'done task'),
+      proof: proofPointer(task),
+      age: formatAge(doneMs, nowMs),
+    }));
 }
 
-function rowsForAgent(agent, links, nowMs) {
-  const all = [
-    ...agent.buckets.landed.map(item => rowForTask(item, 'landed', links, nowMs)),
-    ...agent.buckets.in_review.map(item => rowForTask(item, 'needs you', links, nowMs)),
-    ...agent.buckets.working_now.map(item => rowForTask(item, 'working', links, nowMs)),
-  ];
-  const visible = all.slice(0, 3);
-  const hidden = all.length - visible.length;
-  if (hidden > 0) {
-    visible.push({
-      title: `+${hidden} more, ask for them`,
-      sub: '',
-      subVisible: '',
-      value: '',
-      valueSub: '',
-    });
-  }
-  return visible.length ? visible : [{ title: 'No task movement in this window.', sub: '', subVisible: '', value: 'quiet', valueSub: '' }];
+function buildWaiting(tasks, nowMs) {
+  return tasks
+    .filter(isWaitingTask)
+    .map((task) => {
+      const startMs = taskTime(task, ['metadata.agent_certified_at', 'updated_at', 'created_at']);
+      return {
+        id: taskId(task),
+        title: inlineText(task.title, 'review task'),
+        why: waitingReason(task),
+        age: formatAge(startMs, nowMs),
+        _sort: startMs || 0,
+      };
+    })
+    .sort((a, b) => a._sort - b._sort)
+    .map(({ _sort, ...item }) => item);
 }
 
-function agentSub(agent) {
-  const parts = [];
-  if (agent.buckets.landed.length) parts.push(`${agent.buckets.landed.length} landed`);
-  if (agent.buckets.in_review.length) parts.push(`${agent.buckets.in_review.length} needs you`);
-  if (agent.buckets.working_now.length) parts.push(`${agent.buckets.working_now.length} working`);
-  return parts.length ? parts.join(', ') : 'quiet';
-}
-
-function missionRows(missions) {
-  if (!missions.length) {
-    return [{ title: 'No loops are running right now.', sub: '', subVisible: '', value: 'clear', valueSub: '' }];
-  }
-  return missions.slice(0, 3).map(mission => ({
-    title: operatorSentence(mission.objective, 110, 'A loop is running.'),
-    sub: '',
-    subVisible: '',
-    value: String(mission.status || 'running'),
-    valueSub: '',
+function buildMoves(root) {
+  return nextMoves(root, 3).map((move) => ({
+    id: move.id,
+    title: inlineText(move.title, 'next move'),
+    why: inlineText(move.why || move.source || 'workspace signal', 'workspace signal'),
+    source: move.source || null,
+    owner: move.owner || move.member || null,
   }));
 }
 
-function waitingRows(items, links, nowMs) {
-  if (!items.length) {
-    return [{ title: 'Nothing needs you right now.', sub: '', subVisible: '', value: 'clear', valueSub: '' }];
-  }
-  const visible = items.slice(0, 3).map(item => rowForTask(item, 'review', links, nowMs));
-  const hidden = items.length - visible.length;
-  if (hidden > 0) {
-    visible.push({ title: `+${hidden} more, ask for them`, sub: '', subVisible: '', value: '', valueSub: '' });
-  }
-  return visible;
+function buildWeekLine(root, nowMs) {
+  const data = buildWeekReportData(root, { days: 7, now: nowMs });
+  return renderWeekReport(data).split(/\r?\n/)[0] || 'week in review: 0 landed, 0 completions, 0 xp';
 }
 
-function buildPageModel(data) {
-  const links = [];
-  const nowMs = Date.now();
-  const panels = [
-    {
-      heading: 'waiting on you',
-      sub: data.waiting_on_you.length ? 'Approve or send back.' : 'Clear.',
-      rows: waitingRows(data.waiting_on_you, links, nowMs),
-    },
-  ];
-  for (const agent of data.agents) {
-    panels.push({
-      heading: agent.agent,
-      sub: agentSub(agent),
-      rows: rowsForAgent(agent, links, nowMs),
-    });
-  }
-  if (data.agents.length === 0) {
-    panels.push({
-      heading: 'team',
-      sub: 'quiet',
-      rows: [{ title: 'No task movement in this window.', sub: '', subVisible: '', value: 'quiet', valueSub: '' }],
-    });
-  }
-  panels.push({
-    heading: 'missions',
-    sub: `${plural(data.missions.length, 'loop')} running`,
-    rows: missionRows(data.missions),
-  });
-  const page = {
-    title: 'what your team did',
-    sub: headlineSub(data),
-    rollup: [
-      { number: String(data.totals.landed), label: 'landed' },
-      { number: String(data.totals.in_review), label: 'needs you' },
-      { number: String(data.totals.working), label: 'working' },
-      { number: String(data.totals.active_missions), label: 'loops running' },
-    ],
-    panels,
+function buildBriefData(root = process.cwd(), { days = 1, now = Date.now() } = {}) {
+  const windowDays = Number.isFinite(Number(days)) && Number(days) > 0 ? Math.floor(Number(days)) : 1;
+  const nowMs = normalizeNow(now);
+  const cutoffMs = nowMs - windowDays * DAY_MS;
+  const tasks = readProjection(root);
+  return {
+    schema: 'atris.brief.v1',
+    days: windowDays,
+    landed: buildLanded(tasks, cutoffMs, nowMs),
+    waiting: buildWaiting(tasks, nowMs),
+    moves: buildMoves(root),
+    week: buildWeekLine(root, nowMs),
   };
-  briefOperatorGate(visibleStringsForPage(page));
-  return { page, links };
 }
 
-function visibleStringsForPage(page) {
-  const strings = [page.title, page.sub];
-  for (const item of page.rollup || []) strings.push(item.number, item.label);
-  for (const panel of page.panels || []) {
-    strings.push(panel.heading, panel.sub);
-    for (const row of panel.rows || []) strings.push(row.title, row.subVisible || row.sub, row.value, row.valueSub);
+function plural(count, word, pluralWord = `${word}s`) {
+  return `${count} ${count === 1 ? word : pluralWord}`;
+}
+
+function renderBrief(data) {
+  const landed = Array.isArray(data?.landed) ? data.landed : [];
+  const waiting = Array.isArray(data?.waiting) ? data.waiting : [];
+  const moves = Array.isArray(data?.moves) ? data.moves : [];
+  const days = Number(data?.days) || 1;
+  const window = days === 1 ? 'last 24h' : `last ${days} days`;
+  const lines = [];
+
+  lines.push(outputText(`atris brief: ${landed.length} landed, ${waiting.length} waiting, ${moves.length} next moves | size: ${window} | know: local atris state`));
+  lines.push('');
+
+  lines.push(outputText(`landed: ${landed.length ? 'finished work' : 'nothing finished yet'} | size: ${plural(landed.length, 'task')} | know: task projection`));
+  for (const item of landed.slice(0, 5)) {
+    lines.push(outputText(`- ${operatorTitle(item.title)} | size: 1 task | know: ${item.proof || 'proof on file'} (${item.age})`));
   }
-  return strings;
-}
+  const held = Math.max(0, landed.length - 5);
+  if (held > 0) lines.push(outputText(`- held: ${held} more landed | size: ${plural(held, 'task')} | know: task projection`));
+  if (!landed.length) lines.push(outputText('- clear: no done tasks landed in this window | size: 0 tasks | know: task projection'));
+  lines.push('');
 
-function briefOperatorGate(strings) {
-  const queue = Array.isArray(strings) ? [...strings] : [strings];
-  while (queue.length) {
-    const value = queue.shift();
-    if (Array.isArray(value)) {
-      queue.push(...value);
-      continue;
-    }
-    if (value == null) continue;
-    const text = String(value);
-    for (const rule of GUARD_RULES) {
-      if (rule.re.test(text)) throw new Error(`brief operator gate blocked ${rule.name}`);
-    }
+  lines.push(outputText(`waiting on you: ${waiting.length ? 'review work needs a decision' : 'nothing waiting'} | size: ${plural(waiting.length, 'task')} | know: review lane`));
+  if (waiting.length) {
+    waiting.forEach((item, index) => {
+      lines.push(outputText(`${index + 1}. ${operatorTitle(item.title)} | size: 1 task | know: ${item.why}, ${item.age} old`));
+    });
+  } else {
+    lines.push(outputText('1. clear | size: 0 tasks | know: review lane'));
   }
-  return true;
-}
+  lines.push('');
 
-function renderRows(rows) {
-  return rows.map(row => [
-    '<div class="row">',
-    '<div class="row-main">',
-    `<strong>${escapeHtml(row.title)}</strong>`,
-    row.sub ? `<small>${escapeHtml(row.sub)}</small>` : '',
-    '</div>',
-    row.value ? `<div class="row-side"><span>${escapeHtml(row.value)}</span>${row.valueSub ? `<small>${escapeHtml(row.valueSub)}</small>` : ''}</div>` : '',
-    '</div>',
-  ].join('')).join('');
-}
-
-function renderPanels(panels) {
-  return panels.map(panel => [
-    '<section class="panel">',
-    '<div class="panel-lede">',
-    `<h2>${escapeHtml(panel.heading)}</h2>`,
-    panel.sub ? `<p>${escapeHtml(panel.sub)}</p>` : '',
-    '</div>',
-    '<div class="rows">',
-    renderRows(panel.rows || []),
-    '</div>',
-    '</section>',
-  ].join('')).join('');
-}
-
-function renderRollup(items) {
-  return items.map(item => [
-    '<div class="metric">',
-    `<strong>${escapeHtml(item.number)}</strong>`,
-    `<span>${escapeHtml(item.label)}</span>`,
-    '</div>',
-  ].join('')).join('');
-}
-
-function injectProofLinks(html, links) {
-  let out = html;
-  for (const link of links) {
-    const token = escapeHtml(link.token);
-    const href = escapeHtml(link.href);
-    const label = escapeHtml(link.label);
-    const anchor = `<a href="${href}" target="_blank" rel="noreferrer noopener">${label}</a>`;
-    out = out.split(token).join(anchor);
+  lines.push(outputText(`next moves: ${moves.length ? 'ranked work is ready' : 'nothing ranked'} | size: ${plural(moves.length, 'move')} | know: next-moves scan`));
+  if (moves.length) {
+    moves.forEach((move, index) => {
+      const owner = move.owner ? `; best fit ${move.owner}` : '';
+      lines.push(outputText(`${index + 1}. ${operatorTitle(move.title)} | size: 1 move | know: ${move.why}${owner}`));
+    });
+  } else {
+    lines.push(outputText('1. clear | size: 0 moves | know: next-moves scan'));
   }
-  return out;
+  lines.push('');
+
+  lines.push(outputText(`${data?.week || 'week in review: 0 landed, 0 completions, 0 xp'} | size: 7 days | know: report data`));
+  return lines.join('\n');
+}
+
+function panelRows(items, emptyTitle, emptySub, valueLabel) {
+  if (!items.length) {
+    return [{ title: emptyTitle, sub: emptySub, value: '0', valueSub: valueLabel, sev: 2 }];
+  }
+  return items.map((item, index) => ({
+    title: `${index + 1}. ${item.title}`,
+    sub: item.why ? `${item.why}, ${item.age || ''}` : item.proof || item.source || '',
+    value: '1',
+    valueSub: valueLabel,
+    sev: index % 3,
+  }));
 }
 
 function renderBriefHtml(data) {
-  const { page, links } = buildPageModel(data);
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>atris brief</title>
-<style>
-*{box-sizing:border-box}
-body{margin:0;background:#171513;color:#efe7dc;font:15px/1.45 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-main{max-width:980px;margin:0 auto;padding:42px 24px 64px}
-header{padding:20px 0 28px}
-h1{font-size:clamp(38px,7vw,70px);line-height:.95;margin:0 0 18px;font-weight:650;letter-spacing:0}
-.sub{color:#c8bdb1;font-size:18px;margin:0;max-width:760px}
-.rollup{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:10px 0 28px}
-.metric{border-top:1px solid #4b4138;padding-top:12px}
-.metric strong{display:block;font-size:34px;line-height:1.05;font-weight:620}
-.metric span{display:block;color:#b5aaa0;margin-top:5px}
-.panel{display:grid;grid-template-columns:220px 1fr;gap:24px;border-top:1px solid #4b4138;padding:24px 0}
-.panel-lede h2{font-size:20px;margin:0 0 6px;font-weight:650}
-.panel-lede p{margin:0;color:#b5aaa0}
-.rows{display:grid;gap:8px}
-.row{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;background:#211d19;border:1px solid #40372f;border-radius:8px;padding:13px 15px}
-.row-main strong{display:block;font-weight:560}
-.row-main small,.row-side small{display:block;color:#9d9288;margin-top:3px}
-.row-side{text-align:right;color:#d8cfc5;min-width:82px}
-.row-side span{font-weight:560}
-a{color:#f5b44d;text-decoration:none}
-@media(max-width:760px){main{padding:30px 18px 48px}.rollup{grid-template-columns:repeat(2,1fr)}.panel{grid-template-columns:1fr}.row{grid-template-columns:1fr}.row-side{text-align:left}}
-</style>
-</head>
-<body>
-<main>
-<header>
-<h1>${escapeHtml(page.title)}</h1>
-<p class="sub">${escapeHtml(page.sub)}</p>
-</header>
-<section class="rollup">${renderRollup(page.rollup)}</section>
-${renderPanels(page.panels)}
-</main>
-</body>
-</html>`;
-  return injectProofLinks(html, links);
+  const landed = Array.isArray(data?.landed) ? data.landed : [];
+  const waiting = Array.isArray(data?.waiting) ? data.waiting : [];
+  const moves = Array.isArray(data?.moves) ? data.moves : [];
+  const spec = {
+    theme: 'atris',
+    brand: { name: 'atris', accent: ' brief' },
+    blocks: [
+      {
+        type: 'title',
+        headline: 'atris brief',
+        sub: `${landed.length} landed, ${waiting.length} waiting, ${moves.length} next moves`,
+      },
+      {
+        type: 'bignumber',
+        number: String(landed.length),
+        label: 'landed in the current window',
+        sub: 'known from task projection and proof pointers',
+      },
+      {
+        type: 'panel',
+        heading: 'waiting on you',
+        sub: waiting.length ? 'approve or send back' : 'clear',
+        panel: {
+          header: { title: 'waiting on you', meta: 'review lane' },
+          rows: panelRows(waiting, 'nothing waiting', 'review lane is clear', 'task'),
+        },
+      },
+      {
+        type: 'panel',
+        heading: 'next moves',
+        sub: moves.length ? 'ranked from current workspace state' : 'nothing ranked',
+        panel: {
+          header: { title: 'next moves', meta: 'top 3' },
+          rows: panelRows(moves, 'nothing ranked', 'next-moves scan is clear', 'move'),
+        },
+      },
+      {
+        type: 'close',
+        tagline: `${data?.week || 'week in review: 0 landed, 0 completions, 0 xp'} | size: 7 days | know: report data`,
+      },
+    ],
+  };
+  return renderHtml(spec, { title: 'atris brief' });
 }
 
-function isTestRuntime() {
-  return Boolean(process.env.NODE_TEST_CONTEXT || process.env.ATRIS_BRIEF_NO_OPEN || process.env.NODE_ENV === 'test');
+function readFlagValue(args, name, fallback = null) {
+  const prefix = `${name}=`;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === name) return args[index + 1] || fallback;
+    if (arg.startsWith(prefix)) return arg.slice(prefix.length) || fallback;
+  }
+  return fallback;
 }
 
-function openFile(file) {
-  if (isTestRuntime()) return;
-  const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
-  const child = spawn(opener, [file], { detached: true, stdio: 'ignore' });
-  child.unref();
+function parseArgs(args = []) {
+  return {
+    days: readFlagValue(args, '--days', 1),
+    out: readFlagValue(args, '--out', null),
+    help: args.includes('--help') || args.includes('-h') || args[0] === 'help',
+    html: args.includes('--html'),
+    json: args.includes('--json'),
+    send: args.includes('--send'),
+    noInput: args.includes('--no-input'),
+  };
 }
 
 function showHelp() {
-  console.log('');
-  console.log('atris brief - one local html page of recent team progress');
-  console.log('');
-  console.log('  atris brief [--hours <n>] [--out <path>] [--open] [--json] [--theme <name>]');
-  console.log('');
-  console.log('defaults: --hours 24 --out .atris/state/brief.html --theme atris');
-  console.log('');
+  console.log('Usage: atris brief [--json] [--html [--out FILE]] [--send] [--no-input] [--days N]');
+  console.log('Shows what landed, what waits on you, and what the loop should do next.');
 }
 
-function run(argv = []) {
-  const flags = parseFlags(argv);
+function shouldPromptBrief({ flags, stdin = process.stdin, stdout = process.stdout, data }) {
+  if (flags?.noInput) return false;
+  if (!stdin?.isTTY || !stdout?.isTTY) return false;
+  return Boolean((data?.waiting || []).length || (data?.moves || []).length);
+}
+
+function runTaskAccept(root, id) {
+  const bin = path.join(root, 'bin', 'atris.js');
+  const argv = fs.existsSync(bin)
+    ? [process.execPath, [bin, 'task', 'accept', id]]
+    : ['atris', ['task', 'accept', id]];
+  const result = spawnSync(argv[0], argv[1], { cwd: root, encoding: 'utf8', timeout: 30000 });
+  return {
+    ok: result.status === 0,
+    output: inlineText(result.stdout || result.stderr || ''),
+  };
+}
+
+function approveMove(root, move, stamp = new Date().toISOString()) {
+  recordDecision(root, move, 'approve', stamp);
+  return seedInboxFromMove(root, move);
+}
+
+function parsePromptAnswer(answer) {
+  const text = String(answer || '').trim().toLowerCase();
+  if (!text) return { action: 'skip' };
+  const accept = text.match(/^a\s+?(\d+)$/);
+  if (accept) return { action: 'accept', index: Number(accept[1]) - 1 };
+  const move = text.match(/^m\s+?(\d+)$/);
+  if (move) return { action: 'move', index: Number(move[1]) - 1 };
+  return { action: 'invalid' };
+}
+
+function handleBriefAnswer(root, data, answer, deps = {}) {
+  const parsed = parsePromptAnswer(answer);
+  const acceptTask = deps.acceptTask || ((id) => runTaskAccept(root, id));
+  const moveApproval = deps.approveMove || ((move) => approveMove(root, move, deps.stamp));
+  if (parsed.action === 'skip') return { ok: true, skipped: true, message: 'skipped' };
+  if (parsed.action === 'accept') {
+    const item = (data.waiting || [])[parsed.index];
+    if (!item) return { ok: false, message: 'no waiting item for that number' };
+    const result = acceptTask(item.id);
+    return { ok: result.ok, message: result.output || (result.ok ? `accepted ${item.id}` : `could not accept ${item.id}`) };
+  }
+  if (parsed.action === 'move') {
+    const move = (data.moves || [])[parsed.index];
+    if (!move) return { ok: false, message: 'no move for that number' };
+    const seeded = moveApproval(move);
+    const note = seeded && seeded.alreadyPresent ? 'already in the inbox' : 'seeded into the loop';
+    return { ok: true, message: `approved move ${parsed.index + 1}: ${note}` };
+  }
+  return { ok: false, message: 'no matching brief action' };
+}
+
+async function promptBrief(root, data, io = {}) {
+  const input = io.stdin || process.stdin;
+  const output = io.stdout || process.stdout;
+  const answer = await new Promise((resolve) => {
+    const rl = readline.createInterface({ input, output });
+    rl.question('a N accept waiting, m N approve move, or enter to skip: ', (value) => {
+      rl.close();
+      resolve(value);
+    });
+  });
+  const result = handleBriefAnswer(root, data, answer);
+  if (result.message && !result.skipped) console.log(result.message);
+  return result.ok ? 0 : 1;
+}
+
+function sendBrief(root, text) {
+  const policy = autoland.readPolicy(root) || {};
+  const to = String(policy.imessage_to || '').trim();
+  if (!to) {
+    console.error('no iMessage recipient configured. set one with: atris autoland on --to <your number>');
+    return 1;
+  }
+  const sent = autoland.sendImessage(root, to, text);
+  if (!sent.ok) {
+    console.error(sent.output || `could not send brief to ${to}`);
+    return 1;
+  }
+  console.log(`sent brief to ${to}`);
+  return 0;
+}
+
+async function briefCommand(args = [], root = process.cwd(), io = {}) {
+  const argv = Array.isArray(args) ? args : Array.from(arguments);
+  const flags = parseArgs(argv);
   if (flags.help) {
     showHelp();
     return 0;
   }
 
-  const root = process.cwd();
-  const data = buildBriefData(root, { hours: flags.hours });
+  const data = buildBriefData(root, { days: flags.days });
   if (flags.json) {
     console.log(JSON.stringify(data, null, 2));
     return 0;
   }
+  if (flags.html) {
+    const html = renderBriefHtml(data);
+    if (flags.out) {
+      const outPath = path.resolve(root, flags.out);
+      fs.mkdirSync(path.dirname(outPath), { recursive: true });
+      fs.writeFileSync(outPath, html, 'utf8');
+      console.log(`wrote ${outPath}`);
+      return 0;
+    }
+    console.log(html);
+    return 0;
+  }
 
-  const outPath = path.resolve(root, flags.out);
-  const html = renderBriefHtml(data, { root, theme: flags.theme });
-  fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, html);
-  console.log(`brief written: ${outPath}`);
-  if (flags.open) openFile(outPath);
-  return 0;
+  const text = renderBrief(data);
+  if (flags.send) return sendBrief(root, text);
+  console.log(text);
+  if (!shouldPromptBrief({ flags, stdin: io.stdin || process.stdin, stdout: io.stdout || process.stdout, data })) return 0;
+  return promptBrief(root, data, io);
 }
 
 module.exports = {
   buildBriefData,
-  briefOperatorGate,
+  briefCommand,
+  handleBriefAnswer,
+  parsePromptAnswer,
+  renderBrief,
   renderBriefHtml,
-  run,
+  run: briefCommand,
+  shouldPromptBrief,
 };
