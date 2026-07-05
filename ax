@@ -869,6 +869,8 @@ function formatGoalStatusLine(goal, options = {}) {
   const status = String(goal.mission_status || '').toLowerCase();
   if (!['active', 'running', 'planning', 'in_progress', 'ready'].includes(status)) return '';
   const elapsed = goalElapsedSeconds(goal);
+  // A goal "running" for >24h is stale state, not a live goal — hide it.
+  if (elapsed !== null && elapsed > 86400) return '';
   const objective = String(goal.objective).length > 64
     ? `${String(goal.objective).slice(0, 61)}...`
     : String(goal.objective);
