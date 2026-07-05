@@ -251,6 +251,7 @@ function parseDispatchArgs(args) {
   const taskIds = [];
   let engine = '';
   let promptFile = '';
+  let base = '';
   let json = false;
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -258,15 +259,17 @@ function parseDispatchArgs(args) {
     if (a.startsWith('--engine=')) { engine = a.slice('--engine='.length); continue; }
     if (a === '--prompt-file') { promptFile = args[i + 1] || ''; i += 1; continue; }
     if (a.startsWith('--prompt-file=')) { promptFile = a.slice('--prompt-file='.length); continue; }
+    if (a === '--base') { base = args[i + 1] || ''; i += 1; continue; }
+    if (a.startsWith('--base=')) { base = a.slice('--base='.length); continue; }
     if (a === '--json') { json = true; continue; }
     if (a.startsWith('--')) continue;
     taskIds.push(a);
   }
-  return { taskIds, engine, promptFile, json };
+  return { taskIds, engine, promptFile, base, json };
 }
 
 function runDispatchCommand(args, root) {
-  const { taskIds, engine, promptFile, json } = parseDispatchArgs(args);
+  const { taskIds, engine, promptFile, base, json } = parseDispatchArgs(args);
   if (!taskIds.length || !engine) {
     console.error('usage: atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>]');
     return 2;
@@ -296,7 +299,7 @@ function runDispatchCommand(args, root) {
     console.error(`engine dispatch: ${canonical} CLI (${def.bin}) is not installed here`);
     return 2;
   }
-  return runDispatchFlight({ root, taskIds, engine: canonical, prompt: promptOverride }).then((flight) => {
+  return runDispatchFlight({ root, taskIds, engine: canonical, prompt: promptOverride, ...(base ? { checkoutBase: base } : {}) }).then((flight) => {
     if (json) console.log(JSON.stringify(flight, null, 2));
     return flight.paused.length ? 1 : 0;
   });

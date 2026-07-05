@@ -6248,10 +6248,14 @@ async function runMission(args) {
   if (hasFlag(args, '--fleet')) {
     const { runFleetFlight } = require('../lib/fleet');
     const slots = Math.max(1, Number(readFlag(args, '--slots', '')) || 3);
+    // Default: cut build worktrees from origin/master (checkoutBase). --base
+    // keeps launcher-HEAD only when the operator asks for it explicitly.
+    const baseOverride = readFlag(args, '--base', '');
     const flight = await runFleetFlight({
       slots,
       dryRun: hasFlag(args, '--dry-run'),
       log: asJson ? () => {} : console.log,
+      ...(baseOverride ? { checkoutBase: baseOverride } : {}),
     });
     if (asJson) console.log(JSON.stringify(flight, null, 2));
     process.exitCode = flight.paused && flight.paused.length > 0 ? 1 : 0;
