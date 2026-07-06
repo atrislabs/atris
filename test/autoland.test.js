@@ -126,6 +126,9 @@ test('digest and alarm compose in plain language', () => {
       human: [{ ref: 'CLI-3', title: 'Ship release' }],
     },
     waiting: [{ ref: 'CLI-9', title: 'Send invoice', tag: 'billing', hours: 30 }],
+    waitingWishes: [
+      { text: 'make onboarding better', need: 'Who is onboarding for?' },
+    ],
     landed: { branches: 2, due: 1 },
     project: 'atris-cli',
     nextMoves: {
@@ -153,6 +156,9 @@ test('digest and alarm compose in plain language', () => {
   assert.match(digest, /waiting on you \(0 explained\/1 total; approve or bounce: atris task reviews\):/);
   assert.match(digest, /- 1 more in review that could not explain themselves yet/);
   assert.doesNotMatch(digest, /Send invoice/);
+  assert.match(digest, /wishes waiting on you \(1 wish\):/);
+  assert.match(digest, /- make onboarding better: Who is onboarding for\?/);
+  assert.doesNotMatch(digest, /wish-/);
   assert.match(digest, /in the air: 2 pieces, 1 overdue/);
   assert.match(digest, /next, if you agree:/);
   assert.match(digest, /taste filters.*\(best fit: auto-improver\)/);
@@ -778,6 +784,37 @@ test('tick is a no-op when the policy is off', () => {
   }
 });
 
+test('autoland tick survives a throwing wish sweep', () => {
+  const { base, repo } = makeTempRepo();
+  const commandsAutoland = require('../commands/autoland');
+  const wish = require('../commands/wish');
+  const original = wish.sweepWishes;
+  try {
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', accept_all: true });
+    wish.sweepWishes = () => {
+      throw new Error('wish sweep exploded');
+    };
+    const receipt = {
+      at: new Date().toISOString(),
+      landed: [],
+      alarms: 0,
+      digest_sent: false,
+      enabled: true,
+    };
+    const code = commandsAutoland.runTickBody(repo, {
+      json: false,
+      policy: autoland.readPolicy(repo),
+      receipt,
+    });
+    assert.equal(code, 0);
+    assert.match(receipt.wish_dispatch_error, /wish sweep exploded/);
+    assert.deepEqual(receipt.landed, []);
+  } finally {
+    wish.sweepWishes = original;
+    cleanupTempDir(base);
+  }
+});
+
 test('tick lock: a live concurrent tick is skipped, a stale lock is not', () => {
   const { base, repo } = makeTempRepo();
   try {
@@ -911,6 +948,7 @@ test('janitor: a zombie paused mission and a merged worktree disappear on the ne
     // human tick line carries both counts
     const plain = runCli(['autoland', 'tick'], repo);
     assert.match(plain.stdout, /janitor stopped \d+ missions? \+ reaped \d+ worktrees?/);
+    assert.match(plain.stdout, /wishes: \d+ dispatched, \d+ waiting on operator/);
   } finally {
     cleanupTempDir(base);
   }

@@ -325,6 +325,20 @@ function recordLandingSweepState(state, sweep, { error = null } = {}) {
   };
 }
 
+function wishSweepSummaryLine(summary, error = null) {
+  if (error) return `wishes: sweep failed (${error})`;
+  const dispatched = Number(summary?.dispatched) || 0;
+  const waiting = Number(summary?.waiting_on_operator) || 0;
+  const noExecutor = Number(summary?.skipped_no_executor) || 0;
+  const capped = Number(summary?.capped) || 0;
+  let line = `wishes: ${dispatched} dispatched, ${waiting} waiting on operator`;
+  const notes = [];
+  if (noExecutor > 0) notes.push(`${noExecutor} need a working builder`);
+  if (capped > 0) notes.push(`${capped} held for the next tick`);
+  if (notes.length) line += ` (${notes.join(', ')})`;
+  return line;
+}
+
 function evaluateQueue(root, { strictVerify, acceptAll }) {
   const cliArgs = ['task', 'auto-accept-certified', '--dry-run', '--json', '--limit', '50'];
   if (acceptAll) cliArgs.push('--all');
@@ -478,9 +492,14 @@ function runDigest(root, args, { forceSend = false } = {}) {
   const tasks = readProjection(root);
   const accepted = autoland.acceptedInLastDay(tasks);
   const state = autoland.readState(root);
+  let waitingWishes = [];
+  try {
+    waitingWishes = require('./wish').waitingOperatorWishes(root);
+  } catch {}
   const text = autoland.composeDigest({
     accepted,
     waiting: autoland.waitingOnHuman(tasks),
+    waitingWishes,
     landed: landSummarySafe(root),
     project: projectName(root),
     nextMoves: digestNextMoves(root),
@@ -697,13 +716,27 @@ function runTickBody(root, { json, policy, receipt }) {
     recordLandingSweepState(state, null, { error: receipt.reap_error });
   }
 
+  // 3d. wish sweep: queued wishes are allowed to wake a mission without a
+  // foreground `atris wish` session, but they must never endanger landing.
+  try {
+    const wishDispatch = require('./wish').sweepWishes(root);
+    receipt.wish_dispatch = wishDispatch;
+  } catch (err) {
+    receipt.wish_dispatch_error = String((err && err.message) || err).slice(0, 200);
+  }
+
   // 4. daily digest at the configured hour
   const today = new Date().toISOString().slice(0, 10);
   const digestHour = Number(policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR);
   if (new Date().getHours() === digestHour && state.last_digest_date !== today) {
+    let waitingWishes = [];
+    try {
+      waitingWishes = require('./wish').waitingOperatorWishes(root);
+    } catch {}
     const text = autoland.composeDigest({
       accepted: autoland.acceptedInLastDay(tasks),
       waiting,
+      waitingWishes,
       landed: landSummarySafe(root),
       project: projectName(root),
       nextMoves: digestNextMoves(root),
@@ -788,7 +821,8 @@ function runTickBody(root, { json, policy, receipt }) {
     const reapNote = reapedTotal > 0 ? `, reaped ${receipt.reaped.branches} landed/overdue branches` : '';
     const janitorNote = `, janitor stopped ${receipt.missions_stopped} mission${receipt.missions_stopped === 1 ? '' : 's'} + reaped ${receipt.worktrees_reaped} worktree${receipt.worktrees_reaped === 1 ? '' : 's'}`;
     const heldNote = receipt.missions_held ? `, held ${receipt.missions_held} human-blocked mission${receipt.missions_held === 1 ? '' : 's'}` : '';
-    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}${janitorNote}${heldNote}`);
+    const wishNote = `, ${wishSweepSummaryLine(receipt.wish_dispatch, receipt.wish_dispatch_error)}`;
+    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}${janitorNote}${heldNote}${wishNote}`);
   }
   return 0;
 }
@@ -845,6 +879,8 @@ module.exports = {
   missionReadyForClosedTaskVerify,
   operatorReady,
   hasAgentJargon,
+  runTickBody,
   sweepLanding,
   verifyClosedTaskMissions,
+  wishSweepSummaryLine,
 };
