@@ -6,6 +6,9 @@
 //   atris scout "q1" "q2" "q3"          # parallel scouts
 //   atris scout --dir ../atrisos-web "where is the proxy middleware?"
 //   atris scout --model sonnet "..."     # judgment call, not a lookup
+//   atris scout --engine fast "..."      # glm-5.2 fast lane, ~1% frontier cost
+//   atris scout --engine cursor "..."    # cursor-agent headless
+//   atris scout --engine devin "..."     # devin -p (read-only by default)
 
 const { spawn } = require('child_process');
 const path = require('path');
@@ -19,6 +22,34 @@ const READ_ONLY_TOOLS = [
 
 const MODELS = { haiku: 'haiku', sonnet: 'sonnet', opus: 'opus' };
 
+// Engines share one contract: argv to spawn, and how to read the answer back.
+// All run from the target dir; the prompt itself enforces read-only behavior
+// for engines that lack a tool allowlist (cursor). devin defaults to read-only.
+const ENGINES = {
+  claude: {
+    argv: (prompt, model) => ['claude', ['-p', prompt, '--model', model, '--allowedTools', READ_ONLY_TOOLS]],
+    parse: (out) => out.trim(),
+  },
+  cursor: {
+    argv: (prompt) => ['cursor-agent', ['--trust', '-p', prompt]],
+    parse: (out) => out.trim(),
+  },
+  devin: {
+    argv: (prompt) => ['devin', ['-p', '--', prompt]],
+    parse: (out) => out.trim(),
+  },
+  fast: {
+    argv: (prompt) => ['atris', ['chat', '--print', prompt]],
+    parse: (out) => {
+      try {
+        const j = JSON.parse(out);
+        if (j && typeof j.output === 'string') return j.ok === false ? `fast lane error: ${j.error || j.output}` : j.output.trim();
+      } catch (_) { /* not JSON — fall through to raw */ }
+      return out.trim();
+    },
+  },
+};
+
 function scoutPrompt(question, dir) {
   return [
     `You are a read-only scout in ${dir}. You NEVER write, edit, or run mutating commands.`,
@@ -30,13 +61,11 @@ function scoutPrompt(question, dir) {
   ].join('\n');
 }
 
-function runScout(question, { dir, model, timeoutMs }) {
+function runScout(question, { dir, model, engine, timeoutMs }) {
   return new Promise((resolve) => {
-    const child = spawn('claude', [
-      '-p', scoutPrompt(question, dir),
-      '--model', model,
-      '--allowedTools', READ_ONLY_TOOLS,
-    ], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
+    const eng = ENGINES[engine];
+    const [cmd, cmdArgs] = eng.argv(scoutPrompt(question, dir), model);
+    const child = spawn(cmd, cmdArgs, { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
 
     let out = '';
     let err = '';
@@ -49,11 +78,11 @@ function runScout(question, { dir, model, timeoutMs }) {
     child.stderr.on('data', (d) => { err += d; });
     child.on('error', (e) => {
       clearTimeout(timer);
-      resolve({ question, ok: false, text: `failed to spawn claude: ${e.message}` });
+      resolve({ question, ok: false, text: `failed to spawn ${cmd}: ${e.message}` });
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      if (code === 0 && out.trim()) resolve({ question, ok: true, text: out.trim() });
+      if (code === 0 && out.trim()) resolve({ question, ok: true, text: eng.parse(out) });
       else resolve({ question, ok: false, text: (err.trim() || out.trim() || `exit ${code}`) });
     });
   });
@@ -64,12 +93,17 @@ async function scoutCommand(argv) {
   const questions = [];
   let dir = process.cwd();
   let model = MODELS.haiku;
+  let engine = 'claude';
   let timeoutMs = 180000;
 
   while (args.length) {
     const a = args.shift();
     if (a === '--dir') dir = path.resolve(args.shift() || '.');
     else if (a === '--model') model = MODELS[args.shift()] || MODELS.haiku;
+    else if (a === '--engine') {
+      engine = args.shift() || 'claude';
+      if (!ENGINES[engine]) { console.error(`✗ unknown engine "${engine}" (claude|cursor|devin|fast)`); return 1; }
+    }
     else if (a === '--timeout') timeoutMs = (parseInt(args.shift(), 10) || 180) * 1000;
     else if (a === '--help' || a === '-h') { showHelp(); return 0; }
     else questions.push(a);
@@ -77,9 +111,10 @@ async function scoutCommand(argv) {
 
   if (!questions.length) { showHelp(); return 1; }
 
-  console.log(`\n  scouting with ${questions.length} ${model} agent${questions.length > 1 ? 's' : ''} in ${dir}\n`);
+  const label = engine === 'claude' ? model : engine;
+  console.log(`\n  scouting with ${questions.length} ${label} agent${questions.length > 1 ? 's' : ''} in ${dir}\n`);
   const started = Date.now();
-  const results = await Promise.all(questions.map((q) => runScout(q, { dir, model, timeoutMs })));
+  const results = await Promise.all(questions.map((q) => runScout(q, { dir, model, engine, timeoutMs })));
 
   for (const r of results) {
     console.log(`  ── ${r.ok ? '✓' : '✗'} ${r.question}`);
@@ -98,10 +133,14 @@ function showHelp() {
     atris scout "<question>" ["<question>" ...]     parallel scouts, one per question
     atris scout --dir <path> "<question>"           scout a different repo
     atris scout --model sonnet "<question>"         upgrade the model (default: haiku)
+    atris scout --engine fast "<question>"          engine: claude | cursor | devin | fast
     atris scout --timeout 300 "<question>"          seconds per scout (default: 180)
 
-  scouts are read-only: they can read files, grep, and run safe atris/git
-  read commands. they answer in ≤30 lines with file:line citations.
+  engines: claude = claude -p with a read-only tool allowlist (default, haiku).
+  fast = atris chat --print (glm-5.2 fast lane, needs an atris/ workspace).
+  cursor = cursor-agent --trust -p. devin = devin -p (read-only by default).
+
+  scouts are read-only: they answer in ≤30 lines with file:line citations.
 `);
 }
 
