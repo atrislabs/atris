@@ -6962,6 +6962,8 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
     const claim = runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env });
     assert.equal(claim.status, 0, claim.stderr);
     assert.match(claim.stdout, new RegExp(`claimed ${ref} as codex`));
+    assert.match(claim.stdout, new RegExp(`Next: make the change, then run: atris task ready ${ref} --verify`));
+    assert.match(claim.stdout, /Then: atris autoland tick/);
 
     const claimed = runCli(['task', 'list', '--status', 'claimed'], { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stderr);

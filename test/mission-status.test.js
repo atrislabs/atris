@@ -83,6 +83,28 @@ test('mission verifier timeout can be extended for long suites', () => {
   assert.equal(missionVerifierTimeoutMs({ ATRIS_MISSION_VERIFIER_TIMEOUT_MS: 'bad' }), 120000);
 });
 
+test('mission start prints a verifier-preserving tick command when verifier exists', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const start = runCli([
+      'mission',
+      'start',
+      'create first proof note',
+      '--owner',
+      'mission-lead',
+      '--runner',
+      'manual',
+      '--verify',
+      'test -f FIRST_PROOF.md',
+    ], { cwd: dir });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    assert.match(start.stdout, /Next: atris mission tick mission-\S+ --verify/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 function startMission(dir, title) {
   const res = runCli(['mission', 'start', title, '--owner', 'mission-lead', '--json'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr || res.stdout);

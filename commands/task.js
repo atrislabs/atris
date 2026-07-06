@@ -5535,7 +5535,10 @@ function cmdClaim(args) {
       });
       return;
     }
-    console.log(`claimed ${taskRef(compactTaskFromProjection(projection, taskId))} as ${owner}`);
+    const ref = taskRef(compactTaskFromProjection(projection, taskId));
+    console.log(`claimed ${ref} as ${owner}`);
+    console.log(`Next: make the change, then run: atris task ready ${ref} --verify "<check command>" --result "<who can do what now and why>"`);
+    console.log('Then: atris autoland tick');
   } else {
     const recoveryCommand = result.reason === 'already_claimed' && result.claimed_by
       ? `atris task release ${id} --as ${result.claimed_by}`
