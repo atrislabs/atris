@@ -6,6 +6,11 @@ const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const {
+  appendBriefRecord,
+  stampBriefOutcome,
+  worktreeBaseRef,
+} = require('../lib/brief-ledger');
+const {
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
@@ -6305,11 +6310,27 @@ function spawnGenericRunnerTick(mission, opts) {
   return new Promise((resolve) => {
     let promptFile = null;
     let cmd = '';
+    let briefId = null;
     try {
       promptFile = writeRunnerPromptFile(cwd, mission.id, prompt);
       cmd = buildRunnerCommand({ promptFile, model });
+      const engine = canonicalEngineName(mission.runner);
+      if (engine) {
+        const record = appendBriefRecord(cwd, {
+          author: mission.owner || 'mission',
+          engine,
+          task_id: mission.task_id || mission.task_ref || '',
+          mission_id: mission.id,
+          prompt_text: prompt,
+          context: {
+            worktree: cwd,
+            base_ref: worktreeBaseRef(cwd, ''),
+          },
+        });
+        briefId = record.brief_id;
+      }
     } catch (e) {
-      resolve({ ok: false, error: e.message, sessionIds: [], aborted: false, timedOut: false, authExpired: false });
+      resolve({ ok: false, error: e.message, sessionIds: [], aborted: false, timedOut: false, authExpired: false, brief_id: briefId });
       return;
     }
 
@@ -6350,6 +6371,7 @@ function spawnGenericRunnerTick(mission, opts) {
       const authExpired = /not authenticated|please log in|login required|auth(?:entication)? expired/i.test(errStr);
       resolve({
         ok,
+        brief_id: briefId,
         timedOut,
         aborted,
         authExpired,
@@ -6370,9 +6392,23 @@ function spawnGenericRunnerTick(mission, opts) {
       clearTimeout(timer);
       cleanupPrompt();
       if (signal) signal.removeEventListener?.('abort', onAbort);
-      resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });
+      resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false, brief_id: briefId });
     });
   });
+}
+
+function stampMissionRunnerBrief(root, briefId, result, verifierResult) {
+  if (!briefId) return;
+  let outcome = 'fail';
+  if (result.status === 'ran' && verifierResult?.passed) outcome = 'pass';
+  else if (result.status === 'ran') outcome = 'partial';
+  const verifier = verifierResult ? (verifierResult.passed ? 'verifier passed' : 'verifier failed') : 'no verifier result';
+  try {
+    stampBriefOutcome(root, briefId, {
+      result: outcome,
+      note: `mission tick ${result.tick_index || ''} ${result.reason || result.status || 'ran'}; ${verifier}`.replace(/\s+/g, ' ').trim(),
+    });
+  } catch {}
 }
 
 function spawnClaudeTick(mission, opts) {
@@ -6807,6 +6843,7 @@ async function runMission(args) {
         });
         result.claude = {
           ok: claudeResult.ok,
+          brief_id: claudeResult.brief_id || null,
           summary: claudeResult.summary,
           receipt_text: claudeResult.receipt_text,
           stop_reason: claudeResult.stop_reason,
@@ -6877,6 +6914,7 @@ async function runMission(args) {
         verifierResult = runVerifier(frozen.verifier);
         result.verifier_passed = verifierResult.passed;
       }
+      stampMissionRunnerBrief(cwd, result.claude?.brief_id, result, verifierResult);
 
       // Review-lane drain: always-on loops sweep the agent-safe review actions
       // each tick so proof-backed work reaches certified on cadence with zero
