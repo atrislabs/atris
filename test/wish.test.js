@@ -69,6 +69,12 @@ function appendWishEvent(dir, event) {
   fs.appendFileSync(file, `${JSON.stringify(event)}\n`, 'utf8');
 }
 
+function appendMissionRecord(dir, mission) {
+  const file = path.join(dir, '.atris', 'state', 'missions.jsonl');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, `${JSON.stringify(mission)}\n`, 'utf8');
+}
+
 function withProcessEnv(overrides, fn) {
   const previous = {};
   for (const key of Object.keys(overrides)) previous[key] = process.env[key];
@@ -730,6 +736,66 @@ test('wish review latest appends record', () => {
     const list = runCli(['wish', 'list'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
     assert.match(list.stdout, /make new thing clearer - came true \[reviewed\]/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish say appends steer event and pings linked mission', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-old',
+      ts: '2026-07-06T10:00:00.000Z',
+      text: 'make old thing clearer',
+      status: 'complete',
+      completed_at: '2026-07-06T10:00:00.000Z',
+      mission_id: 'mission-old',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-target',
+      ts: '2026-07-06T11:00:00.000Z',
+      text: 'make the target clearer',
+      status: 'delegated',
+      dispatched_at: '2026-07-06T11:00:00.000Z',
+      mission_id: 'mission-target',
+    });
+    appendMissionRecord(dir, {
+      id: 'mission-target',
+      objective: 'make the target clearer',
+      status: 'running',
+      owner: 'mission-lead',
+      runner: 'claude',
+      created_at: '2026-07-06T11:00:00.000Z',
+      updated_at: '2026-07-06T11:00:00.000Z',
+      wish_id: 'wish-target',
+      metadata: { wish_id: 'wish-target' },
+    });
+
+    const steered = runCli(['wish', 'say', 'try a darker tone'], {
+      cwd: dir,
+      env: { ATRIS_AGENT_ID: 'keshav' },
+    });
+    assert.equal(steered.status, 0, steered.stderr || steered.stdout);
+    assert.match(steered.stdout, /^Steering captured for "make the target clearer" and sent to mission-target\.\n$/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.deepEqual(records.at(-1), {
+      kind: 'steer',
+      wish_id: 'wish-target',
+      ts: records.at(-1).ts,
+      note: 'try a darker tone',
+      steered_by: 'keshav',
+      mission_id: 'mission-target',
+    });
+
+    const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
+    const saved = missions.at(-1);
+    assert.equal(saved.id, 'mission-target');
+    assert.equal(saved.pings.at(-1).text, 'try a darker tone');
+    assert.equal(saved.pings.at(-1).from, 'keshav');
+    assert.equal(saved.pings.at(-1).consumed_at, undefined);
   } finally {
     cleanupTempDir(dir);
   }

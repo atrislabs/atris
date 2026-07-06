@@ -16,6 +16,7 @@ const {
   printList,
   reviewWish,
   runCapturedWish,
+  sayWish,
   sweepWishes,
   waitingOperatorWishes,
 } = require('../lib/wish-delegate');
@@ -25,6 +26,7 @@ function showHelp() {
   console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--json] [--no-mission]');
   console.log('       atris wish list');
   console.log('       atris wish grant <n> "<answer>" [--engine <id>] [--json] [--no-mission]');
+  console.log('       atris wish say "<note>" [wish-id]');
   console.log('       atris wish review [<id>|latest] "<one sentence>" [--score <-1|0|1 or 1-5>]');
   console.log('');
 }
@@ -118,6 +120,9 @@ function wishCommand(args = []) {
     }
     return reviewWish(options.positionals, process.cwd(), { reviewScore: options.score.value });
   }
+  if (first === 'say') {
+    return sayWish(args, process.cwd());
+  }
   const options = wishOptions(args);
   const text = options.positionals.join(' ').trim();
   if (!text) {
@@ -137,6 +142,7 @@ module.exports = {
   missingNamedInputs,
   readWishEvents,
   readWishes,
+  sayWish,
   sharesMeaningfulWords,
   stateFile,
   sweepWishes,
