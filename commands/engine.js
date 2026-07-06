@@ -19,31 +19,26 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const {
   RUNNER_PROFILE_DEFS,
-  RUNNER_PROFILE_ALIASES,
   RUNNER_PROFILE_NAMES,
   buildRunnerCommand,
 } = require('../lib/runner-command');
+const {
+  ENGINE_ROLES,
+  ENGINE_HEALTH_STATUSES,
+  binInstalled,
+  canonicalEngineName,
+  engineRegistryFile,
+  engineRegistryView,
+  readEngineRegistry,
+  resolveEngineForRole,
+  setEngineHealth,
+} = require('../lib/engine-registry');
 const { FLEET_CAPABLE, runDispatchFlight } = require('../lib/fleet');
 
 const HOUSE_ENGINE = 'atris-fast';
 
 function engineFile(root = process.cwd()) {
   return path.join(root, '.atris', 'engine.json');
-}
-
-function binInstalled(bin) {
-  const safe = String(bin || '').replace(/[^A-Za-z0-9_.-]/g, '');
-  if (!safe) return false;
-  const probe = spawnSync('sh', ['-c', `command -v ${safe}`], { encoding: 'utf8' });
-  return probe.status === 0 && Boolean(String(probe.stdout || '').trim());
-}
-
-function canonicalEngineName(name) {
-  const trimmed = String(name || '').trim();
-  if (!trimmed) return '';
-  if (RUNNER_PROFILE_DEFS[trimmed]) return trimmed;
-  if (RUNNER_PROFILE_ALIASES[trimmed]) return RUNNER_PROFILE_ALIASES[trimmed];
-  return '';
 }
 
 function readSavedEngine(root = process.cwd()) {
@@ -70,11 +65,9 @@ function resolveDefaultEngine(root = process.cwd()) {
 
 function roster(root = process.cwd()) {
   const current = resolveDefaultEngine(root);
-  return RUNNER_PROFILE_NAMES.map((name) => ({
-    name,
-    bin: RUNNER_PROFILE_DEFS[name].bin,
-    installed: binInstalled(RUNNER_PROFILE_DEFS[name].bin),
-    default: name === current.name,
+  return engineRegistryView(root).map((engine) => ({
+    ...engine,
+    default: engine.id === current.name,
   }));
 }
 
@@ -102,13 +95,88 @@ function printRoster(root) {
   console.log('');
   for (const engine of list) {
     const mark = engine.default ? '→' : ' ';
-    const state = engine.installed ? 'ready' : 'not installed';
-    console.log(`  ${mark} ${engine.name.padEnd(12)} ${state}`);
+    const state = engine.health.status === 'not_installed' ? 'not installed' : engine.health.status.replace(/_/g, ' ');
+    const roles = engine.roles.join(',');
+    console.log(`  ${mark} ${engine.id.padEnd(12)} ${state.padEnd(13)} ${engine.tier.padEnd(4)} ${roles}`);
   }
   console.log('');
   console.log(`  default: ${current.name}${current.source === 'saved' ? ' (set here)' : current.source === 'env' ? ' (this session)' : ''}`);
   console.log(`  switch:  atris engine <name>   ·   one run: --engine <name> on mission run / autopilot / run`);
   console.log('');
+}
+
+function registryPayload(root) {
+  const current = resolveDefaultEngine(root);
+  const registry = readEngineRegistry(root);
+  return {
+    default: current.name,
+    source: current.source,
+    engines: registry.engines.map((engine) => ({
+      ...engine,
+      default: engine.id === current.name,
+    })),
+  };
+}
+
+function parseSetFlag(args) {
+  const prefix = '--set=';
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i]);
+    if (arg === '--set') return args[i + 1] || '';
+    if (arg.startsWith(prefix)) return arg.slice(prefix.length);
+  }
+  return '';
+}
+
+function runResolveCommand(args, root) {
+  const json = args.includes('--json');
+  const role = args.filter((a) => !String(a).startsWith('--'))[0] || '';
+  if (!role) {
+    const message = `usage: atris engine resolve <role>; roles: ${ENGINE_ROLES.join(', ')}`;
+    if (json) console.log(JSON.stringify({ ok: false, error: message }, null, 2));
+    else console.error(message);
+    return 2;
+  }
+  let engine;
+  try {
+    engine = resolveEngineForRole(role, root);
+  } catch (err) {
+    if (json) console.log(JSON.stringify({ ok: false, error: err.message }, null, 2));
+    else console.error(err.message);
+    return 2;
+  }
+  if (!engine) {
+    const message = `No ready installed engine can fill role "${role}".`;
+    if (json) console.log(JSON.stringify({ ok: false, role, error: message }, null, 2));
+    else console.error(message);
+    return 1;
+  }
+  if (json) console.log(JSON.stringify(engine, null, 2));
+  else console.log(engine.id);
+  return 0;
+}
+
+function runHealthCommand(args, root) {
+  const json = args.includes('--json');
+  const positional = args.filter((a) => !String(a).startsWith('--'));
+  const name = positional[0] || '';
+  const status = parseSetFlag(args);
+  if (!name || !status) {
+    const message = `usage: atris engine health <name> --set <status>; statuses: ${ENGINE_HEALTH_STATUSES.join(', ')}`;
+    if (json) console.log(JSON.stringify({ ok: false, error: message }, null, 2));
+    else console.error(message);
+    return 2;
+  }
+  try {
+    const engine = setEngineHealth(name, status, root);
+    if (json) console.log(JSON.stringify(engine, null, 2));
+    else console.log(`engine ${engine.id} health: ${engine.health.status}`);
+    return 0;
+  } catch (err) {
+    if (json) console.log(JSON.stringify({ ok: false, error: err.message }, null, 2));
+    else console.error(err.message);
+    return 2;
+  }
 }
 
 // Preflight: run one engine CLI headless with a reply-OK prompt and report
@@ -321,10 +389,17 @@ function engineCommand(args = []) {
     return runEngineTest(positional.slice(1), { json, root });
   }
 
+  if (sub === 'resolve') {
+    return runResolveCommand(args.slice(args.indexOf('resolve') + 1), root);
+  }
+
+  if (sub === 'health') {
+    return runHealthCommand(args.slice(args.indexOf('health') + 1), root);
+  }
+
   if (!sub || sub === 'list' || sub === 'status') {
     if (json) {
-      const current = resolveDefaultEngine(root);
-      console.log(JSON.stringify({ engines: roster(root), default: current.name, source: current.source }, null, 2));
+      console.log(JSON.stringify(registryPayload(root), null, 2));
       return 0;
     }
     printRoster(root);
@@ -340,7 +415,7 @@ function engineCommand(args = []) {
   }
 
   if (sub === 'help') {
-    console.log('\n  atris engine            roster + current default\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+    console.log('\n  atris engine            roster + current default\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
     return 0;
   }
 
@@ -364,6 +439,11 @@ module.exports = {
   setEngine,
   resetEngine,
   roster,
+  registryPayload,
+  engineRegistryFile,
+  readEngineRegistry,
+  resolveEngineForRole,
+  setEngineHealth,
   probeEngine,
   runEngineTest,
   parseDispatchArgs,

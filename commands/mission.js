@@ -53,6 +53,11 @@ const STATUS_ALIASES = new Set(['active']);
 const DEFAULT_LONG_RUN_VERIFIER = 'git diff --check';
 const SLEEP_LENGTH_BUDGET_SECONDS = 3600;
 const HUMAN_BLOCKING_PAUSE_REASONS = new Set(['auth-required', 'model-unavailable', 'rate-limit-exceeded-wall']);
+const MISSION_BUDGET_TIERS = Object.freeze({
+  quick: Object.freeze({ max_ticks: 4, requested_seconds: 15 * 60 }),
+  long: Object.freeze({ max_ticks: 12, requested_seconds: 60 * 60 }),
+  deep: Object.freeze({ max_ticks: 30, requested_seconds: 180 * 60 }),
+});
 
 function stampIso() {
   return new Date().toISOString();
@@ -293,6 +298,7 @@ const MISSION_RUN_VALUE_FLAGS = [
   '--stop',
   '--model',
   '--engine',
+  '--budget',
   '--repo',
   '--native-goal-status',
   '--native-goal-objective',
@@ -1730,8 +1736,10 @@ function missionFromArgs(args) {
     '--verify',
     '--stop',
     '--max-wall',
+    '--max-ticks',
     '--minutes',
     '--hours',
+    '--budget',
     '--base',
     '--task',
     '--ask',
@@ -1746,7 +1754,9 @@ function missionFromArgs(args) {
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }
+  const budgetTier = readMissionBudgetTier(args, { json: wantsJson(args) });
   const budgetContract = inferRunObjectiveBudgetContract(objective, args);
+  const maxTicksOverride = readPositiveIntegerFlag(args, '--max-ticks', null, { json: wantsJson(args) });
   const requestedOwner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
   const runner = readFlag(args, '--runner', 'manual');
@@ -1801,6 +1811,9 @@ function missionFromArgs(args) {
   if (budgetContract) {
     mission.budget_contract = budgetContract;
     if (budgetContract.requested_seconds) mission.max_wall_seconds = budgetContract.requested_seconds;
+  }
+  if (budgetTier || maxTicksOverride) {
+    mission.max_ticks = maxTicksOverride || budgetTier.max_ticks;
   }
   if (alwaysOn) mission.next_action = nextCandidateTickAction(mission);
   return mission;
@@ -1877,6 +1890,17 @@ function durationLabel(seconds, fallback = 'the requested time') {
   return `${value} second${value === 1 ? '' : 's'}`;
 }
 
+function readMissionBudgetTier(args = [], options = {}) {
+  const raw = readFlag(args, '--budget', '');
+  if (!raw) return null;
+  const name = String(raw || '').trim().toLowerCase();
+  const tier = MISSION_BUDGET_TIERS[name];
+  if (!tier) {
+    exitMissionError(`Unknown --budget "${raw}". Use quick, long, or deep.`, 2, options.json);
+  }
+  return { name, ...tier };
+}
+
 function wantsFullBudget(text, args = []) {
   if (hasFlag(args, '--spend-full-budget') || hasFlag(args, '--use-whole-budget')) return true;
   if (hasFlag(args, '--hours') || hasFlag(args, '--minutes')) return true;
@@ -1898,7 +1922,45 @@ function sleepLengthBudgetIntent(requestedSeconds, text = '') {
     || (Number.isFinite(seconds) && seconds >= SLEEP_LENGTH_BUDGET_SECONDS);
 }
 
+function buildMissionBudgetContract(requestedSeconds, args = [], options = {}) {
+  const seconds = Number(requestedSeconds);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const text = String(options.text || '');
+  const budgetLabel = options.budgetLabel || durationLabel(seconds);
+  const spendBudget = !hasFlag(args, '--stop-when-done')
+    && (wantsFullBudget(text, args) || sleepLengthBudgetIntent(seconds, text));
+  const policy = spendBudget
+    ? 'spend_full_budget'
+    : 'stop_when_done';
+  const plainLanguage = policy === 'spend_full_budget'
+    ? 'Use the whole time.'
+    : 'Finish early if solved.';
+  const stopRule = policy === 'spend_full_budget'
+    ? `Use the whole ${budgetLabel}; keep picking the next useful move until time is up, unless blocked or unsafe.`
+    : `Use up to ${budgetLabel}; stop early when the mission is done, proven, or blocked.`;
+  return {
+    schema: 'atris.mission_budget_contract.v1',
+    requested_seconds: seconds,
+    budget_label: budgetLabel,
+    policy,
+    plain_language: plainLanguage,
+    stop_rule: stopRule,
+    ...(options.budgetTier ? { budget_tier: options.budgetTier } : {}),
+  };
+}
+
+function budgetContractFromTier(tier, args = []) {
+  if (!tier) return null;
+  return buildMissionBudgetContract(tier.requested_seconds, args, {
+    text: `${tier.name} budget ${Array.isArray(args) ? args.join(' ') : ''}`,
+    budgetLabel: durationLabel(tier.requested_seconds),
+    budgetTier: tier.name,
+  });
+}
+
 function inferRunObjectiveBudgetContract(objective, args = []) {
+  const budgetTier = readMissionBudgetTier(args, { json: wantsJson(args) });
+  if (budgetTier) return budgetContractFromTier(budgetTier, args);
   const text = `${objective || ''} ${Array.isArray(args) ? args.join(' ') : ''}`;
   const explicitHours = Number(readFlag(args, '--hours', ''));
   const explicitMinutes = Number(readFlag(args, '--minutes', ''));
@@ -1911,28 +1973,23 @@ function inferRunObjectiveBudgetContract(objective, args = []) {
   const requestedSeconds = explicitSeconds || durationSecondsFromText(text);
   const overnight = /\bovernight\b/i.test(text);
   if (!requestedSeconds && !overnight) return null;
-  const spendBudget = !hasFlag(args, '--stop-when-done')
-    && (wantsFullBudget(text, args) || sleepLengthBudgetIntent(requestedSeconds, text));
-  const policy = spendBudget
-    ? 'spend_full_budget'
-    : 'stop_when_done';
   const budgetLabel = requestedSeconds
     ? durationLabel(requestedSeconds)
     : 'the overnight window';
-  const plainLanguage = policy === 'spend_full_budget'
-    ? 'Use the whole time.'
-    : 'Finish early if solved.';
-  const stopRule = policy === 'spend_full_budget'
-    ? `Use the whole ${budgetLabel}; keep picking the next useful move until time is up, unless blocked or unsafe.`
-    : `Use up to ${budgetLabel}; stop early when the mission is done, proven, or blocked.`;
-  return {
-    schema: 'atris.mission_budget_contract.v1',
-    requested_seconds: requestedSeconds,
-    budget_label: budgetLabel,
-    policy,
-    plain_language: plainLanguage,
-    stop_rule: stopRule,
-  };
+  if (!requestedSeconds) {
+    const policy = hasFlag(args, '--stop-when-done') ? 'stop_when_done' : 'spend_full_budget';
+    return {
+      schema: 'atris.mission_budget_contract.v1',
+      requested_seconds: requestedSeconds,
+      budget_label: budgetLabel,
+      policy,
+      plain_language: policy === 'spend_full_budget' ? 'Use the whole time.' : 'Finish early if solved.',
+      stop_rule: policy === 'spend_full_budget'
+        ? `Use the whole ${budgetLabel}; keep picking the next useful move until time is up, unless blocked or unsafe.`
+        : `Use up to ${budgetLabel}; stop early when the mission is done, proven, or blocked.`,
+    };
+  }
+  return buildMissionBudgetContract(requestedSeconds, args, { text, budgetLabel });
 }
 
 function budgetStopCondition(contract) {
@@ -2920,7 +2977,7 @@ function startMission(args) {
   const asJson = wantsJson(args);
   const firstArg = String(args[0] || '').trim().toLowerCase();
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || firstArg === 'help') {
-    console.log('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--runner manual|claude|atris2|codex_goal]');
+    console.log('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal]');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
@@ -3025,6 +3082,8 @@ async function startMissionFromRunObjective(objective, args) {
   const landRun = hasFlag(args, '--land');
   const dryRun = hasFlag(args, '--dry-run');
   const inferredLoop = inferRunObjectiveLoopOptions(rawObjective, args);
+  const budgetTier = readMissionBudgetTier(args, { json: asJson });
+  const maxTicksOverride = readPositiveIntegerFlag(args, '--max-ticks', null, { json: asJson });
   const budgetContract = inferRunObjectiveBudgetContract(rawObjective, args);
   const inferredOwner = inferredLoop.wantsLongRun && /\bself[-\s]?improve\b/i.test(rawObjective)
     ? 'auto-improver'
@@ -3078,6 +3137,8 @@ async function startMissionFromRunObjective(objective, args) {
     stopCondition,
   ];
   if (verifier) startArgs.push('--verify', verifier);
+  if (budgetTier) startArgs.push('--budget', budgetTier.name);
+  if (maxTicksOverride) startArgs.push('--max-ticks', String(maxTicksOverride));
   const model = readFlag(args, '--model', '');
   if (model) startArgs.push('--model', model);
   if (hasFlag(args, '--always-on') || inferredLoop.wantsLongRun) startArgs.push('--always-on');
@@ -6467,10 +6528,12 @@ async function runMission(args) {
   const completeOnPass = hasFlag(args, '--complete-on-pass');
   const skipDrain = hasFlag(args, '--no-drain');
   const createNext = hasFlag(args, '--create-next');
+  const budgetTier = readMissionBudgetTier(args, { json: asJson });
+  const runBudgetContract = budgetContractFromTier(budgetTier, args);
   const maxTicksFlag = readFlag(args, '--max-ticks', '');
-  const maxTicks = Math.max(1, Number(maxTicksFlag) || MISSION_RUN_DEFAULTS.maxTicks);
+  let maxTicks = Math.max(1, Number(maxTicksFlag) || (budgetTier ? budgetTier.max_ticks : MISSION_RUN_DEFAULTS.maxTicks));
   const maxWallFlag = readFlag(args, '--max-wall', '');
-  let maxWallSeconds = Math.max(60, Number(maxWallFlag) || MISSION_RUN_DEFAULTS.maxWallSeconds);
+  let maxWallSeconds = Math.max(60, Number(maxWallFlag) || (budgetTier ? budgetTier.requested_seconds : MISSION_RUN_DEFAULTS.maxWallSeconds));
   const cadenceOverride = readFlag(args, '--cadence', '');
   const engineOverrideRaw = readFlag(args, '--engine', '');
   const runnerOverride = engineOverrideRaw
@@ -6508,7 +6571,12 @@ async function runMission(args) {
     if (ref) exitMissingMission(ref, 1, asJson);
     exitMissionError('Usage: atris mission run <id|objective> [--max-ticks 4] [--max-wall 3600]', 1, asJson);
   }
-  if (!maxWallFlag && Number(mission.budget_contract?.requested_seconds) > 0) {
+  if (!maxTicksFlag && !budgetTier && Number(mission.max_ticks) > 0) {
+    maxTicks = Math.max(1, Number(mission.max_ticks));
+  }
+  if (!maxWallFlag && budgetTier) {
+    maxWallSeconds = Math.max(60, Number(budgetTier.requested_seconds));
+  } else if (!maxWallFlag && Number(mission.budget_contract?.requested_seconds) > 0) {
     maxWallSeconds = Math.max(60, Number(mission.budget_contract.requested_seconds));
   }
   if (['complete', 'stopped'].includes(mission.status)) {
@@ -6613,7 +6681,8 @@ async function runMission(args) {
     const cadence = cadenceOverride || mission.cadence || 'manual';
     let cadenceSeconds = parseCadenceSeconds(cadence);
     // cadence=manual|once: exactly 1 tick unless user explicitly raised --max-ticks
-    const effectiveMaxTicks = (cadenceSeconds === 0 && !maxTicksFlag) ? 1 : maxTicks;
+    const hasExplicitTickBudget = Boolean(maxTicksFlag || budgetTier || Number(mission.max_ticks) > 0);
+    const effectiveMaxTicks = (cadenceSeconds === 0 && !hasExplicitTickBudget) ? 1 : maxTicks;
 
     // Session setup: only Claude-backed workers need a persisted session id.
     // atris2 turns are stateless per tick — continuity lives on disk (logs, receipts, now.md).
@@ -6985,6 +7054,7 @@ async function runMission(args) {
     };
     landingSummary.reason = missionHumanReasonText(mission, landingSummary.changed);
     const finalRuntimeMission = runtimeView(mission);
+    const effectiveBudgetContract = runBudgetContract || mission.budget_contract || null;
     const finalReceipt = writeReceipt(finalRuntimeMission, {
       kind: 'mission_run_summary',
       frozen,
@@ -6995,7 +7065,7 @@ async function runMission(args) {
       session_id: sessionId,
       pending_session_id: mission.pending_session_id || null,
       elapsed_seconds: (Date.now() - startedAt) / 1000,
-      budget_contract: mission.budget_contract || null,
+      budget_contract: effectiveBudgetContract,
       worktree: summaryWorktree,
       created_next: createdNext,
       landing: landingSummary,
@@ -7004,7 +7074,7 @@ async function runMission(args) {
     const codexGoalState = refreshCodexGoalController(cwd);
 
     printJsonOrText(
-      { ok: true, action: 'mission_run', mission, runner_override: runnerOverride ? finalRuntimeMission.run_runner_override : null, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: mission.budget_contract || null, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext },
+      { ok: true, action: 'mission_run', mission, runner_override: runnerOverride ? finalRuntimeMission.run_runner_override : null, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: effectiveBudgetContract, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext },
       missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal, ticks, createdNext),
       asJson,
     );
@@ -7677,7 +7747,7 @@ function help() {
   console.log(`
 atris mission - durable goal + loop + owner + proof state
 
-  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--xp-task] [--worktree] [--take-goal-slot]
+  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--budget quick|long|deep] [--xp-task] [--worktree] [--take-goal-slot]
                       [--runner manual|claude|atris2|codex_goal] [--model <id>]
                       (runner claude spawns local claude -p per tick, --model passes through;
                        runner atris2 runs each tick as one /atris2/turn on the AtrisOS backend,
@@ -7702,7 +7772,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission set-runner <id> <runner|engine> [--model <id>] [--json]
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
-  atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"] [--land --repo <path> --verify "git diff --check"]
+  atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--budget quick|long|deep] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"] [--land --repo <path> --verify "git diff --check"]
                                 [--native-goal-status active|paused] [--native-goal-objective "..."] [--manual-ack] [--allow-native-goal-supersede] [--take-goal-slot]
                                 [--engine <name>]
                                 [--spend-full-budget|--use-whole-budget|--stop-when-done] [--preflight|--no-preflight|--room-preflight|--no-room-preflight]
@@ -7710,6 +7780,7 @@ atris mission - durable goal + loop + owner + proof state
                                 [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--create-next] [--json]
                        (bare/member-only run prompts; one-word fuzzy intent starts a new visible-goal mission; --due runs the saved queue)
                        (short time like "20 minutes" means finish early; long/sleep time like "5 hours" keeps using the budget; --stop-when-done overrides)
+                       (--budget quick|long|deep sets max ticks/wall to 4/15m, 12/60m, or 30/180m; explicit --max-ticks wins)
                        (messy, shower, and overnight requests preflight through Mission Room before the visible goal is written)
                        (--room-auto-run makes trusted self-improvement asks preview through Mission Room, select real work, then start one bounded goal)
                        (mission-run completions seed the next visible goal: decide and start the next useful mission)

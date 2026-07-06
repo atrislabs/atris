@@ -27,6 +27,12 @@ test('engine roster lists every profile with detection state', () => {
     const parsed = JSON.parse(res.stdout);
     const names = parsed.engines.map((e) => e.name);
     assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'hermes']);
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'engines.json')));
+    const codex = parsed.engines.find((e) => e.id === 'codex');
+    assert.equal(codex.tier, 'pro');
+    assert.deepEqual(codex.roles, ['executor']);
+    assert.equal(codex.fallback_order, 10);
+    assert.ok(codex.health);
     for (const entry of parsed.engines) {
       assert.equal(typeof entry.installed, 'boolean');
       assert.ok(entry.bin);
@@ -155,6 +161,73 @@ function writeFakeBin(binDir, name, body) {
 // a reply-OK prompt and reports pass/fail per engine. A clean PATH keeps the
 // test deterministic regardless of which engines are installed on the host.
 const CLEAN_PATH = '/usr/bin:/bin';
+
+test('engine list --json exposes the registry contract', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['engine', 'list', '--json'], dir, { PATH: CLEAN_PATH });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(typeof parsed.default, 'string');
+    assert.ok(Array.isArray(parsed.engines));
+    const atrisFast = parsed.engines.find((entry) => entry.id === 'atris-fast');
+    assert.ok(atrisFast, 'atris-fast entry present');
+    assert.equal(atrisFast.tier, 'fast');
+    assert.deepEqual(atrisFast.roles, ['navigator']);
+    assert.equal(typeof atrisFast.fallback_order, 'number');
+    assert.equal(atrisFast.health.status, 'not_installed');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine resolve chooses the first ready engine by role fallback order', () => {
+  const dir = makeTempDir();
+  const binDir = makeBinDir();
+  writeFakeBin(binDir, 'codex', '#!/bin/sh\necho codex\n');
+  writeFakeBin(binDir, 'cursor-agent', '#!/bin/sh\necho cursor\n');
+  try {
+    const res = runCli(['engine', 'resolve', 'executor'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.equal(res.stdout.trim(), 'codex');
+
+    const json = runCli(['engine', 'resolve', 'executor', '--json'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.id, 'codex');
+    assert.equal(payload.health.status, 'ready');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('engine health flip removes a credited-out engine from resolve fallback', () => {
+  const dir = makeTempDir();
+  const binDir = makeBinDir();
+  writeFakeBin(binDir, 'codex', '#!/bin/sh\necho codex\n');
+  writeFakeBin(binDir, 'cursor-agent', '#!/bin/sh\necho cursor\n');
+  try {
+    const health = runCli(['engine', 'health', 'codex', '--set', 'credit_out', '--json'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(health.status, 0, health.stderr || health.stdout);
+    const flipped = JSON.parse(health.stdout);
+    assert.equal(flipped.id, 'codex');
+    assert.equal(flipped.health.status, 'credit_out');
+    assert.ok(flipped.health.last_failure_ts);
+
+    const list = runCli(['engine', 'list', '--json'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    const codex = JSON.parse(list.stdout).engines.find((entry) => entry.id === 'codex');
+    assert.equal(codex.health.status, 'credit_out');
+
+    const resolved = runCli(['engine', 'resolve', 'executor'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(resolved.status, 0, resolved.stderr || resolved.stdout);
+    assert.equal(resolved.stdout.trim(), 'cursor');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  }
+});
 
 test('engine test <name> exits 0 with a pass line when the CLI replies OK', () => {
   const dir = makeTempDir();

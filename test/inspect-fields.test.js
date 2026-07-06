@@ -184,6 +184,8 @@ test('task inspect CLI returns review metadata without parsing show output', () 
       ref,
       '--proof',
       'node --test test/inspect-fields.test.js passed',
+      '--result',
+      'Reviewers can inspect pending proof metadata directly so review checks save time and reduce approval risk.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr || ready.stdout);

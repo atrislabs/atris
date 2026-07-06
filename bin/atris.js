@@ -520,7 +520,7 @@ function showHelp() {
   console.log('    ... build ...');
   console.log('    atris task ready <id> --verify');
   console.log('    atris autoland tick   # second check runs, task lands');
-  console.log('  mission    - Goal + loop + member owner + verifier + receipt');
+  console.log('  mission    - Goal + loop + member owner + verifier + receipt; --budget quick|long|deep sets bounded tiers');
   console.log('  release    - Tag release, bump version, create GitHub release, draft /launch');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('  study      - On-demand learning feed: ingest topic, start server, open browser');
@@ -540,7 +540,7 @@ function showHelp() {
   console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
   console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
   console.log('  autoland   - Approve the policy once; certified work lands itself, you keep irreversible calls');
-  console.log('  engine     - Bring any intelligence: roster of installed coding CLIs, default engine, --engine per run, `engine test` preflight, `engine dispatch <task-id> --engine <name>` one-command claim/build/verify/ship');
+  console.log('  engine     - Engine registry: list/resolve roles, health flips, default engine, `engine test`, and dispatch flights');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('  youtube    - Process YouTube videos with timestamped transcript-first analysis');
@@ -1142,6 +1142,7 @@ function printFirstUseNext() {
 }
 
 function printStarterTaskNext(starter) {
+  console.log('NEXT SETUP STEP: open atris/MAP.md, then claim the starter task.');
   if (starter && starter.display_id) {
     console.log(`Next: atris task claim ${starter.display_id} --as ${localOwnerName()}`);
     console.log(`Mission: ${firstMissionCommand()}`);
