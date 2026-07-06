@@ -164,9 +164,9 @@ const FILLER_WORDS = new Set([
 
 function showHelp() {
   console.log('');
-  console.log('Usage: atris wish "<plain sentence>" [--json] [--no-mission]');
+  console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--json] [--no-mission]');
   console.log('       atris wish list');
-  console.log('       atris wish grant <n> "<answer>" [--json] [--no-mission]');
+  console.log('       atris wish grant <n> "<answer>" [--engine <id>] [--json] [--no-mission]');
   console.log('');
 }
 
@@ -174,8 +174,47 @@ function hasFlag(args, name) {
   return args.includes(name);
 }
 
+function unquote(value) {
+  const text = String(value);
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+    return text.slice(1, -1);
+  }
+  return text;
+}
+
+function readFlag(args, name, fallback = '') {
+  const prefix = `${name}=`;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i] || '');
+    if (arg === name && args[i + 1] && !String(args[i + 1]).startsWith('--')) return unquote(args[i + 1]);
+    if (arg.startsWith(prefix)) return unquote(arg.slice(prefix.length));
+  }
+  return fallback;
+}
+
 function stripFlags(args) {
-  return args.filter((arg) => !String(arg || '').startsWith('--'));
+  const valueFlags = new Set(['--engine']);
+  const out = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i] || '');
+    if (arg.startsWith('--')) {
+      const flagName = arg.split('=')[0];
+      if (valueFlags.has(flagName) && !arg.includes('=') && args[i + 1] && !String(args[i + 1]).startsWith('--')) i += 1;
+      continue;
+    }
+    out.push(args[i]);
+  }
+  return out;
+}
+
+function readEngineOverride(args) {
+  return String(readFlag(args, '--engine', '') || '').trim();
+}
+
+function validateEngineOverride(args, root) {
+  const engineOverride = readEngineOverride(args);
+  if (engineOverride) engineRegistry.resolveRegisteredEngine(engineOverride, root);
+  return engineOverride;
 }
 
 function stateFile(root = process.cwd()) {
@@ -340,6 +379,17 @@ function inferBudgetTier(text) {
 function resolveRole(role, root) {
   const resolver = engineRegistry.resolveRole || engineRegistry.resolve || engineRegistry.resolveEngineForRole;
   return resolver(role, root);
+}
+
+function resolveExecutor(root, engineOverride = '') {
+  if (engineOverride) {
+    return engineRegistry.resolveEngineForRoleWithPreference('executor', root, engineOverride);
+  }
+  return {
+    engine: resolveRole('executor', root),
+    requested_engine: null,
+    engine_fallback_reason: null,
+  };
 }
 
 function withRoot(root, fn) {
@@ -561,16 +611,23 @@ function analyzeWishParts(text, root) {
   return parts.length ? parts : null;
 }
 
-function auditWish(text, root = process.cwd()) {
+function auditWish(text, root = process.cwd(), options = {}) {
   const questions = [];
   const clarity = clarityAudit(text);
   questions.push(...clarity.questions);
+  const engineOverride = String(options.engineOverride || '').trim();
 
   let executor = null;
   let validator = null;
+  let requestedEngine = null;
+  let engineFallbackReason = null;
   try {
-    executor = resolveRole('executor', root);
-  } catch {
+    const resolved = resolveExecutor(root, engineOverride);
+    executor = resolved.engine;
+    requestedEngine = resolved.requested_engine;
+    engineFallbackReason = resolved.engine_fallback_reason;
+  } catch (error) {
+    if (engineOverride) throw error;
     executor = null;
   }
   try {
@@ -597,11 +654,13 @@ function auditWish(text, root = process.cwd()) {
     missing,
     vague: clarity.vague,
     missing_slots: clarity.missing,
+    requested_engine: requestedEngine,
+    engine_fallback_reason: engineFallbackReason,
   };
 }
 
 function machineRecord(wish, status, audit, extra = {}) {
-  return {
+  const record = {
     wish_id: wish.id,
     status,
     task_id: extra.task_id || null,
@@ -610,6 +669,24 @@ function machineRecord(wish, status, audit, extra = {}) {
     budget: audit ? audit.budget : (extra.budget || null),
     questions: audit ? audit.questions : (extra.questions || []),
   };
+  const requestedEngine = extra.requested_engine || (audit && audit.requested_engine);
+  const engineFallbackReason = extra.engine_fallback_reason || (audit && audit.engine_fallback_reason);
+  if (requestedEngine) record.requested_engine = requestedEngine;
+  if (engineFallbackReason) record.engine_fallback_reason = engineFallbackReason;
+  return record;
+}
+
+function engineAuditFields(audit) {
+  const fields = {};
+  if (audit && audit.requested_engine) fields.requested_engine = audit.requested_engine;
+  if (audit && audit.engine_fallback_reason) fields.engine_fallback_reason = audit.engine_fallback_reason;
+  return fields;
+}
+
+function wishDelegationEngine(audit, options = {}) {
+  if (options.engine) return String(options.engine);
+  if (audit && audit.requested_engine && audit.executor && audit.executor.id) return audit.executor.id;
+  return WISH_MISSION_RUNNER;
 }
 
 function printQuestions(wishText, questions) {
@@ -718,6 +795,7 @@ function startWishDelegation(wish, audit, root, options = {}) {
   const taskText = String(options.taskText || wish.text);
   const recordText = String(options.recordText || wish.text);
   const verifyPlan = options.verifyPlan || deriveVerifyPlan(taskText);
+  const engine = wishDelegationEngine(audit, options);
   const now = stampIso();
   const ownerResolution = resolveFunctionalOwner({
     requestedOwner: audit.executor.id,
@@ -768,7 +846,7 @@ function startWishDelegation(wish, audit, root, options = {}) {
       '--to',
       routeOwner,
       '--executed-by',
-      WISH_MISSION_RUNNER,
+      engine,
       '--tag',
       'wish',
       '--goal-objective',
@@ -781,7 +859,7 @@ function startWishDelegation(wish, audit, root, options = {}) {
       '--owner',
       routeOwner,
       '--runner',
-      WISH_MISSION_RUNNER,
+      engine,
       '--budget',
       audit.budget,
       '--task',
@@ -820,7 +898,7 @@ function startWishDelegation(wish, audit, root, options = {}) {
     dispatched_at: now,
     task_id: taskPayload.task_id,
     mission_id: mission ? mission.id : null,
-    engine: WISH_MISSION_RUNNER,
+    engine,
     validator: audit.validator.id,
     budget: audit.budget,
     verify: verifyPlan.command,
@@ -830,6 +908,7 @@ function startWishDelegation(wish, audit, root, options = {}) {
     mission_room_receipt_path: writtenRoom.relativePath,
     mission_room_name: writtenRoom.room?.name || null,
     mission_owner: routeOwner,
+    ...engineAuditFields(audit),
   };
   return { record, taskPayload, mission, verifyPlan };
 }
@@ -862,6 +941,7 @@ function captureOnlyWish(wish, audit, root, asJson) {
     no_mission: true,
     budget: audit ? audit.budget : inferBudgetTier(wish.text),
     questions: audit ? audit.questions : [],
+    ...engineAuditFields(audit),
   });
   const payload = machineRecord(wish, 'captured', audit, {
     engine: null,
@@ -915,7 +995,7 @@ function printDecomposed(parts, delegatedParts, waitingParts) {
   }
 }
 
-function decomposeWish(wish, parts, root, asJson) {
+function decomposeWish(wish, parts, root, asJson, options = {}) {
   const delegatedParts = [];
   const waitingParts = [];
   let firstAudit = null;
@@ -929,7 +1009,7 @@ function decomposeWish(wish, parts, root, asJson) {
       });
       continue;
     }
-    const audit = auditWish(part.text, root);
+    const audit = auditWish(part.text, root, options);
     if (!audit.ok) {
       waitingParts.push({
         part: part.part,
@@ -954,9 +1034,11 @@ function decomposeWish(wish, parts, root, asJson) {
       mission_id: record.mission_id,
       dispatched_at: record.dispatched_at,
       budget: record.budget,
+      engine: record.engine,
       verify: record.verify,
       verify_status: record.verify_status,
       verify_outcome: record.verify_outcome,
+      ...engineAuditFields(audit),
     };
     delegatedParts.push(delegated);
     appendWishRecord(root, {
@@ -990,6 +1072,7 @@ function decomposeWish(wish, parts, root, asJson) {
     budget: firstAudit ? firstAudit.budget : inferBudgetTier(wish.text),
     parts: statusParts,
     delegated_parts: delegatedParts,
+    ...engineAuditFields(firstAudit),
     out_of_scope_parts: waitingParts
       .filter((part) => part.reason && /not in this checkout/.test(part.reason))
       .map((part) => ({ ...part, status: 'waiting' })),
@@ -1030,6 +1113,7 @@ function appendNeedsInputRecord(wish, audit, root) {
     questions: audit.questions,
     vague: !!audit.vague,
     missing_slots: audit.missing_slots || [],
+    ...engineAuditFields(audit),
   });
 }
 
@@ -1140,6 +1224,13 @@ function sweepWishes(root = process.cwd(), options = {}) {
 function runCapturedWish(text, args, root = process.cwd()) {
   const asJson = hasFlag(args, '--json');
   const noMission = hasFlag(args, '--no-mission');
+  let engineOverride = '';
+  try {
+    engineOverride = validateEngineOverride(args, root);
+  } catch (error) {
+    console.error(error.message || String(error));
+    return 2;
+  }
   const ts = stampIso();
   const wish = {
     id: wishId(text, ts),
@@ -1151,8 +1242,8 @@ function runCapturedWish(text, args, root = process.cwd()) {
   appendWishRecord(root, wish);
   const parts = analyzeWishParts(text, root);
   if (parts && noMission) return captureOnlyWish(wish, null, root, asJson);
-  if (parts) return decomposeWish(wish, parts, root, asJson);
-  const audit = auditWish(text, root);
+  if (parts) return decomposeWish(wish, parts, root, asJson, { engineOverride });
+  const audit = auditWish(text, root, { engineOverride });
   if (!audit.ok) return askForInput(wish, audit, root, asJson);
   if (noMission) return captureOnlyWish(wish, audit, root, asJson);
   return delegateWish(wish, audit, root, asJson);
@@ -1161,6 +1252,13 @@ function runCapturedWish(text, args, root = process.cwd()) {
 function grantWish(args, root = process.cwd()) {
   const asJson = hasFlag(args, '--json');
   const noMission = hasFlag(args, '--no-mission');
+  let engineOverride = '';
+  try {
+    engineOverride = validateEngineOverride(args, root);
+  } catch (error) {
+    console.error(error.message || String(error));
+    return 2;
+  }
   const positionals = stripFlags(args);
   const number = Number(positionals[1]);
   const answer = positionals.slice(2).join(' ').trim();
@@ -1217,7 +1315,7 @@ function grantWish(args, root = process.cwd()) {
     answers: [...(wish.answers || []), answer],
   };
   const auditText = [wish.text, ...(answeredWish.answers || [])].join(' ');
-  const audit = auditWish(auditText, root);
+  const audit = auditWish(auditText, root, { engineOverride });
   if (!audit.ok) return askForInput(answeredWish, audit, root, asJson);
   if (noMission) return captureOnlyWish(answeredWish, audit, root, asJson);
   return delegateWish(answeredWish, audit, root, asJson, { grantNumber: number });
