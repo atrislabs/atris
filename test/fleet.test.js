@@ -42,7 +42,7 @@ test('buildFleetPrompt yolo asks the engine to land itself', () => {
   assert.match(prompt, /atris worktree guard/);
   assert.match(prompt, /atris\/MAP\.md first/);
   assert.match(prompt, /plain-English message/);
-  assert.match(prompt, /atris worktree ship --message "<msg>" --verify "<your focused node --test command>" --merge/);
+  assert.match(prompt, /atris worktree ship --message "<msg>" --verify "npm run test:fast && node --test <focused files>" --merge/);
   assert.match(prompt, /never resolve conflicts yourself/);
   assert.doesNotMatch(prompt, /Do not push\. Do not create branches\./);
 });
