@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile, addInboxIdea } = require('../lib/file-ops');
 const engineRegistry = require('../lib/engine-registry');
+const { resolveFunctionalOwner } = require('../lib/functional-owner');
+const { buildMissionRoom, writeMissionRoomReceipt } = require('../lib/mission-room');
 const { delegateTask } = require('./task');
 const { startMission, listMissions } = require('./mission');
 
@@ -75,6 +77,7 @@ const BUDGET_LABELS = {
 };
 
 const WISH_SWEEP_LIMIT = 3;
+const WISH_MISSION_RUNNER = 'claude';
 const TEST_VERIFY_COMMAND = 'node --test';
 const JOURNAL_RESULT_TEXT = 'a written result will be waiting in your journal';
 const WAITING_INPUT_STATUSES = new Set(['needs_input', 'waiting_input']);
@@ -161,9 +164,9 @@ const FILLER_WORDS = new Set([
 
 function showHelp() {
   console.log('');
-  console.log('Usage: atris wish "<plain sentence>" [--json]');
+  console.log('Usage: atris wish "<plain sentence>" [--json] [--no-mission]');
   console.log('       atris wish list');
-  console.log('       atris wish grant <n> "<answer>" [--json]');
+  console.log('       atris wish grant <n> "<answer>" [--json] [--no-mission]');
   console.log('');
 }
 
@@ -603,7 +606,7 @@ function machineRecord(wish, status, audit, extra = {}) {
     status,
     task_id: extra.task_id || null,
     mission_id: extra.mission_id || null,
-    engine: audit && audit.executor ? audit.executor.id : (extra.engine || null),
+    engine: extra.engine || (audit && audit.executor ? audit.executor.id : null),
     budget: audit ? audit.budget : (extra.budget || null),
     questions: audit ? audit.questions : (extra.questions || []),
   };
@@ -663,7 +666,7 @@ function printGranted(text, audit, options = {}) {
   } else {
     console.log(`I heard you: ${quoteText(text)}`);
   }
-  console.log(`I delegated it to ${engineLabel(audit.executor.id)} with a ${audit.budget} budget, ${BUDGET_LABELS[audit.budget]}.`);
+  console.log(`I delegated it to ${engineLabel(options.engine || audit.executor.id)} with a ${audit.budget} budget, ${BUDGET_LABELS[audit.budget]}.`);
   if (verifyPlan.status === 'needs-review') console.log(verifyPlan.outcome + '.');
   else console.log(`You will know it came true when ${verifyOutcomeText(verifyPlan)}.`);
 }
@@ -716,8 +719,44 @@ function startWishDelegation(wish, audit, root, options = {}) {
   const recordText = String(options.recordText || wish.text);
   const verifyPlan = options.verifyPlan || deriveVerifyPlan(taskText);
   const now = stampIso();
+  const ownerResolution = resolveFunctionalOwner({
+    requestedOwner: audit.executor.id,
+    title: taskText,
+    tag: 'wish',
+    goal: taskText,
+    root,
+    fallbackOwners: ['mission-lead', 'task-planner', 'architect', 'validator'],
+  });
+  const baseRoom = buildMissionRoom(taskText, {
+    owner: ownerResolution.owner,
+    root,
+    ownerResolution,
+    trustedRun: true,
+    verifier: verifyPlan.command || '',
+  });
+  const room = {
+    ...baseRoom,
+    wish_id: wish.id,
+    wish: {
+      id: wish.id,
+      text: recordText,
+      task_text: taskText,
+    },
+    source: {
+      ...(baseRoom.source || {}),
+      wish_id: wish.id,
+      wish_text: recordText,
+    },
+  };
+  const writtenRoom = writeMissionRoomReceipt(room, { root });
+  const routeOwner = writtenRoom.room?.member_route?.suggested_member
+    || writtenRoom.room?.owner
+    || ownerResolution.owner
+    || 'mission-lead';
   const note = [
     `Wish: ${taskText}`,
+    `Wish id: ${wish.id}`,
+    `Mission Room: ${writtenRoom.relativePath}`,
     verifyPlan.command
       ? `Verify: ${verifyPlan.command} (${verifyOutcomeText(verifyPlan)})`
       : `Verify: needs human review (${verifyPlan.outcome})`,
@@ -727,9 +766,9 @@ function startWishDelegation(wish, audit, root, options = {}) {
     const delegated = delegateTask([
       taskText,
       '--to',
-      audit.executor.id,
+      routeOwner,
       '--executed-by',
-      audit.executor.id,
+      WISH_MISSION_RUNNER,
       '--tag',
       'wish',
       '--goal-objective',
@@ -740,19 +779,36 @@ function startWishDelegation(wish, audit, root, options = {}) {
     const missionArgs = [
       taskText,
       '--owner',
-      audit.executor.id,
+      routeOwner,
       '--runner',
-      audit.executor.id,
+      WISH_MISSION_RUNNER,
       '--budget',
       audit.budget,
       '--task',
       delegated.task_id,
+      '--duplicate',
       '--json',
     ];
     if (verifyPlan.command) missionArgs.push('--verify', verifyPlan.command);
     return {
       taskPayload: delegated,
-      missionPayload: startMission(missionArgs, { silent: true }),
+      missionPayload: startMission(missionArgs, {
+        silent: true,
+        missionPatch: {
+          wish_id: wish.id,
+          wish_text: recordText,
+          mission_room_receipt_path: writtenRoom.relativePath,
+          mission_room_name: writtenRoom.room?.name || null,
+          source: 'wish',
+          metadata: {
+            wish_id: wish.id,
+            wish_text: recordText,
+            mission_room_receipt_path: writtenRoom.relativePath,
+            mission_room_name: writtenRoom.room?.name || null,
+            mission_room_owner: routeOwner,
+          },
+        },
+      }),
     };
   });
   const mission = missionPayload && missionPayload.mission ? missionPayload.mission : null;
@@ -764,13 +820,16 @@ function startWishDelegation(wish, audit, root, options = {}) {
     dispatched_at: now,
     task_id: taskPayload.task_id,
     mission_id: mission ? mission.id : null,
-    engine: audit.executor.id,
+    engine: WISH_MISSION_RUNNER,
     validator: audit.validator.id,
     budget: audit.budget,
     verify: verifyPlan.command,
     verify_status: verifyPlan.status,
     verify_outcome: verifyPlan.outcome,
     task_text: taskText,
+    mission_room_receipt_path: writtenRoom.relativePath,
+    mission_room_name: writtenRoom.room?.name || null,
+    mission_owner: routeOwner,
   };
   return { record, taskPayload, mission, verifyPlan };
 }
@@ -786,9 +845,33 @@ function delegateWish(wish, audit, root, asJson, options = {}) {
   const payload = machineRecord(wish, 'delegated', audit, {
     task_id: record.task_id,
     mission_id: record.mission_id,
+    engine: record.engine,
   });
   if (asJson) console.log(JSON.stringify(payload, null, 2));
-  else printGranted(options.taskText || wish.text, audit, { ...options, verifyPlan });
+  else printGranted(options.taskText || wish.text, audit, { ...options, verifyPlan, engine: record.engine });
+  return 0;
+}
+
+function captureOnlyWish(wish, audit, root, asJson) {
+  const now = stampIso();
+  appendWishRecord(root, {
+    id: wish.id,
+    ts: now,
+    text: wish.text,
+    status: 'captured_no_mission',
+    no_mission: true,
+    budget: audit ? audit.budget : inferBudgetTier(wish.text),
+    questions: audit ? audit.questions : [],
+  });
+  const payload = machineRecord(wish, 'captured', audit, {
+    engine: null,
+    budget: audit ? audit.budget : inferBudgetTier(wish.text),
+  });
+  if (asJson) console.log(JSON.stringify(payload, null, 2));
+  else {
+    console.log(`I heard you: ${quoteText(wish.text)}`);
+    console.log('Captured only; no mission started.');
+  }
   return 0;
 }
 
@@ -959,7 +1042,7 @@ function latestEventHasGrantAnswer(latestEvent) {
 }
 
 function dispatchableWishReason(wish, latestEvent) {
-  if (!wish || !wish.id || wish.dispatched_at) return '';
+  if (!wish || !wish.id || wish.dispatched_at || wish.no_mission || (latestEvent && latestEvent.no_mission)) return '';
   const status = latestStatusFor(wish, latestEvent);
   if (status === 'captured') return 'captured';
   if (WAITING_INPUT_STATUSES.has(status) && latestEventHasGrantAnswer(latestEvent)) return 'answered';
@@ -1056,6 +1139,7 @@ function sweepWishes(root = process.cwd(), options = {}) {
 
 function runCapturedWish(text, args, root = process.cwd()) {
   const asJson = hasFlag(args, '--json');
+  const noMission = hasFlag(args, '--no-mission');
   const ts = stampIso();
   const wish = {
     id: wishId(text, ts),
@@ -1066,14 +1150,17 @@ function runCapturedWish(text, args, root = process.cwd()) {
   captureWishToJournal(text, root);
   appendWishRecord(root, wish);
   const parts = analyzeWishParts(text, root);
+  if (parts && noMission) return captureOnlyWish(wish, null, root, asJson);
   if (parts) return decomposeWish(wish, parts, root, asJson);
   const audit = auditWish(text, root);
   if (!audit.ok) return askForInput(wish, audit, root, asJson);
+  if (noMission) return captureOnlyWish(wish, audit, root, asJson);
   return delegateWish(wish, audit, root, asJson);
 }
 
 function grantWish(args, root = process.cwd()) {
   const asJson = hasFlag(args, '--json');
+  const noMission = hasFlag(args, '--no-mission');
   const positionals = stripFlags(args);
   const number = Number(positionals[1]);
   const answer = positionals.slice(2).join(' ').trim();
@@ -1132,6 +1219,7 @@ function grantWish(args, root = process.cwd()) {
   const auditText = [wish.text, ...(answeredWish.answers || [])].join(' ');
   const audit = auditWish(auditText, root);
   if (!audit.ok) return askForInput(answeredWish, audit, root, asJson);
+  if (noMission) return captureOnlyWish(answeredWish, audit, root, asJson);
   return delegateWish(answeredWish, audit, root, asJson, { grantNumber: number });
 }
 

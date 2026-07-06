@@ -1824,6 +1824,19 @@ function missionFromArgs(args) {
   return mission;
 }
 
+function applyMissionStartPatch(mission, patch) {
+  if (!patch || typeof patch !== 'object') return mission;
+  const { metadata, ...rest } = patch;
+  Object.assign(mission, rest);
+  if (metadata && typeof metadata === 'object') {
+    mission.metadata = {
+      ...(mission.metadata || {}),
+      ...metadata,
+    };
+  }
+  return mission;
+}
+
 function missingVerifierWarning(mission) {
   if (effectiveMissionVerifier(mission)) return null;
   return {
@@ -2986,7 +2999,7 @@ function startMission(args, options = {}) {
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
-  const mission = missionFromArgs(args);
+  const mission = applyMissionStartPatch(missionFromArgs(args), options.missionPatch);
   // A flag-looking or empty objective is a typo, not a mission.
   const rawObjective = String(mission.objective || '').trim();
   if (!rawObjective || rawObjective.startsWith('-')) {
