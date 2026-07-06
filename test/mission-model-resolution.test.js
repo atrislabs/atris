@@ -2,11 +2,16 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
+  composeHumanBlockingPauseMessage,
   detectUnavailableModel,
+  escalateHumanBlockingPause,
   missionPauseNextAction,
   consecutiveSameReasonErrors,
 } = require('../commands/mission');
@@ -121,6 +126,55 @@ test('missionPauseNextAction names the failing reason for a repeated-error pause
   assert.match(action, /claude-timeout/);
   assert.match(action, /inspect the last receipt/);
   assert.match(action, /atris mission run mission-abc/);
+});
+
+test('human-blocking pause escalation message names cause and resume command', () => {
+  const message = composeHumanBlockingPauseMessage(
+    { id: 'mission-abc' },
+    'auth-required',
+  );
+  assert.match(message, /Mission mission-abc paused: auth-required/);
+  assert.match(message, /operator to log in/);
+  assert.match(message, /Resume: atris mission run mission-abc/);
+});
+
+test('human-blocking pause escalation sends once per paused timestamp', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-pause-escalation-test-'));
+  try {
+    let sendCount = 0;
+    const mission = {
+      id: 'mission-abc',
+      owner: 'mission-lead',
+      status: 'paused',
+      paused_at: '2026-07-06T12:00:00.000Z',
+      stop_reason: 'auth-required',
+    };
+    const first = escalateHumanBlockingPause(mission, dir, {
+      policy: { imessage_to: '+15555550123' },
+      sendImessage: () => {
+        sendCount += 1;
+        return { ok: true, output: '' };
+      },
+      now: '2026-07-06T12:00:01.000Z',
+    });
+    assert.equal(first.escalated, true);
+    assert.equal(first.channel, 'imessage');
+    assert.equal(first.mission.human_blocking_pause_escalation.sent, true);
+
+    const second = escalateHumanBlockingPause(first.mission, dir, {
+      policy: { imessage_to: '+15555550123' },
+      sendImessage: () => {
+        sendCount += 1;
+        return { ok: true, output: '' };
+      },
+      now: '2026-07-06T12:00:02.000Z',
+    });
+    assert.equal(second.escalated, false);
+    assert.equal(second.skipped, 'already-escalated');
+    assert.equal(sendCount, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('missionPauseNextAction points at the cause when max-ticks is hit on an errored tick', () => {

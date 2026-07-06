@@ -746,6 +746,7 @@ test('daily tick expires missions parked for a week, keeps fresh and running one
       // updated_at fresh on purpose: machine re-saves bump it daily, so
       // expiry must key off last_tick_at/created_at, never updated_at.
       { schema: 'atris.mission.v1', id: 'mission-old-paused', owner: 'neo', objective: 'ancient smoke test', status: 'paused', created_at: old, last_tick_at: old, updated_at: new Date().toISOString() },
+      { schema: 'atris.mission.v1', id: 'mission-old-auth', owner: 'neo', objective: 'needs login', status: 'paused', stop_reason: 'auth-required', created_at: old, last_tick_at: old, updated_at: new Date().toISOString() },
       { schema: 'atris.mission.v1', id: 'mission-old-running', owner: 'neo', objective: 'long haul, still ticking', status: 'running', created_at: old, updated_at: old },
       { schema: 'atris.mission.v1', id: 'mission-fresh-paused', owner: 'neo', objective: 'paused yesterday', status: 'paused', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
     ];
@@ -756,13 +757,21 @@ test('daily tick expires missions parked for a week, keeps fresh and running one
     // the hourly janitor (48h paused leash) reaches the old paused mission
     // before the daily 7-day expiry does
     assert.equal(receipt.missions_stopped, 1);
+    assert.equal(receipt.missions_held, 1);
+    assert.deepEqual(receipt.missions_held_refs, ['mission-old-auth']);
+    assert.deepEqual(receipt.missions_held_reasons, { 'auth-required': 1 });
     const { loadMissionMap } = require('../commands/mission');
     const map = loadMissionMap(repo);
     assert.equal(map.get('mission-old-paused').status, 'stopped');
     assert.match(map.get('mission-old-paused').stop_reason, /expired after 48\+ idle hours/);
     assert.match(map.get('mission-old-paused').stop_reason, /revive with: atris mission tick/);
+    assert.equal(map.get('mission-old-auth').status, 'paused');
+    assert.equal(map.get('mission-old-auth').stop_reason, 'auth-required');
     assert.equal(map.get('mission-old-running').status, 'running');
     assert.equal(map.get('mission-fresh-paused').status, 'paused');
+    const state = autoland.readState(repo);
+    assert.equal(state.janitor.missions_held, 1);
+    assert.equal(state.janitor.mission_holds['mission-old-auth'].reason, 'auth-required');
   } finally {
     cleanupTempDir(base);
   }
@@ -851,6 +860,19 @@ test('digest carries the janitor tally in plain language, silent when it did not
   };
   const withTally = autoland.composeDigest({ ...baseArgs, janitor: { missions_stopped: 2, worktrees_reaped: 1 } });
   assert.match(withTally, /tidied up: 2 stale missions stopped, 1 merged worktree cleared/);
+  const withReasons = autoland.composeDigest({
+    ...baseArgs,
+    janitor: {
+      missions_stopped: 1,
+      worktrees_reaped: 0,
+      mission_stop_reasons: { 'paused-idle': 1 },
+      mission_holds: {
+        'mission-auth': { id: 'mission-auth', reason: 'auth-required' },
+      },
+    },
+  });
+  assert.match(withReasons, /held: 1 mission awaiting login \(auth-required\)/);
+  assert.match(withReasons, /stopped: 1 mission stale after the idle window \(paused-idle\)/);
   const without = autoland.composeDigest({ ...baseArgs, janitor: null });
   assert.doesNotMatch(without, /tidied up/);
 });

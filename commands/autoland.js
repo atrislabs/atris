@@ -21,6 +21,55 @@ function projectName(root) {
   return path.basename(root);
 }
 
+function missionReasonBreakdown(rows, fallback = 'stale') {
+  const tally = {};
+  for (const row of rows || []) {
+    const reason = String(row?.reason || row?.pause_reason || fallback).trim() || fallback;
+    tally[reason] = (tally[reason] || 0) + 1;
+  }
+  return tally;
+}
+
+function mergeReasonBreakdown(left = {}, right = {}) {
+  const merged = { ...(left && typeof left === 'object' ? left : {}) };
+  for (const [reason, count] of Object.entries(right || {})) {
+    merged[reason] = (Number(merged[reason]) || 0) + (Number(count) || 0);
+  }
+  return merged;
+}
+
+function mergeHeldMissions(left = {}, held = []) {
+  const merged = { ...(left && typeof left === 'object' ? left : {}) };
+  for (const row of held || []) {
+    if (!row || !row.id) continue;
+    merged[row.id] = {
+      id: row.id,
+      owner: row.owner || null,
+      objective: row.objective || '',
+      reason: row.reason || 'operator-required',
+      resume_command: row.resume_command || `atris mission run ${row.id}`,
+    };
+  }
+  return merged;
+}
+
+function recordJanitorState(state, { stopped = [], held = [], worktrees = 0 } = {}) {
+  const stoppedCount = Array.isArray(stopped) ? stopped.length : Number(stopped) || 0;
+  const heldRows = Array.isArray(held) ? held : [];
+  const worktreeCount = Number(worktrees) || 0;
+  if (!stoppedCount && !heldRows.length && !worktreeCount) return;
+  const prior = state.janitor && typeof state.janitor === 'object' ? state.janitor : {};
+  const missionHolds = mergeHeldMissions(prior.mission_holds, heldRows);
+  const missionStopReasons = mergeReasonBreakdown(prior.mission_stop_reasons, missionReasonBreakdown(stopped, 'stale'));
+  state.janitor = {
+    ...prior,
+    missions_stopped: (Number(prior.missions_stopped) || 0) + stoppedCount,
+    worktrees_reaped: (Number(prior.worktrees_reaped) || 0) + worktreeCount,
+    ...(Object.keys(missionStopReasons).length ? { mission_stop_reasons: missionStopReasons } : {}),
+    ...(Object.keys(missionHolds).length ? { mission_holds: missionHolds, missions_held: Object.keys(missionHolds).length } : {}),
+  };
+}
+
 // The digest's "next, if you agree" section: top candidate moves from Atris
 // state, each with the member best suited to own it. Moves that can't explain
 // themselves are counted, not shown. Never blocks the digest.
@@ -515,13 +564,23 @@ function runTickBody(root, { json, policy, receipt }) {
   // accumulate in state so the daily digest reports the day's total, not
   // just the last tick's.
   receipt.missions_stopped = 0;
+  receipt.missions_held = 0;
   receipt.worktrees_reaped = 0;
   if (policy.janitor !== false) {
+    let stoppedMissions = [];
+    let heldMissions = [];
     try {
       const { reapPausedMissions } = require('./mission');
-      const stopped = reapPausedMissions(root);
-      receipt.missions_stopped = stopped.length;
-      if (stopped.length > 0) receipt.missions_stopped_refs = stopped.map((m) => m.id);
+      stoppedMissions = reapPausedMissions(root);
+      heldMissions = Array.isArray(stoppedMissions.held) ? stoppedMissions.held : [];
+      receipt.missions_stopped = stoppedMissions.length;
+      if (stoppedMissions.length > 0) receipt.missions_stopped_refs = stoppedMissions.map((m) => m.id);
+      if (stoppedMissions.length > 0) receipt.missions_stopped_reasons = missionReasonBreakdown(stoppedMissions, 'stale');
+      receipt.missions_held = heldMissions.length;
+      if (heldMissions.length > 0) {
+        receipt.missions_held_refs = heldMissions.map((m) => m.id);
+        receipt.missions_held_reasons = missionReasonBreakdown(heldMissions, 'operator-required');
+      }
     } catch (err) {
       receipt.janitor_mission_error = String((err && err.message) || err).slice(0, 200);
     }
@@ -533,13 +592,7 @@ function runTickBody(root, { json, policy, receipt }) {
     } catch (err) {
       receipt.janitor_worktree_error = String((err && err.message) || err).slice(0, 200);
     }
-    if (receipt.missions_stopped || receipt.worktrees_reaped) {
-      const tally = state.janitor && typeof state.janitor === 'object' ? state.janitor : {};
-      state.janitor = {
-        missions_stopped: (Number(tally.missions_stopped) || 0) + receipt.missions_stopped,
-        worktrees_reaped: (Number(tally.worktrees_reaped) || 0) + receipt.worktrees_reaped,
-      };
-    }
+    recordJanitorState(state, { stopped: stoppedMissions, held: heldMissions, worktrees: receipt.worktrees_reaped });
   }
 
   // 4. daily digest at the configured hour
@@ -620,7 +673,16 @@ function runTickBody(root, { json, policy, receipt }) {
     try {
       const { expireStaleMissions } = require('./mission');
       const expiredMissions = expireStaleMissions(root);
+      const heldMissions = Array.isArray(expiredMissions.held) ? expiredMissions.held : [];
       if (expiredMissions.length > 0) receipt.expired_missions = expiredMissions.length;
+      if (expiredMissions.length > 0) receipt.expired_mission_reasons = missionReasonBreakdown(expiredMissions, 'stale');
+      if (expiredMissions.length > 0) recordJanitorState(state, { stopped: expiredMissions });
+      if (heldMissions.length > 0) {
+        receipt.expired_missions_held = heldMissions.length;
+        receipt.expired_missions_held_refs = heldMissions.map((m) => m.id);
+        receipt.expired_missions_held_reasons = missionReasonBreakdown(heldMissions, 'operator-required');
+        recordJanitorState(state, { held: heldMissions });
+      }
     } catch (err) {
       receipt.mission_expiry_error = String((err && err.message) || err).slice(0, 200);
     }
@@ -644,7 +706,8 @@ function runTickBody(root, { json, policy, receipt }) {
   else {
     const reapNote = receipt.reaped ? `, reaped ${receipt.reaped.branches} landed/overdue branches` : '';
     const janitorNote = `, janitor stopped ${receipt.missions_stopped} mission${receipt.missions_stopped === 1 ? '' : 's'} + reaped ${receipt.worktrees_reaped} worktree${receipt.worktrees_reaped === 1 ? '' : 's'}`;
-    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}${janitorNote}`);
+    const heldNote = receipt.missions_held ? `, held ${receipt.missions_held} human-blocked mission${receipt.missions_held === 1 ? '' : 's'}` : '';
+    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}${janitorNote}${heldNote}`);
   }
   return 0;
 }

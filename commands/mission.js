@@ -34,6 +34,7 @@ const {
   runsPruneLines,
   formatBytes,
 } = require('../lib/runs-prune');
+const autolandLib = require('../lib/autoland');
 const { operatorReady, hasAgentJargon } = require('./autoland');
 const {
   MISSION_INSPECT_FIELDS,
@@ -51,6 +52,7 @@ const GOAL_LOOP_STATUSES = new Set(['planning', 'running', 'ready']);
 const STATUS_ALIASES = new Set(['active']);
 const DEFAULT_LONG_RUN_VERIFIER = 'git diff --check';
 const SLEEP_LENGTH_BUDGET_SECONDS = 3600;
+const HUMAN_BLOCKING_PAUSE_REASONS = new Set(['auth-required', 'model-unavailable', 'rate-limit-exceeded-wall']);
 
 function stampIso() {
   return new Date().toISOString();
@@ -6110,6 +6112,107 @@ function missionPauseNextAction(pauseReason, missionId, deadModel = null, lastEr
   return `resume with: atris mission run ${missionId}`;
 }
 
+function humanBlockingPauseReason(value) {
+  const reason = String(value || '').trim();
+  return HUMAN_BLOCKING_PAUSE_REASONS.has(reason) ? reason : null;
+}
+
+function missionPauseResumeCommand(missionId) {
+  return `atris mission run ${missionId}`;
+}
+
+function humanBlockingPauseCause(reason, { deadModel = null } = {}) {
+  if (reason === 'auth-required') {
+    return 'the runner needs the operator to log in before it can continue';
+  }
+  if (reason === 'model-unavailable') {
+    return deadModel
+      ? `the configured model "${deadModel}" is unavailable or inaccessible`
+      : 'the configured model is unavailable or inaccessible';
+  }
+  if (reason === 'rate-limit-exceeded-wall') {
+    return 'the rate-limit reset is beyond this run window';
+  }
+  return 'the pause needs operator action before the mission can continue';
+}
+
+function composeHumanBlockingPauseMessage(mission, pauseReason, options = {}) {
+  const command = missionPauseResumeCommand(mission.id);
+  return [
+    `Mission ${mission.id} paused: ${pauseReason}`,
+    `Cause: ${humanBlockingPauseCause(pauseReason, options)}.`,
+    `Resume: ${command}`,
+  ].join('\n');
+}
+
+function missionPauseEscalationAlreadyRecorded(mission, pauseReason, pausedAt) {
+  const marker = mission && mission.human_blocking_pause_escalation;
+  return Boolean(marker && marker.reason === pauseReason && marker.paused_at === pausedAt);
+}
+
+function escalateHumanBlockingPause(mission, root = process.cwd(), options = {}) {
+  const pauseReason = humanBlockingPauseReason(options.pauseReason || mission?.stop_reason);
+  if (!mission || !pauseReason) {
+    return { mission, escalated: false, skipped: 'not-human-blocking' };
+  }
+  const pausedAt = options.pausedAt || mission.paused_at || stampIso();
+  if (missionPauseEscalationAlreadyRecorded(mission, pauseReason, pausedAt)) {
+    return { mission, escalated: false, skipped: 'already-escalated' };
+  }
+  const policy = options.policy || autolandLib.readPolicy(root) || {};
+  const message = composeHumanBlockingPauseMessage(mission, pauseReason, options);
+  const command = missionPauseResumeCommand(mission.id);
+  const marker = {
+    reason: pauseReason,
+    paused_at: pausedAt,
+    escalated_at: options.now || stampIso(),
+    resume_command: command,
+    cause: humanBlockingPauseCause(pauseReason, options),
+    message,
+  };
+  let eventType = 'mission_pause_escalated';
+  let eventPayload = { reason: pauseReason, resume_command: command };
+  if (policy.imessage_to) {
+    const sendImessage = options.sendImessage || autolandLib.sendImessage;
+    const sent = sendImessage(root, policy.imessage_to, message);
+    marker.channel = 'imessage';
+    marker.imessage_to = policy.imessage_to;
+    marker.sent = Boolean(sent && sent.ok);
+    if (!marker.sent) marker.error = String((sent && sent.output) || 'send failed').slice(0, 200);
+    eventPayload = {
+      ...eventPayload,
+      channel: 'imessage',
+      imessage_to: policy.imessage_to,
+      sent: marker.sent,
+      ...(marker.error ? { error: marker.error } : {}),
+    };
+  } else {
+    const warning = `WARN mission ${mission.id} paused for ${pauseReason}: ${marker.cause}. Resume: ${command}`;
+    marker.channel = 'mission-log';
+    marker.warning = warning;
+    eventType = 'mission_pause_escalation_warn';
+    eventPayload = { ...eventPayload, channel: 'mission-log', warning };
+  }
+  const nextMission = { ...mission, paused_at: pausedAt, human_blocking_pause_escalation: marker };
+  try {
+    appendEvent(eventType, nextMission, eventPayload, root);
+  } catch {}
+  if (!policy.imessage_to) {
+    try {
+      appendMemberLog(nextMission.owner, 'Mission pause needs operator', { warning: marker.warning }, root);
+    } catch {}
+  }
+  return {
+    mission: nextMission,
+    escalated: true,
+    channel: marker.channel,
+    sent: Boolean(marker.sent),
+    warning: marker.warning || null,
+    message,
+    reason: pauseReason,
+  };
+}
+
 function writeRunnerPromptFile(cwd, missionId, prompt) {
   const dir = path.join(cwd, '.atris', 'state', 'runner-prompts');
   fs.mkdirSync(dir, { recursive: true });
@@ -6853,13 +6956,20 @@ async function runMission(args) {
       const lastTick = ticks[ticks.length - 1];
       const deadModel = pauseReason === 'model-unavailable' ? (lastTick && lastTick.model_unavailable) || null : null;
       const lastErrorReason = lastTick && lastTick.status === 'errored' ? lastTick.reason : null;
-      mission = saveMission({
+      const pausedAt = stampIso();
+      const pausedMission = {
         ...mission,
         status: 'paused',
-        paused_at: stampIso(),
+        paused_at: pausedAt,
         stop_reason: pauseReason,
         next_action: missionPauseNextAction(pauseReason, mission.id, deadModel, lastErrorReason),
-      }, cwd, 'mission_run_paused', { reason: pauseReason, ...(deadModel ? { model_unavailable: deadModel } : {}) }).mission;
+      };
+      const escalation = escalateHumanBlockingPause(pausedMission, cwd, { pauseReason, pausedAt, deadModel });
+      mission = saveMission(escalation.mission, cwd, 'mission_run_paused', {
+        reason: pauseReason,
+        ...(deadModel ? { model_unavailable: deadModel } : {}),
+        ...(escalation.escalated ? { escalation: { channel: escalation.channel, sent: escalation.sent } } : {}),
+      }).mission;
     }
 
     const summaryWorktree = worktreeReceipt(runWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier, baseline: runWorktreeBaseline });
@@ -7260,6 +7370,30 @@ function stopMission(args) {
 const MISSION_IDLE_EXPIRY_DAYS = 7;
 const EXPIRABLE_STATUSES = new Set(['paused', 'planning', 'ready']);
 
+function missionHeldForHumanBlockingPause(mission, status) {
+  if (status !== 'paused') return null;
+  const reason = humanBlockingPauseReason(mission.stop_reason || mission.pause_reason);
+  if (!reason) return null;
+  return {
+    id: mission.id,
+    owner: mission.owner,
+    previous_status: status,
+    objective: String(mission.objective || '').slice(0, 120),
+    reason,
+    cause: humanBlockingPauseCause(reason),
+    resume_command: missionPauseResumeCommand(mission.id),
+  };
+}
+
+function attachHeldMissions(expired, held) {
+  Object.defineProperty(expired, 'held', {
+    value: held,
+    enumerable: false,
+    configurable: true,
+  });
+  return expired;
+}
+
 function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXPIRY_DAYS, idleHours = null, dryRun = false, statuses = EXPIRABLE_STATUSES } = {}) {
   const windowMs = idleHours != null ? idleHours * 60 * 60 * 1000 : idleDays * 24 * 60 * 60 * 1000;
   const windowLabel = idleHours != null
@@ -7267,6 +7401,7 @@ function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXP
     : `${idleDays}+ idle day${idleDays === 1 ? '' : 's'}`;
   const cutoff = Date.now() - windowMs;
   const expired = [];
+  const held = [];
   for (const mission of listMissions(root)) {
     const status = String(mission.status || '').toLowerCase();
     if (!statuses.has(status)) continue;
@@ -7279,6 +7414,11 @@ function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXP
       Date.parse(mission.created_at || '') || 0,
     );
     if (!touched || touched > cutoff) continue;
+    const heldMission = missionHeldForHumanBlockingPause(mission, status);
+    if (heldMission) {
+      held.push(heldMission);
+      continue;
+    }
     const reason = `expired after ${windowLabel} (was ${status}); revive with: atris mission tick ${mission.id}`;
     if (!dryRun) {
       const next = {
@@ -7290,9 +7430,15 @@ function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXP
       const { mission: saved } = saveMission(next, root, 'mission_expired', { reason, previous_status: status, idle_days: idleDays, idle_hours: idleHours });
       appendMemberLog(saved.owner, 'Mission expired', { mission: saved.objective, reason }, root);
     }
-    expired.push({ id: mission.id, owner: mission.owner, previous_status: status, objective: String(mission.objective || '').slice(0, 120) });
+    expired.push({
+      id: mission.id,
+      owner: mission.owner,
+      previous_status: status,
+      objective: String(mission.objective || '').slice(0, 120),
+      reason: String(mission.stop_reason || '').trim() || `${status}-idle`,
+    });
   }
-  return expired;
+  return attachHeldMissions(expired, held);
 }
 
 // Zombie-mission reap: a mission left paused past a short leash (48h default)
@@ -8008,6 +8154,10 @@ module.exports = {
   businessIdForAtris2Mission,
   detectUnavailableModel,
   missionPauseNextAction,
+  HUMAN_BLOCKING_PAUSE_REASONS,
+  composeHumanBlockingPauseMessage,
+  escalateHumanBlockingPause,
+  humanBlockingPauseReason,
   consecutiveSameReasonErrors,
   missionVerifierTimeoutMs,
 };
