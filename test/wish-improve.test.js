@@ -87,3 +87,36 @@ test('wishLessonsBrief includes lessons when present, empty when file absent', (
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('pruneWishLessons removes a lesson whose after-window average dropped, keeps the rest', () => {
+  const { pruneWishLessons, lessonsFile, appendWishRecord } = require('../lib/wish-store');
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wish-prune-'));
+  // reviews: before 2026-07-01 avg 3, after avg 1 (3 reviews -> prune eligible)
+  appendWishRecord(root, { kind: 'review', wish_id: 'w1', ts: '2026-06-20T00:00:00Z', review_score: 3, review_text: 'good' });
+  appendWishRecord(root, { kind: 'review', wish_id: 'w2', ts: '2026-06-25T00:00:00Z', review_score: 3, review_text: 'good' });
+  appendWishRecord(root, { kind: 'review', wish_id: 'w3', ts: '2026-07-02T00:00:00Z', review_score: 1, review_text: 'meh' });
+  appendWishRecord(root, { kind: 'review', wish_id: 'w4', ts: '2026-07-03T00:00:00Z', review_score: 1, review_text: 'meh' });
+  appendWishRecord(root, { kind: 'review', wish_id: 'w5', ts: '2026-07-04T00:00:00Z', review_score: 1, review_text: 'meh' });
+  const file = lessonsFile(root);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, [
+    '# Wish lessons', '', '## Lessons',
+    '- 2026-07-01: bad lesson that tanked scores',
+    '- 2026-07-04: too fresh to judge',
+    '- undated lesson stays', '',
+    '## Review inbox (raw, distill me)', '',
+  ].join('\n'), 'utf8');
+  const pruned = pruneWishLessons(root, { quiet: true });
+  assert.equal(pruned.length, 1);
+  const after = fs.readFileSync(file, 'utf8');
+  assert.ok(!after.match(/## Lessons[\s\S]*bad lesson[\s\S]*## Review inbox/));
+  assert.ok(after.includes('- 2026-07-04: too fresh to judge'));
+  assert.ok(after.includes('undated lesson stays'));
+  assert.ok(after.includes('## Pruned (did not move the score)'));
+  assert.ok(after.includes('bad lesson that tanked scores [pruned'));
+  // idempotent
+  assert.equal(pruneWishLessons(root, { quiet: true }).length, 0);
+});
