@@ -74,8 +74,10 @@ const BUDGET_LABELS = {
   deep: 'about three hours',
 };
 
+const WISH_SWEEP_LIMIT = 3;
 const TEST_VERIFY_COMMAND = 'node --test';
 const JOURNAL_RESULT_TEXT = 'a written result will be waiting in your journal';
+const WAITING_INPUT_STATUSES = new Set(['needs_input', 'waiting_input']);
 const AUDIENCE_WORDS = /\b(?:for|user|users|customer|customers|operator|operators|agent|agents|developer|developers|admin|admins|member|members|team|teams|visitor|visitors|client|clients|student|students|founder|founders|newcomer|newcomers)\b/i;
 const BUDGET_RANK = { quick: 1, long: 2, deep: 3 };
 const PART_JOINER = /\s+(?:and|plus|also)\s+|[;]\s*/i;
@@ -221,9 +223,25 @@ function readJsonLines(file) {
     .filter(Boolean);
 }
 
+function eventAnswers(event) {
+  const answers = [];
+  for (const key of ['answer', 'answer_text', 'grant_answer']) {
+    const value = event && event[key];
+    if (String(value || '').trim()) answers.push(String(value));
+  }
+  if (Array.isArray(event && event.answers)) {
+    answers.push(...event.answers.map(String).filter((value) => value.trim()));
+  }
+  return answers;
+}
+
+function readWishEvents(root = process.cwd()) {
+  return readJsonLines(stateFile(root));
+}
+
 function readWishes(root = process.cwd()) {
   const byId = new Map();
-  for (const event of readJsonLines(stateFile(root))) {
+  for (const event of readWishEvents(root)) {
     if (!event || !event.id) continue;
     const current = byId.get(event.id) || {
       id: event.id,
@@ -238,12 +256,20 @@ function readWishes(root = process.cwd()) {
       first_ts: current.first_ts || event.ts,
       answers: current.answers || [],
     };
-    if (event.answer) next.answers = [...next.answers, String(event.answer)];
-    if (Array.isArray(event.answers)) next.answers = [...next.answers, ...event.answers.map(String)];
+    const answers = eventAnswers(event);
+    if (answers.length) next.answers = [...next.answers, ...answers];
     byId.set(event.id, next);
   }
   return Array.from(byId.values())
     .sort((a, b) => String(a.first_ts || a.ts || '').localeCompare(String(b.first_ts || b.ts || '')));
+}
+
+function latestWishEventMap(root = process.cwd()) {
+  const byId = new Map();
+  for (const event of readWishEvents(root)) {
+    if (event && event.id) byId.set(event.id, event);
+  }
+  return byId;
 }
 
 function captureWishToJournal(text, root = process.cwd()) {
@@ -311,6 +337,16 @@ function inferBudgetTier(text) {
 function resolveRole(role, root) {
   const resolver = engineRegistry.resolveRole || engineRegistry.resolve || engineRegistry.resolveEngineForRole;
   return resolver(role, root);
+}
+
+function withRoot(root, fn) {
+  const previous = process.cwd();
+  if (root && previous !== root) process.chdir(root);
+  try {
+    return fn();
+  } finally {
+    if (process.cwd() !== previous) process.chdir(previous);
+  }
 }
 
 function cleanToken(value) {
@@ -643,7 +679,7 @@ function latestMissionStatus(root, missionId) {
 }
 
 function operatorStatus(wish, root = process.cwd()) {
-  if (wish.status === 'needs_input') return 'waiting on you';
+  if (WAITING_INPUT_STATUSES.has(String(wish.status || ''))) return 'waiting on you';
   if (wish.status === 'delegated' || wish.status === 'decomposed') {
     const missionStatus = latestMissionStatus(root, wish.mission_id);
     if (missionStatus === 'complete') return 'came true';
@@ -660,7 +696,7 @@ function operatorStatus(wish, root = process.cwd()) {
 }
 
 function openWishes(root = process.cwd()) {
-  return readWishes(root).filter((wish) => ['needs_input', 'delegated', 'decomposed', 'complete'].includes(String(wish.status || '')));
+  return readWishes(root).filter((wish) => ['needs_input', 'waiting_input', 'delegated', 'decomposed', 'complete'].includes(String(wish.status || '')));
 }
 
 function printList(root = process.cwd()) {
@@ -679,6 +715,7 @@ function startWishDelegation(wish, audit, root, options = {}) {
   const taskText = String(options.taskText || wish.text);
   const recordText = String(options.recordText || wish.text);
   const verifyPlan = options.verifyPlan || deriveVerifyPlan(taskText);
+  const now = stampIso();
   const note = [
     `Wish: ${taskText}`,
     verifyPlan.command
@@ -686,39 +723,45 @@ function startWishDelegation(wish, audit, root, options = {}) {
       : `Verify: needs human review (${verifyPlan.outcome})`,
     `Budget: ${audit.budget}`,
   ].join('\n');
-  const taskPayload = delegateTask([
-    taskText,
-    '--to',
-    audit.executor.id,
-    '--executed-by',
-    audit.executor.id,
-    '--tag',
-    'wish',
-    '--goal-objective',
-    taskText,
-    '--note',
-    note,
-  ]);
-  const missionArgs = [
-    taskText,
-    '--owner',
-    audit.executor.id,
-    '--runner',
-    audit.executor.id,
-    '--budget',
-    audit.budget,
-    '--task',
-    taskPayload.task_id,
-    '--json',
-  ];
-  if (verifyPlan.command) missionArgs.push('--verify', verifyPlan.command);
-  const missionPayload = startMission(missionArgs, { silent: true });
+  const { taskPayload, missionPayload } = withRoot(root, () => {
+    const delegated = delegateTask([
+      taskText,
+      '--to',
+      audit.executor.id,
+      '--executed-by',
+      audit.executor.id,
+      '--tag',
+      'wish',
+      '--goal-objective',
+      taskText,
+      '--note',
+      note,
+    ]);
+    const missionArgs = [
+      taskText,
+      '--owner',
+      audit.executor.id,
+      '--runner',
+      audit.executor.id,
+      '--budget',
+      audit.budget,
+      '--task',
+      delegated.task_id,
+      '--json',
+    ];
+    if (verifyPlan.command) missionArgs.push('--verify', verifyPlan.command);
+    return {
+      taskPayload: delegated,
+      missionPayload: startMission(missionArgs, { silent: true }),
+    };
+  });
   const mission = missionPayload && missionPayload.mission ? missionPayload.mission : null;
   const record = {
     id: wish.id,
-    ts: stampIso(),
+    ts: now,
     text: recordText,
     status: 'delegated',
+    dispatched_at: now,
     task_id: taskPayload.task_id,
     mission_id: mission ? mission.id : null,
     engine: audit.executor.id,
@@ -732,9 +775,14 @@ function startWishDelegation(wish, audit, root, options = {}) {
   return { record, taskPayload, mission, verifyPlan };
 }
 
-function delegateWish(wish, audit, root, asJson, options = {}) {
+function appendDelegatedWishRecord(wish, audit, root, options = {}) {
   const { record, verifyPlan } = startWishDelegation(wish, audit, root, options);
   appendWishRecord(root, record);
+  return { record, verifyPlan };
+}
+
+function delegateWish(wish, audit, root, asJson, options = {}) {
+  const { record, verifyPlan } = appendDelegatedWishRecord(wish, audit, root, options);
   const payload = machineRecord(wish, 'delegated', audit, {
     task_id: record.task_id,
     mission_id: record.mission_id,
@@ -821,6 +869,7 @@ function decomposeWish(wish, parts, root, asJson) {
       status: 'delegated',
       task_id: record.task_id,
       mission_id: record.mission_id,
+      dispatched_at: record.dispatched_at,
       budget: record.budget,
       verify: record.verify,
       verify_status: record.verify_status,
@@ -882,6 +931,14 @@ function decomposeWish(wish, parts, root, asJson) {
 }
 
 function askForInput(wish, audit, root, asJson) {
+  appendNeedsInputRecord(wish, audit, root);
+  const payload = machineRecord(wish, 'needs_input', audit);
+  if (asJson) console.log(JSON.stringify(payload, null, 2));
+  else printQuestions(wish.text, audit.questions);
+  return 1;
+}
+
+function appendNeedsInputRecord(wish, audit, root) {
   appendWishRecord(root, {
     id: wish.id,
     ts: stampIso(),
@@ -891,10 +948,110 @@ function askForInput(wish, audit, root, asJson) {
     vague: !!audit.vague,
     missing_slots: audit.missing_slots || [],
   });
-  const payload = machineRecord(wish, 'needs_input', audit);
-  if (asJson) console.log(JSON.stringify(payload, null, 2));
-  else printQuestions(wish.text, audit.questions);
-  return 1;
+}
+
+function latestStatusFor(wish, latestEvent) {
+  return String((latestEvent && latestEvent.status) || wish.status || '').trim();
+}
+
+function latestEventHasGrantAnswer(latestEvent) {
+  return eventAnswers(latestEvent).length > 0;
+}
+
+function dispatchableWishReason(wish, latestEvent) {
+  if (!wish || !wish.id || wish.dispatched_at) return '';
+  const status = latestStatusFor(wish, latestEvent);
+  if (status === 'captured') return 'captured';
+  if (WAITING_INPUT_STATUSES.has(status) && latestEventHasGrantAnswer(latestEvent)) return 'answered';
+  return '';
+}
+
+function waitingWishNeed(questions = []) {
+  const first = (Array.isArray(questions) ? questions : [])
+    .map((question) => String(question || '').trim())
+    .find(Boolean) || 'Answer the open question before I dispatch it.';
+  if (/working builder/i.test(first)) return 'needs a working builder before it can start';
+  if (/working reviewer/i.test(first)) return 'needs a working reviewer before it can start';
+  if (/file or folder/i.test(first)) return 'needs the file or folder location before it can start';
+  if (/workspace, repo, file, or team member/i.test(first)) return first.replace(/^Which /, 'needs the ');
+  return first;
+}
+
+function waitingOperatorWishes(root = process.cwd()) {
+  const latest = latestWishEventMap(root);
+  return readWishes(root)
+    .filter((wish) => {
+      const latestEvent = latest.get(wish.id) || wish;
+      const status = latestStatusFor(wish, latestEvent);
+      return WAITING_INPUT_STATUSES.has(status) && !latestEventHasGrantAnswer(latestEvent) && !wish.dispatched_at;
+    })
+    .map((wish) => {
+      const latestEvent = latest.get(wish.id) || wish;
+      const questions = Array.isArray(latestEvent.questions) ? latestEvent.questions : (wish.questions || []);
+      return {
+        id: wish.id,
+        text: String(wish.text || '').trim(),
+        questions,
+        need: waitingWishNeed(questions),
+        first_ts: wish.first_ts || wish.ts || latestEvent.ts || null,
+      };
+    });
+}
+
+function dispatchWishHeadlessly(wish, root, reason) {
+  const auditText = reason === 'answered'
+    ? [wish.text, ...(wish.answers || [])].join(' ')
+    : wish.text;
+  const audit = auditWish(auditText, root);
+  if (!audit.ok) {
+    appendNeedsInputRecord(wish, audit, root);
+    return {
+      id: wish.id,
+      status: 'waiting_on_operator',
+      no_executor: !audit.executor,
+      no_validator: !audit.validator,
+      questions: audit.questions,
+    };
+  }
+  const { record } = appendDelegatedWishRecord(wish, audit, root);
+  return {
+    id: wish.id,
+    status: 'delegated',
+    dispatched: true,
+    task_id: record.task_id,
+    mission_id: record.mission_id,
+    engine: record.engine,
+    dispatched_at: record.dispatched_at,
+  };
+}
+
+function sweepWishes(root = process.cwd(), options = {}) {
+  const limit = Number.isInteger(options.limit) && options.limit >= 0 ? options.limit : WISH_SWEEP_LIMIT;
+  const latest = latestWishEventMap(root);
+  const summary = {
+    scanned: 0,
+    dispatched: 0,
+    capped: 0,
+    waiting_on_operator: 0,
+    skipped_no_executor: 0,
+    results: [],
+  };
+  for (const wish of readWishes(root)) {
+    const latestEvent = latest.get(wish.id) || wish;
+    const reason = dispatchableWishReason(wish, latestEvent);
+    if (!reason) continue;
+    summary.scanned += 1;
+    if (summary.dispatched >= limit) {
+      summary.capped += 1;
+      continue;
+    }
+    const result = dispatchWishHeadlessly(wish, root, reason);
+    summary.results.push(result);
+    if (result.dispatched) summary.dispatched += 1;
+    if (result.no_executor) summary.skipped_no_executor += 1;
+  }
+  summary.waiting_on_operator = waitingOperatorWishes(root).length;
+  return summary;
 }
 
 function runCapturedWish(text, args, root = process.cwd()) {
@@ -930,7 +1087,7 @@ function grantWish(args, root = process.cwd()) {
     console.error('No wish is waiting at that number.');
     return 2;
   }
-  if (wish.status !== 'needs_input') {
+  if (!WAITING_INPUT_STATUSES.has(String(wish.status || ''))) {
     if (!asJson) console.log(`Granting wish ${number}: ${quoteText(wish.text)}`);
     console.error('That wish is not waiting on an answer.');
     return 2;
@@ -1006,8 +1163,11 @@ module.exports = {
   deriveVerifyPlan,
   inferBudgetTier,
   missingNamedInputs,
+  readWishEvents,
   readWishes,
   sharesMeaningfulWords,
   stateFile,
+  sweepWishes,
   verifyOutcomeText,
+  waitingOperatorWishes,
 };

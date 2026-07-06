@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { inferBudgetTier } = require('../commands/wish');
+const { inferBudgetTier, sweepWishes, waitingOperatorWishes } = require('../commands/wish');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -61,6 +61,26 @@ function readJsonl(file) {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+}
+
+function appendWishEvent(dir, event) {
+  const file = path.join(dir, '.atris', 'state', 'wishes.jsonl');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, `${JSON.stringify(event)}\n`, 'utf8');
+}
+
+function withProcessEnv(overrides, fn) {
+  const previous = {};
+  for (const key of Object.keys(overrides)) previous[key] = process.env[key];
+  Object.assign(process.env, overrides);
+  try {
+    return fn();
+  } finally {
+    for (const key of Object.keys(overrides)) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
 }
 
 function todayJournalPath(dir) {
@@ -379,6 +399,140 @@ test('wish grant names the wish verbatim before dispatching', () => {
     assert.match(granted.stdout, /^Granting wish 1: "make onboarding better"/);
     assertNoInventedVerbEd(granted.stdout, 'make', wish);
     assert.doesNotMatch(granted.stdout, /roughly about/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish sweep dispatches an answered wish once and stamps it', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const ts = new Date().toISOString();
+    appendWishEvent(dir, {
+      id: 'wish-answered-onboarding',
+      ts,
+      text: 'make onboarding better',
+      status: 'needs_input',
+      questions: ['Who is onboarding for?'],
+      vague: true,
+      missing_slots: ['audience'],
+    });
+    appendWishEvent(dir, {
+      id: 'wish-answered-onboarding',
+      ts: new Date(Date.parse(ts) + 1000).toISOString(),
+      text: 'make onboarding better',
+      status: 'needs_input',
+      answer: 'make onboarding better for new users during account setup',
+    });
+
+    const first = withProcessEnv({
+      PATH: `${fakeBin}:${systemPath}`,
+      ATRIS_TASKS_DB: dbPath,
+    }, () => sweepWishes(dir));
+    assert.equal(first.dispatched, 1);
+    assert.equal(first.waiting_on_operator, 0);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    const delegated = records.filter((record) => record.status === 'delegated');
+    assert.equal(delegated.length, 1);
+    assert.ok(delegated[0].dispatched_at);
+    assert.ok(delegated[0].task_id);
+    assert.ok(delegated[0].mission_id);
+
+    const second = withProcessEnv({
+      PATH: `${fakeBin}:${systemPath}`,
+      ATRIS_TASKS_DB: dbPath,
+    }, () => sweepWishes(dir));
+    assert.equal(second.dispatched, 0);
+    assert.equal(readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl')).filter((record) => record.status === 'delegated').length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish sweep respects the three dispatch cap', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    for (let index = 1; index <= 5; index += 1) {
+      appendWishEvent(dir, {
+        id: `wish-captured-${index}`,
+        ts: new Date(Date.now() + index).toISOString(),
+        text: `make boot screen ${index} friendlier for users`,
+        status: 'captured',
+      });
+    }
+    const first = withProcessEnv({
+      PATH: `${fakeBin}:${systemPath}`,
+      ATRIS_TASKS_DB: dbPath,
+    }, () => sweepWishes(dir));
+    assert.equal(first.dispatched, 3);
+    assert.equal(first.capped, 2);
+    assert.equal(readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl')).filter((record) => record.status === 'delegated').length, 3);
+
+    const second = withProcessEnv({
+      PATH: `${fakeBin}:${systemPath}`,
+      ATRIS_TASKS_DB: dbPath,
+    }, () => sweepWishes(dir));
+    assert.equal(second.dispatched, 2);
+    assert.equal(second.capped, 0);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish sweep skips unanswered needs_input wishes', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-waiting',
+      ts: new Date().toISOString(),
+      text: 'make onboarding better',
+      status: 'needs_input',
+      questions: ['Who is onboarding for?'],
+    });
+    const before = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl')).length;
+    const sweep = sweepWishes(dir);
+    assert.equal(sweep.dispatched, 0);
+    assert.equal(sweep.waiting_on_operator, 1);
+    assert.equal(readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl')).length, before);
+    assert.deepEqual(waitingOperatorWishes(dir).map((wish) => wish.text), ['make onboarding better']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish sweep skips dispatch when no executor resolves', () => {
+  const dir = makeTempDir();
+  const emptyBin = path.join(dir, 'empty-bin');
+  fs.mkdirSync(emptyBin, { recursive: true });
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-no-executor',
+      ts: new Date().toISOString(),
+      text: 'make the boot screen friendlier for users',
+      status: 'captured',
+    });
+    const sweep = withProcessEnv({
+      PATH: `${emptyBin}:${systemPath}`,
+    }, () => sweepWishes(dir));
+    assert.equal(sweep.dispatched, 0);
+    assert.equal(sweep.skipped_no_executor, 1);
+    assert.equal(sweep.waiting_on_operator, 1);
+    const waiting = waitingOperatorWishes(dir);
+    assert.equal(waiting[0].need, 'needs a working builder before it can start');
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.some((record) => record.status === 'delegated'), false);
+    assert.equal(records.at(-1).status, 'needs_input');
   } finally {
     cleanupTempDir(dir);
   }
