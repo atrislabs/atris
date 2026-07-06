@@ -111,7 +111,7 @@ function readFlag(args, name, fallback = '') {
   return fallback;
 }
 
-const MISSION_NATIVE_RUNNER_NAMES = Object.freeze(['manual', 'claude', 'atris2', 'codex_goal', 'caller_session', 'current_agent']);
+const MISSION_NATIVE_RUNNER_NAMES = Object.freeze(['manual', 'claude', 'atris2', 'codex_goal', 'caller_session', 'current_agent', 'drill']);
 const MISSION_NATIVE_RUNNER_SET = new Set(MISSION_NATIVE_RUNNER_NAMES);
 
 function canonicalEngineName(name) {
@@ -6411,6 +6411,27 @@ function stampMissionRunnerBrief(root, briefId, result, verifierResult) {
   } catch {}
 }
 
+function runDrillRunnerTick(cwd, mission, tickIdx) {
+  const startedAt = Date.now();
+  const relPath = path.join('.atris', 'state', 'drill-runner-touch.txt');
+  const file = path.join(cwd, relPath);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, [
+    `mission=${mission.id}`,
+    `tick=${tickIdx}`,
+    `at=${stampIso()}`,
+    '',
+  ].join('\n'), 'utf8');
+  const receiptText = `drill runner touched ${relPath}\nlayer: capabilities`;
+  return {
+    ok: true,
+    touched: relPath,
+    summary: `drill runner touched ${relPath}`,
+    receipt_text: receiptText,
+    duration_total_ms: Date.now() - startedAt,
+  };
+}
+
 function spawnClaudeTick(mission, opts) {
   if (resolveClaudeRunnerCommandTemplate()) return spawnGenericRunnerTick(mission, opts);
   const { sessionMode, sessionId, cwd, signal, timeoutMs, prompt, model } = opts;
@@ -6711,9 +6732,11 @@ async function runMission(args) {
     pendingSessionId = mission.pending_session_id || null;
     restoreRunnerProfile = applyMissionRunnerProfile(runtimeMission.runner);
     const callerSessionRunner = runnerUsesCallerSession(runtimeMission.runner);
-    const atris2Runner = String(runtimeMission.runner || '').trim().toLowerCase() === 'atris2';
+    const runnerName = String(runtimeMission.runner || '').trim().toLowerCase();
+    const atris2Runner = runnerName === 'atris2';
+    const drillRunner = runnerName === 'drill';
     const skipWorker = skipClaude || callerSessionRunner;
-    if (!skipClaude && !callerSessionRunner && !atris2Runner) {
+    if (!skipClaude && !callerSessionRunner && !atris2Runner && !drillRunner) {
       const probe = probeClaudeBinary();
       if (!probe.ok) {
         console.error(`[mission run] claude probe failed: ${probe.error}`);
@@ -6740,7 +6763,7 @@ async function runMission(args) {
 
     // Session setup: only Claude-backed workers need a persisted session id.
     // atris2 turns are stateless per tick — continuity lives on disk (logs, receipts, now.md).
-    if (!skipWorker && !atris2Runner && !sessionId && !pendingSessionId) {
+    if (!skipWorker && !atris2Runner && !drillRunner && !sessionId && !pendingSessionId) {
       pendingSessionId = crypto.randomUUID();
       mission = saveMission({ ...mission, pending_session_id: pendingSessionId }, cwd, 'mission_session_pending', { session_id: pendingSessionId }).mission;
       runtimeMission = runtimeView(mission);
@@ -6755,7 +6778,9 @@ async function runMission(args) {
       ? 'caller-session'
       : atris2Runner
         ? `atris2 (${runtimeMission.model || 'atris:fast'})`
-        : (sessionId || `pending=${pendingSessionId}`);
+        : drillRunner
+          ? 'drill'
+          : (sessionId || `pending=${pendingSessionId}`);
     if (!asJson) {
       console.error(`[mission run] ${mission.id}\n  objective: ${mission.objective}\n  lane: ${frozen.lane}\n  cadence: ${cadence} (${cadenceSeconds}s)\n  max_ticks: ${effectiveMaxTicks}, max_wall: ${maxWallSeconds}s\n  session: ${sessionLabel}`);
     }
@@ -6796,6 +6821,15 @@ async function runMission(args) {
           reason: callerSessionRunner ? 'caller-session-runner' : 'no-claude-mode',
           ran: true,
           claude: { skipped: true, reason: callerSessionRunner ? 'runner-uses-caller-session' : 'no-claude-mode' },
+        };
+      } else if (drillRunner) {
+        const drillResult = runDrillRunnerTick(cwd, runtimeMission, tickIdx);
+        result = {
+          ...result,
+          status: 'ran',
+          reason: 'drill-runner',
+          ran: true,
+          drill: drillResult,
         };
       } else if (atris2Runner) {
         const pingDrain = consumeMissionPings(mission, cwd);
@@ -6928,7 +6962,7 @@ async function runMission(args) {
 
       // Layer classification needs the receipt text AND the worktree receipt, so it
       // runs here — after both exist — covering the claude and atris2 branches alike.
-      const tickReceiptText = result.atris2?.receipt_text || result.claude?.receipt_text || '';
+      const tickReceiptText = result.atris2?.receipt_text || result.claude?.receipt_text || result.drill?.receipt_text || '';
       const layerInfo = extractLayerFromReceiptText(tickReceiptText, tickWorktree?.new_since_baseline_sample);
       result.layer = layerInfo.layer;
       result.layer_source = layerInfo.source;
