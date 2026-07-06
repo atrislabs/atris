@@ -100,6 +100,7 @@ test('mission start prints a verifier-preserving tick command when verifier exis
     ], { cwd: dir });
     assert.equal(start.status, 0, start.stderr || start.stdout);
     assert.match(start.stdout, /Next: atris mission tick mission-\S+ --verify/);
+    assert.doesNotMatch(start.stdout, /has no atris\/team\/mission-lead\/ member/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1324,7 +1325,7 @@ test('mission tick receipt stores result.landing with high-level verifier meanin
     assert.equal(receipt.result.landing.checked, 'I ran the behavior checks.');
     assert.match(receipt.result.landing.tested, /Automated behavior checks passed/);
     assert.match(receipt.result.landing.proof, /Receipt saved at atris\/runs\/mission-/);
-    assert.match(receipt.result.landing.next, /Review the proof, then complete the mission/);
+    assert.match(receipt.result.landing.next, new RegExp(`Review proof, then run: atris mission complete ${mission.id} --proof "atris/runs/mission-`));
   } finally {
     cleanupTempDir(dir);
   }

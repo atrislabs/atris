@@ -758,6 +758,12 @@ function memberMissionFile(owner, root = process.cwd()) {
 
 function missingOwnerMemberWarning(owner, root = process.cwd()) {
   if (!owner || fs.existsSync(path.join(root, 'atris', 'team', owner))) return null;
+  const teamDir = path.join(root, 'atris', 'team');
+  const hasKnownMembers = fs.existsSync(teamDir)
+    && fs.readdirSync(teamDir, { withFileTypes: true }).some((entry) => (
+      entry.isDirectory() && fs.existsSync(path.join(teamDir, entry.name, 'MEMBER.md'))
+    ));
+  if (!hasKnownMembers) return null;
   return {
     code: 'missing_owner_member',
     message: `owner "${owner}" has no atris/team/${owner}/ member. Create it (atris member create ${owner}) or pick an existing member (ls atris/team/).`,
@@ -1079,10 +1085,13 @@ function missionReceiptStatus(mission, result) {
   return String(mission?.status || 'running');
 }
 
-function missionReceiptNextText(mission, result) {
+function missionReceiptNextText(mission, result, receiptPath = '') {
   if (result?.next) return String(result.next);
   if (result?.landing?.next) return String(result.landing.next);
   if (result?.verifier_result?.passed === true) {
+    if (!mission?.always_on && receiptPath) {
+      return `Review proof, then run: atris mission complete ${mission.id} --proof "${receiptPath}".`;
+    }
     return mission?.always_on ? 'Run the next proof step.' : 'Review the proof, then complete the mission.';
   }
   if (result?.verifier_result) return 'Fix the verifier failure or revise the mission.';
@@ -1106,7 +1115,7 @@ function missionReceiptLanding(mission, result, receiptPath = '') {
     checked,
     tested,
     proof: receiptPath ? `Receipt saved at ${receiptPath}.` : 'Receipt saved in mission run history.',
-    next: missionReceiptNextText(mission, result),
+    next: missionReceiptNextText(mission, result, receiptPath),
     timeline_visible: !missionLandingChangedIsGenericTick(mission, changed),
   };
 }
