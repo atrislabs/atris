@@ -7,6 +7,12 @@ const { spawnSync } = require('child_process');
 
 const autoland = require('../lib/autoland');
 const { DENIED_TAGS } = require('../lib/auto-accept-certified');
+const {
+  appendBriefRecord,
+  buildBriefReview,
+  renderBriefReview,
+  stampBriefOutcome,
+} = require('../lib/brief-ledger');
 const { renderHtml } = require('../lib/html-render');
 const { nextMoves, recordDecision, seedInboxFromMove } = require('../lib/next-moves');
 const { buildWeekReportData, renderWeekReport } = require('./report');
@@ -388,7 +394,129 @@ function parseArgs(args = []) {
 
 function showHelp() {
   console.log('Usage: atris brief [--json] [--html [--out FILE]] [--send] [--no-input] [--days N]');
+  console.log('       atris brief log --engine <engine> --prompt-file <file> [--json|--raw]');
+  console.log('       atris brief outcome <brief_id> --result pass|fail|partial --note <text> [--json|--raw]');
+  console.log('       atris brief review [--lessons] [--json] [--limit N]');
   console.log('Shows what landed, what waits on you, and what the loop should do next.');
+}
+
+function isBriefLedgerSubcommand(value) {
+  return ['log', 'outcome', 'review'].includes(String(value || '').trim());
+}
+
+function flagPresent(args, name) {
+  return args.includes(name);
+}
+
+function ledgerFlagValue(args, name, fallback = '') {
+  const prefix = `${name}=`;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = String(args[index]);
+    if (arg === name) return args[index + 1] || fallback;
+    if (arg.startsWith(prefix)) return arg.slice(prefix.length) || fallback;
+  }
+  return fallback;
+}
+
+function positionalArgs(args) {
+  const out = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = String(args[index]);
+    if (arg.startsWith('--')) {
+      if (!arg.includes('=') && args[index + 1] && !String(args[index + 1]).startsWith('--')) index += 1;
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
+}
+
+function runBriefLog(args, root) {
+  const json = flagPresent(args, '--json');
+  const raw = flagPresent(args, '--raw');
+  const engine = ledgerFlagValue(args, '--engine');
+  const promptFile = ledgerFlagValue(args, '--prompt-file');
+  if (!engine || !promptFile) {
+    const message = 'usage: atris brief log --engine <engine> --prompt-file <file>';
+    if (json) console.log(JSON.stringify({ ok: false, error: message }, null, 2));
+    else console.error(message);
+    return 2;
+  }
+  let promptText;
+  try {
+    promptText = fs.readFileSync(path.resolve(root, promptFile), 'utf8');
+  } catch (err) {
+    const message = `brief log: could not read prompt file: ${err.message}`;
+    if (json) console.log(JSON.stringify({ ok: false, error: message }, null, 2));
+    else console.error(message);
+    return 2;
+  }
+  const worktree = ledgerFlagValue(args, '--worktree', root);
+  const record = appendBriefRecord(root, {
+    author: ledgerFlagValue(args, '--author', 'external'),
+    engine,
+    task_id: ledgerFlagValue(args, '--task-id'),
+    mission_id: ledgerFlagValue(args, '--mission-id'),
+    prompt_text: promptText,
+    context: {
+      worktree: path.resolve(root, worktree),
+      base_ref: ledgerFlagValue(args, '--base-ref'),
+    },
+  });
+  if (json) console.log(JSON.stringify({ ok: true, record }, null, 2));
+  else if (raw) console.log(record.brief_id);
+  else console.log(`brief logged for ${record.engine}; outcome can be attached after the flight`);
+  return 0;
+}
+
+function runBriefOutcome(args, root) {
+  const json = flagPresent(args, '--json');
+  const raw = flagPresent(args, '--raw');
+  const id = positionalArgs(args)[0] || '';
+  const result = ledgerFlagValue(args, '--result');
+  const note = ledgerFlagValue(args, '--note');
+  if (!id || !result) {
+    const message = 'usage: atris brief outcome <brief_id> --result pass|fail|partial --note <text>';
+    if (json) console.log(JSON.stringify({ ok: false, error: message }, null, 2));
+    else console.error(message);
+    return 2;
+  }
+  let stamped;
+  try {
+    stamped = stampBriefOutcome(root, id, { result, note });
+  } catch (err) {
+    if (json) console.log(JSON.stringify({ ok: false, error: err.message }, null, 2));
+    else console.error(`brief outcome: ${err.message}`);
+    return 2;
+  }
+  if (!stamped.ok) {
+    if (json) console.log(JSON.stringify(stamped, null, 2));
+    else console.error('brief outcome: brief not found');
+    return 1;
+  }
+  if (json) console.log(JSON.stringify({ ok: true, record: stamped.record }, null, 2));
+  else if (raw) console.log(`${stamped.record.brief_id} ${stamped.record.outcome.result}`);
+  else console.log(`brief outcome recorded: ${stamped.record.outcome.result}`);
+  return 0;
+}
+
+function runBriefReview(args, root) {
+  const json = flagPresent(args, '--json');
+  const lessons = flagPresent(args, '--lessons');
+  const limit = Number(ledgerFlagValue(args, '--limit', '20')) || 20;
+  const review = buildBriefReview(root, { limit, lessons });
+  if (json) console.log(JSON.stringify(review, null, 2));
+  else console.log(renderBriefReview(review, { lessons }));
+  return 0;
+}
+
+function runBriefLedgerCommand(args, root) {
+  const subcommand = String(args[0] || '').trim();
+  const rest = args.slice(1);
+  if (subcommand === 'log') return runBriefLog(rest, root);
+  if (subcommand === 'outcome') return runBriefOutcome(rest, root);
+  if (subcommand === 'review') return runBriefReview(rest, root);
+  return 2;
 }
 
 function shouldPromptBrief({ flags, stdin = process.stdin, stdout = process.stdout, data }) {
@@ -478,6 +606,7 @@ function sendBrief(root, text) {
 
 async function briefCommand(args = [], root = process.cwd(), io = {}) {
   const argv = Array.isArray(args) ? args : Array.from(arguments);
+  if (isBriefLedgerSubcommand(argv[0])) return runBriefLedgerCommand(argv, root);
   const flags = parseArgs(argv);
   if (flags.help) {
     showHelp();
@@ -517,5 +646,6 @@ module.exports = {
   renderBrief,
   renderBriefHtml,
   run: briefCommand,
+  runBriefLedgerCommand,
   shouldPromptBrief,
 };

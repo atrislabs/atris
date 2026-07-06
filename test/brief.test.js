@@ -5,7 +5,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
+const fleet = require('../lib/fleet');
+const {
+  appendBriefRecord,
+  buildBriefReview,
+  latestBriefs,
+  readBriefLedger,
+  stampBriefOutcome,
+} = require('../lib/brief-ledger');
 const {
   buildBriefData,
   briefCommand,
@@ -42,6 +51,28 @@ function seedRoadmap(dir, items) {
     `# Roadmap\n\n## Open loop items\n\n${items.map(item => `- [ ] ${item}`).join('\n')}\n`,
     'utf8'
   );
+}
+
+function runGit(dir, args) {
+  const result = spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result;
+}
+
+function makeGitWorktreeFixture() {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-brief-git-'));
+  const repo = path.join(parent, 'repo');
+  const wt = path.join(parent, 'worker');
+  fs.mkdirSync(repo, { recursive: true });
+  runGit(repo, ['init']);
+  runGit(repo, ['config', 'user.email', 'test@example.com']);
+  runGit(repo, ['config', 'user.name', 'Test User']);
+  fs.writeFileSync(path.join(repo, 'README.md'), 'fixture\n', 'utf8');
+  runGit(repo, ['add', 'README.md']);
+  runGit(repo, ['commit', '-m', 'initial']);
+  runGit(repo, ['branch', '-M', 'master']);
+  runGit(repo, ['worktree', 'add', '-b', 'worker', wt]);
+  return { parent, repo, wt };
 }
 
 function captureStdout(fn) {
@@ -222,6 +253,160 @@ test('non-tty branch does not prompt and one-shot answer handling is factored', 
     });
     assert.equal(moved.ok, true);
     assert.match(moved.message, /seeded into the loop/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('fleet dispatch captures a well-shaped brief ledger record', () => {
+  const fixture = makeGitWorktreeFixture();
+  try {
+    const result = fleet.dispatchToEngine({
+      root: fixture.repo,
+      worktreePath: fixture.wt,
+      engine: 'codex',
+      task: {
+        display_id: 'CLI-901',
+        title: 'brief ledger Done: capture prompt quality. Check: node --test test/brief.test.js.',
+      },
+      runner: () => ({ status: 0, stdout: 'report: done', stderr: '' }),
+    });
+    assert.equal(result.exitCode, 0);
+    assert.ok(result.brief_id);
+    const records = readBriefLedger(fixture.repo);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].brief_id, result.brief_id);
+    assert.equal(records[0].engine, 'codex');
+    assert.equal(records[0].task_id, 'CLI-901');
+    assert.match(records[0].prompt_text, /Done criteria: capture prompt quality/);
+    assert.deepEqual(Object.keys(records[0].context), ['worktree', 'base_ref']);
+    assert.equal(records[0].context.worktree, fixture.wt);
+    assert.equal(records[0].outcome, null);
+  } finally {
+    cleanup(fixture.parent);
+  }
+});
+
+test('brief outcome stamping appends a latest outcome row', () => {
+  const dir = makeTempDir();
+  try {
+    const record = appendBriefRecord(dir, {
+      author: 'orb',
+      engine: 'cursor',
+      task_id: 'CLI-901',
+      prompt_text: 'Done criteria: ship it. Check: node --test test/brief.test.js.',
+      context: { worktree: dir, base_ref: 'origin/master' },
+    }, { now: new Date('2026-07-05T12:00:00Z') });
+    const stamped = stampBriefOutcome(dir, record.brief_id, {
+      result: 'pass',
+      note: 'merged PR',
+    }, { now: new Date('2026-07-05T12:10:00Z') });
+    assert.equal(stamped.ok, true);
+    const raw = readBriefLedger(dir);
+    assert.equal(raw.length, 2);
+    const latest = latestBriefs(raw)[0];
+    assert.equal(latest.brief_id, record.brief_id);
+    assert.equal(latest.outcome.result, 'pass');
+    assert.equal(latest.outcome.note, 'merged PR');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('brief review groups recent briefs by outcome with computable signals', () => {
+  const dir = makeTempDir();
+  try {
+    const pass = appendBriefRecord(dir, {
+      author: 'orb',
+      engine: 'codex',
+      task_id: 'CLI-1',
+      prompt_text: 'Done criteria: bounded slice. Check: node --test test/brief.test.js.',
+      context: { worktree: dir, base_ref: 'origin/master' },
+    }, { now: new Date('2026-07-05T12:00:00Z') });
+    const fail = appendBriefRecord(dir, {
+      author: 'orb',
+      engine: 'cursor',
+      task_id: 'CLI-2',
+      prompt_text: 'Do a broad thing with no verifier.',
+      context: { worktree: dir, base_ref: 'origin/master' },
+    });
+    const partial = appendBriefRecord(dir, {
+      author: 'orb',
+      engine: 'devin',
+      task_id: 'CLI-3',
+      prompt_text: 'Done criteria: one bounded slice.',
+      context: { worktree: dir, base_ref: 'origin/master' },
+    });
+    appendBriefRecord(dir, {
+      author: 'orb',
+      engine: 'codex',
+      task_id: 'CLI-4',
+      prompt_text: 'Open flight. Check: node --test test/open.test.js.',
+      context: { worktree: dir, base_ref: 'origin/master' },
+    });
+    stampBriefOutcome(dir, pass.brief_id, { result: 'pass', note: 'merged' }, { now: new Date('2026-07-05T12:12:00Z') });
+    stampBriefOutcome(dir, fail.brief_id, { result: 'fail', note: 'dead flight' });
+    stampBriefOutcome(dir, partial.brief_id, { result: 'partial', note: 'verify failed' });
+    const review = buildBriefReview(dir, { limit: 10 });
+    assert.equal(review.groups.pass.length, 1);
+    assert.equal(review.groups.fail.length, 1);
+    assert.equal(review.groups.partial.length, 1);
+    assert.equal(review.groups.open.length, 1);
+    assert.equal(review.groups.pass[0].signals.has_named_verify, true);
+    assert.equal(review.groups.pass[0].signals.had_exit_criteria, true);
+    assert.equal(review.groups.pass[0].signals.time_to_land_ms, 12 * 60 * 1000);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('brief lessons appear only after a five-record signal bucket exists', () => {
+  const dir = makeTempDir();
+  try {
+    for (let i = 0; i < 4; i += 1) {
+      const record = appendBriefRecord(dir, {
+        author: 'orb',
+        engine: 'codex',
+        prompt_text: `Done criteria: bounded ${i}. Check: node --test test/${i}.test.js.`,
+        context: { worktree: dir, base_ref: 'origin/master' },
+      });
+      stampBriefOutcome(dir, record.brief_id, { result: i < 3 ? 'pass' : 'fail', note: 'done' });
+    }
+    assert.deepEqual(buildBriefReview(dir, { lessons: true }).lessons, []);
+    const fifth = appendBriefRecord(dir, {
+      author: 'orb',
+      engine: 'codex',
+      prompt_text: 'Done criteria: bounded 5. Check: node --test test/five.test.js.',
+      context: { worktree: dir, base_ref: 'origin/master' },
+    });
+    stampBriefOutcome(dir, fifth.brief_id, { result: 'pass', note: 'done' });
+    const lessons = buildBriefReview(dir, { lessons: true }).lessons;
+    assert.ok(lessons.some((line) => /briefs with a named verify command land 4 of 5/.test(line)));
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('brief ledger default output hides generated ids', async () => {
+  const dir = makeTempDir();
+  try {
+    const promptFile = path.join(dir, 'prompt.md');
+    fs.writeFileSync(promptFile, 'Done criteria: keep ids hidden. Check: node --test test/brief.test.js.\n', 'utf8');
+    const logged = await captureStdout(() => briefCommand(['log', '--engine', 'codex', '--prompt-file', promptFile], dir, {
+      stdin: { isTTY: false },
+      stdout: { isTTY: false },
+    }));
+    assert.equal(logged.code, 0);
+    assert.match(logged.out, /brief logged for codex/);
+    assert.doesNotMatch(logged.out, /brief-\d{8}/);
+    const id = readBriefLedger(dir)[0].brief_id;
+    const outcome = await captureStdout(() => briefCommand(['outcome', id, '--result', 'pass', '--note', 'merged'], dir, {
+      stdin: { isTTY: false },
+      stdout: { isTTY: false },
+    }));
+    assert.equal(outcome.code, 0);
+    assert.equal(outcome.out.trim(), 'brief outcome recorded: pass');
+    assert.doesNotMatch(outcome.out, new RegExp(id));
   } finally {
     cleanup(dir);
   }

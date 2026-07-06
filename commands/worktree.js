@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
 
@@ -526,6 +527,12 @@ function shipWorktree(args) {
     console.log('pr: skipped (--no-pr)');
   }
 
+  try {
+    stampLatestOpenBriefForWorktree(root, {
+      result: 'pass',
+      note: `worktree ship completed into ${targetRef}`,
+    }, { worktree: root });
+  } catch {}
   console.log('done: worktree shipped');
   return 0;
 }
