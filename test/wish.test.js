@@ -202,7 +202,7 @@ test('healthy wish delegates a task and records honest proof status', () => {
     const payload = JSON.parse(res.stdout);
     assert.deepEqual(Object.keys(payload).sort(), ['budget', 'engine', 'mission_id', 'questions', 'status', 'task_id', 'wish_id']);
     assert.equal(payload.status, 'delegated');
-    assert.equal(payload.engine, 'codex');
+    assert.equal(payload.engine, 'claude');
     assert.equal(payload.budget, 'long');
     assert.deepEqual(payload.questions, []);
     assert.ok(payload.task_id);
@@ -212,17 +212,55 @@ test('healthy wish delegates a task and records honest proof status', () => {
     assert.equal(wishes.at(-1).status, 'delegated');
     assert.equal(wishes.at(-1).task_id, payload.task_id);
     assert.equal(wishes.at(-1).mission_id, payload.mission_id);
+    assert.ok(wishes.at(-1).mission_room_receipt_path);
 
     const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
     const mission = missions.find((row) => row.id === payload.mission_id);
-    assert.equal(mission.runner, 'codex');
+    assert.equal(mission.runner, 'claude');
+    assert.equal(mission.wish_id, payload.wish_id);
+    assert.equal(mission.metadata.wish_id, payload.wish_id);
+    assert.equal(mission.mission_room_receipt_path, wishes.at(-1).mission_room_receipt_path);
     assert.equal(mission.verifier, '');
     assert.deepEqual(mission.task_ids, [payload.task_id]);
     assert.equal(wishes.at(-1).verify_status, 'needs-review');
     assert.equal(wishes.at(-1).verify_outcome, 'I will show you the result to judge');
 
+    const receipt = JSON.parse(fs.readFileSync(path.join(dir, wishes.at(-1).mission_room_receipt_path), 'utf8'));
+    assert.equal(receipt.wish_id, payload.wish_id);
+    assert.equal(receipt.room.wish_id, payload.wish_id);
+    assert.equal(receipt.room.source.wish_id, payload.wish_id);
+
     const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
     assert.ok(projection.tasks.some((task) => task.id === payload.task_id && task.metadata.delegate_via === 'local'));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish --no-mission records without starting a mission', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'make the boot screen friendlier', '--no-mission', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.status, 'captured');
+    assert.equal(payload.mission_id, null);
+    assert.equal(payload.task_id, null);
+
+    const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(wishes.at(-1).status, 'captured_no_mission');
+    assert.equal(wishes.at(-1).no_mission, true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+
+    const sweep = withProcessEnv({
+      PATH: `${fakeBin}:${systemPath}`,
+    }, () => sweepWishes(dir));
+    assert.equal(sweep.dispatched, 0);
   } finally {
     cleanupTempDir(dir);
   }
