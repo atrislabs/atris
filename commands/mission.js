@@ -825,6 +825,28 @@ function removeLegacyGeneratedMissionViews(dir) {
   }
 }
 
+// Metric-verified missions (wish --metric) render their target expression plus
+// the last observed value, read from the most recent verifier JSON line when a
+// tick has run the verifier (metric_verify.py prints {"value": ..., "proof_uri": ...}).
+function missionMetricLine(mission, indent = '  ') {
+  const metric = mission?.metadata?.metric;
+  if (!metric) return [];
+  const stdout = String(mission?.verifier_result?.stdout || '');
+  let last = null;
+  for (const line of stdout.split(/\r?\n/).reverse()) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && parsed.value !== undefined) {
+        last = parsed.value;
+        break;
+      }
+    } catch {}
+  }
+  return [`${indent}metric: ${metric}${last === null ? '' : ` (last: ${last})`}`];
+}
+
 function renderMemberNowMarkdown(owner, missions) {
   const lines = [
     '# Now',
@@ -850,6 +872,7 @@ function renderMemberNowMarkdown(owner, missions) {
     if (!taskSpine.has_task && taskSpine.ensure_task_command) lines.push(`- task setup: ${taskSpine.ensure_task_command}`);
     if (mission.xp_task?.ref) lines.push(`- AgentXP task: ${mission.xp_task.ref}`);
     if (mission.verifier) lines.push(`- verifier: ${mission.verifier}`);
+    lines.push(...missionMetricLine(mission, '- '));
     if (mission.stop_condition) lines.push(`- stop: ${mission.stop_condition}`);
     if (mission.next_action) lines.push(`- next: ${mission.next_action}`);
     if (mission.receipt_path) lines.push(`- receipt: ${mission.receipt_path}`);
@@ -3589,6 +3612,7 @@ function statusMission(args) {
         `  owner: ${mission.owner}`,
         ...(mission.executed_by ? [`  executed_by: ${mission.executed_by}`] : []),
 	        `  state: ${mission.status}`,
+	        ...missionMetricLine(mission),
 	        ...missionHeartbeatLines(mission),
 	        ...(mission.worktree_root ? [`  worktree: ${mission.worktree_root}`] : []),
 	        `  next: ${mission.next_action || 'tick or verify'}`,

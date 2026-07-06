@@ -330,6 +330,54 @@ test('wish --engine errors clearly for an unknown engine id', () => {
   }
 });
 
+test('wish --metric wires a metric verifier into the mission', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'make the boot screen friendlier', '--metric', 'stripe.active_subs>=10', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.status, 'delegated');
+    assert.ok(payload.mission_id);
+
+    const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(wishes.at(-1).metric, 'stripe.active_subs>=10');
+    assert.equal(wishes.at(-1).verify_status, 'metric');
+
+    const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
+    const mission = missions.find((row) => row.id === payload.mission_id);
+    assert.equal(
+      mission.verifier,
+      'cd /Users/keshavrao/arena/atrisos-backend && venv/bin/python backend/scripts/metric_verify.py stripe.active_subs --gte 10',
+    );
+    assert.equal(mission.stop_condition, 'verifier green (metric target hit)');
+    assert.equal(mission.metadata.metric, 'stripe.active_subs>=10');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish --metric rejects malformed expressions with a clear error', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'make the boot screen friendlier', '--metric', 'active subs at least ten', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /Invalid --metric/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'wishes.jsonl')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish --no-mission records without starting a mission', () => {
   const dir = makeTempDir();
   try {

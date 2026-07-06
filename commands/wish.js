@@ -19,6 +19,7 @@ const {
   printRewards,
   reviewWish,
   runAgainWish,
+  parseMetricExpression,
   runCapturedWish,
   sayWish,
   sweepWishes,
@@ -27,7 +28,8 @@ const {
 
 function showHelp() {
   console.log('');
-  console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--as builder] [--json] [--no-mission]');
+  console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--as builder] [--metric "<name><op><target>"] [--json] [--no-mission]');
+  console.log('         --metric example: --metric "stripe.active_subs>=10" (ops: >=, >, <=, <, ==)');
   console.log('       atris wish list');
   console.log('       atris wish board');
   console.log('       atris wish grant <n> "<answer>" [--engine <id>] [--json] [--no-mission]');
@@ -72,14 +74,24 @@ function parseFlagArgs(args, valueFlagNames = []) {
 }
 
 function wishOptions(args) {
-  const parsed = parseFlagArgs(args, ['--engine', '--as']);
+  const parsed = parseFlagArgs(args, ['--engine', '--as', '--metric']);
   return {
     asJson: args.includes('--json'),
     noMission: args.includes('--no-mission'),
     asMode: String(parsed.values['--as'] || '').trim(),
     engineOverride: String(parsed.values['--engine'] || '').trim(),
+    metricRaw: String(parsed.values['--metric'] || '').trim(),
     positionals: parsed.positionals,
   };
+}
+
+// Parses --metric into options.metric; returns an error message on malformed input.
+function resolveMetricOption(options) {
+  if (!options.metricRaw) return null;
+  const parsed = parseMetricExpression(options.metricRaw);
+  if (!parsed.ok) return parsed.message;
+  options.metric = parsed;
+  return null;
 }
 
 function parseReviewScore(args) {
@@ -189,6 +201,11 @@ function wishCommand(args = []) {
   const options = wishOptions(args);
   if (options.asMode && options.asMode !== 'builder') {
     console.error('wish --as only supports builder.');
+    return 2;
+  }
+  const metricError = resolveMetricOption(options);
+  if (metricError) {
+    console.error(metricError);
     return 2;
   }
   const text = options.positionals.join(' ').trim();
