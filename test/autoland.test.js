@@ -424,13 +424,13 @@ test('tick lands certified allowlisted verify when the landing re-run passes', (
   }
 });
 
-test('tick keeps non-allowlisted verify behavior and never executes it at landing', () => {
+test('tick never executes a non-allowlisted verify at landing — it bounces the task instead', () => {
   const { base, repo } = makeTempRepo();
   try {
     const script = path.join(repo, 'unsafe-verify.sh');
     fs.writeFileSync(script, '#!/usr/bin/env bash\nexit 0\n');
     fs.chmodSync(script, 0o755);
-    const codeTask = certifiedVerifiedTask(repo, 'Unsafe proof keeps existing landing behavior', {
+    const codeTask = certifiedVerifiedTask(repo, 'Unsafe proof bounces instead of landing blind', {
       verify: 'bash unsafe-verify.sh',
     });
     fs.writeFileSync(script, '#!/usr/bin/env bash\nexit 9\n');
@@ -439,12 +439,15 @@ test('tick keeps non-allowlisted verify behavior and never executes it at landin
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
-    assert.deepEqual(receipt.landed, [codeTask]);
-    assert.equal(receipt.revised, 0);
+    // Non-allowlisted verify is never run (a run would surface exit 9 as
+    // verify_failed) — but landing unchecked is no longer the fallback: the
+    // task goes back for an allowlisted verify instead of minting XP blind.
+    assert.deepEqual(receipt.landed, []);
 
     const byRef = projectionByRef(repo);
-    assert.equal(byRef[codeTask].status, 'done');
-    assert.ok(byRef[codeTask].metadata.auto_accepted_at);
+    assert.notEqual(byRef[codeTask].status, 'done');
+    assert.ok(!byRef[codeTask].metadata.auto_accepted_at);
+    assert.match(String(byRef[codeTask].metadata.human_revision_note || ''), /runnable verify/);
   } finally {
     cleanupTempDir(base);
   }
@@ -639,11 +642,13 @@ test('tick janitor keeps fresh worktrees; old residue is salvaged and reaped', (
   }
 });
 
-test('accept_all policy: uncertified work lands on the tick, protected lanes wait', () => {
+test('accept_all policy: check-less work bounces back for a verify, protected lanes wait', () => {
   const { base, repo } = makeTempRepo();
   try {
-    // one pass, one actor, no runnable check — never lands under the certified bar
-    const created = runCli(['task', 'new', 'Loose bar lands this', '--tag', 'code', '--json'], repo);
+    // one pass, one actor, no runnable check — even accept_all refuses to land
+    // it (landing an unverified proof mints XP the signal chain can't trust);
+    // the tick revises it back with instructions to record a verify instead.
+    const created = runCli(['task', 'new', 'Loose bar bounces back', '--tag', 'code', '--json'], repo);
     const id = String(JSON.parse(created.stdout).task?.display_id);
     assert.equal(runCli(['task', 'claim', id, '--as', 'builder'], repo).status, 0);
     assert.equal(runCli(['task', 'ready', id, '--proof', 'Receipt saved at atris/runs/demo-receipt.json, reviewed the rendered output end to end.', '--as', 'builder'], repo).status, 0);
@@ -653,12 +658,13 @@ test('accept_all policy: uncertified work lands on the tick, protected lanes wai
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
-    assert.ok(receipt.landed.includes(id), `expected ${id} in ${JSON.stringify(receipt.landed)}`);
+    assert.ok(!receipt.landed.includes(id), `expected ${id} NOT in ${JSON.stringify(receipt.landed)}`);
     assert.ok(!receipt.landed.includes(billingTask));
 
     const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
     const byRef = Object.fromEntries(projection.tasks.map((t) => [t.display_id, t]));
-    assert.equal(byRef[id].status, 'done');
+    // bounced back to the builder (claimed), carrying the revise note
+    assert.equal(byRef[id].status, 'claimed');
     assert.equal(byRef[billingTask].status, 'review');
   } finally {
     cleanupTempDir(base);

@@ -8732,7 +8732,21 @@ function landingVerifyFailureNote(verify, result) {
 
 function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier' } = {}) {
   const verify = certifyVerifyCandidate(task);
-  if (!verify) return { ok: true, verify: null };
+  if (!verify) {
+    // No runnable check on record. Landing anyway converts "never verified"
+    // into "accepted with XP" — the exact signal poisoning this gate exists
+    // to prevent — so bounce the task back for a recorded verify instead.
+    const note = 'Autoland refused to land without a runnable verify command: record one with `atris task ready --verify "<cmd>" --result "<sentence>"`.';
+    const revised = taskDb.reviseTask(db, { id: task.id, actor, note });
+    return {
+      ok: false,
+      verify: null,
+      result: { reason: 'strict_verify_missing', status: null },
+      note,
+      revised: revised.revised === true,
+      revise_reason: revised.reason || null,
+    };
+  }
   const result = runVerifyCommand(verify, task.workspace_root || process.cwd());
   if (result.ok) return { ok: true, verify, result };
   const note = landingVerifyFailureNote(verify, result);
