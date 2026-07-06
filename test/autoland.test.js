@@ -27,10 +27,24 @@ function cleanupTempDir(base) {
   fs.rmSync(base, { recursive: true, force: true });
 }
 
-function runGit(args, cwd) {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 15000 });
+function runGit(args, cwd, extraEnv = {}) {
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    timeout: 15000,
+    env: { ...process.env, ...extraEnv },
+  });
   assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr || result.stdout}`);
   return result;
+}
+
+function commitOnBranch(repo, branch, file, { backdate = '' } = {}) {
+  runGit(['checkout', '-q', '-b', branch, 'master'], repo);
+  fs.writeFileSync(path.join(repo, file), `${branch}\n`);
+  runGit(['add', '.'], repo);
+  const env = backdate ? { GIT_AUTHOR_DATE: backdate, GIT_COMMITTER_DATE: backdate } : {};
+  runGit(['commit', '-m', `work on ${branch}`], repo, env);
+  runGit(['checkout', '-q', 'master'], repo);
 }
 
 // Live accepts refuse to run inside an agent session, so the fixture CLI
@@ -562,7 +576,84 @@ test('two passes from one actor cannot land until the tick independently re-runs
   }
 });
 
-test('tick drains the landing daily: landed branches reap themselves, once per day', () => {
+test('landing sweep auto-lands merged branch residue', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    runGit(['branch', 'merged-residue'], repo);
+
+    const sweep = require('../commands/autoland').sweepLanding(repo);
+
+    assert.equal(sweep.reaped.branches, 1);
+    assert.equal(runGit(['branch', '--list', 'merged-residue'], repo).stdout.trim(), '');
+    assert.equal(sweep.after.landed, 0);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('landing sweep reaps TTL-expired work through the salvage contract', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    commitOnBranch(repo, 'expired-work', 'expired.txt', { backdate: '2026-05-01T00:00:00' });
+
+    const sweep = require('../commands/autoland').sweepLanding(repo);
+
+    assert.equal(sweep.reaped.branches, 1);
+    assert.ok(sweep.reaped.bundle, 'expired unmerged work must be bundled before deletion');
+    assert.ok(fs.existsSync(sweep.reaped.bundle));
+    assert.equal(runGit(['branch', '--list', 'expired-work'], repo).stdout.trim(), '');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('landing sweep leaves a recent live worktree untouched', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const wtPath = path.join(base, 'fresh-live-wt');
+    runGit(['worktree', 'add', '-b', 'fresh-live-work', wtPath, 'master'], repo);
+
+    const sweep = require('../commands/autoland').sweepLanding(repo);
+
+    assert.equal(sweep.reaped.worktrees, 0);
+    assert.equal(fs.existsSync(wtPath), true);
+    assert.match(runGit(['branch', '--list', 'fresh-live-work'], repo).stdout, /fresh-live-work/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('landing sweep escalates 48h-stale active work into the digest', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const staleDate = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+    commitOnBranch(repo, 'stale-active-work', 'stale-active.txt', { backdate: staleDate });
+
+    const sweep = require('../commands/autoland').sweepLanding(repo);
+    assert.equal(sweep.reaped.branches, 0);
+    assert.equal(runGit(['branch', '--list', 'stale-active-work'], repo).stdout.trim().replace(/^\*\s*/, ''), 'stale-active-work');
+    assert.deepEqual(sweep.stale.map((item) => item.name), ['stale-active-work']);
+
+    const digest = autoland.composeDigest({
+      accepted: { auto: [], human: [] },
+      waiting: [],
+      landed: null,
+      project: 'demo',
+      landingSweep: {
+        stale_count: sweep.stale.length,
+        stale: sweep.stale,
+        human_count: sweep.human.length,
+        human: sweep.human,
+      },
+    });
+    assert.match(digest, /stuck in the air past 48h: 1 piece needs a human/);
+    assert.match(digest, /stale-active-work/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('tick drains the landing hourly: landed branches reap themselves every run', () => {
   const { base, repo } = makeTempRepo();
   try {
     // a branch with no commits ahead of master is residue — the exact thing
@@ -577,12 +668,13 @@ test('tick drains the landing daily: landed branches reap themselves, once per d
     const branches = runGit(['branch', '--list', 'residue-branch'], repo);
     assert.equal(branches.stdout.trim(), '');
 
-    // same day, second tick: the date gate holds, no second reap
+    // same day, second tick: the sweep still runs, but has nothing left to reap
     const again = runCli(['autoland', 'tick', '--json'], repo);
     const receipt2 = JSON.parse(again.stdout.trim().split('\n').pop());
-    assert.equal(receipt2.reaped, undefined);
+    assert.equal(receipt2.reaped.branches, 0);
     const state = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'autoland.json'), 'utf8'));
     assert.equal(state.last_reap_date, new Date().toISOString().slice(0, 10));
+    assert.ok(state.last_reap_at);
   } finally {
     cleanupTempDir(base);
   }
@@ -709,7 +801,7 @@ test('tick lock: a live concurrent tick is skipped, a stale lock is not', () => 
   }
 });
 
-test('a failed daily sweep is not a secret: receipt, state, status, digest all carry it', () => {
+test('a failed landing sweep is not a secret: receipt, state, status, digest all carry it', () => {
   const outer = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-autoland-test-'));
   const repo = path.join(outer, 'repo');
   fs.mkdirSync(repo, { recursive: true });
@@ -729,7 +821,7 @@ test('a failed daily sweep is not a secret: receipt, state, status, digest all c
     const status = runCli(['autoland', 'status'], repo);
     assert.match(status.stdout, /cleanup trouble/);
     const digest = runCli(['autoland', 'digest'], repo);
-    assert.match(digest.stdout, /cleanup trouble: the daily sweep failed/);
+    assert.match(digest.stdout, /cleanup trouble: the landing sweep failed/);
   } finally {
     cleanupTempDir(outer);
   }
@@ -824,7 +916,7 @@ test('janitor: a zombie paused mission and a merged worktree disappear on the ne
   }
 });
 
-test('janitor: policy janitor:false leaves the zombie mission and merged worktree alone', () => {
+test('janitor: policy janitor:false leaves the zombie mission while landing sweep still protects fresh worktrees', () => {
   const { base, repo } = makeTempRepo();
   try {
     autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', accept_all: true, janitor: false });
@@ -836,7 +928,8 @@ test('janitor: policy janitor:false leaves the zombie mission and merged worktre
     ) + '\n');
     const wtPath = path.join(base, 'merged-wt');
     runGit(['worktree', 'add', '-b', 'task/merged-fixture', wtPath], repo);
-    // pin today's daily land-reap as already done, so only the janitor is under test
+    // janitor:false disables mission/worktree janitor cleanup, but the
+    // landing sweep still runs hourly and protects this fresh side copy.
     autoland.writeState(repo, { alerts: {}, last_reap_date: new Date().toISOString().slice(0, 10) });
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
