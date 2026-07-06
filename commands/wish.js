@@ -149,7 +149,15 @@ function wishCommand(args = []) {
       console.error(options.score.message);
       return 2;
     }
-    return reviewWish(options.positionals, process.cwd(), { reviewScore: options.score.value });
+    const reviewResult = reviewWish(options.positionals, process.cwd(), { reviewScore: options.score.value });
+    if (reviewResult === 0) {
+      try {
+        improveWishes(process.cwd(), { quiet: true });
+      } catch {
+        // best-effort: lessons ingest must never fail a review
+      }
+    }
+    return reviewResult;
   }
   if (first === 'say') {
     return sayWish(args, process.cwd());

@@ -51,3 +51,39 @@ test('wish improve ingests unprocessed reviews into LESSONS.md, then reruns clea
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('wishLessonsBrief includes lessons when present, empty when file absent', () => {
+  const { wishLessonsBrief } = require('../lib/wish-store');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-wish-lessons-'));
+  try {
+    assert.equal(wishLessonsBrief(dir), '');
+
+    const skillDir = path.join(dir, '.claude', 'skills', 'wish');
+    fs.mkdirSync(skillDir, { recursive: true });
+    const lessonLines = Array.from({ length: 12 }, (_, i) => `- lesson ${i + 1}`);
+    fs.writeFileSync(path.join(skillDir, 'LESSONS.md'), [
+      '# Wish lessons',
+      '',
+      '## Lessons',
+      '',
+      ...lessonLines,
+      '',
+      '## Review inbox (raw, distill me)',
+      '- raw review entry that must not appear',
+      '',
+    ].join('\n'), 'utf8');
+
+    const brief = wishLessonsBrief(dir);
+    assert.match(brief, /^Lessons from past wishes \(apply these\):/);
+    assert.match(brief, /- lesson 1\b/);
+    assert.match(brief, /- lesson 10\b/);
+    assert.doesNotMatch(brief, /lesson 11/);
+    assert.doesNotMatch(brief, /raw review entry/);
+
+    // Empty Lessons section -> no block
+    fs.writeFileSync(path.join(skillDir, 'LESSONS.md'), '# Wish lessons\n\n## Lessons\n\n## Review inbox (raw, distill me)\n', 'utf8');
+    assert.equal(wishLessonsBrief(dir), '');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
