@@ -8,7 +8,8 @@ const { spawnSync } = require('node:child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const INIT_TIMEOUT_MS = 15000;
-const SKIP_HINT = "context gatherer skipped (non-interactive). run 'atris plan' when you're ready.";
+const SKIP_HINT = 'context gatherer skipped (non-interactive).';
+const FIRST_USE_NEXT = 'Next: atris "help me choose the first useful step for this project"';
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-init-non-interactive-'));
@@ -19,11 +20,15 @@ function cleanupTempDir(dir) {
 }
 
 function runInit(args, { cwd, input, env } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, 'init', ...args], {
+  return runCli(['init', ...args], { cwd, input, env, timeout: INIT_TIMEOUT_MS });
+}
+
+function runCli(args, { cwd, input, env, timeout = INIT_TIMEOUT_MS } = {}) {
+  const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     input,
     encoding: 'utf8',
-    timeout: INIT_TIMEOUT_MS,
+    timeout,
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
@@ -32,7 +37,7 @@ function runInit(args, { cwd, input, env } = {}) {
   });
 
   if (result.error && result.error.code === 'ETIMEDOUT') {
-    assert.fail(`init hung past ${INIT_TIMEOUT_MS}ms (args: ${args.join(' ') || '(none)'})`);
+    assert.fail(`cli hung past ${timeout}ms (args: ${args.join(' ') || '(none)'})`);
   }
 
   if (result.error) {
@@ -48,6 +53,8 @@ test('init --yes exits without hanging and skips context gatherer', () => {
     const res = runInit(['--yes'], { cwd: dir });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.ok(res.stdout.includes(SKIP_HINT));
+    assert.ok(res.stdout.includes(FIRST_USE_NEXT));
+    assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
   } finally {
     cleanupTempDir(dir);
@@ -60,6 +67,8 @@ test('init -y exits without hanging and skips context gatherer', () => {
     const res = runInit(['-y'], { cwd: dir });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.ok(res.stdout.includes(SKIP_HINT));
+    assert.ok(res.stdout.includes(FIRST_USE_NEXT));
+    assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
   } finally {
     cleanupTempDir(dir);
@@ -72,6 +81,8 @@ test('init with piped stdin exits without hanging', () => {
     const res = runInit([], { cwd: dir, input: '' });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.ok(res.stdout.includes(SKIP_HINT));
+    assert.ok(res.stdout.includes(FIRST_USE_NEXT));
+    assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
   } finally {
     cleanupTempDir(dir);
@@ -84,6 +95,24 @@ test('init with ATRIS_NO_INTERACTIVE skips context gatherer', () => {
     const res = runInit([], { cwd: dir, env: { ATRIS_NO_INTERACTIVE: '1' } });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.ok(res.stdout.includes(SKIP_HINT));
+    assert.ok(res.stdout.includes(FIRST_USE_NEXT));
+    assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('first-use command after init creates a starter task instead of MAP homework', () => {
+  const dir = makeTempDir();
+  try {
+    const init = runInit(['--yes'], { cwd: dir });
+    assert.equal(init.status, 0, `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`);
+
+    const res = runCli(['help me choose the first useful step for this project'], { cwd: dir });
+    assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+    assert.match(res.stdout, /First task: [A-Z]+-\d+/);
+    assert.match(res.stdout, /Next: atris task claim [A-Z]+-\d+ --as /);
+    assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
   } finally {
     cleanupTempDir(dir);
   }

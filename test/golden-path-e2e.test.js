@@ -129,6 +129,8 @@ test('golden path e2e runs init delegate ready autoland status without human inp
       'demo',
       '--verify',
       'node --check demo-fix.js',
+      '--result',
+      'Operators can now land a demo fix faster because the proof path is clear.',
       '--json',
     ], { cwd: workspace, env }), 'task ready');
 

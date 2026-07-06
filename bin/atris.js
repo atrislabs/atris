@@ -1115,6 +1115,24 @@ function shouldSkipContextGatherer() {
   return !useInteractiveAtrisUi() || initNonInteractiveFlag();
 }
 
+const FIRST_USE_COMMAND = 'atris "help me choose the first useful step for this project"';
+
+function localOwnerName() {
+  return process.env.USER || os.userInfo?.().username || 'operator';
+}
+
+function printFirstUseNext() {
+  console.log(`Next: ${FIRST_USE_COMMAND}`);
+}
+
+function printStarterTaskNext(starter) {
+  if (starter && starter.display_id) {
+    console.log(`Next: atris task claim ${starter.display_id} --as ${localOwnerName()}`);
+    return;
+  }
+  console.log('Next: atris task next --as ' + localOwnerName());
+}
+
 async function interactiveEntry(userInput) {
   const workspaceDir = process.cwd();
   const state = detectWorkspaceState(workspaceDir);
@@ -1221,7 +1239,7 @@ async function interactiveEntry(userInput) {
         console.log(`First task: ${starter.title}`);
       }
       if (mapStatus !== 'ready') {
-        printMapBootstrap({ userInput: answer, prefix: 'Next setup step' });
+        printStarterTaskNext(starter);
         return;
       }
       await planCmd(answer);
@@ -1229,7 +1247,9 @@ async function interactiveEntry(userInput) {
     }
     if (shouldSkipContextGatherer()) {
       console.log('');
-      console.log("context gatherer skipped (non-interactive). run 'atris plan' when you're ready.");
+      console.log('context gatherer skipped (non-interactive).');
+      printFirstUseNext();
+      return;
     } else {
       const answer = await askContextGatherer(workspaceDir);
       if (isAtrisMetaQuestion(answer)) {
@@ -1253,7 +1273,7 @@ async function interactiveEntry(userInput) {
         console.log(`First task: ${starter.title}`);
       }
       if (mapStatus !== 'ready') {
-        printMapBootstrap({ userInput: answer, prefix: 'Next setup step' });
+        printStarterTaskNext(starter);
         return;
       }
       await planCmd(answer);

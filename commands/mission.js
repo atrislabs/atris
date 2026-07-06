@@ -2990,6 +2990,7 @@ function startMission(args) {
     verifier: saved.verifier,
   });
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
+  const nextTickCommand = `atris mission tick ${saved.id}${saved.verifier ? ' --verify' : ''}`;
   printJsonOrText(
     { ok: true, action: 'mission_started', mission: saved, warnings, goal_slot_handoff: goalSlotHandoff, state_path: statePaths().missionsJsonl, member_state: memberState, log_path: logPath, worktree_baseline: worktreeBaseline ? { path: path.relative(process.cwd(), missionBaselinePath(saved.id)), dirty_count: worktreeBaseline.dirty_count, dirty_hash: worktreeBaseline.dirty_hash } : null },
     [
@@ -2999,7 +3000,7 @@ function startMission(args) {
       ...(saved.worktree ? [`Worktree: ${saved.worktree.path}`, `Branch: ${saved.worktree.branch}`] : []),
       ...warnings.map((warning) => `Warning: ${warning.message}`),
       ...(saved.xp_task ? [`AgentXP task: ${saved.xp_task.ref}`] : []),
-      ...(saved.worktree ? [`Next: cd ${saved.worktree.path} && atris mission tick ${saved.id}`] : [`Next: atris mission tick ${saved.id}`]),
+      ...(saved.worktree ? [`Next: cd ${saved.worktree.path} && ${nextTickCommand}`] : [`Next: ${nextTickCommand}`]),
     ],
     asJson,
   );
