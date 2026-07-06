@@ -345,76 +345,7 @@ function printAtrisGoalBanner(workspaceDir = process.cwd(), label = 'Atris goal'
 }
 
 function showSearchHelp() {
-  console.log('Usage: atris search <keyword>');
-  console.log('Example: atris search auth');
-}
-
-function searchJournal(keyword) {
-  if (!keyword) {
-    showSearchHelp();
-    process.exit(1);
-  }
-
-  if (keyword === '--help' || keyword === '-h') {
-    showSearchHelp();
-    process.exit(0);
-  }
-
-  if (process.argv.slice(4).includes('--help') || process.argv.slice(4).includes('-h')) {
-    showSearchHelp();
-    process.exit(1);
-  }
-
-  const logsDir = path.join(process.cwd(), 'atris', 'logs');
-  if (!fs.existsSync(logsDir)) {
-    console.log('No atris/logs/ directory found. Run "atris init" first.');
-    process.exit(1);
-  }
-
-  console.log(`Searching for "${keyword}" in atris/logs/**/*.md...\n`);
-
-  const results = [];
-  const keywordLower = keyword.toLowerCase();
-
-  // Recursively find all .md files in logs directory
-  function walkDir(dir) {
-    let files;
-    try { files = fs.readdirSync(dir); } catch { return; }
-    for (const file of files) {
-      try {
-        const filePath = path.join(dir, file);
-        const stat = fs.statSync(filePath);
-        if (stat.isDirectory()) {
-          walkDir(filePath);
-        } else if (file.endsWith('.md')) {
-          const content = fs.readFileSync(filePath, 'utf8');
-          const lines = content.split('\n');
-          lines.forEach((line, idx) => {
-            if (line.toLowerCase().includes(keywordLower)) {
-              results.push({
-                file: path.relative(process.cwd(), filePath),
-                line: idx + 1,
-                content: line.trim()
-              });
-            }
-          });
-        }
-      } catch { /* skip unreadable files */ }
-    }
-  }
-
-  walkDir(logsDir);
-
-  if (results.length === 0) {
-    console.log('No matches found.');
-  } else {
-    console.log(`Found ${results.length} match${results.length > 1 ? 'es' : ''}:\n`);
-    results.forEach(r => {
-      console.log(`${r.file}:${r.line}`);
-      console.log(`  ${r.content.substring(0, 100)}${r.content.length > 100 ? '...' : ''}`);
-      console.log('');
-    });
-  }
+  require('../commands/search').showSearchHelp();
 }
 
 function consoleCmd() {
@@ -509,7 +440,7 @@ function showHelp() {
   console.log('  report     - Weekly block: landings, journal completions, and Career XP');
   console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');
-  console.log('  search     - Search journal history (atris search <keyword>)');
+  console.log('  search     - Search workspace memory (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
   console.log('  harvest    - Find bugs and next actions from receipts, run logs, and thinking');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
@@ -2266,8 +2197,8 @@ if (command === 'init') {
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'search') {
-  const keyword = process.argv.slice(3).join(' ');
-  searchJournal(keyword);
+  const code = require('../commands/search').searchCommand(process.argv.slice(3));
+  process.exitCode = code;
 } else if (command === 'scout') {
   require('../commands/scout').scoutCommand(process.argv.slice(3))
     .then((code) => { process.exitCode = code; })

@@ -16293,6 +16293,52 @@ test('search help flags print usage without workspace state', () => {
   }
 });
 
+test('search walks features team wiki then journal in compact mode', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'features', 'credits'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'treasury'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'logs', '2026'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'features', 'credits', 'idea.md'), 'Credits feature spec\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'treasury', 'MEMBER.md'), 'Owns credits and billing.\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'credits.md'), 'Credits decisions live here.\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'logs', '2026', '2026-07-04.md'), 'older credits note\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'logs', '2026', '2026-07-05.md'), 'newer credits note\n', 'utf8');
+
+    const res = runCli(['search', 'credits'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Feature: atris\/features\/credits\//);
+    assert.match(res.stdout, /Owner: atris\/team\/treasury\/MEMBER\.md/);
+    assert.match(res.stdout, /Wiki: atris\/wiki\/credits\.md/);
+    assert.match(res.stdout, /Journal:\n- atris\/logs\/2026\/2026-07-05\.md:1: newer credits note/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('search raw prints full file line dump', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'features', 'credits'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'logs', '2026'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'features', 'credits', 'idea.md'), 'Credits feature spec\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'logs', '2026', '2026-07-05.md'), [
+      'newer credits note',
+      'another credits note',
+    ].join('\n'), 'utf8');
+
+    const res = runCli(['search', 'credits', '--raw'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Searching for "credits" in atris\/features, atris\/team, atris\/wiki, atris\/logs/);
+    assert.match(res.stdout, /atris\/features\/credits\/idea\.md:1\n  Credits feature spec/);
+    assert.match(res.stdout, /atris\/logs\/2026\/2026-07-05\.md:1\n  newer credits note/);
+    assert.match(res.stdout, /atris\/logs\/2026\/2026-07-05\.md:2\n  another credits note/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('learn help prints usage without workspace state', () => {
   const dir = makeTempDir();
   try {
