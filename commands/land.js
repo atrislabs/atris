@@ -5,6 +5,7 @@ const { spawnSync } = require('child_process');
 const { listWorktrees, statusCounts } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
+const DEFAULT_STALE_HOURS = 48;
 const WORKTREE_REAP_GRACE_MS = 60 * 60 * 1000;
 const PROTECTED_BRANCHES = new Set(['main', 'master']);
 
@@ -35,6 +36,10 @@ function baseBranch(root, override = '') {
 
 function ageDays(unixSeconds, now = Date.now()) {
   return Math.floor((now / 1000 - Number(unixSeconds)) / 86400);
+}
+
+function ageHours(unixSeconds, now = Date.now()) {
+  return Math.floor((now / 1000 - Number(unixSeconds)) / 3600);
 }
 
 function worktreeMtimeMs(worktreePath) {
@@ -71,23 +76,50 @@ function aheadCount(root, base, ref) {
   return Number(result.stdout.trim()) || 0;
 }
 
+function cherryStats(root, base, ref) {
+  const result = runGit(['cherry', base, ref], { cwd: root, check: false });
+  if (result.status !== 0) return { landedElsewhere: 0, unique: 0 };
+  let landedElsewhere = 0;
+  let unique = 0;
+  for (const line of result.stdout.split(/\r?\n/).filter(Boolean)) {
+    if (line.startsWith('- ')) landedElsewhere += 1;
+    else if (line.startsWith('+ ')) unique += 1;
+  }
+  return { landedElsewhere, unique };
+}
+
 // Board: every branch and worktree with unlanded state, classified.
 //   landed — no commits ahead of base; the branch pointer is residue
 //   active — has unlanded commits, younger than TTL
 //   due    — has unlanded commits, older than TTL; --reap collects it
-function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '' } = {}) {
+function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', now = Date.now() } = {}) {
   const base = baseBranch(root, baseOverride);
   if (!base) throw new Error('no master/main branch found');
 
   const branches = [];
+  const lastCommitMsByBranch = new Map();
   for (const branch of listBranches(root)) {
     if (PROTECTED_BRANCHES.has(branch.name)) continue;
+    const lastCommitMs = Number(branch.lastCommitUnix) * 1000;
+    if (Number.isFinite(lastCommitMs)) lastCommitMsByBranch.set(branch.name, lastCommitMs);
     const ahead = aheadCount(root, base, branch.name);
-    const age = ageDays(branch.lastCommitUnix);
+    const age = ageDays(branch.lastCommitUnix, now);
+    const hours = ageHours(branch.lastCommitUnix, now);
+    const cherry = ahead > 0 ? cherryStats(root, base, branch.name) : { landedElsewhere: 0, unique: 0 };
     let state = 'active';
-    if (ahead === 0) state = 'landed';
+    if (ahead === 0 || (cherry.landedElsewhere > 0 && cherry.unique === 0)) state = 'landed';
     else if (age > ttlDays) state = 'due';
-    branches.push({ name: branch.name, ahead, ageDays: age, state });
+    branches.push({
+      name: branch.name,
+      ahead,
+      ageDays: age,
+      ageHours: hours,
+      activityHours: hours,
+      landedElsewhere: cherry.landedElsewhere,
+      uniqueChanges: cherry.unique,
+      stale: false,
+      state,
+    });
   }
 
   const worktrees = [];
@@ -102,16 +134,35 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '
       branch,
       dirty,
       ageDays: entry ? entry.ageDays : null,
+      ageHours: entry ? entry.ageHours : null,
       state: entry ? entry.state : 'detached',
     });
+  }
+
+  const activityByBranch = new Map(branches.map((b) => [b.name, lastCommitMsByBranch.get(b.name)]));
+  for (const wt of worktrees) {
+    if (!wt.branch || !activityByBranch.has(wt.branch)) continue;
+    const mtime = worktreeMtimeMs(wt.path);
+    if (typeof mtime === 'number' && mtime > activityByBranch.get(wt.branch)) {
+      activityByBranch.set(wt.branch, mtime);
+    }
+  }
+  for (const branch of branches) {
+    const lastActivity = activityByBranch.get(branch.name);
+    if (Number.isFinite(lastActivity)) {
+      branch.activityHours = Math.floor((now - lastActivity) / 3600000);
+    }
+    branch.stale = branch.state === 'active' && branch.activityHours >= staleHours;
   }
 
   const due = branches.filter((b) => b.state === 'due');
   const landed = branches.filter((b) => b.state === 'landed');
   const active = branches.filter((b) => b.state === 'active');
+  const stale = active.filter((b) => b.stale);
   return {
     base,
     ttlDays,
+    staleHours,
     branches,
     worktrees,
     summary: {
@@ -119,23 +170,25 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '
       active: active.length,
       due: due.length,
       landed: landed.length,
+      stale: stale.length,
       worktrees: worktrees.length,
     },
   };
 }
 
-// Fast counts for the boot banner: no per-branch ahead checks.
+// Counts for the boot banner and digest. This intentionally pays the same
+// classification cost as the landing board so "in the air" never includes
+// merged branch residue.
 function landSummary(cwd = process.cwd(), ttlDays = DEFAULT_TTL_DAYS) {
   const root = repoRoot(cwd);
   if (!root) return null;
-  let branches = 0;
-  let due = 0;
-  for (const branch of listBranches(root)) {
-    if (PROTECTED_BRANCHES.has(branch.name)) continue;
-    branches += 1;
-    if (ageDays(branch.lastCommitUnix) > ttlDays) due += 1;
-  }
-  return { branches, due, ttlDays };
+  const board = collectBoard(root, { ttlDays });
+  return {
+    branches: board.summary.active + board.summary.due,
+    due: board.summary.due,
+    stale: board.summary.stale,
+    ttlDays,
+  };
 }
 
 function salvageDir(root) {
@@ -201,8 +254,8 @@ function salvageWorktree(w, dir, receipt) {
 // includeDetached: detached-HEAD worktrees have no branch, so the salvage
 // bundle cannot cover their commits — unattended reaps (autoland) pass false
 // and leave them for a human reap.
-function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true } = {}) {
-  const board = collectBoard(root, { ttlDays, base: baseOverride });
+function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true, protectCurrent = true, now = Date.now() } = {}) {
+  const board = collectBoard(root, { ttlDays, staleHours, base: baseOverride, now });
   const targets = board.branches.filter((b) => b.state === 'landed' || b.state === 'due');
   const targetNames = new Set(targets.map((b) => b.name));
   const candidateWorktrees = board.worktrees.filter(
@@ -210,13 +263,18 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
   );
   const protectedWorktrees = [];
   const worktreeTargets = [];
+  const current = path.resolve(root);
   for (const w of candidateWorktrees) {
     // Only the fresh-worktree grace protects here. Dirty worktrees are NOT
     // skipped: reap's salvage (bundle + patches + untracked copies below)
     // exists precisely so dirty residue can be cleared loss-free. Blanket
     // dirty protection lives in the janitor's cleanupWorktrees, which has
     // no salvage machinery.
-    if (worktreeWithinReapGrace(w.path)) {
+    if (protectCurrent && path.resolve(w.path) === current) {
+      protectedWorktrees.push({ ...w, reason: 'current_checkout' });
+      continue;
+    }
+    if (worktreeWithinReapGrace(w.path, now)) {
       protectedWorktrees.push({ ...w, reason: 'fresh_worktree_grace' });
       continue;
     }

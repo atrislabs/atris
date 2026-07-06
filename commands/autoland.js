@@ -246,6 +246,76 @@ function landSummarySafe(root) {
   }
 }
 
+function sweepLanding(root, { ttlDays, staleHours, now = Date.now() } = {}) {
+  const { collectBoard, reap } = require('./land');
+  const beforeBoard = collectBoard(root, { ttlDays, staleHours, now });
+  const stale = beforeBoard.branches
+    .filter((b) => b.state === 'active' && b.stale)
+    .sort((a, b) => b.activityHours - a.activityHours)
+    .map((b) => ({
+      name: b.name,
+      ahead: b.ahead,
+      ageHours: b.ageHours,
+      activityHours: b.activityHours,
+    }));
+  const reaped = reap(root, {
+    ttlDays,
+    staleHours,
+    remote: false,
+    includeDetached: false,
+    now,
+  });
+  const afterBoard = collectBoard(root, { ttlDays, staleHours, now });
+  const human = [];
+  for (const kept of reaped.keptWorktrees || []) {
+    if (String(kept).includes('(fresh_worktree_grace)')) continue;
+    if (String(kept).includes('(current_checkout)')) continue;
+    human.push(String(kept));
+  }
+  for (const moved of reaped.keptMovedBranches || []) human.push(`${moved} moved during cleanup`);
+  if (reaped.bundleError) human.push(`backup failed: ${reaped.bundleError}`);
+  return {
+    at: new Date(now).toISOString(),
+    before: beforeBoard.summary,
+    after: afterBoard.summary,
+    stale,
+    human,
+    reaped: {
+      branches: reaped.deletedBranches.length,
+      worktrees: reaped.removedWorktrees.length,
+      bundle: reaped.bundle,
+      patches: reaped.patches.length,
+      untracked: (reaped.untracked || []).length,
+      bundleError: reaped.bundleError || null,
+      keptWorktrees: reaped.keptWorktrees || [],
+      keptMovedBranches: reaped.keptMovedBranches || [],
+    },
+  };
+}
+
+function recordLandingSweepState(state, sweep, { error = null } = {}) {
+  const at = sweep?.at || new Date().toISOString();
+  const today = at.slice(0, 10);
+  state.last_reap_date = today;
+  state.last_reap_at = at;
+  if (error) {
+    state.last_reap_error = { date: today, error };
+    delete state.landing_sweep;
+    return;
+  }
+  delete state.last_reap_error;
+  state.landing_sweep = {
+    at,
+    before: sweep.before,
+    after: sweep.after,
+    reaped: sweep.reaped,
+    stale_count: sweep.stale.length,
+    stale: sweep.stale.slice(0, 10),
+    human_count: sweep.human.length,
+    human: sweep.human.slice(0, 10),
+  };
+}
+
 function evaluateQueue(root, { strictVerify, acceptAll }) {
   const cliArgs = ['task', 'auto-accept-certified', '--dry-run', '--json', '--limit', '50'];
   if (acceptAll) cliArgs.push('--all');
@@ -320,7 +390,7 @@ function showStatus(root, args) {
   console.log(`  heartbeat: ${autoland.cronInstalled(root) ? 'running hourly' : 'not installed'}`);
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
   const reapTrouble = autoland.readState(root).last_reap_error;
-  if (reapTrouble) console.log(`  cleanup trouble: daily sweep failed on ${reapTrouble.date} (${reapTrouble.error}) — run: atris land --reap`);
+  if (reapTrouble) console.log(`  cleanup trouble: landing sweep failed on ${reapTrouble.date} (${reapTrouble.error}) - run: atris land --reap`);
   console.log('');
   if (wouldLand.length > 0) {
     console.log(`  ready to land on their own: ${wouldLand.length}`);
@@ -398,6 +468,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
   const policy = autoland.readPolicy(root) || {};
   const tasks = readProjection(root);
   const accepted = autoland.acceptedInLastDay(tasks);
+  const state = autoland.readState(root);
   const text = autoland.composeDigest({
     accepted,
     waiting: autoland.waitingOnHuman(tasks),
@@ -405,7 +476,8 @@ function runDigest(root, args, { forceSend = false } = {}) {
     project: projectName(root),
     nextMoves: digestNextMoves(root),
     acceptAll: Boolean(policy.accept_all),
-    reapError: autoland.readState(root).last_reap_error?.error || null,
+    reapError: state.last_reap_error?.error || null,
+    landingSweep: state.landing_sweep || null,
   });
   console.log(text);
   // the full story: what each piece actually was, in its own words
@@ -595,6 +667,27 @@ function runTickBody(root, { json, policy, receipt }) {
     recordJanitorState(state, { stopped: stoppedMissions, held: heldMissions, worktrees: receipt.worktrees_reaped });
   }
 
+  // 3c. landing sweep, every tick: merged branch residue is cleared,
+  // TTL-expired work is salvaged before deletion, and 48h-stale active work
+  // is carried into the digest instead of silently aging forever.
+  try {
+    const landingSweep = sweepLanding(root);
+    receipt.reaped = landingSweep.reaped;
+    receipt.landing_sweep = {
+      before: landingSweep.before,
+      after: landingSweep.after,
+      stale: landingSweep.stale.length,
+      human: landingSweep.human.length,
+    };
+    if (landingSweep.reaped.bundleError) {
+      receipt.reap_error = `backup failed, unlanded work kept in place: ${landingSweep.reaped.bundleError}`;
+    }
+    recordLandingSweepState(state, landingSweep);
+  } catch (err) {
+    receipt.reap_error = String((err && err.message) || err).slice(0, 200);
+    recordLandingSweepState(state, null, { error: receipt.reap_error });
+  }
+
   // 4. daily digest at the configured hour
   const today = new Date().toISOString().slice(0, 10);
   const digestHour = Number(policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR);
@@ -608,6 +701,7 @@ function runTickBody(root, { json, policy, receipt }) {
       acceptAll: Boolean(policy.accept_all),
       reapError: state.last_reap_error?.error || null,
       janitor: state.janitor || null,
+      landingSweep: state.landing_sweep || null,
     });
     if (policy.imessage_to) {
       const sent = autoland.sendImessage(root, policy.imessage_to, text);
@@ -646,27 +740,9 @@ function runTickBody(root, { json, policy, receipt }) {
     receipt.daily_experiment_skipped = true;
   }
 
-  // 6. once a day, drain the landing itself: back up (bundle + patches into
-  // .atris/salvage/) then clear branches already landed or past TTL, and
-  // their worktrees. Local-only — remote branches may back open PRs, and
-  // closing those is a human call. Its own date gate, not the digest hour,
-  // so a machine asleep at digest time still drains on its next tick.
-  // Without this the board grows until a human runs `atris land --reap`,
-  // which is exactly the chore autoland exists to remove.
-  if (state.last_reap_date !== today) {
-    try {
-      const { reap } = require('./land');
-      const reaped = reap(root, { remote: false, includeDetached: false });
-      receipt.reaped = {
-        branches: reaped.deletedBranches.length,
-        worktrees: reaped.removedWorktrees.length,
-        bundle: reaped.bundle,
-        patches: reaped.patches.length,
-      };
-      if (reaped.bundleError) receipt.reap_error = `backup failed, unlanded work kept in place: ${reaped.bundleError}`;
-    } catch (err) {
-      receipt.reap_error = String((err && err.message) || err).slice(0, 200);
-    }
+  // 6. once a day, do slower mission cleanup. Landing cleanup runs hourly
+  // above, outside this date gate, so limbo cannot silently accumulate.
+  if (state.last_mission_cleanup_date !== today) {
     // Missions rot the same way branches do: paused/planning/ready and
     // untouched for a week means abandoned. Age them out under the same
     // daily gate so `mission list` shows work, not archaeology.
@@ -693,18 +769,14 @@ function runTickBody(root, { json, policy, receipt }) {
     } catch (err) {
       receipt.mission_verify_errors = [{ error: String((err && err.message) || err).slice(0, 200) }];
     }
-    state.last_reap_date = today;
-    // a failed sweep must not be a secret: status and the next digest carry
-    // it until a sweep succeeds. The date gate above still holds so a broken
-    // repo errors once a day, not hourly.
-    if (receipt.reap_error) state.last_reap_error = { date: today, error: receipt.reap_error };
-    else delete state.last_reap_error;
+    state.last_mission_cleanup_date = today;
   }
   autoland.writeState(root, state);
 
   if (json) console.log(JSON.stringify(receipt));
   else {
-    const reapNote = receipt.reaped ? `, reaped ${receipt.reaped.branches} landed/overdue branches` : '';
+    const reapedTotal = Number(receipt.reaped?.branches || 0) + Number(receipt.reaped?.worktrees || 0);
+    const reapNote = reapedTotal > 0 ? `, reaped ${receipt.reaped.branches} landed/overdue branches` : '';
     const janitorNote = `, janitor stopped ${receipt.missions_stopped} mission${receipt.missions_stopped === 1 ? '' : 's'} + reaped ${receipt.worktrees_reaped} worktree${receipt.worktrees_reaped === 1 ? '' : 's'}`;
     const heldNote = receipt.missions_held ? `, held ${receipt.missions_held} human-blocked mission${receipt.missions_held === 1 ? '' : 's'}` : '';
     console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}${janitorNote}${heldNote}`);
@@ -761,5 +833,6 @@ module.exports = {
   missionReadyForClosedTaskVerify,
   operatorReady,
   hasAgentJargon,
+  sweepLanding,
   verifyClosedTaskMissions,
 };

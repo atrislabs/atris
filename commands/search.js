@@ -258,6 +258,9 @@ function renderCompactSearch(root, results) {
   ];
 
   const journalHits = sortedLineHits(results.layers.logs);
+  if (totalHitCount(results) === 0) {
+    lines.push('No matches found.');
+  }
   if (journalHits.length === 0) {
     lines.push('Journal: none');
     return lines.join('\n');
@@ -265,6 +268,7 @@ function renderCompactSearch(root, results) {
 
   const total = totalHitCount(results);
   const limit = total > 5 ? 3 : 5;
+  lines.push(`Found ${journalHits.length} match${journalHits.length === 1 ? '' : 'es'}.`);
   lines.push('Journal:');
   for (const hit of journalHits.slice(0, limit)) {
     lines.push(`- ${hit.file}:${hit.line}: ${truncateLine(hit.content)}`);
@@ -340,6 +344,10 @@ function searchCommand(args = [], options = {}) {
   }
 
   const root = options.root || process.cwd();
+  if (!fs.existsSync(path.join(root, 'atris'))) {
+    console.log('No Atris workspace found. Run atris init first.');
+    return 1;
+  }
   const results = collectSearchResults(root, query);
   console.log(raw ? renderRawSearch(results) : renderCompactSearch(root, results));
   return 0;
