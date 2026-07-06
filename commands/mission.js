@@ -291,7 +291,6 @@ const MISSION_RUN_VALUE_FLAGS = [
   '--stop',
   '--model',
   '--engine',
-  '--repo',
   '--native-goal-status',
   '--native-goal-objective',
   '--visible-goal-status',
@@ -302,7 +301,6 @@ const MISSION_RUN_BOOLEAN_FLAGS = [
   '--due',
   '--fleet',
   '--dry-run',
-  '--land',
   '--no-claude',
   '--no-verify',
   '--complete-on-pass',
@@ -3017,40 +3015,25 @@ function startMission(args) {
   );
 }
 
-async function startMissionFromRunObjective(objective, args) {
+function startMissionFromRunObjective(objective, args) {
   const asJson = wantsJson(args);
   const rawObjective = String(objective || '').trim();
-  const landRun = hasFlag(args, '--land');
-  const dryRun = hasFlag(args, '--dry-run');
   const inferredLoop = inferRunObjectiveLoopOptions(rawObjective, args);
   const budgetContract = inferRunObjectiveBudgetContract(rawObjective, args);
   const inferredOwner = inferredLoop.wantsLongRun && /\bself[-\s]?improve\b/i.test(rawObjective)
     ? 'auto-improver'
     : (process.env.ATRIS_AGENT_ID || 'mission-lead');
   const preflightOwner = readFlag(args, '--owner', inferredOwner);
-  const missionRunPreflight = landRun && dryRun ? null : buildMissionRunRoomPreflight(rawObjective, args, {
+  const missionRunPreflight = buildMissionRunRoomPreflight(rawObjective, args, {
     root: process.cwd(),
     owner: preflightOwner,
     allowTrustedRun: !inferredLoop.wantsLongRun,
   });
   const missionObjective = missionRunPreflight?.shaped_objective || rawObjective;
-  const landOwnerResolution = landRun
-    ? (missionRunPreflight
-      ? { owner: missionRunPreflight.owner, reason: missionRunPreflight.owner_resolution, requested_owner: preflightOwner, source: 'mission_run_preflight' }
-      : resolveFunctionalOwner({
-        requestedOwner: preflightOwner,
-        title: rawObjective,
-        tag: readFlag(args, '--lane', 'workspace'),
-        goal: rawObjective,
-        root: process.cwd(),
-        fallbackOwners: ['mission-lead', 'task-planner', 'architect', 'validator'],
-      }))
-    : null;
-  const runOwner = landOwnerResolution?.owner || readFlag(args, '--owner', inferredOwner);
   const verifier = readFlag(
     args,
     '--verify',
-    landRun ? DEFAULT_LONG_RUN_VERIFIER : inferRunObjectiveVerifier(missionObjective)
+    inferRunObjectiveVerifier(missionObjective)
       || inferRunObjectiveVerifier(rawObjective)
       || (missionRunPreflight?.trusted_run ? DEFAULT_LONG_RUN_VERIFIER : '')
       || (inferredLoop.wantsLongRun ? DEFAULT_LONG_RUN_VERIFIER : ''),
@@ -3065,7 +3048,7 @@ async function startMissionFromRunObjective(objective, args) {
   const startArgs = [
     missionObjective,
     '--owner',
-    runOwner,
+    readFlag(args, '--owner', inferredOwner),
     '--runner',
     readFlag(args, '--runner', 'codex_goal'),
     '--lane',
@@ -3082,11 +3065,6 @@ async function startMissionFromRunObjective(objective, args) {
   if (hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp') || missionRunPreflight?.task_spine_required) startArgs.push('--xp-task');
 
   const mission = markMissionRunContinuation(missionFromArgs(startArgs));
-  if (landOwnerResolution) {
-    mission.owner = runOwner;
-    mission.owner_resolution = landOwnerResolution.reason || mission.owner_resolution;
-    mission.mission_land_owner = landOwnerResolution;
-  }
   if (missionGoalChainIntent(rawObjective) || missionGoalChainIntent(missionObjective)) {
     mission.goal_chain = buildMissionGoalChain(missionObjective || rawObjective);
     mission.next_action = missionGoalChainNextAction(mission.goal_chain);
@@ -3117,74 +3095,9 @@ async function startMissionFromRunObjective(objective, args) {
     mission.xp_task = xpTask;
     mission.task_ids = Array.from(new Set([...(mission.task_ids || []), xpTask.task_id]));
   }
-  if (landRun) {
-    const repoPath = path.resolve(readFlag(args, '--repo', process.cwd()));
-    const verifyCmd = verifier || DEFAULT_LONG_RUN_VERIFIER;
-    const brief = [
-      `Mission objective: ${mission.objective}`,
-      rawObjective !== mission.objective ? `Original request: ${rawObjective}` : '',
-      `Owner: ${mission.owner}`,
-      `Owner context: ${mission.owner_resolution || 'resolved from the mission objective'}`,
-      mission.mission_run_preflight?.room_name ? `Mission Room: ${mission.mission_run_preflight.room_name}` : '',
-      `Stop condition: ${mission.stop_condition || 'verifier passes and work is landed'}`,
-    ].filter(Boolean).join('\n');
-    const { dispatchCodexFlight } = require('../lib/codex-flight');
-    const flight = await dispatchCodexFlight({
-      repoPath,
-      slug: mission.slug,
-      brief,
-      verifyCmd,
-      dryRun,
-    });
-    if (dryRun) {
-      printJsonOrText(
-        { ok: true, action: 'mission_land_dry_run', mission, codex_flight: { dryRun: true } },
-        [
-          'Codex flight dry-run complete.',
-          `Owner: ${mission.owner}`,
-          `Repo: ${repoPath}`,
-          `Verify: ${verifyCmd}`,
-        ],
-        asJson,
-      );
-      return;
-    }
-    mission.status = 'running';
-    mission.codex_flight = {
-      taskId: flight.taskId,
-      worktreePath: flight.worktreePath,
-      branch: flight.branch,
-      repoPath,
-      verifyCmd,
-      dispatched_at: stampIso(),
-    };
-    mission.next_action = `watch codex flight ${flight.taskId}`;
-  }
   const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective, source: 'mission_run_objective' });
-  if (landRun) {
-    const memberState = renderMemberMissionState(saved.owner);
-    const logPath = appendMemberLog(saved.owner, 'Mission landing flight dispatched', {
-      mission: saved.objective,
-      task_id: saved.codex_flight?.taskId,
-      worktree: saved.codex_flight?.worktreePath,
-      branch: saved.codex_flight?.branch,
-      verifier: saved.codex_flight?.verifyCmd,
-    });
-    printJsonOrText(
-      { ok: true, action: 'mission_land_dispatched', mission: saved, codex_flight: saved.codex_flight, warnings, state_path: statePaths().missionsJsonl, member_state: memberState, log_path: logPath },
-      [
-        `Dispatched Codex flight: ${saved.objective}`,
-        `Owner: ${saved.owner}`,
-        `Task: ${saved.codex_flight.taskId}`,
-        `Worktree: ${saved.codex_flight.worktreePath}`,
-        `Branch: ${saved.codex_flight.branch}`,
-      ],
-      asJson,
-    );
-    return;
-  }
   const directGoalRequest = writeDirectRunCodexGoalRequest(saved, process.cwd());
   const memberState = renderMemberMissionState(saved.owner);
   const logPath = appendMemberLog(saved.owner, 'Mission started from run', {
@@ -6384,7 +6297,7 @@ async function runMission(args) {
       missionRunInputRequired(asJson, input.owner);
     }
     const prompted = await promptMissionRunInput(runArgs);
-    await startMissionFromRunObjective(prompted.objective, prompted.args);
+    startMissionFromRunObjective(prompted.objective, prompted.args);
     return;
   }
 
@@ -6398,7 +6311,7 @@ async function runMission(args) {
     return;
   }
   if (!mission && ref && !String(ref).startsWith('mission-')) {
-    await startMissionFromRunObjective(ref, runArgs);
+    startMissionFromRunObjective(ref, runArgs);
     return;
   }
   if (!mission) {
@@ -7556,7 +7469,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission set-runner <id> <runner|engine> [--model <id>] [--json]
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
-  atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"] [--land --repo <path> --verify "git diff --check"]
+  atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
                                 [--native-goal-status active|paused] [--native-goal-objective "..."] [--manual-ack] [--allow-native-goal-supersede] [--take-goal-slot]
                                 [--engine <name>]
                                 [--spend-full-budget|--use-whole-budget|--stop-when-done] [--preflight|--no-preflight|--room-preflight|--no-room-preflight]

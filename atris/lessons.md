@@ -4,6 +4,8 @@
 
 ---
 
+- **[2026-07-06] experiment-receipt-summary-first-line** — fail — Daily experiment receipt-summary-first-line reverted (apply_failed).
+
 - **[2026-07-05] experiment-tick-prompt-cot-oneliner** — fail — Daily experiment tick-prompt-cot-oneliner reverted (apply_failed).
 
 - **[2026-05-08] narrow-grep-hides-matches** — fail — When operator says X exists in our code and a single-pattern grep returns 0 hits, do NOT conclude it does not exist. Run wider `grep -rn` first (whole backend/, not one subdir) before doubting. 2026-05-08: grepped `gpt-5\.5|gpt5\.5|gpt-5p5` in clients/ only, missed 20+ matches in routers/atris2_router.py + tests/, told operator gpt-5.5 was not wired — operator was right. (Folded from the retired `atris/learnings.jsonl` store so lessons.md is the single lesson format.)

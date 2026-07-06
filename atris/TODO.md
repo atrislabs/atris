@@ -5,12 +5,9 @@
 ## Backlog
 
 - **[CLI-883]** one-time ghost dirt during worktree ship: verify step found mission.js/autopilot.js carrying all three seed-experiment payloads unstaged, unreproducible across 11 isolated re-runs of the same suite; suspect late writes from a just-exited codex yolo child. consider: ship should snapshot git status before verify and diff after, and print the delta; also consider ps-check for live children of dispatched engines before staging. evidence in atris/features/own-yardstick-bench/implementation-notes-*.md session 2026-07-05 [worktree]
-- **[CLI-882]** worktree start cuts from stale origin/master when nobody fetched: git fetch origin (or --no-fetch flag) before resolving the base ref in atris worktree start. found live 2026-07-05 when a seed worktree missed two just-merged PRs and blocked a codex build. Files: commands/worktree.js [worktree]
 
 ## In Progress
 
-- **[CLI-884]** agents-v1: 25-item agent benchmark so Keshav can score any company's coding agent - pack harness + engine adapters + honesty rule (null fails, solution passes). design frozen at atris/features/agents-bench/design.md. Files: lib/bench/engines.js atris/benchmarks/agents-v1/ [bench]
-  **Claimed by:** fable
 - **[CLI-854]** Mission XP: Decide and start the next useful mission after: Drive Missions Verifier Mission Room with harness-engineer: turn "Make self-driving stick. Bug: atris drive parks no-verifier missions via 'mission stop --pause' but mission doctor still flags paused..." into one visible goal, task spine, proof receipt, and next action. [agent-xp]
   **Claimed by:** harness-engineer
 - **[CLI-849]** Mission XP: Drive Missions Verifier Mission Room with harness-engineer: turn "Make self-driving stick. Bug: atris drive parks no-verifier missions via 'mission stop --pause' but mission doctor still flags paused..." into one visible goal, task spine, proof receipt, and next action. [agent-xp]
@@ -33,7 +30,7 @@
 
 ## Review
 
-- **[CLI-824]** Pings to busy members go unread and steering fails silently: member ping only lands on missions, but task-loop agents never tick them. Make ping also drop the note into the member's claimed task dialogue, which every loop reads each step. Done: a ping to a member with no ticking mission reaches their task dialogue, regression test proves both lanes deliver. [voice]
+(Empty)
 
 ## Blocked
 
@@ -54,14 +51,18 @@
 
 ## Completed
 
-- **[CLI-881]** Fleet builds in a repo whose primary checkout sits on a long-lived feature branch keep pausing at rebase_conflict: worktree start cuts the build branch from the launcher HEAD, so rebase-before-ship replays all the feature branch commits onto master (live: three backend pauses tonight on members.py). Done: fleet and engine dispatch cut their worktrees from origin/master by default (checkoutBase), keeping launcher-HEAD only when --base is explicit; ship target already defaults to master from CLI-864. Check: node --test test/fleet.test.js
-  **Verify:** node --test test/fleet.test.js test/engine.test.js test/engine-dispatch.test.js
-- **[CLI-880]** reap contract regression: the janitor grace patch quietly disabled salvage-then-remove, so dirty residue piled up as kept limbo and salvageWorktree was dead code; restored the contract and made npm test green in fresh checkouts
-- **[CLI-879]** Protected tasks cannot be flagged after creation: the auto-accept policy skips tasks tagged needs-human, but tags are only settable at task creation, so an open task that becomes an owner decision (live case: BCK-1248 EFS mount) cannot be marked and fleets keep restaffing it. Done: atris task tag <id> --add <tag> [--remove <tag>] updates tags on an existing task with an event logged, and sweep plus fleet staffing respect a needs-human tag added this way. Check: node --test test/task-tag.test.js
-- **[CLI-878]** silent autoland block: ready --verify accepts any command and promises autoland will land it, but non-allowlisted verifiers block certification with no reason shown anywhere; warn at ready time and name blocked rows plus reasons in autoland tick and task reviews output
-- **[CLI-877]** lock the business story as code: an end-to-end regression test that runs the whole golden path (init --yes, delegate, claim, ready, autoland) in a fresh temp project so packaging can never silently regress
-- **[CLI-876]** janitor reaps brand-new clean worktrees while an engine is still working in them (live hit: atris-fast job got ENOENT mid-run); add a grace period so worktrees younger than an hour or with an active claim are never reaped
-- **[CLI-875]** lessons ledger says 36 unresolved but 3 are already fixed in code; mark those resolved with the file:line evidence so the rot counter tells the truth
-- **[CLI-874]** outbound artifact gate exists but nothing calls it: html and visual artifacts can still reach customers unrendered; wire scripts/outbound-artifact-gate.js into every send path (email, imessage, slack)
+- **[CLI-890]** Golden path papercut: starter task claim prints verifier placeholders that can miss autoland, so the first self-landed task stalls. In /tmp/atris-golden-landed-picMA5, TOY-1 used the printed ready shape with test -f FIRST_PROOF.md; task ready passed but warned autoland could not rerun that verifier, and autoland tick landed nothing. Done: claim or ready guidance gives a self-land-safe verifier path, or the ready output does not promise autoland when the verifier is outside the allowlist, with regression and packed receipt. [golden-path]
+  **Verify:** node --test --test-name-pattern=autoland-aware test/commands.test.js
+- **[CLI-889]** Golden path papercut: landed fresh-init path reaches a starter task but never prints the first mission command. In /tmp/atris-golden-landed-picMA5, following atris -> atris init -> first-use printed TOY-1 claim, not a mission start path, so the first mission still required invented operator knowledge. Done: the fresh printed path includes a copy-paste first mission start/tick/complete recipe or explicitly explains task-first vs mission-first ordering, with packed-install regression. [golden-path]
+  **Verify:** node --test test/init-non-interactive.test.js
+- **[CLI-888]** Golden path papercut: mission start with a verifier prints a tick command without --verify, so following the CLI records a no-work tick. In the patched packed walk, mission start printed Next: atris mission tick <id>; running it recorded 'no verifier was run' even though the mission verifier was test -f FIRST_PROOF.md. Done: mission start prints the verification-preserving next command when a verifier exists, with regression. [golden-path]
+  **Verify:** node --test --test-name-pattern=verifier-preserving test/mission-status.test.js
+- **[CLI-887]** Golden path papercut: after the first printed task claim, atris task claim only says claimed and gives no next command. In the packed patched walk, Next printed atris task claim TOY-1 --as keshavrao; following it exited 0 and printed only 'claimed TOY-1 as keshavrao', leaving a zero-knowledge user without the ready/autoland path. Done: task claim output names the next proof command or points to the zero-human golden path for the claimed task, with regression. [golden-path]
+  **Verify:** node --test --test-name-pattern=claims test/commands.test.js
+- **[CLI-886]** Golden path papercut: packed master atris init still ends in agent MAP bootstrap instead of a human next command. In a clean HOME + npm-pack install from origin/master, the printed path was atris -> atris init, then init ended with BOOTSTRAP REQUIRED and 'Read atris/atris.md, then generate a complete atris/MAP.md' before any first mission or self-landed task. Done: fresh init in a toy repo ends with one human-runnable next command toward first mission/task, not agent-only MAP homework, with pack/install receipt or regression. [golden-path]
+  **Verify:** node --test test/init-non-interactive.test.js
+- **[CLI-885]** PR #256 (result-sentence-gate) landed with 7 failing suite tests: 4 confirmed in task accept landing prints (task plan/ready Plan+Result traces, accept concise human landing, accept receipt next-mission route, accept --public AgentXP landing) plus 3 more in the same family. commands/task.js +87 lines and lib/autoland.js +159 changed without updating expectations. suite red on master since 3e0f154; verify with: node --test test/task-plan-result.test.js test/task-result-gate.test.js [regression]
+- **[CLI-884]** agents-v1: 25-item agent benchmark so Keshav can score any company's coding agent - pack harness + engine adapters + honesty rule (null fails, solution passes). design frozen at atris/features/agents-bench/design.md. Files: lib/bench/engines.js atris/benchmarks/agents-v1/ [bench]
+- **[CLI-882]** worktree start cuts from stale origin/master when nobody fetched: git fetch origin (or --no-fetch flag) before resolving the base ref in atris worktree start. found live 2026-07-05 when a seed worktree missed two just-merged PRs and blocked a codex build. Files: commands/worktree.js [worktree]
 
-(460 older completed tasks archived in `atris task list --status done` and `atris task events`.)
+(463 older completed tasks archived in `atris task list --status done` and `atris task events`.)

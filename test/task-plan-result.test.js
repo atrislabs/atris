@@ -8,6 +8,7 @@ const { spawn, spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withTaskReadyResult } = require('./helpers/task-result');
 
 function hasNodeSqlite() {
   try {
@@ -42,7 +43,7 @@ function baseEnv(env = {}) {
 }
 
 function runCli(args, { cwd, env = {} } = {}) {
-  return spawnSync(process.execPath, [cliPath, ...args], {
+  return spawnSync(process.execPath, [cliPath, ...withTaskReadyResult(args)], {
     cwd,
     env: baseEnv(env),
     encoding: 'utf8',
@@ -51,7 +52,7 @@ function runCli(args, { cwd, env = {} } = {}) {
 
 function runCliAsync(args, { cwd, env = {} } = {}) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [cliPath, ...args], {
+    const child = spawn(process.execPath, [cliPath, ...withTaskReadyResult(args)], {
       cwd,
       env: baseEnv(env),
       stdio: ['ignore', 'pipe', 'pipe'],

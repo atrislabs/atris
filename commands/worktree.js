@@ -148,7 +148,8 @@ function defaultMainlineBase(root) {
   return 'HEAD';
 }
 
-function defaultStartBase(root) {
+function defaultStartBase(root, { fetch = true } = {}) {
+  fetchOriginMainline(root, { skip: !fetch });
   const upstream = currentUpstream(root);
   const mainline = defaultMainlineBase(root);
   if (!upstream || !refExists(root, upstream)) return mainline;
@@ -180,6 +181,15 @@ function refreshRemoteRef(root, ref) {
   if (!ref.startsWith('origin/')) return;
   const remoteBranch = ref.slice('origin/'.length);
   runGit(['fetch', 'origin', remoteBranch], { cwd: root, check: false });
+}
+
+function hasOriginRemote(root) {
+  return runGit(['remote'], { cwd: root, check: false }).stdout.split(/\r?\n/).filter(Boolean).includes('origin');
+}
+
+function fetchOriginMainline(root, { skip = false } = {}) {
+  if (skip || !hasOriginRemote(root)) return;
+  runGit(['fetch', 'origin'], { cwd: root, check: false });
 }
 
 function baseBranchName(ref) {
@@ -280,9 +290,10 @@ function printStatus() {
 // 2026-07-04 (ship merged into the launcher's branch, never reached master).
 // --base/--target still overrides both when the caller wants a different
 // checkout point and ship target on purpose.
-function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task, branch: branchOverride, path: pathOverride, base: baseOverride, now = new Date() } = {}) {
+function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task, branch: branchOverride, path: pathOverride, base: baseOverride, fetch = true, now = new Date() } = {}) {
   const owner = member || agent;
   if (!owner || !task) throw new Error('createAgentWorktree: owner (member/agent) and task required');
+  fetchOriginMainline(root, { skip: !fetch });
   const branch = branchOverride || branchName(owner, task, now);
   const target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
   const explicitBase = Boolean(baseOverride);
@@ -338,6 +349,7 @@ function startWorktree(args) {
       branch: readFlag(args, '--branch'),
       path: readFlag(args, '--path'),
       base: readFlag(args, '--base') || readFlag(args, '--target'),
+      fetch: !hasFlag(args, '--no-fetch'),
     });
   } catch (e) {
     console.error(`refusing: ${e.message}`);
@@ -696,7 +708,7 @@ function help() {
   console.log('Usage: atris worktree <guide|start|ship|status|guard|prune|cleanup>');
   console.log('');
   console.log('  atris worktree guide');
-  console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim]');
+  console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim] [--no-fetch]');
   console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>]');
   console.log('    --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('  atris worktree status');

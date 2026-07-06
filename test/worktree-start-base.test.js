@@ -55,3 +55,35 @@ test('defaultStartBase prefers the mainline over a stale launcher upstream, keep
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('defaultStartBase refreshes stale origin/master before choosing the cut point', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-worktree-stale-origin-'));
+  try {
+    const origin = path.join(base, 'origin.git');
+    const work = path.join(base, 'work');
+    const side = path.join(base, 'side');
+    fs.mkdirSync(origin, { recursive: true });
+    runGit(['init', '--bare', '--initial-branch=master', origin], base);
+    runGit(['clone', origin, work], base);
+    runGit(['clone', origin, side], base);
+    for (const repo of [work, side]) {
+      runGit(['config', 'user.email', 'test@example.com'], repo);
+      runGit(['config', 'user.name', 'Test User'], repo);
+    }
+
+    commitFile(work, 'base.txt', 'c1\n', 'c1');
+    runGit(['push', '-u', 'origin', 'master'], work);
+    runGit(['pull', 'origin', 'master'], side);
+    commitFile(side, 'mainline.txt', 'c2\n', 'c2: master advances elsewhere');
+    runGit(['push', 'origin', 'master'], side);
+
+    const latestMaster = runGit(['rev-parse', 'master'], side).stdout.trim();
+    const staleOriginMaster = runGit(['rev-parse', 'origin/master'], work).stdout.trim();
+    assert.notEqual(staleOriginMaster, latestMaster, 'work checkout should start with a stale origin/master');
+
+    assert.equal(defaultStartBase(work), 'origin/master');
+    assert.equal(runGit(['rev-parse', 'origin/master'], work).stdout.trim(), latestMaster);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

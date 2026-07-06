@@ -122,5 +122,9 @@
   "experiment-tick-prompt-cot-oneliner": {
     "status": "observed",
     "scope": "atris-cli"
+  },
+  "experiment-receipt-summary-first-line": {
+    "status": "observed",
+    "scope": "atris-cli"
   }
 }
