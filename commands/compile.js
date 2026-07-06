@@ -23,6 +23,8 @@ const {
   buildRunnerCommand,
   resolveClaudeRunnerBin,
 } = require('../lib/runner-command');
+const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
+const { loadCredentials } = require('../utils/auth');
 
 const DEFAULT_THRESHOLD = 0.99;
 const SAMPLE_RECORDS_FOR_BUILD = 25;
@@ -36,6 +38,10 @@ function processDir(root, name) {
 
 function recordsPath(root, name) {
   return path.join(root, '.atris', 'state', 'processes', name, 'records.jsonl');
+}
+
+function pushCursorPath(root, name) {
+  return path.join(root, '.atris', 'state', 'processes', name, 'push-cursor.json');
 }
 
 function manifestPath(root, name) {
@@ -132,6 +138,121 @@ function listProcesses(root) {
     }
   }
   return [...names].sort();
+}
+
+function readPushCursor(root, name) {
+  const p = pushCursorPath(root, name);
+  if (!fs.existsSync(p)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePushCursor(root, name, cursor) {
+  const p = pushCursorPath(root, name);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  const tmp = `${p}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(cursor, null, 2) + '\n');
+  fs.renameSync(tmp, p);
+  return cursor;
+}
+
+function requireManifest(root, name) {
+  const p = manifestPath(root, name);
+  if (!fs.existsSync(p)) {
+    throw new Error(`no manifest at ${path.relative(root, p)} - run "atris compile build ${name}" first`);
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('manifest must be a JSON object');
+    }
+    return parsed;
+  } catch (err) {
+    throw new Error(`invalid manifest at ${path.relative(root, p)}: ${err.message}`);
+  }
+}
+
+function readRunnerSource(root, name) {
+  const p = runnerPath(root, name);
+  if (!fs.existsSync(p)) {
+    throw new Error(`no compiled artifact at ${path.relative(root, p)} - run "atris compile build ${name}" first`);
+  }
+  return fs.readFileSync(p, 'utf8');
+}
+
+function requireServerContext(flags) {
+  const agentId = typeof flags.agent === 'string' ? flags.agent.trim() : '';
+  if (!agentId) {
+    throw new Error('server compile commands require --agent <id>');
+  }
+
+  const credentials = loadCredentials();
+  if (!credentials || !credentials.token) {
+    throw new Error('Missing Atris auth. Run: atris login or set ATRIS_TOKEN, then retry.');
+  }
+
+  const apiBase = getApiBaseUrl();
+  try {
+    // Validate now so failures explain configuration instead of surfacing as
+    // opaque network errors from the request helper.
+    new URL(apiBase);
+  } catch {
+    throw new Error(`Invalid ATRIS_API_URL: ${apiBase}`);
+  }
+
+  return { agentId, token: credentials.token, apiBase };
+}
+
+function processApiPath(agentId, name, suffix = '') {
+  return `/processes/${encodeURIComponent(agentId)}/${encodeURIComponent(name)}${suffix}`;
+}
+
+function serverErrorMessage(method, pathname, result) {
+  const status = result && result.status ? `HTTP ${result.status}` : 'network error';
+  const detail = result && (result.error || result.text) ? `: ${result.error || result.text}` : '';
+  return `${method} ${pathname} failed (${status})${detail}`;
+}
+
+async function serverRequest(ctx, method, pathname, body) {
+  const options = {
+    method,
+    token: ctx.token,
+    timeoutMs: 60000,
+    retries: 0,
+  };
+  if (body !== undefined) options.body = body;
+  const result = await apiRequestJson(pathname, options);
+  if (!result || !result.ok) {
+    throw new Error(serverErrorMessage(method, pathname, result || {}));
+  }
+  return result.data || {};
+}
+
+function recordPushPayload(record, index) {
+  if (!record || typeof record !== 'object') {
+    throw new Error(`record ${index + 1} is not an object`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(record, 'input')) {
+    throw new Error(`record ${index + 1} is missing input`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(record, 'output')) {
+    throw new Error(`record ${index + 1} is missing output`);
+  }
+  const payload = { input: record.input, output: record.output };
+  if (Object.prototype.hasOwnProperty.call(record, 'expected')) payload.expected = record.expected;
+  if (record.source) payload.source = String(record.source);
+  return payload;
+}
+
+function cursorStartIndex(cursor, total, ctx) {
+  if (!cursor || cursor.agent_id !== ctx.agentId || cursor.api_base !== ctx.apiBase) return 0;
+  const n = Number(cursor.nextRecordIndex);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(Math.floor(n), total);
 }
 
 // ── compare ────────────────────────────────────────────────────────
@@ -372,6 +493,108 @@ function printBacktest(name, result, failureCount, manifest) {
   }
 }
 
+function extractServerBacktest(data) {
+  const result = (data && data.result && typeof data.result === 'object') ? data.result : (data || {});
+  const manifest = (data && data.manifest && typeof data.manifest === 'object') ? data.manifest : {};
+  return { result, manifest };
+}
+
+function printServerBacktest(name, data, ctx) {
+  const { result, manifest } = extractServerBacktest(data);
+  const version = result.version !== undefined ? result.version : '?';
+  const passed = result.passed !== undefined ? result.passed : '?';
+  const total = result.total !== undefined ? result.total : '?';
+  const accuracy = typeof result.accuracy === 'number' ? formatAccuracy(result.accuracy) : 'unknown';
+  const threshold = typeof result.threshold === 'number' ? formatAccuracy(result.threshold) : 'unknown';
+  const status = manifest.status || result.status || 'unknown';
+  console.log(`server backtest ${name} v${version}: ${passed}/${total} passed (${accuracy}), gate ${threshold}, status ${status}`);
+  if (typeof result.accuracy === 'number' && typeof result.threshold === 'number' && result.accuracy >= result.threshold) {
+    console.log(`next: promote on server with "atris compile promote ${name} --server --agent ${ctx.agentId}"`);
+  } else {
+    console.log('next: fix records or rebuild, publish again, then promote on server when the gate passes');
+  }
+}
+
+async function publishProcessToServer(root, name, flags) {
+  const ctx = requireServerContext(flags);
+  const runJs = readRunnerSource(root, name);
+  const manifest = requireManifest(root, name);
+  const artifact = await serverRequest(ctx, 'PUT', processApiPath(ctx.agentId, name, '/artifact'), {
+    run_js: runJs,
+    manifest,
+  });
+
+  const serverStatus = artifact && artifact.manifest && artifact.manifest.status
+    ? artifact.manifest.status
+    : 'unknown';
+  console.log(`published artifact ${name} to server (${serverStatus})`);
+
+  const records = readRecords(root, name);
+  const cursor = readPushCursor(root, name);
+  const startIndex = cursorStartIndex(cursor, records.length, ctx);
+  let pushed = 0;
+  for (let i = startIndex; i < records.length; i++) {
+    await serverRequest(ctx, 'POST', processApiPath(ctx.agentId, name, '/records'), recordPushPayload(records[i], i));
+    pushed++;
+    writePushCursor(root, name, {
+      agent_id: ctx.agentId,
+      api_base: ctx.apiBase,
+      nextRecordIndex: i + 1,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  if (records.length === 0) {
+    console.log('no local records to push');
+  } else if (pushed === 0) {
+    console.log(`records up to date (${records.length} already pushed)`);
+  } else {
+    console.log(`pushed ${pushed} new record${pushed === 1 ? '' : 's'} (${records.length} total local)`);
+  }
+
+  const backtest = await serverRequest(ctx, 'POST', processApiPath(ctx.agentId, name, '/backtest'));
+  printServerBacktest(name, backtest, ctx);
+  return { artifact, recordsPushed: pushed, backtest };
+}
+
+async function promoteProcessOnServer(root, name, flags) {
+  const ctx = requireServerContext(flags);
+  const body = {};
+  if (flags.gate !== undefined) {
+    const gate = Number(flags.gate);
+    if (!(gate > 0 && gate <= 1)) {
+      throw new Error('--gate must be between 0 and 1 (e.g. 0.99)');
+    }
+    body.gate = gate;
+  }
+  const data = await serverRequest(
+    ctx,
+    'POST',
+    processApiPath(ctx.agentId, name, '/promote'),
+    Object.keys(body).length ? body : undefined
+  );
+  const manifest = data.manifest || {};
+  const bt = manifest.backtest || {};
+  const accuracy = typeof bt.accuracy === 'number' ? formatAccuracy(bt.accuracy) : 'unknown accuracy';
+  const total = bt.total !== undefined ? `${bt.total} records` : 'server records';
+  console.log(`${name} v${manifest.version ?? '?'} server status ${manifest.status || 'unknown'} (${accuracy} over ${total})`);
+  return data;
+}
+
+async function scheduleProcessOnServer(root, name, flags) {
+  const ctx = requireServerContext(flags);
+  const cron = typeof flags.cron === 'string' ? flags.cron.trim() : '';
+  if (!cron) {
+    throw new Error('schedule needs --cron "<expr>"');
+  }
+  const input = flags.input === undefined ? null : parseValueArg(flags.input);
+  const data = await serverRequest(ctx, 'POST', processApiPath(ctx.agentId, name, '/schedule'), { cron, input });
+  const schedule = data.schedule || {};
+  const id = schedule.id || schedule.schedule_id || schedule.name || '(server did not return an id)';
+  console.log(`scheduled ${name}: ${id}`);
+  return data;
+}
+
 // ── command dispatcher ─────────────────────────────────────────────
 
 function showCompileHelp() {
@@ -392,10 +615,17 @@ function showCompileHelp() {
   console.log('  promote <name> [--gate 0.99]');
   console.log('                            mark active (gate: backtest accuracy >= threshold);');
   console.log('                            --gate is the only way to change the standing threshold');
+  console.log('  publish <name> --agent <id>');
+  console.log('                            push run.js, process.json, new records, then run server backtest');
+  console.log('  promote <name> --server --agent <id> [--gate 0.99]');
+  console.log('                            promote the server-side process');
+  console.log('  schedule <name> --agent <id> --cron "<expr>" --input \'<json|@file>\'');
+  console.log('                            schedule the server-side process');
   console.log('  exec <name> --input <json|@file> [--record]');
   console.log('                            run the compiled process on new input');
   console.log('  status [<name>] [--json]  list processes, versions, accuracy, drift');
   console.log('');
+  console.log('Server commands require --agent <id> and Atris auth from atris login or ATRIS_TOKEN.');
   console.log('Loop: record real runs -> build -> backtest -> promote -> exec --record');
   console.log('When backtest accuracy drops below the gate, the process is marked drifted');
   console.log('and a recompile is suggested — self-healing against process drift.');
@@ -414,7 +644,7 @@ async function compileCommand(subcommand, ...rawArgs) {
   // `atris compile <name>` with an existing process name = build shortcut
   let cmd = subcommand;
   let name = positional[0];
-  const subcommands = ['record', 'build', 'backtest', 'promote', 'exec', 'status'];
+  const subcommands = ['record', 'build', 'backtest', 'promote', 'publish', 'schedule', 'exec', 'status'];
   if (!subcommands.includes(subcommand)) {
     if (validName(subcommand) && listProcesses(root).includes(subcommand)) {
       cmd = 'build';
@@ -514,6 +744,10 @@ async function compileCommand(subcommand, ...rawArgs) {
   }
 
   if (cmd === 'promote') {
+    if (flags.server) {
+      await promoteProcessOnServer(root, name, flags);
+      return;
+    }
     const options = {};
     if (flags.gate !== undefined) {
       const t = Number(flags.gate);
@@ -527,6 +761,16 @@ async function compileCommand(subcommand, ...rawArgs) {
     const manifest = promoteProcess(root, name, options);
     console.log(`${name} v${manifest.version} promoted to active (${formatAccuracy(manifest.backtest.accuracy)} over ${manifest.backtest.total} records, gate ${formatAccuracy(manifest.threshold)})`);
     console.log(`run it token-free: atris compile exec ${name} --input '<json>' --record`);
+    return;
+  }
+
+  if (cmd === 'publish') {
+    await publishProcessToServer(root, name, flags);
+    return;
+  }
+
+  if (cmd === 'schedule') {
+    await scheduleProcessOnServer(root, name, flags);
     return;
   }
 

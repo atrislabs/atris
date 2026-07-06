@@ -3,8 +3,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const { spawn, spawnSync } = require('node:child_process');
 
 const {
   appendRecord,
@@ -36,12 +38,110 @@ function writeRunner(root, name, body) {
 
 const DOUBLER = 'module.exports = { run: (input) => ({ doubled: input.n * 2 }) };\n';
 const COMPILE_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'compile.js'), 'utf8');
+const ATRIS_BIN = path.join(__dirname, '..', 'bin', 'atris.js');
 
 function seedRecords(root, name, count, { badFrom = Infinity } = {}) {
   for (let i = 0; i < count; i++) {
     const expected = i >= badFrom ? { doubled: -1 } : { doubled: i * 2 };
     appendRecord(root, name, { input: { n: i }, output: expected });
   }
+}
+
+function cliEnv(overrides = {}) {
+  const env = {
+    ...process.env,
+    HOME: makeRoot(),
+    ATRIS_SKIP_UPDATE_CHECK: '1',
+    NO_UPDATE_NOTIFIER: '1',
+    ...overrides,
+  };
+  if (!Object.prototype.hasOwnProperty.call(overrides, 'ATRIS_TOKEN')) delete env.ATRIS_TOKEN;
+  if (!Object.prototype.hasOwnProperty.call(overrides, 'ATRIS_PROFILE')) delete env.ATRIS_PROFILE;
+  return env;
+}
+
+function runCli(args, options = {}) {
+  return spawnSync(process.execPath, [ATRIS_BIN, ...args], {
+    cwd: options.cwd || makeRoot(),
+    env: options.env || cliEnv(),
+    encoding: 'utf8',
+  });
+}
+
+function runCliAsync(args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [ATRIS_BIN, ...args], {
+      cwd: options.cwd || makeRoot(),
+      env: options.env || cliEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    const timeout = setTimeout(() => {
+      child.kill('SIGTERM');
+      reject(new Error(`CLI timed out: atris ${args.join(' ')}`));
+    }, options.timeoutMs || 10000);
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+    child.on('error', (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+    child.on('close', (code, signal) => {
+      clearTimeout(timeout);
+      resolve({ status: code, signal, stdout, stderr });
+    });
+  });
+}
+
+function readRequestBody(req) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const text = Buffer.concat(chunks).toString('utf8');
+      if (!text) {
+        resolve(null);
+        return;
+      }
+      try {
+        resolve(JSON.parse(text));
+      } catch {
+        resolve(text);
+      }
+    });
+  });
+}
+
+function startHttpMock(handler) {
+  const requests = [];
+  const server = http.createServer(async (req, res) => {
+    const body = await readRequestBody(req);
+    const request = {
+      method: req.method,
+      url: req.url,
+      authorization: req.headers.authorization,
+      body,
+    };
+    requests.push(request);
+
+    const response = await handler(request, requests);
+    res.statusCode = response?.status || 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(response?.body || {}));
+  });
+  return new Promise((resolve, reject) => {
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      resolve({ server, port: server.address().port, requests });
+    });
+  });
+}
+
+function closeServer(server) {
+  return new Promise((resolve, reject) => {
+    server.close((err) => (err ? reject(err) : resolve()));
+  });
 }
 
 test('deepEqual: primitives, objects, arrays, NaN, null', () => {
@@ -307,4 +407,113 @@ test('buildCompilePrompt: states the contract and samples records', () => {
   assert.match(prompt, /\[COMPILE_COMPLETE\]/);
   // no spec yet -> instructs the compiler to write one
   assert.match(prompt, /There is no spec file yet/);
+});
+
+test('publish pushes artifact and records with cursor dedupe', async () => {
+  const root = makeRoot();
+  writeRunner(root, 'demo', DOUBLER);
+  const manifest = defaultManifest('demo');
+  manifest.version = 1;
+  manifest.compiledAt = '2026-07-06T00:00:00.000Z';
+  writeManifest(root, 'demo', manifest);
+  appendRecord(root, 'demo', { input: { n: 1 }, output: { doubled: 2 } });
+  appendRecord(root, 'demo', { input: { n: 2 }, output: { doubled: 4 }, expected: { doubled: 4 }, source: 'human' });
+
+  const mock = await startHttpMock((request, requests) => {
+    if (request.method === 'PUT' && request.url === '/api/processes/agent-1/demo/artifact') {
+      assert.match(request.body.run_js, /doubled/);
+      assert.equal(request.body.manifest.version, 1);
+      return { body: { success: true, manifest: { ...request.body.manifest, status: 'draft' } } };
+    }
+    if (request.method === 'POST' && request.url === '/api/processes/agent-1/demo/records') {
+      return { body: { success: true, record: request.body, records: requests.filter((r) => r.url.endsWith('/records')).length } };
+    }
+    if (request.method === 'POST' && request.url === '/api/processes/agent-1/demo/backtest') {
+      return {
+        body: {
+          success: true,
+          name: 'demo',
+          result: { version: 1, total: 2, passed: 2, accuracy: 1, threshold: 0.99, failures: [] },
+          manifest: { name: 'demo', version: 1, status: 'draft' },
+          failureCount: 0,
+        },
+      };
+    }
+    return { status: 404, body: { detail: `unexpected ${request.method} ${request.url}` } };
+  });
+
+  try {
+    const env = cliEnv({
+      ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api`,
+      ATRIS_TOKEN: 'test-token',
+    });
+    const first = await runCliAsync(['compile', 'publish', 'demo', '--agent', 'agent-1'], { cwd: root, env });
+    assert.equal(first.status, 0, `${first.stdout}\n${first.stderr}`);
+    assert.match(first.stdout, /published artifact demo to server \(draft\)/);
+    assert.match(first.stdout, /pushed 2 new records \(2 total local\)/);
+    assert.match(first.stdout, /server backtest demo v1: 2\/2 passed \(100\.00%\), gate 99\.00%, status draft/);
+    assert.match(first.stdout, /next: promote on server with "atris compile promote demo --server --agent agent-1"/);
+    assert.equal(mock.requests.every((request) => request.authorization === 'Bearer test-token'), true);
+    assert.equal(mock.requests.filter((request) => request.method === 'POST' && request.url.endsWith('/records')).length, 2);
+
+    const cursor = JSON.parse(fs.readFileSync(path.join(root, '.atris', 'state', 'processes', 'demo', 'push-cursor.json'), 'utf8'));
+    assert.equal(cursor.nextRecordIndex, 2);
+    assert.equal(cursor.agent_id, 'agent-1');
+    assert.equal(cursor.api_base, `http://127.0.0.1:${mock.port}/api`);
+
+    const requestCount = mock.requests.length;
+    const second = await runCliAsync(['compile', 'publish', 'demo', '--agent', 'agent-1'], { cwd: root, env });
+    assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
+    assert.match(second.stdout, /records up to date \(2 already pushed\)/);
+    const secondRequests = mock.requests.slice(requestCount);
+    assert.equal(secondRequests.filter((request) => request.method === 'POST' && request.url.endsWith('/records')).length, 0);
+    assert.equal(secondRequests.filter((request) => request.method === 'PUT' && request.url.endsWith('/artifact')).length, 1);
+    assert.equal(secondRequests.filter((request) => request.method === 'POST' && request.url.endsWith('/backtest')).length, 1);
+  } finally {
+    await closeServer(mock.server);
+  }
+});
+
+test('schedule sends cron and input payload to the server', async () => {
+  const root = makeRoot();
+  let captured = null;
+  const mock = await startHttpMock((request) => {
+    captured = request;
+    if (request.method === 'POST' && request.url === '/api/processes/agent-1/demo/schedule') {
+      return { body: { success: true, schedule: { id: 'sched-123' } } };
+    }
+    return { status: 404, body: { detail: 'unexpected request' } };
+  });
+
+  try {
+    const env = cliEnv({
+      ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api`,
+      ATRIS_TOKEN: 'test-token',
+    });
+    const res = await runCliAsync([
+      'compile', 'schedule', 'demo',
+      '--agent', 'agent-1',
+      '--cron', '*/5 * * * *',
+      '--input', '{"n":1}',
+    ], { cwd: root, env });
+    assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`);
+    assert.equal(captured.authorization, 'Bearer test-token');
+    assert.deepEqual(captured.body, { cron: '*/5 * * * *', input: { n: 1 } });
+    assert.match(res.stdout, /scheduled demo: sched-123/);
+  } finally {
+    await closeServer(mock.server);
+  }
+});
+
+test('publish without auth exits non-zero with a helpful message', () => {
+  const root = makeRoot();
+  writeRunner(root, 'demo', DOUBLER);
+  writeManifest(root, 'demo', defaultManifest('demo'));
+  const res = runCli(['compile', 'publish', 'demo', '--agent', 'agent-1'], {
+    cwd: root,
+    env: cliEnv({ ATRIS_API_URL: 'http://127.0.0.1:9/api' }),
+  });
+  assert.notEqual(res.status, 0);
+  assert.match(res.stderr, /Missing Atris auth/);
+  assert.match(res.stderr, /atris login or set ATRIS_TOKEN/);
 });
