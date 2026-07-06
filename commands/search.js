@@ -344,10 +344,6 @@ function searchCommand(args = [], options = {}) {
   }
 
   const root = options.root || process.cwd();
-  if (!fs.existsSync(path.join(root, 'atris'))) {
-    console.log('No Atris workspace found. Run atris init first.');
-    return 1;
-  }
   const results = collectSearchResults(root, query);
   console.log(raw ? renderRawSearch(results) : renderCompactSearch(root, results));
   return 0;

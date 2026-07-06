@@ -46,6 +46,7 @@ const VERBS = new Set([
   'update',
   'verify',
   'write',
+  'understand',
 ]);
 
 const PROPER_SKIP = new Set([
@@ -73,9 +74,53 @@ const BUDGET_LABELS = {
   deep: 'about three hours',
 };
 
-const VERIFY_COMMAND = 'git diff --check';
+const TEST_VERIFY_COMMAND = 'node --test';
 const JOURNAL_RESULT_TEXT = 'a written result will be waiting in your journal';
 const AUDIENCE_WORDS = /\b(?:for|user|users|customer|customers|operator|operators|agent|agents|developer|developers|admin|admins|member|members|team|teams|visitor|visitors|client|clients|student|students|founder|founders|newcomer|newcomers)\b/i;
+const BUDGET_RANK = { quick: 1, long: 2, deep: 3 };
+const PART_JOINER = /\s+(?:and|plus|also)\s+|[;]\s*/i;
+const EXTERNAL_REF_WORDS = new Set(['repo', 'repository', 'project', 'workspace']);
+const EXTERNAL_REF_STOP = new Set([
+  'and',
+  'also',
+  'but',
+  'for',
+  'hard',
+  'it',
+  'may',
+  'might',
+  'or',
+  'plus',
+  'seem',
+  'seems',
+  'that',
+  'though',
+  'to',
+  'when',
+  'where',
+  'which',
+  'with',
+]);
+const SUBJECT_SKIP_WORDS = new Set([
+  'can',
+  'could',
+  'done',
+  'everything',
+  'finish',
+  'line',
+  'maybe',
+  'might',
+  'need',
+  'needs',
+  'should',
+  'take',
+  'this',
+  'us',
+  'we',
+  'will',
+  'wish',
+  'would',
+]);
 const FILLER_WORDS = new Set([
   'a',
   'an',
@@ -231,11 +276,36 @@ function hasVerb(text) {
   });
 }
 
-function inferBudgetTier(text) {
+function largerBudget(left, right) {
+  if (!left) return right || null;
+  if (!right) return left;
+  return BUDGET_RANK[right] > BUDGET_RANK[left] ? right : left;
+}
+
+function speedBudgetSignal(text) {
   const compact = String(text || '').toLowerCase();
-  if (/\b(quick|small|tiny)\b/.test(compact)) return 'quick';
-  if (/\b(big|full|overhaul|all)\b/.test(compact)) return 'deep';
-  return 'long';
+  const action = '(?:fix|patch|polish|tweak|change|update|edit|cleanup|clean|rename|remove|add|copy)';
+  if (new RegExp(`\\b(?:quick|small|tiny)\\s+${action}\\b`).test(compact)) return 'quick';
+  if (new RegExp(`\\b${action}\\b.{0,32}\\b(?:quick|quickly|small|tiny)\\b`).test(compact)) return 'quick';
+  return null;
+}
+
+function deliverableBudgetSignal(text) {
+  const compact = String(text || '').toLowerCase();
+  if (/\b(big|full|overhaul|all|refactor|restructure|rewrite|architecture|system|suite|migration|migrate|e2e|end-to-end)\b/.test(compact)) {
+    return 'deep';
+  }
+  if (/\b(test|tests|testing|coverage|command|commands|cli|subcommand|workflow|flow|integration|real results)\b/.test(compact)) {
+    return 'long';
+  }
+  return null;
+}
+
+function inferBudgetTier(text) {
+  let tier = null;
+  tier = largerBudget(tier, speedBudgetSignal(text));
+  tier = largerBudget(tier, deliverableBudgetSignal(text));
+  return tier || 'long';
 }
 
 function resolveRole(role, root) {
@@ -275,7 +345,8 @@ function namedThingExists(root, value) {
   if (fileExists(root, raw)) return true;
   const slug = slugify(raw);
   const base = path.basename(root).toLowerCase();
-  if (slug && base.includes(slug)) return true;
+  const parentBase = path.basename(path.dirname(root)).toLowerCase();
+  if (slug && (base.includes(slug) || parentBase.includes(slug))) return true;
   const candidates = [
     path.join(root, raw),
     path.join(root, slug),
@@ -291,15 +362,27 @@ function subjectForWish(text) {
   const words = wordList(text)
     .map(cleanToken)
     .filter(Boolean);
-  if (!words.length) return 'this wish';
+  if (!words.length) return '';
   let usable = words;
-  const first = words[0].toLowerCase();
-  if (VERBS.has(first)) usable = words.slice(1);
-  usable = usable.filter((word) => {
+  while (usable.length) {
+    const clean = usable[0].toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (VERBS.has(clean) || FILLER_WORDS.has(clean) || SUBJECT_SKIP_WORDS.has(clean)) {
+      usable = usable.slice(1);
+      continue;
+    }
+    break;
+  }
+  const phrase = [];
+  for (const word of usable) {
     const clean = word.toLowerCase().replace(/[^a-z0-9-]/g, '');
-    return clean && !['a', 'an', 'the', 'please', 'better', 'friendlier', 'improved', 'more'].includes(clean);
-  });
-  return usable.slice(0, 4).join(' ') || 'this wish';
+    if (!clean) continue;
+    if (['by', 'for', 'from', 'in', 'into', 'of', 'on', 'to', 'with'].includes(clean) && phrase.length) break;
+    if (FILLER_WORDS.has(clean) || SUBJECT_SKIP_WORDS.has(clean)) continue;
+    if (VERBS.has(clean)) continue;
+    phrase.push(clean);
+    if (phrase.length >= 4) break;
+  }
+  return phrase.join(' ');
 }
 
 function meaningfulWordSet(text) {
@@ -332,15 +415,15 @@ function clarityAudit(text) {
 
   if (vague) {
     missing.push('outcome');
-    questions.push(`What outcome should ${subject} create?`);
+    questions.push(subject ? `What outcome should ${subject} create?` : 'What would done look like for this wish?');
   }
   if (vague && !AUDIENCE_WORDS.test(text)) {
     missing.push('audience');
-    questions.push(`Who is ${subject} for?`);
+    questions.push(subject ? `Who is ${subject} for?` : 'What should exist when it comes true?');
   }
   if (vague) {
     missing.push('scope');
-    questions.push(`What part of ${subject} should I change first?`);
+    questions.push(subject ? `What part of ${subject} should I change first?` : 'What should I change first?');
   }
 
   return {
@@ -380,6 +463,63 @@ function missingNamedInputs(text, root) {
     addMissing(clean, 'proper');
   }
   return missing;
+}
+
+function cleanPartText(text) {
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[,;:\s]+|[,;:\s]+$/g, '')
+    .trim();
+}
+
+function externalReference(text) {
+  const words = wordList(text).map(cleanToken).filter(Boolean);
+  for (let index = 0; index < words.length; index += 1) {
+    const marker = words[index].toLowerCase().replace(/[^a-z]/g, '');
+    if (!EXTERNAL_REF_WORDS.has(marker)) continue;
+    const collected = [];
+    for (let next = index + 1; next < words.length; next += 1) {
+      const clean = words[next].toLowerCase().replace(/[^a-z0-9._-]/g, '');
+      if (!clean || EXTERNAL_REF_STOP.has(clean)) break;
+      if (VERBS.has(clean) || FILLER_WORDS.has(clean)) break;
+      collected.push(clean);
+      if (collected.length >= 3) break;
+    }
+    if (collected.length) return { marker, name: collected.join(' ') };
+  }
+  return null;
+}
+
+function outOfScopeReason(text, root) {
+  const ref = externalReference(text);
+  if (ref && !namedThingExists(root, ref.name)) {
+    return `${ref.marker} ${ref.name} is not in this checkout`;
+  }
+  const missing = missingNamedInputs(text, root);
+  const pathMissing = missing.find((item) => item.kind === 'path');
+  if (pathMissing) return `${pathMissing.value} is not in this checkout`;
+  return '';
+}
+
+function partLooksDeliverable(text, root) {
+  if (outOfScopeReason(text, root)) return true;
+  if (hasVerb(text)) return true;
+  return meaningfulWordSet(text).size >= 2;
+}
+
+function analyzeWishParts(text, root) {
+  const clean = cleanPartText(text);
+  if (!clean) return null;
+  const rough = clean.split(PART_JOINER).map(cleanPartText).filter(Boolean);
+  const parts = (rough.length > 1 ? rough : [clean])
+    .map((part, index) => ({
+      part: index + 1,
+      text: part,
+      waiting_reason: outOfScopeReason(part, root),
+    }))
+    .filter((part) => rough.length === 1 || partLooksDeliverable(part.text, root));
+  if (parts.length < 2 && !parts.some((part) => part.waiting_reason)) return null;
+  return parts.length ? parts : null;
 }
 
 function auditWish(text, root = process.cwd()) {
@@ -449,21 +589,47 @@ function engineLabel(engine) {
   return text;
 }
 
-function verifyOutcomeText(command) {
-  const verify = String(command || '').trim();
+function deriveVerifyPlan(text) {
+  const compact = String(text || '').toLowerCase();
+  if (/\b(test|tests|testing|suite|coverage)\b/.test(compact)) {
+    return {
+      command: TEST_VERIFY_COMMAND,
+      outcome: 'the fast test run passes and is timed',
+      status: 'derived',
+    };
+  }
+  if (/\b(command|commands|cli|subcommand)\b/.test(compact)) {
+    return {
+      command: TEST_VERIFY_COMMAND,
+      outcome: 'the new command runs end to end',
+      status: 'derived',
+    };
+  }
+  return {
+    command: '',
+    outcome: 'I will show you the result to judge',
+    status: 'needs-review',
+  };
+}
+
+function verifyOutcomeText(planOrCommand) {
+  if (planOrCommand && typeof planOrCommand === 'object') return planOrCommand.outcome || JOURNAL_RESULT_TEXT;
+  const verify = String(planOrCommand || '').trim();
   if (!verify) return JOURNAL_RESULT_TEXT;
-  if (verify === 'git diff --check') return 'the git diff whitespace check passes';
+  if (verify === TEST_VERIFY_COMMAND) return 'the fast test run passes and is timed';
   return `the verify command ${quoteText(verify)} passes`;
 }
 
 function printGranted(text, audit, options = {}) {
+  const verifyPlan = options.verifyPlan || deriveVerifyPlan(text);
   if (options.grantNumber) {
     console.log(`Granting wish ${options.grantNumber}: ${quoteText(text)}`);
   } else {
     console.log(`I heard you: ${quoteText(text)}`);
   }
   console.log(`I delegated it to ${engineLabel(audit.executor.id)} with a ${audit.budget} budget, ${BUDGET_LABELS[audit.budget]}.`);
-  console.log(`You will know it came true when ${verifyOutcomeText(options.verify || VERIFY_COMMAND)}.`);
+  if (verifyPlan.status === 'needs-review') console.log(verifyPlan.outcome + '.');
+  else console.log(`You will know it came true when ${verifyOutcomeText(verifyPlan)}.`);
 }
 
 function latestMissionStatus(root, missionId) {
@@ -478,15 +644,23 @@ function latestMissionStatus(root, missionId) {
 
 function operatorStatus(wish, root = process.cwd()) {
   if (wish.status === 'needs_input') return 'waiting on you';
-  if (wish.status === 'delegated') {
-    return latestMissionStatus(root, wish.mission_id) === 'complete' ? 'came true' : 'in flight';
+  if (wish.status === 'delegated' || wish.status === 'decomposed') {
+    const missionStatus = latestMissionStatus(root, wish.mission_id);
+    if (missionStatus === 'complete') return 'came true';
+    if (missionStatus === 'stopped') return 'stopped';
+    if (missionStatus === 'blocked') return 'blocked';
+    if (missionStatus === 'paused') return 'paused';
+    if (missionStatus === 'ready') return 'ready for review';
+    if (missionStatus) return 'in flight';
+    if (Array.isArray(wish.out_of_scope_parts) && wish.out_of_scope_parts.length) return 'waiting on another home';
+    return 'in flight';
   }
   if (wish.status === 'complete') return 'came true';
   return wish.status || 'waiting';
 }
 
 function openWishes(root = process.cwd()) {
-  return readWishes(root).filter((wish) => ['needs_input', 'delegated', 'complete'].includes(String(wish.status || '')));
+  return readWishes(root).filter((wish) => ['needs_input', 'delegated', 'decomposed', 'complete'].includes(String(wish.status || '')));
 }
 
 function printList(root = process.cwd()) {
@@ -501,14 +675,19 @@ function printList(root = process.cwd()) {
   return 0;
 }
 
-function delegateWish(wish, audit, root, asJson, options = {}) {
+function startWishDelegation(wish, audit, root, options = {}) {
+  const taskText = String(options.taskText || wish.text);
+  const recordText = String(options.recordText || wish.text);
+  const verifyPlan = options.verifyPlan || deriveVerifyPlan(taskText);
   const note = [
-    `Wish: ${wish.text}`,
-    `Verify: ${VERIFY_COMMAND} (${verifyOutcomeText(VERIFY_COMMAND)})`,
+    `Wish: ${taskText}`,
+    verifyPlan.command
+      ? `Verify: ${verifyPlan.command} (${verifyOutcomeText(verifyPlan)})`
+      : `Verify: needs human review (${verifyPlan.outcome})`,
     `Budget: ${audit.budget}`,
   ].join('\n');
   const taskPayload = delegateTask([
-    wish.text,
+    taskText,
     '--to',
     audit.executor.id,
     '--executed-by',
@@ -516,45 +695,185 @@ function delegateWish(wish, audit, root, asJson, options = {}) {
     '--tag',
     'wish',
     '--goal-objective',
-    wish.text,
+    taskText,
     '--note',
     note,
   ]);
-  const missionPayload = startMission([
-    wish.text,
+  const missionArgs = [
+    taskText,
     '--owner',
     audit.executor.id,
     '--runner',
     audit.executor.id,
     '--budget',
     audit.budget,
-    '--verify',
-    VERIFY_COMMAND,
     '--task',
     taskPayload.task_id,
     '--json',
-  ], { silent: true });
+  ];
+  if (verifyPlan.command) missionArgs.push('--verify', verifyPlan.command);
+  const missionPayload = startMission(missionArgs, { silent: true });
   const mission = missionPayload && missionPayload.mission ? missionPayload.mission : null;
   const record = {
     id: wish.id,
     ts: stampIso(),
-    text: wish.text,
+    text: recordText,
     status: 'delegated',
     task_id: taskPayload.task_id,
     mission_id: mission ? mission.id : null,
     engine: audit.executor.id,
     validator: audit.validator.id,
     budget: audit.budget,
-    verify: VERIFY_COMMAND,
+    verify: verifyPlan.command,
+    verify_status: verifyPlan.status,
+    verify_outcome: verifyPlan.outcome,
+    task_text: taskText,
   };
+  return { record, taskPayload, mission, verifyPlan };
+}
+
+function delegateWish(wish, audit, root, asJson, options = {}) {
+  const { record, verifyPlan } = startWishDelegation(wish, audit, root, options);
   appendWishRecord(root, record);
   const payload = machineRecord(wish, 'delegated', audit, {
-    task_id: taskPayload.task_id,
-    mission_id: mission ? mission.id : null,
+    task_id: record.task_id,
+    mission_id: record.mission_id,
   });
   if (asJson) console.log(JSON.stringify(payload, null, 2));
-  else printGranted(wish.text, audit, { ...options, verify: VERIFY_COMMAND });
+  else printGranted(options.taskText || wish.text, audit, { ...options, verifyPlan });
   return 0;
+}
+
+function formatPartRefs(numbers) {
+  const sorted = [...numbers].sort((a, b) => a - b);
+  if (!sorted.length) return 'no parts';
+  if (sorted.length === 1) return `part ${sorted[0]}`;
+  const contiguous = sorted.every((value, index) => index === 0 || value === sorted[index - 1] + 1);
+  if (contiguous) return `parts ${sorted[0]}-${sorted[sorted.length - 1]}`;
+  return `parts ${sorted.slice(0, -1).join(', ')} and ${sorted[sorted.length - 1]}`;
+}
+
+function printDecomposed(parts, delegatedParts, waitingParts) {
+  console.log(`This wish has ${parts.length} ${parts.length === 1 ? 'part' : 'parts'}.`);
+  parts.forEach((part) => {
+    console.log(`Part ${part.part}: ${part.text}`);
+  });
+  const delegatedNumbers = delegatedParts.map((part) => part.part);
+  const ownHomeNumbers = waitingParts
+    .filter((part) => part.reason && /not in this checkout/.test(part.reason))
+    .map((part) => part.part);
+  const otherWaitingNumbers = waitingParts
+    .filter((part) => !ownHomeNumbers.includes(part.part))
+    .map((part) => part.part);
+  if (delegatedNumbers.length && ownHomeNumbers.length) {
+    const needs = ownHomeNumbers.length === 1 ? 'needs its own home' : 'need their own homes';
+    console.log(`I can start ${formatPartRefs(delegatedNumbers)} now; ${formatPartRefs(ownHomeNumbers)} ${needs}.`);
+  } else if (delegatedNumbers.length) {
+    console.log(`I can start ${formatPartRefs(delegatedNumbers)} now.`);
+  } else if (ownHomeNumbers.length) {
+    const needs = ownHomeNumbers.length === 1 ? 'needs its own home' : 'need their own homes';
+    console.log(`${formatPartRefs(ownHomeNumbers)} ${needs}.`);
+  }
+  if (otherWaitingNumbers.length) {
+    console.log(`${formatPartRefs(otherWaitingNumbers)} need one clearer answer before I start.`);
+  }
+}
+
+function decomposeWish(wish, parts, root, asJson) {
+  const delegatedParts = [];
+  const waitingParts = [];
+  let firstAudit = null;
+  for (const part of parts) {
+    if (part.waiting_reason) {
+      waitingParts.push({
+        part: part.part,
+        text: part.text,
+        status: 'waiting',
+        reason: part.waiting_reason,
+      });
+      continue;
+    }
+    const audit = auditWish(part.text, root);
+    if (!audit.ok) {
+      waitingParts.push({
+        part: part.part,
+        text: part.text,
+        status: 'waiting',
+        reason: audit.questions[0] || 'needs a clearer scope',
+        questions: audit.questions,
+      });
+      continue;
+    }
+    if (!firstAudit) firstAudit = audit;
+    const { record, verifyPlan } = startWishDelegation(wish, audit, root, {
+      taskText: part.text,
+      recordText: wish.text,
+      verifyPlan: deriveVerifyPlan(part.text),
+    });
+    const delegated = {
+      part: part.part,
+      text: part.text,
+      status: 'delegated',
+      task_id: record.task_id,
+      mission_id: record.mission_id,
+      budget: record.budget,
+      verify: record.verify,
+      verify_status: record.verify_status,
+      verify_outcome: record.verify_outcome,
+    };
+    delegatedParts.push(delegated);
+    appendWishRecord(root, {
+      ...record,
+      decomposed_part: part.part,
+      parts_total: parts.length,
+      verify_status: verifyPlan.status,
+    });
+  }
+  const statusParts = parts.map((part) => {
+    const delegated = delegatedParts.find((item) => item.part === part.part);
+    if (delegated) return { part: part.part, text: part.text, status: 'delegated' };
+    const waiting = waitingParts.find((item) => item.part === part.part);
+    return {
+      part: part.part,
+      text: part.text,
+      status: 'waiting',
+      reason: waiting ? waiting.reason : 'needs its own home',
+    };
+  });
+  const firstDelegated = delegatedParts[0] || null;
+  const record = {
+    id: wish.id,
+    ts: stampIso(),
+    text: wish.text,
+    status: 'decomposed',
+    task_id: firstDelegated ? firstDelegated.task_id : null,
+    mission_id: firstDelegated ? firstDelegated.mission_id : null,
+    engine: firstAudit && firstAudit.executor ? firstAudit.executor.id : null,
+    validator: firstAudit && firstAudit.validator ? firstAudit.validator.id : null,
+    budget: firstAudit ? firstAudit.budget : inferBudgetTier(wish.text),
+    parts: statusParts,
+    delegated_parts: delegatedParts,
+    out_of_scope_parts: waitingParts
+      .filter((part) => part.reason && /not in this checkout/.test(part.reason))
+      .map((part) => ({ ...part, status: 'waiting' })),
+    waiting_parts: waitingParts,
+  };
+  appendWishRecord(root, record);
+  const payload = {
+    ...machineRecord(wish, 'decomposed', firstAudit, {
+      task_id: record.task_id,
+      mission_id: record.mission_id,
+      engine: record.engine,
+      budget: record.budget,
+      questions: [],
+    }),
+    parts: statusParts,
+    delegated_parts: delegatedParts,
+    out_of_scope_parts: record.out_of_scope_parts,
+  };
+  if (asJson) console.log(JSON.stringify(payload, null, 2));
+  else printDecomposed(parts, delegatedParts, waitingParts);
+  return delegatedParts.length ? 0 : 1;
 }
 
 function askForInput(wish, audit, root, asJson) {
@@ -584,6 +903,8 @@ function runCapturedWish(text, args, root = process.cwd()) {
   };
   captureWishToJournal(text, root);
   appendWishRecord(root, wish);
+  const parts = analyzeWishParts(text, root);
+  if (parts) return decomposeWish(wish, parts, root, asJson);
   const audit = auditWish(text, root);
   if (!audit.ok) return askForInput(wish, audit, root, asJson);
   return delegateWish(wish, audit, root, asJson);
@@ -674,8 +995,10 @@ function wishCommand(args = []) {
 
 module.exports = {
   wishCommand,
+  analyzeWishParts,
   auditWish,
   captureWishToJournal,
+  deriveVerifyPlan,
   inferBudgetTier,
   missingNamedInputs,
   readWishes,
