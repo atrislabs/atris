@@ -54,6 +54,30 @@ test('ax routes workspace questions local inside a workspace, cloud outside', ()
   assert.equal(localPayload.max_turns, 16);
 });
 
+test('ax fast tool-capable turns get pro timeout headroom', () => {
+  const cloudToolPayload = ax.buildPayload('check my connected tools', {
+    mode: 'fast',
+    route: 'cloud',
+    cwd: NON_WORKSPACE_CWD,
+  });
+  assert.equal(cloudToolPayload.model, 'atris:fast');
+  assert.equal(cloudToolPayload.max_turns, 1);
+  assert.equal(Array.isArray(cloudToolPayload.local_tools), true);
+  assert.equal(ax.postTurnTimeoutMs(cloudToolPayload, { local: false }), 180000);
+
+  const localToolPayload = ax.buildPayload('edit this repo and run tests', {
+    mode: 'fast',
+    route: 'local',
+    cwd: '/tmp/project',
+  });
+  assert.equal(localToolPayload.max_turns, 16);
+  assert.equal(ax.postTurnTimeoutMs(localToolPayload, { local: true }), 180000);
+
+  assert.equal(ax.postTurnTimeoutMs({ model: 'atris:fast', max_turns: 1 }, { local: false }), 60000);
+  assert.equal(ax.postTurnTimeoutMs({ model: 'atris:pro', max_turns: 24 }, { local: true }), 180000);
+  assert.equal(ax.postTurnTimeoutMs({ model: 'atris:max', max_turns: 24 }, { local: true }), 300000);
+});
+
 test('ax headless turn runs a bounded prompt and returns structured result', async () => {
   const calls = [];
   const payload = await ax.runHeadlessTurn('bounded prompt', {

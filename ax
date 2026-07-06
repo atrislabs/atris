@@ -34,6 +34,9 @@ const APPROVAL_EXECUTE_PATH = '/api/atris2/approvals/execute';
 const BACKEND_API_TOOL_NAME = 'backend_api';
 const BACKEND_API_TOOL_RESULT_PATH = '/api/atris2/turn/tool-result';
 const DEFAULT_APPROVAL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_TURN_TIMEOUT_MS = 60000;
+const PRO_TURN_TIMEOUT_MS = 180000;
+const MAX_TURN_TIMEOUT_MS = 300000;
 const CONNECTOR_NAMES = {
   gmail: 'Gmail',
   google_calendar: 'Google Calendar',
@@ -95,6 +98,33 @@ function modelForMode(mode) {
   if (mode === 'code-fast') return CODE_FAST.model;
   if (mode === 'max') return 'atris:max';
   return mode === 'fast' ? 'atris:fast' : 'atris:pro';
+}
+
+function payloadCanRunTools(payload = {}, options = {}) {
+  return Boolean(
+    options.business
+    || options.local
+    || payload.local_executor
+    || (Array.isArray(payload.local_tools) && payload.local_tools.length > 0)
+  );
+}
+
+function postTurnTimeoutMs(payload = {}, options = {}) {
+  const model = String(payload.model || '');
+  let timeoutMs = DEFAULT_TURN_TIMEOUT_MS;
+  if (model === 'atris:max') timeoutMs = MAX_TURN_TIMEOUT_MS;
+  else if (model === 'atris:pro') timeoutMs = PRO_TURN_TIMEOUT_MS;
+
+  // AX postTurn is the tool-capable Atris2 path. Fast tool turns need the same
+  // headroom as pro because the backend can spend long stretches inside tools
+  // without SSE traffic. Plain tool-free one-shot fast chat stays at 60s.
+  if (model === 'atris:fast' && payloadCanRunTools(payload, options)) {
+    timeoutMs = Math.max(timeoutMs, PRO_TURN_TIMEOUT_MS);
+  }
+  if (options.business || options.local) {
+    timeoutMs = Math.max(timeoutMs, PRO_TURN_TIMEOUT_MS);
+  }
+  return timeoutMs;
 }
 
 function formatDuration(ms) {
@@ -2697,14 +2727,7 @@ async function postTurn(message, options = {}) {
   const payload = buildPayload(message, { ...options, route, connectionContext, connectionUserId, turnId });
   const postData = JSON.stringify(payload);
   const output = options.output || process.stdout;
-  // Relayed business turns wait on EC2 terminal calls (up to 60s each) with no
-  // SSE traffic in between, so the socket-idle timeout needs more headroom.
-  const baseTimeoutMs = payload.model === 'atris:max' ? 300000 : payload.model === 'atris:pro' ? 180000 : 60000;
-  let timeoutMs = options.business ? Math.max(baseTimeoutMs, 180000) : baseTimeoutMs;
-  // Local workspace tool loops (max_turns 16/24) legitimately run past the fast
-  // lane's 60s chat wall — SwapBench 2026-07-02: three tool-loop tasks died at
-  // ~60s as "Atris cloud did not respond". Same headroom as business relays.
-  if (local) timeoutMs = Math.max(timeoutMs, 180000);
+  const timeoutMs = postTurnTimeoutMs(payload, { business: options.business, local });
   const turnUrl = new URL(backendUrl({ route: endpointRoute }));
   const transport = turnUrl.protocol === 'https:' ? https : http;
   const state = {
@@ -4318,6 +4341,7 @@ module.exports = {
   postApprovalExecution,
   postCodeFastTurn,
   postTurn,
+  postTurnTimeoutMs,
   readApprovalStore,
   removeStoredApproval,
   renderStreamingMarkdown,
