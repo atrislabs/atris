@@ -108,6 +108,18 @@ test('atris2 run without credentials pauses the mission with auth-required', () 
     const record = JSON.parse(statusRes.stdout).missions[0];
     assert.equal(record.status, 'paused');
     assert.equal(record.stop_reason, 'auth-required');
+    assert.equal(record.human_blocking_pause_escalation.reason, 'auth-required');
+    assert.equal(record.human_blocking_pause_escalation.channel, 'mission-log');
+    assert.match(record.human_blocking_pause_escalation.warning, /WARN mission .* paused for auth-required/);
+    assert.match(record.human_blocking_pause_escalation.warning, new RegExp(`Resume: atris mission run ${mission.id}`));
+
+    const events = fs.readFileSync(path.join(dir, '.atris', 'state', 'mission_events.jsonl'), 'utf8')
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    const warnings = events.filter((event) => event.type === 'mission_pause_escalation_warn');
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0].payload.warning, /WARN mission/);
   } finally {
     cleanupTempDir(dir);
     cleanupTempDir(fakeHome);
