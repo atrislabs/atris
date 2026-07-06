@@ -408,9 +408,10 @@ function prMergeRef(prOutput) {
 }
 
 function shipHelp() {
-  console.log('Usage: atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>]');
+  console.log('Usage: atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>] [--local]');
   console.log('');
   console.log('  --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
+  console.log('  --local         merge into the local primary checkout instead of pushing and opening a PR');
   console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
 }
 
@@ -422,6 +423,7 @@ function shipWorktree(args) {
   const root = repoRoot();
   const dryRun = hasFlag(args, '--dry-run');
   const noPr = hasFlag(args, '--no-pr');
+  const localMode = hasFlag(args, '--local') || hasFlag(args, '--local-merge');
   const merge = hasFlag(args, '--merge');
   const message = readFlag(args, '--message') || readFlag(args, '-m');
   const verify = readFlag(args, '--verify');
@@ -491,6 +493,35 @@ function shipWorktree(args) {
     return 3;
   }
   console.log(`merge_check: ${targetRef} clean`);
+
+  if (localMode) {
+    console.log('push: skipped (local mode)');
+    if (merge) {
+      console.log('merge: requested (local mode)');
+      if (!dryRun) {
+        const targetBranch = baseBranchName(targetRef);
+        const primaryBranch = currentBranch(primary);
+        if (primaryBranch !== targetBranch) {
+          const switched = runGit(['switch', targetBranch], { cwd: primary, check: false });
+          if (switched.status !== 0) {
+            throw new Error((switched.stderr || switched.stdout || `git switch ${targetBranch} failed`).trim());
+          }
+        }
+        const primaryCounts = statusCounts(primary) || { staged: 0, unstaged: 0, untracked: 0 };
+        if (primaryCounts.staged || primaryCounts.unstaged || primaryCounts.untracked) {
+          throw new Error(
+            `primary checkout dirty staged=${primaryCounts.staged} ` +
+            `unstaged=${primaryCounts.unstaged} untracked=${primaryCounts.untracked}`
+          );
+        }
+        runGit(['merge', '--no-ff', branch, '-m', `Merge ${branch}`], { cwd: primary });
+        console.log('merge: merged (local mode)');
+      }
+    }
+    console.log('pr: skipped (local mode)');
+    console.log('done: worktree shipped');
+    return 0;
+  }
 
   console.log(`push: origin ${branch}`);
   if (!dryRun) runGit(['push', '-u', 'origin', branch], { cwd: root });
@@ -704,8 +735,9 @@ function help() {
   console.log('');
   console.log('  atris worktree guide');
   console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim]');
-  console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>]');
+  console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>] [--local]');
   console.log('    --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
+  console.log('    --local         merge into the local primary checkout instead of pushing and opening a PR');
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');

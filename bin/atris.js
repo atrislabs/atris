@@ -400,6 +400,7 @@ function showHelp() {
   console.log('  atris computer');
   console.log('  atris business init "My Company"');
   console.log('  atris run');
+  console.log('  atris drill');
   console.log('  atris status');
   console.log('  atris soul');
   console.log('  atris fleet status');
@@ -920,7 +921,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 }
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'wish', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
+const knownCommands = ['init', 'log', 'wish', 'drill', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'harvest', 'verify', 'search', 'scout', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'bench', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'write', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'study', 'rainmaker', 'xp', 'play', 'gm', 'x', 'recap', 'report', 'signup', 'clarity', 'interview', 'moves', 'unknowns',
@@ -1594,6 +1595,10 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'wish') {
   Promise.resolve(require('../commands/wish').wishCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'drill') {
+  Promise.resolve(require('../commands/drill').drillCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'bench') {
