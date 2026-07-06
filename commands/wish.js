@@ -9,7 +9,7 @@ const {
   sharesMeaningfulWords,
   verifyOutcomeText,
 } = require('../lib/wish-audit');
-const { readWishEvents, readWishes, stateFile } = require('../lib/wish-store');
+const { improveWishes, readWishEvents, readWishes, stateFile } = require('../lib/wish-store');
 const {
   captureWishToJournal,
   grantWish,
@@ -35,6 +35,7 @@ function showHelp() {
   console.log('       atris wish again <id> "<tweak text>" [--engine <id>]');
   console.log('       atris wish review [<id>|latest] "<one sentence>" [--score <-1|0|1 or 1-5>]');
   console.log('       atris wish rewards');
+  console.log('       atris wish improve');
   console.log('');
 }
 
@@ -127,6 +128,9 @@ function wishCommand(args = []) {
   if (first === 'rewards') {
     return printRewards(process.cwd());
   }
+  if (first === 'improve') {
+    return improveWishes(process.cwd());
+  }
   if (first === 'again') {
     const options = wishOptions(args);
     if (options.asMode && options.asMode !== 'builder') {
@@ -169,6 +173,7 @@ module.exports = {
   auditWish,
   captureWishToJournal,
   deriveVerifyPlan,
+  improveWishes,
   inferBudgetTier,
   missingNamedInputs,
   printBoard,
