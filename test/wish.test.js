@@ -160,13 +160,14 @@ test('delegated wish restates verbatim without invented verb forms or double hed
     assertNoInventedVerbEd(res.stdout, 'make', wish);
     assert.doesNotMatch(res.stdout, /roughly about/);
     assert.doesNotMatch(res.stdout, /workspace check passes/);
-    assert.match(res.stdout, /You will know it came true when the git diff whitespace check passes\./);
+    assert.doesNotMatch(res.stdout, /git diff whitespace check/);
+    assert.match(res.stdout, /I will show you the result to judge\./);
   } finally {
     cleanupTempDir(dir);
   }
 });
 
-test('healthy wish delegates a task and starts a verified mission', () => {
+test('healthy wish delegates a task and records honest proof status', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   try {
@@ -195,8 +196,10 @@ test('healthy wish delegates a task and starts a verified mission', () => {
     const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
     const mission = missions.find((row) => row.id === payload.mission_id);
     assert.equal(mission.runner, 'codex');
-    assert.equal(mission.verifier, 'git diff --check');
+    assert.equal(mission.verifier, '');
     assert.deepEqual(mission.task_ids, [payload.task_id]);
+    assert.equal(wishes.at(-1).verify_status, 'needs-review');
+    assert.equal(wishes.at(-1).verify_outcome, 'I will show you the result to judge');
 
     const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
     assert.ok(projection.tasks.some((task) => task.id === payload.task_id && task.metadata.delegate_via === 'local'));
@@ -208,8 +211,89 @@ test('healthy wish delegates a task and starts a verified mission', () => {
 test('wish budget tier inference follows plain wording', () => {
   assert.equal(inferBudgetTier('quick polish the help copy'), 'quick');
   assert.equal(inferBudgetTier('small fix for the prompt'), 'quick');
+  assert.equal(inferBudgetTier('quick tests with more real results'), 'long');
+  assert.equal(inferBudgetTier('quick refactor the system test suite'), 'deep');
   assert.equal(inferBudgetTier('overhaul all mission screens'), 'deep');
   assert.equal(inferBudgetTier('make the boot screen friendlier'), 'long');
+});
+
+test('multi-part wish decomposes and records out-of-scope parts', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const res = runCli(['wish', 'make wish list clearer and gm mode in project obelisk'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /This wish has 2 parts\./);
+    assert.match(res.stdout, /Part 1: make wish list clearer/);
+    assert.match(res.stdout, /Part 2: gm mode in project obelisk/);
+    assert.match(res.stdout, /I can start part 1 now; part 2 needs its own home\./);
+    assert.doesNotMatch(res.stdout, /wish-|mission-|[A-Z0-9]{3}-\d/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    const latest = records.at(-1);
+    assert.equal(latest.status, 'decomposed');
+    assert.equal(latest.delegated_parts.length, 1);
+    assert.equal(latest.delegated_parts[0].text, 'make wish list clearer');
+    assert.equal(latest.out_of_scope_parts.length, 1);
+    assert.equal(latest.out_of_scope_parts[0].status, 'waiting');
+    assert.match(latest.out_of_scope_parts[0].reason, /project obelisk is not in this checkout/);
+
+    const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    assert.ok(projection.tasks.some((task) => task.title === 'make wish list clearer'));
+    assert.equal(projection.tasks.some((task) => /project obelisk/.test(task.title)), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish derives proof text from test nouns', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const res = runCli(['wish', 'improve tests with more real results'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /You will know it came true when the fast test run passes and is timed\./);
+    assert.doesNotMatch(res.stdout, /git diff whitespace check/);
+
+    const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(wishes.at(-1).verify, 'node --test');
+    assert.equal(wishes.at(-1).verify_status, 'derived');
+    const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
+    assert.equal(missions.find((row) => row.id === wishes.at(-1).mission_id).verifier, 'node --test');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('vague wish questions do not splice raw fragments', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'we can take this to the finish line'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(res.status, 1, res.stderr || res.stdout);
+    const questions = res.stdout.split(/\r?\n/).filter((line) => /^\d+\./.test(line)).join('\n');
+    assert.doesNotMatch(questions, /we can take this/);
+    assert.match(res.stdout, /What would done look like for this wish\?/);
+    assert.match(res.stdout, /What should exist when it comes true\?/);
+  } finally {
+    cleanupTempDir(dir);
+  }
 });
 
 test('json question shape is stable', () => {
@@ -311,6 +395,38 @@ test('wish list stays in plain language without ids', () => {
     assert.match(list.stdout, /make the boot screen friendlier - in flight/);
     assert.doesNotMatch(list.stdout, /[0-9A-HJKMNP-TV-Z]{26}/);
     assert.doesNotMatch(list.stdout, /wish-|mission-|[A-Z0-9]{3}-\d/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish list renders stopped when its mission was stopped', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const created = runCli(['wish', 'make the boot screen friendlier', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const payload = JSON.parse(created.stdout);
+    const missionsPath = path.join(dir, '.atris', 'state', 'missions.jsonl');
+    fs.appendFileSync(missionsPath, JSON.stringify({
+      id: payload.mission_id,
+      status: 'stopped',
+      updated_at: new Date().toISOString(),
+    }) + '\n', 'utf8');
+
+    const list = runCli(['wish', 'list'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    assert.match(list.stdout, /make the boot screen friendlier - stopped/);
+    assert.doesNotMatch(list.stdout, /make the boot screen friendlier - in flight/);
   } finally {
     cleanupTempDir(dir);
   }
