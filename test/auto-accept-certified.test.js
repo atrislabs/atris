@@ -189,6 +189,76 @@ test('strict verify parser rejects path and npm config escapes', () => {
   assert.equal(parseVerifyCommand('node --check file:///tmp/pwn.js').ok, false);
 });
 
+test('strict verify parser allows safe backend python commands with cd and env', () => {
+  const commands = [
+    'cd backend && OFFLINE_MODE=1 ../venv/bin/python -m pytest tests/test_api_tracking_service.py tests/test_api_key_usage.py -q',
+    'cd backend && OFFLINE_MODE=1 ../venv/bin/python -m pytest tests/test_api_tracking_service.py -q',
+    'cd backend && /Users/keshavrao/arena/atrisos-backend/venv/bin/python -m pytest tests/test_org_decision_loop.py -q',
+    '/Users/keshavrao/arena/atrisos-backend/venv/bin/python scripts/measure_reward_ab.py',
+  ];
+
+  for (const command of commands) {
+    assert.equal(parseVerifyCommand(command).ok, true, command);
+  }
+
+  assert.deepEqual(parseVerifyCommand(commands[0]), {
+    ok: true,
+    cwd: 'backend',
+    env: { OFFLINE_MODE: '1' },
+    argv: [
+      '../venv/bin/python',
+      '-m',
+      'pytest',
+      'tests/test_api_tracking_service.py',
+      'tests/test_api_key_usage.py',
+      '-q',
+    ],
+  });
+});
+
+test('strict verify parser rejects unsafe python command forms', () => {
+  const denied = [
+    'python -c "print(1)"',
+    'cd .. && python -m pytest x',
+    'cd backend; python -m pytest x',
+    'python -m pytest tests/a.py && rm -rf /',
+    'FOO=$(whoami) python -m pytest t.py',
+    'python -m pytest tests/a.py `whoami`',
+    'python -m pytest tests/a.py | cat',
+    'python -m pytest tests/a.py; rm -rf /',
+    '/usr/bin/python -m pytest tests/a.py',
+  ];
+
+  for (const command of denied) {
+    assert.equal(parseVerifyCommand(command).ok, false, command);
+  }
+});
+
+test('strict verify runtime uses cd cwd and env assignments without a shell', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-verify-workspace-'));
+  const scriptsDir = path.join(workspace, 'backend', 'scripts');
+  fs.mkdirSync(scriptsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(scriptsDir, 'check-env.js'),
+    'if (process.env.OFFLINE_MODE !== "1") process.exit(7);\n',
+  );
+
+  const result = runVerifyCommand('cd backend && OFFLINE_MODE=1 node scripts/check-env.js', workspace);
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, 'verify_passed');
+});
+
+test('strict verify runtime rejects absolute venv python outside the workspace arena', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-verify-workspace-'));
+  const outsidePython = path.join(os.homedir(), '.atris-verify-outside', 'venv', 'bin', 'python');
+  const command = `${outsidePython} -m pytest tests/a.py`;
+
+  assert.equal(parseVerifyCommand(command).ok, true);
+  const result = runVerifyCommand(command, workspace);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'verify_command_not_allowed');
+});
+
 test('strict verify parser allows bounded git worktree diff checks', () => {
   const sibling = path.join(os.tmpdir(), 'sibling-worktree');
   const parsed = parseVerifyCommand(`git -C ${sibling} diff --check origin/master^ origin/master`);
