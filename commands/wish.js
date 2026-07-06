@@ -13,8 +13,12 @@ const { readWishEvents, readWishes, stateFile } = require('../lib/wish-store');
 const {
   captureWishToJournal,
   grantWish,
+  printBoard,
   printList,
+  printReviewNudges,
+  printRewards,
   reviewWish,
+  runAgainWish,
   runCapturedWish,
   sayWish,
   sweepWishes,
@@ -23,11 +27,14 @@ const {
 
 function showHelp() {
   console.log('');
-  console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--json] [--no-mission]');
+  console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--as builder] [--json] [--no-mission]');
   console.log('       atris wish list');
+  console.log('       atris wish board');
   console.log('       atris wish grant <n> "<answer>" [--engine <id>] [--json] [--no-mission]');
   console.log('       atris wish say "<note>" [wish-id]');
+  console.log('       atris wish again <id> "<tweak text>" [--engine <id>]');
   console.log('       atris wish review [<id>|latest] "<one sentence>" [--score <-1|0|1 or 1-5>]');
+  console.log('       atris wish rewards');
   console.log('');
 }
 
@@ -63,10 +70,11 @@ function parseFlagArgs(args, valueFlagNames = []) {
 }
 
 function wishOptions(args) {
-  const parsed = parseFlagArgs(args, ['--engine']);
+  const parsed = parseFlagArgs(args, ['--engine', '--as']);
   return {
     asJson: args.includes('--json'),
     noMission: args.includes('--no-mission'),
+    asMode: String(parsed.values['--as'] || '').trim(),
     engineOverride: String(parsed.values['--engine'] || '').trim(),
     positionals: parsed.positionals,
   };
@@ -101,12 +109,31 @@ function reviewOptions(args) {
 
 function wishCommand(args = []) {
   const first = String(args[0] || '').trim();
-  if (!first || first === '--help' || first === '-h' || first === 'help') {
+  if (!first) {
     showHelp();
-    return first ? 0 : 2;
+    printReviewNudges(process.cwd());
+    return 2;
+  }
+  if (first === '--help' || first === '-h' || first === 'help') {
+    showHelp();
+    return 0;
   }
   if (first === 'list' || first === 'ls' || first === 'status') {
     return printList(process.cwd());
+  }
+  if (first === 'board') {
+    return printBoard(process.cwd());
+  }
+  if (first === 'rewards') {
+    return printRewards(process.cwd());
+  }
+  if (first === 'again') {
+    const options = wishOptions(args);
+    if (options.asMode && options.asMode !== 'builder') {
+      console.error('wish --as only supports builder.');
+      return 2;
+    }
+    return runAgainWish(options.positionals, process.cwd(), options);
   }
   if (first === 'grant' || first === 'answer') {
     const options = wishOptions(args);
@@ -124,6 +151,10 @@ function wishCommand(args = []) {
     return sayWish(args, process.cwd());
   }
   const options = wishOptions(args);
+  if (options.asMode && options.asMode !== 'builder') {
+    console.error('wish --as only supports builder.');
+    return 2;
+  }
   const text = options.positionals.join(' ').trim();
   if (!text) {
     showHelp();
@@ -140,8 +171,12 @@ module.exports = {
   deriveVerifyPlan,
   inferBudgetTier,
   missingNamedInputs,
+  printBoard,
+  printReviewNudges,
+  printRewards,
   readWishEvents,
   readWishes,
+  runAgainWish,
   sayWish,
   sharesMeaningfulWords,
   stateFile,
