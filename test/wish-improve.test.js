@@ -120,3 +120,29 @@ test('pruneWishLessons removes a lesson whose after-window average dropped, keep
   // idempotent
   assert.equal(pruneWishLessons(root, { quiet: true }).length, 0);
 });
+
+test('wishLessonsSummary reports alive, pruned, inbox, and score stats', () => {
+  const { wishLessonsSummary, lessonsFile, appendWishRecord } = require('../lib/wish-store');
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wish-summary-'));
+  appendWishRecord(root, { kind: 'review', wish_id: 'w1', ts: '2026-07-01T00:00:00Z', review_score: 2 });
+  appendWishRecord(root, { kind: 'review', wish_id: 'w2', ts: '2026-07-02T00:00:00Z', review_score: 4 });
+  const file = lessonsFile(root);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, [
+    '# Wish lessons', '', '## Lessons',
+    '- 2026-07-01: alive lesson', '',
+    '## Review inbox (raw, distill me)',
+    '- 2026-07-02T00:00:00Z | w2 | score 4 | nice (by keshav)', '',
+    '## Pruned (did not move the score)',
+    '- 2026-06-01: dead lesson [pruned 2026-07-01: avg 3 -> 1 over 3 reviews]', '',
+  ].join('\n'), 'utf8');
+  const summary = wishLessonsSummary(root);
+  assert.deepEqual(summary.lessons, ['- 2026-07-01: alive lesson']);
+  assert.equal(summary.pruned.length, 1);
+  assert.equal(summary.inbox, 1);
+  assert.equal(summary.reviews, 2);
+  assert.equal(summary.avg_all, 3);
+});

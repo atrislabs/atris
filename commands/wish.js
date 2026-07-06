@@ -9,7 +9,7 @@ const {
   sharesMeaningfulWords,
   verifyOutcomeText,
 } = require('../lib/wish-audit');
-const { improveWishes, readWishEvents, readWishes, stateFile } = require('../lib/wish-store');
+const { improveWishes, readWishEvents, readWishes, stateFile, wishLessonsSummary } = require('../lib/wish-store');
 const {
   captureWishToJournal,
   grantWish,
@@ -36,6 +36,7 @@ function showHelp() {
   console.log('       atris wish review [<id>|latest] "<one sentence>" [--score <-1|0|1 or 1-5>]');
   console.log('       atris wish rewards');
   console.log('       atris wish improve');
+  console.log('       atris wish lessons');
   console.log('');
 }
 
@@ -108,6 +109,26 @@ function reviewOptions(args) {
   };
 }
 
+function printLessons(root) {
+  const summary = wishLessonsSummary(root);
+  console.log('');
+  console.log(`Wish lessons — ${summary.reviews} scored reviews, avg ${summary.avg_all === null ? 'n/a' : summary.avg_all} (last 5: ${summary.avg_last5 === null ? 'n/a' : summary.avg_last5})`);
+  console.log('');
+  console.log(summary.lessons.length ? 'Alive:' : 'Alive: none yet — review a wish and the next run distills one.');
+  for (const line of summary.lessons) console.log(`  ${line}`);
+  if (summary.pruned.length) {
+    console.log('');
+    console.log('Pruned (did not move the score):');
+    for (const line of summary.pruned) console.log(`  ${line}`);
+  }
+  if (summary.inbox) {
+    console.log('');
+    console.log(`Inbox: ${summary.inbox} raw review${summary.inbox === 1 ? '' : 's'} waiting to be distilled on the next wish.`);
+  }
+  console.log('');
+  return 0;
+}
+
 function wishCommand(args = []) {
   const first = String(args[0] || '').trim();
   if (!first) {
@@ -130,6 +151,9 @@ function wishCommand(args = []) {
   }
   if (first === 'improve') {
     return improveWishes(process.cwd());
+  }
+  if (first === 'lessons') {
+    return printLessons(process.cwd());
   }
   if (first === 'again') {
     const options = wishOptions(args);
