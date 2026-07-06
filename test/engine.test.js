@@ -26,7 +26,7 @@ test('engine roster lists every profile with detection state', () => {
     assert.equal(res.status, 0, res.stderr);
     const parsed = JSON.parse(res.stdout);
     const names = parsed.engines.map((e) => e.name);
-    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'hermes']);
+    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'hermes', 'droid']);
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'engines.json')));
     const codex = parsed.engines.find((e) => e.id === 'codex');
     assert.equal(codex.tier, 'pro');
@@ -90,7 +90,7 @@ test('--engine flag rides a loop for one run and validates at the boundary', () 
     const bad = runCli(['run', '--legacy', '--dry-run', '--engine', 'gpt-11'], dir);
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /Unknown --engine "gpt-11"/);
-    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, fable, composer, haiku, devin, hermes/);
+    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, fable, composer, haiku, devin, hermes, droid/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -329,5 +329,201 @@ test('engine test rejects an unknown engine name fast', () => {
     assert.match(res.stderr, /Unknown engine "gpt-11"/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+async function captureConsole(fn) {
+  const beforeLog = console.log;
+  const beforeError = console.error;
+  const stdout = [];
+  const stderr = [];
+  console.log = (...parts) => stdout.push(parts.map(String).join(' '));
+  console.error = (...parts) => stderr.push(parts.map(String).join(' '));
+  try {
+    const code = await fn();
+    return { code, stdout: stdout.join('\n'), stderr: stderr.join('\n') };
+  } finally {
+    console.log = beforeLog;
+    console.error = beforeError;
+  }
+}
+
+function writeHomeFile(homeDir, relativePath, content) {
+  const file = path.join(homeDir, relativePath);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content, 'utf8');
+  return file;
+}
+
+function fakeLoginDeps(extra = {}) {
+  const calls = [];
+  return {
+    calls,
+    deps: {
+      ensureValidCredentials: async () => ({ credentials: { token: 'test-token' } }),
+      apiRequestJson: async (pathname, options) => {
+        calls.push({ pathname, options });
+        return extra.response || { ok: true, status: 200, data: { ok: true, provider: 'codex' } };
+      },
+      ...extra,
+    },
+  };
+}
+
+test('engine login manifest is a hard whitelist', () => {
+  assert.deepEqual(Object.keys(engine.ENGINE_LOGIN_MANIFESTS).sort(), ['claude', 'codex', 'cursor', 'devin']);
+  assert.equal(engine.normalizeLoginProvider('codex'), 'codex');
+  assert.equal(engine.normalizeLoginProvider('composer'), '');
+  assert.equal(engine.normalizeLoginProvider('hermes'), '');
+});
+
+test('engine login refuses a missing whitelisted file with a plain hint', async () => {
+  const dir = makeTempDir();
+  let authCalls = 0;
+  let apiCalls = 0;
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['codex', '--yes'], dir, {
+      homeDir: dir,
+      ensureValidCredentials: async () => { authCalls += 1; return { credentials: { token: 'unused' } }; },
+      apiRequestJson: async () => { apiCalls += 1; return { ok: true, status: 200, data: {} }; },
+    }));
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /Missing ~\/\.codex\/auth\.json\. run codex login first\./);
+    assert.equal(authCalls, 0);
+    assert.equal(apiCalls, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine login confirm gate refuses upload without --yes', async () => {
+  const dir = makeTempDir();
+  const secret = 'super-secret-token';
+  writeHomeFile(dir, '.codex/auth.json', JSON.stringify({
+    access_token: secret,
+    account: { email: 'person@example.com' },
+  }));
+  let apiCalls = 0;
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['codex'], dir, {
+      homeDir: dir,
+      confirmUpload: async () => false,
+      ensureValidCredentials: async () => { throw new Error('auth should not run before confirm'); },
+      apiRequestJson: async () => { apiCalls += 1; return { ok: true, status: 200, data: {} }; },
+    }));
+    assert.equal(result.code, 1);
+    assert.match(result.stdout, /engine login: codex/);
+    assert.match(result.stdout, /person@example\.com/);
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(secret));
+    assert.equal(apiCalls, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine login shapes a files payload and redacts echoed secrets', async () => {
+  const dir = makeTempDir();
+  const secret = 'secret-from-auth-json';
+  const content = JSON.stringify({
+    tokens: { access: secret },
+    profile: { email: 'codex@example.com' },
+  });
+  writeHomeFile(dir, '.codex/auth.json', content);
+  const { calls, deps } = fakeLoginDeps({
+    homeDir: dir,
+    response: {
+      ok: true,
+      status: 200,
+      data: {
+        provider: 'codex',
+        registered_at: '2026-07-06T00:00:00.000Z',
+        files: { '~/.codex/auth.json': secret },
+      },
+    },
+  });
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['codex', '--yes'], dir, deps));
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].pathname, '/engines/logins/codex');
+    assert.equal(calls[0].options.method, 'POST');
+    assert.equal(calls[0].options.token, 'test-token');
+    assert.deepEqual(calls[0].options.body, { files: { '~/.codex/auth.json': content } });
+    assert.match(result.stdout, /codex@example\.com/);
+    assert.doesNotMatch(result.stdout, new RegExp(secret));
+    assert.match(result.stdout, /\[redacted\]/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine login captures devin API key through a secret prompt', async () => {
+  const dir = makeTempDir();
+  const secret = 'devin-secret-key';
+  const { calls, deps } = fakeLoginDeps({
+    promptSecret: async () => secret,
+    response: {
+      ok: true,
+      status: 200,
+      data: { provider: 'devin', api_key: secret },
+    },
+  });
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['devin', '--yes'], dir, deps));
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].pathname, '/engines/logins/devin');
+    assert.deepEqual(calls[0].options.body, { api_key: secret });
+    assert.doesNotMatch(result.stdout, new RegExp(secret));
+    assert.match(result.stdout, /\[redacted\]/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine seed shapes business and user targets for backend ready checks', async () => {
+  const dir = makeTempDir();
+  const { calls, deps } = fakeLoginDeps({
+    response: {
+      ok: true,
+      status: 200,
+      data: { ready: true, checks: [{ name: 'credential', ok: true }] },
+    },
+  });
+  try {
+    const business = await captureConsole(() => engine.runEngineSeedCommand(['codex', '--business', 'biz-1'], dir, deps));
+    assert.equal(business.code, 0, business.stderr);
+    assert.equal(calls[0].pathname, '/engines/logins/codex/seed');
+    assert.deepEqual(calls[0].options.body, { target: { type: 'business', id: 'biz-1' } });
+    assert.match(business.stdout, /credential/);
+
+    const user = await captureConsole(() => engine.runEngineSeedCommand(['codex', '--user'], dir, deps));
+    assert.equal(user.code, 0, user.stderr);
+    assert.equal(calls[1].pathname, '/engines/logins/codex/seed');
+    assert.deepEqual(calls[1].options.body, { target: { type: 'user' } });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ATRIS_BACKEND_URL is accepted as a backend root for API paths', () => {
+  const api = require('../utils/api');
+  const previousApi = process.env.ATRIS_API_URL;
+  const previousBackend = process.env.ATRIS_BACKEND_URL;
+  try {
+    delete process.env.ATRIS_API_URL;
+    process.env.ATRIS_BACKEND_URL = 'http://127.0.0.1:4545';
+    assert.equal(api.getApiBaseUrl(), 'http://127.0.0.1:4545/api');
+
+    process.env.ATRIS_BACKEND_URL = 'http://127.0.0.1:4545/api/';
+    assert.equal(api.getApiBaseUrl(), 'http://127.0.0.1:4545/api');
+
+    process.env.ATRIS_API_URL = 'http://127.0.0.1:9999/custom-api';
+    assert.equal(api.getApiBaseUrl(), 'http://127.0.0.1:9999/custom-api');
+  } finally {
+    if (previousApi === undefined) delete process.env.ATRIS_API_URL;
+    else process.env.ATRIS_API_URL = previousApi;
+    if (previousBackend === undefined) delete process.env.ATRIS_BACKEND_URL;
+    else process.env.ATRIS_BACKEND_URL = previousBackend;
   }
 });

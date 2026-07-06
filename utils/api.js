@@ -25,7 +25,11 @@ const DEFAULT_USER_AGENT = `${DEFAULT_CLIENT_ID} (node ${process.version}; ${os.
  * @returns {string} API base URL
  */
 function getApiBaseUrl() {
-  const raw = process.env.ATRIS_API_URL || 'https://api.atris.ai/api';
+  const backend = process.env.ATRIS_BACKEND_URL
+    ? process.env.ATRIS_BACKEND_URL.replace(/\/+$/, '')
+    : '';
+  const raw = process.env.ATRIS_API_URL
+    || (backend ? (backend.endsWith('/api') ? backend : `${backend}/api`) : 'https://api.atris.ai/api');
   return raw.replace(/\/$/, '');
 }
 

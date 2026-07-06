@@ -167,7 +167,7 @@ test('--json shape is stable', async () => {
         display_id: 'CLI-1',
         title: 'Ship json brief',
         status: 'done',
-        done_at: new Date(NOW).toISOString(),
+        done_at: new Date().toISOString(),
       },
     ]);
     const { code, out } = await captureStdout(() => briefCommand(['--json'], dir, {

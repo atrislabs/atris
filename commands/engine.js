@@ -16,7 +16,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const readline = require('readline');
 const { spawnSync } = require('child_process');
+const { Writable } = require('stream');
 const {
   RUNNER_PROFILE_DEFS,
   RUNNER_PROFILE_NAMES,
@@ -34,8 +36,36 @@ const {
   setEngineHealth,
 } = require('../lib/engine-registry');
 const { FLEET_CAPABLE, runDispatchFlight } = require('../lib/fleet');
+const { ensureValidCredentials } = require('../utils/auth');
+const { apiRequestJson } = require('../utils/api');
 
 const HOUSE_ENGINE = 'atris-fast';
+const MAX_ENGINE_LOGIN_FILE_BYTES = 64 * 1024;
+const ENGINE_LOGIN_MANIFESTS = Object.freeze({
+  codex: Object.freeze({
+    type: 'files',
+    files: Object.freeze(['~/.codex/auth.json']),
+    missingHint: 'run codex login first',
+  }),
+  claude: Object.freeze({
+    type: 'files',
+    files: Object.freeze(['~/.claude/.credentials.json']),
+    missingHint: 'run claude login first',
+  }),
+  cursor: Object.freeze({
+    type: 'files',
+    files: Object.freeze(['~/.cursor/cli-config.json']),
+    missingHint: 'run cursor login first',
+  }),
+  devin: Object.freeze({
+    type: 'api_key',
+    missingHint: 'paste a Devin API key',
+  }),
+});
+
+function knownLoginProviders() {
+  return Object.keys(ENGINE_LOGIN_MANIFESTS);
+}
 
 function engineFile(root = process.cwd()) {
   return path.join(root, '.atris', 'engine.json');
@@ -84,6 +114,437 @@ function setEngine(name, root = process.cwd()) {
 
 function resetEngine(root = process.cwd()) {
   try { fs.unlinkSync(engineFile(root)); return true; } catch { return false; }
+}
+
+function expandHomePath(filePath, homeDir = os.homedir()) {
+  const value = String(filePath || '');
+  if (value === '~') return homeDir;
+  if (value.startsWith('~/')) return path.join(homeDir, value.slice(2));
+  return value;
+}
+
+function normalizeLoginProvider(name) {
+  const raw = String(name || '').trim().toLowerCase();
+  if (!raw) return '';
+  const canonical = canonicalEngineName(raw) || raw;
+  return ENGINE_LOGIN_MANIFESTS[canonical] ? canonical : '';
+}
+
+function byteLength(value) {
+  return Buffer.byteLength(String(value || ''), 'utf8');
+}
+
+function detectedEmailFromJsonValue(value, depth = 0) {
+  if (depth > 6 || value == null) return '';
+  if (typeof value === 'string') {
+    const match = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    return match ? match[0] : '';
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = detectedEmailFromJsonValue(item, depth + 1);
+      if (found) return found;
+    }
+    return '';
+  }
+  if (typeof value === 'object') {
+    const preferred = ['email', 'account_email', 'user_email'];
+    for (const key of preferred) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        const found = detectedEmailFromJsonValue(value[key], depth + 1);
+        if (found) return found;
+      }
+    }
+    for (const item of Object.values(value)) {
+      const found = detectedEmailFromJsonValue(item, depth + 1);
+      if (found) return found;
+    }
+  }
+  return '';
+}
+
+function detectedEmailFromContent(content) {
+  try {
+    return detectedEmailFromJsonValue(JSON.parse(content));
+  } catch {
+    return '';
+  }
+}
+
+function readEngineLoginFiles(provider, { homeDir = os.homedir(), fsModule = fs } = {}) {
+  const manifest = ENGINE_LOGIN_MANIFESTS[provider];
+  if (!manifest || manifest.type !== 'files') {
+    throw new Error(`No file manifest for ${provider}`);
+  }
+
+  const files = {};
+  const summary = [];
+  for (const displayPath of manifest.files) {
+    const absolutePath = expandHomePath(displayPath, homeDir);
+    let stat;
+    try {
+      stat = fsModule.statSync(absolutePath);
+    } catch {
+      const err = new Error(`Missing ${displayPath}. ${manifest.missingHint}.`);
+      err.code = 'missing_file';
+      throw err;
+    }
+    if (!stat.isFile()) {
+      const err = new Error(`Missing ${displayPath}. ${manifest.missingHint}.`);
+      err.code = 'missing_file';
+      throw err;
+    }
+    if (stat.size > MAX_ENGINE_LOGIN_FILE_BYTES) {
+      const err = new Error(`${displayPath} is ${stat.size} bytes; maximum is ${MAX_ENGINE_LOGIN_FILE_BYTES} bytes.`);
+      err.code = 'file_too_large';
+      throw err;
+    }
+    const content = fsModule.readFileSync(absolutePath, 'utf8');
+    files[displayPath] = content;
+    summary.push({
+      path: displayPath,
+      bytes: byteLength(content),
+      email: detectedEmailFromContent(content),
+    });
+  }
+  return { payload: { files }, summary };
+}
+
+function parseEngineLoginArgs(args = []) {
+  const options = {
+    provider: '',
+    list: false,
+    remove: '',
+    yes: false,
+    json: false,
+    help: false,
+  };
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i] || '');
+    if (arg === '--help' || arg === '-h' || arg === 'help') {
+      options.help = true;
+      continue;
+    }
+    if (arg === '--list' || arg === 'list') {
+      options.list = true;
+      continue;
+    }
+    if (arg === '--remove' && args[i + 1]) {
+      options.remove = String(args[i + 1] || '').trim();
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--remove=')) {
+      options.remove = arg.slice('--remove='.length).trim();
+      continue;
+    }
+    if (arg === '--yes' || arg === '-y') {
+      options.yes = true;
+      continue;
+    }
+    if (arg === '--json') {
+      options.json = true;
+      continue;
+    }
+    if (arg.startsWith('--')) continue;
+    if (!options.provider) options.provider = arg;
+  }
+  return options;
+}
+
+function parseEngineSeedArgs(args = []) {
+  const options = {
+    provider: '',
+    business: '',
+    user: false,
+    json: false,
+    help: false,
+  };
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i] || '');
+    if (arg === '--help' || arg === '-h' || arg === 'help') {
+      options.help = true;
+      continue;
+    }
+    if ((arg === '--business' || arg === '-b') && args[i + 1]) {
+      options.business = String(args[i + 1] || '').trim();
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--business=')) {
+      options.business = arg.slice('--business='.length).trim();
+      continue;
+    }
+    if (arg === '--user') {
+      options.user = true;
+      continue;
+    }
+    if (arg === '--json') {
+      options.json = true;
+      continue;
+    }
+    if (arg.startsWith('--')) continue;
+    if (!options.provider) options.provider = arg;
+  }
+  return options;
+}
+
+function printEngineLoginHelp() {
+  console.log('\n  atris engine login <provider> --yes\n                           upload a local whitelisted engine login to the Atris vault\n  atris engine login --list\n                           list vaulted engine logins\n  atris engine login --remove <provider>\n                           remove a vaulted engine login\n  providers: codex, claude, cursor, devin\n');
+}
+
+function printEngineSeedHelp() {
+  console.log('\n  atris engine seed <provider> --business <id>\n  atris engine seed <provider> --user\n                           ask the backend to seed a vaulted login onto a computer\n');
+}
+
+function redactBackendResponse(value, parentKey = '') {
+  if (value == null) return value;
+  if (Array.isArray(value)) return value.map((item) => redactBackendResponse(item, parentKey));
+  if (typeof value !== 'object') {
+    if (/api[_-]?key|token|secret|credential|auth|files?/i.test(parentKey)) return '[redacted]';
+    return value;
+  }
+  const output = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (/api[_-]?key|token|secret|credential|auth/i.test(key)) {
+      output[key] = '[redacted]';
+    } else if (key === 'files' && item && typeof item === 'object') {
+      output[key] = Object.fromEntries(Object.keys(item).map((filePath) => [filePath, '[redacted]']));
+    } else {
+      output[key] = redactBackendResponse(item, key);
+    }
+  }
+  return output;
+}
+
+function printBackendResult(result, { json = false } = {}) {
+  const data = result && result.data !== undefined && result.data !== null
+    ? result.data
+    : { ok: Boolean(result && result.ok), status: result && result.status };
+  const safe = redactBackendResponse(data);
+  if (json || typeof safe === 'object') {
+    console.log(JSON.stringify(safe, null, 2));
+  } else {
+    console.log(String(safe));
+  }
+}
+
+function printLoginSummary(provider, summary) {
+  console.log('');
+  console.log(`  engine login: ${provider}`);
+  for (const item of summary) {
+    const email = item.email ? ` email: ${item.email}` : '';
+    console.log(`  ${item.path.padEnd(32)} ${String(item.bytes).padStart(6)} bytes${email}`);
+  }
+  console.log('');
+}
+
+function readLineNoEcho(question) {
+  return new Promise((resolve) => {
+    if (!process.stdin.isTTY) {
+      let data = '';
+      process.stdout.write(question);
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', (chunk) => { data += chunk; });
+      process.stdin.on('end', () => resolve(data.trim()));
+      process.stdin.on('error', () => resolve(''));
+      process.stdin.resume();
+      return;
+    }
+
+    const muted = new Writable({
+      write(chunk, encoding, callback) {
+        if (!muted.muted) process.stdout.write(chunk, encoding);
+        callback();
+      },
+    });
+    const rl = readline.createInterface({ input: process.stdin, output: muted, terminal: true });
+    rl.question(question, (answer) => {
+      rl.close();
+      process.stdout.write('\n');
+      resolve(String(answer || '').trim());
+    });
+    muted.muted = true;
+  });
+}
+
+function readLineVisible(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(String(answer || '').trim());
+    });
+  });
+}
+
+async function promptApiKey(provider, deps = {}) {
+  if (typeof deps.promptSecret === 'function') {
+    return String(await deps.promptSecret(provider) || '').trim();
+  }
+  return readLineNoEcho(`Paste ${provider} API key: `);
+}
+
+async function confirmEngineLoginUpload(provider, deps = {}) {
+  if (typeof deps.confirmUpload === 'function') {
+    return Boolean(await deps.confirmUpload(provider));
+  }
+  const answer = await readLineVisible('Upload this credential to the Atris backend vault? [y/N] ');
+  return /^y(es)?$/i.test(answer);
+}
+
+async function authenticatedEngineApi(pathname, options, deps = {}) {
+  const apiFn = deps.apiRequestJson || apiRequestJson;
+  const ensureFn = deps.ensureValidCredentials || ensureValidCredentials;
+  const ensured = await ensureFn(apiFn);
+  if (ensured.error) {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: ensured.detail || ensured.error || 'not_logged_in',
+      authError: true,
+    };
+  }
+  const token = ensured.credentials && ensured.credentials.token;
+  return apiFn(pathname, {
+    ...options,
+    token,
+  });
+}
+
+async function buildEngineLoginPayload(provider, deps = {}) {
+  const manifest = ENGINE_LOGIN_MANIFESTS[provider];
+  if (!manifest) {
+    throw new Error(`Unknown engine login provider "${provider}". Known providers: ${knownLoginProviders().join(', ')}`);
+  }
+
+  if (manifest.type === 'api_key') {
+    const apiKey = await promptApiKey(provider, deps);
+    if (!apiKey) {
+      const err = new Error('No API key provided.');
+      err.code = 'missing_api_key';
+      throw err;
+    }
+    if (byteLength(apiKey) > MAX_ENGINE_LOGIN_FILE_BYTES) {
+      const err = new Error(`API key is ${byteLength(apiKey)} bytes; maximum is ${MAX_ENGINE_LOGIN_FILE_BYTES} bytes.`);
+      err.code = 'api_key_too_large';
+      throw err;
+    }
+    return {
+      payload: { api_key: apiKey },
+      summary: [{ path: 'api key', bytes: byteLength(apiKey), email: '' }],
+    };
+  }
+
+  return readEngineLoginFiles(provider, deps);
+}
+
+async function runEngineLoginCommand(args, root, deps = {}) {
+  const options = parseEngineLoginArgs(args);
+  if (options.help) {
+    printEngineLoginHelp();
+    return 0;
+  }
+
+  if (options.list) {
+    const result = await authenticatedEngineApi('/engines/logins', { method: 'GET', timeoutMs: 15000, retries: 0 }, deps);
+    if (!result.ok) {
+      console.error(result.authError ? 'Run atris login first.' : `engine login list failed: ${result.error || result.status}`);
+      return 1;
+    }
+    printBackendResult(result, { json: options.json });
+    return 0;
+  }
+
+  if (options.remove) {
+    const provider = normalizeLoginProvider(options.remove);
+    if (!provider) {
+      console.error(`Unknown engine login provider "${options.remove}". Known providers: ${knownLoginProviders().join(', ')}`);
+      return 2;
+    }
+    const result = await authenticatedEngineApi(`/engines/logins/${encodeURIComponent(provider)}`, {
+      method: 'DELETE',
+      timeoutMs: 15000,
+      retries: 0,
+    }, deps);
+    if (!result.ok) {
+      console.error(result.authError ? 'Run atris login first.' : `engine login remove failed: ${result.error || result.status}`);
+      return 1;
+    }
+    printBackendResult(result, { json: options.json });
+    return 0;
+  }
+
+  const provider = normalizeLoginProvider(options.provider);
+  if (!provider) {
+    console.error(`usage: atris engine login <provider> --yes; providers: ${knownLoginProviders().join(', ')}`);
+    return 2;
+  }
+
+  let built;
+  try {
+    built = await buildEngineLoginPayload(provider, deps);
+  } catch (err) {
+    console.error(err.message);
+    return err.code === 'missing_file' || err.code === 'missing_api_key' ? 1 : 2;
+  }
+
+  printLoginSummary(provider, built.summary);
+  if (!options.yes) {
+    const confirmed = await confirmEngineLoginUpload(provider, deps);
+    if (!confirmed) {
+      console.error('engine login upload cancelled');
+      return 1;
+    }
+  }
+
+  const result = await authenticatedEngineApi(`/engines/logins/${encodeURIComponent(provider)}`, {
+    method: 'POST',
+    body: built.payload,
+    timeoutMs: 30000,
+    retries: 0,
+  }, deps);
+  if (!result.ok) {
+    console.error(result.authError ? 'Run atris login first.' : `engine login upload failed: ${result.error || result.status}`);
+    return 1;
+  }
+  printBackendResult(result, { json: options.json });
+  return 0;
+}
+
+async function runEngineSeedCommand(args, root, deps = {}) {
+  const options = parseEngineSeedArgs(args);
+  if (options.help) {
+    printEngineSeedHelp();
+    return 0;
+  }
+
+  const provider = normalizeLoginProvider(options.provider);
+  if (!provider) {
+    console.error(`usage: atris engine seed <provider> --business <id>|--user; providers: ${knownLoginProviders().join(', ')}`);
+    return 2;
+  }
+  if ((options.business && options.user) || (!options.business && !options.user)) {
+    console.error('usage: atris engine seed <provider> --business <id>|--user');
+    return 2;
+  }
+
+  const body = options.user
+    ? { target: { type: 'user' } }
+    : { target: { type: 'business', id: options.business } };
+  const result = await authenticatedEngineApi(`/engines/logins/${encodeURIComponent(provider)}/seed`, {
+    method: 'POST',
+    body,
+    timeoutMs: 60000,
+    retries: 0,
+  }, deps);
+  if (!result.ok) {
+    console.error(result.authError ? 'Run atris login first.' : `engine seed failed: ${result.error || result.status}`);
+    return 1;
+  }
+  printBackendResult(result, { json: options.json });
+  return 0;
 }
 
 function printRoster(root) {
@@ -385,6 +846,14 @@ function engineCommand(args = []) {
   const positional = args.filter((a) => !a.startsWith('--'));
   const sub = (positional[0] || '').trim();
 
+  if (sub === 'login') {
+    return runEngineLoginCommand(args.slice(args.indexOf('login') + 1), root);
+  }
+
+  if (sub === 'seed') {
+    return runEngineSeedCommand(args.slice(args.indexOf('seed') + 1), root);
+  }
+
   if (sub === 'test') {
     return runEngineTest(positional.slice(1), { json, root });
   }
@@ -415,7 +884,7 @@ function engineCommand(args = []) {
   }
 
   if (sub === 'help') {
-    console.log('\n  atris engine            roster + current default\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+    console.log('\n  atris engine            roster + current default\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
     return 0;
   }
 
@@ -448,5 +917,17 @@ module.exports = {
   runEngineTest,
   parseDispatchArgs,
   runDispatchCommand,
+  ENGINE_LOGIN_MANIFESTS,
+  MAX_ENGINE_LOGIN_FILE_BYTES,
+  expandHomePath,
+  normalizeLoginProvider,
+  detectedEmailFromContent,
+  readEngineLoginFiles,
+  parseEngineLoginArgs,
+  parseEngineSeedArgs,
+  redactBackendResponse,
+  buildEngineLoginPayload,
+  runEngineLoginCommand,
+  runEngineSeedCommand,
   HOUSE_ENGINE,
 };
