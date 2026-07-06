@@ -5,25 +5,10 @@
       "scope": "which repo/surface this lesson applies to",
       "applies_to": "array of file paths the bug pattern lives in",
       "detector": "shell command — exits 0 when the lesson is resolved (bug pattern gone), non-zero when still present",
-      "status": "one of: observed | open | attempted | resolved"
+      "status": "one of: observed | open | attempted | resolved",
+      "mechanism": "file/test pointer for resolved deterministic mechanisms"
     },
     "note": "If a lesson has no detector, self-heal falls back to keyword grep and never auto-promotes status. Observation-only lessons (process rules, not fixable bugs) should carry status:observed and no detector."
-  },
-  "diminishing-returns-cluster": {
-    "scope": "atris-cli",
-    "applies_to": [
-      "commands/member.js"
-    ],
-    "status": "observed",
-    "notes": "Process rule, not a code-detectable state. CLI-275..279 were 5 consecutive micro-tweaks to one scanner function (near-zero marginal value). At orient time, if the last 3 task titles share a prefix and the same file is in every recent diff, stop the cluster and diversify."
-  },
-  "gate-saturation-regime": {
-    "scope": "atris-cli",
-    "applies_to": [
-      "atris/team/auto-improver"
-    ],
-    "status": "observed",
-    "notes": "Whole-loop regime rule (broader than diminishing-returns-cluster). When the codebase has hardened (rising suite, surfaces verify clean) AND the human accept gate has saturated (verified work piling certified-but-unaccepted, growing ~1/tick), shipping another change is ~0 marginal value — the bottleneck is downstream. Priority: (1) depth/consolidation that deletes bug-classes over breadth of new pins; (2) surface the gate as THE bottleneck, prefer fewer higher-impact changes; (3) never manufacture pins to keep tick-count up. Proposals outpacing acceptance by ~30+ means throughput is not the constraint."
   },
   "staleness-shell-injection-guard": {
     "scope": "atris-cli",
@@ -81,26 +66,6 @@
     "status": "resolved",
     "last_detected": "2026-04-20"
   },
-  "map-line-drift": {
-    "scope": "atris-cli",
-    "applies_to": [
-      "commands/workflow.js",
-      "commands/init.js",
-      "commands/brainstorm.js"
-    ],
-    "status": "observed",
-    "notes": "Process rule, not a fixable code state. clean.js healer partially mitigates but end-line drift still needs human verification post-feature."
-  },
-  "human-output-t21-fail": {
-    "scope": "atris-cli",
-    "applies_to": [
-      "commands/autopilot.js",
-      "commands/status.js",
-      "commands/workflow.js"
-    ],
-    "status": "observed",
-    "notes": "Output-budget rule. Needs a real end-to-end runner to turn into a detector; deferring to v3.9."
-  },
   "escape-regexp-single-home": {
     "scope": "atris-cli",
     "applies_to": [
@@ -119,8 +84,69 @@
     "status": "resolved",
     "last_detected": "2026-06-13"
   },
-  "experiment-tick-prompt-cot-oneliner": {
-    "status": "observed",
-    "scope": "atris-cli"
+  "outbound-artifacts-must-render-before-send": {
+    "scope": "atris-cli",
+    "status": "resolved",
+    "resolved_at": "2026-07-06",
+    "mechanism": "scripts/outbound-artifact-gate.js blocks raw HTML plain sends and missing HTML render proof; test/outbound-artifact-gate.test.js pins bad and good sends."
+  },
+  "verify-not-runnable": {
+    "scope": "atris-cli",
+    "status": "resolved",
+    "resolved_at": "2026-07-06",
+    "mechanism": "commands/autopilot.js validateVerifyCommandShape rejects markdown backticks and prose expectations before a tick runs; test/autopilot-plan-review.test.js and test/autopilot-verify-vocabulary.test.js pin it."
+  },
+  "verify-not-falsifiable": {
+    "scope": "atris-cli",
+    "status": "resolved",
+    "resolved_at": "2026-07-06",
+    "mechanism": "commands/autopilot.js pre-runs Verify and records verify-not-falsifiable when it passes before work; test/autopilot-verify-falsifiability.test.js pins trivial, pre-passing, and valid missing-file cases."
+  },
+  "play-test-env-leak": {
+    "scope": "atris-cli",
+    "status": "resolved",
+    "resolved_at": "2026-07-06",
+    "mechanism": "test/helpers/agent-env.js scrubAgentEnv removes ATRIS_PROFILE, ATRIS_PLAYER, and ATRIS_USERNAME from spawned CLI tests; test/commands.test.js play-mode coverage uses it."
+  },
+  "features-gitignored-by-default": {
+    "scope": "atris-cli",
+    "status": "resolved",
+    "resolved_at": "2026-07-06",
+    "mechanism": "test/lessons-burndown.test.js checks every public atris/features package entry has matching .gitignore allowlist lines.",
+    "applies_to": [
+      "package.json",
+      ".gitignore"
+    ],
+    "detector": "node --test test/lessons-burndown.test.js --test-name-pattern \"current public feature package entries are gitignore-allowlisted\""
+  },
+  "judge-never-patches": {
+    "scope": "atris-cli",
+    "status": "resolved",
+    "resolved_at": "2026-07-06",
+    "mechanism": "lib/task-db.js rejects positive pre-acceptance review when judge equals worker; lib/auto-accept-certified.js requires independent review before autoland."
+  },
+  "work-must-land-or-it-never-happened": {
+    "scope": "atris-cli",
+    "status": "resolved",
+    "resolved_at": "2026-07-06",
+    "mechanism": "commands/land.js landSummary feeds the boot banner in bin/atris.js and test/land.test.js pins the land board plus reap flow."
+  },
+  "private-data-follows-the-files-array": {
+    "scope": "atris-cli",
+    "status": "resolved",
+    "resolved_at": "2026-07-06",
+    "mechanism": "test/lessons-burndown.test.js blocks private package roots and requires private/ plus decks/private/ in both gitignore and npmignore.",
+    "applies_to": [
+      "package.json",
+      ".gitignore",
+      ".npmignore"
+    ],
+    "detector": "node --test test/lessons-burndown.test.js --test-name-pattern \"current package privacy roots stay private\""
+  },
+  "ship-add-all-sweeps-regenerated-files": {
+    "scope": "atris-cli",
+    "status": "resolved",
+    "resolved_at": "2026-07-06",
+    "mechanism": "commands/worktree.js restoreRegeneratedAdapterChurn skips unstaged AGENTS.md, CLAUDE.md, and GEMINI.md churn; test/worktree-ship-detached.test.js pins it."
   }
 }

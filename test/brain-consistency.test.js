@@ -21,10 +21,12 @@ test('retired lesson/doctrine stores are folded, not left as parallel files', ()
     'atris/INTUITION.md (unused init template) should be deleted, not kept as parallel doctrine');
 });
 
-test('the folded learnings.jsonl entry survives in lessons.md (no memory loss)', () => {
+test('non-mechanizable folded lessons can be burned down without restoring retired stores', () => {
   const md = fs.readFileSync(path.join(ATRIS, 'lessons.md'), 'utf8');
-  assert.match(md, /narrow-grep-hides-matches/,
-    'the folded learnings.jsonl lesson must remain in lessons.md');
+  assert.match(md, /Mechanized Lesson Burn-Down/,
+    'lessons.md should record the burn-down landing');
+  assert.doesNotMatch(md, /narrow-grep-hides-matches/,
+    'the non-mechanizable folded lesson should not be restored from a retired store');
 });
 
 test('lessons.md and lessons.json are slug-consistent (no orphan typed sidecar entries)', () => {

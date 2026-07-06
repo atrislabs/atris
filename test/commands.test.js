@@ -16843,12 +16843,13 @@ test('ensureWikiScaffold migrates legacy syntheses pages into briefs', () => {
   }
 });
 
-test('search with no atris/logs prints error', () => {
+test('search without workspace data prints compact empty result', () => {
   const dir = makeTempDir();
   try {
     const res = runCli(['search', 'auth'], { cwd: dir });
-    assert.equal(res.status, 1);
-    assert.match(res.stdout, /atris init/);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Feature: none/);
+    assert.match(res.stdout, /Journal: none/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -16861,7 +16862,7 @@ test('search finds matches in journal files', () => {
     writeTodayLog(dir, '# Log\n\n## Inbox\n\n- **I1:** Fix the auth module\n');
     const res = runCli(['search', 'auth'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Found 1 match/);
+    assert.match(res.stdout, /Journal:\n- atris\/logs\/2026\/2026-07-06\.md:5: - \*\*I1:\*\* Fix the auth module/);
     assert.match(res.stdout, /auth/i);
   } finally {
     cleanupTempDir(dir);
@@ -16875,7 +16876,7 @@ test('search is case-insensitive', () => {
     writeTodayLog(dir, '# Log\n\n## Notes\n\nDebugged the AUTH flow\n');
     const res = runCli(['search', 'auth'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Found 1 match/);
+    assert.match(res.stdout, /Journal:\n- atris\/logs\/2026\/2026-07-06\.md:5: Debugged the AUTH flow/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -16888,7 +16889,7 @@ test('search with no matches prints no matches', () => {
     writeTodayLog(dir, '# Log\n\n## Notes\n\nNothing relevant here\n');
     const res = runCli(['search', 'xyznonexistent'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /No matches found/);
+    assert.match(res.stdout, /Journal: none/);
   } finally {
     cleanupTempDir(dir);
   }
