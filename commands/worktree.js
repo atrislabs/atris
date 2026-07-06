@@ -195,9 +195,12 @@ function baseBranchName(ref) {
   return String(ref || '').replace(/^refs\/heads\//, '').replace(/^origin\//, '');
 }
 
-function statusCounts(root, { ignoredUnstagedFiles = new Set() } = {}) {
+function statusCounts(root, { ignoredUnstagedFiles = new Set(), ignoredUntrackedFiles = new Set() } = {}) {
   if (!fs.existsSync(root)) return null;
-  const result = runGit(['status', '--porcelain'], { cwd: root, check: false });
+  // -uall expands untracked directories to individual files so ignoredUntrackedFiles
+  // can match exact paths (plain porcelain collapses them to "?? dir/").
+  const statusArgs = ignoredUntrackedFiles.size ? ['status', '--porcelain', '-uall'] : ['status', '--porcelain'];
+  const result = runGit(statusArgs, { cwd: root, check: false });
   if (result.status !== 0) return null;
   let staged = 0;
   let unstaged = 0;
@@ -206,6 +209,7 @@ function statusCounts(root, { ignoredUnstagedFiles = new Set() } = {}) {
     const file = line.slice(3);
     if (ignoredUnstagedFiles.has(file) && line[0] === ' ' && line[1] !== ' ') continue;
     if (line.startsWith('??')) {
+      if (ignoredUntrackedFiles.has(file)) continue;
       untracked += 1;
       continue;
     }
@@ -586,7 +590,8 @@ function guard(args) {
     console.error('run: atris worktree start --member <member>|--agent <name> --task "<short task>" --claim');
     return 2;
   }
-  const counts = statusCounts(root);
+  // The CLI's own worktree metadata (written by `worktree start`) must not count as dirt.
+  const counts = statusCounts(root, { ignoredUntrackedFiles: new Set(['.atris/agent-worktree.json']) });
   if (counts && (counts.staged || counts.unstaged || counts.untracked) && !hasFlag(args, '--allow-dirty')) {
     console.error(`blocked: checkout is dirty staged=${counts.staged} unstaged=${counts.unstaged} untracked=${counts.untracked}`);
     return 3;
