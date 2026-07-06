@@ -54,6 +54,7 @@
   ],
   "scripts": {
     "test": "node --test",
+    "test:fast": "xargs node --test < test/fast-tests.txt",
     "lint:decks": "node scripts/lint-all-decks.js",
     "publish:release": "node scripts/publish-atris-release.js",
     "prepare": "cp scripts/pre-commit .git/hooks/pre-commit 2>/dev/null && cp scripts/commit-msg .git/hooks/commit-msg 2>/dev/null && cp scripts/prepare-commit-msg .git/hooks/prepare-commit-msg 2>/dev/null && chmod +x .git/hooks/pre-commit .git/hooks/commit-msg .git/hooks/prepare-commit-msg || true"

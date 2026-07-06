@@ -421,6 +421,7 @@ function shipHelp() {
   console.log('  --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('  --local         merge into the local primary checkout instead of pushing and opening a PR');
   console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
+  console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
 }
 
 function shipWorktree(args) {
@@ -728,6 +729,7 @@ function guide() {
   console.log('4. Ship only from the isolated worktree:');
   console.log('   atris worktree ship --message "<commit>" --verify "<cmd>" --merge [--target <ref>]');
   console.log('   --target <ref> overrides the default landing target (default: branch atris-base, else origin default branch)');
+  console.log('   recommended verify: npm run test:fast && node --test <focused files>');
   console.log('');
   console.log('5. Clean merged worktrees:');
   console.log('   atris worktree cleanup');
@@ -746,6 +748,7 @@ function help() {
   console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>] [--local]');
   console.log('    --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('    --local         merge into the local primary checkout instead of pushing and opening a PR');
+  console.log('    recommended verify: npm run test:fast && node --test <focused files>');
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');
