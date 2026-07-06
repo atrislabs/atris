@@ -246,7 +246,16 @@ function landSummarySafe(root) {
   }
 }
 
+function refreshLandingRefs(root) {
+  const remotes = spawnSync('git', ['remote'], { cwd: root, encoding: 'utf8', timeout: 10000 });
+  if (remotes.status !== 0 || !remotes.stdout.split(/\r?\n/).includes('origin')) return;
+  for (const branch of ['master', 'main']) {
+    spawnSync('git', ['fetch', 'origin', branch], { cwd: root, encoding: 'utf8', timeout: 30000 });
+  }
+}
+
 function sweepLanding(root, { ttlDays, staleHours, now = Date.now() } = {}) {
+  refreshLandingRefs(root);
   const { collectBoard, reap } = require('./land');
   const beforeBoard = collectBoard(root, { ttlDays, staleHours, now });
   const stale = beforeBoard.branches

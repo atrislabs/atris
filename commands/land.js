@@ -29,6 +29,8 @@ function refExists(root, ref) {
 
 function baseBranch(root, override = '') {
   if (override && refExists(root, override)) return override;
+  if (refExists(root, 'origin/master')) return 'origin/master';
+  if (refExists(root, 'origin/main')) return 'origin/main';
   if (refExists(root, 'master')) return 'master';
   if (refExists(root, 'main')) return 'main';
   return '';

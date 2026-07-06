@@ -6,6 +6,7 @@ const { spawnSync } = require('child_process');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
+const COMMAND_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
 function runGit(args, { cwd = process.cwd(), check = true } = {}) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -17,7 +18,14 @@ function runGit(args, { cwd = process.cwd(), check = true } = {}) {
 }
 
 function runCommand(command, { cwd = process.cwd(), check = true } = {}) {
-  const result = spawnSync(command, { cwd, encoding: 'utf8', shell: true, stdio: 'pipe' });
+  const result = spawnSync(command, {
+    cwd,
+    encoding: 'utf8',
+    shell: true,
+    stdio: 'pipe',
+    maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+  });
+  if (result.error) throw result.error;
   if (check && result.status !== 0) {
     const msg = (result.stderr || result.stdout || `${command} failed`).trim();
     throw new Error(msg);
