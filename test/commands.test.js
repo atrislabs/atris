@@ -6962,7 +6962,8 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
     const claim = runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env });
     assert.equal(claim.status, 0, claim.stderr);
     assert.match(claim.stdout, new RegExp(`claimed ${ref} as codex`));
-    assert.match(claim.stdout, new RegExp(`Next: make the change, then run: atris task ready ${ref} --verify`));
+    assert.match(claim.stdout, new RegExp(`Next: make the change, then run: atris task ready ${ref} --verify "git diff --check"`));
+    assert.match(claim.stdout, /Use a different verifier only if autoland can rerun it/);
     assert.match(claim.stdout, /Then: atris autoland tick/);
 
     const claimed = runCli(['task', 'list', '--status', 'claimed'], { cwd: dir, env });
@@ -10888,6 +10889,22 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
     assert.equal(readyText.status, 0, readyText.stderr);
     assert.match(readyText.stdout, /proof is ready; autoland runs the second check and lands it on the next tick\./);
     assert.doesNotMatch(readyText.stdout, /one more agent check before human approval/);
+
+    const externalAdd = runCli(['task', 'add', 'Autoland external verifier copy', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(externalAdd.status, 0, externalAdd.stderr);
+    const externalRef = JSON.parse(externalAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', externalRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    fs.writeFileSync(path.join(dir, 'proof.txt'), 'done\n');
+    const externalReady = runCli([
+      'task', 'ready', externalRef,
+      '--verify', 'test -f proof.txt',
+      '--result', 'Teammates can trust the handoff faster because the finished proof is checked before review.',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(externalReady.status, 0, externalReady.stderr);
+    assert.match(externalReady.stdout, /proof is ready; this verifier needs a second agent review because autoland cannot rerun it\./);
+    assert.match(externalReady.stdout, /outside the auto-certify allowlist/);
+    assert.doesNotMatch(externalReady.stdout, /autoland runs the second check and lands it on the next tick\./);
   } finally {
     cleanupTempDir(dir);
   }

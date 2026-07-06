@@ -1115,22 +1115,40 @@ function shouldSkipContextGatherer() {
   return !useInteractiveAtrisUi() || initNonInteractiveFlag();
 }
 
-const FIRST_USE_COMMAND = 'atris "help me choose the first useful step for this project"';
+function firstUseCommand() {
+  return 'atris "help me choose the first useful step for this project"';
+}
+
+function firstMissionObjective() {
+  return 'Create FIRST_PROOF.md in this project';
+}
 
 function localOwnerName() {
   return process.env.USER || os.userInfo?.().username || 'operator';
 }
 
+function firstMissionOwner(root = process.cwd()) {
+  const defaultOwner = path.join(root, 'atris', 'team', 'executor', 'MEMBER.md');
+  return fs.existsSync(defaultOwner) ? 'executor' : localOwnerName();
+}
+
+function firstMissionCommand() {
+  return `atris mission start "${firstMissionObjective()}" --owner ${firstMissionOwner()} --runner manual --lane code --verify "test -f FIRST_PROOF.md" --stop "FIRST_PROOF.md exists"`;
+}
+
 function printFirstUseNext() {
-  console.log(`Next: ${FIRST_USE_COMMAND}`);
+  console.log(`Next: ${firstMissionCommand()}`);
+  console.log(`Then: ${firstUseCommand()}`);
 }
 
 function printStarterTaskNext(starter) {
   if (starter && starter.display_id) {
     console.log(`Next: atris task claim ${starter.display_id} --as ${localOwnerName()}`);
+    console.log(`Mission: ${firstMissionCommand()}`);
     return;
   }
   console.log('Next: atris task next --as ' + localOwnerName());
+  console.log(`Mission: ${firstMissionCommand()}`);
 }
 
 async function interactiveEntry(userInput) {

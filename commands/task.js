@@ -5537,7 +5537,8 @@ function cmdClaim(args) {
     }
     const ref = taskRef(compactTaskFromProjection(projection, taskId));
     console.log(`claimed ${ref} as ${owner}`);
-    console.log(`Next: make the change, then run: atris task ready ${ref} --verify "<check command>" --result "<who can do what now and why>"`);
+    console.log(`Next: make the change, then run: atris task ready ${ref} --verify "git diff --check" --result "<who can do what now and why>"`);
+    console.log('Use a different verifier only if autoland can rerun it, such as `node --test <file>`.');
     console.log('Then: atris autoland tick');
   } else {
     const recoveryCommand = result.reason === 'already_claimed' && result.claimed_by
@@ -8410,6 +8411,7 @@ function cmdReady(args) {
   });
   const reviewChat = taskReviewChatHandoff(verifierTask, { reviewer: 'codex-review' });
   const autolandOn = require('../lib/autoland').liveAcceptAuthorization(taskDb.workspaceRoot()).ok;
+  const needsExternalVerifier = Boolean(usedVerify && !verifyAutoCertifyAllowed);
   const handoff = {
     native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
     career_xp_status: 'pending_human_accept',
@@ -8417,6 +8419,8 @@ function cmdReady(args) {
     rule: autolandOn
       ? (agentCertified
         ? 'double-check complete; autoland will accept this on the next tick.'
+        : needsExternalVerifier
+        ? 'proof is ready; this verifier needs a second agent review because autoland cannot rerun it.'
         : 'proof is ready; autoland runs the second check and lands it on the next tick.')
       : (agentCertified
         ? 'double-check complete; ready to keep moving. XP is awarded only after the human approves the task.'
