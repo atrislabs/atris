@@ -47,6 +47,10 @@ function seedRecords(root, name, count, { badFrom = Infinity } = {}) {
   }
 }
 
+function readPushCursorState(root, name) {
+  return JSON.parse(fs.readFileSync(path.join(root, '.atris', 'state', 'processes', name, 'push-cursor.json'), 'utf8'));
+}
+
 function cliEnv(overrides = {}) {
   const env = {
     ...process.env,
@@ -455,8 +459,16 @@ test('publish pushes artifact and records with cursor dedupe', async () => {
     assert.match(first.stdout, /next: promote on server with "atris compile promote demo --server --agent agent-1"/);
     assert.equal(mock.requests.every((request) => request.authorization === 'Bearer test-token'), true);
     assert.equal(mock.requests.filter((request) => request.method === 'POST' && request.url.endsWith('/records')).length, 2);
+    const firstRecordBodies = mock.requests
+      .filter((request) => request.method === 'POST' && request.url.endsWith('/records'))
+      .map((request) => request.body);
+    assert.match(firstRecordBodies[0].record_key, /^compile-record-v1:[a-f0-9]{64}$/);
+    assert.match(firstRecordBodies[1].record_key, /^compile-record-v1:[a-f0-9]{64}$/);
+    assert.notEqual(firstRecordBodies[0].record_key, firstRecordBodies[1].record_key);
 
-    const cursor = JSON.parse(fs.readFileSync(path.join(root, '.atris', 'state', 'processes', 'demo', 'push-cursor.json'), 'utf8'));
+    const cursorState = readPushCursorState(root, 'demo');
+    const cursor = Object.values(cursorState.contexts)[0];
+    assert.equal(cursorState.version, 1);
     assert.equal(cursor.nextRecordIndex, 2);
     assert.equal(cursor.agent_id, 'agent-1');
     assert.equal(cursor.api_base, `http://127.0.0.1:${mock.port}/api`);
@@ -469,6 +481,133 @@ test('publish pushes artifact and records with cursor dedupe', async () => {
     assert.equal(secondRequests.filter((request) => request.method === 'POST' && request.url.endsWith('/records')).length, 0);
     assert.equal(secondRequests.filter((request) => request.method === 'PUT' && request.url.endsWith('/artifact')).length, 1);
     assert.equal(secondRequests.filter((request) => request.method === 'POST' && request.url.endsWith('/backtest')).length, 1);
+  } finally {
+    await closeServer(mock.server);
+  }
+});
+
+test('publish keeps record cursors separate when alternating publish targets', async () => {
+  const root = makeRoot();
+  writeRunner(root, 'demo', DOUBLER);
+  const manifest = defaultManifest('demo');
+  manifest.version = 1;
+  writeManifest(root, 'demo', manifest);
+  appendRecord(root, 'demo', { input: { n: 1 }, output: { doubled: 2 } });
+  appendRecord(root, 'demo', { input: { n: 2 }, output: { doubled: 4 } });
+
+  const mock = await startHttpMock((request) => {
+    const match = request.url.match(/^\/api\/processes\/([^/]+)\/demo\/(artifact|records|backtest)$/);
+    if (!match) return { status: 404, body: { detail: `unexpected ${request.method} ${request.url}` } };
+    const action = match[2];
+    if (request.method === 'PUT' && action === 'artifact') {
+      return { body: { success: true, manifest: { ...request.body.manifest, status: 'draft' } } };
+    }
+    if (request.method === 'POST' && action === 'records') {
+      return { body: { success: true, record: request.body } };
+    }
+    if (request.method === 'POST' && action === 'backtest') {
+      return {
+        body: {
+          success: true,
+          result: { version: 1, total: 2, passed: 2, accuracy: 1, threshold: 0.99, failures: [] },
+          manifest: { name: 'demo', version: 1, status: 'draft' },
+        },
+      };
+    }
+    return { status: 404, body: { detail: `unexpected ${request.method} ${request.url}` } };
+  });
+
+  try {
+    const env = cliEnv({
+      ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api`,
+      ATRIS_TOKEN: 'test-token',
+    });
+    const publish = (agent) => runCliAsync(['compile', 'publish', 'demo', '--agent', agent], { cwd: root, env });
+
+    const first = await publish('agent-a');
+    assert.equal(first.status, 0, `${first.stdout}\n${first.stderr}`);
+    assert.match(first.stdout, /pushed 2 new records \(2 total local\)/);
+
+    const afterFirst = mock.requests.length;
+    const second = await publish('agent-b');
+    assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
+    assert.match(second.stdout, /pushed 2 new records \(2 total local\)/);
+    const secondRequests = mock.requests.slice(afterFirst);
+    assert.equal(secondRequests.filter((request) => request.method === 'POST' && request.url.endsWith('/records')).length, 2);
+
+    const afterSecond = mock.requests.length;
+    const third = await publish('agent-a');
+    assert.equal(third.status, 0, `${third.stdout}\n${third.stderr}`);
+    assert.match(third.stdout, /records up to date \(2 already pushed\)/);
+    const thirdRequests = mock.requests.slice(afterSecond);
+    assert.equal(thirdRequests.filter((request) => request.method === 'POST' && request.url.endsWith('/records')).length, 0);
+
+    const state = readPushCursorState(root, 'demo');
+    const cursors = Object.values(state.contexts);
+    assert.equal(cursors.length, 2);
+    assert.deepEqual(cursors.map((cursor) => cursor.agent_id).sort(), ['agent-a', 'agent-b']);
+    assert.deepEqual(cursors.map((cursor) => cursor.nextRecordIndex).sort(), [2, 2]);
+  } finally {
+    await closeServer(mock.server);
+  }
+});
+
+test('publish advances the push cursor after each successful record post', async () => {
+  const root = makeRoot();
+  writeRunner(root, 'demo', DOUBLER);
+  const manifest = defaultManifest('demo');
+  manifest.version = 1;
+  writeManifest(root, 'demo', manifest);
+  appendRecord(root, 'demo', { input: { n: 1 }, output: { doubled: 2 } });
+  appendRecord(root, 'demo', { input: { n: 2 }, output: { doubled: 4 } });
+
+  let failedSecondRecordOnce = false;
+  const recordBodies = [];
+  const mock = await startHttpMock((request) => {
+    if (request.method === 'PUT' && request.url === '/api/processes/agent-1/demo/artifact') {
+      return { body: { success: true, manifest: { ...request.body.manifest, status: 'draft' } } };
+    }
+    if (request.method === 'POST' && request.url === '/api/processes/agent-1/demo/records') {
+      recordBodies.push(request.body);
+      if (!failedSecondRecordOnce && recordBodies.length === 2) {
+        failedSecondRecordOnce = true;
+        return { status: 500, body: { error: 'simulated record write failure' } };
+      }
+      return { body: { success: true, record: request.body } };
+    }
+    if (request.method === 'POST' && request.url === '/api/processes/agent-1/demo/backtest') {
+      return {
+        body: {
+          success: true,
+          result: { version: 1, total: 2, passed: 2, accuracy: 1, threshold: 0.99, failures: [] },
+          manifest: { name: 'demo', version: 1, status: 'draft' },
+        },
+      };
+    }
+    return { status: 404, body: { detail: `unexpected ${request.method} ${request.url}` } };
+  });
+
+  try {
+    const env = cliEnv({
+      ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api`,
+      ATRIS_TOKEN: 'test-token',
+    });
+    const first = await runCliAsync(['compile', 'publish', 'demo', '--agent', 'agent-1'], { cwd: root, env });
+    assert.notEqual(first.status, 0);
+    const cursorAfterFailure = Object.values(readPushCursorState(root, 'demo').contexts)[0];
+    assert.equal(cursorAfterFailure.nextRecordIndex, 1);
+
+    const beforeRetry = mock.requests.length;
+    const retry = await runCliAsync(['compile', 'publish', 'demo', '--agent', 'agent-1'], { cwd: root, env });
+    assert.equal(retry.status, 0, `${retry.stdout}\n${retry.stderr}`);
+    assert.match(retry.stdout, /pushed 1 new record \(2 total local\)/);
+    const retryRecordRequests = mock.requests
+      .slice(beforeRetry)
+      .filter((request) => request.method === 'POST' && request.url.endsWith('/records'));
+    assert.equal(retryRecordRequests.length, 1);
+    assert.equal(retryRecordRequests[0].body.record_key, recordBodies[1].record_key);
+    const cursorAfterRetry = Object.values(readPushCursorState(root, 'demo').contexts)[0];
+    assert.equal(cursorAfterRetry.nextRecordIndex, 2);
   } finally {
     await closeServer(mock.server);
   }
