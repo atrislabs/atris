@@ -691,6 +691,119 @@ test('wish grant mismatch guard stops disjoint answers and shows the list again'
   }
 });
 
+test('wish review latest appends record', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-old',
+      ts: '2026-07-06T10:00:00.000Z',
+      text: 'make old thing clearer',
+      status: 'delegated',
+      dispatched_at: '2026-07-06T10:00:00.000Z',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-new',
+      ts: '2026-07-06T11:00:00.000Z',
+      text: 'make new thing clearer',
+      status: 'complete',
+      completed_at: '2026-07-06T11:00:00.000Z',
+    });
+
+    const reviewed = runCli(['wish', 'review', 'It landed cleanly.'], {
+      cwd: dir,
+      env: { ATRIS_AGENT_ID: 'keshav' },
+    });
+    assert.equal(reviewed.status, 0, reviewed.stderr || reviewed.stdout);
+    assert.match(reviewed.stdout, /^Review captured for "make new thing clearer"\.\n$/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.deepEqual(records.at(-1), {
+      kind: 'review',
+      wish_id: 'wish-new',
+      ts: records.at(-1).ts,
+      review_text: 'It landed cleanly.',
+      review_score: null,
+      reviewed_by: 'keshav',
+    });
+
+    const list = runCli(['wish', 'list'], { cwd: dir });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    assert.match(list.stdout, /make new thing clearer - came true \[reviewed\]/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish review by id appends record for that wish', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-target',
+      ts: '2026-07-06T10:00:00.000Z',
+      text: 'make the target clearer',
+      status: 'delegated',
+      dispatched_at: '2026-07-06T10:00:00.000Z',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-other',
+      ts: '2026-07-06T11:00:00.000Z',
+      text: 'make the other thing clearer',
+      status: 'delegated',
+      dispatched_at: '2026-07-06T11:00:00.000Z',
+    });
+
+    const reviewed = runCli(['wish', 'review', 'wish-target', 'Useful but too broad.'], { cwd: dir });
+    assert.equal(reviewed.status, 0, reviewed.stderr || reviewed.stdout);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.at(-1).kind, 'review');
+    assert.equal(records.at(-1).wish_id, 'wish-target');
+    assert.equal(records.at(-1).review_text, 'Useful but too broad.');
+    assert.equal(records.at(-1).review_score, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish review missing wish errors clearly', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const reviewed = runCli(['wish', 'review', 'latest', 'Nothing to review yet.'], { cwd: dir });
+    assert.equal(reviewed.status, 2);
+    assert.match(reviewed.stderr, /No wishes to review yet\./);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'wishes.jsonl')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish review score flag parsed', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-scored',
+      ts: '2026-07-06T10:00:00.000Z',
+      text: 'make scoring clearer',
+      status: 'delegated',
+      dispatched_at: '2026-07-06T10:00:00.000Z',
+    });
+
+    const reviewed = runCli(['wish', 'review', 'latest', 'This missed the point.', '--score', '-1'], { cwd: dir });
+    assert.equal(reviewed.status, 0, reviewed.stderr || reviewed.stdout);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.at(-1).kind, 'review');
+    assert.equal(records.at(-1).wish_id, 'wish-scored');
+    assert.equal(records.at(-1).review_score, -1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish list stays in plain language without ids', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();

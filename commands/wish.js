@@ -167,6 +167,7 @@ function showHelp() {
   console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--json] [--no-mission]');
   console.log('       atris wish list');
   console.log('       atris wish grant <n> "<answer>" [--engine <id>] [--json] [--no-mission]');
+  console.log('       atris wish review [<id>|latest] "<one sentence>" [--score <-1|0|1 or 1-5>]');
   console.log('');
 }
 
@@ -194,6 +195,21 @@ function readFlag(args, name, fallback = '') {
 
 function stripFlags(args) {
   const valueFlags = new Set(['--engine']);
+  const out = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i] || '');
+    if (arg.startsWith('--')) {
+      const flagName = arg.split('=')[0];
+      if (valueFlags.has(flagName) && !arg.includes('=') && args[i + 1] && !String(args[i + 1]).startsWith('--')) i += 1;
+      continue;
+    }
+    out.push(args[i]);
+  }
+  return out;
+}
+
+function stripReviewFlags(args) {
+  const valueFlags = new Set(['--score']);
   const out = [];
   for (let i = 0; i < args.length; i += 1) {
     const arg = String(args[i] || '');
@@ -284,12 +300,40 @@ function readWishEvents(root = process.cwd()) {
 function readWishes(root = process.cwd()) {
   const byId = new Map();
   for (const event of readWishEvents(root)) {
+    if (event && event.kind === 'review') {
+      const wishId = String(event.wish_id || '').trim();
+      if (!wishId) continue;
+      const current = byId.get(wishId) || {
+        id: wishId,
+        ts: event.ts,
+        text: '',
+        answers: [],
+        reviews: [],
+        first_ts: event.ts,
+      };
+      const review = {
+        ts: event.ts,
+        review_text: event.review_text || '',
+        review_score: event.review_score === undefined ? null : event.review_score,
+        reviewed_by: event.reviewed_by || null,
+      };
+      const reviews = [...(current.reviews || []), review];
+      byId.set(wishId, {
+        ...current,
+        reviews,
+        reviewed: true,
+        review_count: reviews.length,
+        latest_review: review,
+      });
+      continue;
+    }
     if (!event || !event.id) continue;
     const current = byId.get(event.id) || {
       id: event.id,
       ts: event.ts,
       text: event.text || '',
       answers: [],
+      reviews: [],
       first_ts: event.ts,
     };
     const next = {
@@ -297,6 +341,7 @@ function readWishes(root = process.cwd()) {
       ...event,
       first_ts: current.first_ts || event.ts,
       answers: current.answers || [],
+      reviews: current.reviews || [],
     };
     const answers = eventAnswers(event);
     if (answers.length) next.answers = [...next.answers, ...answers];
@@ -775,6 +820,10 @@ function operatorStatus(wish, root = process.cwd()) {
   return wish.status || 'waiting';
 }
 
+function reviewedMarker(wish) {
+  return wish && (wish.reviewed || (Array.isArray(wish.reviews) && wish.reviews.length)) ? ' [reviewed]' : '';
+}
+
 function openWishes(root = process.cwd()) {
   return readWishes(root).filter((wish) => ['needs_input', 'waiting_input', 'delegated', 'decomposed', 'complete'].includes(String(wish.status || '')));
 }
@@ -786,8 +835,115 @@ function printList(root = process.cwd()) {
     return 0;
   }
   wishes.forEach((wish, index) => {
-    console.log(`${index + 1}. ${wish.text} - ${operatorStatus(wish, root)}`);
+    console.log(`${index + 1}. ${wish.text} - ${operatorStatus(wish, root)}${reviewedMarker(wish)}`);
   });
+  return 0;
+}
+
+function actorName() {
+  return process.env.ATRIS_AGENT_ID || process.env.USER || 'operator';
+}
+
+function parseReviewScore(args) {
+  const hasScore = args.some((arg) => {
+    const text = String(arg || '');
+    return text === '--score' || text.startsWith('--score=');
+  });
+  if (!hasScore) return { ok: true, value: null };
+  const raw = String(readFlag(args, '--score', '') || '').trim();
+  const allowed = new Set([-1, 0, 1, 2, 3, 4, 5]);
+  const value = Number(raw);
+  if (!raw || !Number.isInteger(value) || !allowed.has(value)) {
+    return {
+      ok: false,
+      message: 'wish review --score needs one of -1, 0, 1, 2, 3, 4, or 5.',
+    };
+  }
+  return { ok: true, value };
+}
+
+function reviewableWish(wish) {
+  const status = String(wish && wish.status || '').trim();
+  return status === 'delegated' || status === 'complete' || status === 'completed';
+}
+
+function wishReviewTime(wish, fallback) {
+  const parsed = Date.parse(wish.completed_at || wish.dispatched_at || wish.ts || wish.first_ts || '');
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function latestReviewableWish(wishes) {
+  let latest = null;
+  let latestTime = -Infinity;
+  wishes.forEach((wish, index) => {
+    if (!reviewableWish(wish)) return;
+    const time = wishReviewTime(wish, index);
+    if (time >= latestTime) {
+      latest = wish;
+      latestTime = time;
+    }
+  });
+  return latest;
+}
+
+function looksLikeWishId(value) {
+  return /^wish[-_]/i.test(String(value || '').trim());
+}
+
+function resolveReviewTarget(root, ref) {
+  const wishes = readWishes(root);
+  if (!wishes.length) {
+    return { ok: false, message: 'No wishes to review yet.' };
+  }
+  if (!ref || ref === 'latest') {
+    const latest = latestReviewableWish(wishes);
+    if (!latest) return { ok: false, message: 'No delegated or completed wishes to review.' };
+    return { ok: true, wish: latest };
+  }
+  const wish = wishes.find((row) => row.id === ref);
+  if (!wish) return { ok: false, message: `No wish found with id ${ref}.` };
+  return { ok: true, wish };
+}
+
+function reviewWish(args, root = process.cwd()) {
+  const score = parseReviewScore(args);
+  if (!score.ok) {
+    console.error(score.message);
+    return 2;
+  }
+  const positionals = stripReviewFlags(args);
+  const parts = positionals.slice(1).map(String).filter((value) => value.trim());
+  if (!parts.length) {
+    console.error('wish review needs one sentence of feedback.');
+    return 2;
+  }
+  const knownIds = new Set(readWishes(root).map((wish) => wish.id));
+  let targetRef = 'latest';
+  let reviewParts = parts;
+  const first = parts[0];
+  if (first === 'latest' || knownIds.has(first) || looksLikeWishId(first)) {
+    targetRef = first;
+    reviewParts = parts.slice(1);
+  }
+  const reviewText = reviewParts.join(' ').trim();
+  if (!reviewText) {
+    console.error('wish review needs one sentence of feedback.');
+    return 2;
+  }
+  const target = resolveReviewTarget(root, targetRef);
+  if (!target.ok) {
+    console.error(target.message);
+    return 2;
+  }
+  appendWishRecord(root, {
+    kind: 'review',
+    wish_id: target.wish.id,
+    ts: stampIso(),
+    review_text: reviewText,
+    review_score: score.value,
+    reviewed_by: actorName(),
+  });
+  console.log(`Review captured for ${quoteText(target.wish.text || target.wish.id)}.`);
   return 0;
 }
 
@@ -1332,6 +1488,9 @@ function wishCommand(args = []) {
   }
   if (first === 'grant' || first === 'answer') {
     return grantWish(args, process.cwd());
+  }
+  if (first === 'review') {
+    return reviewWish(args, process.cwd());
   }
   const text = stripFlags(args).join(' ').trim();
   if (!text) {
