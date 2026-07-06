@@ -345,7 +345,11 @@ function searchCommand(args = [], options = {}) {
 
   const root = options.root || process.cwd();
   const results = collectSearchResults(root, query);
-  console.log(raw ? renderRawSearch(results) : renderCompactSearch(root, results));
+  const lines = [raw ? renderRawSearch(results) : renderCompactSearch(root, results)];
+  if (totalHitCount(results) === 0 && !fs.existsSync(path.join(root, 'atris'))) {
+    lines.push('No atris folder here. Run atris init to set one up.');
+  }
+  console.log(lines.join('\n'));
   return 0;
 }
 

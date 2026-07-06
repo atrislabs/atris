@@ -16293,6 +16293,21 @@ test('search help flags print usage without workspace state', () => {
   }
 });
 
+test('search with zero hits outside a workspace points newcomers to init', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['search', 'credits'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /No matches found\./);
+    assert.match(res.stdout, /No atris folder here\. Run atris init to set one up\./);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('search walks features team wiki then journal in compact mode', () => {
   const dir = makeTempDir();
   try {

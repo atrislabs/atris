@@ -753,6 +753,10 @@ function formatPartRefs(numbers) {
   return `parts ${sorted.slice(0, -1).join(', ')} and ${sorted[sorted.length - 1]}`;
 }
 
+function partAgreement(numbers, singular, plural) {
+  return numbers.length === 1 ? singular : plural;
+}
+
 function printDecomposed(parts, delegatedParts, waitingParts) {
   console.log(`This wish has ${parts.length} ${parts.length === 1 ? 'part' : 'parts'}.`);
   parts.forEach((part) => {
@@ -766,16 +770,17 @@ function printDecomposed(parts, delegatedParts, waitingParts) {
     .filter((part) => !ownHomeNumbers.includes(part.part))
     .map((part) => part.part);
   if (delegatedNumbers.length && ownHomeNumbers.length) {
-    const needs = ownHomeNumbers.length === 1 ? 'needs its own home' : 'need their own homes';
+    const needs = partAgreement(ownHomeNumbers, 'needs its own home', 'need their own homes');
     console.log(`I can start ${formatPartRefs(delegatedNumbers)} now; ${formatPartRefs(ownHomeNumbers)} ${needs}.`);
   } else if (delegatedNumbers.length) {
     console.log(`I can start ${formatPartRefs(delegatedNumbers)} now.`);
   } else if (ownHomeNumbers.length) {
-    const needs = ownHomeNumbers.length === 1 ? 'needs its own home' : 'need their own homes';
+    const needs = partAgreement(ownHomeNumbers, 'needs its own home', 'need their own homes');
     console.log(`${formatPartRefs(ownHomeNumbers)} ${needs}.`);
   }
   if (otherWaitingNumbers.length) {
-    console.log(`${formatPartRefs(otherWaitingNumbers)} need one clearer answer before I start.`);
+    const need = partAgreement(otherWaitingNumbers, 'needs', 'need');
+    console.log(`${formatPartRefs(otherWaitingNumbers)} ${need} one clearer answer before I start.`);
   }
 }
 

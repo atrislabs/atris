@@ -252,6 +252,44 @@ test('multi-part wish decomposes and records out-of-scope parts', () => {
   }
 });
 
+test('multi-part wish uses singular agreement for one waiting part', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const res = runCli(['wish', 'fix auth and make wish list clearer'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /part 1 needs one clearer answer before I start\./);
+    assert.doesNotMatch(res.stdout, /part 1 need one clearer answer/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('multi-part wish uses plural agreement for waiting parts', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const res = runCli(['wish', 'fix auth and fix billing and make wish list clearer'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /parts 1-2 need one clearer answer before I start\./);
+    assert.doesNotMatch(res.stdout, /parts 1-2 needs one clearer answer/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish derives proof text from test nouns', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
