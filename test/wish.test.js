@@ -69,6 +69,12 @@ function todayJournalPath(dir) {
   return path.join(dir, 'atris', 'logs', String(now.getFullYear()), `${date}.md`);
 }
 
+function assertNoInventedVerbEd(output, verb, operatorText) {
+  const invented = `${verb}ed`;
+  if (new RegExp(`\\b${invented}\\b`, 'i').test(operatorText)) return;
+  assert.doesNotMatch(output, new RegExp(`\\b${invented}\\b`, 'i'));
+}
+
 test('wish capture writes the journal inbox and wishes jsonl', () => {
   const dir = makeTempDir();
   const emptyBin = path.join(dir, 'empty-bin');
@@ -103,8 +109,58 @@ test('vague wish yields numbered questions', () => {
       env: { PATH: `${fakeBin}:${systemPath}` },
     });
     assert.equal(res.status, 1, res.stderr || res.stdout);
-    assert.match(res.stdout, /^1\. What exact outcome should this create\?/);
+    assert.match(res.stdout, /^You wished: "fix auth"/);
+    assert.match(res.stdout, /1\. What outcome should auth create\?/);
+    assert.match(res.stdout, /2\. Who is auth for\?/);
+    assert.match(res.stdout, /3\. What part of auth should I change first\?/);
+    assert.match(res.stdout.trim(), /answer with atris wish grant <n> "your answer"\.$/);
+    assert.doesNotMatch(res.stdout, /What action should I take/);
     assert.doesNotMatch(res.stdout, /wish-|mission-|[A-Z0-9]{3}-\d/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('vague wish question exit restates the operator wish and asks specific gaps', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'make onboarding better'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(res.status, 1, res.stderr || res.stdout);
+    assert.match(res.stdout, /^You wished: "make onboarding better"/);
+    assert.match(res.stdout, /What outcome should onboarding create\?/);
+    assert.match(res.stdout, /Who is onboarding for\?/);
+    assert.match(res.stdout, /What part of onboarding should I change first\?/);
+    const numbered = res.stdout.split(/\r?\n/).filter((line) => /^\d+\./.test(line));
+    assert.ok(numbered.length >= 1 && numbered.length <= 3);
+    assert.match(res.stdout.trim(), /answer with atris wish grant <n> "your answer"\.$/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('delegated wish restates verbatim without invented verb forms or double hedges', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const wish = 'make the boot screen friendlier';
+    const res = runCli(['wish', wish], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /^I heard you: "make the boot screen friendlier"/);
+    assertNoInventedVerbEd(res.stdout, 'make', wish);
+    assert.doesNotMatch(res.stdout, /roughly about/);
+    assert.doesNotMatch(res.stdout, /workspace check passes/);
+    assert.match(res.stdout, /You will know it came true when the git diff whitespace check passes\./);
   } finally {
     cleanupTempDir(dir);
   }
@@ -174,6 +230,61 @@ test('json question shape is stable', () => {
     assert.equal(payload.engine, 'codex');
     assert.equal(payload.budget, 'long');
     assert.ok(Array.isArray(payload.questions));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish grant names the wish verbatim before dispatching', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const wish = 'make onboarding better';
+    const created = runCli(['wish', wish], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(created.status, 1, created.stderr || created.stdout);
+
+    const granted = runCli(['wish', 'grant', '1', 'make onboarding better for new users during account setup'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(granted.status, 0, granted.stderr || granted.stdout);
+    assert.match(granted.stdout, /^Granting wish 1: "make onboarding better"/);
+    assertNoInventedVerbEd(granted.stdout, 'make', wish);
+    assert.doesNotMatch(granted.stdout, /roughly about/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish grant mismatch guard stops disjoint answers and shows the list again', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const wish = 'make onboarding better';
+    const created = runCli(['wish', wish], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(created.status, 1, created.stderr || created.stdout);
+
+    const guarded = runCli(['wish', 'grant', '1', 'turn dashboard cards blue'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(guarded.status, 1, guarded.stderr || guarded.stdout);
+    assert.match(guarded.stdout, /^Granting wish 1: "make onboarding better"/);
+    assert.match(guarded.stdout, /This answer may be for a different wish, so I did not dispatch it\./);
+    assert.match(guarded.stdout, /1\. make onboarding better - waiting on you/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.some((record) => record.status === 'delegated'), false);
   } finally {
     cleanupTempDir(dir);
   }
