@@ -237,6 +237,93 @@ test('healthy wish delegates a task and records honest proof status', () => {
   }
 });
 
+test('wish --engine uses an explicit ready engine for task and mission execution', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const wish = 'make the boot screen friendlier';
+    const res = runCli(['wish', wish, '--engine', 'codex', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.status, 'delegated');
+    assert.equal(payload.engine, 'codex');
+    assert.equal(payload.requested_engine, 'codex');
+    assert.equal(payload.engine_fallback_reason, undefined);
+
+    const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(wishes[0].text, wish);
+    assert.equal(wishes.at(-1).engine, 'codex');
+    assert.equal(wishes.at(-1).requested_engine, 'codex');
+    assert.equal(wishes.at(-1).engine_fallback_reason, undefined);
+
+    const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
+    assert.equal(missions.find((row) => row.id === payload.mission_id).runner, 'codex');
+
+    const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    const task = projection.tasks.find((row) => row.id === payload.task_id);
+    assert.equal(task.metadata.executed_by, 'codex');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish --engine falls back when the requested engine is not ready and records the reason', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const res = runCli(['wish', 'make the boot screen friendlier', '--engine', 'devin', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.engine, 'codex');
+    assert.equal(payload.requested_engine, 'devin');
+    assert.match(payload.engine_fallback_reason, /Requested engine devin is not ready \(not_installed\); fell back to codex\./);
+
+    const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(wishes.at(-1).engine, 'codex');
+    assert.equal(wishes.at(-1).requested_engine, 'devin');
+    assert.match(wishes.at(-1).engine_fallback_reason, /fell back to codex/);
+
+    const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
+    assert.equal(missions.find((row) => row.id === payload.mission_id).runner, 'codex');
+
+    const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    const task = projection.tasks.find((row) => row.id === payload.task_id);
+    assert.equal(task.metadata.executed_by, 'codex');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish --engine errors clearly for an unknown engine id', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'make the boot screen friendlier', '--engine', 'not-real', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /Unknown engine "not-real"/);
+    assert.match(res.stderr, /Registered engine ids: .*codex/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'wishes.jsonl')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish --no-mission records without starting a mission', () => {
   const dir = makeTempDir();
   try {
