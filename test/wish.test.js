@@ -927,3 +927,195 @@ test('wish list renders stopped when its mission was stopped', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('wish --as builder records a builder slice without delegation', () => {
+  const dir = makeTempDir();
+  const emptyBin = path.join(dir, 'empty-bin');
+  fs.mkdirSync(emptyBin, { recursive: true });
+  try {
+    prepareWorkspace(dir);
+    const res = runCli(['wish', 'improve tests with more real results', '--as', 'builder'], {
+      cwd: dir,
+      env: { PATH: `${emptyBin}:${systemPath}` },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /^Builder wish: "improve tests with more real results"/);
+    assert.match(res.stdout, /Outcome: improve tests with more real results/);
+    assert.match(res.stdout, /Exit criteria: the fast test run passes and is timed\./);
+    assert.match(res.stdout, /Verify: node --test/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.at(-1).status, 'builder');
+    assert.equal(records.at(-1).mode, 'builder');
+    assert.equal(records.at(-1).task_id, undefined);
+    assert.equal(records.at(-1).mission_id, undefined);
+    assert.equal(records.at(-1).builder_slice.verify, 'node --test');
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+
+    const list = runCli(['wish', 'list'], { cwd: dir });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    assert.match(list.stdout, /improve tests with more real results - ready for builder/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish board prints wish rows with review score', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-board-reviewed',
+      ts: '2026-07-06T10:00:00.000Z',
+      text: 'make board reviewed row clearer',
+      status: 'delegated',
+      engine: 'codex',
+      verify_status: 'derived',
+    });
+    appendWishEvent(dir, {
+      kind: 'review',
+      wish_id: 'wish-board-reviewed',
+      ts: '2026-07-06T10:05:00.000Z',
+      review_text: 'Good row.',
+      review_score: 1,
+      reviewed_by: 'keshav',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-board-builder',
+      ts: '2026-07-06T11:00:00.000Z',
+      text: 'make board builder row clearer',
+      status: 'builder',
+      mode: 'builder',
+      verify_status: 'needs-review',
+    });
+
+    const board = runCli(['wish', 'board'], { cwd: dir });
+    assert.equal(board.status, 0, board.stderr || board.stdout);
+    assert.match(board.stdout, /^id\s+text\s+status\s+engine\s+verify_status\s+review/m);
+    assert.match(board.stdout, /wish-board-reviewed\s+make board reviewed row clearer\s+delegated\s+codex\s+derived\s+reviewed\/1/);
+    assert.match(board.stdout, /wish-board-builder\s+make board builder row clearer\s+builder\s+-\s+needs-review\s+-/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('bare wish prints review nudges for completed or verified wishes', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-done',
+      ts: '2026-07-06T10:00:00.000Z',
+      text: 'make completed thing clearer',
+      status: 'complete',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-verified',
+      ts: '2026-07-06T10:10:00.000Z',
+      text: 'make verified thing clearer',
+      status: 'delegated',
+      verify_status: 'verified',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-reviewed',
+      ts: '2026-07-06T10:20:00.000Z',
+      text: 'make reviewed thing clearer',
+      status: 'complete',
+    });
+    appendWishEvent(dir, {
+      kind: 'review',
+      wish_id: 'wish-reviewed',
+      ts: '2026-07-06T10:25:00.000Z',
+      review_text: 'Already reviewed.',
+      review_score: 1,
+    });
+
+    const res = runCli(['wish'], { cwd: dir });
+    assert.equal(res.status, 2);
+    assert.match(res.stdout, /Usage: atris wish/);
+    assert.match(res.stdout, /Wishes ready for review:/);
+    assert.match(res.stdout, /atris wish review wish-done "<one sentence>"/);
+    assert.match(res.stdout, /atris wish review wish-verified "<one sentence>"/);
+    assert.doesNotMatch(res.stdout, /atris wish review wish-reviewed/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish again records parent id and inherits engine override', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    appendWishEvent(dir, {
+      id: 'wish-parent',
+      ts: '2026-07-06T10:00:00.000Z',
+      text: 'make parent thing clearer',
+      status: 'delegated',
+      engine: 'codex',
+      requested_engine: 'codex',
+    });
+
+    const res = runCli(['wish', 'again', 'wish-parent', 'make follow-up clearer for operators', '--no-mission'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    const followUps = records.filter((record) => record.parent_id === 'wish-parent');
+    assert.equal(followUps.length, 2);
+    assert.match(res.stdout, new RegExp(`Created follow-up wish ${followUps[0].id} from wish-parent\\.`));
+    assert.equal(followUps[0].requested_engine, 'codex');
+    assert.equal(followUps.at(-1).requested_engine, 'codex');
+    assert.equal(followUps.at(-1).status, 'captured_no_mission');
+    assert.equal(followUps.at(-1).no_mission, true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish rewards summarizes reviews and wish review scorecards', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-wish-rewards-parent-'));
+  const dir = path.join(parent, 'cli');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      kind: 'review',
+      wish_id: 'wish-one',
+      ts: '2026-07-06T10:00:00.000Z',
+      review_text: 'First landed.',
+      review_score: 1,
+    });
+    appendWishEvent(dir, {
+      kind: 'review',
+      wish_id: 'wish-two',
+      ts: '2026-07-06T11:00:00.000Z',
+      review_text: 'Second landed.',
+      review_score: 3,
+    });
+    appendWishEvent(dir, {
+      kind: 'review',
+      wish_id: 'wish-three',
+      ts: '2026-07-06T12:00:00.000Z',
+      review_text: 'Third has no score.',
+      review_score: null,
+    });
+    const scorecards = path.join(parent, 'atrisos-backend', '.atris', 'state', 'scorecards.jsonl');
+    fs.mkdirSync(path.dirname(scorecards), { recursive: true });
+    fs.appendFileSync(scorecards, JSON.stringify({ source: 'wish_review', feedback: 'good' }) + '\n', 'utf8');
+    fs.appendFileSync(scorecards, JSON.stringify({ source: 'other', feedback: { kind: 'wish_review' } }) + '\n', 'utf8');
+    fs.appendFileSync(scorecards, JSON.stringify({ source: 'other', feedback: 'no match' }) + '\n', 'utf8');
+
+    const rewards = runCli(['wish', 'rewards'], { cwd: dir });
+    assert.equal(rewards.status, 0, rewards.stderr || rewards.stdout);
+    assert.match(rewards.stdout, /reviews count: 3/);
+    assert.match(rewards.stdout, /avg score: 2/);
+    assert.match(rewards.stdout, /last 5 review lines:/);
+    assert.match(rewards.stdout, /wish-three Third has no score\./);
+    assert.match(rewards.stdout, /reward rows found: 2/);
+  } finally {
+    cleanupTempDir(parent);
+  }
+});
