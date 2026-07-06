@@ -27,11 +27,11 @@ function runCli(args, cwd) {
 test('mission start reuses an active twin instead of cloning it', () => {
   const { base, repo } = makeRepo();
   try {
-    const first = runCli(['mission', 'start', 'improve the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
+    const first = runCli(['mission', 'start', '--no-verify', 'improve the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
     assert.equal(first.status, 0, first.stderr || first.stdout);
     const firstId = JSON.parse(first.stdout).mission.id;
 
-    const clone = runCli(['mission', 'start', 'Improve   the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
+    const clone = runCli(['mission', 'start', '--no-verify', 'Improve   the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
     assert.equal(clone.status, 0, clone.stderr || clone.stdout);
     const parsed = JSON.parse(clone.stdout);
     assert.equal(parsed.action, 'mission_reused');
@@ -48,12 +48,12 @@ test('mission start reuses an active twin instead of cloning it', () => {
 test('--duplicate forces a second mission; a different owner is not a twin', () => {
   const { base, repo } = makeRepo();
   try {
-    runCli(['mission', 'start', 'improve the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
+    runCli(['mission', 'start', '--no-verify', 'improve the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
 
-    const otherOwner = runCli(['mission', 'start', 'improve the widget pipeline', '--owner', 'validator', '--json'], repo);
+    const otherOwner = runCli(['mission', 'start', '--no-verify', 'improve the widget pipeline', '--owner', 'validator', '--json'], repo);
     assert.equal(JSON.parse(otherOwner.stdout).action, 'mission_started', 'different owner is a different mission');
 
-    const forced = runCli(['mission', 'start', 'improve the widget pipeline', '--owner', 'auto-improver', '--duplicate', '--json'], repo);
+    const forced = runCli(['mission', 'start', '--no-verify', 'improve the widget pipeline', '--owner', 'auto-improver', '--duplicate', '--json'], repo);
     assert.equal(JSON.parse(forced.stdout).action, 'mission_started', '--duplicate must bypass the gate');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
@@ -63,11 +63,11 @@ test('--duplicate forces a second mission; a different owner is not a twin', () 
 test('a stopped or completed mission is not a twin — restart is allowed', () => {
   const { base, repo } = makeRepo();
   try {
-    const first = runCli(['mission', 'start', 'improve the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
+    const first = runCli(['mission', 'start', '--no-verify', 'improve the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
     const id = JSON.parse(first.stdout).mission.id;
     assert.equal(runCli(['mission', 'stop', id, '--reason', 'test'], repo).status, 0);
 
-    const again = runCli(['mission', 'start', 'improve the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
+    const again = runCli(['mission', 'start', '--no-verify', 'improve the widget pipeline', '--owner', 'auto-improver', '--json'], repo);
     assert.equal(JSON.parse(again.stdout).action, 'mission_started', 'stopped twin must not block a fresh start');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });

@@ -646,6 +646,7 @@ const MEMBER_RUN_START_VALUE_FLAGS = [
 
 const MEMBER_RUN_START_BOOLEAN_FLAGS = [
   '--json',
+  '--no-verify',
   '--worktree',
   '--shared-checkout',
   '--no-worktree',
@@ -755,6 +756,7 @@ function startMemberRunMission(name, missionText, args = []) {
   pushFlagValue(startArgs, args, '--minutes');
   pushFlagValue(startArgs, args, '--hours');
   pushFlagValue(startArgs, args, '--base');
+  pushFlagWhenPresent(startArgs, args, '--no-verify');
   pushFlagWhenPresent(startArgs, args, '--always-on');
   pushFlagWhenPresent(startArgs, args, '--xp-task');
   pushFlagWhenPresent(startArgs, args, '--agent-xp');

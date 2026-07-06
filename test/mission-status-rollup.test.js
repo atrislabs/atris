@@ -53,13 +53,13 @@ function initWorkspace(repo) {
 }
 
 function startMainMission(repo) {
-  const res = runCli(['mission', 'start', 'main checkout mission', '--owner', 'main-lead', '--json'], { cwd: repo });
+  const res = runCli(['mission', 'start', '--no-verify', 'main checkout mission', '--owner', 'main-lead', '--json'], { cwd: repo });
   assert.equal(res.status, 0, res.stderr || res.stdout);
   return JSON.parse(res.stdout).mission;
 }
 
 function startWorktreeMission(repo) {
-  const res = runCli(['mission', 'start', 'worktree mission', '--owner', 'wt-lead', '--worktree', '--json'], { cwd: repo });
+  const res = runCli(['mission', 'start', '--no-verify', 'worktree mission', '--owner', 'wt-lead', '--worktree', '--json'], { cwd: repo });
   assert.equal(res.status, 0, res.stderr || res.stdout);
   return JSON.parse(res.stdout).mission;
 }

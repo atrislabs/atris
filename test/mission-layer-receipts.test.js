@@ -187,7 +187,7 @@ test('classifyPathsByLayer: non-array returns unknown', () => {
 test('manual mission tick records layer from --summary in receipt and mission state', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-layer-tick-test-'));
   try {
-    const started = runCli(['mission', 'start', 'layer tick mission', '--owner', 'mission-lead', '--json'], dir);
+    const started = runCli(['mission', 'start', '--no-verify', 'layer tick mission', '--owner', 'mission-lead', '--json'], dir);
     assert.equal(started.status, 0, started.stderr || started.stdout);
     const mission = JSON.parse(started.stdout).mission;
     const ticked = runCli(['mission', 'tick', mission.id, '--summary', 'wrote the lesson down; layer: beliefs', '--json'], dir);

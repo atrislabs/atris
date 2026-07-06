@@ -94,7 +94,31 @@ test('mission start preserves dynamic verifier when quoted by caller', () => {
   }
 });
 
-test('mission start warns when no verifier is attached', () => {
+test('mission start refuses when no verifier is attached', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const res = runCli([
+      'mission',
+      'start',
+      'unverified mission',
+      '--owner',
+      'mission-lead',
+      '--json',
+    ], { cwd: dir });
+
+    assert.equal(res.status, 2);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.ok, false);
+    assert.match(payload.error, /no verifier/);
+    assert.match(payload.error, /--no-verify/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission start with --no-verify creates the mission but still warns', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -107,6 +131,7 @@ test('mission start warns when no verifier is attached', () => {
       'unverified mission',
       '--owner',
       'mission-lead',
+      '--no-verify',
       '--json',
     ], { cwd: dir });
 
@@ -127,7 +152,7 @@ test('mission doctor stops flagging a drive-parked no-verifier mission (parking 
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     const started = runCli([
-      'mission', 'start', 'parked zombie', '--owner', 'mission-lead', '--json',
+      'mission', 'start', 'parked zombie', '--owner', 'mission-lead', '--no-verify', '--json',
     ], { cwd: dir });
     assert.equal(started.status, 0, started.stderr || started.stdout);
     const missionId = JSON.parse(started.stdout).mission.id;

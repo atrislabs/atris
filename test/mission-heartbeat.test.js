@@ -33,7 +33,7 @@ function runCli(args, { cwd, env = {}, timeout = 15000, allowTimeout = false } =
 }
 
 function startMission(dir, title, extraArgs = []) {
-  const res = runCli(['mission', 'start', title, '--owner', 'mission-lead', '--json', ...extraArgs], { cwd: dir });
+  const res = runCli(['mission', 'start', '--no-verify', title, '--owner', 'mission-lead', '--json', ...extraArgs], { cwd: dir });
   assert.equal(res.status, 0, res.stderr || res.stdout);
   return JSON.parse(res.stdout).mission;
 }

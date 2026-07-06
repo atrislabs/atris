@@ -34,7 +34,7 @@ test('mission start --budget quick stores tier wall and tick budget', () => {
   try {
     prepareWorkspace(dir);
     const res = runCli([
-      'mission', 'start', 'ship a quick proof',
+      'mission', 'start', '--no-verify', 'ship a quick proof',
       '--owner', 'tester',
       '--runner', 'manual',
       '--budget', 'quick',
@@ -81,7 +81,7 @@ test('mission run --budget applies a runtime tier and honors explicit max-ticks'
   try {
     prepareWorkspace(dir);
     const started = runCli([
-      'mission', 'start', 'run a tiered loop',
+      'mission', 'start', '--no-verify', 'run a tiered loop',
       '--owner', 'tester',
       '--runner', 'manual',
       '--json',
@@ -112,7 +112,7 @@ test('mission budget rejects unknown tier names', () => {
   try {
     prepareWorkspace(dir);
     const start = runCli([
-      'mission', 'start', 'bad tier',
+      'mission', 'start', '--no-verify', 'bad tier',
       '--owner', 'tester',
       '--budget', 'forever',
       '--json',

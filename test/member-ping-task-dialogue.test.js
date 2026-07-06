@@ -99,7 +99,7 @@ test('member ping delivers on both lanes: live mission and claimed task dialogue
     const missionEnv = { ...env, PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
 
     const start = runCli([
-      'mission', 'start', 'always-on growth loop',
+      'mission', 'start', '--no-verify', 'always-on growth loop',
       '--owner', 'growth',
       '--runner', 'claude',
       '--cadence', 'manual',

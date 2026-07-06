@@ -90,6 +90,7 @@ test('mission start prints a verifier-preserving tick command when verifier exis
     const start = runCli([
       'mission',
       'start',
+      '--no-verify',
       'create first proof note',
       '--owner',
       'mission-lead',
@@ -107,7 +108,7 @@ test('mission start prints a verifier-preserving tick command when verifier exis
 });
 
 function startMission(dir, title) {
-  const res = runCli(['mission', 'start', title, '--owner', 'mission-lead', '--json'], { cwd: dir });
+  const res = runCli(['mission', 'start', '--no-verify', title, '--owner', 'mission-lead', '--json'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr || res.stdout);
   return JSON.parse(res.stdout).mission;
 }
@@ -204,6 +205,7 @@ console.log(JSON.stringify({
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'fake claude receipt mission',
       '--owner',
       'mission-lead',
@@ -647,6 +649,7 @@ test('always-on mission next action does not suggest completion flag', () => {
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'watchdog mission',
       '--owner',
       'mission-lead',
@@ -774,6 +777,7 @@ test('mission tick can write a passing ad hoc verifier receipt', () => {
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'ad hoc verifier receipt mission',
       '--owner',
       'mission-lead',
@@ -854,6 +858,7 @@ test('mission complete emits a human-readable landing receipt', () => {
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'json complete receipt mission',
       '--owner',
       'mission-lead',
@@ -894,6 +899,7 @@ test('mission complete emits a human-readable landing receipt', () => {
     const humanStarted = runCli([
       'mission',
       'start',
+      '--no-verify',
       'human complete receipt mission',
       '--owner',
       'mission-lead',
@@ -930,6 +936,7 @@ test('mission complete credits ad hoc passing receipt before no-verifier fallbac
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'ad hoc verifier completion receipt',
       '--owner',
       'mission-lead',
@@ -1034,7 +1041,7 @@ test('full-budget passing tick without xp or always-on stays running and names t
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     const start = runCli([
-      'mission', 'start', 'spend the whole hour improving proofs',
+      'mission', 'start', '--no-verify', 'spend the whole hour improving proofs',
       '--owner', 'tester',
       '--lane', 'code',
       '--minutes', '60',
@@ -1114,6 +1121,7 @@ test('mission run summary starts with product landing instead of run internals',
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'human run summary landing',
       '--owner',
       'mission-lead',
@@ -1166,6 +1174,7 @@ test('mission tick landing uses step summary when provided', () => {
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'overnight self improve loop',
       '--owner',
       'mission-lead',
@@ -1296,6 +1305,7 @@ test('mission tick receipt stores result.landing with high-level verifier meanin
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'standard landing receipt mission',
       '--owner',
       'mission-lead',
@@ -1359,6 +1369,7 @@ test('mission tick result landing rewrites raw verified summaries into plain hea
       const started = runCli([
         'mission',
         'start',
+        '--no-verify',
         objective,
         '--owner',
         'mission-lead',
@@ -1397,6 +1408,7 @@ test('mission timeline reads standard result.landing from tick receipts', () => 
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'timeline standard landing receipt',
       '--owner',
       'mission-lead',
@@ -1443,7 +1455,7 @@ test('mission timeline --json reports and applies the filters that shaped the ro
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const started = runCli([
-      'mission', 'start', 'timeline filter display',
+      'mission', 'start', '--no-verify', 'timeline filter display',
       '--owner', 'auto-improver', '--json',
     ], { cwd: dir });
     assert.equal(started.status, 0, started.stderr || started.stdout);
@@ -1505,6 +1517,7 @@ test('mission tick landing describes common verifier checks plainly', () => {
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'plain verifier wording',
       '--owner',
       'mission-lead',
@@ -1603,6 +1616,7 @@ test('mission report shows compact chronological receipt timeline', () => {
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'timeline proof mission',
       '--owner',
       'mission-lead',
@@ -2384,6 +2398,7 @@ test('mission report does not double-prefix goal summaries', () => {
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'timeline duplicate proof mission',
       '--owner',
       'mission-lead',
@@ -2423,6 +2438,7 @@ test('mission report preserves explicit goal labels when tick index differs', ()
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'timeline mismatched goal label mission',
       '--owner',
       'mission-lead',
@@ -2463,6 +2479,7 @@ test('mission report keeps timeline titles short while preserving summaries', ()
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'timeline title summary mission',
       '--owner',
       'mission-lead',
@@ -2615,7 +2632,7 @@ test('mission required arguments are JSON-readable', () => {
     const cases = [
       [
         'start',
-        ['mission', 'start', '--json'],
+        ['mission', 'start', '--no-verify', '--json'],
         'Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]',
       ],
       [
@@ -3186,6 +3203,7 @@ test('mission goal ack matches by mission id despite objective text drift', () =
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'Fix widget handoff',
       '--owner',
       'mission-lead',
@@ -3618,6 +3636,7 @@ test('mission ack attach preserves state when commands race', async () => {
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       objective,
       '--owner',
       'mission-lead',
@@ -4126,11 +4145,11 @@ test('mission start ignores literal ellipsis placeholders when reusing active tw
     fs.mkdirSync(path.join(dir, 'atris', 'team', 'onboarding'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'team', 'onboarding', 'MEMBER.md'), '# Onboarding\n', 'utf8');
     const objective = 'Golden path: zero-knowledge onboarding walk';
-    const first = runCli(['mission', 'start', objective, '--owner', 'onboarding', '--json'], { cwd: dir });
+    const first = runCli(['mission', 'start', '--no-verify', objective, '--owner', 'onboarding', '--json'], { cwd: dir });
     assert.equal(first.status, 0, first.stderr || first.stdout);
     const firstPayload = JSON.parse(first.stdout);
 
-    const second = runCli(['mission', 'start', objective, '--owner', 'onboarding', '...', '--json'], { cwd: dir });
+    const second = runCli(['mission', 'start', '--no-verify', objective, '--owner', 'onboarding', '...', '--json'], { cwd: dir });
     assert.equal(second.status, 0, second.stderr || second.stdout);
     const secondPayload = JSON.parse(second.stdout);
     assert.equal(secondPayload.action, 'mission_reused');
@@ -4984,6 +5003,7 @@ test('mission run --due selects an active verifier mission for loop heartbeats',
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'due verifier mission',
       '--owner',
       'mission-lead',
@@ -5462,6 +5482,7 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'codex visible goal mission',
       '--owner',
       'mission-lead',
@@ -5948,6 +5969,7 @@ test('mission goal selects the next active mission after the prior goal mission 
     const secondStarted = runCli([
       'mission',
       'start',
+      '--no-verify',
       'replacement codex goal mission',
       '--owner',
       'mission-lead',
@@ -5979,6 +6001,7 @@ test('mission completion automatically refreshes Codex goal controller to next m
     const firstStarted = runCli([
       'mission',
       'start',
+      '--no-verify',
       'first codex goal mission',
       '--owner',
       'mission-lead',
@@ -5994,6 +6017,7 @@ test('mission completion automatically refreshes Codex goal controller to next m
     const secondStarted = runCli([
       'mission',
       'start',
+      '--no-verify',
       'next codex goal mission',
       '--owner',
       'mission-lead',
@@ -6041,6 +6065,7 @@ test('mission goal heartbeat refreshes controller state without heavy work', () 
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'heartbeat codex goal mission',
       '--owner',
       'mission-lead',
@@ -6122,6 +6147,7 @@ test('mission goal-loop attaches task spine before due mission work', () => {
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'loop setup codex goal mission',
       '--owner',
       'mission-lead',
@@ -6174,6 +6200,7 @@ test('mission goal-loop runs due mission work once and refreshes final state', (
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'loop due codex goal mission',
       '--owner',
       'mission-lead',
@@ -6241,6 +6268,7 @@ test('always-on missions become due again after cadence even after verifier pass
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'recurring mission',
       '--owner',
       'mission-lead',
@@ -6295,6 +6323,7 @@ test('manual always-on missions do not auto-rerun after verifier passes', () => 
     const started = runCli([
       'mission',
       'start',
+      '--no-verify',
       'manual no-op mission',
       '--owner',
       'mission-lead',

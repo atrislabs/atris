@@ -1,0 +1,2 @@
+timestamp	experiment_id	decision	baseline_passed	candidate_passed	verify_passed	note
+2026-07-06T00:14:13.257Z	receipt-summary-first-line	reverted	init-golden-path,mission-lifecycle,tick-prompt-contract,experiments-smoke-keep-revert,operator-ready-gating,lesson-typed-roundtrip,help-no-workspace-safety			Tweak the buildTickPrompt receipt instruction so the summary first line names what changed and how it was verified.

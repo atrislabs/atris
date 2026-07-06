@@ -35,7 +35,7 @@ function runCli(args, { cwd, env = {}, timeout = 20000 } = {}) {
 test('mission start --runner atris2 defaults model to atris:fast', () => {
   const dir = makeTempDir();
   try {
-    const res = runCli(['mission', 'start', 'atris2 default model', '--owner', 'mission-lead', '--runner', 'atris2', '--json'], { cwd: dir });
+    const res = runCli(['mission', 'start', '--no-verify', 'atris2 default model', '--owner', 'mission-lead', '--runner', 'atris2', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const mission = JSON.parse(res.stdout).mission;
     assert.equal(mission.runner, 'atris2');
@@ -55,7 +55,7 @@ test('mission start in a business workspace stores business binding for atris2',
       slug: 'atris-labs',
     }), 'utf8');
 
-    const res = runCli(['mission', 'start', 'recruiting follow-up loop', '--owner', 'justin', '--runner', 'atris2', '--json'], { cwd: dir });
+    const res = runCli(['mission', 'start', '--no-verify', 'recruiting follow-up loop', '--owner', 'justin', '--runner', 'atris2', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const mission = JSON.parse(res.stdout).mission;
     assert.equal(mission.business_id, 'biz-recruiting');
@@ -70,7 +70,7 @@ test('mission start in a business workspace stores business binding for atris2',
 test('mission start --model is stored verbatim for any runner', () => {
   const dir = makeTempDir();
   try {
-    const res = runCli(['mission', 'start', 'explicit model mission', '--owner', 'mission-lead', '--runner', 'claude', '--model', 'claude-haiku-4-5-20251001', '--json'], { cwd: dir });
+    const res = runCli(['mission', 'start', '--no-verify', 'explicit model mission', '--owner', 'mission-lead', '--runner', 'claude', '--model', 'claude-haiku-4-5-20251001', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const mission = JSON.parse(res.stdout).mission;
     assert.equal(mission.runner, 'claude');
@@ -83,7 +83,7 @@ test('mission start --model is stored verbatim for any runner', () => {
 test('mission start without --model stores no model for non-atris2 runners', () => {
   const dir = makeTempDir();
   try {
-    const res = runCli(['mission', 'start', 'no model mission', '--owner', 'mission-lead', '--runner', 'claude', '--json'], { cwd: dir });
+    const res = runCli(['mission', 'start', '--no-verify', 'no model mission', '--owner', 'mission-lead', '--runner', 'claude', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const mission = JSON.parse(res.stdout).mission;
     assert.equal(mission.model, undefined);
@@ -97,7 +97,7 @@ test('atris2 run without credentials pauses the mission with auth-required', () 
   const fakeHome = makeTempDir();
   try {
     const env = { HOME: fakeHome, ATRIS_TOKEN: '', ATRIS_PROFILE: '' };
-    const startRes = runCli(['mission', 'start', 'atris2 auth gate', '--owner', 'mission-lead', '--runner', 'atris2', '--verify', 'true', '--json'], { cwd: dir, env });
+    const startRes = runCli(['mission', 'start', '--no-verify', 'atris2 auth gate', '--owner', 'mission-lead', '--runner', 'atris2', '--verify', 'true', '--json'], { cwd: dir, env });
     assert.equal(startRes.status, 0, startRes.stderr || startRes.stdout);
     const mission = JSON.parse(startRes.stdout).mission;
 

@@ -59,7 +59,7 @@ test('mission start --worktree creates an isolated checkout holding the mission 
     // Dirty the main checkout: this noise must never reach the mission baseline.
     fs.writeFileSync(path.join(repo, 'main-dirt.txt'), 'noise\n');
 
-    const res = runCli(['mission', 'start', 'isolated mission', '--owner', 'mission-lead', '--worktree', '--json'], { cwd: repo });
+    const res = runCli(['mission', 'start', '--no-verify', 'isolated mission', '--owner', 'mission-lead', '--worktree', '--json'], { cwd: repo });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
     const mission = payload.mission;
@@ -90,7 +90,7 @@ test('ticks inside the mission worktree run against a clean mission_start baseli
   const { base, repo } = makeTempDir();
   try {
     initWorkspace(repo);
-    const started = runCli(['mission', 'start', 'tickable isolated mission', '--owner', 'mission-lead', '--worktree', '--json'], { cwd: repo });
+    const started = runCli(['mission', 'start', '--no-verify', 'tickable isolated mission', '--owner', 'mission-lead', '--worktree', '--json'], { cwd: repo });
     assert.equal(started.status, 0, started.stderr || started.stdout);
     const mission = JSON.parse(started.stdout).mission;
     const wtPath = mission.worktree.path;
@@ -119,7 +119,7 @@ test('mission start --worktree outside a git repo fails with a clear error', () 
   try {
     // No git init: worktree creation has nothing to attach to.
     fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });
-    const res = runCli(['mission', 'start', 'no repo mission', '--owner', 'mission-lead', '--worktree', '--json'], { cwd: repo });
+    const res = runCli(['mission', 'start', '--no-verify', 'no repo mission', '--owner', 'mission-lead', '--worktree', '--json'], { cwd: repo });
     assert.notEqual(res.status, 0, 'must fail outside a git repo');
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.ok, false);
@@ -133,7 +133,7 @@ test('mission start without --worktree keeps the current-directory behavior', ()
   const { base, repo } = makeTempDir();
   try {
     initWorkspace(repo);
-    const res = runCli(['mission', 'start', 'plain mission', '--owner', 'mission-lead', '--json'], { cwd: repo });
+    const res = runCli(['mission', 'start', '--no-verify', 'plain mission', '--owner', 'mission-lead', '--json'], { cwd: repo });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const mission = JSON.parse(res.stdout).mission;
     assert.equal(mission.worktree ?? null, null);

@@ -1776,7 +1776,7 @@ function missionFromArgs(args) {
     '--native-goal-objective',
     '--visible-goal-status',
     '--visible-goal-objective',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--preflight', '--no-preflight', '--room-preflight', '--no-room-preflight', '--manual-ack', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot'])
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--no-verify', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--preflight', '--no-preflight', '--room-preflight', '--no-room-preflight', '--manual-ack', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot'])
     .filter((part) => String(part || '').trim() !== '...');
   const objective = objectiveParts.join(' ').trim();
   if (!objective) {
@@ -3018,7 +3018,7 @@ function startMission(args, options = {}) {
   const asJson = wantsJson(args);
   const firstArg = String(args[0] || '').trim().toLowerCase();
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || firstArg === 'help') {
-    console.log('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal]');
+    console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal]');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
@@ -3061,6 +3061,16 @@ function startMission(args, options = {}) {
       );
       return;
     }
+  }
+  // Intake gate: a mission without a verifier is a planning wish, and planning
+  // wishes silt up the queue (11 swept on 2026-07-06 with zero ticks). Refuse
+  // to create one unless the caller explicitly opts out with --no-verify.
+  if (!effectiveMissionVerifier(mission) && !hasFlag(args, '--no-verify')) {
+    exitMissionError(
+      `mission start refused: no verifier. Add --verify "<command that proves the objective>" so the mission can tick and complete, or pass --no-verify to explicitly create an unverified mission.`,
+      2,
+      asJson,
+    );
   }
   // --worktree: bind the mission to its own isolated checkout. We chdir before
   // any state writes so the mission record, baseline sidecar, receipts, and

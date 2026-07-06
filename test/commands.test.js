@@ -213,6 +213,7 @@ test('member run starts a budgeted isolated mission from plain text', () => {
       'Improve onboarding proof',
       '--minutes',
       '10',
+      '--no-verify',
       '--json',
     ], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
@@ -267,6 +268,7 @@ test('member run chooses useful work from params when no mission text exists', (
       'logistics',
       '--value',
       'reduce support time',
+      '--no-verify',
       '--json',
     ], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
@@ -1173,7 +1175,7 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
     const startedMission = runCli([
-      'mission', 'start', 'Make Missions change the world with self-generated goals',
+      'mission', 'start', '--no-verify', 'Make Missions change the world with self-generated goals',
       '--owner', 'mission-lead',
       '--json',
     ], { cwd: dir });
@@ -1243,7 +1245,7 @@ test('member goal-from-mission does not append a duplicate history entry on ever
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world"'], { cwd: dir }).status, 0);
-    assert.equal(runCli(['mission', 'start', 'Make Missions change the world', '--owner', 'mission-lead', '--json'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['mission', 'start', '--no-verify', 'Make Missions change the world', '--owner', 'mission-lead', '--json'], { cwd: dir }).status, 0);
 
     const created = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(created.status, 0, created.stderr || created.stdout);
@@ -1270,7 +1272,7 @@ test('member goal-from-mission stops when active mission is blocked', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
     assert.equal(runCli([
-      'mission', 'start', 'Make Missions change the world with self-generated goals',
+      'mission', 'start', '--no-verify', 'Make Missions change the world with self-generated goals',
       '--owner', 'mission-lead',
       '--json',
     ], { cwd: dir }).status, 0);
@@ -1303,7 +1305,7 @@ test('member goal-from-mission preserves completed same-day proof history', () =
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions preserve completed proof history"'], { cwd: dir }).status, 0);
     assert.equal(runCli([
-      'mission', 'start', 'Make Missions preserve completed proof history',
+      'mission', 'start', '--no-verify', 'Make Missions preserve completed proof history',
       '--owner', 'mission-lead',
       '--json',
     ], { cwd: dir }).status, 0);
@@ -1353,7 +1355,7 @@ test('member goal-from-mission promotes the mission goal before older active goa
     const scoreGoal = runCli(['member', 'goal', 'mission-lead', 'Older score-derived goal', '--json'], { cwd: dir });
     assert.equal(scoreGoal.status, 0, scoreGoal.stderr || scoreGoal.stdout);
     assert.equal(runCli([
-      'mission', 'start', 'Make Missions choose the next bounded goal',
+      'mission', 'start', '--no-verify', 'Make Missions choose the next bounded goal',
       '--owner', 'mission-lead',
       '--json',
     ], { cwd: dir }).status, 0);
@@ -1479,7 +1481,7 @@ test('member wake returns one finite decision and refuses to pile onto open work
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions wake up safely"'], { cwd: dir }).status, 0);
     assert.equal(runCli([
-      'mission', 'start', 'Make Missions wake up safely',
+      'mission', 'start', '--no-verify', 'Make Missions wake up safely',
       '--owner', 'mission-lead',
       '--json',
     ], { cwd: dir }).status, 0);
@@ -1542,7 +1544,7 @@ test('member wake treats member-generated goals and logs as non-blocking bookkee
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'aeo', '--description="Own AEO proof loops"'], { cwd: dir }).status, 0);
     assert.equal(runCli([
-      'mission', 'start', 'Keep AEO moving',
+      'mission', 'start', '--no-verify', 'Keep AEO moving',
       '--owner', 'aeo',
       '--json',
     ], { cwd: dir }).status, 0);
@@ -3563,7 +3565,7 @@ test('member loop repeats wake quickly and skips an active lease', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions loop safely"'], { cwd: dir }).status, 0);
     assert.equal(runCli([
-      'mission', 'start', 'Make Missions loop safely',
+      'mission', 'start', '--no-verify', 'Make Missions loop safely',
       '--owner', 'mission-lead',
       '--json',
     ], { cwd: dir }).status, 0);
@@ -3646,7 +3648,7 @@ test('member alive supports hourly forever contract with a stop command', () => 
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions loop safely"'], { cwd: dir }).status, 0);
     assert.equal(runCli([
-      'mission', 'start', 'Make Missions loop safely',
+      'mission', 'start', '--no-verify', 'Make Missions loop safely',
       '--owner', 'mission-lead',
       '--json',
     ], { cwd: dir }).status, 0);
@@ -3868,7 +3870,7 @@ test('mission start tick complete writes durable member-owned state', () => {
     assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
 
     const start = runCli([
-      'mission', 'start', 'Make Mission real',
+      'mission', 'start', '--no-verify', 'Make Mission real',
       '--owner', 'mission-lead',
       '--runner', 'codex_goal',
       '--lane', 'code',
@@ -3928,7 +3930,7 @@ test('always-on mission run keeps ticking after verifier passes', () => {
     assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
 
     const start = runCli([
-      'mission', 'start', 'Keep the loop alive',
+      'mission', 'start', '--no-verify', 'Keep the loop alive',
       '--owner', 'mission-lead',
       '--runner', 'codex_goal',
       '--cadence', 'manual',
@@ -4002,7 +4004,7 @@ test('mission run bounds errored claude ticks with max-ticks', () => {
     const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
 
     const start = runCli([
-      'mission', 'start', 'Bound failed worker attempts',
+      'mission', 'start', '--no-verify', 'Bound failed worker attempts',
       '--owner', 'mission-lead',
       '--runner', 'claude',
       '--cadence', 'manual',
@@ -4059,7 +4061,7 @@ test('member run --minutes scales max-ticks past a single tick, untimed stays at
 
     const startMission = (title) => {
       const start = runCli([
-        'mission', 'start', title,
+        'mission', 'start', '--no-verify', title,
         '--owner', 'mission-lead',
         '--runner', 'claude',
         '--cadence', 'manual',
@@ -4124,7 +4126,7 @@ test('allowed rate-limit info with a future resetsAt does not pause a timed run'
     const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
 
     const start = runCli([
-      'mission', 'start', 'timed run survives allowed rate-limit info',
+      'mission', 'start', '--no-verify', 'timed run survives allowed rate-limit info',
       '--owner', 'mission-lead',
       '--runner', 'claude',
       '--cadence', 'manual',
@@ -4173,7 +4175,7 @@ test('member ping reaches the next tick prompt exactly once', () => {
     const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
 
     const start = runCli([
-      'mission', 'start', 'always-on member you can text',
+      'mission', 'start', '--no-verify', 'always-on member you can text',
       '--owner', 'mission-lead',
       '--runner', 'claude',
       '--cadence', 'manual',
@@ -4243,7 +4245,7 @@ test('stale session lock rotates to a fresh session instead of grinding the erro
     const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
 
     const start = runCli([
-      'mission', 'start', 'stale session lock rotates instead of pausing',
+      'mission', 'start', '--no-verify', 'stale session lock rotates instead of pausing',
       '--owner', 'mission-lead',
       '--runner', 'claude',
       '--cadence', 'manual',
@@ -4311,7 +4313,7 @@ test('healthy claude sessions rotate for context refresh after N ran ticks', () 
     // No verifier: ticks keep running to max-ticks, so the third tick can
     // mint the fresh session the rotation cleared the way for.
     const start = runCli([
-      'mission', 'start', 'healthy sessions rotate for context refresh',
+      'mission', 'start', '--no-verify', 'healthy sessions rotate for context refresh',
       '--owner', 'mission-lead',
       '--runner', 'claude',
       '--cadence', 'manual',
@@ -18259,7 +18261,7 @@ test('business handoff mission bootstrap executes in a generated workspace', () 
     assert.match(startCard.stdout, /atris mission start "Run the first useful loop for Executable Co"/);
 
     const mission = runCli([
-      'mission', 'start', 'Run the first useful loop for Executable Co',
+      'mission', 'start', '--no-verify', 'Run the first useful loop for Executable Co',
       '--owner', 'operator',
       '--runner', 'codex_goal',
       '--lane', 'business',
@@ -18337,7 +18339,7 @@ test('business collaborator handoff loop connects tasks missions goals proof and
     assert.equal(nextPayload.task.status, 'claimed');
 
     const mission = runCli([
-      'mission', 'start', 'Run the first useful loop for Loop Co',
+      'mission', 'start', '--no-verify', 'Run the first useful loop for Loop Co',
       '--owner', 'operator',
       '--runner', 'codex_goal',
       '--lane', 'business',

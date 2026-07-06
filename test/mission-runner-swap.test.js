@@ -55,7 +55,7 @@ printf '{"type":"result","session_id":"%s","result":"fake cursor tick\\\\nlayer:
 }
 
 function startMission(dir, args = []) {
-  const res = runCli(['mission', 'start', 'runner swap mission', '--owner', 'mission-lead', ...args, '--json'], { cwd: dir });
+  const res = runCli(['mission', 'start', '--no-verify', 'runner swap mission', '--owner', 'mission-lead', ...args, '--json'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr || res.stdout);
   return JSON.parse(res.stdout).mission;
 }

@@ -64,7 +64,7 @@ function seedReviewLane(dir) {
 }
 
 function startMission(dir, objective, extra = []) {
-  const res = runCli(['mission', 'start', objective, '--owner', 'mission-lead', ...extra, '--json'], { cwd: dir });
+  const res = runCli(['mission', 'start', '--no-verify', objective, '--owner', 'mission-lead', ...extra, '--json'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr || res.stdout);
   return JSON.parse(res.stdout).mission;
 }

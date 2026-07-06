@@ -69,7 +69,7 @@ test('mission --xp-task routes verified goal proof into AgentXP acceptance', () 
     fs.writeFileSync(path.join(dir, 'atris', 'team', 'game-manager', 'MEMBER.md'), '# Game Manager\n');
 
     const start = runCli([
-      'mission', 'start', 'Ship one AgentXP mission loop',
+      'mission', 'start', '--no-verify', 'Ship one AgentXP mission loop',
       '--owner', 'game-manager',
       '--runner', 'codex_goal',
       '--lane', 'code',
@@ -171,7 +171,7 @@ test('mission attach-task creates a task spine for an existing active mission', 
     fs.writeFileSync(path.join(dir, 'atris', 'team', 'game-manager', 'MEMBER.md'), '# Game Manager\n');
 
     const start = runCli([
-      'mission', 'start', 'Retrofit a mission onto the task board',
+      'mission', 'start', '--no-verify', 'Retrofit a mission onto the task board',
       '--owner', 'game-manager',
       '--runner', 'codex_goal',
       '--lane', 'code',
@@ -256,7 +256,7 @@ test('mission attach-task assigns engine-owned missions to functional owners', (
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     const start = runCli([
-      'mission', 'start', 'Watch chat log task signals and infer next action',
+      'mission', 'start', '--no-verify', 'Watch chat log task signals and infer next action',
       '--owner', 'codex',
       '--runner', 'codex_goal',
       '--lane', 'code',
