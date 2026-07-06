@@ -370,11 +370,60 @@ function fakeLoginDeps(extra = {}) {
   };
 }
 
+function fakeDeviceLoginDeps(pollResponses, settings = {}) {
+  const calls = [];
+  const sleepCalls = [];
+  const queue = pollResponses.slice();
+  return {
+    calls,
+    sleepCalls,
+    deps: {
+      ensureValidCredentials: async () => ({ credentials: { token: 'test-token' } }),
+      sleep: async (ms) => { sleepCalls.push(ms); },
+      apiRequestJson: async (pathname, options) => {
+        calls.push({ pathname, options });
+        if (options.method === 'POST') {
+          return {
+            ok: true,
+            status: 200,
+            data: settings.startData || {
+              session_id: 's-device-1',
+              provider: 'codex',
+              instance_id: 'i-device-1',
+              status: 'starting',
+            },
+          };
+        }
+        const data = queue.length ? queue.shift() : pollResponses[pollResponses.length - 1];
+        return { ok: true, status: 200, data };
+      },
+      ...settings.extraDeps,
+    },
+  };
+}
+
 test('engine login manifest is a hard whitelist', () => {
   assert.deepEqual(Object.keys(engine.ENGINE_LOGIN_MANIFESTS).sort(), ['claude', 'codex', 'cursor', 'devin']);
   assert.equal(engine.normalizeLoginProvider('codex'), 'codex');
   assert.equal(engine.normalizeLoginProvider('composer'), '');
   assert.equal(engine.normalizeLoginProvider('hermes'), '');
+});
+
+test('engine login parses --computer and --business device targets', () => {
+  const user = engine.parseEngineLoginArgs(['codex', '--computer']);
+  assert.equal(user.provider, 'codex');
+  assert.equal(user.computer, true);
+  assert.equal(user.business, '');
+
+  const business = engine.parseEngineLoginArgs(['codex', '--business', 'biz-1', '--json']);
+  assert.equal(business.provider, 'codex');
+  assert.equal(business.computer, true);
+  assert.equal(business.business, 'biz-1');
+  assert.equal(business.json, true);
+
+  const businessEquals = engine.parseEngineLoginArgs(['codex', '--business=biz-2']);
+  assert.equal(businessEquals.computer, true);
+  assert.equal(businessEquals.business, 'biz-2');
 });
 
 test('engine login refuses a missing whitelisted file with a plain hint', async () => {
@@ -476,6 +525,173 @@ test('engine login captures devin API key through a secret prompt', async () => 
     assert.deepEqual(calls[0].options.body, { api_key: secret });
     assert.doesNotMatch(result.stdout, new RegExp(secret));
     assert.match(result.stdout, /\[redacted\]/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine login --computer posts a user device-login target', async () => {
+  const dir = makeTempDir();
+  const { calls, deps } = fakeDeviceLoginDeps([
+    {
+      status: 'completed',
+      verify_url: null,
+      code: null,
+      account_email: 'codex@example.com',
+      registered: true,
+    },
+  ]);
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['codex', '--computer'], dir, deps));
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(calls[0].pathname, '/engines/logins/codex/device-login');
+    assert.equal(calls[0].options.method, 'POST');
+    assert.equal(calls[0].options.token, 'test-token');
+    assert.deepEqual(calls[0].options.body, { target: { type: 'user' } });
+    assert.equal(calls[1].pathname, '/engines/logins/device-login/s-device-1');
+    assert.match(result.stdout, /account_email: codex@example\.com/);
+    assert.match(result.stdout, /registered: true/);
+    assert.match(result.stdout, /ready-check: provider=codex/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine login --business posts a business device-login target', async () => {
+  const dir = makeTempDir();
+  const { calls, deps } = fakeDeviceLoginDeps([
+    {
+      status: 'completed',
+      verify_url: null,
+      code: null,
+      account_email: 'codex@example.com',
+      registered: true,
+    },
+  ]);
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['codex', '--business', 'biz-1'], dir, deps));
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(calls[0].pathname, '/engines/logins/codex/device-login');
+    assert.deepEqual(calls[0].options.body, { target: { type: 'business', id: 'biz-1' } });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine login device flow prints url and code once, then completes', async () => {
+  const dir = makeTempDir();
+  const { calls, sleepCalls, deps } = fakeDeviceLoginDeps([
+    {
+      status: 'pending_user',
+      verify_url: 'https://example.com/device',
+      code: 'ABCD-EFGH',
+      account_email: null,
+      registered: false,
+    },
+    {
+      status: 'pending_user',
+      verify_url: 'https://example.com/device',
+      code: 'ABCD-EFGH',
+      account_email: null,
+      registered: false,
+    },
+    {
+      status: 'completed',
+      verify_url: 'https://example.com/device',
+      code: 'ABCD-EFGH',
+      account_email: 'codex@example.com',
+      registered: true,
+    },
+  ]);
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['codex', '--computer'], dir, deps));
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(calls.length, 4);
+    assert.deepEqual(sleepCalls, [3000, 3000]);
+    assert.match(result.stdout, /Sign in: https:\/\/example\.com\/device/);
+    assert.match(result.stdout, /Code:    ABCD-EFGH   \(expires in 15 minutes; never share this code\)/);
+    assert.equal((result.stdout.match(/ABCD-EFGH/g) || []).length, 1);
+    assert.match(result.stdout, /account_email: codex@example\.com/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine login device flow --json emits the final status on stdout', async () => {
+  const dir = makeTempDir();
+  const { deps } = fakeDeviceLoginDeps([
+    {
+      status: 'pending_user',
+      verify_url: 'https://example.com/device',
+      code: 'ABCD-EFGH',
+      account_email: null,
+      registered: false,
+    },
+    {
+      status: 'completed',
+      verify_url: null,
+      code: null,
+      account_email: 'codex@example.com',
+      registered: true,
+    },
+  ]);
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['codex', '--computer', '--json'], dir, deps));
+    assert.equal(result.code, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.status, 'completed');
+    assert.equal(parsed.account_email, 'codex@example.com');
+    assert.equal(parsed.registered, true);
+    assert.doesNotMatch(result.stdout, /Sign in:/);
+    assert.match(result.stderr, /Sign in: https:\/\/example\.com\/device/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine login device flow exits nonzero when expired', async () => {
+  const dir = makeTempDir();
+  const { deps } = fakeDeviceLoginDeps([
+    {
+      status: 'expired',
+      verify_url: 'https://example.com/device',
+      code: 'ABCD-EFGH',
+      account_email: null,
+      registered: false,
+    },
+  ]);
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['codex', '--computer'], dir, deps));
+    assert.equal(result.code, 1);
+    assert.match(result.stdout, /Sign in: https:\/\/example\.com\/device/);
+    assert.match(result.stderr, /engine login device flow ended: expired/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine login without --computer still uses the local upload path', async () => {
+  const dir = makeTempDir();
+  const content = JSON.stringify({
+    tokens: { access: 'local-secret' },
+    profile: { email: 'codex@example.com' },
+  });
+  writeHomeFile(dir, '.codex/auth.json', content);
+  const { calls, deps } = fakeLoginDeps({
+    homeDir: dir,
+    response: {
+      ok: true,
+      status: 200,
+      data: { provider: 'codex', files: { '~/.codex/auth.json': 'local-secret' } },
+    },
+  });
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['codex', '--yes'], dir, deps));
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].pathname, '/engines/logins/codex');
+    assert.doesNotMatch(calls[0].pathname, /device-login/);
+    assert.deepEqual(calls[0].options.body, { files: { '~/.codex/auth.json': content } });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -41,6 +41,8 @@ const { apiRequestJson } = require('../utils/api');
 
 const HOUSE_ENGINE = 'atris-fast';
 const MAX_ENGINE_LOGIN_FILE_BYTES = 64 * 1024;
+const ENGINE_DEVICE_LOGIN_POLL_MS = 3000;
+const ENGINE_DEVICE_LOGIN_TIMEOUT_MS = 16 * 60 * 1000;
 const ENGINE_LOGIN_MANIFESTS = Object.freeze({
   codex: Object.freeze({
     type: 'files',
@@ -217,6 +219,9 @@ function parseEngineLoginArgs(args = []) {
     remove: '',
     yes: false,
     json: false,
+    computer: false,
+    business: '',
+    businessFlag: false,
     help: false,
   };
   for (let i = 0; i < args.length; i += 1) {
@@ -244,6 +249,26 @@ function parseEngineLoginArgs(args = []) {
     }
     if (arg === '--json') {
       options.json = true;
+      continue;
+    }
+    if (arg === '--computer') {
+      options.computer = true;
+      continue;
+    }
+    if (arg === '--business' || arg === '-b') {
+      options.computer = true;
+      options.businessFlag = true;
+      const next = args[i + 1] === undefined ? '' : String(args[i + 1] || '');
+      if (next && !next.startsWith('--')) {
+        options.business = next.trim();
+        i += 1;
+      }
+      continue;
+    }
+    if (arg.startsWith('--business=')) {
+      options.computer = true;
+      options.businessFlag = true;
+      options.business = arg.slice('--business='.length).trim();
       continue;
     }
     if (arg.startsWith('--')) continue;
@@ -290,7 +315,7 @@ function parseEngineSeedArgs(args = []) {
 }
 
 function printEngineLoginHelp() {
-  console.log('\n  atris engine login <provider> --yes\n                           upload a local whitelisted engine login to the Atris vault\n  atris engine login --list\n                           list vaulted engine logins\n  atris engine login --remove <provider>\n                           remove a vaulted engine login\n  providers: codex, claude, cursor, devin\n');
+  console.log('\n  atris engine login <provider> --yes\n                           upload a local whitelisted engine login to the Atris vault\n  atris engine login <provider> --computer\n                           sign in on one of your Atris computers by device flow\n  atris engine login <provider> --business <id>\n                           sign in on a business Atris computer by device flow\n  atris engine login --list\n                           list vaulted engine logins\n  atris engine login --remove <provider>\n                           remove a vaulted engine login\n  providers: codex, claude, cursor, devin\n');
 }
 
 function printEngineSeedHelp() {
@@ -440,6 +465,136 @@ async function buildEngineLoginPayload(provider, deps = {}) {
   return readEngineLoginFiles(provider, deps);
 }
 
+function engineDeviceLoginTarget(options) {
+  if (!options.computer) return null;
+  if (options.businessFlag && !options.business) {
+    const err = new Error('usage: atris engine login <provider> --business <id>');
+    err.code = 'usage';
+    throw err;
+  }
+  if (options.business) return { type: 'business', id: options.business };
+  return { type: 'user' };
+}
+
+function normalizeDeviceLoginStatus(data, provider, sessionId) {
+  const payload = data && typeof data === 'object' ? data : {};
+  return {
+    ...payload,
+    session_id: payload.session_id || sessionId || '',
+    provider: payload.provider || provider,
+  };
+}
+
+function printDeviceLoginCode(status, { json = false } = {}) {
+  const lines = [
+    '',
+    `Sign in: ${status.verify_url}`,
+    `Code:    ${status.code}   (expires in 15 minutes; never share this code)`,
+    '',
+  ];
+  for (const line of lines) {
+    if (json) console.error(line);
+    else console.log(line);
+  }
+}
+
+function printDeviceLoginCompleted(status, { json = false } = {}) {
+  if (json) {
+    console.log(JSON.stringify(status, null, 2));
+    return;
+  }
+  const registered = status.registered === true ? 'true' : status.registered === false ? 'false' : String(status.registered ?? '');
+  console.log('');
+  console.log(`engine login ready: ${status.provider}`);
+  console.log(`account_email: ${status.account_email || '(none)'}`);
+  console.log(`registered: ${registered}`);
+  console.log(`ready-check: provider=${status.provider} session_id=${status.session_id || ''} status=${status.status} registered=${registered}`);
+  console.log('');
+}
+
+function printDeviceLoginFinalJson(status, options) {
+  if (options.json) console.log(JSON.stringify(status, null, 2));
+}
+
+async function waitForDeviceLoginPoll(ms, deps = {}) {
+  if (typeof deps.sleep === 'function') return deps.sleep(ms);
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runEngineDeviceLoginCommand(provider, options, deps = {}) {
+  let target;
+  try {
+    target = engineDeviceLoginTarget(options);
+  } catch (err) {
+    console.error(err.message);
+    return 2;
+  }
+
+  const started = await authenticatedEngineApi(`/engines/logins/${encodeURIComponent(provider)}/device-login`, {
+    method: 'POST',
+    body: { target },
+    timeoutMs: 30000,
+    retries: 0,
+  }, deps);
+  if (!started.ok) {
+    console.error(started.authError ? 'Run atris login first.' : `engine login device flow failed: ${started.error || started.status}`);
+    return 1;
+  }
+
+  const startStatus = normalizeDeviceLoginStatus(started.data, provider, '');
+  const sessionId = startStatus.session_id;
+  if (!sessionId) {
+    console.error('engine login device flow failed: missing session_id');
+    return 1;
+  }
+
+  let finalStatus = startStatus;
+  let codePrinted = false;
+  const pollMs = Math.max(1, Number(deps.deviceLoginPollMs ?? ENGINE_DEVICE_LOGIN_POLL_MS));
+  const timeoutMs = Math.max(0, Number(deps.deviceLoginTimeoutMs ?? ENGINE_DEVICE_LOGIN_TIMEOUT_MS));
+  const maxPolls = Math.ceil(timeoutMs / pollMs);
+
+  for (let attempt = 0; attempt <= maxPolls; attempt += 1) {
+    const polled = await authenticatedEngineApi(`/engines/logins/device-login/${encodeURIComponent(sessionId)}`, {
+      method: 'GET',
+      timeoutMs: 30000,
+      retries: 0,
+    }, deps);
+    if (!polled.ok) {
+      console.error(polled.authError ? 'Run atris login first.' : `engine login device poll failed: ${polled.error || polled.status}`);
+      return 1;
+    }
+
+    finalStatus = normalizeDeviceLoginStatus(polled.data, provider, sessionId);
+    if (!codePrinted && finalStatus.verify_url && finalStatus.code) {
+      printDeviceLoginCode(finalStatus, { json: options.json });
+      codePrinted = true;
+    }
+
+    const status = String(finalStatus.status || '').toLowerCase();
+    if (status === 'completed') {
+      printDeviceLoginCompleted(finalStatus, { json: options.json });
+      return 0;
+    }
+    if (status === 'failed' || status === 'expired') {
+      printDeviceLoginFinalJson(finalStatus, options);
+      console.error(`engine login device flow ended: ${status}`);
+      return 1;
+    }
+
+    if (attempt < maxPolls) await waitForDeviceLoginPoll(pollMs, deps);
+  }
+
+  finalStatus = {
+    ...finalStatus,
+    status: 'timeout',
+    error: `device login did not complete within ${Math.round(timeoutMs / 60000)} minutes`,
+  };
+  printDeviceLoginFinalJson(finalStatus, options);
+  console.error('engine login device flow timed out');
+  return 1;
+}
+
 async function runEngineLoginCommand(args, root, deps = {}) {
   const options = parseEngineLoginArgs(args);
   if (options.help) {
@@ -480,6 +635,10 @@ async function runEngineLoginCommand(args, root, deps = {}) {
   if (!provider) {
     console.error(`usage: atris engine login <provider> --yes; providers: ${knownLoginProviders().join(', ')}`);
     return 2;
+  }
+
+  if (options.computer) {
+    return runEngineDeviceLoginCommand(provider, options, deps);
   }
 
   let built;
@@ -884,7 +1043,7 @@ function engineCommand(args = []) {
   }
 
   if (sub === 'help') {
-    console.log('\n  atris engine            roster + current default\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+    console.log('\n  atris engine            roster + current default\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer | --business <id>\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
     return 0;
   }
 
@@ -927,6 +1086,7 @@ module.exports = {
   parseEngineSeedArgs,
   redactBackendResponse,
   buildEngineLoginPayload,
+  runEngineDeviceLoginCommand,
   runEngineLoginCommand,
   runEngineSeedCommand,
   HOUSE_ENGINE,
