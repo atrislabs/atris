@@ -74,7 +74,43 @@ const BUDGET_LABELS = {
 };
 
 const VERIFY_COMMAND = 'git diff --check';
-const VERIFY_TEXT = 'the workspace check passes and proof is recorded';
+const JOURNAL_RESULT_TEXT = 'a written result will be waiting in your journal';
+const AUDIENCE_WORDS = /\b(?:for|user|users|customer|customers|operator|operators|agent|agents|developer|developers|admin|admins|member|members|team|teams|visitor|visitors|client|clients|student|students|founder|founders|newcomer|newcomers)\b/i;
+const FILLER_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'better',
+  'by',
+  'for',
+  'from',
+  'good',
+  'great',
+  'help',
+  'improved',
+  'into',
+  'it',
+  'its',
+  'more',
+  'nice',
+  'of',
+  'on',
+  'or',
+  'our',
+  'please',
+  'rough',
+  'roughly',
+  'the',
+  'their',
+  'this',
+  'to',
+  'want',
+  'with',
+]);
 
 function showHelp() {
   console.log('');
@@ -184,6 +220,10 @@ function wordList(text) {
     .filter(Boolean);
 }
 
+function quoteText(text) {
+  return JSON.stringify(String(text || ''));
+}
+
 function hasVerb(text) {
   return wordList(text).some((word) => {
     const clean = word.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/g, '');
@@ -247,6 +287,69 @@ function namedThingExists(root, value) {
   return candidates.some((candidate) => fs.existsSync(candidate));
 }
 
+function subjectForWish(text) {
+  const words = wordList(text)
+    .map(cleanToken)
+    .filter(Boolean);
+  if (!words.length) return 'this wish';
+  let usable = words;
+  const first = words[0].toLowerCase();
+  if (VERBS.has(first)) usable = words.slice(1);
+  usable = usable.filter((word) => {
+    const clean = word.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    return clean && !['a', 'an', 'the', 'please', 'better', 'friendlier', 'improved', 'more'].includes(clean);
+  });
+  return usable.slice(0, 4).join(' ') || 'this wish';
+}
+
+function meaningfulWordSet(text) {
+  const words = new Set();
+  for (const raw of wordList(text)) {
+    const clean = raw.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
+    if (!clean || clean.length < 3) continue;
+    if (VERBS.has(clean) || FILLER_WORDS.has(clean)) continue;
+    words.add(clean.replace(/s$/, ''));
+  }
+  return words;
+}
+
+function sharesMeaningfulWords(left, right) {
+  const leftWords = meaningfulWordSet(left);
+  const rightWords = meaningfulWordSet(right);
+  if (!leftWords.size || !rightWords.size) return false;
+  for (const word of leftWords) {
+    if (rightWords.has(word)) return true;
+  }
+  return false;
+}
+
+function clarityAudit(text) {
+  const words = wordList(text);
+  const subject = subjectForWish(text);
+  const missing = [];
+  const questions = [];
+  const vague = words.length < 4 || !hasVerb(text);
+
+  if (vague) {
+    missing.push('outcome');
+    questions.push(`What outcome should ${subject} create?`);
+  }
+  if (vague && !AUDIENCE_WORDS.test(text)) {
+    missing.push('audience');
+    questions.push(`Who is ${subject} for?`);
+  }
+  if (vague) {
+    missing.push('scope');
+    questions.push(`What part of ${subject} should I change first?`);
+  }
+
+  return {
+    vague,
+    missing,
+    questions,
+  };
+}
+
 function missingNamedInputs(text, root) {
   const missing = [];
   const seen = new Set();
@@ -281,9 +384,8 @@ function missingNamedInputs(text, root) {
 
 function auditWish(text, root = process.cwd()) {
   const questions = [];
-  const words = wordList(text);
-  if (words.length < 4) questions.push('What exact outcome should this create?');
-  if (!hasVerb(text)) questions.push('What action should I take?');
+  const clarity = clarityAudit(text);
+  questions.push(...clarity.questions);
 
   let executor = null;
   let validator = null;
@@ -314,6 +416,8 @@ function auditWish(text, root = process.cwd()) {
     validator,
     budget: inferBudgetTier(text),
     missing,
+    vague: clarity.vague,
+    missing_slots: clarity.missing,
   };
 }
 
@@ -329,59 +433,12 @@ function machineRecord(wish, status, audit, extra = {}) {
   };
 }
 
-function printQuestions(questions) {
+function printQuestions(wishText, questions) {
+  console.log(`You wished: ${quoteText(wishText)}`);
   questions.forEach((question, index) => {
     console.log(`${index + 1}. ${question}`);
   });
-}
-
-function pastParticiple(verb) {
-  return {
-    add: 'added',
-    audit: 'audited',
-    build: 'built',
-    change: 'changed',
-    check: 'checked',
-    clean: 'cleaned',
-    create: 'created',
-    debug: 'debugged',
-    deploy: 'deployed',
-    design: 'designed',
-    draft: 'drafted',
-    explain: 'explained',
-    find: 'found',
-    fix: 'fixed',
-    improve: 'improved',
-    migrate: 'migrated',
-    move: 'moved',
-    polish: 'polished',
-    refactor: 'refactored',
-    remove: 'removed',
-    rename: 'renamed',
-    research: 'researched',
-    review: 'reviewed',
-    run: 'run',
-    set: 'set',
-    setup: 'set up',
-    ship: 'shipped',
-    start: 'started',
-    stop: 'stopped',
-    test: 'tested',
-    update: 'updated',
-    verify: 'verified',
-    write: 'written',
-  }[verb] || `${verb}ed`;
-}
-
-function restateWish(text) {
-  const clean = String(text || '').trim().replace(/\s+/g, ' ');
-  const friendly = clean.match(/^make\s+(?:the\s+)?(.+?)\s+friendlier$/i);
-  if (friendly) return `Granted: I heard you want a friendlier ${friendly[1]}.`;
-  const action = clean.match(/^([a-z]+)\s+(.+)$/i);
-  if (action && VERBS.has(action[1].toLowerCase())) {
-    return `Granted: I heard you want ${action[2]} ${pastParticiple(action[1].toLowerCase())}.`;
-  }
-  return `Granted: I heard the wish and turned it into a concrete mission.`;
+  console.log('answer with atris wish grant <n> "your answer".');
 }
 
 function engineLabel(engine) {
@@ -392,10 +449,21 @@ function engineLabel(engine) {
   return text;
 }
 
-function printGranted(text, audit) {
-  console.log(restateWish(text));
-  console.log(`I delegated it to ${engineLabel(audit.executor.id)} with a ${audit.budget} budget, roughly ${BUDGET_LABELS[audit.budget]}.`);
-  console.log(`You will know it came true when ${VERIFY_TEXT}.`);
+function verifyOutcomeText(command) {
+  const verify = String(command || '').trim();
+  if (!verify) return JOURNAL_RESULT_TEXT;
+  if (verify === 'git diff --check') return 'the git diff whitespace check passes';
+  return `the verify command ${quoteText(verify)} passes`;
+}
+
+function printGranted(text, audit, options = {}) {
+  if (options.grantNumber) {
+    console.log(`Granting wish ${options.grantNumber}: ${quoteText(text)}`);
+  } else {
+    console.log(`I heard you: ${quoteText(text)}`);
+  }
+  console.log(`I delegated it to ${engineLabel(audit.executor.id)} with a ${audit.budget} budget, ${BUDGET_LABELS[audit.budget]}.`);
+  console.log(`You will know it came true when ${verifyOutcomeText(options.verify || VERIFY_COMMAND)}.`);
 }
 
 function latestMissionStatus(root, missionId) {
@@ -433,10 +501,10 @@ function printList(root = process.cwd()) {
   return 0;
 }
 
-function delegateWish(wish, audit, root, asJson) {
+function delegateWish(wish, audit, root, asJson, options = {}) {
   const note = [
     `Wish: ${wish.text}`,
-    `Verify: ${VERIFY_TEXT}`,
+    `Verify: ${VERIFY_COMMAND} (${verifyOutcomeText(VERIFY_COMMAND)})`,
     `Budget: ${audit.budget}`,
   ].join('\n');
   const taskPayload = delegateTask([
@@ -485,7 +553,7 @@ function delegateWish(wish, audit, root, asJson) {
     mission_id: mission ? mission.id : null,
   });
   if (asJson) console.log(JSON.stringify(payload, null, 2));
-  else printGranted(wish.text, audit);
+  else printGranted(wish.text, audit, { ...options, verify: VERIFY_COMMAND });
   return 0;
 }
 
@@ -496,10 +564,12 @@ function askForInput(wish, audit, root, asJson) {
     text: wish.text,
     status: 'needs_input',
     questions: audit.questions,
+    vague: !!audit.vague,
+    missing_slots: audit.missing_slots || [],
   });
   const payload = machineRecord(wish, 'needs_input', audit);
   if (asJson) console.log(JSON.stringify(payload, null, 2));
-  else printQuestions(audit.questions);
+  else printQuestions(wish.text, audit.questions);
   return 1;
 }
 
@@ -535,8 +605,35 @@ function grantWish(args, root = process.cwd()) {
     return 2;
   }
   if (wish.status !== 'needs_input') {
+    if (!asJson) console.log(`Granting wish ${number}: ${quoteText(wish.text)}`);
     console.error('That wish is not waiting on an answer.');
     return 2;
+  }
+  const vagueFlagged = wish.vague === true
+    || (Array.isArray(wish.missing_slots) && wish.missing_slots.length > 0)
+    || (Array.isArray(wish.questions) && wish.questions.some((question) => /\b(outcome|Who is|What part)\b/i.test(String(question))));
+  if (vagueFlagged && !sharesMeaningfulWords(wish.text, answer)) {
+    const notice = 'This answer may be for a different wish, so I did not dispatch it.';
+    if (asJson) {
+      const payload = machineRecord(wish, 'needs_input', {
+        executor: null,
+        budget: wish.budget || inferBudgetTier(wish.text),
+        questions: wish.questions || [],
+      }, {
+        engine: wish.engine || null,
+      });
+      console.log(JSON.stringify({
+        ...payload,
+        mismatch: true,
+        notice,
+        wish_text: wish.text,
+      }, null, 2));
+    } else {
+      console.log(`Granting wish ${number}: ${quoteText(wish.text)}`);
+      console.log(notice);
+      printList(root);
+    }
+    return 1;
   }
   appendWishRecord(root, {
     id: wish.id,
@@ -552,7 +649,7 @@ function grantWish(args, root = process.cwd()) {
   const auditText = [wish.text, ...(answeredWish.answers || [])].join(' ');
   const audit = auditWish(auditText, root);
   if (!audit.ok) return askForInput(answeredWish, audit, root, asJson);
-  return delegateWish(answeredWish, audit, root, asJson);
+  return delegateWish(answeredWish, audit, root, asJson, { grantNumber: number });
 }
 
 function wishCommand(args = []) {
@@ -582,5 +679,7 @@ module.exports = {
   inferBudgetTier,
   missingNamedInputs,
   readWishes,
+  sharesMeaningfulWords,
   stateFile,
+  verifyOutcomeText,
 };
