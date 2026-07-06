@@ -17,6 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execSync } = require('child_process');
 const {
   buildRunnerAvailabilityCommand,
@@ -160,6 +161,56 @@ function writePushCursor(root, name, cursor) {
   return cursor;
 }
 
+function hashString(value) {
+  return crypto.createHash('sha256').update(String(value)).digest('hex');
+}
+
+function pushContextKey(ctx) {
+  return hashString(`${ctx.apiBase}\0${ctx.agentId}`);
+}
+
+function recordKey(name, index) {
+  return `compile-record-v1:${hashString(`${name}\0${index}`)}`;
+}
+
+function normalizePushCursorState(raw) {
+  if (raw && typeof raw === 'object' && raw.contexts && typeof raw.contexts === 'object' && !Array.isArray(raw.contexts)) {
+    return { version: 1, contexts: { ...raw.contexts } };
+  }
+  if (
+    raw
+    && typeof raw === 'object'
+    && typeof raw.agent_id === 'string'
+    && typeof raw.api_base === 'string'
+  ) {
+    return {
+      version: 1,
+      contexts: {
+        [pushContextKey({ agentId: raw.agent_id, apiBase: raw.api_base })]: raw,
+      },
+    };
+  }
+  return { version: 1, contexts: {} };
+}
+
+function cursorForContext(cursorState, ctx) {
+  const state = normalizePushCursorState(cursorState);
+  const cursor = state.contexts[pushContextKey(ctx)];
+  if (!cursor || cursor.agent_id !== ctx.agentId || cursor.api_base !== ctx.apiBase) return null;
+  return cursor;
+}
+
+function writePushCursorForContext(root, name, cursorState, ctx, nextRecordIndex) {
+  const state = normalizePushCursorState(cursorState);
+  state.contexts[pushContextKey(ctx)] = {
+    agent_id: ctx.agentId,
+    api_base: ctx.apiBase,
+    nextRecordIndex,
+    updatedAt: new Date().toISOString(),
+  };
+  return writePushCursor(root, name, state);
+}
+
 function requireManifest(root, name) {
   const p = manifestPath(root, name);
   if (!fs.existsSync(p)) {
@@ -232,7 +283,7 @@ async function serverRequest(ctx, method, pathname, body) {
   return result.data || {};
 }
 
-function recordPushPayload(record, index) {
+function recordPushPayload(name, record, index) {
   if (!record || typeof record !== 'object') {
     throw new Error(`record ${index + 1} is not an object`);
   }
@@ -242,14 +293,15 @@ function recordPushPayload(record, index) {
   if (!Object.prototype.hasOwnProperty.call(record, 'output')) {
     throw new Error(`record ${index + 1} is missing output`);
   }
-  const payload = { input: record.input, output: record.output };
+  const payload = { input: record.input, output: record.output, record_key: recordKey(name, index) };
   if (Object.prototype.hasOwnProperty.call(record, 'expected')) payload.expected = record.expected;
   if (record.source) payload.source = String(record.source);
   return payload;
 }
 
-function cursorStartIndex(cursor, total, ctx) {
-  if (!cursor || cursor.agent_id !== ctx.agentId || cursor.api_base !== ctx.apiBase) return 0;
+function cursorStartIndex(cursorState, total, ctx) {
+  const cursor = cursorForContext(cursorState, ctx);
+  if (!cursor) return 0;
   const n = Number(cursor.nextRecordIndex);
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.min(Math.floor(n), total);
@@ -530,18 +582,13 @@ async function publishProcessToServer(root, name, flags) {
   console.log(`published artifact ${name} to server (${serverStatus})`);
 
   const records = readRecords(root, name);
-  const cursor = readPushCursor(root, name);
-  const startIndex = cursorStartIndex(cursor, records.length, ctx);
+  let cursorState = normalizePushCursorState(readPushCursor(root, name));
+  const startIndex = cursorStartIndex(cursorState, records.length, ctx);
   let pushed = 0;
   for (let i = startIndex; i < records.length; i++) {
-    await serverRequest(ctx, 'POST', processApiPath(ctx.agentId, name, '/records'), recordPushPayload(records[i], i));
+    await serverRequest(ctx, 'POST', processApiPath(ctx.agentId, name, '/records'), recordPushPayload(name, records[i], i));
     pushed++;
-    writePushCursor(root, name, {
-      agent_id: ctx.agentId,
-      api_base: ctx.apiBase,
-      nextRecordIndex: i + 1,
-      updatedAt: new Date().toISOString(),
-    });
+    cursorState = writePushCursorForContext(root, name, cursorState, ctx, i + 1);
   }
 
   if (records.length === 0) {
