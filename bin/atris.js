@@ -429,6 +429,7 @@ function showHelp() {
   console.log('');
   console.log('Context & tracking:');
   console.log('  log        - Add ideas to inbox');
+  console.log('  wish       - Say one plain sentence, then Atris asks only for gaps or delegates it');
   console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  activate   - Load Atris context');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
@@ -918,7 +919,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 }
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
+const knownCommands = ['init', 'log', 'wish', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'harvest', 'verify', 'search', 'scout', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'bench', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'write', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'study', 'xp', 'play', 'gm', 'x', 'recap', 'report', 'signup', 'clarity', 'interview', 'moves', 'unknowns',
@@ -1589,6 +1590,10 @@ if (command === 'init') {
   // SQLite-backed task plane. ~/.atris/tasks.db, gitignored, per-workspace.
   Promise.resolve(require('../commands/task').run(process.argv.slice(3)))
     .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'wish') {
+  Promise.resolve(require('../commands/wish').wishCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'bench') {
   Promise.resolve(require('../commands/bench').benchCommand(process.argv.slice(3)))

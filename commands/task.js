@@ -5239,7 +5239,7 @@ function delegateHandoff(task, owner, via, tag) {
   return handoff;
 }
 
-function cmdDelegate(args) {
+function delegateTask(args) {
   const pos = positional(args);
   const title = pos.join(' ').trim();
   if (!title) {
@@ -5302,29 +5302,36 @@ function cmdDelegate(args) {
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const task = compactTaskFromProjection(projection, result.id);
   const handoff = delegateHandoff(task, owner, via, typeof tag === 'string' ? tag : null);
+  return {
+    ok: true,
+    action: 'delegated',
+    task_id: result.id,
+    inserted: result.inserted !== false,
+    owner,
+    owner_resolution: ownerResolution,
+    executed_by: executedBy || null,
+    via,
+    tag: typeof tag === 'string' ? tag : null,
+    handoff,
+    proposed_member_command: metadata.proposed_member_command || null,
+    operator_title_warning: operatorTitleWarning,
+    projection_path: outPath,
+    task,
+  };
+}
+
+function cmdDelegate(args) {
+  const payload = delegateTask(args);
   if (wantsJson(args)) {
-    printJson({
-      ok: true,
-      action: 'delegated',
-      task_id: result.id,
-      inserted: result.inserted !== false,
-      owner,
-      owner_resolution: ownerResolution,
-      executed_by: executedBy || null,
-      via,
-      handoff,
-      operator_title_warning: operatorTitleWarning,
-      projection_path: outPath,
-      task,
-    });
+    printJson(payload);
     return;
   }
-  const tagText = tag && tag !== true ? ` #${tag}` : '';
-  console.log(`delegated ${taskRef(task)} -> ${owner}${tagText} via=${via}`);
-  if (executedBy) console.log(`executed_by: ${executedBy}`);
-  if (ownerResolution.proposed_member) console.log(`member: ${metadata.proposed_member_command}`);
-  console.log(`claim: ${handoff.command}`);
-  if (handoff.swarlo) console.log(`swarlo: ${handoff.swarlo.channel}/${handoff.swarlo.action}`);
+  const tagText = payload.tag ? ` #${payload.tag}` : '';
+  console.log(`delegated ${taskRef(payload.task)} -> ${payload.owner}${tagText} via=${payload.via}`);
+  if (payload.executed_by) console.log(`executed_by: ${payload.executed_by}`);
+  if (payload.proposed_member_command) console.log(`member: ${payload.proposed_member_command}`);
+  console.log(`claim: ${payload.handoff.command}`);
+  if (payload.handoff.swarlo) console.log(`swarlo: ${payload.handoff.swarlo.channel}/${payload.handoff.swarlo.action}`);
 }
 
 // Failed tasks older than this stop earning a daily owner-group row;
@@ -11153,4 +11160,4 @@ async function run(args) {
   }
 }
 
-module.exports = { run, taskDayGroups, AGENT_ENV_MARKERS };
+module.exports = { run, taskDayGroups, delegateTask, AGENT_ENV_MARKERS };

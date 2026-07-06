@@ -2973,7 +2973,7 @@ function findActiveTwinMission(objective, owner, root = process.cwd()) {
   return null;
 }
 
-function startMission(args) {
+function startMission(args, options = {}) {
   const asJson = wantsJson(args);
   const firstArg = String(args[0] || '').trim().toLowerCase();
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || firstArg === 'help') {
@@ -3061,19 +3061,37 @@ function startMission(args) {
   });
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
   const nextTickCommand = `atris mission tick ${saved.id}${saved.verifier ? ' --verify' : ''}`;
-  printJsonOrText(
-    { ok: true, action: 'mission_started', mission: saved, warnings, goal_slot_handoff: goalSlotHandoff, state_path: statePaths().missionsJsonl, member_state: memberState, log_path: logPath, worktree_baseline: worktreeBaseline ? { path: path.relative(process.cwd(), missionBaselinePath(saved.id)), dirty_count: worktreeBaseline.dirty_count, dirty_hash: worktreeBaseline.dirty_hash } : null },
-    [
-      `Started mission: ${saved.objective}`,
-      `Owner: ${saved.owner}`,
-      `State: ${saved.status}`,
-      ...(saved.worktree ? [`Worktree: ${saved.worktree.path}`, `Branch: ${saved.worktree.branch}`] : []),
-      ...warnings.map((warning) => `Warning: ${warning.message}`),
-      ...(saved.xp_task ? [`AgentXP task: ${saved.xp_task.ref}`] : []),
-      ...(saved.worktree ? [`Next: cd ${saved.worktree.path} && ${nextTickCommand}`] : [`Next: ${nextTickCommand}`]),
-    ],
-    asJson,
-  );
+  const payload = {
+    ok: true,
+    action: 'mission_started',
+    mission: saved,
+    warnings,
+    goal_slot_handoff: goalSlotHandoff,
+    state_path: statePaths().missionsJsonl,
+    member_state: memberState,
+    log_path: logPath,
+    worktree_baseline: worktreeBaseline ? {
+      path: path.relative(process.cwd(), missionBaselinePath(saved.id)),
+      dirty_count: worktreeBaseline.dirty_count,
+      dirty_hash: worktreeBaseline.dirty_hash,
+    } : null,
+  };
+  if (!options.silent) {
+    printJsonOrText(
+      payload,
+      [
+        `Started mission: ${saved.objective}`,
+        `Owner: ${saved.owner}`,
+        `State: ${saved.status}`,
+        ...(saved.worktree ? [`Worktree: ${saved.worktree.path}`, `Branch: ${saved.worktree.branch}`] : []),
+        ...warnings.map((warning) => `Warning: ${warning.message}`),
+        ...(saved.xp_task ? [`AgentXP task: ${saved.xp_task.ref}`] : []),
+        ...(saved.worktree ? [`Next: cd ${saved.worktree.path} && ${nextTickCommand}`] : [`Next: ${nextTickCommand}`]),
+      ],
+      asJson,
+    );
+  }
+  return payload;
 }
 
 async function startMissionFromRunObjective(objective, args) {
@@ -8201,6 +8219,7 @@ function missionCommand(args) {
 
 module.exports = {
   missionCommand,
+  startMission,
   inspectMission,
   expireStaleMissions,
   reapPausedMissions,
