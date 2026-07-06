@@ -81,13 +81,14 @@ function setupReadyTask(dir, env, { title, tag, proof }) {
   const ready = runCli([
     'task', 'ready', task.display_id,
     '--proof', proof,
+    '--result', 'Reviewers can see why this task needs human handling so the sweep saves time and reduces risk for sensitive work.',
     '--happened', `Rendered ${title}`,
     '--checked', 'I checked the receipt verifier state before Review.',
     '--tested', 'I inspected the receipt JSON and the named verifier.',
     '--as', 'codex',
     '--json',
   ], { cwd: dir, env });
-  assert.equal(ready.status, 0, ready.stderr);
+  assert.equal(ready.status, 0, ready.stderr || ready.stdout);
   return task;
 }
 
