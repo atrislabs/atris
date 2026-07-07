@@ -4,7 +4,7 @@
 
 ---
 
-- **[2026-07-07] mission-say-mistype-creates-junk-mission** — fail — atris mission say <id> <text> is not a subcommand; the mission router treats the whole line as a new objective and silently creates a garbage mission plus room receipt. Detector: any unknown mission subcommand should error, not fall through to mission-create. Fix candidate: whitelist mission verbs in bin/atris.js dispatch; unknown verb prints usage. Hit live 2026-07-07 while steering the deterministic-scripts wish; cleaned up by mission stop. Correct steering front door is: atris wish say "<note>" <wish-id>.
+- **[2026-07-07] mission-say-mistype-creates-junk-mission** — fail — [resolved] atris mission say <id> <text> is not a subcommand; the mission router treats the whole line as a new objective and silently creates a garbage mission plus room receipt. Detector: `node --test test/mission-unknown-subcommand.test.js`. Fixed in commit d7193da: unknown single-word verbs error with a pointer to atris wish say; quoted objectives and mission- ids keep the shortcut. Hit live 2026-07-07 while steering the deterministic-scripts wish; cleaned up by mission stop. Correct steering front door is: atris wish say "<note>" <wish-id>.
 
 - **[2026-07-07] experiment-autopilot-phase-altitude** — fail — Daily experiment autopilot-phase-altitude reverted (apply_failed).
 

@@ -152,5 +152,14 @@
   "experiment-autopilot-phase-altitude": {
     "status": "observed",
     "scope": "atris-cli"
+  },
+  "mission-say-mistype-creates-junk-mission": {
+    "scope": "atris-cli",
+    "applies_to": [
+      "commands/mission.js"
+    ],
+    "detector": "node --test test/mission-unknown-subcommand.test.js",
+    "status": "resolved",
+    "resolved_at": "2026-07-07"
   }
 }
