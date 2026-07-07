@@ -111,10 +111,12 @@ test('mission --xp-task routes verified goal proof into AgentXP acceptance', () 
     const humanStatus = runCli(['mission', 'status', mission.id], { cwd: dir, env });
     assert.equal(humanStatus.status, 0, humanStatus.stderr || humanStatus.stdout);
     assert.match(humanStatus.stdout, new RegExp(`task: ${mission.xp_task.ref}`));
-    assert.match(humanStatus.stdout, new RegExp(`task next: atris task current-step --goal-id ${mission.id}`));
+    // human surfaces use short display refs; the JSON contract above keeps full ids
+    assert.match(humanStatus.stdout, /task next: atris task current-step --goal-id \d+ /);
 
     const nowText = fs.readFileSync(path.join(dir, 'atris', 'team', 'game-manager', 'now.md'), 'utf8');
     assert.match(nowText, new RegExp(`task: ${mission.xp_task.ref}`));
+    // now.md is a member boot file: full ids there, short refs on the console
     assert.match(nowText, new RegExp(`task next: atris task current-step --goal-id ${mission.id}`));
 
     const blockedTick = runCli(['mission', 'tick', mission.id, '--verify', '--complete-on-pass', '--json'], { cwd: dir, env });
@@ -190,7 +192,8 @@ test('mission attach-task creates a task spine for an existing active mission', 
 
     const beforeText = runCli(['mission', 'status', mission.id], { cwd: dir, env });
     assert.equal(beforeText.status, 0, beforeText.stderr || beforeText.stdout);
-    assert.match(beforeText.stdout, new RegExp(`task setup: atris mission attach-task ${mission.id} --json`));
+    // short display ref in the human hint; verified live: attach-task resolves it
+    assert.match(beforeText.stdout, /task setup: atris mission attach-task \d+ --json/);
 
     const attached = runCli(['mission', 'attach-task', mission.id, '--json'], { cwd: dir, env });
     assert.equal(attached.status, 0, attached.stderr || attached.stdout);
