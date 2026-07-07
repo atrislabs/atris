@@ -345,11 +345,12 @@ function searchCommand(args = [], options = {}) {
 
   const root = options.root || process.cwd();
   const results = collectSearchResults(root, query);
-  const lines = [raw ? renderRawSearch(results) : renderCompactSearch(root, results)];
   if (totalHitCount(results) === 0 && !fs.existsSync(path.join(root, 'atris'))) {
-    lines.push('No atris folder here. Run atris init to set one up.');
+    // Outside a workspace the empty scan rows are noise; lead with the way in.
+    console.log('No atris folder here. Run atris init to set one up.');
+    return 0;
   }
-  console.log(lines.join('\n'));
+  console.log(raw ? renderRawSearch(results) : renderCompactSearch(root, results));
   return 0;
 }
 
