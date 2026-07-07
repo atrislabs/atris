@@ -8362,9 +8362,21 @@ function missionCommand(args) {
     case '--help':
     case '-h':
       return help();
-    default:
-      if (subcommand && !String(subcommand).startsWith('-')) return runMission(args);
+    default: {
+      const first = String(subcommand || '');
+      if (first && !first.startsWith('-')) {
+        // Shortcut forms: a quoted objective sentence or a mission id.
+        // A bare single word is almost always a mistyped subcommand; creating
+        // a mission from it silently is worse than erroring.
+        if (first.includes(' ') || first.startsWith('mission-')) return runMission(args);
+        console.error(`Unknown mission subcommand "${first}".`);
+        console.error('To steer a running wish mission use: atris wish say "<note>" <wish-id>');
+        console.error('Run "atris mission help" for the full verb list.');
+        process.exitCode = 1;
+        return undefined;
+      }
       return help();
+    }
   }
 }
 
