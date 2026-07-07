@@ -1462,17 +1462,35 @@ test('wish keyword scan ignores filler words after folder markers', () => {
   }
 });
 
+test('delete the flows folder inside the backend does not ask which workspace', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const text = 'delete the flows folder inside the backend';
+    assert.deepEqual(missingNamedInputs(text, dir), []);
+    const res = runCli(['wish', text, '--no-mission'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    const output = `${res.stdout}\n${res.stderr || ''}`;
+    assert.doesNotMatch(output, /Which workspace, repo, file, or team member did you mean by inside\?/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish answer accepts a proper-name answer after the exact question was already asked', () => {
   const dir = makeTempDir();
   try {
     prepareWorkspace(dir);
     const fakeBin = makeFakeEngines(dir);
-    const question = 'Which workspace, repo, file, or team member did you mean by ghoststack?';
+    const question = 'Which workspace, repo, file, or team member did you mean by ghost-stack?';
     appendWishEvent(dir, {
       id: 'wish-proper-loop',
       n: 1,
       ts: isoMinutesAgo(10),
-      text: 'fix repo ghoststack for operators',
+      text: 'fix repo ghost-stack for operators',
       status: 'needs_input',
       questions: [question],
     });
@@ -1482,7 +1500,7 @@ test('wish answer accepts a proper-name answer after the exact question was alre
       env: { PATH: `${fakeBin}:${systemPath}` },
     });
     assert.equal(answered.status, 0, answered.stderr || answered.stdout);
-    assert.doesNotMatch(answered.stdout, /Which workspace, repo, file, or team member did you mean by ghoststack\?/);
+    assert.doesNotMatch(answered.stdout, /Which workspace, repo, file, or team member did you mean by ghost-stack\?/);
 
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     assert.equal(records.filter((record) => Array.isArray(record.questions)
