@@ -17,6 +17,7 @@ const extract = require('./extract');
 const json = require('./json');
 const text = require('./text');
 const hash = require('./hash');
+const date = require('./date');
 
 // script -> { ask, modes, run(mode, input) -> {text}|{error} }
 const CATALOG = {
@@ -42,6 +43,11 @@ const CATALOG = {
     ask: 'base64 / hex encode-decode, sha256 / sha1 / md5',
     modes: hash.MODES,
     run: hash.run,
+  },
+  date: {
+    ask: 'epoch <-> ISO, weekday (all UTC)',
+    modes: date.MODES,
+    run: date.run,
   },
 };
 

@@ -10,6 +10,7 @@ const jsonModule = require('./json');
 const { run } = jsonModule;
 const text = require('./text');
 const hash = require('./hash');
+const date = require('./date');
 const { CATALOG } = require('./det');
 
 let passed = 0;
@@ -83,8 +84,21 @@ check('hash.newlineStripped', hash.run('b64', 'hi\n'), { text: 'aGk=' }); // ech
 check('hash.hexdec.bad', hash.run('hexdec', 'xyz').error !== undefined, true);
 check('hash.badMode', hash.run('nope', 'x').error !== undefined, true);
 
+// --- date.js ---
+check('date.iso.sec', date.run('iso', '1700000000'), { text: '2023-11-14T22:13:20.000Z' });
+check('date.iso.ms', date.run('iso', '1700000000000'), { text: '2023-11-14T22:13:20.000Z' });
+check('date.epoch', date.run('epoch', '2026-07-07'), { text: '1783382400' });
+check('date.epochms', date.run('epochms', '2026-07-07'), { text: '1783382400000' });
+check('date.weekday', date.run('weekday', '2026-07-07'), { text: 'Tuesday' });
+check('date.epoch0', date.run('iso', '0'), { text: '1970-01-01T00:00:00.000Z' });
+check('date.utcPinned', date.run('epoch', '2026-07-07T00:00:00'), { text: '1783382400' }); // no zone -> UTC
+check('date.bad', date.run('iso', 'not-a-date').error !== undefined, true);
+check('date.badMode', date.run('nope', '0').error !== undefined, true);
+
 // --- det.js dispatcher ---
-check('det.catalog', Object.keys(CATALOG).sort(), ['extract', 'hash', 'json', 'text']);
+check('det.catalog', Object.keys(CATALOG).sort(), ['date', 'extract', 'hash', 'json', 'text']);
+check('det.date.route', CATALOG.date.run('weekday', '2026-07-07'), { text: 'Tuesday' });
+check('det.date.modes', CATALOG.date.modes, date.MODES);
 check('det.hash.route', CATALOG.hash.run('b64', 'hi'), { text: 'aGk=' });
 check('det.hash.modes', CATALOG.hash.modes, hash.MODES);
 // every catalog entry advertises modes and routes to a working run()

@@ -34,6 +34,7 @@ script at a time; never add one without a self-test.
 | "reformat / validate / flatten this JSON" | `json.js` | `pretty` `min` `validate` `keys` `csv` |
 | "dedupe / sort / count / slugify these lines" | `text.js` | `dedupe` `sort` `rsort` `count` `slug` `trim` |
 | "base64 / hash this" | `hash.js` | `b64` `b64d` `sha256` `sha1` `md5` `hexenc` `hexdec` |
+| "convert this timestamp / what weekday" | `date.js` | `iso` `epoch` `epochms` `weekday` |
 
 ### extract.js
 
@@ -83,6 +84,17 @@ node scripts/det/hash.js hexenc < file.txt        # raw <-> hex (hexdec reverses
 A single trailing newline is stripped before encoding/hashing, so `echo hi` and
 `printf 'hi'` give the same result. These are real crypto digests, not the
 plausible-looking fakes an LLM emits.
+
+### date.js
+
+```bash
+echo 1700000000 | node scripts/det/date.js iso       # epoch (s or ms) -> ISO UTC
+echo 2026-07-07 | node scripts/det/date.js epoch     # date -> epoch seconds (epochms for ms)
+echo 2026-07-07 | node scripts/det/date.js weekday   # -> Tuesday
+```
+
+Everything is UTC and machine-independent: epoch auto-detects seconds vs ms, and
+a bare date string with no timezone is pinned to UTC instead of guessing local.
 
 ## Verifying the library
 
