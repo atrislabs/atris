@@ -108,21 +108,25 @@ test('wish display uses short labels and review accepts a bare display number', 
   const dir = makeTempDir();
   try {
     prepareWorkspace(dir);
+    // relative stamps: the review nudge intentionally goes quiet 24h after a
+    // wish ships, so absolute fixture dates rot into silent test failures
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     appendJsonl(wishesPath(dir), {
       id: 'wish-2026-07-06-claim-haiku-loop-11111111',
       n: 7,
-      ts: '2026-07-06T10:00:00.000Z',
+      ts: twoHoursAgo,
       text: 'claim the haiku loop',
       status: 'delegated',
-      dispatched_at: '2026-07-06T10:00:00.000Z',
+      dispatched_at: twoHoursAgo,
     });
     appendJsonl(wishesPath(dir), {
       id: 'wish-2026-07-06-claim-orb-loop-22222222',
       n: 8,
-      ts: '2026-07-06T11:00:00.000Z',
+      ts: oneHourAgo,
       text: 'claim the orb loop',
       status: 'complete',
-      completed_at: '2026-07-06T11:00:00.000Z',
+      completed_at: oneHourAgo,
     });
 
     const list = runCli(['wish', 'list'], { cwd: dir });
