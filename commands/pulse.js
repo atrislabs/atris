@@ -166,7 +166,9 @@ function gitSnapshot(root) {
   return { head, dirty: new Set(gitChangedFiles(root)) };
 }
 
-function runVerify(root, verifyCmd, timeoutMs = 600000) {
+// 30 min: the full suite takes ~8 min alone but 15+ under concurrent mission
+// load; a 10-min cap turned green suites into false verify FAILs (tick 159).
+function runVerify(root, verifyCmd, timeoutMs = 1800000) {
   if (!verifyCmd) return { passed: null, cmd: null };
   const { envWithNodeDir } = require('../lib/spawn-env');
   const r = spawnSync(verifyCmd, {
