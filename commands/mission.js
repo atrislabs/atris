@@ -6224,6 +6224,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
     `- You are the member "${mission.owner}". Read atris/team/${mission.owner}/MEMBER.md (and SOUL.md if present) before acting — work in that identity, inside its scope and stop rules. After your work, append what you did and what you learned to atris/team/${mission.owner}/logs/<today's date>.md.`,
     `- FIRST: inspect current mission/task state before acting. Read the relevant files, run \`atris mission status ${mission.id}\`, \`git status\`, or \`atris task list\` as needed so you know what's already done.`,
     `- Pick the smallest concrete action that moves the mission forward.`,
+    `- Before acting, state your single next move in one sentence.`,
     `- Edit / run / research as needed for the lane.`,
     `- After your work, the harness runs the frozen verifier — make sure it'll pass.`,
     `- Write the tick summary in operator language: what changed and what it buys or costs in plain words, with no flags, task ids, or code identifiers.`,
