@@ -20,6 +20,7 @@ script at a time; never add one without a self-test.
 | Task the LLM is asked | Script | Modes |
 |-----------------------|--------|-------|
 | "pull all the links / emails / code out of this" | `extract.js` | `urls` `emails` `code` `numbers` `ipv4` `hashtags` |
+| "reformat / validate / flatten this JSON" | `json.js` | `pretty` `min` `validate` `keys` `csv` |
 
 ### extract.js
 
@@ -31,6 +32,19 @@ node scripts/det/extract.js --json urls < page.html  # JSON array
 ```
 
 Duplicates removed, first-seen order preserved. Unknown mode exits 2.
+
+### json.js
+
+```bash
+cat data.json     | node scripts/det/json.js pretty       # 2-space indent
+node scripts/det/json.js min      < data.json              # minified
+node scripts/det/json.js validate < data.json             # "valid" or errors (exit 2)
+node scripts/det/json.js keys     < data.json             # top-level keys
+node scripts/det/json.js csv      < array.json            # array of objects -> RFC-4180 CSV
+```
+
+`csv` handles the escaping LLMs get wrong: fields with commas or quotes are
+quoted, inner quotes doubled. Columns follow first-seen key order across rows.
 
 ## Verifying the library
 

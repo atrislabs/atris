@@ -5,6 +5,7 @@
 
 const assert = require('assert');
 const { extract } = require('./extract');
+const { run } = require('./json');
 
 let passed = 0;
 function check(name, actual, expected) {
@@ -38,5 +39,20 @@ check('unknown', extract('nope', 'x'), null);
 
 // empty input -> empty list
 check('empty', extract('urls', ''), []);
+
+// --- json.js ---
+check('json.pretty', run('pretty', '{"a":1}'), { text: '{\n  "a": 1\n}' });
+check('json.min', run('min', '{ "a" : 1 }'), { text: '{"a":1}' });
+check('json.validate.ok', run('validate', '[1,2,3]'), { text: 'valid' });
+check('json.validate.bad', run('validate', '{bad}').error !== undefined, true);
+check('json.keys', run('keys', '{"a":1,"b":2}'), { text: 'a\nb' });
+// csv: header from first-seen key order, proper RFC-4180 quoting of commas/quotes
+check(
+  'json.csv',
+  run('csv', '[{"name":"a, b","n":1},{"name":"c\\"d","n":2}]'),
+  { text: 'name,n\n"a, b",1\n"c""d",2' }
+);
+check('json.csv.notArray', run('csv', '{"a":1}').error !== undefined, true);
+check('json.badMode', run('nope', '{}').error !== undefined, true);
 
 console.log(`ok — ${passed} checks passed`);
