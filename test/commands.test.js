@@ -16879,7 +16879,7 @@ test('search finds matches in journal files', () => {
     writeTodayLog(dir, '# Log\n\n## Inbox\n\n- **I1:** Fix the auth module\n');
     const res = runCli(['search', 'auth'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Journal:\n- atris\/logs\/2026\/2026-07-06\.md:5: - \*\*I1:\*\* Fix the auth module/);
+    assert.match(res.stdout, /Journal:\n- atris\/logs\/\d{4}\/\d{4}-\d{2}-\d{2}\.md:5: - \*\*I1:\*\* Fix the auth module/);
     assert.match(res.stdout, /auth/i);
   } finally {
     cleanupTempDir(dir);
@@ -16893,7 +16893,7 @@ test('search is case-insensitive', () => {
     writeTodayLog(dir, '# Log\n\n## Notes\n\nDebugged the AUTH flow\n');
     const res = runCli(['search', 'auth'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Journal:\n- atris\/logs\/2026\/2026-07-06\.md:5: Debugged the AUTH flow/);
+    assert.match(res.stdout, /Journal:\n- atris\/logs\/\d{4}\/\d{4}-\d{2}-\d{2}\.md:5: Debugged the AUTH flow/);
   } finally {
     cleanupTempDir(dir);
   }
