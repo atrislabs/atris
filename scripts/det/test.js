@@ -13,6 +13,7 @@ const hash = require('./hash');
 const date = require('./date');
 const commitMsg = require('./commit-msg');
 const changelog = require('./changelog');
+const prDesc = require('./pr-description');
 const { CATALOG } = require('./det');
 
 let passed = 0;
@@ -182,6 +183,65 @@ check('changelog.parse.freeform', changelog.parseSubject('just a note').subject,
 }
 check('changelog.empty', changelog.render(changelog.build([])), 'No changes.');
 check('changelog.badInput', changelog.build('nope').error !== undefined, true);
+
+// --- pr-description.js (git-facing) ---
+// single commit -> title is that subject verbatim
+check(
+  'pr.title.one',
+  prDesc.pickTitle([{ subject: 'feat(cli): add reel' }], [{ path: 'commands/reel.js', status: 'A' }]),
+  'feat(cli): add reel'
+);
+// many commits -> dominant type + lead file (feat wins the tie by SECTIONS order)
+check(
+  'pr.title.many',
+  prDesc.pickTitle(
+    [{ subject: 'feat: a' }, { subject: 'fix: b' }, { subject: 'feat: c' }],
+    [
+      { path: 'lib/new.js', status: 'A', added: 3, deleted: 0 },
+      { path: 'lib/old.js', status: 'M', added: 1, deleted: 1 },
+    ]
+  ),
+  'feat: new.js (+1 more)'
+);
+// summary bullets: one per top-level area, first-seen order, with counts + churn
+check(
+  'pr.summary.areas',
+  prDesc.areaBullets([
+    { path: 'scripts/det/a.js', status: 'A', added: 10, deleted: 0 },
+    { path: 'scripts/det/b.js', status: 'M', added: 2, deleted: 1 },
+    { path: 'test/x.test.js', status: 'A', added: 5, deleted: 0 },
+  ]),
+  ['- **scripts** — 1 added, 1 changed (+12/-1)', '- **test** — 1 added (+5/-0)']
+);
+// test plan lists touched test files, then a check per non-test area
+check(
+  'pr.testplan',
+  prDesc.testPlan([
+    { path: 'scripts/det/a.js', status: 'M' },
+    { path: 'scripts/det/test.js', status: 'M' },
+  ]),
+  [
+    '- [ ] Run the touched tests:',
+    '  - `scripts/det/test.js`',
+    '- [ ] Exercise **scripts** and confirm no regression',
+  ]
+);
+// no test files -> generic fallback line
+check('pr.testplan.none', prDesc.testPlan([{ path: 'README.md', status: 'M' }]), [
+  '- [ ] Exercise **.** and confirm no regression',
+]);
+{
+  const r = prDesc.build({
+    commits: [{ hash: 'a1', subject: 'feat(det): add pr-description.js' }],
+    files: [{ path: 'scripts/det/pr-description.js', status: 'A', added: 100, deleted: 0 }],
+  });
+  const md = prDesc.render(r);
+  check('pr.render.title', /^# feat\(det\): add pr-description\.js/.test(md), true);
+  check('pr.render.summary', md.includes('## Summary'), true);
+  check('pr.render.testplan', md.includes('## Test plan'), true);
+  check('pr.render.stat', md.includes('1 commit, 1 file, +100/-0'), true);
+}
+check('pr.empty', prDesc.build({ commits: [], files: [] }).error !== undefined, true);
 
 // --- det.js dispatcher ---
 check('det.catalog', Object.keys(CATALOG).sort(), ['date', 'extract', 'hash', 'json', 'text']);

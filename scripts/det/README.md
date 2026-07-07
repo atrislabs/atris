@@ -45,6 +45,7 @@ munging. They live outside the stdin catalog because their input is the repo.
 |-----------------------|--------|--------|
 | "write a commit message for this" | `commit-msg.js` | Conventional-Commits draft from the staged diff |
 | "summarize what changed since the last release" | `changelog.js` | grouped changelog from commit subjects |
+| "write a PR description for this branch" | `pr-description.js` | title + area summary + test-plan from the branch diff |
 
 ```bash
 git add -A && node scripts/det/commit-msg.js        # print the drafted message
@@ -67,6 +68,18 @@ Sections, order, and bullets come straight from the commit subjects grouped by
 Conventional-Commits type (`feat`->Features, `fix`->Fixes, ...); `type!:` commits
 surface under BREAKING CHANGES. Subjects that don't match the header grammar land
 in "Other" so nothing is dropped. No paraphrase, no invented or missing entries.
+
+```bash
+node scripts/det/pr-description.js                  # diff origin/master...HEAD -> markdown
+node scripts/det/pr-description.js origin/main      # different base branch
+node scripts/det/pr-description.js origin/main HEAD # explicit base + head
+node scripts/det/pr-description.js --json           # structured {title,summary,testPlan,...}
+```
+
+Title comes from the commits (one commit -> its subject; many -> dominant type +
+lead file); the summary is one bullet per changed area with counts and churn; the
+test-plan lists the touched test files plus one check per non-test area. Every
+line is backed by a real change in the diff — no invented rationale or checklist.
 
 ### extract.js
 
