@@ -36,6 +36,23 @@ script at a time; never add one without a self-test.
 | "base64 / hash this" | `hash.js` | `b64` `b64d` `sha256` `sha1` `md5` `hexenc` `hexdec` |
 | "convert this timestamp / what weekday" | `date.js` | `iso` `epoch` `epochms` `weekday` |
 
+### Git-facing scripts
+
+These read git directly (not stdin) and replace LLM *generation*, not just data
+munging. They live outside the stdin catalog because their input is the repo.
+
+| Task the LLM is asked | Script | Output |
+|-----------------------|--------|--------|
+| "write a commit message for this" | `commit-msg.js` | Conventional-Commits draft from the staged diff |
+
+```bash
+git add -A && node scripts/det/commit-msg.js        # print the drafted message
+node scripts/det/commit-msg.js --json               # structured {type,scope,subject,body,...}
+```
+
+Type and scope come from the changed paths (`docs`/`test`/`chore`/`feat`/`fix`,
+scope = deepest common dir); the body is exact diff stats. No intent-guessing.
+
 ### extract.js
 
 ```bash

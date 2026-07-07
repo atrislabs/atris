@@ -11,6 +11,7 @@ const { run } = jsonModule;
 const text = require('./text');
 const hash = require('./hash');
 const date = require('./date');
+const commitMsg = require('./commit-msg');
 const { CATALOG } = require('./det');
 
 let passed = 0;
@@ -94,6 +95,40 @@ check('date.epoch0', date.run('iso', '0'), { text: '1970-01-01T00:00:00.000Z' })
 check('date.utcPinned', date.run('epoch', '2026-07-07T00:00:00'), { text: '1783382400' }); // no zone -> UTC
 check('date.bad', date.run('iso', 'not-a-date').error !== undefined, true);
 check('date.badMode', date.run('nope', '0').error !== undefined, true);
+
+// --- commit-msg.js (git-facing) ---
+// type from paths: all under scripts/ -> chore, scope = deepest common dir
+{
+  const d = commitMsg.draft([
+    { path: 'scripts/det/date.js', status: 'A', added: 90, deleted: 0 },
+    { path: 'scripts/det/test.js', status: 'M', added: 11, deleted: 1 },
+  ]);
+  check('commit.subject', d.subject, 'chore(det): update 2 files');
+  check('commit.totals', d.totals, { added: 101, deleted: 1 });
+  check('commit.body.stat', /2 files changed, \+101\/-1$/.test(d.body), true);
+}
+check(
+  'commit.docs',
+  commitMsg.draft([{ path: 'README.md', status: 'M', added: 3, deleted: 0 }]).subject,
+  'docs: update README.md'
+);
+check(
+  'commit.test',
+  commitMsg.draft([{ path: 'test/foo.test.js', status: 'A', added: 5, deleted: 0 }]).subject,
+  'test: add foo.test.js'
+);
+check(
+  'commit.feat',
+  commitMsg.draft([{ path: 'lib/parser.js', status: 'A', added: 40, deleted: 0 }]).subject,
+  'feat(lib): add parser.js'
+);
+check(
+  'commit.fix',
+  commitMsg.draft([{ path: 'lib/parser.js', status: 'M', added: 2, deleted: 2 }]).subject,
+  'fix(lib): update parser.js'
+);
+check('commit.scope.root', commitMsg.commonDirScope(['package.json']), '');
+check('commit.empty', commitMsg.draft([]).error !== undefined, true);
 
 // --- det.js dispatcher ---
 check('det.catalog', Object.keys(CATALOG).sort(), ['date', 'extract', 'hash', 'json', 'text']);
