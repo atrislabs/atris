@@ -605,6 +605,35 @@ const SHARED_CHECKOUT_GIT_CONTRACT = `- Shared-checkout git safety (COORDINATION
 - On a shared checkout, \`git reset\`, \`git checkout --\`, \`git clean\`, and stashing other agents' work are FORBIDDEN — concurrent ticks' uncommitted work lives there.`;
 
 /**
+ * Target files of experiment-queue entries that have not run yet. The gated
+ * keep/revert loop owns pending patches to these; a freelance autopilot edit
+ * to the same file blocks the loop with dirty targets (seen live 2026-07-07:
+ * a pulse tick hand-applied two queued prompt patches, verify failed, and the
+ * real experiment run was locked out until the tree was restored).
+ */
+function pendingExperimentTargets(root = process.cwd()) {
+  try {
+    const queueFile = path.join(root, 'atris', 'experiments', 'daily', 'queue.jsonl');
+    const stateFile = path.join(root, '.atris', 'state', 'experiments-daily.json');
+    let history = [];
+    try { history = JSON.parse(fs.readFileSync(stateFile, 'utf8')).history || []; } catch { /* no state yet */ }
+    const done = new Set(history);
+    const targets = new Set();
+    for (const line of fs.readFileSync(queueFile, 'utf8').split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const entry = JSON.parse(trimmed);
+        if (entry.id && !done.has(entry.id)) (entry.target_files || []).forEach((t) => targets.add(t));
+      } catch { /* skip malformed row */ }
+    }
+    return [...targets];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Build the right prompt for each phase, adapting to the kind of work.
  */
 function buildPrompt(phase, context, options = {}) {
@@ -817,6 +846,10 @@ Self-heal task: ${task}
 When done, reply: done.`;
     }
 
+    const pendingTargets = pendingExperimentTargets();
+    const experimentGuard = pendingTargets.length
+      ? `\n- Do NOT edit these files this tick — the gated experiment loop owns pending patches to them: ${pendingTargets.join(', ')}. If the task requires changing them, stop and flag instead.`
+      : '';
     return `You are the executor. Read your MEMBER.md spec first if available.
 
 Rules:
@@ -824,7 +857,7 @@ Rules:
 - Execute ONE step at a time. Verify each step before moving on.
 - Check MAP.md for file locations before grepping.
 - If you hit two errors on the same step, stop and flag for re-scope.
-- Stay in scope. Don't touch files outside the task boundary.
+- Stay in scope. Don't touch files outside the task boundary.${experimentGuard}
 ${SHARED_CHECKOUT_GIT_CONTRACT}
 
 Before reading the file list, state the business stake this task protects or unlocks in one sentence.
@@ -3751,6 +3784,7 @@ module.exports = {
   autopilotAtris,
   autopilotFromTodo,
   buildPrompt,
+  pendingExperimentTargets,
   isLessonResolved,
   isLessonResolvedLegacy,
   loadLessonMetadata,
