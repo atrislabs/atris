@@ -170,3 +170,21 @@ test('gm help is workspace-free and non-mutating', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('gm <member> wakes the member instead of entering manager mode', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), NODE_NO_WARNINGS: '1' };
+  try {
+    const memberDir = path.join(dir, 'atris', 'team', 'maze');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '---\nname: maze\nrole: Test Navigator\n---\n# Maze\n');
+
+    const res = runCli(['gm', 'maze'], { cwd: dir, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /maze is waking up/);
+    assert.doesNotMatch(res.stdout, /AgentXP General Manager/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

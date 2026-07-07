@@ -629,10 +629,28 @@ function render(state) {
   for (const command of state.next_commands) console.log(`- ${command}`);
 }
 
+// `gm <name>` is how people greet a team member in chat ("gm maze"). When the
+// positional names a real member (and not the manager persona), the same phrase
+// works in the terminal: wake that member instead of entering manager mode.
+function wakeableMember(args) {
+  const name = slugify(positional(args)[0]);
+  if (!name || name === 'game-manager' || flag(args, '--manager')) return null;
+  const memberDir = path.join(process.cwd(), 'atris', 'team', name);
+  if (!fs.existsSync(path.join(memberDir, 'MEMBER.md'))) return null;
+  return name;
+}
+
 async function gmCommand(...args) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     showHelp();
     return;
+  }
+
+  const member = wakeableMember(args);
+  if (member) {
+    const { memberCommand } = require('./member');
+    const passthrough = args.filter(arg => arg !== member);
+    return memberCommand('wake', member, ...passthrough);
   }
 
   const state = gmState(args);
