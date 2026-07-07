@@ -787,9 +787,7 @@ function pushFlagWhenPresent(out, args, name) {
   if (hasFlag(args, name)) out.push(name);
 }
 
-function startMemberRunMission(name, missionText, args = []) {
-  const paths = requireMemberDir(name);
-  const owner = paths.storageName || name;
+function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cwd()) {
   const startArgs = [
     'mission',
     'start',
@@ -809,15 +807,43 @@ function startMemberRunMission(name, missionText, args = []) {
   pushFlagValue(startArgs, args, '--minutes');
   pushFlagValue(startArgs, args, '--hours');
   pushFlagValue(startArgs, args, '--base');
-  pushFlagWhenPresent(startArgs, args, '--no-verify');
+  // A member-run mission is driven immediately by its runner, not parked on
+  // the queue — so the mission-start verifier gate (built for parked planning
+  // wishes) would only kill autonomous legs like autopilot's "member chooses
+  // useful work". When the caller named no verifier, opt out explicitly.
+  if (hasFlag(args, '--no-verify') || !readFlag(args, '--verify', '')) {
+    startArgs.push('--no-verify');
+  }
   pushFlagWhenPresent(startArgs, args, '--always-on');
   pushFlagWhenPresent(startArgs, args, '--xp-task');
   pushFlagWhenPresent(startArgs, args, '--agent-xp');
   pushFlagWhenPresent(startArgs, args, '--spend-full-budget');
   pushFlagWhenPresent(startArgs, args, '--use-whole-budget');
   pushFlagWhenPresent(startArgs, args, '--stop-when-done');
-  if (!hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree')) startArgs.push('--worktree');
+  // Default to an isolated worktree only when there is a git repo to cut it
+  // from. A plain (non-git) workspace would fail every mission start with
+  // "fatal: not a git repository" — degrade to the shared checkout instead.
+  if (!hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree') && insideGitRepo(cwd)) {
+    startArgs.push('--worktree');
+  }
   if (hasFlag(args, '--json')) startArgs.push('--json');
+  return startArgs;
+}
+
+function insideGitRepo(startDir) {
+  let dir = path.resolve(startDir || process.cwd());
+  while (true) {
+    if (fs.existsSync(path.join(dir, '.git'))) return true;
+    const parent = path.dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
+}
+
+function startMemberRunMission(name, missionText, args = []) {
+  const paths = requireMemberDir(name);
+  const owner = paths.storageName || name;
+  const startArgs = buildMemberRunStartArgs(owner, missionText, args);
 
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
   try {
@@ -8761,4 +8787,4 @@ async function memberCommand(subcommand, ...args) {
   }
 }
 
-module.exports = { memberCommand, findAllMembers, parseFrontmatter, wakeBootLines };
+module.exports = { memberCommand, findAllMembers, parseFrontmatter, wakeBootLines, buildMemberRunStartArgs };
