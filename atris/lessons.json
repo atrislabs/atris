@@ -176,5 +176,15 @@
     "status": "pass",
     "detector": "node --test test/mission-tick-prompt.test.js",
     "scope": "atris-cli"
+  },
+  "experiment-tick-receipt-verify-command": {
+    "status": "pass",
+    "detector": "node --test test/mission-tick-prompt.test.js",
+    "scope": "atris-cli"
+  },
+  "experiment-autopilot-owner-check": {
+    "status": "pass",
+    "detector": "node --test test/autopilot-plan-review.test.js",
+    "scope": "atris-cli"
   }
 }

@@ -4,6 +4,10 @@
 
 ---
 
+- **[2026-07-07] experiment-autopilot-owner-check** — pass — Daily experiment autopilot-owner-check kept (superset).
+
+- **[2026-07-07] experiment-tick-receipt-verify-command** — pass — Daily experiment tick-receipt-verify-command kept (superset).
+
 - **[2026-07-07] experiment-receipt-summary-first-line** — pass — Daily experiment receipt-summary-first-line kept (superset).
 
 - **[2026-07-07] experiment-tick-prompt-cot-oneliner** — pass — Daily experiment tick-prompt-cot-oneliner kept (superset).
