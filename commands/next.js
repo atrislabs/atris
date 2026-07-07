@@ -3,6 +3,7 @@
 const {
   claimRoadmapItem,
   nextCards,
+  markDreamCardConsumed,
   parkNextCard,
   recordDecision,
   seedInboxFromMove,
@@ -101,12 +102,15 @@ function nextCommand(args = [], root = process.cwd()) {
   const current = nextCards(root, 1)[0] || null;
   if (!action) {
     printCard(current);
+    if (current?.source === 'dream') markDreamCardConsumed(root, current, new Date().toISOString(), 'dealt');
     return 0;
   }
 
   if (action === 'skip') {
     const following = current ? nextCards(root, 1, { skipIds: [current.id] })[0] : null;
+    if (current?.source === 'dream') markDreamCardConsumed(root, current, new Date().toISOString(), 'skipped');
     printCard(following);
+    if (following?.source === 'dream') markDreamCardConsumed(root, following, new Date().toISOString(), 'dealt');
     return 0;
   }
 
