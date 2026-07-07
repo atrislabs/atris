@@ -46,7 +46,7 @@ module.exports = {
     assert.equal(claimed.task.claimed_by, 'bench');
     assertProjectionStatus(ctx, created.task_id, 'claimed');
 
-    const ready = parseJson(ctx.runCli(['task', 'ready', ref, '--verify', 'node -e "process.exit(0)"', '--as', 'bench', '--json']));
+    const ready = parseJson(ctx.runCli(['task', 'ready', ref, '--verify', 'node -e "process.exit(0)"', '--result', 'Operators can now follow one task from claim to done without losing state.', '--as', 'bench', '--json']));
     assert.equal(ready.task.status, 'review');
     assert.equal(ready.approval_status, 'pending');
     assertProjectionStatus(ctx, created.task_id, 'review');

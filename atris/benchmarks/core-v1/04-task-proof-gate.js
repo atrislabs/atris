@@ -27,13 +27,14 @@ module.exports = {
     assert.notEqual(weak.status, 0);
     assert.equal(parseJson(ctx.runCli(['task', 'show', ref, '--json'])).status, 'claimed');
 
+    const result = 'Reviewers can now trust that proof was executed instead of taking claims on faith.';
     const failingVerifier = `${process.execPath} -e "process.exit(4)"`;
-    const failed = ctx.runCli(['task', 'ready', ref, '--verify', failingVerifier, '--json']);
+    const failed = ctx.runCli(['task', 'ready', ref, '--verify', failingVerifier, '--result', result, '--json']);
     assert.equal(failed.status, 1);
     assert.equal(parseJson(ctx.runCli(['task', 'show', ref, '--json'])).status, 'claimed');
 
     const passingVerifier = `${process.execPath} -e "process.exit(0)"`;
-    const ready = parseJson(ctx.runCli(['task', 'ready', ref, '--verify', passingVerifier, '--as', 'bench', '--json']));
+    const ready = parseJson(ctx.runCli(['task', 'ready', ref, '--verify', passingVerifier, '--result', result, '--as', 'bench', '--json']));
     assert.equal(ready.task.status, 'review');
     assert.equal(ready.approval_status, 'pending');
 

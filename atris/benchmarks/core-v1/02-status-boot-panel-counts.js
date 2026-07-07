@@ -29,6 +29,7 @@ module.exports = {
     parseJson(ctx.runCli([
       'task', 'ready', taskRef(review),
       '--proof', 'node --test test/bench-tasks.test.js passed',
+      '--result', 'Operators can now trust the boot panel review count instead of guessing what is waiting.',
       '--as', 'bench',
       '--json',
     ]));
