@@ -41,6 +41,17 @@ test('wake boot surfaces the ask, next step, and receipt', () => {
   assert.ok(output.includes('member-wake-maze-x.json'));
 });
 
+test('every decision code in member.js renders as grammatical English', () => {
+  const fs = require('fs');
+  const source = fs.readFileSync(path.join(__dirname, '..', 'commands', 'member.js'), 'utf8');
+  const codes = new Set([...source.matchAll(/decision\s*[=:]\s*'([a-z_]+)'/g)].map(m => m[1]));
+  assert.ok(codes.size >= 10, `expected to find decision codes in source, got ${codes.size}`);
+  for (const code of codes) {
+    const output = render({ ...baseResult, decision: code, ask: null });
+    assert.ok(!new RegExp(`looked around and ${code}\\.`).test(output), `raw code "${code}" leaked as sentence tail`);
+  }
+});
+
 test('wake boot shows goal, experiment, and unknown reasons degrade gracefully', () => {
   const output = render({
     ...baseResult,
