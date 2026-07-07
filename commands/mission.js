@@ -8368,6 +8368,7 @@ function missionCommand(args) {
 module.exports = {
   missionCommand,
   startMission,
+  completeMission,
   inspectMission,
   expireStaleMissions,
   reapPausedMissions,

@@ -2102,7 +2102,14 @@ if (command === 'init') {
       console.error(`✗ Brainstorm failed: ${error.message || error}`);
       process.exit(1);
     });
-} else if (command === 'next' || command === 'atris') {
+} else if (command === 'next') {
+  Promise.resolve(require('../commands/next').nextCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((error) => {
+      console.error(`✗ Error: ${error.message || error}`);
+      process.exit(1);
+    });
+} else if (command === 'atris') {
   const rawArgs = process.argv.slice(3);
   if (rawArgs.includes('--help') || rawArgs.includes('-h') || rawArgs[0] === 'help') {
     showNextHelp(command);
