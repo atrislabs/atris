@@ -27,9 +27,17 @@ function runLoops(args, dir) {
   });
 }
 
+function runCli(args, cwd) {
+  return spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, NODE_NO_WARNINGS: '1' },
+    cwd,
+  });
+}
+
 test('loops board shows registry jobs with health and retired count', () => {
   const dir = makeHeartbeatFixture();
-  const res = runLoops([], dir);
+  const res = runLoops(['board'], dir);
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /heartbeat registry \(1 live, 1 retired\)/);
   assert.match(res.stdout, /demo-loop/);
@@ -59,4 +67,51 @@ test('loops stop rejects unknown ids', () => {
   const res = runLoops(['stop', 'nope'], dir);
   assert.equal(res.status, 1);
   assert.match(res.stderr, /No registry job named "nope"/);
+});
+
+test('loops init scaffolds project loop files idempotently', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loops-project-'));
+  const res = runCli(['loops', 'init'], dir);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /created:/);
+  assert.match(res.stdout, /atris\/loops\/LOOPS\.md/);
+  assert.match(res.stdout, /atris\/loops\/feedback\.md/);
+  assert.match(res.stdout, /atris\/wiki\/systems\/loops\.md/);
+  assert.equal(fs.existsSync(path.join(dir, 'atris', 'loops', 'TICK.md')), true);
+
+  const again = runCli(['loops', 'init'], dir);
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.stdout, /created:\n  none/);
+  assert.match(again.stdout, /skipped:/);
+  assert.match(again.stdout, /atris\/loops\/quality\.md/);
+});
+
+test('self-improve aliases loops init', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-self-improve-'));
+  const res = runCli(['self-improve'], dir);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /atris loops init/);
+  assert.equal(fs.existsSync(path.join(dir, 'atris', 'loops', 'feedback.md')), true);
+});
+
+test('loops audit checks structural contract and optional Check command', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loops-audit-'));
+  assert.equal(runCli(['loops', 'init'], dir).status, 0);
+
+  const res = runCli(['loops', 'audit'], dir);
+  assert.equal(res.status, 1);
+  assert.match(res.stdout, /❌ feedback/);
+  assert.match(res.stdout, /owner team\/TODO-feedback-owner does not exist/);
+  assert.match(res.stdout, /check: `true` exit 0/);
+  assert.match(res.stdout, /SELF-IMPROVING: NOT YET/);
+});
+
+test('loops tick prints project tick protocol', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loops-tick-'));
+  assert.equal(runCli(['loops', 'init'], dir).status, 0);
+
+  const res = runCli(['loops', 'tick'], dir);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /# The Tick - loop protocol for ANY model/);
+  assert.match(res.stdout, /atris loops audit/);
 });

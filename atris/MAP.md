@@ -59,6 +59,7 @@ rg "Codex Executor|Start Here - Codex Executor" atris/team/codex-executor/MEMBER
 rg "prepareBrainState|refreshNowFile|isGeneratedNowFile|brain compile refreshes stale now|preserves a custom now" commands/brain.js commands/now.js test/commands.test.js # Brain compile refreshes generated now.md before state collection while preserving custom front doors
 rg "cleanAtris|cleanResultPayload|clean --dry-run --json" commands/clean.js test/commands.test.js           # Clean command text/json output
 rg "loopAtris|buildReport|showLoopHelp|loop --help|nextMoves|readEndgameMove|todoKeepsEndgameActive" bin/atris.js commands/loop.js commands/loop-front.js lib/next-moves.js test/commands.test.js test/moves.test.js # Wiki upkeep loop, ranked next moves, stale compiled-endgame suppression, and non-mutating help
+rg "loopsCommand|initLoops|auditLoops|tickLoops|self-improve|templates/loops" bin/atris.js commands/loops.js templates/loops test/loops.test.js # Self-improving project loops: init scaffold, structural audit, tick protocol, self-improve alias, plus legacy board/start/stop
 rg "runAtris" commands/run.js               # Run command (autonomous loop)
 rg "verifyAtris|verifyRubric|showVerifyHelp|verify --help" bin/atris.js commands/verify.js test/commands.test.js # Verify command, rubric, and non-mutating help
 rg "serveAtris|showServeHelp|command === 'serve'" bin/atris.js commands/serve.js test/commands.test.js  # Local AI Computer bridge routing + help guard

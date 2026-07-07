@@ -536,7 +536,8 @@ function showHelp() {
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
   console.log('  soul       - Show, snapshot, or fork workspace identity');
   console.log('  fleet      - Inspect local fleet status');
-  console.log('  loops      - Background loops board: what runs, what died, start/stop');
+  console.log('  loops      - Self-improving loop audit/scaffold (`init`, `audit`, `tick`, `board`)');
+  console.log('  self-improve - Alias for `atris loops init`');
   console.log('  agent      - Select cloud agent, spawn worker requests, or run `agent doctor`');
   console.log('  chat       - Chat with Atris 2 Fast in this workspace (--agent for cloud agent; or: atris chat scan)');
   console.log('  fast       - Chat with Atris2 Fast');
@@ -927,7 +928,7 @@ const knownCommands = ['init', 'log', 'wish', 'drill', 'dream', 'now', 'radar', 
                        'clean', 'harvest', 'verify', 'search', 'scout', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'bench', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'agents', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'write', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'study', 'rainmaker', 'xp', 'play', 'gm', 'x', 'recap', 'report', 'signup', 'clarity', 'interview', 'moves', 'unknowns',
                        'github', 'vercel', 'supabase', 'linear', 'stripe', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
-                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed', 'brief'];
+                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'self-improve', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed', 'brief'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -2418,10 +2419,19 @@ if (command === 'init') {
   require('../commands/fleet').fleet(args)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
-} else if (command === 'loops') {
+} else if (command === 'loops' || command === 'self-improve') {
   try {
-    require('../commands/loops').loopsCommand(process.argv[3], ...process.argv.slice(4));
-    process.exit(0);
+    const loops = require('../commands/loops');
+    const aliasArgs = process.argv.slice(3);
+    const aliasWantsHelp = ['help', '--help', '-h'].includes(aliasArgs[0]);
+    const subcommand = command === 'self-improve'
+      ? (aliasWantsHelp ? aliasArgs[0] : 'init')
+      : process.argv[3];
+    const args = command === 'self-improve'
+      ? (aliasWantsHelp ? aliasArgs.slice(1) : aliasArgs)
+      : process.argv.slice(4);
+    const exitCode = loops.loopsCommand(subcommand, ...args);
+    process.exit(typeof exitCode === 'number' ? exitCode : 0);
   } catch (error) {
     console.error(`\n✗ Error: ${error.message || error}`);
     process.exit(1);

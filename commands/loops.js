@@ -1,8 +1,11 @@
 /**
- * atris loops - one view of every background loop: what runs, what died,
- * what you can start or stop.
+ * atris loops - project loop audit/scaffold plus legacy background loop board.
  *
- *   atris loops              - the board (registry jobs, launchd agents, missions)
+ *   atris loops              - audit atris/loops in this project
+ *   atris loops init         - scaffold the loop system into this project
+ *   atris self-improve       - alias for atris loops init
+ *   atris loops tick         - print the loop tick protocol
+ *   atris loops board        - legacy board: registry jobs, launchd agents, mission
  *   atris loops stop <id>    - disable a registry job or boot out a launchd agent
  *   atris loops start <id>   - enable a registry job or kickstart a launchd agent
  */
@@ -11,6 +14,16 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execSync, spawnSync } = require('child_process');
+
+const MAX_LOG_AGE_DAYS = 14;
+const TEMPLATE_ROOT = path.join(__dirname, '..', 'templates', 'loops');
+const SCAFFOLD_FILES = [
+  'atris/loops/LOOPS.md',
+  'atris/loops/TICK.md',
+  'atris/loops/feedback.md',
+  'atris/loops/quality.md',
+  'atris/wiki/systems/loops.md',
+];
 
 function heartbeatDir() {
   return process.env.ATRIS_HEARTBEAT_DIR || path.join(os.homedir(), '.atris', 'heartbeat');
@@ -127,6 +140,7 @@ function showBoard(cwd) {
   console.log('');
   console.log('control: atris loops stop <id> · atris loops start <id>');
   console.log('ids: registry job id, or a com.atris.* launchd label');
+  return 0;
 }
 
 function saveRegistry(registry) {
@@ -178,35 +192,225 @@ function controlLoop(id, action) {
       process.exit(1);
     }
     console.log(`${action === 'stop' ? 'Stopped' : 'Started'} ${target}.`);
-    return;
+    return 0;
   }
   const ok = setRegistryJob(target, action === 'start');
   if (!ok) {
-    console.error(`No registry job named "${target}". Run: atris loops`);
+    console.error(`No registry job named "${target}". Run: atris loops board`);
     process.exit(1);
   }
   console.log(`${action === 'stop' ? 'Disabled' : 'Enabled'} ${target} in the heartbeat registry (backup written).`);
+  return 0;
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function renderTemplate(text) {
+  return text.split('{{DATE}}').join(todayIso());
+}
+
+function initLoops(cwd = process.cwd()) {
+  const created = [];
+  const skipped = [];
+
+  for (const relPath of SCAFFOLD_FILES) {
+    const source = path.join(TEMPLATE_ROOT, relPath);
+    const target = path.join(cwd, relPath);
+    if (fs.existsSync(target)) {
+      skipped.push(relPath);
+      continue;
+    }
+    const content = renderTemplate(fs.readFileSync(source, 'utf8'));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content, 'utf8');
+    created.push(relPath);
+  }
+
+  console.log('atris loops init');
+  console.log('');
+  console.log('created:');
+  if (created.length) created.forEach(file => console.log(`  ${file}`));
+  else console.log('  none');
+  console.log('');
+  console.log('skipped:');
+  if (skipped.length) skipped.forEach(file => console.log(`  ${file}`));
+  else console.log('  none');
+  console.log('');
+  console.log('Next: fill Owner/Wiki/Runner TODOs, then run atris loops audit');
+  return 0;
+}
+
+function stripAnchor(linkTarget) {
+  return String(linkTarget || '').split('#')[0];
+}
+
+function wikiTargetPath(loopFilePath, wikiLink) {
+  const cleaned = stripAnchor(wikiLink);
+  if (!cleaned || /^[a-z]+:\/\//i.test(cleaned)) return null;
+  return path.resolve(path.dirname(loopFilePath), cleaned);
+}
+
+function checkCommandFrom(text) {
+  return text.match(/\*\*Check:\*\*\s*`([^`]+)`/)?.[1]?.trim() || null;
+}
+
+function runLoopCheck(commandText, cwd) {
+  const result = spawnSync(commandText, {
+    cwd,
+    shell: true,
+    encoding: 'utf8',
+    timeout: 240000,
+  });
+  return {
+    command: commandText,
+    exitCode: typeof result.status === 'number' ? result.status : 1,
+    error: result.error ? result.error.message : null,
+  };
+}
+
+function structuralProblems({ root, filePath, text, nowMs }) {
+  const problems = [];
+
+  const owner = text.match(/\*\*Owner:\*\*\s*`team\/([^`]+)`/)?.[1]?.trim();
+  if (!owner) problems.push('no Owner field');
+  else if (!fs.existsSync(path.join(root, 'team', owner))) problems.push(`owner team/${owner} does not exist`);
+
+  const wiki = text.match(/\*\*Wiki:\*\*\s*\[[^\]]+\]\(([^)]+)\)/)?.[1]?.trim();
+  if (!wiki) {
+    problems.push('no Wiki field');
+  } else {
+    const wikiPath = wikiTargetPath(filePath, wiki);
+    if (!wikiPath || !fs.existsSync(wikiPath)) problems.push(`wiki page ${wiki} missing`);
+  }
+
+  if (!/\*\*Runner:\*\*\s*\S/.test(text)) problems.push('no Runner field');
+  if (!/\*\*Protects:\*\*/.test(text)) problems.push('no Protects field');
+  if (!/\*\*Signal/.test(text)) problems.push('no Signal field');
+  if (!/\*\*Cadence:\*\*/.test(text)) problems.push('no Cadence field');
+
+  const logDates = [...text.matchAll(/^- (\d{4}-\d{2}-\d{2}):/gm)].map(match => match[1]).sort();
+  if (logDates.length === 0) {
+    problems.push('no dated Log entries');
+  } else {
+    const newest = logDates[logDates.length - 1];
+    const ageDays = (nowMs - Date.parse(`${newest}T00:00:00Z`)) / 86400000;
+    if (ageDays > MAX_LOG_AGE_DAYS) problems.push(`log stale: newest ${newest}`);
+  }
+
+  return { owner, problems };
+}
+
+function auditLoops(cwd = process.cwd()) {
+  const loopsDir = path.join(cwd, 'atris', 'loops');
+  if (!fs.existsSync(loopsDir)) {
+    console.log('No atris/loops directory found.');
+    console.log('Run: atris loops init');
+    console.log('');
+    console.log('SELF-IMPROVING: NOT YET — 1 open');
+    return 1;
+  }
+
+  const files = fs.readdirSync(loopsDir)
+    .filter(file => file.endsWith('.md') && file !== 'LOOPS.md' && file !== 'TICK.md')
+    .sort();
+
+  if (!files.length) {
+    console.log('No loop files found in atris/loops.');
+    console.log('Run: atris loops init');
+    console.log('');
+    console.log('SELF-IMPROVING: NOT YET — 1 open');
+    return 1;
+  }
+
+  console.log('atris loops audit');
+  console.log('');
+
+  let open = 0;
+  const nowMs = Date.now();
+  for (const file of files) {
+    const filePath = path.join(loopsDir, file);
+    const text = fs.readFileSync(filePath, 'utf8');
+    const { problems } = structuralProblems({ root: cwd, filePath, text, nowMs });
+    const checkCommand = checkCommandFrom(text);
+    const check = checkCommand ? runLoopCheck(checkCommand, cwd) : null;
+    if (check && check.exitCode !== 0) problems.push(`check failed: exit ${check.exitCode}`);
+
+    if (problems.length) open += 1;
+    const loopName = file.replace(/\.md$/, '');
+    console.log(`${problems.length ? '❌' : '✅'} ${loopName}`);
+    for (const problem of problems) console.log(`   ↳ ${problem}`);
+    if (check) {
+      const errorSuffix = check.error ? ` (${check.error})` : '';
+      console.log(`   ↳ check: \`${check.command}\` exit ${check.exitCode}${errorSuffix}`);
+    }
+  }
+
+  console.log('');
+  if (open === 0) {
+    console.log('SELF-IMPROVING: YES');
+    return 0;
+  }
+  console.log(`SELF-IMPROVING: NOT YET — ${open} open`);
+  return 1;
+}
+
+function tickLoops(cwd = process.cwd()) {
+  const localTick = path.join(cwd, 'atris', 'loops', 'TICK.md');
+  const packagedTick = path.join(TEMPLATE_ROOT, 'atris', 'loops', 'TICK.md');
+  const source = fs.existsSync(localTick) ? localTick : packagedTick;
+  console.log(fs.readFileSync(source, 'utf8').trimEnd());
+  return 0;
+}
+
+function showLoopsHelp() {
+  console.log('Usage: atris loops [audit|init|tick|board|start|stop]');
+  console.log('');
+  console.log('Self-improving loop commands:');
+  console.log('  atris loops              - audit atris/loops in this project');
+  console.log('  atris loops audit        - same audit explicitly');
+  console.log('  atris loops init         - scaffold atris/loops + loop wiki');
+  console.log('  atris self-improve       - alias for atris loops init');
+  console.log('  atris loops tick         - print atris/loops/TICK.md protocol');
+  console.log('');
+  console.log('Background loop board:');
+  console.log('  atris loops board        - registry jobs, launchd agents, mission');
+  console.log('  atris loops stop <id>    - disable a registry job or stop a launchd agent');
+  console.log('  atris loops start <id>   - enable a registry job or start a launchd agent');
+  return 0;
 }
 
 function loopsCommand(subcommand, ...args) {
   switch (subcommand) {
     case undefined:
+    case 'audit':
+      return auditLoops(process.cwd());
+    case 'init':
+      return initLoops(process.cwd());
+    case 'tick':
+      return tickLoops(process.cwd());
     case 'board':
     case 'list':
-      showBoard(process.cwd());
-      break;
+      return showBoard(process.cwd());
     case 'stop':
-      controlLoop(args[0], 'stop');
-      break;
+      return controlLoop(args[0], 'stop');
     case 'start':
-      controlLoop(args[0], 'start');
-      break;
+      return controlLoop(args[0], 'start');
+    case 'help':
+    case '--help':
+    case '-h':
+      return showLoopsHelp();
     default:
-      console.log('Loop commands:');
-      console.log('  atris loops              - board: registry jobs, launchd agents, mission');
-      console.log('  atris loops stop <id>    - disable a registry job or stop a launchd agent');
-      console.log('  atris loops start <id>   - enable a registry job or start a launchd agent');
+      return showLoopsHelp();
   }
 }
 
-module.exports = { loopsCommand, showBoard };
+module.exports = {
+  loopsCommand,
+  showBoard,
+  initLoops,
+  auditLoops,
+  tickLoops,
+  structuralProblems,
+};
