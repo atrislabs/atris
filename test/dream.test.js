@@ -119,7 +119,7 @@ test('next ranker deals and consumes a dream card', () => {
   }
 });
 
-test('malformed dream output exits cleanly and writes no cards', async () => {
+test('malformed dream output exits cleanly and leaves a noop row', async () => {
   const root = tmp();
   try {
     writeJournal(root, '2099-01-01', '# Log 2099-01-01\n\n## Notes\n\n- today had work\n');
@@ -129,7 +129,10 @@ test('malformed dream output exits cleanly and writes no cards', async () => {
 
     assert.equal(result.code, 0);
     assert.match(result.stdout, /^No dreams tonight: could not read dream cards/m);
-    assert.equal(readDreamRows(root).length, 0);
+    const rows = readDreamRows(root);
+    assert.equal(rows.filter((row) => row.source === 'dream').length, 0);
+    assert.equal(rows.at(-1).kind, 'dream_noop');
+    assert.equal(rows.at(-1).reason, 'could not read dream cards');
   } finally {
     cleanup(root);
   }

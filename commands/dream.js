@@ -259,6 +259,7 @@ function defaultDreamRunner({ prompt, model, cwd, timeoutMs = DREAM_TIMEOUT_MS }
 }
 
 function attemptFailureReason(result) {
+  if (result && result.garbled) return 'could not read dream cards';
   if (result && result.timedOut) return 'model timed out';
   if (result && result.error) return 'model could not start';
   if (result && result.exitCode) return 'model stopped early';
@@ -309,7 +310,8 @@ async function runDream(root = process.cwd(), options = {}) {
       try {
         cards = parseDreamCards(output);
       } catch {
-        return { ok: false, cards: [], reason: 'could not read dream cards' };
+        lastFailure = { ok: false, garbled: true };
+        continue;
       }
       return { ok: true, cards: writeDreamCards(root, cards, stamp), reason: null };
     }
