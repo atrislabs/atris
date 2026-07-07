@@ -2951,6 +2951,17 @@ function failureCoveredByPassLesson(line, passLessonText = '') {
     return /spawnSync\s+\/bin\/sh\s+ETIMEDOUT/i.test(passLessonText)
       && (!target || passLessonText.includes(target) || (targetTail && passLessonText.includes(targetTail)));
   }
+  // General remediation channel: a pass lesson that quotes the failure's
+  // normalized pattern marks it fixed. Old log lines stay on disk but stop
+  // feeding the pain score, so pain can actually go down after a fix.
+  const pattern = normalizeFailurePattern(text);
+  const bare = pattern.replace(/^#+\s*[#:.]*\s*·\s*/, '').trim();
+  for (const candidate of [pattern, bare]) {
+    if (candidate && candidate.length >= 12
+      && passLessonText.toLowerCase().includes(candidate.toLowerCase())) {
+      return true;
+    }
+  }
   return false;
 }
 

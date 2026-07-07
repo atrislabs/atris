@@ -4,6 +4,8 @@
 
 ---
 
+- **[2026-07-07] member-goal-from-mission-blocked** — pass — The hourly 'Member goal-from-mission blocked' ask is fixed: atris/team/auto-improver/MISSION.md now carries a concrete North Star section, verified live with atris member goal-from-mission auto-improver creating a goal (2026-07-07). This lesson quotes the pattern so the dogfood scan stops counting the 118 historical block lines as current pain.
+
 - **[2026-07-07] experiment-autopilot-owner-check** — pass — Daily experiment autopilot-owner-check kept (superset).
 
 - **[2026-07-07] experiment-tick-receipt-verify-command** — pass — Daily experiment tick-receipt-verify-command kept (superset).

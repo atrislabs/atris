@@ -2,11 +2,11 @@
 
 ## North Star
 
-Every recurring failure in this workspace becomes a detector-backed fix before it repeats a third time, so the pain score trends down week over week instead of accumulating.
+Every repeat problem in this workspace becomes a detector-backed fix before the third occurrence, so the pain score trends down week over week instead of accumulating.
 
 ## How To Choose Goals
 
-- Read the latest dogfood scan receipt and pick the highest-pain repeated failure.
+- Read the latest dogfood scan receipt and pick the highest-pain repeat problem.
 - Turn it into one bounded fix with a runnable detector, or open a task for the owning member.
 - Never log the same finding twice without acting on it or escalating it.
 
