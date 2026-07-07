@@ -66,7 +66,8 @@ test('short labels use display numbers and meaningful words with old-record fall
   const oldId = 'wish-2026-07-06-claim-orb-loop-testable-on-haiku-via-8429e7cd';
   assert.equal(shortRecordLabel({ id: oldId, n: 7 }, 'claim the haiku loop via'), '#7 haiku loop');
   assert.equal(shortRecordRef({ id: oldId, n: 7 }), '7');
-  assert.equal(shortRecordLabel({ id: oldId }, 'claim the haiku loop via smoke'), '8429e7cd');
+  assert.equal(shortRecordLabel({ id: oldId }, 'claim the haiku loop via smoke'), 'haiku loop smoke');
+  assert.equal(shortRecordLabel({ id: oldId }, ''), '8429e7cd');
   assert.equal(shortRecordRef({ id: oldId }), '8429e7cd');
 });
 
