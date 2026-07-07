@@ -4,7 +4,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { inferBudgetTier, sweepWishes, waitingOperatorWishes } = require('../commands/wish');
+const {
+  REVIEW_WORD_SCORES,
+  inferBudgetTier,
+  sweepWishes,
+  waitingOperatorWishes,
+} = require('../commands/wish');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -93,6 +98,14 @@ function todayJournalPath(dir) {
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   return path.join(dir, 'atris', 'logs', String(now.getFullYear()), `${date}.md`);
+}
+
+function isoHoursAgo(hours) {
+  return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+}
+
+function isoDaysAgo(days) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function assertNoInventedVerbEd(output, verb, operatorText) {
@@ -921,6 +934,130 @@ test('wish review score flag parsed', () => {
   }
 });
 
+test('wish review plain words map to scores when no score flag is passed', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    assert.equal(REVIEW_WORD_SCORES.get('great'), 5);
+    assert.equal(REVIEW_WORD_SCORES.get('love it'), 5);
+    assert.equal(REVIEW_WORD_SCORES.get('nice'), 4);
+    assert.equal(REVIEW_WORD_SCORES.get('ok'), 3);
+    assert.equal(REVIEW_WORD_SCORES.get('weak'), 2);
+    assert.equal(REVIEW_WORD_SCORES.get('wrong'), 1);
+    appendWishEvent(dir, {
+      id: 'wish-scored-word',
+      n: 7,
+      ts: isoHoursAgo(2),
+      text: 'make word scoring clearer',
+      status: 'delegated',
+      dispatched_at: isoHoursAgo(2),
+    });
+
+    const scored = runCli(['wish', 'review', '7', 'great'], { cwd: dir });
+    assert.equal(scored.status, 0, scored.stderr || scored.stdout);
+
+    const unscored = runCli(['wish', 'review', '7', 'helpful but still slow'], { cwd: dir });
+    assert.equal(unscored.status, 0, unscored.stderr || unscored.stdout);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.at(-2).review_score, 5);
+    assert.equal(records.at(-2).review_text, 'great');
+    assert.equal(records.at(-1).review_score, null);
+    assert.equal(records.at(-1).review_text, 'helpful but still slow');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish list folds older quiet wishes and --all shows them', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-old-done',
+      n: 1,
+      ts: isoDaysAgo(9),
+      text: 'make old report calmer',
+      status: 'complete',
+      completed_at: isoDaysAgo(9),
+    });
+    appendWishEvent(dir, {
+      id: 'wish-fresh-done',
+      n: 2,
+      ts: isoHoursAgo(2),
+      text: 'make fresh report clearer',
+      status: 'complete',
+      completed_at: isoHoursAgo(2),
+    });
+    appendWishEvent(dir, {
+      id: 'wish-old-working',
+      n: 3,
+      ts: isoDaysAgo(9),
+      text: 'make old worker steady',
+      status: 'delegated',
+      dispatched_at: isoDaysAgo(9),
+    });
+    appendWishEvent(dir, {
+      id: 'wish-old-waiting',
+      n: 4,
+      ts: isoDaysAgo(9),
+      text: 'make old answer clear',
+      status: 'needs_input',
+      questions: ['What should be different?'],
+    });
+
+    const list = runCli(['wish', 'list'], { cwd: dir });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    assert.doesNotMatch(list.stdout, /old report calmer/);
+    assert.match(list.stdout, /#2 make fresh report - done/);
+    assert.match(list.stdout, /#3 make old worker - working/);
+    assert.match(list.stdout, /#4 make old answer - waiting on you/);
+    assert.match(list.stdout, /1 older wish is resting\. See them with atris wish list --all/);
+
+    const all = runCli(['wish', 'list', '--all'], { cwd: dir });
+    assert.equal(all.status, 0, all.stderr || all.stdout);
+    assert.match(all.stdout, /#1 make old report - done, unreviewed/);
+    assert.match(all.stdout, /#2 make fresh report - done/);
+    assert.doesNotMatch(all.stdout, /resting/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('bare wish stops nudging old shipped wishes without reviews', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-fresh-review',
+      n: 1,
+      ts: isoHoursAgo(2),
+      text: 'make fresh nudge clearer',
+      status: 'complete',
+      completed_at: isoHoursAgo(2),
+    });
+    appendWishEvent(dir, {
+      id: 'wish-stale-review',
+      n: 2,
+      ts: isoHoursAgo(25),
+      text: 'make stale nudge quieter',
+      status: 'complete',
+      completed_at: isoHoursAgo(25),
+    });
+
+    const nudge = runCli(['wish'], { cwd: dir });
+    assert.equal(nudge.status, 2);
+    assert.match(nudge.stdout, /#1 make fresh nudge: atris wish review 1 "<one sentence>"/);
+    assert.doesNotMatch(nudge.stdout, /stale nudge/);
+
+    const list = runCli(['wish', 'list'], { cwd: dir });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    assert.match(list.stdout, /#2 make stale nudge - done, unreviewed/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish list stays in plain language without ids', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -1058,27 +1195,30 @@ test('bare wish prints review nudges for completed or verified wishes', () => {
     prepareWorkspace(dir);
     appendWishEvent(dir, {
       id: 'wish-done',
-      ts: '2026-07-06T10:00:00.000Z',
+      ts: isoHoursAgo(2),
       text: 'make completed thing clearer',
       status: 'complete',
+      completed_at: isoHoursAgo(2),
     });
     appendWishEvent(dir, {
       id: 'wish-verified',
-      ts: '2026-07-06T10:10:00.000Z',
+      ts: isoHoursAgo(2),
       text: 'make verified thing clearer',
       status: 'delegated',
+      dispatched_at: isoHoursAgo(2),
       verify_status: 'verified',
     });
     appendWishEvent(dir, {
       id: 'wish-reviewed',
-      ts: '2026-07-06T10:20:00.000Z',
+      ts: isoHoursAgo(2),
       text: 'make reviewed thing clearer',
       status: 'complete',
+      completed_at: isoHoursAgo(2),
     });
     appendWishEvent(dir, {
       kind: 'review',
       wish_id: 'wish-reviewed',
-      ts: '2026-07-06T10:25:00.000Z',
+      ts: isoHoursAgo(1),
       review_text: 'Already reviewed.',
       review_score: 1,
     });
