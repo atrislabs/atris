@@ -33,6 +33,7 @@ script at a time; never add one without a self-test.
 | "pull all the links / emails / code out of this" | `extract.js` | `urls` `emails` `code` `numbers` `ipv4` `hashtags` |
 | "reformat / validate / flatten this JSON" | `json.js` | `pretty` `min` `validate` `keys` `csv` |
 | "dedupe / sort / count / slugify these lines" | `text.js` | `dedupe` `sort` `rsort` `count` `slug` `trim` |
+| "base64 / hash this" | `hash.js` | `b64` `b64d` `sha256` `sha1` `md5` `hexenc` `hexdec` |
 
 ### extract.js
 
@@ -70,6 +71,18 @@ node scripts/det/text.js trim  < messy.txt        # strip trailing ws, drop blan
 
 `count` is exact — no more eyeballed line/word totals. `slug` folds accents
 (Café -> cafe) so slugs are stable across inputs.
+
+### hash.js
+
+```bash
+printf 'hi' | node scripts/det/hash.js b64        # base64 encode (b64d decodes)
+node scripts/det/hash.js sha256 < file.txt        # real hex sha256 (sha1, md5 too)
+node scripts/det/hash.js hexenc < file.txt        # raw <-> hex (hexdec reverses)
+```
+
+A single trailing newline is stripped before encoding/hashing, so `echo hi` and
+`printf 'hi'` give the same result. These are real crypto digests, not the
+plausible-looking fakes an LLM emits.
 
 ## Verifying the library
 

@@ -16,6 +16,7 @@
 const extract = require('./extract');
 const json = require('./json');
 const text = require('./text');
+const hash = require('./hash');
 
 // script -> { ask, modes, run(mode, input) -> {text}|{error} }
 const CATALOG = {
@@ -36,6 +37,11 @@ const CATALOG = {
     ask: 'dedupe / sort / count / slugify / trim lines',
     modes: text.MODES,
     run: text.run,
+  },
+  hash: {
+    ask: 'base64 / hex encode-decode, sha256 / sha1 / md5',
+    modes: hash.MODES,
+    run: hash.run,
   },
 };
 

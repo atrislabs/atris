@@ -9,6 +9,7 @@ const { extract } = extractModule;
 const jsonModule = require('./json');
 const { run } = jsonModule;
 const text = require('./text');
+const hash = require('./hash');
 const { CATALOG } = require('./det');
 
 let passed = 0;
@@ -70,8 +71,22 @@ check('text.trim', text.run('trim', 'a  \n\n  \nb'), { text: 'a\nb' });
 check('text.empty', text.run('dedupe', ''), { text: '' });
 check('text.badMode', text.run('nope', 'x').error !== undefined, true);
 
+// --- hash.js ---
+check('hash.b64', hash.run('b64', 'hi'), { text: 'aGk=' });
+check('hash.b64.roundtrip', hash.run('b64d', hash.run('b64', 'hello').text), { text: 'hello' });
+check('hash.sha256', hash.run('sha256', 'hi'), {
+  text: '8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4',
+});
+check('hash.md5', hash.run('md5', 'hi'), { text: '49f68a5c8493ec2c0bf489821c21fc3b' });
+check('hash.hex.roundtrip', hash.run('hexdec', hash.run('hexenc', 'yo').text), { text: 'yo' });
+check('hash.newlineStripped', hash.run('b64', 'hi\n'), { text: 'aGk=' }); // echo == printf
+check('hash.hexdec.bad', hash.run('hexdec', 'xyz').error !== undefined, true);
+check('hash.badMode', hash.run('nope', 'x').error !== undefined, true);
+
 // --- det.js dispatcher ---
-check('det.catalog', Object.keys(CATALOG).sort(), ['extract', 'json', 'text']);
+check('det.catalog', Object.keys(CATALOG).sort(), ['extract', 'hash', 'json', 'text']);
+check('det.hash.route', CATALOG.hash.run('b64', 'hi'), { text: 'aGk=' });
+check('det.hash.modes', CATALOG.hash.modes, hash.MODES);
 // every catalog entry advertises modes and routes to a working run()
 check('det.extract.route', CATALOG.extract.run('emails', 'x a@b.com'), { text: 'a@b.com' });
 check('det.json.route', CATALOG.json.run('min', '{ "a": 1 }'), { text: '{"a":1}' });
