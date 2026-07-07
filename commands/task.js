@@ -47,6 +47,10 @@ const PENDING_REVIEW_CHAT_STOP_REASON = 'pending_review_chat_waiting_for_agent_r
 const PROOF_BOUNDARY_BLOCKED_ACTION = 'proof_boundary_blocked';
 const PROOF_BOUNDARY_BLOCKED_REASON = 'proof_boundary_blocked_requires_revision';
 const READY_RESULT_TEACHING = 'ready needs --result: one sentence a day-one pm gets. say what someone can do now and why it matters. no ids, no paths, no commands. example: operators can now read the whole team day on one page instead of scrolling raw logs.';
+const REVIEW_AUTO_ACCEPT_ACTOR = 'auto (certified, small)';
+const REVIEW_AUTO_ACCEPT_POLICY = 'review_autoaccept_certified_small';
+const REVIEW_AUTO_ACCEPT_FILE_LIMIT = 10;
+const REVIEW_AUTO_ACCEPT_LINE_LIMIT = 300;
 
 const STATUS_PLAN_TAGS = new Set([
   'agent',
@@ -4598,6 +4602,483 @@ function cmdReviewLaneRun(args) {
   if (!result.ok) process.exit(1);
 }
 
+function configValueDisabled(value) {
+  if (value === false) return true;
+  const text = String(value === undefined || value === null ? '' : value).trim().toLowerCase();
+  return ['0', 'false', 'off', 'no'].includes(text);
+}
+
+function reviewAutoAcceptEnabled() {
+  try {
+    const { loadConfig } = require('../utils/config');
+    const config = loadConfig();
+    const value = Object.prototype.hasOwnProperty.call(config, 'autoaccept')
+      ? config.autoaccept
+      : Object.prototype.hasOwnProperty.call(config, 'review_autoaccept')
+        ? config.review_autoaccept
+        : config.reviewAutoaccept;
+    return !configValueDisabled(value);
+  } catch {
+    return true;
+  }
+}
+
+function reviewAutoAcceptStatePath(root = process.cwd()) {
+  return path.join(root, '.atris', 'state', 'review-autoaccept.json');
+}
+
+function readReviewAutoAcceptState(root = process.cwd()) {
+  const file = reviewAutoAcceptStatePath(root);
+  try {
+    if (!fs.existsSync(file)) return {};
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeReviewAutoAcceptState(root = process.cwd(), state = {}) {
+  const file = reviewAutoAcceptStatePath(root);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(state, null, 2) + '\n', 'utf8');
+}
+
+function finiteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function firstNumberFromObject(source, keys) {
+  if (!source || typeof source !== 'object') return null;
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+    const value = source[key];
+    if (Array.isArray(value)) return value.length;
+    if (typeof value === 'string' && value.includes(',')) {
+      const parts = value.split(',').map(part => part.trim()).filter(Boolean);
+      if (parts.length > 1) return parts.length;
+    }
+    const number = finiteNumber(value);
+    if (number !== null) return number;
+  }
+  return null;
+}
+
+function arrayFromPathValue(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap(arrayFromPathValue);
+  if (typeof value === 'object') {
+    if (typeof value.path === 'string') return [value.path];
+    if (typeof value.file === 'string') return [value.file];
+    if (typeof value.filename === 'string') return [value.filename];
+    return [];
+  }
+  return String(value)
+    .split(/[\n,]+/)
+    .map(part => part.trim())
+    .filter(Boolean);
+}
+
+function collectRecordedDiffPaths(source) {
+  if (!source || typeof source !== 'object') return [];
+  const keys = [
+    'files',
+    'paths',
+    'touched_files',
+    'touchedFiles',
+    'changed_files',
+    'changedFiles',
+    'modified_files',
+    'modifiedFiles',
+  ];
+  const out = [];
+  for (const key of keys) out.push(...arrayFromPathValue(source[key]));
+  return out;
+}
+
+function normalizeRecordedDiffStats(source, label = 'recorded') {
+  if (!source || typeof source !== 'object') return null;
+  const fileKeys = [
+    'files_touched',
+    'filesTouched',
+    'changed_files_count',
+    'changedFilesCount',
+    'files_changed',
+    'filesChanged',
+    'file_count',
+    'fileCount',
+    'files',
+    'changed_files',
+    'changedFiles',
+  ];
+  const changedLineKeys = [
+    'changed_lines',
+    'changedLines',
+    'lines_changed',
+    'linesChanged',
+    'changed_line_count',
+    'changedLineCount',
+    'total_changed_lines',
+    'totalChangedLines',
+    'line_count',
+    'lineCount',
+  ];
+  const insertions = firstNumberFromObject(source, ['insertions', 'added', 'additions', 'lines_added', 'linesAdded']);
+  const deletions = firstNumberFromObject(source, ['deletions', 'deleted', 'removals', 'lines_deleted', 'linesDeleted']);
+  const paths = collectRecordedDiffPaths(source);
+  const filesTouched = firstNumberFromObject(source, fileKeys) ?? (paths.length ? paths.length : null);
+  const changedLines = firstNumberFromObject(source, changedLineKeys)
+    ?? (insertions !== null || deletions !== null ? Number(insertions || 0) + Number(deletions || 0) : null);
+  if (filesTouched === null && changedLines === null && !paths.length) return null;
+  return {
+    source: label,
+    files_touched: filesTouched,
+    changed_lines: changedLines,
+    paths,
+  };
+}
+
+function recordedDiffStatsForTask(task) {
+  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+  const candidates = [
+    metadata.diff_stats,
+    metadata.diffStats,
+    metadata.git_diff_stats,
+    metadata.gitDiffStats,
+    metadata.change_stats,
+    metadata.changeStats,
+    metadata.stats,
+    metadata,
+  ];
+  for (const candidate of candidates) {
+    const stats = normalizeRecordedDiffStats(candidate, 'recorded');
+    if (stats) return stats;
+  }
+  return null;
+}
+
+function proofDiffStats(proof) {
+  const text = String(proof || '').replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  let filesTouched = null;
+  let changedLines = null;
+  const gitStat = text.match(/(\d+)\s+files?\s+changed(?:,\s*(\d+)\s+insertions?\(\+\))?(?:,\s*(\d+)\s+deletions?\(-\))?/i);
+  if (gitStat) {
+    filesTouched = Number(gitStat[1]);
+    const insertions = gitStat[2] ? Number(gitStat[2]) : 0;
+    const deletions = gitStat[3] ? Number(gitStat[3]) : 0;
+    if (gitStat[2] || gitStat[3]) changedLines = insertions + deletions;
+  }
+  const filePatterns = [
+    /files?\s+(?:touched|changed|modified)\s*[:=]\s*(\d+)/i,
+    /(\d+)\s+files?\s+(?:touched|changed|modified)/i,
+  ];
+  for (const pattern of filePatterns) {
+    const match = text.match(pattern);
+    if (match) filesTouched = Number(match[1]);
+  }
+  const linePatterns = [
+    /changed\s+lines?\s*[:=]\s*(\d+)/i,
+    /(\d+)\s+changed\s+lines?/i,
+    /lines?\s+changed\s*[:=]\s*(\d+)/i,
+  ];
+  for (const pattern of linePatterns) {
+    const match = text.match(pattern);
+    if (match) changedLines = Number(match[1]);
+  }
+  if (filesTouched === null && changedLines === null) return null;
+  return {
+    source: 'proof',
+    files_touched: filesTouched,
+    changed_lines: changedLines,
+    paths: [],
+  };
+}
+
+function safeGitRef(value) {
+  const text = String(value || '').trim();
+  if (!text || text.startsWith('-') || text.includes('..')) return null;
+  if (!/^[a-zA-Z0-9_./@=+~^-]+$/.test(text)) return null;
+  return text;
+}
+
+function runGitForAutoAccept(root, args) {
+  try {
+    const { spawnSync } = require('child_process');
+    return spawnSync('git', args, {
+      cwd: root || process.cwd(),
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+  } catch {
+    return { status: 1, stdout: '', stderr: '' };
+  }
+}
+
+function gitRefExists(root, ref) {
+  const result = runGitForAutoAccept(root, ['rev-parse', '--verify', `${ref}^{commit}`]);
+  return result.status === 0;
+}
+
+function defaultDiffBase(root) {
+  for (const ref of ['origin/master', 'origin/main', 'master', 'main']) {
+    if (gitRefExists(root, ref)) return ref;
+  }
+  return null;
+}
+
+function branchDiffStatsForTask(task, root) {
+  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+  const branch = safeGitRef(
+    metadata.branch
+      || metadata.worktree_branch
+      || metadata.git_branch
+      || metadata.pr_branch
+      || metadata.head_branch
+      || metadata.worktree?.branch
+  );
+  if (!branch) return null;
+  const base = safeGitRef(
+    metadata.base
+      || metadata.base_ref
+      || metadata.target_ref
+      || metadata.target_branch
+      || metadata.worktree?.base
+  ) || defaultDiffBase(root);
+  if (!base) return null;
+  const result = runGitForAutoAccept(root, ['diff', '--numstat', `${base}...${branch}`]);
+  if (result.status !== 0) return null;
+  const lines = String(result.stdout || '').split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return { source: 'branch', files_touched: 0, changed_lines: 0, paths: [] };
+  let changedLines = 0;
+  let unknownLines = false;
+  const paths = [];
+  for (const line of lines) {
+    const parts = line.split(/\t+/);
+    const added = Number(parts[0]);
+    const deleted = Number(parts[1]);
+    if (!Number.isFinite(added) || !Number.isFinite(deleted)) unknownLines = true;
+    else changedLines += added + deleted;
+    if (parts[2]) paths.push(parts.slice(2).join('\t'));
+  }
+  return {
+    source: 'branch',
+    files_touched: lines.length,
+    changed_lines: unknownLines ? null : changedLines,
+    paths,
+  };
+}
+
+function reviewAutoAcceptDiffStats(task, root) {
+  const recorded = recordedDiffStatsForTask(task);
+  if (recorded) return recorded;
+  const branch = branchDiffStatsForTask(task, root);
+  if (branch) return branch;
+  const proof = String(task?.review?.proof || task?.metadata?.latest_agent_proof || '');
+  return proofDiffStats(proof);
+}
+
+function reviewAutoAcceptBigTitle(task) {
+  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+  const text = [
+    task && task.title,
+    metadata.kind,
+    metadata.type,
+    metadata.category,
+    metadata.report_type,
+  ].map(value => String(value || '')).join(' ').toLowerCase();
+  const match = text.match(/\b(daily\s+update|summary|report|digest|retro|retrospective)\b/i);
+  if (!match) return null;
+  return {
+    ok: false,
+    reason: `big_title_${match[1].toLowerCase().replace(/\s+/g, '_')}`,
+  };
+}
+
+function reviewAutoAcceptSizeGate(task, root) {
+  const titleGate = reviewAutoAcceptBigTitle(task);
+  if (titleGate) return titleGate;
+  const stats = reviewAutoAcceptDiffStats(task, root);
+  if (!stats) return { ok: false, reason: 'size_unknown', stats: null };
+  const filesTouched = finiteNumber(stats.files_touched);
+  const changedLines = finiteNumber(stats.changed_lines);
+  if (filesTouched !== null && filesTouched > REVIEW_AUTO_ACCEPT_FILE_LIMIT) {
+    return { ok: false, reason: 'big_files', stats };
+  }
+  if (changedLines !== null && changedLines > REVIEW_AUTO_ACCEPT_LINE_LIMIT) {
+    return { ok: false, reason: 'big_changed_lines', stats };
+  }
+  if (filesTouched === null || changedLines === null) {
+    return { ok: false, reason: 'size_unknown', stats };
+  }
+  return { ok: true, reason: 'small_change', stats };
+}
+
+function reviewAutoAcceptMetadataText(task) {
+  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+  return [
+    task && task.title,
+    task && task.tag,
+    task && task.source_key,
+    metadata.kind,
+    metadata.type,
+    metadata.category,
+    metadata.lane,
+    metadata.stage,
+    metadata.area,
+    JSON.stringify(metadata),
+  ].map(value => String(value || '')).join(' ').toLowerCase();
+}
+
+function reviewAutoAcceptTouchedPaths(task) {
+  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+  const stats = recordedDiffStatsForTask(task);
+  const proof = String(task?.review?.proof || metadata.latest_agent_proof || '');
+  return [
+    ...(stats && stats.paths ? stats.paths : []),
+    ...collectRecordedDiffPaths(metadata),
+    ...taskReviewEvidencePaths(proof, 50),
+  ].map(value => String(value || '').trim()).filter(Boolean);
+}
+
+function reviewProtectedMatch(task) {
+  const text = reviewAutoAcceptMetadataText(task);
+  const paths = reviewAutoAcceptTouchedPaths(task).join(' ').toLowerCase();
+  const combined = `${text} ${paths}`;
+  const checks = [
+    ['auth', /\b(auth|authentication|authorization|oauth|login|session)\b/i],
+    ['credentials', /\b(credentials?|secrets?|passwords?|api[-_ ]?keys?|tokens?)\b/i],
+    ['csp', /\b(csp|content[-_ ]security[-_ ]policy)\b/i],
+    ['sandbox', /\b(sandbox|allow-scripts|allow-same-origin)\b/i],
+    ['billing', /\b(billing|invoice|invoices|subscription|subscriptions)\b/i],
+    ['payments', /\b(payments?|stripe|checkout|refunds?)\b/i],
+    ['outbound_sends', /\b(outbound|send|sending|email|sms|webhook|notification|notifications)\b/i],
+  ];
+  for (const [key, pattern] of checks) {
+    if (pattern.test(combined)) return { ok: false, reason: `protected_${key}` };
+  }
+  return { ok: true };
+}
+
+function evaluateReviewAutoAccept(task, root) {
+  const ref = taskRef(task);
+  if (!task) return { eligible: false, ref, reason: 'task_not_found' };
+  const protectedGate = reviewProtectedMatch(task);
+  if (!protectedGate.ok) return { eligible: false, ref, reason: protectedGate.reason };
+  const sizeGate = reviewAutoAcceptSizeGate(task, root);
+  if (!sizeGate.ok) return { eligible: false, ref, reason: sizeGate.reason, size: sizeGate.stats };
+  const evaluation = evaluateAutoAccept(task, { strictVerify: true });
+  if (!evaluation.eligible) {
+    return {
+      ...evaluation,
+      size: sizeGate.stats,
+    };
+  }
+  return {
+    ...evaluation,
+    eligible: true,
+    reason: 'certified_small',
+    policy: REVIEW_AUTO_ACCEPT_POLICY,
+    size: sizeGate.stats,
+  };
+}
+
+function autoAcceptCertifiedSmallReviews(taskDb, db, projection) {
+  const enabled = reviewAutoAcceptEnabled();
+  const root = projection.workspace_root || process.cwd();
+  const results = [];
+  if (!enabled) {
+    return {
+      enabled,
+      scanned: 0,
+      accepted: 0,
+      changed: false,
+      results,
+    };
+  }
+  const certified = certifiedPendingReviewTasks(projection);
+  for (const item of certified) {
+    const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
+    const task = fullProjection.tasks[0] || null;
+    const evaluation = evaluateReviewAutoAccept(task, root);
+    if (!evaluation.eligible) {
+      results.push({ ...evaluation, action: 'queued', task_id: task?.id || item.id || null });
+      continue;
+    }
+    const accepted = acceptReviewTask(taskDb, db, task.id, {
+      actor: REVIEW_AUTO_ACCEPT_ACTOR,
+      proof: evaluation.proof,
+      reward: 1,
+      lesson: String(task.review?.lesson || task.metadata?.latest_agent_lesson || ''),
+      nextTask: String(task.review?.next_task || task.metadata?.latest_agent_next_task || ''),
+      autoAccepted: true,
+    });
+    if (!accepted.ok) {
+      results.push({ ...evaluation, action: 'accept_failed', task_id: task.id, reason: accepted.reason });
+      continue;
+    }
+    stampAutoAcceptMetadata(taskDb, db, task.id, REVIEW_AUTO_ACCEPT_ACTOR, REVIEW_AUTO_ACCEPT_POLICY);
+    refreshCareerXpAfterReview(accepted.reviewed);
+    results.push({
+      ...evaluation,
+      action: 'accepted',
+      task_id: task.id,
+      reward: accepted.reviewed.episode.reward.value,
+    });
+  }
+  const acceptedCount = results.filter(row => row.action === 'accepted').length;
+  return {
+    enabled,
+    scanned: certified.length,
+    accepted: acceptedCount,
+    changed: acceptedCount > 0,
+    results,
+  };
+}
+
+function autoAcceptedReviewRowsSince(taskDb, db, workspaceRoot, sinceIso, acceptedNowIds = []) {
+  const sinceMs = Date.parse(sinceIso || '');
+  const rows = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot }));
+  const acceptedNow = new Set(acceptedNowIds.filter(Boolean));
+  const seen = new Set();
+  const out = [];
+  for (const row of rows) {
+    const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    const acceptedAt = Date.parse(metadata.auto_accepted_at || metadata.accepted_at || '');
+    const policyMatch = metadata.auto_accept_policy === REVIEW_AUTO_ACCEPT_POLICY
+      || metadata.auto_accepted_by === REVIEW_AUTO_ACCEPT_ACTOR
+      || metadata.accepted_by === REVIEW_AUTO_ACCEPT_ACTOR;
+    const isCurrent = acceptedNow.has(row.id);
+    const isSince = Number.isFinite(sinceMs) && Number.isFinite(acceptedAt) && acceptedAt > sinceMs;
+    const firstLook = !Number.isFinite(sinceMs) && Number.isFinite(acceptedAt);
+    if (row.status !== 'done' || !policyMatch || (!isCurrent && !isSince && !firstLook)) continue;
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push({
+      id: row.id,
+      ref: row.display_id || taskRef(row),
+      title: row.title,
+      accepted_at: metadata.auto_accepted_at || metadata.accepted_at || null,
+    });
+  }
+  out.sort((a, b) => String(b.accepted_at || '').localeCompare(String(a.accepted_at || '')));
+  return out;
+}
+
+function reviewAutoAcceptRollup(taskDb, db, workspaceRoot, previousState, autoAcceptRun) {
+  const acceptedNowIds = (autoAcceptRun.results || [])
+    .filter(row => row.action === 'accepted')
+    .map(row => row.task_id)
+    .filter(Boolean);
+  const rows = autoAcceptedReviewRowsSince(taskDb, db, workspaceRoot, previousState.last_look_at, acceptedNowIds);
+  return {
+    count: rows.length,
+    items: rows,
+    since: previousState.last_look_at || null,
+  };
+}
+
 function reviewQueueLimit(args, total) {
   if (hasFlag(args, '--all')) return total;
   const raw = flag(args, '--limit');
@@ -4796,21 +5277,47 @@ function taskReviewGroups(projection, key) {
 function cmdReviews(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  let { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const workspaceRoot = projection.workspace_root || process.cwd();
+  const previousAutoAcceptState = readReviewAutoAcceptState(workspaceRoot);
+  const autoAcceptRun = autoAcceptCertifiedSmallReviews(taskDb, db, projection);
+  if (autoAcceptRun.changed) {
+    ({ projection, outPath } = writeDefaultProjection(taskDb, db));
+  }
+  const autoAcceptRollup = reviewAutoAcceptRollup(taskDb, db, workspaceRoot, previousAutoAcceptState, autoAcceptRun);
+  writeReviewAutoAcceptState(workspaceRoot, {
+    ...previousAutoAcceptState,
+    last_look_at: new Date().toISOString(),
+    last_count: autoAcceptRollup.count,
+  });
   const groupByRaw = flag(args, '--group-by');
   if (groupByRaw) {
     const key = reviewGroupKey(groupByRaw);
     const groups = taskReviewGroups(projection, key);
     if (wantsJson(args)) {
-      printJson({ ok: true, action: 'review_groups', projection_path: outPath, groups });
+      printJson({
+        ok: true,
+        action: 'review_groups',
+        projection_path: outPath,
+        autoaccept: {
+          enabled: autoAcceptRun.enabled,
+          accepted_now: autoAcceptRun.accepted,
+          accepted_since_last_look: autoAcceptRollup.count,
+          results: autoAcceptRun.results,
+        },
+        groups,
+      });
       return;
     }
-    console.log(`READY FOR APPROVAL — grouped by ${key}`);
+    console.log(`READY FOR APPROVAL - grouped by ${key}`);
+    if (autoAcceptRollup.count > 0) {
+      console.log(`${autoAcceptRollup.count} reviews auto-accepted since your last look`);
+    }
     console.log(`${groups.total_certified} ready for approval across ${groups.group_count} ${key} group(s)`);
     const visibleGroups = groups.groups.slice(0, reviewGroupTextLimit(args, groups.groups.length));
     visibleGroups.forEach((g, index) => {
       console.log('');
-      console.log(`${index + 1}. ${g.value} — ${g.count} task${g.count === 1 ? '' : 's'}`);
+      console.log(`${index + 1}. ${g.value} - ${g.count} task${g.count === 1 ? '' : 's'}`);
       g.sample_titles.forEach(title => console.log(`   • ${title}`));
       console.log(`   approve this group: ${g.accept_group_command} --confirm-human-accept --as <you>`);
     });
@@ -4827,11 +5334,20 @@ function cmdReviews(args) {
       ok: true,
       action: 'review_queue',
       projection_path: outPath,
+      autoaccept: {
+        enabled: autoAcceptRun.enabled,
+        accepted_now: autoAcceptRun.accepted,
+        accepted_since_last_look: autoAcceptRollup.count,
+        results: autoAcceptRun.results,
+      },
       queue,
     });
     return;
   }
   console.log('READY FOR APPROVAL');
+  if (autoAcceptRollup.count > 0) {
+    console.log(`${autoAcceptRollup.count} reviews auto-accepted since your last look`);
+  }
   console.log(`${queue.counts.certified} ready for approval / ${queue.counts.blocking} need one more check / ${queue.counts.review} total waiting`);
   const approvalItems = queue.items.filter(item => item.queue_role !== 'blocked');
   const blockedItems = queue.items.filter(item => item.queue_role === 'blocked');

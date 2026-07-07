@@ -13513,7 +13513,7 @@ test('task reviews gives a compact certified accept queue', () => {
 
     const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
     assert.equal(grouped.status, 0, grouped.stderr);
-    assert.match(grouped.stdout, /READY FOR APPROVAL — grouped by tag/);
+    assert.match(grouped.stdout, /READY FOR APPROVAL - grouped by tag/);
     assert.match(grouped.stdout, /1 ready for approval across 1 tag group\(s\)/);
     assert.match(grouped.stdout, /approve this group: atris task accept-group tag="review" --spot-check 3 --confirm-human-accept --as <you>/);
     assert.doesNotMatch(grouped.stdout, /CERTIFIED REVIEW|review then accept/);
