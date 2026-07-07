@@ -307,11 +307,16 @@ function resolveAtrisBin() {
   return process.env.ATRIS_BIN || 'atris';
 }
 
+// Two legs, not one: when the workspace has no runnable mission yet, leg 1 is
+// setup (a member starts a mission in seconds) and leg 2 is the actual tick.
+// A cap of 1 would create the mission and stop before any work happened.
+const LOCAL_FALLBACK_ARGS = ['autopilot', '--auto', '--iterations=2'];
+
 function runLocalFallback(opts = {}) {
   const bin = resolveAtrisBin();
   const isScript = bin.endsWith('.js');
   const cmd = isScript ? process.execPath : bin;
-  const argv = (isScript ? [bin] : []).concat(['autopilot', '--auto', '--iterations=1']);
+  const argv = (isScript ? [bin] : []).concat(LOCAL_FALLBACK_ARGS);
   const r = spawnSync(cmd, argv, {
     cwd: opts.workspace || process.cwd(),
     encoding: 'utf8',
@@ -516,5 +521,6 @@ module.exports = {
   improveApiPath,
   formatImproveReport,
   runLocalFallback,
+  LOCAL_FALLBACK_ARGS,
   SCORECARD_SCHEMA,
 };
