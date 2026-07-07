@@ -144,7 +144,26 @@ function shouldFallbackLocal({ creds, apiResult } = {}) {
   if (!apiResult) return { fallback: false, reason: 'no_result' };
   if (apiResult.ok) return { fallback: false, reason: 'api_ok' };
   if (apiResult.status === 0) return { fallback: true, reason: 'unreachable' };
+  // The hosted backend validates workspace_path against its own filesystem,
+  // so a local-only folder 403s even for an authed, funded user. That is an
+  // unreachable-workspace condition — run the same tick locally instead of
+  // dying on it. Other 403s (real permission failures) are still reported.
+  if (apiResult.status === 403 && isWorkspaceNotAllowedError(apiResult)) {
+    return { fallback: true, reason: 'workspace_not_on_backend' };
+  }
   return { fallback: false, reason: `api_error_${apiResult.status}` };
+}
+
+const WORKSPACE_NOT_ALLOWED_TEXT = 'workspace_path must be under an allowed directory';
+
+function isWorkspaceNotAllowedError(apiResult = {}) {
+  const candidates = [
+    apiResult.error,
+    apiResult.error && apiResult.error.error,
+    apiResult.data && apiResult.data.detail,
+    apiResult.data && apiResult.data.detail && apiResult.data.detail.error,
+  ];
+  return candidates.some((c) => typeof c === 'string' && c.includes(WORKSPACE_NOT_ALLOWED_TEXT));
 }
 
 function buildScorecardRow(summary = {}, meta = {}) {

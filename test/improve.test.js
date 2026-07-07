@@ -100,6 +100,28 @@ test('shouldFallbackLocal: only on no-auth or unreachable', () => {
   assert.deepEqual(shouldFallbackLocal({ creds: { token: 't' }, apiResult: { ok: false, status: 500 } }), { fallback: false, reason: 'api_error_500' });
 });
 
+test('shouldFallbackLocal: remote backend cannot see a local workspace → fallback', () => {
+  // The hosted backend validates workspace_path against ITS OWN filesystem,
+  // so a local-only folder 403s even when the user is authed and funded.
+  // That is an unreachable-workspace condition, not an answerable failure —
+  // the tick should run locally instead of dying.
+  const detail = { error: 'workspace_path must be under an allowed directory' };
+  assert.deepEqual(
+    shouldFallbackLocal({ creds: { token: 't' }, apiResult: { ok: false, status: 403, error: detail } }),
+    { fallback: true, reason: 'workspace_not_on_backend' }
+  );
+  // nested detail shape ({ error: { error: ... } }) also matches
+  assert.deepEqual(
+    shouldFallbackLocal({ creds: { token: 't' }, apiResult: { ok: false, status: 403, data: { detail } } }),
+    { fallback: true, reason: 'workspace_not_on_backend' }
+  );
+  // an unrelated 403 (e.g. forbidden business) is still reported honestly
+  assert.deepEqual(
+    shouldFallbackLocal({ creds: { token: 't' }, apiResult: { ok: false, status: 403, error: 'forbidden' } }),
+    { fallback: false, reason: 'api_error_403' }
+  );
+});
+
 test('buildScorecardRow: stable schema + fields', () => {
   const row = buildScorecardRow(
     { reward: 4, verify: true, credits: 1, shipped: 'did a thing', files: ['x'], model: 'm', taskId: 'T1', elapsedMs: 1000 },
