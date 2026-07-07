@@ -8,9 +8,20 @@ success and non-zero on bad input.
 
 ## Contract for a calling agent
 
-1. Match the ask to a script in the table below.
-2. Pipe the source text into it: `cat source | node scripts/det/<script>.js <mode>`.
+One entrypoint, no need to know the file layout:
+
+```bash
+node scripts/det/det.js                 # print the catalog (script -> modes)
+node scripts/det/det.js <script> <mode> < input   # route stdin through it
+```
+
+1. Run `det.js` with no args to see every script and mode.
+2. Match the ask, then pipe the source in: `cat source | node scripts/det/det.js <script> <mode>`.
 3. Trust the output — it is exact, not inferred. Do not "improve" it.
+
+You can also call a script directly (`node scripts/det/extract.js urls`); the
+dispatcher is just the discovery front door. Its catalog is derived from the
+scripts' own exports, so it can never drift from what actually runs.
 
 If no script matches, do the task normally. This library grows one verified
 script at a time; never add one without a self-test.

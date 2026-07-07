@@ -4,9 +4,12 @@
 'use strict';
 
 const assert = require('assert');
-const { extract } = require('./extract');
-const { run } = require('./json');
+const extractModule = require('./extract');
+const { extract } = extractModule;
+const jsonModule = require('./json');
+const { run } = jsonModule;
 const text = require('./text');
+const { CATALOG } = require('./det');
 
 let passed = 0;
 function check(name, actual, expected) {
@@ -66,5 +69,17 @@ check('text.slug.accents', text.slugify('Café Déjà Vu'), 'cafe-deja-vu');
 check('text.trim', text.run('trim', 'a  \n\n  \nb'), { text: 'a\nb' });
 check('text.empty', text.run('dedupe', ''), { text: '' });
 check('text.badMode', text.run('nope', 'x').error !== undefined, true);
+
+// --- det.js dispatcher ---
+check('det.catalog', Object.keys(CATALOG).sort(), ['extract', 'json', 'text']);
+// every catalog entry advertises modes and routes to a working run()
+check('det.extract.route', CATALOG.extract.run('emails', 'x a@b.com'), { text: 'a@b.com' });
+check('det.json.route', CATALOG.json.run('min', '{ "a": 1 }'), { text: '{"a":1}' });
+check('det.text.route', CATALOG.text.run('dedupe', 'a\na'), { text: 'a' });
+check('det.badMode', CATALOG.extract.run('nope', 'x').error !== undefined, true);
+// catalog modes must equal what each script actually exports (no drift)
+check('det.extract.modes', CATALOG.extract.modes, Object.keys(extractModule.EXTRACTORS));
+check('det.json.modes', CATALOG.json.modes, jsonModule.MODES);
+check('det.text.modes', CATALOG.text.modes, text.MODES);
 
 console.log(`ok — ${passed} checks passed`);
