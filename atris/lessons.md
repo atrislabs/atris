@@ -4,6 +4,8 @@
 
 ---
 
+- **[2026-07-07] experiment-autopilot-phase-altitude** — fail — Daily experiment autopilot-phase-altitude reverted (apply_failed).
+
 ## Mechanized Lesson Burn-Down
 
 - **[2026-07-06] outbound-artifacts-must-render-before-send** - pass - Mechanism: scripts/outbound-artifact-gate.js blocks raw HTML plain sends and missing HTML render proof; test/outbound-artifact-gate.test.js pins bad and good sends.
