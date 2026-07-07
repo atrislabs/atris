@@ -11,6 +11,7 @@ const {
 } = require('../lib/wish-audit');
 const { improveWishes, readWishEvents, readWishes, stateFile, wishLessonsSummary } = require('../lib/wish-store');
 const {
+  answerWish,
   captureWishToJournal,
   grantWish,
   printBoard,
@@ -32,6 +33,7 @@ function showHelp() {
   console.log('         --metric example: --metric "stripe.active_subs>=10" (ops: >=, >, <=, <, ==)');
   console.log('       atris wish list');
   console.log('       atris wish board');
+  console.log('       atris wish answer "<your answer>" [--engine <id>] [--json] [--no-mission]');
   console.log('       atris wish grant <n> "<answer>" [--engine <id>] [--json] [--no-mission]');
   console.log('       atris wish say "<note>" [wish-id]');
   console.log('       atris wish again <id> "<tweak text>" [--engine <id>]');
@@ -175,7 +177,11 @@ function wishCommand(args = []) {
     }
     return runAgainWish(options.positionals, process.cwd(), options);
   }
-  if (first === 'grant' || first === 'answer') {
+  if (first === 'answer') {
+    const options = wishOptions(args);
+    return answerWish(options.positionals, process.cwd(), options);
+  }
+  if (first === 'grant') {
     const options = wishOptions(args);
     return grantWish(options.positionals, process.cwd(), options);
   }
@@ -208,7 +214,11 @@ function wishCommand(args = []) {
     console.error(metricError);
     return 2;
   }
-  const text = options.positionals.join(' ').trim();
+  // "atris wish claim <text>" is command confusion; the word claim is not part of the wish.
+  const positionals = first === 'claim' && options.positionals.length > 1
+    ? options.positionals.slice(1)
+    : options.positionals;
+  const text = positionals.join(' ').trim();
   if (!text) {
     showHelp();
     return 2;
