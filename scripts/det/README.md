@@ -92,3 +92,6 @@ node scripts/det/test.js   # runs every script against known input/output
 
 Runs fast, no deps. CI-safe. A script is not "done" until it appears here with a
 passing test.
+
+This suite is also gated by the repo's `npm test` via `test/det.test.js`, which
+runs it as a subprocess — so the library cannot silently rot in CI.

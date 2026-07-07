@@ -40,6 +40,7 @@ test/deck-build.test.js
 test/deck-compose.test.js
 test/deck-from-md.test.js
 test/deck-history.test.js
+test/det.test.js
 test/deck-integration.test.js
 test/deck-layout.test.js
 test/deck-review.test.js
