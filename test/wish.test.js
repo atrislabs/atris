@@ -1449,6 +1449,55 @@ test('wish answer accepts a path answer after the path-slot question was already
   }
 });
 
+test('wish keyword scan ignores filler words after folder markers', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fillers = ['already', 'please', 'now', 'again', 'today', 'everywhere', 'anyway', 'though', 'yet', 'still', 'first', 'next'];
+    for (const filler of fillers) {
+      assert.deepEqual(missingNamedInputs(`can we remove the flows folder ${filler}`, dir), []);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish answer accepts a proper-name answer after the exact question was already asked', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const question = 'Which workspace, repo, file, or team member did you mean by ghoststack?';
+    appendWishEvent(dir, {
+      id: 'wish-proper-loop',
+      n: 1,
+      ts: isoMinutesAgo(10),
+      text: 'fix repo ghoststack for operators',
+      status: 'needs_input',
+      questions: [question],
+    });
+
+    const answered = runCli(['wish', 'answer', 'use this checkout', '--no-mission'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(answered.status, 0, answered.stderr || answered.stdout);
+    assert.doesNotMatch(answered.stdout, /Which workspace, repo, file, or team member did you mean by ghoststack\?/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.filter((record) => Array.isArray(record.questions)
+      && record.questions.includes(question)).length, 1);
+    assert.equal(records.some((record) => record.answer === 'use this checkout'), true);
+    assert.equal(records.some((record) => record.kind === 'slot'
+      && record.filled_slots
+      && record.filled_slots[0].kind === 'proper'
+      && record.filled_slots[0].value === 'use this checkout'), true);
+    assert.equal(records.some((record) => record.status === 'captured_no_mission'), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish answer refuses stale fallback without an explicit wish ref', () => {
   const dir = makeTempDir();
   try {
