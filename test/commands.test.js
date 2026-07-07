@@ -175,6 +175,36 @@ test('member create initializes MEMBER.md and dated logs', () => {
   }
 });
 
+test('member run opts out of the verifier gate when no verifier is named', () => {
+  // A member-run mission is driven immediately by its runner — it is not a
+  // parked planning wish, which is what the mission-start verifier gate was
+  // built to refuse. Without an explicit opt-out, autonomous legs (autopilot's
+  // "member chooses useful work") die on "mission start refused: no verifier".
+  const { buildMemberRunStartArgs } = require('../commands/member');
+  const bare = buildMemberRunStartArgs('maze', 'choose useful work', ['--runner', 'atris2', '--minutes', '5']);
+  assert.ok(bare.includes('--no-verify'), 'no verifier named → explicit --no-verify');
+  const verified = buildMemberRunStartArgs('maze', 'ship X', ['--verify', 'npm test']);
+  assert.ok(!verified.includes('--no-verify'), 'a named verifier is kept, not overridden');
+  assert.ok(verified.includes('--verify') && verified.includes('npm test'));
+  const explicit = buildMemberRunStartArgs('maze', 'explore', ['--no-verify']);
+  assert.equal(explicit.filter((a) => a === '--no-verify').length, 1, 'explicit opt-out is passed once');
+});
+
+test('member run defaults to a worktree only inside a git repo', () => {
+  // A plain (non-git) workspace cannot cut a worktree — every mission start
+  // would die with "fatal: not a git repository". Degrade to shared checkout.
+  const { buildMemberRunStartArgs } = require('../commands/member');
+  const inRepo = buildMemberRunStartArgs('maze', 'work', [], __dirname);
+  assert.ok(inRepo.includes('--worktree'), 'git repo → isolated worktree by default');
+  const plainDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-nogit-'));
+  try {
+    const noRepo = buildMemberRunStartArgs('maze', 'work', [], plainDir);
+    assert.ok(!noRepo.includes('--worktree'), 'non-git workspace → shared checkout');
+  } finally {
+    fs.rmSync(plainDir, { recursive: true, force: true });
+  }
+});
+
 test('member run starts a budgeted isolated mission from plain text', () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-run-test-'));
   const dir = path.join(base, 'repo');
