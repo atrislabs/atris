@@ -42,6 +42,8 @@
 
 ## Completed
 
+- **[CLI-918]** six tests fail on master before tonight's work: mission status render pair, always-on due selection, wish short label review, and the two agent xp mission spine cases; each hides real drift between code and contract and blocks a trustworthy full-suite gate [cli]
+  **Verify:** node --test test/mission-status.test.js test/mission-xp.test.js test/short-names.test.js test/mission-status-render.test.js
 - **[CLI-916]** wish review latest resolves to an older open wish instead of the newest wish: reviewing latest tonight hit yesterday's wish while today's decomposed wish existed; pin down the intended meaning of latest and add a test [wish]
   **Verify:** node --test test/wish.test.js
 - **[CLI-909]** Add atris loops init audit tick commands [cli]
@@ -56,6 +58,5 @@
   **Verify:** node --test --test-name-pattern=claims test/commands.test.js
 - **[CLI-886]** Golden path papercut: packed master atris init still ends in agent MAP bootstrap instead of a human next command. In a clean HOME + npm-pack install from origin/master, the printed path was atris -> atris init, then init ended with BOOTSTRAP REQUIRED and 'Read atris/atris.md, then generate a complete atris/MAP.md' before any first mission or self-landed task. Done: fresh init in a toy repo ends with one human-runnable next command toward first mission/task, not agent-only MAP homework, with pack/install receipt or regression. [golden-path]
   **Verify:** node --test test/init-non-interactive.test.js
-- **[CLI-885]** PR #256 (result-sentence-gate) landed with 7 failing suite tests: 4 confirmed in task accept landing prints (task plan/ready Plan+Result traces, accept concise human landing, accept receipt next-mission route, accept --public AgentXP landing) plus 3 more in the same family. commands/task.js +87 lines and lib/autoland.js +159 changed without updating expectations. suite red on master since 3e0f154; verify with: node --test test/task-plan-result.test.js test/task-result-gate.test.js [regression]
 
 (440 older completed tasks archived in `atris task list --status done` and `atris task events`.)

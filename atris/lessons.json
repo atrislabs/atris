@@ -166,5 +166,15 @@
     "detector": "node --test test/mission-unknown-subcommand.test.js",
     "status": "resolved",
     "resolved_at": "2026-07-07"
+  },
+  "experiment-tick-prompt-cot-oneliner": {
+    "status": "pass",
+    "detector": "node --test test/mission-tick-prompt.test.js",
+    "scope": "atris-cli"
+  },
+  "experiment-receipt-summary-first-line": {
+    "status": "pass",
+    "detector": "node --test test/mission-tick-prompt.test.js",
+    "scope": "atris-cli"
   }
 }

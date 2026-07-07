@@ -4,6 +4,10 @@
 
 ---
 
+- **[2026-07-07] experiment-receipt-summary-first-line** — pass — Daily experiment receipt-summary-first-line kept (superset).
+
+- **[2026-07-07] experiment-tick-prompt-cot-oneliner** — pass — Daily experiment tick-prompt-cot-oneliner kept (superset).
+
 - **[2026-07-07] experiment-autopilot-phase-altitude** — pass — Daily experiment autopilot-phase-altitude kept (superset).
 
 - **[2026-07-07] mission-say-mistype-creates-junk-mission** — fail — [resolved] atris mission say <id> <text> is not a subcommand; the mission router treats the whole line as a new objective and silently creates a garbage mission plus room receipt. Detector: `node --test test/mission-unknown-subcommand.test.js`. Fixed in commit d7193da: unknown single-word verbs error with a pointer to atris wish say; quoted objectives and mission- ids keep the shortcut. Hit live 2026-07-07 while steering the deterministic-scripts wish; cleaned up by mission stop. Correct steering front door is: atris wish say "<note>" <wish-id>.
