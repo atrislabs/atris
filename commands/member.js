@@ -7587,6 +7587,15 @@ const WAKE_REASON_TEXT = {
   llm_not_configured: 'no model is configured for autonomous reasoning here',
   insufficient_data: "it doesn't have enough evidence yet to act with confidence",
   proof_not_successful: 'the last proof did not pass, so it stopped instead of stacking work on a failure',
+  auto_improver_task_create_failed: 'it found an improvement but could not put the task on the board',
+  heuristic_cross_domain_proof_written: 'it wrote a cross-domain proof using its built-in heuristics',
+  heuristic_objective_proposal_written: 'it drafted an objective proposal using its built-in heuristics',
+  install_requires_clean_git: 'installing needs a clean git tree first',
+  insufficient_world_model_data: 'its world model is too thin to act on yet',
+  llm_json_parse_failed: 'the model reply did not parse, so it stopped rather than act on garbage',
+  llm_json_parse_failed_heuristic_used: 'the model reply did not parse, so it fell back to built-in heuristics',
+  missing_domain_input: 'it needs a domain file or domain text from you to work on',
+  no_crontab: 'no crontab is available on this machine, so the loop cannot be scheduled',
 };
 
 const WAKE_DECISION_TEXT = {
@@ -7596,7 +7605,22 @@ const WAKE_DECISION_TEXT = {
   close_loop: 'is closing the loop',
   report_proof: 'has proof ready for you',
   create_missing_task: 'is putting the missing task on the board',
+  create_task: 'is putting a new task on the board',
+  stop: 'stopped on purpose',
+  task_create_failed: 'tried to put a task on the board and could not',
+  set_objective: 'set its own objective',
+  generate_objective: 'drafted a new objective for review',
+  supervise: 'reviewed the rest of the team',
+  wiki_mine: 'is mining the wiki for its next move',
+  process_domain_file: 'is digesting the domain file you gave it',
+  cross_domain_generalize: 'is distilling patterns across domains',
 };
+
+function wakeDecisionText(decision) {
+  if (WAKE_DECISION_TEXT[decision]) return WAKE_DECISION_TEXT[decision];
+  const words = String(decision || '').replace(/_/g, ' ').trim();
+  return words ? `decided: ${words}` : 'decided nothing';
+}
 
 function wakeStyle() {
   const on = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
@@ -7621,7 +7645,7 @@ function wakeReasonText(reason) {
 function wakeBootLines(name, result) {
   const s = wakeStyle();
   const role = wakeMemberRole(name);
-  const decisionText = WAKE_DECISION_TEXT[result.decision] || result.decision;
+  const decisionText = wakeDecisionText(result.decision);
   const goal = result.active_goal && result.active_goal.title;
   const experiment = result.current_experiment && result.current_experiment.title;
   const northStar = result.mission && result.mission.north_star;
