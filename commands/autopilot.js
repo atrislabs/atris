@@ -828,6 +828,7 @@ Rules:
 ${SHARED_CHECKOUT_GIT_CONTRACT}
 
 Before reading the file list, state the business stake this task protects or unlocks in one sentence.
+Before marking work ready, confirm the task owner is still right and the work was not superseded.
 
 Read these files first:
 ${readFiles}
