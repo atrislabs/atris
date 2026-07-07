@@ -25,13 +25,15 @@ const {
   sayWish,
   sweepWishes,
   waitingOperatorWishes,
+  REVIEW_WORD_SCORES,
 } = require('../lib/wish-delegate');
+const { printWishStats } = require('../lib/wish-stats');
 
 function showHelp() {
   console.log('');
   console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--as builder] [--metric "<name><op><target>"] [--json] [--no-mission]');
   console.log('         --metric example: --metric "stripe.active_subs>=10" (ops: >=, >, <=, <, ==)');
-  console.log('       atris wish list');
+  console.log('       atris wish list [--all]');
   console.log('       atris wish board');
   console.log('       atris wish answer "<your answer>" [--engine <id>] [--json] [--no-mission]');
   console.log('       atris wish grant <n> "<answer>" [--engine <id>] [--json] [--no-mission]');
@@ -39,6 +41,7 @@ function showHelp() {
   console.log('       atris wish again <id> "<tweak text>" [--engine <id>]');
   console.log('       atris wish review [<id>|latest] "<one sentence>" [--score <-1|0|1 or 1-5>]');
   console.log('       atris wish rewards');
+  console.log('       atris wish stats [--write]');
   console.log('       atris wish improve');
   console.log('       atris wish lessons');
   console.log('');
@@ -155,13 +158,16 @@ function wishCommand(args = []) {
     return 0;
   }
   if (first === 'list' || first === 'ls' || first === 'status') {
-    return printList(process.cwd());
+    return printList(process.cwd(), { all: args.includes('--all') });
   }
   if (first === 'board') {
     return printBoard(process.cwd());
   }
   if (first === 'rewards') {
     return printRewards(process.cwd());
+  }
+  if (first === 'stats') {
+    return printWishStats(process.cwd(), { write: args.includes('--write') });
   }
   if (first === 'improve') {
     return improveWishes(process.cwd());
@@ -247,4 +253,5 @@ module.exports = {
   sweepWishes,
   verifyOutcomeText,
   waitingOperatorWishes,
+  REVIEW_WORD_SCORES,
 };
