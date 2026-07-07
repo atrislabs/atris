@@ -127,8 +127,8 @@ test('wish display uses short labels and review accepts a bare display number', 
 
     const list = runCli(['wish', 'list'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /1\. #7 haiku loop - in flight/);
-    assert.match(list.stdout, /2\. #8 orb loop - came true/);
+    assert.match(list.stdout, /1\. #7 haiku loop - working/);
+    assert.match(list.stdout, /2\. #8 orb loop - done/);
     assert.doesNotMatch(list.stdout, /wish-2026-07-06/);
 
     const nudge = runCli(['wish'], { cwd: dir });

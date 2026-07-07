@@ -125,7 +125,7 @@ test('wish capture writes the journal inbox and wishes jsonl', () => {
   }
 });
 
-test('vague wish yields numbered questions', () => {
+test('vague wish asks one plain question at a time', () => {
   const dir = makeTempDir();
   try {
     prepareWorkspace(dir);
@@ -135,19 +135,19 @@ test('vague wish yields numbered questions', () => {
       env: { PATH: `${fakeBin}:${systemPath}` },
     });
     assert.equal(res.status, 1, res.stderr || res.stdout);
-    assert.match(res.stdout, /^You wished: "fix auth"/);
-    assert.match(res.stdout, /1\. What outcome should auth create\?/);
-    assert.match(res.stdout, /2\. Who is auth for\?/);
-    assert.match(res.stdout, /3\. What part of auth should I change first\?/);
-    assert.match(res.stdout.trim(), /answer with atris wish grant <n> "your answer"\.$/);
-    assert.doesNotMatch(res.stdout, /What action should I take/);
+    assert.match(res.stdout, /^Got it, wish #1: fix auth\./);
+    assert.match(res.stdout, /What should be different about auth when this wish comes true\?/);
+    assert.doesNotMatch(res.stdout, /Who is this for\?/);
+    assert.doesNotMatch(res.stdout, /^\d+\./m);
+    assert.match(res.stdout.trim(), /Answer with: atris wish answer "your words"$/);
+    assert.doesNotMatch(res.stdout, /wish grant/);
     assert.doesNotMatch(res.stdout, /wish-|mission-|[A-Z0-9]{3}-\d/);
   } finally {
     cleanupTempDir(dir);
   }
 });
 
-test('vague wish question exit restates the operator wish and asks specific gaps', () => {
+test('vague wish question names the wish and asks the first gap only', () => {
   const dir = makeTempDir();
   try {
     prepareWorkspace(dir);
@@ -157,13 +157,12 @@ test('vague wish question exit restates the operator wish and asks specific gaps
       env: { PATH: `${fakeBin}:${systemPath}` },
     });
     assert.equal(res.status, 1, res.stderr || res.stdout);
-    assert.match(res.stdout, /^You wished: "make onboarding better"/);
-    assert.match(res.stdout, /What outcome should onboarding create\?/);
-    assert.match(res.stdout, /Who is onboarding for\?/);
-    assert.match(res.stdout, /What part of onboarding should I change first\?/);
-    const numbered = res.stdout.split(/\r?\n/).filter((line) => /^\d+\./.test(line));
-    assert.ok(numbered.length >= 1 && numbered.length <= 3);
-    assert.match(res.stdout.trim(), /answer with atris wish grant <n> "your answer"\.$/);
+    assert.match(res.stdout, /^Got it, wish #1: make onboarding better\./);
+    assert.match(res.stdout, /What should be different about onboarding when this wish comes true\?/);
+    assert.doesNotMatch(res.stdout, /What part of onboarding should I change first\?/);
+    const questionLines = res.stdout.split(/\r?\n/).filter((line) => /\?$/.test(line));
+    assert.equal(questionLines.length, 1);
+    assert.match(res.stdout.trim(), /Answer with: atris wish answer "your words"$/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -182,12 +181,15 @@ test('delegated wish restates verbatim without invented verb forms or double hed
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /^I heard you: "make the boot screen friendlier"/);
+    assert.match(res.stdout, /^Got it, wish #1: make boot screen\. I'm on it\./);
     assertNoInventedVerbEd(res.stdout, 'make', wish);
     assert.doesNotMatch(res.stdout, /roughly about/);
+    assert.doesNotMatch(res.stdout, /budget/);
+    assert.doesNotMatch(res.stdout, /delegated/);
     assert.doesNotMatch(res.stdout, /workspace check passes/);
     assert.doesNotMatch(res.stdout, /git diff whitespace check/);
     assert.match(res.stdout, /I will show you the result to judge\./);
+    assert.doesNotMatch(res.stderr || '', /Warning:/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -428,10 +430,11 @@ test('multi-part wish decomposes and records out-of-scope parts', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /This wish has 2 parts\./);
-    assert.match(res.stdout, /Part 1: make wish list clearer/);
-    assert.match(res.stdout, /Part 2: gm mode in project obelisk/);
-    assert.match(res.stdout, /I can start part 1 now; part 2 needs its own home\./);
+    assert.match(res.stdout, /^Got it, wish #1: make wish list\. It has 2 parts\./);
+    assert.match(res.stdout, /Starting now: make wish list clearer\./);
+    assert.match(res.stdout, /This part lives somewhere else, so I cannot do it from here: gm mode in project obelisk\./);
+    assert.doesNotMatch(res.stdout, /Part \d:/);
+    assert.doesNotMatch(res.stdout, /needs its own home/);
     assert.doesNotMatch(res.stdout, /wish-|mission-|[A-Z0-9]{3}-\d/);
 
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
@@ -451,7 +454,7 @@ test('multi-part wish decomposes and records out-of-scope parts', () => {
   }
 });
 
-test('multi-part wish uses singular agreement for one waiting part', () => {
+test('multi-part wish asks one question about an unclear part', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   try {
@@ -463,14 +466,15 @@ test('multi-part wish uses singular agreement for one waiting part', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /part 1 needs one clearer answer before I start\./);
-    assert.doesNotMatch(res.stdout, /part 1 need one clearer answer/);
+    assert.match(res.stdout, /Starting now: make wish list clearer\./);
+    assert.match(res.stdout, /One question about "fix auth": What should be different about auth when this wish comes true\?/);
+    assert.doesNotMatch(res.stdout, /clearer answer before I start/);
   } finally {
     cleanupTempDir(dir);
   }
 });
 
-test('multi-part wish uses plural agreement for waiting parts', () => {
+test('multi-part wish asks one question per unclear part', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   try {
@@ -482,8 +486,9 @@ test('multi-part wish uses plural agreement for waiting parts', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /parts 1-2 need one clearer answer before I start\./);
-    assert.doesNotMatch(res.stdout, /parts 1-2 needs one clearer answer/);
+    assert.match(res.stdout, /One question about "fix auth":/);
+    assert.match(res.stdout, /One question about "fix billing":/);
+    assert.doesNotMatch(res.stdout, /parts 1-2/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -524,10 +529,9 @@ test('vague wish questions do not splice raw fragments', () => {
       env: { PATH: `${fakeBin}:${systemPath}` },
     });
     assert.equal(res.status, 1, res.stderr || res.stdout);
-    const questions = res.stdout.split(/\r?\n/).filter((line) => /^\d+\./.test(line)).join('\n');
+    const questions = res.stdout.split(/\r?\n/).filter((line) => /\?$/.test(line)).join('\n');
     assert.doesNotMatch(questions, /we can take this/);
-    assert.match(res.stdout, /What would done look like for this wish\?/);
-    assert.match(res.stdout, /What should exist when it comes true\?/);
+    assert.match(res.stdout, /What should be different when this wish comes true\?/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -575,7 +579,7 @@ test('wish grant names the wish verbatim before dispatching', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(granted.status, 0, granted.stderr || granted.stdout);
-    assert.match(granted.stdout, /^Granting wish 1: "make onboarding better"/);
+    assert.match(granted.stdout, /^Got it, wish #1: make onboarding better\. I'm on it\./);
     assertNoInventedVerbEd(granted.stdout, 'make', wish);
     assert.doesNotMatch(granted.stdout, /roughly about/);
   } finally {
@@ -734,9 +738,8 @@ test('wish grant mismatch guard stops disjoint answers and shows the list again'
       env: { PATH: `${fakeBin}:${systemPath}` },
     });
     assert.equal(guarded.status, 1, guarded.stderr || guarded.stdout);
-    assert.match(guarded.stdout, /^Granting wish 1: "make onboarding better"/);
-    assert.match(guarded.stdout, /This answer may be for a different wish, so I did not dispatch it\./);
-    assert.match(guarded.stdout, /1\. make onboarding better - waiting on you/);
+    assert.match(guarded.stdout, /^That answer sounds like a different wish, so I did not start wish #1: make onboarding better\./);
+    assert.match(guarded.stdout, /1\. #1 make onboarding better - waiting on you/);
 
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     assert.equal(records.some((record) => record.status === 'delegated'), false);
@@ -783,7 +786,7 @@ test('wish review latest appends record', () => {
 
     const list = runCli(['wish', 'list'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /make new thing clearer - came true \[reviewed\]/);
+    assert.match(list.stdout, /make new thing - done \[reviewed\]/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -936,7 +939,8 @@ test('wish list stays in plain language without ids', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /make the boot screen friendlier - in flight/);
+    assert.match(list.stdout, /#1 make boot screen - working/);
+    assert.doesNotMatch(list.stdout, /in flight/);
     assert.doesNotMatch(list.stdout, /[0-9A-HJKMNP-TV-Z]{26}/);
     assert.doesNotMatch(list.stdout, /wish-|mission-|[A-Z0-9]{3}-\d/);
   } finally {
@@ -969,8 +973,8 @@ test('wish list renders stopped when its mission was stopped', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /make the boot screen friendlier - stopped/);
-    assert.doesNotMatch(list.stdout, /make the boot screen friendlier - in flight/);
+    assert.match(list.stdout, /make boot screen - stuck/);
+    assert.doesNotMatch(list.stdout, /working/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1002,7 +1006,8 @@ test('wish --as builder records a builder slice without delegation', () => {
 
     const list = runCli(['wish', 'list'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /improve tests with more real results - ready for builder/);
+    assert.match(list.stdout, /#1 improve tests more - waiting on you/);
+    assert.doesNotMatch(list.stdout, /ready for builder/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1039,9 +1044,9 @@ test('wish board prints wish rows with review score', () => {
 
     const board = runCli(['wish', 'board'], { cwd: dir });
     assert.equal(board.status, 0, board.stderr || board.stdout);
-    assert.match(board.stdout, /^id\s+text\s+status\s+engine\s+verify_status\s+review/m);
-    assert.match(board.stdout, /wish-board-reviewed\s+make board reviewed row clearer\s+delegated\s+codex\s+derived\s+reviewed\/1/);
-    assert.match(board.stdout, /wish-board-builder\s+make board builder row clearer\s+builder\s+-\s+needs-review\s+-/);
+    assert.match(board.stdout, /^wish\s+text\s+status\s+engine\s+verify_status\s+review/m);
+    assert.match(board.stdout, /make board reviewed\s+make board reviewed row clearer\s+working\s+codex\s+derived\s+reviewed\/1/);
+    assert.match(board.stdout, /make board builder\s+make board builder row clearer\s+waiting on you\s+-\s+needs-review\s+-/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1082,9 +1087,9 @@ test('bare wish prints review nudges for completed or verified wishes', () => {
     assert.equal(res.status, 2);
     assert.match(res.stdout, /Usage: atris wish/);
     assert.match(res.stdout, /Wishes ready for review:/);
-    assert.match(res.stdout, /atris wish review wish-done "<one sentence>"/);
-    assert.match(res.stdout, /atris wish review wish-verified "<one sentence>"/);
-    assert.doesNotMatch(res.stdout, /atris wish review wish-reviewed/);
+    assert.match(res.stdout, /make completed thing: atris wish review \S+ "<one sentence>"/);
+    assert.match(res.stdout, /make verified thing: atris wish review \S+ "<one sentence>"/);
+    assert.doesNotMatch(res.stdout, /make reviewed thing: atris wish review/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1165,5 +1170,123 @@ test('wish rewards summarizes reviews and wish review scorecards', () => {
     assert.match(rewards.stdout, /reward rows found: 2/);
   } finally {
     cleanupTempDir(parent);
+  }
+});
+
+test('wish answer targets the waiting question, not the wish list number', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    // A wish already working sits at list number 1, like the night the interview collided.
+    appendWishEvent(dir, {
+      id: 'wish-busy',
+      n: 1,
+      ts: '2026-07-06T10:00:00.000Z',
+      text: 'make the boot screen friendlier',
+      status: 'delegated',
+      dispatched_at: '2026-07-06T10:00:00.000Z',
+    });
+
+    const created = runCli(['wish', 'make onboarding better'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(created.status, 1, created.stderr || created.stdout);
+    assert.match(created.stdout.trim(), /Answer with: atris wish answer "your words"$/);
+
+    const answered = runCli(['wish', 'answer', 'make onboarding better for new users during account setup'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(answered.status, 0, answered.stderr || answered.stdout);
+    assert.match(answered.stdout, /^Got it, wish #2: make onboarding better\. I'm on it\./);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    const dispatched = records.filter((record) => record.status === 'delegated' && record.dispatched_at && record.id !== 'wish-busy');
+    assert.equal(dispatched.length, 1);
+    assert.match(dispatched[0].text, /make onboarding better/);
+    assert.equal(records.some((record) => record.id === 'wish-busy' && record.answer), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish claim keeps the command word out of the wish text', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'claim', 'fix auth'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(res.status, 1, res.stderr || res.stdout);
+    assert.doesNotMatch(res.stdout, /claim/);
+    assert.doesNotMatch(res.stderr || '', /Warning/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records[0].text, 'fix auth');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish list shows only the five plain status words', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-fresh',
+      ts: '2026-07-06T09:00:00.000Z',
+      text: 'make signups grow soon',
+      status: 'captured',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-going',
+      ts: '2026-07-06T10:00:00.000Z',
+      text: 'make login flow smoother',
+      status: 'delegated',
+      dispatched_at: '2026-07-06T10:00:00.000Z',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-finished',
+      ts: '2026-07-06T11:00:00.000Z',
+      text: 'make billing page load fast',
+      status: 'complete',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-halted',
+      ts: '2026-07-06T12:00:00.000Z',
+      text: 'make search results smarter',
+      status: 'delegated',
+      dispatched_at: '2026-07-06T12:00:00.000Z',
+      mission_id: 'mission-halted',
+    });
+    appendMissionRecord(dir, {
+      id: 'mission-halted',
+      status: 'stopped',
+      updated_at: '2026-07-06T12:30:00.000Z',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-asking',
+      ts: '2026-07-06T13:00:00.000Z',
+      text: 'make emails warmer',
+      status: 'needs_input',
+      questions: ['Who is this for?'],
+    });
+
+    const list = runCli(['wish', 'list'], { cwd: dir });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    assert.match(list.stdout, /make signups grow - new/);
+    assert.match(list.stdout, /make login flow - working/);
+    assert.match(list.stdout, /make billing page - done/);
+    assert.match(list.stdout, /make search results - stuck/);
+    assert.match(list.stdout, /make emails warmer - waiting on you/);
+    assert.doesNotMatch(list.stdout, /captured|delegated|in flight|came true|waiting on another home|decomposed/);
+  } finally {
+    cleanupTempDir(dir);
   }
 });

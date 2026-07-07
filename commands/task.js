@@ -108,11 +108,11 @@ function getTaskDb() {
   }
 }
 
-function warnIfTaskTitleNeedsOperatorWhy(title) {
+function warnIfTaskTitleNeedsOperatorWhy(title, options = {}) {
   const text = String(title || '').trim();
   if (!text || operatorReady(text)) return null;
   const warning = 'Warning: add the why in plain words to this task title: what it buys or costs, who benefits, and no flags or identifiers.';
-  console.error(warning);
+  if (options.print !== false) console.error(warning);
   return warning;
 }
 
@@ -5239,7 +5239,7 @@ function delegateHandoff(task, owner, via, tag) {
   return handoff;
 }
 
-function delegateTask(args) {
+function delegateTask(args, options = {}) {
   const pos = positional(args);
   const title = pos.join(' ').trim();
   if (!title) {
@@ -5257,7 +5257,7 @@ function delegateTask(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
-  const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title);
+  const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title, { print: options.warnOperatorTitle !== false });
   const ownerResolution = resolveFunctionalTaskOwner({
     requestedOwner: requestedOwner && requestedOwner !== true ? requestedOwner : null,
     title,
