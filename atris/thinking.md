@@ -64,4 +64,6 @@ One lesson format. Boot reads it in one place, writes it in one place — no amb
 - 2026-07-01T19:20:13.781Z - Close Hourly Intelligent Mission Room: Close the hourly intelligent forever loop gap: team members should run every hour, choose useful work, think-do-prove truthfully, and stop instead of fake activity
 - 2026-07-03T20:39:55.226Z - Drive Missions Verifier Mission Room: Make self-driving stick. Bug: atris drive parks no-verifier missions via 'mission stop --pause' but mission doctor still flags paused missions as missing_verifier, so drive...
 - 2026-07-06T17:55:54.929Z - See Process Would Mission Room: i could see how this process would lead me to creating a viral hit on ableton
+- 2026-07-07T10:17:10.674Z - Create Deterministic Code Mission Room: create deterministic code scripts for tasks llms are often asked to do, so a cheaper llm can just run the script
+- 2026-07-07T10:17:11.252Z - Good Results Instead Mission Room: get good results instead of generating from scratch
 <!-- ATRIS_MISSION_ROOM_SIGNALS:END -->
