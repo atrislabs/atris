@@ -252,6 +252,50 @@ function ensureMissionFile(memberDir, { name, role, description } = {}) {
   return missionPath;
 }
 
+function listExistingMemberSlugs() {
+  const teamDir = path.join(process.cwd(), 'atris', 'team');
+  try {
+    return fs.readdirSync(teamDir, { withFileTypes: true })
+      .filter(entry => entry.isDirectory() && !entry.name.startsWith('_'))
+      .map(entry => entry.name)
+      .filter(slug => fs.existsSync(path.join(teamDir, slug, 'MEMBER.md')))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function editDistance(a, b) {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dist = Array.from({ length: rows }, (_, i) => [i, ...Array(cols - 1).fill(0)]);
+  for (let j = 0; j < cols; j++) dist[0][j] = j;
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      dist[i][j] = Math.min(
+        dist[i - 1][j] + 1,
+        dist[i][j - 1] + 1,
+        dist[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+  }
+  return dist[rows - 1][cols - 1];
+}
+
+function nearestMemberSlug(name, slugs) {
+  const needle = String(name || '').toLowerCase();
+  let best = null;
+  let bestScore = Infinity;
+  for (const slug of slugs) {
+    const score = editDistance(needle, slug.toLowerCase());
+    if (score < bestScore) {
+      best = slug;
+      bestScore = score;
+    }
+  }
+  return bestScore <= Math.max(2, Math.floor(needle.length / 3)) ? best : null;
+}
+
 function requireMemberDir(name) {
   if (!name) {
     console.error('Usage: atris member <goal|tick|review> <name> ...');
@@ -266,6 +310,15 @@ function requireMemberDir(name) {
   if (!fs.existsSync(paths.memberFile)) {
     const aliasHint = resolved.aliasOf ? ` or atris/team/${resolved.aliasOf}/MEMBER.md` : '';
     console.error(`Member "${name}" not found at atris/team/${name}/MEMBER.md${aliasHint}`);
+    const team = listExistingMemberSlugs();
+    const nearest = nearestMemberSlug(name, team);
+    if (nearest) {
+      console.error(`Did you mean "${nearest}"?`);
+    } else if (team.length) {
+      console.error(`Team here: ${team.join(', ')}`);
+    } else {
+      console.error(`No team members exist here yet. Create one: atris member create ${name} --role="..."`);
+    }
     process.exit(1);
   }
   return {
