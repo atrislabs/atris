@@ -312,17 +312,25 @@ function resolveAtrisBin() {
 // A cap of 1 would create the mission and stop before any work happened.
 const LOCAL_FALLBACK_ARGS = ['autopilot', '--auto', '--iterations=2'];
 
+function localFallbackArgs(budgetSec) {
+  return LOCAL_FALLBACK_ARGS.concat(['--minutes', String(Math.max(1, Math.round(budgetSec / 60)))]);
+}
+
 function runLocalFallback(opts = {}) {
   const bin = resolveAtrisBin();
   const isScript = bin.endsWith('.js');
   const cmd = isScript ? process.execPath : bin;
-  const argv = (isScript ? [bin] : []).concat(LOCAL_FALLBACK_ARGS);
+  // Tell autopilot its time budget so it lands gracefully ("budget spent")
+  // instead of being SIGKILLed mid-leg and reporting a failed tick. The spawn
+  // timeout stays as a backstop, one minute past the budget.
+  const budgetSec = Math.max(60, Number(opts.timeoutSec) || 600);
+  const argv = (isScript ? [bin] : []).concat(localFallbackArgs(budgetSec));
   const r = spawnSync(cmd, argv, {
     cwd: opts.workspace || process.cwd(),
     encoding: 'utf8',
     env: process.env,
     stdio: opts.json ? ['ignore', 'pipe', 'pipe'] : 'inherit',
-    timeout: Math.max(60, Number(opts.timeoutSec) || 600) * 1000,
+    timeout: (budgetSec + 60) * 1000,
   });
   return {
     ok: r.status === 0,
@@ -522,5 +530,6 @@ module.exports = {
   formatImproveReport,
   runLocalFallback,
   LOCAL_FALLBACK_ARGS,
+  localFallbackArgs,
   SCORECARD_SCHEMA,
 };
