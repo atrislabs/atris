@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 const {
   REVIEW_WORD_SCORES,
   inferBudgetTier,
+  missingNamedInputs,
   sweepWishes,
   waitingOperatorWishes,
 } = require('../commands/wish');
@@ -1414,6 +1415,40 @@ test('wish answer routes a decomposed waiting part instead of an older waiting w
   }
 });
 
+test('wish answer accepts a path answer after the path-slot question was already asked', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    appendWishEvent(dir, {
+      id: 'wish-path-loop',
+      n: 1,
+      ts: isoMinutesAgo(10),
+      text: 'make ~/missing-loop-target usable for operators',
+      status: 'needs_input',
+      questions: ['Where should I find the file or folder you named?'],
+    });
+
+    const answered = runCli(['wish', 'answer', 'use ~/missing-loop-target', '--no-mission'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(answered.status, 0, answered.stderr || answered.stdout);
+    assert.doesNotMatch(answered.stdout, /Where should I find the file or folder you named\?/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.filter((record) => Array.isArray(record.questions)
+      && record.questions.includes('Where should I find the file or folder you named?')).length, 1);
+    assert.equal(records.some((record) => record.answer === 'use ~/missing-loop-target'), true);
+    assert.equal(records.some((record) => record.kind === 'slot'
+      && record.filled_slots
+      && record.filled_slots[0].value === '~/missing-loop-target'), true);
+    assert.equal(records.some((record) => record.status === 'captured_no_mission'), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish answer refuses stale fallback without an explicit wish ref', () => {
   const dir = makeTempDir();
   try {
@@ -1501,6 +1536,77 @@ test('wish answer fresh fallback still applies', () => {
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     assert.equal(records.some((record) => record.id === 'wish-fresh' && record.answer === 'for founders during signup'), true);
     assert.equal(records.some((record) => record.id === 'wish-fresh' && record.status === 'delegated' && record.dispatched_at), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish show prints rows without appending wishes', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-show-rows',
+      n: 7,
+      ts: '2026-07-06T10:00:00.000Z',
+      text: 'make show read only',
+      status: 'captured',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-show-rows',
+      n: 7,
+      ts: '2026-07-06T10:01:00.000Z',
+      text: 'make show read only',
+      status: 'needs_input',
+      questions: ['Who is this for?'],
+    });
+    const file = path.join(dir, '.atris', 'state', 'wishes.jsonl');
+    const before = readJsonl(file).length;
+
+    const shown = runCli(['wish', 'show', '7'], { cwd: dir });
+    assert.equal(shown.status, 0, shown.stderr || shown.stdout);
+    assert.match(shown.stdout, /Wish #7/);
+    assert.match(shown.stdout, /Text: make show read only/);
+    assert.match(shown.stdout, /Rows:/);
+    assert.match(shown.stdout, /row 2:/);
+    assert.match(shown.stdout, /questions: Who is this for\?/);
+    assert.equal(readJsonl(file).length, before);
+
+    const byId = runCli(['wish', 'show', 'wish-show-rows'], { cwd: dir });
+    assert.equal(byId.status, 0, byId.stderr || byId.stdout);
+    assert.match(byId.stdout, /ID: wish-show-rows/);
+    assert.equal(readJsonl(file).length, before);
+
+    const get = runCli(['wish', 'get', '7'], { cwd: dir });
+    assert.equal(get.status, 2);
+    assert.match(get.stderr, /Use: atris wish show 7/);
+    assert.equal(readJsonl(file).length, before);
+
+    const status = runCli(['wish', 'status', '7'], { cwd: dir });
+    assert.equal(status.status, 2);
+    assert.match(status.stderr, /Use: atris wish show 7/);
+    assert.equal(readJsonl(file).length, before);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish audit resolves tilde paths before asking for file location', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  const absoluteFolder = path.join(dir, 'outside-root');
+  try {
+    prepareWorkspace(dir);
+    fs.mkdirSync(path.join(home, 'existing-dir'), { recursive: true });
+    fs.mkdirSync(absoluteFolder, { recursive: true });
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'fix ~/existing-dir for users', '--no-mission'], {
+      cwd: dir,
+      env: { HOME: home, PATH: `${fakeBin}:${systemPath}` },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.doesNotMatch(res.stdout, /Where should I find the file or folder you named\?/);
+    assert.deepEqual(missingNamedInputs(`fix ${absoluteFolder}`, dir), []);
   } finally {
     cleanupTempDir(dir);
   }

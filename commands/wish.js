@@ -8,8 +8,17 @@ const {
   missingNamedInputs,
   sharesMeaningfulWords,
   verifyOutcomeText,
+  withWishAnswerAuditContext,
 } = require('../lib/wish-audit');
-const { improveWishes, readWishEvents, readWishes, stateFile, wishLessonsSummary } = require('../lib/wish-store');
+const {
+  appendWishRecord,
+  improveWishes,
+  readWishEvents,
+  readWishes,
+  stampIso,
+  stateFile,
+  wishLessonsSummary,
+} = require('../lib/wish-store');
 const {
   answerWish,
   captureWishToJournal,
@@ -34,6 +43,7 @@ function showHelp() {
   console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--as builder] [--metric "<name><op><target>"] [--json] [--no-mission]');
   console.log('         --metric example: --metric "stripe.active_subs>=10" (ops: >=, >, <=, <, ==)');
   console.log('       atris wish list [--all]');
+  console.log('       atris wish show <n|id>');
   console.log('       atris wish board');
   console.log('       atris wish answer "<your answer>" [--engine <id>] [--json] [--no-mission]');
   console.log('       atris wish grant <n> "<answer>" [--engine <id>] [--json] [--no-mission]');
@@ -45,6 +55,81 @@ function showHelp() {
   console.log('       atris wish improve');
   console.log('       atris wish lessons');
   console.log('');
+}
+
+function cleanWishShowRef(value) {
+  return String(value || '').trim().replace(/^#/, '');
+}
+
+function wishShowHint(value) {
+  const suffix = cleanWishShowRef(value);
+  return suffix && /^\d+$/.test(suffix)
+    ? `Use: atris wish show ${suffix}`
+    : 'Usage: atris wish show <n|id>';
+}
+
+function wishHistoryRows(root, wish) {
+  return readWishEvents(root).filter((event) => {
+    if (!event) return false;
+    if (event.id && event.id === wish.id) return true;
+    return event.wish_id && event.wish_id === wish.id;
+  });
+}
+
+function printWishShow(root, rawRef) {
+  const ref = cleanWishShowRef(rawRef);
+  if (!ref) {
+    console.error(wishShowHint(rawRef));
+    return 2;
+  }
+  const number = Number(ref);
+  const wishes = readWishes(root);
+  const wish = Number.isInteger(number) && number > 0
+    ? wishes.find((row) => Number(row.n) === number)
+    : wishes.find((row) => String(row.id || '') === ref);
+  if (!wish) {
+    console.error(`No wish found for ${rawRef}. Try: atris wish list --all`);
+    return 1;
+  }
+  const questions = Array.isArray(wish.questions) ? wish.questions.filter(Boolean) : [];
+  console.log(`Wish #${wish.n || '?'} ${wish.id}`);
+  console.log(`ID: ${wish.id}`);
+  console.log(`Status: ${wish.status || 'unknown'}`);
+  console.log(`Text: ${wish.text || ''}`);
+  console.log('Questions:');
+  if (questions.length) questions.forEach((question) => console.log(`- ${question}`));
+  else console.log('- none');
+  console.log('Rows:');
+  const history = wishHistoryRows(root, wish);
+  if (!history.length) console.log('- none');
+  history.forEach((event, index) => {
+    const parts = [event.ts || 'unknown-time', event.kind || event.status || 'event'];
+    if (event.answer) parts.push(`answer: ${event.answer}`);
+    if (event.review_text) parts.push(`review: ${event.review_text}`);
+    if (event.note) parts.push(`note: ${event.note}`);
+    if (Array.isArray(event.filled_slots) && event.filled_slots.length) {
+      parts.push(`filled: ${event.filled_slots.map((slot) => slot.value).join(', ')}`);
+    }
+    console.log(`- row ${index + 1}: ${parts.join(' | ')}`);
+    console.log(`  text: ${event.text || wish.text || ''}`);
+    console.log(`  status: ${event.status || event.kind || 'event'}`);
+    const rowQuestions = Array.isArray(event.questions) ? event.questions.filter(Boolean) : [];
+    console.log(`  questions: ${rowQuestions.length ? rowQuestions.join(' | ') : 'none'}`);
+    console.log(`  history: ${parts.slice(2).join(' | ') || 'none'}`);
+  });
+  return 0;
+}
+
+function appendFilledAnswerSlot(root, context) {
+  if (!context || !context.filled_slot || !context.wish_id) return;
+  appendWishRecord(root, {
+    id: context.wish_id,
+    n: context.n || undefined,
+    ts: stampIso(),
+    text: context.text || undefined,
+    kind: 'slot',
+    filled_slots: [context.filled_slot],
+  });
 }
 
 function unquote(value) {
@@ -157,6 +242,17 @@ function wishCommand(args = []) {
     showHelp();
     return 0;
   }
+  if (first === 'show') {
+    return printWishShow(process.cwd(), args[1]);
+  }
+  if ((first === 'status' || first === 'get') && /^\#?\d+$/.test(String(args[1] || '').trim())) {
+    console.error(wishShowHint(args[1]));
+    return 2;
+  }
+  if (first === 'get') {
+    console.error(wishShowHint(args[1]));
+    return 2;
+  }
   if (first === 'list' || first === 'ls' || first === 'status') {
     return printList(process.cwd(), { all: args.includes('--all') });
   }
@@ -185,7 +281,14 @@ function wishCommand(args = []) {
   }
   if (first === 'answer') {
     const options = wishOptions(args);
-    return answerWish(options.positionals, process.cwd(), options);
+    const root = process.cwd();
+    const context = {
+      root,
+      answer: options.positionals.slice(1).join(' ').trim(),
+    };
+    const code = withWishAnswerAuditContext(context, () => answerWish(options.positionals, root, options));
+    if (code !== 2) appendFilledAnswerSlot(root, context);
+    return code;
   }
   if (first === 'grant') {
     const options = wishOptions(args);
@@ -252,6 +355,7 @@ module.exports = {
   stateFile,
   sweepWishes,
   verifyOutcomeText,
+  withWishAnswerAuditContext,
   waitingOperatorWishes,
   REVIEW_WORD_SCORES,
 };
