@@ -340,3 +340,23 @@ test('integration with real atris bench run', { skip: !fs.existsSync(path.join(r
     cleanup(base);
   }
 });
+
+// [2026-07-07] apply_failed root cause: apply scripts ran via `sh` + polyglot
+// `exec node`, which needs node on PATH — overnight cron PATHs lack it, so the
+// nightly experiment reverted before its patch ever applied. .js apply scripts
+// must run on the CLI's own node binary, PATH-independent.
+test('runApplyScript runs .js apply scripts without node on PATH', () => {
+  const { runApplyScript } = require('../lib/experiments/daily');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apply-'));
+  const script = path.join(dir, 'apply.js');
+  fs.writeFileSync(script, "':' //; exec node \"$0\" \"$@\"\nprocess.exit(0);\n");
+  const savedPath = process.env.PATH;
+  process.env.PATH = '';
+  try {
+    const result = runApplyScript(dir, script);
+    assert.equal(result.status, 0, result.stderr || String(result.error || ''));
+  } finally {
+    process.env.PATH = savedPath;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

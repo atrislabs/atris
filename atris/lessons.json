@@ -150,8 +150,13 @@
     "mechanism": "commands/worktree.js restoreRegeneratedAdapterChurn skips unstaged AGENTS.md, CLAUDE.md, and GEMINI.md churn; test/worktree-ship-detached.test.js pins it."
   },
   "experiment-autopilot-phase-altitude": {
-    "status": "observed",
-    "scope": "atris-cli"
+    "scope": "atris-cli",
+    "applies_to": [
+      "lib/experiments/daily.js"
+    ],
+    "detector": "node --test test/experiments-daily.test.js",
+    "status": "resolved",
+    "resolved_at": "2026-07-07"
   },
   "mission-say-mistype-creates-junk-mission": {
     "scope": "atris-cli",
