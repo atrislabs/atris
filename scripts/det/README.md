@@ -30,16 +30,17 @@ at a time; never add one without a self-test.
 The first five read stdin, write stdout, exit 0 on success and non-zero on bad
 input. The last three read git directly (their input is the repo, not stdin).
 
-You can call any script directly, or use the dispatcher as a discovery front door
-for the five stdin scripts:
+You can call any script directly, or use the dispatcher as a discovery front door:
 
 ```bash
-node scripts/det/det.js                 # print the catalog (script -> modes)
+node scripts/det/det.js                 # print the catalog (all 8 tools)
 node scripts/det/det.js <script> <mode> < input   # route stdin through it
 ```
 
-The dispatcher's catalog is derived from the scripts' own exports, so it can
-never drift from what actually runs. Trust the output; do not "improve" it.
+`det.js` lists every tool: the five stdin scripts it can route, plus the three
+git-facing scripts (which it points you to run directly, since their input is the
+repo). The stdin catalog is derived from the scripts' own exports, so it can never
+drift from what actually runs. Trust the output; do not "improve" it.
 
 ## stdin scripts
 

@@ -19,6 +19,27 @@ const text = require('./text');
 const hash = require('./hash');
 const date = require('./date');
 
+// git-facing scripts: they read the repo, not stdin, so they aren't routable
+// through det.js. Listed here only so the front door surfaces all the tools —
+// a cheap model running `det.js` sees these too and knows to run them directly.
+const GIT_SCRIPTS = [
+  {
+    name: 'commit-msg',
+    ask: 'draft a Conventional-Commits message from the staged diff',
+    usage: 'git add -A && node scripts/det/commit-msg.js',
+  },
+  {
+    name: 'changelog',
+    ask: 'group commits since a ref/tag into a changelog',
+    usage: 'node scripts/det/changelog.js [ref]',
+  },
+  {
+    name: 'pr-description',
+    ask: 'draft a PR title + area summary + test-plan from the branch diff',
+    usage: 'node scripts/det/pr-description.js [base]',
+  },
+];
+
 // script -> { ask, modes, run(mode, input) -> {text}|{error} }
 const CATALOG = {
   extract: {
@@ -55,9 +76,12 @@ function catalogText() {
   const rows = Object.entries(CATALOG).map(
     ([name, s]) => `  ${name.padEnd(9)} ${s.modes.join(' ')}\n    ${s.ask}`
   );
+  const gitRows = GIT_SCRIPTS.map((g) => `  ${g.name.padEnd(15)} ${g.usage}\n    ${g.ask}`);
   return (
     'deterministic task scripts — run: node det.js <script> <mode> < input\n\n' +
     rows.join('\n\n') +
+    '\n\ngit-facing (read the repo, run the script directly; not via det.js):\n\n' +
+    gitRows.join('\n\n') +
     '\n'
   );
 }
@@ -65,7 +89,9 @@ function catalogText() {
 function catalogJson() {
   const out = {};
   for (const [name, s] of Object.entries(CATALOG)) out[name] = { ask: s.ask, modes: s.modes };
-  return JSON.stringify(out, null, 2);
+  const git = {};
+  for (const g of GIT_SCRIPTS) git[g.name] = { ask: g.ask, usage: g.usage };
+  return JSON.stringify({ ...out, git }, null, 2);
 }
 
 function readStdin() {
@@ -85,6 +111,11 @@ async function main() {
 
   if (!script) {
     process.stdout.write((wantJson ? catalogJson() : catalogText()) + '\n');
+    return;
+  }
+  const git = GIT_SCRIPTS.find((g) => g.name === script);
+  if (git) {
+    process.stdout.write(`${git.name} reads the repo, not stdin — run it directly:\n  ${git.usage}\n`);
     return;
   }
   const entry = CATALOG[script];
@@ -109,4 +140,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { CATALOG, catalogJson };
+module.exports = { CATALOG, catalogJson, catalogText, GIT_SCRIPTS };

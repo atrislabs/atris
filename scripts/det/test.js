@@ -14,7 +14,7 @@ const date = require('./date');
 const commitMsg = require('./commit-msg');
 const changelog = require('./changelog');
 const prDesc = require('./pr-description');
-const { CATALOG } = require('./det');
+const { CATALOG, catalogJson, catalogText, GIT_SCRIPTS } = require('./det');
 
 let passed = 0;
 function check(name, actual, expected) {
@@ -258,5 +258,11 @@ check('det.badMode', CATALOG.extract.run('nope', 'x').error !== undefined, true)
 check('det.extract.modes', CATALOG.extract.modes, Object.keys(extractModule.EXTRACTORS));
 check('det.json.modes', CATALOG.json.modes, jsonModule.MODES);
 check('det.text.modes', CATALOG.text.modes, text.MODES);
+// git-facing scripts surface at the front door so all 8 tools are discoverable
+check('det.git.names', GIT_SCRIPTS.map((g) => g.name), ['commit-msg', 'changelog', 'pr-description']);
+check('det.git.text', catalogText().includes('git-facing') && catalogText().includes('pr-description'), true);
+check('det.git.json', JSON.parse(catalogJson()).git['commit-msg'].usage.includes('commit-msg.js'), true);
+// stdin catalog stays separate from the git list (routing must not mix them)
+check('det.git.notRoutable', CATALOG['commit-msg'], undefined);
 
 console.log(`ok — ${passed} checks passed`);
