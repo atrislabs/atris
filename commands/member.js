@@ -8656,6 +8656,143 @@ function memberHistory(name, ...args) {
   }
 }
 
+// --- Live backend status (heartbeat + projection) ---
+
+function parseLiveFlags(args) {
+  const flags = { scope: 'personal', scopeId: null, json: false, state: null, note: null, days: null };
+  const positional = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--json') flags.json = true;
+    else if (a === '--done') flags.state = 'done';
+    else if (a === '--error') flags.state = 'error';
+    else if (a === '--running') flags.state = 'running';
+    else if (a === '--scope') flags.scope = args[++i];
+    else if (a.startsWith('--scope=')) flags.scope = a.slice(8);
+    else if (a === '--scope-id') flags.scopeId = args[++i];
+    else if (a.startsWith('--scope-id=')) flags.scopeId = a.slice(11);
+    else if (a === '--note' || a === '--on') flags.note = args[++i];
+    else if (a.startsWith('--note=')) flags.note = a.slice(7);
+    else if (a === '--days') flags.days = parseInt(args[++i], 10);
+    else if (a.startsWith('--days=')) flags.days = parseInt(a.slice(7), 10);
+    else positional.push(a);
+  }
+  return { flags, positional };
+}
+
+function memberScopeQuery(flags) {
+  let q = `scope=${encodeURIComponent(flags.scope)}`;
+  if (flags.scopeId) q += `&scope_id=${encodeURIComponent(flags.scopeId)}`;
+  return q;
+}
+
+// atris member live — what the iPhone app and web see: GET /api/members projection.
+async function memberLive(...args) {
+  const { flags } = parseLiveFlags(args);
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+  const result = await apiRequestJson(`/members?${memberScopeQuery(flags)}`, { token: creds.token });
+  if (!result.ok) {
+    console.error(`Failed to fetch members: ${result.error || 'Unknown error'}`);
+    process.exit(1);
+  }
+  const members = (result.data?.members || result.data || []).filter((m) => m && m.member_type === 'ai');
+  if (flags.json) {
+    console.log(JSON.stringify(members, null, 2));
+    return;
+  }
+  console.log('');
+  console.log(`live members (${flags.scope}${flags.scopeId ? `:${flags.scopeId}` : ''}) — same projection the app renders`);
+  console.log('');
+  for (const m of members) {
+    const loop = m.loop_status || {};
+    const dot = loop.running ? '●' : '○';
+    const state = loop.state || m.status || '-';
+    const workingOn = loop.working_on || loop.now || '';
+    const lastActive = loop.last_active || '';
+    console.log(`  ${dot} ${m.display_name}  [${state}]${workingOn ? `  ${workingOn}` : ''}${lastActive ? `  (last active ${lastActive})` : ''}`);
+  }
+  if (members.length === 0) console.log('  (no AI members in this scope)');
+  console.log('');
+}
+
+// atris member heartbeat — tell the backend this member is running/done, so
+// every surface (iOS, web) shows it live. POST /api/members/{name}/heartbeat.
+async function memberHeartbeat(name, ...args) {
+  if (!name) {
+    console.error('Usage: atris member heartbeat <name> [--note "what it is doing"] [--done|--error] [--scope business --scope-id <id>] [--json]');
+    process.exit(1);
+  }
+  const { flags } = parseLiveFlags(args);
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+  const body = { state: flags.state || 'running', scope: flags.scope };
+  if (flags.note) body.working_on = flags.note;
+  if (flags.scopeId) body.scope_id = flags.scopeId;
+  const result = await apiRequestJson(`/members/${encodeURIComponent(name)}/heartbeat`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+    token: creds.token,
+  });
+  if (!result.ok) {
+    console.error(`Heartbeat failed: ${result.error || 'Unknown error'}`);
+    process.exit(1);
+  }
+  if (flags.json) {
+    console.log(JSON.stringify(result.data, null, 2));
+    return;
+  }
+  const d = result.data || {};
+  console.log(`${d.running ? '●' : '○'} ${d.member || name} → ${d.state}${d.working_on ? ` — ${d.working_on}` : ''} (visible on every surface)`);
+}
+
+// atris member improvements — what the business computer improved, day by day.
+// GET /api/business/{id}/improvements/daily.
+async function memberImprovements(businessId, ...args) {
+  if (!businessId) {
+    console.error('Usage: atris member improvements <business-id> [--days N] [--json]');
+    process.exit(1);
+  }
+  const { flags } = parseLiveFlags(args);
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+  const days = flags.days && Number.isFinite(flags.days) ? flags.days : 30;
+  const result = await apiRequestJson(`/business/${encodeURIComponent(businessId)}/improvements/daily?days=${days}`, { token: creds.token });
+  if (!result.ok) {
+    console.error(`Failed to fetch improvements: ${result.error || 'Unknown error'}`);
+    process.exit(1);
+  }
+  if (flags.json) {
+    console.log(JSON.stringify(result.data, null, 2));
+    return;
+  }
+  const history = result.data?.history || [];
+  console.log('');
+  console.log(`daily improvements — business ${businessId}`);
+  console.log('');
+  if (history.length === 0) {
+    console.log('  (no improvement history yet — first entry lands after the next nightly self-improve run)');
+  }
+  for (const day of history) {
+    console.log(`  ${day.date}: ${day.agents_improved}/${day.agents_total} agents improved`);
+    for (const agent of day.agents || []) {
+      const note = agent.note ? ` — ${agent.note}` : '';
+      console.log(`    ${agent.kept_count > 0 ? '+' : ' '} ${agent.name} (kept ${agent.kept_count}, score ${agent.best_score})${note}`);
+    }
+  }
+  console.log('');
+}
+
 // --- Command Dispatcher ---
 
 async function memberCommand(subcommand, ...args) {
@@ -8707,6 +8844,13 @@ async function memberCommand(subcommand, ...args) {
       return memberBlock(args[0], args[1], ...args.slice(2));
     case 'status':
       return memberStatus(args[0], ...args.slice(1));
+    case 'live':
+      return memberLive(...args);
+    case 'heartbeat':
+    case 'hb':
+      return memberHeartbeat(args[0], ...args.slice(1));
+    case 'improvements':
+      return memberImprovements(args[0], ...args.slice(1));
     case 'history':
       return memberHistory(args[0], ...args.slice(1));
     case 'supervisor':
@@ -8740,6 +8884,9 @@ async function memberCommand(subcommand, ...args) {
       console.log('  review <name> <id>  Accept/discard an experiment with proof');
       console.log('  block <name> <id>   Mark an experiment blocked with a human/orchestrator ask');
       console.log('  status <name|--all> Show goal, mission, activity, value, ask, and recent log');
+      console.log('  live                Show backend member projection (what iOS/web render) [--scope business --scope-id <id>]');
+      console.log('  heartbeat <name>    Mark a member running/done on every surface [--note "..."] [--done|--error]');
+      console.log('  improvements <biz>  Show daily self-improve history for a business [--days N]');
       console.log('  history <name>      Show git history of member identity files (MEMBER.md, SOUL.md)');
       console.log('  supervisor recommendations  Show advisory supervisor recommendations');
       console.log('  objective-generator proposals  Show autonomous objective proposal');
