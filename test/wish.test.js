@@ -104,6 +104,10 @@ function isoHoursAgo(hours) {
   return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 }
 
+function isoMinutesAgo(minutes) {
+  return new Date(Date.now() - minutes * 60 * 1000).toISOString();
+}
+
 function isoDaysAgo(days) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
@@ -1349,6 +1353,154 @@ test('wish answer targets the waiting question, not the wish list number', () =>
     assert.equal(dispatched.length, 1);
     assert.match(dispatched[0].text, /make onboarding better/);
     assert.equal(records.some((record) => record.id === 'wish-busy' && record.answer), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish answer routes a decomposed waiting part instead of an older waiting wish', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    appendWishEvent(dir, {
+      id: 'wish-old',
+      n: 1,
+      ts: isoHoursAgo(4),
+      text: 'make billing copy warmer',
+      status: 'needs_input',
+      questions: ['Who is this for?'],
+    });
+    appendWishEvent(dir, {
+      id: 'wish-parent',
+      n: 2,
+      ts: isoMinutesAgo(10),
+      text: 'make onboarding calmer and make billing copy warmer',
+      status: 'decomposed',
+      parts: [
+        { part: 1, text: 'make onboarding checklist clearer', status: 'waiting' },
+      ],
+      waiting_parts: [
+        {
+          part: 1,
+          text: 'make onboarding checklist clearer',
+          status: 'waiting',
+          reason: 'What should be different about onboarding checklist when this part comes true?',
+          questions: ['What should be different about onboarding checklist when this part comes true?'],
+        },
+      ],
+      delegated_parts: [],
+    });
+
+    const answered = runCli(['wish', 'answer', 'for new users during account setup'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(answered.status, 0, answered.stderr || answered.stdout);
+    assert.match(answered.stdout, /Got it, wish #3: make onboarding checklist/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.some((record) => record.id === 'wish-old' && record.answer), false);
+    assert.equal(records.some((record) => record.id === 'wish-old' && record.status === 'delegated'), false);
+    const childRecords = records.filter((record) => record.parent_id === 'wish-parent' && record.id !== 'wish-parent');
+    assert.equal(childRecords.some((record) => record.text === 'make onboarding checklist clearer' && record.answer), true);
+    assert.equal(childRecords.some((record) => record.text === 'make onboarding checklist clearer' && record.status === 'delegated' && record.dispatched_at), true);
+    const latestParent = records.filter((record) => record.id === 'wish-parent').at(-1);
+    assert.deepEqual(latestParent.waiting_parts, []);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish answer refuses stale fallback without an explicit wish ref', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-older',
+      n: 1,
+      ts: isoHoursAgo(6),
+      text: 'make billing copy warmer',
+      status: 'needs_input',
+      questions: ['Who is this for?'],
+    });
+    appendWishEvent(dir, {
+      id: 'wish-newer',
+      n: 2,
+      ts: isoHoursAgo(2),
+      text: 'make onboarding copy warmer',
+      status: 'needs_input',
+      questions: ['Who is this for?'],
+    });
+
+    const answered = runCli(['wish', 'answer', 'for founders during signup'], { cwd: dir });
+    assert.equal(answered.status, 2);
+    assert.match(answered.stderr, /The wish waiting on you is #2 make onboarding copy, asked 2 hours ago\. If you mean that one, say: atris wish answer #2 "your words"/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.some((record) => record.answer), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish answer explicit stale ref still applies', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    appendWishEvent(dir, {
+      id: 'wish-old',
+      n: 1,
+      ts: isoHoursAgo(3),
+      text: 'make onboarding copy warmer',
+      status: 'needs_input',
+      questions: ['Who is this for?'],
+    });
+
+    const answered = runCli(['wish', 'answer', '#1', 'for founders during signup'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(answered.status, 0, answered.stderr || answered.stdout);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.some((record) => record.id === 'wish-old' && record.answer === 'for founders during signup'), true);
+    assert.equal(records.some((record) => record.id === 'wish-old' && record.status === 'delegated' && record.dispatched_at), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish answer fresh fallback still applies', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    appendWishEvent(dir, {
+      id: 'wish-fresh',
+      n: 1,
+      ts: isoMinutesAgo(20),
+      text: 'make onboarding copy warmer',
+      status: 'needs_input',
+      questions: ['Who is this for?'],
+    });
+
+    const answered = runCli(['wish', 'answer', 'for founders during signup'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(answered.status, 0, answered.stderr || answered.stdout);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.some((record) => record.id === 'wish-fresh' && record.answer === 'for founders during signup'), true);
+    assert.equal(records.some((record) => record.id === 'wish-fresh' && record.status === 'delegated' && record.dispatched_at), true);
   } finally {
     cleanupTempDir(dir);
   }
