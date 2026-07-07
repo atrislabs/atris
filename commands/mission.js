@@ -50,6 +50,12 @@ const {
   inspectTextLines,
   buildInspectPayload,
 } = require('../lib/inspect-fields');
+const {
+  nextRecordNumber,
+  recordMatchesRef,
+  shortRecordLabel,
+  shortRecordRef,
+} = require('../lib/short-name');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -562,6 +568,30 @@ function readJsonLines(file) {
     .filter(Boolean);
 }
 
+function nextMissionNumber(root = process.cwd()) {
+  return nextRecordNumber(readJsonLines(statePaths(root).missionsJsonl));
+}
+
+function missionLabel(mission) {
+  return shortRecordLabel(mission, mission && (mission.objective || mission.slug || mission.id));
+}
+
+function missionRef(mission) {
+  return shortRecordRef(mission);
+}
+
+function missionDisplayText(mission, value) {
+  const text = String(value || '');
+  const id = String(mission && mission.id || '').trim();
+  if (!id) return text;
+  return text.split(id).join(missionRef(mission));
+}
+
+function assignMissionNumber(mission, root = process.cwd()) {
+  if (!mission || mission.n) return mission;
+  return { ...mission, n: nextMissionNumber(root) };
+}
+
 function loadMissionMap(root = process.cwd()) {
   const paths = statePaths(root);
   const map = new Map();
@@ -632,7 +662,7 @@ function listWorktreeRollupMissions(root = process.cwd()) {
 }
 
 function missionMatchesRef(mission, ref) {
-  return mission && (mission.id === ref || mission.id.startsWith(ref) || mission.slug === ref);
+  return mission && (recordMatchesRef(mission, ref) || mission.slug === String(ref || '').trim());
 }
 
 function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) {
@@ -1622,13 +1652,13 @@ function renderMissionStatus(root = process.cwd()) {
   } else {
     for (const mission of missions.slice(0, 12)) {
       const taskSpine = missionTaskSpine(mission);
-      lines.push(`- **${mission.id}** ${mission.objective}`);
+      lines.push(`- **${missionLabel(mission)}** ${mission.objective}`);
       lines.push(`  - owner: ${mission.owner}`);
       lines.push(`  - state: ${mission.status}`);
-      lines.push(`  - next: ${mission.next_action || 'tick or verify'}`);
+      lines.push(`  - next: ${missionDisplayText(mission, mission.next_action || 'tick or verify')}`);
       if (taskSpine?.task_ref) lines.push(`  - task: ${taskSpine.task_ref}`);
-      if (taskSpine?.current_step_command) lines.push(`  - task next: ${taskSpine.current_step_command}`);
-      if (taskSpine && !taskSpine.has_task && taskSpine.ensure_task_command) lines.push(`  - task setup: ${taskSpine.ensure_task_command}`);
+      if (taskSpine?.current_step_command) lines.push(`  - task next: ${missionDisplayText(mission, taskSpine.current_step_command)}`);
+      if (taskSpine && !taskSpine.has_task && taskSpine.ensure_task_command) lines.push(`  - task setup: ${missionDisplayText(mission, taskSpine.ensure_task_command)}`);
       if (mission.xp_task?.ref) lines.push(`  - AgentXP task: ${mission.xp_task.ref}`);
       if (mission.receipt_path) lines.push(`  - proof: ${mission.receipt_path}`);
       const gateLabel = completionGateLabel(mission.completion_gate);
@@ -2928,7 +2958,7 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
   nextMission.next_action_preview = nextPlan.preview;
 
   ensureMemberMissionFile(nextMission.owner, root, nextMission.objective);
-  const { mission: saved } = saveMission(nextMission, root, 'mission_continuation_started', {
+  const { mission: saved } = saveMission(assignMissionNumber(nextMission, root), root, 'mission_continuation_started', {
     parent_mission_id: parent.id,
     parent_objective: parent.objective,
     proof: proof || null,
@@ -3098,7 +3128,7 @@ function startMission(args, options = {}) {
   }
   const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
-  const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective });
+  const { mission: saved } = saveMission(assignMissionNumber(mission, process.cwd()), process.cwd(), 'mission_started', { objective: mission.objective });
   const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
     ? takeCodexGoalSlotForMission(saved, process.cwd())
     : null;
@@ -3294,7 +3324,7 @@ async function startMissionFromRunObjective(objective, args) {
   }
   const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
-  const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective, source: 'mission_run_objective' });
+  const { mission: saved } = saveMission(assignMissionNumber(mission, process.cwd()), process.cwd(), 'mission_started', { objective: mission.objective, source: 'mission_run_objective' });
   if (landRun) {
     const memberState = renderMemberMissionState(saved.owner);
     const logPath = appendMemberLog(saved.owner, 'Mission landing flight dispatched', {
@@ -3617,20 +3647,20 @@ function statusMission(args) {
     payload,
     missions.length
       ? missionViews.flatMap((mission) => [
-        `Mission: ${mission.objective}`,
-        `  id: ${mission.id}`,
+        `Mission: ${missionLabel(mission)}`,
+        `  objective: ${mission.objective}`,
         `  owner: ${mission.owner}`,
         ...(mission.executed_by ? [`  executed_by: ${mission.executed_by}`] : []),
 	        `  state: ${mission.status}`,
 	        ...missionMetricLine(mission),
 	        ...missionHeartbeatLines(mission),
 	        ...(mission.worktree_root ? [`  worktree: ${mission.worktree_root}`] : []),
-	        `  next: ${mission.next_action || 'tick or verify'}`,
+	        `  next: ${missionDisplayText(mission, mission.next_action || 'tick or verify')}`,
 	        ...(mission.next_action_preview?.feynman?.what ? [`  preview: ${mission.next_action_preview.feynman.what}`] : []),
 	        ...missionGoalChainLines(mission),
 	        ...(mission.task_spine?.task_ref ? [`  task: ${mission.task_spine.task_ref}`] : []),
-        ...(mission.task_spine?.current_step_command ? [`  task next: ${mission.task_spine.current_step_command}`] : []),
-        ...(!mission.task_spine?.has_task && mission.task_spine?.ensure_task_command ? [`  task setup: ${mission.task_spine.ensure_task_command}`] : []),
+        ...(mission.task_spine?.current_step_command ? [`  task next: ${missionDisplayText(mission, mission.task_spine.current_step_command)}`] : []),
+        ...(!mission.task_spine?.has_task && mission.task_spine?.ensure_task_command ? [`  task setup: ${missionDisplayText(mission, mission.task_spine.ensure_task_command)}`] : []),
         ...(mission.receipt_path ? [`  proof: ${mission.receipt_path}`] : []),
         ...missionStatusLandingLines(mission.last_landing),
         ...(completionGateLabel(mission.completion_gate) ? [`  gate: ${completionGateLabel(mission.completion_gate)}`] : []),
@@ -4589,8 +4619,7 @@ function watchMission(args) {
     exitMissingMission(ref, 1, false);
   }
   const stamp = () => new Date().toTimeString().slice(0, 8);
-  const shortId = (mission) => mission.id.length > 20 ? `…${mission.id.slice(-8)}` : mission.id;
-  const emit = (mission, note) => console.log(`[${stamp()}] ${mission.owner} ${shortId(mission)} — ${note}`);
+  const emit = (mission, note) => console.log(`[${stamp()}] ${mission.owner} ${missionLabel(mission)} - ${note}`);
   const fingerprint = (mission) => [mission.status, mission.last_tick_at, mission.last_tick_index, mission.receipt_path].join('|');
   const tickNote = (mission) => {
     const heartbeat = missionHeartbeatLines(mission).map((line) => line.trim()).join(', ');
@@ -4598,7 +4627,7 @@ function watchMission(args) {
   };
   const seen = new Map();
   let lastIdleAt = Date.now();
-  console.log(`watching ${ref || 'active missions'} every ${intervalSeconds}s — ctrl+c to stop`);
+  console.log(`watching ${ref || 'active missions'} every ${intervalSeconds}s - ctrl+c to stop`);
   const poll = () => {
     const targets = loadTargets();
     if (!targets.length && !seen.size) {
@@ -5055,7 +5084,7 @@ function selectCodexGoalMission(root = process.cwd(), options = {}, now = new Da
     .filter((mission) => runnerUsesCallerSession(mission.runner))
     .filter((mission) => missionSelectableForCodexGoal(mission, now));
   if (requestedId) {
-    const exact = candidates.find((mission) => mission.id === requestedId || mission.id.startsWith(requestedId));
+    const exact = candidates.find((mission) => missionMatchesRef(mission, requestedId));
     if (exact) {
       const due = effectiveMissionVerifier(exact) && missionDueAt(exact, now);
       return { mission: exact, reason: due ? 'due' : 'selected' };
@@ -5090,7 +5119,7 @@ function selectAtrisGoalMission(root = process.cwd(), options = {}, now = new Da
   const requestedId = String(options.missionId || '').trim();
   const runnable = listMissions(root).filter((mission) => missionIsRunnable(mission));
   if (requestedId) {
-    const exact = runnable.find((mission) => mission.id === requestedId || mission.id.startsWith(requestedId));
+    const exact = runnable.find((mission) => missionMatchesRef(mission, requestedId));
     if (exact) return { mission: exact, reason: 'selected' };
   }
   runnable.sort((a, b) => {
