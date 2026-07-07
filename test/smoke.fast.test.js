@@ -92,9 +92,9 @@ test('real atris binary fast smoke covers wish questions and task render temp pa
 
     const wish = runCli(['wish', 'fix auth'], { cwd: work, env });
     assert.equal(wish.status, 1, wish.stderr || wish.stdout);
-    assert.match(wish.stdout, /^You wished: "fix auth"/);
-    assert.match(wish.stdout, /What outcome should auth create\?/);
-    assert.match(wish.stdout.trim(), /answer with atris wish grant <n> "your answer"\.$/);
+    assert.match(wish.stdout, /^Got it, wish #\d+: fix auth\./);
+    assert.match(wish.stdout, /What should be different about auth when this wish comes true\?/);
+    assert.match(wish.stdout.trim(), /Answer with: atris wish answer "your words"$/);
 
     const outPath = path.join(dir, 'rendered', 'TODO.md');
     const render = runCli(['task', 'render', '--out', outPath, '--json'], { cwd: work, env });
