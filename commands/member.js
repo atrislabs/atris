@@ -8518,20 +8518,25 @@ function memberStatus(name, ...args) {
     goals_path: paths.goalsJson,
     goals_md_path: paths.goalsMd,
   };
+  const s = wakeStyle();
+  const role = wakeMemberRole(name);
+  const ballWithHuman = goalPlane.needsUser === true || goalPlane.current?.status === 'proposed';
   printJsonOrText(
     payload,
     [
-      `Member: ${name}`,
-      `State: ${goalPlane.stateLabel}`,
-      `Goal: ${goalPlane.goal?.title || 'No goal yet'}`,
-      `Current: ${goalPlane.current ? `${goalPlane.current.status} - ${goalPlane.current.title}` : 'No open experiment'}`,
-      ...(goalPlane.ask ? [`Ask: ${goalPlane.ask}`] : []),
-      `Value: ${goalPlane.value.line}`,
-      `Mission: ${mission.latest ? `${mission.name} (${mission.state}, last tick ${mission.last_tick_age})` : 'No owned mission'}`,
-      `Activity: ${activity.age}`,
-      `Verdict: ${verdict}`,
-      `Next: ${goalPlane.nextCommand}`,
-      ...(goalPlane.logs.length ? ['Recent log:', ...goalPlane.logs.map((line) => `  ${line}`)] : []),
+      '',
+      `${s.cyan('\u25c8')} ${s.bold(name)}${role ? ` ${s.dim(`\u00b7 ${role}`)}` : ''} ${s.dim(`\u00b7 ${verdict.toLowerCase()}, last activity ${activity.age}`)}`,
+      '',
+      `  goal      ${goalPlane.goal?.title ? clipText(goalPlane.goal.title, 70) : s.dim('none yet')}`,
+      `  working   ${goalPlane.current ? `${clipText(goalPlane.current.title, 60)} ${s.dim(`(${goalPlane.current.status})`)}` : s.dim('no open experiment')}`,
+      `  value     ${goalPlane.value.line}`,
+      `  mission   ${mission.latest ? `${mission.name} ${s.dim(`(${mission.state}, last tick ${mission.last_tick_age})`)}` : s.dim('none owned')}`,
+      ...(goalPlane.ask ? ['', `  ${s.bold('One thing from you:')}`, `    ${goalPlane.ask}`] : []),
+      '',
+      `  ${s.bold(ballWithHuman ? 'Your move' : 'Next step')}`,
+      `    ${s.cyan(goalPlane.nextCommand)}`,
+      ...(goalPlane.logs.length ? ['', `  ${s.dim('recent')}`, ...goalPlane.logs.map((line) => `  ${s.dim(line)}`)] : []),
+      '',
     ],
     asJson,
   );
