@@ -53,6 +53,13 @@ function positiveNumber(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+// `--iterations=N` or `--iterations N` — the leg cap legacy callers pass.
+function maxLegsFlag(args) {
+  const eq = args.find((a) => typeof a === 'string' && a.startsWith('--iterations='));
+  if (eq) return positiveNumber(eq.split('=')[1]);
+  return positiveNumber(readValueFlag(args, '--iterations'));
+}
+
 // Most logical member: the one who owns the newest mission, else the first
 // member on the team. Null when the workspace has no members yet.
 function pickMember(root, preferredOwner = '') {
@@ -192,7 +199,11 @@ async function autopilotFront(args = []) {
   clearStop(root);
   const budgetSeconds = runBudgetSeconds(args);
   const legWallDefault = positiveNumber(readValueFlag(args, '--leg-wall')) || DEFAULT_LEG_WALL_SECONDS;
-  const once = args.includes('--once');
+  // Honor the legacy contract callers still speak: `--iterations=N` caps the
+  // number of legs (the improve fallback spawns `--auto --iterations=1` and
+  // means exactly one tick, not an unbounded loop killed by timeout).
+  const maxLegs = maxLegsFlag(args);
+  const once = args.includes('--once') || maxLegs === 1;
   const startedAt = Date.now();
   const state = { pid: process.pid, started_at: new Date().toISOString(), legs: 0 };
   writeState(root, state);
@@ -234,6 +245,7 @@ async function autopilotFront(args = []) {
     writeState(root, state);
 
     if (once) { stopReason = 'single leg (--once)'; break; }
+    if (maxLegs && state.legs >= maxLegs) { stopReason = `leg cap reached (--iterations=${maxLegs})`; break; }
     if (stopRequested(root)) { stopReason = 'stop requested'; break; }
 
     // A leg that finishes in seconds means no real work happened — a crash,
@@ -261,6 +273,7 @@ async function autopilotFront(args = []) {
 
 module.exports = {
   autopilotFront,
+  maxLegsFlag,
   autopilotStop,
   autopilotStatus,
   legPlan,
