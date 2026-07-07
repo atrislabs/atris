@@ -4,6 +4,8 @@
 
 ---
 
+- **[2026-07-07] node-not-on-path-in-autonomous-runtimes** — fail — [resolved] One bug class took down three subsystems on 2026-07-07: cron/launchd runtimes carry a minimal PATH without node, so experiment apply scripts reverted as apply_failed without running, atris2 relayed ops blocked the linguist always-on mission for five days with 'cannot find node', and pulse/mission verifiers could fail work whose bench had passed. Every failure looked like a work failure, not an environment failure, because the child stderr was discarded or generic. Fixed as a class: lib/spawn-env.js envWithNodeDir prepends the CLI's own node directory, wired into experiment applies, experiment verifies, pulse verify, mission runVerifier, and probe runLocalTerminal. Detector: `node --test test/spawn-env.test.js test/probe-local-terminal-path.test.js`. Rule: any spawn from an autonomously-launched context must carry envWithNodeDir; assume the watchless environment is the one missing node.
+
 - **[2026-07-07] mission-wording-must-avoid-failure-regex** — pass — Aspirational or descriptive text in member files gets counted as pain when it contains scan trigger words: the auto-improver north_star line 'north_star: Every recurring failure in this workspace becomes a detector-backed fix before it repeats a third time, so the pain score trends down week over week instead of...' was flagged as a repeated failure by the dogfood scan. Fixed 2026-07-07 by rewording the mission to 'repeat problem' (commit a0acaff). Rule: keep scan trigger words (error, failed, failure, blocked, timeout, regression, crash) out of durable member-file prose; describe problems in neutral words there.
 
 - **[2026-07-07] member-goal-from-mission-blocked** — pass — The hourly 'Member goal-from-mission blocked' ask is fixed: atris/team/auto-improver/MISSION.md now carries a concrete North Star section, verified live with atris member goal-from-mission auto-improver creating a goal (2026-07-07). This lesson quotes the pattern so the dogfood scan stops counting the 118 historical block lines as current pain.
@@ -16,7 +18,7 @@
 
 - **[2026-07-07] experiment-tick-prompt-cot-oneliner** — pass — Daily experiment tick-prompt-cot-oneliner kept (superset).
 
-- **[2026-07-07] experiment-autopilot-phase-altitude** — pass — Daily experiment autopilot-phase-altitude kept (superset).
+- **[2026-07-07] experiment-autopilot-phase-altitude** — pass — [resolved] Daily experiment autopilot-phase-altitude kept (superset).
 
 - **[2026-07-07] mission-say-mistype-creates-junk-mission** — fail — [resolved] atris mission say <id> <text> is not a subcommand; the mission router treats the whole line as a new objective and silently creates a garbage mission plus room receipt. Detector: `node --test test/mission-unknown-subcommand.test.js`. Fixed in commit d7193da: unknown single-word verbs error with a pointer to atris wish say; quoted objectives and mission- ids keep the shortcut. Hit live 2026-07-07 while steering the deterministic-scripts wish; cleaned up by mission stop. Correct steering front door is: atris wish say "<note>" <wish-id>.
 

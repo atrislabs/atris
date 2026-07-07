@@ -155,7 +155,7 @@
       "lib/experiments/daily.js"
     ],
     "detector": "node --test test/autopilot-plan-review.test.js",
-    "status": "pass",
+    "status": "resolved",
     "resolved_at": "2026-07-07"
   },
   "mission-say-mistype-creates-junk-mission": {
@@ -186,5 +186,18 @@
     "status": "pass",
     "detector": "node --test test/autopilot-plan-review.test.js",
     "scope": "atris-cli"
+  },
+  "node-not-on-path-in-autonomous-runtimes": {
+    "scope": "atris-cli",
+    "applies_to": [
+      "lib/spawn-env.js",
+      "commands/pulse.js",
+      "commands/probe.js",
+      "commands/mission.js",
+      "lib/experiments/daily.js"
+    ],
+    "detector": "node --test test/spawn-env.test.js test/probe-local-terminal-path.test.js",
+    "status": "resolved",
+    "resolved_at": "2026-07-07"
   }
 }
