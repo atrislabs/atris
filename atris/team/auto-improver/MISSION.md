@@ -1,5 +1,15 @@
 # Auto-Improver Mission
 
+## North Star
+
+Every recurring failure in this workspace becomes a detector-backed fix before it repeats a third time, so the pain score trends down week over week instead of accumulating.
+
+## How To Choose Goals
+
+- Read the latest dogfood scan receipt and pick the highest-pain repeated failure.
+- Turn it into one bounded fix with a runnable detector, or open a task for the owning member.
+- Never log the same finding twice without acting on it or escalating it.
+
 ## Why This Exists
 
 To prevent naraka - suffering that comes from problems accumulating unnoticed until they become overwhelming.
