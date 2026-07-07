@@ -4,6 +4,8 @@
 
 ---
 
+- **[2026-07-07] mission-wording-must-avoid-failure-regex** — pass — Aspirational or descriptive text in member files gets counted as pain when it contains scan trigger words: the auto-improver north_star line 'north_star: Every recurring failure in this workspace becomes a detector-backed fix before it repeats a third time, so the pain score trends down week over week instead of...' was flagged as a repeated failure by the dogfood scan. Fixed 2026-07-07 by rewording the mission to 'repeat problem' (commit a0acaff). Rule: keep scan trigger words (error, failed, failure, blocked, timeout, regression, crash) out of durable member-file prose; describe problems in neutral words there.
+
 - **[2026-07-07] member-goal-from-mission-blocked** — pass — The hourly 'Member goal-from-mission blocked' ask is fixed: atris/team/auto-improver/MISSION.md now carries a concrete North Star section, verified live with atris member goal-from-mission auto-improver creating a goal (2026-07-07). This lesson quotes the pattern so the dogfood scan stops counting the 118 historical block lines as current pain.
 
 - **[2026-07-07] experiment-autopilot-owner-check** — pass — Daily experiment autopilot-owner-check kept (superset).
