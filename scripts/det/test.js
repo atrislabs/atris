@@ -6,6 +6,7 @@
 const assert = require('assert');
 const { extract } = require('./extract');
 const { run } = require('./json');
+const text = require('./text');
 
 let passed = 0;
 function check(name, actual, expected) {
@@ -54,5 +55,16 @@ check(
 );
 check('json.csv.notArray', run('csv', '{"a":1}').error !== undefined, true);
 check('json.badMode', run('nope', '{}').error !== undefined, true);
+
+// --- text.js ---
+check('text.dedupe', text.run('dedupe', 'a\nb\na\nc'), { text: 'a\nb\nc' });
+check('text.sort', text.run('sort', 'c\na\nb'), { text: 'a\nb\nc' });
+check('text.rsort', text.run('rsort', 'a\nc\nb'), { text: 'c\nb\na' });
+check('text.count', text.run('count', 'a b\nc'), { text: 'lines\t2\nwords\t3\nchars\t5' });
+check('text.slug', text.slugify('Hello, World! 2026'), 'hello-world-2026');
+check('text.slug.accents', text.slugify('Café Déjà Vu'), 'cafe-deja-vu');
+check('text.trim', text.run('trim', 'a  \n\n  \nb'), { text: 'a\nb' });
+check('text.empty', text.run('dedupe', ''), { text: '' });
+check('text.badMode', text.run('nope', 'x').error !== undefined, true);
 
 console.log(`ok — ${passed} checks passed`);

@@ -21,6 +21,7 @@ script at a time; never add one without a self-test.
 |-----------------------|--------|-------|
 | "pull all the links / emails / code out of this" | `extract.js` | `urls` `emails` `code` `numbers` `ipv4` `hashtags` |
 | "reformat / validate / flatten this JSON" | `json.js` | `pretty` `min` `validate` `keys` `csv` |
+| "dedupe / sort / count / slugify these lines" | `text.js` | `dedupe` `sort` `rsort` `count` `slug` `trim` |
 
 ### extract.js
 
@@ -45,6 +46,19 @@ node scripts/det/json.js csv      < array.json            # array of objects -> 
 
 `csv` handles the escaping LLMs get wrong: fields with commas or quotes are
 quoted, inner quotes doubled. Columns follow first-seen key order across rows.
+
+### text.js
+
+```bash
+cat list.txt | node scripts/det/text.js dedupe   # drop dup lines, keep first order
+node scripts/det/text.js sort  < list.txt         # byte-order sort (rsort = reverse)
+node scripts/det/text.js count < list.txt         # lines / words / chars (tab-separated)
+node scripts/det/text.js slug  < titles.txt       # each line -> url slug (accents folded)
+node scripts/det/text.js trim  < messy.txt        # strip trailing ws, drop blank lines
+```
+
+`count` is exact — no more eyeballed line/word totals. `slug` folds accents
+(Café -> cafe) so slugs are stable across inputs.
 
 ## Verifying the library
 
