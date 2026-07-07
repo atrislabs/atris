@@ -85,11 +85,13 @@ test('renderMissionStatus renders mission fields and counts only non-terminal as
       { id: 'm-done', objective: 'finished work', owner: 'auto-improver', status: 'complete', updated_at: '2026-06-13T01:00:00Z' },
     ]);
     const text = fs.readFileSync(renderMissionStatus(dir), 'utf8');
-    assert.match(text, /- \*\*m-run\*\* live work/);
+    // human surface: plain-word labels, never raw mission ids, no label stutter
+    assert.match(text, /- \*\*live work\*\*\n/);
+    assert.doesNotMatch(text, /^- .*m-run/m, 'headline shows the label, never the raw id');
     assert.match(text, /owner: auto-improver/);
     assert.match(text, /state: running/);
     assert.match(text, /next: tick it/);
-    assert.match(text, /- \*\*m-done\*\* finished work/, 'terminal missions still render in the list');
+    assert.match(text, /- \*\*finished work\*\*\n/, 'terminal missions still render in the list');
     assert.match(text, /Active missions: 1/, 'complete is terminal, so only the running mission is active');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -138,7 +140,7 @@ test('renderMissionStatus caps the rendered list at 12 missions', () => {
     }));
     seedMissions(dir, many);
     const text = fs.readFileSync(renderMissionStatus(dir), 'utf8');
-    const rendered = (text.match(/^- \*\*m\d\d\*\*/gm) || []).length;
+    const rendered = (text.match(/^- \*\*/gm) || []).length;
     assert.equal(rendered, 12, 'list is capped at 12 even with 14 missions');
     assert.match(text, /Active missions: 14/, 'the active count still reflects all missions');
   } finally {

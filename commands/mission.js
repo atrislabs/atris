@@ -1652,7 +1652,12 @@ function renderMissionStatus(root = process.cwd()) {
   } else {
     for (const mission of missions.slice(0, 12)) {
       const taskSpine = missionTaskSpine(mission);
-      lines.push(`- **${missionLabel(mission)}** ${mission.objective}`);
+      const label = missionLabel(mission);
+      const objective = String(mission.objective || '').trim();
+      // short objectives ARE their own label; repeating them reads as a stutter
+      lines.push(label.toLowerCase() === objective.toLowerCase()
+        ? `- **${label}**`
+        : `- **${label}** ${objective}`);
       lines.push(`  - owner: ${mission.owner}`);
       lines.push(`  - state: ${mission.status}`);
       lines.push(`  - next: ${missionDisplayText(mission, mission.next_action || 'tick or verify')}`);
