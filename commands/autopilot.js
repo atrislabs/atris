@@ -827,6 +827,8 @@ Rules:
 - Stay in scope. Don't touch files outside the task boundary.
 ${SHARED_CHECKOUT_GIT_CONTRACT}
 
+Before reading the file list, state the business stake this task protects or unlocks in one sentence.
+
 Read these files first:
 ${readFiles}
 
