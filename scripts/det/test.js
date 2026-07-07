@@ -12,6 +12,7 @@ const text = require('./text');
 const hash = require('./hash');
 const date = require('./date');
 const commitMsg = require('./commit-msg');
+const changelog = require('./changelog');
 const { CATALOG } = require('./det');
 
 let passed = 0;
@@ -129,6 +130,39 @@ check(
 );
 check('commit.scope.root', commitMsg.commonDirScope(['package.json']), '');
 check('commit.empty', commitMsg.draft([]).error !== undefined, true);
+
+// --- changelog.js (git-facing) ---
+// header grammar: type(scope)!: subject -> parsed fields, breaking flagged
+check('changelog.parse', changelog.parseSubject('feat(cli): add reel'), {
+  type: 'feat',
+  scope: 'cli',
+  breaking: false,
+  subject: 'add reel',
+});
+check('changelog.parse.bang', changelog.parseSubject('feat!: drop v1').breaking, true);
+// unknown type -> "other" bucket, whole line kept (nothing dropped)
+check('changelog.parse.unknown', changelog.parseSubject('wip: poke').type, 'other');
+check('changelog.parse.freeform', changelog.parseSubject('just a note').subject, 'just a note');
+{
+  const r = changelog.build([
+    { hash: 'a1', subject: 'feat(cli): add reel' },
+    { hash: 'b2', subject: 'fix(det): guard empty range' },
+    { hash: 'c3', subject: 'feat: add card' },
+    { hash: 'd4', subject: 'chore!: bump major' },
+  ]);
+  // sections come back in SECTIONS order: feat before fix before chore
+  check('changelog.order', r.sections.map((s) => s.type), ['feat', 'fix', 'chore']);
+  check('changelog.counts', r.counts, { feat: 2, fix: 1, chore: 1 });
+  check('changelog.breaking', r.breaking.length, 1);
+  check('changelog.total', r.total, 4);
+  // rendered markdown groups under human headings, breaking first
+  const md = changelog.render(r);
+  check('changelog.render.breaking', /^### ⚠ BREAKING CHANGES/.test(md), true);
+  check('changelog.render.feat', md.includes('### Features'), true);
+  check('changelog.render.item', md.includes('- add reel (cli) [a1]'), true);
+}
+check('changelog.empty', changelog.render(changelog.build([])), 'No changes.');
+check('changelog.badInput', changelog.build('nope').error !== undefined, true);
 
 // --- det.js dispatcher ---
 check('det.catalog', Object.keys(CATALOG).sort(), ['date', 'extract', 'hash', 'json', 'text']);

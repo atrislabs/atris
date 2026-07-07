@@ -44,6 +44,7 @@ munging. They live outside the stdin catalog because their input is the repo.
 | Task the LLM is asked | Script | Output |
 |-----------------------|--------|--------|
 | "write a commit message for this" | `commit-msg.js` | Conventional-Commits draft from the staged diff |
+| "summarize what changed since the last release" | `changelog.js` | grouped changelog from commit subjects |
 
 ```bash
 git add -A && node scripts/det/commit-msg.js        # print the drafted message
@@ -52,6 +53,18 @@ node scripts/det/commit-msg.js --json               # structured {type,scope,sub
 
 Type and scope come from the changed paths (`docs`/`test`/`chore`/`feat`/`fix`,
 scope = deepest common dir); the body is exact diff stats. No intent-guessing.
+
+```bash
+node scripts/det/changelog.js                       # since the last tag -> markdown
+node scripts/det/changelog.js v3.34.0               # since a specific ref
+node scripts/det/changelog.js v3.34.0 HEAD          # explicit range
+node scripts/det/changelog.js --json                # structured {sections,counts,breaking,...}
+```
+
+Sections, order, and bullets come straight from the commit subjects grouped by
+Conventional-Commits type (`feat`->Features, `fix`->Fixes, ...); `type!:` commits
+surface under BREAKING CHANGES. Subjects that don't match the header grammar land
+in "Other" so nothing is dropped. No paraphrase, no invented or missing entries.
 
 ### extract.js
 
