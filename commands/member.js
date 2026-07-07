@@ -667,8 +667,10 @@ function resolveMemberRunMissionId(name, args = []) {
   const runtimeId = memberRunRunnableMissionId(purpose.runtimeMission?.id, missionMap);
   if (runtimeId) return runtimeId;
 
+  // strictly active: activeGoal()'s goals[0] fallback would resurrect a
+  // paused goal's stale mission pointer and error the leg every hour
   const goals = loadMemberGoals(name, paths);
-  const goal = activeGoal(goals);
+  const goal = (goals.goals || []).find((candidate) => candidate.status === 'active') || null;
   const goalId = memberRunRunnableMissionId(goal?.mission_id, missionMap);
   if (goalId) return goalId;
 

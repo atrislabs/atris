@@ -6,9 +6,9 @@
     {
       "id": "goal-2026-05-07-fbee1969",
       "title": "build the dashboard",
-      "status": "active",
+      "status": "paused",
       "cadence": "manual",
-      "why": "Find and ship one real, verifiable improvement to `atris-cli` per overnight tick — bug fix, UX polish, or doc/code drift correction. Push immediately. Don't sit on green commits.",
+      "why": "Find and ship one real, verifiable improvement to `atris-cli` per overnight tick \u2014 bug fix, UX polish, or doc/code drift correction. Push immediately. Don't sit on green commits.",
       "acceptance": [
         "One bounded next move is proposed from MISSION.md, not hand-fed by the human.",
         "The move has verifier/proof target, stop rule, and human-ask condition.",
@@ -18,7 +18,7 @@
       "mission_file": "atris/team/mission-lead/MISSION.md",
       "now_file": "atris/team/mission-lead/now.md",
       "mission_id": "mission-2026-07-04-build-the-dashboard-3a8d5383",
-      "mission_north_star": "Find and ship one real, verifiable improvement to `atris-cli` per overnight tick — bug fix, UX polish, or doc/code drift correction. Push immediately. Don't sit on green commits.",
+      "mission_north_star": "Find and ship one real, verifiable improvement to `atris-cli` per overnight tick \u2014 bug fix, UX polish, or doc/code drift correction. Push immediately. Don't sit on green commits.",
       "created_at": "2026-05-07T09:03:15.315Z",
       "experiments": [],
       "history": [
@@ -39,6 +39,11 @@
           "event": "goal_from_mission_reused",
           "mission_id": "mission-2026-07-04-build-the-dashboard-3a8d5383",
           "mission_status": "planning"
+        },
+        {
+          "at": "2026-07-07T16:17:10.020750Z",
+          "event": "goal_paused",
+          "note": "linked mission not found in this workspace (workspace-local ids; the dashboard mission likely lives in atrisos-web or was pruned). autopilot legs were erroring on it hourly. resume by relinking a real mission or moving the goal to the owning workspace."
         }
       ],
       "task_context": null,
