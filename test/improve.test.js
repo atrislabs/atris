@@ -123,8 +123,12 @@ test('shouldFallbackLocal: remote backend cannot see a local workspace → fallb
 });
 
 test('local fallback runs a bounded two-leg autopilot (setup + tick)', () => {
-  const { LOCAL_FALLBACK_ARGS } = require('../commands/improve');
+  const { LOCAL_FALLBACK_ARGS, localFallbackArgs } = require('../commands/improve');
   assert.deepEqual(LOCAL_FALLBACK_ARGS, ['autopilot', '--auto', '--iterations=2']);
+  // the time budget is passed down so autopilot lands gracefully instead of
+  // being SIGKILLed mid-leg
+  assert.deepEqual(localFallbackArgs(300), ['autopilot', '--auto', '--iterations=2', '--minutes', '5']);
+  assert.deepEqual(localFallbackArgs(30), ['autopilot', '--auto', '--iterations=2', '--minutes', '1']);
 });
 
 test('buildScorecardRow: stable schema + fields', () => {
