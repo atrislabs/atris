@@ -361,3 +361,55 @@ test('normalizeExpiryDuration rejects invalid expiry values', () => {
 test('buildCrontabLine requires a scriptPath', () => {
   assert.throws(() => pulse.buildCrontabLine({}), /scriptPath is required/);
 });
+
+// --- non-git workspace blindness (the reward-0-forever bug) ---
+// A workspace without .git made producedWork permanently false, so every tick
+// scored 0 no matter what the engine actually wrote. Pulse must see work via a
+// filesystem snapshot when git is absent.
+
+test('fsSnapshot + diffFsSnapshots detect a newly written file in a non-git root', () => {
+  const root = tmpRoot();
+  const before = pulse.fsSnapshot(root);
+  fs.writeFileSync(path.join(root, 'notes.md'), 'work happened');
+  const after = pulse.fsSnapshot(root);
+  assert.deepEqual(pulse.diffFsSnapshots(before, after), ['notes.md']);
+});
+
+test('fsSnapshot ignores .atris state churn so a tick cannot credit its own receipts', () => {
+  const root = tmpRoot();
+  const before = pulse.fsSnapshot(root);
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'receipts.jsonl'), '{}');
+  const after = pulse.fsSnapshot(root);
+  assert.deepEqual(pulse.diffFsSnapshots(before, after), []);
+});
+
+test('diffFsSnapshots detects modified files, not just new ones', () => {
+  const root = tmpRoot();
+  const f = path.join(root, 'log.md');
+  fs.writeFileSync(f, 'v1');
+  const before = pulse.fsSnapshot(root);
+  fs.writeFileSync(f, 'v2 — longer content');
+  const after = pulse.fsSnapshot(root);
+  assert.deepEqual(pulse.diffFsSnapshots(before, after), ['log.md']);
+});
+
+// --- verify default must match the workspace (npm test in a repo with no
+// package.json guaranteed -1 on any productive tick) ---
+
+test('defaultVerifyCmd returns npm test only when package.json exists', () => {
+  const root = tmpRoot();
+  assert.equal(pulse.defaultVerifyCmd(root), null);
+  fs.writeFileSync(path.join(root, 'package.json'), '{}');
+  assert.equal(pulse.defaultVerifyCmd(root), 'npm test');
+});
+
+test('buildTickScript omits --verify when verifyCmd is null and includes the push step', () => {
+  const script = pulse.buildTickScript({
+    root: '/tmp/ws',
+    stateHome: '/tmp/state',
+    deadlineEpoch: 123,
+    verifyCmd: null,
+  });
+  assert.ok(!script.includes('--verify'), 'null verifyCmd must not emit --verify');
+  assert.ok(script.includes('git -C "$ROOT" push origin'), 'tick script must push landed commits');
+});

@@ -49,7 +49,7 @@ Options:
   --json                 Print machine-readable output
   --no-claude            Do not spawn Claude-backed mission work
   --no-verify            Skip verifier command
-  --verify "<cmd>"       Verifier for changed-work ticks (default: npm test)
+  --verify "<cmd>"       Verifier for changed-work ticks (default: npm test if package.json exists, else none)
   --cadence "<cron>"     Cron cadence for install
   --days <n>             Auto-expire installed heartbeat after n days
   --hours <n>            Auto-expire installed heartbeat after n hours
@@ -187,7 +187,7 @@ function tickCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
   const noClaude = hasFlag(args, '--no-claude');
   const noVerify = hasFlag(args, '--no-verify');
-  const verifyCmd = noVerify ? null : readFlag(args, '--verify', 'npm test');
+  const verifyCmd = noVerify ? null : readFlag(args, '--verify', pulse.defaultVerifyCmd(root));
   const startedAt = Date.now();
 
   // Detect a previous tick that died mid-run before we take the lock.
@@ -233,13 +233,23 @@ function tickCommand(args, root = process.cwd()) {
   let engine;
   let verify = { passed: null, cmd: verifyCmd };
   try {
-    const before = gitSnapshot(root);
+    // Non-git workspaces made producedWork permanently false (empty git delta),
+    // so every tick scored 0 no matter what the engine wrote. Fall back to a
+    // filesystem snapshot when git is absent.
+    const isRepo = fs.existsSync(path.join(root, '.git'));
+    const before = isRepo ? gitSnapshot(root) : pulse.fsSnapshot(root);
     engine = runEngine(root, { noClaude, autopilotFallback: !hasFlag(args, '--no-autopilot') });
-    const after = gitSnapshot(root);
+    const after = isRepo ? gitSnapshot(root) : pulse.fsSnapshot(root);
     // This tick's ACTUAL contribution: files it newly dirtied, or a new commit.
     // Pre-existing dirt is excluded so reward isn't re-credited every tick.
-    const changedFiles = [...after.dirty].filter((f) => !before.dirty.has(f));
-    const committed = Boolean(before.head && after.head && before.head !== after.head);
+    let changedFiles;
+    let committed = false;
+    if (isRepo) {
+      changedFiles = [...after.dirty].filter((f) => !before.dirty.has(f));
+      committed = Boolean(before.head && after.head && before.head !== after.head);
+    } else {
+      changedFiles = pulse.diffFsSnapshots(before, after);
+    }
     const producedWork = committed || changedFiles.length > 0;
 
     // Verify only matters when the tick produced work; a no-op tick skips it.
@@ -432,7 +442,7 @@ function installCommand(args, root = process.cwd()) {
     if (!asJson) process.stdout.write(`pulse install failed: ${out.detail}\n`);
     return emit(out, asJson);
   }
-  const verifyCmd = readFlag(args, '--verify', 'npm test');
+  const verifyCmd = readFlag(args, '--verify', pulse.defaultVerifyCmd(root));
   const model = readFlag(args, '--model', process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || DEFAULT_CLAUDE_RUNNER_MODEL);
   const runnerProfile = readFlag(args, '--runner-profile', process.env.ATRIS_RUNNER_PROFILE || '');
   const runnerBin = readFlag(args, '--runner-bin', process.env.ATRIS_RUNNER_BIN || process.env.ATRIS_CLAUDE_BIN || '');
