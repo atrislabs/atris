@@ -6920,6 +6920,9 @@ async function runMission(args) {
           business: businessId,
           maxTurns: 16,
           signal: controller.signal,
+          // CLI-231: mission ticks execute relayed ops in the mission's own
+          // workspace, not the hosted ai-computer filesystem.
+          localCwd: cwd,
         });
         result.atris2 = {
           ok: turn.ok,

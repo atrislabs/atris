@@ -182,6 +182,24 @@ function runTerminal(base, token, command, businessId) {
   return postJson(`${base}/ai-computer/terminal`, token, body, 80000);
 }
 
+// CLI-231: local executor for atris2 mission ticks. Same result shape as the
+// /ai-computer/terminal endpoint ({ stdout, stderr, exit_code }), but the
+// command runs in the mission's OWN workspace directory instead of the hosted
+// ai-computer. Without this, a mission tick in a local workspace read the
+// remote computer's files and reported local members (e.g. maze) as missing.
+function runLocalTerminal(command, cwd) {
+  const { exec } = require('child_process');
+  return new Promise((resolve) => {
+    exec(command, { cwd, timeout: 60000, maxBuffer: 4 * 1024 * 1024, shell: '/bin/bash' }, (error, stdout, stderr) => {
+      resolve({
+        stdout: String(stdout || ''),
+        stderr: String(stderr || (error && error.message) || ''),
+        exit_code: error ? (typeof error.code === 'number' ? error.code : 1) : 0,
+      });
+    });
+  });
+}
+
 function parseArgs(argv) {
   const a = { business: null, model: 'atris:fast', memberId: null, memberSlug: null, calendar: false, message: null };
   for (let i = 0; i < argv.length; i++) {
@@ -215,6 +233,7 @@ async function runAtris2Turn(opts = {}) {
     idleMs = 180000,
     connectTimeoutMs = 60000,
     signal = null,
+    localCwd = null,
   } = opts;
   const t0 = Date.now();
   const out = { ok: false, text: '', engine: null, tools_run: 0, cli_ops: [], unsupported: [], error: null, duration_ms: 0 };
@@ -299,7 +318,9 @@ async function runAtris2Turn(opts = {}) {
                   out = { status: 'error', error: 'unsupported op or unsafe path' };
                   unsupported.push(`file_op:${op}`);
                 } else {
-                  const term = await runTerminal(base, token, cmd, business);
+                  const term = localCwd
+                    ? await runLocalTerminal(cmd, localCwd)
+                    : await runTerminal(base, token, cmd, business);
                   const ok = term.exit_code === 0;
                   out = ok
                     ? { status: 'ok', stdout: String(term.stdout || '').slice(0, 12000) }
@@ -316,7 +337,9 @@ async function runAtris2Turn(opts = {}) {
                   out = { status: 'error', error: `unsupported atris cli op: ${op || '?'}` };
                   unsupported.push(`cli_op:${op || '?'}`);
                 } else {
-                  const term = await runTerminal(base, token, cmd, business);
+                  const term = localCwd
+                    ? await runLocalTerminal(cmd, localCwd)
+                    : await runTerminal(base, token, cmd, business);
                   out = atrisCliResult(cmd, term);
                   cliOps.push(op || '?');
                 }
@@ -441,4 +464,5 @@ module.exports = {
   fileOpCommand,
   atrisCliCommand,
   atrisCliResult,
+  runLocalTerminal,
 };
