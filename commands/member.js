@@ -7639,7 +7639,12 @@ function wakeMemberRole(name) {
 }
 
 function wakeReasonText(reason) {
-  return WAKE_REASON_TEXT[reason] || String(reason || '').replace(/_/g, ' ');
+  if (WAKE_REASON_TEXT[reason]) return WAKE_REASON_TEXT[reason];
+  if (reason === 'open_experiment_proposed') return 'it already has an experiment on the table, waiting for your review';
+  if (reason === 'open_experiment_running') return 'its current experiment is still running';
+  const openExperiment = String(reason || '').match(/^open_experiment_([a-z_]+)$/);
+  if (openExperiment) return `its current experiment is ${openExperiment[1].replace(/_/g, ' ')}`;
+  return String(reason || '').replace(/_/g, ' ');
 }
 
 function wakeBootLines(name, result) {
@@ -7673,7 +7678,10 @@ function wakeBootLines(name, result) {
     lines.push('', `  ${s.bold('One thing from you:')}`, `    ${result.ask}`);
   }
   if (result.next_command) {
-    lines.push('', `  ${s.bold('Next step')}`, `    ${s.cyan(result.next_command)}`);
+    const ballWithHuman = result.needs_user === true
+      || result.decision === 'ask'
+      || /^open_experiment_/.test(result.reason || '');
+    lines.push('', `  ${s.bold(ballWithHuman ? 'Your move' : 'Next step')}`, `    ${s.cyan(result.next_command)}`);
   }
   lines.push('', `  ${s.dim(`receipt \u00b7 ${path.relative(process.cwd(), result.receipt_path)}`)}`, '');
   return lines;

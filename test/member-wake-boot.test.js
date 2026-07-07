@@ -52,6 +52,22 @@ test('every decision code in member.js renders as grammatical English', () => {
   }
 });
 
+test('when the ball is with the human, the next step reads "Your move"', () => {
+  const waiting = render({
+    ...baseResult,
+    decision: 'wait',
+    reason: 'open_experiment_proposed',
+    ask: null,
+    next_command: 'atris member review maze exp-1 --accept --proof "..." --value 4',
+  });
+  assert.ok(waiting.includes('Your move'));
+  assert.ok(waiting.includes('an experiment on the table'));
+
+  const working = render({ ...baseResult, decision: 'tick', reason: 'safe_next_bounded_step', ask: null, needs_user: false });
+  assert.ok(working.includes('Next step'));
+  assert.ok(!working.includes('Your move'));
+});
+
 test('wake boot shows goal, experiment, and unknown reasons degrade gracefully', () => {
   const output = render({
     ...baseResult,
