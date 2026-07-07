@@ -7571,6 +7571,95 @@ async function runMemberWake(name, { execute = false, confirmed = false, force =
   };
 }
 
+// --- Wake boot rendering: the human face of `gm <member>` ---
+// The JSON contract (atris.member_wake.v1) is untouched; this only changes what a person sees.
+
+const WAKE_REASON_TEXT = {
+  mission_missing_or_placeholder: "it has no North Star yet, and it won't guess at important work",
+  no_active_goal: 'it has no active goal to push on yet',
+  execute_requires_confirm_autonomy_policy: 'autonomous execution waits for your explicit go-ahead',
+  workspace_dirty_in_member_scope: "there are uncommitted changes in its own lane — it won't build on a dirty floor",
+  blocked_experiment: 'its current experiment is blocked on a human answer',
+  tick_executed_experiment_proposed: 'it proposed one bounded experiment and queued it for your review',
+  safe_next_bounded_step: 'it found a safe bounded next step',
+  loop_already_active: 'another loop already holds the lease, so it stepped back instead of double-working',
+  member_archived: 'this member is archived',
+  llm_not_configured: 'no model is configured for autonomous reasoning here',
+  insufficient_data: "it doesn't have enough evidence yet to act with confidence",
+  proof_not_successful: 'the last proof did not pass, so it stopped instead of stacking work on a failure',
+};
+
+const WAKE_DECISION_TEXT = {
+  ask: 'needs one thing from you',
+  wait: 'decided to hold',
+  tick: 'picked one bounded step',
+  close_loop: 'is closing the loop',
+  report_proof: 'has proof ready for you',
+  create_missing_task: 'is putting the missing task on the board',
+};
+
+function wakeStyle() {
+  const on = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+  const wrap = (code) => (text) => (on ? `\x1b[${code}m${text}\x1b[0m` : String(text));
+  return { bold: wrap('1'), dim: wrap('2'), cyan: wrap('36') };
+}
+
+function wakeMemberRole(name) {
+  try {
+    const content = fs.readFileSync(memberPaths(name).memberFile, 'utf8');
+    const fm = parseFrontmatter(content);
+    return (fm && fm.role) || null;
+  } catch {
+    return null;
+  }
+}
+
+function wakeReasonText(reason) {
+  return WAKE_REASON_TEXT[reason] || String(reason || '').replace(/_/g, ' ');
+}
+
+function wakeBootLines(name, result) {
+  const s = wakeStyle();
+  const role = wakeMemberRole(name);
+  const decisionText = WAKE_DECISION_TEXT[result.decision] || result.decision;
+  const goal = result.active_goal && result.active_goal.title;
+  const experiment = result.current_experiment && result.current_experiment.title;
+  const northStar = result.mission && result.mission.north_star;
+  const laneCandidates = result.evidence && result.evidence.task_projection
+    ? result.evidence.task_projection.candidate_count
+    : null;
+
+  const lines = [
+    '',
+    `${s.cyan('\u25c8')} ${s.bold(name)} is waking up${role ? ` ${s.dim(`\u00b7 ${role}`)}` : ''}`,
+    '',
+    `  mission   ${northStar ? clipText(northStar, 70) : s.dim('no North Star yet')}`,
+    `  goal      ${goal ? clipText(goal, 70) : s.dim('none yet')}`,
+    ...(experiment ? [`  working   ${clipText(experiment, 70)}`] : []),
+    ...(laneCandidates !== null ? [`  lane      ${laneCandidates} task${laneCandidates === 1 ? '' : 's'} waiting in ${name}'s lane`] : []),
+    '',
+    `  ${s.bold(name)} looked around and ${s.bold(decisionText)}.`,
+    `  ${s.dim(`Why: ${wakeReasonText(result.reason)}.`)}`,
+  ];
+
+  if (result.created_task && result.created_task.title) {
+    lines.push('', `  On the board: ${result.created_task.display_id || result.created_task.legacy_ref || ''} ${clipText(result.created_task.title, 70)}`.trimEnd());
+  }
+  if (result.ask) {
+    lines.push('', `  ${s.bold('One thing from you:')}`, `    ${result.ask}`);
+  }
+  if (result.next_command) {
+    lines.push('', `  ${s.bold('Next step')}`, `    ${s.cyan(result.next_command)}`);
+  }
+  lines.push('', `  ${s.dim(`receipt \u00b7 ${path.relative(process.cwd(), result.receipt_path)}`)}`, '');
+  return lines;
+}
+
+function clipText(value, max = 70) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1)).trim()}\u2026`;
+}
+
 async function memberWake(name, ...args) {
   const asJson = hasFlag(args, '--json');
   const execute = hasFlag(args, '--execute') && !hasFlag(args, '--dry-run');
@@ -7582,19 +7671,7 @@ async function memberWake(name, ...args) {
     name: readFlag(args, '--domain-name', ''),
   };
   const result = await runMemberWake(name, { execute, confirmed, force, domainInput });
-  printJsonOrText(
-    result,
-    [
-      `Wake: ${name}`,
-      `Decision: ${result.decision}`,
-      `Reason: ${result.reason}`,
-      `Mode: ${result.mode}${result.executed ? ' executed' : ''}`,
-      ...(result.ask ? [`Ask: ${result.ask}`] : []),
-      `Next: ${result.next_command}`,
-      `Receipt: ${path.relative(process.cwd(), result.receipt_path)}`,
-    ],
-    asJson,
-  );
+  printJsonOrText(result, wakeBootLines(name, result), asJson);
 }
 
 function memberAlive(name, ...args) {
@@ -8594,4 +8671,4 @@ async function memberCommand(subcommand, ...args) {
   }
 }
 
-module.exports = { memberCommand, findAllMembers, parseFrontmatter };
+module.exports = { memberCommand, findAllMembers, parseFrontmatter, wakeBootLines };
