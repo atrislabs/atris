@@ -737,16 +737,34 @@ function memberRunTruthRule(args = []) {
     || 'say what changed, what was checked, and what is still unproven';
 }
 
+function operatorWaitingWishTexts(root = process.cwd()) {
+  // Wishes waiting on operator answers are not actionable candidates: seeding
+  // them into member runs spawned three parallel verifier-less wrapper
+  // missions chewing the same unanswered sentence (seen live 2026-07-07).
+  try {
+    const { waitingOperatorWishes } = require('../lib/wish-delegate');
+    return new Set(
+      waitingOperatorWishes(root)
+        .map((wish) => cleanMemberRunPhrase(wish?.text || wish?.task_text || '').toLowerCase())
+        .filter(Boolean),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
 function memberRunUsefulTarget() {
   try {
     const { nextMoves: pickNextMoves, isGenericInboxPlaceholder } = require('../lib/next-moves');
     const moves = pickNextMoves(process.cwd(), 5);
+    const waitingWishes = operatorWaitingWishTexts();
     const candidate = moves.find((move) => {
       const title = cleanMemberRunPhrase(move?.title);
       if (!title) return false;
       if (isGenericInboxPlaceholder(title)) return false;
       if (/^mission xp\s*:/i.test(title)) return false;
       if (/^decide and start the next useful mission after:/i.test(title)) return false;
+      if (waitingWishes.has(title.toLowerCase())) return false;
       return true;
     });
     return candidate?.title ? cleanMemberRunPhrase(candidate.title) : '';
