@@ -8365,10 +8365,15 @@ function missionCommand(args) {
     default: {
       const first = String(subcommand || '');
       if (first && !first.startsWith('-')) {
-        // Shortcut forms: a quoted objective sentence or a mission id.
-        // A bare single word is almost always a mistyped subcommand; creating
-        // a mission from it silently is worse than erroring.
-        if (first.includes(' ') || first.startsWith('mission-')) return runMission(args);
+        // Shortcut forms: a mission id, or an objective (quoted or spread
+        // across argv: `atris mission fix the issue`). Two shapes are
+        // mistyped verbs, not objectives — a later arg naming a mission id
+        // (`mission say <id> ...`), and a single bare word with no objective
+        // after it. Creating a mission from those silently is worse than erroring.
+        const positionals = args.filter((value) => !String(value).startsWith('-'));
+        const referencesMissionId = positionals.slice(1).some((value) => /^mission-/.test(String(value)));
+        const loneWord = positionals.length === 1 && !first.includes(' ');
+        if (first.startsWith('mission-') || (!referencesMissionId && !loneWord)) return runMission(args);
         console.error(`Unknown mission subcommand "${first}".`);
         console.error('To steer a running wish mission use: atris wish say "<note>" <wish-id>');
         console.error('Run "atris mission help" for the full verb list.');

@@ -16331,8 +16331,10 @@ test('search with zero hits outside a workspace points newcomers to init', () =>
     const home = path.join(dir, 'home');
     const res = runCli(['search', 'credits'], { cwd: dir, env: { HOME: home } });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /No matches found\./);
+    // outside a workspace the hint is the whole output; empty scan rows are noise
     assert.match(res.stdout, /No atris folder here\. Run atris init to set one up\./);
+    assert.doesNotMatch(res.stdout, /Feature: none/);
+    assert.doesNotMatch(res.stdout, /No matches found\./);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(home, '.atris')), false);
   } finally {
@@ -16893,6 +16895,8 @@ test('ensureWikiScaffold migrates legacy syntheses pages into briefs', () => {
 test('search without workspace data prints compact empty result', () => {
   const dir = makeTempDir();
   try {
+    // an atris folder exists but is empty: compact rows, not the init hint
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const res = runCli(['search', 'auth'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Feature: none/);
