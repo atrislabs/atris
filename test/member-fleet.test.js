@@ -117,8 +117,8 @@ test('member status --all merges goal, mission, and activity planes', () => {
 
     const single = runCli(['member', 'status', 'live-empty-goal'], root);
     assert.equal(single.status, 0, single.stderr || single.stdout);
-    assert.match(single.stdout, /Mission: mission-live-empty-goal \(running, last tick \S+\)/);
-    assert.match(single.stdout, /Verdict: ACTIVE/);
+    assert.match(single.stdout, /mission {3}mission-live-empty-goal \(running, last tick \S+\)/);
+    assert.match(single.stdout, /live-empty-goal .*active, last activity/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
