@@ -104,10 +104,29 @@ check('date.badMode', date.run('nope', '0').error !== undefined, true);
     { path: 'scripts/det/date.js', status: 'A', added: 90, deleted: 0 },
     { path: 'scripts/det/test.js', status: 'M', added: 11, deleted: 1 },
   ]);
-  check('commit.subject', d.subject, 'chore(det): update 2 files');
+  // names the lead (added) file, not an anonymous "update 2 files" count
+  check('commit.subject', d.subject, 'chore(det): add date.js (+1 more)');
   check('commit.totals', d.totals, { added: 101, deleted: 1 });
   check('commit.body.stat', /2 files changed, \+101\/-1$/.test(d.body), true);
 }
+// lead file = biggest churn when nothing is added; tie broken by path
+check(
+  'commit.lead.churn',
+  commitMsg.draft([
+    { path: 'lib/a.js', status: 'M', added: 2, deleted: 1 },
+    { path: 'lib/b.js', status: 'M', added: 40, deleted: 5 },
+  ]).subject,
+  'fix(lib): update b.js (+1 more)'
+);
+// added file wins over a higher-churn modified file
+check(
+  'commit.lead.added',
+  commitMsg.leadFile([
+    { path: 'lib/big.js', status: 'M', added: 99, deleted: 0 },
+    { path: 'lib/new.js', status: 'A', added: 3, deleted: 0 },
+  ]).path,
+  'lib/new.js'
+);
 check(
   'commit.docs',
   commitMsg.draft([{ path: 'README.md', status: 'M', added: 3, deleted: 0 }]).subject,

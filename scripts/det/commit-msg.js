@@ -55,16 +55,28 @@ function pickType(files) {
   return 'fix';
 }
 
+// The one file that best represents the change: prefer an added file, then the
+// biggest churn, tie-broken by path so the pick is stable across runs.
+function leadFile(files) {
+  return [...files].sort((a, b) => {
+    const addedA = a.status === 'A' ? 1 : 0;
+    const addedB = b.status === 'A' ? 1 : 0;
+    if (addedA !== addedB) return addedB - addedA;
+    const churnA = (a.added || 0) + (a.deleted || 0);
+    const churnB = (b.added || 0) + (b.deleted || 0);
+    if (churnA !== churnB) return churnB - churnA;
+    return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+  })[0];
+}
+
 function summarize(files) {
-  if (files.length === 1) {
-    const f = files[0];
-    const verb = VERB[f.status] || 'update';
-    return `${verb} ${f.path.split('/').pop()}`;
-  }
-  const added = files.filter((f) => f.status === 'A').length;
-  if (added === files.length) return `add ${files.length} files`;
-  if (added === 0) return `update ${files.length} files`;
-  return `update ${files.length} files`;
+  const lead = leadFile(files);
+  const verb = VERB[lead.status] || 'update';
+  const name = lead.path.split('/').pop();
+  if (files.length === 1) return `${verb} ${name}`;
+  // name the lead file instead of an anonymous count ("update 3 files"):
+  // that count is the exact slop this script exists to kill.
+  return `${verb} ${name} (+${files.length - 1} more)`;
 }
 
 // files: [{ path, status, added, deleted }] -> { type, scope, summary, subject, body, totals }
@@ -138,4 +150,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { draft, commonDirScope, pickType, summarize };
+module.exports = { draft, commonDirScope, pickType, summarize, leadFile };

@@ -53,6 +53,8 @@ node scripts/det/commit-msg.js --json               # structured {type,scope,sub
 
 Type and scope come from the changed paths (`docs`/`test`/`chore`/`feat`/`fix`,
 scope = deepest common dir); the body is exact diff stats. No intent-guessing.
+Multi-file changes name the lead file — the added one, else the biggest churn —
+as `add changelog.js (+2 more)`, never the vague `update 3 files`.
 
 ```bash
 node scripts/det/changelog.js                       # since the last tag -> markdown
