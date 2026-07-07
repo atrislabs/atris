@@ -728,6 +728,10 @@ function exitMissingMission(ref, code = 1, asJson = false) {
 function resolveMission(ref, root = process.cwd()) {
   const missions = listMissions(root);
   if (!ref) return missions.find((mission) => !TERMINAL_STATUSES.has(mission.status)) || missions[0] || null;
+  // exact id first: fuzzy prefix/suffix matching can hit a sibling whose id
+  // contains this one (e.g. re-resolving "acked-..." matched "newer-unacked-...")
+  const exact = missions.find((mission) => mission.id === String(ref).trim());
+  if (exact) return exact;
   return missions.find((mission) => missionMatchesRef(mission, ref)) || null;
 }
 
