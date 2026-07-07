@@ -168,12 +168,13 @@ function gitSnapshot(root) {
 
 function runVerify(root, verifyCmd, timeoutMs = 600000) {
   if (!verifyCmd) return { passed: null, cmd: null };
+  const { envWithNodeDir } = require('../lib/spawn-env');
   const r = spawnSync(verifyCmd, {
     cwd: root,
     shell: true,
     encoding: 'utf8',
     timeout: timeoutMs,
-    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_AGENT_PROOF_ONLY: '0' },
+    env: envWithNodeDir({ ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_AGENT_PROOF_ONLY: '0' }),
   });
   return { passed: r.status === 0, cmd: verifyCmd, status: r.status };
 }

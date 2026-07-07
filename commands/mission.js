@@ -4713,12 +4713,13 @@ function missionVerifierTimeoutMs(env = process.env) {
 function runVerifier(command, root = process.cwd()) {
   if (!command) return null;
   const resolvedCommand = resolveVerifierCommand(command);
+  const { envWithNodeDir } = require('../lib/spawn-env');
   const result = spawnSync(resolvedCommand, {
     cwd: root,
     shell: true,
     encoding: 'utf8',
     timeout: missionVerifierTimeoutMs(),
-    env: process.env,
+    env: envWithNodeDir(process.env),
   });
   return {
     command,

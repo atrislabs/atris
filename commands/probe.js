@@ -189,15 +189,8 @@ function runTerminal(base, token, command, businessId) {
 // remote computer's files and reported local members (e.g. maze) as missing.
 function runLocalTerminal(command, cwd) {
   const { exec } = require('child_process');
-  const path = require('path');
-  // Cron/launchd PATHs lack the node directory, so worker-sent `node ...`
-  // commands fail with "cannot find node" and block always-on missions.
-  // Prepend the directory of the node running this CLI.
-  const nodeDir = path.dirname(process.execPath);
-  const basePath = String(process.env.PATH || '');
-  const env = basePath.split(':').includes(nodeDir)
-    ? process.env
-    : { ...process.env, PATH: `${nodeDir}:${basePath}` };
+  const { envWithNodeDir } = require('../lib/spawn-env');
+  const env = envWithNodeDir(process.env);
   return new Promise((resolve) => {
     exec(command, { cwd, env, timeout: 60000, maxBuffer: 4 * 1024 * 1024, shell: '/bin/bash' }, (error, stdout, stderr) => {
       resolve({
