@@ -810,6 +810,41 @@ test('wish review latest appends record', () => {
   }
 });
 
+// CLI-916: a decomposed wish (split into delegated part-missions) is newer and
+// in flight, yet "latest" used to skip it and grade an older delegated wish.
+test('wish review latest picks a newer decomposed wish over an older delegated one', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-old',
+      ts: '2026-07-06T10:00:00.000Z',
+      text: 'make old thing clearer',
+      status: 'delegated',
+      dispatched_at: '2026-07-06T10:00:00.000Z',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-split',
+      ts: '2026-07-07T09:00:00.000Z',
+      text: 'build the split thing',
+      status: 'decomposed',
+      dispatched_at: '2026-07-07T09:00:00.000Z',
+    });
+
+    const reviewed = runCli(['wish', 'review', 'Parts landed and were verified.'], {
+      cwd: dir,
+      env: { ATRIS_AGENT_ID: 'keshav' },
+    });
+    assert.equal(reviewed.status, 0, reviewed.stderr || reviewed.stdout);
+    assert.match(reviewed.stdout, /^Review captured for "build the split thing"\.\n$/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.at(-1).wish_id, 'wish-split');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish say appends steer event and pings linked mission', () => {
   const dir = makeTempDir();
   try {
