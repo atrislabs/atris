@@ -4,6 +4,8 @@
 
 ---
 
+- **[2026-07-07] experiment-autopilot-phase-altitude** — pass — Daily experiment autopilot-phase-altitude kept (superset).
+
 - **[2026-07-07] mission-say-mistype-creates-junk-mission** — fail — [resolved] atris mission say <id> <text> is not a subcommand; the mission router treats the whole line as a new objective and silently creates a garbage mission plus room receipt. Detector: `node --test test/mission-unknown-subcommand.test.js`. Fixed in commit d7193da: unknown single-word verbs error with a pointer to atris wish say; quoted objectives and mission- ids keep the shortcut. Hit live 2026-07-07 while steering the deterministic-scripts wish; cleaned up by mission stop. Correct steering front door is: atris wish say "<note>" <wish-id>.
 
 - **[2026-07-07] experiment-autopilot-phase-altitude** — fail — [resolved] Daily experiment autopilot-phase-altitude reverted (apply_failed) — but the patch never ran: runApplyScript launched apply scripts via `sh` + the polyglot `exec node` header, which needs node on PATH, and the midnight cron PATH has no node. The experiment loop then discarded apply stderr, so the scorecard said apply_failed with no cause and this lesson was born a stub. Fixed: .js apply scripts now run on process.execPath (PATH-independent) and apply errors are recorded in the outcome note; experiment requeued. Detector: `node --test test/experiments-daily.test.js`. Rule: a loop that discards a failing child's stderr converts environment bugs into unfalsifiable mush; record the error with the verdict.

@@ -154,8 +154,8 @@
     "applies_to": [
       "lib/experiments/daily.js"
     ],
-    "detector": "node --test test/experiments-daily.test.js",
-    "status": "resolved",
+    "detector": "node --test test/autopilot-plan-review.test.js",
+    "status": "pass",
     "resolved_at": "2026-07-07"
   },
   "mission-say-mistype-creates-junk-mission": {
