@@ -171,3 +171,30 @@ test('wish bench round 2 miss cases are pinned', () => {
 
   assert.equal(deriveVerifyPlan('stress test the intake with weird phrasings').command, 'node --test');
 });
+
+test('wish bench round 3 held-out cases are pinned', () => {
+  const archived = analyzeWishParts('archive the old blog posts and rebuild the sitemap', repoRoot);
+  assert.equal(archived.length, 2);
+  assert.equal(archived[0].text, 'archive the old blog posts');
+  assert.equal(archived[1].text, 'rebuild the sitemap');
+
+  const upgraded = analyzeWishParts('upgrade node in ci and pin the lockfile', repoRoot);
+  assert.equal(upgraded.length, 2);
+
+  const scheduled = analyzeWishParts('write the investor update; schedule the send for friday', repoRoot);
+  assert.equal(scheduled.length, 2);
+
+  assert.equal(analyzeWishParts('hook up search and make it fast', repoRoot), null);
+  assert.equal(isFrontendWish('compress the card images in the build step'), false);
+
+  const clearCases = [
+    'get first paint under 2s',
+    'Friday we demo, hide the beta badges',
+    'drop v0.9 support quietly',
+    'the 404 page deserves better',
+    'Basically the recap email buries the one number i care about',
+  ];
+  for (const text of clearCases) assert.deepEqual(auditQuestions(text), [], text);
+
+  assert.equal(deriveVerifyPlan('smoke test the publish flow before the tag').command, 'node --test');
+});

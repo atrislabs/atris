@@ -12,7 +12,9 @@
  *   node scripts/wish-bench.mjs           # human table + score
  *   node scripts/wish-bench.mjs --json    # machine scorecard
  *   node scripts/wish-bench.mjs --min 80  # exit 1 below 80%
+ *   node scripts/wish-bench.mjs --cases held-out.json
  */
+import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -93,16 +95,26 @@ function scoreCase(entry, root) {
   return results;
 }
 
+function loadCases(casesPath) {
+  if (!casesPath) return CASES;
+  const resolved = path.resolve(process.cwd(), casesPath);
+  const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+  if (!Array.isArray(parsed)) throw new Error(`--cases must point to a JSON array: ${resolved}`);
+  return parsed;
+}
+
 function run() {
   const args = process.argv.slice(2);
   const asJson = args.includes('--json');
   const minIdx = args.indexOf('--min');
   const min = minIdx >= 0 ? Number(args[minIdx + 1]) : null;
+  const casesIdx = args.indexOf('--cases');
+  const cases = loadCases(casesIdx >= 0 ? args[casesIdx + 1] : '');
 
   const rows = [];
   let pass = 0;
   let total = 0;
-  for (const entry of CASES) {
+  for (const entry of cases) {
     const checks = scoreCase(entry, ROOT);
     const ok = checks.every((c) => c.pass);
     total += 1;
