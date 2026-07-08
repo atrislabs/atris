@@ -236,6 +236,42 @@ test('acquireLock steals a stale lock (surfacing a ghost tick)', () => {
 
 // --- cron script + crontab line generation ---
 
+test('pulse install slot is per repo and stable for the same root', () => {
+  const home = path.join(os.tmpdir(), 'pulse-home');
+  const rootA = path.join(os.tmpdir(), 'a', 'same-name');
+  const rootB = path.join(os.tmpdir(), 'b', 'same-name');
+
+  const slotA = pulse.resolvePulseSlot(rootA, { homeDir: home });
+  const slotB = pulse.resolvePulseSlot(rootB, { homeDir: home });
+  const slotAAgain = pulse.resolvePulseSlot(rootA, { homeDir: home });
+
+  assert.notEqual(slotA.stateHome, slotB.stateHome);
+  assert.notEqual(slotA.marker, slotB.marker);
+  assert.equal(slotA.stateHome, slotAAgain.stateHome);
+  assert.equal(slotA.marker, slotAAgain.marker);
+  assert.match(slotA.stateHome, /\/\.atris\/overnight\/pulse-same-name-[a-f0-9]{6}$/);
+  assert.match(slotA.marker, /^ATRIS_PULSE_SAME_NAME_[A-F0-9]{6}$/);
+});
+
+test('legacy pulse state home is recognized only when tick root matches', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-home-'));
+  const root = tmpRoot();
+  try {
+    const legacyStateHome = pulse.legacyPulseStateHome(home);
+    fs.mkdirSync(legacyStateHome, { recursive: true });
+    fs.writeFileSync(path.join(legacyStateHome, 'tick.sh'), `#!/bin/zsh\nROOT="${root}"\n`, 'utf8');
+
+    const slot = pulse.resolvePulseSlot(root, { homeDir: home });
+    assert.equal(slot.legacyMatches, true);
+    assert.equal(slot.activeStateHome, legacyStateHome);
+    assert.equal(slot.activeMarker, pulse.PULSE_MARKER);
+    assert.deepEqual(slot.markers, [slot.marker, pulse.PULSE_MARKER]);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('buildTickScript embeds root, bin, deadline, marker, and calls pulse tick', () => {
   const script = pulse.buildTickScript({
     root: '/repo/atris-cli',
@@ -260,6 +296,18 @@ test('buildTickScript embeds root, bin, deadline, marker, and calls pulse tick',
   assert.doesNotMatch(script, /ATRIS_CLAUDE_BIN=/);
   assert.doesNotMatch(script, /ATRIS_RUNNER_COMMAND_TEMPLATE=/);
   assert.doesNotMatch(script, /ATRIS_CLAUDE_COMMAND_TEMPLATE=/);
+});
+
+test('buildTickScript runs the daily experiments hook after pulse tick', () => {
+  const script = pulse.buildTickScript({
+    root: '/repo/atris-cli',
+    stateHome: '/home/x/.atris/overnight/pulse-atris-cli-123abc',
+    deadlineEpoch: 1777568422,
+  });
+  assert.ok(script.includes('# runDaily no-ops via last_run_date after the first daily run.'));
+  assert.ok(script.includes('# hourly invocation is safe because repeated calls do no work.'));
+  assert.ok(script.includes('"$ATRIS" experiments daily >> "$log" 2>&1 || true'));
+  assert.ok(script.indexOf('"$ATRIS" pulse tick --json') < script.indexOf('"$ATRIS" experiments daily'));
 });
 
 test('buildTickScript exports a PATH so cron can find bare-name spawns (claude/node)', () => {
