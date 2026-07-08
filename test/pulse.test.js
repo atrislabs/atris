@@ -442,12 +442,18 @@ test('diffFsSnapshots detects modified files, not just new ones', () => {
 });
 
 // --- verify default must match the workspace (npm test in a repo with no
-// package.json guaranteed -1 on any productive tick) ---
+// package.json, or with no "test" script, guaranteed -1 on any productive tick) ---
 
-test('defaultVerifyCmd returns npm test only when package.json exists', () => {
+test('defaultVerifyCmd returns npm test only when package.json has a test script', () => {
   const root = tmpRoot();
   assert.equal(pulse.defaultVerifyCmd(root), null);
   fs.writeFileSync(path.join(root, 'package.json'), '{}');
+  assert.equal(pulse.defaultVerifyCmd(root), null);
+  fs.writeFileSync(path.join(root, 'package.json'), '{"scripts":{"lint":"eslint ."}}');
+  assert.equal(pulse.defaultVerifyCmd(root), null);
+  fs.writeFileSync(path.join(root, 'package.json'), 'not json');
+  assert.equal(pulse.defaultVerifyCmd(root), null);
+  fs.writeFileSync(path.join(root, 'package.json'), '{"scripts":{"test":"node --test"}}');
   assert.equal(pulse.defaultVerifyCmd(root), 'npm test');
 });
 
