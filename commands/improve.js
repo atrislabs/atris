@@ -389,7 +389,12 @@ function collectImproveVitals(options = {}, deps = {}) {
     ? `the heartbeat last beat ${heartbeatAge} and earned ${formatReward(rewardToday)} reward today.`
     : `the heartbeat has not beaten yet and earned ${formatReward(rewardToday)} reward today.`;
   const cronFn = deps.cronInstalled || cronInstalled;
-  const installed = Boolean(cronFn());
+  // Per-repo slots (pr 310): the crontab marker is derived from the root, so
+  // the check must ask about THIS repo's markers, not the legacy default.
+  const slotMarkers = (() => {
+    try { return pulse.resolvePulseSlot(root).markers; } catch { return undefined; }
+  })();
+  const installed = Boolean(slotMarkers ? cronFn(slotMarkers) : cronFn());
   const installNudge = installed ? null : 'the loop is off. turn it on: atris pulse install --model claude-sonnet-5';
 
   const experimentsPath = path.join(root, '.atris', 'state', 'experiments-daily.json');
