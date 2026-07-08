@@ -76,8 +76,6 @@ function emit(obj, asJson) {
   return obj;
 }
 
-const STATE_HOME = path.join(os.homedir(), '.atris', 'overnight', 'atris-cli-self-improve');
-
 // --- engine: run one mission-run-due tick via the real CLI ---
 
 function runMissionEngine(root, { noClaude = false, timeoutMs = 600000 } = {}) {
@@ -366,11 +364,13 @@ function tickCommand(args, root = process.cwd()) {
 
 // --- atris pulse status ---
 
-function cronInstalled(marker = pulse.PULSE_MARKER) {
+function cronInstalled(markers = pulse.PULSE_MARKER) {
+  const markerList = Array.isArray(markers) ? markers : [markers];
   try {
     const r = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
     if (r.status !== 0) return false;
-    return String(r.stdout || '').includes(marker);
+    const crontab = String(r.stdout || '');
+    return markerList.some((marker) => marker && crontab.includes(marker));
   } catch {
     return false;
   }
@@ -378,22 +378,29 @@ function cronInstalled(marker = pulse.PULSE_MARKER) {
 
 function statusCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
+  const slot = pulse.resolvePulseSlot(root);
   const receipts = pulse.readPulseReceipts(root);
   const summary = pulse.summarizePulse(receipts);
-  const installed = cronInstalled();
+  const installed = cronInstalled(slot.markers);
   const out = {
     ok: true,
     action: 'pulse_status',
     cron_installed: installed,
+    state_home: slot.activeStateHome,
+    marker: slot.activeMarker,
+    install_state_home: slot.stateHome,
+    install_marker: slot.marker,
+    legacy_slot: slot.legacyMatches,
     ...summary,
   };
   if (!asJson) {
     process.stdout.write([
-      `pulse: ${installed ? 'cron INSTALLED' : 'cron NOT installed (run: atris pulse install)'}`,
+      `pulse: ${installed ? 'cron installed' : 'cron not installed (run: atris pulse install)'}`,
+      `state home: ${slot.activeStateHome} marker: ${slot.activeMarker}`,
       `ticks: ${summary.total_ticks} | reward: ${summary.reward_sum} | verify pass/fail: ${summary.verify_pass}/${summary.verify_fail}`,
-      `last tick: ${summary.last_tick_ts || 'never'} (verify ${summary.last_verify_passed === null ? 'n/a' : summary.last_verify_passed ? 'pass' : 'FAIL'})`,
-      summary.stale.stale ? `⚠ STALE: ${summary.stale.reason}${summary.stale.tick_index ? ` (ghost tick #${summary.stale.tick_index})` : ''}` : 'liveness: fresh',
-      summary.orphan_ticks.length ? `⚠ orphan (crashed) ticks: ${summary.orphan_ticks.join(', ')}` : '',
+      `last tick: ${summary.last_tick_ts || 'never'} (verify ${summary.last_verify_passed === null ? 'n/a' : summary.last_verify_passed ? 'pass' : 'fail'})`,
+      summary.stale.stale ? `stale: ${summary.stale.reason}${summary.stale.tick_index ? ` (ghost tick #${summary.stale.tick_index})` : ''}` : 'liveness: fresh',
+      summary.orphan_ticks.length ? `orphan (crashed) ticks: ${summary.orphan_ticks.join(', ')}` : '',
     ].filter(Boolean).join('\n') + '\n');
   }
   return emit(out, asJson);
@@ -429,8 +436,17 @@ function resolveEngineBinDirs(extraBins = []) {
   return Array.from(dirs);
 }
 
+function stripMarkedCrontabLines(crontab, markers) {
+  const markerList = Array.isArray(markers) ? markers : [markers];
+  return String(crontab || '')
+    .split('\n')
+    .filter((line) => line && !markerList.some((marker) => marker && line.includes(marker)))
+    .join('\n');
+}
+
 function installCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
+  const slot = pulse.resolvePulseSlot(root);
   const cadenceInput = readFlag(args, '--cadence', pulse.DEFAULT_CADENCE_CRON);
   let cron;
   try {
@@ -471,16 +487,17 @@ function installCommand(args, root = process.cwd()) {
   const runnerCommandTemplate = readFlag(args, '--runner-template', process.env.ATRIS_RUNNER_COMMAND_TEMPLATE || process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE || '');
   const deadlineEpoch = Math.floor(Date.now() / 1000) + expiry.seconds;
 
-  fs.mkdirSync(STATE_HOME, { recursive: true });
-  const scriptPath = path.join(STATE_HOME, 'tick.sh');
+  fs.mkdirSync(slot.stateHome, { recursive: true });
+  const scriptPath = path.join(slot.stateHome, 'tick.sh');
   // Resolve the real bin dirs the engine spawns by bare name, so cron's minimal
   // PATH doesn't silently break the worker spawn (claude lives in ~/.local/bin).
   const pathDirs = resolveEngineBinDirs([runnerBin]);
   const script = pulse.buildTickScript({
     root,
     atrisBin: resolveAtrisBin(),
-    stateHome: STATE_HOME,
+    stateHome: slot.stateHome,
     deadlineEpoch,
+    marker: slot.marker,
     model,
     runnerProfile,
     runnerBin,
@@ -490,11 +507,12 @@ function installCommand(args, root = process.cwd()) {
   });
   fs.writeFileSync(scriptPath, script, { mode: 0o755 });
 
-  const line = pulse.buildCrontabLine({ cron, scriptPath });
-  // Append our line to the existing crontab (idempotent: strip any prior marker first).
+  const line = pulse.buildCrontabLine({ cron, scriptPath, marker: slot.marker });
+  // Append our line to the existing crontab. Strip this repo's new marker and,
+  // when the legacy tick.sh belongs to this root, strip the old single-slot marker too.
   const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
   const prior = existing.status === 0 ? String(existing.stdout || '') : '';
-  const cleaned = prior.split('\n').filter((l) => l && !l.includes(pulse.PULSE_MARKER)).join('\n');
+  const cleaned = stripMarkedCrontabLines(prior, slot.markers);
   const next = `${cleaned ? cleaned + '\n' : ''}${line}\n`;
   const apply = spawnSync('crontab', ['-'], { input: next, encoding: 'utf8', timeout: 10000 });
 
@@ -502,6 +520,9 @@ function installCommand(args, root = process.cwd()) {
     ok: apply.status === 0,
     action: 'pulse_install',
     script_path: scriptPath,
+    state_home: slot.stateHome,
+    marker: slot.marker,
+    legacy_migrated: slot.legacyMatches,
     crontab_line: line,
     cadence: cron,
     cadence_input: cadenceInput,
@@ -527,19 +548,34 @@ function installCommand(args, root = process.cwd()) {
   return emit(out, asJson);
 }
 
-function uninstallCommand(args) {
+function uninstallCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
+  const slot = pulse.resolvePulseSlot(root);
   const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
   if (existing.status !== 0) {
-    const out = { ok: true, action: 'pulse_uninstall', removed: false, reason: 'no_crontab' };
+    const out = {
+      ok: true,
+      action: 'pulse_uninstall',
+      removed: false,
+      reason: 'no_crontab',
+      state_home: slot.activeStateHome,
+      marker: slot.activeMarker,
+    };
     if (!asJson) process.stdout.write('pulse: no crontab to clean.\n');
     return emit(out, asJson);
   }
   const prior = String(existing.stdout || '');
-  const had = prior.includes(pulse.PULSE_MARKER);
-  const cleaned = prior.split('\n').filter((l) => l && !l.includes(pulse.PULSE_MARKER)).join('\n');
+  const had = slot.markers.some((marker) => prior.includes(marker));
+  const cleaned = stripMarkedCrontabLines(prior, slot.markers);
   const apply = spawnSync('crontab', ['-'], { input: cleaned ? cleaned + '\n' : '', encoding: 'utf8', timeout: 10000 });
-  const out = { ok: apply.status === 0, action: 'pulse_uninstall', removed: had };
+  const out = {
+    ok: apply.status === 0,
+    action: 'pulse_uninstall',
+    removed: had,
+    state_home: slot.activeStateHome,
+    marker: slot.activeMarker,
+    legacy_slot: slot.legacyMatches,
+  };
   if (!asJson) process.stdout.write(had ? 'pulse uninstalled (crontab line removed).\n' : 'pulse: no heartbeat line found.\n');
   return emit(out, asJson);
 }
@@ -596,5 +632,5 @@ module.exports = {
   runEngine,
   gitChangedFiles,
   runVerify,
-  STATE_HOME,
+  stripMarkedCrontabLines,
 };
