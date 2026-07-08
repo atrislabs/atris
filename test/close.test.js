@@ -548,11 +548,24 @@ test('scan opens and auto-closes stale experiment liveness flags', () => {
 test('usage record and read round-trips in a temp workspace', () => {
   const dir = makeTempDir();
   try {
+    // The sensor only observes initialized workspaces (never creates .atris).
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
     usage.recordUsage('status', dir);
     const entries = usage.readUsage(dir, { sinceDays: 1 });
     assert.equal(entries.length, 1);
     assert.equal(entries[0].cmd, 'status');
     assert.ok(Date.parse(entries[0].at));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('usage sensor never initializes a pristine directory', () => {
+  const dir = makeTempDir();
+  try {
+    usage.recordUsage('status', dir);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+    assert.equal(usage.readUsage(dir).length, 0);
   } finally {
     cleanupTempDir(dir);
   }
