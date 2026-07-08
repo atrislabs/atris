@@ -35,7 +35,25 @@ function diffCommandRegression(publishedCommands, localCommands, { allow = [] } 
   return { ok: removed.length === 0, removed };
 }
 
-// Fetch bin/atris.js from the published tarball. Best-effort: null on infra failure.
+// The array literal moved from bin/atris.js to lib/known-commands.js when the
+// usage sensor landed. Older published tarballs still carry it inline, so both
+// sides of the diff must try both layouts.
+const KNOWN_COMMANDS_LAYOUTS = [
+  path.join('lib', 'known-commands.js'),
+  path.join('bin', 'atris.js'),
+];
+
+function readKnownCommandsFromDir(dir) {
+  for (const rel of KNOWN_COMMANDS_LAYOUTS) {
+    try {
+      const cmds = extractKnownCommands(fs.readFileSync(path.join(dir, rel), 'utf8'));
+      if (cmds.length) return cmds;
+    } catch (_) { /* try the next layout */ }
+  }
+  return [];
+}
+
+// Fetch the command surface from the published tarball. Best-effort: null on infra failure.
 function fetchPublishedBin(version = 'latest', runner = spawnSync) {
   let dir;
   try {
@@ -44,9 +62,15 @@ function fetchPublishedBin(version = 'latest', runner = spawnSync) {
     if (pack.status !== 0) return null;
     const tgz = String(pack.stdout || '').trim().split('\n').pop();
     if (!tgz) return null;
-    const extract = runner('tar', ['xzf', tgz, '-C', dir, 'package/bin/atris.js'], { cwd: dir, encoding: 'utf8' });
-    if (extract.status !== 0) return null;
-    return fs.readFileSync(path.join(dir, 'package', 'bin', 'atris.js'), 'utf8');
+    let extracted = false;
+    for (const rel of KNOWN_COMMANDS_LAYOUTS) {
+      const member = `package/${rel.split(path.sep).join('/')}`;
+      const extract = runner('tar', ['xzf', tgz, '-C', dir, member], { cwd: dir, encoding: 'utf8' });
+      if (extract.status === 0) extracted = true;
+    }
+    if (!extracted) return null;
+    const cmds = readKnownCommandsFromDir(path.join(dir, 'package'));
+    return cmds.length ? cmds : null;
   } catch (_) {
     return null;
   } finally {
@@ -55,17 +79,16 @@ function fetchPublishedBin(version = 'latest', runner = spawnSync) {
 }
 
 function main() {
-  const localCommands = extractKnownCommands(fs.readFileSync(path.join(repoRoot, 'bin', 'atris.js'), 'utf8'));
+  const localCommands = readKnownCommandsFromDir(repoRoot);
   if (!localCommands.length) {
     console.error('check-command-regression: could not read local knownCommands; aborting.');
     return 1;
   }
-  const publishedSource = fetchPublishedBin('latest');
-  if (!publishedSource) {
+  const publishedCommands = fetchPublishedBin('latest');
+  if (!publishedCommands) {
     console.warn('check-command-regression: could not fetch atris@latest; skipping (infra, not a regression).');
     return 0;
   }
-  const publishedCommands = extractKnownCommands(publishedSource);
   const allow = (process.env.ATRIS_ALLOW_COMMAND_REMOVALS || '').split(',').map((s) => s.trim()).filter(Boolean);
   const { ok, removed } = diffCommandRegression(publishedCommands, localCommands, { allow });
   if (!ok) {
@@ -81,4 +104,4 @@ if (require.main === module) {
   process.exitCode = main();
 }
 
-module.exports = { extractKnownCommands, diffCommandRegression, fetchPublishedBin, main };
+module.exports = { extractKnownCommands, readKnownCommandsFromDir, diffCommandRegression, fetchPublishedBin, main };

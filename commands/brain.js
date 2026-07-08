@@ -231,6 +231,9 @@ function collectStateFileStats(stateDir) {
   const names = new Set(CORE_STATE_FILES);
   if (fs.existsSync(stateDir)) {
     for (const name of fs.readdirSync(stateDir).sort()) {
+      // usage.jsonl is command telemetry written by every dispatch, not brain
+      // state; counting it makes compile stats drift with invocation count.
+      if (name === 'usage.jsonl') continue;
       if (name.endsWith('.json') || name.endsWith('.jsonl')) names.add(name);
     }
   }

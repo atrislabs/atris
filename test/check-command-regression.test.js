@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { extractKnownCommands, diffCommandRegression } = require('../scripts/check-command-regression');
+const { extractKnownCommands, readKnownCommandsFromDir, diffCommandRegression } = require('../scripts/check-command-regression');
 
 test('extractKnownCommands parses the multi-line knownCommands array', () => {
   const src = `
@@ -16,11 +16,22 @@ if (!knownCommands.includes(command)) {}
   assert.deepEqual(extractKnownCommands(src), ['init', 'log', 'deck', 'slop', 'security-review']);
 });
 
-test('extractKnownCommands reads the real bin/atris.js and includes the safety surface', () => {
-  const cmds = extractKnownCommands(fs.readFileSync(path.join(__dirname, '..', 'bin', 'atris.js'), 'utf8'));
+test('readKnownCommandsFromDir reads the real command surface and includes the safety surface', () => {
+  const cmds = readKnownCommandsFromDir(path.join(__dirname, '..'));
   assert.ok(cmds.length > 50);
-  for (const c of ['deck', 'card', 'reel', 'slop', 'site', 'theme', 'signup', 'clarity', 'moves', 'unknowns', 'security-review']) {
+  for (const c of ['deck', 'card', 'reel', 'slop', 'site', 'theme', 'signup', 'clarity', 'moves', 'unknowns', 'security-review', 'close']) {
     assert.ok(cmds.includes(c), `knownCommands should include ${c}`);
+  }
+});
+
+test('readKnownCommandsFromDir falls back to the legacy bin/atris.js layout', () => {
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'atris-layout-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'bin', 'atris.js'), "const knownCommands = ['init', 'deck'];\n");
+    assert.deepEqual(readKnownCommandsFromDir(dir), ['init', 'deck']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
