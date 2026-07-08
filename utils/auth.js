@@ -139,13 +139,25 @@ function shouldRefreshToken(token, bufferSeconds = TOKEN_REFRESH_BUFFER_SECONDS)
 }
 
 // Credentials management
+
+// Create a directory owner-only (0o700). Under the default umask (0o022) a bare
+// recursive mkdir yields 0o755, leaving ~/.atris and its profiles/sessions
+// world-traversable so any local user can enumerate tokens and workspace ids.
+function mkPrivateDir(dir) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+  try {
+    fs.chmodSync(dir, 0o700);
+  } catch {
+    // Best effort: permissions may be unsupported on this platform.
+  }
+  return dir;
+}
+
 function getAtrisDir() {
   const homeDir = os.homedir();
-  const atrisDir = path.join(homeDir, '.atris');
-  if (!fs.existsSync(atrisDir)) {
-    fs.mkdirSync(atrisDir, { recursive: true });
-  }
-  return atrisDir;
+  return mkPrivateDir(path.join(homeDir, '.atris'));
 }
 
 function getCredentialsPath() {
@@ -153,11 +165,7 @@ function getCredentialsPath() {
 }
 
 function getSessionsDir() {
-  const dir = path.join(getAtrisDir(), 'sessions');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return dir;
+  return mkPrivateDir(path.join(getAtrisDir(), 'sessions'));
 }
 
 function getTerminalSessionId() {
@@ -248,11 +256,7 @@ function cleanStaleSessions() {
 }
 
 function getProfilesDir() {
-  const dir = path.join(getAtrisDir(), 'profiles');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return dir;
+  return mkPrivateDir(path.join(getAtrisDir(), 'profiles'));
 }
 
 function profileNameFromEmail(email) {
@@ -568,7 +572,6 @@ async function displayAccountSummary(apiRequestJson) {
   console.log(`User ID: ${userId}`);
   console.log(`Provider: ${provider}`);
   console.log(`Credentials saved: ${savedAt}`);
-  console.log(`Credential file: ${getCredentialsPath()}`);
 
   try {
     const agentsResponse = await fetchMyAgents(credentials.token, apiRequestJson);
