@@ -535,7 +535,7 @@ test('wish derives proof text from test nouns', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /You will know it came true when the fast test run passes and is timed\./);
+    assert.match(res.stdout, /You will know it came true when the tests pass\./);
     assert.doesNotMatch(res.stdout, /git diff whitespace check/);
 
     const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
@@ -801,7 +801,7 @@ test('wish review latest appends record', () => {
       env: { ATRIS_AGENT_ID: 'keshav' },
     });
     assert.equal(reviewed.status, 0, reviewed.stderr || reviewed.stdout);
-    assert.match(reviewed.stdout, /^Review captured for "make new thing clearer"\.\n$/);
+    assert.match(reviewed.stdout, /^Review saved for "make new thing clearer"\. It will shape the next run\.\n$/);
 
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     assert.deepEqual(records.at(-1), {
@@ -847,7 +847,7 @@ test('wish review latest picks a newer decomposed wish over an older delegated o
       env: { ATRIS_AGENT_ID: 'keshav' },
     });
     assert.equal(reviewed.status, 0, reviewed.stderr || reviewed.stdout);
-    assert.match(reviewed.stdout, /^Review captured for "build the split thing"\.\n$/);
+    assert.match(reviewed.stdout, /^Review saved for "build the split thing"\. It will shape the next run\.\n$/);
 
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     assert.equal(records.at(-1).wish_id, 'wish-split');
@@ -1063,11 +1063,11 @@ test('wish list folds older quiet wishes and --all shows them', () => {
     assert.match(list.stdout, /#2 make fresh report - done/);
     assert.match(list.stdout, /#3 make old worker - working/);
     assert.match(list.stdout, /#4 make old answer - waiting on you/);
-    assert.match(list.stdout, /1 older wish is resting\. See them with atris wish list --all/);
+    assert.match(list.stdout, /1 older wish is resting\. See it with atris wish list --all/);
 
     const all = runCli(['wish', 'list', '--all'], { cwd: dir });
     assert.equal(all.status, 0, all.stderr || all.stdout);
-    assert.match(all.stdout, /#1 make old report - done, unreviewed/);
+    assert.match(all.stdout, /#1 make old report - done, needs your review/);
     assert.match(all.stdout, /#2 make fresh report - done/);
     assert.doesNotMatch(all.stdout, /resting/);
   } finally {
@@ -1103,7 +1103,7 @@ test('bare wish stops nudging old shipped wishes without reviews', () => {
 
     const list = runCli(['wish', 'list'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /#2 make stale nudge - done, unreviewed/);
+    assert.match(list.stdout, /#2 make stale nudge - done, needs your review/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1181,7 +1181,7 @@ test('wish --as builder records a builder slice without delegation', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /^Builder wish: "improve tests with more real results"/);
     assert.match(res.stdout, /Outcome: improve tests with more real results/);
-    assert.match(res.stdout, /Exit criteria: the fast test run passes and is timed\./);
+    assert.match(res.stdout, /Exit criteria: the tests pass\./);
     assert.match(res.stdout, /Verify: node --test/);
 
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
@@ -1309,7 +1309,7 @@ test('wish again records parent id and inherits engine override', () => {
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     const followUps = records.filter((record) => record.parent_id === 'wish-parent');
     assert.equal(followUps.length, 2);
-    assert.match(res.stdout, new RegExp(`Created follow-up wish ${followUps[0].id} from wish-parent\\.`));
+    assert.match(res.stdout, /Following up on wish make parent thing\./);
     assert.equal(followUps[0].requested_engine, 'codex');
     assert.equal(followUps.at(-1).requested_engine, 'codex');
     assert.equal(followUps.at(-1).status, 'captured_no_mission');

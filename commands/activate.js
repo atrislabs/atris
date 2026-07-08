@@ -141,14 +141,14 @@ function activateAtris() {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ Atris Activate — Context Loaded                             │');
+  console.log('│ Atris Activate: context loaded                              │');
   console.log('└─────────────────────────────────────────────────────────────┘');
 
   // Display handoff prominently if present
   if (handoffContent) {
     console.log('');
     console.log('┌─────────────────────────────────────────────────────────────┐');
-    console.log('│ 📋 HANDOFF FROM LAST SESSION                                │');
+    console.log('│ 📋 Handoff from last session                                │');
     console.log('├─────────────────────────────────────────────────────────────┤');
     const lines = handoffContent.split('\n').slice(0, 5); // Max 5 lines
     lines.forEach(line => {
@@ -162,7 +162,7 @@ function activateAtris() {
   if (recentCompletions.length > 0) {
     console.log('');
     console.log('┌─────────────────────────────────────────────────────────────┐');
-    console.log('│ ✅ RECENT COMPLETIONS                                       │');
+    console.log('│ ✅ Recent completions                                       │');
     console.log('├─────────────────────────────────────────────────────────────┤');
     recentCompletions.forEach(c => {
       const line = `${c.id}: ${c.desc}`;

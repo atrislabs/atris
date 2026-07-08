@@ -42,7 +42,7 @@ Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is 
 - A strict `plan -> do -> review` loop
 - Daily logs, task tracking, feature packs, and project memory
 - Skills, team members, integrations, and cloud sync when you need them
-- A plain-English answer to "what did my AI actually do?" — run `atris recap` (add `--share` for a paste-ready summary backed by receipts)
+- A plain answer to "what did my AI actually do?": run `atris recap`, or `atris recap --share` for a receipt-backed summary you can paste anywhere
 
 ## Critical Files
 
@@ -91,7 +91,7 @@ atris
 
 `atris init` scaffolds the workspace, including `atris/wiki/`. `atris` loads context and hands the workflow off to `atris/atris.md`.
 
-If you're still shaping the idea, use `atris brainstorm`. If you want one bounded mission pursued to proof, use `atris run "<objective>"`. If you want Atris to keep picking the next mission or member until you say stop, use `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
+If you're still shaping the idea, use `atris brainstorm`. If you want Atris to finish one job and prove it worked, use `atris run "<objective>"`. If you want Atris to keep picking the next mission or member until you say stop, use `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
 
 Core loop: `plan` -> `do` -> `review`
 

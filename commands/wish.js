@@ -214,9 +214,9 @@ function reviewOptions(args) {
 function printLessons(root) {
   const summary = wishLessonsSummary(root);
   console.log('');
-  console.log(`Wish lessons — ${summary.reviews} scored reviews, avg ${summary.avg_all === null ? 'n/a' : summary.avg_all} (last 5: ${summary.avg_last5 === null ? 'n/a' : summary.avg_last5})`);
+  console.log(`Wish lessons: ${summary.reviews} scored reviews, average ${summary.avg_all === null ? 'none yet' : summary.avg_all} (last 5: ${summary.avg_last5 === null ? 'none yet' : summary.avg_last5})`);
   console.log('');
-  console.log(summary.lessons.length ? 'Alive:' : 'Alive: none yet — review a wish and the next run distills one.');
+  console.log(summary.lessons.length ? 'Alive:' : 'Alive: none yet. Review a wish and the next run distills your review into a lesson.');
   for (const line of summary.lessons) console.log(`  ${line}`);
   if (summary.pruned.length) {
     console.log('');
