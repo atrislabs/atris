@@ -48,6 +48,16 @@ function readLedger(dir) {
   return fs.readFileSync(file, 'utf8').trim().split(/\n/).filter(Boolean).map((line) => JSON.parse(line));
 }
 
+function writeJson(file, payload) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(payload, null, 2));
+}
+
+function writeJsonl(file, rows) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`);
+}
+
 function runCli(args, cwd) {
   const result = spawnSync(process.execPath, [cliPath, 'close', ...args], {
     cwd,
@@ -209,6 +219,201 @@ test('sweep prints operator sentences and escalates once per day per loop', () =
 
     runClose(['sweep'], dir, '2026-04-05T00:00:00.000Z');
     assert.equal(readLedger(dir).filter((event) => event.kind === 'escalated').length, 4);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan opens stale review and failed task flags by source and dedupes them', () => {
+  const dir = makeTempDir();
+  const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+  const now = '2026-01-10T00:00:00.000Z';
+  try {
+    const tasks = [
+      {
+        id: 'task-review-old',
+        display_id: 'T-1',
+        title: 'Old review',
+        status: 'review',
+        updated_at: '2026-01-04T23:59:58.000Z',
+        review: {
+          approval_status: 'pending',
+          agent_certified: true,
+        },
+      },
+      {
+        id: 'task-review-recent',
+        display_id: 'T-2',
+        title: 'Recent review',
+        status: 'review',
+        updated_at: '2026-01-09T00:00:00.000Z',
+        review: {
+          approval_status: 'pending',
+          agent_certified: true,
+        },
+      },
+      {
+        id: 'task-failed-old',
+        display_id: 'T-3',
+        title: 'Old failure',
+        status: 'failed',
+        updated_at: '2026-01-07T23:59:58.000Z',
+      },
+      {
+        id: 'task-done-old',
+        display_id: 'T-4',
+        title: 'Done work',
+        status: 'done',
+        updated_at: '2026-01-01T00:00:00.000Z',
+        review: {
+          approval_status: 'accepted',
+        },
+      },
+    ];
+    writeJson(projectionPath, { schema: 'test', tasks });
+
+    const scan = runClose(['scan'], dir, now);
+    assert.equal(scan.code, 0, scan.stderr);
+    assert.deepEqual(scan.stdout.split('\n'), [
+      'opened task t-1 has waited in review too long, accept it or send it back.',
+      'opened task t-3 failed and nobody looked, retry it or dissolve it.',
+    ]);
+
+    const opened = readLedger(dir).filter((event) => event.kind === 'opened');
+    assert.equal(opened.length, 2);
+    assert.deepEqual(opened.map((event) => event.source).sort(), ['task:task-failed-old', 'task:task-review-old']);
+    assert.equal(opened.every((event) => event.lane === 'code' && event.ttl_days === 3), true);
+
+    const duplicate = runClose(['scan'], dir, now);
+    assert.equal(duplicate.code, 0, duplicate.stderr);
+    assert.equal(duplicate.stdout, 'nothing new to open, nothing resolved.');
+    assert.equal(readLedger(dir).filter((event) => event.kind === 'opened').length, 2);
+
+    tasks[0].status = 'done';
+    tasks[0].review.approval_status = 'accepted';
+    writeJson(projectionPath, { schema: 'test', tasks });
+    const resolved = runClose(['scan'], dir, now);
+    assert.equal(resolved.code, 0, resolved.stderr);
+    assert.equal(resolved.stdout, 'auto-closed task t-1 has waited in review too long, accept it or send it back.');
+    const closed = readLedger(dir).filter((event) => event.kind === 'closed');
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0].proof, 'resolved in source store');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan caps dead mission flags and reports skipped stale missions', () => {
+  const dir = makeTempDir();
+  const missionsPath = path.join(dir, '.atris', 'state', 'missions.jsonl');
+  try {
+    const missions = Array.from({ length: 12 }, (_, index) => ({
+      id: `mission-${index + 1}`,
+      objective: `old mission ${index + 1}`,
+      owner: 'codex',
+      status: index % 2 === 0 ? 'running' : 'planning',
+      updated_at: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
+    }));
+    writeJsonl(missionsPath, missions);
+
+    const scan = runClose(['scan'], dir, '2026-01-20T00:00:00.000Z');
+    assert.equal(scan.code, 0, scan.stderr);
+    const lines = scan.stdout.split('\n');
+    assert.equal(lines.filter((line) => line.startsWith('opened mission old mission')).length, 10);
+    assert.equal(lines.at(-1), 'skipped 2 stale missions due to cap.');
+    const opened = readLedger(dir).filter((event) => event.kind === 'opened' && event.source.startsWith('mission:'));
+    assert.equal(opened.length, 10);
+    assert.equal(opened[0].source, 'mission:mission-1');
+    assert.equal(opened[9].source, 'mission:mission-10');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan auto-closes mission flags when the mission resolves', () => {
+  const dir = makeTempDir();
+  const missionsPath = path.join(dir, '.atris', 'state', 'missions.jsonl');
+  try {
+    writeJsonl(missionsPath, [{
+      id: 'mission-resolved',
+      objective: 'resolve source mission',
+      owner: 'codex',
+      status: 'running',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    }]);
+    const opened = runClose(['scan'], dir, '2026-01-10T00:00:00.000Z');
+    assert.equal(opened.code, 0, opened.stderr);
+    assert.equal(readLedger(dir).filter((event) => event.kind === 'opened').length, 1);
+
+    writeJsonl(missionsPath, [{
+      id: 'mission-resolved',
+      objective: 'resolve source mission',
+      owner: 'codex',
+      status: 'stopped',
+      updated_at: '2026-01-11T00:00:00.000Z',
+    }]);
+    const closed = runClose(['scan'], dir, '2026-01-11T00:00:00.000Z');
+    assert.equal(closed.code, 0, closed.stderr);
+    assert.equal(closed.stdout, 'auto-closed mission resolve source mission has not moved in days, resume it or stop it.');
+    const closedEvents = readLedger(dir).filter((event) => event.kind === 'closed');
+    assert.equal(closedEvents.length, 1);
+    assert.equal(closedEvents[0].proof, 'resolved in source store');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan opens and resolves watch file flags from relative and absolute paths', () => {
+  const dir = makeTempDir();
+  const watchPath = path.join(dir, '.atris', 'close-watch.json');
+  const absolutePath = path.join(dir, 'outside.log');
+  try {
+    fs.writeFileSync(path.join(dir, 'notes.md'), 'todo close this loose end\n');
+    fs.writeFileSync(absolutePath, 'blocked by external signal\n');
+    writeJson(watchPath, [
+      {
+        path: 'notes.md',
+        pattern: 'todo close',
+        lane: 'life',
+        ttl_days: 2,
+        what: 'notes has close todo',
+      },
+      {
+        path: absolutePath,
+        pattern: 'blocked',
+        lane: 'code',
+        ttl_days: 4,
+        what: 'external blocker is present',
+      },
+      {
+        path: 'missing.md',
+        pattern: 'never',
+        lane: 'code',
+        ttl_days: 1,
+        what: 'missing watch should skip',
+      },
+    ]);
+
+    const scan = runClose(['scan', '--json'], dir, '2026-02-01T00:00:00.000Z');
+    assert.equal(scan.code, 0, scan.stderr);
+    const payload = JSON.parse(scan.stdout);
+    assert.equal(payload.counts.opened, 2);
+    assert.equal(payload.counts.auto_closed, 0);
+    assert.deepEqual(payload.opened.map((event) => event.source).sort(), [
+      `watch:${absolutePath}`,
+      'watch:notes.md',
+    ]);
+    const notesFlag = payload.opened.find((event) => event.source === 'watch:notes.md');
+    assert.equal(notesFlag.lane, 'life');
+    assert.equal(notesFlag.ttl_days, 2);
+
+    fs.writeFileSync(path.join(dir, 'notes.md'), 'the loose end is clear\n');
+    const resolved = runClose(['scan'], dir, '2026-02-02T00:00:00.000Z');
+    assert.equal(resolved.code, 0, resolved.stderr);
+    assert.equal(resolved.stdout, 'auto-closed notes has close todo.');
+    const closed = readLedger(dir).filter((event) => event.kind === 'closed');
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0].proof, 'resolved in source store');
   } finally {
     cleanupTempDir(dir);
   }

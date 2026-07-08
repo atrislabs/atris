@@ -304,12 +304,17 @@ function tickCommand(args, root = process.cwd()) {
     // day without a human invoking atris close sweep. Never fails the tick.
     let closure = null;
     try {
-      const { sweepState } = require('./close');
+      const { scanState, sweepState } = require('./close');
+      const scanned = scanState(root);
       const swept = sweepState(root);
       closure = {
         open: swept.open,
         overdue: swept.overdue.length,
         escalated_today: swept.escalated_today,
+        scanned: {
+          opened: scanned.opened.length,
+          auto_closed: scanned.auto_closed.length,
+        },
       };
     } catch { /* closure ledger optional */ }
 
