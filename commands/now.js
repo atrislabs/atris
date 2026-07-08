@@ -205,14 +205,61 @@ function compactLine(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function truncateLine(value, max) {
+  const s = compactLine(value);
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1).trimEnd()}…`;
+}
+
+function taskReceiptTitle(row) {
+  return compactLine(row?.state?.title || row?.title || row?.task_id || 'untitled work');
+}
+
+// The receipts behind "Completed receipts today", as lines a human can read:
+// one per task, latest event wins, title + proof.
+function todayTaskReceiptLines(root = process.cwd(), date = new Date(), limit = 6) {
+  const targetDay = formatLocalDate(date);
+  const byTask = new Map();
+  for (const row of readJsonlRows(path.join(root, '.atris', 'state', 'task_episodes.jsonl'))) {
+    if (localDateKey(row?.created_at) !== targetDay) continue;
+    if (!rowMatchesWorkspace(row?.workspace_root, root)) continue;
+    const proof = taskReceiptProof(row);
+    if (!proof) continue;
+    const eventType = String(row?.action?.event_type || '').toLowerCase();
+    if (eventType && !TASK_RECEIPT_EVENTS.has(eventType)) continue;
+    byTask.set(row?.task_id || row?.episode_id || byTask.size, {
+      title: taskReceiptTitle(row),
+      proof,
+    });
+  }
+  return Array.from(byTask.values())
+    .slice(-limit)
+    .reverse()
+    .map((r) => `- ✓ ${truncateLine(r.title, 90)} — ${truncateLine(r.proof, 70)}`);
+}
+
+// The one thing only the owner can do, straight from the master loop's status.
+function nextOwnerActionLine(root = process.cwd()) {
+  const statusPath = path.join(root, 'atris', 'status', 'master-loop.md');
+  if (!fs.existsSync(statusPath)) return null;
+  const line = fs.readFileSync(statusPath, 'utf8')
+    .split(/\r?\n/)
+    .find((l) => l.startsWith('- next_owner_action:'));
+  if (!line) return null;
+  const action = truncateLine(line.replace('- next_owner_action:', ''), 220);
+  return action || null;
+}
+
 function currentMissionMoveLine(root = process.cwd()) {
   try {
     const { selectCodexGoalMission, codexGoalNextCommand } = require('./mission');
     const selected = selectCodexGoalMission(root);
     const mission = selected?.mission || null;
     if (!mission) return null;
-    const objective = compactLine(mission.objective);
-    const next = compactLine(codexGoalNextCommand(mission));
+    // Truncated hard: a raw mission objective + raw command once made the whole
+    // card unreadable. The card states the move; the mission file has the rest.
+    const objective = truncateLine(mission.objective, 140);
+    const next = truncateLine(codexGoalNextCommand(mission), 110);
     if (!objective || !next) return null;
     return `The move: ${objective} — next: ${next}`;
   } catch {
@@ -241,6 +288,12 @@ function renderDefaultNow(root = process.cwd()) {
   const whatMattersNow = moveLine
     ? `${moveLine}\n\n- Decide the next useful move before opening more context.`
     : '- Decide the next useful move before opening more context.';
+  const receiptLines = todayTaskReceiptLines(root);
+  const whileAway = receiptLines.length
+    ? receiptLines.join('\n')
+    : '- Nothing has landed yet today.';
+  const ownerAction = nextOwnerActionLine(root);
+  const needsYou = ownerAction ? `\n## Needs You\n\n- ${ownerAction}\n` : '';
 
   return `# now
 
@@ -253,6 +306,10 @@ Last updated: ${generated}
 
 ${whatMattersNow}
 
+## While You Were Away
+
+${whileAway}
+${needsYou}
 ## Current Priority
 
 - Keep the workspace coherent and useful for the next human or agent.
@@ -263,16 +320,6 @@ ${whatMattersNow}
 - Open TODO items: ${openTodoCount}
 - Inbox items today: ${inboxCount}
 - Completed receipts today: ${completedCount}
-
-## Watchouts
-
-- Do not treat old logs as current truth unless this file links to them.
-- Do not create motion for its own sake.
-- If facts conflict, surface the conflict and cite the receipts.
-
-## Next Move
-
-- Read \`atris/MAP.md\`, \`atris/TODO.md\`, and today's journal only as needed for the task in front of you.
 
 ## Receipts
 
@@ -449,6 +496,9 @@ module.exports = {
   countOpenTodoItems,
   countTaskReceiptsToday,
   currentMissionMoveLine,
+  nextOwnerActionLine,
+  todayTaskReceiptLines,
+  truncateLine,
   findChildWorkspaces,
   isGeneratedNowFile,
   nowAtris,
