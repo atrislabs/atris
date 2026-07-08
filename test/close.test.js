@@ -6,6 +6,9 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const close = require('../commands/close');
+const pulse = require('../lib/pulse');
+const usage = require('../lib/usage');
+const { knownCommands } = require('../lib/known-commands');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -56,6 +59,10 @@ function writeJson(file, payload) {
 function writeJsonl(file, rows) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`);
+}
+
+function isoHoursBefore(now, hours) {
+  return new Date(new Date(now).getTime() - hours * 60 * 60 * 1000).toISOString();
 }
 
 function runCli(args, cwd) {
@@ -415,6 +422,151 @@ test('scan opens and resolves watch file flags from relative and absolute paths'
     assert.equal(closed.length, 1);
     assert.equal(closed[0].proof, 'resolved in source store');
   } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan skips unused command flags while the usage ledger is young', () => {
+  const dir = makeTempDir();
+  const now = '2026-06-01T00:00:00.000Z';
+  try {
+    writeJsonl(usage.usagePath(dir), [
+      { at: isoHoursBefore(now, 24), cmd: 'status' },
+    ]);
+
+    const scan = runClose(['scan'], dir, now);
+    assert.equal(scan.code, 0, scan.stderr);
+    assert.equal(scan.stdout, 'nothing new to open, nothing resolved.');
+    assert.equal(readLedger(dir).filter((event) => event.kind === 'opened' && event.source.startsWith('usage:')).length, 0);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan opens zero-use command flags after thirty days of usage history', () => {
+  const dir = makeTempDir();
+  const now = '2026-06-01T00:00:00.000Z';
+  try {
+    writeJsonl(usage.usagePath(dir), [
+      { at: isoHoursBefore(now, 40 * 24), cmd: 'init' },
+      { at: isoHoursBefore(now, 2 * 24), cmd: 'status' },
+    ]);
+
+    const scan = runClose(['scan', '--json'], dir, now);
+    assert.equal(scan.code, 0, scan.stderr);
+    const payload = JSON.parse(scan.stdout);
+    const usageSources = payload.opened.map((event) => event.source).filter((source) => source.startsWith('usage:'));
+    assert.ok(usageSources.includes('usage:close'));
+    assert.ok(usageSources.includes('usage:init'));
+    assert.equal(usageSources.includes('usage:status'), false);
+    assert.equal(usageSources.length, knownCommands.length - 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan auto-closes unused command flags when usage appears', () => {
+  const dir = makeTempDir();
+  const now = '2026-06-01T00:00:00.000Z';
+  try {
+    writeJsonl(usage.usagePath(dir), [
+      { at: isoHoursBefore(now, 40 * 24), cmd: 'init' },
+      { at: isoHoursBefore(now, 2 * 24), cmd: 'status' },
+    ]);
+    const opened = runClose(['scan'], dir, now);
+    assert.equal(opened.code, 0, opened.stderr);
+    assert.ok(readLedger(dir).some((event) => event.kind === 'opened' && event.source === 'usage:close'));
+
+    writeJsonl(usage.usagePath(dir), [
+      { at: isoHoursBefore(now, 40 * 24), cmd: 'init' },
+      { at: isoHoursBefore(now, 2 * 24), cmd: 'status' },
+      { at: isoHoursBefore(now, 1), cmd: 'close' },
+    ]);
+    const closed = runClose(['scan'], dir, now);
+    assert.equal(closed.code, 0, closed.stderr);
+    assert.match(closed.stdout, /auto-closed command close has zero uses in 30 days, kill it or defend it\./);
+    const closedEvents = readLedger(dir).filter((event) => event.kind === 'closed');
+    assert.equal(closedEvents.length, 1);
+    assert.equal(closedEvents[0].id, close.closeIdForWhat('usage:close'));
+    assert.equal(closedEvents[0].proof, 'resolved in source store');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan opens and auto-closes stale pulse liveness flags', () => {
+  const dir = makeTempDir();
+  const now = '2026-06-01T00:00:00.000Z';
+  try {
+    writeJsonl(pulse.pulseReceiptsPath(dir), [
+      pulse.buildPulseReceipt({ tickIndex: 1, phase: 'finished', ts: isoHoursBefore(now, 25), verifyPassed: true }),
+    ]);
+    const opened = runClose(['scan'], dir, now);
+    assert.equal(opened.code, 0, opened.stderr);
+    assert.equal(opened.stdout, 'opened the heartbeat has not ticked green in a day, the loop may be dead.');
+    assert.ok(readLedger(dir).some((event) => event.kind === 'opened' && event.source === 'liveness:pulse'));
+
+    writeJsonl(pulse.pulseReceiptsPath(dir), [
+      pulse.buildPulseReceipt({ tickIndex: 1, phase: 'finished', ts: isoHoursBefore(now, 25), verifyPassed: true }),
+      pulse.buildPulseReceipt({ tickIndex: 2, phase: 'finished', ts: isoHoursBefore(now, 1), verifyPassed: true }),
+    ]);
+    const closed = runClose(['scan'], dir, now);
+    assert.equal(closed.code, 0, closed.stderr);
+    assert.equal(closed.stdout, 'auto-closed the heartbeat has not ticked green in a day, the loop may be dead.');
+    const closedEvents = readLedger(dir).filter((event) => event.kind === 'closed');
+    assert.equal(closedEvents.length, 1);
+    assert.equal(closedEvents[0].proof, 'resolved in source store');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan opens and auto-closes stale experiment liveness flags', () => {
+  const dir = makeTempDir();
+  const now = '2026-06-01T00:00:00.000Z';
+  const stateFile = path.join(dir, '.atris', 'state', 'experiments.jsonl');
+  try {
+    writeJsonl(stateFile, [
+      { at: isoHoursBefore(now, 4 * 24), id: 'old-experiment' },
+    ]);
+    const opened = runClose(['scan'], dir, now);
+    assert.equal(opened.code, 0, opened.stderr);
+    assert.equal(opened.stdout, 'opened no experiment has run in three days, evolution is coasting.');
+
+    writeJsonl(stateFile, [
+      { at: isoHoursBefore(now, 4 * 24), id: 'old-experiment' },
+      { at: isoHoursBefore(now, 1), id: 'fresh-experiment' },
+    ]);
+    const closed = runClose(['scan'], dir, now);
+    assert.equal(closed.code, 0, closed.stderr);
+    assert.equal(closed.stdout, 'auto-closed no experiment has run in three days, evolution is coasting.');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('usage record and read round-trips in a temp workspace', () => {
+  const dir = makeTempDir();
+  try {
+    usage.recordUsage('status', dir);
+    const entries = usage.readUsage(dir, { sinceDays: 1 });
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].cmd, 'status');
+    assert.ok(Date.parse(entries[0].at));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('usage sensor does not throw for an unwritable workspace', () => {
+  const dir = makeTempDir();
+  try {
+    fs.chmodSync(dir, 0o555);
+    assert.doesNotThrow(() => usage.recordUsage('status', dir));
+  } finally {
+    try {
+      fs.chmodSync(dir, 0o755);
+    } catch {}
     cleanupTempDir(dir);
   }
 });
