@@ -263,16 +263,21 @@ function landedCommitLines(root = process.cwd(), limit = 5) {
   }
 }
 
-// The one thing only the owner can do, straight from the master loop's status.
+// The one thing only the owner can answer. Prefers an explicit owner action;
+// falls back to a blocked loop's open question (needs_human). Loops ask here —
+// they never invent the answer themselves.
 function nextOwnerActionLine(root = process.cwd()) {
   const statusPath = path.join(root, 'atris', 'status', 'master-loop.md');
   if (!fs.existsSync(statusPath)) return null;
-  const line = fs.readFileSync(statusPath, 'utf8')
-    .split(/\r?\n/)
-    .find((l) => l.startsWith('- next_owner_action:'));
-  if (!line) return null;
-  const action = truncateLine(line.replace('- next_owner_action:', ''), 220);
-  return action || null;
+  const lines = fs.readFileSync(statusPath, 'utf8').split(/\r?\n/);
+  for (const prefix of ['- next_owner_action:', '- needs_human:']) {
+    const line = lines.find((l) => l.startsWith(prefix));
+    if (line) {
+      const action = truncateLine(line.replace(prefix, ''), 220);
+      if (action) return action;
+    }
+  }
+  return null;
 }
 
 function currentMissionMoveLine(root = process.cwd()) {
