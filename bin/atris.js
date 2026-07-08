@@ -445,6 +445,7 @@ function showHelp() {
   console.log('  analytics  - Show recent productivity from journals');
   console.log('  search     - Search workspace memory (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
+  console.log('  close      - track open loops with deadlines and daily escalation');
   console.log('  harvest    - Find bugs and next actions from receipts, run logs, and thinking');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
   console.log('  task       - Local agent task plane (atomic claims, TODO import)');
@@ -925,7 +926,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'wish', 'drill', 'dream', 'now', 'radar', 'stream', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'harvest', 'verify', 'search', 'scout', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'bench', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
+                       'clean', 'close', 'harvest', 'verify', 'search', 'scout', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'bench', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'agents', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'write', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'study', 'rainmaker', 'xp', 'play', 'gm', 'x', 'recap', 'report', 'signup', 'clarity', 'interview', 'moves', 'unknowns',
                        'github', 'vercel', 'supabase', 'linear', 'stripe', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'self-improve', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed', 'brief'];
@@ -1637,6 +1638,10 @@ if (command === 'init') {
   Promise.resolve(require('../commands/land').landCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'close') {
+  Promise.resolve(require('../commands/close').run(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'drive') {
   // Drive: one self-driving tick — mission doctor -> auto-fix safe findings -> count disengagements.
   Promise.resolve(require('../commands/drive').driveCommand(process.argv.slice(3)))
