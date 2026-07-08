@@ -436,6 +436,17 @@ test('wish budget tier inference follows plain wording', () => {
   assert.equal(inferBudgetTier('make the boot screen friendlier'), 'long');
 });
 
+test('an "and" joining noun phrases does not split the wish', () => {
+  const { analyzeWishParts } = require('../lib/wish-audit');
+  const parts = analyzeWishParts(
+    'every explanation atris gives me should make sense to an ml researcher and a 2nd grade teacher at the same time',
+    repoRoot
+  );
+  assert.equal(parts, null);
+  const split = analyzeWishParts('make wish list clearer and gm mode in project obelisk', repoRoot);
+  assert.ok(Array.isArray(split) && split.length === 2);
+});
+
 test('multi-part wish decomposes and records out-of-scope parts', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
