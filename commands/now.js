@@ -175,30 +175,39 @@ function taskReceiptKey(row, fallback) {
   return `row:${fallback}`;
 }
 
-function countTaskReceiptsToday(root = process.cwd(), date = new Date()) {
+// One pass over today's receipt sources, deduped by key. Both the
+// "Completed receipts today" count and the readable "While You Were Away"
+// lines derive from this, so the number and the list can never disagree.
+function collectTaskReceiptsToday(root = process.cwd(), date = new Date()) {
   const targetDay = formatLocalDate(date);
   const stateDir = path.join(root, '.atris', 'state');
-  const seen = new Set();
+  const byKey = new Map();
 
   for (const row of readJsonlRows(path.join(stateDir, 'task_episodes.jsonl'))) {
     if (localDateKey(row?.created_at) !== targetDay) continue;
     if (!rowMatchesWorkspace(row?.workspace_root, root)) continue;
-    if (!taskReceiptProof(row)) continue;
+    const proof = taskReceiptProof(row);
+    if (!proof) continue;
     const eventType = String(row?.action?.event_type || '').toLowerCase();
     if (eventType && !TASK_RECEIPT_EVENTS.has(eventType)) continue;
-    seen.add(taskReceiptKey(row, seen.size));
+    byKey.set(taskReceiptKey(row, byKey.size), { title: taskReceiptTitle(row), proof });
   }
 
   for (const row of readJsonlRows(path.join(stateDir, 'career_xp_receipts.jsonl'))) {
     if (localDateKey(row?.accepted_at || row?.created_at || row?.ts) !== targetDay) continue;
     if (!rowMatchesWorkspace(row?.workspace_root, root)) continue;
-    if (!taskReceiptProof(row)) continue;
+    const proof = taskReceiptProof(row);
+    if (!proof) continue;
     const source = String(row?.source_type || row?.receipt_id || row?.source || '').toLowerCase();
     if (!source.includes('task')) continue;
-    seen.add(taskReceiptKey(row, seen.size));
+    byKey.set(taskReceiptKey(row, byKey.size), { title: taskReceiptTitle(row), proof });
   }
 
-  return seen.size;
+  return Array.from(byKey.values());
+}
+
+function countTaskReceiptsToday(root = process.cwd(), date = new Date()) {
+  return collectTaskReceiptsToday(root, date).length;
 }
 
 function compactLine(value) {
@@ -216,23 +225,10 @@ function taskReceiptTitle(row) {
 }
 
 // The receipts behind "Completed receipts today", as lines a human can read:
-// one per task, latest event wins, title + proof.
+// one per receipt, title + proof. Shares the collector with the count so the
+// number and the visible list always match.
 function todayTaskReceiptLines(root = process.cwd(), date = new Date(), limit = 6) {
-  const targetDay = formatLocalDate(date);
-  const byTask = new Map();
-  for (const row of readJsonlRows(path.join(root, '.atris', 'state', 'task_episodes.jsonl'))) {
-    if (localDateKey(row?.created_at) !== targetDay) continue;
-    if (!rowMatchesWorkspace(row?.workspace_root, root)) continue;
-    const proof = taskReceiptProof(row);
-    if (!proof) continue;
-    const eventType = String(row?.action?.event_type || '').toLowerCase();
-    if (eventType && !TASK_RECEIPT_EVENTS.has(eventType)) continue;
-    byTask.set(row?.task_id || row?.episode_id || byTask.size, {
-      title: taskReceiptTitle(row),
-      proof,
-    });
-  }
-  return Array.from(byTask.values())
+  return collectTaskReceiptsToday(root, date)
     .slice(-limit)
     .reverse()
     .map((r) => `- ✓ ${truncateLine(r.title, 90)} — ${truncateLine(r.proof, 70)}`);
