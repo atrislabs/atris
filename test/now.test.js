@@ -333,6 +333,57 @@ test('renderDefaultNow counts today task receipts from task state', () => {
   }
 });
 
+test('While You Were Away shows every receipt behind the count, including accepted career-XP receipts', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+
+    const today = new Date();
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'task_episodes.jsonl'), [
+      JSON.stringify({
+        episode_id: 'ep-episode',
+        task_id: 'task-1',
+        workspace_root: dir,
+        created_at: today.toISOString(),
+        proof: 'node --test episode receipt passed',
+        action: { event_type: 'reviewed' },
+        state: { title: 'Ship the episode receipt' },
+      }),
+      '',
+    ].join('\n'), 'utf8');
+    // An accepted career-XP receipt with no matching episode row. It counts
+    // toward "Completed receipts today" and must also be readable.
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'career_xp_receipts.jsonl'), [
+      JSON.stringify({
+        receipt_id: 'task_review:ep-accepted',
+        source_type: 'task_review',
+        source_episode_id: 'ep-accepted',
+        workspace_root: dir,
+        accepted_at: today.toISOString(),
+        proof: 'node --test accepted receipt passed',
+        title: 'Land the accepted receipt',
+      }),
+      '',
+    ].join('\n'), 'utf8');
+
+    const content = renderDefaultNow(dir);
+    const receiptLineCount = (content.match(/^- ✓ /gm) || []).length;
+
+    // The count and the readable list must agree, and the accepted receipt
+    // (previously counted but invisible) is now shown.
+    assert.equal(countTaskReceiptsToday(dir, today), 2);
+    assert.equal(receiptLineCount, 2);
+    assert.match(content, /Completed receipts today: 2/);
+    assert.match(content, /Ship the episode receipt — node --test episode receipt passed/);
+    assert.match(content, /Land the accepted receipt — node --test accepted receipt passed/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('renderDefaultNow refuses non-Atris workspaces', () => {
   const dir = makeTempDir();
   try {
