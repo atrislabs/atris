@@ -372,11 +372,11 @@ function commandSnooze(args, context = {}) {
   return 0;
 }
 
-function commandSweep(args, context = {}) {
-  const { options } = parseArgs(args);
-  const now = context.now ? new Date(context.now) : new Date();
+// Escalation core shared by the CLI verb and the hourly pulse tick: append
+// one escalated event per overdue flag per day, return the resulting state.
+function sweepState(cwd = process.cwd(), now = new Date()) {
   const today = isoDateOnly(now);
-  let flags = openFlags(context.cwd, { now });
+  let flags = openFlags(cwd, { now });
   const overdue = flags.filter((flag) => flag.overdue).sort(compareSweepFlags);
   const escalatedToday = [];
 
@@ -387,15 +387,22 @@ function commandSweep(args, context = {}) {
       at: now.toISOString(),
       id: flag.id,
       day: today,
-    }, context.cwd);
+    }, cwd);
     escalatedToday.push(flag.id);
   }
 
-  flags = openFlags(context.cwd, { now });
+  flags = openFlags(cwd, { now });
+  return { open: flags.length, overdue, escalated_today: escalatedToday };
+}
+
+function commandSweep(args, context = {}) {
+  const { options } = parseArgs(args);
+  const now = context.now ? new Date(context.now) : new Date();
+  const { open, overdue, escalated_today: escalatedToday } = sweepState(context.cwd, now);
 
   if (options.json) {
     printJson({
-      open: flags.length,
+      open,
       overdue: overdue.length,
       escalated_today: escalatedToday,
     });
@@ -435,6 +442,7 @@ function run(args = [], context = {}) {
 
 module.exports = {
   run,
+  sweepState,
   closeIdForWhat,
   foldEvents,
   openFlags,

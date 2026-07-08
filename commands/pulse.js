@@ -300,6 +300,19 @@ function tickCommand(args, root = process.cwd()) {
       scorecardWritten = true;
     }
 
+    // Closure sweep rides the heartbeat: escalate overdue open loops once a
+    // day without a human invoking atris close sweep. Never fails the tick.
+    let closure = null;
+    try {
+      const { sweepState } = require('./close');
+      const swept = sweepState(root);
+      closure = {
+        open: swept.open,
+        overdue: swept.overdue.length,
+        escalated_today: swept.escalated_today,
+      };
+    } catch { /* closure ledger optional */ }
+
     const out = {
       ok: true,
       action: 'pulse_tick',
@@ -314,10 +327,14 @@ function tickCommand(args, root = process.cwd()) {
       elapsed_ms: elapsedMs,
       receipts_path: pulse.pulseReceiptsPath(root),
     };
+    if (closure) out.closure = closure;
     if (!asJson) {
       const ghost = priorStale.stale ? ` (recovered ghost tick #${priorStale.tick_index || '?'})` : '';
       const r = reward > 0 ? `+${reward}` : String(reward);
       process.stdout.write(`pulse tick #${tickIndex}: ${what} - verify ${verify.passed === null ? 'n/a' : verify.passed ? 'pass' : 'FAIL'} - reward ${r}${ghost}\n`);
+      if (closure && closure.overdue > 0) {
+        process.stdout.write(`closure: ${closure.overdue} open loop${closure.overdue === 1 ? '' : 's'} overdue, run: atris close sweep\n`);
+      }
     }
     return emit(out, asJson);
   } catch (err) {
