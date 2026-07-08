@@ -3874,6 +3874,7 @@ function findAllMembers(teamDir) {
       const content = fs.readFileSync(fullPath, 'utf8');
       const fm = parseFrontmatter(content);
       if (!fm) continue; // No frontmatter = not a member
+      if (fm.type && fm.type !== 'member') continue; // Index/doc files (e.g. ASSIGNMENTS.md, type: index) are not members
 
       const name = entry.replace('.md', '');
       members.push({
