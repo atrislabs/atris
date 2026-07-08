@@ -238,6 +238,31 @@ function todayTaskReceiptLines(root = process.cwd(), date = new Date(), limit = 
     .map((r) => `- ✓ ${truncateLine(r.title, 90)} — ${truncateLine(r.proof, 70)}`);
 }
 
+// What actually landed on this branch in the last day — the fleet's overnight
+// merges are the strongest "the computer worked while you were away" evidence.
+function landedCommitLines(root = process.cwd(), limit = 5) {
+  try {
+    const { execFileSync } = require('node:child_process');
+    const out = execFileSync(
+      'git',
+      ['log', '--since=24 hours ago', '--no-merges', '--format=%s', '-n', '40'],
+      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    const seen = new Set();
+    const lines = [];
+    for (const subject of out.split('\n')) {
+      const s = compactLine(subject);
+      if (!s || seen.has(s)) continue;
+      seen.add(s);
+      lines.push(`- ↑ ${truncateLine(s, 90)}`);
+      if (lines.length >= limit) break;
+    }
+    return lines;
+  } catch {
+    return [];
+  }
+}
+
 // The one thing only the owner can do, straight from the master loop's status.
 function nextOwnerActionLine(root = process.cwd()) {
   const statusPath = path.join(root, 'atris', 'status', 'master-loop.md');
@@ -289,8 +314,10 @@ function renderDefaultNow(root = process.cwd()) {
     ? `${moveLine}\n\n- Decide the next useful move before opening more context.`
     : '- Decide the next useful move before opening more context.';
   const receiptLines = todayTaskReceiptLines(root);
-  const whileAway = receiptLines.length
-    ? receiptLines.join('\n')
+  const commitLines = landedCommitLines(root);
+  const awayLines = [...receiptLines, ...commitLines];
+  const whileAway = awayLines.length
+    ? awayLines.join('\n')
     : '- Nothing has landed yet today.';
   const ownerAction = nextOwnerActionLine(root);
   const needsYou = ownerAction ? `\n## Needs You\n\n- ${ownerAction}\n` : '';
@@ -496,6 +523,7 @@ module.exports = {
   countOpenTodoItems,
   countTaskReceiptsToday,
   currentMissionMoveLine,
+  landedCommitLines,
   nextOwnerActionLine,
   todayTaskReceiptLines,
   truncateLine,
