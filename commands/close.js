@@ -511,6 +511,23 @@ function pulseLivenessState(cwd, now) {
   };
 }
 
+// Degradation sensor: the loop can be alive (ticking) yet losing ground. The
+// pulse liveness check only sees silence; this sees a run of negative reward.
+// Sums reward over the last N finished ticks; unhealthy when the trend is net
+// negative, healthy once it climbs back to zero or better.
+const REWARD_REGRESSION_WINDOW = 6;
+
+function rewardRegressionState(cwd, now) {
+  const receipts = pulse.readJsonl(pulse.pulseReceiptsPath(cwd));
+  const finished = receipts
+    .filter((r) => r && r.phase === 'finished' && parseDate(r.ts || r.at) !== null)
+    .sort((a, b) => parseDate(a.ts || a.at) - parseDate(b.ts || b.at));
+  if (finished.length < REWARD_REGRESSION_WINDOW) return { healthy: false, unhealthy: false };
+  const window = finished.slice(-REWARD_REGRESSION_WINDOW);
+  const sum = window.reduce((acc, r) => acc + (Number(r.reward) || 0), 0);
+  return { healthy: sum >= 0, unhealthy: sum < 0, sum };
+}
+
 function newestExperimentTimestamp(row) {
   const fields = ['ts', 'at', 'updated_at', 'finished_at', 'started_at', 'reviewed_at', 'created_at'];
   for (const field of fields) {
@@ -741,6 +758,7 @@ function scanState(cwd = process.cwd(), options = {}) {
   const usageReady = usageHistoryReady(cwd, now);
   const pulseLiveness = pulseLivenessState(cwd, now);
   const experimentLiveness = experimentLivenessState(cwd, now);
+  const rewardRegression = rewardRegressionState(cwd, now);
   const openBySource = new Map();
   const dissolvedSources = new Set();
   const autoClosed = [];
@@ -791,6 +809,10 @@ function scanState(cwd = process.cwd(), options = {}) {
     }
     if (flag.source === 'liveness:experiments') {
       if (experimentLiveness.healthy) closeFlag(flag);
+      continue;
+    }
+    if (flag.source === 'liveness:reward') {
+      if (rewardRegression.healthy) closeFlag(flag);
     }
   }
 
@@ -881,6 +903,15 @@ function scanState(cwd = process.cwd(), options = {}) {
       lane: 'code',
       ttlDays: 2,
       source: 'liveness:experiments',
+    });
+  }
+
+  if (rewardRegression.unhealthy) {
+    openCandidate({
+      what: 'the last several heartbeats lost more than they gained, find what is failing and fix the loop',
+      lane: 'code',
+      ttlDays: 1,
+      source: 'liveness:reward',
     });
   }
 

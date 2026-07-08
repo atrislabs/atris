@@ -521,6 +521,29 @@ test('scan opens and auto-closes stale pulse liveness flags', () => {
   }
 });
 
+test('scan opens and auto-closes a negative reward regression flag', () => {
+  const dir = makeTempDir();
+  const now = '2026-06-01T00:00:00.000Z';
+  const losing = Array.from({ length: 6 }, (_, i) =>
+    pulse.buildPulseReceipt({ tickIndex: i + 1, phase: 'finished', ts: isoHoursBefore(now, 6 - i), verifyPassed: false, reward: -1 }));
+  try {
+    writeJsonl(pulse.pulseReceiptsPath(dir), losing);
+    const opened = runClose(['scan'], dir, now);
+    assert.equal(opened.code, 0, opened.stderr);
+    assert.ok(readLedger(dir).some((e) => e.kind === 'opened' && e.source === 'liveness:reward'));
+
+    // A run of wins pulls the window back to net non-negative and closes it.
+    const winning = Array.from({ length: 6 }, (_, i) =>
+      pulse.buildPulseReceipt({ tickIndex: i + 7, phase: 'finished', ts: isoHoursBefore(now, 0), verifyPassed: true, reward: 1 }));
+    writeJsonl(pulse.pulseReceiptsPath(dir), losing.concat(winning));
+    const closed = runClose(['scan'], dir, now);
+    assert.equal(closed.code, 0, closed.stderr);
+    assert.ok(readLedger(dir).some((e) => e.kind === 'closed' && e.proof === 'resolved in source store'));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('scan opens and auto-closes stale experiment liveness flags', () => {
   const dir = makeTempDir();
   const now = '2026-06-01T00:00:00.000Z';
