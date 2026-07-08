@@ -156,7 +156,7 @@ test('digest and alarm compose in plain language', () => {
   assert.match(digest, /waiting on you \(0 explained\/1 total; approve or bounce: atris task reviews\):/);
   assert.match(digest, /- 1 more in review that could not explain themselves yet/);
   assert.doesNotMatch(digest, /Send invoice/);
-  assert.match(digest, /wishes waiting on you \(1 wish\):/);
+  assert.match(digest, /1 wish waiting on you:/);
   assert.match(digest, /- make onboarding better: Who is onboarding for\?/);
   assert.doesNotMatch(digest, /wish-/);
   assert.match(digest, /in the air: 2 pieces, 1 overdue/);

@@ -7153,7 +7153,7 @@ test('task add warns when title lacks operator-ready plain why', () => {
 
     const warned = runCli(['task', 'add', 'Refactor task title warning', '--json'], { cwd: dir, env });
     assert.equal(warned.status, 0, warned.stderr);
-    assert.match(warned.stderr, /Warning: add the why in plain words to this task title/);
+    assert.match(warned.stderr, /Warning: put the why in this task title in plain words/);
     const warnedPayload = JSON.parse(warned.stdout);
     assert.equal(warnedPayload.action, 'created');
     assert.match(warnedPayload.operator_title_warning, /what it buys or costs/);
@@ -12307,8 +12307,8 @@ test('task ready and finish accept landing capability sentences', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(missingReady.status, 0, missingReady.stderr);
-    assert.match(missingReady.stderr, /day-one PM could read/);
-    assert.match(JSON.parse(missingReady.stdout).landing_advisory, /day-one PM could read/);
+    assert.match(missingReady.stderr, /new teammate would get/);
+    assert.match(JSON.parse(missingReady.stdout).landing_advisory, /new teammate would get/);
 
     const finishAdd = runCli([
       'task', 'add', 'Finish digest landing sentence',

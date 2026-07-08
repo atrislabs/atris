@@ -46,7 +46,7 @@ const REVIEW_LANE_RUN_MAX_RUNS = 20;
 const PENDING_REVIEW_CHAT_STOP_REASON = 'pending_review_chat_waiting_for_agent_review';
 const PROOF_BOUNDARY_BLOCKED_ACTION = 'proof_boundary_blocked';
 const PROOF_BOUNDARY_BLOCKED_REASON = 'proof_boundary_blocked_requires_revision';
-const READY_RESULT_TEACHING = 'ready needs --result: one sentence a day-one pm gets. say what someone can do now and why it matters. no ids, no paths, no commands. example: operators can now read the whole team day on one page instead of scrolling raw logs.';
+const READY_RESULT_TEACHING = 'ready needs --result: one plain sentence someone new to the project can understand. say what someone can do now and why it matters. no ids, no paths, no commands. example: operators can now read the whole team day on one page instead of scrolling raw logs.';
 const REVIEW_AUTO_ACCEPT_ACTOR = 'auto (certified, small)';
 const REVIEW_AUTO_ACCEPT_POLICY = 'review_autoaccept_certified_small';
 const REVIEW_AUTO_ACCEPT_FILE_LIMIT = 10;
@@ -115,7 +115,7 @@ function getTaskDb() {
 function warnIfTaskTitleNeedsOperatorWhy(title, options = {}) {
   const text = String(title || '').trim();
   if (!text || operatorReady(text)) return null;
-  const warning = 'Warning: add the why in plain words to this task title: what it buys or costs, who benefits, and no flags or identifiers.';
+  const warning = 'Warning: put the why in this task title in plain words: what it buys or costs, and who benefits. Drop flags and ids.';
   if (options.print !== false) console.error(warning);
   return warning;
 }
@@ -486,7 +486,7 @@ function landingNeedsDayOnePm(sentence, title) {
 function warnIfLandingNeedsDayOnePm(landing, title) {
   const sentence = landing && typeof landing === 'object' ? landing.happened : '';
   if (!landingNeedsDayOnePm(sentence, title)) return null;
-  const warning = 'Advisory: add --landing with one capability sentence a day-one PM could read, with the result in plain words and no flags or identifiers.';
+  const warning = 'Advisory: add --landing with one plain sentence saying what someone can do now, in words a new teammate would get. No flags, no ids.';
   console.error(warning);
   return warning;
 }

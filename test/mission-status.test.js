@@ -1250,7 +1250,7 @@ test('mission tick accepts plain recovery summary without warning', () => {
     ], { cwd: dir });
 
     assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
-    assert.doesNotMatch(ticked.stderr, /Warning: add the why in plain words to this tick summary/);
+    assert.doesNotMatch(ticked.stderr, /Warning: put the why in this tick summary in plain words/);
     const payload = JSON.parse(ticked.stdout);
     assert.equal(payload.action, 'mission_tick');
     assert.equal(payload.tick.summary, summary);

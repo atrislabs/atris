@@ -1,6 +1,6 @@
 # Getting Started with Atris
 
-Atris turns any folder into a workspace that gets better over time. Integrates with any agent.
+Atris turns any folder into a workspace that gets better over time. It works with any coding agent.
 
 ## Install
 

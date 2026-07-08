@@ -107,7 +107,7 @@ test('activate prints core file paths', () => {
 
     const res = runCli(['activate'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris Activate — Context Loaded/);
+    assert.match(res.stdout, /Atris Activate: context loaded/);
     assert.match(res.stdout, /atris[\\/]+TODO\.md/);
     assert.match(res.stdout, /atris[\\/]+wiki[\\/]+STATUS\.md/);
     assert.match(res.stdout, /Wiki:/);
