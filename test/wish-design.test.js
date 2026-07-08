@@ -142,6 +142,36 @@ test('startWishDelegation writes a design brief into the mission room and task n
   }
 });
 
+test('startWishDelegation keeps a verify command derived from the wish text', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    writeDesignFixture(dir);
+
+    const result = withProcessEnv({
+      ATRIS_AGENT_ID: 'codex',
+      ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+      NODE_NO_WARNINGS: '1',
+    }, () => startWishDelegation({
+      id: 'wish-design-derived-verify',
+      text: 'restyle the dashboard layout and keep the tests green',
+    }, {
+      ok: true,
+      executor: { id: 'claude' },
+      validator: { id: 'validator' },
+      budget: 'quick',
+      questions: [],
+    }, dir));
+
+    assert.equal(result.verifyPlan.status, 'derived');
+    assert.notEqual(result.verifyPlan.command, 'npm run audit:design');
+    assert.ok(result.verifyPlan.command);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('startWishDelegation keeps a supplied verify command for frontend wishes', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
