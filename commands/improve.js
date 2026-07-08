@@ -742,6 +742,11 @@ async function run(argv = [], deps = {}) {
     const vitals = (deps.collectImproveVitals || collectImproveVitals)({ workspace: process.cwd() }, deps);
     if (args.includes('--json')) console.log(JSON.stringify(vitals));
     else console.log(formatImproveVitals(vitals));
+    // Keep the live page in step with what the terminal just said.
+    try {
+      const file = require('../lib/improve-vitals-html').writeVitalsHtml(process.cwd(), deps);
+      if (!args.includes('--json')) console.log(`\nlive page: ${file} (open it once, it refreshes itself)`);
+    } catch { /* page is a bonus, never a failure */ }
     return 0;
   }
 

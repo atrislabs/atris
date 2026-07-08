@@ -316,6 +316,9 @@ function tickCommand(args, root = process.cwd()) {
       };
     } catch { /* closure ledger optional */ }
 
+    // Rewrite the live vitals page so an open browser tab shows this tick.
+    try { require('../lib/improve-vitals-html').writeVitalsHtml(root); } catch { /* page is a bonus */ }
+
     const out = {
       ok: true,
       action: 'pulse_tick',
