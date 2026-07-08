@@ -152,3 +152,22 @@ test('wish verifier derivation requires test or command deliverables', () => {
   assert.equal(inferBudgetTier('qucik fix the typo in the readme'), 'quick');
   assert.equal(inferBudgetTier('smal fix the typo in the readme'), 'quick');
 });
+
+test('wish bench round 2 miss cases are pinned', () => {
+  assert.equal(analyzeWishParts('polish the header and footer spacing', repoRoot), null);
+
+  assert.equal(isFrontendWish('make the signup flow gorgeous'), true);
+  assert.equal(isFrontendWish('our charts look like excel'), true);
+  assert.equal(isFrontendWish('too much going on above the fold'), true);
+  assert.equal(isFrontendWish('dark mode washes out the cards'), true);
+  assert.equal(isFrontendWish('cache the theme config lookup in the server'), false);
+  assert.equal(isFrontendWish('screen the webhook payloads for secrets'), false);
+
+  assert.deepEqual(auditQuestions('shave 300ms off boot'), []);
+  assert.deepEqual(auditQuestions('Wednesday demo needs the banner gone'), []);
+  assert.deepEqual(auditQuestions('Theres a weird gap under the hero'), []);
+  assert.ok(auditQuestions('do that thing again').length > 0);
+  assert.ok(auditQuestions('make it more like the other one').length > 0);
+
+  assert.equal(deriveVerifyPlan('stress test the intake with weird phrasings').command, 'node --test');
+});

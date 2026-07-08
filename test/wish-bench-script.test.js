@@ -12,7 +12,7 @@ test('wish-bench runs and holds the score floor', () => {
   const report = JSON.parse(res.stdout);
   assert.equal(report.schema, 'atris.wish_bench.v1');
   assert.ok(report.cases >= 30);
-  // Ratchet floor: 58.1% measured 2026-07-07. Raise this when the score
+  // Ratchet floor: 100% measured 2026-07-08. Raise this when the score
   // improves; never lower it.
-  assert.ok(report.pct >= 58, `wish-bench regressed: ${report.pct}% is below the 58% floor`);
+  assert.ok(report.pct >= 95, `wish-bench regressed: ${report.pct}% is below the 95% floor`);
 });
