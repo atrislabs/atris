@@ -395,20 +395,23 @@ function commandSnooze(args, context = {}) {
 
 // Escalation core shared by the CLI verb and the hourly pulse tick: append
 // one escalated event per overdue flag per day, return the resulting state.
-function sweepState(cwd = process.cwd(), now = new Date()) {
+function sweepState(cwd = process.cwd(), now = new Date(), options = {}) {
   const today = isoDateOnly(now);
   let flags = openFlags(cwd, { now });
   const overdue = flags.filter((flag) => flag.overdue).sort(compareSweepFlags);
   const escalatedToday = [];
+  const shouldWrite = options.dryRun !== true && options.write !== false && options.readOnly !== true;
 
   for (const flag of overdue) {
     if (flag.escalated_days.includes(today)) continue;
-    appendEvent({
-      kind: 'escalated',
-      at: now.toISOString(),
-      id: flag.id,
-      day: today,
-    }, cwd);
+    if (shouldWrite) {
+      appendEvent({
+        kind: 'escalated',
+        at: now.toISOString(),
+        id: flag.id,
+        day: today,
+      }, cwd);
+    }
     escalatedToday.push(flag.id);
   }
 

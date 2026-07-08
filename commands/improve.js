@@ -24,6 +24,11 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
+const pulse = require('../lib/pulse');
+const { cronInstalled } = require('./pulse');
+const close = require('./close');
+const { readUsage } = require('../lib/usage');
+const { knownCommands } = require('../lib/known-commands');
 
 /**
  * Expand a leading `~` to the real home directory for LOCAL filesystem
@@ -40,8 +45,10 @@ function expandHome(p) {
 }
 
 const SCORECARD_SCHEMA = 'atris.improve_tick.v1';
+const IMPROVE_VITALS_SCHEMA = 'atris.improve_vitals.v1';
 const DEFAULT_TIMEOUT_MS = 300000;
 const VALID_MODES = new Set(['full', 'plan', 'delegate']);
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Resolve the improve endpoint path relative to the configured API base.
@@ -268,6 +275,234 @@ function localHourMinute(d = new Date()) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+function readJsonFile(file, fallback = null) {
+  try {
+    if (!fs.existsSync(file)) return fallback;
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return fallback;
+  }
+}
+
+function readJsonlFile(file) {
+  try {
+    if (!fs.existsSync(file)) return [];
+    return fs.readFileSync(file, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function timestampMs(value) {
+  const ms = Date.parse(String(value || ''));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+function formatReward(value) {
+  const n = Number(value) || 0;
+  if (Number.isInteger(n)) return String(n);
+  return String(Number(n.toFixed(2)));
+}
+
+function agePhrase(ts, nowMs = Date.now()) {
+  const ms = timestampMs(ts);
+  if (ms == null) return null;
+  const delta = Math.max(0, nowMs - ms);
+  if (delta < 60 * 1000) return 'just now';
+  if (delta < 60 * 60 * 1000) return `${plural(Math.round(delta / (60 * 1000)), 'minute')} ago`;
+  if (delta < DAY_MS) return `${plural(Math.round(delta / (60 * 60 * 1000)), 'hour')} ago`;
+  if (delta < 30 * DAY_MS) return `${plural(Math.round(delta / DAY_MS), 'day')} ago`;
+  return `on ${new Date(ms).toISOString().slice(0, 10)}`;
+}
+
+function plainSentence(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function latestByTime(rows, fields) {
+  let latest = null;
+  let latestMs = -Infinity;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    for (const field of fields) {
+      const ms = timestampMs(row && row[field]);
+      if (ms != null && ms > latestMs) {
+        latest = row;
+        latestMs = ms;
+      }
+    }
+  }
+  return latest ? { row: latest, ms: latestMs } : null;
+}
+
+function scoutFindingLanded(row = {}) {
+  if (!row || typeof row !== 'object') return false;
+  if (row.finding_landed === true || row.finding === true) return true;
+  if (Array.isArray(row.findings) && row.findings.length > 0) return true;
+  if (row.result && typeof row.result === 'object') {
+    if (row.result.finding_landed === true || row.result.finding === true) return true;
+    if (Array.isArray(row.result.findings) && row.result.findings.length > 0) return true;
+  }
+  const landing = row.last_landing || (row.result && row.result.landing) || row.landing;
+  if (landing && typeof landing === 'object') {
+    const text = `${landing.finding || ''} ${landing.findings || ''}`.trim();
+    if (text) return true;
+  }
+  return false;
+}
+
+function collectImproveVitals(options = {}, deps = {}) {
+  const root = expandHome(options.workspace || process.cwd());
+  const nowDate = options.now ? new Date(options.now) : new Date();
+  const nowMs = Number.isFinite(nowDate.getTime()) ? nowDate.getTime() : Date.now();
+  const today = localDateKey(new Date(nowMs));
+
+  const readPulse = deps.readPulseReceipts || pulse.readPulseReceipts;
+  const pulsePath = (deps.pulseReceiptsPath || pulse.pulseReceiptsPath)(root);
+  const receipts = readPulse(root);
+  const finished = (Array.isArray(receipts) ? receipts : []).filter((row) => row && row.phase === 'finished');
+  const latestPulse = latestByTime(finished, ['ts']);
+  const rewardSince = nowMs - DAY_MS;
+  const rewardToday = finished.reduce((sum, row) => {
+    const ms = timestampMs(row.ts);
+    return ms != null && ms >= rewardSince ? sum + (Number(row.reward) || 0) : sum;
+  }, 0);
+  const heartbeatAge = latestPulse ? agePhrase(latestPulse.row.ts, nowMs) : null;
+  const heartbeatSentence = latestPulse
+    ? `the heartbeat last beat ${heartbeatAge} and earned ${formatReward(rewardToday)} reward today.`
+    : `the heartbeat has not beaten yet and earned ${formatReward(rewardToday)} reward today.`;
+  const cronFn = deps.cronInstalled || cronInstalled;
+  const installed = Boolean(cronFn());
+  const installNudge = installed ? null : 'the loop is off. turn it on: atris pulse install --model claude-sonnet-5';
+
+  const experimentsPath = path.join(root, '.atris', 'state', 'experiments-daily.json');
+  const experiments = readJsonFile(experimentsPath, {});
+  const history = Array.isArray(experiments && experiments.history) ? experiments.history : [];
+  const experimentRanToday = String(experiments && experiments.last_run_date || '') === today;
+  const exploitSentence = `${experimentRanToday ? 'todays experiment already ran' : 'no experiment yet today'}, with ${plural(history.length, 'total experiment')}.`;
+
+  const missionsPath = path.join(root, '.atris', 'state', 'missions.jsonl');
+  const missions = readJsonlFile(missionsPath);
+  const scoutMissions = missions.filter((row) => {
+    const owner = String(row && row.owner || '').toLowerCase();
+    return owner === 'scout' || owner === 'signal-scout' || owner.endsWith('-scout');
+  });
+  const latestScout = latestByTime(scoutMissions, [
+    'last_tick_at',
+    'last_tick_finished_at',
+    'finished_at',
+    'updated_at',
+    'created_at',
+    'started_at',
+  ]);
+  const scoutAge = latestScout ? agePhrase(new Date(latestScout.ms).toISOString(), nowMs) : null;
+  const findingLanded = latestScout ? scoutFindingLanded(latestScout.row) : false;
+  const exploreSentence = latestScout
+    ? `the scout last explored ${scoutAge} and ${findingLanded ? 'landed a finding' : 'no finding landed'}.`
+    : 'the scout has not explored yet and no finding landed.';
+
+  const openFlags = (deps.openFlags || close.openFlags)(root, { now: new Date(nowMs) });
+  const sweep = (deps.sweepState || close.sweepState)(root, new Date(nowMs), { dryRun: true });
+  const overdue = Array.isArray(sweep.overdue) ? sweep.overdue : openFlags.filter((flag) => flag && flag.overdue);
+  const topOverdueSentence = overdue[0] ? plainSentence((deps.sweepLine || close.sweepLine)(overdue[0])) : null;
+  const excreteSentence = `the excretion loop has ${plural(openFlags.length, 'open loop')} and ${plural(overdue.length, 'overdue loop')}.`;
+
+  const usageRows = (deps.readUsage || readUsage)(root, { sinceDays: 7, now: new Date(nowMs).toISOString() });
+  const known = deps.knownCommands || knownCommands;
+  const knownSet = new Set(known);
+  const usedThisWeek = new Set((Array.isArray(usageRows) ? usageRows : [])
+    .map((row) => row && row.cmd)
+    .filter((cmd) => knownSet.has(cmd)));
+  const usageSentence = `you used ${usedThisWeek.size} of ${known.length} known commands this week.`;
+
+  const heartbeat = {
+    receipts_path_exists: fs.existsSync(pulsePath),
+    last_finished_at: latestPulse ? latestPulse.row.ts : null,
+    last_finished_ago: heartbeatAge,
+    reward_last_24h: Number(formatReward(rewardToday)),
+    cron_installed: installed,
+    sentence: plainSentence(heartbeatSentence),
+  };
+  const exploit = {
+    ran_today: experimentRanToday,
+    total_experiments: history.length,
+    last_run_date: experiments && experiments.last_run_date || null,
+    sentence: plainSentence(exploitSentence),
+  };
+  const explore = {
+    total_scout_missions: scoutMissions.length,
+    last_tick_at: latestScout ? new Date(latestScout.ms).toISOString() : null,
+    last_tick_ago: scoutAge,
+    finding_landed: findingLanded,
+    sentence: plainSentence(exploreSentence),
+  };
+  const excrete = {
+    open: openFlags.length,
+    overdue: overdue.length,
+    top_overdue_sentence: topOverdueSentence,
+    sentence: plainSentence(excreteSentence),
+  };
+  const usage = {
+    used_this_week: usedThisWeek.size,
+    known_commands: known.length,
+    sentence: plainSentence(usageSentence),
+  };
+
+  const sentences = [
+    heartbeat.sentence,
+    exploit.sentence,
+    explore.sentence,
+    excrete.sentence,
+    ...(topOverdueSentence ? [`the top overdue loop says ${topOverdueSentence}`] : []),
+    usage.sentence,
+  ];
+  const groups = [
+    [heartbeat.sentence, installNudge].filter(Boolean),
+    [exploit.sentence],
+    [explore.sentence],
+    [excrete.sentence, ...(topOverdueSentence ? [`the top overdue loop says ${topOverdueSentence}`] : [])],
+    [usage.sentence],
+  ];
+
+  return {
+    schema: IMPROVE_VITALS_SCHEMA,
+    generated_at: new Date(nowMs).toISOString(),
+    heartbeat,
+    exploit,
+    explore,
+    excrete,
+    usage,
+    install_nudge: installNudge,
+    sentences,
+    groups,
+  };
+}
+
+function formatImproveVitals(vitals = {}) {
+  const groups = Array.isArray(vitals.groups) ? vitals.groups : [];
+  return groups
+    .map((group) => group.filter(Boolean).map(plainSentence).join('\n'))
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 /**
  * Append a human-readable tick entry to today's journal under ## Notes.
  * The skill contract says every tick lands in the journal; the JSONL
@@ -462,10 +697,13 @@ function formatImproveReport(result = {}) {
 }
 
 function showHelp() {
-  console.log(`atris improve — run one paid RL improvement tick
+  console.log(`atris improve - show the self-improvement metabolism vitals
 
 Usage:
-  atris improve [mode] [options]
+  atris improve
+  atris improve --json
+  atris improve tick [mode] [options]
+  atris improve [mode|history] [options]
 
 Modes (positional or --mode):
   full        plan + build + verify + score (default)
@@ -489,8 +727,21 @@ Atris credits per successful tick. Writes a per-tick scorecard to
 the backend is unreachable or you are not logged in.`);
 }
 
-async function run(argv = []) {
-  const opts = parseImproveArgs(argv);
+function isBareVitalsArgs(argv = []) {
+  return argv.length === 0 || (argv.length === 1 && argv[0] === '--json');
+}
+
+async function run(argv = [], deps = {}) {
+  const args = Array.isArray(argv) ? [...argv] : [];
+  if (isBareVitalsArgs(args)) {
+    const vitals = (deps.collectImproveVitals || collectImproveVitals)({ workspace: process.cwd() }, deps);
+    if (args.includes('--json')) console.log(JSON.stringify(vitals));
+    else console.log(formatImproveVitals(vitals));
+    return 0;
+  }
+
+  const routedArgs = args[0] === 'tick' ? args.slice(1) : args;
+  const opts = parseImproveArgs(routedArgs);
   if (opts.help) { showHelp(); return 0; }
 
   if (opts.history) {
@@ -500,7 +751,8 @@ async function run(argv = []) {
     return 0;
   }
 
-  const result = await runImprove(opts, {
+  const improveFn = deps.runImprove || runImprove;
+  const result = await improveFn(opts, {
     log: opts.json ? () => {} : (m) => console.error(`  ${m}`),
   });
 
@@ -523,6 +775,9 @@ module.exports = {
   appendScorecardRow,
   appendTickToJournal,
   expandHome,
+  collectImproveVitals,
+  formatImproveVitals,
+  isBareVitalsArgs,
   readTickHistory,
   summarizeTickHistory,
   formatTickHistory,
@@ -532,4 +787,5 @@ module.exports = {
   LOCAL_FALLBACK_ARGS,
   localFallbackArgs,
   SCORECARD_SCHEMA,
+  IMPROVE_VITALS_SCHEMA,
 };
