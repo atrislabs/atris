@@ -530,8 +530,12 @@ function taskWaitingOnHumanAccept(task) {
 }
 
 function failedTaskNeedsAttention(task, now) {
+  // Recency window: a failure nobody touched in 30 days is archaeology, not an
+  // open loop. Flag only failures old enough to be ignored but fresh enough to
+  // still matter.
   return normalizeSpaces(task && task.status).toLowerCase() === 'failed'
-    && isOlderThan(task.updated_at, 2, now);
+    && isOlderThan(task.updated_at, 2, now)
+    && !isOlderThan(task.updated_at, 30, now);
 }
 
 function resolveWatchPath(cwd, watchPath) {
@@ -621,7 +625,14 @@ function scanState(cwd = process.cwd(), options = {}) {
   const watchEntries = readWatchConfig(cwd);
   const watchBySource = new Map(watchEntries.map((entry) => [entry.source, entry]));
   const openBySource = new Map();
+  const dissolvedSources = new Set();
   const autoClosed = [];
+
+  // Dissolve is a durable verdict: a source the operator declared dead on
+  // purpose must never re-open on a later scan.
+  for (const flag of foldEvents(readEvents(cwd), { now })) {
+    if (flag.status === 'dissolved' && flag.source) dissolvedSources.add(flag.source);
+  }
 
   for (const flag of openFlags(cwd, { now })) {
     if (flag.source) openBySource.set(flag.source, flag);
@@ -655,7 +666,7 @@ function scanState(cwd = process.cwd(), options = {}) {
 
   const opened = [];
   const openCandidate = (candidate) => {
-    if (!candidate.source || openBySource.has(candidate.source)) return null;
+    if (!candidate.source || openBySource.has(candidate.source) || dissolvedSources.has(candidate.source)) return null;
     const event = appendOpenedFromSource(candidate, cwd, now);
     opened.push(event);
     openBySource.set(candidate.source, { ...event, status: 'open' });
