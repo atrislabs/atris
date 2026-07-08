@@ -65,6 +65,8 @@ const {
   DEFAULT_CLIENT_ID, DEFAULT_USER_AGENT,
 } = require('../utils/api');
 const missionRuntime = require('../lib/mission-runtime-loop');
+const { knownCommands } = require('../lib/known-commands');
+const { recordUsage } = require('../lib/usage');
 
 // Bind DI wrappers (utils/auth uses dependency injection for apiRequestJson)
 const validateAccessToken = (token) => _validateAccessToken(token, apiRequestJson);
@@ -898,6 +900,7 @@ function showAutopilotHelp() {
 }
 
 if (command === 'help' || command === '--help' || command === '-h') {
+  recordUsage(command, process.cwd());
   showHelp();
   process.exit(0);
 }
@@ -924,12 +927,6 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 }
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'wish', 'drill', 'dream', 'now', 'radar', 'stream', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
-                       'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'close', 'harvest', 'verify', 'search', 'scout', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'bench', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
-                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'agents', 'probe', 'worktree', 'land', 'autoland', 'drive', 'aeo', 'slop', 'strings', 'write', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'study', 'rainmaker', 'xp', 'play', 'gm', 'x', 'recap', 'report', 'signup', 'clarity', 'interview', 'moves', 'unknowns',
-                       'github', 'vercel', 'supabase', 'linear', 'stripe', 'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
-                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'self-improve', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines', 'feed', 'brief'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -1030,6 +1027,8 @@ if (!command || !knownCommands.includes(command)) {
     });
   return;
 }
+
+recordUsage(command, process.cwd());
 
 function printAtrisOverview() {
   console.log('');

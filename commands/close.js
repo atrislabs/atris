@@ -1,6 +1,9 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { knownCommands } = require('../lib/known-commands');
+const { readUsage, usagePath } = require('../lib/usage');
+const pulse = require('../lib/pulse');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const VALID_LANES = new Set(['business', 'life', 'code']);
@@ -8,6 +11,8 @@ const LEDGER_RELATIVE_PATH = path.join('.atris', 'state', 'closure.jsonl');
 const TASK_PROJECTION_RELATIVE_PATH = path.join('.atris', 'state', 'tasks.projection.json');
 const MISSIONS_RELATIVE_PATH = path.join('.atris', 'state', 'missions.jsonl');
 const WATCH_CONFIG_RELATIVE_PATH = path.join('.atris', 'close-watch.json');
+const EXPERIMENTS_RELATIVE_PATH = path.join('.atris', 'state', 'experiments.jsonl');
+const EXPERIMENTS_DIR_RELATIVE_PATH = path.join('atris', 'experiments');
 const RESOLVED_IN_SOURCE_PROOF = 'resolved in source store';
 
 function ledgerPath(cwd = process.cwd()) {
@@ -471,6 +476,111 @@ function readMissions(cwd) {
   return readJsonlFile(path.join(cwd, MISSIONS_RELATIVE_PATH));
 }
 
+function usageHistoryReady(cwd, now) {
+  if (!fs.existsSync(usagePath(cwd))) return false;
+  let earliest = null;
+  for (const entry of readUsage(cwd)) {
+    const at = parseDate(entry.at);
+    if (at === null) continue;
+    if (earliest === null || at < earliest) earliest = at;
+  }
+  return earliest !== null && now.getTime() - earliest >= 30 * DAY_MS;
+}
+
+function usedCommandsSince(cwd, now, days) {
+  return new Set(readUsage(cwd, { sinceDays: days, now }).map((entry) => entry.cmd));
+}
+
+function pulseLivenessState(cwd, now) {
+  const receipts = pulse.readJsonl(pulse.pulseReceiptsPath(cwd));
+  let newest = null;
+  for (const receipt of receipts) {
+    if (!receipt || receipt.phase !== 'finished') continue;
+    const at = parseDate(receipt.ts || receipt.at);
+    if (at === null) continue;
+    if (newest === null || at > newest) newest = at;
+  }
+  if (newest === null) return { healthy: false, unhealthy: false };
+  const ageMs = now.getTime() - newest;
+  return {
+    healthy: ageMs <= DAY_MS,
+    unhealthy: ageMs > DAY_MS,
+  };
+}
+
+function newestExperimentTimestamp(row) {
+  const fields = ['ts', 'at', 'updated_at', 'finished_at', 'started_at', 'reviewed_at', 'created_at'];
+  for (const field of fields) {
+    const at = parseDate(row && row[field]);
+    if (at !== null) return at;
+  }
+  return null;
+}
+
+function newestFileMtime(dir) {
+  let newest = null;
+  const visit = (target) => {
+    let stat;
+    try {
+      stat = fs.statSync(target);
+    } catch {
+      return;
+    }
+    if (stat.isFile()) {
+      newest = newest === null ? stat.mtimeMs : Math.max(newest, stat.mtimeMs);
+      return;
+    }
+    if (!stat.isDirectory()) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(target, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    if (entries.length === 0) {
+      newest = newest === null ? stat.mtimeMs : Math.max(newest, stat.mtimeMs);
+      return;
+    }
+    for (const entry of entries) {
+      visit(path.join(target, entry.name));
+    }
+  };
+  visit(dir);
+  return newest;
+}
+
+function experimentLivenessState(cwd, now) {
+  const stateFile = path.join(cwd, EXPERIMENTS_RELATIVE_PATH);
+  const experimentsDir = path.join(cwd, EXPERIMENTS_DIR_RELATIVE_PATH);
+  const exists = fs.existsSync(stateFile) || fs.existsSync(experimentsDir);
+  if (!exists) return { healthy: false, unhealthy: false };
+
+  let newest = null;
+  if (fs.existsSync(stateFile)) {
+    for (const row of readJsonlFile(stateFile)) {
+      const at = newestExperimentTimestamp(row);
+      if (at !== null) newest = newest === null ? at : Math.max(newest, at);
+    }
+    if (newest === null) {
+      try {
+        newest = fs.statSync(stateFile).mtimeMs;
+      } catch {}
+    }
+  }
+
+  if (fs.existsSync(experimentsDir)) {
+    const mtime = newestFileMtime(experimentsDir);
+    if (mtime !== null) newest = newest === null ? mtime : Math.max(newest, mtime);
+  }
+
+  if (newest === null) return { healthy: false, unhealthy: false };
+  const ageMs = now.getTime() - newest;
+  return {
+    healthy: ageMs <= 3 * DAY_MS,
+    unhealthy: ageMs > 3 * DAY_MS,
+  };
+}
+
 function latestById(rows) {
   const map = new Map();
   for (const row of rows || []) {
@@ -624,6 +734,10 @@ function scanState(cwd = process.cwd(), options = {}) {
   const missionsById = latestById(missions);
   const watchEntries = readWatchConfig(cwd);
   const watchBySource = new Map(watchEntries.map((entry) => [entry.source, entry]));
+  const usedCommands = usedCommandsSince(cwd, now, 30);
+  const usageReady = usageHistoryReady(cwd, now);
+  const pulseLiveness = pulseLivenessState(cwd, now);
+  const experimentLiveness = experimentLivenessState(cwd, now);
   const openBySource = new Map();
   const dissolvedSources = new Set();
   const autoClosed = [];
@@ -661,6 +775,19 @@ function scanState(cwd = process.cwd(), options = {}) {
       if (!entry) continue;
       const matched = watchMatch(entry);
       if (matched.readable && !matched.matches) closeFlag(flag);
+      continue;
+    }
+    if (flag.source.startsWith('usage:')) {
+      const commandName = flag.source.slice('usage:'.length);
+      if (usedCommands.has(commandName)) closeFlag(flag);
+      continue;
+    }
+    if (flag.source === 'liveness:pulse') {
+      if (pulseLiveness.healthy) closeFlag(flag);
+      continue;
+    }
+    if (flag.source === 'liveness:experiments') {
+      if (experimentLiveness.healthy) closeFlag(flag);
     }
   }
 
@@ -721,6 +848,36 @@ function scanState(cwd = process.cwd(), options = {}) {
       lane: entry.lane,
       ttlDays: entry.ttl_days,
       source: entry.source,
+    });
+  }
+
+  if (usageReady) {
+    for (const commandName of knownCommands) {
+      if (usedCommands.has(commandName)) continue;
+      openCandidate({
+        what: `command ${commandName} has zero uses in 30 days, kill it or defend it`,
+        lane: 'code',
+        ttlDays: 7,
+        source: `usage:${commandName}`,
+      });
+    }
+  }
+
+  if (pulseLiveness.unhealthy) {
+    openCandidate({
+      what: 'the heartbeat has not ticked green in a day, the loop may be dead',
+      lane: 'code',
+      ttlDays: 1,
+      source: 'liveness:pulse',
+    });
+  }
+
+  if (experimentLiveness.unhealthy) {
+    openCandidate({
+      what: 'no experiment has run in three days, evolution is coasting',
+      lane: 'code',
+      ttlDays: 2,
+      source: 'liveness:experiments',
     });
   }
 
