@@ -200,6 +200,19 @@ function registryUrl(pathname, deps = {}) {
   return `${cleanBase}${pathname}`;
 }
 
+// The web app's CSRF gate only trusts requests whose Origin matches its own
+// url; bearer-token CLI posts are not a CSRF vector, so we present the app
+// origin we are posting to (2026-07-09: prod publish --push failed 403 while
+// every test passed against a bare local server).
+function registryOrigin(deps = {}) {
+  const appBase = (deps.getAppBaseUrl || getAppBaseUrl)();
+  try {
+    return new URL(String(appBase)).origin;
+  } catch {
+    return '';
+  }
+}
+
 function optionalAuthHeaders(deps = {}) {
   const readCredentials = deps.loadCredentials || loadCredentials;
   const credentials = readCredentials();
@@ -228,6 +241,7 @@ async function postPackToRegistry(manifest, zipBuffer, deps = {}) {
         ...authHeaders,
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        ...(registryOrigin(deps) ? { Origin: registryOrigin(deps) } : {}),
       },
       body,
     });
