@@ -54,6 +54,7 @@ rg "activateAtris|showActivateHelp|activate and next --help" bin/atris.js comman
 rg "autopilotAtris|buildAutopilotGlassLog|writeAutopilotGlassLog|glassLogPath" commands/autopilot.js test/autopilot-glass-logging.test.js  # Autopilot command + glass phase receipt (plan -> review -> action -> result -> proof)
 rg "runImprove|summarizeImproveResponse|shouldFallbackLocal|summarizeTickHistory|appendTickToJournal" commands/improve.js bin/atris.js test/improve.test.js  # Improve command: paid RL tick (POST /api/improve, deducts credits), scorecard row + journal, `improve history` compounding view, --member attribution, local fallback
 rg "youtubeCommand|processYoutube|Usage: atris youtube|process_youtube" commands/youtube.js bin/atris.js test/youtube.test.js atris/skills/youtube/SKILL.md  # YouTube video processing CLI: Node-backed Gemini native video API wrapper for agents that cannot shell out to curl
+rg "meetCommand|buildBookingProfile|runPlainInterview|atris meet" commands/meet.js commands/interview.js bin/atris.js test/meet.test.js  # Meet command: non-technical onboarding in one sitting, init/theme/avail composition, local profile, booking link
 rg "brainCommand|collectState|countStateRows|certifiedReviewTasks|latestTaskEpisodes|latestScorecard|isActionableScorecardNextMove|operatorActivationNextMove|normalizeMemberSlug|memberProfileIssues|renderMissingMemberCard|renderPlaceholderMemberCard|recordTaskEpisodeScorecards|renderActivationCard|modeNextMove|renderActivationGallery|readMemberContext|rememberOperator|recordFeedback|recordApproval|brain --help" commands/brain.js test/commands.test.js  # Brain compile/activate/gallery/feedback/approval/scorecard, certified review checkpoint routing, and workspace-free help
 rg "Codex Executor|Start Here - Codex Executor" atris/team/codex-executor/MEMBER.md atris/team/codex-executor/START_HERE.md atris/team/codex-executor/README.md  # Codex Executor member profile, first-work contract, and setup notes
 rg "prepareBrainState|refreshNowFile|isGeneratedNowFile|brain compile refreshes stale now|preserves a custom now" commands/brain.js commands/now.js test/commands.test.js # Brain compile refreshes generated now.md before state collection while preserving custom front doors
@@ -115,6 +116,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 - **atris report:** `commands/report.js` renders a weekly operator block from landings, journals, and Career XP with coverage in `test/report.test.js`.
 - **atris brief:** `commands/brief.js` renders the one-glance operator brief from done tasks, review waits, next moves, and the weekly report line with coverage in `test/brief.test.js`.
+- **atris meet:** `commands/meet.js` composes interview flags, `init`, `theme init`, and `avail` helpers to create a first profile plus a `/book/{username}` link with coverage in `test/meet.test.js`.
 
 ### Feature: Natural Language Interface (`atris [anything]`)
 
