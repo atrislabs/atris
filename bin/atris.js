@@ -462,6 +462,7 @@ function showHelp() {
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('  study      - On-demand learning feed: ingest topic, start server, open browser');
   console.log('  rainmaker  - Relationship manager dashboard (atrisos-backend/scripts/rainmaker.py)');
+  console.log('  meet       - onboard a stranger in one sitting and print their /book link');
   console.log('  avail      - Booking availability (/book/{username} weekly windows)');
   console.log('  brain      - Compile MAP/TODO/wiki/state into a loadable agent brain');
   console.log('  lesson     - Append a one-line lesson to atris/lessons.md (mine: distill receipts/episodes/scorecards into policy lessons)');
@@ -1690,6 +1691,10 @@ if (command === 'init') {
   process.exit(typeof code === 'number' ? code : 0);
 } else if (command === 'avail') {
   Promise.resolve(require('../commands/avail').availCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'meet') {
+  Promise.resolve(require('../commands/meet').meetCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'brain') {

@@ -927,6 +927,7 @@ test('janitor: a zombie paused mission and a merged worktree disappear on the ne
     runGit(['worktree', 'add', '-b', 'task/merged-fixture', wtPath], repo);
     const staleStamp = new Date(Date.now() - 61 * 60 * 1000);
     fs.utimesSync(wtPath, staleStamp, staleStamp);
+    autoland.writeState(repo, { alerts: {}, last_digest_date: new Date().toISOString().slice(0, 10) });
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
