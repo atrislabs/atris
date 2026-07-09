@@ -7842,6 +7842,23 @@ async function memberWake(name, ...args) {
     file: readFlag(args, '--domain-file', ''),
     name: readFlag(args, '--domain-name', ''),
   };
+  // Honor per-member sleep switch before any tick dispatch.
+  try {
+    const { isMemberAwake } = require('../lib/member-switches');
+    if (name && !isMemberAwake(name)) {
+      const skipped = {
+        ok: true,
+        skipped: true,
+        reason: 'asleep',
+        member: name,
+        decision: 'stop',
+      };
+      printJsonOrText(skipped, [`${name} is asleep`], asJson);
+      return skipped;
+    }
+  } catch {
+    // switch store unreadable: fail open and continue wake
+  }
   const result = await runMemberWake(name, { execute, confirmed, force, domainInput });
   printJsonOrText(result, wakeBootLines(name, result), asJson);
 }
@@ -8579,6 +8596,16 @@ function memberStatus(name, ...args) {
   const mission = memberMissionSummary(owner, memberRunMissionMap());
   const activity = memberLastActivity(owner, paths);
   const verdict = memberVerdict({ mission, activity });
+  let memberSwitch = { awake: true, loops: {} };
+  try {
+    const { getMemberSwitch } = require('../lib/member-switches');
+    memberSwitch = getMemberSwitch(name);
+  } catch {
+    // default awake
+  }
+  const loopEntries = Object.entries(memberSwitch.loops || {})
+    .map(([id, on]) => `${id}:${on === false ? 'asleep' : 'awake'}`);
+  const switchLabel = memberSwitch.awake === false ? 'asleep' : 'awake';
   const payload = {
     ok: true,
     action: 'status',
@@ -8590,6 +8617,10 @@ function memberStatus(name, ...args) {
     current_experiment: goalPlane.current || null,
     last_reviewed: goalPlane.lastReviewed || null,
     value: goalPlane.value,
+    switch: {
+      awake: memberSwitch.awake !== false,
+      loops: memberSwitch.loops || {},
+    },
     mission: mission.latest ? {
       id: mission.latest.id || null,
       name: mission.name,
@@ -8617,6 +8648,7 @@ function memberStatus(name, ...args) {
       `  goal      ${goalPlane.goal?.title ? clipText(goalPlane.goal.title, 70) : s.dim('none yet')}`,
       `  working   ${goalPlane.current ? `${clipText(goalPlane.current.title, 60)} ${s.dim(`(${goalPlane.current.status})`)}` : s.dim('no open experiment')}`,
       `  value     ${goalPlane.value.line}`,
+      `  switch    ${switchLabel}${loopEntries.length ? ` ${s.dim(`(${loopEntries.join(', ')})`)}` : ''}`,
       `  mission   ${mission.latest ? `${mission.name} ${s.dim(`(${mission.state}, last tick ${mission.last_tick_age})`)}` : s.dim('none owned')}`,
       ...(goalPlane.ask ? ['', `  ${s.bold('One thing from you:')}`, `    ${goalPlane.ask}`] : []),
       '',

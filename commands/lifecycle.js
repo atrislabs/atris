@@ -3,6 +3,13 @@ const path = require('path');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses, businessMatchesSlug } = require('./business');
+const {
+  isLocalMember,
+  memberArgFromArgv,
+  readLoopFlag,
+  setMemberAwake,
+  setMemberLoopAwake,
+} = require('../lib/member-switches');
 
 /**
  * Resolve business slug from CLI arg or local .atris/business.json.
@@ -21,6 +28,29 @@ function resolveSlug() {
     if (!slug || slug.startsWith('-')) slug = null;
   }
   return slug;
+}
+
+/**
+ * Per-member / per-loop switch path for atris sleep|wake <member> [--loop <id>].
+ * Returns true when handled so callers skip business-level lifecycle.
+ */
+function handleMemberSwitch(awake) {
+  const name = memberArgFromArgv(process.argv);
+  if (!name || name === '--help' || name === '-h' || name === 'help') return false;
+  if (!isLocalMember(name)) return false;
+
+  const loopId = readLoopFlag(process.argv);
+  if (loopId) {
+    setMemberLoopAwake(name, loopId, awake);
+    console.log(awake
+      ? `${name} loop ${loopId} is awake`
+      : `${name} loop ${loopId} is asleep`);
+    return true;
+  }
+
+  setMemberAwake(name, awake);
+  console.log(awake ? `${name} is awake` : `${name} is asleep`);
+  return true;
 }
 
 async function resolveBusiness(token, slug) {
@@ -91,12 +121,15 @@ async function waitForBusinessComputer(token, business, maxWait = 90000) {
  * @returns {Promise<void>}
  */
 async function sleepAtris() {
+  if (handleMemberSwitch(false)) return;
+
   const slug = resolveSlug();
 
   if (!slug || slug === '--help' || slug === '-h' || slug === 'help') {
-    console.log('Usage: atris sleep [business]');
+    console.log('Usage: atris sleep [business|member] [--loop <loop-id>]');
     console.log('');
     console.log('  Pause a workspace to save compute. Storage only.');
+    console.log('  Or flip a local member / member-loop switch asleep.');
     process.exit(0);
   }
 
@@ -131,7 +164,7 @@ async function sleepAtris() {
   }
 
   console.log(`Workspace '${slug}' is now sleeping. Context saved. Wake it with: atris wake ${slug}`);
-  console.log('Compute paused. Storage only — pennies/day.');
+  console.log('Compute paused. Storage only - pennies/day.');
 }
 
 /**
@@ -139,12 +172,15 @@ async function sleepAtris() {
  * @returns {Promise<void>}
  */
 async function wakeAtris() {
+  if (handleMemberSwitch(true)) return;
+
   const slug = resolveSlug();
 
   if (!slug || slug === '--help' || slug === '-h' || slug === 'help') {
-    console.log('Usage: atris wake [business]');
+    console.log('Usage: atris wake [business|member] [--loop <loop-id>]');
     console.log('');
     console.log('  Wake a sleeping workspace. Agents resume automatically.');
+    console.log('  Or flip a local member / member-loop switch awake.');
     process.exit(0);
   }
 
