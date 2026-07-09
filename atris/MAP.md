@@ -378,10 +378,10 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Implementation:** `commands/autoland.js` (status/on/off/tick/digest) + `lib/autoland.js` (policy, heartbeat cron, digest/alarm composition)
 - **Daily experiment hook:** `commands/autoland.js:49` (`runOwnCli` resolves the local CLI), `commands/autoland.js:577` (`autoland tick` daily experiment block), `commands/autoland.js:579` (`daily_experiment` policy gate), `commands/autoland.js:580` (`experiments daily --json`)
 - **Authorization bridge:** `commands/task.js` cmdAutoAcceptCertified consults `liveAcceptAuthorization()` — the policy file is the standing human confirmation
-- **Eligibility engine:** `lib/auto-accept-certified.js` evaluateAutoAccept (2 passes + 2 actors or 3 passes, denied tags, proof checks, strict verify re-run)
+- **Eligibility engine:** `lib/auto-accept-certified.js` evaluateAutoAccept (2 passes + 2 actors or 3 passes, denied tags, proof checks including cited suite-green claims, strict verify re-run); `lib/task-proof.js` validates proof citations
 - **Policy file:** `.atris/policy/autoland.json`; state (alarm dedupe, digest date): `.atris/state/autoland.json`
 - **Heartbeat:** hourly labeled cron (`ATRIS_AUTOLAND_<project>`) running `atris autoland tick`: land eligible -> alarm anything waiting on a human past 24h -> daily iMessage digest
-- **Regression:** `test/autoland.test.js` (compose, dedupe, policy gate, live e2e land + denied lane, off no-op)
+- **Regression:** `test/autoland.test.js` (compose, dedupe, policy gate, cited suite-green claims, live e2e land + denied lane, off no-op)
 - **Value:** the human approves policy, not items; nothing certified waits silently again
 
 **Search:** `rg "autolandCommand|liveAcceptAuthorization|composeDigest" commands/autoland.js lib/autoland.js commands/task.js`

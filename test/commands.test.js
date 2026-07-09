@@ -11343,7 +11343,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const pseudoReady = runCli([
       'task', 'ready', pseudoRef,
       '--as', 'codex',
-      '--proof', 'validation passed: node command tests passed',
+      '--proof', 'validation passed: node command tests passed; run_id=123456789',
       '--json',
     ], { cwd: dir, env });
     assert.equal(pseudoReady.status, 0, pseudoReady.stderr);
@@ -11358,7 +11358,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const npmPseudoReady = runCli([
       'task', 'ready', npmPseudoRef,
       '--as', 'codex',
-      '--proof', 'validation passed: npm command tests passed',
+      '--proof', 'validation passed: npm command tests passed; run_id=123456789',
       '--json',
     ], { cwd: dir, env });
     assert.equal(npmPseudoReady.status, 0, npmPseudoReady.stderr);
@@ -11373,7 +11373,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const pluralPseudoReady = runCli([
       'task', 'ready', pluralPseudoRef,
       '--as', 'codex',
-      '--proof', 'validation passed: npm tests passed, git checks passed',
+      '--proof', 'validation passed: npm tests passed, git checks passed; run_id=123456789',
       '--json',
     ], { cwd: dir, env });
     assert.equal(pluralPseudoReady.status, 0, pluralPseudoReady.stderr);
@@ -11388,7 +11388,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const atrisSlugReady = runCli([
       'task', 'ready', atrisSlugRef,
       '--as', 'codex',
-      '--proof', 'Second-pass review: recruiting shortcut fallback is scoped to the built-in atris-labs shortcut, keeps generic business lookup strict, and full npm test passed 1635/1635.',
+      '--proof', 'Second-pass review: recruiting shortcut fallback is scoped to the built-in atris-labs shortcut, keeps generic business lookup strict, and full npm test passed 1635/1635; run_id=123456789.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(atrisSlugReady.status, 0, atrisSlugReady.stderr);

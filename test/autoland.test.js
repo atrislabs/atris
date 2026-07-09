@@ -97,7 +97,7 @@ function certifiedTask(repo, title, { tag = 'code' } = {}) {
   return String(id);
 }
 
-function certifiedVerifiedTask(repo, title, { verify, tag = 'code' } = {}) {
+function certifiedVerifiedTask(repo, title, { verify, proof = '', tag = 'code' } = {}) {
   const created = runCli(['task', 'new', title, '--tag', tag, '--json'], repo);
   assert.equal(created.status, 0, created.stderr || created.stdout);
   const id = JSON.parse(created.stdout).task?.display_id
@@ -106,11 +106,43 @@ function certifiedVerifiedTask(repo, title, { verify, tag = 'code' } = {}) {
     || JSON.parse(created.stdout).id;
   assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
   assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
-  const builderReady = runCli(['task', 'ready', String(id), '--verify', verify, '--as', 'builder'], repo);
+  const builderArgs = ['task', 'ready', String(id), '--verify', verify, '--as', 'builder'];
+  if (proof) builderArgs.push('--proof', proof);
+  const builderReady = runCli(builderArgs, repo);
   assert.equal(builderReady.status, 0, builderReady.stderr || builderReady.stdout);
-  const reviewerReady = runCli(['task', 'ready', String(id), '--verify', verify, '--as', 'codex-review'], repo);
+  const reviewerArgs = ['task', 'ready', String(id), '--verify', verify, '--as', 'codex-review'];
+  if (proof) reviewerArgs.push('--proof', proof);
+  const reviewerReady = runCli(reviewerArgs, repo);
   assert.equal(reviewerReady.status, 0, reviewerReady.stderr || reviewerReady.stdout);
   return String(id);
+}
+
+function replaceLatestProof(repo, ref, proof) {
+  const task = projectionByRef(repo)[ref];
+  assert.ok(task, 'task must exist before replacing its proof');
+  const script = [
+    "const { DatabaseSync } = require('node:sqlite');",
+    'const sqlite = new DatabaseSync(process.argv[1]);',
+    'try {',
+    "  const row = sqlite.prepare('SELECT metadata FROM tasks WHERE id = ?').get(process.argv[2]);",
+    "  const metadata = JSON.parse(row.metadata || '{}');",
+    '  metadata.latest_agent_proof = process.argv[3];',
+    "  sqlite.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(metadata), Date.now(), process.argv[2]);",
+    '} finally {',
+    '  sqlite.close();',
+    '}',
+  ].join('\n');
+  const seeded = spawnSync(process.execPath, [
+    '-e',
+    script,
+    path.join(repo, '.atris', 'fixture-tasks.db'),
+    task.id,
+    proof,
+  ], {
+    encoding: 'utf8',
+    env: { ...process.env, NODE_NO_WARNINGS: '1' },
+  });
+  assert.equal(seeded.status, 0, seeded.stderr || seeded.stdout);
 }
 
 test('digest and alarm compose in plain language', () => {
@@ -345,6 +377,66 @@ test('live auto-accept refuses without policy, lands with it, blocks denied lane
     assert.ok(byRef[codeTask].metadata.auto_accepted_at);
     assert.equal(byRef[billingTask].status, 'review');
     assert.equal(status.status, 0);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('tick blocks uncited suite-green proof and cites the needed run in its receipt', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const ref = proofBackedTask(repo, 'Reject an uncited green claim');
+    replaceLatestProof(repo, ref, 'Command passed: git diff --check (exit 0). suite green.');
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', accept_all: true });
+
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.deepEqual(receipt.landed, []);
+    assert.deepEqual(receipt.citation_blocks, [{
+      ref,
+      reason: 'cite the CI run URL, run id, or commit-pinned verify command with exit 0 before claiming the suite is green',
+    }]);
+    assert.equal(projectionByRef(repo)[ref].status, 'review');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('tick lands the same suite-green proof when it cites a CI run URL', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const ref = certifiedVerifiedTask(repo, 'Land a cited green claim', {
+      verify: 'git diff --check',
+      proof: 'suite green https://github.com/acme/repo/actions/runs/123456789',
+    });
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.deepEqual(receipt.landed, [ref]);
+    assert.equal(receipt.citation_blocks, undefined);
+    assert.equal(projectionByRef(repo)[ref].status, 'done');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('tick still lands an ordinary command proof with exit 0', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const ref = certifiedVerifiedTask(repo, 'Land an ordinary local verify', {
+      verify: 'git diff --check',
+      proof: 'Command passed: git diff --check (exit 0).',
+    });
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.deepEqual(receipt.landed, [ref]);
+    assert.equal(projectionByRef(repo)[ref].status, 'done');
   } finally {
     cleanupTempDir(base);
   }
