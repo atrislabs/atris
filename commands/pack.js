@@ -4,11 +4,15 @@ const fs = require('fs');
 const path = require('path');
 const { getAppBaseUrl, httpRequest } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
-const { readZipBuffer, writeZipFile } = require('../lib/zip');
+const { createZipBuffer, readZipBuffer } = require('../lib/zip');
+
+const REGISTRY_TIMEOUT_MS = 60000;
 
 function showHelp() {
-  console.log('Usage: atris pack publish [--dir atris] [--slug <slug>] [--notes "..."] [--minor|--major] --out <file.zip>');
+  console.log('usage: atris pack publish [--dir atris] [--slug <slug>] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
+  console.log('       atris pack pull [<slug>] [--dir <path>]');
+  console.log('       atris pack status [--dir <path>]');
   console.log('       atris pack update [<dir>]');
   console.log('       atris pack list [--dir <path>]');
 }
@@ -68,6 +72,19 @@ function bumpVersion(current, bump) {
   if (bump === 'major') return `${major + 1}.0.0`;
   if (bump === 'minor') return `${major}.${minor + 1}.0`;
   return `${major}.${minor}.${patch + 1}`;
+}
+
+function comparePackVersions(left, right) {
+  const leftParsed = parseSemver(left);
+  const rightParsed = parseSemver(right);
+  if (!leftParsed || !rightParsed) {
+    return String(left || '') === String(right || '') ? 0 : null;
+  }
+  for (let i = 0; i < leftParsed.length; i += 1) {
+    if (leftParsed[i] > rightParsed[i]) return 1;
+    if (leftParsed[i] < rightParsed[i]) return -1;
+  }
+  return 0;
 }
 
 function readJson(filePath) {
@@ -154,7 +171,101 @@ function collectAtrisEntries(sourceDir, includeLogs) {
   return entries;
 }
 
-function publishPack(rawArgs, cwd = process.cwd()) {
+function parseJsonBody(buffer) {
+  const text = Buffer.isBuffer(buffer) ? buffer.toString('utf8') : String(buffer || '');
+  if (!text.trim()) return { data: null, text };
+  try {
+    return { data: JSON.parse(text), text };
+  } catch {
+    return { data: null, text };
+  }
+}
+
+function responseErrorText(response, fallback) {
+  const parsed = parseJsonBody(response.body);
+  const data = parsed.data;
+  if (data && typeof data === 'object') {
+    const message = data.error || data.message || data.detail;
+    if (message) return String(message);
+  }
+  if (parsed.text.trim()) return parsed.text.trim();
+  return fallback;
+}
+
+function registryUrl(pathname, deps = {}) {
+  const appBase = (deps.getAppBaseUrl || getAppBaseUrl)();
+  const cleanBase = String(appBase || '').replace(/\/+$/, '');
+  return `${cleanBase}${pathname}`;
+}
+
+function optionalAuthHeaders(deps = {}) {
+  const readCredentials = deps.loadCredentials || loadCredentials;
+  const credentials = readCredentials();
+  return credentials && credentials.token ? { Authorization: `Bearer ${credentials.token}` } : {};
+}
+
+function requiredAuthHeaders(deps = {}) {
+  const headers = optionalAuthHeaders(deps);
+  if (!headers.Authorization) {
+    throw new Error('not logged in. run atris login first to publish packs.');
+  }
+  return headers;
+}
+
+async function postPackToRegistry(manifest, zipBuffer, deps = {}) {
+  const request = deps.httpRequest || httpRequest;
+  const url = registryUrl('/api/pack/registry', deps);
+  const body = JSON.stringify({ manifest, zipBase64: zipBuffer.toString('base64') });
+  const authHeaders = requiredAuthHeaders(deps);
+  let response;
+  try {
+    response = await request(url, {
+      method: 'POST',
+      timeoutMs: REGISTRY_TIMEOUT_MS,
+      headers: {
+        ...authHeaders,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body,
+    });
+  } catch {
+    throw new Error('could not reach pack registry. check your connection and try again.');
+  }
+
+  const parsed = parseJsonBody(response.body);
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(responseErrorText(response, `registry publish failed with status ${response.status}`));
+  }
+  if (!parsed.data || typeof parsed.data !== 'object' || parsed.data.ok === false) {
+    throw new Error(responseErrorText(response, 'registry publish failed'));
+  }
+  return parsed.data;
+}
+
+async function fetchRegistryZip(slug, deps = {}) {
+  const request = deps.httpRequest || httpRequest;
+  const url = registryUrl(`/api/pack/registry/${encodeURIComponent(slug)}`, deps);
+  let response;
+  try {
+    response = await request(url, {
+      method: 'GET',
+      timeoutMs: REGISTRY_TIMEOUT_MS,
+      headers: optionalAuthHeaders(deps),
+    });
+  } catch {
+    throw new Error('could not reach pack registry. check your connection and try again.');
+  }
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(responseErrorText(response, `registry lookup failed for ${slug} with status ${response.status}`));
+  }
+  if (!response.body || response.body.length === 0) {
+    throw new Error(`registry returned an empty zip for ${slug}`);
+  }
+  return response.body;
+}
+
+async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   const args = [...rawArgs];
   const sourceDir = path.resolve(cwd, takeValue(args, '--dir') || 'atris');
   const slug = takeValue(args, '--slug');
@@ -163,12 +274,9 @@ function publishPack(rawArgs, cwd = process.cwd()) {
   const includeLogs = takeFlag(args, '--include-logs');
   const major = takeFlag(args, '--major');
   const minor = takeFlag(args, '--minor');
+  const push = takeFlag(args, '--push');
   if (major && minor) throw new Error('choose either --major or --minor, not both');
   if (args.length) throw new Error(`unknown pack publish argument: ${args.join(' ')}`);
-  if (!out) {
-    console.log('registry upload coming soon. for now, publish offline with --out <file.zip>.');
-    return 2;
-  }
   if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
     throw new Error(`pack source not found: ${path.relative(cwd, sourceDir) || sourceDir}`);
   }
@@ -187,9 +295,24 @@ function publishPack(rawArgs, cwd = process.cwd()) {
     { name: 'pack.json', data: Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8'), mtime: new Date() },
     ...collectAtrisEntries(sourceDir, includeLogs),
   ];
-  const outPath = path.resolve(cwd, out);
-  writeZipFile(outPath, entries);
-  console.log(`packed ${manifest.slug} ${manifest.version} -> ${path.relative(cwd, outPath) || outPath}`);
+  const zipBuffer = out || push ? createZipBuffer(entries) : null;
+  if (out) {
+    const outPath = path.resolve(cwd, out);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, zipBuffer);
+    console.log(`packed ${manifest.slug} ${manifest.version} -> ${path.relative(cwd, outPath) || outPath}`);
+  }
+  if (push) {
+    const result = await postPackToRegistry(manifest, zipBuffer, options.deps || {});
+    const publishedSlug = result.slug || manifest.slug;
+    const publishedVersion = result.version || manifest.version;
+    console.log(`published ${publishedSlug} ${publishedVersion}`);
+    console.log(`install with: atris pack install ${publishedSlug}`);
+  }
+  if (!out && !push) {
+    console.log(`wrote pack.json for ${manifest.slug} ${manifest.version}`);
+    console.log('share with: atris pack publish --out <file.zip> or atris pack publish --push');
+  }
   return 0;
 }
 
@@ -257,6 +380,89 @@ function manifestVersion(manifest) {
   return manifest.version
     || (Array.isArray(manifest.versions) && manifest.versions[0] && manifest.versions[0].version)
     || 'unknown';
+}
+
+function upstreamStatePath(packDir) {
+  return path.join(packDir, '.upstream', 'STATE.json');
+}
+
+function buildUpstreamState(slug, localVersion, remoteVersion) {
+  return {
+    slug,
+    localVersion,
+    remoteVersion,
+    pulledAt: new Date().toISOString(),
+  };
+}
+
+function writeUpstreamState(packDir, state) {
+  writeJson(upstreamStatePath(packDir), state);
+}
+
+function writeUpstreamZip(entries, packDir, state) {
+  const upstreamDir = path.join(packDir, '.upstream');
+  fs.rmSync(upstreamDir, { recursive: true, force: true });
+  fs.mkdirSync(upstreamDir, { recursive: true });
+  writeZipEntries(entries, upstreamDir);
+  writeUpstreamState(packDir, state);
+}
+
+async function pullPack(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  const packDir = path.resolve(cwd, takeValue(args, '--dir') || '.');
+  const slugArg = args.shift() || null;
+  if (args.length) throw new Error(`unknown pack pull argument: ${args.join(' ')}`);
+
+  const existing = readPackManifestFromDir(packDir);
+  const slug = slugify(slugArg || existing.slug);
+  const zipBuffer = await fetchRegistryZip(slug, options.deps || {});
+  const entries = readZipBuffer(zipBuffer);
+  const remoteManifest = parseManifest(entries, slug);
+  if (slugify(remoteManifest.slug || slug) !== slug) {
+    throw new Error(`registry returned different slug: ${remoteManifest.slug}`);
+  }
+
+  const localVersion = manifestVersion(existing);
+  const remoteVersion = manifestVersion(remoteManifest);
+  const comparison = comparePackVersions(remoteVersion, localVersion);
+  if (comparison === null) {
+    throw new Error(`could not compare pack versions: local ${localVersion}, remote ${remoteVersion}`);
+  }
+
+  const state = buildUpstreamState(slug, localVersion, remoteVersion);
+  if (comparison > 0) {
+    writeUpstreamZip(entries, packDir, state);
+    console.log(`pulled ${slug} local v${localVersion} -> remote v${remoteVersion}`);
+    console.log('upstream lives in .upstream/ for a deliberate merge.');
+    return { ok: true, upToDate: false, localVersion, remoteVersion, targetDir: packDir };
+  }
+
+  writeUpstreamState(packDir, state);
+  if (comparison === 0) {
+    console.log(`already up to date v${localVersion}`);
+  } else {
+    console.log(`local v${localVersion} is newer than remote v${remoteVersion}`);
+  }
+  return { ok: true, upToDate: true, localVersion, remoteVersion, targetDir: packDir };
+}
+
+function statusPack(rawArgs, cwd = process.cwd()) {
+  const args = [...rawArgs];
+  const packDir = path.resolve(cwd, takeValue(args, '--dir') || '.');
+  if (args.length) throw new Error(`unknown pack status argument: ${args.join(' ')}`);
+
+  const manifest = readPackManifestFromDir(packDir);
+  const localVersion = manifestVersion(manifest);
+  const state = readJson(upstreamStatePath(packDir));
+  if (!state) {
+    console.log(`${manifest.slug} local v${localVersion}, remote never pulled`);
+    return { ok: true, manifest, state: null };
+  }
+
+  const remoteVersion = state.remoteVersion || 'unknown';
+  console.log(`${state.slug || manifest.slug} local v${localVersion}, last pulled remote v${remoteVersion}`);
+  if (state.pulledAt) console.log(`pulled at ${state.pulledAt}`);
+  return { ok: true, manifest, state };
 }
 
 function originForPayload(payload) {
@@ -364,7 +570,7 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
   if (force && existing) {
     const oldVersion = manifestVersion(existing);
     const newVersion = manifestVersion(manifest);
-    console.log(`updated v${oldVersion} → v${newVersion}`);
+    console.log(`updated v${oldVersion} -> v${newVersion}`);
   }
 
   const displayTarget = path.relative(cwd, targetDir) || '.';
@@ -424,7 +630,7 @@ async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
   const installed = readPackManifestFromDir(resolved);
   const manifest = { ...installed, origin: existing.origin };
   writeInstalledPackJson(resolved, manifest);
-  console.log(`updated v${oldVersion} → v${newVersion}`);
+  console.log(`updated v${oldVersion} -> v${newVersion}`);
   return { ok: true, upToDate: false, manifest, targetDir: resolved };
 }
 
@@ -506,9 +712,11 @@ async function run(argv = []) {
       showHelp();
       return subcommand ? 0 : 2;
     }
-    if (subcommand === 'publish') return publishPack(args);
-    if (subcommand === 'install') return installPack(args);
-    if (subcommand === 'update') return updatePack(args);
+    if (subcommand === 'publish') return await publishPack(args);
+    if (subcommand === 'install') return await installPack(args);
+    if (subcommand === 'pull') return await pullPack(args);
+    if (subcommand === 'status') return statusPack(args);
+    if (subcommand === 'update') return await updatePack(args);
     if (subcommand === 'list') return listPackCommand(args);
     console.error(`unknown pack command: ${subcommand}`);
     showHelp();
@@ -523,10 +731,13 @@ module.exports = {
   run,
   publishPack,
   installPack,
+  pullPack,
+  statusPack,
   updatePack,
   listInstalledPacks,
   loadZipPayload,
   buildManifest,
+  comparePackVersions,
   readPackManifestFromDir,
   shouldSkipRelative,
   resolveEntryTarget,
