@@ -15,6 +15,7 @@
  *   node scripts/wish-bench.mjs --cases held-out.json
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -103,6 +104,31 @@ function loadCases(casesPath) {
   return parsed;
 }
 
+function createHermeticScoringRoot() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-wish-bench-'));
+  const binDir = path.join(root, 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  for (const name of ['codex', 'claude']) {
+    const file = path.join(binDir, name);
+    fs.writeFileSync(file, '#!/bin/sh\nexit 0\n', 'utf8');
+    fs.chmodSync(file, 0o755);
+  }
+  return { root, binDir };
+}
+
+function withHermeticScoringRoot(fn) {
+  const { root, binDir } = createHermeticScoringRoot();
+  const previousPath = process.env.PATH;
+  process.env.PATH = [binDir, previousPath || ''].filter(Boolean).join(path.delimiter);
+  try {
+    return fn(root);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function run() {
   const args = process.argv.slice(2);
   const asJson = args.includes('--json');
@@ -114,13 +140,15 @@ function run() {
   const rows = [];
   let pass = 0;
   let total = 0;
-  for (const entry of cases) {
-    const checks = scoreCase(entry, ROOT);
-    const ok = checks.every((c) => c.pass);
-    total += 1;
-    if (ok) pass += 1;
-    rows.push({ id: entry.id, wish: entry.wish, pass: ok, checks });
-  }
+  withHermeticScoringRoot((scoringRoot) => {
+    for (const entry of cases) {
+      const checks = scoreCase(entry, scoringRoot);
+      const ok = checks.every((c) => c.pass);
+      total += 1;
+      if (ok) pass += 1;
+      rows.push({ id: entry.id, wish: entry.wish, pass: ok, checks });
+    }
+  });
   const pct = Math.round((pass / total) * 1000) / 10;
 
   if (asJson) {
