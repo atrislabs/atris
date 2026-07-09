@@ -9,6 +9,7 @@ const { readZipBuffer, writeZipFile } = require('../lib/zip');
 function showHelp() {
   console.log('Usage: atris pack publish [--dir atris] [--slug <slug>] [--notes "..."] [--minor|--major] --out <file.zip>');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
+  console.log('       atris pack update [<dir>]');
   console.log('       atris pack list [--dir <path>]');
 }
 
@@ -210,13 +211,22 @@ async function loadZipPayload(source, cwd, deps = {}) {
       throw new Error(`download failed with status ${response.status}`);
     }
     const urlPath = new URL(source).pathname;
-    return { buffer: response.body, fallbackSlug: fallbackSlugFromZipPath(urlPath || 'atris-pack.zip') };
+    return {
+      buffer: response.body,
+      fallbackSlug: fallbackSlugFromZipPath(urlPath || 'atris-pack.zip'),
+      sourceType: 'url',
+      sourceUrl: source,
+    };
   }
 
   const localPath = path.resolve(cwd, source);
   if (fs.existsSync(localPath) || source.toLowerCase().endsWith('.zip')) {
     if (!fs.existsSync(localPath)) throw new Error(`zip file not found: ${source}`);
-    return { buffer: fs.readFileSync(localPath), fallbackSlug: fallbackSlugFromZipPath(localPath) };
+    return {
+      buffer: fs.readFileSync(localPath),
+      fallbackSlug: fallbackSlugFromZipPath(localPath),
+      sourceType: 'file',
+    };
   }
 
   const slug = slugify(source);
@@ -229,7 +239,7 @@ async function loadZipPayload(source, cwd, deps = {}) {
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`registry lookup failed for ${slug} with status ${response.status}`);
   }
-  return { buffer: response.body, fallbackSlug: slug };
+  return { buffer: response.body, fallbackSlug: slug, sourceType: 'registry', sourceSlug: slug };
 }
 
 function parseManifest(entries, fallbackSlug) {
@@ -240,6 +250,73 @@ function parseManifest(entries, fallbackSlug) {
     return parsed && typeof parsed === 'object' ? parsed : { slug: fallbackSlug };
   } catch {
     return { slug: fallbackSlug };
+  }
+}
+
+function manifestVersion(manifest) {
+  return manifest.version
+    || (Array.isArray(manifest.versions) && manifest.versions[0] && manifest.versions[0].version)
+    || 'unknown';
+}
+
+function originForPayload(payload) {
+  if (payload.sourceType === 'registry') {
+    return { type: 'registry', slug: payload.sourceSlug };
+  }
+  if (payload.sourceType === 'url') {
+    return { type: 'url', url: payload.sourceUrl };
+  }
+  if (payload.sourceType === 'file') {
+    return { type: 'file' };
+  }
+  return null;
+}
+
+function stampOriginInManifest(manifest, origin) {
+  if (!origin || manifest.origin) return manifest;
+  return { ...manifest, origin };
+}
+
+function writeInstalledPackJson(targetDir, manifest) {
+  writeJson(path.join(targetDir, 'pack.json'), manifest);
+}
+
+function finalizeInstalledPack(targetDir, payload, preserveOrigin) {
+  const manifest = readPackManifestFromDir(targetDir);
+  let finalized;
+  if (preserveOrigin) {
+    finalized = { ...manifest, origin: preserveOrigin };
+  } else {
+    finalized = stampOriginInManifest(manifest, originForPayload(payload));
+  }
+  if (finalized !== manifest) {
+    writeInstalledPackJson(targetDir, finalized);
+  }
+  return finalized;
+}
+
+function assertForceInstallAllowed(targetDir, slug) {
+  if (!fs.existsSync(targetDir)) return null;
+  const manifestPath = path.join(targetDir, 'pack.json');
+  if (!fs.existsSync(manifestPath)) return null;
+  const existing = readPackManifestFromDir(targetDir);
+  if (slugify(existing.slug) !== slugify(slug)) {
+    throw new Error(
+      `refusing update: existing slug ${existing.slug} does not match ${slug}`,
+    );
+  }
+  return existing;
+}
+
+function writeZipEntries(entries, targetDir) {
+  const writes = [];
+  for (const entry of entries) {
+    if (!entry.name || entry.name.endsWith('/')) continue;
+    writes.push({ destination: resolveEntryTarget(targetDir, entry.name), data: entry.data });
+  }
+  for (const write of writes) {
+    fs.mkdirSync(path.dirname(write.destination), { recursive: true });
+    fs.writeFileSync(write.destination, write.data);
   }
 }
 
@@ -271,28 +348,84 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
 
   const payload = await loadZipPayload(source, cwd, options.deps || {});
   const entries = readZipBuffer(payload.buffer);
-  const manifest = parseManifest(entries, payload.fallbackSlug);
-  const slug = slugify(manifest.slug || payload.fallbackSlug);
+  const zipManifest = parseManifest(entries, payload.fallbackSlug);
+  const slug = slugify(zipManifest.slug || payload.fallbackSlug);
   const targetDir = path.resolve(cwd, targetArg || slug);
   if (fs.existsSync(path.join(targetDir, 'atris')) && !force) {
     throw new Error(`target already contains atris/: ${path.relative(cwd, targetDir) || targetDir}. rerun with --force to overwrite.`);
   }
 
-  const writes = [];
-  for (const entry of entries) {
-    if (!entry.name || entry.name.endsWith('/')) continue;
-    writes.push({ destination: resolveEntryTarget(targetDir, entry.name), data: entry.data });
-  }
+  const existing = force ? assertForceInstallAllowed(targetDir, slug) : null;
+  const preserveOrigin = existing && existing.origin ? existing.origin : null;
 
-  for (const write of writes) {
-    fs.mkdirSync(path.dirname(write.destination), { recursive: true });
-    fs.writeFileSync(write.destination, write.data);
+  writeZipEntries(entries, targetDir);
+  const manifest = finalizeInstalledPack(targetDir, payload, preserveOrigin);
+
+  if (force && existing) {
+    const oldVersion = manifestVersion(existing);
+    const newVersion = manifestVersion(manifest);
+    console.log(`updated v${oldVersion} → v${newVersion}`);
   }
 
   const displayTarget = path.relative(cwd, targetDir) || '.';
   console.log(`installed ${slug} -> ${displayTarget}`);
   console.log(`cd ${shellQuote(displayTarget)} && claude`);
   return 0;
+}
+
+async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  const packDir = args.shift() || '.';
+  if (args.length) throw new Error(`unknown pack update argument: ${args.join(' ')}`);
+
+  const resolved = path.resolve(cwd, packDir);
+  const existing = readPackManifestFromDir(resolved);
+  const origin = existing.origin;
+
+  if (!origin || typeof origin !== 'object' || !origin.type) {
+    throw new Error('pack.json is missing origin; reinstall or use pack install --force');
+  }
+  if (origin.type === 'file') {
+    throw new Error(
+      'this pack was installed from a local zip; update it with: atris pack install <zip> --dir <path> --force',
+    );
+  }
+  if (origin.type !== 'registry' && origin.type !== 'url') {
+    throw new Error(`unsupported origin type: ${origin.type}`);
+  }
+
+  const deps = options.deps || {};
+  const request = deps.httpRequest || httpRequest;
+  const url = origin.type === 'registry'
+    ? `${(deps.getApiBaseUrl || getApiBaseUrl)()}/pack/registry/${encodeURIComponent(origin.slug)}`
+    : origin.url;
+  const readCredentials = deps.loadCredentials || loadCredentials;
+  const credentials = readCredentials();
+  const headers = credentials && credentials.token ? { Authorization: `Bearer ${credentials.token}` } : {};
+  const response = await request(url, { method: 'GET', headers });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`download failed with status ${response.status}`);
+  }
+
+  const entries = readZipBuffer(response.body);
+  const zipManifest = parseManifest(entries, existing.slug);
+  if (slugify(zipManifest.slug) !== slugify(existing.slug)) {
+    throw new Error(`download returned different slug: ${zipManifest.slug}`);
+  }
+
+  const oldVersion = manifestVersion(existing);
+  const newVersion = manifestVersion(zipManifest);
+  if (oldVersion === newVersion) {
+    console.log(`already up to date v${oldVersion}`);
+    return { ok: true, upToDate: true, manifest: existing, targetDir: resolved };
+  }
+
+  writeZipEntries(entries, resolved);
+  const installed = readPackManifestFromDir(resolved);
+  const manifest = { ...installed, origin: existing.origin };
+  writeInstalledPackJson(resolved, manifest);
+  console.log(`updated v${oldVersion} → v${newVersion}`);
+  return { ok: true, upToDate: false, manifest, targetDir: resolved };
 }
 
 function readPackManifestFromDir(packDir) {
@@ -375,6 +508,7 @@ async function run(argv = []) {
     }
     if (subcommand === 'publish') return publishPack(args);
     if (subcommand === 'install') return installPack(args);
+    if (subcommand === 'update') return updatePack(args);
     if (subcommand === 'list') return listPackCommand(args);
     console.error(`unknown pack command: ${subcommand}`);
     showHelp();
@@ -389,10 +523,16 @@ module.exports = {
   run,
   publishPack,
   installPack,
+  updatePack,
   listInstalledPacks,
   loadZipPayload,
   buildManifest,
   readPackManifestFromDir,
   shouldSkipRelative,
   resolveEntryTarget,
+  manifestVersion,
+  originForPayload,
+  stampOriginInManifest,
+  assertForceInstallAllowed,
+  writeZipEntries,
 };

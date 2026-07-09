@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { readZipFile, writeZipFile } = require('../lib/zip');
-const { installPack, listInstalledPacks } = require('../commands/pack');
+const { installPack, listInstalledPacks, updatePack } = require('../commands/pack');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -215,6 +215,166 @@ test('pack install accepts registry slugs and https zip urls', async () => {
     assert.equal(calls[1].url, 'https://packs.test/g-brain.zip');
     assert.ok(fs.existsSync(path.join(slugTarget, 'pack.json')));
     assert.ok(fs.existsSync(path.join(urlTarget, 'pack.json')));
+    const slugInstalled = JSON.parse(fs.readFileSync(path.join(slugTarget, 'pack.json'), 'utf8'));
+    assert.deepEqual(slugInstalled.origin, { type: 'registry', slug: 'g-brain' });
+    const urlInstalled = JSON.parse(fs.readFileSync(path.join(urlTarget, 'pack.json'), 'utf8'));
+    assert.deepEqual(urlInstalled.origin, { type: 'url', url: 'https://packs.test/g-brain.zip' });
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install stamps file origin for local zip installs', async () => {
+  const dir = makeTempDir();
+  try {
+    const manifest = sampleManifest({ slug: 'local-pack' });
+    const zipPath = path.join(dir, 'local.zip');
+    writeZipFile(zipPath, [
+      { name: 'pack.json', data: Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`) },
+      { name: 'README.md', data: Buffer.from('# local\n') },
+    ]);
+    const installDir = path.join(dir, 'installed');
+    fs.mkdirSync(installDir, { recursive: true });
+
+    assert.equal(await installPack([zipPath, '--dir', installDir], dir), 0);
+    const installed = JSON.parse(fs.readFileSync(path.join(installDir, 'pack.json'), 'utf8'));
+    assert.deepEqual(installed.origin, { type: 'file' });
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install preserves origin already present in zip pack.json', async () => {
+  const dir = makeTempDir();
+  try {
+    const existingOrigin = { type: 'registry', slug: 'custom-origin' };
+    const zipBuffer = packZipBuffer(dir, sampleManifest({
+      slug: 'custom-origin',
+      origin: existingOrigin,
+    }));
+    const calls = [];
+    const deps = {
+      getApiBaseUrl: () => 'https://api.test/api',
+      loadCredentials: () => ({ token: 'test-token' }),
+      httpRequest: async (url) => {
+        calls.push(url);
+        return { status: 200, body: zipBuffer };
+      },
+    };
+
+    assert.equal(await installPack(['custom-origin', '--dir', path.join(dir, 'target')], dir, { deps }), 0);
+    const installed = JSON.parse(fs.readFileSync(path.join(dir, 'target', 'pack.json'), 'utf8'));
+    assert.deepEqual(installed.origin, existingOrigin);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install --force refuses mismatched slug', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-pack');
+    writePackDir(target, { slug: 'demo-pack', version: '0.1.0' });
+    const zipPath = path.join(dir, 'other.zip');
+    writeZipFile(zipPath, [
+      { name: 'pack.json', data: Buffer.from(`${JSON.stringify(sampleManifest({ slug: 'other-pack', version: '0.2.0' }), null, 2)}\n`) },
+      { name: 'README.md', data: Buffer.from('# other\n') },
+    ]);
+
+    await assert.rejects(
+      () => installPack([zipPath, '--dir', target, '--force'], dir),
+      /refusing update: existing slug demo-pack does not match other-pack/,
+    );
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install --force overwrites zip files and preserves user notes', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-pack');
+    writePackDir(target, { slug: 'demo-pack', version: '0.1.0', origin: { type: 'file' } });
+    fs.writeFileSync(path.join(target, 'notes.txt'), 'my notes stay', 'utf8');
+
+    const zipPath = path.join(dir, 'update.zip');
+    writeZipFile(zipPath, [
+      { name: 'pack.json', data: Buffer.from(`${JSON.stringify(sampleManifest({ slug: 'demo-pack', version: '0.2.0' }), null, 2)}\n`) },
+      { name: 'README.md', data: Buffer.from('# updated readme\n') },
+    ]);
+
+    assert.equal(await installPack([zipPath, '--dir', target, '--force'], dir), 0);
+    assert.ok(fs.existsSync(path.join(target, 'notes.txt')));
+    assert.equal(fs.readFileSync(path.join(target, 'notes.txt'), 'utf8'), 'my notes stay');
+    const installed = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'));
+    assert.equal(installed.version, '0.2.0');
+    assert.deepEqual(installed.origin, { type: 'file' });
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack update is a no-op when version is unchanged', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-pack');
+    writePackDir(target, {
+      slug: 'demo-pack',
+      version: '0.1.0',
+      origin: { type: 'registry', slug: 'demo-pack' },
+    });
+    fs.writeFileSync(path.join(target, 'notes.txt'), 'keep me', 'utf8');
+
+    const zipBuffer = packZipBuffer(dir, sampleManifest({ slug: 'demo-pack', version: '0.1.0' }));
+    const calls = [];
+    const result = await updatePack([target], dir, {
+      deps: {
+        getApiBaseUrl: () => 'https://api.test/api',
+        loadCredentials: () => ({ token: 'test-token' }),
+        httpRequest: async (url) => {
+          calls.push(url);
+          return { status: 200, body: zipBuffer };
+        },
+      },
+    });
+
+    assert.equal(result.upToDate, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0], 'https://api.test/api/pack/registry/demo-pack');
+    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# pack\n');
+    assert.equal(fs.readFileSync(path.join(target, 'notes.txt'), 'utf8'), 'keep me');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack update upgrades registry packs and preserves user files', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-pack');
+    writePackDir(target, {
+      slug: 'demo-pack',
+      version: '0.1.0',
+      origin: { type: 'registry', slug: 'demo-pack' },
+    });
+    fs.writeFileSync(path.join(target, 'notes.txt'), 'user journal', 'utf8');
+
+    const zipBuffer = packZipBuffer(dir, sampleManifest({ slug: 'demo-pack', version: '0.2.0' }));
+    const result = await updatePack([target], dir, {
+      deps: {
+        getApiBaseUrl: () => 'https://api.test/api',
+        loadCredentials: () => ({ token: 'test-token' }),
+        httpRequest: async () => ({ status: 200, body: zipBuffer }),
+      },
+    });
+
+    assert.equal(result.upToDate, false);
+    assert.ok(fs.existsSync(path.join(target, 'notes.txt')));
+    assert.equal(fs.readFileSync(path.join(target, 'notes.txt'), 'utf8'), 'user journal');
+    const installed = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'));
+    assert.equal(installed.version, '0.2.0');
+    assert.deepEqual(installed.origin, { type: 'registry', slug: 'demo-pack' });
+    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# pack\n');
   } finally {
     cleanupTempDir(dir);
   }
