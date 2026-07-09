@@ -49,13 +49,17 @@ function withProcessEnv(overrides, fn) {
 }
 
 function auditQuestions(text) {
+  return auditQuestionsInRoot(text, repoRoot);
+}
+
+function auditQuestionsInRoot(text, root) {
   const dir = makeTempDir();
   try {
     const fakeBin = makeFakeEngines(dir);
     return withProcessEnv({
       PATH: `${fakeBin}:${systemPath}`,
       NODE_NO_WARNINGS: '1',
-    }, () => auditWish(text, repoRoot).questions);
+    }, () => auditWish(text, root).questions);
   } finally {
     cleanupTempDir(dir);
   }
@@ -83,12 +87,17 @@ function readJsonl(file) {
     .map((line) => JSON.parse(line));
 }
 
-test('vague superlative wish gets named interpretations and a recommendation', () => {
-  const questions = auditQuestions('best todo list ever');
-  assert.equal(questions[0], 'Best todo list could mean fastest capture, smartest resurfacing, or most closure. I would bet on resurfacing, so which should I optimize for?');
-  assert.match(questions[1], /^Todo list audience could mean todo list owner, team member, or end user\. I would bet on todo list owner, so who is this for\?$/);
-  assert.match(questions[2], /^Todo list first slice could mean todo list capture path, resurfacing rule, or closure loop\. I would bet on resurfacing rule, so what should I change first\?$/);
-  assert.ok(questions.every((question) => question.endsWith('?')));
+test('subject-bearing vague superlative wish gets one named interpretation question', () => {
+  const root = makeTempDir();
+  try {
+    const questions = auditQuestionsInRoot('make me the best todo list ever', root);
+    assert.equal(questions.length, 1);
+    assert.match(questions[0], /todo list/);
+    assert.match(questions[0], /I would bet/);
+    assert.match(questions[0], /\?$/);
+  } finally {
+    cleanupTempDir(root);
+  }
 });
 
 test('wish label preserves the noun phrase after a vague superlative', () => {
@@ -98,9 +107,12 @@ test('wish label preserves the noun phrase after a vague superlative', () => {
     const fakeBin = makeFakeEngines(dir);
     const env = { PATH: `${fakeBin}:${systemPath}` };
     const created = runCli(['wish', 'make me the best todo list ever', '--no-mission'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr || created.stdout);
+    assert.equal(created.status, 1, created.stderr || created.stdout);
     assert.match(created.stdout, /^Got it, wish #1: make best todo list\./);
     assert.doesNotMatch(created.stdout, /make me best/);
+
+    const answered = runCli(['wish', 'answer', 'smartest resurfacing', '--no-mission'], { cwd: dir, env });
+    assert.equal(answered.status, 0, answered.stderr || answered.stdout);
 
     const listed = runCli(['wish', 'list', '--all'], { cwd: dir, env });
     assert.equal(listed.status, 0, listed.stderr || listed.stdout);
@@ -114,10 +126,11 @@ test('wish label preserves the noun phrase after a vague superlative', () => {
 });
 
 test('vague interview candidates follow the subject kind with a generic fallback', () => {
-  assert.equal(
-    auditQuestions('sweep')[0],
+  assert.deepEqual(auditQuestions('sweep'), [
     'This could mean faster to use, smarter by default, or more complete. I would bet on smarter by default, so which should I optimize for?',
-  );
+    'Audience could mean solo operator, team member, or end user. I would bet on solo operator, so who is this for?',
+    'First slice could mean first step, default behavior, or completion path. I would bet on default behavior, so what should I change first?',
+  ]);
   assert.equal(
     auditQuestions('best landing page ever')[0],
     'Best landing page could mean clearer layout, faster scanning, or stronger action. I would bet on clearer layout, so which should I optimize for?',
@@ -134,7 +147,7 @@ test('wish answer fills a named interpretation question without repeating it', (
     prepareWorkspace(dir);
     const fakeBin = makeFakeEngines(dir);
     const env = { PATH: `${fakeBin}:${systemPath}` };
-    const created = runCli(['wish', 'best todo list ever', '--no-mission'], { cwd: dir, env });
+    const created = runCli(['wish', 'make me the best todo list ever', '--no-mission'], { cwd: dir, env });
     assert.equal(created.status, 1, created.stderr || created.stdout);
     assert.match(created.stdout, /Best todo list could mean fastest capture, smartest resurfacing, or most closure\./);
 
@@ -159,5 +172,11 @@ test('wish answer fills a named interpretation question without repeating it', (
 });
 
 test('clear wish gets no clarity questions', () => {
+  const root = makeTempDir();
+  try {
+    assert.deepEqual(auditQuestionsInRoot('add a csv export to the task list', root), []);
+  } finally {
+    cleanupTempDir(root);
+  }
   assert.deepEqual(auditQuestions('make the README clearer'), []);
 });
