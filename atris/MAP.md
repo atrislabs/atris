@@ -97,6 +97,7 @@ rg "stripeCommand|stripe cli wrapper|stripe help is workspace-free" bin/atris.js
 rg "memberCommand|memberGoal|memberTick|collectWakeEvidence|collectProblemDiscoveryEvidence|configuredProblemSignalSources|seedAutonomousProblemGoal|scoredWakeCandidates|proposalForGoal|memberStatus|memberBlock|memberReview|memberPush|memberPull" commands/member.js  # Team member identity, autonomous problem discovery, configurable external signal roots/files, adaptive wake evidence/scoring, optional Atris2 proposal generation, status/block/review, and cloud sync
 rg "pullAtris|pullBusiness" commands/pull.js  # Cloud pull (journals + businesses)
 rg "pushAtris|buildPushChangePlan|buildPushUploadBatches|sync?timeout" commands/push.js test/watch-alias.test.js  # Cloud push: manifest-hash skip, small upload batching through /sync, delete guard, and S5 regression
+rg "cloudAtris|cloudClean|collectCloudOrphans|parseCloudCleanArgs|showOrphans" commands/cloud.js commands/business-sync.js bin/atris.js lib/known-commands.js test/cloud-clean.test.js  # Cloud clean: list/delete cloud files not present locally, and sync --status --show-orphans
 rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|claimed_task|canonical_mirror_hash" scripts/atris-labs-cloud-next-sync.js test/cloud-next-sync.test.js  # Atris Labs cloud next-work mirror sync: local task state -> /workspace/work/next -> cloud self-improve receipt; claimed codex work beats human-accept waits; stable digest sidecar detects unchanged mirror state
 rg "businessSync|parseBusinessSyncArgs|--watch|command === 'watch'|knownCommands" commands/business-sync.js bin/atris.js lib/known-commands.js test/watch-alias.test.js  # Business sync/watch surface, including top-level `atris watch` alias for `sync --watch`
 rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep business brain fresh by doctor/pull/watch/push
@@ -420,6 +421,20 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Value:** Operators can live inside the workspace without remembering pull/push hygiene.
 
 **Search:** `rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js`
+
+### Feature: Cloud Clean (`atris cloud clean`)
+
+**Purpose:** List and delete cloud files that are not present locally, and surface them in `atris sync --status`.
+
+- **Entry point:** `bin/atris.js` dispatch for `cloud` (`command === 'cloud'`) routes to `commands/cloud.js`
+- **Handler:** `commands/cloud.js` (`cloudAtris`, `cloudClean`, `collectCloudOrphans`, `parseCloudCleanArgs`, `renderCloudCleanSummary`)
+- **Args:** `atris cloud clean [business] [--dry-run] [--yes] [--delete-all]`
+- **Status integration:** `commands/business-sync.js` (`businessSync`) supports `--status --show-orphans` and uses `collectCloudOrphans` from `commands/cloud.js`
+- **Safety:** mass delete guard from `commands/push.js` (`isMassDeletePlan`) blocks `--yes` unless `--delete-all` is also passed
+- **Known commands:** `lib/known-commands.js` includes `cloud`
+- **Regression:** `test/cloud-clean.test.js`
+
+**Search:** `rg "cloudAtris|cloudClean|collectCloudOrphans|parseCloudCleanArgs|showOrphans" commands/cloud.js commands/business-sync.js bin/atris.js lib/known-commands.js test/cloud-clean.test.js`
 
 ### Feature: Business Owners + Computers (`atris business`)
 
