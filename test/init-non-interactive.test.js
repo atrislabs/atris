@@ -10,7 +10,7 @@ const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const INIT_TIMEOUT_MS = 15000;
 const SKIP_HINT = 'context gatherer skipped (non-interactive).';
 const FIRST_USE_NEXT = 'Next: atris "help me choose the first useful step for this project"';
-const FIRST_MISSION_RE = /Next: atris mission start "Create FIRST_PROOF\.md in this project" --owner \S+ --runner manual --lane code --verify "test -f FIRST_PROOF\.md" --stop "FIRST_PROOF\.md exists"/;
+const FIRST_MISSION = 'atris mission start "Verify this Atris workspace is ready" --owner validator --runner manual --lane workspace --verify "node -e \\"require(\'fs\').accessSync(\'atris/atris.md\')\\"" --stop "workspace readiness is verified"';
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-init-non-interactive-'));
@@ -54,7 +54,7 @@ test('init --yes exits without hanging and skips context gatherer', () => {
     const res = runInit(['--yes'], { cwd: dir });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.ok(res.stdout.includes(SKIP_HINT));
-    assert.match(res.stdout, FIRST_MISSION_RE);
+    assert.ok(res.stdout.includes(`Next: ${FIRST_MISSION}`));
     assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
@@ -69,7 +69,7 @@ test('init -y exits without hanging and skips context gatherer', () => {
     const res = runInit(['-y'], { cwd: dir });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.ok(res.stdout.includes(SKIP_HINT));
-    assert.match(res.stdout, FIRST_MISSION_RE);
+    assert.ok(res.stdout.includes(`Next: ${FIRST_MISSION}`));
     assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
@@ -84,7 +84,7 @@ test('init with piped stdin exits without hanging', () => {
     const res = runInit([], { cwd: dir, input: '' });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.ok(res.stdout.includes(SKIP_HINT));
-    assert.match(res.stdout, FIRST_MISSION_RE);
+    assert.ok(res.stdout.includes(`Next: ${FIRST_MISSION}`));
     assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
@@ -99,7 +99,7 @@ test('init with ATRIS_NO_INTERACTIVE skips context gatherer', () => {
     const res = runInit([], { cwd: dir, env: { ATRIS_NO_INTERACTIVE: '1' } });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.ok(res.stdout.includes(SKIP_HINT));
-    assert.match(res.stdout, FIRST_MISSION_RE);
+    assert.ok(res.stdout.includes(`Next: ${FIRST_MISSION}`));
     assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
   } finally {
@@ -117,7 +117,8 @@ test('first-use command after init creates a starter task instead of MAP homewor
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.match(res.stdout, /First task: [A-Z]+-\d+/);
     assert.match(res.stdout, /Next: atris task claim [A-Z]+-\d+ --as /);
-    assert.match(res.stdout, /Mission: atris mission start "Create FIRST_PROOF\.md in this project" --owner \S+ --runner manual --lane code --verify "test -f FIRST_PROOF\.md" --stop "FIRST_PROOF\.md exists"/);
+    assert.match(res.stdout, /next setup: open atris\/MAP\.md, then claim the starter task\./);
+    assert.doesNotMatch(res.stdout, /^Mission: atris mission start/m);
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
   } finally {
     cleanupTempDir(dir);

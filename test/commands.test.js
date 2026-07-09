@@ -6997,6 +6997,7 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
     assert.equal(claim.status, 0, claim.stderr);
     assert.match(claim.stdout, new RegExp(`claimed ${ref} as codex`));
     assert.match(claim.stdout, new RegExp(`Next: make the change, then run: atris task ready ${ref} --verify "git diff --check"`));
+    assert.match(claim.stdout, /--landing "<what someone can do now>"/);
     assert.match(claim.stdout, /Use a different verifier only if autoland can rerun it/);
     assert.match(claim.stdout, /Then: atris autoland tick/);
 

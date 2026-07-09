@@ -6150,7 +6150,7 @@ function cmdClaim(args) {
     }
     const ref = taskRef(compactTaskFromProjection(projection, taskId));
     console.log(`claimed ${ref} as ${owner}`);
-    console.log(`Next: make the change, then run: atris task ready ${ref} --verify "git diff --check" --result "<who can do what now and why>"`);
+    console.log(`Next: make the change, then run: atris task ready ${ref} --verify "git diff --check" --result "<who can do what now and why>" --landing "<what someone can do now>"`);
     console.log('Use a different verifier only if autoland can rerun it, such as `node --test <file>`.');
     console.log('Then: atris autoland tick');
   } else {

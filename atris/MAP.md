@@ -33,6 +33,7 @@ rg "modelForMode|buildPayload|connectorTurnPolicy|formatApprovalReceipt|formatTa
 rg "atrisFastChat|atrisFastOnce|streamProChat|text_delta|Usage: atris fast" bin/atris.js utils/api.js test/commands.test.js test/api-stream.test.js  # Atris2 Fast one-shot chat CLI and SSE text_delta streaming
 rg "brainstormAtris|Usage: atris brainstorm|brainstorm help" commands/brainstorm.js test/commands.test.js  # Brainstorm command + workspace-free help
 rg "drillCommand|runDrill|drill runner|local mode" commands/drill.js commands/mission.js commands/worktree.js test/drill.test.js  # Drill command: no-LLM sandbox pipeline proof across wish, task, mission, local worktree ship, and ledger checks
+rg "firstMissionCommand|packed golden path|printedAtrisArgs|golden path e2e|what someone can do now" bin/atris.js commands/task.js test/init-non-interactive.test.js test/golden-path-e2e.test.js atris/GOLDEN_PATH_PAPERCUTS.md  # Packed-install zero-knowledge contract: ready-on-init mission, clean HOME, printed mission/task handoffs, autoland, and durable papercut status
 rg "function planAtris" commands/workflow.js   # Plan command (line 66)
 rg "function doAtris" commands/workflow.js     # Do command (line 394)
 rg "function reviewAtris" commands/workflow.js  # Review command: default certified queue, --verbose legacy validator prompt
