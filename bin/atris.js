@@ -513,8 +513,8 @@ function showHelp() {
   console.log('  browse [query]     - Discover workspace templates');
   console.log('  fork <template>    - Clone a template into a new workspace');
   console.log('  publish            - Share your workspace as a template');
-  console.log('  sleep [business]   - Pause workspace compute (context saved)');
-  console.log('  wake [business]    - Resume workspace (agents restart)');
+  console.log('  sleep [business|member] [--loop id] - Pause compute or flip a member switch');
+  console.log('  wake [business|member] [--loop id]  - Resume compute or flip a member switch');
   console.log('');
   console.log('Business:');
   console.log('  business init <name>   - Create shared owner + first/default computer');

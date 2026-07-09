@@ -648,6 +648,11 @@ async function gmCommand(...args) {
 
   const member = wakeableMember(args);
   if (member) {
+    const { isMemberAwake } = require('../lib/member-switches');
+    if (!isMemberAwake(member)) {
+      console.log(`${member} is asleep`);
+      return;
+    }
     const { memberCommand } = require('./member');
     const passthrough = args.filter(arg => arg !== member);
     return memberCommand('wake', member, ...passthrough);
