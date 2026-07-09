@@ -160,13 +160,16 @@ function defaultMainlineBase(root) {
 function defaultStartBase(root) {
   const upstream = currentUpstream(root);
   const mainline = defaultMainlineBase(root);
+  // Always refresh before cutting a worktree: a stale origin/master base sent
+  // an engine off to rebuild work that had already landed (2026-07-09, packs
+  // one-click flight rebuilt the stars backend from a base two PRs behind).
+  refreshRemoteRef(root, mainline);
   if (!upstream || !refExists(root, upstream)) return mainline;
   if (mainline === 'HEAD' || mainline === upstream) return upstream;
   // A launcher upstream that is behind the mainline is a stale cut point
   // (2026-07-05: a stale origin/task branch sent two flights into rebase
   // conflicts). Start from the mainline unless the upstream carries new work.
   refreshRemoteRef(root, upstream);
-  refreshRemoteRef(root, mainline);
   const behind = runGit(['merge-base', '--is-ancestor', upstream, mainline], { cwd: root, check: false });
   return behind.status === 0 ? mainline : upstream;
 }
