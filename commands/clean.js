@@ -465,15 +465,27 @@ function findSymbolLine(fileContent, symbol) {
  */
 function findStalePages(cwd, atrisDir) {
   const stalePages = [];
+  const skippedDirs = new Set(['archive', 'runs', 'qa', 'node_modules', '.git']);
+  const currentYear = new Date().getFullYear();
+
+  function shouldSkipDir(dir, name) {
+    if (skippedDirs.has(name)) return true;
+    if (/^\d{4}$/.test(name) && path.basename(path.dirname(dir)) === 'logs') {
+      return Number(name) < currentYear;
+    }
+    return false;
+  }
 
   function scanDir(dir) {
     if (!fs.existsSync(dir)) return;
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory() && entry.name !== 'archive' && entry.name !== 'node_modules') {
+      if (entry.isDirectory()) {
+        if (shouldSkipDir(fullPath, entry.name)) continue;
         scanDir(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      } else if (entry.isFile()) {
+        if (!entry.name.endsWith('.md')) continue;
         const result = checkPageStaleness(cwd, fullPath);
         if (result) stalePages.push(result);
       }

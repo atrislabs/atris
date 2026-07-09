@@ -1704,14 +1704,43 @@ function readRecentWakeReceiptEvidence(name) {
 }
 
 function readJsonlRowsIfExists(filePath, maxRows = 80) {
+  const tailBytes = 256 * 1024;
+  let fd;
   let text = '';
+  let truncated = false;
   try {
-    text = fs.readFileSync(filePath, 'utf8');
+    fd = fs.openSync(filePath, 'r');
+    const stat = fs.fstatSync(fd);
+    const bytesToRead = Math.min(stat.size, tailBytes);
+    const start = Math.max(0, stat.size - bytesToRead);
+    const buffer = Buffer.alloc(bytesToRead);
+    let bytesRead = 0;
+    while (bytesRead < bytesToRead) {
+      const count = fs.readSync(
+        fd,
+        buffer,
+        bytesRead,
+        bytesToRead - bytesRead,
+        start + bytesRead
+      );
+      if (count === 0) break;
+      bytesRead += count;
+    }
+    text = buffer.toString('utf8', 0, bytesRead);
+    truncated = start > 0;
   } catch {
     return [];
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch {}
+    }
   }
   const rows = [];
-  const lines = text.split(/\r?\n/).filter((line) => line.trim()).slice(-Math.max(1, maxRows));
+  const lines = text
+    .split(/\r?\n/)
+    .slice(truncated ? 1 : 0)
+    .filter((line) => line.trim())
+    .slice(-Math.max(1, maxRows));
   for (const line of lines) {
     try {
       rows.push(JSON.parse(line));
