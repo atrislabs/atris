@@ -154,7 +154,7 @@ test('vague wish asks one plain question at a time', () => {
     });
     assert.equal(res.status, 1, res.stderr || res.stdout);
     assert.match(res.stdout, /^Got it, wish #1: fix auth\./);
-    assert.match(res.stdout, /What should be different about auth when this wish comes true\?/);
+    assert.match(res.stdout, /Auth could mean fastest capture, smartest resurfacing, or most closure\. I would bet on resurfacing, so which should I optimize for\?/);
     assert.doesNotMatch(res.stdout, /Who is this for\?/);
     assert.doesNotMatch(res.stdout, /^\d+\./m);
     assert.match(res.stdout.trim(), /Answer with: atris wish answer "your words"$/);
@@ -176,8 +176,8 @@ test('vague wish question names the wish and asks the first gap only', () => {
     });
     assert.equal(res.status, 1, res.stderr || res.stdout);
     assert.match(res.stdout, /^Got it, wish #1: make onboarding better\./);
-    assert.match(res.stdout, /What should be different about onboarding when this wish comes true\?/);
-    assert.doesNotMatch(res.stdout, /What part of onboarding should I change first\?/);
+    assert.match(res.stdout, /Better could mean fastest capture, smartest resurfacing, or most closure\. I would bet on resurfacing, so which should I optimize for\?/);
+    assert.doesNotMatch(res.stdout, /Onboarding first slice could mean/);
     const questionLines = res.stdout.split(/\r?\n/).filter((line) => /\?$/.test(line));
     assert.equal(questionLines.length, 1);
     assert.match(res.stdout.trim(), /Answer with: atris wish answer "your words"$/);
@@ -496,7 +496,7 @@ test('multi-part wish asks one question about an unclear part', () => {
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Starting now: make wish list clearer\./);
-    assert.match(res.stdout, /One question about "fix auth": What should be different about auth when this wish comes true\?/);
+    assert.match(res.stdout, /One question about "fix auth": Auth could mean fastest capture, smartest resurfacing, or most closure\. I would bet on resurfacing, so which should I optimize for\?/);
     assert.doesNotMatch(res.stdout, /clearer answer before I start/);
   } finally {
     cleanupTempDir(dir);
@@ -560,7 +560,7 @@ test('vague wish questions do not splice raw fragments', () => {
     assert.equal(res.status, 1, res.stderr || res.stdout);
     const questions = res.stdout.split(/\r?\n/).filter((line) => /\?$/.test(line)).join('\n');
     assert.doesNotMatch(questions, /we can take this/);
-    assert.match(res.stdout, /What should be different when this wish comes true\?/);
+    assert.match(res.stdout, /This could mean fastest capture, smartest resurfacing, or most closure\. I would bet on closure, so which should I optimize for\?/);
   } finally {
     cleanupTempDir(dir);
   }
