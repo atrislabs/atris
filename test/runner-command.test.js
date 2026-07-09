@@ -200,6 +200,16 @@ test('compat runner profiles resolve to concrete runner configs', () => {
   }
 });
 
+test('grok runner profile uses grok --always-approve and pins grok-4.5', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'grok' }, () => {
+    assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.grok);
+    assert.equal(resolveClaudeRunnerBin(), 'grok');
+    assert.equal(resolveClaudeRunnerModel({}), 'grok-4.5');
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --always-approve -p {prompt}');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'grok --always-approve -p "$(cat /tmp/p.tmp)"');
+  });
+});
+
 test('generic runner env overrides the Atris Fast profile', () => {
   withRunnerEnv({
     ATRIS_RUNNER_PROFILE: 'atris-fast',

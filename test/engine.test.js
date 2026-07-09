@@ -26,7 +26,7 @@ test('engine roster lists every profile with detection state', () => {
     assert.equal(res.status, 0, res.stderr);
     const parsed = JSON.parse(res.stdout);
     const names = parsed.engines.map((e) => e.name);
-    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'hermes', 'droid']);
+    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'hermes', 'droid']);
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'engines.json')));
     const codex = parsed.engines.find((e) => e.id === 'codex');
     assert.equal(codex.tier, 'pro');
@@ -90,7 +90,7 @@ test('--engine flag rides a loop for one run and validates at the boundary', () 
     const bad = runCli(['run', '--legacy', '--dry-run', '--engine', 'gpt-11'], dir);
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /Unknown --engine "gpt-11"/);
-    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, fable, composer, haiku, devin, hermes, droid/);
+    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, hermes, droid/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -124,6 +124,7 @@ test('house default is atris-fast and profile templates stay engine-shaped', () 
   assert.match(RUNNER_PROFILES['atris-fast'].commandTemplate, /--fast/);
   assert.match(RUNNER_PROFILES.cursor.commandTemplate, /--trust -p/);
   assert.match(RUNNER_PROFILES.devin.commandTemplate, /-p --/);
+  assert.match(RUNNER_PROFILES.grok.commandTemplate, /--always-approve -p/);
   assert.match(RUNNER_PROFILES.hermes.commandTemplate, /-p --/);
   // claude rides the default claude-shaped spawn, no template needed
   assert.equal(RUNNER_PROFILES.claude.commandTemplate, '');
@@ -403,8 +404,9 @@ function fakeDeviceLoginDeps(pollResponses, settings = {}) {
 }
 
 test('engine login manifest is a hard whitelist', () => {
-  assert.deepEqual(Object.keys(engine.ENGINE_LOGIN_MANIFESTS).sort(), ['claude', 'codex', 'cursor', 'devin']);
+  assert.deepEqual(Object.keys(engine.ENGINE_LOGIN_MANIFESTS).sort(), ['claude', 'codex', 'cursor', 'devin', 'grok']);
   assert.equal(engine.normalizeLoginProvider('codex'), 'codex');
+  assert.equal(engine.normalizeLoginProvider('grok'), 'grok');
   assert.equal(engine.normalizeLoginProvider('composer'), '');
   assert.equal(engine.normalizeLoginProvider('hermes'), '');
 });
