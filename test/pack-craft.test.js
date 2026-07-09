@@ -52,7 +52,10 @@ test('pack craft creates research pack structure with valid manifest', () => {
     assert.equal(manifest.name, 'quantum-error-correction');
     assert.equal(manifest.title, 'Quantum Error Correction');
     assert.equal(manifest.description, `research pack on ${topic}, in progress`);
-    assert.equal(manifest.author, '');
+    assert.ok(
+      typeof manifest.author === 'string' && manifest.author.trim().length > 0,
+      `author must be non-empty for the registry, got: ${JSON.stringify(manifest.author)}`
+    );
     assert.deepEqual(manifest.tags, []);
     assert.equal(manifest.version, '0.0.1');
     assert.deepEqual(manifest.versions, []);
