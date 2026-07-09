@@ -48,7 +48,7 @@ test('watch is a known command with proactive agent help', () => {
     assert.match(res.stdout, /atris watch "<sentence>"/);
     assert.match(res.stdout, /atris watch list/);
     assert.match(res.stdout, /atris watch stop/);
-    assert.doesNotMatch(res.stdout, /atris sync --watch/);
+    assert.match(res.stdout, /looking for the old file-sync watcher\? use: atris sync --watch/);
   } finally {
     cleanupTempDir(dir);
   }

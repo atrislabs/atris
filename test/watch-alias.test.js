@@ -47,7 +47,7 @@ test('watch is a known top-level proactive watcher command', () => {
     assert.doesNotMatch(res.stdout, /Unknown command/);
     assert.match(res.stdout, /atris watch "<sentence>"/);
     assert.match(res.stdout, /atris watch list/);
-    assert.doesNotMatch(res.stdout, /atris sync --watch/);
+    assert.match(res.stdout, /looking for the old file-sync watcher\? use: atris sync --watch/);
   } finally {
     cleanupTempDir(dir);
   }

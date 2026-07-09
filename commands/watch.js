@@ -157,6 +157,8 @@ function showWatchHelp() {
   console.log('  --name slug       stable watch name (default derived from the sentence)');
   console.log('  --notify channel  journal (default) or imessage preference for the pulse');
   console.log('');
+  console.log('looking for the old file-sync watcher? use: atris sync --watch');
+  console.log('');
 }
 
 function createWatch(args, cwd = process.cwd()) {
