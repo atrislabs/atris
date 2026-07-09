@@ -48,6 +48,7 @@ function showHelp() {
   console.log('       atris wish answer "<your answer>" [--engine <id>] [--json] [--no-mission]');
   console.log('       atris wish grant <n> "<answer>" [--engine <id>] [--json] [--no-mission]');
   console.log('       atris wish say "<note>" [wish-id]');
+  console.log('       atris wish close <n|id> [<n|id> ...]');
   console.log('       atris wish again <id> "<tweak text>" [--engine <id>]');
   console.log('       atris wish review [<id>|latest] "<one sentence>" [--score <-1|0|1 or 1-5>]');
   console.log('       atris wish rewards');
@@ -118,6 +119,43 @@ function printWishShow(root, rawRef) {
     console.log(`  history: ${parts.slice(2).join(' | ') || 'none'}`);
   });
   return 0;
+}
+
+function closeWishes(root, refs) {
+  const cleaned = refs.map(cleanWishShowRef).filter(Boolean);
+  if (!cleaned.length) {
+    console.error('Usage: atris wish close <n|id> [<n|id> ...]');
+    return 2;
+  }
+  const wishes = readWishes(root);
+  const closedBy = process.env.ATRIS_AGENT_ID || process.env.USER || 'operator';
+  let missing = 0;
+  for (const ref of cleaned) {
+    const number = Number(ref);
+    const wish = Number.isInteger(number) && number > 0
+      ? wishes.find((row) => Number(row.n) === number)
+      : wishes.find((row) => String(row.id || '') === ref);
+    if (!wish) {
+      console.error(`No wish found for ${ref}. Try: atris wish list --all`);
+      missing += 1;
+      continue;
+    }
+    if (String(wish.status || '') === 'closed') {
+      console.log(`Wish #${wish.n || '?'} is already closed.`);
+      continue;
+    }
+    appendWishRecord(root, {
+      id: wish.id,
+      n: wish.n || undefined,
+      ts: stampIso(),
+      text: wish.text || undefined,
+      kind: 'close',
+      status: 'closed',
+      closed_by: closedBy,
+    });
+    console.log(`Closed wish #${wish.n || '?'}: ${String(wish.text || '').slice(0, 60)}`);
+  }
+  return missing ? 1 : 0;
 }
 
 function appendFilledAnswerSlot(root, context) {
@@ -244,6 +282,9 @@ function wishCommand(args = []) {
   }
   if (first === 'show') {
     return printWishShow(process.cwd(), args[1]);
+  }
+  if (first === 'close') {
+    return closeWishes(process.cwd(), args.slice(1));
   }
   if ((first === 'status' || first === 'get') && /^\#?\d+$/.test(String(args[1] || '').trim())) {
     console.error(wishShowHint(args[1]));

@@ -1801,3 +1801,55 @@ test('wish list shows only the five plain status words', () => {
     cleanupTempDir(dir);
   }
 });
+
+// atris wish close: hides a wish from the list and the board status by appending a closed event.
+test('wish close hides a wish from the list and errors on unknown refs', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    appendWishEvent(dir, {
+      id: 'wish-close-me',
+      n: 1,
+      ts: '2026-07-09T00:00:00.000Z',
+      text: 'make the best landing page ever',
+      status: 'delegated',
+    });
+    appendWishEvent(dir, {
+      id: 'wish-keep-me',
+      n: 2,
+      ts: '2026-07-09T00:00:01.000Z',
+      text: 'keep this wish open',
+      status: 'delegated',
+    });
+
+    const closed = runCli(['wish', 'close', '1'], { cwd: dir, env: { ATRIS_AGENT_ID: 'keshav' } });
+    assert.equal(closed.status, 0, closed.stderr || closed.stdout);
+    assert.match(closed.stdout, /Closed wish #1: make the best landing page ever/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.deepEqual(records.at(-1), {
+      id: 'wish-close-me',
+      n: 1,
+      ts: records.at(-1).ts,
+      text: 'make the best landing page ever',
+      kind: 'close',
+      status: 'closed',
+      closed_by: 'keshav',
+    });
+
+    const list = runCli(['wish', 'list', '--all'], { cwd: dir });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    assert.doesNotMatch(list.stdout, /landing page/);
+    assert.match(list.stdout, /keep wish open/);
+
+    const again = runCli(['wish', 'close', '1'], { cwd: dir });
+    assert.equal(again.status, 0, again.stderr || again.stdout);
+    assert.match(again.stdout, /already closed/);
+
+    const missing = runCli(['wish', 'close', '99'], { cwd: dir });
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /No wish found for 99/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
