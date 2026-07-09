@@ -1,7 +1,7 @@
 ---
 name: engines
 description: "Dispatch coding work to an installed terminal agent — Codex, Cursor, Devin, Grok, or Atris Fast — as an interchangeable worker engine. Claude orchestrates: writes the bounded prompt, the engine builds, Claude verifies and lands. Triggers on: use codex, use cursor, use devin, use grok, use atris, engine, dispatch to, worker agent, second opinion build."
-version: 1.1.0
+version: 1.2.0
 tags:
   - engines
   - codex
@@ -34,6 +34,20 @@ One contract, five engines. The orchestrator (you, Claude) writes a bounded task
 - **Grok** - fastest frontier lookups and quick second opinions (grok-4.5, ~10s; reads MAP first); use `--best-of-n` for tricky bounded builds. Uses grok.com login.
 - **Atris Fast** — cheap bounded lookups, single-file facts, small verified edits, high-volume fan-out (ten questions = ten `--print` calls at pennies). Not for multi-file features or long builds. Use it before burning a frontier engine on grunt work.
 - Parallel builds across repos: one engine job per repo, never two engines writing the same checkout.
+
+## Models worth pinning (verified live 2026-07-09)
+
+Each engine CLI can pin a specific model. Current best picks:
+
+| Engine | Flag | Best models today |
+|--------|------|-------------------|
+| Devin | `--model swe-1.7` | `swe-1.7` (free right now: use it as the volume executor for parallel bounded slices), `swe-1.7-lightning` for speed |
+| Cursor | `--model grok-4.5-xhigh` | `grok-4.5-xhigh` / `grok-4.5-fast-xhigh` for second-opinion builds, `composer-2.5` for fast edits; parameterized Claude via `'claude-opus-4-8[effort=high]'`; `--list-models` shows the full menu |
+| Grok | (default) | `grok-4.5` default, `grok-composer-2.5-fast` for speed |
+| Codex | (plugin default) | rides the codex plugin's pinned model |
+| Atris Fast | (fixed) | api.atris.ai fast lane |
+
+Re-verify this table when a lab ships a new model: run each CLI's model-list command, smoke one lookup, and update the row. Free-tier windows (like swe-1.7 now) are the moment to fan out volume work.
 
 ## Atris Fast runtime requirements (verified live 2026-07-03)
 
