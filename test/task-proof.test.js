@@ -73,7 +73,7 @@ test('task proof helper rejects generic or vague completion proof', () => {
 
 test('task proof helper accepts commands, verifier results, receipts, and human approval', () => {
   for (const proof of [
-    'npm run test passed',
+    'npm run test passed; run_id=123456789',
     'node --test test/commands.test.js passed',
     'node bin/atris.js clean --dry-run --json passed',
     'typecheck passed and git diff --check passed',
@@ -89,6 +89,22 @@ test('task proof helper accepts commands, verifier results, receipts, and human 
     assert.equal(taskProofLooksMeaningful(proof), true, `${JSON.stringify(proof)} should be accepted`);
   }
   assert.equal(taskProofLooksMeaningful('node bin/atris.js clean --json passed'), false);
+});
+
+test('task proof helper requires citations for suite-green claims', () => {
+  const missing = taskProofState('suite green');
+  assert.equal(missing.ok, false);
+  assert.equal(missing.code, 'suite_green_citation_required');
+  assert.match(missing.reason, /cite the CI run/i);
+
+  for (const proof of [
+    'suite passes; https://github.com/acme/repo/actions/runs/123456789',
+    'all green; run_id=123456789',
+    'npm test passed; run 123456789',
+    'commit abc1234; npm test passed (exit 0)',
+  ]) {
+    assert.equal(taskProofLooksMeaningful(proof), true, String(proof) + ' should cite the suite result');
+  }
 });
 
 test('non-strict auto-accept rejects free-text test-passed claims until proof was executed', () => {
@@ -125,8 +141,9 @@ test('buildVerifiedProof turns a passing command into executed proof', () => {
   assert.equal(result.exit, 0);
   assert.match(result.proof, /^\[verified\] `npm test` passed \(exit 0\)/);
   assert.match(result.proof, /fixed the parser/);
-  // The synthesized proof must itself satisfy the proof gate.
-  assert.equal(taskProofLooksMeaningful(result.proof), true);
+  // A locally verified full-suite command still needs an explicit citation.
+  assert.equal(taskProofLooksMeaningful(result.proof), false);
+  assert.equal(taskProofState(result.proof).code, 'suite_green_citation_required');
   // It actually ran the command via bash.
   assert.deepEqual(calls[0][0], 'bash');
   assert.deepEqual(calls[0][1], ['-lc', 'npm test']);

@@ -615,13 +615,18 @@ function runTickBody(root, { json, policy, receipt }) {
   const accept = runOwnCli(root, cliArgs);
   try {
     const parsed = JSON.parse(accept.stdout);
+    const results = Array.isArray(parsed.results) ? parsed.results : [];
     // A refused sweep (ok:false — a guard tripped, policy race) carries no
     // summary fields. Name the reason instead of leaving nulls that read as
     // "no work": a blind heartbeat must say WHY it is blind.
     if (parsed.ok === false) {
       receipt.accept_error = String(parsed.reason || 'auto-accept refused');
     }
-    receipt.landed = (parsed.results || []).filter((r) => r.action === 'accepted').map((r) => r.ref);
+    receipt.landed = results.filter((r) => r.action === 'accepted').map((r) => r.ref);
+    const citationBlocks = results
+      .filter((r) => r.action === 'skipped' && r.proof_state === 'suite_green_citation_required')
+      .map((r) => ({ ref: r.ref, reason: r.reason }));
+    if (citationBlocks.length) receipt.citation_blocks = citationBlocks;
     receipt.certified = parsed.certified ?? null;
     receipt.scanned = parsed.scanned ?? null;
     receipt.revised = parsed.revised ?? null;

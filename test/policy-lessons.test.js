@@ -244,7 +244,7 @@ test('task ready surfaces policy hints on evidence-less proof and stays quiet on
       schema: 'atris.mission_receipt.v1',
       result: { passed: true },
     }) + '\n', 'utf8');
-    const second = runCli(['task', 'ready', ref, '--proof', 'npm test 12/12 green; receipt atris/runs/probe.json', '--json'], { cwd: dir });
+    const second = runCli(['task', 'ready', ref, '--proof', 'npm test 12/12 green; run_id=123456789; receipt atris/runs/probe.json', '--json'], { cwd: dir });
     assert.equal(second.status, 0, second.stderr || second.stdout);
     const secondPayload = JSON.parse(second.stdout);
     assert.equal(secondPayload.handoff.policy_hints, undefined, 'evidence-backed proof must not be nagged');

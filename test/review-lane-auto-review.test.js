@@ -81,7 +81,7 @@ test('review lane drains a green-receipt task to certified with zero human turns
   const dir = makeTempDir();
   try {
     const receipt = writePassingReceipt(dir);
-    const ref = readyTaskWithProof(dir, `suite green; receipt ${receipt}`);
+    const ref = readyTaskWithProof(dir, 'suite green; run_id=123456789; receipt ' + receipt);
 
     // Cadence simulation: bounded agent-only runs, no human commands in between.
     const first = reviewLaneRun(dir);
@@ -123,7 +123,7 @@ test('evidence-less reviews do not head-block green tasks behind them', () => {
     // Task A: meaningful proof, no receipt. Task B behind it: green receipt.
     readyTaskWithProof(dir, 'ran node --test test/sample.test.js: 3/3 pass, no receipt file written');
     const receipt = writePassingReceipt(dir);
-    readyTaskWithProof(dir, `suite green; receipt ${receipt}`);
+    readyTaskWithProof(dir, 'suite green; run_id=123456789; receipt ' + receipt);
 
     reviewLaneRun(dir); // review chats for both
     const second = reviewLaneRun(dir); // auto review: skips A, certifies B

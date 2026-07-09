@@ -58,7 +58,7 @@ function seedReviewLane(dir) {
   assert.equal(created.status, 0, created.stderr || created.stdout);
   const ref = created.stdout.trim().split('\t')[0];
   runCli(['task', 'claim', ref, '--as', 'seed-agent'], { cwd: dir });
-  const ready = runCli(['task', 'ready', ref, '--proof', `suite green; receipt ${receiptRel}`], { cwd: dir });
+  const ready = runCli(['task', 'ready', ref, '--proof', 'suite green; run_id=123456789; receipt ' + receiptRel], { cwd: dir });
   assert.equal(ready.status, 0, ready.stderr || ready.stdout);
   return ref;
 }
