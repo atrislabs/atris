@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 function slugify(value, fallback = 'atris-pack') {
@@ -63,6 +64,20 @@ function isNonEmptyTarget(targetDir) {
   return fs.readdirSync(targetDir).length > 0;
 }
 
+// the registry requires a non-empty author, so fall back through the local
+// login and finally a placeholder the filler agent is told to replace
+function defaultAuthor() {
+  try {
+    const creds = JSON.parse(
+      fs.readFileSync(path.join(os.homedir(), '.atris', 'credentials.json'), 'utf8')
+    );
+    if (creds && typeof creds.email === 'string' && creds.email.trim()) return creds.email.trim();
+  } catch {
+    // not logged in; use the placeholder
+  }
+  return 'unknown author';
+}
+
 function buildCraftManifest(topic, slug) {
   const title = titleFromSlug(slug);
   return {
@@ -70,7 +85,7 @@ function buildCraftManifest(topic, slug) {
     slug,
     title,
     description: `research pack on ${topic}, in progress`,
-    author: '',
+    author: defaultAuthor(),
     tags: [],
     version: '0.0.1',
     versions: [],
