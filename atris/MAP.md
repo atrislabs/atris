@@ -324,10 +324,10 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 - **Entry point:** `commands/push.js` (`pushAtris`)
 - **Scoped push (S4):** `parsePushArgv` / `mergePushScopes` / `resolveChangedScopePaths` — `atris push <file...>` and `atris push --changed` (manifest hash diffs via `lib/manifest.js`) become `onlyPrefixes` for `buildPushChangePlan`
-- **Safety:** drift gate, mass-delete guard, `analyzePushSafety` / `renderPushSafetyBlock`
-- **Regression:** `test/push-scoped.test.js`, `test/push-delete-safety.test.js`
+- **Safety:** drift gate (S1 safe-path-first message with `atris sync --review` and `atris push --only` escape hatches via `renderDriftBlock`), mass-delete guard, `analyzePushSafety` / `renderPushSafetyBlock`, `--force --allow-broad-workspace` requires interactive y/N confirm (skippable with `--yes`) via `needsForceBroadWorkspaceConfirm` / `promptConfirm`
+- **Regression:** `test/push-scoped.test.js`, `test/push-delete-safety.test.js`, `test/push-safety-ux.test.js`
 
-**Search:** `rg "parsePushArgv|mergePushScopes|resolveChangedScopePaths|buildPushChangePlan" commands/push.js test/push-scoped.test.js`
+**Search:** `rg "parsePushArgv|mergePushScopes|resolveChangedScopePaths|buildPushChangePlan|renderDriftBlock|needsForceBroadWorkspaceConfirm|promptConfirm" commands/push.js test/push-scoped.test.js test/push-safety-ux.test.js`
 
 ### Feature: Missions (`atris mission`)
 

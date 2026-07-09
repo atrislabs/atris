@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const readline = require('readline');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses, businessMatchesSlug } = require('./business');
@@ -341,6 +342,36 @@ function renderPushSafetyBlock(report, slug) {
   return `${lines.join('\n')}\n`;
 }
 
+function renderDriftBlock(driftFiles) {
+  const lines = [];
+  const count = driftFiles.length;
+  lines.push('');
+  lines.push(`  ${count} file${count === 1 ? '' : 's'} conflict. run atris sync --review to pick local/cloud/merge, or atris push --only <path> to ship just what changed.`);
+  lines.push('');
+  lines.push('    Files that differ on cloud:');
+  driftFiles.slice(0, 8).forEach((p) => lines.push(`      ~ ${p.replace(/^\//, '')}`));
+  if (driftFiles.length > 8) lines.push(`      ... +${driftFiles.length - 8} more`);
+  lines.push('');
+  lines.push('    To override (force-push, may clobber cloud edits): atris push --force');
+  lines.push('');
+  return `${lines.join('\n')}\n`;
+}
+
+function needsForceBroadWorkspaceConfirm({ force = false, allowBroadWorkspace = false, yes = false, dryRun = false } = {}) {
+  return force && allowBroadWorkspace && !yes && !dryRun;
+}
+
+async function promptConfirm(message, { input = process.stdin, output = process.stdout } = {}) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input, output });
+    rl.question(message, (answer) => {
+      rl.close();
+      const normalized = String(answer).trim().toLowerCase();
+      resolve(normalized === 'y' || normalized === 'yes');
+    });
+  });
+}
+
 function parsePushTimeoutSec(argv = process.argv, defaultSec = 120) {
   let raw = null;
   const eqArg = argv.find(a => a.startsWith('--timeout='));
@@ -378,6 +409,7 @@ async function pushAtris() {
     console.log('  --allow-broad-workspace      Publish a large unscoped workspace plan after review');
     console.log('  --allow-nested-workspace     Explicitly allow nested <slug>/ paths');
     console.log('  --allow-sync-artifacts       Explicitly allow *.remote/*.local/*.base/*.cloud files');
+    console.log('  --yes                        Skip interactive confirmation (e.g. force broad workspace)');
     process.exit(0);
   }
 
@@ -410,11 +442,13 @@ async function pushAtris() {
     console.log('  --allow-broad-workspace      Publish a large unscoped workspace plan after review');
     console.log('  --allow-nested-workspace     Explicitly allow nested <slug>/ paths');
     console.log('  --allow-sync-artifacts       Explicitly allow *.remote/*.local/*.base/*.cloud files');
+    console.log('  --yes                        Skip interactive confirmation (e.g. force broad workspace)');
     process.exit(0);
   }
 
   const force = process.argv.includes('--force');
   const dryRun = process.argv.includes('--dry-run');
+  const yes = process.argv.includes('--yes');
   const allowDelete = process.argv.includes('--delete');
   const allowMassDelete = process.argv.includes('--delete-all');
   const allowBroadWorkspace = process.argv.includes('--allow-broad-workspace');
@@ -439,6 +473,20 @@ async function pushAtris() {
 
   // Refuse to walk/upload dangerous paths ($HOME, /, /Users, system dirs).
   assertSafeWorkspaceRoot(sourceDir, { slug, op: 'push from' });
+
+  // Force-pushing a broad workspace is the most destructive push combo.
+  // Require an interactive y/N confirm unless the caller passed --yes.
+  if (needsForceBroadWorkspaceConfirm({ force, allowBroadWorkspace, yes, dryRun })) {
+    if (!process.stdin.isTTY) {
+      console.log('  --force --allow-broad-workspace requires an interactive terminal or --yes');
+      process.exit(1);
+    }
+    const ok = await promptConfirm('This will force push a broad workspace. Continue? (y/N) ');
+    if (!ok) {
+      console.log('  aborted');
+      process.exit(1);
+    }
+  }
 
   // Push the whole business workspace by default. Brain-only sync must be
   // explicit with --only atris/ so root workspace files cannot be missed.
@@ -589,16 +637,7 @@ async function pushAtris() {
         }
       }
       if (driftFiles.length > 0) {
-        console.log(`drift detected (${driftFiles.length} file${driftFiles.length === 1 ? '' : 's'})`);
-        console.log('');
-        console.log(`  ✗ Cloud has changed since your last pull. Refusing to push stale state.`);
-        console.log('');
-        console.log('    Files that differ on cloud:');
-        driftFiles.slice(0, 8).forEach((p) => console.log(`      ~ ${p.replace(/^\//, '')}`));
-        if (driftFiles.length > 8) console.log(`      ... +${driftFiles.length - 8} more`);
-        console.log('');
-        console.log('    Run `atris pull` first, then push your changes.');
-        console.log('    To override (force-push, may clobber cloud edits): atris push --force');
+        process.stdout.write(renderDriftBlock(driftFiles));
         await emit('drift', { error_detail: `${driftFiles.length} file(s) drifted` });
         process.exit(1);
       }
@@ -1030,4 +1069,7 @@ module.exports = {
   isNestedWorkspacePollutionPath,
   isSyncReviewArtifactPath,
   renderPushSafetyBlock,
+  renderDriftBlock,
+  needsForceBroadWorkspaceConfirm,
+  promptConfirm,
 };
