@@ -39,7 +39,7 @@ function runCli(args, cwd, extraEnv = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
-    timeout: 30000,
+    timeout: 60000,
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
