@@ -84,6 +84,9 @@
     "lib": "lib",
     "test": "test"
   },
+  "dependencies": {
+    "fflate": "^0.8.3"
+  },
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/atrislabs/atris/issues"

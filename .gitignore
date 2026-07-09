@@ -74,6 +74,8 @@ atris/features/*
 !atris/features/spaceship/**
 !atris/features/cloud-sync-simplicity/
 !atris/features/cloud-sync-simplicity/**
+!atris/features/pack-cli/
+!atris/features/pack-cli/**
 # Legacy location (deprecated)
 docs/features/
 

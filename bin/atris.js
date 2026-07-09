@@ -2601,6 +2601,8 @@ if (command === 'init') {
   Promise.resolve(require('../commands/brief').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'pack') {
+  require('../commands/pack').packAtris();
 } else if (command === 'reel') {
   // Reel: one line of text into a short on-brand video (an animated card; frames via Chrome + ffmpeg).
   Promise.resolve(require('../commands/reel').run(process.argv.slice(3)))

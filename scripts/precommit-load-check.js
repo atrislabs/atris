@@ -66,6 +66,12 @@ function main() {
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-precommit-'));
   try {
     sh('git', ['checkout-index', '-a', `--prefix=${stage}${path.sep}`], { cwd: repoRoot });
+    // Staged modules may require real dependencies; resolve them against the
+    // repo's installed node_modules, not the empty temp tree.
+    const repoModules = path.join(repoRoot, 'node_modules');
+    if (fs.existsSync(repoModules) && !fs.existsSync(path.join(stage, 'node_modules'))) {
+      fs.symlinkSync(repoModules, path.join(stage, 'node_modules'), 'dir');
+    }
     const problems = [];
     for (const file of files) {
       const abs = path.join(stage, file);
