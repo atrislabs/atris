@@ -54,6 +54,102 @@ function pathInScope(filePath, onlyPrefixes) {
   return onlyPrefixes.some(prefix => filePath.startsWith(prefix));
 }
 
+const PUSH_VALUE_FLAGS = new Set(['--from', '--only', '--timeout']);
+
+function looksLikePushPath(token) {
+  const value = String(token || '');
+  if (!value || value.startsWith('-')) return false;
+  if (value.includes('/') || value.includes('\\')) return true;
+  return value.includes('.');
+}
+
+function normalizePushScopePath(raw) {
+  const wikiPrefix = normalizeWikiOnlyPrefix(raw);
+  if (wikiPrefix) return `/${wikiPrefix.replace(/^\//, '')}`;
+  let n = '/' + String(raw || '').replace(/^\//, '').replace(/\\/g, '/');
+  if (!n.endsWith('/') && !n.includes('.')) n += '/';
+  return n;
+}
+
+/**
+ * Parse push argv into optional business slug, positional file paths, and --changed.
+ * `atris push [business] [file...] [--changed] [--only <prefix>]`
+ */
+function parsePushArgv(argv = process.argv) {
+  const args = argv.slice(3);
+  const flags = new Set();
+  const values = {};
+  const positionals = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (!a.startsWith('-')) {
+      positionals.push(a);
+      continue;
+    }
+    const eq = a.indexOf('=');
+    if (eq !== -1) {
+      values[a.slice(0, eq)] = a.slice(eq + 1);
+      continue;
+    }
+    if (PUSH_VALUE_FLAGS.has(a) && args[i + 1] && !args[i + 1].startsWith('-')) {
+      values[a] = args[++i];
+      continue;
+    }
+    flags.add(a);
+  }
+
+  let slug = null;
+  const pathArgs = [];
+  for (const token of positionals) {
+    if (!slug && !looksLikePushPath(token)) slug = token;
+    else pathArgs.push(token);
+  }
+
+  return {
+    slug,
+    pathArgs,
+    changed: flags.has('--changed'),
+    onlyRaw: values['--only'] || null,
+  };
+}
+
+/** Local files whose hash differs from (or is absent in) the last-synced manifest. */
+function resolveChangedScopePaths(localFiles = {}, baseFiles = {}) {
+  const paths = [];
+  for (const [filePath, info] of Object.entries(localFiles || {})) {
+    const base = baseFiles[filePath];
+    if (!base || base.hash !== info.hash) paths.push(filePath.startsWith('/') ? filePath : `/${filePath}`);
+  }
+  return paths.sort();
+}
+
+/**
+ * Merge --only, positional paths, and --changed into onlyPrefixes for buildPushChangePlan.
+ * Returns null when nothing scopes the push (full workspace plan).
+ * `--changed` with no diffs returns [] so the plan stays empty instead of widening.
+ */
+function mergePushScopes({ onlyRaw = null, pathArgs = [], changed = false, localFiles = {}, baseFiles = {} } = {}) {
+  const scopes = [];
+  if (onlyRaw) {
+    for (const part of String(onlyRaw).split(',')) {
+      const trimmed = part.trim();
+      if (trimmed) scopes.push(normalizePushScopePath(trimmed));
+    }
+  }
+  for (const raw of pathArgs || []) {
+    const trimmed = String(raw || '').trim();
+    if (trimmed) scopes.push(normalizePushScopePath(trimmed));
+  }
+  if (changed) {
+    for (const filePath of resolveChangedScopePaths(localFiles, baseFiles)) {
+      scopes.push(filePath.startsWith('/') ? filePath : `/${filePath}`);
+    }
+  }
+  if (scopes.length === 0) return changed ? [] : null;
+  return [...new Set(scopes)];
+}
+
 function buildPushChangePlan({
   localFiles = {},
   baseFiles = {},
@@ -261,17 +357,20 @@ function parsePushTimeoutSec(argv = process.argv, defaultSec = 120) {
 
 async function pushAtris() {
   const elapsedMs = startTimer();
-  let slug = process.argv[3];
+  const parsed = parsePushArgv(process.argv);
+  let slug = parsed.slug;
   let _coldWake = false;
 
   if (process.argv.includes('--help') || process.argv.includes('-h') || slug === 'help') {
-    console.log('Usage: atris push [business] [--from <path>] [--only <prefix>] [--force] [--delete] [--delete-all]');
+    console.log('Usage: atris push [business] [file...] [--changed] [--from <path>] [--only <prefix>] [--force] [--delete] [--delete-all]');
     console.log('');
     console.log('  Push requires a fresh pull. If cloud has changed since your last pull,');
     console.log('  the push will be blocked until you run `atris pull`. Use --force to override.');
     console.log('');
     console.log('  atris push                   Push from current folder (auto-detect business)');
     console.log('  atris push example-co            Push example-co/ or atris/example-co/');
+    console.log('  atris push atris/now.md      Push only the named file(s)');
+    console.log('  atris push --changed         Push only files that differ from the last-synced manifest');
     console.log('  atris push example-co --only team/nate   Only push files in team/nate/');
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
     console.log('  atris push --delete          Allow small cloud deletes shown by --dry-run');
@@ -295,13 +394,15 @@ async function pushAtris() {
   }
 
   if (!slug || slug === '--help') {
-    console.log('Usage: atris push [business] [--from <path>] [--only <prefix>] [--force] [--delete] [--delete-all]');
+    console.log('Usage: atris push [business] [file...] [--changed] [--from <path>] [--only <prefix>] [--force] [--delete] [--delete-all]');
     console.log('');
     console.log('  Push requires a fresh pull. If cloud has changed since your last pull,');
     console.log('  the push will be blocked until you run `atris pull`. Use --force to override.');
     console.log('');
     console.log('  atris push                   Push from current folder (auto-detect business)');
     console.log('  atris push example-co            Push example-co/ or atris/example-co/');
+    console.log('  atris push atris/now.md      Push only the named file(s)');
+    console.log('  atris push --changed         Push only files that differ from the last-synced manifest');
     console.log('  atris push example-co --only team/nate   Only push files in team/nate/');
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
     console.log('  atris push --delete          Allow small cloud deletes shown by --dry-run');
@@ -321,24 +422,7 @@ async function pushAtris() {
   const allowSyncArtifacts = process.argv.includes('--allow-sync-artifacts');
   const allowCrossRootManifest = process.argv.includes('--allow-cross-root-manifest');
   const timeoutSec = parsePushTimeoutSec(process.argv);
-
-  // Parse --only
-  let onlyRaw = null;
-  const onlyEq = process.argv.find(a => a.startsWith('--only='));
-  if (onlyEq) onlyRaw = onlyEq.slice(7);
-  else {
-    const oi = process.argv.indexOf('--only');
-    if (oi !== -1 && process.argv[oi + 1] && !process.argv[oi + 1].startsWith('-')) onlyRaw = process.argv[oi + 1];
-  }
-  let onlyPrefixes = onlyRaw
-    ? onlyRaw.split(',').map(p => {
-        const wikiPrefix = normalizeWikiOnlyPrefix(p);
-        if (wikiPrefix) return `/${wikiPrefix.replace(/^\//, '')}`;
-        let n = '/' + p.replace(/^\//, '');
-        if (!n.endsWith('/') && !n.includes('.')) n += '/';
-        return n;
-      })
-    : null;
+  let onlyPrefixes = null;
 
   const creds = loadCredentials();
   if (!creds || !creds.token) { console.error('Not logged in. Run: atris login'); process.exit(1); }
@@ -440,6 +524,17 @@ async function pushAtris() {
     return;
   }
 
+  // Resolve scoped push filters before freshness so drift checks honor
+  // positional paths / --changed the same way --only already did.
+  const baseFiles = filterSyncFiles((manifest && manifest.files) ? manifest.files : {});
+  onlyPrefixes = mergePushScopes({
+    onlyRaw: parsed.onlyRaw,
+    pathArgs: parsed.pathArgs,
+    changed: parsed.changed,
+    localFiles,
+    baseFiles,
+  });
+
   console.log('');
   console.log(`Pushing to ${businessName}...`);
 
@@ -526,7 +621,11 @@ async function pushAtris() {
 
   // Compare local hashes to manifest — NO server call needed
   // Files where local hash differs from manifest = changed locally
-  const baseFiles = filterSyncFiles((manifest && manifest.files) ? manifest.files : {});
+  if (parsed.changed && Array.isArray(onlyPrefixes) && onlyPrefixes.length === 0 && (!parsed.pathArgs || parsed.pathArgs.length === 0) && !parsed.onlyRaw) {
+    console.log('\n  Already up to date.\n');
+    await emit('success', { files_unchanged: Object.keys(localFiles).length });
+    return;
+  }
   const { filesToPush, deletedPaths, unchangedCount } = buildPushChangePlan({
     localFiles,
     baseFiles,
@@ -923,6 +1022,10 @@ module.exports = {
   isBusinessWorkspaceRoot,
   isMassDeletePlan,
   parsePushTimeoutSec,
+  parsePushArgv,
+  normalizePushScopePath,
+  resolveChangedScopePaths,
+  mergePushScopes,
   analyzePushSafety,
   isNestedWorkspacePollutionPath,
   isSyncReviewArtifactPath,

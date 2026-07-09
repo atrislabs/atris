@@ -317,6 +317,17 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Search:** `rg "pullAtris" commands/pull.js`
 
+### Feature: Push (`atris push`)
+
+**Purpose:** Publish local workspace files to the business cloud workspace, with narrow defaults for safe scoped pushes
+
+- **Entry point:** `commands/push.js` (`pushAtris`)
+- **Scoped push (S4):** `parsePushArgv` / `mergePushScopes` / `resolveChangedScopePaths` — `atris push <file...>` and `atris push --changed` (manifest hash diffs via `lib/manifest.js`) become `onlyPrefixes` for `buildPushChangePlan`
+- **Safety:** drift gate, mass-delete guard, `analyzePushSafety` / `renderPushSafetyBlock`
+- **Regression:** `test/push-scoped.test.js`, `test/push-delete-safety.test.js`
+
+**Search:** `rg "parsePushArgv|mergePushScopes|resolveChangedScopePaths|buildPushChangePlan" commands/push.js test/push-scoped.test.js`
+
 ### Feature: Missions (`atris mission`)
 
 **Purpose:** Durable objective loop with owner, verifier command, receipt, member now file, and status surface.
