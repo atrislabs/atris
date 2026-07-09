@@ -31,6 +31,8 @@ function parseBusinessSyncArgs(args = []) {
   const resolveFlag = parseFlagValue(args, '--resolve', null);
   const resolve = resolveFlag || (resolveIdx !== -1 ? positional[resolveIdx + 1] : null);
   const resolvePath = parseFlagValue(args, '--path', parseFlagValue(args, '--file', null));
+  const takeRaw = parseFlagValue(args, '--take', null);
+  const take = takeRaw ? String(takeRaw).trim().toLowerCase() : null;
   const commandWords = new Set(['status', 'doctor', 'review', 'resolve', 'local', 'cloud', 'both', 'merge']);
   const slug = positional.find((arg) => !commandWords.has(arg)) || null;
   const dryRun = args.includes('--dry-run');
@@ -41,7 +43,7 @@ function parseBusinessSyncArgs(args = []) {
   const debounceSec = Number.parseInt(parseFlagValue(args, '--debounce', '5'), 10);
   const help = args.includes('--help') || args.includes('-h') || positional[0] === 'help';
 
-  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review, resolve, resolvePath, help };
+  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review, resolve, resolvePath, take, help };
 }
 
 function readBusinessSlug(cwd = process.cwd()) {
@@ -334,7 +336,7 @@ function renderLocalSyncStatus(status) {
 
 function renderBusinessSyncHelp() {
   return [
-    'Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--resolve local|cloud|both|merge] [--path <file>] [--timeout 120]',
+    'Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--take local|cloud] [--resolve local|cloud|both|merge] [--path <file>] [--timeout 120]',
     '',
     'Safe loop:',
     '  Pull -> Review -> Publish',
@@ -342,7 +344,9 @@ function renderBusinessSyncHelp() {
     'Commands:',
     '  atris sync --status       Show local sync health',
     '  atris sync --dry-run      Preview pull and publish plans without writing cloud',
-    '  atris sync --review       Read the latest conflict packet',
+    '  atris sync --review       List conflicts; pick local / cloud / merge per file',
+    '  atris sync --review --take local|cloud',
+    '                            Non-interactive: take local or cloud for every conflict',
     '  atris sync --resolve cloud|local|merge [--path <file>]',
     '  atris sync --watch        Keep the workspace live with the same safety gates',
     '',
@@ -351,6 +355,147 @@ function renderBusinessSyncHelp() {
     '  Use exact --only paths for repairs, or explicit push override flags after review.',
     '',
   ].join('\n');
+}
+
+function readTextIfExists(filePath) {
+  try {
+    return fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function buildConflictMarkers(localContent = '', remoteContent = '') {
+  const local = String(localContent);
+  const remote = String(remoteContent);
+  const localBody = local.endsWith('\n') || local === '' ? local : `${local}\n`;
+  const remoteBody = remote.endsWith('\n') || remote === '' ? remote : `${remote}\n`;
+  return `<<<<<<< local\n${localBody}=======\n${remoteBody}>>>>>>> cloud\n`;
+}
+
+function listConflictFiles(entries = []) {
+  const lines = [];
+  const count = entries.length;
+  if (count === 0) {
+    lines.push('no sync conflicts need review.');
+    return `${lines.join('\n')}\n`;
+  }
+  lines.push(`${count} file${count === 1 ? '' : 's'} conflict`);
+  entries.forEach((entry, index) => {
+    lines.push(`  ${index + 1}. ${entry.targetRel}`);
+  });
+  lines.push('');
+  lines.push('pick local / cloud / merge per file (interactive), or run:');
+  lines.push('  atris sync --review --take local');
+  lines.push('  atris sync --review --take cloud');
+  lines.push('merge writes standard conflict markers into the file (no .remote dump).');
+  return `${lines.join('\n')}\n`;
+}
+
+function applyReviewChoice(cwd, entry, choice) {
+  const strategy = String(choice || '').trim().toLowerCase();
+  if (!['local', 'cloud', 'merge'].includes(strategy)) {
+    throw new Error(`unknown choice "${choice}". use local, cloud, or merge.`);
+  }
+
+  const targetPath = assertWorkspaceTarget(cwd, entry.targetRel);
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+
+  if (strategy === 'merge') {
+    const localContent = readTextIfExists(entry.localPath);
+    const remoteContent = readTextIfExists(entry.remotePath);
+    fs.writeFileSync(targetPath, buildConflictMarkers(localContent, remoteContent), 'utf8');
+  } else {
+    const sourcePath = strategy === 'local' ? entry.localPath : entry.remotePath;
+    if (!fs.existsSync(sourcePath)) {
+      throw new Error(`missing ${strategy} artifact for ${entry.targetRel}`);
+    }
+    fs.copyFileSync(sourcePath, targetPath);
+  }
+
+  // Review path never leaves sibling .remote dumps next to workspace files.
+  cleanupResolvedConflictSidecars(cwd, entry.targetRel, { keepCloud: false });
+  cleanupConflictPacketArtifacts(entry);
+  return { path: entry.targetRel, choice: strategy };
+}
+
+async function promptReviewChoice(entry, ask) {
+  const answer = await ask(`${entry.targetRel}: local / cloud / merge? `);
+  const choice = String(answer || '').trim().toLowerCase();
+  if (!['local', 'cloud', 'merge'].includes(choice)) {
+    throw new Error(`invalid choice "${answer}". use local, cloud, or merge.`);
+  }
+  return choice;
+}
+
+/**
+ * S2 conflict handler for `atris sync --review`.
+ * Lists each conflicting file, then resolves via interactive prompt or `--take local|cloud`.
+ * Merge writes standard conflict markers into the target file (no workspace .remote dump).
+ */
+async function runSyncReview(cwd = process.cwd(), options = {}) {
+  const take = options.take ? String(options.take).trim().toLowerCase() : null;
+  if (take && !['local', 'cloud'].includes(take)) {
+    return {
+      resolved: [],
+      choices: [],
+      message: 'use --take local or --take cloud (merge is interactive only).\n',
+      exitCode: 1,
+    };
+  }
+
+  const wantedTarget = normalizeResolvePath(options.path || options.resolvePath || null);
+  const entries = collectConflictResolutionEntries(cwd)
+    .filter((entry) => !wantedTarget || normalizeResolvePath(entry.targetRel) === wantedTarget);
+
+  if (entries.length === 0) {
+    // Fall back to packet summary when no resolvable .local artifacts exist.
+    return {
+      resolved: [],
+      choices: [],
+      message: renderLatestConflictReview(cwd),
+      exitCode: 0,
+    };
+  }
+
+  const lines = [];
+  lines.push(`${entries.length} file${entries.length === 1 ? '' : 's'} conflict`);
+  entries.forEach((entry, index) => {
+    lines.push(`  ${index + 1}. ${entry.targetRel}`);
+  });
+
+  const interactive = typeof options.ask === 'function';
+  if (!take && !interactive) {
+    lines.push('');
+    lines.push('pick local / cloud / merge per file (interactive), or run:');
+    lines.push('  atris sync --review --take local');
+    lines.push('  atris sync --review --take cloud');
+    lines.push('merge writes standard conflict markers into the file (no .remote dump).');
+    lines.push('');
+    lines.push(renderLatestConflictReview(cwd).trimEnd());
+    lines.push('');
+    return { resolved: [], choices: [], message: `${lines.join('\n')}\n`, exitCode: 0 };
+  }
+
+  const choices = [];
+  const resolved = [];
+  for (const entry of entries) {
+    const choice = take || await promptReviewChoice(entry, options.ask);
+    const result = applyReviewChoice(cwd, entry, choice);
+    choices.push(result);
+    resolved.push(result.path);
+    lines.push(`  -> ${result.path}: ${result.choice}`);
+  }
+
+  const finalizedManifests = cleanupEmptyConflictPackets(cwd, entries);
+  lines.push('');
+  lines.push(`resolved ${resolved.length} conflict${resolved.length === 1 ? '' : 's'}.`);
+  if (finalizedManifests.length) {
+    lines.push(`updated sync manifest for ${finalizedManifests.join(', ')}.`);
+  }
+  lines.push('next: run `atris sync --dry-run` before publishing.');
+  lines.push('');
+  return { resolved, choices, message: `${lines.join('\n')}\n`, exitCode: 0 };
 }
 
 function renderLatestConflictReview(cwd = process.cwd()) {
@@ -796,7 +941,18 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   }
 
   if (options.review) {
-    process.stdout.write(renderLatestConflictReview(cwd));
+    let ask = null;
+    if (!options.take && process.stdin.isTTY) {
+      const { promptUser } = require('../utils/auth');
+      ask = (question) => promptUser(question);
+    }
+    const result = await runSyncReview(cwd, {
+      take: options.take,
+      path: options.resolvePath,
+      ask,
+    });
+    process.stdout.write(result.message);
+    if (result.exitCode && result.exitCode !== 0) process.exit(result.exitCode);
     return;
   }
 
@@ -894,8 +1050,10 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
 }
 
 module.exports = {
+  applyReviewChoice,
   businessSync,
   buildBusinessSyncPlan,
+  buildConflictMarkers,
   canPreviewPush,
   collectBrainSnapshot,
   collectWorkspaceSnapshot,
@@ -903,6 +1061,7 @@ module.exports = {
   collectLocalSyncStatus,
   collectConflictResolutionEntries,
   describeWatchFailure,
+  listConflictFiles,
   parseBusinessSyncArgs,
   readBusinessSlug,
   renderLatestConflictReview,
@@ -910,6 +1069,7 @@ module.exports = {
   renderBusinessSyncHelp,
   resolveLatestConflict,
   resolveBusinessSyncOptions,
+  runSyncReview,
   safeLineMerge,
   safeMarkdownMerge,
   shouldIgnoreWatchPath,

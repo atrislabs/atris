@@ -329,6 +329,18 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Search:** `rg "parsePushArgv|mergePushScopes|resolveChangedScopePaths|buildPushChangePlan" commands/push.js test/push-scoped.test.js`
 
+### Feature: Sync review conflict handler (`atris sync --review`)
+
+**Purpose:** S2 default conflict handler. Lists each conflicting file from the latest `.atris/sync/conflicts/*` packet, then picks local / cloud / merge. Non-interactive via `--take local|cloud`. Merge writes standard `<<<<<<< local` markers into the target file and never dumps workspace `*.remote` sidecars.
+
+- **Entry:** `commands/business-sync.js` (`businessSync` when `--review`)
+- **Core:** `runSyncReview`, `applyReviewChoice`, `buildConflictMarkers`, `listConflictFiles`
+- **Args:** `parseBusinessSyncArgs` (`--review`, `--take local|cloud`, `--path`)
+- **Packet source:** `collectConflictResolutionEntries` (reads `*.local` / `*.remote` under latest conflict dir)
+- **Regression:** `test/sync-review.test.js`
+
+**Search:** `rg "runSyncReview|buildConflictMarkers|applyReviewChoice|--take" commands/business-sync.js test/sync-review.test.js`
+
 ### Feature: Missions (`atris mission`)
 
 **Purpose:** Durable objective loop with owner, verifier command, receipt, member now file, and status surface.
