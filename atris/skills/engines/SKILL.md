@@ -65,6 +65,7 @@ Re-verify this table when a lab ships a new model: run each CLI's model-list com
 
 - **Codex sandbox cannot reach github.com and may get read-only repo access.** Expect temp clones / `git format-patch` fallbacks under `/private/tmp`. Apply patches in a fresh worktree, re-run the verify command yourself, then push.
 - Cursor and Devin run unsandboxed — still re-run the verify command yourself before pushing.
+- Long Devin runs (5+ min) can return empty stdout even when the build fully succeeded — judge by `git status` and the diff in its worktree, never by the printed report.
 - Atris Fast answers are model output over a real tool runtime — treat `output` as a claim, spot-check the cited file:line, and re-run any verifier yourself before acting on it.
 - Engine task DBs and receipts written inside a sandbox are snapshots; reconcile against the live `atris task` plane after landing.
 - A stalled job (no log output for 30+ min) gets cancelled and taken over; don't wait on it. Atris Fast turns that exceed ~60s have hung — kill and retry once with a tighter prompt.
