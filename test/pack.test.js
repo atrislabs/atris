@@ -533,3 +533,39 @@ test('pack status prints never pulled and last pulled remote version', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('pack publish from a pack root ships the whole folder except junk', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'wiki'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.upstream'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'node_modules', 'x'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'pack.json'), JSON.stringify({
+      name: 'root-pack', slug: 'root-pack', title: 'Root Pack', description: 'd',
+      author: '', tags: [], version: '0.0.1',
+      versions: [{ version: '0.0.1', date: '2026-07-09', notes: 'seed' }],
+    }));
+    fs.writeFileSync(path.join(dir, 'atris', 'atris.md'), '# boot\n');
+    fs.writeFileSync(path.join(dir, 'wiki', 'idea.md'), '# idea\nsource: https://example.com\n');
+    fs.writeFileSync(path.join(dir, 'README.md'), '# root pack\n');
+    fs.writeFileSync(path.join(dir, '.upstream', 'STATE.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'node_modules', 'x', 'index.js'), 'x');
+    fs.writeFileSync(path.join(dir, '.env'), 'SECRET=1');
+
+    const zipPath = path.join(os.tmpdir(), `root-pack-${process.pid}.zip`);
+    const publish = runCli(['pack', 'publish', '--out', zipPath], { cwd: dir });
+    assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
+
+    const names = readZipFile(zipPath).map((entry) => entry.name);
+    assert.ok(names.includes('wiki/idea.md'), `missing wiki page in ${names.join(', ')}`);
+    assert.ok(names.includes('README.md'));
+    assert.ok(names.includes('atris/atris.md'));
+    assert.ok(!names.some((n) => n.startsWith('.upstream')));
+    assert.ok(!names.some((n) => n.includes('node_modules')));
+    assert.ok(!names.some((n) => n.includes('.env')));
+    fs.rmSync(zipPath, { force: true });
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

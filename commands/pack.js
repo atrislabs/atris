@@ -173,6 +173,38 @@ function collectAtrisEntries(sourceDir, includeLogs) {
   return entries;
 }
 
+// A crafted pack keeps wiki/, README.md, and friends at the pack root, so a
+// root publish must ship the whole folder, not just atris/ (2026-07-09: the
+// first dogfooded pack shipped without its research).
+function collectPackRootEntries(rootDir, includeLogs) {
+  const entries = [];
+
+  function walk(dir, relativeDir = '') {
+    const names = fs.readdirSync(dir).sort();
+    for (const name of names) {
+      const abs = path.join(dir, name);
+      const rel = relativeDir ? path.join(relativeDir, name) : name;
+      const normalized = rel.replace(/\\/g, '/');
+      if (normalized === 'pack.json') continue;
+      if (normalized === '.upstream' || normalized.startsWith('.upstream/')) continue;
+      if (name === 'node_modules' || name === '.atris' || name === '.DS_Store') continue;
+      if (normalized === 'atris/logs' || normalized.startsWith('atris/logs/')) {
+        if (!includeLogs) continue;
+      }
+      if (shouldSkipRelative(normalized, includeLogs)) continue;
+      const stat = fs.statSync(abs);
+      if (stat.isDirectory()) {
+        walk(abs, rel);
+      } else if (stat.isFile()) {
+        entries.push({ name: normalized, data: fs.readFileSync(abs), mtime: stat.mtime });
+      }
+    }
+  }
+
+  walk(rootDir);
+  return entries;
+}
+
 function parseJsonBody(buffer) {
   const text = Buffer.isBuffer(buffer) ? buffer.toString('utf8') : String(buffer || '');
   if (!text.trim()) return { data: null, text };
@@ -283,7 +315,9 @@ async function fetchRegistryZip(slug, deps = {}) {
 
 async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   const args = [...rawArgs];
-  const sourceDir = path.resolve(cwd, takeValue(args, '--dir') || 'atris');
+  const dirArg = takeValue(args, '--dir');
+  const packRootMode = !dirArg && fs.existsSync(path.join(cwd, 'pack.json'));
+  const sourceDir = packRootMode ? path.resolve(cwd) : path.resolve(cwd, dirArg || 'atris');
   const slug = takeValue(args, '--slug');
   const notes = takeValue(args, '--notes') || '';
   const out = takeValue(args, '--out');
@@ -297,19 +331,25 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
     throw new Error(`pack source not found: ${path.relative(cwd, sourceDir) || sourceDir}`);
   }
 
-  const manifestPath = path.join(path.dirname(sourceDir), 'pack.json');
+  const manifestPath = packRootMode
+    ? path.join(sourceDir, 'pack.json')
+    : path.join(path.dirname(sourceDir), 'pack.json');
   const existing = readJson(manifestPath);
   const manifest = buildManifest(existing, {
     slug,
     notes,
     bump: major ? 'major' : minor ? 'minor' : 'patch',
-    fallbackSlug: path.basename(path.dirname(sourceDir)) || path.basename(sourceDir),
+    fallbackSlug: packRootMode
+      ? path.basename(sourceDir)
+      : path.basename(path.dirname(sourceDir)) || path.basename(sourceDir),
   });
   writeJson(manifestPath, manifest);
 
   const entries = [
     { name: 'pack.json', data: Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8'), mtime: new Date() },
-    ...collectAtrisEntries(sourceDir, includeLogs),
+    ...(packRootMode
+      ? collectPackRootEntries(sourceDir, includeLogs)
+      : collectAtrisEntries(sourceDir, includeLogs)),
   ];
   const zipBuffer = out || push ? createZipBuffer(entries) : null;
   if (out) {
