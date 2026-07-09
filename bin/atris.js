@@ -1752,6 +1752,10 @@ if (command === 'init') {
     process.exit(0);
   }
   activateCmd();
+} else if (command === 'watch') {
+  Promise.resolve(require('../commands/business-sync').businessSync(['--watch', ...process.argv.slice(3)]))
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'update' || command === 'sync') {
   const args = process.argv.slice(3);
   const firstSyncArg = process.argv[3];
