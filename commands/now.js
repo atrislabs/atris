@@ -1,10 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const { hasRenderedSections, isOpenSection } = require('../lib/todo-sections');
+const { renderMorningCardRow } = require('../lib/receipt-block');
 
 const NOW_PATH = path.join('atris', 'now.md');
 const TASK_EPISODES_PATH = path.join('.atris', 'state', 'task_episodes.jsonl');
 const CAREER_XP_RECEIPTS_PATH = path.join('.atris', 'state', 'career_xp_receipts.jsonl');
+const MISSION_RUNS_PATH = path.join('atris', 'runs');
 const EXECUTABLE_TASK_STATUSES = new Set(['open', 'claimed']);
 const TASK_RECEIPT_EVENTS = new Set(['proof_ready', 'reviewed', 'completed']);
 
@@ -231,10 +233,10 @@ function todayTaskReceiptLines(root = process.cwd(), date = new Date(), limit = 
   return collectTaskReceiptsToday(root, date)
     .slice(-limit)
     .reverse()
-    .map((r) => `- ✓ ${truncateLine(r.title, 90)} — ${truncateLine(r.proof, 70)}`);
+    .map((r) => `- ✓ ${truncateLine(r.title, 90)} - ${truncateLine(r.proof, 70)}`);
 }
 
-// What actually landed on this branch in the last day — the fleet's overnight
+// What actually landed on this branch in the last day - the fleet's overnight
 // merges are the strongest "the computer worked while you were away" evidence.
 function landedCommitLines(root = process.cwd(), limit = 5) {
   try {
@@ -260,7 +262,7 @@ function landedCommitLines(root = process.cwd(), limit = 5) {
 }
 
 // The one thing only the owner can answer. Prefers an explicit owner action;
-// falls back to a blocked loop's open question (needs_human). Loops ask here —
+// falls back to a blocked loop's open question (needs_human). Loops ask here -
 // they never invent the answer themselves.
 function nextOwnerActionLine(root = process.cwd()) {
   const statusPath = path.join(root, 'atris', 'status', 'master-loop.md');
@@ -287,10 +289,53 @@ function currentMissionMoveLine(root = process.cwd()) {
     const objective = truncateLine(mission.objective, 140);
     const next = truncateLine(codexGoalNextCommand(mission), 110);
     if (!objective || !next) return null;
-    return `The move: ${objective} — next: ${next}`;
+    return `The move: ${objective} - next: ${next}`;
   } catch {
     return null;
   }
+}
+
+function receiptSortKey(receipt) {
+  return String(receipt?.at || receipt?.result?.tick?.finished_at || receipt?.result?.tick?.started_at || '');
+}
+
+function collectMissionReceiptsToday(root = process.cwd(), date = new Date()) {
+  const targetDay = formatLocalDate(date);
+  const runsDir = path.join(root, MISSION_RUNS_PATH);
+  if (!fs.existsSync(runsDir)) return [];
+  let files = [];
+  try {
+    files = fs.readdirSync(runsDir)
+      .filter((file) => file.endsWith('.json'))
+      .map((file) => path.join(runsDir, file));
+  } catch {
+    return [];
+  }
+  const receipts = [];
+  for (const file of files) {
+    let receipt = null;
+    try {
+      receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (receipt?.schema !== 'atris.mission_receipt.v1') continue;
+    if (localDateKey(receiptSortKey(receipt)) !== targetDay) continue;
+    receipts.push(receipt);
+  }
+  receipts.sort((a, b) => receiptSortKey(a).localeCompare(receiptSortKey(b)));
+  return receipts;
+}
+
+function countMissionReceiptsToday(root = process.cwd(), date = new Date()) {
+  return collectMissionReceiptsToday(root, date).length;
+}
+
+function todayMissionReceiptLines(root = process.cwd(), date = new Date(), limit = 6) {
+  return collectMissionReceiptsToday(root, date)
+    .slice(-limit)
+    .reverse()
+    .map((receipt) => renderMorningCardRow(receipt));
 }
 
 function currentJournalPath(root = process.cwd()) {
@@ -308,15 +353,17 @@ function renderDefaultNow(root = process.cwd()) {
   const openTodoCount = countOpenWorkItems(root, todoPath);
   const inboxCount = countMatches(journalPath, /^-\s+\*\*I\d+:/gm);
   const taskReceiptCount = countTaskReceiptsToday(root);
-  const completedCount = taskReceiptCount || countJournalCompletedReceipts(journalPath);
+  const missionReceiptCount = countMissionReceiptsToday(root);
+  const completedCount = taskReceiptCount + missionReceiptCount || countJournalCompletedReceipts(journalPath);
   const generated = todayIso();
   const moveLine = currentMissionMoveLine(root);
   const whatMattersNow = moveLine
     ? `${moveLine}\n\n- Decide the next useful move before opening more context.`
     : '- Decide the next useful move before opening more context.';
   const receiptLines = todayTaskReceiptLines(root);
+  const missionReceiptLines = todayMissionReceiptLines(root);
   const commitLines = landedCommitLines(root);
-  const awayLines = [...receiptLines, ...commitLines];
+  const awayLines = [...missionReceiptLines, ...receiptLines, ...commitLines];
   const whileAway = awayLines.length
     ? awayLines.join('\n')
     : '- Nothing has landed yet today.';
@@ -522,10 +569,12 @@ module.exports = {
   countJournalCompletedReceipts,
   countOpenWorkItems,
   countOpenTodoItems,
+  countMissionReceiptsToday,
   countTaskReceiptsToday,
   currentMissionMoveLine,
   landedCommitLines,
   nextOwnerActionLine,
+  todayMissionReceiptLines,
   todayTaskReceiptLines,
   truncateLine,
   findChildWorkspaces,
