@@ -34,7 +34,7 @@ function runCli(args, { cwd, env = {}, timeout = 6000 } = {}) {
   return result;
 }
 
-test('watch is a known top-level alias for sync --watch', () => {
+test('watch is a known top-level proactive watcher command', () => {
   const dir = makeTempDir();
   try {
     const home = path.join(dir, 'home');
@@ -45,8 +45,9 @@ test('watch is a known top-level alias for sync --watch', () => {
 
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.doesNotMatch(res.stdout, /Unknown command/);
-    assert.match(res.stdout, /Usage: atris sync/);
-    assert.match(res.stdout, /atris sync --watch/);
+    assert.match(res.stdout, /atris watch "<sentence>"/);
+    assert.match(res.stdout, /atris watch list/);
+    assert.doesNotMatch(res.stdout, /atris sync --watch/);
   } finally {
     cleanupTempDir(dir);
   }
