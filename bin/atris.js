@@ -506,6 +506,7 @@ function showHelp() {
   console.log('Sync:');
   console.log('  pull       - Pull journals + member data from cloud');
   console.log('  push       - Push workspace files to cloud');
+  console.log('  cloud      - Delete cloud files not present locally (cloud clean --dry-run|--yes)');
   console.log('  live       - Keep a business brain fresh (doctor, pull, watch, push)');
   console.log('  clean-workspace <slug> - Analyze & remove junk files from a workspace (alias: cw)');
   console.log('');
@@ -2391,6 +2392,8 @@ if (command === 'init') {
   require('../commands/align').alignAtris()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'cloud') {
+  require('../commands/cloud').cloudAtris();
 } else if (command === 'terminal') {
   require('../commands/terminal').terminalAtris()
     .then(() => process.exit(0))

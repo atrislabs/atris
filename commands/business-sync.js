@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { loadManifest, saveManifest } = require('../lib/manifest');
 const { removeBaseContents, writeBaseContents } = require('../lib/company-brain-sync');
+const { collectCloudOrphans } = require('../commands/cloud');
 
 const WATCH_IGNORED_DIRS = new Set([
   '.git', '.atris', '.claude', '.cursor', '.next', '.cache',
@@ -41,9 +42,10 @@ function parseBusinessSyncArgs(args = []) {
   const watch = args.includes('--watch');
   const intervalSec = Number.parseInt(parseFlagValue(args, '--interval', '60'), 10);
   const debounceSec = Number.parseInt(parseFlagValue(args, '--debounce', '5'), 10);
+  const showOrphans = args.includes('--show-orphans');
   const help = args.includes('--help') || args.includes('-h') || positional[0] === 'help';
 
-  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review, resolve, resolvePath, take, help };
+  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review, resolve, resolvePath, take, showOrphans, help };
 }
 
 function readBusinessSlug(cwd = process.cwd()) {
@@ -324,6 +326,20 @@ function renderLocalSyncStatus(status) {
   } else {
     lines.push('  warnings: none');
   }
+  if (status.orphanError !== undefined) {
+    lines.push(`  orphans: ${status.orphanError}`);
+  } else if (status.orphanPaths !== undefined) {
+    if (status.orphanPaths.length === 0) {
+      lines.push('  orphans: none');
+    } else {
+      const orphanLabel = status.orphanPaths.length === 1 ? 'file' : 'files';
+      lines.push(`  orphans: ${status.orphanPaths.length} cloud ${orphanLabel} not present locally`);
+      status.orphanPaths.slice(0, 20).forEach((p) => lines.push(`    - ${p.replace(/^\//, '')}`));
+      if (status.orphanPaths.length > 20) {
+        lines.push(`    ... +${status.orphanPaths.length - 20} more`);
+      }
+    }
+  }
   if (status.heartbeat && status.heartbeat.updated_at) {
     lines.push(`  watcher: last heartbeat ${status.heartbeat.updated_at} (${status.heartbeat.state || 'unknown'})`);
   } else {
@@ -336,13 +352,14 @@ function renderLocalSyncStatus(status) {
 
 function renderBusinessSyncHelp() {
   return [
-    'Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--take local|cloud] [--resolve local|cloud|both|merge] [--path <file>] [--timeout 120]',
+    'Usage: atris sync [business] [--dry-run] [--watch] [--status] [--show-orphans] [--review] [--take local|cloud] [--resolve local|cloud|both|merge] [--path <file>] [--timeout 120]',
     '',
     'Safe loop:',
     '  Pull -> Review -> Publish',
     '',
     'Commands:',
     '  atris sync --status       Show local sync health',
+    '  atris sync --status --show-orphans   Show local sync health plus cloud files not present locally',
     '  atris sync --dry-run      Preview pull and publish plans without writing cloud',
     '  atris sync --review       List conflicts; pick local / cloud / merge per file',
     '  atris sync --review --take local|cloud',
@@ -927,7 +944,7 @@ async function runSyncCycle(plan, cwd, options = {}) {
   }
 }
 
-async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
+async function businessSync(args = process.argv.slice(3), cwd = process.cwd(), deps = {}) {
   const options = resolveBusinessSyncOptions(args, cwd);
 
   if (options.help) {
@@ -936,7 +953,16 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   }
 
   if (options.status) {
-    process.stdout.write(renderLocalSyncStatus(collectLocalSyncStatus(cwd, options)));
+    const status = collectLocalSyncStatus(cwd, options);
+    if (options.showOrphans) {
+      try {
+        const { orphanPaths } = await collectCloudOrphans(cwd, options.slug, deps);
+        status.orphanPaths = orphanPaths;
+      } catch (err) {
+        status.orphanError = err.message || String(err);
+      }
+    }
+    process.stdout.write(renderLocalSyncStatus(status));
     return;
   }
 
