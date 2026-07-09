@@ -302,7 +302,11 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   const branch = branchOverride || branchName(owner, task, now);
   const target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
   const explicitBase = Boolean(baseOverride);
-  const checkoutBase = normalizeTargetRef(root, baseOverride || defaultStartBase(root));
+  // Agent/member worktrees always cut from the mainline: honoring the
+  // launcher checkout's upstream let a dispatch inherit another session's
+  // in-progress feature branch (2026-07-09: an auth fix arrived carrying 13
+  // unpushed commits from a parallel session and could not merge).
+  const checkoutBase = normalizeTargetRef(root, baseOverride || defaultMainlineBase(root));
   const shipBase = explicitBase ? checkoutBase : normalizeTargetRef(root, 'origin/master');
   if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
