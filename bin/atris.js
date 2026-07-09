@@ -2603,7 +2603,9 @@ if (command === 'init') {
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'pack') {
-  require('../commands/pack').packAtris();
+  Promise.resolve(require('../commands/pack').run(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'reel') {
   // Reel: one line of text into a short on-brand video (an animated card; frames via Chrome + ffmpeg).
   Promise.resolve(require('../commands/reel').run(process.argv.slice(3)))
@@ -2633,10 +2635,6 @@ if (command === 'init') {
 } else if (command === 'publish') {
   require('../commands/publish').publishAtris()
     .then(() => process.exit(0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
-} else if (command === 'pack') {
-  Promise.resolve(require('../commands/pack').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'sleep') {
   require('../commands/lifecycle').sleepAtris()

@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { readZipFile, writeZipFile } = require('../lib/zip');
+const { installPack, listInstalledPacks } = require('../commands/pack');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -22,6 +23,34 @@ function seedAtris(dir) {
   fs.mkdirSync(atrisDir, { recursive: true });
   fs.writeFileSync(path.join(atrisDir, 'atris.md'), '# Atris\n');
   return atrisDir;
+}
+
+function sampleManifest(overrides = {}) {
+  return {
+    name: 'demo-pack',
+    slug: 'demo-pack',
+    title: 'Demo Pack',
+    description: 'A tiny pack for tests.',
+    version: '0.1.0',
+    ...overrides,
+  };
+}
+
+function writePackDir(dir, overrides = {}) {
+  const manifest = sampleManifest(overrides);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'pack.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, 'README.md'), '# pack\n', 'utf8');
+  return manifest;
+}
+
+function packZipBuffer(dir, manifest = sampleManifest()) {
+  const zipPath = path.join(dir, `${manifest.slug}.zip`);
+  writeZipFile(zipPath, [
+    { name: 'pack.json', data: Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`) },
+    { name: 'README.md', data: Buffer.from('# pack\n') },
+  ]);
+  return fs.readFileSync(zipPath);
 }
 
 function runCli(args, { cwd }) {
@@ -132,6 +161,60 @@ test('pack publish bumps patch version on subsequent publish', () => {
     assert.deepEqual(manifest.versions.map((entry) => entry.version), ['0.1.0', '0.1.1']);
     const zipManifest = JSON.parse(readZipFile(secondZip).find((entry) => entry.name === 'pack.json').data.toString('utf8'));
     assert.equal(zipManifest.version, '0.1.1');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack list shows pack folders under cwd and packs', () => {
+  const dir = makeTempDir();
+  try {
+    writePackDir(path.join(dir, 'alpha-pack'), {
+      slug: 'alpha-pack',
+      title: 'Alpha Pack',
+    });
+    writePackDir(path.join(dir, 'packs', 'beta-pack'), {
+      slug: 'beta-pack',
+      title: 'Beta Pack',
+      version: '2.0.0',
+    });
+
+    const listed = listInstalledPacks(dir);
+    assert.deepEqual(listed.packs.map((pack) => pack.manifest.slug), ['alpha-pack', 'beta-pack']);
+
+    const list = runCli(['pack', 'list'], { cwd: dir });
+    assert.equal(list.status, 0, `stdout:\n${list.stdout}\nstderr:\n${list.stderr}`);
+    assert.match(list.stdout, /alpha-pack\s+Alpha Pack\s+v0\.1\.0\s+alpha-pack/);
+    assert.match(list.stdout, /beta-pack\s+Beta Pack\s+v2\.0\.0\s+packs\/beta-pack/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install accepts registry slugs and https zip urls', async () => {
+  const dir = makeTempDir();
+  try {
+    const zipBuffer = packZipBuffer(dir, sampleManifest({ slug: 'g-brain', title: 'G Brain' }));
+    const calls = [];
+    const deps = {
+      getApiBaseUrl: () => 'https://api.test/api',
+      loadCredentials: () => ({ token: 'test-token' }),
+      httpRequest: async (url, options) => {
+        calls.push({ url, options });
+        return { status: 200, body: zipBuffer };
+      },
+    };
+
+    const slugTarget = path.join(dir, 'from-slug');
+    const urlTarget = path.join(dir, 'from-url');
+    assert.equal(await installPack(['g-brain', '--dir', slugTarget], dir, { deps }), 0);
+    assert.equal(await installPack(['https://packs.test/g-brain.zip', '--dir', urlTarget], dir, { deps }), 0);
+
+    assert.equal(calls[0].url, 'https://api.test/api/pack/registry/g-brain');
+    assert.equal(calls[0].options.headers.Authorization, 'Bearer test-token');
+    assert.equal(calls[1].url, 'https://packs.test/g-brain.zip');
+    assert.ok(fs.existsSync(path.join(slugTarget, 'pack.json')));
+    assert.ok(fs.existsSync(path.join(urlTarget, 'pack.json')));
   } finally {
     cleanupTempDir(dir);
   }

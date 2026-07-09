@@ -9,6 +9,7 @@ const { readZipBuffer, writeZipFile } = require('../lib/zip');
 function showHelp() {
   console.log('Usage: atris pack publish [--dir atris] [--slug <slug>] [--notes "..."] [--minor|--major] --out <file.zip>');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
+  console.log('       atris pack list [--dir <path>]');
 }
 
 function slugify(value, fallback = 'atris-pack') {
@@ -201,9 +202,10 @@ function fallbackSlugFromZipPath(zipPath) {
   return slugify(path.basename(zipPath, path.extname(zipPath)), 'atris-pack');
 }
 
-async function loadZipPayload(source, cwd) {
+async function loadZipPayload(source, cwd, deps = {}) {
+  const request = deps.httpRequest || httpRequest;
   if (/^https?:\/\//i.test(source)) {
-    const response = await httpRequest(source, { method: 'GET' });
+    const response = await request(source, { method: 'GET' });
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`download failed with status ${response.status}`);
     }
@@ -218,10 +220,12 @@ async function loadZipPayload(source, cwd) {
   }
 
   const slug = slugify(source);
-  const credentials = loadCredentials();
+  const readCredentials = deps.loadCredentials || loadCredentials;
+  const credentials = readCredentials();
   const headers = credentials && credentials.token ? { Authorization: `Bearer ${credentials.token}` } : {};
-  const url = `${getApiBaseUrl()}/pack/registry/${encodeURIComponent(slug)}`;
-  const response = await httpRequest(url, { method: 'GET', headers });
+  const apiBaseUrl = deps.getApiBaseUrl || getApiBaseUrl;
+  const url = `${apiBaseUrl()}/pack/registry/${encodeURIComponent(slug)}`;
+  const response = await request(url, { method: 'GET', headers });
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`registry lookup failed for ${slug} with status ${response.status}`);
   }
@@ -254,7 +258,7 @@ function resolveEntryTarget(targetDir, entryName) {
   return destination;
 }
 
-async function installPack(rawArgs, cwd = process.cwd()) {
+async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
   const args = [...rawArgs];
   const source = args.shift();
   if (!source || source === 'help' || source === '--help' || source === '-h') {
@@ -265,7 +269,7 @@ async function installPack(rawArgs, cwd = process.cwd()) {
   const force = takeFlag(args, '--force');
   if (args.length) throw new Error(`unknown pack install argument: ${args.join(' ')}`);
 
-  const payload = await loadZipPayload(source, cwd);
+  const payload = await loadZipPayload(source, cwd, options.deps || {});
   const entries = readZipBuffer(payload.buffer);
   const manifest = parseManifest(entries, payload.fallbackSlug);
   const slug = slugify(manifest.slug || payload.fallbackSlug);
@@ -291,6 +295,77 @@ async function installPack(rawArgs, cwd = process.cwd()) {
   return 0;
 }
 
+function readPackManifestFromDir(packDir) {
+  const manifest = readJson(path.join(packDir, 'pack.json'));
+  if (!manifest || typeof manifest !== 'object' || !manifest.slug) {
+    throw new Error(`pack.json is missing slug: ${packDir}`);
+  }
+  return manifest;
+}
+
+function collectPackDirs(root, found, seen, depth = 0) {
+  const resolved = path.resolve(root);
+  if (seen.has(resolved) || depth > 4) return;
+  seen.add(resolved);
+
+  let entries;
+  try {
+    entries = fs.readdirSync(resolved, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  const hasPackJson = entries.some((entry) => entry.isFile() && entry.name === 'pack.json');
+  if (hasPackJson) {
+    try {
+      found.push({ dir: resolved, manifest: readPackManifestFromDir(resolved) });
+    } catch {
+      // Ignore malformed pack folders while listing installed packs.
+    }
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.atris') continue;
+    collectPackDirs(path.join(resolved, entry.name), found, seen, depth + 1);
+  }
+}
+
+function listInstalledPacks(cwd = process.cwd()) {
+  const root = path.resolve(cwd);
+  const found = [];
+  const seen = new Set();
+  collectPackDirs(root, found, seen);
+  collectPackDirs(path.join(root, 'packs'), found, seen);
+
+  found.sort((a, b) => {
+    const left = String(a.manifest.title || a.manifest.name || a.manifest.slug);
+    const right = String(b.manifest.title || b.manifest.name || b.manifest.slug);
+    return left.localeCompare(right);
+  });
+
+  if (!found.length) {
+    console.log('no packs found under this directory');
+    return { packs: [] };
+  }
+
+  for (const item of found) {
+    const title = item.manifest.title || item.manifest.name || item.manifest.slug;
+    const version = item.manifest.version || 'unknown';
+    const displayPath = path.relative(root, item.dir) || '.';
+    console.log(`${item.manifest.slug}  ${title}  v${version}  ${displayPath}`);
+  }
+  return { packs: found };
+}
+
+function listPackCommand(rawArgs, cwd = process.cwd()) {
+  const args = [...rawArgs];
+  const dir = takeValue(args, '--dir');
+  if (args.length) throw new Error(`unknown pack list argument: ${args.join(' ')}`);
+  return listInstalledPacks(dir ? path.resolve(cwd, dir) : cwd);
+}
+
 async function run(argv = []) {
   const [subcommand, ...args] = argv;
   try {
@@ -300,6 +375,7 @@ async function run(argv = []) {
     }
     if (subcommand === 'publish') return publishPack(args);
     if (subcommand === 'install') return installPack(args);
+    if (subcommand === 'list') return listPackCommand(args);
     console.error(`unknown pack command: ${subcommand}`);
     showHelp();
     return 2;
@@ -313,7 +389,10 @@ module.exports = {
   run,
   publishPack,
   installPack,
+  listInstalledPacks,
+  loadZipPayload,
   buildManifest,
+  readPackManifestFromDir,
   shouldSkipRelative,
   resolveEntryTarget,
 };
