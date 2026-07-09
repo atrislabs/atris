@@ -514,6 +514,7 @@ function showHelp() {
   console.log('  browse [query]     - Discover workspace templates');
   console.log('  fork <template>    - Clone a template into a new workspace');
   console.log('  publish            - Share your workspace as a template');
+  console.log('  pack               - Publish or install an Atris brain zip');
   console.log('  sleep [business|member] [--loop id] - Pause compute or flip a member switch');
   console.log('  wake [business|member] [--loop id]  - Resume compute or flip a member switch');
   console.log('');
@@ -2632,6 +2633,10 @@ if (command === 'init') {
 } else if (command === 'publish') {
   require('../commands/publish').publishAtris()
     .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'pack') {
+  Promise.resolve(require('../commands/pack').run(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'sleep') {
   require('../commands/lifecycle').sleepAtris()
