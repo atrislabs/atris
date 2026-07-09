@@ -514,6 +514,7 @@ function showHelp() {
   console.log('  browse [query]     - Discover workspace templates');
   console.log('  fork <template>    - Clone a template into a new workspace');
   console.log('  publish            - Share your workspace as a template');
+  console.log('  pack               - Publish or install an Atris brain zip');
   console.log('  sleep [business|member] [--loop id] - Pause compute or flip a member switch');
   console.log('  wake [business|member] [--loop id]  - Resume compute or flip a member switch');
   console.log('');
@@ -2602,7 +2603,9 @@ if (command === 'init') {
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'pack') {
-  require('../commands/pack').packAtris();
+  Promise.resolve(require('../commands/pack').run(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'reel') {
   // Reel: one line of text into a short on-brand video (an animated card; frames via Chrome + ffmpeg).
   Promise.resolve(require('../commands/reel').run(process.argv.slice(3)))

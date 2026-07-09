@@ -121,6 +121,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **atris report:** `commands/report.js` renders a weekly operator block from landings, journals, and Career XP with coverage in `test/report.test.js`.
 - **atris brief:** `commands/brief.js` renders the one-glance operator brief from done tasks, review waits, next moves, and the weekly report line with coverage in `test/brief.test.js`.
 - **atris meet:** `commands/meet.js` composes interview flags, `init`, `theme init`, and `avail` helpers to create a first profile plus a `/book/{username}` link with coverage in `test/meet.test.js`.
+- **atris pack:** `commands/pack.js:156` publishes an offline Atris brain zip with `pack.json` versioning and denylist filtering, `commands/pack.js:261` installs local zip/url/slug payloads with zip-slip protection, `commands/pack.js:335` lists installed pack folders under cwd and `./packs`, `lib/zip.js:65` writes standard deflated PKZIP archives, `lib/zip.js:158` reads them, `bin/atris.js:517` adds the help line, `bin/atris.js:2605` routes the modular command, and `test/pack.test.js:70` covers round-trip, denylist, zip-slip, version bump, list, and registry/url install behavior.
 
 ### Feature: Natural Language Interface (`atris [anything]`)
 
