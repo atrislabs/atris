@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getApiBaseUrl, httpRequest } = require('../utils/api');
+const { getAppBaseUrl, httpRequest } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
 const { readZipBuffer, writeZipFile } = require('../lib/zip');
 
@@ -233,8 +233,8 @@ async function loadZipPayload(source, cwd, deps = {}) {
   const readCredentials = deps.loadCredentials || loadCredentials;
   const credentials = readCredentials();
   const headers = credentials && credentials.token ? { Authorization: `Bearer ${credentials.token}` } : {};
-  const apiBaseUrl = deps.getApiBaseUrl || getApiBaseUrl;
-  const url = `${apiBaseUrl()}/pack/registry/${encodeURIComponent(slug)}`;
+  const apiBaseUrl = deps.getAppBaseUrl || getAppBaseUrl;
+  const url = `${apiBaseUrl()}/api/pack/registry/${encodeURIComponent(slug)}`;
   const response = await request(url, { method: 'GET', headers });
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`registry lookup failed for ${slug} with status ${response.status}`);
@@ -397,7 +397,7 @@ async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
   const deps = options.deps || {};
   const request = deps.httpRequest || httpRequest;
   const url = origin.type === 'registry'
-    ? `${(deps.getApiBaseUrl || getApiBaseUrl)()}/pack/registry/${encodeURIComponent(origin.slug)}`
+    ? `${(deps.getAppBaseUrl || getAppBaseUrl)()}/api/pack/registry/${encodeURIComponent(origin.slug)}`
     : origin.url;
   const readCredentials = deps.loadCredentials || loadCredentials;
   const credentials = readCredentials();

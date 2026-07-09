@@ -197,7 +197,7 @@ test('pack install accepts registry slugs and https zip urls', async () => {
     const zipBuffer = packZipBuffer(dir, sampleManifest({ slug: 'g-brain', title: 'G Brain' }));
     const calls = [];
     const deps = {
-      getApiBaseUrl: () => 'https://api.test/api',
+      getAppBaseUrl: () => 'https://app.test',
       loadCredentials: () => ({ token: 'test-token' }),
       httpRequest: async (url, options) => {
         calls.push({ url, options });
@@ -210,7 +210,7 @@ test('pack install accepts registry slugs and https zip urls', async () => {
     assert.equal(await installPack(['g-brain', '--dir', slugTarget], dir, { deps }), 0);
     assert.equal(await installPack(['https://packs.test/g-brain.zip', '--dir', urlTarget], dir, { deps }), 0);
 
-    assert.equal(calls[0].url, 'https://api.test/api/pack/registry/g-brain');
+    assert.equal(calls[0].url, 'https://app.test/api/pack/registry/g-brain');
     assert.equal(calls[0].options.headers.Authorization, 'Bearer test-token');
     assert.equal(calls[1].url, 'https://packs.test/g-brain.zip');
     assert.ok(fs.existsSync(path.join(slugTarget, 'pack.json')));
@@ -254,7 +254,7 @@ test('pack install preserves origin already present in zip pack.json', async () 
     }));
     const calls = [];
     const deps = {
-      getApiBaseUrl: () => 'https://api.test/api',
+      getAppBaseUrl: () => 'https://app.test',
       loadCredentials: () => ({ token: 'test-token' }),
       httpRequest: async (url) => {
         calls.push(url);
@@ -329,7 +329,7 @@ test('pack update is a no-op when version is unchanged', async () => {
     const calls = [];
     const result = await updatePack([target], dir, {
       deps: {
-        getApiBaseUrl: () => 'https://api.test/api',
+        getAppBaseUrl: () => 'https://app.test',
         loadCredentials: () => ({ token: 'test-token' }),
         httpRequest: async (url) => {
           calls.push(url);
@@ -340,7 +340,7 @@ test('pack update is a no-op when version is unchanged', async () => {
 
     assert.equal(result.upToDate, true);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0], 'https://api.test/api/pack/registry/demo-pack');
+    assert.equal(calls[0], 'https://app.test/api/pack/registry/demo-pack');
     assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# pack\n');
     assert.equal(fs.readFileSync(path.join(target, 'notes.txt'), 'utf8'), 'keep me');
   } finally {
@@ -362,7 +362,7 @@ test('pack update upgrades registry packs and preserves user files', async () =>
     const zipBuffer = packZipBuffer(dir, sampleManifest({ slug: 'demo-pack', version: '0.2.0' }));
     const result = await updatePack([target], dir, {
       deps: {
-        getApiBaseUrl: () => 'https://api.test/api',
+        getAppBaseUrl: () => 'https://app.test',
         loadCredentials: () => ({ token: 'test-token' }),
         httpRequest: async () => ({ status: 200, body: zipBuffer }),
       },
