@@ -1061,7 +1061,7 @@ function firstUseCommand() {
 }
 
 function firstMissionObjective() {
-  return 'Create FIRST_PROOF.md in this project';
+  return 'Verify this Atris workspace is ready';
 }
 
 function localOwnerName() {
@@ -1069,12 +1069,12 @@ function localOwnerName() {
 }
 
 function firstMissionOwner(root = process.cwd()) {
-  const defaultOwner = path.join(root, 'atris', 'team', 'executor', 'MEMBER.md');
-  return fs.existsSync(defaultOwner) ? 'executor' : localOwnerName();
+  const defaultOwner = path.join(root, 'atris', 'team', 'validator', 'MEMBER.md');
+  return fs.existsSync(defaultOwner) ? 'validator' : localOwnerName();
 }
 
 function firstMissionCommand() {
-  return `atris mission start "${firstMissionObjective()}" --owner ${firstMissionOwner()} --runner manual --lane code --verify "test -f FIRST_PROOF.md" --stop "FIRST_PROOF.md exists"`;
+  return `atris mission start "${firstMissionObjective()}" --owner ${firstMissionOwner()} --runner manual --lane workspace --verify "node -e \\"require('fs').accessSync('atris/atris.md')\\"" --stop "workspace readiness is verified"`;
 }
 
 function printFirstUseNext() {
@@ -1083,14 +1083,12 @@ function printFirstUseNext() {
 }
 
 function printStarterTaskNext(starter) {
-  console.log('NEXT SETUP STEP: open atris/MAP.md, then claim the starter task.');
+  console.log('next setup: open atris/MAP.md, then claim the starter task.');
   if (starter && starter.display_id) {
     console.log(`Next: atris task claim ${starter.display_id} --as ${localOwnerName()}`);
-    console.log(`Mission: ${firstMissionCommand()}`);
     return;
   }
   console.log('Next: atris task next --as ' + localOwnerName());
-  console.log(`Mission: ${firstMissionCommand()}`);
 }
 
 async function interactiveEntry(userInput) {

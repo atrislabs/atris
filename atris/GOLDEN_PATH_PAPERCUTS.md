@@ -2,16 +2,20 @@
 
 ## Open
 
-None in the latest packed pass: `/tmp/atris-golden-zero-hhFUPA`.
+None in the durable packed pass.
 
-## Ready for Human Approval
+- Verifier: `node --test test/golden-path-e2e.test.js`
+- Coverage: `npm pack` -> clean `HOME` install -> new Git repo -> printed `init` -> printed readiness mission start/tick/complete -> printed first-task claim -> task proof -> printed autoland tick.
+- Contract: the test executes the commands Atris prints instead of relying on a temporary transcript or source-only imports.
+
+## Resolved Papercuts
 
 - **CLI-889** - Landed fresh-init path reaches a starter task but never prints the first mission command.
   - Receipt: `/tmp/atris-golden-landed-picMA5`
   - Fixed receipt: `/tmp/atris-golden-zero-hhFUPA`
   - Repro: clean temp `HOME`, clean detached `origin/master` at `6705da8`, `npm pack`, `npm install -g --prefix <temp> atris-3.35.0.tgz`, new toy repo, then follow printed commands: `atris` -> `atris init` -> `atris "help me choose the first useful step for this project"`.
   - Evidence: the printed path reaches `First task: TOY-1` and `Next: atris task claim TOY-1 --as keshavrao`; no first mission start/tick/complete command appears before an operator invents one.
-  - Fixed evidence: `atris init` now prints `Next: atris mission start "Create FIRST_PROOF.md in this project" --owner executor ... --verify "test -f FIRST_PROOF.md"` and `Then: atris "help me choose the first useful step for this project"`. Following the mission prints the verifier tick command, the successful tick prints the exact `atris mission complete ... --proof "<receipt>"` command, and mission complete succeeds.
+  - Fixed evidence: `atris init` now prints a readiness mission with a cross-platform Node verifier for `atris/atris.md` and `Then: atris "help me choose the first useful step for this project"`. Every printed mission command succeeds immediately, the tick prints the exact `atris mission complete ... --proof "<receipt>"` command, and mission complete reaches the first-task handoff without an invented file-creation step.
   - Why it blocks success: the goal requires install -> init -> first mission -> first self-landed task using only CLI prints, but the landed path skips the mission recipe.
   - Done when: the fresh printed path includes a copy-paste first mission recipe or explicitly explains task-first vs mission-first ordering, with packed-install regression.
 - **CLI-890** - Starter task claim prints verifier placeholders that can miss autoland, so the first self-landed task stalls.
