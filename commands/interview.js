@@ -16,6 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const readline = require('readline');
 
 function findWorkspaceRoot(start) {
   let dir = start;
@@ -48,6 +49,71 @@ function showHelp() {
   console.log('  atris interview "<Name>"   Cold-start a new expert into a new member');
   console.log('  --help, -h                 Show this help');
   console.log('');
+}
+
+function unquote(value) {
+  const text = String(value);
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+    return text.slice(1, -1);
+  }
+  return text;
+}
+
+function parseSimpleFlags(args = [], valueFlagNames = []) {
+  const valueFlags = new Set(valueFlagNames);
+  const values = {};
+  const positionals = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i] || '');
+    if (arg.startsWith('--')) {
+      const flagName = arg.split('=')[0];
+      if (valueFlags.has(flagName)) {
+        const prefix = `${flagName}=`;
+        if (arg.startsWith(prefix)) values[flagName] = unquote(arg.slice(prefix.length));
+        else if (args[i + 1] && !String(args[i + 1]).startsWith('--')) {
+          values[flagName] = unquote(args[i + 1]);
+          i += 1;
+        }
+      } else {
+        values[flagName] = true;
+      }
+      continue;
+    }
+    positionals.push(args[i]);
+  }
+  return { values, positionals };
+}
+
+function askPlain(rl, question) {
+  return new Promise((resolve) => rl.question(question, (answer) => resolve(answer)));
+}
+
+async function runPlainInterview({ args = [], fields = [], input = process.stdin, output = process.stdout } = {}) {
+  const parsed = parseSimpleFlags(args, fields.map((field) => field.flag));
+  const answers = {};
+  for (const field of fields) {
+    const value = String(parsed.values[field.flag] || '').trim();
+    if (value) answers[field.key] = value;
+  }
+
+  const missing = fields.filter((field) => !answers[field.key]);
+  if (!missing.length) return { ok: true, answers, positionals: parsed.positionals };
+  if (!input.isTTY) return { ok: false, missing: missing.map((field) => field.flag), answers, positionals: parsed.positionals };
+
+  const rl = readline.createInterface({ input, output });
+  try {
+    for (const field of missing) {
+      // eslint-disable-next-line no-await-in-loop
+      const answer = (await askPlain(rl, field.question)).trim();
+      if (answer) answers[field.key] = answer;
+    }
+  } finally {
+    rl.close();
+  }
+
+  const stillMissing = fields.filter((field) => !answers[field.key]);
+  if (stillMissing.length) return { ok: false, missing: stillMissing.map((field) => field.flag), answers, positionals: parsed.positionals };
+  return { ok: true, answers, positionals: parsed.positionals };
 }
 
 function composePrompt(mode, subject, contextPaths, root) {
@@ -140,4 +206,4 @@ async function interviewCommand(args = [], root = process.cwd()) {
   });
 }
 
-module.exports = { interviewCommand };
+module.exports = { interviewCommand, parseSimpleFlags, runPlainInterview };
