@@ -123,7 +123,8 @@ function buildManifest(existing, options) {
   manifest.versions.push({
     version,
     date: new Date().toISOString(),
-    notes: options.notes || '',
+    // the registry rejects entries with empty notes, so never write one
+    notes: options.notes || 'version bump',
   });
   return manifest;
 }
