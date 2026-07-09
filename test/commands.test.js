@@ -4818,6 +4818,7 @@ test('business sync plan pulls safely then pushes wiki scope through normal push
     review: false,
     resolve: null,
     resolvePath: null,
+    take: null,
     help: false,
   });
   assert.deepEqual(buildBusinessSyncPlan(options), {
