@@ -128,6 +128,47 @@ function appendMissionState(dir, mission) {
   }) + '\n', 'utf8');
 }
 
+test('mission status requires end-to-end proof placeholder for golden-path AgentXP receipts', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-golden-path',
+      slug: 'golden-path',
+      objective: 'Golden path zero-knowledge fresh-laptop pass',
+      owner: 'onboarding',
+      status: 'ready',
+      xp_task_enabled: true,
+      xp_task: {
+        task_id: 'task-golden-path',
+        ref: 'CLI-801',
+        title: 'Mission XP: Golden path zero-knowledge fresh-laptop pass',
+      },
+      task_ids: ['task-golden-path'],
+      stop_condition: 'a full fresh-environment pass completes with zero new papercuts',
+      receipt_path: 'atris/runs/bookkeeping.json',
+      next_action: 'queue AgentXP review: atris task current-step --goal-id mission-golden-path --as onboarding --proof "atris/runs/bookkeeping.json" --json',
+      updated_at: '2026-07-02T00:00:00.000Z',
+    });
+
+    const status = runCli(['mission', 'status', 'mission-golden-path'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /proof needed: zero-papercut end-to-end fresh-laptop receipt/);
+    assert.match(status.stdout, /--proof "<zero-papercut end-to-end receipt>"/);
+    assert.doesNotMatch(status.stdout, /--proof "atris\/runs\/bookkeeping\.json"/);
+
+    const jsonStatus = runCli(['mission', 'status', 'mission-golden-path', '--json'], { cwd: dir });
+    assert.equal(jsonStatus.status, 0, jsonStatus.stderr);
+    const payload = JSON.parse(jsonStatus.stdout);
+    const mission = payload.missions[0];
+    assert.equal(mission.proof_needed, 'zero-papercut end-to-end fresh-laptop receipt; latest mission/tick receipt alone is not enough');
+    assert.equal(mission.task_spine.current_step_command, 'atris task current-step --goal-id mission-golden-path --as onboarding --proof "<zero-papercut end-to-end receipt>" --json');
+    assert.doesNotMatch(mission.next_action, /atris\/runs\/bookkeeping\.json/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 function writeMemberProfile(dir, slug, role) {
   fs.mkdirSync(path.join(dir, 'atris', 'team', slug), { recursive: true });
   fs.writeFileSync(path.join(dir, 'atris', 'team', slug, 'MEMBER.md'), [
@@ -3627,6 +3668,83 @@ test('mission run preserves native goal ack block behind --manual-ack', () => {
   }
 });
 
+test('mission goal recovers a matching usage-limited native goal without duplicate create', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'run', 'usage limited recovery', '--no-preflight', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const mission = JSON.parse(run.stdout).mission;
+
+    const goal = runCli([
+      'mission',
+      'goal',
+      '--native-goal-status',
+      'usageLimited',
+      '--native-goal-objective',
+      mission.objective,
+      '--json',
+    ], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.action, 'codex_goal_candidate');
+    assert.equal(payload.goal.mission_id, mission.id);
+    assert.equal(payload.goal.runtime_goal_state.status, 'usage_limited');
+    assert.equal(payload.requires_native_goal_start, false);
+    assert.equal(payload.requires_native_goal_recovery, true);
+    assert.equal(payload.native_goal_action, null);
+    assert.equal(payload.native_goal_recovery.commands.ack_current_goal, `atris mission goal ack ${mission.id} --runtime codex --status active --objective 'usage limited recovery' --json`);
+    assert.match(payload.goal.next_command, /do not call create_goal/);
+    assert.match(payload.goal.next_command, /hand off to a fresh agent/);
+    assert.doesNotMatch(payload.goal.next_command, /Call native Codex create_goal/);
+
+    const status = fs.readFileSync(path.join(dir, 'atris', 'status', 'codex-goal.md'), 'utf8');
+    assert.match(status, /visible goal: needs_ack_recovery/);
+    assert.match(status, /visible goal ack recovery:/);
+    assert.match(status, /usage-limited handoff:/);
+    assert.doesNotMatch(status, /visible goal create:/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission tick prints usage-limited recovery instead of native goal create', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'run', 'tick usage limited recovery', '--no-preflight', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const mission = JSON.parse(run.stdout).mission;
+
+    const tick = runCli([
+      'mission',
+      'tick',
+      mission.id,
+      '--native-goal-status',
+      'usageLimited',
+      '--native-goal-objective',
+      mission.objective,
+      '--summary',
+      'work while goal is limited',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(tick.status, 2, tick.stderr || tick.stdout);
+    const payload = JSON.parse(tick.stdout);
+    assert.equal(payload.code, 'native_goal_recovery_required');
+    assert.equal(payload.requires_native_goal_start, false);
+    assert.equal(payload.requires_native_goal_recovery, true);
+    assert.equal(payload.native_goal_action, null);
+    assert.match(payload.next_action, /do not call create_goal/);
+    assert.match(payload.next_action, /mission goal ack/);
+    assert.match(payload.native_goal_recovery.commands.handoff_to_fresh_agent, /atris mission status/);
+    assert.doesNotMatch(payload.next_action, /Call native Codex create_goal/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission ack attach preserves state when commands race', async () => {
   const dir = makeTempDir();
   try {
@@ -6398,9 +6516,10 @@ test('mission help documents status filters', () => {
     assert.match(help.stdout, /mission report \[id\] \[--limit <n>\] \[--local\] \[--json\]/);
     assert.match(help.stdout, /mission timeline \[id\] \[--limit <n>\] \[--all\] \[--prune-preview\] \[--write\] \[--json\]/);
     assert.match(help.stdout, /rolls up sibling git-worktree missions/);
-    assert.match(help.stdout, /mission goal \[--runtime codex\|atris\] \[--heartbeat\] \[--native-goal-status active\|paused\] \[--native-goal-objective "\.\.\."\] \[--manual-ack\] \[--allow-native-goal-supersede\] \[--json\]/);
+    assert.match(help.stdout, /mission goal \[--runtime codex\|atris\] \[--heartbeat\] \[--native-goal-status active\|paused\|usageLimited\] \[--native-goal-objective "\.\.\."\] \[--manual-ack\] \[--allow-native-goal-supersede\] \[--json\]/);
     assert.match(help.stdout, /mission goal ack <id> --runtime codex --status active --objective "<objective>" --json/);
     assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);
+    assert.match(help.stdout, /mission tick <id> \[--verify \["cmd"\]\] \[--complete-on-pass\] \[--summary "\.\.\."\]\n\s+\[--native-goal-status active\|paused\|usageLimited\] \[--native-goal-objective "\.\.\."\] \[--json\]/);
     assert.match(help.stdout, /--spend-full-budget\|--use-whole-budget\|--stop-when-done/);
     assert.match(help.stdout, /--preflight\|--no-preflight\|--room-preflight\|--no-room-preflight/);
     assert.match(help.stdout, /short time like "20 minutes" means finish early/);
