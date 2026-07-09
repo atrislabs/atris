@@ -191,10 +191,13 @@ test('wish bench round 3 held-out cases are pinned', () => {
     'get first paint under 2s',
     'Friday we demo, hide the beta badges',
     'drop v0.9 support quietly',
-    'the 404 page deserves better',
     'Basically the recap email buries the one number i care about',
   ];
   for (const text of clearCases) assert.deepEqual(auditQuestions(text), [], text);
+  const pageQuestions = auditQuestions('the 404 page deserves better');
+  assert.equal(pageQuestions.length, 1);
+  assert.match(pageQuestions[0], /404 page/);
+  assert.match(pageQuestions[0], /I would bet/);
 
   assert.equal(deriveVerifyPlan('smoke test the publish flow before the tag').command, 'node --test');
 });
