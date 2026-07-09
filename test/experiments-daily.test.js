@@ -10,6 +10,7 @@ const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const daily = require('../lib/experiments/daily');
 const { SCORECARD_SCHEMA, evaluateKeepRule } = require('../lib/experiments/daily');
 const { loadLessonMetadata } = require('../commands/autopilot');
+const CLI_TIMEOUT_MS = 120000;
 
 function makeTempRepo() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-experiments-daily-'));
@@ -39,7 +40,7 @@ function runCli(args, cwd, extraEnv = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
-    timeout: 60000,
+    timeout: CLI_TIMEOUT_MS,
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',

@@ -533,8 +533,15 @@ function writeDefaultProjection(taskDb, db, options = {}) {
     limit: options.all ? null : 500,
   }));
   const outPath = path.resolve(path.join('.atris', 'state', 'tasks.projection.json'));
+  const output = JSON.stringify(projection, null, 2) + '\n';
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, JSON.stringify(projection, null, 2) + '\n', 'utf8');
+  let shouldWrite = true;
+  try {
+    shouldWrite = fs.readFileSync(outPath, 'utf8') !== output;
+  } catch {
+    shouldWrite = true;
+  }
+  if (shouldWrite) fs.writeFileSync(outPath, output, 'utf8');
   return { projection, outPath };
 }
 

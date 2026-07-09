@@ -56,6 +56,34 @@ function shouldSkipAutoHumanGate(task) {
 function repoMapAuditReportsClean(cwd) {
   const auditPath = path.join(cwd, 'scripts', 'audit_map_refs.py');
   if (!fs.existsSync(auditPath)) return false;
+  const mapPath = path.join(cwd, 'atris', 'MAP.md');
+  const cachePath = path.join(cwd, '.atris', 'state', 'map-audit-cache.json');
+  let auditKey = null;
+
+  try {
+    auditKey = {
+      mapMtimeMs: fs.statSync(mapPath).mtimeMs,
+      scriptMtimeMs: fs.statSync(auditPath).mtimeMs,
+    };
+  } catch {
+    auditKey = null;
+  }
+
+  if (auditKey) {
+    try {
+      const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+      if (
+        cached &&
+        cached.mapMtimeMs === auditKey.mapMtimeMs &&
+        cached.scriptMtimeMs === auditKey.scriptMtimeMs &&
+        typeof cached.result === 'boolean'
+      ) {
+        return cached.result;
+      }
+    } catch {
+      // Cache is a hot-path optimization only; fall through to the audit.
+    }
+  }
 
   const result = spawnSync('python3', [auditPath], {
     cwd,
@@ -67,7 +95,18 @@ function repoMapAuditReportsClean(cwd) {
 
   const output = `${result.stdout || ''}\n${result.stderr || ''}`;
   const match = output.match(/Total broken references:\s*(\d+)/i);
-  return Boolean(match && Number(match[1]) === 0);
+  const clean = Boolean(match && Number(match[1]) === 0);
+
+  if (auditKey) {
+    try {
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+      fs.writeFileSync(cachePath, JSON.stringify({ ...auditKey, result: clean }, null, 2) + '\n', 'utf8');
+    } catch {
+      // Failure to persist the cache should not change audit behavior.
+    }
+  }
+
+  return clean;
 }
 
 /**
