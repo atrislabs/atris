@@ -249,6 +249,11 @@ function landSummarySafe(root) {
 function refreshLandingRefs(root) {
   const remotes = spawnSync('git', ['remote'], { cwd: root, encoding: 'utf8', timeout: 10000 });
   if (remotes.status !== 0 || !remotes.stdout.split(/\r?\n/).includes('origin')) return;
+  // One round-trip for both; a missing branch doesn't fail the other with a
+  // multi-ref fetch on any git that supports it, and fetch errors are ignored
+  // here anyway.
+  const both = spawnSync('git', ['fetch', 'origin', 'master', 'main'], { cwd: root, encoding: 'utf8', timeout: 30000 });
+  if (both.status === 0) return;
   for (const branch of ['master', 'main']) {
     spawnSync('git', ['fetch', 'origin', branch], { cwd: root, encoding: 'utf8', timeout: 30000 });
   }
@@ -257,7 +262,9 @@ function refreshLandingRefs(root) {
 function sweepLanding(root, { ttlDays, staleHours, now = Date.now() } = {}) {
   refreshLandingRefs(root);
   const { collectBoard, reap } = require('./land');
-  const beforeBoard = collectBoard(root, { ttlDays, staleHours, now });
+  // light: this board only feeds .branches staleness + .summary; reap builds
+  // its own full board for dirty-count salvage decisions.
+  const beforeBoard = collectBoard(root, { ttlDays, staleHours, now, light: true });
   const stale = beforeBoard.branches
     .filter((b) => b.state === 'active' && b.stale)
     .sort((a, b) => b.activityHours - a.activityHours)
@@ -274,7 +281,7 @@ function sweepLanding(root, { ttlDays, staleHours, now = Date.now() } = {}) {
     includeDetached: false,
     now,
   });
-  const afterBoard = collectBoard(root, { ttlDays, staleHours, now });
+  const afterBoard = collectBoard(root, { ttlDays, staleHours, now, light: true });
   const human = [];
   for (const kept of reaped.keptWorktrees || []) {
     if (String(kept).includes('(fresh_worktree_grace)')) continue;
