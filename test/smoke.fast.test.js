@@ -93,7 +93,7 @@ test('real atris binary fast smoke covers wish questions and task render temp pa
     const wish = runCli(['wish', 'fix auth'], { cwd: work, env });
     assert.equal(wish.status, 1, wish.stderr || wish.stdout);
     assert.match(wish.stdout, /^Got it, wish #\d+: fix auth\./);
-    assert.match(wish.stdout, /Auth could mean fastest capture, smartest resurfacing, or most closure\. I would bet on resurfacing, so which should I optimize for\?/);
+    assert.match(wish.stdout, /Auth could mean fewer steps, smarter defaults, or more reliable completion\. I would bet on smarter defaults, so which should I optimize for\?/);
     assert.match(wish.stdout.trim(), /Answer with: atris wish answer "your words"$/);
 
     const outPath = path.join(dir, 'rendered', 'TODO.md');
