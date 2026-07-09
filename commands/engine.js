@@ -63,6 +63,11 @@ const ENGINE_LOGIN_MANIFESTS = Object.freeze({
     type: 'api_key',
     missingHint: 'paste a Devin API key',
   }),
+  grok: Object.freeze({
+    type: 'files',
+    files: Object.freeze(['~/.grok/auth.json']),
+    missingHint: 'run grok and log in with grok.com',
+  }),
 });
 
 function knownLoginProviders() {
@@ -315,7 +320,7 @@ function parseEngineSeedArgs(args = []) {
 }
 
 function printEngineLoginHelp() {
-  console.log('\n  atris engine login <provider> --yes\n                           upload a local whitelisted engine login to the Atris vault\n  atris engine login <provider> --computer\n                           sign in on one of your Atris computers by device flow\n  atris engine login <provider> --business <id>\n                           sign in on a business Atris computer by device flow\n  atris engine login --list\n                           list vaulted engine logins\n  atris engine login --remove <provider>\n                           remove a vaulted engine login\n  providers: codex, claude, cursor, devin\n');
+  console.log('\n  atris engine login <provider> --yes\n                           upload a local whitelisted engine login to the Atris vault\n  atris engine login <provider> --computer\n                           sign in on one of your Atris computers by device flow\n  atris engine login <provider> --business <id>\n                           sign in on a business Atris computer by device flow\n  atris engine login --list\n                           list vaulted engine logins\n  atris engine login --remove <provider>\n                           remove a vaulted engine login\n  providers: codex, claude, cursor, devin, grok\n');
 }
 
 function printEngineSeedHelp() {
