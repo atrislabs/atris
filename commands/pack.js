@@ -5,11 +5,13 @@ const path = require('path');
 const { getAppBaseUrl, httpRequest } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
 const { createZipBuffer, readZipBuffer } = require('../lib/zip');
+const { craftPack } = require('./pack-craft');
 
 const REGISTRY_TIMEOUT_MS = 60000;
 
 function showHelp() {
-  console.log('usage: atris pack publish [--dir atris] [--slug <slug>] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push]');
+  console.log('usage: atris pack craft "<topic>" [--dir <target>] [--force]');
+  console.log('       atris pack publish [--dir atris] [--slug <slug>] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
   console.log('       atris pack pull [<slug>] [--dir <path>]');
   console.log('       atris pack status [--dir <path>]');
@@ -712,6 +714,14 @@ async function run(argv = []) {
       showHelp();
       return subcommand ? 0 : 2;
     }
+    if (subcommand === 'craft') {
+      const result = craftPack(args);
+      if (result && result.needsHelp) {
+        showHelp();
+        return 0;
+      }
+      return result;
+    }
     if (subcommand === 'publish') return await publishPack(args);
     if (subcommand === 'install') return await installPack(args);
     if (subcommand === 'pull') return await pullPack(args);
@@ -729,6 +739,7 @@ async function run(argv = []) {
 
 module.exports = {
   run,
+  craftPack,
   publishPack,
   installPack,
   pullPack,
