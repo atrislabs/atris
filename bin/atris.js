@@ -437,6 +437,7 @@ function showHelp() {
   console.log('  activate   - Load Atris context');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  stream     - Watch the whole team work live in one terminal');
+  console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
   console.log('  brief      - Show the one-glance operator brief');
@@ -1755,9 +1756,7 @@ if (command === 'init') {
   }
   activateCmd();
 } else if (command === 'watch') {
-  Promise.resolve(require('../commands/business-sync').businessSync(['--watch', ...process.argv.slice(3)]))
-    .then(() => process.exit(0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  require('../commands/watch').watchAtris();
 } else if (command === 'update' || command === 'sync') {
   const args = process.argv.slice(3);
   const firstSyncArg = process.argv[3];
