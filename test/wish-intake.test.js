@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const {
   analyzeWishParts,
@@ -13,6 +14,7 @@ const {
 const { isFrontendWish } = require('../lib/wish-design');
 
 const repoRoot = path.resolve(__dirname, '..');
+const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const engineRegistryPath = path.join(repoRoot, '.atris', 'state', 'engines.json');
 const systemPath = '/usr/bin:/bin:/usr/sbin:/sbin';
 
@@ -22,6 +24,40 @@ function makeTempDir() {
 
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function hasNodeSqlite() {
+  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
+    encoding: 'utf8',
+    env: { ...process.env, NODE_NO_WARNINGS: '1' },
+  });
+  return result.status === 0;
+}
+
+function prepareWorkspace(dir) {
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+}
+
+function runCli(args, { cwd, env = {} } = {}) {
+  return spawnSync(process.execPath, [cliPath, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      NODE_NO_WARNINGS: '1',
+      ...env,
+    },
+  });
+}
+
+function readJsonl(file) {
+  return fs.readFileSync(file, 'utf8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
 }
 
 function makeFakeEngines(dir) {
@@ -142,6 +178,71 @@ test('wish clarity audit does not ask for concrete fuzzy operator language', () 
   assert.equal(typoQuestions.some((question) => /\bpl[sz]\b/i.test(question)), false);
 
   assert.ok(auditQuestions('fix the thing we talked about').length > 0);
+});
+
+test('wish grant does not mine location candidates from a consumed answer', () => {
+  if (!hasNodeSqlite()) return;
+  const cases = [
+    { token: '749-760', answer: 'cloud sync uses 749-760 as a line-number range' },
+    { token: 'Refusing', answer: 'cloud sync reports "Refusing" as the error word' },
+    { token: 'reference.', answer: 'cloud sync treats reference. as ordinary prose' },
+  ];
+
+  for (const scenario of cases) {
+    const dir = makeTempDir();
+    try {
+      prepareWorkspace(dir);
+      const fakeBin = makeFakeEngines(dir);
+      const env = {
+        PATH: `${fakeBin}:${systemPath}`,
+        ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+      };
+      const created = runCli(['wish', 'fix cloud sync'], { cwd: dir, env });
+      assert.equal(created.status, 1, `${scenario.token}: ${created.stderr || created.stdout}`);
+      assert.match(created.stdout, /Cloud sync could mean/);
+
+      const granted = runCli(['wish', 'grant', '1', scenario.answer], { cwd: dir, env });
+      assert.equal(granted.status, 0, `${scenario.token}: ${granted.stderr || granted.stdout}`);
+      assert.doesNotMatch(`${granted.stdout}\n${granted.stderr}`, /Which workspace, repo, file, or team member/);
+
+      const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+      const locationQuestions = records.filter((record) => Array.isArray(record.questions)
+        && record.questions.some((question) => /Which workspace, repo, file, or team member/.test(String(question))));
+      assert.equal(locationQuestions.length, 0, scenario.token);
+      assert.equal(records.some((record) => record.answer === scenario.answer), true, scenario.token);
+      assert.equal(records.filter((record) => record.status === 'delegated' && record.dispatched_at).length, 1, scenario.token);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  }
+});
+
+test('wish answer dispatches after one named-input question subject', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const env = {
+      PATH: `${fakeBin}:${systemPath}`,
+      ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    };
+    const created = runCli(['wish', 'fix GhostStack and DeltaOps output for operators'], { cwd: dir, env });
+    assert.equal(created.status, 1, created.stderr || created.stdout);
+    assert.match(created.stdout, /Which workspace, repo, file, or team member did you mean by GhostStack\?/);
+
+    const answered = runCli(['wish', 'answer', 'use this checkout'], { cwd: dir, env });
+    assert.equal(answered.status, 0, answered.stderr || answered.stdout);
+    assert.doesNotMatch(answered.stdout, /Which workspace, repo, file, or team member did you mean by DeltaOps\?/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    const locationQuestions = records.filter((record) => Array.isArray(record.questions)
+      && record.questions.some((question) => /Which workspace, repo, file, or team member/.test(String(question))));
+    assert.equal(locationQuestions.length, 1);
+    assert.equal(records.filter((record) => record.status === 'delegated' && record.dispatched_at).length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
 });
 
 test('wish verifier derivation requires test or command deliverables', () => {
