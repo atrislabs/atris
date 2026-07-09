@@ -240,9 +240,10 @@ test('healthy wish delegates a task and records honest proof status', () => {
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
-    assert.deepEqual(Object.keys(payload).sort(), ['budget', 'engine', 'mission_id', 'questions', 'status', 'task_id', 'wish_id']);
+    assert.deepEqual(Object.keys(payload).sort(), ['budget', 'engine', 'mission_id', 'questions', 'status', 'task_id', 'validator', 'wish_id']);
     assert.equal(payload.status, 'delegated');
     assert.equal(payload.engine, 'claude');
+    assert.equal(payload.validator, 'claude');
     assert.equal(payload.budget, 'long');
     assert.deepEqual(payload.questions, []);
     assert.ok(payload.task_id);
@@ -342,6 +343,36 @@ test('wish attaches to an active normalized objective and owner twin', () => {
   }
 });
 
+test('wish --verify records one explicit allowlisted mission verifier', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'fix the auth bug', '--verify', 'node --test', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: path.join(dir, 'tasks.db') },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    const mission = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'))
+      .find((row) => row.id === payload.mission_id);
+    const wish = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl')).at(-1);
+    assert.equal(mission.verifier, 'node --test');
+    assert.equal(wish.verify, 'node --test');
+    assert.equal(wish.verify_status, 'explicit');
+
+    const refused = runCli(['wish', 'fix the auth bug', '--verify', 'node --test && git push', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: path.join(dir, 'tasks.db') },
+    });
+    assert.equal(refused.status, 2);
+    assert.match(refused.stderr, /wish --verify is not allowed/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish --engine uses an explicit ready engine for task and mission execution', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -358,6 +389,7 @@ test('wish --engine uses an explicit ready engine for task and mission execution
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.status, 'delegated');
     assert.equal(payload.engine, 'codex');
+    assert.equal(payload.validator, 'claude');
     assert.equal(payload.requested_engine, 'codex');
     assert.equal(payload.engine_fallback_reason, undefined);
 
@@ -657,11 +689,12 @@ test('json question shape is stable', () => {
     });
     assert.equal(res.status, 1, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
-    assert.deepEqual(Object.keys(payload).sort(), ['budget', 'engine', 'mission_id', 'questions', 'status', 'task_id', 'wish_id']);
+    assert.deepEqual(Object.keys(payload).sort(), ['budget', 'engine', 'mission_id', 'questions', 'status', 'task_id', 'validator', 'wish_id']);
     assert.equal(payload.status, 'needs_input');
     assert.equal(payload.task_id, null);
     assert.equal(payload.mission_id, null);
     assert.equal(payload.engine, 'codex');
+    assert.equal(payload.validator, 'claude');
     assert.equal(payload.budget, 'long');
     assert.ok(Array.isArray(payload.questions));
   } finally {

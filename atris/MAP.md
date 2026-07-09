@@ -143,7 +143,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 ### Feature: Natural Language Interface (`atris [anything]`)
 
-**Purpose:** Universal entry point - accepts any input and routes intelligently
+**Purpose:** Make one plain sentence the complete scoped path from intent to verified Review.
 
 - **Entry point:** `lib/known-commands.js:3` (knownCommands list), `bin/atris.js:987` (dispatch check)
 - **Cold-start handler:** `bin/atris.js:1099` (`interactiveEntry`; active missions/work outrank completed history)
@@ -159,8 +159,15 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris fix the auth bug` → Hot start with task
 - `atris build user dashboard` → Hot start with feature
 - **Value:** Single command for everything, natural language input
+- **Argument routing:** `bin/atris.js:127-165` strips only recognized controls, preserves the operator sentence, and keeps single-word command typo behavior.
+- **Natural entry:** `bin/atris.js:1045-1074` routes multiword unknown input into the one-lap path; `bin/atris.js:1135-1335` preserves fresh-workspace context gathering and uses one lap only after MAP/context readiness.
+- **Coordinator:** `commands/one-lap.js:1-361` resumes matching active wishes, requires one exact task and mission, blocks protected actions, selects a ready executor, requires an allowlisted mission verifier, and renders text or `atris.one_lap.v1` JSON.
+- **Execution gate:** `lib/fleet.js:757-1076` atomically claims the exact task, builds in an isolated worktree, reruns the coordinator-owned verifier without a shell, leaves master unchanged, moves passing work to Review, and writes `atris.dispatch_receipt.v1`.
+- **Proof gate:** `lib/receipt-evidence.js:31-66` treats missing verifier state as non-passing.
+- **Regression:** `test/one-lap-router.test.js:1-90` covers flag/alias/JSON routing; `test/one-lap-runtime.test.js:1-236` proves the real task DB, engine process, git worktree, verifier pass/fail, dedupe, receipt, and unchanged master paths.
+- **Examples:** `atris "fix the failing test"`; `atris "fix the failing test" --engine codex --json`.
 
-**Search:** `rg "interactiveEntry" bin/atris.js`
+**Search:** `rg "runOneLap|reviewOnly|atris.one_lap" bin/atris.js commands/one-lap.js lib/fleet.js test/one-lap-*.test.js`
 
 ### Feature: Project Initialization (`atris init`)
 

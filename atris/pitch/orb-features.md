@@ -7,7 +7,7 @@
 ## The forward pass (the product)
 
 1. **The Interview**, any fuzzy ask gets opinionated blanks ("best could mean X, Y, Z, I'd bet Y, right?") before dispatch. The input edge of the orb. Stands on: wish-audit clarity gate, taste doctrine.
-2. **One command, one lap**, `atris "<any sentence>"` runs the whole diagram: orb breaks it down, navigator gathers, engines build, validator gates, orb answers in plain english with a receipt. Stands on: mission run --fleet, engines, wish front door.
+2. **One command, one lap** (shipped 2026-07-09), `atris "<any sentence>"` scopes one task, resumes duplicates, builds in an isolated worktree, reruns an allowlisted verifier, stops in Review without changing master, and answers in plain english or JSON with a receipt. Stands on: wish interview, engine registry, scoped dispatch, receipt evidence.
 3. **Weights that update**, receipts auto-tune routing nightly: which engine/prompt/model won per task shape gets repinned without a human. The gradient arrow made real. Stands on: scorecards, experiments-on-tick, ROUTING.md.
 4. **Watch the forward pass**, live web view of the neural-net diagram: your ask lighting up orb → hidden layer → validator → answer. The demo that sells itself. Stands on: atrisos-web, tasks.projection.json, mission events.
 

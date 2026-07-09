@@ -40,10 +40,11 @@ const {
 } = require('../lib/wish-delegate');
 const { enqueueCloudMission, VALID_CLOUD_LANES } = require('../lib/cloud-mission');
 const { printWishStats } = require('../lib/wish-stats');
+const { parseVerifyCommand } = require('../lib/auto-accept-certified');
 
 function showHelp() {
   console.log('');
-  console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--as builder] [--metric "<name><op><target>"] [--json] [--no-mission]');
+  console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--verify "<cmd>"] [--as builder] [--metric "<name><op><target>"] [--json] [--no-mission]');
   console.log('       atris wish "<plain sentence>" --cloud [--lane fast|pro|max] [--agent <id>]');
   console.log('         --metric example: --metric "stripe.active_subs>=10" (ops: >=, >, <=, <, ==)');
   console.log('       atris wish list [--all]');
@@ -208,17 +209,19 @@ function parseFlagArgs(args, valueFlagNames = []) {
 function wishOptions(args) {
   const cloud = args.includes('--cloud');
   const parsed = parseFlagArgs(args, cloud
-    ? ['--engine', '--as', '--metric', '--lane', '--agent']
-    : ['--engine', '--as', '--metric']);
+    ? ['--engine', '--as', '--metric', '--verify', '--lane', '--agent']
+    : ['--engine', '--as', '--metric', '--verify']);
   return {
     asJson: args.includes('--json'),
     cloud,
     noMission: args.includes('--no-mission'),
+    singleTask: args.includes('--one-lap'),
     asMode: String(parsed.values['--as'] || '').trim(),
     agentId: String(parsed.values['--agent'] || '').trim(),
     engineOverride: String(parsed.values['--engine'] || '').trim(),
     lane: String(parsed.values['--lane'] || '').trim() || 'fast',
     metricRaw: String(parsed.values['--metric'] || '').trim(),
+    verifyRaw: String(parsed.values['--verify'] || '').trim(),
     positionals: parsed.positionals,
   };
 }
@@ -273,6 +276,19 @@ async function runCloudWish(text, root, options, deps = {}) {
     (deps.error || console.error)(error.message || String(error));
     return error.exitCode || 1;
   }
+}
+
+function resolveVerifyOption(options) {
+  if (!options.verifyRaw) return null;
+  const parsed = parseVerifyCommand(options.verifyRaw);
+  if (!parsed.ok) return `wish --verify is not allowed (${parsed.reason}).`;
+  options.verifyPlan = {
+    command: options.verifyRaw,
+    outcome: 'the supplied verifier passes',
+    status: 'explicit',
+  };
+  options.userVerifyProvided = true;
+  return null;
 }
 
 // Parses --metric into options.metric; returns an error message on malformed input.
@@ -431,6 +447,11 @@ function wishCommand(args = [], deps = {}) {
   const metricError = resolveMetricOption(options);
   if (metricError) {
     console.error(metricError);
+    return 2;
+  }
+  const verifyError = resolveVerifyOption(options);
+  if (verifyError) {
+    console.error(verifyError);
     return 2;
   }
   // "atris wish claim <text>" is command confusion; the word claim is not part of the wish.

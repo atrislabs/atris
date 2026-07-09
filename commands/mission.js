@@ -729,6 +729,63 @@ function listMissions(root = process.cwd()) {
     .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
 }
 
+function markMissionReviewReady(missionId, options = {}, root = process.cwd()) {
+  const mission = loadMissionMap(root).get(String(missionId || '').trim());
+  if (!mission) throw new Error(`mission not found: ${missionId}`);
+  if (['complete', 'stopped'].includes(String(mission.status || ''))) {
+    throw new Error(`mission is already ${mission.status}: ${mission.id}`);
+  }
+  const verifier = String(options.verifier || '').trim();
+  const receiptInput = String(options.receiptPath || '').trim();
+  if (!verifier || !receiptInput) throw new Error('review-ready mission requires verifier and receipt');
+  const receiptPath = path.isAbsolute(receiptInput) ? path.resolve(receiptInput) : path.resolve(root, receiptInput);
+  const runsRoot = path.resolve(root, 'atris', 'runs');
+  if (receiptPath !== runsRoot && !receiptPath.startsWith(`${runsRoot}${path.sep}`)) {
+    throw new Error('review-ready receipt must be under atris/runs');
+  }
+  let receipt;
+  try { receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8')); } catch {
+    throw new Error('review-ready receipt is missing or invalid');
+  }
+  const receiptVerifier = receipt && receipt.result && receipt.result.verifier_result;
+  if (receipt?.result?.passed !== true || receiptVerifier?.passed !== true || receiptVerifier.command !== verifier) {
+    throw new Error('review-ready receipt does not contain the passing mission verifier');
+  }
+  if (receipt?.review_only === true
+      && (receipt.result.master_boundary_enforced !== true || receipt.result.master_unchanged !== true)) {
+    throw new Error('review-ready receipt does not prove the master boundary');
+  }
+  if (receipt?.review_only === true && receipt?.context?.source === 'one_lap') {
+    const validation = receipt?.result?.validator_result;
+    if (validation?.passed !== true
+        || validation?.independent !== true
+        || validation?.worktree_unchanged !== true
+        || !validation?.engine
+        || validation.engine === validation.executor_engine) {
+      throw new Error('review-ready one-lap receipt does not contain an independent validator pass');
+    }
+  }
+  if (receipt?.context?.mission_id && receipt.context.mission_id !== mission.id) {
+    throw new Error('review-ready receipt belongs to another mission');
+  }
+  const relativeReceipt = path.relative(root, receiptPath);
+  const next = {
+    ...mission,
+    status: 'ready',
+    verifier,
+    verifier_result: { ...receiptVerifier, scope: 'isolated_worktree' },
+    receipt_path: relativeReceipt,
+    review_ready_at: stampIso(),
+    next_action: String(options.nextAction || '').trim() || `review proof at ${relativeReceipt}`,
+  };
+  return saveMission(next, root, 'mission_review_ready', {
+    verifier,
+    receipt_path: relativeReceipt,
+    task_id: options.taskId || null,
+    worktree: options.worktree || null,
+  }).mission;
+}
+
 // Cross-worktree rollup: missions started with --worktree keep their state inside
 // that worktree, so a plain `mission status` from any single checkout is blind to
 // them. Enumerate sibling git worktrees and surface their missions read-only.
@@ -9290,6 +9347,7 @@ module.exports = {
   reapPausedMissions,
   missionHeartbeatLines,
   listMissions,
+  markMissionReviewReady,
   listWorktreeRollupMissions,
   findActiveTwinMission,
   TWIN_ACTIVE_STATUSES,

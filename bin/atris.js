@@ -87,7 +87,7 @@ const helpRequested = updateCommand === 'help'
   || updateArgs.includes('--help')
   || updateArgs.includes('-h')
   || updateArgs[0] === 'help';
-const jsonRequested = updateArgs.includes('--json');
+const jsonRequested = process.argv.slice(2).includes('--json');
 const dryRunRequested = updateArgs.includes('--dry-run');
 const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested || jsonRequested);
 if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update'].includes(updateCommand)))) {
@@ -110,6 +110,12 @@ let command = process.argv[2];
 const commandArgs = process.argv.slice(3);
 const firstCommandArg = process.argv[3];
 const RUNNER_FLAG_NAMES = ['--runner-bin', '--runner-template', '--runner-model', '--runner-profile'];
+const NATURAL_VALUE_FLAGS = [...RUNNER_FLAG_NAMES, '--engine', '--verify'];
+const SINGLE_WORD_NATURAL_INTENTS = new Set([
+  'add', 'analyze', 'build', 'change', 'check', 'create', 'debug', 'document',
+  'edit', 'fix', 'implement', 'inspect', 'investigate', 'make', 'patch',
+  'refactor', 'remove', 'rename', 'research', 'test', 'update', 'validate', 'write',
+]);
 
 function readOptionArg(args, name) {
   const prefix = `${name}=`;
@@ -122,6 +128,50 @@ function readOptionArg(args, name) {
 
 function isOptionValue(args, index, optionNames) {
   return index > 0 && optionNames.includes(args[index - 1]);
+}
+
+function parseNaturalEntryArgs(args = []) {
+  const positionals = [];
+  let asJson = false;
+  let engine = '';
+  let verifier = '';
+  let error = '';
+  for (let i = 0; i < args.length; i += 1) {
+    const value = String(args[i] || '');
+    if (value === '--json') {
+      asJson = true;
+      continue;
+    }
+    const inlineFlag = NATURAL_VALUE_FLAGS.find((name) => value.startsWith(`${name}=`));
+    if (inlineFlag) {
+      const optionValue = value.slice(inlineFlag.length + 1);
+      if (!optionValue) error = `${inlineFlag} needs a value`;
+      if (inlineFlag === '--engine') engine = optionValue;
+      if (inlineFlag === '--verify') verifier = optionValue;
+      continue;
+    }
+    if (NATURAL_VALUE_FLAGS.includes(value)) {
+      const optionValue = String(args[i + 1] || '');
+      if (!optionValue || optionValue.startsWith('--')) {
+        error = `${value} needs a value`;
+      } else {
+        if (value === '--engine') engine = optionValue;
+        if (value === '--verify') verifier = optionValue;
+        i += 1;
+      }
+      continue;
+    }
+    positionals.push(value);
+  }
+  return {
+    asJson,
+    engine,
+    verifier,
+    error,
+    positionals,
+    input: positionals.join(' ').replace(/\s+/g, ' ').trim(),
+    multiword: positionals.length > 1 || positionals.some((value) => /\s/.test(value.trim())),
+  };
 }
 
 function applyRunnerFlags(args) {
@@ -399,6 +449,9 @@ function showHelp() {
   console.log('  3. Atris acts with context, memory, tools, and a review loop');
   console.log('');
   console.log('Common invocations:');
+  console.log('  atris "<request>"         Build one isolated change, verify it, and stop in Review');
+  console.log('  atris "<request>" --verify "<cmd>" --json');
+  console.log('                            Supply proof explicitly and return one JSON result');
   console.log('  atris init [--yes]        Global install: initialize this project');
   console.log('  npx atris init [--yes]    Local install: initialize this project');
   console.log('  atris computer');
@@ -987,11 +1040,7 @@ const voiceTriggers = {
 if (!command || !knownCommands.includes(command)) {
   // Check voice triggers before falling through to natural language
   const fullInput = process.argv.slice(2).join(' ').toLowerCase().trim();
-  const fullInputWithoutFlags = process.argv.slice(2)
-    .filter((arg, index, args) => !String(arg).startsWith('-') && !isOptionValue(args, index, RUNNER_FLAG_NAMES))
-    .join(' ')
-    .toLowerCase()
-    .trim();
+  const fullInputWithoutFlags = parseNaturalEntryArgs(process.argv.slice(2)).input.toLowerCase();
   const triggered = voiceTriggers[fullInput] || voiceTriggers[fullInputWithoutFlags];
   if (triggered) {
     command = triggered;
@@ -1005,28 +1054,32 @@ if (!command || !knownCommands.includes(command)) {
 }
 
 if (!command || !knownCommands.includes(command)) {
-  const userInput = process.argv.slice(2).join(' ');
+  const rawNaturalArgs = process.argv.slice(2);
+  const natural = parseNaturalEntryArgs(rawNaturalArgs);
+  const userInput = natural.input;
+  const directSingleWordNatural = !natural.multiword
+    && SINGLE_WORD_NATURAL_INTENTS.has(userInput.toLowerCase());
 
-  if (process.argv.includes('--json')) {
+  if (natural.asJson && !natural.multiword && !directSingleWordNatural) {
     console.log(JSON.stringify({
       ok: false,
       error: command ? `unknown command: ${command}` : 'unknown command',
       command: command || null,
-      input: userInput,
+      input: rawNaturalArgs.join(' '),
       usage: 'atris help',
     }, null, 2));
     process.exit(2);
   }
 
   // Warn if this looks like a mistyped single-word command (no spaces)
-  if (command && !userInput.includes(' ')) {
+  if (command && !natural.multiword && !directSingleWordNatural) {
     console.log(`⚠ Unknown command: "${command}". Run "atris help" for available commands.`);
     console.log('  Treating as natural language input...\n');
   }
 
   // Launch interactive entry (the "Performance")
-  interactiveEntry(userInput)
-    .then(() => process.exit(0))
+  interactiveEntry(userInput, { oneLap: true, asJson: natural.asJson, engine: natural.engine, verifier: natural.verifier, optionError: natural.error })
+    .then((code) => process.exit(Number.isInteger(code) ? code : 0))
     .catch((error) => {
       console.error(`✗ Error: ${error.message || error}`);
       process.exit(1);
@@ -1096,18 +1149,49 @@ function printStarterTaskNext(starter) {
   console.log('Next: atris task next --as ' + localOwnerName());
 }
 
-async function interactiveEntry(userInput) {
+async function interactiveEntry(userInput, options = {}) {
   const workspaceDir = process.cwd();
   const state = detectWorkspaceState(workspaceDir);
   const context = loadContext(workspaceDir);
 
+  if (options.asJson && !String(userInput || '').trim()) {
+    console.log(JSON.stringify({
+      schema: 'atris.one_lap.v1',
+      ok: false,
+      status: 'stuck',
+      reason: 'a request is required',
+      next_action: 'atris "<request>" --json',
+    }, null, 2));
+    return 2;
+  }
+
   if (isAtrisMetaQuestion(userInput)) {
+    if (options.asJson) {
+      console.log(JSON.stringify({
+        schema: 'atris.overview.v1',
+        ok: true,
+        product: 'Atris',
+        description: 'An AI computer for a workspace with context, tasks, memory, tools, and proof.',
+        workflow: ['plan', 'do', 'review'],
+      }, null, 2));
+      return 0;
+    }
     printAtrisOverview();
     return;
   }
 
   // Fresh install - offer init
   if (state.state === 'fresh') {
+    if (options.asJson) {
+      console.log(JSON.stringify({
+        schema: 'atris.one_lap.v1',
+        ok: false,
+        status: 'stuck',
+        reason: 'this workspace is not initialized',
+        next_action: 'atris init --yes',
+      }, null, 2));
+      return 2;
+    }
     console.log('\nNo atris/ folder found.');
     console.log('');
     console.log('Next: atris init');
@@ -1139,6 +1223,55 @@ async function interactiveEntry(userInput) {
   // commitment that hasn't been closed yet.
   const activeMissions = loadActiveMissions(workspaceDir);
   const liveMissionsCount = activeMissions.length;
+  const wipCount = inProgressTasksCount + inProgressFeaturesCount;
+  const mapStatus = context.mapStatus || (context.mapExists ? 'ready' : 'missing');
+  const gatherContext = shouldGatherContext({
+    root: workspaceDir,
+    userInput,
+    mapStatus,
+    liveMissionsCount,
+    wipCount,
+    backlogCount,
+    inboxCount,
+    completedTasksCount,
+  });
+
+  if (options.optionError) {
+    const result = {
+      schema: 'atris.one_lap.v1',
+      ok: false,
+      status: 'stuck',
+      reason: options.optionError,
+      next_action: 'atris "<request>" [--engine <id>] [--verify "<cmd>"] [--json]',
+    };
+    if (options.asJson) console.log(JSON.stringify(result, null, 2));
+    else {
+      console.log('lap: stuck');
+      console.log(`why it matters: ${result.reason}`);
+      console.log(`next: ${result.next_action}`);
+    }
+    return 2;
+  }
+
+  if (userInput && mapStatus === 'ready' && !gatherContext && options.oneLap !== false) {
+    return require('../commands/one-lap').runOneLap(userInput, {
+      root: workspaceDir,
+      asJson: options.asJson === true,
+      engine: options.engine || '',
+      verifier: options.verifier || '',
+    });
+  }
+
+  if (options.asJson && userInput) {
+    console.log(JSON.stringify({
+      schema: 'atris.one_lap.v1',
+      ok: false,
+      status: 'stuck',
+      reason: mapStatus !== 'ready' ? 'the workspace map is not ready' : 'first-contact context is required',
+      next_action: mapStatus !== 'ready' ? 'atris init --yes' : 'atris "<first direction>"',
+    }, null, 2));
+    return 2;
+  }
   // Mission needs a tick when: it has a verifier configured AND that verifier
   // hasn't passed yet. Planning-state missions count too — first tick is what
   // moves them to running.
@@ -1148,7 +1281,6 @@ async function interactiveEntry(userInput) {
 
   // Build status line
   const parts = [];
-  const wipCount = inProgressTasksCount + inProgressFeaturesCount;
   if (wipCount > 0) {
     parts.push(`WIP: ${wipCount}`);
   }
@@ -1173,16 +1305,7 @@ async function interactiveEntry(userInput) {
   console.log(`│ ${statusLine.padEnd(60)}│`);
   console.log('└─────────────────────────────────────────────────────────────┘');
 
-  const mapStatus = context.mapStatus || (context.mapExists ? 'ready' : 'missing');
-  if (shouldGatherContext({
-    root: workspaceDir,
-    userInput,
-    mapStatus,
-    liveMissionsCount,
-    wipCount,
-    backlogCount,
-    inboxCount,
-  })) {
+  if (gatherContext) {
     const hotAnswer = String(userInput || '').trim();
     if (hotAnswer) {
       const answer = hotAnswer;
@@ -2156,9 +2279,15 @@ if (command === 'init') {
     showNextHelp(command);
     process.exit(0);
   }
-  const userInput = rawArgs.filter((arg) => !arg.startsWith('-')).join(' ').trim();
-  interactiveEntry(userInput || null)
-    .then(() => process.exit(0))
+  const natural = parseNaturalEntryArgs(rawArgs);
+  interactiveEntry(natural.input || null, {
+    oneLap: Boolean(natural.input),
+    asJson: natural.asJson,
+    engine: natural.engine,
+    verifier: natural.verifier,
+    optionError: natural.error,
+  })
+    .then((code) => process.exit(Number.isInteger(code) ? code : 0))
     .catch((error) => {
       console.error(`✗ Error: ${error.message || error}`);
       process.exit(1);
