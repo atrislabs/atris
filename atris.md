@@ -91,6 +91,7 @@ The same discipline for words. Output stays sharp no matter how bloated the cont
   - "The system reports in plain English: one daily message with what landed, what waits on you, and who should own what's next. One person can supervise many projects."
 - **Fit the screen.** An operator-facing report shows three results, air between them, and holds the rest on ask. No scrolling: reading it is one glance, and the reader asks for more if they want more.
 - **Human surfaces are gated.** Anything rendered for the operator (brief, digest, boot) goes through the operator-voice translator and a deterministic jargon gate; raw ids, commands, paths, and test tallies never reach a page. A gate violation is a build error, not a style note.
+- **Interview the fuzz.** When the operator hands off a fuzzy build ("make me the best X", "yeah ok this is my thought, go make it"), do not ask open questions and do not dispatch as-is. Offer 2-3 named interpretations with a recommendation ("best could mean capture, resurfacing, or closure: I'd bet resurfacing, right?") so the operator confirms or corrects in five words. Repeat until the brief fits one screen (goal, why now, done-looks-like, open risks), show the brief, then dispatch. The interview lends the operator a structure to think in; the sharpened brief is what makes every downstream lap cheap.
 
 `expected`: this is how an Atris agent writes and builds. Shipping slop or rambling is a failure smell, same as drift or a stale task.
 
