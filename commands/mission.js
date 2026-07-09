@@ -35,6 +35,12 @@ const {
   writeMissionArtifact,
 } = require('../lib/mission-artifact');
 const {
+  renderCard,
+  renderPageSection,
+  renderEmailLine,
+  renderMorningCardRow,
+} = require('../lib/receipt-block');
+const {
   pruneRuns,
   runsPruneLines,
   formatBytes,
@@ -4713,7 +4719,7 @@ function writeReceipt(mission, result, root = process.cwd()) {
   const receiptPath = path.join(paths.runsDir, `mission-${mission.id}-${safeTime}.json`);
   const relativeReceiptPath = path.relative(root, receiptPath);
   const finalResult = normalizeMissionReceiptResult(mission, result, relativeReceiptPath);
-  fs.writeFileSync(receiptPath, JSON.stringify({
+  const receipt = {
     schema: 'atris.mission_receipt.v1',
     mission_id: mission.id,
     objective: mission.objective,
@@ -4721,7 +4727,15 @@ function writeReceipt(mission, result, root = process.cwd()) {
     at: stampIso(),
     verifier: mission.verifier || null,
     result: finalResult,
-  }, null, 2) + '\n', 'utf8');
+  };
+  receipt.render = {
+    version: 1,
+    card: renderCard(receipt),
+    page_section: renderPageSection(receipt),
+    email_line: renderEmailLine(receipt),
+    morning_card_row: renderMorningCardRow(receipt),
+  };
+  fs.writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n', 'utf8');
   return relativeReceiptPath;
 }
 

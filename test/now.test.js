@@ -122,7 +122,7 @@ test('renderDefaultNow leads with active mission move when codex goal selection 
     const content = renderDefaultNow(dir);
     const section = content.split('## What Matters Now\n\n')[1].split('\n\n## Current Priority')[0];
 
-    assert.equal(section.split('\n')[0], 'The move: Make the golden path obvious — next: atris mission run --due --max-ticks 1 --complete-on-pass');
+    assert.equal(section.split('\n')[0], 'The move: Make the golden path obvious - next: atris mission run --due --max-ticks 1 --complete-on-pass');
     assert.match(section, /- Decide the next useful move before opening more context\./);
   } finally {
     cleanup(dir);
@@ -377,8 +377,8 @@ test('While You Were Away shows every receipt behind the count, including accept
     assert.equal(countTaskReceiptsToday(dir, today), 2);
     assert.equal(receiptLineCount, 2);
     assert.match(content, /Completed receipts today: 2/);
-    assert.match(content, /Ship the episode receipt — node --test episode receipt passed/);
-    assert.match(content, /Land the accepted receipt — node --test accepted receipt passed/);
+    assert.match(content, /Ship the episode receipt - node --test episode receipt passed/);
+    assert.match(content, /Land the accepted receipt - node --test accepted receipt passed/);
   } finally {
     cleanup(dir);
   }
