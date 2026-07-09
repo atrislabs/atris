@@ -1,11 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { readZipFile, writeZipFile } = require('../lib/zip');
-const { installPack, listInstalledPacks, updatePack } = require('../commands/pack');
+const { comparePackVersions, installPack, listInstalledPacks, pullPack, updatePack } = require('../commands/pack');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -53,7 +54,7 @@ function packZipBuffer(dir, manifest = sampleManifest()) {
   return fs.readFileSync(zipPath);
 }
 
-function runCli(args, { cwd }) {
+function runCli(args, { cwd, env = {} }) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
@@ -61,10 +62,27 @@ function runCli(args, { cwd }) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...env,
     },
   });
   if (result.error) throw result.error;
   return result;
+}
+
+function listen(server) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject);
+      resolve(server.address());
+    });
+  });
+}
+
+function closeServer(server) {
+  return new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
 }
 
 test('pack publish --out then install round trips atris and manifest', () => {
@@ -164,6 +182,54 @@ test('pack publish bumps patch version on subsequent publish', () => {
   } finally {
     cleanupTempDir(dir);
   }
+});
+
+test('pack publish without output still writes pack.json and sharing hint', () => {
+  const dir = makeTempDir();
+  try {
+    seedAtris(dir);
+    const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'hint-pack'], { cwd: dir });
+    assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
+    assert.match(publish.stdout, /wrote pack\.json for hint-pack 0\.1\.0/);
+    assert.match(publish.stdout, /share with: atris pack publish --out <file\.zip> or atris pack publish --push/);
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'pack.json'), 'utf8'));
+    assert.equal(manifest.slug, 'hint-pack');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack publish --push exits with login hint when not logged in', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  try {
+    seedAtris(dir);
+    const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'push-pack', '--push'], {
+      cwd: dir,
+      env: {
+        HOME: home,
+        ATRIS_TOKEN: '',
+        ATRIS_PROFILE: '',
+        TERM_SESSION_ID: '',
+        ITERM_SESSION_ID: '',
+        TMUX_PANE: '',
+        WT_SESSION: '',
+        WEZTERM_PANE: '',
+      },
+    });
+    assert.equal(publish.status, 1, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
+    assert.match(`${publish.stdout}\n${publish.stderr}`, /not logged in\. run atris login first to publish packs\./);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('pack version comparison sorts semantic versions numerically', () => {
+  assert.equal(comparePackVersions('0.2.0', '0.1.9'), 1);
+  assert.equal(comparePackVersions('1.0.0', '1.0.0'), 0);
+  assert.equal(comparePackVersions('1.2.0', '1.10.0'), -1);
+  assert.equal(comparePackVersions('unknown', '0.1.0'), null);
 });
 
 test('pack list shows pack folders under cwd and packs', () => {
@@ -375,6 +441,94 @@ test('pack update upgrades registry packs and preserves user files', async () =>
     assert.equal(installed.version, '0.2.0');
     assert.deepEqual(installed.origin, { type: 'registry', slug: 'demo-pack' });
     assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# pack\n');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack pull stages newer remote in upstream and preserves local edits', async () => {
+  const dir = makeTempDir();
+  let server = null;
+  const previousAppUrl = process.env.ATRIS_APP_URL;
+  try {
+    const localZip = path.join(dir, 'local.zip');
+    writeZipFile(localZip, [
+      { name: 'pack.json', data: Buffer.from(`${JSON.stringify(sampleManifest({ slug: 'demo-pack', version: '0.1.0' }), null, 2)}\n`) },
+      { name: 'README.md', data: Buffer.from('# local readme\n') },
+    ]);
+
+    const target = path.join(dir, 'installed');
+    assert.equal(await installPack([localZip, '--dir', target], dir), 0);
+    fs.writeFileSync(path.join(target, 'README.md'), '# local edit\n', 'utf8');
+
+    const remoteZip = path.join(dir, 'remote.zip');
+    writeZipFile(remoteZip, [
+      { name: 'pack.json', data: Buffer.from(`${JSON.stringify(sampleManifest({ slug: 'demo-pack', version: '0.2.0' }), null, 2)}\n`) },
+      { name: 'README.md', data: Buffer.from('# remote readme\n') },
+      { name: 'atris/atris.md', data: Buffer.from('# remote atris\n') },
+    ]);
+    const remoteBuffer = fs.readFileSync(remoteZip);
+    const requests = [];
+    server = http.createServer((req, res) => {
+      requests.push(`${req.method} ${req.url}`);
+      if (req.method === 'GET' && req.url === '/api/pack/registry/demo-pack') {
+        res.writeHead(200, { 'Content-Type': 'application/zip' });
+        res.end(remoteBuffer);
+        return;
+      }
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not found' }));
+    });
+    const address = await listen(server);
+    process.env.ATRIS_APP_URL = `http://127.0.0.1:${address.port}`;
+
+    const result = await pullPack(['--dir', target], dir);
+    assert.equal(result.upToDate, false);
+    assert.deepEqual(requests, ['GET /api/pack/registry/demo-pack']);
+    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# local edit\n');
+    assert.equal(fs.readFileSync(path.join(target, '.upstream', 'README.md'), 'utf8'), '# remote readme\n');
+    assert.equal(fs.readFileSync(path.join(target, '.upstream', 'atris', 'atris.md'), 'utf8'), '# remote atris\n');
+
+    const upstreamManifest = JSON.parse(fs.readFileSync(path.join(target, '.upstream', 'pack.json'), 'utf8'));
+    assert.equal(upstreamManifest.version, '0.2.0');
+    const state = JSON.parse(fs.readFileSync(path.join(target, '.upstream', 'STATE.json'), 'utf8'));
+    assert.equal(state.slug, 'demo-pack');
+    assert.equal(state.localVersion, '0.1.0');
+    assert.equal(state.remoteVersion, '0.2.0');
+    assert.ok(state.pulledAt);
+  } finally {
+    if (previousAppUrl === undefined) {
+      delete process.env.ATRIS_APP_URL;
+    } else {
+      process.env.ATRIS_APP_URL = previousAppUrl;
+    }
+    if (server) await closeServer(server);
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack status prints never pulled and last pulled remote version', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-pack');
+    writePackDir(target, { slug: 'demo-pack', version: '0.1.0' });
+
+    const neverPulled = runCli(['pack', 'status', '--dir', target], { cwd: dir });
+    assert.equal(neverPulled.status, 0, `stdout:\n${neverPulled.stdout}\nstderr:\n${neverPulled.stderr}`);
+    assert.match(neverPulled.stdout, /demo-pack local v0\.1\.0, remote never pulled/);
+
+    fs.mkdirSync(path.join(target, '.upstream'), { recursive: true });
+    fs.writeFileSync(path.join(target, '.upstream', 'STATE.json'), `${JSON.stringify({
+      slug: 'demo-pack',
+      localVersion: '0.1.0',
+      remoteVersion: '0.2.0',
+      pulledAt: '2026-07-09T12:00:00.000Z',
+    }, null, 2)}\n`);
+
+    const pulled = runCli(['pack', 'status', '--dir', target], { cwd: dir });
+    assert.equal(pulled.status, 0, `stdout:\n${pulled.stdout}\nstderr:\n${pulled.stderr}`);
+    assert.match(pulled.stdout, /demo-pack local v0\.1\.0, last pulled remote v0\.2\.0/);
+    assert.match(pulled.stdout, /pulled at 2026-07-09T12:00:00\.000Z/);
   } finally {
     cleanupTempDir(dir);
   }
