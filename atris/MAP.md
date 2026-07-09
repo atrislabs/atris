@@ -1100,14 +1100,15 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Load Atris context - MAP.md, journal, tasks - and display system status
 
-- **Entry point:** `commands/activate.js:6-129` (activateAtris function)
+- **Entry point:** `commands/activate.js:56-249` (activateAtris function)
 - **Routing:** `bin/atris.js:1153-1159`
 - **Help:** `bin/atris.js:677-687` (`showActivateHelp`) prints usage before context loading or journal creation
-- **Regression:** `test/commands.test.js:4310-4324` covers activate help without context panels or temp state creation
+- **Regression:** `test/commands.test.js:4310-4324` covers activate help without context panels or temp state creation; `test/activate-boot.test.js` covers the boot brief + sync-status line
 - **Logic:**
 - Detects workspace state via `lib/state-detection.js`
 - Loads MAP.md, TODO.md, today's journal
 - Shows context summary (inbox, backlog, in progress, completions)
+- Ends with the one-line brief (`renderBrief` first line) + one cloud sync line (`sync: in sync|N files drifted|offline`) via `lib/sync-status.js` (`syncStatus`/`driftCount`, local-only vs `lib/manifest.js`)
 - **Value:** Quick context reload without natural language entry
 
 **Search:** `rg "activateAtris|showActivateHelp|activate and next --help" bin/atris.js commands/activate.js test/commands.test.js`

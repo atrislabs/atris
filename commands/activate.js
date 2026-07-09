@@ -231,6 +231,18 @@ function activateAtris() {
   } catch { /* alive onboarding is best-effort; never block activate */ }
   console.log('Next: atris plan → do → review (or atris log)');
   console.log('');
+
+  // One-line brief + one-line cloud sync status. Best-effort: never block boot.
+  try {
+    const { buildBriefData, renderBrief } = require('./brief');
+    const briefLine = renderBrief(buildBriefData(workspaceDir)).split('\n')[0];
+    if (briefLine) console.log(briefLine);
+  } catch { /* brief is best-effort */ }
+  try {
+    const { syncStatus } = require('../lib/sync-status');
+    console.log(`sync: ${syncStatus(workspaceDir)}`);
+  } catch { /* sync status is best-effort */ }
+  console.log('');
 }
 
 module.exports = { activateAtris };
