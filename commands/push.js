@@ -98,6 +98,34 @@ function shouldRetrySyncIndividually(result, filesToPush) {
   return result.status !== 403 && result.status !== 409;
 }
 
+function buildPushUploadBatches(filesToPush = [], { maxBatchBytes = 256 * 1024 } = {}) {
+  const batches = [];
+  let current = [];
+  let currentBytes = 0;
+  const limit = Number.isFinite(maxBatchBytes) && maxBatchBytes > 0 ? maxBatchBytes : 256 * 1024;
+
+  const flush = () => {
+    if (current.length > 0) batches.push(current);
+    current = [];
+    currentBytes = 0;
+  };
+
+  for (const file of filesToPush) {
+    const bytes = Buffer.byteLength(file && file.content ? String(file.content) : '', 'utf8');
+    if (bytes > limit) {
+      flush();
+      batches.push([file]);
+      continue;
+    }
+    if (current.length > 0 && currentBytes + bytes > limit) flush();
+    current.push(file);
+    currentBytes += bytes;
+  }
+
+  flush();
+  return batches;
+}
+
 function isMassDeletePlan({ deletedPaths = [], filesToPush = [], unchangedCount = 0 } = {}) {
   const deleteCount = deletedPaths.length;
   if (deleteCount === 0) return false;
@@ -667,64 +695,68 @@ async function pushAtris() {
 
   if (filesToPush.length > 0) {
     // Push files to server (strip leading slash — server requires workspace-relative paths)
-    result = await syncFiles(filesToPush);
+    const uploadBatches = buildPushUploadBatches(filesToPush);
+    for (const batch of uploadBatches) {
+      result = await syncFiles(batch);
 
-    if (!result.ok) {
-      if (result.status === 403) {
-        const detail = result.errorMessage || result.error || (result.data && result.data.detail) || '';
-        if (detail && /plan required|business, max, or enterprise/i.test(detail)) {
-          console.error(`\n  Access denied: ${detail}`);
-          await emit('access_denied', { error_detail: detail });
-          process.exit(1);
-        }
-        // Permission denied — retry with only team/ and journal/ files
-        const allowed = filesToPush.filter(f => f.path.startsWith('/team/') || f.path.startsWith('/journal/'));
-        skipped = filesToPush.filter(f => !f.path.startsWith('/team/') && !f.path.startsWith('/journal/'));
-
-        if (allowed.length > 0) {
-          const retry = await syncFiles(allowed);
-          if (retry.ok) {
-            recordSyncResults(allowed, retry);
-            pushed = landedPaths.size;
-          } else {
-            console.error(`\n  Push failed: ${retry.errorMessage || retry.error || retry.status}`);
-            await emit('access_denied', { error_detail: `403 retry failed: ${retry.status}` });
+      if (!result.ok) {
+        if (result.status === 403) {
+          const detail = result.errorMessage || result.error || (result.data && result.data.detail) || '';
+          if (detail && /plan required|business, max, or enterprise/i.test(detail)) {
+            console.error(`\n  Access denied: ${detail}`);
+            await emit('access_denied', { error_detail: detail });
             process.exit(1);
           }
+          // Permission denied — retry with only team/ and journal/ files
+          const allowed = filesToPush.filter(f => f.path.startsWith('/team/') || f.path.startsWith('/journal/'));
+          skipped = filesToPush.filter(f => !f.path.startsWith('/team/') && !f.path.startsWith('/journal/'));
+
+          if (allowed.length > 0) {
+            const retry = await syncFiles(allowed);
+            if (retry.ok) {
+              recordSyncResults(allowed, retry);
+              pushed = landedPaths.size;
+              break;
+            } else {
+              console.error(`\n  Push failed: ${retry.errorMessage || retry.error || retry.status}`);
+              await emit('access_denied', { error_detail: `403 retry failed: ${retry.status}` });
+              process.exit(1);
+            }
+          } else {
+            console.error('\n  Access denied: you can only push to your team/ folder.');
+            await emit('access_denied');
+            process.exit(1);
+          }
+        } else if (result.status === 409) {
+          console.error('\n  Computer is sleeping. Wake it first.');
+          await emit('cold_wake', { error_detail: 'computer sleeping (409)' });
+          process.exit(1);
+        } else if (shouldRetrySyncIndividually(result, batch)) {
+          batchFailureDetail = `${result.status || 'unknown'}: ${result.errorMessage || result.error || 'batch sync failed'}`;
+          console.log('');
+          console.log(`  Batch push failed (${result.errorMessage || result.error || result.status}). Retrying one file at a time...`);
+          for (const f of batch) {
+            const single = await syncFiles([f]);
+            if (single.ok) {
+              recordSyncResults([f], single);
+            } else {
+              failedToLand.push({
+                path: f.path,
+                status: single.status || 'error',
+                error: single.errorMessage || single.error || '',
+              });
+            }
+          }
+          pushed = landedPaths.size;
         } else {
-          console.error('\n  Access denied: you can only push to your team/ folder.');
-          await emit('access_denied');
+          console.error(`\n  Push failed: ${result.errorMessage || result.error || result.status}`);
+          await emit('status_unknown', { error_detail: `sync status ${result.status}` });
           process.exit(1);
         }
-      } else if (result.status === 409) {
-        console.error('\n  Computer is sleeping. Wake it first.');
-        await emit('cold_wake', { error_detail: 'computer sleeping (409)' });
-        process.exit(1);
-      } else if (shouldRetrySyncIndividually(result, filesToPush)) {
-        batchFailureDetail = `${result.status || 'unknown'}: ${result.errorMessage || result.error || 'batch sync failed'}`;
-        console.log('');
-        console.log(`  Batch push failed (${result.errorMessage || result.error || result.status}). Retrying one file at a time...`);
-        for (const f of filesToPush) {
-          const single = await syncFiles([f]);
-          if (single.ok) {
-            recordSyncResults([f], single);
-          } else {
-            failedToLand.push({
-              path: f.path,
-              status: single.status || 'error',
-              error: single.errorMessage || single.error || '',
-            });
-          }
-        }
-        pushed = landedPaths.size;
       } else {
-        console.error(`\n  Push failed: ${result.errorMessage || result.error || result.status}`);
-        await emit('status_unknown', { error_detail: `sync status ${result.status}` });
-        process.exit(1);
+        recordSyncResults(batch, result);
+        pushed = landedPaths.size;
       }
-    } else {
-      recordSyncResults(filesToPush, result);
-      pushed = landedPaths.size;
     }
   }
 
@@ -882,6 +914,7 @@ async function pushAtris() {
 module.exports = {
   pushAtris,
   buildPushChangePlan,
+  buildPushUploadBatches,
   shouldRetrySyncIndividually,
   resolvePushSourceDir,
   canonicalWorkspaceRoot,
