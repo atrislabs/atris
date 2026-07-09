@@ -59,6 +59,17 @@ function commit(ctx, message) {
   ]);
 }
 
+function markerText(ours, theirs) {
+  return `<<<<<<< HEAD\n${ours}=======\n${theirs}>>>>>>> feature\n`;
+}
+
+function ensureConflictMarkers(ctx, file, ours, theirs) {
+  const filePath = path.join(ctx.workspace, file);
+  const text = fs.readFileSync(filePath, 'utf8');
+  if (text.includes('<<<<<<<')) return;
+  fs.writeFileSync(filePath, markerText(ours, theirs), 'utf8');
+}
+
 module.exports = async function setup(ctx) {
   git(ctx, ['init', '-b', 'main']);
   commit(ctx, 'base');
@@ -77,6 +88,8 @@ module.exports = async function setup(ctx) {
   if (merge.status === 0) {
     throw new Error('expected merge conflict');
   }
+  ensureConflictMarkers(ctx, 'math.js', mainMath, featureMath);
+  ensureConflictMarkers(ctx, 'message.js', mainMessage, featureMessage);
   for (const file of ['math.js', 'message.js']) {
     const text = fs.readFileSync(path.join(ctx.workspace, file), 'utf8');
     if (!text.includes('<<<<<<<')) throw new Error(`${file} did not conflict`);
