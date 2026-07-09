@@ -462,6 +462,7 @@ function showHelp() {
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('  study      - On-demand learning feed: ingest topic, start server, open browser');
   console.log('  rainmaker  - Relationship manager dashboard (atrisos-backend/scripts/rainmaker.py)');
+  console.log('  avail      - Booking availability (/book/{username} weekly windows)');
   console.log('  brain      - Compile MAP/TODO/wiki/state into a loadable agent brain');
   console.log('  lesson     - Append a one-line lesson to atris/lessons.md (mine: distill receipts/episodes/scorecards into policy lessons)');
   console.log('  ingest     - Local-first wiki ingest into atris/wiki/');
@@ -1365,6 +1366,9 @@ function printMapBootstrap({ userInput, prefix = 'Bootstrap required' } = {}) {
 
 // ASCII Welcome Visualization
 function showWelcomeVisualization() {
+  // landSummary is expensive (git board classification) — compute at most once per boot.
+  let bootLandInfo = null;
+  let bootLandComputed = false;
   const { getTaskCounts } = require('../lib/state-detection');
   const { readEndgameState } = require('../commands/autopilot');
   const cwd = process.cwd();
@@ -1463,8 +1467,9 @@ function showWelcomeVisualization() {
         : `${tasksInReview} waiting`;
       console.log(`    │   ⏳ Review:  ${reviewText.padEnd(26)}│`);
     }
-    let landInfo = null;
-    try { landInfo = require('../commands/land').landSummary(process.cwd()); } catch (err) { landInfo = null; }
+    try { bootLandInfo = require('../commands/land').landSummary(process.cwd()); } catch (err) { bootLandInfo = null; }
+    bootLandComputed = true;
+    const landInfo = bootLandInfo;
     if (landInfo && landInfo.branches > 0) {
       const landText = `${landInfo.branches} in the air, ${landInfo.due} overdue`;
       console.log(`    │   🛬 Land:    ${landText.padEnd(26)}│`);
@@ -1529,8 +1534,10 @@ function showWelcomeVisualization() {
   if (tasksCertified > 0) {
     console.log(`    Ready. ${tasksCertified} certified await accept — run 'atris task reviews'.`);
   } else {
-    let landHint = null;
-    try { landHint = require('../commands/land').landSummary(process.cwd()); } catch (err) { landHint = null; }
+    let landHint = bootLandInfo;
+    if (!bootLandComputed) {
+      try { landHint = require('../commands/land').landSummary(process.cwd()); } catch (err) { landHint = null; }
+    }
     if (landHint && landHint.due > 0) {
       console.log(`    Ready. ${landHint.due} overdue in the landing — run 'atris land --reap'.`);
     } else {
@@ -1682,6 +1689,10 @@ if (command === 'init') {
 } else if (command === 'rainmaker') {
   const code = require('../commands/rainmaker').rainmakerCommand(process.argv.slice(3));
   process.exit(typeof code === 'number' ? code : 0);
+} else if (command === 'avail') {
+  Promise.resolve(require('../commands/avail').availCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'brain') {
   Promise.resolve()
     .then(() => require('../commands/brain').brainCommand(process.argv.slice(3)))

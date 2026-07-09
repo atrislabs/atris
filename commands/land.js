@@ -57,18 +57,29 @@ function worktreeWithinReapGrace(worktreePath, now = Date.now()) {
   return typeof mtime === 'number' && now - mtime < WORKTREE_REAP_GRACE_MS;
 }
 
-function listBranches(root) {
-  const result = runGit(
-    ['for-each-ref', 'refs/heads', '--format=%(refname:short)%09%(committerdate:unix)'],
-    { cwd: root, check: false }
-  );
-  if (result.status !== 0) return [];
+function listBranches(root, base = '') {
+  // With a base, ask git for ahead counts in the same single spawn
+  // (%(ahead-behind:) needs git >= 2.41; on failure we retry without it and
+  // collectBoard falls back to per-branch aheadCount).
+  const format = base
+    ? `%(refname:short)%09%(committerdate:unix)%09%(ahead-behind:${base})`
+    : '%(refname:short)%09%(committerdate:unix)';
+  const result = runGit(['for-each-ref', 'refs/heads', `--format=${format}`], { cwd: root, check: false });
+  if (result.status !== 0) {
+    if (base) return listBranches(root);
+    return [];
+  }
   return result.stdout
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => {
-      const [name, date] = line.split('\t');
-      return { name, lastCommitUnix: Number(date) };
+      const [name, date, aheadBehind] = line.split('\t');
+      const entry = { name, lastCommitUnix: Number(date) };
+      if (aheadBehind !== undefined) {
+        const ahead = Number(aheadBehind.split(' ')[0]);
+        if (Number.isFinite(ahead)) entry.ahead = ahead;
+      }
+      return entry;
     });
 }
 
@@ -94,17 +105,17 @@ function cherryStats(root, base, ref) {
 //   landed — no commits ahead of base; the branch pointer is residue
 //   active — has unlanded commits, younger than TTL
 //   due    — has unlanded commits, older than TTL; --reap collects it
-function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', now = Date.now() } = {}) {
+function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', now = Date.now(), light = false } = {}) {
   const base = baseBranch(root, baseOverride);
   if (!base) throw new Error('no master/main branch found');
 
   const branches = [];
   const lastCommitMsByBranch = new Map();
-  for (const branch of listBranches(root)) {
+  for (const branch of listBranches(root, base)) {
     if (PROTECTED_BRANCHES.has(branch.name)) continue;
     const lastCommitMs = Number(branch.lastCommitUnix) * 1000;
     if (Number.isFinite(lastCommitMs)) lastCommitMsByBranch.set(branch.name, lastCommitMs);
-    const ahead = aheadCount(root, base, branch.name);
+    const ahead = branch.ahead !== undefined ? branch.ahead : aheadCount(root, base, branch.name);
     const age = ageDays(branch.lastCommitUnix, now);
     const hours = ageHours(branch.lastCommitUnix, now);
     const cherry = ahead > 0 ? cherryStats(root, base, branch.name) : { landedElsewhere: 0, unique: 0 };
@@ -128,7 +139,9 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
   const all = listWorktrees(root);
   for (const wt of all.slice(1)) {
     const branch = (wt.branch || '').replace(/^refs\/heads\//, '');
-    const counts = statusCounts(wt.path) || { staged: 0, unstaged: 0, untracked: 0 };
+    // light mode skips the full `git status` per worktree — the banner summary
+    // never reads dirty counts, only worktree mtimes for staleness.
+    const counts = (light ? null : statusCounts(wt.path)) || { staged: 0, unstaged: 0, untracked: 0 };
     const dirty = counts.staged + counts.unstaged + counts.untracked;
     const entry = branches.find((b) => b.name === branch) || null;
     worktrees.push({
@@ -184,7 +197,7 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
 function landSummary(cwd = process.cwd(), ttlDays = DEFAULT_TTL_DAYS) {
   const root = repoRoot(cwd);
   if (!root) return null;
-  const board = collectBoard(root, { ttlDays });
+  const board = collectBoard(root, { ttlDays, light: true });
   return {
     branches: board.summary.active + board.summary.due,
     due: board.summary.due,
