@@ -5,10 +5,12 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
+const systemPath = '/usr/bin:/bin:/usr/sbin:/sbin';
+
 test('wish-bench runs and holds the score floor', () => {
   const res = spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'wish-bench.mjs'), '--json'], {
     encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
+    env: { ...process.env, NODE_NO_WARNINGS: '1', PATH: systemPath },
   });
   assert.equal(res.status, 0, res.stderr || res.stdout);
   const report = JSON.parse(res.stdout);

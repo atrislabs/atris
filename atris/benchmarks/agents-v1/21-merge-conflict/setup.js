@@ -15,9 +15,7 @@ module.exports = { add };
 const mainMath = `'use strict';
 
 function add(a, b) {
-  const left = Number(a);
-  const right = Number(b);
-  return left + right;
+  return Number.parseFloat(a) + Number.parseFloat(b);
 }
 
 module.exports = { add };
@@ -35,7 +33,7 @@ module.exports = { greeting };
 const mainMessage = `'use strict';
 
 function greeting(name) {
-  return \`hello \${String(name).trim()}\`;
+  return \`hello \${String(name).trim().toLowerCase()}\`;
 }
 
 module.exports = { greeting };
