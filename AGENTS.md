@@ -125,6 +125,41 @@ member -> mission start --verify -> status --status active -> one bounded step -
 - Close: if the verifier passes, run `atris mission complete <id> --proof "<receipt_path>"`; if current-agent work should keep going, repeat status -> step -> tick.
 - Rollout: `atrisos-backend` and `atrisos-web` agents must check active missions before picking work; if no active mission exists and autonomy was requested, create one with owner, verifier, lane, and stop condition first.
 
+## Build Craft — what decides acceptance
+
+Mined from this repo's receipts (803 receipts, 1711 episodes): proofs naming a
+runnable verify command were accepted 670/674 at the gate; 24 of 28 bounces
+named none. These rules are the difference, in priority order:
+
+1. **Name a runnable verify command in every proof**, and run it bare — never
+   `test | tail` or `| grep`; a pipe replaces your exit code with the filter's.
+2. **A task naming a spec file (`atris/features/<name>/idea.md`) is a contract.**
+   Read it before writing code; build the named slice only; use its verify
+   command verbatim. Do not improvise adjacent improvements.
+3. **Zero new dependencies.** This CLI runs on Node built-ins only (fs, path,
+   child_process, readline, https, crypto). A `package.json` dependency change
+   is an automatic bounce.
+4. **New CLI command = router entry too.** A `commands/<name>.js` branch is dead
+   until the name is in `knownCommands` in `bin/atris.js`. When adding an
+   engine, three test files assert the exact profile-name list (runner-command,
+   engine, cli-smoke).
+5. **Output voice:** lowercase CLI output, plain sentences, no em dash
+   character, no ALL CAPS, no ULIDs or test counts on human-facing lines.
+6. **Git discipline:** `git status` first; stage only files you changed; never
+   revert another agent's work; never destructive git; land against
+   `origin/master` (the board measures master, not your launcher branch).
+7. **Final report = files changed + verify command + its exact exit/output.**
+   Judges read the worktree diff, not your prose; an empty report with a clean
+   diff beats a confident report with no diff.
+8. **Update `atris/MAP.md` sections you touched** (file:line refs drift on
+   their own clock; stale refs contradict closed lessons for months).
+9. **Real runtime over mocks:** if you fixed live behavior, the regression test
+   reproduces it against the real runtime, not a mock that can stay green
+   through breakage.
+10. **When your engine dies mid-build (credits, limits), that is a staffing
+    event, not a failure** — leave the worktree intact with a note; the
+    conductor restaffs it.
+
 ## Rules
 
 - [ ] 3-4 sentences max per response
