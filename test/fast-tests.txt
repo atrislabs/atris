@@ -85,6 +85,7 @@ test/outbound-send-gate.test.js
 test/permission-grants.test.js
 test/policy-lessons.test.js
 test/probe.test.js
+test/pack-craft.test.js
 test/publish-release.test.js
 test/pulse.test.js
 test/push-delete-safety.test.js
