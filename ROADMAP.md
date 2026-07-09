@@ -118,6 +118,36 @@ Big swings
 25. Investor evidence pack updated with the week's story: the red-CI discovery, the green law, meet, the till. Honest numbers only. (orb)
 26. Blocks spine day 1 (see "The blocks plan" below): receipt block, verifier block, intake block, serial, plus one thin fixture pack (rainmaker-thin) compiling through all three with a live receipt. (sol + codex, brief: atris/briefs/2026-07-10-blocks.md)
 
+## The unlock (why the blocks are the whole bet)
+
+The fundamental block is the compiler: manifest in, business capability out
+(page + intake + loop + receipts). Once it exists, growth stops being linear
+in engineering hours:
+
+- a new business function is a one-page manifest, not a codebase. The suite
+  (rainmaker, popshare, aeo, agentgrads, security, data) becomes days of
+  writing, not quarters of building.
+- 80% of any company is repeatable machinery: funnel, launch, docs, outreach,
+  support, billing. Packs compile that 80%, so a founder only has to be right
+  about their core 20%. That is the product a founder respects.
+- the positioning formula (full pitch: atris/decks/2026-07-09-what-atris-is.md):
+  prime intellect's market-maker shape (they sell verified compute, we sell
+  verified outcomes) + polsia's promise (runs your company while you sleep,
+  made believable by auditable receipts) + cofounder's scope (every
+  department) + snapchat's interface (one gesture: a wish).
+- we can get data (plain english -> real rows -> living docs, the lakehouse
+  feel without a data team) and we can build businesses (the shell in days).
+  Both are the same blocks wearing different manifests.
+- honesty is the product: every claim traces to a verifier that is not the
+  thing that did the work. The pitch that closes: check the receipts yourself;
+  if they are empty, stop paying.
+- the end state is the outcome economy: anyone with a want meets capacity to
+  fulfill it, receipts clear the market. Prime intellect for work itself.
+
+Explosive growth is gated on exactly three proofs, in order: the compiler
+works (golden fixture pack), money is verifiable (the till), and one stranger
+pays. Everything else on this roadmap is in service of those three.
+
 ## The blocks plan (the generator, 2026-07-10 onward)
 
 We are not building all software; we are building the thing that builds it.
