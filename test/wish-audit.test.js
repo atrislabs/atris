@@ -85,10 +85,47 @@ function readJsonl(file) {
 
 test('vague superlative wish gets named interpretations and a recommendation', () => {
   const questions = auditQuestions('best todo list ever');
-  assert.equal(questions[0], 'Best could mean fastest capture, smartest resurfacing, or most closure. I would bet on resurfacing, so which should I optimize for?');
+  assert.equal(questions[0], 'Best todo list could mean fastest capture, smartest resurfacing, or most closure. I would bet on resurfacing, so which should I optimize for?');
   assert.match(questions[1], /^Todo list audience could mean todo list owner, team member, or end user\. I would bet on todo list owner, so who is this for\?$/);
   assert.match(questions[2], /^Todo list first slice could mean todo list capture path, resurfacing rule, or closure loop\. I would bet on resurfacing rule, so what should I change first\?$/);
   assert.ok(questions.every((question) => question.endsWith('?')));
+});
+
+test('wish label preserves the noun phrase after a vague superlative', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const env = { PATH: `${fakeBin}:${systemPath}` };
+    const created = runCli(['wish', 'make me the best todo list ever', '--no-mission'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    assert.match(created.stdout, /^Got it, wish #1: make best todo list\./);
+    assert.doesNotMatch(created.stdout, /make me best/);
+
+    const listed = runCli(['wish', 'list', '--all'], { cwd: dir, env });
+    assert.equal(listed.status, 0, listed.stderr || listed.stdout);
+    assert.match(listed.stdout, /#1 make best todo list - new/);
+
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(records.every((record) => String(record.text || '').includes('todo list')), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('vague interview candidates follow the subject kind with a generic fallback', () => {
+  assert.equal(
+    auditQuestions('sweep')[0],
+    'This could mean faster to use, smarter by default, or more complete. I would bet on smarter by default, so which should I optimize for?',
+  );
+  assert.equal(
+    auditQuestions('best landing page ever')[0],
+    'Best landing page could mean clearer layout, faster scanning, or stronger action. I would bet on clearer layout, so which should I optimize for?',
+  );
+  assert.equal(
+    auditQuestions('best auth flow ever')[0],
+    'Best auth flow could mean fewer steps, smarter defaults, or more reliable completion. I would bet on smarter defaults, so which should I optimize for?',
+  );
 });
 
 test('wish answer fills a named interpretation question without repeating it', () => {
@@ -99,22 +136,22 @@ test('wish answer fills a named interpretation question without repeating it', (
     const env = { PATH: `${fakeBin}:${systemPath}` };
     const created = runCli(['wish', 'best todo list ever', '--no-mission'], { cwd: dir, env });
     assert.equal(created.status, 1, created.stderr || created.stdout);
-    assert.match(created.stdout, /Best could mean fastest capture, smartest resurfacing, or most closure\./);
+    assert.match(created.stdout, /Best todo list could mean fastest capture, smartest resurfacing, or most closure\./);
 
     const answer = 'smartest resurfacing for my personal task loop';
     const answered = runCli(['wish', 'answer', answer, '--no-mission'], { cwd: dir, env });
     assert.equal(answered.status, 0, answered.stderr || answered.stdout);
-    assert.doesNotMatch(answered.stdout, /Best could mean fastest capture/);
+    assert.doesNotMatch(answered.stdout, /Best todo list could mean fastest capture/);
     assert.doesNotMatch(answered.stdout, /Answer with:/);
 
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     const repeatedRows = records.filter((record) => Array.isArray(record.questions)
-      && record.questions.some((question) => String(question).startsWith('Best could mean fastest capture')));
+      && record.questions.some((question) => String(question).startsWith('Best todo list could mean fastest capture')));
     assert.equal(repeatedRows.length, 1);
     assert.equal(records.some((record) => record.answer === answer), true);
     assert.equal(records.some((record) => record.kind === 'slot'
       && record.filled_slots
-      && String(record.filled_slots[0].question || '').startsWith('Best could mean fastest capture')), true);
+      && String(record.filled_slots[0].question || '').startsWith('Best todo list could mean fastest capture')), true);
     assert.equal(records.some((record) => record.status === 'captured_no_mission'), true);
   } finally {
     cleanupTempDir(dir);
