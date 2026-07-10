@@ -5214,6 +5214,46 @@ test('mission run --due selects acknowledged always-on caller-session missions w
   }
 });
 
+test('mission run --due --headless skips caller-session missions', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'older-headless-mission',
+      slug: 'older-headless-mission',
+      objective: 'older headless mission',
+      status: 'planning',
+      runner: 'drill',
+      verifier: 'test -f .atris/state/drill-runner-touch.txt',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'newer-caller-mission',
+      slug: 'newer-caller-mission',
+      objective: 'newer caller mission',
+      status: 'planning',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    assert.equal(selectDueMission(dir).id, 'newer-caller-mission');
+    assert.equal(selectDueMission(dir, new Date(), { headlessOnly: true }).id, 'older-headless-mission');
+
+    const run = runCli(['mission', 'run', '--due', '--headless', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.mission.id, 'older-headless-mission');
+    assert.equal(payload.ticks.length, 1);
+    assert.equal(payload.ticks[0].reason, 'drill-runner');
+    assert.equal(payload.ticks[0].verifier_passed, true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission tick keeps task-backed always-on caller-session missions runnable without verifier', () => {
   const dir = makeTempDir();
   try {

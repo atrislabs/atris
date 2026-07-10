@@ -338,6 +338,7 @@ const MISSION_RUN_VALUE_FLAGS = [
 const MISSION_RUN_BOOLEAN_FLAGS = [
   '--json',
   '--due',
+  '--headless',
   '--fleet',
   '--dry-run',
   '--land',
@@ -5100,9 +5101,10 @@ function missionSortTime(mission) {
   return Date.parse(mission?.updated_at || mission?.created_at || '') || 0;
 }
 
-function selectDueMission(root = process.cwd(), now = new Date()) {
+function selectDueMission(root = process.cwd(), now = new Date(), options = {}) {
   const candidates = listMissions(root)
     .filter((mission) => missionSelectableForLoop(mission, now))
+    .filter((mission) => !options.headlessOnly || !runnerUsesCallerSession(mission.runner))
     .filter((mission) => !missionTaskHumanAcceptWaiting(mission))
     .filter((mission) => effectiveMissionVerifier(mission) || callerSessionMissionReadyForDue(mission))
     .filter((mission) => mission.always_on || !missionVerifierPassed(mission))
@@ -6835,6 +6837,7 @@ async function runMission(args) {
     return;
   }
   const dueMode = hasFlag(args, '--due');
+  const headlessOnly = hasFlag(args, '--headless');
   const skipClaude = hasFlag(args, '--no-claude');
   const verifyEach = !hasFlag(args, '--no-verify');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
@@ -6866,7 +6869,7 @@ async function runMission(args) {
     return;
   }
 
-  let mission = dueMode && !ref ? selectDueMission() : resolveMission(ref);
+  let mission = dueMode && !ref ? selectDueMission(process.cwd(), new Date(), { headlessOnly }) : resolveMission(ref);
   if (!mission && dueMode && !ref) {
     printJsonOrText(
       { ok: true, action: 'run_skipped', reason: 'no_due_mission', mission: null },
@@ -8096,8 +8099,8 @@ atris mission - durable goal + loop + owner + proof state
                                 [--engine <name>]
                                 [--spend-full-budget|--use-whole-budget|--stop-when-done] [--preflight|--no-preflight|--room-preflight|--no-room-preflight]
                                 [--room-auto-run|--no-room-auto-run]
-                                [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--create-next] [--json]
-                       (bare/member-only run prompts; one-word fuzzy intent starts a new visible-goal mission; --due runs the saved queue)
+                                [--headless] [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--create-next] [--json]
+                       (bare/member-only run prompts; one-word fuzzy intent starts a new visible-goal mission; --due runs the saved queue; --headless skips caller-session runners)
                        (short time like "20 minutes" means finish early; long/sleep time like "5 hours" keeps using the budget; --stop-when-done overrides)
                        (--budget quick|long|deep sets max ticks/wall to 4/15m, 12/60m, or 30/180m; explicit --max-ticks wins)
                        (messy, shower, and overnight requests preflight through Mission Room before the visible goal is written)

@@ -126,7 +126,7 @@ test('shouldFallbackLocal: remote backend cannot see a local workspace → fallb
 
 test('local fallback runs exactly one due mission tick with JSON proof', () => {
   const { LOCAL_FALLBACK_ARGS, localFallbackArgs } = require('../commands/improve');
-  assert.deepEqual(LOCAL_FALLBACK_ARGS, ['mission', 'run', '--due', '--max-ticks', '1', '--complete-on-pass', '--json']);
+  assert.deepEqual(LOCAL_FALLBACK_ARGS, ['mission', 'run', '--due', '--headless', '--max-ticks', '1', '--complete-on-pass', '--json']);
   assert.deepEqual(localFallbackArgs(300), [...LOCAL_FALLBACK_ARGS, '--max-wall', '300']);
   assert.deepEqual(localFallbackArgs(30), [...LOCAL_FALLBACK_ARGS, '--max-wall', '60']);
 });
@@ -157,6 +157,15 @@ test('summarizeLocalMissionRun accepts one verified tick and rejects missing pro
     () => summarizeLocalMissionRun({ ok: true, action: 'mission_run', tick_count: 2, ticks: [{}, {}] }),
     /exactly one tick/
   );
+  assert.throws(
+    () => summarizeLocalMissionRun({
+      ok: true,
+      action: 'mission_run',
+      tick_count: 1,
+      ticks: [{ status: 'ran', reason: 'caller-session-runner', verifier_passed: true, claude: { skipped: true } }],
+    }),
+    /worker did not run/
+  );
 });
 
 test('real local improve fallback runs one drill tick, verifies it, and writes one scorecard', () => {
@@ -183,6 +192,16 @@ test('real local improve fallback runs one drill tick, verifies it, and writes o
       '--json',
     ]);
     assert.equal(started.status, 0, started.stderr || started.stdout);
+    const caller = runCli([
+      'mission', 'start',
+      'newer caller placeholder',
+      '--owner', 'improver',
+      '--runner', 'codex_goal',
+      '--verify', 'node -e "process.exit(0)"',
+      '--always-on',
+      '--json',
+    ]);
+    assert.equal(caller.status, 0, caller.stderr || caller.stdout);
 
     const improved = runCli(['improve', 'tick', '--json', '--timeout=60']);
     assert.equal(improved.status, 0, improved.stderr || improved.stdout);
@@ -190,6 +209,7 @@ test('real local improve fallback runs one drill tick, verifies it, and writes o
     assert.equal(payload.ok, true);
     assert.equal(payload.source, 'local');
     assert.equal(payload.local.payload.tick_count, 1);
+    assert.equal(payload.local.payload.mission.runner, 'drill');
     assert.equal(payload.local.payload.ticks[0].verifier_passed, true);
     assert.equal(payload.summary.reward, 1);
     assert.equal(payload.receipt, 'written');
