@@ -189,6 +189,38 @@ test('strict verify parser rejects path and npm config escapes', () => {
   assert.equal(parseVerifyCommand('node --check file:///tmp/pwn.js').ok, false);
 });
 
+test('strict verify parser accepts quoted node test filters without enabling shell operators', () => {
+  const command = "node --test --test-name-pattern='update and sync --help|upgrade --help|help invocations skip background' test/commands.test.js";
+  assert.deepEqual(parseVerifyCommand(command), {
+    ok: true,
+    argv: [
+      'node',
+      '--test',
+      '--test-name-pattern=update and sync --help|upgrade --help|help invocations skip background',
+      'test/commands.test.js',
+    ],
+  });
+  assert.equal(parseVerifyCommand("node --test --test-name-pattern='safe' | touch pwned test/commands.test.js").ok, false);
+  assert.equal(parseVerifyCommand("node --test --test-name-pattern='unterminated test/commands.test.js").ok, false);
+});
+
+test('strict verify runtime passes a quoted alternation directly to node without a shell', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-node-pattern-'));
+  const testsDir = path.join(workspace, 'test');
+  const target = path.join(workspace, 'pwned');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(testsDir, 'sample.test.js'),
+    "const test = require('node:test'); test('safe', () => {});\n",
+  );
+  const result = runVerifyCommand(
+    `node --test --test-name-pattern='safe|touch ${target}' test/sample.test.js`,
+    workspace,
+  );
+  assert.equal(result.ok, true, result.stderr);
+  assert.equal(fs.existsSync(target), false);
+});
+
 test('strict verify parser allows safe backend python commands with cd and env', () => {
   const commands = [
     'cd backend && OFFLINE_MODE=1 ../venv/bin/python -m pytest tests/test_api_tracking_service.py tests/test_api_key_usage.py -q',
