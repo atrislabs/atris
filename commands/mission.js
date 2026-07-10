@@ -66,6 +66,10 @@ const {
   shortRecordLabel,
   shortRecordRef,
 } = require('../lib/short-name');
+const {
+  runCloudMissionCommand,
+  statusCloudMissionCommand,
+} = require('../lib/cloud-mission');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -413,6 +417,7 @@ const MISSION_RUN_BOOLEAN_FLAGS = [
   '--always-on',
   '--xp-task',
   '--agent-xp',
+  '--cloud',
 ];
 const DEFAULT_MISSION_RUN_OWNER_SLUGS = new Set(
   FUNCTIONAL_MEMBER_TOPICS.map(topic => normalizeOwnerSlug(topic.owner)),
@@ -6878,6 +6883,11 @@ async function runMission(args) {
     help();
     return;
   }
+  if (hasFlag(args, '--cloud')) {
+    const result = await runCloudMissionCommand(args);
+    process.exitCode = result.exitCode;
+    return result;
+  }
   // --fleet: staff every idle capable engine on the board's claimable
   // safe-lane tasks, build in parallel worktrees, land serially. Humble flag,
   // full loop — see lib/fleet.js. --dry-run previews the staffing only.
@@ -8190,6 +8200,7 @@ atris mission - durable goal + loop + owner + proof state
                        default model atris:fast; runner codex_goal publishes the goal for a live
                        Codex session to pull via atris mission goal)
   atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]
+  atris mission status --cloud <task_id> [--watch]
   atris mission inspect <id> --fields status,runner,ack,pings [--json]
                        Field-selectable mission state (status, runner, native goal ack, ping counts)
   atris mission doctor [--local] [--json]   Flag no-verifier missions, help missions, stale ready receipts, and blocked always-on loops
@@ -8209,6 +8220,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission set-runner <id> <runner|engine> [--model <id>] [--json]
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
+  atris mission run "<objective>" --cloud [--lane fast|pro|max]   Enqueue on the Atris backend instead of running local ticks
   atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--budget quick|long|deep] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"] [--land --repo <path> --verify "git diff --check"]
                                 [--native-goal-status active|paused|usageLimited] [--native-goal-objective "..."] [--manual-ack] [--allow-native-goal-supersede] [--take-goal-slot]
                                 [--engine <name>]
@@ -8579,6 +8591,12 @@ function missionCommand(args) {
     case 'show':
     case 'info':
     case 'view':
+      if (hasFlag(rest, '--cloud')) {
+        return statusCloudMissionCommand(rest).then((result) => {
+          process.exitCode = result.exitCode;
+          return result;
+        });
+      }
       return statusMission(rest);
     case 'doctor':
     case 'check':
