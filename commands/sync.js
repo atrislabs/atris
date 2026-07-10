@@ -364,16 +364,13 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
   // customer workspace. Business-starter template ships skill infra (README,
   // folders) but skill files live in atris-cli/atris/skills/ — single source
   // of truth. Any new skill (e.g. AEO) auto-propagates to every customer.
-  let skillsUpdated = 0;
-  if (!dryRun) {
-    skillsUpdated = syncPackageSkills(targetAtrisDir, { verbose: false });
-  }
+  const skillsUpdated = syncPackageSkills(targetAtrisDir, { verbose: false, dryRun });
 
   console.log(`  Added:     ${added}`);
   console.log(`  Updated:   ${updated} ${force ? '' : '(--force to enable)'}`);
   console.log(`  Preserved: ${preserved} (existing customizations kept)`);
   console.log(`  Skipped:   ${skipped} (already match template)`);
-  console.log(`  Skills:    ${skillsUpdated} updated from atris-cli/atris/skills/`);
+  console.log(`  Skills:    ${skillsUpdated} ${dryRun ? 'would update' : 'updated'} from atris-cli/atris/skills/`);
   console.log('');
 
   if (addedList.length > 0) {

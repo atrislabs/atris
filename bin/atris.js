@@ -1035,7 +1035,11 @@ if (!command || !knownCommands.includes(command)) {
   return;
 }
 
-recordUsage(command, process.cwd());
+// Update previews promise a write-free workspace. Business workspaces already
+// have .atris/, so ordinary usage telemetry would otherwise break that promise.
+if (!(dryRunRequested && ['update', 'sync'].includes(command))) {
+  recordUsage(command, process.cwd());
+}
 
 function printAtrisOverview() {
   console.log('');
