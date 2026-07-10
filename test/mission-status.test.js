@@ -6559,7 +6559,7 @@ test('mission help documents status filters', () => {
     assert.match(help.stdout, /mission goal \[--runtime codex\|atris\] \[--heartbeat\] \[--native-goal-status active\|paused\|usageLimited\] \[--native-goal-objective "\.\.\."\] \[--manual-ack\] \[--allow-native-goal-supersede\] \[--json\]/);
     assert.match(help.stdout, /mission goal ack <id> --runtime codex --status active --objective "<objective>" --json/);
     assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);
-    assert.match(help.stdout, /mission tick <id> \[--verify \["cmd"\]\] \[--complete-on-pass\] \[--summary "\.\.\."\]\n\s+\[--native-goal-status active\|paused\|usageLimited\] \[--native-goal-objective "\.\.\."\] \[--json\]/);
+    assert.match(help.stdout, /mission tick <id> \[--verify \["cmd"\]\] \[--complete-on-pass\] \[--self-drive\] \[--summary "\.\.\."\]\n\s+\[--native-goal-status active\|paused\|usageLimited\] \[--native-goal-objective "\.\.\."\] \[--json\]/);
     assert.match(help.stdout, /--spend-full-budget\|--use-whole-budget\|--stop-when-done/);
     assert.match(help.stdout, /--preflight\|--no-preflight\|--room-preflight\|--no-room-preflight/);
     assert.match(help.stdout, /short time like "20 minutes" means finish early/);

@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const {
+  nextRecordNumber,
   shortRecordLabel,
   shortRecordRef,
 } = require('../lib/short-name');
@@ -69,6 +70,14 @@ test('short labels use display numbers and meaningful words with old-record fall
   assert.equal(shortRecordLabel({ id: oldId }, 'claim the haiku loop via smoke'), 'haiku loop smoke');
   assert.equal(shortRecordLabel({ id: oldId }, ''), '8429e7cd');
   assert.equal(shortRecordRef({ id: oldId }), '8429e7cd');
+});
+
+test('next display number ignores later renumbering of an existing record', () => {
+  assert.equal(nextRecordNumber([
+    { id: 'mission-one', n: 10 },
+    { id: 'mission-one', n: 12 },
+    { id: 'mission-two', n: 11 },
+  ]), 12);
 });
 
 test('wish capture assigns the next display number from wishes jsonl', () => {

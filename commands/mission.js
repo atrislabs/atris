@@ -61,6 +61,7 @@ const {
   buildInspectPayload,
 } = require('../lib/inspect-fields');
 const {
+  displayNumber,
   nextRecordNumber,
   recordMatchesRef,
   shortRecordLabel,
@@ -663,15 +664,31 @@ function missionDisplayText(mission, value) {
 }
 
 function assignMissionNumber(mission, root = process.cwd()) {
-  if (!mission || mission.n) return mission;
+  if (!mission) return mission;
+  const existing = mission.id ? loadMissionMap(root).get(mission.id) : null;
+  if (existing) {
+    const next = { ...mission };
+    if (displayNumber(existing.n)) next.n = existing.n;
+    else delete next.n;
+    return next;
+  }
+  if (displayNumber(mission.n)) return mission;
   return { ...mission, n: nextMissionNumber(root) };
 }
 
 function loadMissionMap(root = process.cwd()) {
   const paths = statePaths(root);
   const map = new Map();
+  const assignedNumbers = new Map();
   for (const mission of readJsonLines(paths.missionsJsonl)) {
-    if (mission && mission.id) map.set(mission.id, normalizeMissionState(mission));
+    if (!mission || !mission.id) continue;
+    if (!assignedNumbers.has(mission.id) && displayNumber(mission.n)) {
+      assignedNumbers.set(mission.id, mission.n);
+    }
+    const normalized = { ...normalizeMissionState(mission) };
+    if (assignedNumbers.has(mission.id)) normalized.n = assignedNumbers.get(mission.id);
+    else delete normalized.n;
+    map.set(mission.id, normalized);
   }
   return map;
 }
@@ -807,6 +824,17 @@ function resolveMission(ref, root = process.cwd()) {
   // contains this one (e.g. re-resolving "acked-..." matched "newer-unacked-...")
   const exact = missions.find((mission) => mission.id === String(ref).trim());
   if (exact) return exact;
+  const rawRef = String(ref).trim();
+  const wantedNumber = displayNumber(rawRef.startsWith('#') ? rawRef.slice(1) : rawRef);
+  if (wantedNumber) {
+    const matches = missions.filter((mission) => recordMatchesRef(mission, ref));
+    if (matches.length > 1) {
+      const chosen = matches.find((mission) => !TERMINAL_STATUSES.has(mission.status)) || matches[0];
+      console.warn(`warning: mission number #${wantedNumber} is shared by ${matches.map((mission) => mission.id).join(', ')}; using ${chosen.id}.`);
+      return chosen;
+    }
+    return matches[0] || null;
+  }
   return missions.find((mission) => missionMatchesRef(mission, ref)) || null;
 }
 
@@ -836,8 +864,14 @@ function appendEvent(type, mission, payload = {}, root = process.cwd()) {
 
 function saveMission(mission, root = process.cwd(), eventType = 'mission_updated', payload = {}) {
   const paths = statePaths(root);
+  const existing = mission && mission.id ? loadMissionMap(root).get(mission.id) : null;
+  const stableMission = { ...mission };
+  if (existing) {
+    if (displayNumber(existing.n)) stableMission.n = existing.n;
+    else delete stableMission.n;
+  }
   const next = normalizeMissionState({
-    ...mission,
+    ...stableMission,
     schema: 'atris.mission.v1',
     updated_at: stampIso(),
   });
