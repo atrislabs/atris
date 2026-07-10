@@ -1621,9 +1621,17 @@ if (command === 'init') {
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(2); });
 } else if (command === 'mission') {
+  // process.exit() can outrun a piped stdout: writes beyond the 64KB pipe
+  // buffer are async, so large --json payloads truncate at 64KB multiples.
+  // Queue an empty write and exit from its callback — it fires only after
+  // every earlier buffered write has drained (BCK-1306).
+  const exitAfterStdoutDrain = (code) => {
+    if (process.stdout.writableLength === 0) process.exit(code);
+    else process.stdout.write('', () => process.exit(code));
+  };
   Promise.resolve(require('../commands/mission').missionCommand(process.argv.slice(3)))
-    .then(() => process.exit(process.exitCode || 0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+    .then(() => exitAfterStdoutDrain(process.exitCode || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitAfterStdoutDrain(1); });
 } else if (command === 'agents') {
   // Glanceable view of every member's state: stuck, waiting on you, working, resting.
   const code = require('../commands/agents').agentsCommand(process.argv.slice(3));
