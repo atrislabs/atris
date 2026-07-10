@@ -299,6 +299,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - Compares content with package atris.md
 - Copies new version if different
 - Prompts user to regenerate MAP.md and agents
+- `--dry-run` is write-free across startup skill sync, core files, migrations, project skills and symlinks, Claude adapters/settings, and wiki scaffolding; it prints each planned change and a summary instead
 - **Workspace logic (`--all`):**
 - Scans cwd recursively for every `atris/atris.md`
 - Builds per-project plan (added/changed/skipped), prints before writing
@@ -307,6 +308,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - Confirms before writing unless `--force` / `--yes` / `-y`
 - `--dry-run` prints the plan and exits
 - **Regression:** `test/commands.test.js` covers `update --help` and `sync --help` as non-mutating usage output, including a stale global skill sentinel under a temporary HOME
+- **Dry-run regression:** `test/update-dry-run.test.js` snapshots a minimal project plus temporary-HOME global skill, then proves single-project `update --dry-run` and `sync --dry-run` leave both trees byte-for-byte unchanged
 - **Value:** Keep canonical docs (atris.md, PERSONA.md, GETTING_STARTED.md, CLAUDE.md) in sync across a multi-project workspace in one command
 
 **Search:** `rg "showUpdateHelp|syncAtris|syncAtrisAll|_findAtrisProjects|update and sync --help" bin/atris.js commands/sync.js test/commands.test.js`
