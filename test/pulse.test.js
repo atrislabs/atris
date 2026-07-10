@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
+const { crontabHasActiveMarker } = require('../commands/pulse');
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
@@ -18,6 +19,14 @@ function tmpRoot() {
 
 test('scoreTick punishes verify failure with -1', () => {
   assert.equal(pulse.scoreTick({ verifyPassed: false, producedWork: true }), -1);
+});
+
+test('pulse status ignores disabled cron marker history', () => {
+  const marker = 'ATRIS_PULSE_ATRIS_CLI_3C8EC7';
+  assert.equal(crontabHasActiveMarker(`# DISABLED-20260708 */20 * * * * /tmp/tick.sh # ${marker}\n`, marker), false);
+  assert.equal(crontabHasActiveMarker(`   # ${marker}\n`, marker), false);
+  assert.equal(crontabHasActiveMarker(`*/20 * * * * /tmp/tick.sh # ${marker}\n`, marker), true);
+  assert.equal(crontabHasActiveMarker(`*/20 * * * * /tmp/other.sh # OTHER\n`, marker), false);
 });
 
 test('scoreTick rewards a verified, work-producing tick with +1', () => {
