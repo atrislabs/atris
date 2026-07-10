@@ -61,6 +61,22 @@ function improveApiPath(baseUrl) {
   return base.endsWith('/api') ? '/improve' : '/api/improve';
 }
 
+function hostedApiCannotReachLocalWorkspace(workspace, baseUrl) {
+  if (!path.isAbsolute(String(workspace || ''))) return false;
+  try {
+    if (!fs.statSync(workspace).isDirectory()) return false;
+    const hostname = new URL(baseUrl).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    const loopback = hostname === 'localhost'
+      || hostname.endsWith('.localhost')
+      || hostname === '::1'
+      || hostname === '0.0.0.0'
+      || hostname.startsWith('127.');
+    return !loopback;
+  } catch {
+    return false;
+  }
+}
+
 function parseImproveArgs(argv = []) {
   const args = Array.isArray(argv) ? [...argv] : [];
   const opts = {
@@ -674,6 +690,8 @@ async function runImprove(opts = {}, deps = {}) {
   const timeoutSec = Math.round((opts.timeoutMs || DEFAULT_TIMEOUT_MS) / 1000);
   const startedAt = now();
   const creds = loadCreds();
+  const shippingTick = (opts.mode || 'full') === 'full' && !opts.dryRun;
+  const localFallbackEligible = opts.fallback && shippingTick;
 
   const finishLocalFallback = (reason, apiResult = null) => {
     const local = localFn({ workspace, json: opts.json, timeoutSec });
@@ -731,10 +749,12 @@ async function runImprove(opts = {}, deps = {}) {
 
   // No auth → local fallback (or report if fallback disabled).
   if (!creds || !creds.token) {
-    if (!opts.fallback) {
+    if (!localFallbackEligible) {
       return {
         ok: false, source: 'none', reason: 'no_auth',
-        error: 'Not logged in and --no-fallback set. Run: atris login',
+        error: shippingTick
+          ? 'Not logged in and --no-fallback set. Run: atris login'
+          : 'Not logged in. Plan, delegate, and dry-run modes require the hosted API; run: atris login',
         startedAt, finishedAt: now(),
       };
     }
@@ -742,8 +762,17 @@ async function runImprove(opts = {}, deps = {}) {
     return finishLocalFallback('no_auth');
   }
 
+  // A hosted backend cannot read an absolute workspace that only exists on
+  // this machine. Skip the known-impossible request and use the same verified
+  // local mission fallback that its workspace-path 403 would have selected.
+  const apiBase = baseFn();
+  if (localFallbackEligible && hostedApiCannotReachLocalWorkspace(workspace, apiBase)) {
+    log('hosted backend cannot reach local workspace; falling back to one local mission tick');
+    return finishLocalFallback('workspace_not_on_backend');
+  }
+
   // Attempt the paid API tick.
-  const apiPath = improveApiPath(baseFn());
+  const apiPath = improveApiPath(apiBase);
   const body = buildImprovePayload({ ...opts, workspace });
   const apiResult = await apiFn(apiPath, {
     method: 'POST',
@@ -758,7 +787,7 @@ async function runImprove(opts = {}, deps = {}) {
     // Only a real, shipping tick earns a receipt. Plan/delegate/dry-run ship
     // nothing, and an error inside an ok envelope (e.g. "workspace not found")
     // is not a shipped change — none of these should write a scorecard/journal.
-    const shipped = (opts.mode || 'full') === 'full' && !opts.dryRun && !summary.error;
+    const shipped = shippingTick && !summary.error;
     if (!shipped) {
       return { ok: true, source: 'api', summary, scorecardPath: null, journalPath: null, receipt: 'skipped', startedAt, finishedAt };
     }
@@ -779,7 +808,7 @@ async function runImprove(opts = {}, deps = {}) {
   }
 
   const decide = shouldFallbackLocal({ creds, apiResult });
-  if (decide.fallback && opts.fallback) {
+  if (decide.fallback && localFallbackEligible) {
     log(`backend ${decide.reason} — falling back to one local mission tick`);
     return finishLocalFallback(decide.reason, apiResult);
   }

@@ -393,6 +393,125 @@ test('runImprove: unreachable backend falls back to local', async () => {
   assert.equal(calls.journal.length, 1);
 });
 
+test('runImprove: existing local workspace skips an impossible hosted API call', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-local-workspace-'));
+  try {
+    const { calls, deps } = fakeDeps({
+      getApiBaseUrl: () => 'https://api.atris.ai/api',
+    });
+    const res = await runImprove({ workspace, fallback: true }, deps);
+
+    assert.equal(res.ok, true);
+    assert.equal(res.source, 'local');
+    assert.equal(res.reason, 'workspace_not_on_backend');
+    assert.equal(calls.api.length, 0);
+    assert.equal(calls.local.length, 1);
+    assert.equal(calls.local[0].workspace, workspace);
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runImprove: loopback API still receives an existing local workspace', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-loopback-workspace-'));
+  try {
+    const { calls, deps } = fakeDeps({
+      getApiBaseUrl: () => 'http://127.0.0.1:8000',
+    });
+    const res = await runImprove({ workspace, fallback: true }, deps);
+
+    assert.equal(res.ok, true);
+    assert.equal(res.source, 'api');
+    assert.equal(calls.api.length, 1);
+    assert.equal(calls.api[0].o.body.workspace, workspace);
+    assert.equal(calls.local.length, 0);
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runImprove: hosted API still receives a workspace not present locally', async () => {
+  const workspace = path.join(os.tmpdir(), `atris-hosted-workspace-${process.pid}-${Date.now()}`);
+  const { calls, deps } = fakeDeps({
+    getApiBaseUrl: () => 'https://api.atris.ai/api',
+  });
+  const res = await runImprove({ workspace, fallback: true }, deps);
+
+  assert.equal(res.ok, true);
+  assert.equal(res.source, 'api');
+  assert.equal(calls.api.length, 1);
+  assert.equal(calls.api[0].o.body.workspace, workspace);
+  assert.equal(calls.local.length, 0);
+});
+
+const NONSHIPPING_CASES = [
+  ['plan', { mode: 'plan' }],
+  ['delegate', { mode: 'delegate' }],
+  ['dry-run', { mode: 'full', dryRun: true }],
+];
+
+test('runImprove: hosted nonshipping modes use the API for an existing local workspace', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-nonshipping-workspace-'));
+  try {
+    for (const [label, options] of NONSHIPPING_CASES) {
+      const { calls, deps } = fakeDeps({ getApiBaseUrl: () => 'https://api.atris.ai/api' });
+      const res = await runImprove({ workspace, fallback: true, ...options }, deps);
+      assert.equal(res.source, 'api', label);
+      assert.equal(res.receipt, 'skipped', label);
+      assert.equal(calls.api.length, 1, label);
+      assert.equal(calls.local.length, 0, label);
+      assert.equal(calls.rows.length, 0, label);
+      assert.equal(calls.journal.length, 0, label);
+    }
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runImprove: nonshipping API failures never enter the local shipping fallback', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-nonshipping-failure-'));
+  try {
+    for (const [label, options] of NONSHIPPING_CASES) {
+      const { calls, deps } = fakeDeps({
+        getApiBaseUrl: () => 'http://127.0.0.1:8000',
+        apiRequestJson: async (p, o) => {
+          calls.api.push({ p, o });
+          return { ok: false, status: 0, error: 'Network error' };
+        },
+      });
+      const res = await runImprove({ workspace, fallback: true, ...options }, deps);
+      assert.equal(res.ok, false, label);
+      assert.equal(res.source, 'api', label);
+      assert.equal(res.reason, 'unreachable', label);
+      assert.equal(calls.api.length, 1, label);
+      assert.equal(calls.local.length, 0, label);
+      assert.equal(calls.rows.length, 0, label);
+      assert.equal(calls.journal.length, 0, label);
+    }
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runImprove: no-auth nonshipping modes never enter the local shipping fallback', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-nonshipping-no-auth-'));
+  try {
+    for (const [label, options] of NONSHIPPING_CASES) {
+      const { calls, deps } = fakeDeps({ loadCredentials: () => null });
+      const res = await runImprove({ workspace, fallback: true, ...options }, deps);
+      assert.equal(res.ok, false, label);
+      assert.equal(res.source, 'none', label);
+      assert.equal(res.reason, 'no_auth', label);
+      assert.equal(calls.api.length, 0, label);
+      assert.equal(calls.local.length, 0, label);
+      assert.equal(calls.rows.length, 0, label);
+      assert.equal(calls.journal.length, 0, label);
+    }
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test('runImprove: local fallback without verifier proof fails and writes no receipt', async () => {
   const { calls, deps } = fakeDeps({
     loadCredentials: () => null,
