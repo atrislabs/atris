@@ -46,6 +46,18 @@ function makeFixture() {
   return { root, workspace, home };
 }
 
+function makeBusinessFixture() {
+  const fixture = makeFixture();
+  const metaDir = path.join(fixture.workspace, '.atris');
+  fs.mkdirSync(metaDir, { recursive: true });
+  fs.writeFileSync(path.join(metaDir, 'business.json'), JSON.stringify({
+    slug: 'preview-co',
+    name: 'Preview Co',
+    workspace_template: 'business',
+  }), 'utf8');
+  return fixture;
+}
+
 test('single-project update and sync dry-run write nothing', () => {
   for (const command of ['update', 'sync']) {
     const fixture = makeFixture();
@@ -69,5 +81,29 @@ test('single-project update and sync dry-run write nothing', () => {
     } finally {
       fs.rmSync(fixture.root, { recursive: true, force: true });
     }
+  }
+});
+
+test('business update dry-run reports stale skill changes without writing', () => {
+  const fixture = makeBusinessFixture();
+  try {
+    const beforeWorkspace = snapshotTree(fixture.workspace);
+    const beforeHome = snapshotTree(fixture.home);
+    const result = spawnSync(process.execPath, [cliPath, 'update', '--dry-run'], {
+      cwd: fixture.workspace,
+      encoding: 'utf8',
+      timeout: 15000,
+      env: {
+        ...scrubAgentEnv(),
+        HOME: fixture.home,
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /Skills:\s+[1-9]\d* would update from atris-cli\/atris\/skills\//);
+    assert.deepEqual(snapshotTree(fixture.workspace), beforeWorkspace, 'business update changed workspace files');
+    assert.deepEqual(snapshotTree(fixture.home), beforeHome, 'business update changed global files');
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
   }
 });
