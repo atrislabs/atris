@@ -11,7 +11,7 @@
  *
  * This is the CLI entrypoint for the headline paid capability. The member
  * loop and the /improve skill both call it. If the backend is unreachable
- * or the user is not logged in, it falls back to a local autopilot tick
+ * or the user is not logged in, it falls back to one local mission tick
  * (same loop, local inference) instead of erroring silently.
  *
  * The orchestrator (runImprove) takes injected deps so the network, auth,
@@ -140,7 +140,7 @@ function summarizeImproveResponse(data = {}) {
 }
 
 /**
- * Decide whether to fall back to a local autopilot tick. Fallback only when
+ * Decide whether to fall back to one local mission tick. Fallback only when
  * the backend is genuinely unavailable: no auth, or unreachable (status 0).
  * A real HTTP error (insufficient credits 402, server error 5xx) is reported
  * honestly — we never silently run local work and bill nothing on what was a
@@ -547,13 +547,63 @@ function resolveAtrisBin() {
   return process.env.ATRIS_BIN || 'atris';
 }
 
-// Two legs, not one: when the workspace has no runnable mission yet, leg 1 is
-// setup (a member starts a mission in seconds) and leg 2 is the actual tick.
-// A cap of 1 would create the mission and stop before any work happened.
-const LOCAL_FALLBACK_ARGS = ['autopilot', '--auto', '--iterations=2'];
+// The improve contract is one call -> one tick. Use the mission runtime
+// directly so the tick count and verifier result come back as structured JSON
+// instead of hiding several mission ticks inside one autopilot leg.
+const LOCAL_FALLBACK_ARGS = ['mission', 'run', '--due', '--max-ticks', '1', '--complete-on-pass', '--json'];
 
 function localFallbackArgs(budgetSec) {
-  return LOCAL_FALLBACK_ARGS.concat(['--minutes', String(Math.max(1, Math.round(budgetSec / 60)))]);
+  return LOCAL_FALLBACK_ARGS.concat(['--max-wall', String(Math.max(60, Math.round(budgetSec)))]);
+}
+
+function localSummaryText(tick = {}, mission = {}) {
+  const candidates = [
+    tick.claude && tick.claude.summary,
+    tick.atris2 && tick.atris2.summary,
+    tick.drill && tick.drill.summary,
+    mission.objective,
+  ];
+  return String(candidates.find((value) => String(value || '').trim()) || 'verified local improvement')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Turn one mission-run JSON result into the same stable summary the paid API
+ * returns. A local tick earns the conservative local reward (+1) only after
+ * its real verifier passes; missing proof is a failed improve call.
+ */
+function summarizeLocalMissionRun(payload = {}) {
+  const ticks = Array.isArray(payload.ticks) ? payload.ticks : [];
+  const tickCount = Number(payload.tick_count != null ? payload.tick_count : ticks.length);
+  if (!payload.ok || payload.action !== 'mission_run') {
+    throw new Error(`local improve did not run a mission tick${payload.reason ? `: ${payload.reason}` : ''}`);
+  }
+  if (tickCount !== 1 || ticks.length !== 1) {
+    throw new Error(`local improve must run exactly one tick; got ${tickCount}`);
+  }
+  const tick = ticks[0] || {};
+  if (tick.status !== 'ran') {
+    throw new Error(`local improve tick did not run${tick.reason ? `: ${tick.reason}` : ''}`);
+  }
+  if (tick.verifier_passed !== true) {
+    throw new Error('local improve verifier did not pass');
+  }
+  const mission = payload.mission || {};
+  const files = tick.worktree && Array.isArray(tick.worktree.new_since_baseline_sample)
+    ? tick.worktree.new_since_baseline_sample
+    : [];
+  return {
+    shipped: localSummaryText(tick, mission),
+    reward: 1,
+    verify: true,
+    credits: 0,
+    files,
+    model: mission.model || mission.runner || null,
+    taskId: mission.task_id || mission.current_task_id || null,
+    elapsedMs: null,
+    scorecardWritten: false,
+  };
 }
 
 function runLocalFallback(opts = {}) {
@@ -569,14 +619,33 @@ function runLocalFallback(opts = {}) {
     cwd: opts.workspace || process.cwd(),
     encoding: 'utf8',
     env: process.env,
-    stdio: opts.json ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    // Mission output is JSON even for the human-facing improve command because
+    // proof must be parsed before improve can claim success or write a receipt.
+    stdio: ['ignore', 'pipe', 'pipe'],
     timeout: (budgetSec + 60) * 1000,
   });
+  let payload = null;
+  let summary = null;
+  let error = null;
+  if (r.status === 0) {
+    try {
+      payload = JSON.parse(String(r.stdout || '').trim());
+      summary = summarizeLocalMissionRun(payload);
+    } catch (e) {
+      error = e.message;
+    }
+  } else {
+    error = String(r.stderr || '').trim().split('\n').filter(Boolean).slice(-1)[0]
+      || `local improve exited ${r.status == null ? 1 : r.status}`;
+  }
   return {
-    ok: r.status === 0,
+    ok: r.status === 0 && Boolean(summary),
     status: r.status == null ? 1 : r.status,
     stdout: r.stdout || '',
     stderr: r.stderr || '',
+    payload,
+    summary,
+    error,
   };
 }
 
@@ -603,6 +672,60 @@ async function runImprove(opts = {}, deps = {}) {
   const startedAt = now();
   const creds = loadCreds();
 
+  const finishLocalFallback = (reason, apiResult = null) => {
+    const local = localFn({ workspace, json: opts.json, timeoutSec });
+    const finishedAt = now();
+    if (!local.ok || !local.summary || local.summary.verify !== true) {
+      return {
+        ok: false,
+        source: 'local',
+        reason,
+        error: local.error || 'local improve verifier did not pass',
+        local,
+        ...(apiResult ? { apiResult } : {}),
+        startedAt,
+        finishedAt,
+      };
+    }
+    const row = buildScorecardRow(local.summary, {
+      source: 'local',
+      mode: opts.mode || 'full',
+      ts: finishedAt,
+      member: opts.member,
+    });
+    let scorecardPath;
+    let journalPath;
+    try {
+      scorecardPath = writeRow(workspace, row);
+      journalPath = writeJournal(workspace, local.summary, { source: 'local', member: opts.member });
+    } catch (e) {
+      return {
+        ok: false,
+        source: 'local',
+        reason,
+        error: `local improve receipt write failed: ${e.message}`,
+        local,
+        ...(apiResult ? { apiResult } : {}),
+        startedAt,
+        finishedAt,
+      };
+    }
+    return {
+      ok: true,
+      source: 'local',
+      reason,
+      summary: local.summary,
+      scorecardPath,
+      journalPath,
+      receipt: 'written',
+      row,
+      local,
+      ...(apiResult ? { apiResult } : {}),
+      startedAt,
+      finishedAt,
+    };
+  };
+
   // No auth → local fallback (or report if fallback disabled).
   if (!creds || !creds.token) {
     if (!opts.fallback) {
@@ -612,9 +735,8 @@ async function runImprove(opts = {}, deps = {}) {
         startedAt, finishedAt: now(),
       };
     }
-    log('not logged in — falling back to a local autopilot tick');
-    const local = localFn({ workspace, json: opts.json, timeoutSec });
-    return { ok: local.ok, source: 'local', reason: 'no_auth', local, startedAt, finishedAt: now() };
+    log('not logged in — falling back to one local mission tick');
+    return finishLocalFallback('no_auth');
   }
 
   // Attempt the paid API tick.
@@ -655,9 +777,8 @@ async function runImprove(opts = {}, deps = {}) {
 
   const decide = shouldFallbackLocal({ creds, apiResult });
   if (decide.fallback && opts.fallback) {
-    log(`backend ${decide.reason} — falling back to a local autopilot tick`);
-    const local = localFn({ workspace, json: opts.json, timeoutSec });
-    return { ok: local.ok, source: 'local', reason: decide.reason, local, apiResult, startedAt, finishedAt: now() };
+    log(`backend ${decide.reason} — falling back to one local mission tick`);
+    return finishLocalFallback(decide.reason, apiResult);
   }
 
   // Real, answerable failure (e.g. insufficient credits, server error). Report it.
@@ -689,9 +810,16 @@ function formatImproveReport(result = {}) {
   }
   if (result.source === 'local') {
     lines.push(result.ok ? 'improved (local fallback).' : 'local fallback tick failed.');
-    lines.push(`  reason:  backend ${result.reason} — ran a local autopilot tick instead`);
-    if (result.local && !result.ok && result.local.stderr) {
-      lines.push(`  error:   ${result.local.stderr.trim().split('\n').slice(-1)[0]}`);
+    lines.push(`  reason:  backend ${result.reason} — ran one local mission tick instead`);
+    if (result.ok) {
+      const s = result.summary || {};
+      lines.push(`  task:    ${s.shipped || '(no description returned)'}`);
+      lines.push(`  verify:  pass`);
+      lines.push(`  reward:  ${s.reward != null ? s.reward : '?'}`);
+      if (s.files && s.files.length) lines.push(`  files:   ${s.files.join(', ')}`);
+      if (result.scorecardPath) lines.push(`  scorecard: ${path.relative(process.cwd(), result.scorecardPath)}`);
+    } else if (result.error) {
+      lines.push(`  error:   ${result.error}`);
     }
     return lines.join('\n');
   }
@@ -728,7 +856,7 @@ Options:
 
 Calls POST /api/improve, which ships one verifiable change and deducts
 Atris credits per successful tick. Writes a per-tick scorecard to
-.atris/state/scorecards.jsonl. Falls back to a local autopilot tick when
+.atris/state/scorecards.jsonl. Falls back to one local mission tick when
 the backend is unreachable or you are not logged in.`);
 }
 
@@ -794,6 +922,7 @@ module.exports = {
   improveApiPath,
   formatImproveReport,
   runLocalFallback,
+  summarizeLocalMissionRun,
   LOCAL_FALLBACK_ARGS,
   localFallbackArgs,
   SCORECARD_SCHEMA,

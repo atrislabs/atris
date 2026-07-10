@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const {
   runImprove,
@@ -19,6 +20,7 @@ const {
   summarizeTickHistory,
   formatTickHistory,
   improveApiPath,
+  summarizeLocalMissionRun,
   SCORECARD_SCHEMA,
 } = require('../commands/improve');
 
@@ -122,13 +124,125 @@ test('shouldFallbackLocal: remote backend cannot see a local workspace → fallb
   );
 });
 
-test('local fallback runs a bounded two-leg autopilot (setup + tick)', () => {
+test('local fallback runs exactly one due mission tick with JSON proof', () => {
   const { LOCAL_FALLBACK_ARGS, localFallbackArgs } = require('../commands/improve');
-  assert.deepEqual(LOCAL_FALLBACK_ARGS, ['autopilot', '--auto', '--iterations=2']);
-  // the time budget is passed down so autopilot lands gracefully instead of
-  // being SIGKILLed mid-leg
-  assert.deepEqual(localFallbackArgs(300), ['autopilot', '--auto', '--iterations=2', '--minutes', '5']);
-  assert.deepEqual(localFallbackArgs(30), ['autopilot', '--auto', '--iterations=2', '--minutes', '1']);
+  assert.deepEqual(LOCAL_FALLBACK_ARGS, ['mission', 'run', '--due', '--max-ticks', '1', '--complete-on-pass', '--json']);
+  assert.deepEqual(localFallbackArgs(300), [...LOCAL_FALLBACK_ARGS, '--max-wall', '300']);
+  assert.deepEqual(localFallbackArgs(30), [...LOCAL_FALLBACK_ARGS, '--max-wall', '60']);
+});
+
+test('summarizeLocalMissionRun accepts one verified tick and rejects missing proof', () => {
+  const verified = summarizeLocalMissionRun({
+    ok: true,
+    action: 'mission_run',
+    mission: { objective: 'fix the fallback', task_id: 'T1', runner: 'claude' },
+    tick_count: 1,
+    ticks: [{
+      status: 'ran',
+      verifier_passed: true,
+      claude: { summary: 'fixed the fallback' },
+      worktree: { new_since_baseline_sample: ['commands/improve.js'] },
+    }],
+  });
+  assert.equal(verified.verify, true);
+  assert.equal(verified.reward, 1);
+  assert.equal(verified.shipped, 'fixed the fallback');
+  assert.deepEqual(verified.files, ['commands/improve.js']);
+
+  assert.throws(
+    () => summarizeLocalMissionRun({ ok: true, action: 'mission_run', tick_count: 1, ticks: [{ status: 'ran' }] }),
+    /verifier did not pass/
+  );
+  assert.throws(
+    () => summarizeLocalMissionRun({ ok: true, action: 'mission_run', tick_count: 2, ticks: [{}, {}] }),
+    /exactly one tick/
+  );
+});
+
+test('real local improve fallback runs one drill tick, verifies it, and writes one scorecard', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-runtime-'));
+  const home = path.join(dir, 'home');
+  const cli = path.resolve(__dirname, '..', 'bin', 'atris.js');
+  const env = { ...process.env, HOME: home, ATRIS_SKIP_UPDATE_CHECK: '1' };
+  delete env.ATRIS_TOKEN;
+  const runCli = (args) => spawnSync(process.execPath, [cli, ...args], {
+    cwd: dir,
+    env,
+    encoding: 'utf8',
+    timeout: 15000,
+  });
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(home, { recursive: true });
+    const started = runCli([
+      'mission', 'start',
+      'prove one local improve tick',
+      '--owner', 'improver',
+      '--runner', 'drill',
+      '--verify', 'test -f .atris/state/drill-runner-touch.txt',
+      '--json',
+    ]);
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+
+    const improved = runCli(['improve', 'tick', '--json', '--timeout=60']);
+    assert.equal(improved.status, 0, improved.stderr || improved.stdout);
+    const payload = JSON.parse(improved.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.source, 'local');
+    assert.equal(payload.local.payload.tick_count, 1);
+    assert.equal(payload.local.payload.ticks[0].verifier_passed, true);
+    assert.equal(payload.summary.reward, 1);
+    assert.equal(payload.receipt, 'written');
+
+    const scorecards = fs.readFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+      .filter((row) => row.schema === SCORECARD_SCHEMA);
+    assert.equal(scorecards.length, 1);
+    assert.equal(scorecards[0].source, 'local');
+    assert.equal(scorecards[0].verify_passed, true);
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'drill-runner-touch.txt')));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('real local improve fallback proves success in human output mode', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-human-'));
+  const home = path.join(dir, 'home');
+  const cli = path.resolve(__dirname, '..', 'bin', 'atris.js');
+  const env = { ...process.env, HOME: home, ATRIS_SKIP_UPDATE_CHECK: '1' };
+  delete env.ATRIS_TOKEN;
+  const runCli = (args) => spawnSync(process.execPath, [cli, ...args], {
+    cwd: dir,
+    env,
+    encoding: 'utf8',
+    timeout: 15000,
+  });
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(home, { recursive: true });
+    const started = runCli([
+      'mission', 'start',
+      'prove human local improve output',
+      '--owner', 'improver',
+      '--runner', 'drill',
+      '--verify', 'test -f .atris/state/drill-runner-touch.txt',
+      '--json',
+    ]);
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+
+    const improved = runCli(['improve', 'tick', '--timeout=60']);
+    assert.equal(improved.status, 0, improved.stderr || improved.stdout);
+    assert.match(improved.stdout, /improved \(local fallback\)/);
+    assert.match(improved.stdout, /verify:\s+pass/);
+    const rows = readTickHistory(dir);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].verify_passed, true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('buildScorecardRow: stable schema + fields', () => {
@@ -171,7 +285,16 @@ function fakeDeps(over = {}) {
       getApiBaseUrl: over.getApiBaseUrl || (() => 'https://api.atris.ai/api'),
       now: () => '2026-06-08T00:00:00.000Z',
       apiRequestJson: over.apiRequestJson || (async (p, o) => { calls.api.push({ p, o }); return { ok: true, status: 200, data: {} }; }),
-      runLocalFallback: over.runLocalFallback || ((o) => { calls.local.push(o); return { ok: true, status: 0, stdout: '', stderr: '' }; }),
+      runLocalFallback: over.runLocalFallback || ((o) => {
+        calls.local.push(o);
+        return {
+          ok: true,
+          status: 0,
+          summary: { reward: 1, verify: true, shipped: 'local fix', files: ['x.js'], model: 'claude', taskId: 'T1', elapsedMs: 1000 },
+          stdout: '',
+          stderr: '',
+        };
+      }),
       appendScorecardRow: over.appendScorecardRow || ((ws, row) => { calls.rows.push({ ws, row }); return '/ws/.atris/state/scorecards.jsonl'; }),
       appendTickToJournal: over.appendTickToJournal || ((ws, summary, o) => { calls.journal.push({ ws, summary, o }); return '/ws/atris/logs/2026/2026-06-08.md'; }),
       log: () => {},
@@ -233,6 +356,9 @@ test('runImprove: no auth falls back to local without calling the API', async ()
   assert.equal(res.ok, true);
   assert.equal(calls.api.length, 0); // did not attempt a paid call without auth
   assert.equal(calls.local.length, 1);
+  assert.equal(calls.rows.length, 1);
+  assert.equal(calls.rows[0].row.source, 'local');
+  assert.equal(calls.journal.length, 1);
 });
 
 test('runImprove: unreachable backend falls back to local', async () => {
@@ -243,7 +369,23 @@ test('runImprove: unreachable backend falls back to local', async () => {
   assert.equal(res.source, 'local');
   assert.equal(res.reason, 'unreachable');
   assert.equal(calls.local.length, 1);
-  assert.equal(calls.rows.length, 0); // no scorecard for a non-shipping tick
+  assert.equal(calls.rows.length, 1);
+  assert.equal(calls.journal.length, 1);
+});
+
+test('runImprove: local fallback without verifier proof fails and writes no receipt', async () => {
+  const { calls, deps } = fakeDeps({
+    loadCredentials: () => null,
+    runLocalFallback: (o) => {
+      calls.local.push(o);
+      return { ok: false, status: 1, error: 'local improve verifier did not pass', stdout: '', stderr: '' };
+    },
+  });
+  const res = await runImprove({ workspace: '/ws', fallback: true }, deps);
+  assert.equal(res.ok, false);
+  assert.match(res.error, /verifier did not pass/);
+  assert.equal(calls.rows.length, 0);
+  assert.equal(calls.journal.length, 0);
 });
 
 test('runImprove: insufficient credits (402) is reported, not silently retried locally', async () => {
