@@ -1035,9 +1035,9 @@ if (!command || !knownCommands.includes(command)) {
   return;
 }
 
-// Update previews promise a write-free workspace. Business workspaces already
-// have .atris/, so ordinary usage telemetry would otherwise break that promise.
-if (!(dryRunRequested && ['update', 'sync'].includes(command))) {
+// Update previews and help promise a write-free workspace. Business workspaces
+// already have .atris/, so ordinary usage telemetry would break that promise.
+if (!((dryRunRequested || helpRequested) && ['update', 'sync'].includes(command))) {
   recordUsage(command, process.cwd());
 }
 

@@ -311,6 +311,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Dry-run regression:** `test/update-dry-run.test.js` snapshots a minimal project plus temporary-HOME global skill, then proves single-project `update --dry-run` and `sync --dry-run` leave both trees byte-for-byte unchanged
 - **Business dry-run regression:** the same file proves a stale business skill is counted as a planned update while project and temporary-HOME trees remain byte-for-byte unchanged
 - Update and sync previews also skip `lib/usage.js` telemetry so an existing `.atris/` directory does not gain `state/usage.jsonl` during a dry run; normal commands still record usage
+- Update and sync help use the same telemetry guard, and the business fixture proves both help paths leave workspace and temporary-HOME trees byte-for-byte unchanged
 - **Value:** Keep canonical docs (atris.md, PERSONA.md, GETTING_STARTED.md, CLAUDE.md) in sync across a multi-project workspace in one command
 
 **Search:** `rg "showUpdateHelp|syncAtris|syncAtrisAll|_findAtrisProjects|update and sync --help" bin/atris.js commands/sync.js test/commands.test.js`
