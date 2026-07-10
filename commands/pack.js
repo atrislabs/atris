@@ -11,7 +11,7 @@ const REGISTRY_TIMEOUT_MS = 60000;
 
 function showHelp() {
   console.log('usage: atris pack craft "<topic>" [--dir <target>] [--force]');
-  console.log('       atris pack publish [--dir atris] [--slug <slug>] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push]');
+  console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
   console.log('       atris pack pull [<slug>] [--dir <path>]');
   console.log('       atris pack status [--dir <path>]');
@@ -115,7 +115,7 @@ function buildManifest(existing, options) {
     slug,
     title,
     description: existingManifest.description || `Atris pack for ${title}.`,
-    author: existingManifest.author || '',
+    author: (options.author && String(options.author).trim()) || existingManifest.author || '',
     tags: Array.isArray(existingManifest.tags) ? existingManifest.tags : [],
     version,
     versions: Array.isArray(existingManifest.versions) ? [...existingManifest.versions] : [],
@@ -265,6 +265,9 @@ async function postPackToRegistry(manifest, zipBuffer, deps = {}) {
   const url = registryUrl('/api/pack/registry', deps);
   const body = JSON.stringify({ manifest, zipBase64: zipBuffer.toString('base64') });
   const authHeaders = requiredAuthHeaders(deps);
+  if (!manifest.author || !String(manifest.author).trim()) {
+    throw new Error('registry packs need an author. re-run with --author "<your name>" (or set "author" in pack.json).');
+  }
   let response;
   try {
     response = await request(url, {
@@ -320,6 +323,7 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   const packRootMode = !dirArg && fs.existsSync(path.join(cwd, 'pack.json'));
   const sourceDir = packRootMode ? path.resolve(cwd) : path.resolve(cwd, dirArg || 'atris');
   const slug = takeValue(args, '--slug');
+  const author = takeValue(args, '--author');
   const notes = takeValue(args, '--notes') || '';
   const out = takeValue(args, '--out');
   const includeLogs = takeFlag(args, '--include-logs');
@@ -338,6 +342,7 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   const existing = readJson(manifestPath);
   const manifest = buildManifest(existing, {
     slug,
+    author,
     notes,
     bump: major ? 'major' : minor ? 'minor' : 'patch',
     fallbackSlug: packRootMode

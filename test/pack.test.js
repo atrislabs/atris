@@ -85,6 +85,24 @@ function closeServer(server) {
   });
 }
 
+test('pack publish --author writes the author into the manifest', () => {
+  const dir = makeTempDir();
+  try {
+    seedAtris(dir);
+    const zipPath = path.join(dir, 'authored.zip');
+    const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'authored-pack', '--author', 'Ada Lovelace', '--out', zipPath], { cwd: dir });
+    assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
+
+    const target = path.join(dir, 'installed');
+    const install = runCli(['pack', 'install', zipPath, '--dir', target], { cwd: dir });
+    assert.equal(install.status, 0, `stdout:\n${install.stdout}\nstderr:\n${install.stderr}`);
+    const manifest = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'));
+    assert.equal(manifest.author, 'Ada Lovelace');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack publish --out then install round trips atris and manifest', () => {
   const dir = makeTempDir();
   try {
