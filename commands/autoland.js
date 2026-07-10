@@ -620,26 +620,15 @@ function runTick(root, args) {
 
 function runTickBody(root, { json, policy, receipt }) {
 
-  // 1. certify what has executable proof — re-run the runnable check named in
-  // each Review proof as a second actor. Without this the tick only lands rows
-  // some always-on mission happened to certify, and everything else waits on a
-  // human who never needed to look. Denied lanes and check-less proofs still wait.
-  const certify = runOwnCli(root, ['task', 'certify-verified', '--json']);
-  try {
-    const parsed = JSON.parse(certify.stdout);
-    receipt.reviews_certified = parsed.certified ?? 0;
-    if (parsed.ok !== true) receipt.certify_error = 'certify-verified failed';
-  } catch {
-    receipt.certify_error = certify.stderr.slice(0, 200) || 'certify-verified output unreadable';
-  }
-
-  // 2. land what is eligible — the policy is the standing authorization.
+  // 1. certify and land in one task process. Keeping both phases together lets
+  // the landing gate reuse the live certification verifier result without
+  // persisting trust across heartbeats. Denied lanes and check-less proofs wait.
   // No hardcoded --limit here: a fixed low cap (this used to be 12) silently
   // undercounts a real backlog every single tick — 12/hour forever even with
   // 78 certified rows waiting. Let `atris task auto-accept-certified` apply
   // its own default (12 without --all, a high safety cap under --all) so a
   // policy with accept_all:true actually drains the full certified set.
-  const cliArgs = ['task', 'auto-accept-certified', '--json'];
+  const cliArgs = ['task', 'auto-accept-certified', '--json', '--certify-first'];
   if (policy.accept_all) cliArgs.push('--all');
   else if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
   const accept = runOwnCli(root, cliArgs);
@@ -651,6 +640,10 @@ function runTickBody(root, { json, policy, receipt }) {
     // "no work": a blind heartbeat must say WHY it is blind.
     if (parsed.ok === false) {
       receipt.accept_error = String(parsed.reason || 'auto-accept refused');
+    }
+    receipt.reviews_certified = parsed.certification?.certified ?? 0;
+    if (parsed.certification && parsed.certification.ok !== true) {
+      receipt.certify_error = 'certify-verified failed';
     }
     receipt.landed = results.filter((r) => r.action === 'accepted').map((r) => r.ref);
     const citationBlocks = results

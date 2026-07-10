@@ -9404,9 +9404,11 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
   };
 }
 
-function cmdCertifyVerified(args) {
+function cmdCertifyVerified(args, options = {}) {
   const dryRun = hasFlag(args, '--dry-run');
   const asJson = wantsJson(args);
+  const silent = options.silent === true;
+  const verifyCache = options.verifyCache || null;
   const actor = String(flag(args, '--as') || 'autoland-verifier');
   const limitRaw = flag(args, '--limit');
   const max = limitRaw && limitRaw !== true ? Math.max(1, Number(limitRaw) || 6) : 6;
@@ -9483,7 +9485,7 @@ function cmdCertifyVerified(args) {
       results.push({ ref, action: 'would_certify', verify });
       continue;
     }
-    const run = runVerifyCommand(verify, task.workspace_root || process.cwd());
+    const run = runVerifyCommandCached(verify, task.workspace_root || process.cwd(), verifyCache);
     if (!run.ok) {
       results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
       continue;
@@ -9517,6 +9519,9 @@ function cmdCertifyVerified(args) {
     results,
     projection_path: outPath,
   };
+  if (silent) {
+    return payload;
+  }
   if (asJson) {
     console.log(JSON.stringify(payload, null, 2));
   } else if (results.length === 0) {
@@ -9549,6 +9554,7 @@ function cmdLanding(args) {
 function cmdAutoAcceptCertified(args) {
   const dryRun = hasFlag(args, '--dry-run');
   const acceptAll = hasFlag(args, '--all');
+  const certifyFirst = hasFlag(args, '--certify-first');
   const strictVerify = !hasFlag(args, '--no-strict-verify') && !acceptAll;
   const actorFlag = flag(args, '--as');
   const hasHumanActor = validHumanActorFlag(actorFlag);
@@ -9607,6 +9613,14 @@ function cmdAutoAcceptCertified(args) {
     );
   }
 
+  // A heartbeat certifies and lands in one process so its live verifier result
+  // remains available to the landing gate. The cache is process-local and is
+  // never persisted: a later heartbeat must prove the checkout again.
+  const verifyCache = new Map();
+  const certification = certifyFirst && !dryRun
+    ? cmdCertifyVerified([], { verifyCache, silent: true })
+    : null;
+
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
@@ -9626,7 +9640,6 @@ function cmdAutoAcceptCertified(args) {
       .slice(0, max)
     : queue.items.filter(item => item.queue_role !== 'blocked');
   const results = [];
-  const verifyCache = new Map();
 
   for (const item of pool) {
     const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
@@ -9709,10 +9722,11 @@ function cmdAutoAcceptCertified(args) {
       summary,
       ...summary,
       results,
+      certification,
       projection_path: finalPath,
       queue,
     });
-    return;
+    return { ...summary, results, certification, projection_path: finalPath, queue };
   }
   console.log(`AUTO-ACCEPT CERTIFIED (${dryRun ? 'dry-run' : 'execute'})`);
   console.log(`${summary.certified} certified, ${summary.scanned} scanned, ${summary.accepted || summary.would_accept} accepted, ${summary.skipped} skipped${summary.revised ? `, ${summary.revised} revised` : ''}${summary.failed ? `, ${summary.failed} failed` : ''}${summary.undercounted ? ' (UNDERCOUNTED — raise --limit or the sweep cap)' : ''}`);
@@ -9721,6 +9735,7 @@ function cmdAutoAcceptCertified(args) {
     const reviewChat = row.review_chat_command ? ` review_chat=${row.review_chat_command}` : '';
     console.log(`${row.action.toUpperCase()} ${row.ref}: ${row.reason}${row.reward ? ` reward=${row.reward}` : ''}${nextAction}${reviewChat}`);
   }
+  return { ...summary, results, certification, projection_path: finalPath, queue };
 }
 
 const SWEEP_AUTO_ACCEPT_PROTECTED = new Set([
