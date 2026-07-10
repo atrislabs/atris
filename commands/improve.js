@@ -838,6 +838,7 @@ function showHelp() {
 Usage:
   atris improve
   atris improve --json
+  atris improve doctor [--json] [--fix]
   atris improve tick [mode] [options]
   atris improve [mode|history] [options]
 
@@ -846,6 +847,7 @@ Modes (positional or --mode):
   plan        return the plan only, no changes
   delegate    queue the tick for a local Claude Code session
   history     show the tick history (reward trend, credits, pass rate)
+  doctor      scan loop receipts and optionally file one repair mission
 
 Options:
   --member <name>  attribute the tick to a member (the loop's owner)
@@ -867,8 +869,78 @@ function isBareVitalsArgs(argv = []) {
   return argv.length === 0 || (argv.length === 1 && argv[0] === '--json');
 }
 
+const LOOP_DOCTOR_OPEN_STATUSES = new Set(['planning', 'ready', 'running', 'paused', 'blocked']);
+
+function loopDoctorKey(finding) {
+  return `[loop-doctor:${finding.kind}]`;
+}
+
+function openLoopDoctorMission(root, finding) {
+  const key = loopDoctorKey(finding);
+  const rows = readJsonlFile(path.join(root, '.atris', 'state', 'missions.jsonl'));
+  const latest = new Map();
+  rows.forEach((row, index) => {
+    const mission = row && row.mission && typeof row.mission === 'object' ? row.mission : row;
+    if (mission && typeof mission === 'object') latest.set(String(mission.id || `row-${index}`), mission);
+  });
+  return [...latest.values()].find((mission) => LOOP_DOCTOR_OPEN_STATUSES.has(String(mission.status || '').toLowerCase())
+    && String(mission.objective || '').includes(key)) || null;
+}
+
+function formatLoopDoctor(findings, fix = null) {
+  const lines = [`loop doctor: ${findings.length} finding${findings.length === 1 ? '' : 's'}`];
+  findings.forEach((finding, index) => {
+    lines.push(`${index + 1}. ${finding.kind}: ${finding.evidence.detail} (${finding.count})`);
+    lines.push(`   repair: ${finding.suggested_mission.objective}`);
+  });
+  if (!findings.length) lines.push('the recent improve-loop receipts are clean.');
+  if (fix && fix.action === 'mission_started') lines.push(`filed one mission: ${fix.mission.id}`);
+  if (fix && fix.action === 'mission_exists') lines.push(`no mission filed: ${fix.mission.id} already covers the top finding.`);
+  return lines.join('\n');
+}
+
+function runLoopDoctor(argv = [], deps = {}) {
+  const args = Array.isArray(argv) ? argv : [];
+  const json = args.includes('--json');
+  const fixRequested = args.includes('--fix');
+  const root = process.cwd();
+  const scan = deps.scanLoopReceipts || require('../lib/loop-doctor').scanLoopReceipts;
+  const findings = scan({ root, now: deps.now || new Date() });
+  let fix = null;
+
+  if (fixRequested && findings.length) {
+    const finding = findings[0];
+    const existing = openLoopDoctorMission(root, finding);
+    if (existing) {
+      fix = { action: 'mission_exists', finding_kind: finding.kind, mission: existing };
+    } else {
+      const suggested = finding.suggested_mission;
+      const objective = `${loopDoctorKey(finding)} ${suggested.objective}`;
+      const start = deps.startMission || require('./mission').startMission;
+      const started = start([
+        objective,
+        '--owner', suggested.owner,
+        '--verify', suggested.verifier,
+        '--cadence', suggested.cadence,
+        '--runner', 'claude',
+        '--always-on',
+      ], { silent: true });
+      fix = { action: 'mission_started', finding_kind: finding.kind, mission: started.mission };
+    }
+  }
+
+  const payload = { schema: 'atris.loop_doctor.v1', findings, fix };
+  if (json) console.log(JSON.stringify(payload));
+  else console.log(formatLoopDoctor(findings, fix));
+  return payload;
+}
+
 async function run(argv = [], deps = {}) {
   const args = Array.isArray(argv) ? [...argv] : [];
+  if (args[0] === 'doctor') {
+    runLoopDoctor(args.slice(1), deps);
+    return 0;
+  }
   if (isBareVitalsArgs(args)) {
     const vitals = (deps.collectImproveVitals || collectImproveVitals)({ workspace: process.cwd() }, deps);
     if (args.includes('--json')) console.log(JSON.stringify(vitals));
@@ -924,6 +996,10 @@ module.exports = {
   formatTickHistory,
   improveApiPath,
   formatImproveReport,
+  runLoopDoctor,
+  formatLoopDoctor,
+  openLoopDoctorMission,
+  loopDoctorKey,
   runLocalFallback,
   summarizeLocalMissionRun,
   LOCAL_FALLBACK_ARGS,
