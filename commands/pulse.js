@@ -367,13 +367,20 @@ function tickCommand(args, root = process.cwd()) {
 
 // --- atris pulse status ---
 
+function crontabHasActiveMarker(crontab, markers = pulse.PULSE_MARKER) {
+  const markerList = (Array.isArray(markers) ? markers : [markers]).filter(Boolean);
+  return String(crontab || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+    .some((line) => markerList.some((marker) => line.includes(marker)));
+}
+
 function cronInstalled(markers = pulse.PULSE_MARKER) {
-  const markerList = Array.isArray(markers) ? markers : [markers];
   try {
     const r = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
     if (r.status !== 0) return false;
-    const crontab = String(r.stdout || '');
-    return markerList.some((marker) => marker && crontab.includes(marker));
+    return crontabHasActiveMarker(r.stdout, markers);
   } catch {
     return false;
   }
@@ -627,6 +634,7 @@ module.exports = {
   tickCommand,
   statusCommand,
   cronInstalled,
+  crontabHasActiveMarker,
   installCommand,
   uninstallCommand,
   runCommand,
