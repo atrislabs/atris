@@ -313,6 +313,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - Update and sync previews also skip `lib/usage.js` telemetry so an existing `.atris/` directory does not gain `state/usage.jsonl` during a dry run; normal commands still record usage
 - Update and sync help use the same telemetry guard, and the business fixture proves both help paths leave workspace and temporary-HOME trees byte-for-byte unchanged
 - The central CLI dispatcher suppresses usage telemetry for every help path, including bare help; business snapshots cover bare, update, sync, upgrade, and now help while normal commands still record usage
+- The same dispatcher guard applies to every `--dry-run`; a real business-workspace `clean --dry-run --json` snapshot proves previews do not create usage state, while normal telemetry tests remain green
 - **Value:** Keep canonical docs (atris.md, PERSONA.md, GETTING_STARTED.md, CLAUDE.md) in sync across a multi-project workspace in one command
 
 **Search:** `rg "showUpdateHelp|syncAtris|syncAtrisAll|_findAtrisProjects|update and sync --help" bin/atris.js commands/sync.js test/commands.test.js`

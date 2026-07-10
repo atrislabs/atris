@@ -158,3 +158,26 @@ test('business help is write-free for bare and unrelated commands', () => {
     }
   }
 });
+
+test('clean dry-run writes nothing in an existing workspace', () => {
+  const fixture = makeBusinessFixture();
+  try {
+    const beforeWorkspace = snapshotTree(fixture.workspace);
+    const beforeHome = snapshotTree(fixture.home);
+    const result = spawnSync(process.execPath, [cliPath, 'clean', '--dry-run', '--json'], {
+      cwd: fixture.workspace,
+      encoding: 'utf8',
+      timeout: 15000,
+      env: {
+        ...scrubAgentEnv(),
+        HOME: fixture.home,
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.deepEqual(snapshotTree(fixture.workspace), beforeWorkspace, 'clean dry-run changed workspace files');
+    assert.deepEqual(snapshotTree(fixture.home), beforeHome, 'clean dry-run changed global files');
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
