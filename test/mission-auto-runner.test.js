@@ -151,3 +151,70 @@ test('a failed auto tick records health and the next tick skips that engine', ()
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Regression: a tick that errors with a generic reason (e.g. a hard 401,
+// surfaced as status "errored" / reason "claude-error") used to fall through
+// engineFailureHealthStatus's credit_out/not_installed regexes and return
+// null, so recordMissionEngineTickOutcome never called setEngineHealth and
+// engines.json kept showing the engine as "ready" even though the last tick
+// hard-failed. Any errored tick with a resolved engine_id must now persist
+// some non-ready health for that engine.
+test('an errored tick with a generic reason (401 / claude-error) still marks the engine unhealthy', () => {
+  const dir = makeWorkspace();
+  try {
+    const health = recordMissionEngineTickOutcome('codex', {
+      status: 'errored',
+      reason: 'claude-error',
+      claude: { stderr: '401 Unauthorized', summary: 'request failed with status 401' },
+    }, dir);
+    assert.ok(health, 'expected a health record to be returned');
+    assert.equal(health.health.status, 'error');
+
+    const registry = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'engines.json'), 'utf8'));
+    const codex = registry.engines.find((engine) => engine.id === 'codex');
+    assert.equal(codex.health.status, 'error');
+    assert.ok(codex.health.last_failure_ts);
+
+    // Health status of "error" must survive a registry reseed (the same
+    // read path resolveEngineForRole uses), not just the raw file write.
+    const { resolveEngineForRole } = require('../lib/engine-registry');
+    const executor = resolveEngineForRole('executor', dir);
+    assert.notEqual(executor && executor.id, 'codex', 'a sick engine must not be selected as the ready executor');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI: a tick that errors with a hard 401 persists engine health to engines.json in that workspace', () => {
+  const dir = makeWorkspace();
+  try {
+    const pathValue = executorPath(
+      dir,
+      'echo "401 Unauthorized" >&2\nexit 1',
+      'echo "cursor completed the tick"',
+    );
+    const started = runCli([
+      'mission', 'start', 'auto 401 health mission', '--owner', 'mission-lead',
+      '--runner', 'auto', '--no-verify', '--json',
+    ], dir, { PATH: pathValue });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+
+    const changed = runCli(['mission', 'set-runner', mission.id, 'auto', '--json'], dir, { PATH: pathValue });
+    assert.equal(changed.status, 0, changed.stderr || changed.stdout);
+
+    const firstRun = runCli([
+      'mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json',
+    ], dir, { PATH: pathValue });
+    assert.equal(firstRun.status, 0, firstRun.stderr || firstRun.stdout);
+    const firstPayload = JSON.parse(firstRun.stdout);
+    assert.equal(firstPayload.ticks[0].engine_id, 'codex');
+    assert.equal(firstPayload.ticks[0].status, 'errored');
+    assert.equal(firstPayload.ticks[0].engine_health.status, 'error');
+
+    const registry = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'engines.json'), 'utf8'));
+    assert.equal(registry.engines.find((engine) => engine.id === 'codex').health.status, 'error');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

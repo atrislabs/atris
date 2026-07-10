@@ -951,10 +951,21 @@ function runLoopDoctor(argv = [], deps = {}) {
         '--owner', suggested.owner,
         '--verify', suggested.verifier,
         '--cadence', suggested.cadence,
-        '--runner', 'claude',
+        '--runner', 'auto',
         '--always-on',
       ], { silent: true });
       fix = { action: 'mission_started', finding_kind: finding.kind, mission: started.mission };
+      const workspace = deps.workspace || root;
+      const appendScorecard = deps.appendScorecardRow || appendScorecardRow;
+      appendScorecard(workspace, {
+        schema: 'atris.loop_doctor.v1',
+        ts: (deps.now || new Date()).toISOString(),
+        source: 'loop_doctor',
+        kind: finding.kind,
+        mission_id: started.mission.id,
+        reward: 0,
+        note: 'repair filed; reward is earned by the repair tick, not the filing',
+      });
     }
   }
 
