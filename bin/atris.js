@@ -88,6 +88,7 @@ const helpRequested = updateCommand === 'help'
   || updateArgs.includes('-h')
   || updateArgs[0] === 'help';
 const jsonRequested = updateArgs.includes('--json');
+const dryRunRequested = updateArgs.includes('--dry-run');
 const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested || jsonRequested);
 if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update'].includes(updateCommand)))) {
   updateCheckPromise = checkForUpdates()
@@ -200,7 +201,7 @@ const isBusinessSyncSafetyCommand = command === 'sync'
 
 // Auto-sync skills only for commands that modify workspace state. Help must
 // stay read-only, including global ~/.claude and ~/.codex skill directories.
-if (!helpRequested && (['init', 'update', 'upgrade'].includes(command) || (command === 'sync' && !isBusinessSyncSafetyCommand))) {
+if (!helpRequested && !dryRunRequested && (['init', 'update', 'upgrade'].includes(command) || (command === 'sync' && !isBusinessSyncSafetyCommand))) {
   try {
     const { syncSkills } = require('../commands/sync');
     const skillsUpdated = syncSkills({ silent: true });
@@ -1786,7 +1787,10 @@ if (command === 'init') {
       .then(() => process.exit(0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else {
-    syncCmd();
+    syncCmd({
+      dryRun: args.includes('--dry-run'),
+      force: args.includes('--force') || args.includes('--yes') || args.includes('-y'),
+    });
   }
 } else if (command === 'upgrade') {
   const args = process.argv.slice(3);

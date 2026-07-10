@@ -89,12 +89,15 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
   const userSkillsDir = path.join(targetAtrisDir, 'skills');
   const claudeSkillsBaseDir = path.join(path.dirname(targetAtrisDir), '.claude', 'skills');
   const verbose = opts.verbose !== false;
+  const dryRun = opts.dryRun === true;
   let updated = 0;
 
   if (!fs.existsSync(packageSkillsDir)) return 0;
 
-  ensureRealDirectory(userSkillsDir);
-  ensureRealDirectory(claudeSkillsBaseDir);
+  if (!dryRun) {
+    ensureRealDirectory(userSkillsDir);
+    ensureRealDirectory(claudeSkillsBaseDir);
+  }
 
   const skillFolders = fs.readdirSync(packageSkillsDir).filter(f => {
     try { return fs.statSync(path.join(packageSkillsDir, f)).isDirectory(); }
@@ -107,7 +110,7 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
     const symlinkPath = path.join(claudeSkillsBaseDir, skill);
 
     const syncRecursive = (src, dest, skillName, basePath = '') => {
-      ensureRealDirectory(dest);
+      if (!dryRun) ensureRealDirectory(dest);
       for (const entry of fs.readdirSync(src)) {
         const srcPath = path.join(src, entry);
         const destPath = path.join(dest, entry);
@@ -118,9 +121,11 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
           const srcContent = fs.readFileSync(srcPath, 'utf8');
           const destContent = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : '';
           if (srcContent !== destContent) {
-            fs.writeFileSync(destPath, srcContent);
-            if (entry.endsWith('.sh')) fs.chmodSync(destPath, 0o755);
-            if (verbose) console.log(`✓ Updated atris/skills/${skillName}/${relPath}`);
+            if (!dryRun) {
+              fs.writeFileSync(destPath, srcContent);
+              if (entry.endsWith('.sh')) fs.chmodSync(destPath, 0o755);
+            }
+            if (verbose) console.log(`${dryRun ? 'Would update' : '✓ Updated'} atris/skills/${skillName}/${relPath}`);
             updated++;
           }
         }
@@ -131,16 +136,20 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
 
     if (!fs.existsSync(symlinkPath)) {
       const relativePath = path.relative(claudeSkillsBaseDir, destSkillDir);
-      try {
-        fs.symlinkSync(relativePath, symlinkPath);
-        if (verbose) console.log(`✓ Linked .claude/skills/${skill}`);
-      } catch (e) {
-        ensureRealDirectory(symlinkPath);
-        const skillFile = path.join(destSkillDir, 'SKILL.md');
-        if (fs.existsSync(skillFile)) {
-          fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
+      if (dryRun) {
+        if (verbose) console.log(`Would link .claude/skills/${skill}`);
+      } else {
+        try {
+          fs.symlinkSync(relativePath, symlinkPath);
+          if (verbose) console.log(`✓ Linked .claude/skills/${skill}`);
+        } catch (e) {
+          ensureRealDirectory(symlinkPath);
+          const skillFile = path.join(destSkillDir, 'SKILL.md');
+          if (fs.existsSync(skillFile)) {
+            fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
+          }
+          if (verbose) console.log(`✓ Copied .claude/skills/${skill} (symlink failed)`);
         }
-        if (verbose) console.log(`✓ Copied .claude/skills/${skill} (symlink failed)`);
       }
     }
   }
@@ -421,7 +430,9 @@ function syncBusinessCanonical(targetRoot, bizMeta, options = {}) {
   });
 }
 
-function syncAtris() {
+function syncAtris(options = {}) {
+  const dryRun = options.dryRun != null ? options.dryRun : process.argv.includes('--dry-run');
+  const force = options.force != null ? options.force : process.argv.includes('--force');
   // Business mode detection: if .atris/business.json exists, use canonical templates
   const bizFile = path.join(process.cwd(), '.atris', 'business.json');
   if (fs.existsSync(bizFile)) {
@@ -429,6 +440,8 @@ function syncAtris() {
       const bizMeta = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
       return syncWorkspaceTemplate(process.cwd(), bizMeta, {
         templateName: bizMeta.workspace_template || 'business',
+        dryRun,
+        force,
       });
     } catch (e) {
       console.error(`✗ Failed to read .atris/business.json: ${e.message}`);
@@ -452,7 +465,7 @@ function syncAtris() {
     console.log('📦 Migrating agent_team/ → team/ (v2.1.0 update)');
 
     // Create team/ if it doesn't exist
-    if (!fs.existsSync(teamDir)) {
+    if (!dryRun && !fs.existsSync(teamDir)) {
       fs.mkdirSync(teamDir, { recursive: true });
     }
 
@@ -465,27 +478,27 @@ function syncAtris() {
       // Only copy if destination doesn't exist (preserve any customizations)
       if (!fs.existsSync(destPath)) {
         if (fs.statSync(srcPath).isFile()) {
-          fs.copyFileSync(srcPath, destPath);
-          console.log(`  ✓ Migrated ${file}`);
+          if (!dryRun) fs.copyFileSync(srcPath, destPath);
+          console.log(`  ${dryRun ? 'Would migrate' : '✓ Migrated'} ${file}`);
         }
       }
     }
 
     // Remove old agent_team/ folder
-    fs.rmSync(legacyAgentTeamDir, { recursive: true, force: true });
-    console.log('  ✓ Removed old agent_team/ folder');
+    if (!dryRun) fs.rmSync(legacyAgentTeamDir, { recursive: true, force: true });
+    console.log(`  ${dryRun ? 'Would remove' : '✓ Removed'} old agent_team/ folder`);
     console.log('');
   }
 
   if (!fs.existsSync(teamDir)) {
-    fs.mkdirSync(teamDir, { recursive: true });
+    if (!dryRun) fs.mkdirSync(teamDir, { recursive: true });
   }
 
   // Ensure policies folder exists
   const policiesDir = path.join(targetDir, 'policies');
   if (!fs.existsSync(policiesDir)) {
-    fs.mkdirSync(policiesDir, { recursive: true });
-    console.log('✓ Created atris/policies/ folder');
+    if (!dryRun) fs.mkdirSync(policiesDir, { recursive: true });
+    console.log(`${dryRun ? 'Would create' : '✓ Created'} atris/policies/ folder`);
   }
 
   const filesToSync = [
@@ -522,9 +535,11 @@ function syncAtris() {
       return;
     }
 
-    fs.mkdirSync(path.dirname(targetFile), { recursive: true });
-    fs.copyFileSync(sourceFile, targetFile);
-    console.log(`✓ Updated ${target}`);
+    if (!dryRun) {
+      fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+      fs.copyFileSync(sourceFile, targetFile);
+    }
+    console.log(`${dryRun ? 'Would update' : '✓ Updated'} ${target}`);
     updated++;
   });
 
@@ -532,12 +547,13 @@ function syncAtris() {
   const todoFile = path.join(targetDir, 'TODO.md');
   const legacyTaskFile = path.join(targetDir, 'TASK_CONTEXTS.md');
   if (!fs.existsSync(todoFile) && fs.existsSync(legacyTaskFile)) {
-    fs.renameSync(legacyTaskFile, todoFile);
-    console.log('✓ Migrated TASK_CONTEXTS.md to TODO.md');
+    if (!dryRun) fs.renameSync(legacyTaskFile, todoFile);
+    console.log(`${dryRun ? 'Would migrate' : '✓ Migrated'} TASK_CONTEXTS.md to TODO.md`);
+    updated++;
   }
 
   // Sync all skills from package to user's project via shared helper.
-  updated += syncPackageSkills(targetDir, { verbose: true });
+  updated += syncPackageSkills(targetDir, { verbose: true, dryRun });
 
   // Update .claude/skills/atris/SKILL.md (legacy - now handled above, keeping for compatibility)
   const claudeSkillsDir = path.join(process.cwd(), '.claude', 'skills', 'atris');
@@ -572,13 +588,13 @@ Key behaviors:
 - Use \`atris task\` for claims, proof, ready, and accept
 - Treat TODO.md as a rendered view; regenerate it instead of hand-editing tasks`;
 
-  if (!fs.existsSync(claudeSkillsDir)) {
+  if (!dryRun && !fs.existsSync(claudeSkillsDir)) {
     fs.mkdirSync(claudeSkillsDir, { recursive: true });
   }
   const currentSkill = fs.existsSync(claudeSkillFile) ? fs.readFileSync(claudeSkillFile, 'utf8') : '';
   if (currentSkill !== skillContent) {
-    fs.writeFileSync(claudeSkillFile, skillContent);
-    console.log('✓ Updated .claude/skills/atris/SKILL.md');
+    if (!dryRun) fs.writeFileSync(claudeSkillFile, skillContent);
+    console.log(`${dryRun ? 'Would update' : '✓ Updated'} .claude/skills/atris/SKILL.md`);
     updated++;
   }
 
@@ -599,8 +615,8 @@ Key behaviors:
         ]
       }
     };
-    fs.writeFileSync(claudeSettingsFile, JSON.stringify(claudeSettings, null, 2));
-    console.log('✓ Created .claude/settings.json (SessionStart hook)');
+    if (!dryRun) fs.writeFileSync(claudeSettingsFile, JSON.stringify(claudeSettings, null, 2));
+    console.log(`${dryRun ? 'Would create' : '✓ Created'} .claude/settings.json (SessionStart hook)`);
     updated++;
   }
 
@@ -618,6 +634,12 @@ After displaying the boot output, respond to the user naturally.
 
 `;
 
+  const applyClaudeUpdate = (content, dryAction, completedAction) => {
+    if (!dryRun) fs.writeFileSync(rootClaudeMd, content);
+    console.log(dryRun ? `Would ${dryAction}` : `✓ ${completedAction}`);
+    updated++;
+  };
+
   if (fs.existsSync(rootClaudeMd)) {
     let content = fs.readFileSync(rootClaudeMd, 'utf8');
     const startMarker = '<!-- ATRIS:START';
@@ -630,9 +652,7 @@ After displaying the boot output, respond to the user naturally.
       if (endRaw === -1) {
         // End marker missing — replace from start marker to end of file with fresh block
         content = atrisBlock + content.slice(0, startIdx);
-        fs.writeFileSync(rootClaudeMd, content);
-        console.log('✓ Repaired Atris block in CLAUDE.md (missing end marker)');
-        updated++;
+        applyClaudeUpdate(content, 'repair Atris block in CLAUDE.md (missing end marker)', 'Repaired Atris block in CLAUDE.md (missing end marker)');
       } else {
         const endIdx = endRaw + endMarker.length;
         const existingBlock = content.slice(startIdx, endIdx);
@@ -640,25 +660,21 @@ After displaying the boot output, respond to the user naturally.
         if (!existingBlock.includes('Atris boot sequence')) {
           // Replace existing Atris block with new version
           content = atrisBlock + content.slice(0, startIdx) + content.slice(endIdx).replace(/^\n+/, '');
-          fs.writeFileSync(rootClaudeMd, content);
-          console.log('✓ Updated Atris block in CLAUDE.md');
-          updated++;
+          applyClaudeUpdate(content, 'update Atris block in CLAUDE.md', 'Updated Atris block in CLAUDE.md');
         }
       }
     } else {
       // Prepend Atris block
-      fs.writeFileSync(rootClaudeMd, atrisBlock + content);
-      console.log('✓ Prepended Atris block to CLAUDE.md');
-      updated++;
+      applyClaudeUpdate(atrisBlock + content, 'prepend Atris block to CLAUDE.md', 'Prepended Atris block to CLAUDE.md');
     }
   } else {
     // Create new CLAUDE.md with just Atris block
-    fs.writeFileSync(rootClaudeMd, atrisBlock.trim() + '\n');
-    console.log('✓ Created CLAUDE.md with Atris block');
-    updated++;
+    applyClaudeUpdate(atrisBlock.trim() + '\n', 'create CLAUDE.md with Atris block', 'Created CLAUDE.md with Atris block');
   }
 
-  if (updated === 0) {
+  if (dryRun) {
+    console.log(`\nDry run: ${updated} file(s) would update, ${skipped} unchanged; no changes made.`);
+  } else if (updated === 0) {
     ensureWikiScaffold(process.cwd());
     console.log('✓ Already up to date');
   } else {
