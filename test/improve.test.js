@@ -21,6 +21,7 @@ const {
   formatTickHistory,
   improveApiPath,
   summarizeLocalMissionRun,
+  runLoopDoctor,
   SCORECARD_SCHEMA,
 } = require('../commands/improve');
 
@@ -661,4 +662,89 @@ test('runImprove: ok envelope carrying a server error writes no receipt', async 
   assert.equal(res.receipt, 'skipped'); // error-in-envelope is not a shipped change
   assert.equal(calls.rows.length, 0);
   assert.equal(calls.journal.length, 0);
+});
+
+function fakeFinding(kind = 'repeated_auth_failure') {
+  return {
+    kind,
+    evidence: { detail: 'fake finding for tests' },
+    count: 2,
+    suggested_mission: {
+      objective: 'repair the fake thing',
+      verifier: 'node --test test/improve.test.js',
+      owner: 'auto-improver',
+      cadence: '15m',
+    },
+  };
+}
+
+test('doctor --fix files the repair mission with runner auto, not claude', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-doctor-'));
+  try {
+    const startCalls = [];
+    const deps = {
+      scanLoopReceipts: () => [fakeFinding()],
+      startMission: (args) => {
+        startCalls.push(args);
+        return { mission: { id: 'mission-fake-1', objective: args[0], status: 'planning' } };
+      },
+      workspace: root,
+      now: new Date('2026-07-10T12:00:00.000Z'),
+    };
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    try {
+      runLoopDoctor(['--fix', '--json'], deps);
+    } finally {
+      process.chdir(originalCwd);
+    }
+    assert.equal(startCalls.length, 1);
+    const runnerFlagIndex = startCalls[0].indexOf('--runner');
+    assert.ok(runnerFlagIndex !== -1, 'expected --runner flag in filed mission args');
+    assert.equal(startCalls[0][runnerFlagIndex + 1], 'auto');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('doctor --fix writes a scorecard row on mission_started but not on mission_exists', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-doctor-'));
+  try {
+    const scorecardFile = path.join(root, '.atris', 'state', 'scorecards.jsonl');
+    const missionsFile = path.join(root, '.atris', 'state', 'missions.jsonl');
+    const finding = fakeFinding('reward_flatline');
+    const deps = {
+      scanLoopReceipts: () => [finding],
+      startMission: (args) => {
+        const mission = { id: 'mission-fake-2', objective: args[0], status: 'planning' };
+        fs.mkdirSync(path.dirname(missionsFile), { recursive: true });
+        fs.appendFileSync(missionsFile, `${JSON.stringify({ mission })}\n`, 'utf8');
+        return { mission };
+      },
+      workspace: root,
+      now: new Date('2026-07-10T12:00:00.000Z'),
+    };
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    let secondPayload;
+    try {
+      runLoopDoctor(['--fix', '--json'], deps);
+      secondPayload = runLoopDoctor(['--fix', '--json'], deps);
+    } finally {
+      process.chdir(originalCwd);
+    }
+    assert.equal(secondPayload.fix.action, 'mission_exists');
+
+    assert.ok(fs.existsSync(scorecardFile), 'expected a scorecard row on mission_started');
+    const rows = fs.readFileSync(scorecardFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].schema, 'atris.loop_doctor.v1');
+    assert.equal(rows[0].source, 'loop_doctor');
+    assert.equal(rows[0].kind, 'reward_flatline');
+    assert.equal(rows[0].mission_id, 'mission-fake-2');
+    assert.equal(rows[0].reward, 0);
+    assert.equal(rows[0].note, 'repair filed; reward is earned by the repair tick, not the filing');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

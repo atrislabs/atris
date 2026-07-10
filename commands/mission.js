@@ -194,7 +194,12 @@ function engineFailureHealthStatus(result) {
     return 'credit_out';
   }
   if (/timeout|model-unavailable/.test(signalText)) return 'not_installed';
-  return null;
+  // Any other errored tick (claude-error, no-ready-engine's sibling failures,
+  // etc.) is still a real failure signal for the engine that ran it. Falling
+  // through to null here left the registry showing "ready" for an engine
+  // that had just hard-failed (e.g. a 401), so auto routing kept sending
+  // ticks back to it. Mark it "error" instead of silently doing nothing.
+  return 'error';
 }
 
 function recordMissionEngineTickOutcome(engineId, result, root = process.cwd()) {

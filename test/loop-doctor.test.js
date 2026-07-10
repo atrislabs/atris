@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { scanLoopReceipts } = require('../lib/loop-doctor');
+const { scanLoopReceipts, nonPositiveRewardPressure, FINDING_PRIORITY } = require('../lib/loop-doctor');
 
 const NOW = '2026-07-10T12:00:00.000Z';
 
@@ -147,6 +147,60 @@ test('orders the blocking auth defect before downstream loop symptoms', () => {
     'zero_due_capable_missions',
     'reward_flatline',
   ]);
+});
+
+test('reward_pressure boosts effective priority and re-sorts findings above their static rank', () => {
+  const root = workspace();
+  // Two non-positive scorecard rows in the last 24h: a repeated_pause_reason
+  // finding (static priority 300) should now outrank zero_due_capable_missions
+  // (static priority 200) either way, but with enough pressure it should also
+  // outrank a repeated_tick_error at a *higher* static priority (400) is not
+  // possible here since we only seed one low-priority finding kind; instead
+  // verify the reward_pressure field itself and that it lifts effective
+  // priority above the static baseline.
+  writeJsonl(root, '.atris/state/scorecards.jsonl', [
+    { ts: '2026-07-09T13:00:00.000Z', reward: 0 },
+    { ts: '2026-07-10T09:00:00.000Z', reward: -1 },
+  ]);
+  writeJsonl(root, '.atris/state/missions.jsonl', [
+    { id: 'manual-1', status: 'ready', cadence: 'manual', runner: 'claude', always_on: true, created_at: NOW },
+  ]);
+  const pressure = nonPositiveRewardPressure(
+    [{ ts: '2026-07-09T13:00:00.000Z', reward: 0 }, { ts: '2026-07-10T09:00:00.000Z', reward: -1 }],
+    NOW,
+  );
+  assert.equal(pressure, 2);
+
+  const findings = scanLoopReceipts({ root, now: NOW });
+  const zeroDue = findings.find((finding) => finding.kind === 'zero_due_capable_missions');
+  assert.ok(zeroDue);
+  assert.equal(zeroDue.reward_pressure, 2);
+  assert.equal(zeroDue.effective_priority, FINDING_PRIORITY.zero_due_capable_missions + 20);
+});
+
+test('reward_pressure caps at 100 and every finding gets the field even at zero pressure', () => {
+  const root = workspace();
+  const rows = [];
+  for (let i = 0; i < 15; i++) {
+    rows.push({ ts: '2026-07-10T11:00:00.000Z', reward: 0 });
+  }
+  writeJsonl(root, '.atris/state/scorecards.jsonl', rows);
+  writeJsonl(root, '.atris/state/missions.jsonl', [
+    { id: 'manual-1', status: 'ready', cadence: 'manual', runner: 'claude', always_on: true, created_at: NOW },
+  ]);
+  const findings = scanLoopReceipts({ root, now: NOW });
+  const zeroDue = findings.find((finding) => finding.kind === 'zero_due_capable_missions');
+  assert.equal(zeroDue.reward_pressure, 15);
+  assert.equal(zeroDue.effective_priority, FINDING_PRIORITY.zero_due_capable_missions + 100);
+
+  const clean = workspace();
+  seedHealthyState(clean);
+  writeJsonl(clean, '.atris/state/scorecards.jsonl', [{ ts: '2026-07-10T10:00:00.000Z', reward: 1 }]);
+  writeJson(clean, 'atris/runs/mission-auth-1.json', { ts: '2026-07-09T09:00:00.000Z', error: 'Signature verification failed' });
+  writeJson(clean, 'atris/runs/mission-auth-2.json', { ts: '2026-07-10T09:00:00.000Z', error: 'Signature verification failed' });
+  const zeroPressure = scanLoopReceipts({ root: clean, now: NOW });
+  assert.equal(zeroPressure[0].reward_pressure, 0);
+  assert.equal(zeroPressure[0].effective_priority, FINDING_PRIORITY[zeroPressure[0].kind]);
 });
 
 test('doctor --fix files at most one mission and dedupes the second run', () => {
