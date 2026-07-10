@@ -907,7 +907,6 @@ function showAutopilotHelp() {
 }
 
 if (command === 'help' || command === '--help' || command === '-h') {
-  recordUsage(command, process.cwd());
   showHelp();
   process.exit(0);
 }
@@ -1035,9 +1034,9 @@ if (!command || !knownCommands.includes(command)) {
   return;
 }
 
-// Update previews and help promise a write-free workspace. Business workspaces
+// Help and update previews promise a write-free workspace. Business workspaces
 // already have .atris/, so ordinary usage telemetry would break that promise.
-if (!((dryRunRequested || helpRequested) && ['update', 'sync'].includes(command))) {
+if (!(helpRequested || (dryRunRequested && ['update', 'sync'].includes(command)))) {
   recordUsage(command, process.cwd());
 }
 

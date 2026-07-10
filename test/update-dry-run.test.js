@@ -133,3 +133,28 @@ test('business update and sync help write nothing', () => {
     }
   }
 });
+
+test('business help is write-free for bare and unrelated commands', () => {
+  for (const args of [['help'], ['upgrade', '--help'], ['now', '--help']]) {
+    const fixture = makeBusinessFixture();
+    try {
+      const beforeWorkspace = snapshotTree(fixture.workspace);
+      const beforeHome = snapshotTree(fixture.home);
+      const result = spawnSync(process.execPath, [cliPath, ...args], {
+        cwd: fixture.workspace,
+        encoding: 'utf8',
+        timeout: 15000,
+        env: {
+          ...scrubAgentEnv(),
+          HOME: fixture.home,
+          ATRIS_SKIP_UPDATE_CHECK: '1',
+        },
+      });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      assert.deepEqual(snapshotTree(fixture.workspace), beforeWorkspace, `${args.join(' ')} changed workspace files`);
+      assert.deepEqual(snapshotTree(fixture.home), beforeHome, `${args.join(' ')} changed global files`);
+    } finally {
+      fs.rmSync(fixture.root, { recursive: true, force: true });
+    }
+  }
+});
