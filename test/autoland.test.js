@@ -578,6 +578,94 @@ test('tick lands certified allowlisted verify when the landing re-run passes', (
   }
 });
 
+test('one heartbeat runs an identical verifier once for every matching task', () => {
+  const { base, repo } = makeTempRepo();
+  const marker = path.join(repo, 'shared-verify-runs.txt');
+  try {
+    const first = certifiedVerifiedTask(repo, 'First task shares a verifier', {
+      verify: 'git diff --check',
+    });
+    const second = certifiedVerifiedTask(repo, 'Second task shares a verifier', {
+      verify: 'git diff --check',
+    });
+    const before = projectionByRef(repo);
+    assert.equal(before[first].metadata.verify, 'git diff --check');
+    assert.equal(before[second].metadata.verify, 'git diff --check');
+    const fakeBin = path.join(base, 'fake-bin');
+    const fakeGit = path.join(fakeBin, 'git');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    fs.writeFileSync(fakeGit, [
+      '#!/bin/sh',
+      `if [ "$1" = "diff" ] && [ "$2" = "--check" ]; then echo run >> ${JSON.stringify(marker)}; fi`,
+      'exec /usr/bin/git "$@"',
+      '',
+    ].join('\n'));
+    fs.chmodSync(fakeGit, 0o755);
+    fs.writeFileSync(marker, '');
+
+    autoland.writePolicy(repo, {
+      enabled: true,
+      enabled_by: 'keshav',
+      strict_verify: true,
+      accept_all: true,
+      daily_experiment: false,
+      janitor: false,
+    });
+    const sweep = runCli(['task', 'auto-accept-certified', '--json', '--all'], repo, {
+      PATH: `${fakeBin}:${process.env.PATH}`,
+    });
+    assert.equal(sweep.status, 0, sweep.stderr || sweep.stdout);
+    const receipt = JSON.parse(sweep.stdout);
+    assert.deepEqual(receipt.results.filter((row) => row.action === 'accepted').map((row) => row.ref).sort(), [first, second].sort());
+    const runs = fs.readFileSync(marker, 'utf8').trim().split('\n').filter(Boolean).length;
+    assert.equal(runs, 1, JSON.stringify(receipt));
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('one cached verifier failure revises every matching task', () => {
+  const { base, repo } = makeTempRepo();
+  const marker = path.join(repo, 'shared-failure-runs.txt');
+  try {
+    const first = certifiedVerifiedTask(repo, 'First task shares a failing verifier', {
+      verify: 'git diff --check',
+    });
+    const second = certifiedVerifiedTask(repo, 'Second task shares a failing verifier', {
+      verify: 'git diff --check',
+    });
+    const fakeBin = path.join(base, 'fake-bin');
+    const fakeGit = path.join(fakeBin, 'git');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    fs.writeFileSync(fakeGit, [
+      '#!/bin/sh',
+      `if [ "$1" = "diff" ] && [ "$2" = "--check" ]; then echo run >> ${JSON.stringify(marker)}; exit 1; fi`,
+      'exec /usr/bin/git "$@"',
+      '',
+    ].join('\n'));
+    fs.chmodSync(fakeGit, 0o755);
+    fs.writeFileSync(marker, '');
+
+    autoland.writePolicy(repo, {
+      enabled: true,
+      enabled_by: 'keshav',
+      strict_verify: false,
+    });
+    const sweep = runCli(['task', 'auto-accept-certified', '--json', '--no-strict-verify'], repo, {
+      PATH: `${fakeBin}:${process.env.PATH}`,
+    });
+    assert.equal(sweep.status, 0, sweep.stderr || sweep.stdout);
+    const receipt = JSON.parse(sweep.stdout);
+    assert.equal(receipt.revised, 2, JSON.stringify(receipt.results));
+    assert.equal(fs.readFileSync(marker, 'utf8').trim().split('\n').filter(Boolean).length, 1);
+    const after = projectionByRef(repo);
+    assert.equal(after[first].status, 'claimed');
+    assert.equal(after[second].status, 'claimed');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('tick never executes a non-allowlisted verify at landing — it bounces the task instead', () => {
   const { base, repo } = makeTempRepo();
   try {
