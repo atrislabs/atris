@@ -198,8 +198,9 @@ const isBusinessSyncSafetyCommand = command === 'sync'
     || firstCommandArg === 'resolve'
   );
 
-// Auto-sync skills only for commands that modify workspace state
-if (['init', 'update', 'upgrade'].includes(command) || (command === 'sync' && !isBusinessSyncSafetyCommand)) {
+// Auto-sync skills only for commands that modify workspace state. Help must
+// stay read-only, including global ~/.claude and ~/.codex skill directories.
+if (!helpRequested && (['init', 'update', 'upgrade'].includes(command) || (command === 'sync' && !isBusinessSyncSafetyCommand))) {
   try {
     const { syncSkills } = require('../commands/sync');
     const skillsUpdated = syncSkills({ silent: true });
