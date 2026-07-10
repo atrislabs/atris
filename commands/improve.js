@@ -550,7 +550,7 @@ function resolveAtrisBin() {
 // The improve contract is one call -> one tick. Use the mission runtime
 // directly so the tick count and verifier result come back as structured JSON
 // instead of hiding several mission ticks inside one autopilot leg.
-const LOCAL_FALLBACK_ARGS = ['mission', 'run', '--due', '--max-ticks', '1', '--complete-on-pass', '--json'];
+const LOCAL_FALLBACK_ARGS = ['mission', 'run', '--due', '--headless', '--max-ticks', '1', '--complete-on-pass', '--json'];
 
 function localFallbackArgs(budgetSec) {
   return LOCAL_FALLBACK_ARGS.concat(['--max-wall', String(Math.max(60, Math.round(budgetSec)))]);
@@ -585,6 +585,9 @@ function summarizeLocalMissionRun(payload = {}) {
   const tick = ticks[0] || {};
   if (tick.status !== 'ran') {
     throw new Error(`local improve tick did not run${tick.reason ? `: ${tick.reason}` : ''}`);
+  }
+  if (tick.claude?.skipped === true || ['caller-session-runner', 'no-claude-mode'].includes(tick.reason)) {
+    throw new Error('local improve worker did not run');
   }
   if (tick.verifier_passed !== true) {
     throw new Error('local improve verifier did not pass');
