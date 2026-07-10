@@ -529,6 +529,82 @@ test('tick certifies proof-backed reviews by re-running their check, then lands 
   }
 });
 
+test('tick reuses the certification verifier result at landing', () => {
+  const { base, repo } = makeTempRepo();
+  const marker = path.join(repo, 'cross-phase-verify-runs.txt');
+  try {
+    const codeTask = proofBackedTask(repo, 'One check across certification and landing', { tag: 'code' });
+    const fakeBin = path.join(base, 'fake-bin');
+    const fakeGit = path.join(fakeBin, 'git');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    fs.writeFileSync(fakeGit, [
+      '#!/bin/sh',
+      `if [ "$1" = "diff" ] && [ "$2" = "--check" ]; then echo run >> ${JSON.stringify(marker)}; fi`,
+      'exec /usr/bin/git "$@"',
+      '',
+    ].join('\n'));
+    fs.chmodSync(fakeGit, 0o755);
+    fs.writeFileSync(marker, '');
+
+    autoland.writePolicy(repo, {
+      enabled: true,
+      enabled_by: 'keshav',
+      strict_verify: false,
+      daily_experiment: false,
+      janitor: false,
+    });
+    const tick = runCli(['autoland', 'tick', '--json'], repo, {
+      PATH: `${fakeBin}:${process.env.PATH}`,
+    });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.reviews_certified, 1, JSON.stringify(receipt));
+    assert.deepEqual(receipt.landed, [codeTask]);
+    assert.equal(fs.readFileSync(marker, 'utf8').trim().split('\n').filter(Boolean).length, 1);
+    assert.equal(projectionByRef(repo)[codeTask].status, 'done');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('tick runs a failing certification verifier once and never lands it', () => {
+  const { base, repo } = makeTempRepo();
+  const marker = path.join(repo, 'failed-cross-phase-verify-runs.txt');
+  try {
+    const codeTask = proofBackedTask(repo, 'Failed certification stays in review', { tag: 'code' });
+    const fakeBin = path.join(base, 'fake-bin');
+    const fakeGit = path.join(fakeBin, 'git');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    fs.writeFileSync(fakeGit, [
+      '#!/bin/sh',
+      `if [ "$1" = "diff" ] && [ "$2" = "--check" ]; then echo run >> ${JSON.stringify(marker)}; exit 1; fi`,
+      'exec /usr/bin/git "$@"',
+      '',
+    ].join('\n'));
+    fs.chmodSync(fakeGit, 0o755);
+    fs.writeFileSync(marker, '');
+
+    autoland.writePolicy(repo, {
+      enabled: true,
+      enabled_by: 'keshav',
+      strict_verify: false,
+      daily_experiment: false,
+      janitor: false,
+    });
+    const tick = runCli(['autoland', 'tick', '--json'], repo, {
+      PATH: `${fakeBin}:${process.env.PATH}`,
+    });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.reviews_certified, 0, JSON.stringify(receipt));
+    assert.deepEqual(receipt.landed, []);
+    assert.equal(fs.readFileSync(marker, 'utf8').trim().split('\n').filter(Boolean).length, 1);
+    assert.equal(projectionByRef(repo)[codeTask].status, 'review');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('tick revises certified stale allowlisted verify instead of awarding reward', () => {
   const { base, repo } = makeTempRepo();
   try {
