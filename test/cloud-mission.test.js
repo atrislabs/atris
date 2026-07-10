@@ -77,6 +77,41 @@ test('cloud mission enqueue sends the backend contract and appends a local recei
   }
 });
 
+test('cloud mission enqueue passes an explicit agent id to the backend', async () => {
+  const root = tempDir();
+  const calls = [];
+  try {
+    const result = await runCloudMissionCommand([
+      'ship with a business agent',
+      '--cloud',
+      '--agent',
+      'agent-business-1',
+    ], {
+      root,
+      log: () => {},
+      error: () => {},
+      loadCredentials: () => ({ token: 'test-token' }),
+      apiRequestJson: async (pathname, options) => {
+        calls.push({ pathname, options });
+        return {
+          ok: true,
+          status: 200,
+          data: { task_id: 'task-cloud-agent', status: 'pending', lane: 'fast' },
+        };
+      },
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(calls[0].options.body, {
+      text: 'ship with a business agent',
+      lane: 'fast',
+      agent_id: 'agent-business-1',
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('cloud mission status parses the cloud task id and prints backend status', async () => {
   const calls = [];
   const output = capture();

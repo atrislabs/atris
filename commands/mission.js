@@ -8254,7 +8254,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission set-runner <id> <runner|engine> [--model <id>] [--json]
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
-  atris mission run "<objective>" --cloud [--lane fast|pro|max]   Enqueue on the Atris backend instead of running local ticks
+  atris mission run "<objective>" --cloud [--lane fast|pro|max] [--agent <id>]   Enqueue on the Atris backend instead of running local ticks
   atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--budget quick|long|deep] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"] [--land --repo <path> --verify "git diff --check"]
                                 [--native-goal-status active|paused|usageLimited] [--native-goal-objective "..."] [--manual-ack] [--allow-native-goal-supersede] [--take-goal-slot]
                                 [--engine <name>]
