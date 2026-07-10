@@ -346,7 +346,7 @@ function loadCredentials() {
   const profileOverride = process.env.ATRIS_PROFILE;
   if (profileOverride) {
     const profile = loadProfile(profileOverride);
-    if (profile) return profile;
+    if (profile) return { ...profile, source_profile: profileOverride };
     const profiles = listProfiles();
     const q = profileOverride.toLowerCase();
     const match = profiles.find(p => p.toLowerCase() === q)
@@ -354,7 +354,7 @@ function loadCredentials() {
       || profiles.find(p => p.toLowerCase().includes(q));
     if (match) {
       const matched = loadProfile(match);
-      if (matched) return matched;
+      if (matched) return { ...matched, source_profile: match };
     }
   }
 
@@ -362,7 +362,7 @@ function loadCredentials() {
   const sessionProfile = getSessionProfile();
   if (sessionProfile) {
     const profile = loadProfile(sessionProfile);
-    if (profile) return profile;
+    if (profile) return { ...profile, source_profile: sessionProfile };
   }
 
   // 3. Global credentials.json
@@ -442,7 +442,27 @@ async function performTokenRefresh(credentials, apiRequestJson) {
   const email = refreshUser?.email || credentials.email;
   const userId = refreshUser?.id || credentials.user_id;
 
-  saveCredentials(accessToken, newRefreshToken, email, userId, provider);
+  // Refreshed tokens must land in the file they were loaded from. Writing a
+  // profile's refresh to the global credentials.json leaves the profile token
+  // to expire permanently (every ATRIS_PROFILE session then 401s forever).
+  const persistRefreshed = () => {
+    if (credentials.source_profile) {
+      const { source_profile, source, ...rest } = { ...credentials };
+      saveProfile(credentials.source_profile, {
+        ...rest,
+        token: accessToken,
+        refresh_token: newRefreshToken,
+        email,
+        user_id: userId,
+        provider,
+        saved_at: new Date().toISOString(),
+      });
+    } else {
+      saveCredentials(accessToken, newRefreshToken, email, userId, provider);
+    }
+  };
+
+  persistRefreshed();
   let latestCreds = loadCredentials();
 
   const validation = await validateAccessToken(accessToken, apiRequestJson);
@@ -460,7 +480,20 @@ async function performTokenRefresh(credentials, apiRequestJson) {
       updatedProvider !== latestCreds.provider ||
       updatedUserId !== latestCreds.user_id
     ) {
-      saveCredentials(accessToken, newRefreshToken, updatedEmail, updatedUserId, updatedProvider);
+      if (credentials.source_profile) {
+        const { source_profile, source, ...rest } = { ...credentials };
+        saveProfile(credentials.source_profile, {
+          ...rest,
+          token: accessToken,
+          refresh_token: newRefreshToken,
+          email: updatedEmail,
+          user_id: updatedUserId,
+          provider: updatedProvider,
+          saved_at: new Date().toISOString(),
+        });
+      } else {
+        saveCredentials(accessToken, newRefreshToken, updatedEmail, updatedUserId, updatedProvider);
+      }
       latestCreds = loadCredentials();
     }
   }
