@@ -1,7 +1,7 @@
 ---
 name: improve
-description: "Run one RL improvement tick on the workspace via POST /api/improve. Ships one verifiable change, scores it, writes the scorecard. The thing you pay for. Triggers on: improve, make this better, ship one thing, run a tick, get smarter."
-version: 1.0.0
+description: "Run one verified, scored improvement tick and write its receipt. Use when the user asks to improve, make this better, ship one thing, run a tick, or get smarter. `atris improve` alone shows metabolism vitals; use `atris improve tick` to ship work."
+version: 1.1.0
 tags:
   - rl
   - improve
@@ -12,74 +12,94 @@ tags:
 
 # /improve
 
-Runs one improvement tick on the workspace. Calls `POST /api/improve` on the backend, which plans one task, builds it, verifies it, and scores it. Returns what shipped + the reward. Writes the scorecard locally.
+Run one improvement tick on the workspace. A successful tick ships one result, passes a real verifier, receives a score, and writes a machine-readable scorecard.
 
-This is the product. The thing the user pays for. One call, one verifiable result.
+One call means one verifiable result. Never turn one invocation into a hidden batch.
 
-## How it works
+## Command contract
 
-```
-/improve
-  → POST /api/improve { workspace: ".", mode: "full" }
-  → backend picks a task, plans, builds, reviews, verifies
-  → returns { task, reward, files_changed, verify_pass, summary }
-  → CLI writes scorecard to .atris/presidio/scorecards.md
-  → CLI reports result to user
-```
+`atris improve` alone shows the self-improvement metabolism vitals. It does not ship a change.
 
-The inference is Claude Code (or whatever model the backend uses). The environment is the folder. The endpoint is the bridge.
-
-## On invoke
-
-Run the CLI command — it does the whole tick (auth, the credit-metered call, scorecard, fallback):
+Use the explicit `tick` subcommand when the user asks for improvement work:
 
 ```bash
-atris improve            # one full tick: plan → build → verify → score (deducts credits)
-atris improve plan       # show the plan only, change nothing
-atris improve --json     # machine-readable result (this is what the member loop consumes)
-atris improve --no-fallback   # fail loudly instead of running a local tick when the backend is down
+atris improve tick                    # one full tick: plan, build, verify, score
+atris improve tick --json             # the same tick as machine-readable output
+atris improve tick plan               # plan only; no change or receipt
+atris improve tick --dry-run          # execute without committing; no shipping receipt
+atris improve tick --no-fallback      # report API failure instead of running locally
+atris improve history                 # reward trend, credits, and pass rate
+atris improve                         # vitals only
+atris improve --json                  # vitals only as JSON
 ```
 
-Under the hood `atris improve` (`commands/improve.js`):
+## Run one tick
 
-1. Loads the auth token via `utils/auth.loadCredentials`
-2. `POST /api/improve { workspace, mode, model }` via `utils/api.apiRequestJson`
-3. The backend plans, builds, runs the verify command, scores it, and **deducts Atris credits per successful tick** (`bill_tick`)
-4. Writes a per-tick scorecard row to `.atris/state/scorecards.jsonl` (the receipt the brain ledger counts)
-5. Falls back to a local autopilot tick **only** when you are not logged in or the backend is unreachable — a real error (insufficient credits, server error) is reported, never silently retried
+1. Run `atris improve tick`, adding `--json` only when structured output is useful.
+2. Inspect the returned source, task summary, verifier result, reward, files, and receipt path.
+3. Count the tick only when `ok` is true, verification passed, and the scorecard was written.
+4. Report what shipped and the exact verifier result. If the tick fails, report the failure and stop.
 
-The full-mode response does not echo `credits_deducted` (credits are still billed server-side), so the CLI shows "billed server-side" when the count is absent. To call the endpoint directly instead of the command, `POST /api/improve` with `{ workspace, mode, model }`.
+For a paid API tick, the CLI:
 
-## Modes
+1. Loads credentials with `utils/auth.loadCredentials`.
+2. Calls `POST /api/improve` with the workspace, mode, model, and dry-run setting.
+3. Lets the backend plan, build, verify, score, and bill the successful tick.
+4. Writes the normalized receipt to `.atris/state/scorecards.jsonl` and the human trail to the daily Atris journal.
 
-- `full` — plan, build, review, verify (default)
-- `plan` — just pick the task and show what it would do
-- `dry_run` — run everything but don't commit
+The full response may omit the billed credit count. In that case the CLI reports that billing happened server-side instead of inventing a number.
 
-## Fallback
+## Local fallback
 
-If the backend is unreachable (no auth, no network, localhost not running), fall back to local mode: run `atris autopilot --auto --iterations=1` instead. Same loop, just local inference via `claude -p` subprocess. Report that it ran locally.
+Local fallback is allowed when there is no login, the backend is unreachable, or the hosted backend cannot access the local workspace path. The CLI runs this exact bounded command internally:
 
-## Output
-
+```bash
+atris mission run --due --headless --max-ticks 1 --complete-on-pass --json
 ```
+
+The local result succeeds only when all of these are true:
+
+1. Exactly one mission tick ran.
+2. A headless worker actually ran; caller-session and no-worker placeholders are rejected.
+3. The mission verifier passed.
+4. The scorecard and journal receipt were written.
+
+A verified local tick earns the conservative local reward of `+1` and deducts no credits. No due headless mission, a skipped worker, a failed or missing verifier, or a receipt write failure makes the improve command fail without a reward.
+
+Do not silently fall back for answerable API failures such as insufficient credits, unrelated authorization failures, or server errors.
+
+## Expected output
+
+User says: "Improve this once."
+
+Action: run `atris improve tick`.
+
+Expected shape:
+
+```text
 improved.
-
-  task:    fixed the stale wiki ref in auth-flow.md
-  verify:  pass (npm test, 143/143)
-  reward:  +4
-  files:   atris/wiki/briefs/auth-flow.md
-  time:    47s
-
-  scorecard updated.
+  task:    fixed the stale wiki reference
+  verify:  pass
+  reward:  4
+  files:   atris/wiki/auth-flow.md
+  scorecard: .atris/state/scorecards.jsonl
 ```
+
+For local fallback, the first line is `improved (local fallback).` and the report still names the task, passing verifier, reward, and scorecard.
+
+## Failure handling
+
+- If verification fails or is missing, halt honestly and write a durable lesson. Do not claim improvement.
+- If the command reports no due headless mission, stop; do not manufacture busywork or a scorecard.
+- If the API returns insufficient credits or another answerable error, report it without a local retry.
+- If the workspace is dirty, preserve existing changes. Use an isolated worktree for manual follow-up fixes.
+- If a worker lands work but the outer receipt fails, report the landed commit separately and do not count the improve tick.
 
 ## Rules
 
 - One tick only. Never batch.
-- Always verify. No reward without a check.
+- No reward without a passing verifier.
 - Show what shipped, not what was attempted.
-- Write the scorecard. This is the receipt.
-- If verify fails, halt honestly and write a lesson.
-- Fallback to local if backend is unreachable. Never error silently.
+- A scorecard is required for success.
+- Preserve user work and unrelated changes.
 - The user pays because something real happened. Never fake it.
