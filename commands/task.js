@@ -14,6 +14,7 @@ const {
   isAutoCertifyVerifyCommandAllowed,
   parseVerifyCommand,
   runVerifyCommand,
+  runVerifyCommandCached,
   DENIED_TAGS,
 } = require('../lib/auto-accept-certified');
 const { extractReceiptEvidence, RECEIPT_PATH_PATTERN } = require('../lib/receipt-evidence');
@@ -9368,7 +9369,7 @@ function landingVerifyFailureNote(verify, result) {
   return `Autoland re-ran allowlisted verify at landing and it failed: ${verify} (exit ${exit}).`;
 }
 
-function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier' } = {}) {
+function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', verifyCache = null } = {}) {
   const verify = certifyVerifyCandidate(task);
   if (!verify) {
     // No runnable check on record. Landing anyway converts "never verified"
@@ -9385,7 +9386,7 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier' }
       revise_reason: revised.reason || null,
     };
   }
-  const result = runVerifyCommand(verify, task.workspace_root || process.cwd());
+  const result = runVerifyCommandCached(verify, task.workspace_root || process.cwd(), verifyCache);
   if (result.ok) return { ok: true, verify, result };
   const note = landingVerifyFailureNote(verify, result);
   const revised = taskDb.reviseTask(db, {
@@ -9625,6 +9626,7 @@ function cmdAutoAcceptCertified(args) {
       .slice(0, max)
     : queue.items.filter(item => item.queue_role !== 'blocked');
   const results = [];
+  const verifyCache = new Map();
 
   for (const item of pool) {
     const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
@@ -9638,7 +9640,7 @@ function cmdAutoAcceptCertified(args) {
       results.push({ ...proofBoundary, action: 'skipped' });
       continue;
     }
-    const evaluation = evaluateAutoAccept(task, { strictVerify, acceptAll });
+    const evaluation = evaluateAutoAccept(task, { strictVerify, acceptAll, verifyCache });
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped' });
       continue;
@@ -9647,7 +9649,7 @@ function cmdAutoAcceptCertified(args) {
       results.push({ ...evaluation, action: 'would_accept', reward: parsedReward.value });
       continue;
     }
-    const landingVerify = reverifyBeforeLanding(taskDb, db, task);
+    const landingVerify = reverifyBeforeLanding(taskDb, db, task, { verifyCache });
     if (!landingVerify.ok) {
       results.push({
         ...evaluation,
