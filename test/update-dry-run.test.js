@@ -107,3 +107,29 @@ test('business update dry-run reports stale skill changes without writing', () =
     fs.rmSync(fixture.root, { recursive: true, force: true });
   }
 });
+
+test('business update and sync help write nothing', () => {
+  for (const command of ['update', 'sync']) {
+    const fixture = makeBusinessFixture();
+    try {
+      const beforeWorkspace = snapshotTree(fixture.workspace);
+      const beforeHome = snapshotTree(fixture.home);
+      const result = spawnSync(process.execPath, [cliPath, command, '--help'], {
+        cwd: fixture.workspace,
+        encoding: 'utf8',
+        timeout: 15000,
+        env: {
+          ...scrubAgentEnv(),
+          HOME: fixture.home,
+          ATRIS_SKIP_UPDATE_CHECK: '1',
+        },
+      });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      assert.match(result.stdout, new RegExp(`Usage: atris ${command}`));
+      assert.deepEqual(snapshotTree(fixture.workspace), beforeWorkspace, `${command} help changed workspace files`);
+      assert.deepEqual(snapshotTree(fixture.home), beforeHome, `${command} help changed global files`);
+    } finally {
+      fs.rmSync(fixture.root, { recursive: true, force: true });
+    }
+  }
+});
