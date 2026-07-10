@@ -292,7 +292,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 - **Entry point (single project):** `commands/sync.js:424` (syncAtris function)
 - **Entry point (workspace):** `commands/sync.js:881` (syncAtrisAll function)
-- **Dispatch/help:** `bin/atris.js:1026-1052` handles `update|sync --help` before any template sync work
+- **Startup/help guard:** `bin/atris.js:200-212` skips global and project skill sync for every help invocation; `bin/atris.js:1758-1791` dispatches `update|sync --help` before command-specific template sync work
 - **Discovery helper:** `commands/sync.js:797` (_findAtrisProjects — walks subtree, max depth 8, skips node_modules/.git/dist/build/worktrees)
 - **Single-project logic:**
 - Validates atris/ folder exists
@@ -306,7 +306,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - atris-cli itself always dogfoods canonical files regardless of business.json
 - Confirms before writing unless `--force` / `--yes` / `-y`
 - `--dry-run` prints the plan and exits
-- **Regression:** `test/commands.test.js:4218-4233` covers `update --help` and `sync --help` as non-mutating usage output
+- **Regression:** `test/commands.test.js` covers `update --help` and `sync --help` as non-mutating usage output, including a stale global skill sentinel under a temporary HOME
 - **Value:** Keep canonical docs (atris.md, PERSONA.md, GETTING_STARTED.md, CLAUDE.md) in sync across a multi-project workspace in one command
 
 **Search:** `rg "showUpdateHelp|syncAtris|syncAtrisAll|_findAtrisProjects|update and sync --help" bin/atris.js commands/sync.js test/commands.test.js`

@@ -17578,12 +17578,18 @@ test('sync command works as alias for update', () => {
 test('update and sync --help print usage without touching workspace', () => {
   const dir = makeTempDir();
   try {
+    const home = path.join(dir, 'home');
+    const skillFile = path.join(home, '.codex', 'skills', 'improve', 'SKILL.md');
+    fs.mkdirSync(path.dirname(skillFile), { recursive: true });
     for (const command of ['update', 'sync']) {
-      const res = runCli([command, '--help'], { cwd: dir });
+      fs.writeFileSync(skillFile, 'operator-owned skill\n', 'utf8');
+      const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
       assert.equal(res.status, 0, res.stderr);
       assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
       assert.match(res.stdout, /--dry-run/);
       assert.doesNotMatch(res.stdout, /Updating|Local workspace updated|up to date/i);
+      assert.doesNotMatch(res.stdout, /skills updated/i);
+      assert.equal(fs.readFileSync(skillFile, 'utf8'), 'operator-owned skill\n');
     }
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
