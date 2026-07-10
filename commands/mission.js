@@ -20,6 +20,10 @@ const {
   RUNNER_PROFILE_NAMES,
 } = require('../lib/runner-command');
 const {
+  resolveEngineForRoleWithPreference,
+  setEngineHealth,
+} = require('../lib/engine-registry');
+const {
   FUNCTIONAL_MEMBER_TOPICS,
   listWorkspaceMemberSlugs,
   normalizeOwnerSlug,
@@ -127,6 +131,7 @@ function readFlag(args, name, fallback = '') {
 
 const MISSION_NATIVE_RUNNER_NAMES = Object.freeze(['manual', 'claude', 'atris2', 'codex_goal', 'caller_session', 'current_agent', 'drill']);
 const MISSION_NATIVE_RUNNER_SET = new Set(MISSION_NATIVE_RUNNER_NAMES);
+const MISSION_AUTO_RUNNER = 'auto';
 
 function canonicalEngineName(name) {
   const trimmed = String(name || '').trim();
@@ -137,7 +142,7 @@ function canonicalEngineName(name) {
 }
 
 function knownMissionRunnerText() {
-  return `Known runners: ${MISSION_NATIVE_RUNNER_NAMES.join(', ')}. Known engines: ${RUNNER_PROFILE_NAMES.join(', ')}`;
+  return `Known runners: ${[...MISSION_NATIVE_RUNNER_NAMES, MISSION_AUTO_RUNNER].join(', ')}. Known engines: ${RUNNER_PROFILE_NAMES.join(', ')}`;
 }
 
 function resolveMissionRunnerSelection(value, options = {}) {
@@ -147,16 +152,55 @@ function resolveMissionRunnerSelection(value, options = {}) {
   if (!raw) {
     exitMissionError(`${options.label || 'runner'} is required. ${knownMissionRunnerText()}.`, 2, asJson);
   }
+  const runner = raw.toLowerCase();
+  if (runner === MISSION_AUTO_RUNNER) {
+    return { requested: raw, runner, engine: null, kind: 'auto' };
+  }
+  if (!engineOnly && MISSION_NATIVE_RUNNER_SET.has(runner)) {
+    return { requested: raw, runner, engine: null, kind: 'runner' };
+  }
   const engine = canonicalEngineName(raw);
   if (engine) {
     return { requested: raw, runner: engine, engine, kind: 'engine' };
   }
-  const runner = raw.toLowerCase();
-  if (!engineOnly && MISSION_NATIVE_RUNNER_SET.has(runner)) {
-    return { requested: raw, runner, engine: null, kind: 'runner' };
-  }
   const noun = engineOnly ? 'engine' : 'runner';
   exitMissionError(`Unknown ${noun} "${raw}". ${knownMissionRunnerText()}.`, 2, asJson);
+}
+
+function resolveMissionTickRunner(mission, root = process.cwd()) {
+  if (String(mission && mission.runner || '').trim().toLowerCase() !== MISSION_AUTO_RUNNER) {
+    return { mission, engine_id: null, requested_engine: null, engine_fallback_reason: null };
+  }
+  const resolved = resolveEngineForRoleWithPreference('executor', root, mission.preferred_engine);
+  return {
+    mission: resolved.engine ? { ...mission, runner: resolved.engine.id, runner_kind: 'engine' } : mission,
+    engine_id: resolved.engine ? resolved.engine.id : null,
+    requested_engine: resolved.requested_engine,
+    engine_fallback_reason: resolved.engine_fallback_reason,
+  };
+}
+
+function engineFailureHealthStatus(result) {
+  if (!result || result.status !== 'errored') return null;
+  const signalText = [
+    result.reason,
+    result.model_unavailable,
+    result.claude && result.claude.summary,
+    result.claude && result.claude.receipt_text,
+    result.claude && result.claude.stderr,
+    result.rate_limit_info && JSON.stringify(result.rate_limit_info),
+  ].filter(Boolean).join('\n').toLowerCase();
+  if (/usage[ _-]?limit|purchase more credits|insufficient credits|credit(?:s)?[ _-]?(?:out|limit)|rate[ _-]?limit/.test(signalText)) {
+    return 'credit_out';
+  }
+  if (/timeout|model-unavailable/.test(signalText)) return 'not_installed';
+  return null;
+}
+
+function recordMissionEngineTickOutcome(engineId, result, root = process.cwd()) {
+  if (!engineId) return null;
+  const status = result && result.status === 'ran' ? 'ready' : engineFailureHealthStatus(result);
+  return status ? setEngineHealth(engineId, status, root) : null;
 }
 
 function runnerModelPatch(runner, model) {
@@ -171,6 +215,7 @@ function missionRunRuntimeView(mission, runnerOverride = null, modelOverride = '
   const next = {
     ...mission,
     runner: runnerOverride.runner,
+    runner_kind: runnerOverride.kind,
     run_runner_override: {
       requested: runnerOverride.requested,
       runner: runnerOverride.runner,
@@ -1873,7 +1918,8 @@ function missionFromArgs(args) {
   const maxTicksOverride = readPositiveIntegerFlag(args, '--max-ticks', null, { json: wantsJson(args) });
   const requestedOwner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
-  const runner = readFlag(args, '--runner', 'manual');
+  const runnerSelection = resolveMissionRunnerSelection(readFlag(args, '--runner', 'manual'), { asJson: wantsJson(args), label: 'runner' });
+  const runner = runnerSelection.runner;
   const model = readFlag(args, '--model', '') || (String(runner).toLowerCase() === 'atris2' ? 'atris:fast' : '');
   const lane = readFlag(args, '--lane', 'workspace');
   const ownerResolution = resolveFunctionalOwner({
@@ -1907,6 +1953,7 @@ function missionFromArgs(args) {
     status: 'planning',
     cadence,
     runner,
+    runner_kind: runnerSelection.kind,
     ...(model ? { model } : {}),
     ...(businessBinding?.business_id ? { business_id: businessBinding.business_id } : {}),
     ...(businessBinding?.workspace_id ? { workspace_id: businessBinding.workspace_id } : {}),
@@ -3104,7 +3151,7 @@ function startMission(args, options = {}) {
   const asJson = wantsJson(args);
   const firstArg = String(args[0] || '').trim().toLowerCase();
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || firstArg === 'help') {
-    console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal]');
+    console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal|auto]');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
@@ -3617,6 +3664,7 @@ function setMissionRunner(args) {
     const nextMission = {
       ...mission,
       runner: selection.runner,
+      runner_kind: selection.kind,
       next_action: mission.next_action || `run: atris mission run ${mission.id}`,
     };
     delete nextMission.model;
@@ -6963,13 +7011,14 @@ async function runMission(args) {
     }
     sessionId = mission.claude_session_id || null;
     pendingSessionId = mission.pending_session_id || null;
-    restoreRunnerProfile = applyMissionRunnerProfile(runtimeMission.runner);
+    const autoRunner = String(runtimeMission.runner || '').trim().toLowerCase() === MISSION_AUTO_RUNNER;
+    restoreRunnerProfile = autoRunner ? () => {} : applyMissionRunnerProfile(runtimeMission.runner);
     const callerSessionRunner = runnerUsesCallerSession(runtimeMission.runner);
     const runnerName = String(runtimeMission.runner || '').trim().toLowerCase();
     const atris2Runner = runnerName === 'atris2';
     const drillRunner = runnerName === 'drill';
     const skipWorker = skipClaude || callerSessionRunner;
-    if (!skipClaude && !callerSessionRunner && !atris2Runner && !drillRunner) {
+    if (!autoRunner && !skipClaude && !callerSessionRunner && !atris2Runner && !drillRunner) {
       const probe = probeClaudeBinary();
       if (!probe.ok) {
         console.error(`[mission run] claude probe failed: ${probe.error}`);
@@ -7035,9 +7084,28 @@ async function runMission(args) {
       const tickStart = stampIso();
       const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
       let result = { status: 'skipped', reason: 'unknown', tick_index: tickIdx, ran: false, started_at: tickStart };
+      const tickSelection = resolveMissionTickRunner(runtimeMission, cwd);
+      const tickRuntimeMission = tickSelection.mission;
+      const tickRunnerName = String(tickRuntimeMission.runner || '').trim().toLowerCase();
+      const tickCallerSessionRunner = runnerUsesCallerSession(tickRunnerName);
+      const tickAtris2Runner = tickRunnerName === 'atris2';
+      const tickDrillRunner = tickRunnerName === 'drill';
+      const tickSkipWorker = skipClaude || tickCallerSessionRunner;
+      const inferredEngineId = canonicalEngineName(tickRunnerName);
+      const engineBackedTick = autoRunner
+        || runtimeMission.runner_kind === 'engine'
+        || (inferredEngineId && !MISSION_NATIVE_RUNNER_SET.has(tickRunnerName));
+      const tickEngineId = engineBackedTick ? (tickSelection.engine_id || inferredEngineId) : null;
+      if (engineBackedTick) {
+        result.engine_id = tickEngineId;
+        result.requested_engine = tickSelection.requested_engine;
+        result.engine_fallback_reason = tickSelection.engine_fallback_reason;
+      }
 
       // Active-hours gate
-      if (!isWithinActiveHours(mission.active_hours)) {
+      if (engineBackedTick && !tickEngineId) {
+        result = { ...result, status: 'errored', reason: 'no-ready-engine' };
+      } else if (!isWithinActiveHours(mission.active_hours)) {
         result = { ...result, status: 'skipped', reason: 'quiet-hours' };
       }
       // Rate-limit cooldown
@@ -7047,16 +7115,16 @@ async function runMission(args) {
         result = { ...result, status: 'skipped', reason: 'rate-limited', resets_at: lastRateLimit.resetsAt };
       }
       // Real tick
-      else if (skipWorker) {
+      else if (tickSkipWorker) {
         result = {
           ...result,
           status: 'ran',
-          reason: callerSessionRunner ? 'caller-session-runner' : 'no-claude-mode',
+          reason: tickCallerSessionRunner ? 'caller-session-runner' : 'no-claude-mode',
           ran: true,
-          claude: { skipped: true, reason: callerSessionRunner ? 'runner-uses-caller-session' : 'no-claude-mode' },
+          claude: { skipped: true, reason: tickCallerSessionRunner ? 'runner-uses-caller-session' : 'no-claude-mode' },
         };
-      } else if (drillRunner) {
-        const drillResult = runDrillRunnerTick(cwd, runtimeMission, tickIdx);
+      } else if (tickDrillRunner) {
+        const drillResult = runDrillRunnerTick(cwd, tickRuntimeMission, tickIdx);
         result = {
           ...result,
           status: 'ran',
@@ -7064,16 +7132,16 @@ async function runMission(args) {
           ran: true,
           drill: drillResult,
         };
-      } else if (atris2Runner) {
+      } else if (tickAtris2Runner) {
         const pingDrain = consumeMissionPings(mission, cwd);
         mission = pingDrain.mission;
         runtimeMission = runtimeView(mission);
-        const prompt = buildTickPrompt(runtimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
+        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
         const { runAtris2Turn } = require('./probe');
-        const businessId = businessIdForAtris2Mission(runtimeMission, cwd);
+        const businessId = businessIdForAtris2Mission(tickRuntimeMission, cwd);
         const turn = await runAtris2Turn({
           prompt,
-          model: runtimeMission.model || 'atris:fast',
+          model: tickRuntimeMission.model || 'atris:fast',
           business: businessId,
           maxTurns: 16,
           signal: controller.signal,
@@ -7084,7 +7152,7 @@ async function runMission(args) {
         result.atris2 = {
           ok: turn.ok,
           engine: turn.engine,
-          model: runtimeMission.model || 'atris:fast',
+          model: tickRuntimeMission.model || 'atris:fast',
           tools_run: turn.tools_run,
           unsupported: turn.unsupported,
           duration_ms: turn.duration_ms,
@@ -7105,12 +7173,18 @@ async function runMission(args) {
         const pingDrain = consumeMissionPings(mission, cwd);
         mission = pingDrain.mission;
         runtimeMission = runtimeView(mission);
-        const prompt = buildTickPrompt(runtimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
-        const claudeResult = await spawnClaudeTick(runtimeMission, {
-          sessionMode, sessionId: useId, cwd, signal: controller.signal,
-          timeoutMs: MISSION_RUN_DEFAULTS.claudeTimeoutMs, prompt,
-          model: resolveClaudeRunnerModel(runtimeMission),
-        });
+        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
+        const restoreTickRunnerProfile = tickEngineId ? applyMissionRunnerProfile(tickEngineId) : () => {};
+        let claudeResult;
+        try {
+          claudeResult = await spawnClaudeTick(tickRuntimeMission, {
+            sessionMode, sessionId: useId, cwd, signal: controller.signal,
+            timeoutMs: MISSION_RUN_DEFAULTS.claudeTimeoutMs, prompt,
+            model: resolveClaudeRunnerModel(tickRuntimeMission),
+          });
+        } finally {
+          restoreTickRunnerProfile();
+        }
         result.claude = {
           ok: claudeResult.ok,
           brief_id: claudeResult.brief_id || null,
@@ -7175,6 +7249,12 @@ async function runMission(args) {
           }
           result = { ...result, status: 'ran', reason: 'tick-ok', ran: true };
         }
+      }
+
+      if (tickEngineId) {
+        result.rate_limit_info = lastRateLimit;
+        const engineHealth = recordMissionEngineTickOutcome(tickEngineId, result, cwd);
+        if (engineHealth) result.engine_health = engineHealth.health;
       }
 
       // Verifier (only if claude succeeded or no-claude mode)
@@ -8572,4 +8652,8 @@ module.exports = {
   humanBlockingPauseReason,
   consecutiveSameReasonErrors,
   missionVerifierTimeoutMs,
+  resolveMissionRunnerSelection,
+  resolveMissionTickRunner,
+  engineFailureHealthStatus,
+  recordMissionEngineTickOutcome,
 };
