@@ -389,6 +389,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Eligibility engine:** `lib/auto-accept-certified.js` evaluateAutoAccept (2 passes + 2 actors or 3 passes, denied tags, proof checks including cited suite-green claims, strict verify re-run); `lib/task-proof.js` validates proof citations
 - **Policy file:** `.atris/policy/autoland.json`; state (alarm dedupe, digest date): `.atris/state/autoland.json`
 - **Heartbeat:** hourly labeled cron (`ATRIS_AUTOLAND_<project>`) running `atris autoland tick`: land eligible -> alarm anything waiting on a human past 24h -> daily iMessage digest
+- **Status latency:** status reads the last heartbeat install result from policy and never invokes `crontab`; on/off retain the 10s mutation timeout and persist their result, while legacy policy reports an honest unknown with a repair command. Queue status evaluates eligibility without executing recorded verifiers, labels candidates as pending heartbeat recheck, and leaves execution to `autoland tick`. `test/autoland.test.js` covers both stalls
 - **Regression:** `test/autoland.test.js` (compose, dedupe, policy gate, cited suite-green claims, live e2e land + denied lane, off no-op)
 - **Value:** the human approves policy, not items; nothing certified waits silently again
 

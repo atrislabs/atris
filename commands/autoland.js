@@ -6,6 +6,7 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 
 const autoland = require('../lib/autoland');
+const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
 const CLOSED_TASK_STATUSES = new Set(['done', 'archived']);
@@ -347,16 +348,21 @@ function wishSweepSummaryLine(summary, error = null) {
 }
 
 function evaluateQueue(root, { strictVerify, acceptAll }) {
-  const cliArgs = ['task', 'auto-accept-certified', '--dry-run', '--json', '--limit', '50'];
-  if (acceptAll) cliArgs.push('--all');
-  else if (strictVerify === false) cliArgs.push('--no-strict-verify');
-  const result = runOwnCli(root, cliArgs);
-  try {
-    const parsed = JSON.parse(result.stdout);
-    return Array.isArray(parsed.results) ? parsed.results : [];
-  } catch (err) {
-    return [];
-  }
+  return readProjection(root)
+    .filter((task) => task && task.status === 'review')
+    .filter((task) => String(task.review?.approval_status || task.metadata?.approval_status || 'pending') === 'pending')
+    .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
+    .slice(0, 50)
+    .map((task) => {
+      const evaluation = evaluateAutoAccept(
+        { ...task, workspace_root: root },
+        { strictVerify, acceptAll, executeVerify: false },
+      );
+      return {
+        ...evaluation,
+        action: evaluation.eligible ? 'would_accept' : 'skipped',
+      };
+    });
 }
 
 function plainReason(reason) {
@@ -389,17 +395,22 @@ function showStatus(root, args) {
   const acceptAll = Boolean(policy && policy.accept_all);
   const results = evaluateQueue(root, { strictVerify, acceptAll })
     .filter((r) => r.reason !== 'not_in_review');
-  const wouldLand = results.filter((r) => r.action === 'would_accept');
+  const readyForRecheck = results.filter((r) => r.action === 'would_accept');
+  const wouldLand = readyForRecheck.filter((r) => r.verification_pending !== true);
   const blocked = results.filter((r) => r.action !== 'would_accept');
   const tasks = readProjection(root);
   const waiting = autoland.waitingOnHuman(tasks);
+  const heartbeatInstalled = typeof policy?.heartbeat_installed === 'boolean'
+    ? policy.heartbeat_installed
+    : null;
 
   if (json) {
     console.log(JSON.stringify({
       enabled,
       policy,
-      heartbeat_installed: autoland.cronInstalled(root),
+      heartbeat_installed: heartbeatInstalled,
       would_land: wouldLand,
+      ready_for_recheck: readyForRecheck,
       blocked,
       waiting_on_human: waiting,
     }, null, 2));
@@ -417,14 +428,19 @@ function showStatus(root, args) {
     : 'off - everything waits for you';
   console.log(`  policy: ${policyText}`);
   if (enabled && acceptAll) console.log('  bar: everything lands except the protected lanes (money, deploys, security, customer, outward)');
-  console.log(`  heartbeat: ${autoland.cronInstalled(root) ? 'running hourly' : 'not installed'}`);
+  const heartbeatText = heartbeatInstalled === true
+    ? 'running hourly'
+    : heartbeatInstalled === false
+      ? 'not installed'
+      : 'unknown - run atris autoland on to check and repair';
+  console.log(`  heartbeat: ${heartbeatText}`);
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
   const reapTrouble = autoland.readState(root).last_reap_error;
   if (reapTrouble) console.log(`  cleanup trouble: landing sweep failed on ${reapTrouble.date} (${reapTrouble.error}) - run: atris land --reap`);
   console.log('');
-  if (wouldLand.length > 0) {
-    console.log(`  ready to land on their own: ${wouldLand.length}`);
-    for (const r of wouldLand.slice(0, 10)) console.log(`    lands itself  ${r.ref}`);
+  if (readyForRecheck.length > 0) {
+    console.log(`  ready for heartbeat recheck: ${readyForRecheck.length}`);
+    for (const r of readyForRecheck.slice(0, 10)) console.log(`    rechecks then lands  ${r.ref}`);
   } else {
     console.log('  nothing is ready to land on its own right now.');
   }
@@ -467,6 +483,11 @@ function turnOn(root, args) {
     daily_experiment: previous.daily_experiment !== false,
   });
   const cronOk = autoland.installCron(root);
+  autoland.writePolicy(root, {
+    ...policy,
+    heartbeat_installed: cronOk,
+    heartbeat_checked_at: new Date().toISOString(),
+  });
   console.log('');
   console.log('autoland is on.');
   if (acceptAll) console.log(`  everything in review now lands itself, accepted as ${owner} — only the protected lanes wait.`);
@@ -485,8 +506,17 @@ function turnOn(root, args) {
 
 function turnOff(root) {
   const policy = autoland.readPolicy(root) || {};
-  autoland.writePolicy(root, { ...policy, enabled: false, disabled_at: new Date().toISOString() });
+  const disabledPolicy = autoland.writePolicy(root, {
+    ...policy,
+    enabled: false,
+    disabled_at: new Date().toISOString(),
+  });
   const cronOk = autoland.uninstallCron(root);
+  autoland.writePolicy(root, {
+    ...disabledPolicy,
+    heartbeat_installed: cronOk ? false : null,
+    heartbeat_checked_at: new Date().toISOString(),
+  });
   console.log('');
   console.log('autoland is off. everything waits for your accept again.');
   console.log(`  heartbeat ${cronOk ? 'removed' : 'removal failed — check crontab -l'}.`);

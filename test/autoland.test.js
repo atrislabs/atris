@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const autoland = require('../lib/autoland');
+const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { withTaskReadyResult } = require('./helpers/task-result');
 
 function makeTempRepo() {
@@ -318,6 +319,47 @@ test('cron line is labeled and removable', () => {
   const line = autoland.buildCronLine('/tmp/some-project');
   assert.match(line, /# ATRIS_AUTOLAND_SOME_PROJECT$/);
   assert.match(line, /autoland tick/);
+});
+
+test('autoland status never probes a stalled crontab', () => {
+  const { base, repo } = makeTempRepo();
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-slow-crontab-'));
+  const crontab = path.join(fakeBin, 'crontab');
+  try {
+    fs.writeFileSync(crontab, '#!/bin/sh\nexec /bin/sleep 3\n', 'utf8');
+    fs.chmodSync(crontab, 0o755);
+    const started = Date.now();
+    const status = runCli(['autoland', 'status'], repo, { PATH: `${fakeBin}:${process.env.PATH}` });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.match(status.stdout, /heartbeat: unknown - run atris autoland on to check and repair/);
+    assert.ok(Date.now() - started < 1500, 'read-only status should not wait on crontab');
+  } finally {
+    cleanupTempDir(fakeBin);
+    cleanupTempDir(base);
+  }
+});
+
+test('autoland status eligibility never executes recorded verifiers', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-autoland-plan-'));
+  const marker = path.join(base, 'verifier-ran');
+  const verifyFile = path.join(base, 'slow.test.js');
+  try {
+    fs.writeFileSync(verifyFile, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran');\n`, 'utf8');
+    const evaluation = evaluateAutoAccept({
+      id: 'task-plan-only',
+      display_id: 'CLI-PLAN',
+      status: 'review',
+      tag: 'code',
+      review: { approval_status: 'pending' },
+      metadata: { verify: `node --test ${verifyFile}` },
+      workspace_root: base,
+    }, { acceptAll: true, executeVerify: false });
+    assert.equal(evaluation.eligible, true);
+    assert.equal(evaluation.verification_pending, true);
+    assert.equal(fs.existsSync(marker), false);
+  } finally {
+    cleanupTempDir(base);
+  }
 });
 
 test('autoland help forms are read-only and do not run a heartbeat', () => {
