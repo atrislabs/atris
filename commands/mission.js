@@ -1629,7 +1629,14 @@ function missionGoalChainLines(mission) {
   return lines;
 }
 
-function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason = null, continuationGoal = null, ticks = [], createdNext = null) {
+function missionBlockerReceiptLine(blocker) {
+  if (!blocker?.taskId) return null;
+  return blocker.dispatched
+    ? `blocker filed as ${blocker.taskId}, dispatched to ${blocker.engine}`
+    : `blocker filed as ${blocker.taskId}, no engine ready: ${blocker.reason}`;
+}
+
+function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason = null, continuationGoal = null, ticks = [], createdNext = null, blocker = null) {
   const changed = missionRunChangedText(mission, ranTicks, effectiveMaxTicks, ticks, createdNext);
   const reason = missionHumanReasonText(mission, changed);
   const verifier = mission.verifier_result;
@@ -1652,6 +1659,7 @@ function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalRecei
     `  How I checked: ${checked}`,
     `  What I tested: ${tested}`,
     `  Proof: Summary receipt saved at ${finalReceipt}.`,
+    ...(missionBlockerReceiptLine(blocker) ? [`  ${missionBlockerReceiptLine(blocker)}`] : []),
     `  Timeline: ${missionRunTimelineCommand(mission)}`,
     `  Export: ${missionRunExportCommand(mission)}`,
     `  Prune preview: ${missionRunPrunePreviewCommand(mission)}`,
@@ -6838,6 +6846,7 @@ async function runMission(args) {
   }
   const dueMode = hasFlag(args, '--due');
   const headlessOnly = hasFlag(args, '--headless');
+  const selfDrive = dueMode || headlessOnly || hasFlag(args, '--self-drive');
   const skipClaude = hasFlag(args, '--no-claude');
   const verifyEach = !hasFlag(args, '--no-verify');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
@@ -6931,6 +6940,7 @@ async function runMission(args) {
   const ticks = [];
   let onSig = null;
   let restoreRunnerProfile = null;
+  let blocker = null;
 
   try {
     const cwd = process.cwd();
@@ -7367,6 +7377,16 @@ async function runMission(args) {
       }).mission;
     }
 
+    const blockerReason = pauseReason || mission.stop_reason || (mission.status === 'blocked' ? 'verifier-failed' : null);
+    if (selfDrive && blockerReason) {
+      blocker = require('../lib/self-drive').handleMissionBlocker({
+        mission,
+        stopReason: blockerReason,
+        workspaceRoot: cwd,
+        appendEvent: (type, payload) => appendEvent(type, mission, payload, cwd),
+      });
+    }
+
     const summaryWorktree = worktreeReceipt(runWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier, baseline: runWorktreeBaseline });
     const createdNext = createNext
       ? require('./loop-front').createNextLoopTask(['--as', mission.owner || 'auto-improver', '--json'], cwd, { print: false })
@@ -7400,8 +7420,8 @@ async function runMission(args) {
     const codexGoalState = refreshCodexGoalController(cwd);
 
     printJsonOrText(
-      { ok: true, action: 'mission_run', mission, runner_override: runnerOverride ? finalRuntimeMission.run_runner_override : null, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: effectiveBudgetContract, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext },
-      missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal, ticks, createdNext),
+      { ok: true, action: 'mission_run', mission, runner_override: runnerOverride ? finalRuntimeMission.run_runner_override : null, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, blocker, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: effectiveBudgetContract, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext },
+      missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal, ticks, createdNext, blocker),
       asJson,
     );
   } finally {
@@ -7419,7 +7439,7 @@ async function runMission(args) {
 function tickMission(args) {
   const asJson = wantsJson(args);
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
-    console.log('Usage: atris mission tick <id> [--verify] [--summary "..."] [--complete-on-pass]');
+    console.log('Usage: atris mission tick <id> [--verify] [--summary "..."] [--complete-on-pass] [--self-drive]');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
@@ -7427,9 +7447,10 @@ function tickMission(args) {
   const verifyOverride = readFlag(args, '--verify', '');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
   const summary = readFlag(args, '--summary', '');
+  const selfDrive = hasFlag(args, '--self-drive');
   const nativeGoalOptions = codexNativeGoalOptionsFromArgs(args);
   const operatorSummaryWarning = warnIfSummaryNeedsOperatorWhy(summary);
-  const ref = stripKnownFlags(args, ['--summary', '--verify', '--native-goal-status', '--native-goal-objective', '--visible-goal-status', '--visible-goal-objective'], ['--json', '--complete-on-pass', '--manual-ack', '--allow-native-goal-supersede', '--supersede-paused-native-goal'])[0] || '';
+  const ref = stripKnownFlags(args, ['--summary', '--verify', '--native-goal-status', '--native-goal-objective', '--visible-goal-status', '--visible-goal-objective'], ['--json', '--complete-on-pass', '--self-drive', '--manual-ack', '--allow-native-goal-supersede', '--supersede-paused-native-goal'])[0] || '';
   let mission = resolveMission(ref);
   if (!mission) {
     if (ref) exitMissingMission(ref, 1, asJson);
@@ -7559,6 +7580,14 @@ function tickMission(args) {
     const { mission: saved } = saveMission(nextMission, cwd, 'mission_tick', {
       tick_index: tickIdx, verify, verifier_result: verifierResult, receipt_path: receiptPath, layer: tickRecord.layer,
     });
+    const blocker = selfDrive && saved.status === 'blocked'
+      ? require('../lib/self-drive').handleMissionBlocker({
+        mission: saved,
+        stopReason: 'verifier-failed',
+        workspaceRoot: cwd,
+        appendEvent: (type, payload) => appendEvent(type, saved, payload, cwd),
+      })
+      : null;
     const logPath = appendMemberLog(saved.owner, 'Mission tick', {
       mission: saved.objective,
       state: saved.status,
@@ -7575,9 +7604,10 @@ function tickMission(args) {
     const atrisGoalState = refreshAtrisGoalController(process.cwd(), { missionId: outputMission.id });
     const codexGoalState = refreshCodexGoalController(process.cwd());
     printJsonOrText(
-      { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, operator_summary_warning: operatorSummaryWarning },
+      { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, blocker, receipt_path: receiptPath, log_path: logPath, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, operator_summary_warning: operatorSummaryWarning },
       [
         ...missionTickResultLines(outputMission, tickIdx, receiptPath, verifierResult, summary),
+        ...(missionBlockerReceiptLine(blocker) ? [missionBlockerReceiptLine(blocker)] : []),
         ...(continuationGoal?.mission ? [`Next goal: ${continuationGoal.mission.objective}`] : []),
       ],
       asJson,
@@ -8089,7 +8119,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission goal [--runtime codex|atris] [--heartbeat] [--native-goal-status active|paused|usageLimited] [--native-goal-objective "..."] [--manual-ack] [--allow-native-goal-supersede] [--json]
   atris mission goal ack <id> --runtime codex --status active --objective "<objective>" --json
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
-  atris mission tick <id> [--verify ["cmd"]] [--complete-on-pass] [--summary "..."]
+  atris mission tick <id> [--verify ["cmd"]] [--complete-on-pass] [--self-drive] [--summary "..."]
                        [--native-goal-status active|paused|usageLimited] [--native-goal-objective "..."] [--json]
   atris mission set-runner <id> <runner|engine> [--model <id>] [--json]
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
@@ -8099,7 +8129,7 @@ atris mission - durable goal + loop + owner + proof state
                                 [--engine <name>]
                                 [--spend-full-budget|--use-whole-budget|--stop-when-done] [--preflight|--no-preflight|--room-preflight|--no-room-preflight]
                                 [--room-auto-run|--no-room-auto-run]
-                                [--headless] [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--create-next] [--json]
+                                [--headless] [--self-drive] [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--create-next] [--json]
                        (bare/member-only run prompts; one-word fuzzy intent starts a new visible-goal mission; --due runs the saved queue; --headless skips caller-session runners)
                        (short time like "20 minutes" means finish early; long/sleep time like "5 hours" keeps using the budget; --stop-when-done overrides)
                        (--budget quick|long|deep sets max ticks/wall to 4/15m, 12/60m, or 30/180m; explicit --max-ticks wins)
