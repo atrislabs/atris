@@ -544,6 +544,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
     acceptAll: Boolean(policy.accept_all),
     reapError: state.last_reap_error?.error || null,
     landingSweep: state.landing_sweep || null,
+    fullStory: true,
   });
   console.log(text);
   // the full story: what each piece actually was, in its own words

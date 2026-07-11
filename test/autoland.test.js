@@ -257,6 +257,23 @@ test('digest and alarm compose in plain language', () => {
   assert.match(alarm, /CLI-9 \(30h\)/);
 });
 
+test('expanded digest points to the full story below instead of rerunning itself', () => {
+  const accepted = Array.from({ length: 4 }, (_, index) => ({
+    ref: `CLI-${index + 1}`,
+    happened: `Operators can read result ${index + 1}, so they can act without opening a receipt.`,
+  }));
+  const digest = autoland.composeDigest({
+    accepted: { auto: accepted, human: [] },
+    waiting: [],
+    landed: null,
+    project: 'atris-cli',
+    fullStory: true,
+  });
+
+  assert.match(digest, /1 more result in the full story below/);
+  assert.doesNotMatch(digest, /atris autoland digest/);
+});
+
 test('operatorReady: a queue sentence earns its digest surface with a why, no agent jargon', () => {
   const { operatorReady } = require('../commands/autoland');
   // Carries a cost the operator can feel, no identifiers.
