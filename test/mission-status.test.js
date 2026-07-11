@@ -1346,7 +1346,7 @@ test('mission run summary starts with product landing instead of run internals',
   }
 });
 
-test('mission tick landing uses step summary when provided', () => {
+test('mission tick landing uses its stated consequence as the reason', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -1370,12 +1370,12 @@ test('mission tick landing uses step summary when provided', () => {
       mission.id,
       '--verify',
       '--summary',
-      'Made review landing proof high-level.',
+      'Made review landing proof high-level, so operators can judge the result without opening logs.',
     ], { cwd: dir });
     assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
     assert.match(ticked.stdout, /^Landing:/m);
-    assert.match(ticked.stdout, /Changed: Made review landing proof high-level\./);
-    assert.match(ticked.stdout, /Why it matters: It makes the result understandable before a human accepts or rejects it\./);
+    assert.match(ticked.stdout, /Changed: Made review landing proof high-level, so operators can judge the result without opening logs\./);
+    assert.match(ticked.stdout, /Why it matters: Operators can judge the result without opening logs\./);
     assert.doesNotMatch(ticked.stdout, /Changed: overnight self improve loop is ready for review\./);
     assert.match(ticked.stdout, /How I checked: Verifier passed: node -e "process\.exit\(0\)"/);
     assert.match(ticked.stdout, /What I tested: Verifier command passed: node -e "process\.exit\(0\)"/);
