@@ -6695,6 +6695,17 @@ function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
 }
 
+function missionLockOwnerIsAlive(pid) {
+  const ownerPid = Number(pid);
+  if (!Number.isInteger(ownerPid) || ownerPid <= 0) return false;
+  try {
+    process.kill(ownerPid, 0);
+    return true;
+  } catch (error) {
+    return error && error.code === 'EPERM';
+  }
+}
+
 function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
   const dir = path.join(root, '.atris', 'state');
   fs.mkdirSync(dir, { recursive: true });
@@ -6711,6 +6722,12 @@ function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
       if (e.code === 'EEXIST') {
         let info = {};
         try { info = JSON.parse(fs.readFileSync(lockFile, 'utf8') || '{}'); } catch {}
+        if (!missionLockOwnerIsAlive(info.pid)) {
+          try {
+            fs.unlinkSync(lockFile);
+            continue;
+          } catch {}
+        }
         if (deadline && Date.now() < deadline) {
           sleepSync(Math.min(25, deadline - Date.now()));
           continue;
