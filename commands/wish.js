@@ -13,11 +13,13 @@ const {
 const {
   appendWishRecord,
   improveWishes,
+  nextWishNumber,
   readWishEvents,
   readWishes,
   stampIso,
   stateFile,
   wishLessonsSummary,
+  wishId,
 } = require('../lib/wish-store');
 const {
   answerWish,
@@ -36,11 +38,13 @@ const {
   waitingOperatorWishes,
   REVIEW_WORD_SCORES,
 } = require('../lib/wish-delegate');
+const { enqueueCloudMission, VALID_CLOUD_LANES } = require('../lib/cloud-mission');
 const { printWishStats } = require('../lib/wish-stats');
 
 function showHelp() {
   console.log('');
   console.log('Usage: atris wish "<plain sentence>" [--engine <id>] [--as builder] [--metric "<name><op><target>"] [--json] [--no-mission]');
+  console.log('       atris wish "<plain sentence>" --cloud [--lane fast|pro|max] [--agent <id>]');
   console.log('         --metric example: --metric "stripe.active_subs>=10" (ops: >=, >, <=, <, ==)');
   console.log('       atris wish list [--all]');
   console.log('       atris wish show <n|id>');
@@ -202,15 +206,71 @@ function parseFlagArgs(args, valueFlagNames = []) {
 }
 
 function wishOptions(args) {
-  const parsed = parseFlagArgs(args, ['--engine', '--as', '--metric']);
+  const cloud = args.includes('--cloud');
+  const parsed = parseFlagArgs(args, cloud
+    ? ['--engine', '--as', '--metric', '--lane', '--agent']
+    : ['--engine', '--as', '--metric']);
   return {
     asJson: args.includes('--json'),
+    cloud,
     noMission: args.includes('--no-mission'),
     asMode: String(parsed.values['--as'] || '').trim(),
+    agentId: String(parsed.values['--agent'] || '').trim(),
     engineOverride: String(parsed.values['--engine'] || '').trim(),
+    lane: String(parsed.values['--lane'] || '').trim() || 'fast',
     metricRaw: String(parsed.values['--metric'] || '').trim(),
     positionals: parsed.positionals,
   };
+}
+
+function cloudWishOptionError(args, options) {
+  if (args.some((arg) => String(arg) === '--lane=')) {
+    return '--lane requires one of: fast, pro, max';
+  }
+  const laneIndex = args.findIndex((arg) => String(arg) === '--lane');
+  if (laneIndex >= 0 && (!args[laneIndex + 1] || String(args[laneIndex + 1]).startsWith('--'))) {
+    return '--lane requires one of: fast, pro, max';
+  }
+  const agentIndex = args.findIndex((arg) => String(arg) === '--agent');
+  if (args.some((arg) => String(arg) === '--agent=')) return '--agent requires an agent id';
+  if (agentIndex >= 0 && (!args[agentIndex + 1] || String(args[agentIndex + 1]).startsWith('--'))) {
+    return '--agent requires an agent id';
+  }
+  if (!VALID_CLOUD_LANES.has(options.lane)) {
+    return `invalid --lane "${options.lane}". expected fast, pro, or max`;
+  }
+  return '';
+}
+
+async function runCloudWish(text, root, options, deps = {}) {
+  try {
+    const mission = await enqueueCloudMission({
+      text,
+      lane: options.lane,
+      ...(options.agentId ? { agentId: options.agentId } : {}),
+    }, deps);
+    const ts = deps.ts || stampIso();
+    const record = {
+      id: deps.wishId || wishId(text, ts),
+      n: nextWishNumber(root),
+      ts,
+      text,
+      status: 'delegated',
+      dispatched_at: ts,
+      cloud: true,
+      task_id: mission.task_id,
+      lane: mission.lane || options.lane,
+    };
+    captureWishToJournal(text, root);
+    appendWishRecord(root, record);
+    const log = deps.log || console.log;
+    log(`task_id: ${record.task_id}`);
+    log(`watch: atris mission status --cloud ${record.task_id} --watch`);
+    return 0;
+  } catch (error) {
+    (deps.error || console.error)(error.message || String(error));
+    return error.exitCode || 1;
+  }
 }
 
 // Parses --metric into options.metric; returns an error message on malformed input.
@@ -269,7 +329,7 @@ function printLessons(root) {
   return 0;
 }
 
-function wishCommand(args = []) {
+function wishCommand(args = [], deps = {}) {
   const first = String(args[0] || '').trim();
   if (!first) {
     showHelp();
@@ -355,6 +415,13 @@ function wishCommand(args = []) {
     return sayWish(args, process.cwd());
   }
   const options = wishOptions(args);
+  if (options.cloud) {
+    const optionError = cloudWishOptionError(args, options);
+    if (optionError) {
+      (deps.error || console.error)(optionError);
+      return 2;
+    }
+  }
   if (options.asMode && options.asMode !== 'builder') {
     console.error('wish --as only supports builder.');
     return 2;
@@ -373,6 +440,7 @@ function wishCommand(args = []) {
     showHelp();
     return 2;
   }
+  if (options.cloud) return runCloudWish(text, process.cwd(), options, deps);
   return runCapturedWish(text, process.cwd(), options);
 }
 
@@ -390,6 +458,7 @@ module.exports = {
   printRewards,
   readWishEvents,
   readWishes,
+  runCloudWish,
   runAgainWish,
   sayWish,
   sharesMeaningfulWords,
