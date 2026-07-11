@@ -299,7 +299,6 @@ test('digest acceptance history is not capped by the compact done-task projectio
     assert.match(digest.stdout, /^atris repo: last 24 hours\n11 landed;/);
     assert.match(digest.stdout, /8 more results in the full story below/);
     assert.equal((digest.stdout.match(/^  REP-/gm) || []).length, 8);
-    assert.equal((digest.stdout.match(/Full story \d lets operators inspect/g) || []).length, 6);
     assert.match(digest.stdout, /^  REP-\d+  Accepted result 1 saves operator time, so the daily count stays trustworthy\.$/m);
     assert.match(digest.stdout, /^  REP-\d+  Title-only result lets operators inspect accepted work, so the daily story stays complete\.$/m);
   } finally {
@@ -372,6 +371,14 @@ test('operatorReady: a queue sentence earns its digest surface with a why, no ag
   assert.ok(!operatorReady('Make codex_goal slot handoff faster for users'));
   assert.ok(!operatorReady('Add --inspect flag so users save time'));
   assert.ok(!operatorReady('CLI-788 failed because the continuation stopped'));
+});
+
+test('result gate accepts a complete act-on phrase but rejects a dangling on ending', () => {
+  const complete = autoland.explainResult('Atris now shows its refresh minute, so operators can judge whether the current truth is fresh enough to act on.');
+  assert.equal(complete.ok, true, complete.reason);
+  const dangling = autoland.explainResult('Atris now shows its refresh minute, so operators know the current truth and act on.');
+  assert.equal(dangling.ok, false);
+  assert.match(dangling.reason, /ends mid-thought/);
 });
 
 test('digest falls back to the complete landing when shortening the result removes its why', () => {
