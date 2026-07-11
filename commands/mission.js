@@ -1138,7 +1138,8 @@ function missionLandingStepSummary(summary) {
     .replace(/[`*~]/g, '')
     .replace(/__+/g, '')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    .replace(/^done[.!]\s*/i, '');
   if (!clean) return '';
   const withoutLabel = clean
     .replace(/^(?:landing|changed|summary|result|product proof|proof):\s*/i, '')
@@ -1146,7 +1147,9 @@ function missionLandingStepSummary(summary) {
   if (!withoutLabel) return '';
   const plainVerified = missionPlainVerifiedSummary(withoutLabel);
   if (plainVerified) return plainVerified;
-  const beforeChecks = withoutLabel.split(/\s+(?:checks?|verified|proof):\s+/i)[0] || withoutLabel;
+  const beforeChecks = (withoutLabel.split(/\s+(?:checks?|verified|proof):\s+/i)[0] || withoutLabel)
+    .replace(/,\s*(?:verifier|proof|checks?)\s+(?:still|pending)[.!]?$/i, '')
+    .trim();
   const clipped = missionLandingSentenceClip(beforeChecks, 220);
   return clipped ? `${clipped}.` : '';
 }
