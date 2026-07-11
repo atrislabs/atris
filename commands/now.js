@@ -412,7 +412,11 @@ function renderDefaultNow(root = process.cwd()) {
   const receiptLines = todayTaskReceiptLines(root);
   const missionReceiptLines = todayMissionReceiptLines(root);
   const commitLines = landedCommitLines(root);
-  const awayLines = [...missionReceiptLines, ...receiptLines, ...commitLines];
+  const hiddenReceiptCount = Math.max(0, completedCount - missionReceiptLines.length - receiptLines.length);
+  const hiddenReceiptLine = hiddenReceiptCount > 0
+    ? [`- ${hiddenReceiptCount} more completed receipt${hiddenReceiptCount === 1 ? '' : 's'} omitted from this short recap.`]
+    : [];
+  const awayLines = [...missionReceiptLines, ...receiptLines, ...hiddenReceiptLine, ...commitLines];
   const whileAway = awayLines.length
     ? awayLines.join('\n')
     : '- Nothing has landed yet today.';
