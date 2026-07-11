@@ -618,6 +618,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Task room:** `atris/features/task-production-readiness/task-room-v1.md`
 - **Short update:** `atris/reports/task-production-update.md`
 - **Core rule:** durable task/event state is truth; UI, markdown, Swarlo, and cloud views are projections.
+- Compact `atris task status` titles close at a readable clause for both text and JSON instead of slicing a word with an ellipsis. Regression: `test/commands.test.js` (`task status closes long current titles at a clause`).
 - **Launch gate:** one task moves from creation -> claim -> proof -> review -> RL episode -> next task, with local and cloud projections intact.
 
 **Search:** `rg "Task Production Readiness|production-ready|--create-next|task_projection" atris/features/task-production-readiness commands/task.js lib/task-db.js`
