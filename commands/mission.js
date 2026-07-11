@@ -1134,7 +1134,11 @@ function missionHumanNextAction(mission, root = process.cwd(), options = {}) {
 }
 
 function missionLandingStepSummary(summary) {
-  const clean = String(summary || '').replace(/\s+/g, ' ').trim();
+  const clean = String(summary || '')
+    .replace(/[`*~]/g, '')
+    .replace(/__+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!clean) return '';
   const withoutLabel = clean
     .replace(/^(?:landing|changed|summary|result|product proof|proof):\s*/i, '')
@@ -8767,6 +8771,7 @@ module.exports = {
   humanBlockingPauseReason,
   consecutiveSameReasonErrors,
   missionVerifierTimeoutMs,
+  missionLandingStepSummary,
   resolveMissionRunnerSelection,
   resolveMissionTickRunner,
   engineFailureHealthStatus,
