@@ -128,7 +128,8 @@ test('renderDefaultNow leads with active mission move when codex goal selection 
 
     assert.equal(section.split('\n')[0], 'The move: Operators stop trusting reports the first time one reads wrong - next: atris mission run --due --max-ticks 1 --complete-on-pass');
     assert.doesNotMatch(section.split('\n')[0], /…|\.\.\./);
-    assert.match(section, /- Decide the next useful move before opening more context\./);
+    assert.match(section, /- Run the named next action and leave proof before choosing another\./);
+    assert.doesNotMatch(section, /Decide the next useful move/);
 
     fs.writeFileSync(missionsPath, `${JSON.stringify({
       ...mission,
