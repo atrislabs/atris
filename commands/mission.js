@@ -1160,6 +1160,11 @@ function missionLandingStepSummary(summary) {
 }
 
 function missionHumanReasonText(mission, changed = '') {
+  const consequence = String(changed || '').match(/,\s+so\s+(.+?)\s*[.!?]*$/i)?.[1]?.trim();
+  if (consequence) {
+    const sentence = consequence.charAt(0).toUpperCase() + consequence.slice(1);
+    return `${sentence.replace(/[.!?]+$/g, '')}.`;
+  }
   const objective = String(mission?.objective || '').trim();
   const text = `${objective} ${changed}`.toLowerCase();
   if (/\b(human|plain|language|landing|proof|receipt|understand|readable)\b/.test(text)) {
