@@ -94,6 +94,11 @@ test('morning row closes long mission text without ellipsis fragments', () => {
   const row = renderMorningCardRow(receipt);
   assert.doesNotMatch(row, /\.\.\.|…/);
   assert.doesNotMatch(row, /\b(?:and|or|but|with|to|for|from|by|the|a|an)$/);
+
+  receipt.result.landing.changed = 'Task landing validation now rejects dangling as-exists grammar while recognizing reduced risk as a real consequence, so clear actions pass.';
+  const adjectiveBoundary = renderMorningCardRow(receipt);
+  assert.match(adjectiveBoundary, /real consequence/);
+  assert.doesNotMatch(adjectiveBoundary, /as a real;/);
 });
 
 test('morning card shows mission receipt rows through the receipt block renderer', () => {
