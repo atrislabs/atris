@@ -76,6 +76,11 @@ test('land board classifies active, due, and landed branches', () => {
     assert.ok(byName['stale-work'].ageDays > 7);
     assert.equal(board.summary.unlanded, 3);
     assert.equal(board.summary.due, 1);
+
+    const text = runCli(['land', 'status'], repo);
+    assert.equal(text.status, 0, text.stderr || text.stdout);
+    assert.ok(text.stdout.indexOf('stale-work') < text.stdout.indexOf('fresh-work'), text.stdout);
+    assert.ok(text.stdout.indexOf('fresh-work') < text.stdout.indexOf('residue'), text.stdout);
   } finally {
     cleanupTempDir(base);
   }
