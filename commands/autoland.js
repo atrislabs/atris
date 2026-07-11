@@ -586,7 +586,7 @@ function pidAlive(pid) {
 function runTick(root, args) {
   const json = args.includes('--json');
   const policy = autoland.readPolicy(root);
-  const receipt = { at: new Date().toISOString(), landed: [], alarms: 0, digest_sent: false, enabled: Boolean(policy && policy.enabled) };
+  const receipt = { at: new Date().toISOString(), landed: [], alarms: 0, digest_due: false, digest_sent: false, enabled: Boolean(policy && policy.enabled) };
   if (!policy || policy.enabled !== true) {
     if (json) console.log(JSON.stringify(receipt));
     else console.log('autoland is off; tick did nothing.');
@@ -627,6 +627,12 @@ function persistTickReceipt(root, receipt) {
   receipt.receipt_path = path.relative(root, receiptPath);
   fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
   return receipt.receipt_path;
+}
+
+function digestTickStatus(receipt) {
+  if (receipt.digest_sent) return 'sent';
+  if (receipt.digest_due) return 'saved';
+  return 'not due';
 }
 
 function runTickBody(root, { json, policy, receipt }) {
@@ -778,6 +784,7 @@ function runTickBody(root, { json, policy, receipt }) {
   const today = new Date().toISOString().slice(0, 10);
   const digestHour = Number(policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR);
   if (new Date().getHours() === digestHour && state.last_digest_date !== today) {
+    receipt.digest_due = true;
     let waitingWishes = [];
     try {
       waitingWishes = require('./wish').waitingOperatorWishes(root);
@@ -878,7 +885,7 @@ function runTickBody(root, { json, policy, receipt }) {
     const heldNote = receipt.missions_held ? `, held ${receipt.missions_held} human-blocked mission${receipt.missions_held === 1 ? '' : 's'}` : '';
     const wishNote = `, ${wishSweepSummaryLine(receipt.wish_dispatch, receipt.wish_dispatch_error)}`;
     const receiptNote = receipt.receipt_path ? `, receipt ${receipt.receipt_path}` : '';
-    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}${janitorNote}${heldNote}${wishNote}${receiptNote}`);
+    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${receiptNote}`);
   }
   return 0;
 }
@@ -932,6 +939,7 @@ module.exports = {
   autolandCommand,
   attachedTasksForMission,
   digestNextMoves,
+  digestTickStatus,
   explainResult,
   missionReadyForClosedTaskVerify,
   operatorReady,

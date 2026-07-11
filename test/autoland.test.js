@@ -402,6 +402,13 @@ test('live update receipt keeps the exact sent text for the next linguist audit'
   }
 });
 
+test('heartbeat digest status distinguishes sent, saved, and not due', () => {
+  const { digestTickStatus } = require('../commands/autoland');
+  assert.equal(digestTickStatus({ digest_due: true, digest_sent: true }), 'sent');
+  assert.equal(digestTickStatus({ digest_due: true, digest_sent: false }), 'saved');
+  assert.equal(digestTickStatus({ digest_due: false, digest_sent: false }), 'not due');
+});
+
 test('alarm dedupe: a task pings once per window', () => {
   const now = Date.now();
   const waiting = [{ ref: 'CLI-9', hours: 30 }, { ref: 'CLI-8', hours: 10 }];
