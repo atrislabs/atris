@@ -231,7 +231,7 @@ test('sweep prints operator sentences and escalates once per day per loop', () =
   }
 });
 
-test('scan opens stale review and failed task flags by source and dedupes them', () => {
+test('scan opens stale review and one failed-task batch, then dedupes them', () => {
   const dir = makeTempDir();
   const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
   const now = '2026-01-10T00:00:00.000Z';
@@ -283,12 +283,13 @@ test('scan opens stale review and failed task flags by source and dedupes them',
     assert.equal(scan.code, 0, scan.stderr);
     assert.deepEqual(scan.stdout.split('\n'), [
       'opened task t-1 has waited in review too long, accept it or send it back.',
-      'opened task t-3 failed and nobody looked, retry it or dissolve it.',
+      'opened 1 failed task needs one decision: retry t-3 or dissolve it.',
     ]);
 
     const opened = readLedger(dir).filter((event) => event.kind === 'opened');
     assert.equal(opened.length, 2);
-    assert.deepEqual(opened.map((event) => event.source).sort(), ['task:task-failed-old', 'task:task-review-old']);
+    assert.equal(opened.some((event) => event.source === 'task:task-review-old'), true);
+    assert.equal(opened.some((event) => event.source.startsWith('tasks:failed:')), true);
     assert.equal(opened.every((event) => event.lane === 'code' && event.ttl_days === 3), true);
 
     const duplicate = runClose(['scan'], dir, now);
@@ -305,6 +306,78 @@ test('scan opens stale review and failed task flags by source and dedupes them',
     const closed = readLedger(dir).filter((event) => event.kind === 'closed');
     assert.equal(closed.length, 1);
     assert.equal(closed[0].proof, 'resolved in source store');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan migrates legacy failed-task rows and respects per-task dissolves', () => {
+  const dir = makeTempDir();
+  const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+  const ledger = close.ledgerPath(dir);
+  const now = '2026-01-10T00:00:00.000Z';
+  try {
+    writeJson(projectionPath, { schema: 'test', tasks: [
+      { id: 'failed-keep', display_id: 'T-1', status: 'failed', updated_at: '2026-01-05T00:00:00.000Z' },
+      { id: 'failed-dismissed', display_id: 'T-2', status: 'failed', updated_at: '2026-01-05T00:00:00.000Z' },
+    ] });
+    writeJsonl(ledger, [
+      {
+        kind: 'opened', at: '2026-01-06T00:00:00.000Z', id: 'close-legacy-keep',
+        what: 'task t-1 failed and nobody looked, retry it or dissolve it', owner: 'operator',
+        lane: 'code', opened_at: '2026-01-06T00:00:00.000Z', ttl_days: 3,
+        close_condition: 'the source store resolves it', source: 'task:failed-keep',
+      },
+      {
+        kind: 'opened', at: '2026-01-06T00:00:00.000Z', id: 'close-legacy-dismissed',
+        what: 'task t-2 failed and nobody looked, retry it or dissolve it', owner: 'operator',
+        lane: 'code', opened_at: '2026-01-06T00:00:00.000Z', ttl_days: 3,
+        close_condition: 'the source store resolves it', source: 'task:failed-dismissed',
+      },
+      { kind: 'dissolved', at: '2026-01-07T00:00:00.000Z', id: 'close-legacy-dismissed', why: 'dead work' },
+    ]);
+
+    const scan = runClose(['scan'], dir, now);
+    assert.equal(scan.code, 0, scan.stderr);
+    assert.match(scan.stdout, /opened 1 failed task needs one decision: retry t-1 or dissolve it\./);
+    assert.match(scan.stdout, /auto-closed task t-1 failed and nobody looked, retry it or dissolve it\./);
+    const open = close.openFlags(dir, { now });
+    assert.equal(open.length, 1);
+    assert.match(open[0].source, /^tasks:failed:/);
+    assert.doesNotMatch(open[0].what, /t-2/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('failed-task batch source changes only when batch membership changes', () => {
+  const dir = makeTempDir();
+  const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+  const now = '2026-01-10T00:00:00.000Z';
+  const tasks = [
+    { id: 'failed-a', display_id: 'T-1', status: 'failed', updated_at: '2026-01-05T00:00:00.000Z' },
+    { id: 'failed-b', display_id: 'T-2', status: 'failed', updated_at: '2026-01-05T00:00:00.000Z' },
+  ];
+  try {
+    writeJson(projectionPath, { schema: 'test', tasks });
+    const first = runClose(['scan'], dir, now);
+    assert.equal(first.code, 0, first.stderr);
+    assert.equal(first.stdout, 'opened 2 failed tasks need one decision: retry the useful ones or dissolve the rest (t-1, t-2).');
+    const firstOpen = close.openFlags(dir, { now });
+    assert.equal(firstOpen.length, 1);
+    const firstSource = firstOpen[0].source;
+
+    const duplicate = runClose(['scan'], dir, now);
+    assert.equal(duplicate.stdout, 'nothing new to open, nothing resolved.');
+
+    tasks.push({ id: 'failed-c', display_id: 'T-3', status: 'failed', updated_at: '2026-01-05T00:00:00.000Z' });
+    writeJson(projectionPath, { schema: 'test', tasks });
+    const changed = runClose(['scan'], dir, now);
+    assert.match(changed.stdout, /opened 3 failed tasks need one decision/);
+    assert.match(changed.stdout, /auto-closed 2 failed tasks need one decision/);
+    const changedOpen = close.openFlags(dir, { now });
+    assert.equal(changedOpen.length, 1);
+    assert.notEqual(changedOpen[0].source, firstSource);
   } finally {
     cleanupTempDir(dir);
   }

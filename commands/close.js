@@ -14,6 +14,7 @@ const WATCH_CONFIG_RELATIVE_PATH = path.join('.atris', 'close-watch.json');
 const EXPERIMENTS_RELATIVE_PATH = path.join('.atris', 'state', 'experiments.jsonl');
 const EXPERIMENTS_DIR_RELATIVE_PATH = path.join('atris', 'experiments');
 const RESOLVED_IN_SOURCE_PROOF = 'resolved in source store';
+const FAILED_TASK_BATCH_PREFIX = 'tasks:failed:';
 
 function ledgerPath(cwd = process.cwd()) {
   return path.join(cwd, LEDGER_RELATIVE_PATH);
@@ -668,6 +669,23 @@ function failedTaskNeedsAttention(task, now) {
     && !isOlderThan(task.updated_at, 30, now);
 }
 
+function failedTaskBatchSource(tasks) {
+  const ids = tasks.map((task) => normalizeSpaces(task && task.id)).filter(Boolean).sort();
+  if (ids.length === 0) return '';
+  const hash = crypto.createHash('sha1').update(ids.join('\n')).digest('hex').slice(0, 12);
+  return `${FAILED_TASK_BATCH_PREFIX}${hash}`;
+}
+
+function failedTaskBatchWhat(tasks) {
+  const refs = tasks.map(taskRef).filter(Boolean).sort();
+  const shown = refs.slice(0, 5).map((ref) => ref.toLowerCase());
+  const more = refs.length > shown.length ? ` and ${refs.length - shown.length} more` : '';
+  const subject = refs.length === 1 ? '1 failed task needs' : `${refs.length} failed tasks need`;
+  const targets = refs.length === 1 ? shown[0] : `${shown.join(', ')}${more}`;
+  const action = refs.length === 1 ? `retry ${targets} or dissolve it` : `retry the useful ones or dissolve the rest (${targets})`;
+  return `${subject} one decision: ${action}`;
+}
+
 function resolveWatchPath(cwd, watchPath) {
   return path.isAbsolute(watchPath) ? watchPath : path.join(cwd, watchPath);
 }
@@ -769,6 +787,12 @@ function scanState(cwd = process.cwd(), options = {}) {
     if (flag.status === 'dissolved' && flag.source) dissolvedSources.add(flag.source);
   }
 
+  const failedTasks = Array.from(tasksById.values())
+    .filter((task) => failedTaskNeedsAttention(task, now))
+    .filter((task) => !dissolvedSources.has(taskSource(task)))
+    .sort((a, b) => taskRef(a).localeCompare(taskRef(b)));
+  const failedBatchSource = failedTaskBatchSource(failedTasks);
+
   for (const flag of openFlags(cwd, { now })) {
     if (flag.source) openBySource.set(flag.source, flag);
   }
@@ -782,7 +806,12 @@ function scanState(cwd = process.cwd(), options = {}) {
   for (const flag of Array.from(openBySource.values())) {
     if (flag.source.startsWith('task:')) {
       const task = tasksById.get(flag.source.slice('task:'.length));
-      if (task && taskResolved(task)) closeFlag(flag);
+      const status = normalizeSpaces(task && task.status).toLowerCase();
+      if (task && (taskResolved(task) || status === 'failed')) closeFlag(flag);
+      continue;
+    }
+    if (flag.source.startsWith(FAILED_TASK_BATCH_PREFIX)) {
+      if (flag.source !== failedBatchSource) closeFlag(flag);
       continue;
     }
     if (flag.source.startsWith('mission:')) {
@@ -838,14 +867,15 @@ function scanState(cwd = process.cwd(), options = {}) {
       });
       continue;
     }
-    if (failedTaskNeedsAttention(task, now)) {
-      openCandidate({
-        what: `task ${ref} failed and nobody looked, retry it or dissolve it`,
-        lane: 'code',
-        ttlDays: 3,
-        source,
-      });
-    }
+  }
+
+  if (failedTasks.length > 0) {
+    openCandidate({
+      what: failedTaskBatchWhat(failedTasks),
+      lane: 'code',
+      ttlDays: 3,
+      source: failedBatchSource,
+    });
   }
 
   const staleMissions = missions
