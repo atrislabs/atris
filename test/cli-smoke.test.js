@@ -588,7 +588,7 @@ test('default entry gathers first-contact context before MAP bootstrap', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Got it\. I saved your first direction/);
     assert.match(res.stdout, /First task:/);
-    assert.match(res.stdout, /NEXT SETUP STEP/i);
+    assert.match(res.stdout, /next setup:/i);
     assert.match(res.stdout, /MAP\.md/i);
     assert.match(fs.readFileSync(path.join(dir, '.atris', 'state', 'context_profile.json'), 'utf8'), /college applications/);
     assert.match(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /First useful step: help me organize college applications/);

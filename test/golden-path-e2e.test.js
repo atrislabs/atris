@@ -363,7 +363,7 @@ test('packed golden path follows printed init mission task and autoland handoffs
     const landingIndex = readyArgs.indexOf('--landing');
     assert.notEqual(landingIndex, -1, `printed task-ready command has no landing: ${readyArgs.join(' ')}`);
     assert.match(readyArgs[landingIndex + 1] || '', /^<what someone can do now>$/);
-    readyArgs[landingIndex + 1] = 'New users can now finish their first proof loop without hidden setup steps.';
+    readyArgs[landingIndex + 1] = 'New users can now finish their first proof loop faster, skipping the hidden setup steps.';
     const ready = runInstalled(readyArgs);
     assertGoldenPathStep(ready, 'printed task-ready command');
     assert.match(ready.stdout, /proof is ready; autoland runs the second check and lands it on the next tick\./);
