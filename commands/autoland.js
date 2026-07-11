@@ -601,7 +601,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
         console.log('');
         printedStoryHeader = true;
       }
-      console.log(`  ${item.ref}  ${story}`);
+      console.log(`  - ${story}`);
     }
   }
   const shouldSend = (forceSend || args.includes('--send')) && policy.imessage_to;
