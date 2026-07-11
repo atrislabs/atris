@@ -46,3 +46,5 @@ node scripts/outbound-artifact-gate.js --channel email --format html --body-file
 ```
 
 The Gmail backend MIME fix is a transport safety net. Agents still need this gate before asking approval or sending.
+
+Day-loop coach messages use the stricter surface rules in `atris/policies/day-loop-voice.md` and pass `--coach-surface`. Warm pings also name a fresh `--signal-proof` file.

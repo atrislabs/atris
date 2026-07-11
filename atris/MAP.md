@@ -115,7 +115,7 @@ rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations s
 # Documentation
 rg "Phase 1" atris.md                       # Agent generation spec
 rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/init.js atris/CLAUDE.md  # generated agent onboarding contract
-rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/policies/outbound-artifact-gate.md scripts/outbound-artifact-gate.js test/outbound-artifact-gate.test.js  # Human-facing send gate: no raw HTML/source artifacts, require render proof for HTML/visual sends, anti-slop copy check
+rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-surface|coach-signal-proof-missing" atris/policies/outbound-artifact-gate.md atris/policies/day-loop-voice.md scripts/outbound-artifact-gate.js test/outbound-artifact-gate.test.js  # Human-facing send gate: no raw HTML/source artifacts, render proof for HTML/visual sends, anti-slop copy check, and day-loop coach boundaries with fresh-signal proof for warm pings
 ```
 
 ---
@@ -1572,6 +1572,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `atris/policies/atris-backend.md` — Backend architecture policy
 - `atris/policies/writing.md` — Essay writing skill
 - `atris/policies/outbound-artifact-gate.md` — Human-facing send gate: rendered artifacts, anti-slop copy, approval packet, receipt
+- `atris/policies/day-loop-voice.md` — Morning one-thing, evening mirror, warm-ping, sensing-correction, and coach-gate contract
 - `scripts/outbound-artifact-gate.js` — Cheap validator for raw HTML/source sends, missing render proof, and slop copy
 - `test/outbound-artifact-gate.test.js` — Regression coverage for the Justin raw-HTML failure class
 - `commands/slop.js` (`slopCommand`, `RULES` `:28-69`) — deterministic frontend/prose slop detector (HOW copy reads); `detect --fix/--diff/--staged`, project rules in `.atris/slop.rules.json`, `installHook` pre-commit gate `:118-133`

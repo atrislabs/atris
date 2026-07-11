@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const HTML_TAG_RE = /<!doctype\s+html|<\/?(?:html|head|body|div|section|article|main|table|thead|tbody|tr|td|th|p|br|span|h[1-6]|ul|ol|li|style|script|a|img|strong|em)\b[^>]*>/i;
 const ENCODED_HTML_RE = /&lt;\/?(?:html|head|body|div|table|tr|td|p|span|h[1-6]|ul|ol|li|style|script|svg)\b/i;
 const RENDERED_SOURCE_FENCE_RE = /```\s*(?:html|xml|jsx|tsx|css|svg|mermaid)\b/i;
+const COACH_INTERNAL_RE = /(?:\b(?:CLI|WEB|BE)-\d+\b|\b[0-9A-HJKMNP-TV-Z]{26}\b|\bmission-[a-z0-9-]+|(?:^|\s)--[a-z][a-z-]*\b|(?:^|\s)(?:\.atris|atris\/runs)\/|(?:^|\s)\/(?:Users|home|workspace|tmp)\/\S+)/im;
+const COACH_PRESSURE_RE = /\b(?:asap|urgent|time-sensitive|immediately|friendly reminder|just checking in|you still haven'?t|don'?t forget|why haven'?t you|you need to|productive day|great work|nice work|good job|keep the streak)\b/i;
 
 const SLOP_RULES = [
   {
@@ -25,6 +27,7 @@ const SLOP_RULES = [
 ];
 
 const VALID_FORMATS = new Set(['plain', 'html', 'markdown', 'visual', 'source']);
+const VALID_COACH_SURFACES = new Set(['morning', 'evening', 'warm-ping']);
 
 function usage() {
   return [
@@ -38,6 +41,8 @@ function usage() {
     '  --body <text>',
     '  --body-file <path>',
     '  --proof-file <path>   Required for html and visual formats',
+    '  --coach-surface <morning|evening|warm-ping>',
+    '  --signal-proof <path> Required for a warm-ping coach surface',
     '  --visual              Require visual proof even when format is not visual',
     '  --allow-slop          Skip anti-slop copy checks',
   ].join('\n');
@@ -50,6 +55,8 @@ function parseArgs(argv) {
     body: '',
     bodyFile: null,
     proofFile: null,
+    coachSurface: null,
+    signalProof: null,
     visual: false,
     allowSlop: false,
     help: false,
@@ -114,10 +121,15 @@ function scanOutboundArtifact(options, body) {
   const errors = [];
   const format = String(options.format || 'plain').toLowerCase();
   const channel = String(options.channel || 'other').toLowerCase();
+  const coachSurface = options.coachSurface ? String(options.coachSurface).toLowerCase() : null;
 
   if (!VALID_FORMATS.has(format)) {
     addError(errors, 'invalid-format', `format must be one of ${Array.from(VALID_FORMATS).join(', ')}`);
     return errors;
+  }
+
+  if (coachSurface && !VALID_COACH_SURFACES.has(coachSurface)) {
+    addError(errors, 'invalid-coach-surface', `coach surface must be one of ${Array.from(VALID_COACH_SURFACES).join(', ')}`);
   }
 
   const sendsSource = format === 'source';
@@ -137,6 +149,18 @@ function scanOutboundArtifact(options, body) {
 
   if (needsRenderProof && !proofExists(options.proofFile)) {
     addError(errors, 'render-proof-missing', 'HTML or visual sends need --proof-file with preview, screenshot, PDF, or rendered-email receipt');
+  }
+
+  if (coachSurface) {
+    if (COACH_INTERNAL_RE.test(body)) {
+      addError(errors, 'coach-internal-language', 'coach copy contains an internal id, flag, or path');
+    }
+    if (COACH_PRESSURE_RE.test(body)) {
+      addError(errors, 'coach-pressure-language', 'coach copy contains urgency, guilt, nagging, or generic productivity praise');
+    }
+    if (coachSurface === 'warm-ping' && !proofExists(options.signalProof)) {
+      addError(errors, 'coach-signal-proof-missing', 'warm pings need --signal-proof for the fresh human event');
+    }
   }
 
   if (!options.allowSlop) {
@@ -196,6 +220,8 @@ module.exports = {
   HTML_TAG_RE,
   RENDERED_SOURCE_FENCE_RE,
   SLOP_RULES,
+  COACH_INTERNAL_RE,
+  COACH_PRESSURE_RE,
   parseArgs,
   scanOutboundArtifact,
 };
