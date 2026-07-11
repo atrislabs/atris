@@ -6049,6 +6049,12 @@ function codexGoalNextCommand(mission) {
   return `atris mission tick ${mission.id} --summary "<what changed>"`;
 }
 
+function codexGoalCompletionInstruction(mission) {
+  const continuation = missionBudgetContinuationText(mission);
+  if (!continuation) return 'update_goal({ status: "complete" })';
+  return `${continuation}; do not call update_goal until the full budget is used`;
+}
+
 function codexVisibleGoalBridge(mission, goalObjective, options = {}) {
   const ack = codexNativeGoalAck(mission, goalObjective);
   const recovery = options.nativeGoalRecovery || null;
@@ -6069,11 +6075,14 @@ function codexVisibleGoalBridge(mission, goalObjective, options = {}) {
       ack_existing_matching_goal: recovery?.commands?.ack_current_goal || null,
       handoff_when_usage_limited: recovery?.commands?.handoff_to_fresh_agent || null,
       ack_after_create: codexGoalAckCommand(mission, goalObjective),
-      complete_after_proof: 'update_goal({ status: "complete" })',
+      complete_after_proof: codexGoalCompletionInstruction(mission),
       refresh_on_phase_change: 'atris mission goal --json before continuing changed work',
       refresh_next_candidate: 'atris mission goal --json',
     },
     guardrails: [
+      ...(missionBudgetContinuationText(mission)
+        ? ['Keep the matching native goal active until the full budget is used, even when an intermediate verifier passes.']
+        : []),
       'Do not complete a human-set active goal unless it matches this mission goal or the mission receipt proves handoff.',
       'If create_goal fails because another goal is active, keep this bridge waiting for the visible goal slot.',
       'Do not run mission work for runner=codex_goal until ack_after_create has been recorded.',
@@ -6087,7 +6096,7 @@ function codexGoalToolContract(mission, nativeGoalRecovery = null) {
     return {
       current_policy: 'keep one visible Codex /goal active for the selected Atris mission',
       read_current_goal: 'get_goal',
-      complete_current_goal: 'update_goal({ status: "complete" })',
+      complete_current_goal: codexGoalCompletionInstruction(mission),
       select_next_goal: 'atris mission goal --json',
       set_next_goal: 'do not call create_goal; the matching native goal already exists',
       visible_goal_bridge: 'goal.visible_goal',
@@ -6101,7 +6110,7 @@ function codexGoalToolContract(mission, nativeGoalRecovery = null) {
   return {
     current_policy: 'keep one visible Codex /goal active for the selected Atris mission',
     read_current_goal: 'get_goal',
-    complete_current_goal: 'update_goal({ status: "complete" })',
+    complete_current_goal: codexGoalCompletionInstruction(mission),
     select_next_goal: 'atris mission goal --json',
     set_next_goal: 'use goal.visible_goal: create_goal({ objective: goal.objective }) when no active goal blocks the slot',
     visible_goal_bridge: 'goal.visible_goal',
@@ -6144,7 +6153,7 @@ function writeCodexGoalState(payload, root = process.cwd()) {
   ];
   if (state.goal) {
     lines.push(`- mission: ${state.goal.mission_id}`);
-    lines.push(`- status: ${state.goal.mission_status}`);
+    lines.push(`- status: ${missionHumanStatusText(state.mission || { status: state.goal.mission_status })}`);
     lines.push(`- reason: ${state.goal.reason}`);
     lines.push(`- objective: ${state.goal.objective}`);
     lines.push(`- next: ${state.goal.next_command}`);
