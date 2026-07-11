@@ -120,11 +120,11 @@ test('collectImproveVitals reads metabolism fixtures and renders plain lowercase
     assert.equal(vitals.excrete.overdue, 1);
     assert.equal(vitals.usage.used_this_week, 2);
     assert.equal(vitals.usage.known_commands, knownCommands.length);
-    assert.equal(vitals.install_nudge, 'the loop is off. turn it on: atris pulse install --model claude-sonnet-5');
+    assert.equal(vitals.install_nudge, 'the scheduled improve loop is off. turn it on: atris pulse install --model claude-sonnet-5');
 
     const output = formatImproveVitals(vitals);
-    assert.match(output, /the heartbeat last beat 12 minutes ago and earned 2 reward today\./);
-    assert.match(output, /the loop is off\. turn it on: atris pulse install --model claude-sonnet-5/);
+    assert.match(output, /the scheduled improve heartbeat last beat 12 minutes ago and earned 2 reward today\./);
+    assert.match(output, /the scheduled improve loop is off\. turn it on: atris pulse install --model claude-sonnet-5/);
     assert.match(output, /todays experiment already ran, with 2 total experiments\./);
     assert.match(output, /the scout last explored 2 hours ago and landed a finding\./);
     assert.match(output, /the excretion loop has 1 open loop and 1 overdue loop\./);

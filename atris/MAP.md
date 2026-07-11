@@ -1028,6 +1028,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Pure core:** `lib/pulse.js` — receipts (`buildPulseReceipt`, `buildInterruptedPulseReceipt`), reward gating (`scoreTick`, `shouldWriteScorecard`), ghost/stale detection (`findOrphanStarts`, `detectStaleTick`), summary (`summarizePulse`), cron cadence normalization (`normalizeCronCadence`: `13m` -> `*/13 * * * *`), cron-script generation (`buildTickScript`, `buildCrontabLine`), IO (`appendPulseReceipt`, `nextTickIndex`, `acquireLock`)
 - **Command:** `commands/pulse.js` (`pulseCommand`) — subcommands `tick|status|install|uninstall|run`; `crontabHasActiveMarker()` makes status and improve vitals ignore commented/disabled marker history instead of falsely reporting the heartbeat installed
+- `atris improve` labels pulse age and install state as the scheduled improve heartbeat/loop, so direct mission work is not mistaken for idle metabolism. Regression: `test/improve-vitals.test.js`.
   - `tickCommand` — lock → 'started' receipt → `runMissionEngine` (`atris mission run --due --max-ticks 1 --complete-on-pass`) → `runVerify` → 'finished' receipt + gated scorecard → release lock
   - `statusCommand` — liveness, reward sum, ghost-tick detection, cron-installed check
   - `installCommand` / `uninstallCommand` — write `~/.atris/overnight/atris-cli-self-improve/tick.sh` + manage the `ATRIS_PULSE_SELF_IMPROVE` crontab line (idempotent, preserves other entries, 7-day auto-expiry deadline)
