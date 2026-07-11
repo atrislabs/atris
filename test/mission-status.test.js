@@ -6786,6 +6786,14 @@ test('mission help documents status filters', () => {
       assert.match(statusHelp.stdout, /remaining budget, next action, and proof inspection command/);
       assert.doesNotMatch(statusHelp.stderr, /Mission .* not found/);
     }
+    for (const subcommand of ['report', 'timeline']) {
+      for (const helpArg of ['--help', '-h', 'help']) {
+        const subcommandHelp = runCli(['mission', subcommand, helpArg], { cwd: dir });
+        assert.equal(subcommandHelp.status, 0, subcommandHelp.stderr || subcommandHelp.stdout);
+        assert.match(subcommandHelp.stdout, new RegExp(`^Usage: atris mission ${subcommand}`));
+        assert.doesNotMatch(subcommandHelp.stderr, /Mission .* not found/);
+      }
+    }
   } finally {
     cleanupTempDir(dir);
   }
