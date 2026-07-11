@@ -196,7 +196,7 @@ test('digest and alarm compose in plain language', () => {
   assert.doesNotMatch(digest, /\bexplained\b/);
   // Waiting items only render when they can explain themselves.
   assert.match(digest, /task approvals waiting on you \(0 clear next actions\/1 total; approve or bounce: atris task reviews\):/);
-  assert.match(digest, /- 1 more in review that could not explain itself yet/);
+  assert.match(digest, /- 1 review stayed hidden because its next action was unclear/);
   assert.doesNotMatch(digest, /Send invoice/);
   assert.match(digest, /1 wish waiting on you:/);
   assert.match(digest, /- make onboarding better: Who is onboarding for\?/);
@@ -285,6 +285,23 @@ test('digest acceptance history is not capped by the compact done-task projectio
     taskDb.close(db);
     cleanupTempDir(base);
   }
+});
+
+test('digest folds unclear landed results across members into one count', () => {
+  const unclear = Array.from({ length: 4 }, (_, index) => ({
+    ref: `CLI-${index + 1}`,
+    title: 'Refactor internals',
+    member: `member-${index + 1}`,
+  }));
+  const digest = autoland.composeDigest({
+    accepted: { auto: unclear, human: [] },
+    waiting: [],
+    landed: null,
+    project: 'atris-cli',
+  });
+  assert.match(digest, /4 landed results stayed hidden because their outcomes were unclear/);
+  assert.equal((digest.match(/stayed hidden because/g) || []).length, 1);
+  assert.doesNotMatch(digest, /member-1|could not explain themselves/);
 });
 
 test('expanded digest points to the full story below instead of rerunning itself', () => {
