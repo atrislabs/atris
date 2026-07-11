@@ -12,7 +12,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-const { taskDayGroups } = require('../commands/task');
+const { taskDayGroups, taskDayTextGroups, taskDayTitle } = require('../commands/task');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -113,7 +113,7 @@ test('task day CLI collapses stale failed rows into one summary line', () => {
     assert.equal(day.status, 0, day.stderr);
     assert.doesNotMatch(day.stdout, /Doomed old task/);
     assert.match(day.stdout, /Live open task/);
-    assert.match(day.stdout, /stale\s+1 failed >7d hidden — atris task list --status failed/);
+    assert.match(day.stdout, /stale\s+1 failed >7d hidden - atris task list --status failed/);
     // Header counts are lane truth: review counts review-status only, failed shown separately.
     assert.match(day.stdout, /active 1 \/ owners 1 \/ review 0 \/ failed 1/);
 
@@ -124,6 +124,64 @@ test('task day CLI collapses stale failed rows into one summary line', () => {
     assert.equal(payload.counts.review, 0);
     assert.equal(payload.counts.failed, 1);
     assert.deepEqual(payload.stale_failed.refs, [doomed.display_id]);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('taskDayTextGroups caps the whole surface and reports hidden owners', () => {
+  const groups = Array.from({ length: 12 }, (_, index) => ({
+    owner: `owner-${index + 1}`,
+    tasks: [fakeTask({ id: `task-${index + 1}`, status: 'open', updated_at: index + 1 })],
+  }));
+  const view = taskDayTextGroups(groups);
+  assert.equal(view.groups.length, 8);
+  assert.equal(view.groups.flatMap((group) => group.tasks).length, 8);
+  assert.equal(view.hiddenTasks, 4);
+  assert.equal(view.hiddenOwners, 4);
+
+  const full = taskDayTextGroups(groups, { full: true });
+  assert.equal(full.groups.length, 12);
+  assert.equal(full.hiddenTasks, 0);
+});
+
+test('taskDayTitle ends long rows at a sentence or honest ellipsis', () => {
+  assert.equal(
+    taskDayTitle(`${'A'.repeat(55)}. ${'B'.repeat(100)}`),
+    `${'A'.repeat(55)}.`,
+  );
+  const clipped = taskDayTitle('one '.repeat(40));
+  assert.ok(clipped.endsWith('...'));
+  assert.ok(clipped.length <= 123);
+  assert.equal(taskDayTitle('A live result — with one move'), 'A live result - with one move');
+});
+
+test('task day text caps eight rows while full and json keep all tasks', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    for (let index = 1; index <= 10; index += 1) {
+      const created = runCli(['task', 'new', `bounded item ${index}`, '--tag', 'day-cap', '--json'], { cwd: dir, env });
+      assert.equal(created.status, 0, created.stderr);
+    }
+
+    const compact = runCli(['task', 'day'], { cwd: dir, env });
+    assert.equal(compact.status, 0, compact.stderr);
+    assert.equal((compact.stdout.match(/bounded item/g) || []).length, 8);
+    assert.match(compact.stdout, /more\s+2 active rows hidden - atris task day --full/);
+
+    const full = runCli(['task', 'day', '--full'], { cwd: dir, env });
+    assert.equal(full.status, 0, full.stderr);
+    assert.equal((full.stdout.match(/bounded item/g) || []).length, 10);
+    assert.doesNotMatch(full.stdout, /active rows hidden/);
+
+    const json = runCli(['task', 'day', '--json'], { cwd: dir, env });
+    assert.equal(json.status, 0, json.stderr);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.counts.active, 10);
+    assert.equal(payload.groups.flatMap((group) => group.tasks).length, 10);
   } finally {
     cleanupTempDir(dir);
   }

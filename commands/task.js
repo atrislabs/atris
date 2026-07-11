@@ -174,7 +174,8 @@ atris task - durable local task state (SQLite, gitignored)
                                            Start task-owned Do work from the plan
   atris task backlog <id> [--reason "..."] Move a planned open task back to Backlog
   atris task clear-plan --yes              Move all planned open tasks back to Backlog
-  atris task day [--all] [--everywhere] [--json]  show today's owner-grouped task list
+  atris task day [--full] [--all] [--everywhere] [--json]  show today's owner-grouped task list
+                                           text shows eight current rows; --full shows every active row
                                            --all stays in this workspace; --everywhere spans workspaces
   atris task list [--all] [--everywhere] [--status <s>]
                                            list tasks in this workspace; --everywhere spans workspaces
@@ -5944,6 +5945,34 @@ function cmdDelegate(args) {
 // Failed tasks older than this stop earning a daily owner-group row;
 // they collapse into one stale summary line instead (target state = clean day view).
 const DAY_STALE_FAILED_MS = 7 * 24 * 60 * 60 * 1000;
+const DAY_TEXT_TASK_LIMIT = 8;
+
+function taskDayTextGroups(groups, { full = false } = {}) {
+  if (full) return { groups, hiddenTasks: 0, hiddenOwners: 0 };
+  const statusOrder = { claimed: 0, open: 1, review: 2, failed: 3, done: 4 };
+  const ranked = groups
+    .flatMap((group) => group.tasks)
+    .sort((a, b) => ((statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5))
+      || ((b.updated_at || 0) - (a.updated_at || 0)));
+  const selected = new Set(ranked.slice(0, DAY_TEXT_TASK_LIMIT));
+  const visibleGroups = groups
+    .map((group) => ({ ...group, tasks: group.tasks.filter((task) => selected.has(task)) }))
+    .filter((group) => group.tasks.length > 0);
+  return {
+    groups: visibleGroups,
+    hiddenTasks: Math.max(0, ranked.length - selected.size),
+    hiddenOwners: Math.max(0, groups.length - visibleGroups.length),
+  };
+}
+
+function taskDayTitle(title, maxLength = 120) {
+  const text = String(title || '').replace(/\s*[—–]\s*/g, ' - ').replace(/\s+/g, ' ').trim();
+  if (text.length <= maxLength) return text;
+  const sentence = text.slice(0, maxLength + 1).match(/^(.{48,}?[.!?])(?:\s|$)/);
+  if (sentence) return sentence[1];
+  const clipped = text.slice(0, maxLength).replace(/\s+\S*$/, '').trim();
+  return `${clipped || text.slice(0, maxLength).trim()}...`;
+}
 
 function taskDayGroups(tasks, { now = Date.now() } = {}) {
   const active = tasks.filter(task => task.status !== 'done');
@@ -5978,6 +6007,7 @@ function taskDayGroups(tasks, { now = Date.now() } = {}) {
 
 function cmdDay(args) {
   const all = hasFlag(args, '--all');
+  const full = hasFlag(args, '--full');
   const everywhere = taskScopeEverywhere(args);
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -6008,24 +6038,30 @@ function cmdDay(args) {
     });
     return;
   }
-  console.log('TASK DAY');
+  const textView = taskDayTextGroups(groups, { full });
+  console.log('task day');
   const failedText = counts.failed > 0 ? ` / failed ${counts.failed}` : '';
   console.log(`${date}  active ${counts.active} / owners ${counts.owners} / review ${counts.review}${failedText}`);
   console.log('');
   if (!groups.length) {
     console.log('clear   no active tasks');
   }
-  for (const group of groups) {
+  for (const group of textView.groups) {
     console.log(`${group.owner}`);
-    for (const task of group.tasks.slice(0, 8)) {
+    for (const task of group.tasks) {
       const tag = task.tag ? ` #${task.tag}` : '';
       const claim = task.claimed_by ? ` @${task.claimed_by}` : '';
-      console.log(`  ${task.status.padEnd(7)} ${taskRef(task)}${claim}${tag} ${task.title}`);
+      console.log(`  ${task.status.padEnd(7)} ${taskRef(task)}${claim}${tag} ${taskDayTitle(task.title)}`);
     }
+  }
+  if (textView.hiddenTasks > 0) {
+    console.log('');
+    const ownerText = textView.hiddenOwners > 0 ? `, ${textView.hiddenOwners} owners not shown` : '';
+    console.log(`more    ${textView.hiddenTasks} active rows hidden${ownerText} - atris task day --full`);
   }
   if (staleFailed.length) {
     console.log('');
-    console.log(`stale   ${staleFailed.length} failed >7d hidden — atris task list --status failed`);
+    console.log(`stale   ${staleFailed.length} failed >7d hidden - atris task list --status failed`);
   }
   console.log('');
   console.log('add: atris task delegate "..." --to task-planner --tag tasks');
@@ -11818,4 +11854,4 @@ async function run(args) {
   }
 }
 
-module.exports = { run, taskDayGroups, delegateTask, AGENT_ENV_MARKERS };
+module.exports = { run, taskDayGroups, taskDayTextGroups, taskDayTitle, delegateTask, AGENT_ENV_MARKERS };

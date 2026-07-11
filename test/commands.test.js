@@ -8744,7 +8744,7 @@ test('task delegate creates assigned work and day view groups by owner', () => {
 
     const textDay = runCli(['task', 'day'], { cwd: dir, env });
     assert.equal(textDay.status, 0, textDay.stderr);
-    assert.match(textDay.stdout, /TASK DAY/);
+    assert.match(textDay.stdout, /task day/);
     assert.match(textDay.stdout, /justin/);
     assert.match(textDay.stdout, /Review launch draft/);
   } finally {

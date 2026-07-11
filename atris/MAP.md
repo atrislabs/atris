@@ -501,7 +501,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris task next` claims open work first; if only human-only certified Review rows remain, it preserves the human accept gate and surfaces an Endgame-derived agent fallback (`next_agent_action`) from `atris/TODO.md`, including a bounded task seed with title/tag/files/verifier/stop rule plus create/claim/note commands; `--create-next` materializes that seed as a claimed task and leaves human accept pending
 - `atris task delegate "<title>" --to <owner>` creates assigned work without hand-editing TODO.md
 - `atris task delegate "<title>" --to <owner> --via swarlo` prepares a live Swarlo handoff while keeping the task DB canonical
-- `atris task day` shows the owner-grouped day list for a human or headless swarm coordinator
+- `atris task day` shows eight globally ranked active rows with exact hidden task/owner counts; `--full` restores the uncapped owner-grouped text view and `--json` remains complete for headless coordinators
 - `--json` on task commands emits stable machine-readable output for headless agents
 - `--create-next` on `task finish|review` converts the review `--next` suggestion into the next durable task
 - `atris task add` creates a workspace-scoped row in `~/.atris/tasks.db` (or `ATRIS_TASKS_DB`)
