@@ -6071,7 +6071,7 @@ function codexVisibleGoalBridge(mission, goalObjective, options = {}) {
     operations: {
       read_current_goal: 'get_goal',
       keep_if_matching: 'if current goal objective equals goal.objective, continue the mission',
-      create_when_empty_or_completed: recovery ? null : 'create_goal({ objective: goal.objective })',
+      create_when_empty_or_completed: ack || recovery ? null : 'create_goal({ objective: goal.objective })',
       ack_existing_matching_goal: recovery?.commands?.ack_current_goal || null,
       handoff_when_usage_limited: recovery?.commands?.handoff_to_fresh_agent || null,
       ack_after_create: codexGoalAckCommand(mission, goalObjective),
@@ -6174,7 +6174,7 @@ function writeCodexGoalState(payload, root = process.cwd()) {
     if (state.goal.native_goal_recovery) {
       lines.push(`- native goal recovery: ${state.goal.native_goal_recovery.next_command}`);
     }
-    lines.push(`- platform write blocked: ${state.goal.codex_tool_contract.blocked_without_platform_goal_write}`);
+    lines.push(`- platform goal write required: ${state.goal.requires_native_goal_start === true || state.goal.requires_native_goal_replace === true}`);
   } else if (state.active_goal_conflict) {
     lines.push(`- conflict: ${state.active_goal_conflict.message}`);
     lines.push(`- new mission: ${state.active_goal_conflict.new_mission_id}`);

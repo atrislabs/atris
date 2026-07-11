@@ -1073,6 +1073,41 @@ test('visible goal bridge holds completion for full budget while raw status stay
   }
 });
 
+test('goal controller card distinguishes active goal from required write', () => {
+  const dir = makeTempDir();
+  try {
+    const now = new Date().toISOString();
+    appendMissionState(dir, {
+      id: 'active-controller-goal',
+      slug: 'active-controller-goal',
+      objective: 'keep active controller state honest',
+      owner: 'linguist',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'git diff --check',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'keep active controller state honest',
+        acknowledged_at: now,
+      },
+      created_at: now,
+      updated_at: now,
+    });
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.goal.visible_goal.status, 'active');
+    assert.equal(payload.goal.visible_goal.operations.create_when_empty_or_completed, null);
+    const card = fs.readFileSync(path.join(dir, 'atris', 'status', 'codex-goal.md'), 'utf8');
+    assert.match(card, /- platform goal write required: false/);
+    assert.doesNotMatch(card, /visible goal create:|platform write blocked:/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission tick can write a passing ad hoc verifier receipt', () => {
   const dir = makeTempDir();
   try {
