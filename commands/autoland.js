@@ -94,7 +94,11 @@ function digestNextMoves(root) {
     const explainable = all.filter((move) => move.kind === 'mission_ready' || operatorReady(move.title));
     const ready = explainable.slice(0, 3).map((move) => {
       let owner = null;
-      try { owner = resolveFunctionalOwner({ title: move.title, root })?.owner || null; } catch {}
+      const mission = move.kind === 'mission_ready' ? missions.get(move.ref) : null;
+      if (mission?.owner) owner = mission.owner;
+      else {
+        try { owner = resolveFunctionalOwner({ title: move.title, root })?.owner || null; } catch {}
+      }
       return { title: move.title, owner, kind: move.kind || null, label: move.label || null };
     });
     return { moves: ready, unexplained: all.length - explainable.length };
