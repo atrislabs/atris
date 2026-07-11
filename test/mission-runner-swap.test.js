@@ -71,7 +71,7 @@ function writeMissionLock(dir, id) {
   fs.mkdirSync(lockDir, { recursive: true });
   fs.writeFileSync(
     path.join(lockDir, `mission-${id}.lock`),
-    JSON.stringify({ pid: 123456, started_at: '2026-07-05T00:00:00.000Z', mission_id: id }),
+    JSON.stringify({ pid: process.pid, started_at: '2026-07-05T00:00:00.000Z', mission_id: id }),
     'utf8',
   );
 }

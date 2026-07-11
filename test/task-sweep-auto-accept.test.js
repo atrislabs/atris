@@ -65,9 +65,10 @@ function setupReadyTask(dir, env, { title, tag = 'test', proof }) {
   const ready = runCli([
     'task', 'ready', task.display_id,
     '--proof', proof,
-    '--happened', `Rendered ${title}`,
+    '--happened', `Anyone reviewing ${title} can see the rendered result at a glance, so checks finish faster.`,
     '--checked', 'I checked the receipt verifier state before Review.',
     '--tested', 'I inspected the receipt JSON and the named verifier.',
+    '--result', 'Operators can read the rendered result on one page, so reviews go faster than scrolling raw output.',
     '--as', 'codex',
     '--json',
   ], { cwd: dir, env });
@@ -97,7 +98,7 @@ test('task sweep --auto-accept accepts verified non-protected review tasks with 
     const sweep = runCli(['task', 'sweep', '--auto-accept'], { cwd: dir, env });
     assert.equal(sweep.status, 0, sweep.stderr);
     assert.match(sweep.stdout, /TASK SWEEP AUTO-ACCEPT: 1 accepted \/ 1 scanned \/ 0 skipped/);
-    assert.match(sweep.stdout, new RegExp(`ACCEPTED ${task.display_id}: Rendered Ship production approval flow`));
+    assert.match(sweep.stdout, new RegExp(`ACCEPTED ${task.display_id}: Anyone reviewing Ship production approval flow`));
     assert.match(sweep.stdout, /proved by atris\/runs\/sweep-pass-receipt\.json verifier_passed=true/);
 
     const accepted = JSON.parse(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).stdout);
