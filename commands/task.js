@@ -2223,7 +2223,7 @@ function compactTaskForStatus(task) {
     id: task.id,
     display_id: task.display_id || null,
     legacy_ref: task.legacy_ref || taskRef(task.id),
-    title: clipStatusText(task.title, 140),
+    title: clipStatusTitle(task.title, 140),
     result: clipStatusText(task.result || metadata.result, 180) || null,
     status: task.status,
     updated_at: task.updated_at,
@@ -2301,6 +2301,19 @@ function clipStatusText(value, max = 180) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (text.length <= max) return text;
   return `${text.slice(0, max - 1)}…`;
+}
+
+function clipStatusTitle(value, max = 140) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max + 1);
+  const boundaries = [...cut.matchAll(/[.!?;](?=\s|$)/g)];
+  const boundary = boundaries.map((match) => match.index).filter((index) => index >= max * 0.45).pop();
+  if (Number.isInteger(boundary)) {
+    return cut.slice(0, boundary + 1).replace(/[;:]+$/, '').trim();
+  }
+  const wholeWords = text.slice(0, max).replace(/\s+\S*$/, '').trim();
+  return `${wholeWords || text.slice(0, max).trim()}...`;
 }
 
 function compactReviewActionRef(task, { hasExistingReviewFollowUp = null } = {}) {

@@ -13497,6 +13497,34 @@ test('task status gives web and Swarlo a compact live contract', () => {
   }
 });
 
+test('task status closes long current titles at a clause', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const title = 'The current status sentence now explains the operator consequence in one complete clause; this second clause is deliberately long enough that a character slice would end it in the middle of a word and append an ellipsis';
+    const created = runCli(['task', 'new', title, '--tag', 'voice', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const ref = JSON.parse(created.stdout).task.display_id;
+    const claimed = runCli(['task', 'claim', ref, '--as', 'linguist'], { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
+
+    const json = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const currentTitle = JSON.parse(json.stdout).status.current.title;
+    assert.equal(currentTitle, 'The current status sentence now explains the operator consequence in one complete clause');
+    assert.doesNotMatch(currentTitle, /\.\.\.|…|second clause/);
+
+    const text = runCli(['task', 'status'], { cwd: dir, env });
+    assert.equal(text.status, 0, text.stderr || text.stdout);
+    assert.match(text.stdout, /current .*The current status sentence now explains the operator consequence in one complete clause$/m);
+    assert.doesNotMatch(text.stdout, /\.\.\.|…|second clause/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task status stream tasks use latest agent proof fallback', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
