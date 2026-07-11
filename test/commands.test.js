@@ -5767,7 +5767,7 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     const acceptedReady = runCli([
       'task', 'ready', acceptedRef,
       '--proof', 'node --test test/commands.test.js passed and diff reviewed',
-      '--happened', 'Made the approval receipt readable.',
+      '--happened', 'Operators can now read the approval receipt without opening raw proof, saving time at the human gate.',
       '--checked', 'I checked the task page Result block.',
       '--tested', 'I ran the focused regression.',
       '--decision', 'Accept if the receipt is clear.',
@@ -5778,7 +5778,7 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     const accepted = runCli(['task', 'accept', acceptedRef, '--as', 'keshav', '--json'], { cwd: dir, env });
     assert.equal(accepted.status, 0, accepted.stderr);
     const acceptedPayload = JSON.parse(accepted.stdout);
-    assert.equal(acceptedPayload.episode.review_landing.happened, 'Made the approval receipt readable.');
+    assert.equal(acceptedPayload.episode.review_landing.happened, 'Operators can now read the approval receipt without opening raw proof, saving time at the human gate.');
     assert.equal(acceptedPayload.episode.landing_quality.completeness, 1);
     assert.equal(acceptedPayload.episode.human_feedback.approval_status, 'accepted');
     const episodePath = path.join(dir, '.atris', 'state', 'task_episodes.jsonl');
@@ -5802,7 +5802,7 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     const revisedReady = runCli([
       'task', 'ready', revisedRef,
       '--proof', 'node --test test/commands.test.js passed but receipt was vague',
-      '--happened', 'Updated the result.',
+      '--happened', 'Operators can now inspect the updated result before approval, reducing the risk of accepting vague proof.',
       '--checked', 'I checked something.',
       '--tested', 'I ran tests.',
       '--decision', 'Accept if useful.',
@@ -5826,7 +5826,7 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     const payload = JSON.parse(scorecard.stdout);
     const acceptedCard = payload.scorecards.find(row => row.task_title === 'Landing accepted task');
     const revisedCard = payload.scorecards.find(row => row.task_title === 'Landing reworked task');
-    assert.equal(acceptedCard.review_landing.happened, 'Made the approval receipt readable.');
+    assert.equal(acceptedCard.review_landing.happened, 'Operators can now read the approval receipt without opening raw proof, saving time at the human gate.');
     assert.equal(acceptedCard.landing_quality.completeness, 1);
     assert.equal(acceptedCard.approval_status, 'accepted');
     assert.equal(acceptedCard.rl_label, 'accepted');
@@ -10614,7 +10614,7 @@ test('task ready holds work in review until human accept', () => {
     const ready = runCli([
       'task', 'ready', ref,
       '--proof', 'typecheck passed and diff reviewed',
-      '--happened', 'Prepared the XP approval gate so autonomous work waits for human accept.',
+      '--happened', 'Operators can now hold autonomous work for human approval before XP is awarded, preventing unapproved rewards.',
       '--checked', 'I checked the task stayed in Review and did not mint XP.',
       '--tested', 'I ran the typecheck proof and inspected the diff.',
       '--decision', 'Accept if XP should land; rework if proof is missing.',
@@ -10638,14 +10638,14 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(readyPayload.task.status, 'review');
     assert.equal(readyPayload.task.review.summary, 'approve autonomous work before XP: proof is ready for human approval; approve only if the evidence is real.');
     assert.deepEqual(readyPayload.task.review.landing, {
-      happened: 'Prepared the XP approval gate so autonomous work waits for human accept.',
+      happened: 'Operators can now hold autonomous work for human approval before XP is awarded, preventing unapproved rewards.',
       reason: 'It keeps real-world side effects behind a clear human decision.',
       checked: 'I checked the task stayed in Review and did not mint XP.',
       tested: 'I ran the typecheck proof and inspected the diff.',
       decision: 'Accept if XP should land; rework if proof is missing.',
     });
     assert.deepEqual(readyPayload.task.review.result, {
-      changed: 'Prepared the XP approval gate so autonomous work waits for human accept.',
+      changed: 'Operators can now hold autonomous work for human approval before XP is awarded, preventing unapproved rewards.',
       reason: 'It keeps real-world side effects behind a clear human decision.',
       checked: 'I checked the task stayed in Review and did not mint XP.',
       saved: `Completed result saved for review as ${ref}.`,
@@ -10661,7 +10661,7 @@ test('task ready holds work in review until human accept', () => {
     const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(readyShow.status, 0, readyShow.stderr);
     assert.match(readyShow.stdout, /Result:/);
-    assert.match(readyShow.stdout, /What happened: Prepared the XP approval gate so autonomous work waits for human accept\./);
+    assert.match(readyShow.stdout, /What happened: Operators can now hold autonomous work for human approval before XP is awarded, preventing unapproved rewards\./);
     assert.match(readyShow.stdout, /Why it matters: It keeps real-world side effects behind a clear human decision\./);
     assert.match(readyShow.stdout, /How I checked: I checked the task stayed in Review and did not mint XP\./);
     assert.match(readyShow.stdout, /What I tested: I ran the typecheck proof and inspected the diff\./);
@@ -12406,6 +12406,40 @@ test('task ready and finish accept landing capability sentences', () => {
   }
 });
 
+test('task ready rejects an explicit landing sentence a day-one PM cannot act on before review', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const added = runCli([
+      'task', 'add', 'Make the team stream actionable for a new operator',
+      '--tag', 'language',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(added.status, 0, added.stderr);
+    const ref = JSON.parse(added.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const weak = runCli([
+      'task', 'ready', ref,
+      '--proof', 'node --test test/commands.test.js passed',
+      '--result', 'Operators can now see one worker without searching the whole team stream, saving time during handoffs.',
+      '--landing', 'Run atris stream with an agent filter for one worker.',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(weak.status, 2, weak.stderr || weak.stdout);
+    assert.match(weak.stderr, /landing needs one plain sentence saying what someone can do now and why it matters/);
+
+    const after = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
+    assert.equal(after.status, 0, after.stderr);
+    assert.equal(JSON.parse(after.stdout).status, 'claimed', 'weak landing must not move the task to review');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task accept automatically projects accepted proof into durable local XP ledger', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -13518,7 +13552,7 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(runCli([
       'task', 'ready', certifiedTask.display_id,
       '--proof', certifiedProof,
-      '--happened', 'Certified proof packet is ready for human approval.',
+      '--happened', 'Operators can now review one compact certified proof packet, reducing the risk of approving against stale context.',
       '--checked', 'I checked the verifier claims and review thread.',
       '--tested', 'I ran the focused review queue test.',
       '--decision', 'Accept if the packet is readable; rework if proof is vague.',
@@ -13559,7 +13593,7 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(blockedQueueItem.reason, 'needs_second_actor_review');
     assert.equal(blockedQueueItem.next_command, `atris task review-chat ${blockingTask.display_id} --as codex-review`);
 	    assert.deepEqual(payload.queue.items[0].landing, {
-	      happened: 'Certified proof packet is ready for human approval.',
+	      happened: 'Operators can now review one compact certified proof packet, reducing the risk of approving against stale context.',
 	      reason: 'Human approval queue shows a compact certified packet without stale objective text.',
 	      checked: 'I checked the verifier claims and review thread.',
 	      tested: 'I ran the focused review queue test.',
@@ -13585,7 +13619,7 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(text.status, 0, text.stderr);
 	    assert.match(text.stdout, /READY FOR APPROVAL/);
 	    assert.match(text.stdout, /Result:/);
-	    assert.match(text.stdout, /What happened: Certified proof packet is ready for human approval\./);
+	    assert.match(text.stdout, /What happened: Operators can now review one compact certified proof packet, reducing the risk of approving against stale context\./);
 	    assert.match(text.stdout, /Why it matters: Human approval queue shows a compact certified packet without stale objective text\./);
     assert.match(text.stdout, /How I checked: I checked the verifier claims and review thread\./);
     assert.match(text.stdout, /What I tested: I ran the focused review queue test\./);

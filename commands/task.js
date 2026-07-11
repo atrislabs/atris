@@ -495,6 +495,16 @@ function warnIfLandingNeedsDayOnePm(landing, title) {
   return warning;
 }
 
+function requireExplicitLandingDayOnePm(label, landing, title) {
+  const sentence = landing && typeof landing === 'object' ? normalizedLandingSentence(landing.happened) : '';
+  if (!sentence || !landingNeedsDayOnePm(sentence, title)) return;
+  failTask(
+    label,
+    'weak_landing',
+    'landing needs one plain sentence saying what someone can do now and why it matters, in words a new teammate would understand. no flags, ids, or unnamed filters.',
+  );
+}
+
 function numericFlag(args, name) {
   const value = flag(args, name);
   if (value === null || value === true || value === undefined) return null;
@@ -8789,6 +8799,7 @@ function cmdFinish(args) {
   if (canComplete) {
     if (!failed || hasReview) requireMeaningfulTaskProof('atris task finish', proof);
     else if (proof) requireMeaningfulTaskProof('atris task finish', proof);
+    if (!failed && hasReview) requireExplicitLandingDayOnePm('atris task finish', landing, currentTask.title);
   }
   const done = taskDb.doneTask(db, {
     id: taskId,
@@ -9035,6 +9046,7 @@ function cmdReady(args) {
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task ready');
   const beforeTask = taskDetail(taskDb, db, taskId);
+  requireExplicitLandingDayOnePm('atris task ready', landing, beforeTask && beforeTask.title);
   const missionXpIssue = missionXpEndToEndProofIssue(beforeTask, proof, taskDb.workspaceRoot());
   if (missionXpIssue) {
     failTask('atris task ready', MISSION_XP_END_TO_END_REASON, missionXpIssue);
