@@ -411,6 +411,12 @@ test('heartbeat digest status distinguishes sent, saved, and not due', () => {
   assert.equal(digestTickStatus({ digest_due: false, digest_sent: false }), 'not due');
 });
 
+test('historical digest landing repairs the accepted as-exists fragment', () => {
+  const text = autoland.historicalLandingText('Read the artifact check as exists and not empty, preventing machine paths from obscuring the proof.');
+  assert.equal(text, 'Read the artifact check as a saved file that exists and is not empty, preventing machine paths from obscuring the proof.');
+  assert.doesNotMatch(text, /as exists/);
+});
+
 test('due digest without a phone is composed and saved in the durable heartbeat receipt', () => {
   const { base, repo } = makeTempRepo();
   try {
