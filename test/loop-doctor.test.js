@@ -173,6 +173,31 @@ test('mission receipts dated only by their at field are gated as stale, not unkn
   assert.deepEqual(scanLoopReceipts({ root, now: NOW, freshnessMs: 2 * 60 * 60 * 1000 }), []);
 });
 
+test('a running receipt re-stamped fresh does not resurrect its old errored ticks', () => {
+  const root = workspace();
+  seedHealthyState(root);
+  // A long-running mission rewrites one receipt every tick, so its top-level
+  // time is fresh, but the failing ticks inside carry their own old timestamps
+  // and the mission has since recovered. The failure must be dated by the tick.
+  const oldError = { status: 'errored', reason: 'claude-error', started_at: '2026-07-10T06:00:00.000Z' };
+  writeJson(root, 'atris/runs/mission-running-1.json', {
+    at: '2026-07-10T11:59:00.000Z',
+    ticks: [oldError, { status: 'ran', reason: 'tick-ok', started_at: '2026-07-10T11:58:00.000Z' }],
+  });
+  writeJson(root, 'atris/runs/mission-running-2.json', {
+    at: '2026-07-10T11:59:30.000Z',
+    ticks: [{ ...oldError, started_at: '2026-07-10T06:05:00.000Z' }, { status: 'ran', reason: 'tick-ok' }],
+  });
+  assert.deepEqual(scanLoopReceipts({ root, now: NOW, freshnessMs: 2 * 60 * 60 * 1000 }), []);
+
+  // The same shape with a genuinely recent failing tick still fires.
+  writeJson(root, 'atris/runs/mission-running-3.json', {
+    at: '2026-07-10T11:59:45.000Z',
+    ticks: [{ status: 'errored', reason: 'claude-error', started_at: '2026-07-10T11:40:00.000Z' }],
+  });
+  assert.deepEqual(scanLoopReceipts({ root, now: NOW }).map((f) => f.kind), ['repeated_tick_error']);
+});
+
 test('clean receipt data produces no findings', () => {
   const root = workspace();
   seedHealthyState(root);
