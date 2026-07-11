@@ -172,6 +172,7 @@ test('digest and alarm compose in plain language', () => {
           title: 'Operators stop trusting reports the first time one reads wrong, so every day the linguist reads yesterday\'s operator surfaces exactly as sent and files one bounded language fix',
           owner: 'task-planner',
           kind: 'mission_ready',
+          label: 'operators stop trusting',
         },
       ],
       unexplained: 2,
@@ -203,8 +204,8 @@ test('digest and alarm compose in plain language', () => {
   assert.match(digest, /next, if you agree:/);
   assert.match(digest, /taste filters.*\(best fit: auto-improver\)/);
   assert.match(digest, /stuck codex mission/);
-  assert.match(digest, /Review the finished mission proof so accepted work can leave the queue/);
-  assert.doesNotMatch(digest, /surfaces exactly|Review the finished mission proof.*best fit/);
+  assert.match(digest, /review proof for operators stop trusting so finished work can leave the queue/);
+  assert.doesNotMatch(digest, /surfaces exactly|review proof for operators stop trusting.*best fit/);
   assert.match(digest, /- 2 more ideas that can't explain themselves yet \(atris now\)/);
   // One tail pointer: the 'more results' line already names the command, so
   // the closing line only appears when nothing else pointed there.
