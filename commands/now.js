@@ -407,7 +407,7 @@ function renderDefaultNow(root = process.cwd()) {
   const generated = todayIso();
   const moveLine = currentMissionMoveLine(root);
   const whatMattersNow = moveLine
-    ? `${moveLine}\n\n- Decide the next useful move before opening more context.`
+    ? `${moveLine}\n\n- Run the named next action and leave proof before choosing another.`
     : '- Decide the next useful move before opening more context.';
   const receiptLines = todayTaskReceiptLines(root);
   const missionReceiptLines = todayMissionReceiptLines(root);
