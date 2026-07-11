@@ -18,6 +18,12 @@ function formatLocalDate(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function formatLocalTimestamp(date = new Date()) {
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${formatLocalDate(date)} at ${hours}:${minutes} local time`;
+}
+
 function todayIso() {
   return formatLocalDate(new Date());
 }
@@ -408,7 +414,7 @@ function renderDefaultNow(root = process.cwd()) {
   const taskReceiptCount = countTaskReceiptsToday(root);
   const missionReceiptCount = countMissionReceiptsToday(root);
   const completedCount = taskReceiptCount + missionReceiptCount || countJournalCompletedReceipts(journalPath);
-  const generated = todayIso();
+  const generated = formatLocalTimestamp();
   const moveLine = currentMissionMoveLine(root);
   const whatMattersNow = moveLine
     ? `${moveLine}\n\n- Run the named next action and leave proof before choosing another.`
@@ -467,7 +473,7 @@ function renderPortfolioNow(root = process.cwd()) {
     throw new Error('atris/ folder not found. Run "atris init" first.');
   }
 
-  const generated = todayIso();
+  const generated = formatLocalTimestamp();
   const lines = workspaces.map((workspace) => {
     const heading = readFirstHeading(workspace.mapPath) || workspace.slug;
     const todoCount = countOpenWorkItems(workspace.root, workspace.todoPath);
@@ -623,6 +629,7 @@ module.exports = {
   CAREER_XP_RECEIPTS_PATH,
   ensureNowFile,
   formatLocalDate,
+  formatLocalTimestamp,
   countJournalCompletedReceipts,
   countOpenWorkItems,
   countOpenTodoItems,
