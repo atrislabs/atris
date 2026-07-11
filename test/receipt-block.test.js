@@ -101,6 +101,17 @@ test('morning row closes long mission text without ellipsis fragments', () => {
   assert.doesNotMatch(adjectiveBoundary, /as a real;/);
 });
 
+test('mission proof renders as a direct passed fact instead of first-person process', () => {
+  const receipt = fixtureReceipt();
+  receipt.result.landing.checked = 'I ran the behavior checks.';
+
+  assert.equal(
+    renderEmailLine(receipt),
+    'receipt block renders the proof once; 4 changed files; we know because the behavior checks passed.',
+  );
+  assert.doesNotMatch(renderMorningCardRow(receipt), /\bi ran\b/i);
+});
+
 test('morning card shows mission receipt rows through the receipt block renderer', () => {
   const dir = makeTempDir();
   try {
