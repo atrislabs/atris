@@ -1212,6 +1212,7 @@ function missionVerifierCheckedText(verifierResult, mission) {
   if (verifierResult.passed) {
     if (/^git\s+diff\s+--check\b/i.test(command)) return 'I ran the diff cleanliness check.';
     if (/\bnode\s+--test\b/i.test(command)) return 'I ran the behavior checks.';
+    if (/^test\s+-s\s+\S+/i.test(command)) return 'I checked that the saved artifact exists and is not empty.';
     return `Verifier passed: ${command}.`;
   }
   if (/^git\s+diff\s+--check\b/i.test(command)) return 'Diff cleanliness check failed.';
@@ -1231,6 +1232,9 @@ function missionVerifierHighLevelTestText(verifierResult, mission) {
   }
   if (/\bnode\s+--test\b/i.test(command)) {
     return `Automated behavior checks ${outcome}: the touched code path was exercised by Node tests.`;
+  }
+  if (/^test\s+-s\s+\S+/i.test(command)) {
+    return `Saved artifact check ${outcome}: the file exists and is not empty.`;
   }
   return `Verifier command ${outcome}: ${command}.`;
 }
@@ -8782,6 +8786,8 @@ module.exports = {
   missionVerifierTimeoutMs,
   missionLandingStepSummary,
   missionLandingLines,
+  missionVerifierCheckedText,
+  missionVerifierHighLevelTestText,
   resolveMissionRunnerSelection,
   resolveMissionTickRunner,
   engineFailureHealthStatus,
