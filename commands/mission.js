@@ -1273,9 +1273,11 @@ function missionLandingStepSummary(summary) {
     .replace(/^(?:landing|changed|summary|result|product proof|proof):\s*/i, '')
     .trim();
   if (!withoutLabel) return '';
-  const plainVerified = missionPlainVerifiedSummary(withoutLabel);
+  const withoutInternalId = withoutLabel.replace(/^(?:CLI|OBL|BCK)-\d+\s+/i, '').trim();
+  const withoutProofTail = withoutInternalId.replace(/;\s+(?=(?:PR\s+\d+|(?:node|npm|git)\b)).*$/i, '').trim();
+  const plainVerified = missionPlainVerifiedSummary(withoutProofTail);
   if (plainVerified) return plainVerified;
-  const beforeInlineProof = withoutLabel.split(/\s+(?:—|-)\s+verified by\b/i)[0] || withoutLabel;
+  const beforeInlineProof = withoutProofTail.split(/\s+(?:—|-)\s+verified by\b/i)[0] || withoutProofTail;
   const beforeChecks = (beforeInlineProof.split(/\s+(?:checks?|verified|proof):\s+/i)[0] || beforeInlineProof)
     .replace(/,\s*(?:verifier|proof|checks?)\s+(?:still|pending)[.!]?$/i, '')
     .trim();
@@ -4199,7 +4201,8 @@ function missionLandingTimeline(mission, root = process.cwd(), limit = 12, { kin
     if (sinceFilter && String(receipt.at || '') < sinceFilter) continue;
     const landing = receipt.result && receipt.result.landing;
     if (landing && landing.timeline_visible === false) continue;
-    const changed = String(landing && landing.changed || '').trim();
+    const rawChanged = String(landing && landing.changed || '').trim();
+    const changed = missionLandingStepSummary(rawChanged) || rawChanged;
     const next = String(landing && landing.next || '').trim();
     if (!changed && !next) continue;
     const receiptPath = path.relative(root, file);

@@ -2868,6 +2868,48 @@ test('mission timeline lists saved landing changed and next lines', () => {
   }
 });
 
+test('mission timeline cleans internal ids and verifier tails from history', () => {
+  const dir = makeTempDir();
+  try {
+    const missionId = 'mission-clean-history';
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    for (const [name, at, changed] of [
+      ['first', '2026-07-11T01:00:00.000Z', 'CLI-901 Brief ledger runtime is present and the live review returns graded prompt, outcome, and signal records.'],
+      ['second', '2026-07-11T02:00:00.000Z', 'Daily digest now renders one complete review action for the right owner; PR 378 merged at 9a127d6, node --test test/autoland.test.js passed 46/46.'],
+    ]) {
+      fs.writeFileSync(path.join(dir, 'atris', 'runs', `mission-${missionId}-${name}.json`), JSON.stringify({
+        schema: 'atris.mission_receipt.v1',
+        mission_id: missionId,
+        at,
+        result: { kind: 'mission_tick', landing: { changed, next: 'Keep going.' } },
+      }), 'utf8');
+    }
+    appendMissionState(dir, {
+      id: missionId,
+      slug: missionId,
+      objective: 'keep full history readable',
+      owner: 'linguist',
+      status: 'ready',
+      runner: 'codex_goal',
+      created_at: '2026-07-11T00:00:00.000Z',
+      updated_at: '2026-07-11T02:00:00.000Z',
+    });
+
+    const text = runCli(['mission', 'timeline', missionId, '--all'], { cwd: dir });
+    assert.equal(text.status, 0, text.stderr || text.stdout);
+    assert.match(text.stdout, /Brief ledger runtime is present and the live review returns graded prompt, outcome, and signal records\./);
+    assert.match(text.stdout, /Daily digest now renders one complete review action for the right owner\./);
+    assert.doesNotMatch(text.stdout, /CLI-901|PR 378|node --test|46\/46/);
+
+    const json = runCli(['mission', 'timeline', missionId, '--all', '--json'], { cwd: dir });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const changed = JSON.parse(json.stdout).timeline.map((item) => item.changed).join(' ');
+    assert.doesNotMatch(changed, /CLI-901|PR 378|node --test|46\/46/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission report does not double-prefix goal summaries', () => {
   const dir = makeTempDir();
   try {
