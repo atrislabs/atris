@@ -424,6 +424,16 @@ function evaluateQueue(root, { strictVerify, acceptAll }) {
     });
 }
 
+function protectedReviewWaiting(root, policy = {}, waiting = []) {
+  const alreadyWaiting = new Set((waiting || []).map((row) => row.ref));
+  return evaluateQueue(root, {
+    strictVerify: policy.strict_verify !== false,
+    acceptAll: Boolean(policy.accept_all),
+  })
+    .filter((row) => /^denied_tag_/.test(String(row.reason || '')))
+    .filter((row) => !alreadyWaiting.has(row.ref));
+}
+
 function plainReason(reason) {
   const map = {
     denied_tag_billing: 'money: yours to approve',
@@ -593,9 +603,11 @@ function runDigest(root, args, { forceSend = false } = {}) {
   try {
     waitingWishes = require('./wish').waitingOperatorWishes(root);
   } catch {}
+  const waiting = autoland.waitingOnHuman(tasks);
   const text = autoland.composeDigest({
     accepted,
-    waiting: autoland.waitingOnHuman(tasks),
+    waiting,
+    protectedWaiting: protectedReviewWaiting(root, policy, waiting),
     waitingWishes,
     landed: landSummarySafe(root),
     project: projectName(root),
@@ -752,6 +764,7 @@ function runTickBody(root, { json, policy, receipt }) {
   const state = autoland.readState(root);
   const tasks = readProjection(root);
   const waiting = autoland.waitingOnHuman(tasks);
+  const protectedWaiting = protectedReviewWaiting(root, policy, waiting);
   const alarmHours = Number(policy.alarm_hours) || autoland.DEFAULT_ALARM_HOURS;
   const due = autoland.dueForAlarm(waiting, state, { alarmHours });
   if (due.length > 0 && policy.imessage_to) {
@@ -845,6 +858,7 @@ function runTickBody(root, { json, policy, receipt }) {
     const text = autoland.composeDigest({
       accepted: autoland.acceptedInLastDay(readAcceptedTaskHistory(root, tasks)),
       waiting,
+      protectedWaiting,
       waitingWishes,
       landed: landSummarySafe(root),
       project: projectName(root),
