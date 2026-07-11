@@ -10,6 +10,7 @@ const {
   countOpenTodoItems,
   countOpenWorkItems,
   countTaskReceiptsToday,
+  compactMissionCommand,
   ensureNowFile,
   formatLocalDate,
   nowAtris,
@@ -96,10 +97,11 @@ test('renderDefaultNow leads with active mission move when codex goal selection 
     fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
     fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+    const objective = 'Operators stop trusting reports the first time one reads wrong, so every day the linguist reads yesterday operator surfaces exactly as sent and files one bounded language fix for the worst sentence';
     fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
       schema: 'atris.mission.v1',
       id: 'mission-now-move',
-      objective: 'Make the golden path obvious',
+      objective,
       owner: 'onboarding',
       status: 'running',
       runner: 'codex_goal',
@@ -112,7 +114,7 @@ test('renderDefaultNow leads with active mission move when codex goal selection 
         runtime: 'codex',
         status: 'active',
         mission_id: 'mission-now-move',
-        objective: 'Make the golden path obvious',
+        objective,
         acknowledged_at: '2026-07-04T00:00:00.000Z',
       },
       created_at: '2026-07-04T00:00:00.000Z',
@@ -122,11 +124,20 @@ test('renderDefaultNow leads with active mission move when codex goal selection 
     const content = renderDefaultNow(dir);
     const section = content.split('## What Matters Now\n\n')[1].split('\n\n## Current Priority')[0];
 
-    assert.equal(section.split('\n')[0], 'The move: Make the golden path obvious - next: atris mission run --due --max-ticks 1 --complete-on-pass');
+    assert.equal(section.split('\n')[0], 'The move: Operators stop trusting reports the first time one reads wrong - next: atris mission run --due --max-ticks 1 --complete-on-pass');
+    assert.doesNotMatch(section.split('\n')[0], /…|\.\.\./);
     assert.match(section, /- Decide the next useful move before opening more context\./);
   } finally {
     cleanup(dir);
   }
+});
+
+test('compactMissionCommand uses the short mission number without truncating the action', () => {
+  const command = 'atris task current-step --goal-id mission-very-long-id --as auto-improver --proof "<proof>" --json';
+  assert.equal(
+    compactMissionCommand(command, { id: 'mission-very-long-id', n: 28 }),
+    'atris task current-step --goal-id 28 --as auto-improver --proof "<proof>" --json',
+  );
 });
 
 test('countOpenTodoItems ignores rendered blocked and completed task rows', () => {
