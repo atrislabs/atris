@@ -583,6 +583,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
       t?.review?.landing?.happened || t?.metadata?.landing_happened || '',
       item.result,
       item.happened,
+      autoland.clarify(item.title, 160),
     ].map((candidate) => autoland.historicalLandingText(candidate, 160));
     return { item, story: candidates.find((candidate) => operatorReady(candidate)) || '' };
   }).filter((row) => row.story);
