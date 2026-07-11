@@ -252,8 +252,11 @@ test('mission status keeps full-budget work moving until promised time ends', ()
     fs.mkdirSync(path.join(dir, 'atris', 'team', 'linguist'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'team', 'linguist', 'MEMBER.md'), '# Linguist\n', 'utf8');
     fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'atris', 'runs', 'full-budget.json'), JSON.stringify({
+    fs.writeFileSync(path.join(dir, 'atris', 'runs', 'mission-full-budget.json'), JSON.stringify({
+      mission_id: 'mission-full-budget',
+      at: new Date().toISOString(),
       result: {
+        kind: 'tick',
         landing: {
           changed: 'The latest bounded improvement passed its check.',
           next: 'Review proof, then run: atris mission complete mission-full-budget.',
@@ -269,8 +272,8 @@ test('mission status keeps full-budget work moving until promised time ends', ()
       xp_task_enabled: true,
       xp_task: { task_id: 'task-full-budget', ref: 'CLI-900', title: 'Mission XP: full budget' },
       task_ids: ['task-full-budget'],
-      receipt_path: 'atris/runs/full-budget.json',
-      next_action: 'queue AgentXP review: atris task current-step --goal-id mission-full-budget --as linguist --proof "atris/runs/full-budget.json" --json',
+      receipt_path: 'atris/runs/mission-full-budget.json',
+      next_action: 'queue AgentXP review: atris task current-step --goal-id mission-full-budget --as linguist --proof "atris/runs/mission-full-budget.json" --json',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       budget_contract: {
@@ -309,6 +312,12 @@ test('mission status keeps full-budget work moving until promised time ends', ()
     assert.match(memberNow, /proof: saved; inspect: atris mission timeline mission-full-budget --limit 5/);
     assert.doesNotMatch(memberNow, /atris\/runs\/full-budget\.json/);
     assert.doesNotMatch(memberNow, /task next:|current-step/);
+
+    const timeline = runCli(['mission', 'timeline', 'mission-full-budget'], { cwd: dir });
+    assert.equal(timeline.status, 0, timeline.stderr || timeline.stdout);
+    assert.match(timeline.stdout, /Next: keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment/);
+    assert.match(timeline.stdout, /Proof: saved in mission history\./);
+    assert.doesNotMatch(timeline.stdout, /Review proof|mission complete|atris\/runs\/mission-full-budget\.json/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1928,7 +1937,8 @@ test('mission timeline lists saved landing changed and next lines', () => {
     assert.doesNotMatch(timeline.stdout, /  1\. Created and claimed next task/);
     assert.match(timeline.stdout, /Created and claimed next task: \S+ Add receipt timeline proof\./);
     assert.match(timeline.stdout, /Next: Created next task: \S+ Add receipt timeline proof\./);
-    assert.match(timeline.stdout, /Proof: atris\/runs\/mission-/);
+    assert.match(timeline.stdout, /Proof: saved in mission history\./);
+    assert.doesNotMatch(timeline.stdout, /Proof: atris\/runs\/mission-/);
     assert.doesNotMatch(timeline.stdout, /Full history:/);
 
     const json = runCli(['mission', 'timeline', 'landing-timeline-codex-loop', '--json'], { cwd: dir });
@@ -2205,6 +2215,11 @@ test('mission timeline lists saved landing changed and next lines', () => {
     const secondRun = runCli(['mission', 'run', 'landing-timeline-codex-loop', '--no-preflight', '--no-drain', '--create-next'], { cwd: dir });
     assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
     assert.match(secondRun.stdout, /Changed: Kept active task:/);
+
+    const historyText = runCli(['mission', 'timeline', 'landing-timeline-codex-loop'], { cwd: dir });
+    assert.equal(historyText.status, 0, historyText.stderr || historyText.stdout);
+    assert.match(historyText.stdout, /Next at the time: Created next task:/);
+    assert.doesNotMatch(historyText.stdout, /Proof: atris\/runs\/mission-/);
 
     const limitedText = runCli(['mission', 'timeline', 'landing-timeline-codex-loop', '--limit', '1'], { cwd: dir });
     assert.equal(limitedText.status, 0, limitedText.stderr || limitedText.stdout);
