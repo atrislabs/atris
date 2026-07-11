@@ -375,6 +375,15 @@ test('While You Were Away shows every receipt behind the count, including accept
     // toward "Completed receipts today" and must also be readable.
     fs.writeFileSync(path.join(dir, '.atris', 'state', 'career_xp_receipts.jsonl'), [
       JSON.stringify({
+        receipt_id: 'task_review:ep-episode',
+        source_type: 'task_review',
+        source_episode_id: 'ep-episode',
+        workspace_root: dir,
+        accepted_at: today.toISOString(),
+        proof: 'node --test duplicate episode receipt passed',
+        title: 'Duplicate without the landed result',
+      }),
+      JSON.stringify({
         receipt_id: 'task_review:ep-accepted',
         source_type: 'task_review',
         source_episode_id: 'ep-accepted',
@@ -389,8 +398,8 @@ test('While You Were Away shows every receipt behind the count, including accept
     const content = renderDefaultNow(dir);
     const receiptLineCount = (content.match(/^- ✓ /gm) || []).length;
 
-    // The count and the readable list must agree, and the accepted receipt
-    // (previously counted but invisible) is now shown.
+    // The count and the readable list must agree. A duplicate Career XP row
+    // must not erase the richer landed result from the task episode.
     assert.equal(countTaskReceiptsToday(dir, today), 2);
     assert.equal(receiptLineCount, 2);
     assert.match(content, /Completed receipts today: 2/);

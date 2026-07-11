@@ -192,6 +192,21 @@ function taskReceiptKey(row, fallback) {
   return `row:${fallback}`;
 }
 
+function storeTaskReceipt(byKey, row) {
+  const key = taskReceiptKey(row, byKey.size);
+  const previous = byKey.get(key);
+  const candidate = {
+    title: taskReceiptTitle(row),
+    result: taskReceiptResult(row),
+    certified: taskReceiptCertified(row),
+  };
+  byKey.set(key, {
+    title: candidate.title || previous?.title,
+    result: candidate.result || previous?.result || '',
+    certified: Boolean(candidate.certified || previous?.certified),
+  });
+}
+
 // One pass over today's receipt sources, deduped by key. Both the
 // "Completed receipts today" count and the readable "While You Were Away"
 // lines derive from this, so the number and the list can never disagree.
@@ -207,11 +222,7 @@ function collectTaskReceiptsToday(root = process.cwd(), date = new Date()) {
     if (!proof) continue;
     const eventType = String(row?.action?.event_type || '').toLowerCase();
     if (eventType && !TASK_RECEIPT_EVENTS.has(eventType)) continue;
-    byKey.set(taskReceiptKey(row, byKey.size), {
-      title: taskReceiptTitle(row),
-      result: taskReceiptResult(row),
-      certified: taskReceiptCertified(row),
-    });
+    storeTaskReceipt(byKey, row);
   }
 
   for (const row of readJsonlRows(path.join(stateDir, 'career_xp_receipts.jsonl'))) {
@@ -221,11 +232,7 @@ function collectTaskReceiptsToday(root = process.cwd(), date = new Date()) {
     if (!proof) continue;
     const source = String(row?.source_type || row?.receipt_id || row?.source || '').toLowerCase();
     if (!source.includes('task')) continue;
-    byKey.set(taskReceiptKey(row, byKey.size), {
-      title: taskReceiptTitle(row),
-      result: taskReceiptResult(row),
-      certified: taskReceiptCertified(row),
-    });
+    storeTaskReceipt(byKey, row);
   }
 
   return Array.from(byKey.values());
