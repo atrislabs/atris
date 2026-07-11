@@ -74,11 +74,23 @@ function recordJanitorState(state, { stopped = [], held = [], worktrees = 0 } = 
 // The digest's "next, if you agree" section: top candidate moves from Atris
 // state, each with the member best suited to own it. Moves that can't explain
 // themselves are counted, not shown. Never blocks the digest.
+function missionHasBudgetRemaining(mission, nowMs = Date.now()) {
+  if (mission?.budget_contract?.policy !== 'spend_full_budget') return false;
+  const seconds = Number(mission?.budget_contract?.requested_seconds || mission?.max_wall_seconds || 0);
+  const startedMs = Date.parse(mission?.started_at || mission?.created_at || mission?.updated_at || '');
+  return Number.isFinite(seconds) && seconds > 0
+    && Number.isFinite(startedMs) && startedMs + seconds * 1000 > nowMs;
+}
+
 function digestNextMoves(root) {
   try {
     const { nextMoves } = require('../lib/next-moves');
     const { resolveFunctionalOwner } = require('../lib/functional-owner');
-    const all = (nextMoves(root, 5) || []).filter((move) => move && move.title);
+    const { listMissions } = require('./mission');
+    const missions = new Map((listMissions(root) || []).map((mission) => [mission.id, mission]));
+    const all = (nextMoves(root, 5) || [])
+      .filter((move) => move && move.title)
+      .filter((move) => move.kind !== 'mission_ready' || !missionHasBudgetRemaining(missions.get(move.ref)));
     const explainable = all.filter((move) => move.kind === 'mission_ready' || operatorReady(move.title));
     const ready = explainable.slice(0, 3).map((move) => {
       let owner = null;
