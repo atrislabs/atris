@@ -554,14 +554,14 @@ test('live update: a landing texts its capability sentence the moment it lands',
   assert.equal(autoland.composeLiveUpdate({ landedRefs: ['CLI-2'], tasks, project: 'atris-cli' }), '');
 });
 
-test('live update receipt keeps the exact sent text for the next linguist audit', () => {
+test('live update receipt keeps the exact sent text when the daily digest is sent too', () => {
   const { base, repo } = makeTempRepo();
   const commandsAutoland = require('../commands/autoland');
   const originalSend = autoland.sendImessage;
   const agentEnvKeys = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT', 'CODEX_SANDBOX', 'CURSOR_AGENT', 'DEVIN_SESSION_ID', 'ATRIS_AGENT_PROOF_ONLY'];
   const savedAgentEnv = Object.fromEntries(agentEnvKeys.map((key) => [key, process.env[key]]));
   const savedTaskDb = process.env.ATRIS_TASKS_DB;
-  let sentText = '';
+  const sentTexts = [];
   try {
     for (const key of agentEnvKeys) delete process.env[key];
     process.env.ATRIS_TASKS_DB = path.join(repo, '.atris', 'fixture-tasks.db');
@@ -571,12 +571,13 @@ test('live update receipt keeps the exact sent text for the next linguist audit'
       enabled_by: 'keshav',
       strict_verify: false,
       imessage_to: '+15555550100',
+      digest_hour: new Date().getHours(),
       daily_experiment: false,
       janitor: false,
     };
     autoland.writePolicy(repo, policy);
     autoland.sendImessage = (_root, _to, text) => {
-      sentText = text;
+      sentTexts.push(text);
       return { ok: true, output: 'sent' };
     };
     const receipt = { at: new Date().toISOString(), landed: [], alarms: 0, digest_sent: false, enabled: true };
@@ -585,12 +586,16 @@ test('live update receipt keeps the exact sent text for the next linguist audit'
 
     assert.deepEqual(receipt.landed, [taskRef]);
     assert.equal(receipt.live_update_sent, true);
-    assert.equal(receipt.live_update_text, sentText);
+    assert.equal(receipt.digest_sent, true);
+    assert.equal(sentTexts.length, 2);
+    assert.equal(receipt.live_update_text, sentTexts[0]);
+    assert.equal(receipt.digest_text, sentTexts[1]);
     assert.match(receipt.live_update_text, /^atris repo: just landed\n\n- operators can now trust completed test work faster because the result is clear \(builder\)$/);
     assert.match(receipt.receipt_path, /^atris\/runs\/autoland-tick-/);
     const persisted = JSON.parse(fs.readFileSync(path.join(repo, receipt.receipt_path), 'utf8'));
     assert.equal(persisted.live_update_sent, true);
-    assert.equal(persisted.live_update_text, sentText);
+    assert.equal(persisted.live_update_text, sentTexts[0]);
+    assert.equal(persisted.digest_text, sentTexts[1]);
   } finally {
     autoland.sendImessage = originalSend;
     for (const key of agentEnvKeys) {
