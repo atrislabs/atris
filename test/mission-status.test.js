@@ -6811,6 +6811,18 @@ test('mission help documents status filters', () => {
         assert.doesNotMatch(subcommandHelp.stdout, /Layer growth curve:|Landing:\n  Changed:/);
       }
     }
+    for (const subcommand of ['goal', 'goal-loop']) {
+      for (const helpArg of ['--help', '-h', 'help']) {
+        const stateFile = path.join(dir, '.atris', 'state', 'codex_goal.json');
+        fs.rmSync(stateFile, { force: true });
+        const subcommandHelp = runCli(['mission', subcommand, helpArg], { cwd: dir });
+        assert.equal(subcommandHelp.status, 0, subcommandHelp.stderr || subcommandHelp.stdout);
+        assert.match(subcommandHelp.stdout, new RegExp(`^Usage: atris mission ${subcommand}`));
+        assert.match(subcommandHelp.stdout, /Help is read-only/);
+        assert.equal(fs.existsSync(stateFile), false);
+        assert.doesNotMatch(subcommandHelp.stdout, /Codex \/goal:|"ran_heavy_work":true/);
+      }
+    }
   } finally {
     cleanupTempDir(dir);
   }
