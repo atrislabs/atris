@@ -247,6 +247,26 @@ test('operatorReady: a queue sentence earns its digest surface with a why, no ag
   assert.ok(!operatorReady('CLI-788 failed because the continuation stopped'));
 });
 
+test('digest falls back to the complete landing when shortening the result removes its why', () => {
+  const digest = autoland.composeDigest({
+    accepted: {
+      auto: [{
+        ref: 'REPORT-1',
+        result: 'Operators can now read a complete review action for finished missions in the daily digest with the evidence and owner presented in one place, so proof no longer appears cut off.',
+        happened: 'Read the full review request in the daily digest, preventing a cut-off sentence from hiding what you need to approve.',
+        member: 'linguist',
+      }],
+      human: [],
+    },
+    waiting: [],
+    landed: null,
+    project: 'atris-cli',
+  });
+
+  assert.match(digest, /read the full review request.*preventing a cut-off sentence/);
+  assert.doesNotMatch(digest, /could not explain themselves|operators can now read a complete review action/);
+});
+
 test('clarify: the gate strips agent jargon and closes the thought before an operator reads it', () => {
   const { clarify } = autoland;
   // Flag dashes, task ids, and snake_case are what an operator cannot act on;
