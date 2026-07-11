@@ -205,7 +205,7 @@ test('digest and alarm compose in plain language', () => {
   assert.match(digest, /next, if you agree:/);
   assert.match(digest, /taste filters.*\(best fit: auto-improver\)/);
   assert.match(digest, /stuck codex mission/);
-  assert.match(digest, /review proof for operators stop trusting so finished work can leave the queue/);
+  assert.match(digest, /review proof from task-planner for operators stop trusting so finished work can leave the queue/);
   assert.doesNotMatch(digest, /#13|surfaces exactly|review proof for operators stop trusting.*best fit/);
   assert.match(digest, /- 2 more queued moves stay hidden until their owners write clear next actions/);
   // One tail pointer: the 'more results' line already names the command, so
@@ -320,6 +320,7 @@ test('digest next moves render proof-ready missions only after promised time is 
     const missions = Array.from({ length: 5 }, (_, index) => ({
       id: `mission-${index + 1}`,
       objective: `Tidy paperclips ${index + 1}`,
+      owner: `member-${index + 1}`,
       status: 'ready',
       receipt_path: `atris/runs/mission-${index + 1}.json`,
       ...(index === 0 ? {
@@ -333,7 +334,8 @@ test('digest next moves render proof-ready missions only after promised time is 
 
     assert.equal(next.moves.length, 3);
     assert.ok(next.moves.every((move) => move.kind === 'mission_ready'));
-    assert.ok(next.moves.every((move) => move.ref !== 'mission-1'));
+    assert.ok(next.moves.every((move) => /^member-[2-5]$/.test(move.owner)));
+    assert.ok(next.moves.every((move) => move.owner !== 'member-1'));
     assert.equal(next.unexplained, 0);
   } finally {
     cleanupTempDir(base);
