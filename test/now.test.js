@@ -98,7 +98,7 @@ test('renderDefaultNow leads with active mission move when codex goal selection 
     fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
     fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
     const objective = 'Operators stop trusting reports the first time one reads wrong, so every day the linguist reads yesterday operator surfaces exactly as sent and files one bounded language fix for the worst sentence';
-    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
+    const mission = {
       schema: 'atris.mission.v1',
       id: 'mission-now-move',
       objective,
@@ -119,7 +119,9 @@ test('renderDefaultNow leads with active mission move when codex goal selection 
       },
       created_at: '2026-07-04T00:00:00.000Z',
       updated_at: '2026-07-04T00:00:00.000Z',
-    })}\n`, 'utf8');
+    };
+    const missionsPath = path.join(dir, '.atris', 'state', 'missions.jsonl');
+    fs.writeFileSync(missionsPath, `${JSON.stringify(mission)}\n`, 'utf8');
 
     const content = renderDefaultNow(dir);
     const section = content.split('## What Matters Now\n\n')[1].split('\n\n## Current Priority')[0];
@@ -127,6 +129,22 @@ test('renderDefaultNow leads with active mission move when codex goal selection 
     assert.equal(section.split('\n')[0], 'The move: Operators stop trusting reports the first time one reads wrong - next: atris mission run --due --max-ticks 1 --complete-on-pass');
     assert.doesNotMatch(section.split('\n')[0], /…|\.\.\./);
     assert.match(section, /- Decide the next useful move before opening more context\./);
+
+    fs.writeFileSync(missionsPath, `${JSON.stringify({
+      ...mission,
+      status: 'ready',
+      n: 28,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      budget_contract: {
+        policy: 'spend_full_budget',
+        requested_seconds: 21600,
+        budget_label: '6 hours',
+      },
+    })}\n`, 'utf8');
+    const budgetedSection = renderDefaultNow(dir).split('## What Matters Now\n\n')[1].split('\n\n## Current Priority')[0];
+    assert.equal(budgetedSection.split('\n')[0], 'The move: Operators stop trusting reports the first time one reads wrong - next: keep shipping bounded improvements for the full 6 hours');
+    assert.doesNotMatch(budgetedSection, /current-step|review proof/);
   } finally {
     cleanup(dir);
   }
