@@ -395,10 +395,11 @@ function recordLandingSweepState(state, sweep, { error = null } = {}) {
 function wishSweepSummaryLine(summary, error = null) {
   if (error) return `wishes: sweep failed (${error})`;
   const dispatched = Number(summary?.dispatched) || 0;
+  const fulfilled = Number(summary?.fulfilled) || 0;
   const waiting = Number(summary?.waiting_on_operator) || 0;
   const noExecutor = Number(summary?.skipped_no_executor) || 0;
   const capped = Number(summary?.capped) || 0;
-  let line = `wishes: ${dispatched} dispatched, ${waiting} waiting on operator`;
+  let line = `wishes: ${dispatched} dispatched, ${waiting} waiting on operator, ${fulfilled} fulfilled`;
   const notes = [];
   if (noExecutor > 0) notes.push(`${noExecutor} need a working builder`);
   if (capped > 0) notes.push(`${capped} held for the next tick`);
@@ -953,6 +954,9 @@ function runTickBody(root, { json, policy, receipt }) {
     const wishNote = `, ${wishSweepSummaryLine(receipt.wish_dispatch, receipt.wish_dispatch_error)}`;
     const receiptNote = receipt.receipt_path ? `, receipt ${receipt.receipt_path}` : '';
     console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${receiptNote}`);
+    for (const fulfilled of receipt.wish_dispatch?.fulfilled_results || []) {
+      if (fulfilled.review_ask) console.log(fulfilled.review_ask);
+    }
   }
   return 0;
 }
