@@ -88,6 +88,14 @@ test('receipt block renders all four surfaces deterministically', () => {
   );
 });
 
+test('morning row closes long mission text without ellipsis fragments', () => {
+  const receipt = fixtureReceipt();
+  receipt.result.landing.changed = 'Ready-mission proof, historical digest landings, stale-work actions, and freshness counts now agree in plain language, so live operator surfaces no longer contradict themselves.';
+  const row = renderMorningCardRow(receipt);
+  assert.doesNotMatch(row, /\.\.\.|…/);
+  assert.doesNotMatch(row, /\b(?:and|or|but|with|to|for|from|by|the|a|an)$/);
+});
+
 test('morning card shows mission receipt rows through the receipt block renderer', () => {
   const dir = makeTempDir();
   try {
