@@ -153,7 +153,7 @@ test('renderDefaultNow leads with active mission move when codex goal selection 
       },
     })}\n`, 'utf8');
     const budgetedSection = renderDefaultNow(dir).split('## What Matters Now\n\n')[1].split('\n\n## Current Priority')[0];
-    assert.equal(budgetedSection.split('\n')[0], 'The move: Operators stop trusting reports the first time one reads wrong - next: keep shipping bounded improvements for the full 6 hours');
+    assert.match(budgetedSection.split('\n')[0], /^The move: Operators stop trusting reports the first time one reads wrong - next: keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment$/);
     assert.doesNotMatch(budgetedSection, /current-step|review proof/);
   } finally {
     cleanup(dir);

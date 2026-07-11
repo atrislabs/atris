@@ -1773,9 +1773,14 @@ function missionFullBudgetRemainingSeconds(mission, nowMs = Date.now()) {
 }
 
 function missionBudgetContinuationText(mission, nowMs = Date.now()) {
-  if (missionFullBudgetRemainingSeconds(mission, nowMs) <= 0) return null;
+  const remaining = missionFullBudgetRemainingSeconds(mission, nowMs);
+  if (remaining <= 0) return null;
   const budget = String(mission?.budget_contract?.budget_label || 'promised time').trim();
-  return `keep shipping bounded improvements for the full ${budget}`;
+  const measured = budget.match(/^(\d+)\s+(hours?|minutes?)$/i);
+  const commitment = measured
+    ? `${measured[1]}-${measured[2].replace(/s$/i, '').toLowerCase()}`
+    : budget;
+  return `keep shipping bounded improvements for the remaining ${formatDurationShort(remaining)} of the ${commitment} commitment`;
 }
 
 function missionHumanStatusText(mission, nowMs = Date.now()) {
