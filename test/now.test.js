@@ -364,7 +364,7 @@ test('While You Were Away shows every receipt behind the count, including accept
         state: {
           title: 'Ship the episode receipt',
           metadata: {
-            result: 'Operators can read the complete landed result without decoding verifier commands, so the morning recap is trustworthy.',
+            result: 'Operators can now read complete mission receipt lines in Atris now, preventing ellipsis and adjective fragments from making the overnight recap ambiguous.',
             agent_certified: true,
           },
         },
@@ -403,7 +403,7 @@ test('While You Were Away shows every receipt behind the count, including accept
     assert.equal(countTaskReceiptsToday(dir, today), 2);
     assert.equal(receiptLineCount, 2);
     assert.match(content, /Completed receipts today: 2/);
-    assert.match(content, /Operators can read the complete landed result without decoding verifier commands, so the morning recap is trustworthy\. - independently checked/);
+    assert.match(content, /Operators can now read complete mission receipt lines in Atris now, preventing ellipsis and adjective fragments from making the overnight recap ambiguous\. - independently checked/);
     assert.match(content, /Land the accepted receipt - proof on file/);
     assert.doesNotMatch(content, /node --test/);
     assert.doesNotMatch(content, /…/);
