@@ -770,3 +770,76 @@ test('doctor --fix writes a scorecard row on mission_started but not on mission_
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('doctor credits a filed repair once its finding clears, and only once', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-doctor-'));
+  try {
+    const scorecardFile = path.join(root, '.atris', 'state', 'scorecards.jsonl');
+    fs.mkdirSync(path.dirname(scorecardFile), { recursive: true });
+    // A prior filing left a reward-0 row for a reward_flatline repair.
+    fs.writeFileSync(scorecardFile, `${JSON.stringify({
+      schema: 'atris.loop_doctor.v1', ts: '2026-07-10T10:00:00.000Z', source: 'loop_doctor',
+      kind: 'reward_flatline', mission_id: 'mission-fixed-1', reward: 0,
+      note: 'repair filed; reward is earned by the repair tick, not the filing',
+    })}\n`, 'utf8');
+
+    const deps = {
+      workspace: root,
+      now: new Date('2026-07-10T12:00:00.000Z'),
+      // The reward_flatline finding is gone; a different finding still fires.
+      scanLoopReceipts: () => [fakeFinding('repeated_tick_error')],
+    };
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    let first;
+    let second;
+    try {
+      first = runLoopDoctor(['--json'], deps);
+      second = runLoopDoctor(['--json'], deps);
+    } finally {
+      process.chdir(originalCwd);
+    }
+
+    assert.equal(first.closed.length, 1, 'the cleared finding is credited on first observation');
+    assert.equal(first.closed[0].kind, 'reward_flatline');
+    assert.equal(first.closed[0].mission_id, 'mission-fixed-1');
+    assert.equal(first.closed[0].reward, 3);
+    assert.equal(first.closed[0].closed, true);
+    assert.equal(second.closed.length, 0, 'a credited repair is never credited twice');
+
+    const rows = fs.readFileSync(scorecardFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    const closingRows = rows.filter((row) => row.mission_id === 'mission-fixed-1' && row.closed === true);
+    assert.equal(closingRows.length, 1, 'exactly one closing row exists on disk');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('doctor does not credit a filed repair while its finding still fires', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-doctor-'));
+  try {
+    const scorecardFile = path.join(root, '.atris', 'state', 'scorecards.jsonl');
+    fs.mkdirSync(path.dirname(scorecardFile), { recursive: true });
+    fs.writeFileSync(scorecardFile, `${JSON.stringify({
+      schema: 'atris.loop_doctor.v1', ts: '2026-07-10T10:00:00.000Z', source: 'loop_doctor',
+      kind: 'repeated_tick_error', mission_id: 'mission-open-1', reward: 0,
+    })}\n`, 'utf8');
+
+    const deps = {
+      workspace: root,
+      now: new Date('2026-07-10T12:00:00.000Z'),
+      scanLoopReceipts: () => [fakeFinding('repeated_tick_error')],
+    };
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    let payload;
+    try {
+      payload = runLoopDoctor(['--json'], deps);
+    } finally {
+      process.chdir(originalCwd);
+    }
+    assert.equal(payload.closed.length, 0, 'an unresolved finding earns no credit');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

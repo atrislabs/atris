@@ -917,7 +917,7 @@ function openLoopDoctorMission(root, finding) {
     && String(mission.objective || '').includes(key)) || null;
 }
 
-function formatLoopDoctor(findings, fix = null) {
+function formatLoopDoctor(findings, fix = null, closed = []) {
   const lines = [`loop doctor: ${findings.length} finding${findings.length === 1 ? '' : 's'}`];
   findings.forEach((finding, index) => {
     lines.push(`${index + 1}. ${finding.kind}: ${finding.evidence.detail} (${finding.count})`);
@@ -926,7 +926,49 @@ function formatLoopDoctor(findings, fix = null) {
   if (!findings.length) lines.push('the recent improve-loop receipts are clean.');
   if (fix && fix.action === 'mission_started') lines.push(`filed one mission: ${fix.mission.id}`);
   if (fix && fix.action === 'mission_exists') lines.push(`no mission filed: ${fix.mission.id} already covers the top finding.`);
+  if (Array.isArray(closed) && closed.length) {
+    lines.push(`credited ${closed.length} verified repair${closed.length === 1 ? '' : 's'}: ${closed.map((row) => row.kind).join(', ')}`);
+  }
   return lines.join('\n');
+}
+
+// Close the reward loop the doctor opens. When it files a repair it writes a
+// reward-0 loop_doctor row; the fix only earns once its finding is provably
+// gone. This reconciles those open rows against the current findings: a filed
+// row whose kind no longer fires gets one closing credit, so the scorecard
+// reads filed then paid instead of a pile of zero-reward filings. Deduped by
+// mission id so a finding that clears stays closed even if it flickers back.
+function reconcileLoopDoctorRewards(root, findings, now, appendScorecard) {
+  // Read the raw rows, not readTickHistory: that filters to improve_tick
+  // schema and would drop the loop_doctor rows this reconciliation is about.
+  const rows = readJsonlFile(path.join(expandHome(root), '.atris', 'state', 'scorecards.jsonl'));
+  const openByMission = new Map();
+  const closedMissions = new Set();
+  for (const row of rows) {
+    if (!row || row.schema !== 'atris.loop_doctor.v1' || !row.mission_id) continue;
+    if (row.closed === true) { closedMissions.add(String(row.mission_id)); continue; }
+    if (Number(row.reward) === 0) openByMission.set(String(row.mission_id), row);
+  }
+  const liveKinds = new Set(findings.map((finding) => finding.kind));
+  const closed = [];
+  for (const [missionId, row] of openByMission) {
+    if (closedMissions.has(missionId)) continue;
+    if (liveKinds.has(row.kind)) continue; // finding still fires, repair not proven yet
+    const closingRow = {
+      schema: 'atris.loop_doctor.v1',
+      ts: now.toISOString(),
+      source: 'loop_doctor',
+      kind: row.kind,
+      mission_id: missionId,
+      reward: 3,
+      closed: true,
+      note: 'repair verified: the finding it filed against is no longer present',
+    };
+    appendScorecard(root, closingRow);
+    closedMissions.add(missionId);
+    closed.push(closingRow);
+  }
+  return closed;
 }
 
 function runLoopDoctor(argv = [], deps = {}) {
@@ -954,6 +996,13 @@ function runLoopDoctor(argv = [], deps = {}) {
     else console.log(`loop doctor check failed: ${check.reason}.`);
     return payload;
   }
+
+  // Credit any past filing whose finding has since cleared. This runs on plain
+  // `doctor` and `doctor --fix`, never on `--check` (a pure verifier that must
+  // not write), so the reward closes on the next observation after a repair.
+  const reconcileNow = deps.now || new Date();
+  const reconcileAppend = deps.appendScorecardRow || appendScorecardRow;
+  const closed = reconcileLoopDoctorRewards(deps.workspace || root, findings, reconcileNow, reconcileAppend);
 
   if (fixRequested && findings.length) {
     const finding = findings[0];
@@ -987,9 +1036,9 @@ function runLoopDoctor(argv = [], deps = {}) {
     }
   }
 
-  const payload = { schema: 'atris.loop_doctor.v1', findings, fix };
+  const payload = { schema: 'atris.loop_doctor.v1', findings, fix, closed };
   if (json) console.log(JSON.stringify(payload));
-  else console.log(formatLoopDoctor(findings, fix));
+  else console.log(formatLoopDoctor(findings, fix, closed));
   return payload;
 }
 
@@ -1055,6 +1104,7 @@ module.exports = {
   improveApiPath,
   formatImproveReport,
   runLoopDoctor,
+  reconcileLoopDoctorRewards,
   formatLoopDoctor,
   openLoopDoctorMission,
   loopDoctorKey,
