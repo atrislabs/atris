@@ -431,6 +431,34 @@ test('While You Were Away shows every receipt behind the count, including accept
   }
 });
 
+test('While You Were Away names receipts omitted by its short recap limit', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+    const createdAt = new Date().toISOString();
+    const episodes = Array.from({ length: 7 }, (_, index) => JSON.stringify({
+      episode_id: `ep-${index + 1}`,
+      task_id: `task-${index + 1}`,
+      workspace_root: dir,
+      created_at: createdAt,
+      proof: 'focused verifier passed',
+      action: { event_type: 'reviewed' },
+      state: { title: `Completed receipt ${index + 1}` },
+    }));
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'task_episodes.jsonl'), `${episodes.join('\n')}\n`, 'utf8');
+
+    const content = renderDefaultNow(dir);
+    assert.match(content, /Completed receipts today: 7/);
+    assert.equal((content.match(/^- ✓ /gm) || []).length, 6);
+    assert.match(content, /- 1 more completed receipt omitted from this short recap\./);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('renderDefaultNow refuses non-Atris workspaces', () => {
   const dir = makeTempDir();
   try {
