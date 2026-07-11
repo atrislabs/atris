@@ -642,7 +642,7 @@ test('worktree start defaults to upstream remote base and records ship metadata'
   }
 });
 
-test('worktree start ships agent/member worktrees to origin/master even when the launcher checkout is on a feature branch', () => {
+test('worktree start isolates agent/member worktrees on origin/master when the launcher is on a feature branch', () => {
   const dir = makeTempDir();
   let worktreePath;
   try {
@@ -692,13 +692,14 @@ test('worktree start ships agent/member worktrees to origin/master even when the
     assert.match(res.stdout, /base: origin\/master/, 'ship target must default to master, not the launcher branch');
     const branch = runGit(['branch', '--show-current'], worktreePath);
     assert.equal(runGit(['config', '--get', `branch.${branch}.atris-base`], worktreePath), 'origin/master');
-    // The checkout point still starts from the launcher's own work (unchanged
-    // behavior); only the ship-target metadata changed.
-    assert.match(runGit(['log', '-1', '--oneline'], worktreePath), /feature work/);
+    // The checkout point must not inherit the launcher's feature commit. A
+    // parallel session's in-progress branch is not a safe worker base.
+    assert.match(runGit(['log', '-1', '--oneline'], worktreePath), /init/);
+    assert.doesNotMatch(runGit(['show', 'HEAD:README.md'], worktreePath), /feature work in progress/);
 
     const sidecar = JSON.parse(fs.readFileSync(path.join(worktreePath, '.atris', 'agent-worktree.json'), 'utf8'));
     assert.equal(sidecar.base, 'origin/master');
-    assert.equal(sidecar.checkout_base, 'origin/task/feature-work');
+    assert.equal(sidecar.checkout_base, 'origin/master');
   } finally {
     if (worktreePath) cleanupTempDir(worktreePath);
     cleanupTempDir(dir);
