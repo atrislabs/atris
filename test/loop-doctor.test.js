@@ -106,6 +106,11 @@ test('detects zero due-capable missions and accepts a headless always-on cadence
     { id: 'headless-1', status: 'ready', cadence: '15m', runner: 'atris2', always_on: true, created_at: NOW },
   ]);
   assert.deepEqual(findingKinds(root), []);
+
+  writeJsonl(root, '.atris/state/missions.jsonl', [
+    { id: 'auto-1', status: 'ready', cadence: '15m', runner: 'auto', always_on: true, created_at: NOW },
+  ]);
+  assert.deepEqual(findingKinds(root), []);
 });
 
 test('detects repeated auth failure strings', () => {
