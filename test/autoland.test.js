@@ -227,6 +227,21 @@ test('digest and alarm compose in plain language', () => {
   assert.match(completeMissionName, /review proof for keep every human-facing surface small and current/);
   assert.doesNotMatch(completeMissionName, /review proof for keep every human so/);
 
+  const vagueMissionName = autoland.composeDigest({
+    accepted: { auto: [], human: [] },
+    waiting: [],
+    landed: null,
+    project: 'atris-cli',
+    nextMoves: [{
+      title: 'New ideas from existing primitives: compose what already exists (day loop, wish loop, housekeeper) into new capabilities. Each tick writes one idea brief.',
+      label: '#16 new ideas from existing primitives',
+      owner: 'brainstormer',
+      kind: 'mission_ready',
+    }],
+  });
+  assert.match(vagueMissionName, /review proof from brainstormer for compose what already exists into new capabilities so finished work can leave the queue/);
+  assert.doesNotMatch(vagueMissionName, /review proof from brainstormer for new ideas from existing primitives/);
+
   const quiet = autoland.composeDigest({
     accepted: { auto: [], human: [] },
     waiting: [],
