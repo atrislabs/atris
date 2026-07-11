@@ -757,8 +757,78 @@ function listWorktreeRollupMissions(root = process.cwd()) {
   return rolled;
 }
 
+// BCK-1319: `mission list` merges in worktree-rollup missions (sibling git
+// worktrees keep their own missions.jsonl) but the resolver only ever
+// searched the local root, so an id/slug list showed via rollup would 404 in
+// run/tick/show. This is the same local+rollup, deduped-by-id, list-sorted
+// set `mission status`/`list` renders, so id/slug/suffix lookups search
+// exactly what list showed. n stays exactly as each mission's home workspace
+// assigned it (loadMissionMap owns that) — this index does NOT renumber,
+// because n must stay a stable, durable handle across saves (see
+// mission-number-stability.test.js); numeric-n resolution stays scoped to
+// the local root, where n is guaranteed unique.
+function canonicalMissionIndex(root = process.cwd()) {
+  const missions = listMissions(root);
+  const seen = new Set(missions.map((mission) => mission.id));
+  for (const rolled of listWorktreeRollupMissions(root)) {
+    if (seen.has(rolled.id)) continue;
+    seen.add(rolled.id);
+    missions.push(rolled);
+  }
+  missions.sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
+  return missions;
+}
+
+const MISSION_REF_SUFFIX_MIN_LENGTH = 6;
+
+// A ref that "looks like" an id/suffix/number is a single token with no
+// whitespace matching a hex/id/numeric shape. Those must resolve or error —
+// never silently fall through to starting a new mission (a mistyped id/n
+// creating a junk mission is the worst failure mode here).
+function missionRefLooksLikeHandle(ref) {
+  const raw = String(ref || '').trim();
+  if (!raw || /\s/.test(raw)) return false;
+  const withoutHash = raw.startsWith('#') ? raw.slice(1) : raw;
+  if (/^\d+$/.test(withoutHash)) return true;
+  if (/^mission-/.test(raw)) return true;
+  if (/^[0-9a-f]{6,}$/i.test(withoutHash)) return true;
+  return false;
+}
+
 function missionMatchesRef(mission, ref) {
   return mission && (recordMatchesRef(mission, ref) || mission.slug === String(ref || '').trim());
+}
+
+// Suffix/prefix id matches and slug-prefix matches, gated to unique hits of
+// at least MISSION_REF_SUFFIX_MIN_LENGTH chars so a short fragment can't
+// silently grab the wrong mission.
+function missionsMatchingHandleFragment(missions, ref) {
+  const raw = String(ref || '').trim();
+  if (!raw || raw.length < MISSION_REF_SUFFIX_MIN_LENGTH) return [];
+  const lower = raw.toLowerCase();
+  const idHits = missions.filter((mission) => {
+    const id = String(mission.id || '').toLowerCase();
+    return id.startsWith(lower) || id.endsWith(lower);
+  });
+  if (idHits.length) return idHits;
+  return missions.filter((mission) => String(mission.slug || '').toLowerCase().startsWith(lower));
+}
+
+function nearestMissionCandidates(missions, ref, limit = 5) {
+  const raw = String(ref || '').trim().toLowerCase();
+  return missions
+    .map((mission) => {
+      const id = String(mission.id || '').toLowerCase();
+      const slug = String(mission.slug || '').toLowerCase();
+      let score = 0;
+      if (raw && (id.includes(raw) || slug.includes(raw))) score = 2;
+      else if (raw && raw.length >= 3 && (id.slice(-6).includes(raw.slice(0, 3)) || slug.includes(raw.slice(0, 3)))) score = 1;
+      return { mission, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((entry) => entry.mission);
 }
 
 function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) {
@@ -801,19 +871,39 @@ function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) 
   return hints;
 }
 
-function exitMissingMission(ref, code = 1, asJson = false) {
+function exitMissingMission(ref, code = 1, asJson = false, root = process.cwd()) {
   const error = `Mission "${ref}" not found.`;
-  const hints = listSiblingWorkspaceMissionHints(ref);
+  const hints = listSiblingWorkspaceMissionHints(ref, root);
+  // Only compute nearest-candidate hints for refs that actually look like a
+  // mission handle (id/suffix/number). Plain garbage strings/objectives
+  // passed to status/show keep the original bare "not found" shape.
+  let candidates = [];
+  if (missionRefLooksLikeHandle(ref)) {
+    try {
+      candidates = nearestMissionCandidates(canonicalMissionIndex(root), ref).map((mission) => ({
+        n: mission.n,
+        id: mission.id,
+        status: mission.status,
+        objective: mission.objective,
+      }));
+    } catch { /* best-effort hint only */ }
+  }
   if (asJson) {
     const payload = { ok: false, error };
     if (hints.length) payload.workspace_hint = hints[0];
     if (hints.length > 1) payload.workspace_hints = hints;
+    if (candidates.length) payload.nearest_candidates = candidates;
     console.log(JSON.stringify(payload, null, 2));
   } else {
     console.error(error);
     if (hints.length) {
       console.error(`Workspace hint: mission ${hints[0].id} exists in ${hints[0].workspace_root}.`);
       console.error(`Run: ${hints[0].command}`);
+    } else if (candidates.length) {
+      console.error('Nearest candidates:');
+      for (const candidate of candidates) {
+        console.error(`  #${candidate.n} ${candidate.id} (${candidate.status}) — ${candidate.objective}`);
+      }
     } else {
       console.error('Mission ids are workspace-local — run this from the workspace that created the mission.');
     }
@@ -821,17 +911,28 @@ function exitMissingMission(ref, code = 1, asJson = false) {
   process.exit(code);
 }
 
+// BCK-1319: id/slug/suffix lookups search the same local+rollup set `mission
+// list` renders (canonicalMissionIndex), so a full id or slug shown by list
+// always resolves here too. Numeric n lookups stay scoped to the local root:
+// n is a durable per-workspace handle (loadMissionMap assigns it once and
+// never renumbers), so it's only guaranteed unique within its own workspace
+// — searching rollups by n would let one worktree's #1 silently resolve to
+// a different worktree's #1.
 function resolveMission(ref, root = process.cwd()) {
-  const missions = listMissions(root);
-  if (!ref) return missions.find((mission) => !TERMINAL_STATUSES.has(mission.status)) || missions[0] || null;
-  // exact id first: fuzzy prefix/suffix matching can hit a sibling whose id
-  // contains this one (e.g. re-resolving "acked-..." matched "newer-unacked-...")
-  const exact = missions.find((mission) => mission.id === String(ref).trim());
-  if (exact) return exact;
+  const localMissions = listMissions(root);
+  if (!ref) {
+    return localMissions.find((mission) => !TERMINAL_STATUSES.has(mission.status)) || localMissions[0] || null;
+  }
   const rawRef = String(ref).trim();
+  // exact id first, local root only: fuzzy prefix/suffix matching can hit a
+  // sibling whose id contains this one (e.g. re-resolving "acked-..." matched
+  // "newer-unacked-...")
+  const exactLocal = localMissions.find((mission) => mission.id === rawRef);
+  if (exactLocal) return exactLocal;
+
   const wantedNumber = displayNumber(rawRef.startsWith('#') ? rawRef.slice(1) : rawRef);
   if (wantedNumber) {
-    const matches = missions.filter((mission) => recordMatchesRef(mission, ref));
+    const matches = localMissions.filter((mission) => recordMatchesRef(mission, ref));
     if (matches.length > 1) {
       const chosen = matches.find((mission) => !TERMINAL_STATUSES.has(mission.status)) || matches[0];
       console.warn(`warning: mission number #${wantedNumber} is shared by ${matches.map((mission) => mission.id).join(', ')}; using ${chosen.id}.`);
@@ -839,7 +940,25 @@ function resolveMission(ref, root = process.cwd()) {
     }
     return matches[0] || null;
   }
-  return missions.find((mission) => missionMatchesRef(mission, ref)) || null;
+
+  const localSlugOrLegacyMatch = localMissions.find((mission) => missionMatchesRef(mission, rawRef));
+  if (localSlugOrLegacyMatch) return localSlugOrLegacyMatch;
+
+  // Not found locally by id/slug: widen to the canonical (local + rollup)
+  // index before giving up, so an id/slug copied from `mission list` (which
+  // includes rollups) resolves here too instead of 404ing.
+  const missions = canonicalMissionIndex(root);
+  const widerExact = missions.find((mission) => mission.id === rawRef || missionMatchesRef(mission, rawRef));
+  if (widerExact) return widerExact;
+
+  const fragmentMatches = missionsMatchingHandleFragment(missions, rawRef);
+  if (fragmentMatches.length === 1) return fragmentMatches[0];
+  if (fragmentMatches.length > 1) {
+    const chosen = fragmentMatches.find((mission) => !TERMINAL_STATUSES.has(mission.status)) || fragmentMatches[0];
+    console.warn(`warning: "${rawRef}" matches ${fragmentMatches.length} missions (${fragmentMatches.map((mission) => mission.id).join(', ')}); using ${chosen.id}.`);
+    return chosen;
+  }
+  return null;
 }
 
 function missionMatchesStatusFilter(mission, statusFilter) {
@@ -3836,16 +3955,9 @@ function statusMission(args) {
     exitMissionError(`Invalid --status: ${statusFilter}`, 2, asJson);
   }
   const limit = readPositiveIntegerFlag(args, '--limit', null, { json: asJson });
-  let missions = ref ? [resolveMission(ref)].filter(Boolean) : listMissions();
-  if (!ref && !localOnly) {
-    const seen = new Set(missions.map((mission) => mission.id));
-    for (const rolled of listWorktreeRollupMissions()) {
-      if (seen.has(rolled.id)) continue;
-      seen.add(rolled.id);
-      missions.push(rolled);
-    }
-    missions.sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
-  }
+  // BCK-1319: same canonical local+rollup index the resolver uses, so the n
+  // this renders is the exact n `mission run/tick/show <n>` resolves.
+  let missions = ref ? [resolveMission(ref)].filter(Boolean) : (localOnly ? listMissions() : canonicalMissionIndex());
   if (!ref && statusFilter) missions = missions.filter((mission) => missionMatchesStatusFilter(mission, statusFilter));
   if (!ref && limit) missions = missions.slice(0, limit);
   if (ref && !missions.length) {
@@ -7056,12 +7168,20 @@ async function runMission(args) {
     );
     return;
   }
-  if (!mission && ref && !String(ref).startsWith('mission-')) {
+  // BCK-1319: a bare single token that looks like an id/suffix/number (no
+  // whitespace, hex/id/numeric shape) is a mistyped or stale mission handle,
+  // not a new objective. Silently starting a fresh mission from it is the
+  // worst failure mode — it buries the mission the operator meant to run.
+  // Only a genuine multi-word (or non-handle-shaped) ref keeps the
+  // start-a-new-mission shortcut.
+  if (!mission && ref && missionRefLooksLikeHandle(ref)) {
+    exitMissingMission(ref, 1, asJson);
+  }
+  if (!mission && ref) {
     await startMissionFromRunObjective(ref, runArgs);
     return;
   }
   if (!mission) {
-    if (ref) exitMissingMission(ref, 1, asJson);
     exitMissionError('Usage: atris mission run <id|objective> [--max-ticks 4] [--max-wall 3600]', 1, asJson);
   }
   if (!maxTicksFlag && !budgetTier && Number(mission.max_ticks) > 0) {
