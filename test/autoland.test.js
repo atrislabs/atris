@@ -212,6 +212,20 @@ test('digest and alarm compose in plain language', () => {
   assert.equal((digest.match(/atris autoland digest/g) || []).length, 1);
   assert.doesNotMatch(digest, /branch|worktree|ttl|certif(?!ied)|--hourly/i);
 
+  const completeMissionName = autoland.composeDigest({
+    accepted: { auto: [], human: [] },
+    waiting: [],
+    landed: null,
+    project: 'atris-cli',
+    nextMoves: [{
+      title: 'Keep every human-facing surface small and current: waiting items, wishes, and landed branches',
+      label: '#13 keep every human',
+      kind: 'mission_ready',
+    }],
+  });
+  assert.match(completeMissionName, /review proof for keep every human-facing surface small and current/);
+  assert.doesNotMatch(completeMissionName, /review proof for keep every human so/);
+
   const quiet = autoland.composeDigest({
     accepted: { auto: [], human: [] },
     waiting: [],
