@@ -79,12 +79,13 @@ function digestNextMoves(root) {
     const { nextMoves } = require('../lib/next-moves');
     const { resolveFunctionalOwner } = require('../lib/functional-owner');
     const all = (nextMoves(root, 5) || []).filter((move) => move && move.title);
-    const ready = all.filter((move) => operatorReady(move.title)).slice(0, 3).map((move) => {
+    const explainable = all.filter((move) => move.kind === 'mission_ready' || operatorReady(move.title));
+    const ready = explainable.slice(0, 3).map((move) => {
       let owner = null;
       try { owner = resolveFunctionalOwner({ title: move.title, root })?.owner || null; } catch {}
       return { title: move.title, owner, kind: move.kind || null, label: move.label || null };
     });
-    return { moves: ready, unexplained: all.length - ready.length };
+    return { moves: ready, unexplained: all.length - explainable.length };
   } catch {
     return { moves: [], unexplained: 0 };
   }
@@ -930,6 +931,7 @@ function autolandCommand(args = []) {
 module.exports = {
   autolandCommand,
   attachedTasksForMission,
+  digestNextMoves,
   explainResult,
   missionReadyForClosedTaskVerify,
   operatorReady,
