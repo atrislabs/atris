@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { hasRenderedSections, isOpenSection } = require('../lib/todo-sections');
 const { renderMorningCardRow } = require('../lib/receipt-block');
+const { historicalLandingText } = require('../lib/autoland');
 
 const NOW_PATH = path.join('atris', 'now.md');
 const TASK_EPISODES_PATH = path.join('.atris', 'state', 'task_episodes.jsonl');
@@ -284,15 +285,28 @@ function currentMissionMoveLine(root = process.cwd()) {
     const selected = selectCodexGoalMission(root);
     const mission = selected?.mission || null;
     if (!mission) return null;
-    // Truncated hard: a raw mission objective + raw command once made the whole
-    // card unreadable. The card states the move; the mission file has the rest.
-    const objective = truncateLine(mission.objective, 140);
-    const next = truncateLine(codexGoalNextCommand(mission), 110);
+    const objective = completeMissionObjective(mission.objective, 140);
+    const compact = compactMissionCommand(codexGoalNextCommand(mission), mission);
+    const next = compact.length <= 160 ? compact : `atris mission status ${mission.n || mission.id}`;
     if (!objective || !next) return null;
     return `The move: ${objective} - next: ${next}`;
   } catch {
     return null;
   }
+}
+
+function completeMissionObjective(objective, max = 140) {
+  const clean = String(objective || '').replace(/\s+/g, ' ').trim();
+  const firstClause = clean.split(',', 1)[0].trim();
+  if (firstClause.length >= 40 && firstClause.length <= max) return firstClause;
+  return historicalLandingText(clean, max);
+}
+
+function compactMissionCommand(command, mission) {
+  const value = String(command || '').trim();
+  const id = String(mission?.id || '').trim();
+  const shortRef = String(mission?.n || '').trim();
+  return id && shortRef ? value.split(id).join(shortRef) : value;
 }
 
 function receiptSortKey(receipt) {
@@ -572,6 +586,8 @@ module.exports = {
   countMissionReceiptsToday,
   countTaskReceiptsToday,
   currentMissionMoveLine,
+  compactMissionCommand,
+  completeMissionObjective,
   landedCommitLines,
   nextOwnerActionLine,
   todayMissionReceiptLines,
