@@ -1874,6 +1874,38 @@ test('mission report keeps full-budget work active until promised time is used',
   }
 });
 
+test('mission inspect shows live budget in text while JSON keeps lifecycle status', () => {
+  const dir = makeTempDir();
+  try {
+    appendMissionState(dir, {
+      id: 'mission-inspect-live-budget',
+      slug: 'mission-inspect-live-budget',
+      objective: 'keep compact status honest',
+      runner: 'codex_goal',
+      owner: 'linguist',
+      status: 'ready',
+      created_at: new Date(Date.now() - 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+      budget_contract: {
+        policy: 'spend_full_budget',
+        requested_seconds: 21600,
+        budget_label: '6 hours',
+      },
+    });
+
+    const text = runCli(['mission', 'inspect', 'mission-inspect-live-budget', '--fields', 'status,runner'], { cwd: dir });
+    assert.equal(text.status, 0, text.stderr || text.stdout);
+    assert.match(text.stdout, /^status: working for the full 6 hours$/m);
+    assert.doesNotMatch(text.stdout, /^status: ready$/m);
+
+    const json = runCli(['mission', 'inspect', 'mission-inspect-live-budget', '--fields', 'status,runner', '--json'], { cwd: dir });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    assert.equal(JSON.parse(json.stdout).fields.status, 'ready');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission report shows compact chronological receipt timeline', () => {
   const dir = makeTempDir();
   try {
