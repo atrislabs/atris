@@ -518,7 +518,8 @@ function printBoard(board) {
   const labels = { due: 'overdue', landed: 'landed', active: 'in the air' };
   for (const b of rows) {
     const changes = b.ahead === 1 ? '1 change ' : `${b.ahead} changes`;
-    console.log(`  ${(labels[b.state] || b.state).padEnd(11)} ${String(b.ageDays).padStart(3)}d  ${changes}  ${b.name}`);
+    const label = b.stale ? 'stale' : (labels[b.state] || b.state);
+    console.log(`  ${label.padEnd(11)} ${String(b.ageDays).padStart(3)}d  ${changes}  ${b.name}`);
   }
   for (const w of board.worktrees) {
     const edits = w.dirty === 1 ? '1 unsaved edit' : `${w.dirty} unsaved edits`;
