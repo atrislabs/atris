@@ -484,7 +484,7 @@ function landingNeedsDayOnePm(sentence, title) {
   const text = normalizedLandingSentence(sentence);
   if (!text) return true;
   if (text.toLowerCase() === normalizedLandingSentence(defaultLandingSentenceForTitle(title)).toLowerCase()) return true;
-  return hasAgentJargon(text) || !operatorReady(text);
+  return hasAgentJargon(text) || /\bas\s+exists?\b/i.test(text) || !operatorReady(text);
 }
 
 function warnIfLandingNeedsDayOnePm(landing, title) {
