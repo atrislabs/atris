@@ -41,6 +41,10 @@ test('mission landing summary strips broken markdown before status renders it', 
     missionLandingLines({ changed: 'Cut the waiting queue into one honest decision; confirmed with `atris close.' })[1],
     '  Changed: Cut the waiting queue into one honest decision; confirmed with atris close.',
   );
+  assert.equal(
+    missionLandingLines({ changed: 'Done. One brief written, verifier still.' })[1],
+    '  Changed: One brief written.',
+  );
 });
 
 function runCli(args, { cwd, env = {} } = {}) {
