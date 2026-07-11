@@ -104,7 +104,9 @@ test('land status names the clearable category instead of saying overdue/landed'
 
     const result = runCli(['land', 'status'], repo);
     assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /1 piece tracked: 0 still in the air, 0 overdue, 1 landed and safe to clear/);
     assert.match(result.stdout, /back up \+ clear 1 landed: atris land --reap/);
+    assert.doesNotMatch(result.stdout, /1 piece of work in the air/);
     assert.doesNotMatch(result.stdout, /overdue\/landed/);
   } finally {
     cleanupTempDir(base);
