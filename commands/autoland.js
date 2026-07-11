@@ -555,7 +555,8 @@ function turnOff(root) {
 function runDigest(root, args, { forceSend = false } = {}) {
   const policy = autoland.readPolicy(root) || {};
   const tasks = readProjection(root);
-  const accepted = autoland.acceptedInLastDay(readAcceptedTaskHistory(root, tasks));
+  const acceptedTasks = readAcceptedTaskHistory(root, tasks);
+  const accepted = autoland.acceptedInLastDay(acceptedTasks);
   const state = autoland.readState(root);
   let waitingWishes = [];
   try {
@@ -575,7 +576,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
   });
   console.log(text);
   // the full story: what each piece actually was, in its own words
-  const byRef = new Map(tasks.map((t) => [t.display_id || t.legacy_ref || t.id, t]));
+  const byRef = new Map(acceptedTasks.map((t) => [t.display_id || t.legacy_ref || t.id, t]));
   const storied = accepted.auto.filter((item) => {
     const t = byRef.get(item.ref);
     return t && (t.review?.landing?.happened || t.metadata?.landing_happened);
