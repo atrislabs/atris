@@ -156,6 +156,18 @@ test('repeated failures require fresh evidence but keep unknown-age evidence vis
   assert.equal(findings[0].last_seen, null);
 });
 
+test('mission receipts dated only by their at field are gated as stale, not unknown-age', () => {
+  const root = workspace();
+  seedHealthyState(root);
+  writeJson(root, 'atris/runs/mission-at-1.json', {
+    at: '2026-07-10T06:00:00.000Z', ticks: [{ status: 'errored', error: 'engine outage' }],
+  });
+  writeJson(root, 'atris/runs/mission-at-2.json', {
+    at: '2026-07-10T06:10:00.000Z', ticks: [{ status: 'errored', error: 'engine outage' }],
+  });
+  assert.deepEqual(scanLoopReceipts({ root, now: NOW, freshnessMs: 2 * 60 * 60 * 1000 }), []);
+});
+
 test('clean receipt data produces no findings', () => {
   const root = workspace();
   seedHealthyState(root);
