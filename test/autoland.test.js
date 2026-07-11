@@ -261,26 +261,33 @@ test('digest and alarm compose in plain language', () => {
 test('digest acceptance history is not capped by the compact done-task projection', () => {
   const { base, repo } = makeTempRepo();
   const taskDb = require('../lib/task-db');
-  const dbPath = path.join(repo, '.atris', 'history-tasks.db');
+  const dbPath = path.join(repo, '.atris', 'fixture-tasks.db');
   const db = taskDb.open(dbPath);
   try {
+    const workspaceRoot = fs.realpathSync(repo);
     const acceptedAt = new Date().toISOString();
     for (let i = 1; i <= 9; i += 1) {
       taskDb.addTask(db, {
         title: `Accepted result ${i} saves operator time`,
-        workspaceRoot: repo,
+        workspaceRoot,
         status: 'done',
         metadata: {
           accepted_at: acceptedAt,
           auto_accepted_at: acceptedAt,
           result: `Accepted result ${i} saves operator time, so the daily count stays trustworthy.`,
+          landing_happened: `Full story ${i} lets operators inspect the accepted result, so daily review stays trustworthy.`,
         },
       });
     }
-    const compact = taskDb.taskProjection(db, { workspaceRoot: repo });
+    const compact = taskDb.taskProjection(db, { workspaceRoot });
     assert.equal(compact.tasks.filter((task) => task.status === 'done').length, 8);
-    const history = require('../commands/autoland').readAcceptedTaskHistory(repo, [], dbPath);
+    const history = require('../commands/autoland').readAcceptedTaskHistory(workspaceRoot, [], dbPath);
     assert.equal(autoland.acceptedInLastDay(history).auto.length, 9);
+    taskDb.close(db);
+    const digest = runCli(['autoland', 'digest'], repo);
+    assert.equal(digest.status, 0, digest.stderr || digest.stdout);
+    assert.match(digest.stdout, /^atris repo: last 24 hours\n9 landed;/);
+    assert.equal((digest.stdout.match(/Full story \d lets operators inspect/g) || []).length, 9);
   } finally {
     taskDb.close(db);
     cleanupTempDir(base);
