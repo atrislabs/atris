@@ -282,20 +282,24 @@ test('mission status keeps full-budget work moving until promised time ends', ()
 
     const status = runCli(['mission', 'status', 'mission-full-budget'], { cwd: dir });
     assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /state: working for the full 6 hours/);
     assert.match(status.stdout, /next: keep shipping bounded improvements for the full 6 hours/);
     assert.doesNotMatch(status.stdout, /task next:|current-step|Review proof|mission complete/);
 
     const jsonStatus = runCli(['mission', 'status', 'mission-full-budget', '--json'], { cwd: dir });
     assert.equal(jsonStatus.status, 0, jsonStatus.stderr);
     const mission = JSON.parse(jsonStatus.stdout).missions[0];
+    assert.equal(mission.status, 'ready');
     assert.equal(mission.next_action, 'keep shipping bounded improvements for the full 6 hours');
     assert.equal(mission.task_spine.current_step_command, null);
     assert.equal(mission.last_landing.next, 'keep shipping bounded improvements for the full 6 hours');
 
     const statusNow = fs.readFileSync(path.join(dir, 'atris', 'status', 'now.md'), 'utf8');
+    assert.match(statusNow, /state: working for the full 6 hours/);
     assert.match(statusNow, /next: keep shipping bounded improvements for the full 6 hours/);
     assert.doesNotMatch(statusNow, /task next:|current-step/);
     const memberNow = fs.readFileSync(path.join(dir, 'atris', 'team', 'linguist', 'now.md'), 'utf8');
+    assert.match(memberNow, /status: working for the full 6 hours/);
     assert.match(memberNow, /next: keep shipping bounded improvements for the full 6 hours/);
     assert.doesNotMatch(memberNow, /task next:|current-step/);
   } finally {
