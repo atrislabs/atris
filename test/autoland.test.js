@@ -267,6 +267,7 @@ test('operatorReady: a queue sentence earns its digest surface with a why, no ag
   assert.ok(!operatorReady('Operators can inspect the daily report'));
   assert.ok(!operatorReady('Users can open the finished work'));
   assert.ok(operatorReady('Operators can inspect the daily report, preventing unclear work from reaching approval'));
+  assert.ok(operatorReady('Reviewers can inspect one proof packet, reducing the risk of approving stale context'));
   // Why present but written in agent vocabulary (snake_case, flags, ids).
   assert.ok(!operatorReady('Make codex_goal slot handoff faster for users'));
   assert.ok(!operatorReady('Add --inspect flag so users save time'));

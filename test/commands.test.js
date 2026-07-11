@@ -12485,6 +12485,16 @@ test('task ready rejects an explicit landing sentence a day-one PM cannot act on
     const ref = JSON.parse(added.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
+    const brokenGrammar = runCli([
+      'task', 'ready', ref,
+      '--proof', 'node --test test/commands.test.js passed',
+      '--result', 'Reviewers can now inspect saved artifact proof without opening machine logs, preventing slow approval checks.',
+      '--landing', 'Read the artifact check as exists and not empty, preventing shell syntax from obscuring the proof.',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(brokenGrammar.status, 2, brokenGrammar.stderr || brokenGrammar.stdout);
+    assert.match(brokenGrammar.stderr, /landing needs one plain sentence saying what someone can do now and why it matters/);
+
     const weak = runCli([
       'task', 'ready', ref,
       '--proof', 'node --test test/commands.test.js passed',
