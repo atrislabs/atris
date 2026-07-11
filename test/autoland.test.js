@@ -206,7 +206,7 @@ test('digest and alarm compose in plain language', () => {
   assert.match(digest, /stuck codex mission/);
   assert.match(digest, /review proof for operators stop trusting so finished work can leave the queue/);
   assert.doesNotMatch(digest, /#13|surfaces exactly|review proof for operators stop trusting.*best fit/);
-  assert.match(digest, /- 2 more ideas that can't explain themselves yet \(atris now\)/);
+  assert.match(digest, /- 2 more moves need a clearer next action \(atris now\)/);
   // One tail pointer: the 'more results' line already names the command, so
   // the closing line only appears when nothing else pointed there.
   assert.equal((digest.match(/atris autoland digest/g) || []).length, 1);
@@ -244,8 +244,8 @@ test('digest and alarm compose in plain language', () => {
     project: 'atris-cli',
     nextMoves: { moves: [], unexplained: 1 },
   });
-  assert.match(oneUnexplained, /1 idea in the queue can't explain itself yet/);
-  assert.doesNotMatch(oneUnexplained, /1 idea.*themselves/);
+  assert.match(oneUnexplained, /1 move in the queue needs a clearer next action/);
+  assert.doesNotMatch(oneUnexplained, /idea|explain itself/);
 
   const alarm = autoland.composeAlarm({
     waiting: [{ ref: 'CLI-9', title: 'Send invoice', hours: 30 }],
