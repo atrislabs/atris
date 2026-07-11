@@ -86,6 +86,20 @@ test('mission landing summary strips broken markdown before status renders it', 
   assert.equal(storedLandProof[3], '  How I checked: I checked the live landing queue.');
   assert.equal(storedLandProof[4], '  What I tested: Landing status check passed: the queue and worktree state were readable.');
   assert.doesNotMatch(storedLandProof.join('\n'), /\/Users\/private|atris\.js|node /);
+  const drillVerifier = { passed: true, command: 'node /Users/private/bin/atris.js drill' };
+  assert.equal(missionVerifierCheckedText(drillVerifier, {}), 'I ran the no-model end-to-end workflow drill.');
+  assert.equal(
+    missionVerifierHighLevelTestText(drillVerifier, {}),
+    'End-to-end workflow drill passed in a throwaway workspace.',
+  );
+  const storedDrillProof = missionLandingLines({
+    changed: 'One brief written.',
+    checked: 'Verifier passed: node /Users/private/bin/atris.js drill.',
+    tested: 'Verifier command passed: node /Users/private/bin/atris.js drill.',
+  });
+  assert.equal(storedDrillProof[3], '  How I checked: I ran the no-model end-to-end workflow drill.');
+  assert.equal(storedDrillProof[4], '  What I tested: End-to-end workflow drill passed in a throwaway workspace.');
+  assert.doesNotMatch(storedDrillProof.join('\n'), /\/Users\/private|atris\.js|node /);
 });
 
 function runCli(args, { cwd, env = {} } = {}) {
