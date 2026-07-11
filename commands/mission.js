@@ -4418,19 +4418,25 @@ function missionReportFor(mission, root = process.cwd()) {
   const receipt = readMissionReceipt(verifierReceiptPath, root);
   const workerReceiptPath = mission.worker_receipt_path || (receipt && verifierReceiptPath) || null;
   const verifierPassed = mission.verifier_result && mission.verifier_result.passed === true;
-  const operatorOutcome = mission.operator_outcome
+  const budgetContinuation = missionBudgetContinuationText(mission);
+  const operatorOutcome = budgetContinuation
+    ? 'The last verifier passed; full-budget work is continuing.'
+    : mission.operator_outcome
     || (verifierPassed ? 'Verifier passed.' : mission.status === 'complete' ? 'Mission is complete.' : mission.status === 'blocked' ? 'Mission is blocked.' : 'Mission is still in progress.');
   return {
     id: mission.id,
     objective: mission.objective,
     status: mission.status,
+    human_status: missionHumanStatusText(mission),
+    budget_continuation: budgetContinuation,
     operator_outcome: operatorOutcome,
     worker: mission.worker || missionWorkerLabel(mission),
     worker_summary: missionWorkerSummary(mission, receipt),
     timeline: missionReportTimeline(mission, root),
     worker_receipt_path: workerReceiptPath,
     verifier_receipt_path: verifierReceiptPath,
-    operator_next: mission.operator_next || mission.next_action || 'Review the mission state.',
+    proof_text: mission.receipt_path ? missionStatusProofText(mission) : null,
+    operator_next: budgetContinuation || mission.operator_next || mission.next_action || 'Review the mission state.',
   };
 }
 
@@ -4470,16 +4476,17 @@ function reportMission(args) {
     reports.length
       ? reports.flatMap((report) => [
         `Mission: ${report.objective}`,
-        `  state: ${report.status}`,
+        `  state: ${report.human_status}`,
         `  What happened: ${report.operator_outcome}`,
         `  Worker: ${report.worker}`,
         `  Worker summary: ${report.worker_summary}`,
         ...(report.timeline && report.timeline.length ? [
           '  Timeline:',
-          ...report.timeline.map((item) => `    - ${item.title}`),
+          ...report.timeline.map((item) => `    - ${report.budget_continuation ? item.summary : item.title}`),
         ] : []),
-        ...(report.worker_receipt_path ? [`  Worker receipt: ${report.worker_receipt_path}`] : []),
-        ...(report.verifier_receipt_path ? [`  Verifier receipt: ${report.verifier_receipt_path}`] : []),
+        ...(report.budget_continuation && report.proof_text ? [`  Proof: ${report.proof_text}`] : []),
+        ...(!report.budget_continuation && report.worker_receipt_path ? [`  Worker receipt: ${report.worker_receipt_path}`] : []),
+        ...(!report.budget_continuation && report.verifier_receipt_path ? [`  Verifier receipt: ${report.verifier_receipt_path}`] : []),
         `  Next: ${missionReportNextText(report.operator_next)}`,
       ])
       : ['No missions yet. Run: atris mission start "..." --owner <member>'],
