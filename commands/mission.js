@@ -4441,6 +4441,11 @@ function missionReportNextText(nextAction) {
 }
 
 function reportMission(args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission report [id] [--limit <n>] [--local] [--json]');
+    console.log('Show the mission outcome, worker summary, proof receipts, timeline, and next move.');
+    return;
+  }
   const asJson = wantsJson(args);
   const localOnly = hasFlag(args, '--local');
   const ref = stripKnownFlags(args, ['--limit'], ['--json', '--local'])[0] || '';
@@ -4483,6 +4488,11 @@ function reportMission(args) {
 }
 
 function timelineMission(args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission timeline [id] [--limit <n>] [--all] [--prune-preview] [--write] [--json]');
+    console.log('Show saved landing outcomes; use --all --write for the full report.');
+    return;
+  }
   const asJson = wantsJson(args);
   const write = hasFlag(args, '--write');
   const all = hasFlag(args, '--all');
