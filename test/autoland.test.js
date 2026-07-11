@@ -266,6 +266,16 @@ test('digest acceptance history is not capped by the compact done-task projectio
   try {
     const workspaceRoot = fs.realpathSync(repo);
     const acceptedAt = new Date().toISOString();
+    const titleOnly = taskDb.addTask(db, {
+      title: 'Title-only result lets operators inspect accepted work, so the daily story stays complete.',
+      workspaceRoot,
+      status: 'done',
+      metadata: {
+        accepted_at: acceptedAt,
+        auto_accepted_at: acceptedAt,
+      },
+    });
+    db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(Date.now() - 10000, titleOnly.id);
     for (let i = 1; i <= 10; i += 1) {
       taskDb.addTask(db, {
         title: `Accepted result ${i} saves operator time`,
@@ -275,19 +285,10 @@ test('digest acceptance history is not capped by the compact done-task projectio
           accepted_at: acceptedAt,
           auto_accepted_at: acceptedAt,
           result: `Accepted result ${i} saves operator time, so the daily count stays trustworthy.`,
-          ...(i <= 9 ? { landing_happened: `Full story ${i} lets operators inspect the accepted result, so daily review stays trustworthy.` } : {}),
+          ...(i !== 1 ? { landing_happened: `Full story ${i} lets operators inspect the accepted result, so daily review stays trustworthy.` } : {}),
         },
       });
     }
-    taskDb.addTask(db, {
-      title: 'Title-only result lets operators inspect accepted work, so the daily story stays complete.',
-      workspaceRoot,
-      status: 'done',
-      metadata: {
-        accepted_at: acceptedAt,
-        auto_accepted_at: acceptedAt,
-      },
-    });
     const compact = taskDb.taskProjection(db, { workspaceRoot });
     assert.equal(compact.tasks.filter((task) => task.status === 'done').length, 8);
     const history = require('../commands/autoland').readAcceptedTaskHistory(workspaceRoot, [], dbPath);
@@ -296,8 +297,10 @@ test('digest acceptance history is not capped by the compact done-task projectio
     const digest = runCli(['autoland', 'digest'], repo);
     assert.equal(digest.status, 0, digest.stderr || digest.stdout);
     assert.match(digest.stdout, /^atris repo: last 24 hours\n11 landed;/);
-    assert.equal((digest.stdout.match(/Full story \d lets operators inspect/g) || []).length, 9);
-    assert.match(digest.stdout, /^  REP-\d+  Accepted result 10 saves operator time, so the daily count stays trustworthy\.$/m);
+    assert.match(digest.stdout, /8 more results in the full story below/);
+    assert.equal((digest.stdout.match(/^  REP-/gm) || []).length, 8);
+    assert.equal((digest.stdout.match(/Full story \d lets operators inspect/g) || []).length, 6);
+    assert.match(digest.stdout, /^  REP-\d+  Accepted result 1 saves operator time, so the daily count stays trustworthy\.$/m);
     assert.match(digest.stdout, /^  REP-\d+  Title-only result lets operators inspect accepted work, so the daily story stays complete\.$/m);
   } finally {
     taskDb.close(db);
