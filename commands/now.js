@@ -264,7 +264,7 @@ function todayTaskReceiptLines(root = process.cwd(), date = new Date(), limit = 
     .slice(-limit)
     .reverse()
     .map((r) => {
-      const result = historicalLandingText(r.result || r.title, 130);
+      const result = historicalLandingText(r.result || r.title, 180);
       const proofState = r.certified ? 'independently checked' : 'proof on file';
       return `- ✓ ${result} - ${proofState}`;
     });
