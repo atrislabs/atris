@@ -4308,6 +4308,68 @@ test('stale session lock rotates to a fresh session instead of grinding the erro
   }
 });
 
+test('a resume against a vanished session rotates instead of grinding the error breaker', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
+
+    const fakeBin = path.join(dir, 'fake-bin');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    const fakeClaude = path.join(fakeBin, 'claude');
+    const goneMarker = path.join(dir, 'resume-failed-once');
+    // The first --resume fails the way a cleaned-up session does: the stored id
+    // resolves to no conversation. Every other call succeeds. Without the
+    // rotation the run would grind claude-error until the breaker paused it.
+    fs.writeFileSync(fakeClaude, [
+      '#!/bin/sh',
+      'if [ "$1" = "--help" ]; then',
+      '  echo "--output-format --permission-mode --resume --session-id --include-partial-messages"',
+      '  exit 0',
+      'fi',
+      'mode=""; sid=""; prev=""',
+      'for a in "$@"; do',
+      '  if [ "$prev" = "--session-id" ]; then mode=set; sid="$a"; fi',
+      '  if [ "$prev" = "--resume" ]; then mode=resume; sid="$a"; fi',
+      '  prev="$a"',
+      'done',
+      `if [ "$mode" = "resume" ] && [ ! -f "${goneMarker}" ]; then`,
+      `  touch "${goneMarker}"`,
+      '  echo "No conversation found with session ID: $sid" >&2',
+      '  exit 1',
+      'fi',
+      'echo "{\\"type\\":\\"result\\",\\"is_error\\":false,\\"result\\":\\"did work\\",\\"session_id\\":\\"$sid\\"}"',
+      'exit 0',
+      '',
+    ].join('\n'), 'utf8');
+    fs.chmodSync(fakeClaude, 0o755);
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+
+    const start = runCli([
+      'mission', 'start', '--no-verify', 'vanished session rotates instead of pausing',
+      '--owner', 'mission-lead',
+      '--runner', 'claude',
+      '--cadence', 'manual',
+      '--verify', 'node -e "process.exit(1)"',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const mission = JSON.parse(start.stdout).mission;
+
+    const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--json'], { cwd: dir, env });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.pause_reason, 'consecutive-verifier-fails');
+
+    const stateLog = fs.readFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), 'utf8');
+    assert.match(stateLog, /claude-session-busy/);
+    const sessionIds = new Set([...stateLog.matchAll(/"claude_session_id":"([0-9a-f-]+)"/g)].map((m) => m[1]));
+    assert.equal(sessionIds.size, 2, `expected a rotated second session id, saw: ${[...sessionIds].join(', ')}`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('healthy claude sessions rotate for context refresh after N ran ticks', () => {
   const dir = makeTempDir();
   try {

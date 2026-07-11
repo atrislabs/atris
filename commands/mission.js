@@ -7322,11 +7322,15 @@ async function runMission(args) {
             : 'claude-error';
           if (deadModel) { reason = 'model-unavailable'; result.model_unavailable = deadModel; }
           // A killed tick (usually claude-timeout) can leave the session lock
-          // held, so the next resume fails with "already in use". Session
-          // continuity is disposable — mission state lives on disk (receipts,
-          // logs, now.md) — so rotate to a fresh id instead of grinding the
-          // repeated-error breaker on a stale lock.
-          if (/session id .* is already in use/i.test(claudeResult.stderr || '')) {
+          // held, so the next resume fails with "already in use". A session
+          // that was cleaned up between ticks fails the resume the other way,
+          // with "No conversation found with session ID". Both mean the stored
+          // id is dead. Session continuity is disposable — mission state lives
+          // on disk (receipts, logs, now.md) — so rotate to a fresh id instead
+          // of grinding the repeated-error breaker on a stale session.
+          const staleSession = /session id .* is already in use/i.test(claudeResult.stderr || '')
+            || /no conversation found with session id/i.test(claudeResult.stderr || '');
+          if (staleSession) {
             reason = 'claude-session-busy';
             pendingSessionId = crypto.randomUUID();
             sessionId = null;
