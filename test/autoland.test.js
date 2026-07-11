@@ -374,6 +374,14 @@ test('operatorReady: a queue sentence earns its digest surface with a why, no ag
   assert.ok(!operatorReady('CLI-788 failed because the continuation stopped'));
 });
 
+test('result gate accepts a complete act-on phrase but rejects a dangling on ending', () => {
+  const complete = autoland.explainResult('Atris now shows its refresh minute, so operators can judge whether the current truth is fresh enough to act on.');
+  assert.equal(complete.ok, true, complete.reason);
+  const dangling = autoland.explainResult('Atris now shows its refresh minute, so operators know the current truth and act on.');
+  assert.equal(dangling.ok, false);
+  assert.match(dangling.reason, /ends mid-thought/);
+});
+
 test('digest falls back to the complete landing when shortening the result removes its why', () => {
   const digest = autoland.composeDigest({
     accepted: {
