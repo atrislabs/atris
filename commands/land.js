@@ -513,7 +513,7 @@ function printBoard(board) {
     console.log('');
     return;
   }
-  const order = { due: 0, detached: 0, landed: 1, active: 2 };
+  const order = { due: 0, detached: 0, active: 1, landed: 2 };
   const rows = [...board.branches].sort((a, b) => (order[a.state] ?? 3) - (order[b.state] ?? 3) || b.ageDays - a.ageDays);
   const labels = { due: 'overdue', landed: 'landed', active: 'in the air' };
   for (const b of rows) {
