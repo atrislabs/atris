@@ -251,6 +251,15 @@ test('mission status keeps full-budget work moving until promised time ends', ()
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'atris', 'team', 'linguist'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'team', 'linguist', 'MEMBER.md'), '# Linguist\n', 'utf8');
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'runs', 'full-budget.json'), JSON.stringify({
+      result: {
+        landing: {
+          changed: 'The latest bounded improvement passed its check.',
+          next: 'Review proof, then run: atris mission complete mission-full-budget.',
+        },
+      },
+    }), 'utf8');
     appendMissionState(dir, {
       id: 'mission-full-budget',
       slug: 'full-budget',
@@ -274,13 +283,14 @@ test('mission status keeps full-budget work moving until promised time ends', ()
     const status = runCli(['mission', 'status', 'mission-full-budget'], { cwd: dir });
     assert.equal(status.status, 0, status.stderr);
     assert.match(status.stdout, /next: keep shipping bounded improvements for the full 6 hours/);
-    assert.doesNotMatch(status.stdout, /task next:|current-step/);
+    assert.doesNotMatch(status.stdout, /task next:|current-step|Review proof|mission complete/);
 
     const jsonStatus = runCli(['mission', 'status', 'mission-full-budget', '--json'], { cwd: dir });
     assert.equal(jsonStatus.status, 0, jsonStatus.stderr);
     const mission = JSON.parse(jsonStatus.stdout).missions[0];
     assert.equal(mission.next_action, 'keep shipping bounded improvements for the full 6 hours');
     assert.equal(mission.task_spine.current_step_command, null);
+    assert.equal(mission.last_landing.next, 'keep shipping bounded improvements for the full 6 hours');
 
     const statusNow = fs.readFileSync(path.join(dir, 'atris', 'status', 'now.md'), 'utf8');
     assert.match(statusNow, /next: keep shipping bounded improvements for the full 6 hours/);
