@@ -4795,6 +4795,7 @@ function timelineMission(args) {
     },
     artifact_path: artifactPath,
   };
+  const hideHistoricalNext = Boolean(missionBudgetContinuationText(mission));
   const lines = timeline.length
     ? [
       `Mission timeline: ${mission.objective}`,
@@ -4804,7 +4805,7 @@ function timelineMission(args) {
       ...(historyWithoutCurrent.length ? ['History:'] : []),
       ...historyWithoutCurrent.flatMap((item, index) => [
         `  ${index + 1}. ${item.changed || 'Landing recorded.'}`,
-        ...(item.next ? [`     Next at the time: ${item.next}`] : []),
+        ...(item.next && !hideHistoricalNext ? [`     Next at the time: ${item.next}`] : []),
         '     Proof: saved in mission history.',
       ]),
     ]
