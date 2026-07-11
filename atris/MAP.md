@@ -397,6 +397,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Exact sent surface:** when a live landing message is attempted, the tick receipt stores its exact body as `live_update_text` beside `live_update_sent`, so the next linguist audit reads what the operator received instead of reconstructing newer code. Regression: `test/autoland.test.js` (`live update receipt keeps the exact sent text...`)
 - **Proof-ready digest action:** `digestNextMoves()` preserves each move kind; a `mission_ready` row renders one complete human review action without truncating the mission objective or suggesting a new owner. Regression: `test/autoland.test.js` (`digest and alarm compose in plain language`)
 - **Exact digest window:** the digest header says `last 24 hours`, matching `acceptedInLastDay()` instead of calling a rolling window `yesterday`. Regression: `test/autoland.test.js` (`digest and alarm compose in plain language`)
+- **Action-plus-why boundary:** `operatorReady()` treats audience words such as `users` and `operators` as subjects, not consequences; reports must name a real outcome such as saved time, prevented failure, or increased trust. Regression: `test/autoland.test.js` (`operatorReady: a queue sentence earns its digest surface with a why...`)
 - **Regression:** `test/autoland.test.js` (compose, dedupe, policy gate, cited suite-green claims, live e2e land + denied lane, off no-op)
 - **Value:** the human approves policy, not items; nothing certified waits silently again
 
