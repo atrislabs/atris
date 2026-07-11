@@ -245,6 +245,54 @@ test('mission status requires end-to-end proof placeholder for golden-path Agent
   }
 });
 
+test('mission status keeps full-budget work moving until promised time ends', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'linguist'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'linguist', 'MEMBER.md'), '# Linguist\n', 'utf8');
+    appendMissionState(dir, {
+      id: 'mission-full-budget',
+      slug: 'full-budget',
+      objective: 'Keep improving operator reports with bounded verified fixes',
+      owner: 'linguist',
+      status: 'ready',
+      xp_task_enabled: true,
+      xp_task: { task_id: 'task-full-budget', ref: 'CLI-900', title: 'Mission XP: full budget' },
+      task_ids: ['task-full-budget'],
+      receipt_path: 'atris/runs/full-budget.json',
+      next_action: 'queue AgentXP review: atris task current-step --goal-id mission-full-budget --as linguist --proof "atris/runs/full-budget.json" --json',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      budget_contract: {
+        policy: 'spend_full_budget',
+        requested_seconds: 21600,
+        budget_label: '6 hours',
+      },
+    });
+
+    const status = runCli(['mission', 'status', 'mission-full-budget'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /next: keep shipping bounded improvements for the full 6 hours/);
+    assert.doesNotMatch(status.stdout, /task next:|current-step/);
+
+    const jsonStatus = runCli(['mission', 'status', 'mission-full-budget', '--json'], { cwd: dir });
+    assert.equal(jsonStatus.status, 0, jsonStatus.stderr);
+    const mission = JSON.parse(jsonStatus.stdout).missions[0];
+    assert.equal(mission.next_action, 'keep shipping bounded improvements for the full 6 hours');
+    assert.equal(mission.task_spine.current_step_command, null);
+
+    const statusNow = fs.readFileSync(path.join(dir, 'atris', 'status', 'now.md'), 'utf8');
+    assert.match(statusNow, /next: keep shipping bounded improvements for the full 6 hours/);
+    assert.doesNotMatch(statusNow, /task next:|current-step/);
+    const memberNow = fs.readFileSync(path.join(dir, 'atris', 'team', 'linguist', 'now.md'), 'utf8');
+    assert.match(memberNow, /next: keep shipping bounded improvements for the full 6 hours/);
+    assert.doesNotMatch(memberNow, /task next:|current-step/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 function writeMemberProfile(dir, slug, role) {
   fs.mkdirSync(path.join(dir, 'atris', 'team', slug), { recursive: true });
   fs.writeFileSync(path.join(dir, 'atris', 'team', slug, 'MEMBER.md'), [

@@ -1007,6 +1007,7 @@ function renderMemberNowMarkdown(owner, missions) {
   }
   for (const mission of missions) {
     const taskSpine = missionTaskSpine(mission);
+    const budgetContinuation = missionBudgetContinuationText(mission);
     lines.push(`## ${mission.objective}`);
     lines.push('');
     lines.push(`- id: ${mission.id}`);
@@ -1015,13 +1016,13 @@ function renderMemberNowMarkdown(owner, missions) {
     lines.push(`- runner: ${mission.runner}${mission.model ? ` (${mission.model})` : ''}`);
     lines.push(`- lane: ${mission.lane}`);
     if (taskSpine.task_ref) lines.push(`- task: ${taskSpine.task_ref}`);
-    if (taskSpine.current_step_command) lines.push(`- task next: ${taskSpine.current_step_command}`);
+    if (taskSpine.current_step_command && !budgetContinuation) lines.push(`- task next: ${taskSpine.current_step_command}`);
     if (!taskSpine.has_task && taskSpine.ensure_task_command) lines.push(`- task setup: ${taskSpine.ensure_task_command}`);
     if (mission.xp_task?.ref) lines.push(`- AgentXP task: ${mission.xp_task.ref}`);
     if (mission.verifier) lines.push(`- verifier: ${mission.verifier}`);
     lines.push(...missionMetricLine(mission, '- '));
     if (mission.stop_condition) lines.push(`- stop: ${mission.stop_condition}`);
-    if (mission.next_action) lines.push(`- next: ${mission.next_action}`);
+    if (budgetContinuation || mission.next_action) lines.push(`- next: ${budgetContinuation || mission.next_action}`);
     if (mission.receipt_path) lines.push(`- receipt: ${mission.receipt_path}`);
     if (mission.human_asks?.length) {
       lines.push('- human asks:');
@@ -1642,6 +1643,12 @@ function missionFullBudgetRemainingSeconds(mission, nowMs = Date.now()) {
   return Math.max(0, Math.ceil((startedMs + budgetSeconds * 1000 - nowMs) / 1000));
 }
 
+function missionBudgetContinuationText(mission, nowMs = Date.now()) {
+  if (missionFullBudgetRemainingSeconds(mission, nowMs) <= 0) return null;
+  const budget = String(mission?.budget_contract?.budget_label || 'promised time').trim();
+  return `keep shipping bounded improvements for the full ${budget}`;
+}
+
 function missionGoalChainIntent(text) {
   const lower = String(text || '').toLowerCase().replace(/\s+/g, ' ');
   return /\b(3\s*(?:or|-)?\s*4|three\s+or\s+four|multiple|child|subgoals?|goal\s+after\s+goal|keeps?\s+goaling|mission\s+feeling\s+good|feels?\s+good|validated\s+and\s+i\s+can\s+understand)\b/.test(lower)
@@ -1956,9 +1963,14 @@ function missionStatusView(mission) {
   const taskSpine = missionTaskSpine(mission);
   if (!taskSpine) return mission;
   const needsEndToEndProof = missionRequiresZeroPapercutEndToEnd(mission);
-  const safeNextAction = needsEndToEndProof && /^queue AgentXP review:/i.test(String(mission.next_action || ''))
-    ? missionXpReadyAction(mission, mission.receipt_path) || mission.next_action
-    : mission.next_action;
+  const budgetContinuation = missionBudgetContinuationText(mission);
+  const safeNextAction = budgetContinuation
+    || (needsEndToEndProof && /^queue AgentXP review:/i.test(String(mission.next_action || ''))
+      ? missionXpReadyAction(mission, mission.receipt_path) || mission.next_action
+      : mission.next_action);
+  const visibleTaskSpine = budgetContinuation
+    ? { ...taskSpine, current_step_command: null }
+    : taskSpine;
   const requestedOwner = taskSpine.requested_owner
     || mission.requested_owner
     || (mission.owner && mission.owner !== taskSpine.owner ? mission.owner : null);
@@ -1977,7 +1989,7 @@ function missionStatusView(mission) {
     task_id: taskSpine.task_id,
     current_task_id: taskSpine.current_task_id,
     task_ref: taskSpine.task_ref,
-    task_spine: taskSpine,
+    task_spine: visibleTaskSpine,
     last_landing: missionLastLanding(mission),
   };
 }
@@ -8817,6 +8829,7 @@ module.exports = {
   missionVerifierCheckedText,
   missionVerifierHighLevelTestText,
   missionFullBudgetRemainingSeconds,
+  missionBudgetContinuationText,
   resolveMissionRunnerSelection,
   resolveMissionTickRunner,
   engineFailureHealthStatus,
