@@ -49,6 +49,10 @@ test('mission landing summary strips broken markdown before status renders it', 
     missionLandingLines({ changed: 'Killed a trap number before it reached the pitch — verified by `test -s` (163 lines, passes). I closed tick 1\'s open item: swept the entire /arena workspace for the store the objective.' })[1],
     '  Changed: Killed a trap number before it reached the pitch.',
   );
+  assert.equal(
+    missionLandingLines({ changed: 'Verifier passes (45 tests). Now I need to read yesterday\'s operator surfaces. Let me look at the latest receipt.' })[1],
+    '  Changed: This proof step recorded no operator-facing result.',
+  );
 });
 
 function runCli(args, { cwd, env = {} } = {}) {
