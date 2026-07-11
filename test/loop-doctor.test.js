@@ -59,7 +59,7 @@ test('detects repeated pause reasons and repeated errored ticks', () => {
     ticks: [{ status: 'errored', error: 'worker exited 7' }],
   });
   writeJson(root, 'atris/runs/mission-002.json', {
-    ts: '2026-07-10T09:00:00.000Z',
+    ts: '2026-07-10T11:00:00.000Z',
     result: { pause_reason: 'claude-session-busy' },
     ticks: [{ status: 'failed', error: 'worker exited 7' }],
   });
@@ -115,13 +115,45 @@ test('detects repeated auth failure strings', () => {
     ts: '2026-07-09T09:00:00.000Z', ticks: [{ status: 'paused', message: 'request returned 401' }],
   });
   writeJson(root, 'atris/runs/mission-auth-2.json', {
-    ts: '2026-07-10T09:00:00.000Z', result: { tooling: 'request returned 401 again' },
+    ts: '2026-07-10T11:00:00.000Z', result: { tooling: 'request returned 401 again' },
   });
   const findings = scanLoopReceipts({ root, now: NOW });
   assert.deepEqual(findings.map((finding) => finding.kind), ['repeated_auth_failure']);
   assert.equal(findings[0].evidence.signature, '401');
   assert.equal(findings[0].suggested_mission.verifier,
     'atris improve doctor --check repeated_auth_failure');
+});
+
+test('repeated failures require fresh evidence but keep unknown-age evidence visible', () => {
+  const stale = workspace();
+  seedHealthyState(stale);
+  writeJson(stale, 'atris/runs/mission-stale-1.json', {
+    ts: '2026-07-10T06:00:00.000Z', auth: 'Token expired',
+    ticks: [{ status: 'errored', error: 'engine outage' }],
+  });
+  writeJson(stale, 'atris/runs/mission-stale-2.json', {
+    ts: '2026-07-10T06:10:00.000Z', auth: 'Token expired',
+    ticks: [{ status: 'errored', error: 'engine outage' }],
+  });
+  assert.deepEqual(scanLoopReceipts({ root: stale, now: NOW, freshnessMs: 2 * 60 * 60 * 1000 }), []);
+
+  writeJson(stale, 'atris/runs/mission-fresh.json', {
+    ts: '2026-07-10T11:00:00.000Z', ticks: [{ status: 'errored', error: 'engine outage' }],
+  });
+  assert.deepEqual(scanLoopReceipts({ root: stale, now: NOW }).map((finding) => finding.kind),
+    ['repeated_tick_error']);
+
+  const unknown = workspace();
+  seedHealthyState(unknown);
+  writeJson(unknown, 'atris/runs/mission-unknown-1.json', {
+    ticks: [{ status: 'errored', error: 'timestamp unavailable' }],
+  });
+  writeJson(unknown, 'atris/runs/mission-unknown-2.json', {
+    ticks: [{ status: 'errored', error: 'timestamp unavailable' }],
+  });
+  const findings = scanLoopReceipts({ root: unknown, now: NOW });
+  assert.deepEqual(findings.map((finding) => finding.kind), ['repeated_tick_error']);
+  assert.equal(findings[0].last_seen, null);
 });
 
 test('clean receipt data produces no findings', () => {
@@ -144,7 +176,7 @@ test('orders the blocking auth defect before downstream loop symptoms', () => {
   ]);
   for (let i = 0; i < 2; i++) {
     writeJson(root, `atris/runs/mission-bad-${i}.json`, {
-      ts: `2026-07-${8 + i}T09:00:00.000Z`,
+      ts: `2026-07-10T${10 + i}:00:00.000Z`,
       pause_reason: 'max-ticks-reached',
       auth: 'Token expired',
     });
@@ -205,7 +237,7 @@ test('reward_pressure caps at 100 and every finding gets the field even at zero 
   seedHealthyState(clean);
   writeJsonl(clean, '.atris/state/scorecards.jsonl', [{ ts: '2026-07-10T10:00:00.000Z', reward: 1 }]);
   writeJson(clean, 'atris/runs/mission-auth-1.json', { ts: '2026-07-09T09:00:00.000Z', error: 'Signature verification failed' });
-  writeJson(clean, 'atris/runs/mission-auth-2.json', { ts: '2026-07-10T09:00:00.000Z', error: 'Signature verification failed' });
+  writeJson(clean, 'atris/runs/mission-auth-2.json', { ts: '2026-07-10T11:00:00.000Z', error: 'Signature verification failed' });
   const zeroPressure = scanLoopReceipts({ root: clean, now: NOW });
   assert.equal(zeroPressure[0].reward_pressure, 0);
   assert.equal(zeroPressure[0].effective_priority, FINDING_PRIORITY[zeroPressure[0].kind]);
@@ -214,8 +246,9 @@ test('reward_pressure caps at 100 and every finding gets the field even at zero 
 test('doctor --fix files at most one mission and dedupes the second run', () => {
   const root = workspace();
   seedHealthyState(root);
-  writeJson(root, 'atris/runs/mission-auth-1.json', { ts: '2026-07-09T09:00:00.000Z', error: 'Signature verification failed' });
-  writeJson(root, 'atris/runs/mission-auth-2.json', { ts: '2026-07-10T09:00:00.000Z', error: 'Signature verification failed' });
+  const freshTs = new Date().toISOString();
+  writeJson(root, 'atris/runs/mission-auth-1.json', { ts: freshTs, error: 'Signature verification failed' });
+  writeJson(root, 'atris/runs/mission-auth-2.json', { ts: freshTs, error: 'Signature verification failed' });
   const cli = path.resolve(__dirname, '..', 'bin', 'atris.js');
   const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', HOME: path.join(root, 'home') };
   const run = () => spawnSync(process.execPath, [cli, 'improve', 'doctor', '--fix', '--json'], {
