@@ -231,6 +231,48 @@ test('worktree ship treats adapter-only churn as clean after restore', () => {
   }
 });
 
+test('worktree ship names dirt created during verification and stops before push', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const { remote, repo, git } = setupRepo(dir);
+    worktreePath = path.join(dir, 'verify-dirt-worktree');
+    const start = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-shipper',
+      '--task',
+      'Verify Dirt',
+      '--path',
+      worktreePath,
+    ], { cwd: repo });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+
+    const shipped = runCli([
+      'worktree',
+      'ship',
+      '--verify',
+      `${process.execPath} -e "require('fs').writeFileSync('late-write.txt', 'late')"`,
+      '--no-pr',
+    ], { cwd: worktreePath });
+
+    assert.equal(shipped.status, 3, shipped.stderr || shipped.stdout);
+    assert.match(shipped.stderr, /blocked: verifier left checkout dirty/);
+    assert.match(shipped.stderr, /new after verify: \?\? late-write\.txt/);
+    assert.equal(fs.readFileSync(path.join(worktreePath, 'late-write.txt'), 'utf8'), 'late');
+    const branch = git(['branch', '--show-current'], worktreePath);
+    const remoteRef = spawnSync('git', ['--git-dir', remote, 'show-ref', '--verify', `refs/heads/${branch}`], {
+      cwd: dir,
+      encoding: 'utf8',
+    });
+    assert.notEqual(remoteRef.status, 0, 'verification dirt must stop before push');
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
 test('worktree ship still blocks from master', () => {
   const dir = makeTempDir();
   try {

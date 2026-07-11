@@ -33,6 +33,20 @@ function runCommand(command, { cwd = process.cwd(), check = true } = {}) {
   return result;
 }
 
+function statusSnapshot(root) {
+  const result = runGit(['status', '--porcelain=v1', '--untracked-files=all'], { cwd: root, check: false });
+  if (result.status !== 0) return [];
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter(Boolean);
+}
+
+function newStatusRows(before, after) {
+  const seen = new Set(before);
+  return after.filter((row) => !seen.has(row));
+}
+
 function repoRoot(cwd = process.cwd()) {
   return runGit(['rev-parse', '--show-toplevel'], { cwd }).stdout.trim();
 }
@@ -490,14 +504,20 @@ function shipWorktree(args) {
   }
 
   if (verify) {
+    const beforeVerify = dryRun ? [] : statusSnapshot(root);
     console.log(`verify: ${verify}`);
     if (!dryRun) runCommand(verify, { cwd: root });
+    const afterVerifyRows = dryRun ? [] : statusSnapshot(root);
+    const verifyDelta = newStatusRows(beforeVerify, afterVerifyRows);
     const afterVerify = dryRun ? { staged: 0, unstaged: 0, untracked: 0 } : statusCounts(root) || { staged: 0, unstaged: 0, untracked: 0 };
     if (!dryRun && (afterVerify.staged || afterVerify.unstaged || afterVerify.untracked)) {
       console.error(
         `blocked: verifier left checkout dirty staged=${afterVerify.staged} ` +
           `unstaged=${afterVerify.unstaged} untracked=${afterVerify.untracked}`
       );
+      if (verifyDelta.length) {
+        console.error(`new after verify: ${verifyDelta.slice(0, 8).join(', ')}`);
+      }
       return 3;
     }
   } else {
@@ -790,6 +810,8 @@ function worktreeCommand(args = []) {
 
 module.exports = {
   branchName,
+  statusSnapshot,
+  newStatusRows,
   createAgentWorktree,
   createOrFindPr,
   cleanupWorktrees,

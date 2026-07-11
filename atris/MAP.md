@@ -419,7 +419,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Entry point:** `bin/atris.js` dispatch for `worktree`
 - **Handler:** `commands/worktree.js`
-- **Core flows:** `guide` prints the agent recipe; `start --member <slug> --task "<task>" --claim` and `start --agent <slug> --task "<task>"` create sibling `.agent-worktrees/<repo>/...` checkouts from the current upstream/default remote base; `ship --message "<commit>" --verify "<cmd>" [--merge]` commits, verifies, merge-checks, pushes, opens a PR, and optionally merges; `status` lists dirty counts for each worktree; `guard` blocks primary/dirty checkout use unless explicitly allowed; `prune --apply` removes stale missing worktree registrations.
+- **Core flows:** `guide` prints the agent recipe; `start --member <slug> --task "<task>" --claim` and `start --agent <slug> --task "<task>"` create sibling `.agent-worktrees/<repo>/...` checkouts from the current upstream/default remote base; `ship --message "<commit>" --verify "<cmd>" [--merge]` commits, snapshots checkout status around verification, names and blocks new verifier-created dirt, merge-checks, pushes, opens a PR, and optionally merges; `status` lists dirty counts for each worktree; `guard` blocks primary/dirty checkout use unless explicitly allowed; `prune --apply` removes stale missing worktree registrations.
 - **Value:** Ties member/agent identity, branch, isolated filesystem state, staging area, live Swarlo claim, verification, push, PR, and merge together for multi-agent work.
 
 **Search:** `rg "worktreeCommand|startWorktree|shipWorktree|parseWorktrees|swarloClaim" commands/worktree.js test/commands.test.js`
