@@ -356,7 +356,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       // could not fully back up what force-remove would destroy — keep it,
       // and say why: a bare path in the receipt reads as an unexplained
       // no-op (the exact silence BCK-1232 was about).
-      receipt.keptWorktrees.push(`${w.path} (salvage incomplete — patch/copy failed, kept to avoid losing work)`);
+      receipt.keptWorktrees.push(`${w.path} (salvage incomplete: patch/copy failed, kept to avoid losing work)`);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
@@ -492,7 +492,7 @@ function printStory(story) {
     console.log('  some other way. nothing here would be lost by clearing it.');
   } else if (story.landedElsewhere > 0) {
     console.log(`  bottom line: ${story.landedElsewhere} of ${story.changes.length} changes made it into ${story.base} another`);
-    console.log(`  way. ${story.uniqueChanges} exist only here (marked "never made it") — they may have`);
+    console.log(`  way. ${story.uniqueChanges} exist only here (marked "never made it") - they may have`);
     console.log('  been redone differently, or they may be real lost work. clearing backs');
     console.log('  them up first either way.');
   } else {
@@ -506,7 +506,7 @@ function printStory(story) {
 
 function printBoard(board) {
   console.log('');
-  console.log('the landing — what is actually done vs still in the air');
+  console.log('the landing: what is actually done vs still in the air');
   console.log('');
   if (board.branches.length === 0 && board.worktrees.length === 0) {
     console.log('  everything has landed. nothing in the air, nothing stuck.');
@@ -541,13 +541,13 @@ function printBoard(board) {
 function printReceipt(receipt) {
   console.log('');
   if (receipt.dryRun) {
-    console.log(`landing cleanup preview — would clear ${receipt.deletedBranches.length} pieces of work, ${receipt.removedWorktrees.length} side copies:`);
+    console.log(`landing cleanup preview: would clear ${receipt.deletedBranches.length} pieces of work, ${receipt.removedWorktrees.length} side copies:`);
     for (const b of receipt.deletedBranches) console.log(`  would clear  ${b}`);
     for (const w of receipt.removedWorktrees) console.log(`  would remove ${w}`);
   } else {
-    console.log(`landing cleanup done — ${receipt.deletedBranches.length} pieces cleared, ${receipt.removedWorktrees.length} side copies removed`);
+    console.log(`landing cleanup done: ${receipt.deletedBranches.length} pieces cleared, ${receipt.removedWorktrees.length} side copies removed`);
     if (receipt.bundle) console.log(`  backed up first, nothing lost: ${receipt.bundle}`);
-    if (receipt.bundleError) console.log(`  backup failed — unlanded work left in place: ${receipt.bundleError}`);
+    if (receipt.bundleError) console.log(`  backup failed: unlanded work left in place: ${receipt.bundleError}`);
     for (const p of receipt.patches) console.log(`  unsaved edits saved: ${p}`);
     for (const u of receipt.untracked || []) console.log(`  new files saved: ${u}`);
     // fresh-grace keeps are healthy active work, not a call to action —
@@ -571,7 +571,7 @@ function readFlag(args, name, fallback = '') {
 
 function showHelp() {
   console.log('');
-  console.log('atris land — the landing: what is actually done vs still in the air');
+  console.log('atris land: the landing, what is actually done vs still in the air');
   console.log('');
   console.log('work counts as done only when it lands in master. everything else is');
   console.log('in the air, and this shows it so nothing quietly dies.');
@@ -588,7 +588,7 @@ function showHelp() {
   console.log('  atris land --ttl <days>        change the 7-day overdue line');
   console.log('  atris land --json              machine-readable output');
   console.log('');
-  console.log('backups go to .atris/salvage/<date>/ — clearing never loses work.');
+  console.log('backups go to .atris/salvage/<date>/; clearing never loses work.');
   console.log('');
 }
 
