@@ -132,6 +132,17 @@ function readProjection(root) {
   }
 }
 
+function readAcceptedTaskHistory(root, fallbackTasks = [], dbPath = undefined) {
+  try {
+    const taskDb = require('../lib/task-db');
+    const db = taskDb.open(dbPath);
+    const rows = taskDb.listTasks(db, { workspaceRoot: root });
+    return taskDb.withTaskDisplayRefs(rows);
+  } catch {
+    return fallbackTasks;
+  }
+}
+
 function compactId(value) {
   return String(value || '').trim();
 }
@@ -544,7 +555,7 @@ function turnOff(root) {
 function runDigest(root, args, { forceSend = false } = {}) {
   const policy = autoland.readPolicy(root) || {};
   const tasks = readProjection(root);
-  const accepted = autoland.acceptedInLastDay(tasks);
+  const accepted = autoland.acceptedInLastDay(readAcceptedTaskHistory(root, tasks));
   const state = autoland.readState(root);
   let waitingWishes = [];
   try {
@@ -807,7 +818,7 @@ function runTickBody(root, { json, policy, receipt }) {
       waitingWishes = require('./wish').waitingOperatorWishes(root);
     } catch {}
     const text = autoland.composeDigest({
-      accepted: autoland.acceptedInLastDay(tasks),
+      accepted: autoland.acceptedInLastDay(readAcceptedTaskHistory(root, tasks)),
       waiting,
       waitingWishes,
       landed: landSummarySafe(root),
@@ -960,6 +971,7 @@ module.exports = {
   explainResult,
   missionReadyForClosedTaskVerify,
   operatorReady,
+  readAcceptedTaskHistory,
   hasAgentJargon,
   runTickBody,
   persistTickReceipt,
