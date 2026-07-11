@@ -938,7 +938,11 @@ function resolveMission(ref, root = process.cwd()) {
       console.warn(`warning: mission number #${wantedNumber} is shared by ${matches.map((mission) => mission.id).join(', ')}; using ${chosen.id}.`);
       return chosen;
     }
-    return matches[0] || null;
+    if (matches.length) return matches[0];
+    // No mission has this n. An all-digit ref can still be a hash suffix —
+    // missionId()'s 8-hex-char suffix is purely numeric ~2.4% of the time
+    // ((10/16)^8), and returning null here made those missions unresolvable
+    // by suffix. Fall through to slug/suffix resolution instead.
   }
 
   const localSlugOrLegacyMatch = localMissions.find((mission) => missionMatchesRef(mission, rawRef));

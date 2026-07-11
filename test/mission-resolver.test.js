@@ -163,3 +163,23 @@ test('a genuine multi-word objective still starts a new mission (unchanged behav
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('an all-digit hash suffix still resolves by suffix, not just as a number n', () => {
+  // missionId()'s 8-hex-char suffix is all digits ~2.4% of the time; the
+  // numeric-n fast path must fall through to suffix matching when no mission
+  // has that n, or those missions become unresolvable by suffix.
+  const { base, repo } = makeRepo();
+  try {
+    const mission = startMission(repo, 'digit suffix objective', 'alice');
+    const stateFile = path.join(repo, '.atris', 'state', 'missions.jsonl');
+    const digitId = mission.id.replace(/[0-9a-f]{8}$/, '20482048');
+    assert.notEqual(digitId, mission.id, 'test needs to rewrite the suffix');
+    fs.writeFileSync(stateFile, fs.readFileSync(stateFile, 'utf8').split(mission.id).join(digitId));
+
+    const bySuffix = runCli(['mission', 'show', '20482048', '--json'], repo);
+    assert.equal(bySuffix.status, 0, bySuffix.stderr || bySuffix.stdout);
+    assert.equal(JSON.parse(bySuffix.stdout).missions[0].id, digitId);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
