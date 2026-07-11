@@ -15,6 +15,8 @@ const {
   missionVerifierTimeoutMs,
   missionLandingStepSummary,
   missionLandingLines,
+  missionVerifierCheckedText,
+  missionVerifierHighLevelTestText,
 } = require('../commands/mission');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -52,6 +54,15 @@ test('mission landing summary strips broken markdown before status renders it', 
   assert.equal(
     missionLandingLines({ changed: 'Verifier passes (45 tests). Now I need to read yesterday\'s operator surfaces. Let me look at the latest receipt.' })[1],
     '  Changed: This proof step recorded no operator-facing result.',
+  );
+  const fileVerifier = { passed: true, command: 'test -s /Users/private/workspace/EVIDENCE.md' };
+  assert.equal(
+    missionVerifierCheckedText(fileVerifier, {}),
+    'I checked that the saved artifact exists and is not empty.',
+  );
+  assert.equal(
+    missionVerifierHighLevelTestText(fileVerifier, {}),
+    'Saved artifact check passed: the file exists and is not empty.',
   );
 });
 
