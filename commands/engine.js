@@ -906,6 +906,11 @@ function runEngineTest(targets, { json, root } = {}) {
   const results = enginesToTest.map((name) => probeEngine(name));
   const failures = results.filter((r) => !r.pass);
   const passed = results.length - failures.length;
+  // A live probe is the freshest health evidence there is: write it back so
+  // a transient failure does not leave an engine stuck on error forever.
+  for (const r of results) {
+    try { setEngineHealth(r.engine, r.pass ? 'ready' : 'error', root); } catch { /* best-effort */ }
+  }
   if (json) {
     console.log(JSON.stringify({
       ok: failures.length === 0,
