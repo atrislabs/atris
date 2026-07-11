@@ -937,8 +937,10 @@ function showHelp() {
   console.log('automatically with a receipt. money, deploys, security, customer, and');
   console.log('outward-facing work always waits for you.');
   console.log('');
-  console.log('recommended agent flight verify: npm run test:fast && node --test <focused files>');
-  console.log('autoland still trusts the recorded verifier and full-suite checks when named.');
+  console.log('recommended agent flight checks:');
+  console.log('  fast suite: npm run test:fast');
+  console.log('  focused: node --test <focused files>');
+  console.log('record one runnable verifier; autoland reruns the recorded check.');
   console.log('');
   console.log('  atris autoland                     what would land, what waits for you');
   console.log('  atris autoland on [--to <phone>]   flip it on: hourly heartbeat, daily');
