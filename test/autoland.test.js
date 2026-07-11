@@ -610,6 +610,7 @@ test('status presents default autoland owner as inferred, not configured state',
     const status = runCli(['autoland', 'status'], repo);
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.doesNotMatch(status.stdout, /accepting as Test/);
+    assert.doesNotMatch(status.stdout, /—/);
     assert.match(status.stdout, /policy: on by default for this workspace \(no policy set; would accept as Test\)\. set it: atris autoland on/);
   } finally {
     cleanupTempDir(base);
@@ -677,7 +678,8 @@ test('autoland help forms are read-only and do not run a heartbeat', () => {
     ]) {
       const help = runCli(args, repo);
       assert.equal(help.status, 0, help.stderr || help.stdout);
-      assert.match(help.stdout, /atris autoland — you approve the policy once/);
+      assert.match(help.stdout, /atris autoland: you approve the policy once/);
+      assert.doesNotMatch(help.stdout, /—/);
       assert.match(help.stdout, /atris autoland tick \[--json\]/);
       assert.match(help.stdout, /tick --help never lands work/);
       assert.doesNotMatch(help.stdout, /autoland tick:/);

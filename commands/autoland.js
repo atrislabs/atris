@@ -412,13 +412,13 @@ function evaluateQueue(root, { strictVerify, acceptAll }) {
 
 function plainReason(reason) {
   const map = {
-    denied_tag_billing: 'money — yours to approve',
-    denied_tag_deploy: 'a deploy — yours to approve',
-    denied_tag_security: 'security — yours to approve',
-    denied_tag_customer: 'customer-facing — yours to approve',
-    denied_tag_external: 'outward-facing — yours to approve',
-    denied_tag_feedback: 'customer feedback — yours to approve',
-    denied_tag_voice: 'voice/comms — yours to approve',
+    denied_tag_billing: 'money: yours to approve',
+    denied_tag_deploy: 'a deploy: yours to approve',
+    denied_tag_security: 'security: yours to approve',
+    denied_tag_customer: 'customer-facing: yours to approve',
+    denied_tag_external: 'outward-facing: yours to approve',
+    denied_tag_feedback: 'customer feedback: yours to approve',
+    denied_tag_voice: 'voice/comms: yours to approve',
     needs_second_reviewer_or_third_pass: 'needs one more independent check first',
     needs_independent_reviewer: 'built and judged by the same actor, needs an independent check',
     verifier_is_builder: 'the re-check actor built this row, another actor must re-check',
@@ -463,7 +463,7 @@ function showStatus(root, args) {
   }
 
   console.log('');
-  console.log(`autoland — certified work lands itself; you keep the irreversible calls`);
+  console.log('autoland: certified work lands itself; you keep the irreversible calls');
   console.log('');
   const policyOwner = String(policy?.enabled_by || 'unknown').trim() || 'unknown';
   const policyText = enabled
@@ -493,11 +493,11 @@ function showStatus(root, args) {
   const needsWork = blocked.filter((r) => !String(r.reason || '').startsWith('denied_tag_'));
   if (humanOnly.length > 0) {
     console.log(`  yours to approve (protected lanes): ${humanOnly.length}`);
-    for (const r of humanOnly.slice(0, 10)) console.log(`    waits for you  ${r.ref} — ${plainReason(r.reason)}`);
+    for (const r of humanOnly.slice(0, 10)) console.log(`    waits for you  ${r.ref} - ${plainReason(r.reason)}`);
   }
   if (needsWork.length > 0) {
     console.log(`  not ready yet: ${needsWork.length}`);
-    for (const r of needsWork.slice(0, 10)) console.log(`    held back      ${r.ref} — ${plainReason(String(r.reason || ''))}`);
+    for (const r of needsWork.slice(0, 10)) console.log(`    held back      ${r.ref} - ${plainReason(String(r.reason || ''))}`);
   }
   if (waiting.length > 0) {
     console.log('');
@@ -535,14 +535,14 @@ function turnOn(root, args) {
   });
   console.log('');
   console.log('autoland is on.');
-  if (acceptAll) console.log(`  everything in review now lands itself, accepted as ${owner} — only the protected lanes wait.`);
+  if (acceptAll) console.log(`  everything in review now lands itself, accepted as ${owner}; only the protected lanes wait.`);
   else console.log(`  certified, verified, reversible work now lands itself, accepted as ${owner}.`);
   console.log('  protected lanes (money, deploys, security, customer, outward) still wait for you.');
-  console.log(`  heartbeat: ${cronOk ? 'installed, runs hourly' : 'could not install cron — run atris autoland tick yourself'}`);
+  console.log(`  heartbeat: ${cronOk ? 'installed, runs hourly' : 'could not install cron; run atris autoland tick yourself'}`);
   if (policy.imessage_to) {
     console.log(`  daily message to ${policy.imessage_to} at ${policy.digest_hour}:00; anything waiting on you past ${policy.alarm_hours}h pings you.`);
   } else {
-    console.log('  no phone number set — digest goes to the log only. add one: atris autoland on --to <your number>');
+    console.log('  no phone number set; digest goes to the log only. add one: atris autoland on --to <your number>');
   }
   console.log('  turn it off any time: atris autoland off');
   console.log('');
@@ -564,7 +564,7 @@ function turnOff(root) {
   });
   console.log('');
   console.log('autoland is off. everything waits for your accept again.');
-  console.log(`  heartbeat ${cronOk ? 'removed' : 'removal failed — check crontab -l'}.`);
+  console.log(`  heartbeat ${cronOk ? 'removed' : 'removal failed; check crontab -l'}.`);
   console.log('');
   return 0;
 }
@@ -931,7 +931,7 @@ function runTickBody(root, { json, policy, receipt }) {
 
 function showHelp() {
   console.log('');
-  console.log('atris autoland — you approve the policy once; certified work lands itself');
+  console.log('atris autoland: you approve the policy once; certified work lands itself');
   console.log('');
   console.log('finished work that passed its checks and two independent reviews lands');
   console.log('automatically with a receipt. money, deploys, security, customer, and');
