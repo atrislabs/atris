@@ -195,7 +195,7 @@ test('digest and alarm compose in plain language', () => {
   assert.doesNotMatch(digest, /you approved|workers:/);
   assert.doesNotMatch(digest, /\bexplained\b/);
   // Waiting items only render when they can explain themselves.
-  assert.match(digest, /waiting on you \(0 clear next actions\/1 total; approve or bounce: atris task reviews\):/);
+  assert.match(digest, /task approvals waiting on you \(0 clear next actions\/1 total; approve or bounce: atris task reviews\):/);
   assert.match(digest, /- 1 more in review that could not explain itself yet/);
   assert.doesNotMatch(digest, /Send invoice/);
   assert.match(digest, /1 wish waiting on you:/);
@@ -233,7 +233,7 @@ test('digest and alarm compose in plain language', () => {
     landed: { branches: 2, due: 0 },
     project: 'atris-cli',
   });
-  assert.match(quiet, /waiting on you: nothing/);
+  assert.match(quiet, /task approvals waiting on you: nothing/);
   assert.match(quiet, /in the air: 2 pieces, all fresh/);
   assert.match(quiet, /the full story: atris autoland digest/);
   assert.doesNotMatch(quiet, /next, if you agree/);
