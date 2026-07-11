@@ -978,6 +978,57 @@ test('mission goal keeps always-on ready missions running after xp proof', () =>
   }
 });
 
+test('native goal bridge keeps full-budget mission working before task review', () => {
+  const dir = makeTempDir();
+  try {
+    const now = new Date().toISOString();
+    appendMissionState(dir, {
+      id: 'full-budget-native-goal',
+      slug: 'full-budget-native-goal',
+      objective: 'keep the promised work window active',
+      owner: 'linguist',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'git diff --check',
+      receipt_path: 'atris/runs/full-budget-native-goal.json',
+      next_action: 'queue AgentXP review now',
+      xp_task_enabled: true,
+      xp_task: {
+        task_id: 'task-full-budget-native-goal',
+        ref: 'CLI-1000',
+        status: 'claimed',
+        assigned_to: 'linguist',
+      },
+      task_ids: ['task-full-budget-native-goal'],
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'keep the promised work window active',
+        acknowledged_at: now,
+      },
+      verifier_result: { command: 'git diff --check', status: 0, passed: true },
+      created_at: new Date(Date.now() - 60_000).toISOString(),
+      updated_at: now,
+      budget_contract: {
+        policy: 'spend_full_budget',
+        requested_seconds: 21600,
+        budget_label: '6 hours',
+      },
+    });
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(
+      payload.goal.next_command,
+      'atris mission tick full-budget-native-goal --verify --summary "<what changed>"',
+    );
+    assert.doesNotMatch(payload.goal.next_command, /task current-step|AgentXP|review/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission tick can write a passing ad hoc verifier receipt', () => {
   const dir = makeTempDir();
   try {
