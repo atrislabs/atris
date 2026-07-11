@@ -4322,13 +4322,14 @@ function missionTimelineCountLine(meta) {
   return `Showing ${formatInteger(shown)} ${shown === 1 ? 'item' : 'items'}.`;
 }
 
-function missionTimelineCurrentLandingLines(landing) {
+function missionTimelineCurrentLandingLines(mission, landing) {
   if (!landing) return [];
+  const next = missionBudgetContinuationText(mission) || landing.next;
   return [
     'Current landing:',
     `  Changed: ${landing.changed || 'Landing recorded.'}`,
-    ...(landing.next ? [`  Next: ${landing.next}`] : []),
-    `  Proof: ${landing.receipt_path}`,
+    ...(next ? [`  Next: ${next}`] : []),
+    '  Proof: saved in mission history.',
     '',
   ];
 }
@@ -4799,12 +4800,12 @@ function timelineMission(args) {
       `Mission timeline: ${mission.objective}`,
       `Generated at: ${generatedAt}`,
       missionTimelineCountLine(timelineResult.meta),
-      ...missionTimelineCurrentLandingLines(currentLanding),
+      ...missionTimelineCurrentLandingLines(mission, currentLanding),
       ...(historyWithoutCurrent.length ? ['History:'] : []),
       ...historyWithoutCurrent.flatMap((item, index) => [
         `  ${index + 1}. ${item.changed || 'Landing recorded.'}`,
-        ...(item.next ? [`     Next: ${item.next}`] : []),
-        `     Proof: ${item.receipt_path}`,
+        ...(item.next ? [`     Next at the time: ${item.next}`] : []),
+        '     Proof: saved in mission history.',
       ]),
     ]
     : [
