@@ -436,13 +436,13 @@ function protectedReviewWaiting(root, policy = {}, waiting = []) {
 
 function plainReason(reason) {
   const map = {
-    denied_tag_billing: 'money: yours to approve',
-    denied_tag_deploy: 'a deploy: yours to approve',
-    denied_tag_security: 'security: yours to approve',
-    denied_tag_customer: 'customer-facing: yours to approve',
-    denied_tag_external: 'outward-facing: yours to approve',
-    denied_tag_feedback: 'customer feedback: yours to approve',
-    denied_tag_voice: 'voice/comms: yours to approve',
+    denied_tag_billing: 'money: human decision required',
+    denied_tag_deploy: 'a deploy: human decision required',
+    denied_tag_security: 'security: human decision required',
+    denied_tag_customer: 'customer-facing: human decision required',
+    denied_tag_external: 'outward-facing: human decision required',
+    denied_tag_feedback: 'customer feedback: human decision required',
+    denied_tag_voice: 'voice/comms: human decision required',
     needs_second_reviewer_or_third_pass: 'needs one more independent check first',
     needs_independent_reviewer: 'built and judged by the same actor, needs an independent check',
     verifier_is_builder: 'the re-check actor built this row, another actor must re-check',
@@ -516,7 +516,7 @@ function showStatus(root, args) {
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
   const needsWork = blocked.filter((r) => !String(r.reason || '').startsWith('denied_tag_'));
   if (humanOnly.length > 0) {
-    console.log(`  yours to approve (protected lanes): ${humanOnly.length}`);
+    console.log(`  protected reviews waiting on you: ${humanOnly.length}`);
     for (const r of humanOnly.slice(0, 10)) console.log(`    waits for you  ${r.ref} - ${plainReason(r.reason)}`);
   }
   if (needsWork.length > 0) {
