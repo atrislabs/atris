@@ -177,6 +177,8 @@ test('digest and alarm compose in plain language', () => {
       unexplained: 2,
     },
   });
+  assert.match(digest, /^atris atris-cli: last 24 hours$/m);
+  assert.doesNotMatch(digest, /: yesterday$/m);
   assert.match(digest, /5 landed \(3 explained\), verified twice with proof on file/);
   assert.match(digest, /- slow mission budgets cost users trust/);
   assert.match(digest, /- manual member checks waste users time/);
