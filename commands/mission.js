@@ -4806,7 +4806,6 @@ function timelineMission(args) {
       ...historyWithoutCurrent.flatMap((item, index) => [
         `  ${index + 1}. ${item.changed || 'Landing recorded.'}`,
         ...(item.next && !hideHistoricalNext ? [`     Next at the time: ${item.next}`] : []),
-        '     Proof: saved in mission history.',
       ]),
     ]
     : [
