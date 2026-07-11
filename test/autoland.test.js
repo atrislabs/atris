@@ -195,7 +195,7 @@ test('digest and alarm compose in plain language', () => {
   assert.doesNotMatch(digest, /you approved|workers:/);
   // Waiting items only render when they can explain themselves.
   assert.match(digest, /waiting on you \(0 explained\/1 total; approve or bounce: atris task reviews\):/);
-  assert.match(digest, /- 1 more in review that could not explain themselves yet/);
+  assert.match(digest, /- 1 more in review that could not explain itself yet/);
   assert.doesNotMatch(digest, /Send invoice/);
   assert.match(digest, /1 wish waiting on you:/);
   assert.match(digest, /- make onboarding better: Who is onboarding for\?/);
@@ -222,6 +222,16 @@ test('digest and alarm compose in plain language', () => {
   assert.match(quiet, /in the air: 2 pieces, all fresh/);
   assert.match(quiet, /the full story: atris autoland digest/);
   assert.doesNotMatch(quiet, /next, if you agree/);
+
+  const oneUnexplained = autoland.composeDigest({
+    accepted: { auto: [], human: [] },
+    waiting: [],
+    landed: null,
+    project: 'atris-cli',
+    nextMoves: { moves: [], unexplained: 1 },
+  });
+  assert.match(oneUnexplained, /1 idea in the queue can't explain itself yet/);
+  assert.doesNotMatch(oneUnexplained, /1 idea.*themselves/);
 
   const alarm = autoland.composeAlarm({
     waiting: [{ ref: 'CLI-9', title: 'Send invoice', hours: 30 }],
