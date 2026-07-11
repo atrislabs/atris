@@ -417,7 +417,7 @@ test('digest falls back to the complete landing when shortening the result remov
   assert.doesNotMatch(digest, /could not explain themselves|operators can now read a complete review action/);
 });
 
-test('digest next moves render proof-ready missions only after promised time is used', () => {
+test('digest next moves withhold duplicate objective review until promised time is used', () => {
   const { base, repo } = makeTempRepo();
   try {
     const stateDir = path.join(repo, '.atris', 'state');
@@ -433,14 +433,24 @@ test('digest next moves render proof-ready missions only after promised time is 
         budget_contract: { policy: 'spend_full_budget', requested_seconds: 21600 },
       } : {}),
     }));
+    missions.push({
+      id: 'mission-active-duplicate',
+      objective: 'Tidy paperclips 2',
+      owner: 'member-active',
+      status: 'ready',
+      receipt_path: 'atris/runs/mission-active-duplicate.json',
+      created_at: new Date().toISOString(),
+      budget_contract: { policy: 'spend_full_budget', requested_seconds: 21600 },
+    });
     fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), `${missions.map(JSON.stringify).join('\n')}\n`);
 
     const next = require('../commands/autoland').digestNextMoves(repo);
 
     assert.equal(next.moves.length, 3);
     assert.ok(next.moves.every((move) => move.kind === 'mission_ready'));
-    assert.ok(next.moves.every((move) => /^member-[2-5]$/.test(move.owner)));
+    assert.ok(next.moves.every((move) => /^member-[3-5]$/.test(move.owner)));
     assert.ok(next.moves.every((move) => move.owner !== 'member-1'));
+    assert.ok(next.moves.every((move) => move.owner !== 'member-2'));
     assert.equal(next.unexplained, 0);
   } finally {
     cleanupTempDir(base);
