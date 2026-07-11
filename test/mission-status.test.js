@@ -284,6 +284,9 @@ test('mission status keeps full-budget work moving until promised time ends', ()
     assert.equal(status.status, 0, status.stderr);
     assert.match(status.stdout, /state: working for the full 6 hours/);
     assert.match(status.stdout, /next: keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment/);
+    assert.match(status.stdout, /proof: saved; inspect: atris mission timeline mission-full-budget --limit 5/);
+    assert.match(status.stdout, /Proof: Receipt saved in mission history\./);
+    assert.doesNotMatch(status.stdout, /atris\/runs\/full-budget\.json/);
     assert.doesNotMatch(status.stdout, /task next:|current-step|Review proof|mission complete/);
 
     const jsonStatus = runCli(['mission', 'status', 'mission-full-budget', '--json'], { cwd: dir });
@@ -297,10 +300,14 @@ test('mission status keeps full-budget work moving until promised time ends', ()
     const statusNow = fs.readFileSync(path.join(dir, 'atris', 'status', 'now.md'), 'utf8');
     assert.match(statusNow, /state: working for the full 6 hours/);
     assert.match(statusNow, /next: keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment/);
+    assert.match(statusNow, /proof: saved; inspect: atris mission timeline mission-full-budget --limit 5/);
+    assert.doesNotMatch(statusNow, /atris\/runs\/full-budget\.json/);
     assert.doesNotMatch(statusNow, /task next:|current-step/);
     const memberNow = fs.readFileSync(path.join(dir, 'atris', 'team', 'linguist', 'now.md'), 'utf8');
     assert.match(memberNow, /status: working for the full 6 hours/);
     assert.match(memberNow, /next: keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment/);
+    assert.match(memberNow, /proof: saved; inspect: atris mission timeline mission-full-budget --limit 5/);
+    assert.doesNotMatch(memberNow, /atris\/runs\/full-budget\.json/);
     assert.doesNotMatch(memberNow, /task next:|current-step/);
   } finally {
     cleanupTempDir(dir);

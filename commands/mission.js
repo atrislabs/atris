@@ -1147,7 +1147,7 @@ function renderMemberNowMarkdown(owner, missions) {
     lines.push(...missionMetricLine(mission, '- '));
     if (mission.stop_condition) lines.push(`- stop: ${mission.stop_condition}`);
     if (budgetContinuation || mission.next_action) lines.push(`- next: ${budgetContinuation || mission.next_action}`);
-    if (mission.receipt_path) lines.push(`- receipt: ${mission.receipt_path}`);
+    if (mission.receipt_path) lines.push(`- proof: ${missionStatusProofText(mission)}`);
     if (mission.human_asks?.length) {
       lines.push('- human asks:');
       for (const ask of mission.human_asks) lines.push(`  - ${ask}`);
@@ -1490,12 +1490,20 @@ function missionLandingLines(landing) {
 }
 
 function missionStatusLandingLines(landing) {
-  const lines = missionLandingLines(landing);
+  const statusLanding = landing?.receipt_path
+    ? { ...landing, proof: 'Receipt saved in mission history.' }
+    : landing;
+  const lines = missionLandingLines(statusLanding);
   if (!lines.length) return [];
   return [
     '  last landing:',
     ...lines.slice(1).map((line) => `  ${line.trim()}`),
   ];
+}
+
+function missionStatusProofText(mission) {
+  const ref = mission?.n || mission?.id;
+  return `saved; inspect: atris mission timeline ${ref} --limit 5`;
 }
 
 function missionLastLanding(mission, root = process.cwd()) {
@@ -1982,7 +1990,7 @@ function renderMissionStatus(root = process.cwd()) {
       if (taskSpine && !taskSpine.has_task && taskSpine.ensure_task_command) lines.push(`  - task setup: ${missionDisplayText(view, taskSpine.ensure_task_command)}`);
       if (view.xp_task?.ref) lines.push(`  - AgentXP task: ${view.xp_task.ref}`);
       if (view.proof_needed) lines.push(`  - proof needed: ${view.proof_needed}`);
-      if (view.receipt_path) lines.push(`  - proof: ${view.receipt_path}`);
+      if (view.receipt_path) lines.push(`  - proof: ${missionStatusProofText(view)}`);
       const gateLabel = completionGateLabel(view.completion_gate);
       if (gateLabel) lines.push(`  - gate: ${gateLabel}`);
     }
@@ -4007,7 +4015,7 @@ function statusMission(args) {
         ...(mission.task_spine?.current_step_command ? [`  task next: ${missionDisplayText(mission, mission.task_spine.current_step_command)}`] : []),
         ...(!mission.task_spine?.has_task && mission.task_spine?.ensure_task_command ? [`  task setup: ${missionDisplayText(mission, mission.task_spine.ensure_task_command)}`] : []),
         ...(mission.proof_needed ? [`  proof needed: ${mission.proof_needed}`] : []),
-        ...(mission.receipt_path ? [`  proof: ${mission.receipt_path}`] : []),
+        ...(mission.receipt_path ? [`  proof: ${missionStatusProofText(mission)}`] : []),
         ...missionStatusLandingLines(mission.last_landing),
         ...(completionGateLabel(mission.completion_gate) ? [`  gate: ${completionGateLabel(mission.completion_gate)}`] : []),
       ])

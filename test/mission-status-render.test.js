@@ -115,7 +115,8 @@ test('renderMissionStatus emits xp/proof/gate lines only when those fields are p
     assert.match(text, /task next: atris task current-step --goal-id m-full --as a --proof "<proof>" --json/);
     assert.match(text, /task setup: atris mission attach-task m-bare --json/);
     assert.match(text, /AgentXP task: CLI-999/);
-    assert.match(text, /proof: atris\/runs\/proof\.json/);
+    assert.match(text, /proof: saved; inspect: atris mission timeline m-full --limit 5/);
+    assert.doesNotMatch(text, /atris\/runs\/proof\.json/);
     assert.match(text, /gate: human-accept/);
     // the bare mission contributes no optional lines
     assert.equal((text.match(/^  - task:/gm) || []).length, 1);
