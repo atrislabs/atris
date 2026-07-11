@@ -8954,7 +8954,10 @@ function inspectMission(args) {
     fields: parsed.fields,
     values,
   });
-  printJsonOrText(payload, inspectTextLines(parsed.fields, values), asJson);
+  const humanValues = parsed.fields.includes('status')
+    ? { ...values, status: missionHumanStatusText(mission) }
+    : values;
+  printJsonOrText(payload, inspectTextLines(parsed.fields, humanValues), asJson);
 }
 
 // always-on member mid-run without stopping it. opts.silent skips console
