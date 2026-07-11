@@ -240,7 +240,10 @@ function missionRunRuntimeView(mission, runnerOverride = null, modelOverride = '
 }
 
 function applyMissionRunnerProfile(runner) {
-  const engine = canonicalEngineName(runner);
+  const runnerName = String(runner || '').trim().toLowerCase();
+  // `manual` is the legacy name for a directly-run Claude mission. Do not let
+  // the host process's runner profile silently turn it into another engine.
+  const engine = canonicalEngineName(runnerName) || (runnerName === 'manual' ? 'claude' : '');
   if (!engine) return () => {};
   const previous = process.env.ATRIS_RUNNER_PROFILE;
   process.env.ATRIS_RUNNER_PROFILE = engine;
