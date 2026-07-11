@@ -6803,6 +6803,14 @@ test('mission help documents status filters', () => {
         assert.doesNotMatch(subcommandHelp.stderr, /Mission .* not found/);
       }
     }
+    for (const subcommand of ['layers', 'prune-runs']) {
+      for (const helpArg of ['--help', '-h', 'help']) {
+        const subcommandHelp = runCli(['mission', subcommand, helpArg], { cwd: dir });
+        assert.equal(subcommandHelp.status, 0, subcommandHelp.stderr || subcommandHelp.stdout);
+        assert.match(subcommandHelp.stdout, new RegExp(`^Usage: atris mission ${subcommand}`));
+        assert.doesNotMatch(subcommandHelp.stdout, /Layer growth curve:|Landing:\n  Changed:/);
+      }
+    }
   } finally {
     cleanupTempDir(dir);
   }

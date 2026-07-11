@@ -8750,6 +8750,11 @@ function classifyPathsByLayer(paths) {
 // proof standard says: if every tick is one layer and none touch the others, the
 // loop is doing work but not getting smarter. This makes that check one command.
 function layersMission(args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission layers [--mission <id-substr>] [--since <date>] [--json]');
+    console.log('Show the per-layer growth curve across saved tick receipts.');
+    return;
+  }
   const asJson = args.includes('--json');
   const missionFilter = readFlag(args, '--mission', '');
   const sinceRaw = readFlag(args, '--since', '');
@@ -8853,6 +8858,11 @@ function roomMission(args) {
 }
 
 function pruneRunsMission(args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission prune-runs [--apply] [--days <n>] [--keep-newest <n>] [--json]');
+    console.log('Preview old unreferenced run receipts; add --apply only after review.');
+    return;
+  }
   const asJson = wantsJson(args);
   let keepNewest;
   let keepDays;
