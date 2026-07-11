@@ -85,11 +85,14 @@ test('land status renders the board instead of looking up status as a name', () 
   const { base, repo } = makeTempRepo();
   try {
     commitOnBranch(repo, 'fresh-work', 'fresh.txt');
+    const threeDaysAgo = new Date(Date.now() - 72 * 3600 * 1000).toISOString();
+    commitOnBranch(repo, 'aging-work', 'aging.txt', { backdate: threeDaysAgo });
 
     const result = runCli(['land', 'status'], repo);
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.match(result.stdout, /the landing/);
     assert.match(result.stdout, /fresh-work/);
+    assert.match(result.stdout, /2 pieces tracked: 2 still in the air, 1 stale, 0 overdue, 0 landed and safe to clear/);
     assert.doesNotMatch(result.stderr, /nothing called 'status'/);
   } finally {
     cleanupTempDir(base);
@@ -104,7 +107,7 @@ test('land status names the clearable category instead of saying overdue/landed'
 
     const result = runCli(['land', 'status'], repo);
     assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /1 piece tracked: 0 still in the air, 0 overdue, 1 landed and safe to clear/);
+    assert.match(result.stdout, /1 piece tracked: 0 still in the air, 0 stale, 0 overdue, 1 landed and safe to clear/);
     assert.match(result.stdout, /back up \+ clear 1 landed: atris land --reap/);
     assert.doesNotMatch(result.stdout, /1 piece of work in the air/);
     assert.doesNotMatch(result.stdout, /overdue\/landed/);
