@@ -82,7 +82,7 @@ function digestNextMoves(root) {
     const ready = all.filter((move) => operatorReady(move.title)).slice(0, 3).map((move) => {
       let owner = null;
       try { owner = resolveFunctionalOwner({ title: move.title, root })?.owner || null; } catch {}
-      return { title: move.title, owner };
+      return { title: move.title, owner, kind: move.kind || null };
     });
     return { moves: ready, unexplained: all.length - ready.length };
   } catch {
