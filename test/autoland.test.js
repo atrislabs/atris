@@ -682,6 +682,9 @@ test('autoland help forms are read-only and do not run a heartbeat', () => {
       assert.doesNotMatch(help.stdout, /—/);
       assert.match(help.stdout, /atris autoland tick \[--json\]/);
       assert.match(help.stdout, /tick --help never lands work/);
+      assert.match(help.stdout, /fast suite: npm run test:fast/);
+      assert.match(help.stdout, /focused: node --test <focused files>/);
+      assert.doesNotMatch(help.stdout, /&&/);
       assert.doesNotMatch(help.stdout, /autoland tick:/);
     }
 
