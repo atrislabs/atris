@@ -92,6 +92,7 @@ test('land status renders the board instead of looking up status as a name', () 
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.match(result.stdout, /the landing/);
     assert.match(result.stdout, /fresh-work/);
+    assert.doesNotMatch(result.stdout, /—/);
     assert.match(result.stdout, /2 pieces tracked: 2 still in the air, 1 stale, 0 overdue, 0 landed and safe to clear/);
     assert.doesNotMatch(result.stderr, /nothing called 'status'/);
   } finally {
@@ -214,6 +215,7 @@ test('land --help prints usage without touching the repo', () => {
     assert.equal(result.status, 0);
     assert.match(result.stdout, /still in the air/);
     assert.match(result.stdout, /--reap/);
+    assert.doesNotMatch(result.stdout, /—/);
   } finally {
     cleanupTempDir(base);
   }
