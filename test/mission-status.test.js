@@ -6778,6 +6778,14 @@ test('mission help documents status filters', () => {
     assert.match(help.stdout, /Headless: start with --runner claude --cadence "15m" --always-on/);
     assert.match(help.stdout, /Backend\/web agents:/);
     assert.match(help.stdout, /--status active shows planning\/running\/ready\/paused\/blocked missions/);
+
+    for (const args of [['mission', 'status', '--help'], ['mission', 'status', '-h'], ['mission', 'status', 'help']]) {
+      const statusHelp = runCli(args, { cwd: dir });
+      assert.equal(statusHelp.status, 0, statusHelp.stderr || statusHelp.stdout);
+      assert.match(statusHelp.stdout, /^Usage: atris mission status \[id\]/);
+      assert.match(statusHelp.stdout, /remaining budget, next action, and proof inspection command/);
+      assert.doesNotMatch(statusHelp.stderr, /Mission .* not found/);
+    }
   } finally {
     cleanupTempDir(dir);
   }

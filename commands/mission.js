@@ -3967,6 +3967,12 @@ function setMissionRunner(args) {
 }
 
 function statusMission(args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]');
+    console.log('List mission state, remaining budget, next action, and proof inspection command.');
+    console.log('Use --status active for planning, running, ready, paused, and blocked missions.');
+    return;
+  }
   const asJson = wantsJson(args);
   const localOnly = hasFlag(args, '--local');
   const ref = stripKnownFlags(args, ['--status', '--limit'], ['--json', '--local'])[0] || '';
