@@ -7,6 +7,11 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const {
+  buildEngineVerifyPrompt,
+  engineVerifierResultFromRun,
+  missionVerifierCheckedText,
+} = require('../commands/mission');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-verifier-test-'));
@@ -16,7 +21,7 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function runCli(args, { cwd } = {}) {
+function runCli(args, { cwd, env = {} } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
@@ -24,11 +29,75 @@ function runCli(args, { cwd } = {}) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...env,
     },
   });
   if (result.error) throw result.error;
   return result;
 }
+
+test('engine verify contract requires real execution and parses only the final verdict line', () => {
+  const prompt = buildEngineVerifyPrompt({ objective: 'prove the changed surface' }, 3);
+  assert.match(prompt, /ACTUALLY RUN the changed surface on this computer/);
+  assert.match(prompt, /real commands and real exit codes/);
+  assert.match(prompt, /Do not edit files/);
+  assert.equal(engineVerifierResultFromRun({ ok: true, result: 'npm test\nexit 0\nVERDICT: PASS' }).passed, true);
+  assert.equal(engineVerifierResultFromRun({ ok: true, result: 'VERDICT: PASS\nextra text' }).passed, false);
+  assert.deepEqual(
+    engineVerifierResultFromRun({ ok: false, timedOut: true, stderr: 'timed out' }),
+    { passed: false, mode: 'engine-unavailable', engine: 'codex', timed_out: true, output: 'timed out' },
+  );
+});
+
+test('unverified and failed tick recap text carries a visible warning marker', () => {
+  assert.match(missionVerifierCheckedText(null, {}), /^UNVERIFIED:/);
+  assert.match(missionVerifierCheckedText({ passed: false, command: 'false' }, {}), /^VERIFY FAILED:/);
+  assert.match(missionVerifierCheckedText({ passed: false, mode: 'engine-unavailable' }, {}), /^VERIFY FAILED:/);
+});
+
+test('mission run uses an engine verify fallback and explicit no-verify stays unverified', () => {
+  const dir = makeTempDir();
+  const runnerEnv = {
+    ATRIS_RUNNER_BIN: process.execPath,
+    ATRIS_RUNNER_COMMAND_TEMPLATE: `${process.execPath} -e "process.stdout.write('tick receipt\\nlayer: capabilities\\nVERDICT: PASS\\n')"`,
+  };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'mission-lead'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'MEMBER.md'), '# Mission Lead\n', 'utf8');
+    const started = runCli([
+      'mission', 'start', 'engine verify fallback', '--owner', 'mission-lead',
+      '--runner', 'codex', '--no-verify', '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+
+    const verified = runCli([
+      'mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--json',
+    ], { cwd: dir, env: runnerEnv });
+    assert.equal(verified.status, 0, verified.stderr || verified.stdout);
+    const verifiedPayload = JSON.parse(verified.stdout);
+    assert.equal(verifiedPayload.ticks[0].verifier_passed, true);
+    assert.equal(verifiedPayload.mission.verifier_result.mode, 'engine');
+    assert.match(verifiedPayload.mission.verifier_result.output, /VERDICT: PASS$/);
+
+    const skippedStarted = runCli([
+      'mission', 'start', 'explicit verify skip', '--owner', 'mission-lead',
+      '--runner', 'codex', '--no-verify', '--json',
+    ], { cwd: dir });
+    assert.equal(skippedStarted.status, 0, skippedStarted.stderr || skippedStarted.stdout);
+    const skippedMission = JSON.parse(skippedStarted.stdout).mission;
+    const skipped = runCli([
+      'mission', 'run', skippedMission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json',
+    ], { cwd: dir, env: runnerEnv });
+    assert.equal(skipped.status, 0, skipped.stderr || skipped.stdout);
+    const skippedPayload = JSON.parse(skipped.stdout);
+    assert.equal(skippedPayload.ticks[0].verifier_passed, undefined);
+    const tickReceipt = JSON.parse(fs.readFileSync(path.join(dir, skippedPayload.mission.receipt_path), 'utf8'));
+    assert.match(tickReceipt.result.landing.checked, /^UNVERIFIED:/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
 
 test('mission start rejects static numeric verifier from expanded shell substitution', () => {
   const dir = makeTempDir();

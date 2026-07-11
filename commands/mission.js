@@ -1339,7 +1339,15 @@ function missionLastStepSummary(ticks = []) {
 }
 
 function missionVerifierCheckedText(verifierResult, mission) {
-  if (!verifierResult) return 'Tick recorded; no verifier was run.';
+  if (!verifierResult) return 'UNVERIFIED: tick recorded but nothing was checked; treat this increment as unproven.';
+  if (verifierResult.mode === 'engine-unavailable') {
+    return 'VERIFY FAILED: the engine verify pass was unavailable; treat this increment as unproven.';
+  }
+  if (verifierResult.mode === 'engine') {
+    return verifierResult.passed
+      ? 'Engine verify passed after running the changed surface on this computer.'
+      : 'VERIFY FAILED: the engine verify pass did not end with VERDICT: PASS.';
+  }
   const command = verifierResult.command || mission.verifier || 'configured verifier';
   if (verifierResult.passed) {
     if (/^git\s+diff\s+--check\b/i.test(command)) return 'I ran the diff cleanliness check.';
@@ -1349,13 +1357,21 @@ function missionVerifierCheckedText(verifierResult, mission) {
     if (/(?:node\s+\S*atris\.js|\batris)\s+drill\b/i.test(command)) return 'I ran the no-model end-to-end workflow drill.';
     return `Verifier passed: ${command}.`;
   }
-  if (/^git\s+diff\s+--check\b/i.test(command)) return 'Diff cleanliness check failed.';
-  if (/\bnode\s+--test\b/i.test(command)) return 'Behavior checks failed.';
-  return `Verifier failed: ${command}.`;
+  if (/^git\s+diff\s+--check\b/i.test(command)) return 'VERIFY FAILED: diff cleanliness check failed.';
+  if (/\bnode\s+--test\b/i.test(command)) return 'VERIFY FAILED: behavior checks failed.';
+  return `VERIFY FAILED: ${command}.`;
 }
 
 function missionVerifierHighLevelTestText(verifierResult, mission) {
   if (!verifierResult) return 'No automated verifier ran for this receipt; judge it from the receipt, changed files, and next action.';
+  if (verifierResult.mode === 'engine-unavailable') {
+    return 'No changed-surface commands were confirmed because the engine verify pass was unavailable.';
+  }
+  if (verifierResult.mode === 'engine') {
+    return verifierResult.passed
+      ? 'The verify engine inspected the tick diff and reported real changed-surface command output.'
+      : 'The verify engine did not provide a passing changed-surface verdict.';
+  }
   const command = verifierResult.command || mission.verifier || 'configured verifier';
   const outcome = verifierResult.passed ? 'passed' : 'failed';
   if (/^git\s+diff\s+--check\b/i.test(command)) {
@@ -1930,14 +1946,15 @@ function missionBlockerReceiptLine(blocker) {
 function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason = null, continuationGoal = null, ticks = [], createdNext = null, blocker = null) {
   const changed = missionRunChangedText(mission, ranTicks, effectiveMaxTicks, ticks, createdNext);
   const reason = missionHumanReasonText(mission, changed);
-  const verifier = mission.verifier_result;
+  const lastTick = ticks[ticks.length - 1] || null;
+  const verifier = lastTick && lastTick.verifier_passed == null ? null : mission.verifier_result;
   const checked = verifier
     ? missionVerifierCheckedText(verifier, mission)
     : pauseReason === 'no-progress'
       ? `Run stopped: ${mission.stop_reason || 'no progress across consecutive ticks'}.`
       : pauseReason
         ? `Run paused: ${pauseReason}.`
-        : 'Run recorded; no verifier was run.';
+        : 'UNVERIFIED: run recorded but nothing was checked; treat this increment as unproven.';
   const tested = verifier
     ? missionVerifierHighLevelTestText(verifier, mission)
     : mission.verifier
@@ -6803,7 +6820,8 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
     `- Pick the smallest concrete action that moves the mission forward.`,
     `- Before acting, state your single next move in one sentence.`,
     `- Edit / run / research as needed for the lane.`,
-    `- After your work, the harness runs the frozen verifier — make sure it'll pass.`,
+    `- The tick is not done until the verify step passes. If a frozen verifier exists, the harness runs it. If no frozen verifier exists, finish by actually running the surface you changed on this computer and paste the real command output into your receipt.`,
+    `- After that one verify step, STOP. Never start a second slice in one tick.`,
     `- Write the tick summary in operator language: what changed and what it buys or costs in plain words, with no flags, task ids, or code identifiers.`,
     `- If you can't make progress this tick, say why explicitly. Don't fake it.`,
     ``,
@@ -7206,6 +7224,71 @@ function spawnClaudeTick(mission, opts) {
       resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });
     });
   });
+}
+
+const ENGINE_VERIFY_TIMEOUT_MS = 5 * 60 * 1000;
+const ENGINE_VERIFY_OUTPUT_LIMIT = 4000;
+
+function buildEngineVerifyPrompt(mission, tickIndex) {
+  return [
+    `# Verify Mission Tick ${tickIndex}`,
+    ``,
+    `This is a bounded verify-only pass for mission: ${mission.objective}`,
+    `Read the diff this tick produced. Do not edit files and do not start another work slice.`,
+    `ACTUALLY RUN the changed surface on this computer using real commands and real exit codes.`,
+    `Paste the commands and their real output. Do not accept a receipt claim or static inspection as execution proof.`,
+    `End your reply with a final line exactly 'VERDICT: PASS' or 'VERDICT: FAIL'.`,
+  ].join('\n');
+}
+
+function engineVerifierResultFromRun(engineResult, engine = 'codex') {
+  const output = String(
+    engineResult?.result
+    || engineResult?.receipt_text
+    || engineResult?.stderr
+    || engineResult?.error
+    || '',
+  ).slice(-ENGINE_VERIFY_OUTPUT_LIMIT);
+  if (!engineResult?.ok || engineResult?.timedOut || engineResult?.aborted) {
+    return {
+      passed: false,
+      mode: 'engine-unavailable',
+      engine,
+      timed_out: Boolean(engineResult?.timedOut),
+      output,
+    };
+  }
+  const finalLine = output.trim().split(/\r?\n/).pop() || '';
+  return {
+    passed: finalLine === 'VERDICT: PASS',
+    mode: 'engine',
+    engine,
+    output,
+  };
+}
+
+async function runEngineVerifier(mission, options = {}) {
+  const cwd = options.cwd || process.cwd();
+  const engine = 'codex';
+  const verifyMission = { ...mission, runner: engine, runner_kind: 'engine' };
+  const restoreRunnerProfile = applyMissionRunnerProfile(engine);
+  let engineResult;
+  try {
+    engineResult = await spawnClaudeTick(verifyMission, {
+      sessionMode: 'set',
+      sessionId: crypto.randomUUID(),
+      cwd,
+      signal: options.signal,
+      timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
+      prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1),
+      model: resolveClaudeRunnerModel(verifyMission),
+    });
+  } catch (error) {
+    engineResult = { ok: false, error: error.message };
+  } finally {
+    restoreRunnerProfile();
+  }
+  return engineVerifierResultFromRun(engineResult, engine);
 }
 
 function stripClaudeReceiptLine(line) {
@@ -7680,8 +7763,14 @@ async function runMission(args) {
       // Verifier (only if claude succeeded or no-claude mode)
       let verifierResult = null;
       let receiptPath = null;
-      if (result.status === 'ran' && verifyEach && frozen.verifier) {
-        verifierResult = runVerifier(frozen.verifier);
+      if (result.status === 'ran' && verifyEach) {
+        verifierResult = frozen.verifier
+          ? runVerifier(frozen.verifier)
+          : await runEngineVerifier(tickRuntimeMission, {
+            cwd,
+            signal: controller.signal,
+            tickIndex: tickIdx,
+          });
         result.verifier_passed = verifierResult.passed;
       }
       stampMissionRunnerBrief(cwd, result.claude?.brief_id, result, verifierResult);
@@ -9179,6 +9268,8 @@ module.exports = {
   missionLandingLines,
   missionVerifierCheckedText,
   missionVerifierHighLevelTestText,
+  buildEngineVerifyPrompt,
+  engineVerifierResultFromRun,
   missionFullBudgetRemainingSeconds,
   missionBudgetContinuationText,
   resolveMissionRunnerSelection,
