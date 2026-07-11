@@ -180,7 +180,7 @@ test('digest and alarm compose in plain language', () => {
   });
   assert.match(digest, /^atris atris-cli: last 24 hours$/m);
   assert.doesNotMatch(digest, /: yesterday$/m);
-  assert.match(digest, /5 landed \(3 explained\), verified twice with proof on file/);
+  assert.match(digest, /5 landed; 3 clear results, each verified twice with proof on file/);
   assert.match(digest, /- slow mission budgets cost users trust/);
   assert.match(digest, /- manual member checks waste users time/);
   // Clean-stop check-offs fold into the on-ask count; results get air between
@@ -193,8 +193,9 @@ test('digest and alarm compose in plain language', () => {
   // v5: no self-news ("you approved N") and no separate workers tally; each
   // result carries its author inline instead.
   assert.doesNotMatch(digest, /you approved|workers:/);
+  assert.doesNotMatch(digest, /\bexplained\b/);
   // Waiting items only render when they can explain themselves.
-  assert.match(digest, /waiting on you \(0 explained\/1 total; approve or bounce: atris task reviews\):/);
+  assert.match(digest, /waiting on you \(0 clear next actions\/1 total; approve or bounce: atris task reviews\):/);
   assert.match(digest, /- 1 more in review that could not explain itself yet/);
   assert.doesNotMatch(digest, /Send invoice/);
   assert.match(digest, /1 wish waiting on you:/);
