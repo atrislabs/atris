@@ -6024,6 +6024,10 @@ function codexGoalNextCommand(mission) {
   if (taskSpine && !taskSpine.has_task && taskSpine.ensure_task_command) {
     return taskSpine.ensure_task_command;
   }
+  if (missionBudgetContinuationText(mission)) {
+    const verifyFlag = effectiveMissionVerifier(mission) ? ' --verify' : '';
+    return `atris mission tick ${mission.id}${verifyFlag} --summary "<what changed>"`;
+  }
   if (missionChoosesNextMission(mission)) {
     return chooseNextMissionCommand(mission);
   }
