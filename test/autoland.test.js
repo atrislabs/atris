@@ -273,6 +273,51 @@ test('live update: a landing texts its capability sentence the moment it lands',
   assert.equal(autoland.composeLiveUpdate({ landedRefs: ['CLI-2'], tasks, project: 'atris-cli' }), '');
 });
 
+test('live update receipt keeps the exact sent text for the next linguist audit', () => {
+  const { base, repo } = makeTempRepo();
+  const commandsAutoland = require('../commands/autoland');
+  const originalSend = autoland.sendImessage;
+  const agentEnvKeys = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT', 'CODEX_SANDBOX', 'CURSOR_AGENT', 'DEVIN_SESSION_ID', 'ATRIS_AGENT_PROOF_ONLY'];
+  const savedAgentEnv = Object.fromEntries(agentEnvKeys.map((key) => [key, process.env[key]]));
+  const savedTaskDb = process.env.ATRIS_TASKS_DB;
+  let sentText = '';
+  try {
+    for (const key of agentEnvKeys) delete process.env[key];
+    process.env.ATRIS_TASKS_DB = path.join(repo, '.atris', 'fixture-tasks.db');
+    const taskRef = certifiedTask(repo, 'Make live landing messages auditable for operators');
+    const policy = {
+      enabled: true,
+      enabled_by: 'keshav',
+      strict_verify: false,
+      imessage_to: '+15555550100',
+      daily_experiment: false,
+      janitor: false,
+    };
+    autoland.writePolicy(repo, policy);
+    autoland.sendImessage = (_root, _to, text) => {
+      sentText = text;
+      return { ok: true, output: 'sent' };
+    };
+    const receipt = { at: new Date().toISOString(), landed: [], alarms: 0, digest_sent: false, enabled: true };
+
+    commandsAutoland.runTickBody(repo, { json: false, policy, receipt });
+
+    assert.deepEqual(receipt.landed, [taskRef]);
+    assert.equal(receipt.live_update_sent, true);
+    assert.equal(receipt.live_update_text, sentText);
+    assert.match(receipt.live_update_text, /^atris repo: just landed\n\n- operators can now trust completed test work faster because the result is clear \(builder\)$/);
+  } finally {
+    autoland.sendImessage = originalSend;
+    for (const key of agentEnvKeys) {
+      if (savedAgentEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedAgentEnv[key];
+    }
+    if (savedTaskDb === undefined) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = savedTaskDb;
+    cleanupTempDir(base);
+  }
+});
+
 test('alarm dedupe: a task pings once per window', () => {
   const now = Date.now();
   const waiting = [{ ref: 'CLI-9', hours: 30 }, { ref: 'CLI-8', hours: 10 }];
