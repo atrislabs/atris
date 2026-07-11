@@ -14,6 +14,7 @@ const {
   usefulClaudeReceiptSummary,
   missionVerifierTimeoutMs,
   missionLandingStepSummary,
+  missionLandingLines,
 } = require('../commands/mission');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -35,6 +36,10 @@ test('mission landing summary strips broken markdown before status renders it', 
   assert.equal(
     missionLandingStepSummary('**Killed** an __unverified__ number before it reached the ~~pitch~~.'),
     'Killed an unverified number before it reached the pitch.',
+  );
+  assert.equal(
+    missionLandingLines({ changed: 'Cut the waiting queue into one honest decision; confirmed with `atris close.' })[1],
+    '  Changed: Cut the waiting queue into one honest decision; confirmed with atris close.',
   );
 });
 

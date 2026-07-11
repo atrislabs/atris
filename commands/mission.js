@@ -1311,9 +1311,11 @@ function missionReceiptLanding(mission, result, receiptPath = '') {
 
 function missionLandingLines(landing) {
   if (!landing) return [];
+  const rawChanged = landing.changed || landing.happened || 'Landing recorded.';
+  const changed = missionLandingStepSummary(rawChanged) || rawChanged;
   return [
     'Landing:',
-    `  Changed: ${landing.changed || landing.happened || 'Landing recorded.'}`,
+    `  Changed: ${changed}`,
     `  Why it matters: ${landing.reason || landing.why || 'This makes the work easier to judge.'}`,
     `  How I checked: ${landing.checked || 'No check recorded.'}`,
     `  What I tested: ${landing.tested || 'No test summary recorded.'}`,
@@ -8772,6 +8774,7 @@ module.exports = {
   consecutiveSameReasonErrors,
   missionVerifierTimeoutMs,
   missionLandingStepSummary,
+  missionLandingLines,
   resolveMissionRunnerSelection,
   resolveMissionTickRunner,
   engineFailureHealthStatus,
