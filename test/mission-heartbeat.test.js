@@ -88,6 +88,23 @@ test('missionHeartbeatLines marks overdue always-on missions as due now', () => 
   assert.equal(lines[1], '  due: now');
 });
 
+test('missionHeartbeatLines shows time left for active full-budget work instead of due now', () => {
+  const now = new Date('2026-06-12T12:00:00Z');
+  const lines = missionHeartbeatLines({
+    status: 'ready',
+    cadence: '15m',
+    created_at: '2026-06-12T11:00:00Z',
+    last_tick_at: '2026-06-12T11:00:00Z',
+    last_tick_status: 'ran',
+    budget_contract: {
+      policy: 'spend_full_budget',
+      requested_seconds: 21600,
+    },
+  }, now);
+  assert.equal(lines[0], '  last tick: 1h 0m ago (ran, no verifier)');
+  assert.equal(lines[1], '  budget: 5h 0m remaining');
+});
+
 test('missionHeartbeatLines stays quiet for terminal missions', () => {
   const lines = missionHeartbeatLines({ status: 'complete', cadence: '15m' });
   assert.deepEqual(lines, []);
