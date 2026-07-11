@@ -6176,7 +6176,10 @@ function writeCodexGoalState(payload, root = process.cwd()) {
       if (state.goal.visible_goal.operations.handoff_when_usage_limited) {
         lines.push(`- usage-limited handoff: ${state.goal.visible_goal.operations.handoff_when_usage_limited}`);
       }
-      lines.push(`- visible goal complete: ${state.goal.visible_goal.operations.complete_after_proof}`);
+      const completionLabel = missionBudgetContinuationText(state.mission)
+        ? 'visible goal hold'
+        : 'visible goal complete';
+      lines.push(`- ${completionLabel}: ${state.goal.visible_goal.operations.complete_after_proof}`);
     }
     if (state.goal.native_goal_recovery) {
       lines.push(`- native goal recovery: ${state.goal.native_goal_recovery.next_command}`);

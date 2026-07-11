@@ -1067,7 +1067,8 @@ test('visible goal bridge holds completion for full budget while raw status stay
     const card = fs.readFileSync(path.join(dir, 'atris', 'status', 'codex-goal.md'), 'utf8');
     assert.match(card, /- status: working for the full 6 hours/);
     assert.doesNotMatch(card, /- status: ready/);
-    assert.match(card, /visible goal complete: .*do not call update_goal until the full budget is used/);
+    assert.match(card, /visible goal hold: .*do not call update_goal until the full budget is used/);
+    assert.doesNotMatch(card, /visible goal complete: .*do not call update_goal/);
   } finally {
     cleanupTempDir(dir);
   }
