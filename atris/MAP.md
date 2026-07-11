@@ -423,7 +423,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Work is merged or reaped, never limbo — the board shows every unlanded branch/worktree; `--reap` salvages then deletes anything landed or past TTL
 
-- **Implementation:** `commands/land.js` (collectBoard, printBoard, reap, landSummary); cleanup guidance names overdue and landed counts separately so the operator knows what will be cleared
+- **Implementation:** `commands/land.js` (collectBoard, printBoard, reap, landSummary); the board separates total tracked, still in the air, overdue, and landed counts so completed branches never inflate live work; cleanup guidance names what will be cleared
 - **Router:** `bin/atris.js` (`command === 'land'` dispatch)
 - **Boot visibility:** `bin/atris.js` welcome banner (`🛬 Land:` line via `landSummary`)
 - **Doctrine:** `atris.md` operating rules ("land or reap"), `AGENTS.md` agent contract table

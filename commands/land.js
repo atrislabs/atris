@@ -526,7 +526,8 @@ function printBoard(board) {
   }
   console.log('');
   const s = board.summary;
-  console.log(`  ${s.unlanded} pieces of work in the air, ${s.due} overdue, ${s.landed} landed and safe to clear.`);
+  const stillInAir = s.active + s.due;
+  console.log(`  ${s.unlanded} ${s.unlanded === 1 ? 'piece' : 'pieces'} tracked: ${stillInAir} still in the air, ${s.due} overdue, ${s.landed} landed and safe to clear.`);
   console.log('  work counts as done only when it lands in master.');
   if (s.due + s.landed > 0) {
     const clearable = s.due > 0 && s.landed > 0
