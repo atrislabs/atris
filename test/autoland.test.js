@@ -268,6 +268,29 @@ test('digest falls back to the complete landing when shortening the result remov
   assert.doesNotMatch(digest, /could not explain themselves|operators can now read a complete review action/);
 });
 
+test('digest next moves render proof-ready missions before judging their old objectives', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const stateDir = path.join(repo, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    const missions = Array.from({ length: 4 }, (_, index) => ({
+      id: `mission-${index + 1}`,
+      objective: `Tidy paperclips ${index + 1}`,
+      status: 'ready',
+      receipt_path: `atris/runs/mission-${index + 1}.json`,
+    }));
+    fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), `${missions.map(JSON.stringify).join('\n')}\n`);
+
+    const next = require('../commands/autoland').digestNextMoves(repo);
+
+    assert.equal(next.moves.length, 3);
+    assert.ok(next.moves.every((move) => move.kind === 'mission_ready'));
+    assert.equal(next.unexplained, 0);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('clarify: the gate strips agent jargon and closes the thought before an operator reads it', () => {
   const { clarify } = autoland;
   // Flag dashes, task ids, and snake_case are what an operator cannot act on;
