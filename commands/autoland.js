@@ -556,7 +556,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
     let printedStoryHeader = false;
     for (const item of storied) {
       const t = byRef.get(item.ref);
-      const happened = String(t.review?.landing?.happened || t.metadata?.landing_happened || '').replace(/\s+/g, ' ').slice(0, 160);
+      const happened = autoland.historicalLandingText(t.review?.landing?.happened || t.metadata?.landing_happened || '', 160);
       if (!operatorReady(happened)) continue;
       if (!printedStoryHeader) {
         console.log('');
