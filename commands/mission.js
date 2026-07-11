@@ -4953,6 +4953,11 @@ function collectMissionDoctorFindings(root = process.cwd(), options = {}) {
 }
 
 function doctorMission(args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission doctor [--local] [--json]');
+    console.log('Check verifier, receipt, and loop health without changing mission state.');
+    return;
+  }
   const asJson = wantsJson(args);
   const localOnly = hasFlag(args, '--local');
   const { missions, findings } = collectMissionDoctorFindings(process.cwd(), { localOnly });
@@ -4976,6 +4981,11 @@ function doctorMission(args) {
 // `atris mission watch [id]` — read-only live heartbeat. Prints a line per tick as it
 // lands so a human (or any terminal) can see the loop is alive without rerunning status.
 function watchMission(args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission watch [id] [--interval <s>] [--idle-every <s>]');
+    console.log('Watch live mission heartbeat lines without changing mission state.');
+    return;
+  }
   const ref = stripKnownFlags(args, ['--interval', '--idle-every'], [])[0] || '';
   const intervalSeconds = Math.max(1, parseInt(readFlag(args, '--interval', '2'), 10) || 2);
   const idleEverySeconds = Math.max(1, parseInt(readFlag(args, '--idle-every', '30'), 10) || 30);
