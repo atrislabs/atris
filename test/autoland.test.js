@@ -205,7 +205,7 @@ test('digest and alarm compose in plain language', () => {
   assert.match(digest, /next, if you agree:/);
   assert.match(digest, /taste filters.*\(best fit: auto-improver\)/);
   assert.match(digest, /stuck codex mission/);
-  assert.match(digest, /review proof from task-planner for operators stop trusting so finished work can leave the queue/);
+  assert.match(digest, /review proof from task-planner for operators stop trusting reports the first time one reads wrong so finished work can leave the queue/);
   assert.doesNotMatch(digest, /#13|surfaces exactly|review proof for operators stop trusting.*best fit/);
   assert.match(digest, /- 2 more queued moves stay hidden until their owners write clear next actions/);
   // One tail pointer: the 'more results' line already names the command, so
