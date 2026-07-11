@@ -577,21 +577,23 @@ function runDigest(root, args, { forceSend = false } = {}) {
   console.log(text);
   // the full story: what each piece actually was, in its own words
   const byRef = new Map(acceptedTasks.map((t) => [t.display_id || t.legacy_ref || t.id, t]));
-  const storied = accepted.auto.filter((item) => {
+  const storied = accepted.auto.map((item) => {
     const t = byRef.get(item.ref);
-    return t && (t.review?.landing?.happened || t.metadata?.landing_happened);
-  });
+    const candidates = [
+      t?.review?.landing?.happened || t?.metadata?.landing_happened || '',
+      item.result,
+      item.happened,
+    ].map((candidate) => autoland.historicalLandingText(candidate, 160));
+    return { item, story: candidates.find((candidate) => operatorReady(candidate)) || '' };
+  }).filter((row) => row.story);
   if (storied.length > 0) {
     let printedStoryHeader = false;
-    for (const item of storied) {
-      const t = byRef.get(item.ref);
-      const happened = autoland.historicalLandingText(t.review?.landing?.happened || t.metadata?.landing_happened || '', 160);
-      if (!operatorReady(happened)) continue;
+    for (const { item, story } of storied) {
       if (!printedStoryHeader) {
         console.log('');
         printedStoryHeader = true;
       }
-      console.log(`  ${item.ref}  ${happened}`);
+      console.log(`  ${item.ref}  ${story}`);
     }
   }
   const shouldSend = (forceSend || args.includes('--send')) && policy.imessage_to;
