@@ -1108,6 +1108,48 @@ test('goal controller card distinguishes active goal from required write', () =>
   }
 });
 
+test('goal handshake keeps matching native goal active for full budget', () => {
+  const dir = makeTempDir();
+  try {
+    const now = new Date().toISOString();
+    appendMissionState(dir, {
+      id: 'full-budget-goal-handshake',
+      slug: 'full-budget-goal-handshake',
+      objective: 'keep the matching native goal active',
+      owner: 'linguist',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'git diff --check',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'keep the matching native goal active',
+        acknowledged_at: now,
+      },
+      created_at: new Date(Date.now() - 60_000).toISOString(),
+      updated_at: now,
+      budget_contract: {
+        policy: 'spend_full_budget',
+        requested_seconds: 21600,
+        budget_label: '6 hours',
+      },
+    });
+
+    const json = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.match(payload.goal.replace_after, /keep the matching Codex \/goal active until the full budget is used/);
+    assert.doesNotMatch(payload.goal.replace_after, /replace the Codex \/goal/);
+
+    const text = runCli(['mission', 'goal'], { cwd: dir });
+    assert.equal(text.status, 0, text.stderr || text.stdout);
+    assert.match(text.stdout, /After each proof.*keep the matching Codex \/goal active until the full budget is used\./);
+    assert.doesNotMatch(text.stdout, /replace the Codex \/goal/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission tick can write a passing ad hoc verifier receipt', () => {
   const dir = makeTempDir();
   try {
