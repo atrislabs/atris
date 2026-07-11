@@ -182,6 +182,30 @@ test('clean receipt data produces no findings', () => {
   assert.deepEqual(scanLoopReceipts({ root, now: NOW }), []);
 });
 
+test('detects dead and unparseable mission locks but ignores a live pid', () => {
+  const root = workspace();
+  seedHealthyState(root);
+  writeJson(root, '.atris/state/mission-dead.lock', { pid: 2147483647 });
+  writeJson(root, '.atris/state/mission-live.lock', { pid: process.pid });
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'mission-broken.lock'), '{broken', 'utf8');
+
+  const findings = scanLoopReceipts({ root, now: NOW });
+  assert.deepEqual(findings.map((finding) => finding.kind), ['stale_mission_lock']);
+  assert.equal(findings[0].count, 2);
+  assert.equal(FINDING_PRIORITY.stale_mission_lock, 350);
+  assert.equal(findings[0].effective_priority, 360);
+  assert.deepEqual(findings[0].evidence.locks.map((lock) => lock.lock), [
+    'mission-broken.lock',
+    'mission-dead.lock',
+  ]);
+  assert.deepEqual(findings[0].suggested_mission, {
+    objective: 'clear stale mission locks left by dead runs',
+    verifier: 'atris improve doctor --check stale_mission_lock',
+    owner: 'auto-improver',
+    cadence: '15m',
+  });
+});
+
 test('orders the blocking auth defect before downstream loop symptoms', () => {
   const root = workspace();
   writeJsonl(root, '.atris/state/scorecards.jsonl', [
