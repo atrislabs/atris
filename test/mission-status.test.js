@@ -7032,7 +7032,7 @@ test('mission lock busy errors are JSON-readable', () => {
     const lockPath = path.join(dir, '.atris', 'state', `mission-${mission.id}.lock`);
     fs.mkdirSync(path.dirname(lockPath), { recursive: true });
     fs.writeFileSync(lockPath, JSON.stringify({
-      pid: 12345,
+      pid: process.pid,
       started_at: '2026-05-09T00:00:00.000Z',
     }), 'utf8');
 
@@ -7052,6 +7052,29 @@ test('mission lock busy errors are JSON-readable', () => {
     assert.equal(humanRun.status, 3);
     assert.equal(humanRun.stdout, '');
     assert.match(humanRun.stderr, /\[mission run\] lock busy/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission lock reaps a dead owner before acquiring', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const mission = startMission(dir, 'dead lock recovery mission');
+    const lockFile = path.join(dir, '.atris', 'state', `mission-${mission.id}.lock`);
+    fs.writeFileSync(lockFile, JSON.stringify({
+      pid: 2147483647,
+      started_at: '2026-07-11T00:00:00.000Z',
+      mission_id: mission.id,
+    }), 'utf8');
+
+    const tick = runCli([
+      'mission', 'tick', mission.id, '--summary', 'Recovered the interrupted mission lock, so work can continue without manual file cleanup.', '--json',
+    ], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    assert.equal(JSON.parse(tick.stdout).mission.last_tick_index, 1);
+    assert.equal(fs.existsSync(lockFile), false);
   } finally {
     cleanupTempDir(dir);
   }
