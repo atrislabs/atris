@@ -82,15 +82,29 @@ function missionHasBudgetRemaining(mission, nowMs = Date.now()) {
     && Number.isFinite(startedMs) && startedMs + seconds * 1000 > nowMs;
 }
 
+function normalizedMissionObjective(mission) {
+  return String(mission?.objective || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 function digestNextMoves(root) {
   try {
     const { nextMoves } = require('../lib/next-moves');
     const { resolveFunctionalOwner } = require('../lib/functional-owner');
     const { listMissions } = require('./mission');
-    const missions = new Map((listMissions(root) || []).map((mission) => [mission.id, mission]));
+    const missionRows = listMissions(root) || [];
+    const missions = new Map(missionRows.map((mission) => [mission.id, mission]));
+    const activeBudgetObjectives = new Set(missionRows
+      .filter((mission) => missionHasBudgetRemaining(mission))
+      .map(normalizedMissionObjective)
+      .filter(Boolean));
     const all = (nextMoves(root, 5) || [])
       .filter((move) => move && move.title)
-      .filter((move) => move.kind !== 'mission_ready' || !missionHasBudgetRemaining(missions.get(move.ref)));
+      .filter((move) => {
+        if (move.kind !== 'mission_ready') return true;
+        const mission = missions.get(move.ref);
+        return !missionHasBudgetRemaining(mission)
+          && !activeBudgetObjectives.has(normalizedMissionObjective(mission));
+      });
     const explainable = all.filter((move) => move.kind === 'mission_ready' || operatorReady(move.title));
     const ready = explainable.slice(0, 3).map((move) => {
       let owner = null;
