@@ -13,6 +13,7 @@ const {
   selectCodexGoalMission,
   usefulClaudeReceiptSummary,
   missionVerifierTimeoutMs,
+  missionLandingStepSummary,
 } = require('../commands/mission');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -25,6 +26,17 @@ function makeTempDir() {
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
+
+test('mission landing summary strips broken markdown before status renders it', () => {
+  assert.equal(
+    missionLandingStepSummary('Cut the waiting queue into one honest decision; confirmed with `atris close.'),
+    'Cut the waiting queue into one honest decision; confirmed with atris close.',
+  );
+  assert.equal(
+    missionLandingStepSummary('**Killed** an __unverified__ number before it reached the ~~pitch~~.'),
+    'Killed an unverified number before it reached the pitch.',
+  );
+});
 
 function runCli(args, { cwd, env = {} } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
