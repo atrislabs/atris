@@ -5355,7 +5355,10 @@ function missionHeartbeatLines(mission, now = new Date()) {
       : 'no verifier';
     const tickIdx = mission.last_tick_index != null ? `#${mission.last_tick_index}, ` : '';
     const layerSuffix = mission.last_tick_layer ? `, layer: ${mission.last_tick_layer}` : '';
-    lines.push(`  last tick: ${age} ago (${tickIdx}${mission.last_tick_status || 'unknown'}, ${verifier}${layerSuffix})`);
+    const activityLabel = missionBudgetContinuationText(mission, now.getTime())
+      ? 'last mission receipt'
+      : 'last tick';
+    lines.push(`  ${activityLabel}: ${age} ago (${tickIdx}${mission.last_tick_status || 'unknown'}, ${verifier}${layerSuffix})`);
   } else if (!HEARTBEAT_TERMINAL_STATUSES.has(mission.status)) {
     lines.push('  last tick: never');
   }

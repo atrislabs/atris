@@ -101,7 +101,7 @@ test('missionHeartbeatLines shows time left for active full-budget work instead 
       requested_seconds: 21600,
     },
   }, now);
-  assert.equal(lines[0], '  last tick: 1h 0m ago (ran, no verifier)');
+  assert.equal(lines[0], '  last mission receipt: 1h 0m ago (ran, no verifier)');
   assert.equal(lines[1], '  budget: 5h 0m remaining');
 });
 
