@@ -867,7 +867,7 @@ function showHelp() {
 Usage:
   atris improve
   atris improve --json
-  atris improve doctor [--json] [--fix]
+  atris improve doctor [--json] [--fix] [--check <kind>]
   atris improve tick [mode] [options]
   atris improve [mode|history] [options]
 
@@ -885,6 +885,7 @@ Options:
   --no-fallback    do not fall back to a local tick if the backend is down
   --workspace <p>  workspace path (default: cwd)
   --timeout <sec>  request timeout in seconds (default: 300)
+  --check <kind>   exit 0 when the doctor finding is absent, or 1 when present
   --json           machine-readable output (for the member loop)
   -h, --help       this help
 
@@ -932,10 +933,27 @@ function runLoopDoctor(argv = [], deps = {}) {
   const args = Array.isArray(argv) ? argv : [];
   const json = args.includes('--json');
   const fixRequested = args.includes('--fix');
+  const checkIndex = args.indexOf('--check');
+  const checkRequested = checkIndex !== -1;
+  const checkKind = checkRequested ? String(args[checkIndex + 1] || '').trim() : null;
   const root = process.cwd();
   const scan = deps.scanLoopReceipts || require('../lib/loop-doctor').scanLoopReceipts;
   const findings = scan({ root, now: deps.now || new Date() });
   let fix = null;
+
+  if (checkRequested) {
+    const finding = checkKind && findings.find((item) => item.kind === checkKind);
+    const check = {
+      kind: checkKind,
+      ok: Boolean(checkKind) && !finding,
+      reason: !checkKind ? 'missing finding kind' : (finding ? `${checkKind} is still present` : null),
+    };
+    const payload = { schema: 'atris.loop_doctor.v1', findings, fix, check };
+    if (json) console.log(JSON.stringify(payload));
+    else if (check.ok) console.log(`loop doctor check passed: no ${checkKind} finding.`);
+    else console.log(`loop doctor check failed: ${check.reason}.`);
+    return payload;
+  }
 
   if (fixRequested && findings.length) {
     const finding = findings[0];
@@ -978,8 +996,8 @@ function runLoopDoctor(argv = [], deps = {}) {
 async function run(argv = [], deps = {}) {
   const args = Array.isArray(argv) ? [...argv] : [];
   if (args[0] === 'doctor') {
-    runLoopDoctor(args.slice(1), deps);
-    return 0;
+    const result = runLoopDoctor(args.slice(1), deps);
+    return result.check && !result.check.ok ? 1 : 0;
   }
   if (isBareVitalsArgs(args)) {
     const vitals = (deps.collectImproveVitals || collectImproveVitals)({ workspace: process.cwd() }, deps);

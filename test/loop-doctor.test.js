@@ -68,6 +68,8 @@ test('detects repeated pause reasons and repeated errored ticks', () => {
   assert.deepEqual(findings.map((finding) => finding.kind), ['repeated_tick_error', 'repeated_pause_reason']);
   assert.equal(findings[0].count, 2);
   assert.equal(findings[1].evidence.value, 'claude-session-busy');
+  assert.equal(findings[0].suggested_mission.verifier, 'atris improve doctor --check repeated_tick_error');
+  assert.equal(findings[1].suggested_mission.verifier, 'atris improve doctor --check repeated_pause_reason');
 });
 
 test('detects a seven-day reward flatline and stays quiet after positive reward', () => {
@@ -79,6 +81,8 @@ test('detects a seven-day reward flatline and stays quiet after positive reward'
     { ts: '2026-07-10T10:00:00.000Z', reward: 0 },
   ]);
   assert.deepEqual(findingKinds(root), ['reward_flatline']);
+  assert.equal(scanLoopReceipts({ root, now: NOW })[0].suggested_mission.verifier,
+    'atris improve doctor --check reward_flatline');
 
   writeJsonl(root, '.atris/state/scorecards.jsonl', [
     { ts: '2026-07-08T12:00:00.000Z', reward: 0 },
@@ -95,6 +99,8 @@ test('detects zero due-capable missions and accepts a headless always-on cadence
     { id: 'caller-1', status: 'running', cadence: '15m', runner: 'codex_goal', always_on: true, created_at: NOW },
   ]);
   assert.deepEqual(findingKinds(root), ['zero_due_capable_missions']);
+  assert.equal(scanLoopReceipts({ root, now: NOW })[0].suggested_mission.verifier,
+    'atris improve doctor --check zero_due_capable_missions');
 
   writeJsonl(root, '.atris/state/missions.jsonl', [
     { id: 'headless-1', status: 'ready', cadence: '15m', runner: 'atris2', always_on: true, created_at: NOW },
@@ -114,6 +120,8 @@ test('detects repeated auth failure strings', () => {
   const findings = scanLoopReceipts({ root, now: NOW });
   assert.deepEqual(findings.map((finding) => finding.kind), ['repeated_auth_failure']);
   assert.equal(findings[0].evidence.signature, '401');
+  assert.equal(findings[0].suggested_mission.verifier,
+    'atris improve doctor --check repeated_auth_failure');
 });
 
 test('clean receipt data produces no findings', () => {

@@ -8,6 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const {
+  run,
   runImprove,
   parseImproveArgs,
   buildImprovePayload,
@@ -671,12 +672,33 @@ function fakeFinding(kind = 'repeated_auth_failure') {
     count: 2,
     suggested_mission: {
       objective: 'repair the fake thing',
-      verifier: 'node --test test/improve.test.js',
+      verifier: `atris improve doctor --check ${kind}`,
       owner: 'auto-improver',
       cadence: '15m',
     },
   };
 }
+
+test('doctor --check exits 0 when the finding is absent and 1 when present', async () => {
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    const absent = await run(['doctor', '--check', 'repeated_auth_failure'], {
+      scanLoopReceipts: () => [],
+    });
+    assert.equal(absent, 0);
+    assert.equal(lines.pop(), 'loop doctor check passed: no repeated_auth_failure finding.');
+
+    const present = await run(['doctor', '--check', 'repeated_auth_failure'], {
+      scanLoopReceipts: () => [fakeFinding()],
+    });
+    assert.equal(present, 1);
+    assert.equal(lines.pop(), 'loop doctor check failed: repeated_auth_failure is still present.');
+  } finally {
+    console.log = originalLog;
+  }
+});
 
 test('doctor --fix files the repair mission with runner auto, not claude', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-doctor-'));
