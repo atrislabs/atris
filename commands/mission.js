@@ -1971,6 +1971,10 @@ function missionStatusView(mission) {
   const visibleTaskSpine = budgetContinuation
     ? { ...taskSpine, current_step_command: null }
     : taskSpine;
+  const lastLanding = missionLastLanding(mission);
+  const visibleLastLanding = budgetContinuation && lastLanding
+    ? { ...lastLanding, next: budgetContinuation }
+    : lastLanding;
   const requestedOwner = taskSpine.requested_owner
     || mission.requested_owner
     || (mission.owner && mission.owner !== taskSpine.owner ? mission.owner : null);
@@ -1990,7 +1994,7 @@ function missionStatusView(mission) {
     current_task_id: taskSpine.current_task_id,
     task_ref: taskSpine.task_ref,
     task_spine: visibleTaskSpine,
-    last_landing: missionLastLanding(mission),
+    last_landing: visibleLastLanding,
   };
 }
 
