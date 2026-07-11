@@ -263,6 +263,17 @@ test('mission status keeps full-budget work moving until promised time ends', ()
         },
       },
     }), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'runs', 'mission-full-budget-older.json'), JSON.stringify({
+      mission_id: 'mission-full-budget',
+      at: new Date(Date.now() - 1000).toISOString(),
+      result: {
+        kind: 'tick',
+        landing: {
+          changed: 'An earlier bounded improvement passed its check.',
+          next: 'Review proof, then run: atris mission complete mission-full-budget --proof "atris/runs/mission-full-budget-older.json".',
+        },
+      },
+    }), 'utf8');
     appendMissionState(dir, {
       id: 'mission-full-budget',
       slug: 'full-budget',
@@ -317,7 +328,8 @@ test('mission status keeps full-budget work moving until promised time ends', ()
     assert.equal(timeline.status, 0, timeline.stderr || timeline.stdout);
     assert.match(timeline.stdout, /Next: keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment/);
     assert.match(timeline.stdout, /Proof: saved in mission history\./);
-    assert.doesNotMatch(timeline.stdout, /Review proof|mission complete|atris\/runs\/mission-full-budget\.json/);
+    assert.match(timeline.stdout, /History:\n  1\. An earlier bounded improvement passed its check\./);
+    assert.doesNotMatch(timeline.stdout, /Next at the time|Review proof|mission complete|atris\/runs\/mission-full-budget/);
   } finally {
     cleanupTempDir(dir);
   }
