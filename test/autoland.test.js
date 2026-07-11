@@ -339,6 +339,10 @@ test('live update receipt keeps the exact sent text for the next linguist audit'
     assert.equal(receipt.live_update_sent, true);
     assert.equal(receipt.live_update_text, sentText);
     assert.match(receipt.live_update_text, /^atris repo: just landed\n\n- operators can now trust completed test work faster because the result is clear \(builder\)$/);
+    assert.match(receipt.receipt_path, /^atris\/runs\/autoland-tick-/);
+    const persisted = JSON.parse(fs.readFileSync(path.join(repo, receipt.receipt_path), 'utf8'));
+    assert.equal(persisted.live_update_sent, true);
+    assert.equal(persisted.live_update_text, sentText);
   } finally {
     autoland.sendImessage = originalSend;
     for (const key of agentEnvKeys) {

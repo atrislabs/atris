@@ -618,6 +618,16 @@ function runTick(root, args) {
   }
 }
 
+function persistTickReceipt(root, receipt) {
+  const runsDir = path.join(root, 'atris', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const safeTime = String(receipt.at || new Date().toISOString()).replace(/[:.]/g, '-');
+  const receiptPath = path.join(runsDir, `autoland-tick-${safeTime}.json`);
+  receipt.receipt_path = path.relative(root, receiptPath);
+  fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+  return receipt.receipt_path;
+}
+
 function runTickBody(root, { json, policy, receipt }) {
 
   // 1. certify and land in one task process. Keeping both phases together lets
@@ -853,6 +863,12 @@ function runTickBody(root, { json, policy, receipt }) {
   }
   autoland.writeState(root, state);
 
+  try {
+    persistTickReceipt(root, receipt);
+  } catch (err) {
+    receipt.receipt_error = String((err && err.message) || err).slice(0, 200);
+  }
+
   if (json) console.log(JSON.stringify(receipt));
   else {
     const reapedTotal = Number(receipt.reaped?.branches || 0) + Number(receipt.reaped?.worktrees || 0);
@@ -860,7 +876,8 @@ function runTickBody(root, { json, policy, receipt }) {
     const janitorNote = `, janitor stopped ${receipt.missions_stopped} mission${receipt.missions_stopped === 1 ? '' : 's'} + reaped ${receipt.worktrees_reaped} worktree${receipt.worktrees_reaped === 1 ? '' : 's'}`;
     const heldNote = receipt.missions_held ? `, held ${receipt.missions_held} human-blocked mission${receipt.missions_held === 1 ? '' : 's'}` : '';
     const wishNote = `, ${wishSweepSummaryLine(receipt.wish_dispatch, receipt.wish_dispatch_error)}`;
-    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}${janitorNote}${heldNote}${wishNote}`);
+    const receiptNote = receipt.receipt_path ? `, receipt ${receipt.receipt_path}` : '';
+    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}${reapNote}${janitorNote}${heldNote}${wishNote}${receiptNote}`);
   }
   return 0;
 }
@@ -918,6 +935,7 @@ module.exports = {
   operatorReady,
   hasAgentJargon,
   runTickBody,
+  persistTickReceipt,
   sweepLanding,
   verifyClosedTaskMissions,
   wishSweepSummaryLine,
