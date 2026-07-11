@@ -279,16 +279,26 @@ test('digest acceptance history is not capped by the compact done-task projectio
         },
       });
     }
+    taskDb.addTask(db, {
+      title: 'Title-only result lets operators inspect accepted work, so the daily story stays complete.',
+      workspaceRoot,
+      status: 'done',
+      metadata: {
+        accepted_at: acceptedAt,
+        auto_accepted_at: acceptedAt,
+      },
+    });
     const compact = taskDb.taskProjection(db, { workspaceRoot });
     assert.equal(compact.tasks.filter((task) => task.status === 'done').length, 8);
     const history = require('../commands/autoland').readAcceptedTaskHistory(workspaceRoot, [], dbPath);
-    assert.equal(autoland.acceptedInLastDay(history).auto.length, 10);
+    assert.equal(autoland.acceptedInLastDay(history).auto.length, 11);
     taskDb.close(db);
     const digest = runCli(['autoland', 'digest'], repo);
     assert.equal(digest.status, 0, digest.stderr || digest.stdout);
-    assert.match(digest.stdout, /^atris repo: last 24 hours\n10 landed;/);
+    assert.match(digest.stdout, /^atris repo: last 24 hours\n11 landed;/);
     assert.equal((digest.stdout.match(/Full story \d lets operators inspect/g) || []).length, 9);
     assert.match(digest.stdout, /^  REP-\d+  Accepted result 10 saves operator time, so the daily count stays trustworthy\.$/m);
+    assert.match(digest.stdout, /^  REP-\d+  Title-only result lets operators inspect accepted work, so the daily story stays complete\.$/m);
   } finally {
     taskDb.close(db);
     cleanupTempDir(base);
