@@ -5087,6 +5087,8 @@ test('bare mission run asks for input instead of resuming an old mission', () =>
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.ok, false);
     assert.equal(payload.action, 'mission_input_required');
+    assert.match(payload.error, /atris mission run --due --headless/);
+    assert.match(payload.error, /atris mission run <explicit-mission-id>/);
     assert.equal(payload.prompt, 'What mission should Atris run?');
     assert.equal(payload.owner, 'mission-lead');
     assert.equal(payload.owner_prompt, 'Which team member should own it?');
@@ -5106,8 +5108,39 @@ test('mission run with owner only asks for the missing mission', () => {
     assert.equal(run.status, 1);
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.action, 'mission_input_required');
+    assert.match(payload.error, /atris mission run --due --headless/);
     assert.equal(payload.owner, 'mission-lead');
     assert.match(payload.example, /--owner mission-lead/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run kills a worker that exceeds the remaining wall', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission', 'start', 'wall-bound worker', '--owner', 'mission-lead',
+      '--runner', 'claude', '--no-verify', '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+    const run = runCli([
+      'mission', 'run', mission.id, '--max-wall', '0.05', '--max-ticks', '1', '--no-verify', '--json',
+    ], {
+      cwd: dir,
+      env: {
+        ATRIS_RUNNER_BIN: process.execPath,
+        ATRIS_RUNNER_COMMAND_TEMPLATE: `${process.execPath} -e "setInterval(() => {}, 1000)"`,
+      },
+    });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.pause_reason, 'max-wall-reached');
+    assert.equal(payload.ticks[0].status, 'errored');
+    assert.equal(payload.ticks[0].reason, 'wall-exceeded-during-tick');
+    assert.equal(payload.ticks[0].claude.timed_out, true);
   } finally {
     cleanupTempDir(dir);
   }

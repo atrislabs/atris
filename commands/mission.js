@@ -429,20 +429,20 @@ const DEFAULT_MISSION_RUN_OWNER_SLUGS = new Set(
 
 function missionRunInputRequired(asJson = false, owner = '') {
   const defaultOwner = normalizeOwnerSlug(owner || process.env.ATRIS_AGENT_ID || 'mission-lead') || 'mission-lead';
+  const error = 'mission run needs an interactive terminal; use atris mission run --due --headless or atris mission run <explicit-mission-id>.';
   const payload = {
     ok: false,
     action: 'mission_input_required',
+    error,
     prompt: 'What mission should Atris run?',
     owner: defaultOwner,
     owner_prompt: 'Which team member should own it?',
     example: `atris mission run "make onboarding magical" --owner ${defaultOwner}`,
   };
   if (asJson) {
-    console.log(JSON.stringify(payload, null, 2));
+    console.log(JSON.stringify(payload));
   } else {
-    console.error('What mission should Atris run?');
-    if (defaultOwner) console.error(`Team member: ${defaultOwner}`);
-    console.error(`Try: atris mission run "make onboarding magical" --owner ${defaultOwner}`);
+    console.error(error);
   }
   process.exit(1);
 }
@@ -499,6 +499,7 @@ function missionRunInputFromArgs(args, root = process.cwd()) {
 }
 
 async function promptMissionRunInput(args) {
+  if (!process.stdin.isTTY) missionRunInputRequired(wantsJson(args), readFlag(args, '--owner', ''));
   const defaultOwner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
   try {
@@ -6957,7 +6958,7 @@ async function runMission(args) {
   const maxTicksFlag = readFlag(args, '--max-ticks', '');
   let maxTicks = Math.max(1, Number(maxTicksFlag) || (budgetTier ? budgetTier.max_ticks : MISSION_RUN_DEFAULTS.maxTicks));
   const maxWallFlag = readFlag(args, '--max-wall', '');
-  let maxWallSeconds = Math.max(60, Number(maxWallFlag) || (budgetTier ? budgetTier.requested_seconds : MISSION_RUN_DEFAULTS.maxWallSeconds));
+  let maxWallSeconds = Math.max(0.001, Number(maxWallFlag) || (budgetTier ? budgetTier.requested_seconds : MISSION_RUN_DEFAULTS.maxWallSeconds));
   const cadenceOverride = readFlag(args, '--cadence', '');
   const engineOverrideRaw = readFlag(args, '--engine', '');
   const runnerOverride = engineOverrideRaw
@@ -7201,16 +7202,30 @@ async function runMission(args) {
         const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
         const { runAtris2Turn } = require('./probe');
         const businessId = businessIdForAtris2Mission(tickRuntimeMission, cwd);
-        const turn = await runAtris2Turn({
-          prompt,
-          model: tickRuntimeMission.model || 'atris:fast',
-          business: businessId,
-          maxTurns: 16,
-          signal: controller.signal,
-          // CLI-231: mission ticks execute relayed ops in the mission's own
-          // workspace, not the hosted ai-computer filesystem.
-          localCwd: cwd,
-        });
+        const tickController = new AbortController();
+        let wallExpired = false;
+        const abortTick = () => tickController.abort();
+        controller.signal.addEventListener('abort', abortTick, { once: true });
+        const tickTimer = setTimeout(() => {
+          wallExpired = true;
+          tickController.abort();
+        }, Math.max(1, Math.floor(remainingWall * 1000)));
+        let turn;
+        try {
+          turn = await runAtris2Turn({
+            prompt,
+            model: tickRuntimeMission.model || 'atris:fast',
+            business: businessId,
+            maxTurns: 16,
+            signal: tickController.signal,
+            // CLI-231: mission ticks execute relayed ops in the mission's own
+            // workspace, not the hosted ai-computer filesystem.
+            localCwd: cwd,
+          });
+        } finally {
+          clearTimeout(tickTimer);
+          controller.signal.removeEventListener('abort', abortTick);
+        }
         result.atris2 = {
           ok: turn.ok,
           engine: turn.engine,
@@ -7224,7 +7239,9 @@ async function runMission(args) {
         };
         if (controller.signal.aborted) { pauseReason = 'aborted-during-atris2'; break; }
         if (turn.error === 'not-logged-in') { pauseReason = 'auth-required'; break; }
-        if (!turn.ok || !String(turn.text || '').trim()) {
+        if (wallExpired) {
+          result = { ...result, status: 'errored', reason: 'wall-exceeded-during-tick' };
+        } else if (!turn.ok || !String(turn.text || '').trim()) {
           result = { ...result, status: 'errored', reason: atris2TurnErrorReason(turn.error) };
         } else {
           result = { ...result, status: 'ran', reason: 'tick-ok', ran: true };
@@ -7241,7 +7258,7 @@ async function runMission(args) {
         try {
           claudeResult = await spawnClaudeTick(tickRuntimeMission, {
             sessionMode, sessionId: useId, cwd, signal: controller.signal,
-            timeoutMs: MISSION_RUN_DEFAULTS.claudeTimeoutMs, prompt,
+            timeoutMs: Math.min(MISSION_RUN_DEFAULTS.claudeTimeoutMs, Math.max(1, Math.floor(remainingWall * 1000))), prompt,
             model: resolveClaudeRunnerModel(tickRuntimeMission),
           });
         } finally {
@@ -7274,7 +7291,10 @@ async function runMission(args) {
 
         if (!claudeResult.ok) {
           const deadModel = detectUnavailableModel(claudeResult.summary || claudeResult.receipt_text);
-          let reason = claudeResult.timedOut ? 'claude-timeout' : 'claude-error';
+          const wallBoundTimeout = remainingWall * 1000 <= MISSION_RUN_DEFAULTS.claudeTimeoutMs;
+          let reason = claudeResult.timedOut
+            ? (wallBoundTimeout ? 'wall-exceeded-during-tick' : 'claude-timeout')
+            : 'claude-error';
           if (deadModel) { reason = 'model-unavailable'; result.model_unavailable = deadModel; }
           // A killed tick (usually claude-timeout) can leave the session lock
           // held, so the next resume fails with "already in use". Session
@@ -7447,6 +7467,11 @@ async function runMission(args) {
         // fresh id, so backing off just burns wall clock. If rotation itself
         // keeps failing, the repeated-error breaker below still stops the run.
         backoffAttempt++;
+      }
+
+      if (result.status === 'errored' && result.reason === 'wall-exceeded-during-tick') {
+        pauseReason = 'max-wall-reached';
+        break;
       }
 
       if (callerSessionRunner && result.status === 'ran') break;
