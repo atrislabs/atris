@@ -1817,6 +1817,63 @@ test('mission report keeps worker debrief separate from verifier proof', () => {
   }
 });
 
+test('mission report keeps full-budget work active until promised time is used', () => {
+  const dir = makeTempDir();
+  try {
+    const missionId = 'mission-report-live-budget';
+    const receiptPath = path.join('atris', 'runs', `${missionId}-tick.json`);
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, receiptPath), JSON.stringify({
+      schema: 'atris.mission_receipt.v1',
+      mission_id: missionId,
+      at: new Date().toISOString(),
+      result: {
+        kind: 'mission_tick',
+        tick: {
+          tick_index: 1,
+          status: 'ran',
+          summary: 'The first boundary is pinned with complete language, so the operator can keep following the live run without decoding a clipped sentence.',
+        },
+      },
+    }), 'utf8');
+    appendMissionState(dir, {
+      id: missionId,
+      slug: missionId,
+      objective: 'keep report budget truth aligned',
+      runner: 'codex_goal',
+      owner: 'linguist',
+      status: 'ready',
+      receipt_path: receiptPath,
+      verifier_result: { passed: true, command: 'git diff --check', status: 0 },
+      next_action: 'queue AgentXP review now',
+      created_at: new Date(Date.now() - 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+      budget_contract: {
+        policy: 'spend_full_budget',
+        requested_seconds: 21600,
+        budget_label: '6 hours',
+      },
+    });
+
+    const report = runCli(['mission', 'report', missionId], { cwd: dir });
+    assert.equal(report.status, 0, report.stderr || report.stdout);
+    assert.match(report.stdout, /state: working for the full 6 hours/);
+    assert.match(report.stdout, /What happened: The last verifier passed; full-budget work is continuing\./);
+    assert.match(report.stdout, /The first boundary is pinned.*without decoding a clipped sentence\./);
+    assert.match(report.stdout, /Proof: saved; inspect: atris mission timeline/);
+    assert.match(report.stdout, /Next: keep shipping bounded improvements for the remaining .* of the 6-hour commitment/);
+    assert.doesNotMatch(report.stdout, /Worker receipt:|Verifier receipt:|atris\/runs\/|queue AgentXP review|\.\.\./);
+
+    const json = runCli(['mission', 'report', missionId, '--json'], { cwd: dir });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.reports[0].status, 'ready');
+    assert.equal(payload.reports[0].verifier_receipt_path, receiptPath);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission report shows compact chronological receipt timeline', () => {
   const dir = makeTempDir();
   try {
