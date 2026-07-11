@@ -61,6 +61,10 @@ test('buildTickPrompt includes layer receipt instruction', () => {
   );
   assert.ok(prompt.includes('layer: identity|beliefs|capabilities|behaviors|environment'));
   assert.ok(prompt.includes('final line'));
+  assert.ok(prompt.includes('The tick is not done until the verify step passes'));
+  assert.ok(prompt.includes('finish by actually running the surface you changed on this computer'));
+  assert.ok(prompt.includes('After that one verify step, STOP'));
+  assert.ok(prompt.includes('Never start a second slice in one tick'));
 });
 
 test('layer parser round-trips explicit receipt layer and ignores enum docs', () => {
