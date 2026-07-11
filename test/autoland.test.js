@@ -258,6 +258,35 @@ test('digest and alarm compose in plain language', () => {
   assert.match(alarm, /CLI-9 \(30h\)/);
 });
 
+test('digest acceptance history is not capped by the compact done-task projection', () => {
+  const { base, repo } = makeTempRepo();
+  const taskDb = require('../lib/task-db');
+  const dbPath = path.join(repo, '.atris', 'history-tasks.db');
+  const db = taskDb.open(dbPath);
+  try {
+    const acceptedAt = new Date().toISOString();
+    for (let i = 1; i <= 9; i += 1) {
+      taskDb.addTask(db, {
+        title: `Accepted result ${i} saves operator time`,
+        workspaceRoot: repo,
+        status: 'done',
+        metadata: {
+          accepted_at: acceptedAt,
+          auto_accepted_at: acceptedAt,
+          result: `Accepted result ${i} saves operator time, so the daily count stays trustworthy.`,
+        },
+      });
+    }
+    const compact = taskDb.taskProjection(db, { workspaceRoot: repo });
+    assert.equal(compact.tasks.filter((task) => task.status === 'done').length, 8);
+    const history = require('../commands/autoland').readAcceptedTaskHistory(repo, [], dbPath);
+    assert.equal(autoland.acceptedInLastDay(history).auto.length, 9);
+  } finally {
+    taskDb.close(db);
+    cleanupTempDir(base);
+  }
+});
+
 test('expanded digest points to the full story below instead of rerunning itself', () => {
   const accepted = Array.from({ length: 4 }, (_, index) => ({
     ref: `CLI-${index + 1}`,
