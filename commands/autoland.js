@@ -593,7 +593,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
   });
   console.log(text);
   // the full story: what each piece actually was, in its own words
-  const storied = digestStoryRows(accepted, acceptedTasks);
+  const storied = digestStoryRows(accepted, acceptedTasks).slice(3);
   if (storied.length > 0) {
     let printedStoryHeader = false;
     for (const { item, story } of storied) {
