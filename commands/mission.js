@@ -375,6 +375,7 @@ function printJsonOrText(payload, lines, asJson) {
 const MISSION_RUN_VALUE_FLAGS = [
   '--slots',
   '--max-ticks',
+  '--max-idle-ticks',
   '--max-wall',
   '--minutes',
   '--hours',
@@ -1917,9 +1918,11 @@ function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalRecei
   const verifier = mission.verifier_result;
   const checked = verifier
     ? missionVerifierCheckedText(verifier, mission)
-    : pauseReason
-      ? `Run paused: ${pauseReason}.`
-      : 'Run recorded; no verifier was run.';
+    : pauseReason === 'no-progress'
+      ? `Run stopped: ${mission.stop_reason || 'no progress across consecutive ticks'}.`
+      : pauseReason
+        ? `Run paused: ${pauseReason}.`
+        : 'Run recorded; no verifier was run.';
   const tested = verifier
     ? missionVerifierHighLevelTestText(verifier, mission)
     : mission.verifier
@@ -5261,6 +5264,8 @@ const MISSION_RUN_DEFAULTS = {
   maxWallSeconds: 3600,
   claudeTimeoutMs: 10 * 60 * 1000,
   backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
+  // BCK-1324: consecutive no-progress ticks before an honest early stop.
+  maxIdleTicks: 3,
 };
 
 // Claude sessions accumulate context across resumed ticks; an always-on
@@ -6525,6 +6530,39 @@ function consecutiveVerifierFails(ticks) {
   return n;
 }
 
+// BCK-1324: a "holding tick" is a tick that reports status=ran/reason=tick-ok
+// (so it never trips the error-streak breakers) but left no structural trace —
+// no new or cleared dirty files beyond whatever was already dirty at tick
+// start, and no fresh verifier pass. Claude's own summary text ("holding
+// tick, no drift") is not the signal: agents self-label busywork as progress
+// constantly. The worktree diff and verifier result are ground truth.
+function tickMadeProgress(tick) {
+  if (!tick || tick.status !== 'ran') return true; // errors/skips aren't "idle" — other breakers own those
+  const wt = tick.worktree;
+  if (wt && wt.available) {
+    if ((wt.new_dirty_count || 0) > 0) return true;
+    if ((wt.cleared_dirty_count || 0) > 0) return true;
+  } else if (!wt) {
+    // No worktree signal available (e.g. git unavailable) — don't punish a
+    // tick we have no evidence against.
+    return true;
+  }
+  if (tick.verifier_passed === true) return true;
+  return false;
+}
+
+// Count the trailing run of ticks (most recent first) that made no progress
+// per tickMadeProgress. A single progressing tick anywhere in the run resets
+// this to 0 — only the tail streak matters.
+function consecutiveNoProgressTicks(ticks) {
+  let n = 0;
+  for (let i = ticks.length - 1; i >= 0; i--) {
+    if (tickMadeProgress(ticks[i])) break;
+    n++;
+  }
+  return n;
+}
+
 // Count the trailing run of errored ticks that all share the most-recent error's
 // reason. Backoff caps at 10min, so an error that recurs identically (claude-timeout,
 // atris2-error, a dead model) otherwise retries forever until max-ticks/max-wall.
@@ -7146,6 +7184,12 @@ async function runMission(args) {
   const runBudgetContract = budgetContractFromTier(budgetTier, args);
   const maxTicksFlag = readFlag(args, '--max-ticks', '');
   let maxTicks = Math.max(1, Number(maxTicksFlag) || (budgetTier ? budgetTier.max_ticks : MISSION_RUN_DEFAULTS.maxTicks));
+  // BCK-1324: a tick that "ran" but left no structural trace (no new/cleared
+  // dirty files, no verifier pass) is a no-op wearing a success label — the
+  // live 6h run e7b93c4d burned 15 consecutive ticks stuck at
+  // new_since_baseline_count=4 with reason=tick-ok every time. Stop honestly
+  // instead of grinding the tick budget. 0 disables the guard.
+  const maxIdleTicks = readNonNegativeIntegerFlag(args, '--max-idle-ticks', MISSION_RUN_DEFAULTS.maxIdleTicks);
   const maxWallFlag = readFlag(args, '--max-wall', '');
   let maxWallSeconds = Math.max(0.001, Number(maxWallFlag) || (budgetTier ? budgetTier.requested_seconds : MISSION_RUN_DEFAULTS.maxWallSeconds));
   const cadenceOverride = readFlag(args, '--cadence', '');
@@ -7678,6 +7722,11 @@ async function runMission(args) {
       if (callerSessionRunner && result.status === 'ran') break;
       if (newStatus === 'complete' || (newStatus === 'ready' && !mission.always_on && !fullBudgetMode)) break;
       if (consecutiveVerifierFails(ticks) >= 2) { pauseReason = 'consecutive-verifier-fails'; break; }
+      // BCK-1324: N consecutive ticks that each self-report "ran" but leave no
+      // structural trace is a manufactured-busywork loop, not progress. Stop
+      // honestly (clean stop, not a pause/blocker) rather than burn the rest
+      // of the tick budget. --max-idle-ticks 0 disables this guard.
+      if (maxIdleTicks > 0 && consecutiveNoProgressTicks(ticks) >= maxIdleTicks) { pauseReason = 'no-progress'; break; }
       // A retired/inaccessible model is deterministic: the id is fixed for the run, so
       // every remaining tick (and every future cron firing) fails identically. Backoff
       // only slows the bleeding. Stop on first detection and surface the dead id —
@@ -7715,7 +7764,38 @@ async function runMission(args) {
       if (lastTick && lastTick.status !== 'ran' && !missionRunKeepsRetryingError(lastTick.reason)) pauseReason = 'max-ticks-reached';
     }
 
-    if (pauseReason && !['complete', 'ready', 'max-wall-reached'].includes(pauseReason)) {
+    // BCK-1324: no-progress is a clean, honest stop — the run did what it
+    // could and correctly recognized there was nothing left to do. It is NOT
+    // a failure/blocker: pausing it (resumable, retried by cron/self-drive)
+    // or dispatching handleMissionBlocker (files a fleet task, dispatches an
+    // engine) would recreate the exact busywork loop this guard exists to
+    // stop. Give it its own branch, shaped like stopMission()'s stop path —
+    // status=stopped, a receipt, no escalation, no blocker.
+    if (pauseReason === 'no-progress') {
+      const stoppedAt = stampIso();
+      const idleCount = consecutiveNoProgressTicks(ticks);
+      const noProgressReason = `no-progress: ${idleCount} consecutive tick(s) with no new/cleared dirty files and no verifier pass`;
+      const snapshot = gitWorktreeSnapshot(cwd);
+      const stopWorktree = worktreeReceipt(snapshot, snapshot, { verifier: frozen.verifier, baseline: runWorktreeBaseline });
+      const noProgressReceipt = writeReceipt(runtimeView(mission), { kind: 'mission_stop', reason: noProgressReason, worktree: stopWorktree });
+      const baselineSummary = pruneMissionWorktreeBaseline(mission, cwd);
+      mission = saveMission({
+        ...mission,
+        status: 'stopped',
+        stopped_at: stoppedAt,
+        paused_at: null,
+        stop_reason: noProgressReason,
+        receipt_path: noProgressReceipt || mission.receipt_path || null,
+        worktree_baseline: baselineSummary || mission.worktree_baseline || null,
+        next_action: 'mission stopped: no progress — inspect the last few receipts, then start a fresh mission or resume with new context',
+      }, cwd, 'mission_run_stopped_no_progress', {
+        reason: noProgressReason,
+        idle_ticks: idleCount,
+        receipt_path: noProgressReceipt,
+      }).mission;
+      clearDirectRunCodexGoalRequestForMission(mission.id, cwd);
+      appendMemberLog(mission.owner, 'Mission stopped: no progress', { mission: mission.objective, reason: noProgressReason });
+    } else if (pauseReason && !['complete', 'ready', 'max-wall-reached'].includes(pauseReason)) {
       const lastTick = ticks[ticks.length - 1];
       const deadModel = pauseReason === 'model-unavailable' ? (lastTick && lastTick.model_unavailable) || null : null;
       const lastErrorReason = lastTick && lastTick.status === 'errored' ? lastTick.reason : null;
@@ -7735,7 +7815,12 @@ async function runMission(args) {
       }).mission;
     }
 
-    const blockerReason = pauseReason || mission.stop_reason || (mission.status === 'blocked' ? 'verifier-failed' : null);
+    // 'no-progress' is a clean stop the run diagnosed itself — never route it
+    // through handleMissionBlocker (that would file a blocker task and
+    // dispatch an engine to "fix" a mission that correctly stopped itself).
+    const blockerReason = pauseReason === 'no-progress'
+      ? null
+      : (pauseReason || mission.stop_reason || (mission.status === 'blocked' ? 'verifier-failed' : null));
     if (selfDrive && blockerReason) {
       blocker = require('../lib/self-drive').handleMissionBlocker({
         mission,
@@ -8978,4 +9063,6 @@ module.exports = {
   resolveMissionTickRunner,
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
+  tickMadeProgress,
+  consecutiveNoProgressTicks,
 };
