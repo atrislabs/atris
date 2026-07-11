@@ -252,6 +252,10 @@ function truncateLine(value, max) {
   return `${s.slice(0, max - 1).trimEnd()}…`;
 }
 
+function compactCommitSubject(value, max = 90) {
+  return historicalLandingText(compactLine(value), max);
+}
+
 function taskReceiptTitle(row) {
   return compactLine(row?.state?.title || row?.title || row?.task_id || 'untitled work');
 }
@@ -286,7 +290,7 @@ function landedCommitLines(root = process.cwd(), limit = 5) {
       const s = compactLine(subject);
       if (!s || seen.has(s)) continue;
       seen.add(s);
-      lines.push(`- ↑ ${truncateLine(s, 90)}`);
+      lines.push(`- ↑ ${compactCommitSubject(s, 90)}`);
       if (lines.length >= limit) break;
     }
     return lines;
@@ -626,6 +630,7 @@ module.exports = {
   countTaskReceiptsToday,
   currentMissionMoveLine,
   compactMissionCommand,
+  compactCommitSubject,
   completeMissionObjective,
   landedCommitLines,
   nextOwnerActionLine,

@@ -10,6 +10,7 @@ const {
   countOpenTodoItems,
   countOpenWorkItems,
   countTaskReceiptsToday,
+  compactCommitSubject,
   compactMissionCommand,
   ensureNowFile,
   formatLocalDate,
@@ -18,6 +19,13 @@ const {
   renderDefaultNow,
   renderPortfolioNow,
 } = require('../commands/now');
+
+test('compactCommitSubject closes a long commit at a complete clause without ellipsis', () => {
+  const subject = 'fix mission resolver and list agreement for every handle, preventing ambiguous suffix lookups from misleading operators';
+  const compact = compactCommitSubject(subject, 70);
+  assert.equal(compact, 'fix mission resolver and list agreement for every handle');
+  assert.doesNotMatch(compact, /…|\.\.\./);
+});
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-now-test-'));
