@@ -1214,6 +1214,7 @@ function missionVerifierCheckedText(verifierResult, mission) {
     if (/\bnode\s+--test\b/i.test(command)) return 'I ran the behavior checks.';
     if (/^test\s+-s\s+\S+/i.test(command)) return 'I checked that the saved artifact exists and is not empty.';
     if (/(?:node\s+\S*atris\.js|\batris)\s+land\s+status\b/i.test(command)) return 'I checked the live landing queue.';
+    if (/(?:node\s+\S*atris\.js|\batris)\s+drill\b/i.test(command)) return 'I ran the no-model end-to-end workflow drill.';
     return `Verifier passed: ${command}.`;
   }
   if (/^git\s+diff\s+--check\b/i.test(command)) return 'Diff cleanliness check failed.';
@@ -1239,6 +1240,9 @@ function missionVerifierHighLevelTestText(verifierResult, mission) {
   }
   if (/(?:node\s+\S*atris\.js|\batris)\s+land\s+status\b/i.test(command)) {
     return `Landing status check ${outcome}: the queue and worktree state were readable.`;
+  }
+  if (/(?:node\s+\S*atris\.js|\batris)\s+drill\b/i.test(command)) {
+    return `End-to-end workflow drill ${outcome} in a throwaway workspace.`;
   }
   return `Verifier command ${outcome}: ${command}.`;
 }
@@ -1333,13 +1337,17 @@ function missionLandingLines(landing) {
     ? 'I checked that the saved artifact exists and is not empty.'
     : (/(?:node\s+\S*atris\.js|\batris)\s+land\s+status\b/i.test(rawChecked)
       ? 'I checked the live landing queue.'
-      : rawChecked);
+      : (/(?:node\s+\S*atris\.js|\batris)\s+drill\b/i.test(rawChecked)
+        ? 'I ran the no-model end-to-end workflow drill.'
+        : rawChecked));
   const rawTested = landing.tested || 'No test summary recorded.';
   const tested = /^Verifier command passed:\s+test\s+-s\s+\S+/i.test(rawTested)
     ? 'Saved artifact check passed: the file exists and is not empty.'
     : (/(?:node\s+\S*atris\.js|\batris)\s+land\s+status\b/i.test(rawTested)
       ? 'Landing status check passed: the queue and worktree state were readable.'
-      : rawTested);
+      : (/(?:node\s+\S*atris\.js|\batris)\s+drill\b/i.test(rawTested)
+        ? 'End-to-end workflow drill passed in a throwaway workspace.'
+        : rawTested));
   return [
     'Landing:',
     `  Changed: ${changed}`,
