@@ -314,16 +314,13 @@ function nextOwnerActionLine(root = process.cwd()) {
 
 function currentMissionMoveLine(root = process.cwd()) {
   try {
-    const { selectCodexGoalMission, codexGoalNextCommand, missionFullBudgetRemainingSeconds } = require('./mission');
+    const { selectCodexGoalMission, codexGoalNextCommand, missionBudgetContinuationText } = require('./mission');
     const selected = selectCodexGoalMission(root);
     const mission = selected?.mission || null;
     if (!mission) return null;
     const objective = completeMissionObjective(mission.objective, 140);
-    const remaining = missionFullBudgetRemainingSeconds(mission);
-    if (remaining > 0) {
-      const budget = String(mission?.budget_contract?.budget_label || 'promised time').trim();
-      return `The move: ${objective} - next: keep shipping bounded improvements for the full ${budget}`;
-    }
+    const budgetContinuation = missionBudgetContinuationText(mission);
+    if (budgetContinuation) return `The move: ${objective} - next: ${budgetContinuation}`;
     const compact = compactMissionCommand(codexGoalNextCommand(mission), mission);
     const next = compact.length <= 160 ? compact : `atris mission status ${mission.n || mission.id}`;
     if (!objective || !next) return null;
