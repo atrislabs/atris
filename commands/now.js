@@ -424,7 +424,7 @@ function renderDefaultNow(root = process.cwd()) {
   const commitLines = landedCommitLines(root);
   const hiddenReceiptCount = Math.max(0, completedCount - missionReceiptLines.length - receiptLines.length);
   const hiddenReceiptLine = hiddenReceiptCount > 0
-    ? [`- ${hiddenReceiptCount} more completed receipt${hiddenReceiptCount === 1 ? '' : 's'} omitted from this short recap; open task results with atris autoland digest and mission proof with atris run logs.`]
+    ? [`- ${hiddenReceiptCount} more completed receipt${hiddenReceiptCount === 1 ? '' : 's'} omitted from this short recap; open task results with atris autoland digest and mission proof with atris mission status.`]
     : [];
   const awayLines = [...missionReceiptLines, ...receiptLines, ...hiddenReceiptLine, ...commitLines];
   const whileAway = awayLines.length
