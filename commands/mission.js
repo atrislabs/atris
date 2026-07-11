@@ -8365,7 +8365,20 @@ function reapPausedMissions(root = process.cwd(), { hours = MISSION_PAUSED_REAP_
   return expireStaleMissions(root, { idleHours: hours, dryRun, statuses: new Set(['paused']) });
 }
 
+function missionGoalHelp() {
+  console.log('Usage: atris mission goal [--runtime codex|atris] [--heartbeat] [--native-goal-status active|paused|usageLimited] [--native-goal-objective "..."] [--manual-ack] [--allow-native-goal-supersede] [--json]');
+  console.log('Refresh the visible native goal from active mission state. Help is read-only.');
+}
+
+function missionGoalLoopHelp() {
+  console.log('Usage: atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--dry-run] [--once] [--json]');
+  console.log('Run the bounded native-goal controller. Help is read-only and never starts due work.');
+}
+
 function goalMission(args) {
+  if (args.some((arg) => arg === 'help' || arg === '--help' || arg === '-h')) {
+    return missionGoalHelp();
+  }
   const asJson = wantsJson(args);
   if (args[0] === 'ack') {
     return ackMissionGoal(args.slice(1));
@@ -8501,6 +8514,9 @@ function ackMissionGoal(args) {
 }
 
 async function goalLoopMission(args) {
+  if (args.some((arg) => arg === 'help' || arg === '--help' || arg === '-h')) {
+    return missionGoalLoopHelp();
+  }
   const asJson = wantsJson(args);
   const noClaude = hasFlag(args, '--no-claude');
   const dryRun = hasFlag(args, '--dry-run');
