@@ -411,6 +411,33 @@ test('heartbeat digest status distinguishes sent, saved, and not due', () => {
   assert.equal(digestTickStatus({ digest_due: false, digest_sent: false }), 'not due');
 });
 
+test('due digest without a phone is composed and saved in the durable heartbeat receipt', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    autoland.writePolicy(repo, {
+      enabled: true,
+      enabled_by: 'keshav',
+      digest_hour: new Date().getHours(),
+      imessage_to: null,
+      daily_experiment: false,
+      janitor: false,
+    });
+
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.digest_due, true);
+    assert.equal(receipt.digest_sent, false);
+    assert.match(receipt.digest_text, /^atris repo: last 24 hours/m);
+    assert.equal(require('../commands/autoland').digestTickStatus(receipt), 'saved');
+    const persisted = JSON.parse(fs.readFileSync(path.join(repo, receipt.receipt_path), 'utf8'));
+    assert.equal(persisted.digest_text, receipt.digest_text);
+    assert.equal(persisted.digest_due, true);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('alarm dedupe: a task pings once per window', () => {
   const now = Date.now();
   const waiting = [{ ref: 'CLI-9', hours: 30 }, { ref: 'CLI-8', hours: 10 }];
