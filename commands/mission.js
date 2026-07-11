@@ -6055,6 +6055,13 @@ function codexGoalCompletionInstruction(mission) {
   return `${continuation}; do not call update_goal until the full budget is used`;
 }
 
+function codexGoalReplaceAfterInstruction(mission) {
+  if (missionBudgetContinuationText(mission)) {
+    return 'After each proof, run atris mission goal --json again and keep the matching Codex /goal active until the full budget is used.';
+  }
+  return 'After proof or verifier pass, run atris mission goal --json again and replace the Codex /goal with the returned objective.';
+}
+
 function codexVisibleGoalBridge(mission, goalObjective, options = {}) {
   const ack = codexNativeGoalAck(mission, goalObjective);
   const recovery = options.nativeGoalRecovery || null;
@@ -6273,7 +6280,7 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
         allowNativeGoalSupersede: options.allowNativeGoalSupersede === true,
       })
       : codexGoalNextCommand(mission),
-    replace_after: 'After proof or verifier pass, run atris mission goal --json again and replace the Codex /goal with the returned objective.',
+    replace_after: codexGoalReplaceAfterInstruction(mission),
     visible_goal: codexVisibleGoalBridge(mission, objective, { nativeGoalRecovery }),
     codex_tool_contract: codexGoalToolContract(mission, nativeGoalRecovery),
     requires_native_goal_start: !ack && !nativeGoalRecovery,
