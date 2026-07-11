@@ -1011,7 +1011,7 @@ function renderMemberNowMarkdown(owner, missions) {
     lines.push(`## ${mission.objective}`);
     lines.push('');
     lines.push(`- id: ${mission.id}`);
-    lines.push(`- status: ${mission.status}`);
+    lines.push(`- status: ${missionHumanStatusText(mission)}`);
     lines.push(`- cadence: ${mission.cadence}`);
     lines.push(`- runner: ${mission.runner}${mission.model ? ` (${mission.model})` : ''}`);
     lines.push(`- lane: ${mission.lane}`);
@@ -1649,6 +1649,12 @@ function missionBudgetContinuationText(mission, nowMs = Date.now()) {
   return `keep shipping bounded improvements for the full ${budget}`;
 }
 
+function missionHumanStatusText(mission, nowMs = Date.now()) {
+  if (!missionBudgetContinuationText(mission, nowMs)) return String(mission?.status || 'unknown');
+  const budget = String(mission?.budget_contract?.budget_label || 'promised time').trim();
+  return `working for the full ${budget}`;
+}
+
 function missionGoalChainIntent(text) {
   const lower = String(text || '').toLowerCase().replace(/\s+/g, ' ');
   return /\b(3\s*(?:or|-)?\s*4|three\s+or\s+four|multiple|child|subgoals?|goal\s+after\s+goal|keeps?\s+goaling|mission\s+feeling\s+good|feels?\s+good|validated\s+and\s+i\s+can\s+understand)\b/.test(lower)
@@ -1833,7 +1839,7 @@ function renderMissionStatus(root = process.cwd()) {
         ? `- **${label}**`
         : `- **${label}** ${objective}`);
       lines.push(`  - owner: ${view.owner}`);
-      lines.push(`  - state: ${view.status}`);
+      lines.push(`  - state: ${missionHumanStatusText(view)}`);
       lines.push(`  - next: ${missionDisplayText(view, view.next_action || 'tick or verify')}`);
       if (taskSpine?.task_ref) lines.push(`  - task: ${taskSpine.task_ref}`);
       if (taskSpine?.current_step_command) lines.push(`  - task next: ${missionDisplayText(view, taskSpine.current_step_command)}`);
@@ -3861,7 +3867,7 @@ function statusMission(args) {
         `  objective: ${mission.objective}`,
         `  owner: ${mission.owner}`,
         ...(mission.executed_by ? [`  executed_by: ${mission.executed_by}`] : []),
-	        `  state: ${mission.status}`,
+	        `  state: ${missionHumanStatusText(mission)}`,
 	        ...missionMetricLine(mission),
 	        ...missionHeartbeatLines(mission),
 	        ...(mission.worktree_root ? [`  worktree: ${mission.worktree_root}`] : []),
