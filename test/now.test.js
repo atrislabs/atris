@@ -461,7 +461,7 @@ test('While You Were Away names receipts omitted by its short recap limit', () =
     const content = renderDefaultNow(dir);
     assert.match(content, /Completed receipts today: 7/);
     assert.equal((content.match(/^- ✓ /gm) || []).length, 6);
-    assert.match(content, /- 1 more completed receipt omitted from this short recap\./);
+    assert.match(content, /- 1 more completed receipt omitted from this short recap; open task results with atris autoland digest and mission proof with atris run logs\./);
   } finally {
     cleanup(dir);
   }
