@@ -1029,6 +1029,50 @@ test('native goal bridge keeps full-budget mission working before task review', 
   }
 });
 
+test('visible goal bridge holds completion for full budget while raw status stays ready', () => {
+  const dir = makeTempDir();
+  try {
+    const now = new Date().toISOString();
+    appendMissionState(dir, {
+      id: 'full-budget-visible-goal',
+      slug: 'full-budget-visible-goal',
+      objective: 'keep visible completion honest',
+      owner: 'linguist',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'git diff --check',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'keep visible completion honest',
+        acknowledged_at: now,
+      },
+      created_at: new Date(Date.now() - 60_000).toISOString(),
+      updated_at: now,
+      budget_contract: {
+        policy: 'spend_full_budget',
+        requested_seconds: 21600,
+        budget_label: '6 hours',
+      },
+    });
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.goal.mission_status, 'ready');
+    assert.match(payload.goal.visible_goal.operations.complete_after_proof, /do not call update_goal until the full budget is used/);
+    assert.match(payload.goal.codex_tool_contract.complete_current_goal, /do not call update_goal until the full budget is used/);
+    assert.ok(payload.goal.visible_goal.guardrails.some((line) => /Keep the matching native goal active until the full budget is used/.test(line)));
+
+    const card = fs.readFileSync(path.join(dir, 'atris', 'status', 'codex-goal.md'), 'utf8');
+    assert.match(card, /- status: working for the full 6 hours/);
+    assert.doesNotMatch(card, /- status: ready/);
+    assert.match(card, /visible goal complete: .*do not call update_goal until the full budget is used/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission tick can write a passing ad hoc verifier receipt', () => {
   const dir = makeTempDir();
   try {
