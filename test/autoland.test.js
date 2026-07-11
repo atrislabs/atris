@@ -453,6 +453,29 @@ test('digest reports protected reviews before certification', () => {
   }
 });
 
+test('autoland status does not call one-pass protected work approval-ready', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const created = runCli(['task', 'new', 'Keep the protected sentence clear so a human can judge it', '--tag', 'voice', '--json'], repo);
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const task = JSON.parse(created.stdout).task || JSON.parse(created.stdout);
+    const ref = task.display_id || task.id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'linguist'], repo).status, 0);
+    const ready = runCli([
+      'task', 'ready', ref, '--proof', 'Command passed: git diff --check. Evidence inspected: protected wording is pinned.', '--as', 'linguist',
+    ], repo);
+    assert.equal(ready.status, 0, ready.stderr || ready.stdout);
+
+    const status = runCli(['autoland', 'status'], repo);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.match(status.stdout, /protected reviews waiting on you: 1/);
+    assert.match(status.stdout, /voice\/comms: human decision required/);
+    assert.doesNotMatch(status.stdout, /yours to approve/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('digest next moves withhold duplicate objective review until promised time is used', () => {
   const { base, repo } = makeTempRepo();
   try {
