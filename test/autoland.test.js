@@ -417,6 +417,42 @@ test('digest falls back to the complete landing when shortening the result remov
   assert.doesNotMatch(digest, /could not explain themselves|operators can now read a complete review action/);
 });
 
+test('digest reports protected reviews before certification', () => {
+  const digest = autoland.composeDigest({
+    accepted: { auto: [], human: [] },
+    waiting: [],
+    protectedWaiting: [
+      { ref: 'CLI-1', reason: 'denied_tag_voice' },
+      { ref: 'CLI-2', reason: 'denied_tag_security' },
+    ],
+    landed: null,
+    project: 'atris-cli',
+  });
+
+  assert.match(digest, /2 protected reviews waiting on you; inspect: atris task reviews/);
+  assert.doesNotMatch(digest, /task approvals waiting on you: nothing/);
+
+  const { base, repo } = makeTempRepo();
+  try {
+    const created = runCli(['task', 'new', 'Keep the customer-facing sentence clear so operators can approve it', '--tag', 'voice', '--json'], repo);
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const task = JSON.parse(created.stdout).task || JSON.parse(created.stdout);
+    const ref = task.display_id || task.id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'linguist'], repo).status, 0);
+    const ready = runCli([
+      'task', 'ready', ref, '--proof', 'Command passed: git diff --check. Evidence inspected: sentence is pinned.', '--as', 'linguist',
+    ], repo);
+    assert.equal(ready.status, 0, ready.stderr || ready.stdout);
+
+    const live = runCli(['autoland', 'digest'], repo);
+    assert.equal(live.status, 0, live.stderr || live.stdout);
+    assert.match(live.stdout, /1 protected review waiting on you; inspect: atris task reviews/);
+    assert.doesNotMatch(live.stdout, /task approvals waiting on you: nothing/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('digest next moves withhold duplicate objective review until promised time is used', () => {
   const { base, repo } = makeTempRepo();
   try {
