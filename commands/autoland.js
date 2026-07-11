@@ -670,6 +670,9 @@ function runTickBody(root, { json, policy, receipt }) {
       project: projectName(root),
     });
     if (text) {
+      // Keep the exact operator surface beside the delivery result. The next
+      // linguist pass must audit what was sent, not reconstruct today's code.
+      receipt.live_update_text = text;
       const sent = autoland.sendImessage(root, policy.imessage_to, text);
       receipt.live_update_sent = sent.ok;
     }
