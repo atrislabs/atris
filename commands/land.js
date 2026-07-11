@@ -529,7 +529,10 @@ function printBoard(board) {
   console.log(`  ${s.unlanded} pieces of work in the air, ${s.due} overdue, ${s.landed} landed and safe to clear.`);
   console.log('  work counts as done only when it lands in master.');
   if (s.due + s.landed > 0) {
-    console.log(`  back up + clear the ${s.due + s.landed} overdue/landed: atris land --reap`);
+    const clearable = s.due > 0 && s.landed > 0
+      ? `${s.due} overdue and ${s.landed} landed`
+      : s.due > 0 ? `${s.due} overdue` : `${s.landed} landed`;
+    console.log(`  back up + clear ${clearable}: atris land --reap`);
   }
   console.log('');
 }

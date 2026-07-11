@@ -80,6 +80,7 @@ The same discipline for words. Output stays sharp no matter how bloated the cont
 - **Cut filler.** Drop "it's worth noting", "in order to", "leverage", "seamless", "robust", "delve", stacked hedges, and em dashes. `atris slop` flags the prose tells (em-dash, hype-copy) too.
 - **Bound verbosity by information, not context.** Say the load-bearing thing and stop. Length tracks what the reader needs to act, nothing more.
 - **Match the register.** The operator wants the next move; a spec wants the contract; a journal wants one line. Jargon is a lever only when shared: use the reader's precise terms, define a new one once.
+- **Pass both readers.** Run the dual-register test: an ML researcher finds no technical error, and a second-grade teacher can follow the first read. Keep necessary terms, define each new one once, and remove jargon that does not change the decision.
 
 `expected`: this is how an Atris agent writes and builds. Shipping slop or rambling is a failure smell, same as drift or a stale task.
 
