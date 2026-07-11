@@ -4166,7 +4166,7 @@ test('allowed rate-limit info with a future resetsAt does not pause a timed run'
     assert.equal(start.status, 0, start.stderr || start.stdout);
     const mission = JSON.parse(start.stdout).mission;
 
-    const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--json'], { cwd: dir, env });
+    const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--max-idle-ticks', '0', '--json'], { cwd: dir, env });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
     // The budgeted run should spend its 4-tick budget; a rate-limit pause after
