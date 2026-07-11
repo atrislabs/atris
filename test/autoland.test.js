@@ -1112,7 +1112,7 @@ test('landing sweep escalates 48h-stale active work into the digest', () => {
     const digest = autoland.composeDigest({
       accepted: { auto: [], human: [] },
       waiting: [],
-      landed: null,
+      landed: { branches: 2, due: 0 },
       project: 'demo',
       landingSweep: {
         stale_count: sweep.stale.length,
@@ -1123,6 +1123,8 @@ test('landing sweep escalates 48h-stale active work into the digest', () => {
     });
     assert.match(digest, /stuck in the air past 48h: 1 piece needs a human/);
     assert.match(digest, /oldest: stale-active-work \(\d+h\); inspect: atris land/);
+    assert.match(digest, /in the air: 2 pieces, 1 stale/);
+    assert.doesNotMatch(digest, /all fresh/);
 
     const plural = autoland.composeDigest({
       accepted: { auto: [], human: [] },
