@@ -14,6 +14,7 @@ const {
   compactMissionCommand,
   ensureNowFile,
   formatLocalDate,
+  formatLocalTimestamp,
   nowAtris,
   refreshNowFile,
   renderDefaultNow,
@@ -487,6 +488,19 @@ test('now dates use local calendar day near UTC boundary', () => {
   }).trim();
 
   assert.equal(output, '2026-05-09');
+});
+
+test('now timestamps show the local refresh minute near a UTC boundary', () => {
+  const output = execFileSync(process.execPath, [
+    '-e',
+    "const { formatLocalTimestamp } = require('./commands/now'); console.log(formatLocalTimestamp(new Date('2026-05-10T03:30:00Z')));",
+  ], {
+    cwd: path.join(__dirname, '..'),
+    env: { ...process.env, TZ: 'America/Los_Angeles' },
+    encoding: 'utf8',
+  }).trim();
+
+  assert.equal(output, '2026-05-09 at 20:30 local time');
 });
 
 test('ensureNowFile creates a portfolio now.md for a parent of Atris workspaces', () => {
