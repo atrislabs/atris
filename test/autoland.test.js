@@ -312,16 +312,20 @@ test('digest falls back to the complete landing when shortening the result remov
   assert.doesNotMatch(digest, /could not explain themselves|operators can now read a complete review action/);
 });
 
-test('digest next moves render proof-ready missions before judging their old objectives', () => {
+test('digest next moves render proof-ready missions only after promised time is used', () => {
   const { base, repo } = makeTempRepo();
   try {
     const stateDir = path.join(repo, '.atris', 'state');
     fs.mkdirSync(stateDir, { recursive: true });
-    const missions = Array.from({ length: 4 }, (_, index) => ({
+    const missions = Array.from({ length: 5 }, (_, index) => ({
       id: `mission-${index + 1}`,
       objective: `Tidy paperclips ${index + 1}`,
       status: 'ready',
       receipt_path: `atris/runs/mission-${index + 1}.json`,
+      ...(index === 0 ? {
+        created_at: new Date().toISOString(),
+        budget_contract: { policy: 'spend_full_budget', requested_seconds: 21600 },
+      } : {}),
     }));
     fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), `${missions.map(JSON.stringify).join('\n')}\n`);
 
@@ -329,6 +333,7 @@ test('digest next moves render proof-ready missions before judging their old obj
 
     assert.equal(next.moves.length, 3);
     assert.ok(next.moves.every((move) => move.kind === 'mission_ready'));
+    assert.ok(next.moves.every((move) => move.ref !== 'mission-1'));
     assert.equal(next.unexplained, 0);
   } finally {
     cleanupTempDir(base);
