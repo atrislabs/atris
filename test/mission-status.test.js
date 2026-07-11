@@ -329,6 +329,7 @@ test('mission status keeps full-budget work moving until promised time ends', ()
     assert.match(timeline.stdout, /Next: keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment/);
     assert.match(timeline.stdout, /Proof: saved in mission history\./);
     assert.match(timeline.stdout, /History:\n  1\. An earlier bounded improvement passed its check\./);
+    assert.equal((timeline.stdout.match(/Proof: saved in mission history\./g) || []).length, 1);
     assert.doesNotMatch(timeline.stdout, /Next at the time|Review proof|mission complete|atris\/runs\/mission-full-budget/);
   } finally {
     cleanupTempDir(dir);
@@ -2231,6 +2232,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
     const historyText = runCli(['mission', 'timeline', 'landing-timeline-codex-loop'], { cwd: dir });
     assert.equal(historyText.status, 0, historyText.stderr || historyText.stdout);
     assert.match(historyText.stdout, /Next at the time: Created next task:/);
+    assert.equal((historyText.stdout.match(/Proof: saved in mission history\./g) || []).length, 1);
     assert.doesNotMatch(historyText.stdout, /Proof: atris\/runs\/mission-/);
 
     const limitedText = runCli(['mission', 'timeline', 'landing-timeline-codex-loop', '--limit', '1'], { cwd: dir });
