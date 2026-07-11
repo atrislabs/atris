@@ -1147,7 +1147,8 @@ function missionLandingStepSummary(summary) {
   if (!withoutLabel) return '';
   const plainVerified = missionPlainVerifiedSummary(withoutLabel);
   if (plainVerified) return plainVerified;
-  const beforeChecks = (withoutLabel.split(/\s+(?:checks?|verified|proof):\s+/i)[0] || withoutLabel)
+  const beforeInlineProof = withoutLabel.split(/\s+(?:—|-)\s+verified by\b/i)[0] || withoutLabel;
+  const beforeChecks = (beforeInlineProof.split(/\s+(?:checks?|verified|proof):\s+/i)[0] || beforeInlineProof)
     .replace(/,\s*(?:verifier|proof|checks?)\s+(?:still|pending)[.!]?$/i, '')
     .trim();
   const clipped = missionLandingSentenceClip(beforeChecks, 220);
