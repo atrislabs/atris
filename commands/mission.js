@@ -1213,6 +1213,7 @@ function missionVerifierCheckedText(verifierResult, mission) {
     if (/^git\s+diff\s+--check\b/i.test(command)) return 'I ran the diff cleanliness check.';
     if (/\bnode\s+--test\b/i.test(command)) return 'I ran the behavior checks.';
     if (/^test\s+-s\s+\S+/i.test(command)) return 'I checked that the saved artifact exists and is not empty.';
+    if (/(?:node\s+\S*atris\.js|\batris)\s+land\s+status\b/i.test(command)) return 'I checked the live landing queue.';
     return `Verifier passed: ${command}.`;
   }
   if (/^git\s+diff\s+--check\b/i.test(command)) return 'Diff cleanliness check failed.';
@@ -1235,6 +1236,9 @@ function missionVerifierHighLevelTestText(verifierResult, mission) {
   }
   if (/^test\s+-s\s+\S+/i.test(command)) {
     return `Saved artifact check ${outcome}: the file exists and is not empty.`;
+  }
+  if (/(?:node\s+\S*atris\.js|\batris)\s+land\s+status\b/i.test(command)) {
+    return `Landing status check ${outcome}: the queue and worktree state were readable.`;
   }
   return `Verifier command ${outcome}: ${command}.`;
 }
@@ -1327,11 +1331,15 @@ function missionLandingLines(landing) {
   const rawChecked = landing.checked || 'No check recorded.';
   const checked = /^Verifier passed:\s+test\s+-s\s+\S+/i.test(rawChecked)
     ? 'I checked that the saved artifact exists and is not empty.'
-    : rawChecked;
+    : (/(?:node\s+\S*atris\.js|\batris)\s+land\s+status\b/i.test(rawChecked)
+      ? 'I checked the live landing queue.'
+      : rawChecked);
   const rawTested = landing.tested || 'No test summary recorded.';
   const tested = /^Verifier command passed:\s+test\s+-s\s+\S+/i.test(rawTested)
     ? 'Saved artifact check passed: the file exists and is not empty.'
-    : rawTested;
+    : (/(?:node\s+\S*atris\.js|\batris)\s+land\s+status\b/i.test(rawTested)
+      ? 'Landing status check passed: the queue and worktree state were readable.'
+      : rawTested);
   return [
     'Landing:',
     `  Changed: ${changed}`,

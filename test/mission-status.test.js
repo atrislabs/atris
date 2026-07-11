@@ -72,6 +72,20 @@ test('mission landing summary strips broken markdown before status renders it', 
   assert.equal(storedFileProof[3], '  How I checked: I checked that the saved artifact exists and is not empty.');
   assert.equal(storedFileProof[4], '  What I tested: Saved artifact check passed: the file exists and is not empty.');
   assert.doesNotMatch(storedFileProof.join('\n'), /\/Users\/private|test -s/);
+  const landVerifier = { passed: true, command: 'node /Users/private/bin/atris.js land status' };
+  assert.equal(missionVerifierCheckedText(landVerifier, {}), 'I checked the live landing queue.');
+  assert.equal(
+    missionVerifierHighLevelTestText(landVerifier, {}),
+    'Landing status check passed: the queue and worktree state were readable.',
+  );
+  const storedLandProof = missionLandingLines({
+    changed: 'Cleared duplicate waiting rows.',
+    checked: 'Verifier passed: node /Users/private/bin/atris.js land status.',
+    tested: 'Verifier command passed: node /Users/private/bin/atris.js land status.',
+  });
+  assert.equal(storedLandProof[3], '  How I checked: I checked the live landing queue.');
+  assert.equal(storedLandProof[4], '  What I tested: Landing status check passed: the queue and worktree state were readable.');
+  assert.doesNotMatch(storedLandProof.join('\n'), /\/Users\/private|atris\.js|node /);
 });
 
 function runCli(args, { cwd, env = {} } = {}) {
