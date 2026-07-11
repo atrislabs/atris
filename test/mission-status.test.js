@@ -45,6 +45,10 @@ test('mission landing summary strips broken markdown before status renders it', 
     missionLandingLines({ changed: 'Done. One brief written, verifier still.' })[1],
     '  Changed: One brief written.',
   );
+  assert.equal(
+    missionLandingLines({ changed: 'Killed a trap number before it reached the pitch — verified by `test -s` (163 lines, passes). I closed tick 1\'s open item: swept the entire /arena workspace for the store the objective.' })[1],
+    '  Changed: Killed a trap number before it reached the pitch.',
+  );
 });
 
 function runCli(args, { cwd, env = {} } = {}) {
