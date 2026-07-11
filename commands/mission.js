@@ -8816,6 +8816,7 @@ module.exports = {
   missionLandingLines,
   missionVerifierCheckedText,
   missionVerifierHighLevelTestText,
+  missionFullBudgetRemainingSeconds,
   resolveMissionRunnerSelection,
   resolveMissionTickRunner,
   engineFailureHealthStatus,
