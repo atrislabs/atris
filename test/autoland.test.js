@@ -322,6 +322,21 @@ test('digest folds unclear landed results across members into one count', () => 
   assert.doesNotMatch(digest, /member-1|could not explain themselves/);
 });
 
+test('expanded story excludes a saved landing when its digest result did not clear the headline gate', () => {
+  const accepted = {
+    auto: [{ ref: 'REP-1', title: 'Refactor internal worker', result: '', happened: '' }],
+    human: [],
+  };
+  const tasks = [{
+    display_id: 'REP-1',
+    metadata: {
+      landing_happened: 'Operators can inspect the saved result, so review stays trustworthy.',
+    },
+  }];
+  const rows = require('../commands/autoland').digestStoryRows(accepted, tasks);
+  assert.deepEqual(rows, []);
+});
+
 test('expanded digest points to the full story below instead of rerunning itself', () => {
   const accepted = Array.from({ length: 4 }, (_, index) => ({
     ref: `CLI-${index + 1}`,

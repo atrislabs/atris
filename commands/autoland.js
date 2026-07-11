@@ -143,6 +143,23 @@ function readAcceptedTaskHistory(root, fallbackTasks = [], dbPath = undefined) {
   }
 }
 
+function digestStoryRows(accepted, acceptedTasks) {
+  const byRef = new Map((acceptedTasks || []).map((task) => [task.display_id || task.legacy_ref || task.id, task]));
+  return (accepted?.auto || []).map((item) => {
+    const summary = autoland.digestLine(item);
+    if (!summary || !operatorReady(summary)) return null;
+    const task = byRef.get(item.ref);
+    const candidates = [
+      task?.review?.landing?.happened || task?.metadata?.landing_happened || '',
+      item.result,
+      item.happened,
+      autoland.clarify(item.title, 160),
+      summary,
+    ].map((candidate) => autoland.historicalLandingText(candidate, 160));
+    return { item, story: candidates.find((candidate) => operatorReady(candidate)) || summary };
+  }).filter(Boolean);
+}
+
 function compactId(value) {
   return String(value || '').trim();
 }
@@ -576,17 +593,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
   });
   console.log(text);
   // the full story: what each piece actually was, in its own words
-  const byRef = new Map(acceptedTasks.map((t) => [t.display_id || t.legacy_ref || t.id, t]));
-  const storied = accepted.auto.map((item) => {
-    const t = byRef.get(item.ref);
-    const candidates = [
-      t?.review?.landing?.happened || t?.metadata?.landing_happened || '',
-      item.result,
-      item.happened,
-      autoland.clarify(item.title, 160),
-    ].map((candidate) => autoland.historicalLandingText(candidate, 160));
-    return { item, story: candidates.find((candidate) => operatorReady(candidate)) || '' };
-  }).filter((row) => row.story);
+  const storied = digestStoryRows(accepted, acceptedTasks);
   if (storied.length > 0) {
     let printedStoryHeader = false;
     for (const { item, story } of storied) {
@@ -971,6 +978,7 @@ module.exports = {
   autolandCommand,
   attachedTasksForMission,
   digestNextMoves,
+  digestStoryRows,
   digestTickStatus,
   explainResult,
   missionReadyForClosedTaskVerify,
