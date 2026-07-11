@@ -1141,6 +1141,9 @@ function missionLandingStepSummary(summary) {
     .trim()
     .replace(/^done[.!]\s*/i, '');
   if (!clean) return '';
+  if (/^verifier pass(?:es|ed)(?:\s*\([^)]*\))?[.!]\s*(?:now (?:i|we) need|let me|next i)\b/i.test(clean)) {
+    return 'This proof step recorded no operator-facing result.';
+  }
   const withoutLabel = clean
     .replace(/^(?:landing|changed|summary|result|product proof|proof):\s*/i, '')
     .trim();
