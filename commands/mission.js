@@ -5225,8 +5225,13 @@ function missionHeartbeatLines(mission, now = new Date()) {
     lines.push('  last tick: never');
   }
   if (parseCadenceSeconds(mission.cadence) > 0 && !HEARTBEAT_TERMINAL_STATUSES.has(mission.status)) {
-    const dueIn = secondsUntilMissionDue(mission, now);
-    lines.push(dueIn === 0 ? '  due: now' : `  due: in ${formatDurationShort(dueIn)}`);
+    const budgetRemaining = missionFullBudgetRemainingSeconds(mission, now.getTime());
+    if (budgetRemaining > 0) {
+      lines.push(`  budget: ${formatDurationShort(budgetRemaining)} remaining`);
+    } else {
+      const dueIn = secondsUntilMissionDue(mission, now);
+      lines.push(dueIn === 0 ? '  due: now' : `  due: in ${formatDurationShort(dueIn)}`);
+    }
   }
   return lines;
 }
