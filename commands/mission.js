@@ -1324,12 +1324,20 @@ function missionLandingLines(landing) {
   if (!landing) return [];
   const rawChanged = landing.changed || landing.happened || 'Landing recorded.';
   const changed = missionLandingStepSummary(rawChanged) || rawChanged;
+  const rawChecked = landing.checked || 'No check recorded.';
+  const checked = /^Verifier passed:\s+test\s+-s\s+\S+/i.test(rawChecked)
+    ? 'I checked that the saved artifact exists and is not empty.'
+    : rawChecked;
+  const rawTested = landing.tested || 'No test summary recorded.';
+  const tested = /^Verifier command passed:\s+test\s+-s\s+\S+/i.test(rawTested)
+    ? 'Saved artifact check passed: the file exists and is not empty.'
+    : rawTested;
   return [
     'Landing:',
     `  Changed: ${changed}`,
     `  Why it matters: ${landing.reason || landing.why || 'This makes the work easier to judge.'}`,
-    `  How I checked: ${landing.checked || 'No check recorded.'}`,
-    `  What I tested: ${landing.tested || 'No test summary recorded.'}`,
+    `  How I checked: ${checked}`,
+    `  What I tested: ${tested}`,
     `  Proof: ${landing.proof || landing.saved || 'No proof path recorded.'}`,
     `  Next: ${landing.next || landing.decision || 'Pick the next useful move.'}`,
   ];

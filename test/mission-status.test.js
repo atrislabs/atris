@@ -64,6 +64,14 @@ test('mission landing summary strips broken markdown before status renders it', 
     missionVerifierHighLevelTestText(fileVerifier, {}),
     'Saved artifact check passed: the file exists and is not empty.',
   );
+  const storedFileProof = missionLandingLines({
+    changed: 'Killed a trap number before it reached the pitch.',
+    checked: 'Verifier passed: test -s /Users/private/workspace/EVIDENCE.md.',
+    tested: 'Verifier command passed: test -s /Users/private/workspace/EVIDENCE.md.',
+  });
+  assert.equal(storedFileProof[3], '  How I checked: I checked that the saved artifact exists and is not empty.');
+  assert.equal(storedFileProof[4], '  What I tested: Saved artifact check passed: the file exists and is not empty.');
+  assert.doesNotMatch(storedFileProof.join('\n'), /\/Users\/private|test -s/);
 });
 
 function runCli(args, { cwd, env = {} } = {}) {
