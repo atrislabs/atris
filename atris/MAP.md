@@ -48,7 +48,7 @@ rg "gmState|AgentXP General Manager|pickSeedPlayer|inferManager" commands/gm.js 
 # Modular commands
 rg "initAtris" commands/init.js             # Init command
 rg "syncAtris" commands/sync.js             # Update/sync command
-rg "logAtris" commands/log.js               # Log command
+rg "logAtris|logsDigest" commands/log.js bin/atris.js test/logs-digest.test.js  # Interactive log writer and read-only daily workspace/team digest
 rg "logSyncAtris" commands/log-sync.js      # Log sync command
 rg "experimentsCommand" commands/experiments.js  # Experiments CLI command
 rg "loginAtris|switchAccount|useAccount|accountsCmd|showAuthHelp" bin/atris.js commands/auth.js test/commands.test.js # Auth/account commands + non-mutating help

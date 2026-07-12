@@ -1750,6 +1750,14 @@ if (command === 'init') {
   } else {
     logCmd();
   }
+} else if (command === 'logs') {
+  try {
+    require('../commands/log').logsDigest(process.argv.slice(3));
+    process.exit(0);
+  } catch (error) {
+    console.error(error.message || String(error));
+    process.exit(1);
+  }
 } else if (command === 'now') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
