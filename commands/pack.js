@@ -374,6 +374,9 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   if (!out && !push) {
     console.log(`wrote pack.json for ${manifest.slug} ${manifest.version}`);
     console.log('share with: atris pack publish --out <file.zip> or atris pack publish --push');
+    if (!manifest.author || !String(manifest.author).trim()) {
+      console.log('note: publishing to the registry needs an author. add --author "<your name>".');
+    }
   }
   return 0;
 }
