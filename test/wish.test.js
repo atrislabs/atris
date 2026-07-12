@@ -263,6 +263,67 @@ test('healthy wish delegates a task and records honest proof status', () => {
   }
 });
 
+test('firing the same wish twice attaches the second dispatch to one active flight', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const env = { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath };
+    const first = runCli(['wish', 'make the boot screen friendlier'], { cwd: dir, env });
+    const second = runCli(['wish', 'make the boot screen friendlier'], { cwd: dir, env });
+
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    assert.equal(second.status, 0, second.stderr || second.stdout);
+    const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
+    assert.equal(missions.filter((mission) => ['planning', 'ready', 'running'].includes(mission.status)).length, 1);
+    assert.match(second.stdout, new RegExp(`attached to existing flight ${missions[0].id}`));
+
+    const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(wishes.at(-1).mission_id, missions[0].id);
+    assert.equal(wishes.at(-1).task_id, missions[0].task_ids[0]);
+    const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    assert.equal(projection.tasks.length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish attaches to an active normalized objective and owner twin', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const env = { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath };
+    const started = runCli([
+      'mission',
+      'start',
+      '  MAKE   THE BOOT SCREEN FRIENDLIER  ',
+      '--owner',
+      'wish-owner',
+      '--no-verify',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const existing = JSON.parse(started.stdout).mission;
+
+    const wish = runCli(['wish', 'make the boot screen friendlier'], { cwd: dir, env });
+    assert.equal(wish.status, 0, wish.stderr || wish.stdout);
+    assert.match(wish.stdout, new RegExp(`attached to existing flight ${existing.id}`));
+
+    const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
+    assert.equal(missions.filter((mission) => ['planning', 'ready', 'running'].includes(mission.status)).length, 1);
+    const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    assert.equal(wishes.at(-1).mission_id, existing.id);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'tasks.projection.json')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish --engine uses an explicit ready engine for task and mission execution', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();

@@ -3437,7 +3437,7 @@ function startMission(args, options = {}) {
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
-  const mission = applyMissionStartPatch(missionFromArgs(args), options.missionPatch);
+  let mission = applyMissionStartPatch(missionFromArgs(args), options.missionPatch);
   // A flag-looking or empty objective is a typo, not a mission.
   const rawObjective = String(mission.objective || '').trim();
   if (!rawObjective || rawObjective.startsWith('-')) {
@@ -3510,6 +3510,9 @@ function startMission(args, options = {}) {
     if (!mission.verifier && !mission.always_on) {
       mission.next_action = `work task then run: atris task current-step --goal-id ${mission.id} --as ${mission.owner} --proof "<proof>" --json`;
     }
+  }
+  if (typeof options.beforeMissionSave === 'function') {
+    mission = options.beforeMissionSave(mission) || mission;
   }
   const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
@@ -9240,6 +9243,8 @@ module.exports = {
   missionHeartbeatLines,
   listMissions,
   listWorktreeRollupMissions,
+  findActiveTwinMission,
+  TWIN_ACTIVE_STATUSES,
   pingMission,
   buildTickPrompt,
   loadMissionMap,
