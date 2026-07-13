@@ -145,8 +145,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Universal entry point - accepts any input and routes intelligently
 
-- **Entry point:** `bin/atris.js:922-933` (knownCommands dispatch)
-- **Cold-start handler:** `bin/atris.js:1035` (`interactiveEntry`; active missions/work outrank completed history)
+- **Entry point:** `lib/known-commands.js:3` (knownCommands list), `bin/atris.js:987` (dispatch check)
+- **Cold-start handler:** `bin/atris.js:1099` (`interactiveEntry`; active missions/work outrank completed history)
 - **Regression:** `test/commands.test.js:4974-4987` covers parseable JSON errors for unknown top-level commands
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
@@ -210,7 +210,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Entry point:** `bin/atris.js` command routing for `compile`
 - **Handler:** `commands/compile.js`
-- **Core functions:** `commands/compile.js:104` (`appendRecord`), `commands/compile.js:171` (`runBacktest`), `commands/compile.js:222` (`promoteProcess`), `commands/compile.js:249` (`buildCompilePrompt`), `commands/compile.js:274` (`executeBuild`), `commands/compile.js:405` (`compileCommand`)
+- **Core functions:** `commands/compile.js:111` (`appendRecord`), `commands/compile.js:344` (`runBacktest`), `commands/compile.js:395` (`promoteProcess`), `commands/compile.js:422` (`buildCompilePrompt`), `commands/compile.js:447` (`executeBuild`), `commands/compile.js:682` (`compileCommand`)
 - **How it works:**
 - `atris compile record <name> --input ... --output ... [--expected ...]` appends an execution record to `.atris/state/processes/<name>/records.jsonl`
 - `atris compile build <name>` uses the shared runner command (`ATRIS_RUNNER_BIN`, `ATRIS_RUNNER_COMMAND_TEMPLATE`; legacy `ATRIS_CLAUDE_*` aliases still work; default Claude-compatible `claude -p`) to compile records + `atris/processes/<name>/spec.md` into `atris/processes/<name>/run.js` (contract: `module.exports = { run }`, deterministic, Node built-ins only); bumps version, clears the old backtest
@@ -249,7 +249,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Handler:** `commands/experiments.js`
 - **Core functions:** `commands/experiments.js:55` (`ensureExperimentsFramework`), `commands/experiments.js:310` (`buildBenchmarkArtifact`), `commands/experiments.js:409` (`experimentsRun`), `commands/experiments.js:469` (`experimentsCompare`), `commands/experiments.js:501` (`experimentsReplay`)
 - **Daily loop:** `commands/experiments.js:524` (`experimentsDaily`), `commands/experiments.js:530` (`experimentsQueue`), `commands/experiments.js:543` (`experimentsCommand` routes `daily` and `queue`)
-- **Daily engine:** `lib/experiments/daily.js:18` (`queuePath`), `lib/experiments/daily.js:53` (`readQueue`), `lib/experiments/daily.js:69` (`appendQueueEntry`), `lib/experiments/daily.js:227` (`evaluateKeepRule`), `lib/experiments/daily.js:259` (`runApplyScript`), `lib/experiments/daily.js:390` (`runDaily`), `lib/experiments/daily.js:578` (`queueAdd`), `lib/experiments/daily.js:598` (`queueList`)
+- **Daily engine:** `lib/experiments/daily.js:18` (`queuePath`), `lib/experiments/daily.js:53` (`readQueue`), `lib/experiments/daily.js:69` (`appendQueueEntry`), `lib/experiments/daily.js:227` (`evaluateKeepRule`), `lib/experiments/daily.js:259` (`runApplyScript`), `lib/experiments/daily.js:394` (`runDaily`), `lib/experiments/daily.js:584` (`queueAdd`), `lib/experiments/daily.js:604` (`queueList`)
 - **Autoland hook:** `commands/autoland.js:577` runs `atris experiments daily --json` during `autoland tick` when policy `daily_experiment` is not false
 - **How it works:**
 - `atris init` now prepares `atris/experiments/` with packaged validators, fixtures, templates, and smoke examples
@@ -307,10 +307,10 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Updates local atris.md to latest package version. `--all` propagates across every atris project under cwd.
 
-- **Entry point (single project):** `commands/sync.js:424` (syncAtris function)
-- **Entry point (workspace):** `commands/sync.js:881` (syncAtrisAll function)
+- **Entry point (single project):** `commands/sync.js:430` (syncAtris function)
+- **Entry point (workspace):** `commands/sync.js:894` (syncAtrisAll function)
 - **Startup/help guard:** `bin/atris.js:200-212` skips global and project skill sync for every help invocation; `bin/atris.js:1758-1791` dispatches `update|sync --help` before command-specific template sync work
-- **Discovery helper:** `commands/sync.js:797` (_findAtrisProjects — walks subtree, max depth 8, skips node_modules/.git/dist/build/worktrees)
+- **Discovery helper:** `commands/sync.js:810` (_findAtrisProjects — walks subtree, max depth 8, skips node_modules/.git/dist/build/worktrees)
 - **Single-project logic:**
 - Validates atris/ folder exists
 - Compares content with package atris.md
@@ -404,7 +404,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 **Purpose:** The owner approves the policy once; certified work lands itself with receipts. Money, deploys, security, customer, and outward lanes always wait for the human.
 
 - **Implementation:** `commands/autoland.js` (status/on/off/tick/digest) + `lib/autoland.js` (policy, heartbeat cron, digest/alarm composition)
-- **Daily experiment hook:** `commands/autoland.js:49` (`runOwnCli` resolves the local CLI), `commands/autoland.js:577` (`autoland tick` daily experiment block), `commands/autoland.js:579` (`daily_experiment` policy gate), `commands/autoland.js:580` (`experiments daily --json`)
+- **Daily experiment hook:** `commands/autoland.js:130` (`runOwnCli` resolves the local CLI), `commands/autoland.js:577` (`autoland tick` daily experiment block), `commands/autoland.js:553` (`daily_experiment` policy gate), `commands/autoland.js:580` (`experiments daily --json`)
 - **Authorization bridge:** `commands/task.js` cmdAutoAcceptCertified consults `liveAcceptAuthorization()` — the policy file is the standing human confirmation
 - **Eligibility engine:** `lib/auto-accept-certified.js` evaluateAutoAccept (2 passes + 2 actors or 3 passes, denied tags, proof checks including cited suite-green claims, strict verify re-run); its direct-argv tokenizer accepts quoted Node test-name regexes while rejecting shell operators outside quotes, and always executes with `shell: false`; `lib/task-proof.js` validates proof citations
 - **Policy file:** `.atris/policy/autoland.json`; state (alarm dedupe, digest date): `.atris/state/autoland.json`
@@ -533,7 +533,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Entry point:** command routing in `bin/atris.js:803`
 - **Handler:** `commands/task.js:9670` (`run` dispatch)
-- **Store:** `lib/task-db.js:358` (`addTask`), `lib/task-db.js:405` (`listTasks`), `lib/task-db.js:441` (`claimTask`), `lib/task-db.js:472` (`doneTask`)
+- **Store:** `lib/task-db.js:362` (`addTask`), `lib/task-db.js:409` (`listTasks`), `lib/task-db.js:445` (`claimTask`), `lib/task-db.js:513` (`doneTask`)
 - **TODO shim:** `lib/todo.js:19` (`dbToShimRow`) preserves imported `Verify:` metadata when `ATRIS_TASK_DB=1`
 - **How it works:**
 - `atris task` opens the compact task desk and refreshes `.atris/state/tasks.projection.json`
@@ -549,8 +549,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris task review <id> --reward <n> --lesson "..." --next "..."` appends a reviewed event and `.atris/state/task_episodes.jsonl`
 - `atris brain --help` and `atris brain -h` short-circuit before workspace compilation via `commands/brain.js:1071-1075`; regression: `test/commands.test.js:4304-4318`
 - `atris brain compile` refreshes generated `atris/now.md` before state collection while preserving custom front doors via `commands/brain.js:294-296` and `commands/now.js:204-256`; regressions: `test/commands.test.js:2315-2389`
-- `atris brain compile` counts `.atris/state/task_episodes.jsonl` as episode state via `commands/brain.js:487` (`collectState`) and `commands/brain.js:549-554` (`countStateRows`/`nextMove`)
-- `atris brain scorecard --verify` converts reviewed task episodes into one latest-review scorecard per task via `commands/brain.js:1196-1204` (`latestTaskEpisodes`/`recordTaskEpisodeScorecards`/`verifyTaskEpisodeScorecards`)
+- `atris brain compile` counts `.atris/state/task_episodes.jsonl` as episode state via `commands/brain.js:490` (`collectState`) and `commands/brain.js:552-557` (`countStateRows`/`nextMove`)
+- `atris brain scorecard --verify` converts reviewed task episodes into one latest-review scorecard per task via `commands/brain.js:1199-1207` (`latestTaskEpisodes`/`recordTaskEpisodeScorecards`/`verifyTaskEpisodeScorecards`)
 - `atris brain compile` uses the latest scorecard's `next_task_suggestion` before the generic business-loop fallback when no open TODO remains (`commands/brain.js:194-265`)
 - `atris task show <id> --json` emits one task card with dialogue and events
 - `atris task setup --import-todo` bootstraps durable state and writes `.atris/state/tasks.projection.json`
@@ -578,9 +578,9 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 **Purpose:** Register the current directory as a live local AI Computer session so cloud agents can apply bounded file operations.
 
 - **Known command:** `bin/atris.js:637-642` includes `serve`, so the explicit branch is reachable before natural-language fallback
-- **Help:** `bin/atris.js:818-830` (`showServeHelp`) prints usage without auth checks or bridge startup
+- **Help:** `bin/atris.js:832-844` (`showServeHelp`) prints usage without auth checks or bridge startup
 - **Dispatch:** `bin/atris.js:1122-1143` routes `serve --help`, `serve -h`, and `serve help` before parsing bridge options; normal runs call `serveAtris`
-- **Handler:** `commands/serve.js:275-356` (`serveAtris`) registers the session and subscribes for operations
+- **Handler:** `commands/serve.js:306-407` (`serveAtris`) registers the session and subscribes for operations
 - **Safety core:** `commands/serve.js:55-78` (`safePath`) and `commands/serve.js:83-176` (`applyOp`) constrain file operations
 - **Regression:** `test/commands.test.js:4293-4305` covers `serve --help` without planner fallback, bridge startup, login checks, or auth-state creation
 
@@ -686,8 +686,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Quick visibility into system state - supports parallel work
 
-- **Entry point:** `commands/status.js:79-334` (statusAtris function)
-- **Help:** `bin/atris.js:650-663` (`showStatusHelp`) and `bin/atris.js:1455-1460` short-circuit `status --help` before workspace or business-status reads
+- **Entry point:** `commands/status.js:124-384` (statusAtris function)
+- **Help:** `bin/atris.js:660-673` (`showStatusHelp`) and `bin/atris.js:1455-1460` short-circuit `status --help` before workspace or business-status reads
 - **Regression:** `test/commands.test.js:4287-4302` covers `status --help` without `atris/` or `$HOME/.atris`
 - **Signature:** `statusAtris(isQuick = false, jsonMode = false, verbose = false)`
 - **Reads:**
@@ -700,7 +700,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `--verbose` / `-v`: Legacy visual task board
 - `--quick` / `-q`: One-line emoji summary
 - `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team)
-- **Routing:** `bin/atris.js:1962-1966` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
+- **Routing:** `bin/atris.js:2235-2239` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
 - **Value:** Parallel work visibility + machine-readable output for scripting
 
 **Search:** `rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js`
@@ -714,7 +714,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Ranking:** `commands/launchpad.js:201` (`chooseNextAction`) — own-claimed task > mission needing a tick > proof needing agent review > certified human-accept queue > open claim > endgame seed > brain next move > ask-for-work; `taskIsHumanGatedClaimed` skips claimed work gated on human accept
 - **Suggestions:** `commands/launchpad.js:373` (`suggestedNextMoves`) returns up to 3 plain-language moves
 - **Render:** `commands/launchpad.js:575` (`renderLaunchpad`) draws the ASCII card; `commands/launchpad.js:609` (`showLaunchpadHelp`)
-- **Help:** `bin/atris.js:464` help line; **Routing:** `bin/atris.js:1856-1857` dispatch, `bin/atris.js:922` `knownCommands`
+- **Help:** `bin/atris.js:464` help line; **Routing:** `bin/atris.js:1856-1857` dispatch, `lib/known-commands.js:3` `knownCommands`
 - **Regression:** `test/commands.test.js:7588` (actor-claimed first), `test/commands.test.js:15225` (clean queue → endgame seed), `test/commands.test.js:102` (verifier mission when no claimed task); `--help` smoke at `test/commands.test.js:14915`
 - **Value:** Answers "who is doing what, what needs review, what is blocked, what should start next" in one card without cloud auth
 
@@ -725,7 +725,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 **Purpose:** Housekeeping — find stale tasks, heal broken refs, detect stale wiki pages, archive old journals
 
 - **Dispatch:** `bin/atris.js:1924` handles `--help`, `--dry-run`, and `--json` before routing to `cleanAtris`
-- **Help:** `bin/atris.js:852` (`showCleanHelp`) prints usage without touching workspace state
+- **Help:** `bin/atris.js:866` (`showCleanHelp`) prints usage without touching workspace state
 - **Entry point:** `commands/clean.js:12` (cleanAtris function)
 - **JSON payload:** `commands/clean.js:162` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, and manual actions without text chrome
 - **Helpers:**
@@ -786,7 +786,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Entry points:** `bin/atris.js` (`loop` help + routing), `commands/wiki.js` (`wiki loop` alias)
 - **Handlers:** `commands/loop.js` (report builder + STATUS/log refresh), `lib/wiki.js` (stale/orphan/suggestion helpers)
-- **Help:** `bin/atris.js:832-850` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
+- **Help:** `bin/atris.js:846-864` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
 - **Dispatch:** `bin/atris.js:1502-1510` routes `loop --help`, `loop -h`, and `loop help` before `loopAtris`
 - **How it works:**
 - `atris loop` ensures the wiki scaffold exists, analyzes current pages, then rewrites `atris/wiki/STATUS.md`
@@ -806,7 +806,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 **Purpose:** Validate work is actually done - tests pass, MAP.md updated, changes exist
 
 - **Entry point:** `commands/verify.js:13-35` (verifyAtris function)
-- **Help:** `bin/atris.js:701-713` (showVerifyHelp) and `bin/atris.js:701-713` (showVerifyHelp short-circuit)
+- **Help:** `bin/atris.js:711-723` (showVerifyHelp) and `bin/atris.js:711-723` (showVerifyHelp short-circuit)
 - **Rubric runner:** `commands/verify.js:495-529` (verifyRubric)
 - **Regression:** `test/commands.test.js:4323-4338` covers `verify --help` without verifier execution
 - **Modes:**
@@ -861,7 +861,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 **Purpose:** Productivity insights from existing journal data
 
 - **Entry point:** `commands/analytics.js:4-147` (analyticsAtris function)
-- **Help:** `bin/atris.js:665-675` (`showAnalyticsHelp`) and `bin/atris.js:1472-1478` short-circuit `analytics --help` before workspace reads
+- **Help:** `bin/atris.js:675-685` (`showAnalyticsHelp`) and `bin/atris.js:1472-1478` short-circuit `analytics --help` before workspace reads
 - **Regression:** `test/commands.test.js:4287-4302` covers `analytics --help` without `atris/` or `$HOME/.atris`
 - **Pareto insight:** No new instrumentation - parses existing markdown
 - **Data sources:**
@@ -932,16 +932,16 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review. Reached only via `--legacy`; its exports (`writeLesson`, `runTaskOnce`, `readEndgameState`, `getVerifyCommand`) are still consumed by `commands/lesson.js`, `commands/experiments.js`, and `bin/atris.js`.
 
-- **Entry point:** `commands/autopilot.js:3095` (autopilotAtris function)
-- **From-todo mode:** `commands/autopilot.js:3709` (autopilotFromTodo function)
+- **Entry point:** `commands/autopilot.js:3194` (autopilotAtris function)
+- **From-todo mode:** `commands/autopilot.js:3808` (autopilotFromTodo function)
 - **Reward config:** `lib/reward-config.js` — frozen `REWARD_CONFIG` object + `REWARD_CHECKSUM` (SHA-256 of `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` at ship time). The loop cannot edit its own judge.
-- **Reward computer:** `commands/autopilot.js:1945` (`computeTickReward`) — computes per-tick reward score from `REWARD_CONFIG` constants (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
-- **Tick registry writer:** `commands/autopilot.js:954` (`recordTickCommit`) — persists `{hash, verifyCmd, slug, timestamp}` to `atris/tick-registry.json` after each successful tick
-- **Regression checker:** `commands/autopilot.js:970` (`regressionCheck`) — reads last 10 tick-registry entries, re-runs verify at original commit via git worktree, writes lesson + -5 penalty on failure
-- **Judge integrity guard:** `commands/autopilot.js:1164` (`verifyJudgeIntegrity`) — SHA-256 checksums `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
+- **Reward computer:** `commands/autopilot.js:2020` (`computeTickReward`) — computes per-tick reward score from `REWARD_CONFIG` constants (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
+- **Tick registry writer:** `commands/autopilot.js:1029` (`recordTickCommit`) — persists `{hash, verifyCmd, slug, timestamp}` to `atris/tick-registry.json` after each successful tick
+- **Regression checker:** `commands/autopilot.js:1045` (`regressionCheck`) — reads last 10 tick-registry entries, re-runs verify at original commit via git worktree, writes lesson + -5 penalty on failure
+- **Judge integrity guard:** `commands/autopilot.js:1239` (`verifyJudgeIntegrity`) — SHA-256 checksums `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
 - **Lesson gate tests:** `test/lesson-gate.test.js` covers unresolved/resolved lesson filtering and detector-backed lesson metadata before horizon selection.
-- **Heartbeat writer:** `commands/autopilot.js:1989` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
-- **Suggestion engine:** `commands/autopilot.js:77` (suggestNextTask function, async)
+- **Heartbeat writer:** `commands/autopilot.js:2064` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
+- **Suggestion engine:** `commands/autopilot.js:116` (suggestNextTask function, async)
   - Checks 8 signal types in priority order:
   - 0. Endgame tasks (current horizon — highest priority)
   - 1. Resume interrupted in-progress tasks
@@ -952,23 +952,23 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
   - 6. Unprocessed inbox items from journal
   - 7. Periodic review (MAP.md stale >7 days)
   - Imagined fallback: when no reactive signals fire, calls `proposeCandidateHorizons(cwd)`, picks the highest-confidence candidate, and returns it as `kind: 'imagined'` (priority 99). Throws → returns `null` so `"nothing to do."` still works.
-- **Prompt builder:** `commands/autopilot.js:610` (buildPrompt function; SHARED_CHECKOUT_GIT_CONTRACT at :500 injects the worktree/destructive-git rule into default + self-heal do prompts) — adapts prompts per task kind, including strategy-specific benchmark runs
-- **Autopilot glass log:** `commands/autopilot.js:513` (`buildAutopilotGlassLog`, `writeAutopilotGlassLog`) — successful ticks write `atris/logs/autopilot/<timestamp>-<task>.md` with Plan, Plan Review, Action, Result, and Proof sections. Regression: `test/autopilot-glass-logging.test.js`
-- **Single-task runner:** `commands/autopilot.js:1691` (`runTaskOnce`) — guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, always runs verify command (decoupled from review proxy), success requires verify ran AND passed, returns `verifyCmd`, `verifyRan`, `verifyPass`, and `glassLogPath`
-- **Verify executor helper:** `commands/autopilot.js:1024-1036` (`getVerifyCommand`) — reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }` — no default, tasks without Verify halt
-- **Lesson writer helper:** `commands/autopilot.js:924-948` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
-- **Phase executor:** `commands/autopilot.js:449` (executePhaseDetailed function) — runs `buildRunnerCommand()` (default Claude-compatible `claude -p`, configurable with `ATRIS_RUNNER_*` env or runner flags)
-- **Approval gate:** `commands/autopilot.js:371` (askApproval function) — enter/skip/quit
-- **Human freshness check:** `commands/autopilot.js:389` (`askHuman`) — interactive readline prompt "Is [task] still relevant? y/n"; returns `{ fresh: boolean }`; used in interactive mode when `isStillTrue` returns `unverified`
-- **Idle-tick helper:** `commands/autopilot.js:2277` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
-- **Recent-signals helper:** `commands/autopilot.js:2312` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
-- **Lesson-resolved checker:** `commands/autopilot.js:2737` (`isLessonResolved`) — parses a lesson line for file paths and slug keywords, greps named files via `execFileSync`; returns true if bug pattern is gone (no keyword matches in any named file)
-- **Candidate-horizons helper:** `commands/autopilot.js:2943` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, uses the shared runner command with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (at least 1 valid entry after filtering shipped/resolved lessons); tags resolved fail lessons `[resolved]` in lessons.md and drops matching pass lessons as already shipped
-- **Scoring helper:** `commands/autopilot.js:2362` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value; adaptive explore rate (20%-50%) based on last-5 type diversity, difficulty floor filters easy-win types (>80% success + mean reward >5); called during horizon picking (line 244) to weight candidates by historical reward
-- **Task age helper:** `commands/autopilot.js:3566` (`getTaskAgeDays`) — computes age in days: endgame tasks use `Picked:` date, in-progress tasks parse `Claimed by:` timestamp, fallback 0.
-- **Staleness gate:** `commands/autopilot.js:3595` (`isStillTrue`) — takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only — no model calls.
-- **Model freshness check:** `commands/autopilot.js:3664` (`askModel`) — called when `isStillTrue` returns `unverified`; uses the shared runner command with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
-- **Staleness wiring:** `commands/autopilot.js:77` (suggestNextTask staleness gate) — after sorting suggestions, filters via `isStillTrue`; in auto mode, `unverified` items escalate to `askModel`; in interactive mode, prompts human via `askHuman`; skips stale/not-fresh into `staleSkipped` array; logs to journal `## Notes`.
+- **Prompt builder:** `commands/autopilot.js:678` (buildPrompt function; SHARED_CHECKOUT_GIT_CONTRACT at :500 injects the worktree/destructive-git rule into default + self-heal do prompts) — adapts prompts per task kind, including strategy-specific benchmark runs
+- **Autopilot glass log:** `commands/autopilot.js:552` (`buildAutopilotGlassLog`, `writeAutopilotGlassLog`) — successful ticks write `atris/logs/autopilot/<timestamp>-<task>.md` with Plan, Plan Review, Action, Result, and Proof sections. Regression: `test/autopilot-glass-logging.test.js`
+- **Single-task runner:** `commands/autopilot.js:1766` (`runTaskOnce`) — guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, always runs verify command (decoupled from review proxy), success requires verify ran AND passed, returns `verifyCmd`, `verifyRan`, `verifyPass`, and `glassLogPath`
+- **Verify executor helper:** `commands/autopilot.js:1099-1111` (`getVerifyCommand`) — reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }` — no default, tasks without Verify halt
+- **Lesson writer helper:** `commands/autopilot.js:999-1023` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
+- **Phase executor:** `commands/autopilot.js:488` (executePhaseDetailed function) — runs `buildRunnerCommand()` (default Claude-compatible `claude -p`, configurable with `ATRIS_RUNNER_*` env or runner flags)
+- **Approval gate:** `commands/autopilot.js:410` (askApproval function) — enter/skip/quit
+- **Human freshness check:** `commands/autopilot.js:428` (`askHuman`) — interactive readline prompt "Is [task] still relevant? y/n"; returns `{ fresh: boolean }`; used in interactive mode when `isStillTrue` returns `unverified`
+- **Idle-tick helper:** `commands/autopilot.js:2352` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
+- **Recent-signals helper:** `commands/autopilot.js:2387` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
+- **Lesson-resolved checker:** `commands/autopilot.js:2836` (`isLessonResolved`) — parses a lesson line for file paths and slug keywords, greps named files via `execFileSync`; returns true if bug pattern is gone (no keyword matches in any named file)
+- **Candidate-horizons helper:** `commands/autopilot.js:3042` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, uses the shared runner command with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (at least 1 valid entry after filtering shipped/resolved lessons); tags resolved fail lessons `[resolved]` in lessons.md and drops matching pass lessons as already shipped
+- **Scoring helper:** `commands/autopilot.js:2437` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value; adaptive explore rate (20%-50%) based on last-5 type diversity, difficulty floor filters easy-win types (>80% success + mean reward >5); called during horizon picking (line 244) to weight candidates by historical reward
+- **Task age helper:** `commands/autopilot.js:3665` (`getTaskAgeDays`) — computes age in days: endgame tasks use `Picked:` date, in-progress tasks parse `Claimed by:` timestamp, fallback 0.
+- **Staleness gate:** `commands/autopilot.js:3694` (`isStillTrue`) — takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only — no model calls.
+- **Model freshness check:** `commands/autopilot.js:3763` (`askModel`) — called when `isStillTrue` returns `unverified`; uses the shared runner command with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
+- **Staleness wiring:** `commands/autopilot.js:116` (suggestNextTask staleness gate) — after sorting suggestions, filters via `isStillTrue`; in auto mode, `unverified` items escalate to `askModel`; in interactive mode, prompts human via `askHuman`; skips stale/not-fresh into `staleSkipped` array; logs to journal `## Notes`.
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`, `--runner-profile NAME`, `--runner-bin PATH`, `--runner-template CMD`, `--runner-model MODEL`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
 
@@ -982,21 +982,21 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Prompt builder:** `commands/run.js:120-213` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
 - **Phase executor:** `commands/run.js:218-255` (executePhase function) — runs `buildRunnerCommand()` with prompt, executes via spawnSync in a detached process group, sweeps the configured runner tree on timeout/kill, and handles output
 - **Glass run logs:** `commands/run.js:31-37` (getRunLogDir, getRunLogPath, writePhaseToRunLog) — persists plan/do/review phase reasoning to `atris/logs/runs/YYYY-MM-DD-<stamp>-cycle-N.md` as inspectable material; failed phases also logged as ERROR sections
-- **Run log browser:** `commands/run.js:641-727` (listRunLogs function) — `atris run logs [--tail N] [--cat FILE] [--json]` subcommand for browsing glass run logs
-- **Run log pruning:** `commands/run.js:735-779` (pruneRunLogs function) — `atris run prune-logs [--keep N] [--dry-run]` subcommand for cleaning up old run logs
-- **Run log search:** `commands/run.js:788-875` (searchRunLogs function) — `atris run search <keyword> [--phase P] [--limit N]` subcommand for searching phase reasoning
-- **Run log stats:** `commands/run.js:880-931` (statsRunLogs function) — `atris run stats` subcommand showing phase counts and avg durations
-- **Run log export:** `commands/run.js:938-982` (exportRunLogs function) — `atris run export [--out FILE]` subcommand for JSON bundle export
+- **Run log browser:** `commands/run.js:644-730` (listRunLogs function) — `atris run logs [--tail N] [--cat FILE] [--json]` subcommand for browsing glass run logs
+- **Run log pruning:** `commands/run.js:738-782` (pruneRunLogs function) — `atris run prune-logs [--keep N] [--dry-run]` subcommand for cleaning up old run logs
+- **Run log search:** `commands/run.js:791-878` (searchRunLogs function) — `atris run search <keyword> [--phase P] [--limit N]` subcommand for searching phase reasoning
+- **Run log stats:** `commands/run.js:883-934` (statsRunLogs function) — `atris run stats` subcommand showing phase counts and avg durations
+- **Run log export:** `commands/run.js:941-985` (exportRunLogs function) — `atris run export [--out FILE]` subcommand for JSON bundle export
 - **Run log diff:** `commands/run.js:988-1063` (diffRunLogs function) — `atris run diff <file1> <file2>` subcommand for comparing two run logs
 - **Work detector:** `commands/run.js:297-299` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
 - **Journal logger:** `commands/run.js:333-361` (logRunCompletion function) — appends run summary (cycles, duration, per-phase timings) to journal ## Notes
 - **Phase timing:** `commands/run.js:254-255,268` — collects `{plan, do, review}` ms per cycle, stored in `cycleTimings` array
-- **Summary table:** `commands/run.js:428` (cycleTimings forEach) — per-cycle phase duration table
-- **Post-cycle clean:** `commands/run.js:549` (cleanAtris call) — self-heal MAP.md refs
+- **Summary table:** `commands/run.js:431` (cycleTimings forEach) — per-cycle phase duration table
+- **Post-cycle clean:** `commands/run.js:552` (cleanAtris call) — self-heal MAP.md refs
 - **Post-cycle push:** `commands/run.js:386` (execSync git push) — disabled with `--no-push`
 - **Routing:** `bin/atris.js:113-138` (command dispatch + flag parsing)
-- **Help text:** `bin/atris.js:414` (showHelp function)
-- **Known commands:** `bin/atris.js:922` (knownCommands array)
+- **Help text:** `bin/atris.js:388` (showHelp function)
+- **Known commands:** `lib/known-commands.js:3` (knownCommands array)
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
 - **Flags:**
   - `--once` — Single plan→do→review cycle
@@ -1084,7 +1084,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `logoutAtris` (lines 125-136): Delete credentials
 - `whoamiAtris` (lines 138-152): Show auth status via `displayAccountSummary`
 - **Auth (canonical):** `utils/auth.js` + `utils/api.js` — all auth logic consolidated, no inline duplicates
-- **Help:** `bin/atris.js:756-792` (`showAuthHelp`) prints login/logout/whoami/switch/use/accounts usage before auth workers can prompt, create state, delete credentials, or touch session/profile dirs
+- **Help:** `bin/atris.js:770-806` (`showAuthHelp`) prints login/logout/whoami/switch/use/accounts usage before auth workers can prompt, create state, delete credentials, or touch session/profile dirs
 - **Dispatch:** `bin/atris.js:1198-1239` routes login/logout/whoami/switch/use/accounts `--help`, `-h`, and bare `help` before calling `commands/auth.js`
 - **Regression:** `test/commands.test.js:4249-4294` covers auth/account help without login prompts, status output, `.atris` creation, session/profile dir creation, or credential deletion
 - JWT helpers: `decodeJwtClaims` (bin:59-74), `shouldRefreshToken` (bin:85-92)
@@ -1093,8 +1093,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
   1. Browser OAuth: opens `{APP_BASE}/auth/cli`, user pastes code, CLI exchanges via `POST /auth/cli/exchange`
   2. Manual token: user pastes raw token, saved + validated
   3. Non-interactive: `--token <t>` flag for CI/scripts
-- **Token refresh:** `utils/auth.js:420-472` (`performTokenRefresh`) — saves new access token, optionally rotates refresh token, re-validates, updates user metadata
-- **Credential guard:** `utils/auth.js:474-527` (`ensureValidCredentials`) — proactive refresh if within 5-min buffer, validate, fallback refresh
+- **Token refresh:** `utils/auth.js:424-509` (`performTokenRefresh`) — saves new access token, optionally rotates refresh token, re-validates, updates user metadata
+- **Credential guard:** `utils/auth.js:511-564` (`ensureValidCredentials`) — proactive refresh if within 5-min buffer, validate, fallback refresh
 - **Dependencies:** `utils/auth.js` for token management, `utils/api.js` for HTTP
 - **Consumers:**
   - `commands/auth.js` (login/logout/whoami) — uses modular `utils/auth.js`
@@ -1112,7 +1112,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 **Purpose:** First-time setup checks Node.js, login state, businesses, and optional business pull.
 
 - **Entry point:** `commands/setup.js:6-178` (`setupAtris`)
-- **Help:** `bin/atris.js:806-816` (`showSetupHelp`) prints setup usage without entering setup
+- **Help:** `bin/atris.js:820-830` (`showSetupHelp`) prints setup usage without entering setup
 - **Dispatch:** `bin/atris.js:1491-1499` routes `setup --help`, `setup -h`, and `setup help` before login, business fetch, or pull flow
 - **Regression:** `test/commands.test.js:4279-4290` covers setup help without setup banner, login prompt, or `.atris` creation
 - **Value:** Gives first-run guidance while keeping help safe in temp homes and automation.
@@ -1133,7 +1133,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:2313-2365` (upgradeAtris function)
+- **Entry point:** `bin/atris.js:2682-2734` (upgradeAtris function)
 - **Dispatch/help:** `bin/atris.js:1432-1438` handles `upgrade --help` before npm checks or global installs
 - **Logic:**
 - Shows current version
@@ -1184,7 +1184,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:2606-2663` (chatAtris function)
+- **Entry point:** `bin/atris.js:2975-3063` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
@@ -1200,7 +1200,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Entry point:** `commands/activate.js:56-249` (activateAtris function)
 - **Routing:** `bin/atris.js:1153-1159`
-- **Help:** `bin/atris.js:677-687` (`showActivateHelp`) prints usage before context loading or journal creation
+- **Help:** `bin/atris.js:687-697` (`showActivateHelp`) prints usage before context loading or journal creation
 - **Regression:** `test/commands.test.js:4310-4324` covers activate help without context panels or temp state creation; `test/activate-boot.test.js` covers the boot brief + sync-status line
 - **Logic:**
 - Detects workspace state via `lib/state-detection.js`
@@ -1215,7 +1215,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Search journal history for keywords across all log files
 
-- **Entry point:** `bin/atris.js:308-311` (`showSearchHelp` + `searchJournal`)
+- **Entry point:** `bin/atris.js:351-353` (`showSearchHelp` + `searchJournal`)
 - **Routing:** `bin/atris.js:757`
 - **Logic:**
 - `--help` and `-h` short-circuit before `atris/logs` checks; regression: `test/commands.test.js:3714-3728`
@@ -1265,8 +1265,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Auto-advance to next workflow step based on journal state
 
-- **Entry point:** `bin/atris.js:1035` (interactiveEntry function)
-- **Help:** `bin/atris.js:689-699` (`showNextHelp`) and `bin/atris.js:1366-1373` route `next --help` before `interactiveEntry`
+- **Entry point:** `bin/atris.js:1099` (interactiveEntry function)
+- **Help:** `bin/atris.js:699-709` (`showNextHelp`) and `bin/atris.js:1366-1373` route `next --help` before `interactiveEntry`
 - **Regression:** `test/commands.test.js:4310-4324` covers next help without context panels or temp state creation
 - **Logic:** Same as natural language entry - loads context, detects state, advances
 - **Value:** Single-command workflow progression without typing a description
@@ -1356,7 +1356,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris integrations` (lines 298-338): Show status of all integrations
 - **Auth:** Uses `getAuthToken()` (line 16) from `~/.atris/credentials.json`
 - **Routing:** `bin/atris.js:760-792`
-- **Help:** `bin/atris.js:794-804` (`showIntegrationsHelp`) and `bin/atris.js:1467-1472` route `integrations --help` before auth/session state or backend status checks
+- **Help:** `bin/atris.js:808-818` (`showIntegrationsHelp`) and `bin/atris.js:1467-1472` route `integrations --help` before auth/session state or backend status checks
 - **Regression:** `test/commands.test.js:4279-4294` covers integrations help without login errors or `.atris` creation
 - **Value:** Manage external services without leaving the CLI
 
@@ -1384,7 +1384,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** First `atris` contact asks for human context before planning or agent bootstrap, then persists the answer and creates a starter onboarding task.
 
-- **Entry point:** `bin/atris.js:1035` (`interactiveEntry`)
+- **Entry point:** `bin/atris.js:1099` (`interactiveEntry`)
 - **Helper:** `lib/context-gatherer.js`
 - **State:** `.atris/state/context_profile.json`
 - **Regression:** `test/context-gatherer.test.js`, `test/cli-smoke.test.js`
@@ -1660,20 +1660,20 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `planAtris()` → `commands/workflow.js:362-701`
 - `doAtris()` → `commands/workflow.js:703-1054`
 - `reviewAtris()` → `commands/workflow.js:1056-1545`
-- `statusAtris()` → `commands/status.js:79-334`
+- `statusAtris()` → `commands/status.js:124-384`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
 - `brainstormAtris()` → `commands/brainstorm.js:21-355`
-- `autopilotAtris()` → `commands/autopilot.js:3095-3558`
-- `writeLesson()` → `commands/autopilot.js:924-948`
-- `getVerifyCommand()` → `commands/autopilot.js:1024-1036`
-- `recordTickCommit()` → `commands/autopilot.js:954-962`
-- `regressionCheck()` → `commands/autopilot.js:970-1016`
-- `runTaskOnce()` → `commands/autopilot.js:1691-1905`
-- `getTaskAgeDays()` → `commands/autopilot.js:3566-3583`
-- `askHuman()` → `commands/autopilot.js:389-398`
-- `isStillTrue()` → `commands/autopilot.js:3595-3653`
-- `askModel()` → `commands/autopilot.js:3664-3704`
-- `activateAtris()` → `commands/activate.js:6-129`
+- `autopilotAtris()` → `commands/autopilot.js:3194-3657`
+- `writeLesson()` → `commands/autopilot.js:999-1023`
+- `getVerifyCommand()` → `commands/autopilot.js:1099-1111`
+- `recordTickCommit()` → `commands/autopilot.js:1029-1037`
+- `regressionCheck()` → `commands/autopilot.js:1045-1091`
+- `runTaskOnce()` → `commands/autopilot.js:1766-1980`
+- `getTaskAgeDays()` → `commands/autopilot.js:3665-3682`
+- `askHuman()` → `commands/autopilot.js:428-437`
+- `isStillTrue()` → `commands/autopilot.js:3694-3752`
+- `askModel()` → `commands/autopilot.js:3763-3803`
+- `activateAtris()` → `commands/activate.js:56-246`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
 - `releaseAtris()` → `commands/release.js:15-122`

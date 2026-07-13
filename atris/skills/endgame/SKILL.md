@@ -62,18 +62,22 @@ After running the three moves, write the result to `atris/TODO.md`:
 **Source:** <inbox-item | wiki-signal | user-prompt> (so we know where it came from)
 ```
 
-2. **Add each REVERSE PATH step as a tagged backlog task** in `## Backlog`:
+2. **Add each REVERSE PATH step as a tagged task — through the task db when one exists.**
+
+**Durable-db workspaces (any repo with `.atris/state/tasks.projection.json` / the `atris task` verb):** markdown task lines written into TODO.md DO NOT SURVIVE — the next `atris task render` regenerates the file from the db and silently wipes them (learned 2026-07-12, lesson `endgame-tasks-must-be-durable-db-rows`; the `## Endgame` header block survives, the tasks vanish). Create each step as a real row instead:
+
+```bash
+atris task add "<step description>" --tag endgame
+```
+
+**Markdown-only workspaces (no task db):** the old inline form is fine:
 
 ```markdown
 - **T1:** <step 1 description> [endgame]
   **Verify:** <deterministic-check>
-- **T2:** <step 2 description> [endgame]
-  **Verify:** <deterministic-check>
-- **T3:** <step 3 description> [endgame]
-  **Verify:** <deterministic-check>
 ```
 
-The tag must be exactly `[endgame]` (parser only matches `\w+`, no colons or hyphens). The slug lives in the section header.
+The tag must be exactly `endgame` / `[endgame]` (parser only matches `\w+`, no colons or hyphens). The slug lives in the section header.
 
 3. **Always append an RSI audit as the final task:**
 

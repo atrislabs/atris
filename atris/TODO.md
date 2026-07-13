@@ -2,16 +2,23 @@
 
 > Regenerated from durable Atris task state. Do not treat this file as truth.
 
+## Endgame
+
+**Slug:** wish-rides-itself
+**Picked:** 2026-07-12 09:05
+**Horizon:** A wish spoken once travels the whole pipeline unattended — intake, single dispatch (no duplicate flights), build, verify, land, one plain-sentence receipt — proven by a live cloud fast-lane round trip.
+**Source:** inbox-item (2026-07-10 I29 + I28; duplicate-flight lesson 7/09)
+
 ## Backlog
 
-- **[CLI-967]** wish intake interview loops on tokens from prior answers: after grant/answer text containing line numbers (749-760), quoted error words (Refusing), or a trailing-period token (reference.), the interview asks 'which workspace, repo, file, or team member did you mean by X?' repeatedly and never dispatches. repro: wish-2026-07-09-make-cloud-sync-safe-and-simple-sync-a7d24b4b, 3 consecutive loops on 2026-07-09. fix: the interviewer should not mine noun candidates from operator answers already consumed, and should cap the same-question retry at 1 before proceeding with best guess.
-- **[CLI-961]** S1 push safety ux: build slice S1 exactly as specified in atris/features/cloud-sync-simplicity/idea.md. verify: node --test test/push-safety-ux.test.js
+- **[CLI-1122]** make first-run onboarding land: a fresh laptop with a new atris folder reaches a working first wish without help, gaps fixed as found (reshapes wish CLI-895) [wish]
+- **[CLI-1121]** revalidate stale feature packs: heal drifted line refs, rerun rubric checks, bump last_compiled (revives CLI-222) [maintenance]
+- **[CLI-1120]** recompile the stale wiki pages that feed agent boot: systems/atris-cli, overview brief, concepts (revives CLI-221) [maintenance]
+- **[CLI-1119]** heal workspace drift: stale MAP.md line refs and old journals via atris clean, then rerun the drift count to prove it dropped (revives CLI-220) [maintenance]
+- **[CLI-1118]** fix skill audit false-fails: no-xml-tags rule flags placeholders inside code blocks, failing 9 healthy skills (revives CLI-223) [maintenance]
+- **[CLI-979]** csrf gate should exempt cookie-less bearer-token api calls so every cli lane works without origin workarounds; protected lane, orb reviews pre-merge
 - **[CLI-958]** yo can you make me the best to do list ever [wish]
 - **[CLI-957]** make me the best landing page ever [wish]
-- **[CLI-956]** make me the best todo list ever [wish]
-- **[CLI-955]** make me the best landing page ever [wish]
-- **[CLI-954]** make me the best todo list ever [wish]
-- **[CLI-953]** make me the best landing page ever [wish]
 - **[CLI-952]** orb-slate 15: every lap launches itself - shipped work auto-produces card/reel/post
 - **[CLI-951]** orb-slate 14: overnight autoresearch as a customer dial - expose pulse prune/strengthen loop
 - **[CLI-950]** orb-slate 13: wish-to-company - pooled capital into a wish, founders as approval queue
@@ -19,28 +26,25 @@
 - **[CLI-948]** orb-slate 11: the FDE exam - hackerrank for FDEs scored on real atris laps
 - **[CLI-947]** orb-slate 10: receipts as compliance - receipt ledger as SOC2-grade evidence
 - **[CLI-946]** orb-slate 9: loop packs sold as laps - package DoorDash BQR + Pallet recruiting for customer N+1
-- **[CLI-945]** orb-slate 8: drop-in install - golden path to zero-papercut atris/ folder landing
 - **[CLI-944]** orb-slate 7: second-brain check-ins - system schedules interviews to keep memory current
 - **[CLI-943]** orb-slate 6: day loop cloned per operator - morning card + evening close for Justin next
 - **[CLI-942]** orb-slate 5: plain-english approval queue - waiting-on-you as one sentence each, approvable from phone/SMS
 - **[CLI-941]** orb-slate 4: watch the forward pass - live web view of the neural-net lap in atrisos-web
 - **[CLI-940]** orb-slate 3: weights that update - receipts auto-tune engine/prompt routing nightly
-- **[CLI-939]** orb-slate 2: one command one lap - atris <sentence> runs orb->navigator->engines->validator->plain-english receipt
 - **[CLI-936]** one command to wake or sleep a single member and to turn a single loop on or off, local or cloud, and one line that tells me what that member is doing right now. atris sleep and wake exist for whole businesses, loops board shows everything, but there is no per-member or per-loop switch. confirming something is happening and being able to stop one thing fast is the point - speed is everything [wish]
 - **[CLI-935]** rendering it in atrisos-web [wish]
 - **[CLI-934]** this is about serving that projection through the backend [wish]
 - **[CLI-933]** on the web i can see which members are awake and doing work, simply. i can see their actions and the loops that are running. the same view comes to our ios app later, desktop someday - for now the cloud versions. the data already exists in atris stream, task status --json, mission status, and the member alive loops [wish]
-- **[CLI-932]** day-loop voice: own every sentence the justin day loop sends (morning one-thing, evening mirror, real-time warm ping). Standard = the 5-day simulation keshav approved in session 2026-07-08: plain, specific, one idea per beat, admits mistakes, never nags. Write the voice spec + message templates-as-guidance (not hardcoded strings) and the slop-gate rules for outbound coach messages.
-- **[CLI-926]** a 2nd grade teacher at the same time: scientifically accurate, least jargon possible, fastest path to understanding [wish]
-- **[CLI-925]** every explanation atris gives me should make sense to an ml researcher [wish]
-  **Verify:** before/after of one real digest or result sentence + the doctrine diff
-- **[CLI-915]** wish review latest resolves to an older open wish instead of the newest wish: reviewing 'latest' tonight hit yesterday's wish while today's decomposed wish existed; pin down the intended meaning of latest and add a test [wish]
 - **[CLI-914]** get good results instead of generating from scratch [wish]
 - **[CLI-913]** create deterministic code scripts for tasks llms are often asked to do, so a cheaper llm can just run the script [wish]
 - **[CLI-912]** AgentXP Mode first rep: complete one proof-backed useful mission [agent-xp]
 
 ## In Progress
 
+- **[CLI-1123]** master test board is red again after the map-reference healing change; fix the clean dry-run heal test so real breakage is visible to everyone [maintenance]
+  **Claimed by:** mission-lead
+- **[CLI-984]** test/commands.test.js:645 worktree-target test fails on master (expects /feature work/, gets '54d8fe6 init'); pre-existing before PR 342, confirmed on merge parents 91cbcb3 and 52595ec on 2026-07-09
+  **Claimed by:** keshavrao
 - **[CLI-966]** S6 activate boot line: build slice S6 exactly as specified in atris/features/cloud-sync-simplicity/idea.md. verify: node --test test/activate-boot.test.js
   **Claimed by:** fleet-claude
 - **[CLI-964]** S4 scoped push: build slice S4 exactly as specified in atris/features/cloud-sync-simplicity/idea.md. verify: node --test test/push-scoped.test.js
@@ -49,6 +53,9 @@
   **Claimed by:** fleet-devin
 - **[CLI-962]** S2 sync --review conflict handler: build slice S2 exactly as specified in atris/features/cloud-sync-simplicity/idea.md. verify: node --test test/sync-review.test.js
   **Claimed by:** fleet-grok
+- **[CLI-939]** orb-slate 2: one command one lap - atris <sentence> runs orb->navigator->engines->validator->plain-english receipt
+  **Claimed by:** mission-lead
+  **Verify:** A real-runtime test with a temp Git remote and executable engine fixture must invoke node bin/atris.js with one quoted sentence, prove the exact task was built and verified, prove origin/master was not silently changed by default, and show the task/receipt evidence is Review-ready.
 - **[CLI-937]** our vision, in bullets: 1) the brain is the smartest place in the company - everything anyone does feeds it and everyone draws from it. 2) the day is the unit - every human gets one thing in the morning, a mirror at night, and gets measurably better every week. 3) loops run meaningfully on real reward - replies, shifts, revenue, outcomes - never motion. 4) the system maintains its own memory of people and work - member files, lessons, and surfaces never go stale and never get crowded. 5) humans keep only taste, priorities, and final accept - everything else is prepared for them before they ask. 6) agentgrads is the wedge - a scored, consented work shift anyone on earth can start from a link, and the fde market is where we win first. 7) every new person or agent activates at full context on day one - onboarding is activation, the company compounds instead of just growing [wish]
   **Claimed by:** fleet-claude
 - **[CLI-931]** justin is connected as an operator - the system should give him ios notifications and a daily report. it should know what he's working on and be his coach inside this system. it should help him think about how to architect the system and hold him accountable on who he's reaching out to in the most effective way possible - encoded with smart language, not hardcoded rules. at the end of the day he says wow this system is so good, it's helping me. it has rainmaker and the other apps inside it so he can do his outreach from there - it brings the best out of him [wish]
@@ -76,50 +83,64 @@
   **Claimed by:** codex-close-engine
 - **[CLI-911]** member wake: warm human boot output (gm experience) [cli]
   **Claimed by:** devin
-- **[CLI-910]** Make loops audit self-improving green [loops]
-  **Claimed by:** auto-improver
-  **Verify:** node bin/atris.js loops audit
 - **[CLI-891]** Engine registry v2: .atris/state/engines.json (tier, roles, fallback order, health) + atris engine resolve <role> + engine list --json contract + mission --budget quick|long|deep tiers
   **Claimed by:** codex-engine-registry
 
 ## Review
 
-(Empty)
+- **[CLI-1117]** rsi audit for endgame wish-rides-itself: read this endgame's halts, verify failures, and lessons; repair the loop itself if it broke, no-op otherwise; verify with npm test [endgame]
+  **Verify:** node --test test/mission-idle-stop.test.js
+- **[CLI-1116]** wish receipt speaks operator voice: completion surfaces one plain sentence (what + how we know), no ulids or command dumps, covered by a test on the receipt renderer [endgame]
+  **Verify:** node --test test/wish.test.js
+- **[CLI-1114]** duplicate-flight guard: a second dispatch for the same wish slice (repeat wish or manual engine dispatch) is detected and refused or attached instead of launching a parallel flight; add a regression test [endgame]
+  **Verify:** node --test test/wish.test.js
+- **[CLI-1113]** Mission XP: Decide and start the next useful mission after: Repair the blocked operator-report mission by reproducing the live-update receipt failure, shipping one bounded verified fix, and continuing only after proof. [agent-xp]
+- **[CLI-1112]** Mission XP: Repair the blocked operator-report mission by reproducing the live-update receipt failure, shipping one bounded verified fix, and continuing only after proof. [agent-xp]
+  **Verify:** node --test test/autoland.test.js
+- **[CLI-1110]** Improve vitals names the scheduled loop so active missions do not look idle [voice]
+  **Verify:** node --test test/improve-vitals.test.js
+- **[CLI-1108]** Mission history removes internal ids and verifier commands so full proof stays readable [voice]
+  **Verify:** node --test --test-name-pattern='mission timeline cleans internal ids and verifier tails from history' test/mission-status.test.js
+- **[CLI-1107]** Task status closes long current titles at a clause so operators can act [voice]
+  **Verify:** node --test --test-name-pattern='task status closes long current titles at a clause' test/commands.test.js
+- **[CLI-1106]** Autoland status calls protected work a review until it is ready to approve [voice]
+  **Verify:** node --test --test-name-pattern='autoland status does not call one-pass protected work approval-ready' test/autoland.test.js
+- **[CLI-1105]** Goal controller labels active budget as hold so completion line stays clear [voice]
+  **Verify:** node --test --test-name-pattern='visible goal bridge holds completion for full budget' test/mission-status.test.js
+- **[CLI-1104]** Daily digest includes protected reviews so approval count matches autoland [voice]
+  **Verify:** node --test --test-name-pattern='digest reports protected reviews before certification' test/autoland.test.js
+- **[CLI-1102]** Goal controller card keeps active goals from looking blocked or needing creation [voice]
+  **Verify:** node --test --test-name-pattern='goal controller card distinguishes active goal from required write' test/mission-status.test.js
+- **[CLI-1099]** Mission inspect shows live budget so compact status does not contradict report [voice]
+  **Verify:** node --test --test-name-pattern='mission inspect shows live budget in text' test/mission-status.test.js
+- **[CLI-1098]** Mission report follows live budget so operators do not review early [voice]
+  **Verify:** node --test --test-name-pattern='mission report keeps full-budget work active' test/mission-status.test.js
+- **[CLI-1095]** Digest withholds duplicate mission review during active full-budget run [voice]
+  **Verify:** node --test --test-name-pattern='digest next moves withhold duplicate objective review' test/autoland.test.js
+- **[CLI-1020]** Landing gate counts audience words as a reason, letting action-only reports pass without saying why they matter [voice]
+  **Verify:** node --test test/autoland.test.js
 
 ## Blocked
 
-- **[CLI-908]** i could see how this process would lead me to creating a viral hit on ableton [wish]
-- **[CLI-907]** Wishes come true while everyone sleeps: queued wishes dispatch from the hourly loop instead of waiting for a live session, so the operator can wish at midnight and wake to landed work
-- **[CLI-905]** Wish stops guessing wrong on big wishes: multi-part wishes get split or asked about instead of blind-delegated, budgets and proof come from the work not word-matching, and questions read like a person wrote them, so wishes can be trusted with anything
-- **[CLI-904]** Flights verify in seconds: a fast real-behavior test tier becomes the default gate while the full suite moves to a background check, so every build lands minutes sooner without trusting mocks
-- **[CLI-903]** quick tests with more real results so flights verify in seconds not minutes [wish]
-- **[CLI-902]** One command proves the whole factory works: a golden-path drill runs wish to task to mission to landed merge against a sandbox repo and reports pass or the exact broken stage, so process breakage is caught in minutes not discovered mid-flight
-- **[CLI-901]** Every plan the orchestrator hands a coder becomes a graded record: the brief, what came back, and the verdict live together, so plan quality is measured and improves instead of evaporating after each dispatch
-- **[CLI-900]** the orb orchestrator always gives great plans to the executor coder and all the meta thinking is logged and organized to improve our thinking over time [wish]
-- **[CLI-899]** Live team stream: one command shows what every agent is doing right now in plain rolling lines, per agent or whole team, so the operator understands everything at a glance instead of digging through logs
-- **[CLI-898]** i could understand everything so fast in a stream for each agent or the whole team and that it was connected to GM mode so easily and the gm mode in project obelisk though it may seem hard [wish]
-- **[CLI-897]** Wish speaks like a person: restates your words back, asks specific questions, names which wish it is granting, and never mangles grammar, so operators trust it on the first try
-- **[CLI-896]** my roadmap till agi was ready [wish]
-
-(32 older blocked tasks archived in `atris task list --status failed` and `atris task events`.)
+(Empty)
 
 ## Completed
 
-- **[CLI-968]** blocks spine slice 1: receipt block - one schema, four renderers (card/page/email/morning-card), brief atris/briefs/2026-07-10-blocks.md
-  **Verify:** node --test test/receipt-block.test.js
-- **[CLI-965]** S5 sync speed and watch alias: build slice S5 exactly as specified in atris/features/cloud-sync-simplicity/idea.md. verify: node --test test/watch-alias.test.js
-  **Verify:** node --test test/watch-alias.test.js Result
-- **[CLI-960]** atris meet: onboard a stranger in one sitting - interview + init + theme + avail composed into one command that ends with their folder + live /book link
-  **Verify:** node --test test/meet.test.js
-- **[CLI-959]** Fix master CI red: 60+ failures since 7/05 (bench-agents merge-conflict, wish-bench floor, 15-min timeout)
-  **Verify:** node --test test/bench-agents.test.js test/wish-bench-script.test.js
-- **[CLI-938]** orb-slate 1: the interview - fuzzy asks get opinionated blanks before dispatch (wish-audit hook + taste doctrine)
-  **Verify:** node --test test/wish-audit.test.js
-- **[CLI-918]** six tests fail on master before tonight's work: mission status render pair, always-on due selection, wish short label review, and the two agent xp mission spine cases; each hides real drift between code and contract and blocks a trustworthy full-suite gate [cli]
-  **Verify:** node --test test/mission-status.test.js test/mission-xp.test.js test/short-names.test.js test/mission-status-render.test.js
-- **[CLI-916]** wish review latest resolves to an older open wish instead of the newest wish: reviewing latest tonight hit yesterday's wish while today's decomposed wish existed; pin down the intended meaning of latest and add a test [wish]
-  **Verify:** node --test test/wish.test.js
-- **[CLI-909]** Add atris loops init audit tick commands [cli]
-  **Verify:** node --test test/loops.test.js
+- **[CLI-1115]** live proof of wish-to-cloud: fire a one-sentence hello wish on the cloud fast lane and capture the receipt to the receipt ledger [endgame]
+  **Verify:** git diff --check
+- **[CLI-1111]** Rate-limit fixture disables the idle breaker so the command suite tests one boundary [test]
+  **Verify:** node --test --test-name-pattern='allowed rate-limit info with a future resetsAt does not pause a timed run' test/commands.test.js
+- **[CLI-1109]** Mission locks reap dead owners so interrupted work can recover immediately [reliability]
+  **Verify:** node --test --test-name-pattern='mission lock reaps a dead owner before acquiring' test/mission-status.test.js
+- **[CLI-1103]** Goal handshake keeps matching native goal active through the full budget [safety]
+  **Verify:** node --test --test-name-pattern='goal handshake keeps matching native goal active for full budget' test/mission-status.test.js
+- **[CLI-1101]** Visible goal bridge holds completion until full budget ends [safety]
+  **Verify:** node --test --test-name-pattern='visible goal bridge holds completion for full budget' test/mission-status.test.js
+- **[CLI-1100]** Native goal bridge continues live budget so agents do not review early [safety]
+  **Verify:** node --test --test-name-pattern='native goal bridge keeps full-budget mission working' test/mission-status.test.js
+- **[CLI-1097]** Mission goal help stays read-only so discovery cannot launch work [safety]
+  **Verify:** node --test --test-name-pattern='mission help documents status filters' test/mission-status.test.js
+- **[CLI-1094]** Mission layers and prune help stay read-only [mission]
+  **Verify:** node --test --test-name-pattern='mission help documents status filters' test/mission-status.test.js
 
-(396 older completed tasks archived in `atris task list --status done` and `atris task events`.)
+(428 older completed tasks archived in `atris task list --status done` and `atris task events`.)
