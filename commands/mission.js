@@ -398,6 +398,7 @@ const MISSION_RUN_BOOLEAN_FLAGS = [
   '--json',
   '--due',
   '--headless',
+  '--self-drive',
   '--fleet',
   '--dry-run',
   '--land',
@@ -7763,18 +7764,21 @@ async function runMission(args) {
         if (engineHealth) result.engine_health = engineHealth.health;
       }
 
-      // Verifier (only if claude succeeded or no-claude mode)
+      // --no-claude is the deterministic no-model path used by local loop
+      // tests and operators who explicitly want no engine traffic. Keep
+      // command verifiers active there, but do not replace a missing command
+      // verifier with a Codex network call.
       let verifierResult = null;
       let receiptPath = null;
       if (result.status === 'ran' && verifyEach) {
         verifierResult = frozen.verifier
           ? runVerifier(frozen.verifier)
-          : await runEngineVerifier(tickRuntimeMission, {
+          : skipClaude ? null : await runEngineVerifier(tickRuntimeMission, {
             cwd,
             signal: controller.signal,
             tickIndex: tickIdx,
           });
-        result.verifier_passed = verifierResult.passed;
+        if (verifierResult) result.verifier_passed = verifierResult.passed;
       }
       stampMissionRunnerBrief(cwd, result.claude?.brief_id, result, verifierResult);
 
