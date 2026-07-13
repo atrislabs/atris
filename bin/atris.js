@@ -1507,7 +1507,7 @@ function showWelcomeVisualization() {
       // that worked — it has nothing to resolve and counting it guilt-trips
       // the operator with a number (600+) no one can ever drive to zero.
       const unresolvedLessons = parseLessons(lessonsText)
-        .filter((lesson) => lesson.status === 'fail' && !lesson.resolved && !/\[resolved\]/i.test(lesson.text)).length;
+        .filter((lesson) => lesson.status === 'fail' && !lesson.resolved && !/\[resolved[\]:]/i.test(lesson.text)).length;
       if (worktrees > 0 || unresolvedLessons > 0) {
         rotInfo = { worktrees, lessons: unresolvedLessons };
       }
