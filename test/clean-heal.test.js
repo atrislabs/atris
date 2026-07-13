@@ -309,7 +309,7 @@ test('healer ignores descriptive annotations that are not code symbols', () => {
     const result = healBrokenMapRefs(dir, atrisDir, false);
 
     assert.deepEqual(result.unhealable, [
-      { file: 'api.js', line: 99, reason: 'Symbol "GHOST" not found' },
+      { file: 'api.js', line: 99, reason: 'No symbol to search for' },
     ]);
     const updated = fs.readFileSync(path.join(atrisDir, 'MAP.md'), 'utf8');
     assert.ok(updated.includes('api.js:2'));
