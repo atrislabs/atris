@@ -78,3 +78,79 @@ test('healer still handles post-ref symbol context (baseline)', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('healer resolves tilde refs from an injected home and preserves missing refs', () => {
+  const { dir, atrisDir } = makeTempAtris();
+  const fakeHome = path.join(dir, 'home');
+  try {
+    const source = [
+      '// header',
+      '// more',
+      'function tildeTarget() {',
+      '  return true;',
+      '}',
+      '',
+    ].join('\n');
+    const srcFile = path.join(fakeHome, 'arena', 'sibling', 'tilde.js');
+    fs.mkdirSync(path.dirname(srcFile), { recursive: true });
+    fs.writeFileSync(srcFile, source);
+
+    const mapContent = [
+      '# MAP',
+      '`~/arena/sibling/tilde.js:20` (tildeTarget function)',
+      '`~/arena/sibling/missing.js:8` (missingTarget function)',
+      '',
+    ].join('\n');
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'), mapContent);
+
+    const result = healBrokenMapRefs(dir, atrisDir, false, fakeHome);
+
+    assert.equal(result.healed, 1);
+    assert.deepEqual(result.unhealable, [
+      { file: '~/arena/sibling/missing.js', line: 8, reason: 'File not found' },
+    ]);
+    const updated = fs.readFileSync(path.join(atrisDir, 'MAP.md'), 'utf8');
+    assert.match(updated, /~\/arena\/sibling\/tilde\.js:3/);
+    assert.match(updated, /~\/arena\/sibling\/missing\.js:8/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('healer uses absolute refs as-is and preserves missing refs', () => {
+  const { dir, atrisDir } = makeTempAtris();
+  try {
+    const source = [
+      '// header',
+      '// more',
+      'function absoluteTarget() {',
+      '  return true;',
+      '}',
+      '',
+    ].join('\n');
+    const srcFile = path.join(dir, 'sibling', 'absolute.js');
+    fs.mkdirSync(path.dirname(srcFile), { recursive: true });
+    fs.writeFileSync(srcFile, source);
+    const missingFile = path.join(dir, 'sibling', 'missing.js');
+
+    const mapContent = [
+      '# MAP',
+      `\`${srcFile}:20\` (absoluteTarget function)`,
+      `\`${missingFile}:8\` (missingTarget function)`,
+      '',
+    ].join('\n');
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'), mapContent);
+
+    const result = healBrokenMapRefs(dir, atrisDir, false);
+
+    assert.equal(result.healed, 1);
+    assert.deepEqual(result.unhealable, [
+      { file: missingFile, line: 8, reason: 'File not found' },
+    ]);
+    const updated = fs.readFileSync(path.join(atrisDir, 'MAP.md'), 'utf8');
+    assert.ok(updated.includes(`${srcFile}:3`));
+    assert.ok(updated.includes(`${missingFile}:8`));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
