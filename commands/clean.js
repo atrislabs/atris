@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const escapeRegExp = require('../lib/escape-regexp');
 
@@ -250,7 +251,7 @@ function findStaleTasks(atrisDir) {
  * Detects both out-of-bounds AND drift (symbol moved to different line)
  * Returns { healed: number, unhealable: array }
  */
-function healBrokenMapRefs(cwd, atrisDir, dryRun = false) {
+function healBrokenMapRefs(cwd, atrisDir, dryRun = false, homeDir = os.homedir()) {
   const mapFile = path.join(atrisDir, 'MAP.md');
   if (!fs.existsSync(mapFile)) return { healed: 0, unhealable: [] };
 
@@ -261,12 +262,12 @@ function healBrokenMapRefs(cwd, atrisDir, dryRun = false) {
   // Match both `file.js:123` and `file.js:123-456` with surrounding context
   // [^\S\n] = horizontal whitespace only (no newlines)
   // Required delimiter [(,[,—,-] prevents bleeding into adjacent refs on same line
-  const refPattern = /(`?)([a-zA-Z0-9_\-./\\]+\.(js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(?:-(\d+))?(`?)([^\S\n]*[\(\[—\-][^\S\n]*([^)\]\n]+))?/g;
+  const refPattern = /(`?)([a-zA-Z0-9_~\-./\\]+\.(js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(?:-(\d+))?(`?)([^\S\n]*[\(\[—\-][^\S\n]*([^)\]\n]+))?/g;
 
   // Function Inventory form: `symbolName()` → `file:line[-line]`
   // Pre-scan to build a (file:line) → symbol map so refs with the symbol BEFORE them still verify.
   const preRefSymbols = {};
-  const preRefPattern = /`([a-zA-Z_][a-zA-Z0-9_]*)\s*\(?\s*\)?`\s*(?:→|->)\s*`([a-zA-Z0-9_\-./\\]+\.(?:js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(?:-\d+)?`/g;
+  const preRefPattern = /`([a-zA-Z_][a-zA-Z0-9_]*)\s*\(?\s*\)?`\s*(?:→|->)\s*`([a-zA-Z0-9_~\-./\\]+\.(?:js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(?:-\d+)?`/g;
   let preMatch;
   while ((preMatch = preRefPattern.exec(mapContent)) !== null) {
     preRefSymbols[`${preMatch[2]}:${preMatch[3]}`] = preMatch[1];
@@ -276,7 +277,10 @@ function healBrokenMapRefs(cwd, atrisDir, dryRun = false) {
   const fileCache = {};
   function readFileCached(filePath) {
     if (!fileCache[filePath]) {
-      const fullPath = path.join(cwd, filePath);
+      const expandedPath = filePath.startsWith('~/') || filePath.startsWith('~\\')
+        ? path.join(homeDir, filePath.slice(2))
+        : filePath;
+      const fullPath = path.isAbsolute(expandedPath) ? expandedPath : path.join(cwd, expandedPath);
       if (!fs.existsSync(fullPath)) return null;
       try {
         const content = fs.readFileSync(fullPath, 'utf8');
