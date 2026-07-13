@@ -417,6 +417,10 @@ function extractSymbol(context) {
 
   if (!cleaned) return null;
 
+  // MAP.md uses all-caps editorial annotations such as (NEW) and (PATCH +177).
+  // These describe the ref rather than naming a symbol to verify.
+  if (/^[A-Z][A-Z0-9_]*(?:\s+\+\d+)?$/.test(cleaned)) return null;
+
   // Try to extract a function/class/variable name
   // Pattern: word that looks like an identifier
   const identifierMatch = cleaned.match(/\b([a-zA-Z_][a-zA-Z0-9_]*(?:Atris|Entry|Handler|Cmd|Function|Class)?)\b/i);
