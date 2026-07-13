@@ -8,7 +8,22 @@ const {
   buildAvailableHours,
   resolveTimezone,
   formatDecimalHour,
+  formatBookingLink,
 } = require('../commands/avail');
+
+describe('avail formatBookingLink', () => {
+  it('renders the /book link when a handle exists', () => {
+    assert.equal(
+      formatBookingLink('keshavrao', 'https://atris.ai/'),
+      '  link: https://atris.ai/book/keshavrao'
+    );
+  });
+  it('names the fix instead of dropping the link when no handle', () => {
+    const line = formatBookingLink('', 'https://atris.ai');
+    assert.match(line, /none yet/);
+    assert.match(line, /atris signup/);
+  });
+});
 
 describe('avail parseTimeToDecimal', () => {
   it('parses 12h and 24h times', () => {

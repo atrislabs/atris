@@ -170,6 +170,18 @@ function summarizeHours(availableHours) {
   return lines.join('\n');
 }
 
+// The booking link is the funnel: an operator shares /book/{username} so a
+// stranger can pick a slot. With no claimed handle there is no link — say so and
+// name the fix instead of silently dropping the line.
+function formatBookingLink(username, appBase) {
+  const handle = String(username || '').trim();
+  const base = String(appBase || '').replace(/\/+$/, '');
+  if (!handle) {
+    return '  link: none yet — claim a handle with `atris signup` to get your /book link';
+  }
+  return `  link: ${base}/book/${handle}`;
+}
+
 async function showAvail({ json = false } = {}) {
   const token = await getToken();
   const result = await apiRequestJson('/profile/booking-settings', { method: 'GET', token });
@@ -188,7 +200,7 @@ async function showAvail({ json = false } = {}) {
   console.log('📅 Booking availability\n');
   console.log(`  timezone: ${data.timezone}`);
   console.log(`  slot: ${data.slot_duration_minutes} min · window: ${data.booking_window_days} days`);
-  if (username) console.log(`  link: ${appBase}/book/${username}`);
+  console.log(formatBookingLink(username, appBase));
   console.log('\n  weekly windows (stored timezone):');
   console.log(summarizeHours(data.available_hours || {}));
   console.log('\n  Google Calendar busy times are subtracted automatically.');
@@ -386,6 +398,7 @@ async function availCommand(argv = []) {
 
 module.exports = {
   availCommand,
+  formatBookingLink,
   parseTimeToDecimal,
   parseDaysArg,
   buildAvailableHours,

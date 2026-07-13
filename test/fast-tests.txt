@@ -126,3 +126,4 @@ test/worktree-ship-help.test.js
 test/write.test.js
 test/youtube.test.js
 test/codex-flight-brief.test.js
+test/avail.test.js
