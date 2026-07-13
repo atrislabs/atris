@@ -221,3 +221,38 @@ test('healer uses absolute refs as-is and preserves missing refs', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('healer ignores descriptive annotations that are not code symbols', () => {
+  const { dir, atrisDir } = makeTempAtris();
+  try {
+    const source = [
+      '// header',
+      'function realTarget() {',
+      '  return true;',
+      '}',
+      '',
+    ].join('\n');
+    const srcFile = path.join(dir, 'api.js');
+    fs.writeFileSync(srcFile, source);
+
+    const mapContent = [
+      '# MAP',
+      // in-bounds ref, annotation is prose ("PATCH /api/...") not a symbol
+      '`api.js:2` (PATCH endpoint handler)',
+      // out-of-bounds ref with an unfindable symbol stays unhealable
+      '`api.js:99` (GHOST function)',
+      '',
+    ].join('\n');
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'), mapContent);
+
+    const result = healBrokenMapRefs(dir, atrisDir, false);
+
+    assert.deepEqual(result.unhealable, [
+      { file: 'api.js', line: 99, reason: 'Symbol "GHOST" not found' },
+    ]);
+    const updated = fs.readFileSync(path.join(atrisDir, 'MAP.md'), 'utf8');
+    assert.ok(updated.includes('api.js:2'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

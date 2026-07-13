@@ -324,7 +324,15 @@ function healBrokenMapRefs(cwd, atrisDir, dryRun = false, homeDir = os.homedir()
     // Find where the symbol actually is now
     const newStart = findSymbolLine(file.content, symbol);
     if (!newStart) {
-      unhealable.push({ file: filePath, line: startLine, reason: `Symbol "${symbol}" not found` });
+      // A "symbol" that appears nowhere in the file is often descriptive
+      // prose from the annotation ("PATCH /api/...", "mission drain"), not
+      // a code identifier. Suppress those for in-bounds refs to existing
+      // files; still flag out-of-bounds refs and vanished identifiers
+      // (camelCase/snake_case words were plausibly real symbols).
+      const identifierLike = /[a-z][^\s]*[A-Z]|_/.test(symbol);
+      if (outOfBounds || identifierLike) {
+        unhealable.push({ file: filePath, line: startLine, reason: `Symbol "${symbol}" not found` });
+      }
       continue;
     }
 
