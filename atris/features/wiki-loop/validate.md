@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-06-30
+last_compiled: 2026-07-12
 sources:
   - commands/loop.js:1-114 (report builder, dry-run/json/limit, STATUS/log writes)
   - commands/wiki.js:549-557 (wiki loop alias)
@@ -14,7 +14,7 @@ sources:
 # Wiki Upkeep Loop — Validation
 
 > **Status:** shipped local upkeep command with clean public-wiki baseline
-> **Validated:** 2026-06-30
+> **Validated:** 2026-07-12
 > **Exit condition:** `atris loop` reports local wiki health deterministically, writes STATUS/log unless `--dry-run`, `atris wiki loop` aliases it, and test coverage proves stale/orphan/suggestion behavior.
 
 ## Checks
@@ -48,7 +48,7 @@ node bin/atris.js loop wiki --json
 
 ## Current Repo Report
 
-_Point-in-time snapshot from `node bin/atris.js loop wiki --json` on 2026-06-30 — recompiling or ingesting wiki pages changes these counts, so a mismatch here is drift, not a bug._
+_Point-in-time snapshot from `node bin/atris.js loop wiki --json` on 2026-06-30 - recompiling or ingesting wiki pages changes these counts, so a mismatch here is drift, not a bug._
 
 - Reports 22 pages, 0 stale pages, 0 orphan pages, and 0 next-ingest candidates.
 - Health is `wiki is in good shape`.

@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-06-30
+last_compiled: 2026-07-12
 sources:
   - lib/wiki.js:15-25 (public/private wiki root getters)
   - lib/wiki.js:192-217 (wiki and context scaffold)
@@ -24,7 +24,7 @@ sources:
 # Wiki — Validation
 
 > **Status:** v3 — local-first wiki plus clean upkeep baseline
-> **Validated:** 2026-06-30
+> **Validated:** 2026-07-12
 > **Exit condition:** local/public and private wiki flows work, canonical root is `atris/wiki/`, init scaffolds it, activate surfaces it, agent/spec docs reference it, stale/orphan upkeep is executable, and this repo dogfoods it.
 
 ## Checks
