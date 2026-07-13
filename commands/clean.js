@@ -408,32 +408,30 @@ function findFunctionEnd(lines, startLine) {
 function extractSymbol(context) {
   if (!context) return null;
 
-  // Clean up the context
-  const cleaned = context.trim()
-    .replace(/`/g, '')                // Strip backticks
-    .replace(/^[\(\[—\-:]+\s*/, '')  // Remove leading punctuation
-    .replace(/[\)\]]+$/, '')          // Remove trailing brackets
+  const original = context;
+
+  // Clean up the context without stripping parentheses from a symbol ending in ().
+  const unquoted = context.trim().replace(/`/g, '');
+  const wrapper = unquoted.match(/^([\(\[])/)?.[1];
+  let cleaned = unquoted
+    .replace(/^[\(\[—\-:]+\s*/, '')
     .trim();
+  if (wrapper === '(') cleaned = cleaned.replace(/\)$/, '').trim();
+  if (wrapper === '[') cleaned = cleaned.replace(/\]$/, '').trim();
 
   if (!cleaned) return null;
 
-  // MAP.md uses all-caps editorial annotations such as (NEW) and (PATCH +177).
-  // These describe the ref rather than naming a symbol to verify.
-  if (/^[A-Z][A-Z0-9_]*(?:\s+\+\d+)?$/.test(cleaned)) return null;
+  const tokenMatch = cleaned.match(/^([a-zA-Z_][a-zA-Z0-9_]*)(\(\))?/);
+  if (!tokenMatch) return null;
 
-  // Try to extract a function/class/variable name
-  // Pattern: word that looks like an identifier
-  const identifierMatch = cleaned.match(/\b([a-zA-Z_][a-zA-Z0-9_]*(?:Atris|Entry|Handler|Cmd|Function|Class)?)\b/i);
+  const symbol = tokenMatch[1];
+  const token = tokenMatch[0];
+  const codeShaped = symbol.includes('_') || /[a-z][A-Z]/.test(symbol) || token.endsWith('()');
+  if (codeShaped) return symbol;
 
-  if (identifierMatch) {
-    return identifierMatch[1];
-  }
-
-  // Fallback: first word
-  const firstWord = cleaned.split(/\s+/)[0];
-  if (firstWord && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(firstWord)) {
-    return firstWord;
-  }
+  const isSingleWord = cleaned === symbol;
+  const isBackticked = original.includes(`\`${symbol}\``);
+  if (isSingleWord && isBackticked) return symbol;
 
   return null;
 }
