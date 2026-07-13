@@ -264,6 +264,8 @@ async function runCloudWish(text, root, options, deps = {}) {
     captureWishToJournal(text, root);
     appendWishRecord(root, record);
     const log = deps.log || console.log;
+    const subject = String(text || '').trim().replace(/[.!?]+/g, '').replace(/\s+/g, ' ').toLowerCase();
+    log(`i sent ${JSON.stringify(subject)} to cloud work, and we know it is queued because the cloud accepted it.`);
     log(`task_id: ${record.task_id}`);
     log(`watch: atris mission status --cloud ${record.task_id} --watch`);
     return 0;

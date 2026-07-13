@@ -71,6 +71,7 @@ test('wish cloud enqueues the text and records the cloud receipt', async () => {
       }],
     );
     assert.deepEqual(stdout, [
+      'i sent "make cloud wishes real" to cloud work, and we know it is queued because the cloud accepted it.',
       'task_id: task-cloud-wish-1',
       'watch: atris mission status --cloud task-cloud-wish-1 --watch',
     ]);
