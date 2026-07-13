@@ -179,7 +179,7 @@ function buildXp(root, cutoff) {
       };
     })
     .filter(row => row.amount > 0)
-    .filter(row => !row.receipt?.outcome || row.receipt.outcome === 'accepted')
+    .filter(row => row.receipt?.outcome === 'accepted')
     .filter(row => Number(row.timestamp_ms) >= cutoff)
     .sort((a, b) => Number(b.timestamp_ms || 0) - Number(a.timestamp_ms || 0))
     .map((row) => ({

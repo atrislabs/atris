@@ -890,30 +890,33 @@ function readTaskEpisodeTail(episodePath, cursorPath, options = {}) {
 }
 
 function receiptFromTaskEpisode(episode) {
+  const episodeId = episode?.episode_id;
+  const label = episode?.rl?.label;
+  const rejected = label === 'rework_requested' || label === 'rejected';
   const doneForXp = String(episode?.state?.status || '').toLowerCase() === 'done';
   const hasExplicitCareerXp = episode?.career_xp && typeof episode.career_xp === 'object';
   const eligible = doneForXp && (
     episode?.career_xp?.eligible === true
-      || (!hasExplicitCareerXp && episode?.rl?.label === 'accepted')
+      || (!hasExplicitCareerXp && label === 'accepted')
   );
   const proof = String(episode?.proof || '').trim();
   const reward = asNumber(episode?.career_xp?.reward ?? episode?.reward?.value, 0);
-  if (!eligible || !proof || reward <= 0 || !episode?.episode_id) return null;
+  if (!episodeId || (!rejected && (!eligible || !proof || reward <= 0))) return null;
 
   return {
     schema: 'atris.career_xp_receipt.v1',
-    receipt_id: `task_review:${episode.episode_id}`,
+    receipt_id: `task_review:${episodeId}${rejected ? ':rejected' : ''}`,
     source: 'atris-cli',
     source_type: 'task_review',
     source_task_id: episode.task_id || null,
-    source_episode_id: episode.episode_id,
+    source_episode_id: episodeId,
     workspace_root: episode.workspace_root || null,
     actor: episode.action?.actor || null,
-    outcome: 'accepted',
-    xp: reward,
-    reward,
-    proof,
-    proof_ref: proof,
+    outcome: rejected ? 'rejected' : 'accepted',
+    xp: rejected ? 0 : reward,
+    reward: rejected ? 0 : reward,
+    proof: proof || null,
+    proof_ref: proof || null,
     source_episode_hash: hashPayload(episode),
     title: episode.state?.title || null,
     goal: episode.goal || null,

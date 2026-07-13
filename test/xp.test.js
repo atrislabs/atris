@@ -1282,6 +1282,57 @@ test('xp status cursor stays byte-aligned after newline-terminated JSONL append'
   }
 });
 
+test('xp status records rejected reviews without adding XP', () => {
+  const workspace = makeTempDir();
+  try {
+    const rejected = taskEpisode(workspace, {
+      episode_id: 'review-outcome',
+      task_id: 'task-review-outcome',
+      title: 'Capture review outcomes',
+      xp: 2,
+      proof: 'accepted proof still earns XP',
+    });
+    rejected.state.status = 'claimed';
+    rejected.reward.value = 0;
+    rejected.proof = null;
+    rejected.career_xp = { eligible: false, reward: 0 };
+    rejected.rl = { label: 'rework_requested', reward: 0 };
+
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      rejected,
+      taskEpisode(workspace, {
+        episode_id: 'review-outcome',
+        task_id: 'task-review-outcome',
+        title: 'Capture review outcomes',
+        xp: 2,
+        proof: 'accepted proof still earns XP',
+      }),
+    ]);
+
+    const result = runCli(['xp', 'status', '--local', '--json'], { cwd: workspace });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.collected_receipts, 2);
+    assert.equal(payload.receipts_count, 1);
+    assert.equal(payload.total_xp, 2);
+    assert.equal(payload.contribution_graph.total_xp, 2);
+
+    const receiptsPath = path.join(workspace, '.atris', 'state', 'career_xp_receipts.jsonl');
+    const receipts = fs.readFileSync(receiptsPath, 'utf8').trim().split(/\r?\n/).map(line => JSON.parse(line));
+    const rejectedReceipt = receipts.find(receipt => receipt.outcome === 'rejected');
+    assert.equal(rejectedReceipt.receipt_id, 'task_review:review-outcome:rejected');
+    assert.equal(rejectedReceipt.xp, 0);
+    assert.equal(rejectedReceipt.reward, 0);
+    assert.equal(rejectedReceipt.proof, null);
+
+    const acceptedReceipt = receipts.find(receipt => receipt.outcome === 'accepted');
+    assert.equal(acceptedReceipt.receipt_id, 'task_review:review-outcome');
+    assert.equal(acceptedReceipt.xp, 2);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
 test('xp status replays accepted episodes when the receipt ledger is missing', () => {
   const workspace = makeTempDir();
   try {

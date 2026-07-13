@@ -144,6 +144,13 @@ test('buildWeekReportData sums only fresh Career XP receipts', () => {
         title: 'Old accepted task',
         accepted_at: new Date(NOW - 12 * DAY_MS).toISOString(),
       },
+      {
+        receipt_id: 'task_review:rejected:rejected',
+        outcome: 'rejected',
+        xp: 100,
+        title: 'Rejected report task',
+        accepted_at: new Date(NOW - DAY_MS).toISOString(),
+      },
     ]);
     const data = buildWeekReportData(dir, { days: 7, now: NOW });
     assert.equal(data.empty, false);
