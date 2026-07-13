@@ -107,6 +107,30 @@ test('mission run with the full id copied from list --json resolves and runs it,
   }
 });
 
+test('mission run exact id bypasses Mission Room and keeps recognized flags out of the objective', () => {
+  const { base, repo } = makeRepo();
+  try {
+    const mission = startMission(repo, 'run this exact mission unchanged', 'alice');
+    const run = runCli([
+      'mission', 'run', mission.id,
+      '--max-wall', '60', '--max-ticks', '1',
+      '--self-drive', '--headless', '--no-claude', '--json',
+    ], repo);
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+
+    assert.equal(payload.action, 'mission_run');
+    assert.equal(payload.mission.id, mission.id);
+    assert.equal(payload.mission.objective, mission.objective);
+    assert.equal(payload.mission.mission_run_preflight, undefined);
+
+    const after = listMissions(repo);
+    assert.deepEqual(after.map((row) => row.id), [mission.id]);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('an unmatched hex-looking ref errors instead of silently starting a new mission', () => {
   const { base, repo } = makeRepo();
   try {
