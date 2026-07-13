@@ -17603,7 +17603,7 @@ test('clean dry-run shows MAP refs it would heal', () => {
     fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), [
       '# MAP.md',
       '',
-      '- `src/app.js:20` (main function)',
+      '- `src/app.js:20` (`main`)',
       '',
     ].join('\n'), 'utf8');
 
