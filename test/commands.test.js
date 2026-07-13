@@ -4166,7 +4166,7 @@ test('allowed rate-limit info with a future resetsAt does not pause a timed run'
     assert.equal(start.status, 0, start.stderr || start.stdout);
     const mission = JSON.parse(start.stdout).mission;
 
-    const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--max-idle-ticks', '0', '--json'], { cwd: dir, env });
+    const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--max-idle-ticks', '0', '--no-verify', '--json'], { cwd: dir, env });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
     // The budgeted run should spend its 4-tick budget; a rate-limit pause after
@@ -4403,8 +4403,8 @@ test('healthy claude sessions rotate for context refresh after N ran ticks', () 
       ATRIS_CLAUDE_SESSION_ROTATE_TICKS: '2',
     };
 
-    // No verifier: ticks keep running to max-ticks, so the third tick can
-    // mint the fresh session the rotation cleared the way for.
+    // Explicitly skip the fallback verifier so ticks keep running to max-ticks
+    // and the third tick can mint the fresh session the rotation cleared for.
     const start = runCli([
       'mission', 'start', '--no-verify', 'healthy sessions rotate for context refresh',
       '--owner', 'mission-lead',
@@ -4415,7 +4415,7 @@ test('healthy claude sessions rotate for context refresh after N ran ticks', () 
     assert.equal(start.status, 0, start.stderr || start.stdout);
     const mission = JSON.parse(start.stdout).mission;
 
-    const run = runCli(['mission', 'run', mission.id, '--max-ticks', '3', '--max-wall', '120', '--json'], { cwd: dir, env });
+    const run = runCli(['mission', 'run', mission.id, '--max-ticks', '3', '--max-wall', '120', '--no-verify', '--json'], { cwd: dir, env });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.ran_ticks, 3, run.stdout);

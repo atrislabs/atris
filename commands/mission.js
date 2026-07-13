@@ -7767,14 +7767,16 @@ async function runMission(args) {
       let verifierResult = null;
       let receiptPath = null;
       if (result.status === 'ran' && verifyEach) {
-        verifierResult = frozen.verifier
-          ? runVerifier(frozen.verifier)
-          : await runEngineVerifier(tickRuntimeMission, {
+        if (frozen.verifier) {
+          verifierResult = runVerifier(frozen.verifier);
+        } else if (!tickSkipWorker) {
+          verifierResult = await runEngineVerifier(tickRuntimeMission, {
             cwd,
             signal: controller.signal,
             tickIndex: tickIdx,
           });
-        result.verifier_passed = verifierResult.passed;
+        }
+        if (verifierResult) result.verifier_passed = verifierResult.passed;
       }
       stampMissionRunnerBrief(cwd, result.claude?.brief_id, result, verifierResult);
 
