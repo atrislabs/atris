@@ -6639,7 +6639,7 @@ function tickMadeProgress(tick) {
   if (wt && wt.available) {
     if ((wt.new_dirty_count || 0) > 0) return true;
     if ((wt.cleared_dirty_count || 0) > 0) return true;
-  } else if (!wt) {
+  } else {
     // No worktree signal available (e.g. git unavailable) — don't punish a
     // tick we have no evidence against.
     return true;
@@ -7764,20 +7764,23 @@ async function runMission(args) {
         if (engineHealth) result.engine_health = engineHealth.health;
       }
 
-      // --no-claude is the deterministic no-model path used by local loop
-      // tests and operators who explicitly want no engine traffic. Keep
-      // command verifiers active there, but do not replace a missing command
-      // verifier with a Codex network call.
+      // An explicit verifier is safe and useful in no-worker mode. The
+      // fallback engine verifier is itself worker activity, so --no-claude
+      // and caller-session ticks must not launch it behind the operator's
+      // back. Leaving verifier_passed unset also lets the idle-stop breaker
+      // judge these ticks from the worktree signal instead of hanging here.
       let verifierResult = null;
       let receiptPath = null;
       if (result.status === 'ran' && verifyEach) {
-        verifierResult = frozen.verifier
-          ? runVerifier(frozen.verifier)
-          : skipClaude ? null : await runEngineVerifier(tickRuntimeMission, {
+        if (frozen.verifier) {
+          verifierResult = runVerifier(frozen.verifier);
+        } else if (!tickSkipWorker) {
+          verifierResult = await runEngineVerifier(tickRuntimeMission, {
             cwd,
             signal: controller.signal,
             tickIndex: tickIdx,
           });
+        }
         if (verifierResult) result.verifier_passed = verifierResult.passed;
       }
       stampMissionRunnerBrief(cwd, result.claude?.brief_id, result, verifierResult);
