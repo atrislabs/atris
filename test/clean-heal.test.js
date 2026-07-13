@@ -146,6 +146,67 @@ test('healer still reports a genuine symbol mismatch as unhealable', () => {
   }
 });
 
+test('healer treats prose after an in-bounds ref as a description', () => {
+  const { dir, atrisDir } = makeTempAtris();
+  try {
+    const source = [
+      '// header',
+      'const fleetState = {};',
+      '',
+    ].join('\n');
+    const srcFile = path.join(dir, 'commands', 'fleet.js');
+    fs.mkdirSync(path.dirname(srcFile), { recursive: true });
+    fs.writeFileSync(srcFile, source);
+
+    const mapContent = [
+      '# MAP',
+      '`commands/fleet.js:2` - Single source of truth for fleet state',
+      '',
+    ].join('\n');
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'), mapContent);
+
+    const result = healBrokenMapRefs(dir, atrisDir, false);
+
+    assert.equal(result.healed, 0);
+    assert.deepEqual(result.unhealable, []);
+    assert.equal(fs.readFileSync(path.join(atrisDir, 'MAP.md'), 'utf8'), mapContent);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('healer still treats camelCase context as a symbol', () => {
+  const { dir, atrisDir } = makeTempAtris();
+  try {
+    const source = [
+      '// header',
+      'function actualTarget() {',
+      '  return true;',
+      '}',
+      '',
+    ].join('\n');
+    const srcFile = path.join(dir, 'commands', 'mission.js');
+    fs.mkdirSync(path.dirname(srcFile), { recursive: true });
+    fs.writeFileSync(srcFile, source);
+
+    const mapContent = [
+      '# MAP',
+      '`commands/mission.js:2` - resolveMission helper',
+      '',
+    ].join('\n');
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'), mapContent);
+
+    const result = healBrokenMapRefs(dir, atrisDir, false);
+
+    assert.equal(result.healed, 0);
+    assert.deepEqual(result.unhealable, [
+      { file: 'commands/mission.js', line: 2, reason: 'Symbol "resolveMission" not found' },
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('healer resolves tilde refs from an injected home and preserves missing refs', () => {
   const { dir, atrisDir } = makeTempAtris();
   const fakeHome = path.join(dir, 'home');
