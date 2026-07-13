@@ -1593,7 +1593,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris/skills/drive/SKILL.md` — Google Drive + Sheets integration v1.0.0 (files, sheets CRUD)
 - `atris/skills/README.md` — Skills pattern + Claude symlink instructions
 - `atris/skills/copy-editor/SKILL.md` — Repo-owned anti-slop copy editor skill, including memo-specific slop gate
-- `commands/skill.js:591-640` — `atris skill create <customer>/<skill>` scaffolds customer skills under `atris/customers/<customer>/skills/`
+- `commands/skill.js` and `test/skill-audit-codeblocks.test.js` - Skill audit checks and code-block XML regression coverage
+- `commands/skill.js:668-719` - `atris skill create <customer>/<skill>` scaffolds customer skills under `atris/customers/<customer>/skills/`
 - `commands/plugin.js:176` — `buildPlugin` packages universal `atris/skills` into `atris-workspace.plugin`
 - `commands/plugin.js:336` — `publishPlugin` syncs universal skills to a marketplace repo; no customer-specific publish path yet
 - `atris/features/customer-skill-zones/` — parked feature notes for customer skill scaffold vs private plugin publishing

@@ -44,12 +44,36 @@ test('placeholders inside fenced code blocks do not count as XML', () => {
   assert.equal(check.pass, true, check.message);
 });
 
+test('placeholders inside longer fenced code examples do not count as XML', () => {
+  const check = xmlCheck(makeSkill([
+    '# Fixture',
+    '',
+    '1. Show the nested example below.',
+    '',
+    '````markdown',
+    '```bash',
+    'cd <worktree-path>',
+    '```',
+    '````',
+  ].join('\n')));
+  assert.equal(check.pass, true, check.message);
+});
+
 test('placeholders inside inline code spans do not count as XML', () => {
   const check = xmlCheck(makeSkill([
     '# Fixture',
     '',
     '1. Save the draft to `/workspace/atris/aeo/drafts/<slug>.md` first.',
     '2. Then audit `<slug>-<date>.md` for citations.',
+  ].join('\n')));
+  assert.equal(check.pass, true, check.message);
+});
+
+test('placeholders inside longer inline code spans do not count as XML', () => {
+  const check = xmlCheck(makeSkill([
+    '# Fixture',
+    '',
+    '1. Run ``cd <worktree-path>`` before shipping.',
   ].join('\n')));
   assert.equal(check.pass, true, check.message);
 });

@@ -123,6 +123,52 @@ function findReadableSkills() {
 
 // --- Audit Checks ---
 
+function stripMarkdownCode(content) {
+  let fenceLength = 0;
+
+  return content.split('\n').map((line) => {
+    if (fenceLength > 0) {
+      const closingFence = line.match(/^ {0,3}(`+)[ \t]*$/);
+      if (closingFence && closingFence[1].length >= fenceLength) fenceLength = 0;
+      return '';
+    }
+
+    const openingFence = line.match(/^ {0,3}(`{3,})([^`]*)$/);
+    if (openingFence) {
+      fenceLength = openingFence[1].length;
+      return '';
+    }
+
+    let prose = '';
+    for (let index = 0; index < line.length;) {
+      if (line[index] !== '`') {
+        prose += line[index++];
+        continue;
+      }
+
+      const start = index;
+      while (line[index] === '`') index++;
+      const delimiterLength = index - start;
+      let closingStart = index;
+
+      while (closingStart < line.length) {
+        closingStart = line.indexOf('`', closingStart);
+        if (closingStart === -1) break;
+        let closingEnd = closingStart;
+        while (line[closingEnd] === '`') closingEnd++;
+        if (closingEnd - closingStart === delimiterLength) {
+          index = closingEnd;
+          break;
+        }
+        closingStart = closingEnd;
+      }
+
+      if (closingStart === -1) prose += line.slice(start, index);
+    }
+    return prose;
+  }).join('\n');
+}
+
 function runAuditChecks(skill) {
   const fm = skill.frontmatter || {};
   const checks = [];
@@ -183,9 +229,7 @@ function runAuditChecks(skill) {
   });
 
   // 7. no XML tags in content (skip placeholders like <name>, <keyword>, code blocks)
-  const proseContent = skill.content
-    .replace(/```[\s\S]*?```/g, '')   // fenced code blocks
-    .replace(/`[^`\n]*`/g, '');        // inline code spans
+  const proseContent = stripMarkdownCode(skill.content);
   const xmlMatches = proseContent.match(/<[a-zA-Z][^>]*>/g) || [];
   // Single-letter tags like <X>/<N> are prose placeholders, not real XML.
   const placeholders = /^<(name|keyword|placeholder|value|type|path|file|dir|id|url|tag|description|your-|user-|project-|skill-|[a-zA-Z]>)/i;
