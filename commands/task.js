@@ -164,6 +164,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task auto-accept-certified --dry-run [--strict-verify] [--all] [--limit <n>]
                                            Preview certified Review rows; live accept needs --confirm-human-accept --as <human>
   atris task sweep --auto-accept [--json]   Auto-accept verified Review rows; protected lanes wait for human
+  atris task audit [--limit <n>] [--revise] re-run stored verifies for newest accepted tasks; report-only unless --revise
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
   atris task add "<title>" [--tag <tag>] [--goal-id <id>]  Create a task
@@ -10078,6 +10079,138 @@ function cmdRevise(args) {
   console.log(`revise ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
 }
 
+function taskAuditTimestamp(task) {
+  const acceptedAt = Date.parse(String(task?.metadata?.accepted_at || ''));
+  if (Number.isFinite(acceptedAt)) return acceptedAt;
+  return Number(task?.done_at || task?.updated_at || task?.created_at || 0);
+}
+
+function taskAuditOutput(value, max = 800) {
+  const text = String(value || '').trim();
+  if (text.length <= max) return text;
+  return `...${text.slice(-max)}`;
+}
+
+function taskAuditReceiptPath(at) {
+  const safeTime = at.replace(/[:.]/g, '-');
+  return path.join('atris', 'runs', `task-audit-${safeTime}.json`);
+}
+
+function runTaskAuditVerify(task, verify) {
+  const { spawnSync } = require('child_process');
+  const result = spawnSync('bash', ['-c', verify], {
+    cwd: task.workspace_root,
+    encoding: 'utf8',
+    timeout: 120000,
+  });
+  const passed = !result.error && result.status === 0;
+  return {
+    passed,
+    exit: result.status,
+    signal: result.signal || null,
+    error: result.error ? result.error.message : null,
+    output: taskAuditOutput(`${result.stdout || ''}${result.stderr || ''}`),
+  };
+}
+
+function cmdAudit(args) {
+  const limitRaw = flag(args, '--limit');
+  const limit = limitRaw === null ? 20 : Number(limitRaw);
+  if (!Number.isInteger(limit) || limit < 1) {
+    console.error('atris task audit: --limit must be a positive integer');
+    process.exit(2);
+  }
+
+  const revise = hasFlag(args, '--revise');
+  const actor = String(flag(args, '--as') || 'task-audit');
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const workspaceRoot = taskDb.workspaceRoot();
+  const allRows = taskDb.listTasks(db, { workspaceRoot });
+  const accepted = taskDb.withTaskDisplayRefs(
+    allRows
+      .filter(task => task.status === 'done' && task.metadata?.approval_status === 'accepted')
+      .sort((a, b) => taskAuditTimestamp(b) - taskAuditTimestamp(a))
+      .slice(0, limit),
+    allRows,
+  );
+  const at = new Date().toISOString();
+  const receiptPath = taskAuditReceiptPath(at);
+  const results = accepted.map(task => {
+    const verify = typeof task.metadata?.verify === 'string' ? task.metadata.verify : '';
+    if (!verify.trim()) {
+      return {
+        task_id: task.id,
+        ref: task.display_id || task.legacy_ref || taskRef(task),
+        status: 'skipped-no-verify',
+        verify: null,
+      };
+    }
+    const run = runTaskAuditVerify(task, verify);
+    return {
+      task_id: task.id,
+      ref: task.display_id || task.legacy_ref || taskRef(task),
+      status: run.passed ? 'passed' : 'failed',
+      verify,
+      exit: run.exit,
+      signal: run.signal,
+      error: run.error,
+      output: run.output,
+    };
+  });
+
+  const failing = results.filter(row => row.status === 'failed');
+  if (revise) {
+    const note = `task audit re-ran the stored verify and it failed; see ${receiptPath}`;
+    for (const row of failing) {
+      const revised = taskDb.reviseTask(db, {
+        id: row.task_id,
+        actor,
+        note,
+        allowDone: true,
+      });
+      row.revised = revised.revised === true;
+      row.revise_reason = revised.revised ? null : revised.reason;
+    }
+    if (failing.some(row => row.revised)) writeDefaultProjection(taskDb, db);
+  }
+
+  const summary = {
+    sampled: results.length,
+    passed: results.filter(row => row.status === 'passed').length,
+    failed: failing.length,
+    'skipped-no-verify': results.filter(row => row.status === 'skipped-no-verify').length,
+    revised: results.filter(row => row.revised === true).length,
+  };
+  const receipt = {
+    schema: 'atris.task_audit_receipt.v1',
+    at,
+    workspace_root: workspaceRoot,
+    limit,
+    revise,
+    summary,
+    failing_task_ids: failing.map(row => row.task_id),
+    results,
+  };
+  const receiptFile = path.join(workspaceRoot, receiptPath);
+  fs.mkdirSync(path.dirname(receiptFile), { recursive: true });
+  fs.writeFileSync(receiptFile, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'task_audit',
+      receipt_path: receiptPath,
+      ...receipt,
+    });
+    return;
+  }
+  console.log(`task audit: sampled ${summary.sampled}, passed ${summary.passed}, failed ${summary.failed}, skipped-no-verify ${summary['skipped-no-verify']}`);
+  console.log(`failing task ids: ${failing.length ? failing.map(row => row.ref).join(', ') : 'none'}`);
+  if (revise) console.log(`revised: ${summary.revised}`);
+  console.log(`receipt: ${receiptPath}`);
+}
+
 function cmdReview(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -11836,6 +11969,7 @@ async function run(args) {
       return cmdAutoAcceptCertified(rest);
     case 'sweep':
       return cmdSweep(rest);
+    case 'audit': return cmdAudit(rest);
     case 'certify-verified':
       return cmdCertifyVerified(rest);
     case 'accept-group':
