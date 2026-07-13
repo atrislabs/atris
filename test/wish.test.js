@@ -119,6 +119,20 @@ function assertNoInventedVerbEd(output, verb, operatorText) {
   assert.doesNotMatch(output, new RegExp(`\\b${invented}\\b`, 'i'));
 }
 
+function firstOutputLine(output) {
+  return String(output || '').trim().split(/\r?\n/, 1)[0];
+}
+
+function assertOperatorReceipt(output) {
+  const firstLine = firstOutputLine(output);
+  assert.match(firstLine, /^[a-z]/);
+  assert.match(firstLine, /\.$/);
+  assert.equal((firstLine.match(/[.!?](?=\s|$)/g) || []).length, 1);
+  assert.doesNotMatch(firstLine, /[0-9A-HJKMNP-TV-Z]{26}/);
+  assert.doesNotMatch(firstLine, /mission-20/);
+  assert.doesNotMatch(firstLine, /\batris\b/);
+}
+
 test('wish capture writes the journal inbox and wishes jsonl', () => {
   const dir = makeTempDir();
   const emptyBin = path.join(dir, 'empty-bin');
@@ -199,14 +213,14 @@ test('delegated wish restates verbatim without invented verb forms or double hed
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /^Got it, wish #1: make boot screen\. I'm on it\./);
+    assert.match(res.stdout, /^i started work on "make the boot screen friendlier", and we will know it worked after you judge the result i show you\./);
+    assertOperatorReceipt(res.stdout);
     assertNoInventedVerbEd(res.stdout, 'make', wish);
     assert.doesNotMatch(res.stdout, /roughly about/);
     assert.doesNotMatch(res.stdout, /budget/);
     assert.doesNotMatch(res.stdout, /delegated/);
     assert.doesNotMatch(res.stdout, /workspace check passes/);
     assert.doesNotMatch(res.stdout, /git diff whitespace check/);
-    assert.match(res.stdout, /I will show you the result to judge\./);
     assert.doesNotMatch(res.stderr || '', /Warning:/);
   } finally {
     cleanupTempDir(dir);
@@ -278,7 +292,9 @@ test('firing the same wish twice attaches the second dispatch to one active flig
     assert.equal(second.status, 0, second.stderr || second.stdout);
     const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
     assert.equal(missions.filter((mission) => ['planning', 'ready', 'running'].includes(mission.status)).length, 1);
-    assert.match(second.stdout, new RegExp(`attached to existing flight ${missions[0].id}`));
+    assert.match(second.stdout, /^i attached "make the boot screen friendlier" to work already in flight, and we will know it worked after you judge the result i show you\./);
+    assertOperatorReceipt(second.stdout);
+    assert.doesNotMatch(firstOutputLine(second.stdout), new RegExp(missions[0].id));
 
     const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     assert.equal(wishes.at(-1).mission_id, missions[0].id);
@@ -312,7 +328,9 @@ test('wish attaches to an active normalized objective and owner twin', () => {
 
     const wish = runCli(['wish', 'make the boot screen friendlier'], { cwd: dir, env });
     assert.equal(wish.status, 0, wish.stderr || wish.stdout);
-    assert.match(wish.stdout, new RegExp(`attached to existing flight ${existing.id}`));
+    assert.match(wish.stdout, /^i attached "make the boot screen friendlier" to work already in flight, and we will know it worked after you judge the result i show you\./);
+    assertOperatorReceipt(wish.stdout);
+    assert.doesNotMatch(firstOutputLine(wish.stdout), new RegExp(existing.id));
 
     const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
     assert.equal(missions.filter((mission) => ['planning', 'ready', 'running'].includes(mission.status)).length, 1);
@@ -596,7 +614,8 @@ test('wish derives proof text from test nouns', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /You will know it came true when the tests pass\./);
+    assert.match(res.stdout, /^i started work on "improve tests with more real results", and we will know it worked when the tests pass\./);
+    assertOperatorReceipt(res.stdout);
     assert.doesNotMatch(res.stdout, /git diff whitespace check/);
 
     const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
@@ -669,7 +688,8 @@ test('wish grant names the wish verbatim before dispatching', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(granted.status, 0, granted.stderr || granted.stdout);
-    assert.match(granted.stdout, /^Got it, wish #1: make onboarding better\. I'm on it\./);
+    assert.match(granted.stdout, /^i started work on "make onboarding better", and we will know it worked after you judge the result i show you\./);
+    assertOperatorReceipt(granted.stdout);
     assertNoInventedVerbEd(granted.stdout, 'make', wish);
     assert.doesNotMatch(granted.stdout, /roughly about/);
   } finally {
@@ -1454,7 +1474,8 @@ test('wish answer targets the waiting question, not the wish list number', () =>
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(answered.status, 0, answered.stderr || answered.stdout);
-    assert.match(answered.stdout, /^Got it, wish #2: make onboarding better\. I'm on it\./);
+    assert.match(answered.stdout, /^i started work on "make onboarding better", and we will know it worked after you judge the result i show you\./);
+    assertOperatorReceipt(answered.stdout);
 
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     const dispatched = records.filter((record) => record.status === 'delegated' && record.dispatched_at && record.id !== 'wish-busy');
@@ -1507,7 +1528,8 @@ test('wish answer routes a decomposed waiting part instead of an older waiting w
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(answered.status, 0, answered.stderr || answered.stdout);
-    assert.match(answered.stdout, /Got it, wish #3: make onboarding checklist/);
+    assert.match(answered.stdout, /^i started work on "make onboarding checklist clearer", and we will know it worked after you judge the result i show you\./);
+    assertOperatorReceipt(answered.stdout);
 
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     assert.equal(records.some((record) => record.id === 'wish-old' && record.answer), false);
