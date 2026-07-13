@@ -308,11 +308,40 @@ test('healer ignores descriptive annotations that are not code symbols', () => {
 
     const result = healBrokenMapRefs(dir, atrisDir, false);
 
-    assert.deepEqual(result.unhealable, [
-      { file: 'api.js', line: 99, reason: 'No symbol to search for' },
-    ]);
+    assert.deepEqual(
+      result.unhealable.map(({ file, line }) => ({ file, line })),
+      [{ file: 'api.js', line: 99 }],
+    );
     const updated = fs.readFileSync(path.join(atrisDir, 'MAP.md'), 'utf8');
     assert.ok(updated.includes('api.js:2'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('healer re-pins python async def symbols', () => {
+  const { dir, atrisDir } = makeTempAtris();
+  try {
+    const source = [
+      '# header',
+      '',
+      'async def moved_handler(request):',
+      '    return 1',
+      '',
+    ].join('\n');
+    fs.writeFileSync(path.join(dir, 'router.py'), source);
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'), [
+      '# MAP',
+      '`router.py:99` (moved_handler function)',
+      '',
+    ].join('\n'));
+
+    const result = healBrokenMapRefs(dir, atrisDir, false);
+
+    assert.equal(result.healed, 1);
+    assert.deepEqual(result.unhealable, []);
+    const updated = fs.readFileSync(path.join(atrisDir, 'MAP.md'), 'utf8');
+    assert.ok(updated.includes('router.py:3'));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

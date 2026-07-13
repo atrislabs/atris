@@ -459,7 +459,7 @@ function findSymbolLine(fileContent, symbol) {
     new RegExp(`^\\s*class\\s+${esc}\\b`),                      // class name
     new RegExp(`^\\s*${esc}\\s*[:(]`),                           // name: or name(
     new RegExp(`exports\\.${esc}\\s*=`),                         // exports.name =
-    new RegExp(`^\\s*def\\s+${esc}\\s*\\(`),                     // def name( (Python)
+    new RegExp(`^\\s*(async\\s+)?def\\s+${esc}\\s*\\(`),           // [async] def name( (Python)
   ];
 
   for (const pattern of patterns) {
