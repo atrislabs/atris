@@ -3989,6 +3989,44 @@ function setMissionRunner(args) {
   }
 }
 
+function setMissionVerifier(args) {
+  const asJson = wantsJson(args);
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission set-verifier <id> "<cmd>" [--json]');
+    return;
+  }
+  const positionals = stripKnownFlags(args, [], ['--json']);
+  const ref = String(positionals[0] || '').trim();
+  if (!ref || positionals.length < 2) {
+    exitMissionError('Usage: atris mission set-verifier <id> "<cmd>" [--json].', 1, asJson);
+  }
+  const verifier = String(positionals[1]);
+  let mission = resolveMission(ref);
+  if (!mission) exitMissingMission(ref, 1, asJson);
+
+  const lock = acquireMissionLock(mission.id);
+  if (!lock.ok) {
+    exitMissionError(`[mission set-verifier] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`, 3, asJson);
+  }
+
+  try {
+    mission = resolveMission(mission.id) || mission;
+    const { mission: saved } = saveMission(
+      { ...mission, verifier },
+      process.cwd(),
+      'mission_verifier_changed',
+      { verifier },
+    );
+    printJsonOrText(
+      { ok: true, action: 'mission_set_verifier', mission_id: saved.id, verifier: saved.verifier },
+      [`mission verifier updated: ${saved.id}`],
+      asJson,
+    );
+  } finally {
+    releaseMissionLock(lock);
+  }
+}
+
 function statusMission(args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
     console.log('Usage: atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]');
@@ -8774,6 +8812,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission tick <id> [--verify ["cmd"]] [--complete-on-pass] [--self-drive] [--summary "..."]
                        [--native-goal-status active|paused|usageLimited] [--native-goal-objective "..."] [--json]
   atris mission set-runner <id> <runner|engine> [--model <id>] [--json]
+  atris mission set-verifier <id> "<cmd>" [--json]
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
   atris mission run "<objective>" --cloud [--lane fast|pro|max] [--agent <id>]   Enqueue on the Atris backend instead of running local ticks
@@ -9205,6 +9244,8 @@ function missionCommand(args) {
     case 'set-runner':
     case 'runner':
       return setMissionRunner(rest);
+    case 'set-verifier':
+      return setMissionVerifier(rest);
     case 'run':
       return runMission(rest);
     case 'complete':
