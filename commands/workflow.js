@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getLogPath } = require('../lib/journal');
+const { encodeToolResult } = require('../lib/tool-result-encode');
 
 function wrapWorkflowText(text, width = 76) {
   const normalized = String(text || '').replace(/\s+/g, ' ').trim();
@@ -139,7 +140,7 @@ function postToolResult(callId, result, base = 'http://127.0.0.1:8000') {
   const url = new URL('/api/atris2/turn/tool-result', base);
   const transport = url.protocol === 'https:' ? require('https') : require('http');
   return new Promise((resolve, reject) => {
-    const postData = JSON.stringify({ call_id: callId, result });
+    const postData = JSON.stringify({ call_id: callId, result_base64: encodeToolResult(result) });
     const req = transport.request({
       hostname: url.hostname,
       port: url.port || (url.protocol === 'https:' ? 443 : 80),
