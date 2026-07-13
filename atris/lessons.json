@@ -199,5 +199,15 @@
     "detector": "node --test test/spawn-env.test.js test/probe-local-terminal-path.test.js",
     "status": "resolved",
     "resolved_at": "2026-07-07"
+  },
+  "dispatched-engines-bypass-hooks-under-pressure": {
+    "scope": "atris-cli",
+    "applies_to": [
+      "lib/codex-flight.js"
+    ],
+    "detector": "node --test test/codex-flight-brief.test.js",
+    "mechanism": "lib/codex-flight.js buildPrompt hook-stop instruction, asserted by test/codex-flight-brief.test.js",
+    "status": "resolved",
+    "resolved_at": "2026-07-13"
   }
 }

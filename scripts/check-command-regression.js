@@ -28,6 +28,30 @@ function extractKnownCommands(source) {
   return matches.map((s) => s.slice(1, -1));
 }
 
+// Parse the command verbs the router actually dispatches on: `command === 'x'`.
+// Flag aliases (--help, -v) and numeric tokens are not user-facing commands.
+function extractDispatchedCommands(source) {
+  const matches = String(source || '').match(/command === '([^']+)'/g) || [];
+  const verbs = matches.map((s) => s.replace(/^command === '/, '').replace(/'$/, ''));
+  // Real command verbs start with a letter; drop numeric special forms
+  // (e.g. `atris 2 fast`) and flag aliases (`--help`, `-v`).
+  return Array.from(new Set(verbs)).filter((v) => /^[a-z][a-z0-9_-]*$/.test(v));
+}
+
+// A command dispatched in the router but absent from knownCommands is dead: it
+// falls through to the natural-language handler and never runs (the avail bug).
+function findUnregisteredDispatches(rootDir) {
+  let binSource = '';
+  try {
+    binSource = fs.readFileSync(path.join(rootDir, 'bin', 'atris.js'), 'utf8');
+  } catch (_) {
+    return [];
+  }
+  const dispatched = extractDispatchedCommands(binSource);
+  const known = new Set(readKnownCommandsFromDir(rootDir));
+  return dispatched.filter((c) => !known.has(c));
+}
+
 function diffCommandRegression(publishedCommands, localCommands, { allow = [] } = {}) {
   const local = new Set(localCommands);
   const allowed = new Set(allow);
@@ -84,6 +108,12 @@ function main() {
     console.error('check-command-regression: could not read local knownCommands; aborting.');
     return 1;
   }
+  const orphans = findUnregisteredDispatches(repoRoot);
+  if (orphans.length) {
+    console.error(`Refusing to publish: these commands are dispatched in bin/atris.js but missing from knownCommands (they silently never run):\n  ${orphans.join(', ')}`);
+    console.error('Add them to lib/known-commands.js.');
+    return 1;
+  }
   const publishedCommands = fetchPublishedBin('latest');
   if (!publishedCommands) {
     console.warn('check-command-regression: could not fetch atris@latest; skipping (infra, not a regression).');
@@ -104,4 +134,4 @@ if (require.main === module) {
   process.exitCode = main();
 }
 
-module.exports = { extractKnownCommands, readKnownCommandsFromDir, diffCommandRegression, fetchPublishedBin, main };
+module.exports = { extractKnownCommands, extractDispatchedCommands, findUnregisteredDispatches, readKnownCommandsFromDir, diffCommandRegression, fetchPublishedBin, main };

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { extractKnownCommands, readKnownCommandsFromDir, diffCommandRegression } = require('../scripts/check-command-regression');
+const { extractKnownCommands, extractDispatchedCommands, findUnregisteredDispatches, readKnownCommandsFromDir, diffCommandRegression } = require('../scripts/check-command-regression');
 
 test('extractKnownCommands parses the multi-line knownCommands array', () => {
   const src = `
@@ -49,6 +49,24 @@ test('diffCommandRegression passes when local is a superset', () => {
 test('diffCommandRegression honors an explicit allow-list', () => {
   const { ok } = diffCommandRegression(['init', 'oldcmd'], ['init'], { allow: ['oldcmd'] });
   assert.equal(ok, true);
+});
+
+test('extractDispatchedCommands pulls router verbs and drops flag aliases', () => {
+  const src = `
+    if (command === 'init') {}
+    else if (command === 'avail') {}
+    else if (command === '--help') {}
+    else if (command === '-v') {}
+    else if (command === '2' && x) {}
+  `;
+  assert.deepEqual(extractDispatchedCommands(src).sort(), ['avail', 'init']);
+});
+
+test('every command the router dispatches is registered in knownCommands (no dead commands)', () => {
+  // A dispatched-but-unregistered command falls through to the natural-language
+  // handler and silently never runs — the avail regression. This locks it out.
+  const orphans = findUnregisteredDispatches(path.join(__dirname, '..'));
+  assert.deepEqual(orphans, [], `these commands are dispatched but missing from knownCommands: ${orphans.join(', ')}`);
 });
 
 test('the publish workflow runs the regression gate before publishing', () => {

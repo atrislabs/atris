@@ -125,3 +125,4 @@ test/verify-task-id-escaping.test.js
 test/worktree-ship-help.test.js
 test/write.test.js
 test/youtube.test.js
+test/codex-flight-brief.test.js
