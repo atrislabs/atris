@@ -1,7 +1,7 @@
 ---
-last_compiled: 2026-06-30
+last_compiled: 2026-07-12
 sources:
-  - commands/member.js:7588-7676 (member command dispatch and help)
+  - commands/member.js:8891-9028 (member command dispatch and help)
   - commands/mission.js:412-443 (renderMemberNowMarkdown — member now.md rendering)
   - test/commands.test.js:144 (member create, goal, wake, loop, status coverage starts here)
 ---
@@ -9,7 +9,7 @@ sources:
 # Team Member Standard — Validation
 
 > **Status:** implemented and re-verified (local-first member runtime)
-> **Validated:** 2026-06-30
+> **Validated:** 2026-07-12
 
 ## Checks
 

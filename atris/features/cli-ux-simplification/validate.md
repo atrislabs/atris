@@ -1,9 +1,9 @@
 ---
-last_compiled: 2026-06-30
+last_compiled: 2026-07-12
 validated_by: executor
-validation_notes: Re-verified 2026-06-30. Reconciled the top-level help against the current AI-computer front door, mission/task/brain context commands, business/cloud sections, and durable TODO rendering. TODO.md remains a readable board regenerated from durable task state, not ownership truth.
+validation_notes: Re-verified 2026-07-12. Reconciled the top-level help against the current AI-computer front door, mission/task/brain context commands, business/cloud sections, and durable TODO rendering. TODO.md remains a readable board regenerated from durable task state, not ownership truth.
 sources:
-  - bin/atris.js:414-596 (showHelp function — quick start, setup, workflow, context/tracking, sync, business, cloud agents, skills, team)
+  - bin/atris.js:388-606 (showHelp function - quick start, setup, workflow, context/tracking, sync, business, cloud agents, skills, team)
   - commands/init.js:416-441 (TODO.md placeholder creation via fs.writeFileSync)
   - commands/workflow.js:411-413 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
   - commands/workflow.js:619-633 (planAtris — include TODO.md in user prompt)
@@ -14,18 +14,18 @@ sources:
 
 # CLI UX Simplification — Validation
 
-> **Status:** v4 — re-verified 2026-06-30
+> **Status:** v4 - re-verified 2026-07-12
 > **Exit Condition:** Help output opens with the persistent AI computer path, keeps plan/do/review/run separate from optional helpers and cloud/business commands, and names the durable task/mission/brain surfaces. TODO.md is created and read by init/plan/do/review, while `atris task render` keeps it aligned with durable task state. Legacy TASK_CONTEXTS.md is still supported for backwards compatibility.
 
 ## Checks
 
 ### 1. Help Output Structure
-- [x] `atris help` starts with the persistent AI computer quick start and common invocations (`bin/atris.js:420-440`)
-- [x] Setup stays separate from the working loop (`bin/atris.js:442-446`)
-- [x] Core workflow groups plan, do, review, run, run logs, run search, pulse, and spaceship (`bin/atris.js:448-456`)
-- [x] Context & tracking names the live operating surfaces: launchpad, task, mission, learn, brain, lesson, ingest/query/lint/loop (`bin/atris.js:458-481`)
-- [x] Optional helpers stay secondary: brainstorm, autopilot, improve, worktree, visualize, youtube (`bin/atris.js:483-489`)
-- [x] Sync, business, cloud agents, skills, team, plugin, feedback, and other commands are separate sections (`bin/atris.js:508-592`)
+- [x] `atris help` starts with the persistent AI computer quick start and common invocations (`bin/atris.js:394-410`)
+- [x] Setup stays separate from the working loop (`bin/atris.js:419-424`)
+- [x] Core workflow groups plan, do, review, run, run logs, run search, pulse, and spaceship (`bin/atris.js:425-434`)
+- [x] Context & tracking names the live operating surfaces: launchpad, task, mission, learn, brain, lesson, ingest/query/lint/loop (`bin/atris.js:435-477`)
+- [x] Optional helpers stay secondary: brainstorm, autopilot, improve, worktree, visualize, youtube (`bin/atris.js:478-489`)
+- [x] Sync, business, cloud agents, skills, team, plugin, feedback, and other commands are separate sections (`bin/atris.js:509-604`)
 
 ### 2. TODO.md Creation & Usage
 - [x] `atris init` creates atris/TODO.md with placeholder content (`commands/init.js:419-446`)
@@ -67,8 +67,8 @@ Key decisions:
 - Backwards-compatible fallback to TASK_CONTEXTS.md for old projects
 - visualize command kept but nudged toward plan (legacy not removed per v2.0.0 stability rules)
 
-Drift notes (reconciled 2026-06-30): the help surface has grown since v2.0.0 into an AI-computer front door. Core workflow now includes run logs/search, pulse, and spaceship; Context & tracking now exposes launchpad, task, mission, brain, lesson, and local wiki commands; `renderTodoMarkdown` lives at `lib/task-db.js:1611-1719`.
+Drift notes (reconciled 2026-07-12): the help surface has grown since v2.0.0 into an AI-computer front door. Core workflow now includes run logs/search, pulse, and spaceship; Context & tracking now exposes launchpad, task, mission, brain, lesson, and local wiki commands; `renderTodoMarkdown` lives at `lib/task-db.js:1611-1719`.
 
 ## Errors Hit
 
-None. Implementation clean. Retroactively documented during /improve cycle (2026-04-06). Lesson learned: features-outlive-status — validate.md creation is the right trigger to update idea.md status from "planning" to "complete" when shipping. Re-verification 2026-06-30 hit no errors; the top-level help ref was re-read against source before re-stamping.
+None. Implementation clean. Retroactively documented during /improve cycle (2026-04-06). Lesson learned: features-outlive-status - validate.md creation is the right trigger to update idea.md status from "planning" to "complete" when shipping. Re-verification 2026-07-12 hit no errors; the top-level help ref was re-read against source before re-stamping.
