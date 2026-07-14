@@ -67,7 +67,7 @@ test('rejects three passes from a single actor: passes alone never land work', (
 });
 
 test('rejects denied tags and weak proof', () => {
-  assert.equal(evaluateAutoAccept(reviewTask({ tag: 'voice' })).eligible, false);
+  assert.equal(evaluateAutoAccept(reviewTask({ tag: 'security' })).eligible, false);
   assert.equal(evaluateAutoAccept(reviewTask({
     metadata: { latest_agent_proof: 'done' },
     review: { proof: 'done' },

@@ -7252,7 +7252,7 @@ test('task display refs use semantic IDs and collision-safe legacy prefixes', ()
   assert.ok(rows[1].legacy_ref.startsWith('01KQMBKF'));
 });
 
-test('task render preserves Endgame metadata and markdown-only T rows', () => {
+test('task render preserves Endgame metadata and drops markdown-only rows', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -7294,9 +7294,7 @@ test('task render preserves Endgame metadata and markdown-only T rows', () => {
     const regenerated = fs.readFileSync(todoPath, 'utf8');
     assert.match(regenerated, /## Endgame/);
     assert.match(regenerated, /\*\*Slug:\*\* renderer-horizon/);
-    assert.match(regenerated, /- \*\*\[T1\]\*\* Keep markdown horizon \[endgame\] \[execute\]/);
-    assert.match(regenerated, /\*\*Verify:\*\* test -f horizon\.txt/);
-    assert.match(regenerated, /## Review\n\n- \*\*\[T2\]\*\* Pending human approval \[agent\]\n  \*\*Verify:\*\* test -f approval\.txt/);
+    assert.doesNotMatch(regenerated, /Keep markdown horizon|Pending human approval|horizon\.txt|approval\.txt/);
     assert.match(regenerated, /DB state task \[agent\]/);
     assert.match(regenerated, new RegExp(`\\*\\*\\[${createdTask.display_id}\\]\\*\\* DB state task`));
     const showByRenderedRef = runCli(['task', 'show', createdTask.display_id, '--json'], { cwd: dir, env });
@@ -13965,6 +13963,23 @@ test('task render archives old completed records from TODO view', () => {
     const tightCompletedLines = tight.match(/\*\*\[[^\]]+\]\*\* Completed task/g) || [];
     assert.equal(tightCompletedLines.length, 2);
     assert.match(tight, /10 older completed tasks archived/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mutating task commands regenerate TODO.md from task db', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# stale view\n', 'utf8');
+    const created = runCli(['task', 'new', 'Rendered task from the database', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const todo = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+    assert.match(todo, /Rendered task from the database/);
+    assert.doesNotMatch(todo, /# stale view/);
   } finally {
     cleanupTempDir(dir);
   }

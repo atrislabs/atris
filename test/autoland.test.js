@@ -422,19 +422,18 @@ test('digest reports protected reviews before certification', () => {
     accepted: { auto: [], human: [] },
     waiting: [],
     protectedWaiting: [
-      { ref: 'CLI-1', reason: 'denied_tag_voice' },
       { ref: 'CLI-2', reason: 'denied_tag_security' },
     ],
     landed: null,
     project: 'atris-cli',
   });
 
-  assert.match(digest, /2 protected reviews waiting on you; inspect: atris task reviews/);
+    assert.match(digest, /1 protected review waiting on you; inspect: atris task reviews/);
   assert.doesNotMatch(digest, /task approvals waiting on you: nothing/);
 
   const { base, repo } = makeTempRepo();
   try {
-    const created = runCli(['task', 'new', 'Keep the customer-facing sentence clear so operators can approve it', '--tag', 'voice', '--json'], repo);
+    const created = runCli(['task', 'new', 'Keep the customer-facing sentence clear so operators can approve it', '--tag', 'security', '--json'], repo);
     assert.equal(created.status, 0, created.stderr || created.stdout);
     const task = JSON.parse(created.stdout).task || JSON.parse(created.stdout);
     const ref = task.display_id || task.id;
@@ -456,7 +455,7 @@ test('digest reports protected reviews before certification', () => {
 test('autoland status does not call one-pass protected work approval-ready', () => {
   const { base, repo } = makeTempRepo();
   try {
-    const created = runCli(['task', 'new', 'Keep the protected sentence clear so a human can judge it', '--tag', 'voice', '--json'], repo);
+    const created = runCli(['task', 'new', 'Keep the protected sentence clear so a human can judge it', '--tag', 'security', '--json'], repo);
     assert.equal(created.status, 0, created.stderr || created.stdout);
     const task = JSON.parse(created.stdout).task || JSON.parse(created.stdout);
     const ref = task.display_id || task.id;
@@ -469,7 +468,7 @@ test('autoland status does not call one-pass protected work approval-ready', () 
     const status = runCli(['autoland', 'status'], repo);
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.match(status.stdout, /protected reviews waiting on you: 1/);
-    assert.match(status.stdout, /voice\/comms: human decision required/);
+    assert.match(status.stdout, /security: human decision required/);
     assert.doesNotMatch(status.stdout, /yours to approve/);
   } finally {
     cleanupTempDir(base);

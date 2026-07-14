@@ -1832,41 +1832,44 @@ test('wish list shows only the five plain status words', () => {
   const dir = makeTempDir();
   try {
     prepareWorkspace(dir);
+    // Timestamps must stay inside the recent-list window or the list rests
+    // these wishes behind --all (hardcoded dates rotted once before).
+    const hoursAgo = (h) => new Date(Date.now() - h * 60 * 60 * 1000).toISOString();
     appendWishEvent(dir, {
       id: 'wish-fresh',
-      ts: '2026-07-06T09:00:00.000Z',
+      ts: hoursAgo(5),
       text: 'make signups grow soon',
       status: 'captured',
     });
     appendWishEvent(dir, {
       id: 'wish-going',
-      ts: '2026-07-06T10:00:00.000Z',
+      ts: hoursAgo(4),
       text: 'make login flow smoother',
       status: 'delegated',
-      dispatched_at: '2026-07-06T10:00:00.000Z',
+      dispatched_at: hoursAgo(4),
     });
     appendWishEvent(dir, {
       id: 'wish-finished',
-      ts: '2026-07-06T11:00:00.000Z',
+      ts: hoursAgo(3),
       text: 'make billing page load fast',
       status: 'complete',
     });
     appendWishEvent(dir, {
       id: 'wish-halted',
-      ts: '2026-07-06T12:00:00.000Z',
+      ts: hoursAgo(2),
       text: 'make search results smarter',
       status: 'delegated',
-      dispatched_at: '2026-07-06T12:00:00.000Z',
+      dispatched_at: hoursAgo(2),
       mission_id: 'mission-halted',
     });
     appendMissionRecord(dir, {
       id: 'mission-halted',
       status: 'stopped',
-      updated_at: '2026-07-06T12:30:00.000Z',
+      updated_at: hoursAgo(1.5),
     });
     appendWishEvent(dir, {
       id: 'wish-asking',
-      ts: '2026-07-06T13:00:00.000Z',
+      ts: hoursAgo(1),
       text: 'make emails warmer',
       status: 'needs_input',
       questions: ['Who is this for?'],

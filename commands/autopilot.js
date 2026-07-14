@@ -1659,6 +1659,21 @@ function isDoPhaseTimeoutMessage(message) {
  * Returns true if a bullet was marked.
  */
 function markTodoBulletDone(cwd, taskTitle) {
+  try {
+    // A rendered TODO.md carries the "Regenerated from durable Atris task
+    // state" marker; those are projections and never hand-edited. Legacy
+    // hand-written TODO.md files (no marker) keep the bullet-mark fallback.
+    const renderedTodoPath = path.join(cwd, 'atris', 'TODO.md');
+    const isRenderedView = fs.existsSync(renderedTodoPath)
+      && fs.readFileSync(renderedTodoPath, 'utf8').includes('Regenerated from durable Atris task state');
+    if (isRenderedView) {
+      require('node:sqlite');
+      const rendered = require('./task').autoRenderTodoFromDb(cwd);
+      if (rendered) return true;
+    }
+  } catch {
+    // Older Node runtimes and legacy workspaces retain the markdown fallback.
+  }
   const needle = taskMatchNeedle(taskTitle);
   if (!needle) return false;
   for (const name of ['TODO.md', 'todo.md']) {

@@ -1380,6 +1380,10 @@ function showWelcomeVisualization() {
   const cwd = process.cwd();
   const atrisDir = path.join(cwd, 'atris');
   const projectName = path.basename(cwd);
+  const panelWidth = 42;
+  const panelRow = (label, value) => `    │${(`   ${label.padEnd(10)}${String(value)}`).slice(0, panelWidth).padEnd(panelWidth)}│`;
+  const panelHeader = (title) => `    ┌${(`─ ${title} `).padEnd(panelWidth, '─')}┐`;
+  const projectDisplay = projectName.length > 25 ? `${projectName.slice(0, 22)}...` : projectName;
 
   // Gather workspace stats
   let filesIndexed = 0;
@@ -1448,37 +1452,37 @@ function showWelcomeVisualization() {
   console.log('');
 
   if (!isInitialized) {
-    console.log('    ⚡ Spec detected. No workspace found.');
+    console.log('    spec detected. no workspace found.');
     console.log('');
-    console.log('    ┌─ READY TO INITIALIZE ────────────────────┐');
+    console.log(panelHeader('ready to initialize'));
     console.log('    │                                          │');
-    console.log(`    │   📍 Project: ${projectName.substring(0, 25).padEnd(25)}│`);
-    console.log(`    │   📄 Spec:    atris.md v${CLI_VERSION.padEnd(18)}│`);
+    console.log(panelRow('project:', projectDisplay));
+    console.log(panelRow('spec:', `atris.md v${CLI_VERSION}`));
     console.log('    │                                          │');
     console.log('    │   Run "atris init" to create workspace   │');
     console.log('    │                                          │');
     console.log('    └──────────────────────────────────────────┘');
   } else {
-    console.log('    ⚡ Scanning spec...');
+    console.log('    scanning spec...');
     console.log('');
-    console.log('    ┌─ WORKSPACE DETECTED ─────────────────────┐');
+    console.log(panelHeader('workspace detected'));
     console.log('    │                                          │');
-    console.log(`    │   📍 Project: ${projectName.substring(0, 25).padEnd(25)}│`);
-    console.log(`    │   📄 Spec:    atris.md v${CLI_VERSION.padEnd(18)}│`);
-    console.log(`    │   🗺️  Map:    ${hasMap ? (filesIndexed + ' files indexed').padEnd(26) : 'not generated yet'.padEnd(26)}│`);
-    console.log(`    │   📋 Tasks:   ${(tasksInBacklog + ' backlog, ' + tasksInProgress + ' active').padEnd(26)}│`);
+    console.log(panelRow('project:', projectDisplay));
+    console.log(panelRow('spec:', `atris.md v${CLI_VERSION}`));
+    console.log(panelRow('map:', hasMap ? `${filesIndexed} file refs in map` : 'not generated yet'));
+    console.log(panelRow('tasks:', `${tasksInBacklog} backlog, ${tasksInProgress} active`));
     if (tasksInReview > 0) {
       const reviewText = tasksCertified > 0
         ? `${tasksInReview} waiting (${tasksCertified} certified)`
         : `${tasksInReview} waiting`;
-      console.log(`    │   ⏳ Review:  ${reviewText.padEnd(26)}│`);
+      console.log(panelRow('review:', reviewText));
     }
     try { bootLandInfo = require('../commands/land').landSummary(process.cwd()); } catch (err) { bootLandInfo = null; }
     bootLandComputed = true;
     const landInfo = bootLandInfo;
     if (landInfo && landInfo.branches > 0) {
       const landText = `${landInfo.branches} in the air, ${landInfo.due} overdue`;
-      console.log(`    │   🛬 Land:    ${landText.padEnd(26)}│`);
+      console.log(panelRow('land:', landText));
     }
     let rotInfo = null;
     try {
@@ -1516,14 +1520,9 @@ function showWelcomeVisualization() {
     }
     if (rotInfo) {
       const rotText = `${rotInfo.worktrees} stale worktree${rotInfo.worktrees === 1 ? '' : 's'}, ${rotInfo.lessons} unresolved lesson${rotInfo.lessons === 1 ? '' : 's'}`;
-      console.log(`    │   🧹 rot:      ${rotText.padEnd(26)}│`);
+      console.log(panelRow('rot:', rotText));
     }
-    console.log(`    │   📝 Journal: ${(journalEntries + ' entries today').padEnd(26)}│`);
-    if (endgameState.slug !== 'unset' && endgameState.horizon) {
-      const endgameLine = endgameState.slug + ' — ' + endgameState.horizon;
-      const paddedEndgame = endgameLine.padEnd(26);
-      console.log(`    │   🎯 Endgame: ${paddedEndgame}│`);
-    }
+    console.log(panelRow('journal:', `${journalEntries} entries today`));
     console.log('    │                                          │');
     console.log('    │   ┌──────────────────────────────────┐   │');
     console.log('    │   │  MAP.md ←──── YOU ARE HERE       │   │');
@@ -1535,19 +1534,27 @@ function showWelcomeVisualization() {
     console.log('    │   └──────────────────────────────────┘   │');
     console.log('    │                                          │');
     console.log('    └──────────────────────────────────────────┘');
+    if (endgameState.slug !== 'unset' && endgameState.horizon) {
+      console.log('');
+      console.log(`    endgame: ${endgameState.slug} - ${endgameState.horizon}`);
+    }
   }
   console.log('');
   if (tasksCertified > 0) {
-    console.log(`    Ready. ${tasksCertified} certified await accept — run 'atris task reviews'.`);
+    console.log(`    Ready. ${tasksCertified} certified await accept - run 'atris task reviews'.`);
   } else {
     let landHint = bootLandInfo;
     if (!bootLandComputed) {
       try { landHint = require('../commands/land').landSummary(process.cwd()); } catch (err) { landHint = null; }
     }
     if (landHint && landHint.due > 0) {
-      console.log(`    Ready. ${landHint.due} overdue in the landing — run 'atris land --reap'.`);
+      console.log(`    Ready. ${landHint.due} overdue in the landing - run 'atris land --reap'.`);
     } else {
-      console.log(`    Ready. Run 'atris plan' to start.`);
+      if (endgameState.slug !== 'unset') {
+        console.log(`    Ready. Continue the endgame with 'atris autopilot'.`);
+      } else {
+        console.log(`    Ready. Run 'atris plan' to start.`);
+      }
     }
   }
   console.log('');
