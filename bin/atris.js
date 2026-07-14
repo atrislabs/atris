@@ -1439,22 +1439,27 @@ function showWelcomeVisualization() {
   if (!isInitialized) {
     console.log('  no atris workspace here yet.');
     console.log('');
-    console.log(row('next', 'atris init'));
+    console.log(row('next', 'atris init  (set up this folder)'));
     console.log('');
     return;
   }
 
+  // Waiting-on-you comes first: the one thing only a human can do.
+  if (tasksCertified > 0) {
+    console.log(row('you', `${tasksCertified} finished task${tasksCertified === 1 ? ' needs' : 's need'} your ok`));
+  }
+
   const taskBits = [];
-  if (tasksInBacklog > 0) taskBits.push(`${tasksInBacklog} queued`);
-  if (tasksInProgress > 0) taskBits.push(`${tasksInProgress} in progress`);
-  if (tasksInReview > 0) taskBits.push(`${tasksInReview} waiting for review`);
+  if (tasksInProgress > 0) taskBits.push(`${tasksInProgress} being worked on`);
+  if (tasksInBacklog > 0) taskBits.push(`${tasksInBacklog} waiting to start`);
+  if (tasksInReview > 0) taskBits.push(`${tasksInReview} being checked`);
   console.log(row('tasks', taskBits.length ? taskBits.join(', ') : 'none open'));
 
   // landSummary is expensive (git board classification) - compute once per boot.
   let landInfo = null;
   try { landInfo = require('../commands/land').landSummary(cwd); } catch (err) { landInfo = null; }
   if (landInfo && landInfo.branches > 0) {
-    let landText = `${landInfo.branches} ${landInfo.branches === 1 ? 'branch' : 'branches'} waiting to merge`;
+    let landText = `${landInfo.branches} finished change${landInfo.branches === 1 ? '' : 's'} not delivered yet`;
     if (landInfo.due > 0) landText += `, ${landInfo.due} overdue`;
     console.log(row('landing', landText));
   }
@@ -1495,8 +1500,8 @@ function showWelcomeVisualization() {
   }
   if (rotInfo) {
     const bits = [];
-    if (rotInfo.worktrees > 0) bits.push(`${rotInfo.worktrees} stale worktree${rotInfo.worktrees === 1 ? '' : 's'}`);
-    if (rotInfo.lessons > 0) bits.push(`${rotInfo.lessons} unresolved lesson${rotInfo.lessons === 1 ? '' : 's'}`);
+    if (rotInfo.worktrees > 0) bits.push(`${rotInfo.worktrees} old workspace${rotInfo.worktrees === 1 ? '' : 's'} to clear`);
+    if (rotInfo.lessons > 0) bits.push(`${rotInfo.lessons} known problem${rotInfo.lessons === 1 ? '' : 's'} still open`);
     console.log(row('cleanup', bits.join(', ')));
   }
 
@@ -1507,20 +1512,20 @@ function showWelcomeVisualization() {
   if (endgameState.slug !== 'unset') {
     // Repeated impression: the horizon sentence renders verbatim every boot
     // so agents keep the target in mind (test/boot-impression.test.js).
-    console.log(row('endgame', endgameState.horizon
-      ? `${endgameState.slug}: ${endgameState.horizon}`
-      : endgameState.slug));
+    console.log(row('goal', endgameState.horizon || endgameState.slug));
   }
 
+  // The next command always carries a plain-english gloss: a newcomer should
+  // know what typing it will do before they type it.
   let next;
   if (tasksCertified > 0) {
-    next = `atris task reviews  (${tasksCertified} verified, waiting on your accept)`;
+    next = `atris task reviews  (approve the finished work)`;
   } else if (landInfo && landInfo.due > 0) {
-    next = `atris land --reap  (${landInfo.due} overdue)`;
+    next = `atris land --reap  (clear the ${landInfo.due} overdue deliver${landInfo.due === 1 ? 'y' : 'ies'})`;
   } else if (endgameState.slug !== 'unset') {
-    next = 'atris autopilot';
+    next = 'atris autopilot  (do the next piece of work)';
   } else {
-    next = 'atris plan';
+    next = 'atris plan  (plan the first tasks)';
   }
   console.log('');
   console.log(row('next', next));
