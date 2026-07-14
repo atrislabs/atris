@@ -1446,24 +1446,20 @@ function showWelcomeVisualization() {
 
   // Waiting-on-you comes first: the one thing only a human can do.
   if (tasksCertified > 0) {
-    console.log(row('you', `${tasksCertified} finished task${tasksCertified === 1 ? ' needs' : 's need'} your ok`));
+    console.log(row('you', `${tasksCertified} done, waiting for your ok`));
   }
 
-  const taskBits = [];
-  if (tasksInProgress > 0) taskBits.push(`${tasksInProgress} being worked on`);
-  if (tasksInBacklog > 0) taskBits.push(`${tasksInBacklog} waiting to start`);
-  if (tasksInReview > 0) taskBits.push(`${tasksInReview} being checked`);
-  console.log(row('tasks', taskBits.length ? taskBits.join(', ') : 'none open'));
+  const workBits = [];
+  if (tasksInProgress > 0) workBits.push(`${tasksInProgress} moving`);
+  if (tasksInBacklog > 0) workBits.push(`${tasksInBacklog} up next`);
+  console.log(row('work', workBits.length ? workBits.join(', ') : 'nothing open'));
+  if (tasksInReview > 0) {
+    console.log(row('checks', `${tasksInReview} getting a final look`));
+  }
 
   // landSummary is expensive (git board classification) - compute once per boot.
   let landInfo = null;
   try { landInfo = require('../commands/land').landSummary(cwd); } catch (err) { landInfo = null; }
-  if (landInfo && landInfo.branches > 0) {
-    let landText = `${landInfo.branches} finished change${landInfo.branches === 1 ? '' : 's'} not delivered yet`;
-    if (landInfo.due > 0) landText += `, ${landInfo.due} overdue`;
-    console.log(row('landing', landText));
-  }
-
   let rotInfo = null;
   try {
     const { parseLessons } = require('../lib/memory-view');
@@ -1498,16 +1494,23 @@ function showWelcomeVisualization() {
   } catch (err) {
     rotInfo = null;
   }
-  if (rotInfo) {
-    const bits = [];
-    if (rotInfo.worktrees > 0) bits.push(`${rotInfo.worktrees} old workspace${rotInfo.worktrees === 1 ? '' : 's'} to clear`);
-    if (rotInfo.lessons > 0) bits.push(`${rotInfo.lessons} known problem${rotInfo.lessons === 1 ? '' : 's'} still open`);
-    console.log(row('cleanup', bits.join(', ')));
+  // One tidy row for all loose ends, in words that work outside engineering:
+  // unlanded finished work = "to put away", stale worktrees = "old copies".
+  const tidyBits = [];
+  if (landInfo && landInfo.branches > 0) {
+    let landText = `${landInfo.branches} finished piece${landInfo.branches === 1 ? '' : 's'} to put away`;
+    if (landInfo.due > 0) landText += ` (${landInfo.due} overdue)`;
+    tidyBits.push(landText);
+  }
+  if (rotInfo && rotInfo.worktrees > 0) tidyBits.push(`${rotInfo.worktrees} old cop${rotInfo.worktrees === 1 ? 'y' : 'ies'} to toss`);
+  if (rotInfo && rotInfo.lessons > 0) tidyBits.push(`${rotInfo.lessons} open problem${rotInfo.lessons === 1 ? '' : 's'}`);
+  if (tidyBits.length) {
+    console.log(row('tidy', tidyBits.join(', ')));
   }
 
-  console.log(row('journal', journalEntries > 0
-    ? `${journalEntries} ${journalEntries === 1 ? 'entry' : 'entries'} today`
-    : 'nothing logged today'));
+  console.log(row('logs', journalEntries > 0
+    ? `${journalEntries} note${journalEntries === 1 ? '' : 's'} today`
+    : 'nothing yet today'));
 
   if (endgameState.slug !== 'unset') {
     // Repeated impression: the horizon sentence renders verbatim every boot
@@ -1521,7 +1524,7 @@ function showWelcomeVisualization() {
   if (tasksCertified > 0) {
     next = `atris task reviews  (approve the finished work)`;
   } else if (landInfo && landInfo.due > 0) {
-    next = `atris land --reap  (clear the ${landInfo.due} overdue deliver${landInfo.due === 1 ? 'y' : 'ies'})`;
+    next = `atris land --reap  (put away the overdue work)`;
   } else if (endgameState.slug !== 'unset') {
     next = 'atris autopilot  (do the next piece of work)';
   } else {

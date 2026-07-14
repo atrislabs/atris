@@ -155,7 +155,7 @@ test('atris.md boot visualization does not create a task DB just to count tasks'
 
     const res = runCli(['atris.md'], { cwd: dir, env: { ATRIS_TASKS_DB: dbPath } });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /tasks\s+1 waiting to start/);
+    assert.match(res.stdout, /work\s+1 up next/);
     assert.equal(fs.existsSync(dbPath), false);
   } finally {
     cleanupTempDir(dir);
@@ -189,8 +189,8 @@ test('atris.md boot visualization prefers task DB counts over stale TODO rows', 
 
     const res = runCli(['atris.md'], { cwd: dir, env: { ATRIS_TASKS_DB: dbPath } });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /tasks\s+1 being worked on/);
-    assert.doesNotMatch(res.stdout, /1 waiting to start/);
+    assert.match(res.stdout, /work\s+1 moving/);
+    assert.doesNotMatch(res.stdout, /1 up next/);
   } finally {
     taskDb.close();
     if (oldDb === undefined) delete process.env.ATRIS_TASKS_DB;
