@@ -1659,6 +1659,16 @@ function isDoPhaseTimeoutMessage(message) {
  * Returns true if a bullet was marked.
  */
 function markTodoBulletDone(cwd, taskTitle) {
+  try {
+    const configuredDb = process.env.ATRIS_TASKS_DB;
+    const dbPath = configuredDb || path.join(cwd, '.atris', 'tasks.db');
+    if (!fs.existsSync(dbPath)) throw new Error('task db is not enabled for this workspace');
+    require('node:sqlite');
+    require('./task').autoRenderTodoFromDb(cwd);
+    return true;
+  } catch {
+    // Older Node runtimes and legacy workspaces retain the markdown fallback.
+  }
   const needle = taskMatchNeedle(taskTitle);
   if (!needle) return false;
   for (const name of ['TODO.md', 'todo.md']) {

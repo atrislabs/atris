@@ -10724,6 +10724,25 @@ function refreshExistingTodoMarkdown(taskDb, db, workspaceRoot) {
   return outPath;
 }
 
+// TODO.md is a projection of task-db state. Keep this best-effort and silent
+// because it runs after every successful mutating task command.
+function autoRenderTodoFromDb(cwd = process.cwd()) {
+  try {
+    const atrisDir = path.join(cwd, 'atris');
+    if (!fs.existsSync(atrisDir)) return null;
+    const taskDb = getTaskDb();
+    const db = taskDb.open();
+    const outPath = path.join(atrisDir, 'TODO.md');
+    if (fs.existsSync(outPath)) return refreshExistingTodoMarkdown(taskDb, db, cwd);
+    const rows = taskDb.listTasks(db, { workspaceRoot: cwd, limit: 500 });
+    const refRows = taskDb.listTasks(db, { workspaceRoot: cwd });
+    fs.writeFileSync(outPath, taskDb.renderTodoMarkdown(rows, { refRows }), 'utf8');
+    return outPath;
+  } catch {
+    return null;
+  }
+}
+
 function cmdRender(args) {
   const out = flag(args, '--out') || path.join('atris', 'TODO.md');
   const all = hasFlag(args, '--all');
@@ -11874,7 +11893,7 @@ function cmdServe(args) {
   });
 }
 
-async function run(args) {
+async function runTaskCommand(args) {
   const raw = args || [];
   if (raw.includes('--help') || raw.includes('-h')) return help();
   const first = raw[0];
@@ -12013,4 +12032,23 @@ async function run(args) {
   }
 }
 
-module.exports = { run, taskDayGroups, taskDayTextGroups, taskDayTitle, delegateTask, AGENT_ENV_MARKERS };
+const MUTATING_TASK_COMMANDS = new Set([
+  'add', 'new', 'delegate', 'assign', 'plan', 'do', 'backlog', 'unplan',
+  'clear-plan', 'clearplan', 'claim', 'start', 'release', 'unclaim', 'next',
+  'continue-work', 'continue', 'chat', 'note', 'say', 'tag', 'tags', 'step',
+  'ready', 'result', 'accept', 'landing', 'land-review', 'auto-accept-certified',
+  'auto-accept', 'sweep', 'audit', 'certify-verified', 'accept-group', 'revise',
+  'done', 'finish', 'fail', 'archive', 'relabel-archived', 'review', 'import',
+  'setup', 'review-lane-act', 'review-act', 'act-review', 'review-lane-loop',
+  'review-loop', 'loop-review', 'review-lane-run', 'review-run', 'run-review',
+]);
+
+async function run(args) {
+  const raw = args || [];
+  const sub = !raw[0] || raw[0].startsWith('--') ? 'desk' : raw[0];
+  const result = await runTaskCommand(raw);
+  if (MUTATING_TASK_COMMANDS.has(sub)) autoRenderTodoFromDb();
+  return result;
+}
+
+module.exports = { run, taskDayGroups, taskDayTextGroups, taskDayTitle, delegateTask, AGENT_ENV_MARKERS, autoRenderTodoFromDb };

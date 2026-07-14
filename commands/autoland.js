@@ -443,7 +443,6 @@ function plainReason(reason) {
     denied_tag_customer: 'customer-facing: human decision required',
     denied_tag_external: 'outward-facing: human decision required',
     denied_tag_feedback: 'customer feedback: human decision required',
-    denied_tag_voice: 'voice/comms: human decision required',
     needs_second_reviewer_or_third_pass: 'needs one more independent check first',
     needs_independent_reviewer: 'built and judged by the same actor, needs an independent check',
     verifier_is_builder: 'the re-check actor built this row, another actor must re-check',

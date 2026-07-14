@@ -631,9 +631,9 @@ async function planAtris(userInput = null) {
     userPrompt += `   - Include file:line references from MAP.md\n`;
     userPrompt += `   - List dependencies between tasks\n`;
     userPrompt += `   - Add acceptance criteria for each task\n\n`;
-    userPrompt += `STEP 4: Write tasks to atris/TODO.md\n`;
-    userPrompt += `   - Add to ## Backlog section\n`;
-    userPrompt += `   - Format: - **T#:** Description [explore|execute]\n`;
+    userPrompt += `STEP 4: Create tasks through the task database\n`;
+    userPrompt += `   - Use bash to run 'atris task add' or the task database calls; do not hand-edit TODO.md\n`;
+    userPrompt += `   - The CLI will re-render atris/TODO.md after this workflow step completes\n`;
     userPrompt += `   - Each task: one job, clear exit condition\n`;
     userPrompt += `   - Include file:line references from MAP.md\n\n`;
     userPrompt += `STEP 5: Log to your journal\n`;
@@ -652,7 +652,7 @@ async function planAtris(userInput = null) {
     try {
       await executeCodeExecution({
         prompt: userPrompt,
-        allowedTools: ['Read', 'Write', 'Edit'], // Navigator needs to write TODO.md
+        allowedTools: ['Read', 'Bash'], // Task creation must go through atris task / the database
         permissionMode: 'default',
         maxTurns: 15,
         systemPrompt,
@@ -687,6 +687,11 @@ async function planAtris(userInput = null) {
           console.error(`\n❌ Execution error: ${error.message}`);
         },
       });
+      try {
+        require('./task').autoRenderTodoFromDb(process.cwd());
+      } catch {
+        // Rendering is best-effort; task-db state remains authoritative.
+      }
 
       console.log('\n');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

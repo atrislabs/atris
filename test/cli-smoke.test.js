@@ -131,7 +131,7 @@ test('atris.md boot visualization does not create an empty daily journal', () =>
 
     const res = runCli(['atris.md'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /WORKSPACE DETECTED/);
+    assert.match(res.stdout, /workspace detected/);
     assert.equal(fs.existsSync(path.join(atrisDir, 'logs')), false);
   } finally {
     cleanupTempDir(dir);
@@ -154,7 +154,7 @@ test('atris.md boot visualization does not create a task DB just to count tasks'
 
     const res = runCli(['atris.md'], { cwd: dir, env: { ATRIS_TASKS_DB: dbPath } });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Tasks:\s+1 backlog, 0 active/);
+    assert.match(res.stdout, /tasks:\s+1 backlog, 0 active/);
     assert.equal(fs.existsSync(dbPath), false);
   } finally {
     cleanupTempDir(dir);
@@ -188,7 +188,7 @@ test('atris.md boot visualization prefers task DB counts over stale TODO rows', 
 
     const res = runCli(['atris.md'], { cwd: dir, env: { ATRIS_TASKS_DB: dbPath } });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Tasks:\s+0 backlog, 1 active/);
+    assert.match(res.stdout, /tasks:\s+0 backlog, 1 active/);
     assert.match(res.stdout, /TODO\.md ←── 0 tasks waiting/);
   } finally {
     taskDb.close();
