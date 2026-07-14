@@ -1523,11 +1523,6 @@ function showWelcomeVisualization() {
       console.log(panelRow('rot:', rotText));
     }
     console.log(panelRow('journal:', `${journalEntries} entries today`));
-    if (endgameState.slug !== 'unset' && endgameState.horizon) {
-      const endgameLine = `${endgameState.slug} - ${endgameState.horizon}`;
-      console.log(panelRow('endgame:', endgameLine));
-      console.log(`    endgame horizon: ${endgameState.horizon}`);
-    }
     console.log('    │                                          │');
     console.log('    │   ┌──────────────────────────────────┐   │');
     console.log('    │   │  MAP.md ←──── YOU ARE HERE       │   │');
@@ -1539,6 +1534,10 @@ function showWelcomeVisualization() {
     console.log('    │   └──────────────────────────────────┘   │');
     console.log('    │                                          │');
     console.log('    └──────────────────────────────────────────┘');
+    if (endgameState.slug !== 'unset' && endgameState.horizon) {
+      console.log('');
+      console.log(`    endgame: ${endgameState.slug} - ${endgameState.horizon}`);
+    }
   }
   console.log('');
   if (tasksCertified > 0) {
