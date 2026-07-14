@@ -445,7 +445,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Implementation:** `commands/land.js` (collectBoard, printBoard, reap, landSummary); the board orders overdue, active, then landed residue, labels aging active rows `stale`, and keeps fresh rows `in the air`; counts separate tracked, stale, overdue, and landed work
 - **Router:** `bin/atris.js` (`command === 'land'` dispatch)
-- **Boot visibility:** `bin/atris.js` welcome banner (`🛬 Land:` line via `landSummary`)
+- **Boot visibility:** `bin/atris.js` boot status (`landing` row via `landSummary`)
 - **Doctrine:** `atris.md` operating rules ("land or reap"), `AGENTS.md` agent contract table
 - **Salvage:** bundles + dirty patches under `.atris/salvage/<date>/` — a reap never loses work
 - **Regression:** `test/land.test.js` (board classification, category-specific cleanup guidance, reap, dry-run, worktree patch salvage)
@@ -609,7 +609,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris task lineage <id> [--json]` — endgame → parents → target → children chain + commits grepped by display refs (`cmdLineage` in `commands/task.js`; test: `test/commands.test.js` 'task lineage')
 - `atris member history <name> [--limit N] [--json]` — git log per identity file (MEMBER.md/SOUL.md) (`memberHistory` in `commands/member.js`; test: `test/member-history.test.js`)
 - `atris lesson sweep [--dry-run] [--json]` — contradiction detection (opposite outcomes, dead file refs) → idempotent dissolve tasks (`lib/lesson-contradiction.js`, `commands/lesson.js`; test: `test/lesson-sweep.test.js`)
-- Boot impression: welcome panel renders active endgame slug+horizon verbatim (`bin/atris.js` showWelcomeVisualization); `listTasks` ranks `tag='endgame'` first within status (`lib/task-db.js`; test: `test/boot-impression.test.js`)
+- Boot impression: boot status `endgame` row renders active slug+horizon verbatim (`bin/atris.js` showWelcomeVisualization); `listTasks` ranks `tag='endgame'` first within status (`lib/task-db.js`; test: `test/boot-impression.test.js`)
 - Layer receipts: every mission tick stores `layer`/`layer_source` (explicit `layer: x` receipt line or path-class fallback) + `last_tick_layer` on the mission; heartbeat shows it (`extractLayerFromReceiptText`/`classifyPathsByLayer` in `commands/mission.js`; test: `test/mission-layer-receipts.test.js`)
 
 ### Feature: Task Production Readiness
@@ -1653,7 +1653,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - Command routing (lines 783-1212)
 - `interactiveEntry()` — Natural language entry (line 525)
-- `showWelcomeVisualization()` — Spec file trigger (line 672)
+- `showWelcomeVisualization()` — Boot status; spec-file trigger at `bin/atris.js:943`, function at `bin/atris.js:1376` (plain rows, banner only on TTY)
 - `upgradeAtris()` — npm upgrade (line 1214)
 **Modular commands (in commands/):**
 

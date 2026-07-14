@@ -1370,44 +1370,26 @@ function printMapBootstrap({ userInput, prefix = 'Bootstrap required' } = {}) {
   console.log('');
 }
 
-// ASCII Welcome Visualization
+// Boot status: plain rows, honest numbers, one next action.
+// The banner only renders in a real terminal; when a hook or agent captures
+// this output it stays compact so it costs almost nothing in context.
 function showWelcomeVisualization() {
-  // landSummary is expensive (git board classification) — compute at most once per boot.
-  let bootLandInfo = null;
-  let bootLandComputed = false;
   const { getTaskCounts } = require('../lib/state-detection');
   const { readEndgameState } = require('../commands/autopilot');
   const cwd = process.cwd();
   const atrisDir = path.join(cwd, 'atris');
   const projectName = path.basename(cwd);
-  const panelWidth = 42;
-  const panelRow = (label, value) => `    │${(`   ${label.padEnd(10)}${String(value)}`).slice(0, panelWidth).padEnd(panelWidth)}│`;
-  const panelHeader = (title) => `    ┌${(`─ ${title} `).padEnd(panelWidth, '─')}┐`;
-  const projectDisplay = projectName.length > 25 ? `${projectName.slice(0, 22)}...` : projectName;
+  const row = (label, value) => `  ${label.padEnd(9)}${value}`;
 
-  // Gather workspace stats
-  let filesIndexed = 0;
   let tasksInBacklog = 0;
   let tasksInProgress = 0;
   let tasksInReview = 0;
   let tasksCertified = 0;
   let journalEntries = 0;
-  let hasMap = false;
-  let isInitialized = fs.existsSync(atrisDir);
+  const isInitialized = fs.existsSync(atrisDir);
   let endgameState = { slug: 'unset', horizon: '' };
 
   if (isInitialized) {
-    // Check MAP.md
-    const mapPath = path.join(atrisDir, 'MAP.md');
-    if (fs.existsSync(mapPath)) {
-      hasMap = true;
-      const mapContent = fs.readFileSync(mapPath, 'utf8');
-      // Count file references (lines with file paths)
-      const fileRefs = mapContent.match(/`[^`]+\.(js|ts|py|go|rs|md|json|yaml|yml)`/g);
-      filesIndexed = fileRefs ? fileRefs.length : 0;
-    }
-
-    // Task lane counts — DB truth first, TODO.md parse as fallback
     try {
       const counts = getTaskCounts(atrisDir);
       tasksInBacklog = counts.backlog;
@@ -1418,7 +1400,6 @@ function showWelcomeVisualization() {
       // Silently fail - show 0 tasks if reading fails
     }
 
-    // Read endgame state
     try {
       endgameState = readEndgameState(cwd);
     } catch {
@@ -1439,124 +1420,110 @@ function showWelcomeVisualization() {
   }
 
   console.log('');
-  console.log('    ╭──────────────────────────────────────────╮');
-  console.log('    │                                          │');
-  console.log('    │      █████╗ ████████╗██████╗ ██╗███████╗ │');
-  console.log('    │     ██╔══██╗╚══██╔══╝██╔══██╗██║██╔════╝ │');
-  console.log('    │     ███████║   ██║   ██████╔╝██║███████╗ │');
-  console.log('    │     ██╔══██║   ██║   ██╔══██╗██║╚════██║ │');
-  console.log('    │     ██║  ██║   ██║   ██║  ██║██║███████║ │');
-  console.log('    │     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚══════╝ │');
-  console.log('    │                                          │');
-  console.log('    ╰──────────────────────────────────────────╯');
+  if (process.stdout.isTTY) {
+    console.log('    ╭──────────────────────────────────────────╮');
+    console.log('    │                                          │');
+    console.log('    │      █████╗ ████████╗██████╗ ██╗███████╗ │');
+    console.log('    │     ██╔══██╗╚══██╔══╝██╔══██╗██║██╔════╝ │');
+    console.log('    │     ███████║   ██║   ██████╔╝██║███████╗ │');
+    console.log('    │     ██╔══██║   ██║   ██╔══██╗██║╚════██║ │');
+    console.log('    │     ██║  ██║   ██║   ██║  ██║██║███████║ │');
+    console.log('    │     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚══════╝ │');
+    console.log('    │                                          │');
+    console.log('    ╰──────────────────────────────────────────╯');
+    console.log('');
+  }
+  console.log(`  atris v${CLI_VERSION} · ${projectName}`);
   console.log('');
 
   if (!isInitialized) {
-    console.log('    spec detected. no workspace found.');
+    console.log('  no atris workspace here yet.');
     console.log('');
-    console.log(panelHeader('ready to initialize'));
-    console.log('    │                                          │');
-    console.log(panelRow('project:', projectDisplay));
-    console.log(panelRow('spec:', `atris.md v${CLI_VERSION}`));
-    console.log('    │                                          │');
-    console.log('    │   Run "atris init" to create workspace   │');
-    console.log('    │                                          │');
-    console.log('    └──────────────────────────────────────────┘');
-  } else {
-    console.log('    scanning spec...');
+    console.log(row('next', 'atris init'));
     console.log('');
-    console.log(panelHeader('workspace detected'));
-    console.log('    │                                          │');
-    console.log(panelRow('project:', projectDisplay));
-    console.log(panelRow('spec:', `atris.md v${CLI_VERSION}`));
-    console.log(panelRow('map:', hasMap ? `${filesIndexed} file refs in map` : 'not generated yet'));
-    console.log(panelRow('tasks:', `${tasksInBacklog} backlog, ${tasksInProgress} active`));
-    if (tasksInReview > 0) {
-      const reviewText = tasksCertified > 0
-        ? `${tasksInReview} waiting (${tasksCertified} certified)`
-        : `${tasksInReview} waiting`;
-      console.log(panelRow('review:', reviewText));
+    return;
+  }
+
+  const taskBits = [];
+  if (tasksInBacklog > 0) taskBits.push(`${tasksInBacklog} queued`);
+  if (tasksInProgress > 0) taskBits.push(`${tasksInProgress} in progress`);
+  if (tasksInReview > 0) taskBits.push(`${tasksInReview} waiting for review`);
+  console.log(row('tasks', taskBits.length ? taskBits.join(', ') : 'none open'));
+
+  // landSummary is expensive (git board classification) - compute once per boot.
+  let landInfo = null;
+  try { landInfo = require('../commands/land').landSummary(cwd); } catch (err) { landInfo = null; }
+  if (landInfo && landInfo.branches > 0) {
+    let landText = `${landInfo.branches} ${landInfo.branches === 1 ? 'branch' : 'branches'} waiting to merge`;
+    if (landInfo.due > 0) landText += `, ${landInfo.due} overdue`;
+    console.log(row('landing', landText));
+  }
+
+  let rotInfo = null;
+  try {
+    const { parseLessons } = require('../lib/memory-view');
+    const resolved = path.resolve(cwd);
+    const parent = path.dirname(resolved);
+    const grandparent = path.dirname(parent);
+    let worktreeDir;
+    if (path.basename(grandparent) === '.agent-worktrees') {
+      worktreeDir = parent;
+    } else {
+      worktreeDir = path.join(path.dirname(resolved), '.agent-worktrees', path.basename(resolved));
     }
-    try { bootLandInfo = require('../commands/land').landSummary(process.cwd()); } catch (err) { bootLandInfo = null; }
-    bootLandComputed = true;
-    const landInfo = bootLandInfo;
-    if (landInfo && landInfo.branches > 0) {
-      const landText = `${landInfo.branches} in the air, ${landInfo.due} overdue`;
-      console.log(panelRow('land:', landText));
+    let worktrees = 0;
+    if (fs.existsSync(worktreeDir)) {
+      worktrees = fs.readdirSync(worktreeDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory()).length;
     }
-    let rotInfo = null;
+    let lessonsText = '';
     try {
-      const { parseLessons } = require('../lib/memory-view');
-      const resolved = path.resolve(cwd);
-      const parent = path.dirname(resolved);
-      const grandparent = path.dirname(parent);
-      let worktreeDir;
-      if (path.basename(grandparent) === '.agent-worktrees') {
-        worktreeDir = parent;
-      } else {
-        worktreeDir = path.join(path.dirname(resolved), '.agent-worktrees', path.basename(resolved));
-      }
-      let worktrees = 0;
-      if (fs.existsSync(worktreeDir)) {
-        worktrees = fs.readdirSync(worktreeDir, { withFileTypes: true })
-          .filter((entry) => entry.isDirectory()).length;
-      }
-      let lessonsText = '';
-      try {
-        lessonsText = fs.readFileSync(path.join(atrisDir, 'lessons.md'), 'utf8');
-      } catch (err) {
-        lessonsText = '';
-      }
-      // rot = fail lessons nobody has resolved. A `pass` lesson is knowledge
-      // that worked — it has nothing to resolve and counting it guilt-trips
-      // the operator with a number (600+) no one can ever drive to zero.
-      const unresolvedLessons = parseLessons(lessonsText)
-        .filter((lesson) => lesson.status === 'fail' && !lesson.resolved && !/\[resolved[\]:]/i.test(lesson.text)).length;
-      if (worktrees > 0 || unresolvedLessons > 0) {
-        rotInfo = { worktrees, lessons: unresolvedLessons };
-      }
+      lessonsText = fs.readFileSync(path.join(atrisDir, 'lessons.md'), 'utf8');
     } catch (err) {
-      rotInfo = null;
+      lessonsText = '';
     }
-    if (rotInfo) {
-      const rotText = `${rotInfo.worktrees} stale worktree${rotInfo.worktrees === 1 ? '' : 's'}, ${rotInfo.lessons} unresolved lesson${rotInfo.lessons === 1 ? '' : 's'}`;
-      console.log(panelRow('rot:', rotText));
+    // cleanup = fail lessons nobody has resolved. A `pass` lesson is knowledge
+    // that worked - it has nothing to resolve and counting it guilt-trips
+    // the operator with a number (600+) no one can ever drive to zero.
+    const unresolvedLessons = parseLessons(lessonsText)
+      .filter((lesson) => lesson.status === 'fail' && !lesson.resolved && !/\[resolved[\]:]/i.test(lesson.text)).length;
+    if (worktrees > 0 || unresolvedLessons > 0) {
+      rotInfo = { worktrees, lessons: unresolvedLessons };
     }
-    console.log(panelRow('journal:', `${journalEntries} entries today`));
-    console.log('    │                                          │');
-    console.log('    │   ┌──────────────────────────────────┐   │');
-    console.log('    │   │  MAP.md ←──── YOU ARE HERE       │   │');
-    console.log('    │   │     ↓                            │   │');
-    const taskText = `${tasksInBacklog} task${tasksInBacklog === 1 ? '' : 's'} waiting`;
-    console.log(`    │   │  TODO.md ←── ${taskText.padEnd(20)}│   │`);
-    console.log('    │   │     ↓                            │   │');
-    console.log('    │   │  navigator → executor → validator│   │');
-    console.log('    │   └──────────────────────────────────┘   │');
-    console.log('    │                                          │');
-    console.log('    └──────────────────────────────────────────┘');
-    if (endgameState.slug !== 'unset' && endgameState.horizon) {
-      console.log('');
-      console.log(`    endgame: ${endgameState.slug} - ${endgameState.horizon}`);
-    }
+  } catch (err) {
+    rotInfo = null;
+  }
+  if (rotInfo) {
+    const bits = [];
+    if (rotInfo.worktrees > 0) bits.push(`${rotInfo.worktrees} stale worktree${rotInfo.worktrees === 1 ? '' : 's'}`);
+    if (rotInfo.lessons > 0) bits.push(`${rotInfo.lessons} unresolved lesson${rotInfo.lessons === 1 ? '' : 's'}`);
+    console.log(row('cleanup', bits.join(', ')));
+  }
+
+  console.log(row('journal', journalEntries > 0
+    ? `${journalEntries} ${journalEntries === 1 ? 'entry' : 'entries'} today`
+    : 'nothing logged today'));
+
+  if (endgameState.slug !== 'unset') {
+    // Repeated impression: the horizon sentence renders verbatim every boot
+    // so agents keep the target in mind (test/boot-impression.test.js).
+    console.log(row('endgame', endgameState.horizon
+      ? `${endgameState.slug}: ${endgameState.horizon}`
+      : endgameState.slug));
+  }
+
+  let next;
+  if (tasksCertified > 0) {
+    next = `atris task reviews  (${tasksCertified} verified, waiting on your accept)`;
+  } else if (landInfo && landInfo.due > 0) {
+    next = `atris land --reap  (${landInfo.due} overdue)`;
+  } else if (endgameState.slug !== 'unset') {
+    next = 'atris autopilot';
+  } else {
+    next = 'atris plan';
   }
   console.log('');
-  if (tasksCertified > 0) {
-    console.log(`    Ready. ${tasksCertified} certified await accept - run 'atris task reviews'.`);
-  } else {
-    let landHint = bootLandInfo;
-    if (!bootLandComputed) {
-      try { landHint = require('../commands/land').landSummary(process.cwd()); } catch (err) { landHint = null; }
-    }
-    if (landHint && landHint.due > 0) {
-      console.log(`    Ready. ${landHint.due} overdue in the landing - run 'atris land --reap'.`);
-    } else {
-      if (endgameState.slug !== 'unset') {
-        console.log(`    Ready. Continue the endgame with 'atris autopilot'.`);
-      } else {
-        console.log(`    Ready. Run 'atris plan' to start.`);
-      }
-    }
-  }
+  console.log(row('next', next));
   console.log('');
 }
 
