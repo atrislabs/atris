@@ -6,7 +6,7 @@
 
 **Slug:** wish-rides-itself
 **Picked:** 2026-07-12 09:05
-**Horizon:** A wish spoken once travels the whole pipeline unattended — intake, single dispatch (no duplicate flights), build, verify, land, one plain-sentence receipt — proven by a live cloud fast-lane round trip.
+**Horizon:** Say a wish once and the system does the rest alone: one builder picks it up, builds it, checks it, delivers it, and reports back in one plain sentence. Proven the day a wish makes that full trip in the cloud without a human touching it.
 **Source:** inbox-item (2026-07-10 I29 + I28; duplicate-flight lesson 7/09)
 
 ## Backlog

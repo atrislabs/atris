@@ -62,6 +62,8 @@ After running the three moves, write the result to `atris/TODO.md`:
 **Source:** <inbox-item | wiki-signal | user-prompt> (so we know where it came from)
 ```
 
+**Horizon voice rule (non-negotiable).** The horizon renders verbatim on every boot to whoever opens the workspace: engineer, operator, or a first-day outsider. Write it so a new teammate in any domain gets it on first read: one sentence, plain words, no em dashes, no ids/flags/insider jargon (no "dispatch", "lane", "fast-tier", "receipt path"), and it names the observable proof ("proven the day X happens"). If a term only means something to the people who built the system, translate it or cut it.
+
 2. **Add each REVERSE PATH step as a tagged task — through the task db when one exists.**
 
 **Durable-db workspaces (any repo with `.atris/state/tasks.projection.json` / the `atris task` verb):** markdown task lines written into TODO.md DO NOT SURVIVE — the next `atris task render` regenerates the file from the db and silently wipes them (learned 2026-07-12, lesson `endgame-tasks-must-be-durable-db-rows`; the `## Endgame` header block survives, the tasks vanish). Create each step as a real row instead:

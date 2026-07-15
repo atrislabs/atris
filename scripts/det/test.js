@@ -266,3 +266,29 @@ check('det.git.json', JSON.parse(catalogJson()).git['commit-msg'].usage.includes
 check('det.git.notRoutable', CATALOG['commit-msg'], undefined);
 
 console.log(`ok — ${passed} checks passed`);
+
+// hunk-filter: keeps only matching hunks, drops non-matching files entirely
+{
+  const { filterHunks } = require('./hunk-filter');
+  const diff = [
+    'diff --git a/f.md b/f.md',
+    'index 111..222 100644',
+    '--- a/f.md',
+    '+++ b/f.md',
+    '@@ -1,2 +1,2 @@',
+    ' keep me',
+    '-old horizon line',
+    '+new horizon line',
+    '@@ -9,2 +9,2 @@',
+    ' other',
+    '-their churn',
+    '+their new churn',
+    ''
+  ].join('\n');
+  const filtered = filterHunks(diff, 'horizon');
+  assert.ok(filtered.includes('+new horizon line'), 'hunk-filter keeps matching hunk');
+  assert.ok(!filtered.includes('their churn'), 'hunk-filter drops non-matching hunk');
+  assert.ok(filtered.includes('diff --git a/f.md'), 'hunk-filter keeps file header');
+  assert.deepStrictEqual(filterHunks(diff, 'nomatch-xyz'), '', 'hunk-filter empty when nothing matches');
+  passed += 4;
+}
