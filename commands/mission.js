@@ -156,6 +156,161 @@ function proposeMissionDestinationChange(mission, destination) {
   };
 }
 
+const SUPPORTED_MISSION_HARD_GATES = new Set([
+  'money_movement',
+  'outbound_communication',
+  'destructive_change',
+  'irreversible_change',
+  'secret_access',
+  'destination_change',
+]);
+
+function missionRouteLegId(leg, index) {
+  return String(leg?.id || leg?.key || `leg-${index + 1}`).trim();
+}
+
+function missionRouteHardGates(proposal) {
+  const gates = [];
+  const add = (value) => {
+    const values = Array.isArray(value) ? value : value ? [value] : [];
+    for (const entry of values) {
+      const gate = String(entry || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (gate && !gates.includes(gate)) gates.push(gate);
+    }
+  };
+  add(proposal?.hard_gates);
+  for (const leg of proposal?.legs || []) {
+    add(leg?.hard_gates);
+    add(leg?.hard_gate);
+  }
+  return gates;
+}
+
+function missionRouteScopePresent(leg) {
+  const files = Array.isArray(leg?.files) ? leg.files : leg?.files ? [leg.files] : [];
+  const surfaces = Array.isArray(leg?.surface) ? leg.surface : leg?.surface ? [leg.surface] : [];
+  return [...files, ...surfaces].some((value) => String(value || '').trim());
+}
+
+function missionRouteCycle(legs) {
+  const ids = legs.map(missionRouteLegId);
+  const dependencies = new Map(legs.map((leg, index) => [
+    ids[index],
+    Array.isArray(leg.dependencies) ? leg.dependencies.map((value) => String(value || '').trim()).filter(Boolean) : [],
+  ]));
+  const visiting = new Set();
+  const visited = new Set();
+  const stack = [];
+
+  function visit(id) {
+    if (visiting.has(id)) {
+      const start = stack.indexOf(id);
+      return [...stack.slice(start), id];
+    }
+    if (visited.has(id)) return null;
+    visiting.add(id);
+    stack.push(id);
+    for (const dependency of dependencies.get(id) || []) {
+      const cycle = visit(dependency);
+      if (cycle) return cycle;
+    }
+    stack.pop();
+    visiting.delete(id);
+    visited.add(id);
+    return null;
+  }
+
+  for (const id of ids) {
+    const cycle = visit(id);
+    if (cycle) return cycle;
+  }
+  return null;
+}
+
+function validateMissionRouteProposal(proposal) {
+  const legs = proposal?.legs;
+  if (!Array.isArray(legs) || legs.length === 0) {
+    return { code: 'missing_legs', reason: 'route proposal must contain at least one leg' };
+  }
+
+  const ids = legs.map(missionRouteLegId);
+  const idSet = new Set(ids);
+  if (idSet.size !== ids.length) {
+    return { code: 'duplicate_leg_id', reason: 'route proposal contains duplicate leg ids' };
+  }
+
+  for (let index = 0; index < legs.length; index += 1) {
+    const leg = legs[index];
+    const id = ids[index];
+    if (!leg || typeof leg !== 'object' || Array.isArray(leg)) {
+      return { code: 'invalid_leg', reason: `route leg ${id} must be an object` };
+    }
+    if (!String(leg.objective || '').trim()) {
+      return { code: 'missing_objective', reason: `route leg ${id} is missing an objective` };
+    }
+    if (!String(leg.verifier || '').trim()) {
+      return { code: 'missing_verifier', reason: `route leg ${id} is missing a verifier command` };
+    }
+    if (!String(leg.stop_condition || leg.terminal_condition || leg.terminal_state || '').trim()) {
+      return { code: 'missing_stop_condition', reason: `route leg ${id} is missing a stop or terminal condition` };
+    }
+    if (!missionRouteScopePresent(leg)) {
+      return { code: 'missing_scope', reason: `route leg ${id} has no files or surface scope` };
+    }
+    if (leg.dependencies !== undefined && !Array.isArray(leg.dependencies)) {
+      return { code: 'invalid_dependencies', reason: `route leg ${id} dependencies must be a list` };
+    }
+    for (const dependency of leg.dependencies || []) {
+      const dependencyId = String(dependency || '').trim();
+      if (!idSet.has(dependencyId)) {
+        return { code: 'unknown_dependency', reason: `route leg ${id} depends on unknown leg ${dependencyId || '(empty)'}` };
+      }
+    }
+  }
+
+  const unsupportedGate = missionRouteHardGates(proposal)
+    .find((gate) => !SUPPORTED_MISSION_HARD_GATES.has(gate));
+  if (unsupportedGate) {
+    return { code: 'unsupported_hard_gate', reason: `route uses unsupported hard gate ${unsupportedGate}` };
+  }
+
+  const cycle = missionRouteCycle(legs);
+  if (cycle) {
+    return { code: 'dependency_cycle', reason: `route dependencies form a cycle: ${cycle.join(' -> ')}` };
+  }
+  return null;
+}
+
+function readMissionRouteProposal(args, asJson) {
+  const source = readFlag(args, '--file', '');
+  let raw = '';
+  try {
+    raw = source && source !== '-'
+      ? fs.readFileSync(path.resolve(process.cwd(), source), 'utf8')
+      : fs.readFileSync(0, 'utf8');
+  } catch (error) {
+    exitMissionError(`Could not read route proposal: ${error.message}`, 1, asJson);
+  }
+  if (!String(raw || '').trim()) {
+    exitMissionError('Route proposal JSON is required on stdin or with --file <path>.', 1, asJson);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    exitMissionError(`Route proposal is not valid JSON: ${error.message}`, 1, asJson);
+  }
+  if (Array.isArray(parsed)) return { legs: parsed, hard_gates: [] };
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    exitMissionError('Route proposal must be a list of legs or an object with a legs list.', 1, asJson);
+  }
+  return {
+    ...parsed,
+    legs: parsed.legs,
+    hard_gates: parsed.hard_gates ?? [],
+  };
+}
+
 function hasFlag(args, name) {
   return args.includes(name);
 }
@@ -4266,6 +4421,129 @@ function setMissionVerifier(args) {
     printJsonOrText(
       { ok: true, action: 'mission_set_verifier', mission_id: saved.id, verifier: saved.verifier },
       [`mission verifier updated: ${saved.id}`],
+      asJson,
+    );
+  } finally {
+    releaseMissionLock(lock);
+  }
+}
+
+function routeMission(args) {
+  const asJson = wantsJson(args);
+  const action = String(args[0] || '').trim().toLowerCase();
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || action === 'help') {
+    console.log('Usage: atris mission route set <id> [--file <route.json>|--file -] [--json]');
+    console.log('Pass a JSON list of legs, or an object with legs and hard_gates, by file or stdin.');
+    return;
+  }
+  if (action !== 'set') {
+    exitMissionError('Usage: atris mission route set <id> [--file <route.json>|--file -] [--json].', 1, asJson);
+  }
+
+  const rest = args.slice(1);
+  const ref = String(stripKnownFlags(rest, ['--file'], ['--json'])[0] || '').trim();
+  if (!ref) {
+    exitMissionError('Usage: atris mission route set <id> [--file <route.json>|--file -] [--json].', 1, asJson);
+  }
+  let mission = resolveMission(ref);
+  if (!mission) exitMissingMission(ref, 1, asJson);
+  if (!mission.drive) {
+    exitMissionError(`Mission ${mission.id} has no drive destination. Start it with --destination before setting a route.`, 1, asJson);
+  }
+
+  const proposal = readMissionRouteProposal(rest, asJson);
+  const rejection = validateMissionRouteProposal(proposal);
+  const missionRoot = mission.worktree_root || process.cwd();
+  const lock = acquireMissionLock(mission.id, missionRoot);
+  if (!lock.ok) {
+    exitMissionError(`[mission route set] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`, 3, asJson);
+  }
+
+  try {
+    mission = resolveMission(mission.id, missionRoot) || mission;
+    if (rejection) {
+      const rejectedProposal = {
+        schema: 'atris.mission.route_proposal.v1',
+        ...proposal,
+        reason_code: rejection.code,
+        reason: rejection.reason,
+        rejected_at: stampIso(),
+      };
+      const { mission: saved, event } = saveMission(
+        {
+          ...mission,
+          drive: {
+            ...mission.drive,
+            pending_route_proposal: rejectedProposal,
+          },
+        },
+        missionRoot,
+        'mission_route_rejected',
+        {
+          route_version: mission.drive.route_version,
+          reason_code: rejection.code,
+          reason: rejection.reason,
+          proposal: rejectedProposal,
+        },
+      );
+      printJsonOrText(
+        {
+          ok: false,
+          action: 'mission_route_rejected',
+          mission_id: saved.id,
+          route_version: saved.drive.route_version,
+          reason_code: rejection.code,
+          reason: rejection.reason,
+          proposal: rejectedProposal,
+          mission: saved,
+          event,
+        },
+        [
+          `Mission route rejected: ${saved.id}`,
+          `Reason: ${rejection.reason}.`,
+          `Active route remains version ${saved.drive.route_version}.`,
+        ],
+        asJson,
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    const nextDrive = {
+      ...mission.drive,
+      route_version: Number(mission.drive.route_version || 0) + 1,
+      position: 0,
+      legs: proposal.legs,
+      hard_gates: missionRouteHardGates(proposal),
+    };
+    delete nextDrive.pending_route_proposal;
+    const { mission: saved, event } = saveMission(
+      { ...mission, drive: nextDrive },
+      missionRoot,
+      'mission_route_set',
+      {
+        previous_route_version: mission.drive.route_version,
+        route_version: nextDrive.route_version,
+        leg_count: nextDrive.legs.length,
+        hard_gates: nextDrive.hard_gates,
+      },
+    );
+    printJsonOrText(
+      {
+        ok: true,
+        action: 'mission_route_set',
+        mission_id: saved.id,
+        route_version: saved.drive.route_version,
+        legs: saved.drive.legs,
+        hard_gates: saved.drive.hard_gates,
+        mission: saved,
+        event,
+      },
+      [
+        `Mission route set: ${saved.id}`,
+        `Route version: ${saved.drive.route_version}.`,
+        `Legs: ${saved.drive.legs.length}.`,
+      ],
       asJson,
     );
   } finally {
@@ -9066,6 +9344,7 @@ atris mission - durable goal + loop + owner + proof state
                        [--native-goal-status active|paused|usageLimited] [--native-goal-objective "..."] [--json]
   atris mission set-runner <id> <runner|engine> [--model <id>] [--json]
   atris mission set-verifier <id> "<cmd>" [--json]
+  atris mission route set <id> [--file <route.json>|--file -] [--json]   Validate and save a falsifiable route from a JSON file or stdin
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
   atris mission run "<objective>" --cloud [--lane fast|pro|max] [--agent <id>]   Enqueue on the Atris backend instead of running local ticks
@@ -9499,6 +9778,8 @@ function missionCommand(args) {
       return setMissionRunner(rest);
     case 'set-verifier':
       return setMissionVerifier(rest);
+    case 'route':
+      return routeMission(rest);
     case 'run':
       return runMission(rest);
     case 'complete':
