@@ -12,6 +12,10 @@ const {
   engineVerifierResultFromRun,
   missionVerifierCheckedText,
 } = require('../commands/mission');
+const {
+  missionVerifierTimeoutMs,
+  verifierBudgetWarning,
+} = require('../lib/default-verifier');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-verifier-test-'));
@@ -53,6 +57,16 @@ test('unverified and failed tick recap text carries a visible warning marker', (
   assert.match(missionVerifierCheckedText(null, {}), /^UNVERIFIED:/);
   assert.match(missionVerifierCheckedText({ passed: false, command: 'false' }, {}), /^VERIFY FAILED:/);
   assert.match(missionVerifierCheckedText({ passed: false, mode: 'engine-unavailable' }, {}), /^VERIFY FAILED:/);
+});
+
+test('verifier budget warnings share the mission timeout and ignore scoped checks', () => {
+  const env = { ATRIS_MISSION_VERIFIER_TIMEOUT_MS: '90000' };
+  assert.equal(missionVerifierTimeoutMs(env), 90000);
+  const warning = verifierBudgetWarning('node --test', env);
+  assert.equal(warning.code, 'verifier_may_outlive_window');
+  assert.equal(warning.verifier_timeout_ms, 90000);
+  assert.match(warning.message, /90 seconds/);
+  assert.equal(verifierBudgetWarning('node --test test/wish.test.js', env), null);
 });
 
 test('mission run uses the repo default verifier and explicit no-verify stays unverified', () => {

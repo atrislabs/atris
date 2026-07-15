@@ -71,7 +71,10 @@ const {
   runCloudMissionCommand,
   statusCloudMissionCommand,
 } = require('../lib/cloud-mission');
-const { resolveDefaultVerifier } = require('../lib/default-verifier');
+const {
+  missionVerifierTimeoutMs,
+  resolveDefaultVerifier,
+} = require('../lib/default-verifier');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -5257,12 +5260,6 @@ function resolveVerifierCommand(command) {
   if (!trimmed || !/^atris(?:\s|$)/.test(trimmed)) return raw;
   const cliPath = path.resolve(__dirname, '..', 'bin', 'atris.js');
   return `${leading}${shellQuote(process.execPath)} ${shellQuote(cliPath)}${trimmed.slice('atris'.length)}`;
-}
-
-function missionVerifierTimeoutMs(env = process.env) {
-  const parsed = Number(env.ATRIS_MISSION_VERIFIER_TIMEOUT_MS);
-  if (Number.isFinite(parsed) && parsed >= 1000) return Math.floor(parsed);
-  return 120000;
 }
 
 function runVerifier(command, root = process.cwd()) {
