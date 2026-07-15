@@ -61,7 +61,7 @@ Font alternatives: instead of Inter: Instrument Sans, Plus Jakarta Sans, Outfit.
 
 **Copy:** no em dashes (the character, U+2014) anywhere in UI copy. no hedge words, no hype adverbs (the "-lessly" family). plain sentences a human would type.
 
-**Visual anti-patterns:** no glassmorphism, no gradient text, no sparklines as decoration, no rounded-rect-with-colored-border, no large icons with rounded corners above headings, no hero metric layout (big number + small label), no modals unless truly necessary, no all-caps eyebrows/labels/headers, no status-dot-plus-eyebrow hero kickers (a pulsing/colored dot next to a small caps/mono label above the headline; keshav's #1 named slop pattern. if a section needs a kicker at all, plain sentence-case text with no dot), no "claude beige" off-white backgrounds, no instrument serif overuse (the new AI tell), no generic flat tinted backgrounds.
+**Visual anti-patterns:** no glassmorphism, no gradient text, no sparklines as decoration, no rounded-rect-with-colored-border, no large icons with rounded corners above headings, no hero metric layout (big number + small label), no modals unless truly necessary, no all-caps eyebrows/labels/headers, no status-dot-plus-eyebrow hero kickers (a pulsing/colored dot next to a small caps/mono label above the headline; keshav's #1 named slop pattern. if a section needs a kicker at all, plain sentence-case text with no dot), no "claude beige" off-white backgrounds, no instrument serif overuse (the new AI tell), no generic flat tinted backgrounds, no giant blurred gradient orb glowing behind the hero (the aurora-blob background: a huge soft-blurred colored blob absolutely positioned behind the fold; reads as a template).
 
 ## Vocabulary is the Lever
 

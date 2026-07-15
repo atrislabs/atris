@@ -49,6 +49,15 @@ test('flags the hover-lift reflex but not a subtle hover scale', () => {
   assert.ok(!scanFile(tmpFile('Ok2.tsx', '<div className="hover:scale-100">')).map((f) => f.rule).includes('hover-lift'));
 });
 
+test('flags the decorative blur blob but not a small legit blur', () => {
+  const blob = scanFile(tmpFile('Hero.tsx', '<div className="absolute -z-10 blur-3xl bg-sky-400/20 rounded-full" />')).map((f) => f.rule);
+  assert.ok(blob.includes('decorative-blur-blob'), 'aurora-blob background');
+  // a small deliberate blur (e.g. an image placeholder) must NOT trip it
+  assert.ok(!scanFile(tmpFile('Ok.css', '.thumb { filter: blur(4px); }')).map((f) => f.rule).includes('decorative-blur-blob'));
+  // backdrop-blur is a different tell (glassmorphism), not this one
+  assert.ok(!scanFile(tmpFile('Ok2.tsx', '<div className="backdrop-blur-sm" />')).map((f) => f.rule).includes('decorative-blur-blob'));
+});
+
 test('clean markup produces zero findings', () => {
   const clean = [
     '<section className="rounded-lg border border-stone-200 bg-stone-50 p-12">',
