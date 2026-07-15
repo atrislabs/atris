@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { wishCommand } = require('../commands/wish');
+const { withReceiptVoice, RECEIPT_VOICE_CONTRACT } = require('../lib/cloud-mission');
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-wish-cloud-test-'));
@@ -53,7 +54,7 @@ test('wish cloud enqueues the text and records the cloud receipt', async () => {
       options: {
         method: 'POST',
         token: 'test-token',
-        body: { text: 'make cloud wishes real', lane: 'pro', agent_id: 'agent-42' },
+        body: { text: withReceiptVoice('make cloud wishes real'), lane: 'pro', agent_id: 'agent-42' },
       },
     }]);
     assert.deepEqual(
@@ -105,4 +106,12 @@ test('wish cloud rejects an invalid lane before making a request or writing stat
     process.chdir(previousCwd);
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('withReceiptVoice adds the contract once and skips empty text', () => {
+  const once = withReceiptVoice('do the thing');
+  assert.match(once, /report back in plain sentences/);
+  assert.equal(withReceiptVoice(once), once);
+  assert.equal(withReceiptVoice(''), '');
+  assert.ok(once.includes(RECEIPT_VOICE_CONTRACT));
 });
