@@ -85,6 +85,10 @@ const PAIR_RULES = [
     a: /rounded-full[^"'`]{0,80}\b[wh]-(?:1(?:\.5)?|2(?:\.5)?|3)\b|\b[wh]-(?:1(?:\.5)?|2(?:\.5)?|3)\b[^"'`]{0,80}rounded-full/i,
     b: /font-mono|tracking-(?:wide(?:r|st)?|\[)|text-\[?1[01]px|letter-spacing:\s*0?\.\d/i,
     why: 'tiny status dot next to a small mono/tracked kicker label: banned hero-kicker composite' },
+  { id: 'pastel-icon-tile', sev: 'warn', span: 2,
+    a: /\bbg-(?:indigo|violet|purple|fuchsia|blue|sky|cyan|teal|emerald|green|lime|amber|orange|rose|pink|red)-(?:50|100)\b/i,
+    b: /\brounded(?:-(?:sm|md|lg|xl|2xl))?\b[^"'`]{0,80}\b(?:size-|[wh]-)(?:8|9|10|11|12|14|16)\b|\b(?:size-|[wh]-)(?:8|9|10|11|12|14|16)\b[^"'`]{0,80}\brounded(?:-(?:sm|md|lg|xl|2xl))?\b/i,
+    why: 'pastel-tinted rounded icon tile (small light-100 square holding an icon): the generated feature-card reflex' },
 ];
 
 const ICON = { error: '✗', warn: '⚠' }; // ✗  ⚠

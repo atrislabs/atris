@@ -97,6 +97,15 @@ test('a lone status dot far from any label does not trip the pair rule', () => {
   assert.ok(!scanFile(tmpFile('Dot.tsx', ok)).some((f) => f.rule === 'hero-kicker'));
 });
 
+test('flags the pastel icon tile but not a plain pastel card or a neutral square', () => {
+  const tile = scanFile(tmpFile('Feature.tsx', '<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100">')).map((f) => f.rule);
+  assert.ok(tile.includes('pastel-icon-tile'), 'pastel rounded icon tile');
+  // a large padded pastel section (no small square) must NOT trip it
+  assert.ok(!scanFile(tmpFile('Ok.tsx', '<section className="rounded-lg bg-indigo-50 p-12">')).map((f) => f.rule).includes('pastel-icon-tile'));
+  // a neutral (non-pastel) rounded square avatar must NOT trip it
+  assert.ok(!scanFile(tmpFile('Ok2.tsx', '<div className="h-12 w-12 rounded-full bg-stone-200" />')).map((f) => f.rule).includes('pastel-icon-tile'));
+});
+
 test('findings carry file:line + rule id for the verification gate', () => {
   const f = scanFile(tmpFile('X.css', '\n\n.x { backdrop-filter: blur(8px); }'))[0];
   assert.equal(f.line, 3);
