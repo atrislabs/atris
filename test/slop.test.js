@@ -67,6 +67,8 @@ test('flags a dot char followed by an all-caps kicker label', () => {
   assert.ok(hits.includes('kicker-dot-caps'));
   // a bullet separator with normal copy must NOT trip it
   assert.ok(!scanFile(tmpFile('Sep.tsx', '<span>2 min read ● Updated today</span>')).map((f) => f.rule).includes('kicker-dot-caps'));
+  // ASCII wireframes in prose docs use ● as radio/transport glyphs: exempt
+  assert.ok(!scanFile(tmpFile('idea.md', '│ ▶ PLAY ■ STOP ● REC │')).map((f) => f.rule).includes('kicker-dot-caps'));
 });
 
 test('a lone status dot far from any label does not trip the pair rule', () => {

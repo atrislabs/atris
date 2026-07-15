@@ -68,6 +68,7 @@ const RULES = [
     why: 'hype/marketing slop phrase: say the specific thing instead' },
   { id: 'kicker-dot-caps', sev: 'error',
     re: /[●◉]\s*[A-Z][A-Z0-9]+(?:\s+[A-Z0-9]+)*\b/,
+    notFiles: /\.(md|mdx|txt)$/i, // prose/wireframe docs use ● as radio buttons and transport glyphs
     why: 'dot char + all-caps label: the status-dot eyebrow kicker, the #1 banned hero pattern' },
 ];
 
@@ -187,6 +188,7 @@ function scanFile(file, rules = RULES, pairRules = PAIR_RULES) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     for (const rule of rules) {
+      if (rule.notFiles && rule.notFiles.test(file)) continue;
       const m = rule.re.exec(line);
       if (m) {
         findings.push({
