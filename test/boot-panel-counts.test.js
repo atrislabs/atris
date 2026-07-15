@@ -92,10 +92,10 @@ test('boot panel shows DB lane truth including certified review gate', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir, env });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /tasks:\s+2 backlog, 1 active/);
-    assert.match(boot.stdout, /review:\s+1 waiting \(1 certified\)/);
-    assert.match(boot.stdout, /1 certified await accept - run 'atris task reviews'/);
-    assert.match(boot.stdout, /TODO\.md ←── 2 tasks waiting/);
+    assert.match(boot.stdout, /you\s+1 done, waiting for your ok/);
+    assert.match(boot.stdout, /work\s+1 moving, 2 up next/);
+    assert.match(boot.stdout, /checks\s+1 getting a final look/);
+    assert.match(boot.stdout, /next\s+atris task reviews\s+\(approve the finished work\)/);
     assert.doesNotMatch(boot.stdout, /—/);
     assert.doesNotMatch(boot.stdout, /[\u{1F300}-\u{1FAFF}]/u);
     assert.doesNotMatch(boot.stdout, /WORKSPACE DETECTED|READY TO INITIALIZE/);
@@ -114,10 +114,9 @@ test('boot panel hides review line when nothing is in review', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir, env });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /tasks:\s+1 backlog, 0 active/);
-    assert.doesNotMatch(boot.stdout, /Review:/);
-    assert.match(boot.stdout, /Ready\. Run 'atris plan' to start\./);
-    assert.match(boot.stdout, /TODO\.md ←── 1 task waiting/);
+    assert.match(boot.stdout, /work\s+1 up next/);
+    assert.doesNotMatch(boot.stdout, /^\s*checks\s/m);
+    assert.match(boot.stdout, /next\s+atris plan\s+\(plan the first tasks\)/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -145,14 +144,14 @@ test('boot panel falls back to TODO.md parse when no task DB exists', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir, env });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /tasks:\s+3 backlog, 1 active/);
-    assert.doesNotMatch(boot.stdout, /review:/);
+    assert.match(boot.stdout, /work\s+1 moving, 3 up next/);
+    assert.doesNotMatch(boot.stdout, /^\s*checks\s/m);
   } finally {
     cleanupTempDir(dir);
   }
 });
 
-test('boot panel shows rot counts for stale worktrees and unresolved lessons', () => {
+test('boot panel shows tidy counts for stale worktrees and unresolved lessons', () => {
   const base = makeTempDir();
   const dir = path.join(base, 'myrepo');
   try {
@@ -170,13 +169,13 @@ test('boot panel shows rot counts for stale worktrees and unresolved lessons', (
 
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /rot:\s+2 stale worktrees, 1 unresolv/);
+    assert.match(boot.stdout, /tidy\s+2 old copies to toss, 1 open problem/);
   } finally {
     cleanupTempDir(base);
   }
 });
 
-test('boot panel hides rot line when worktrees and lessons are clean', () => {
+test('boot panel hides tidy line when worktrees and lessons are clean', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -187,7 +186,7 @@ test('boot panel hides rot line when worktrees and lessons are clean', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.doesNotMatch(boot.stdout, /rot:/);
+    assert.doesNotMatch(boot.stdout, /^\s*tidy\s/m);
   } finally {
     cleanupTempDir(dir);
   }
