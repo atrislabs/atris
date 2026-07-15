@@ -525,8 +525,8 @@ test('one lap keeps the worktree and proof receipt when the real verifier fails'
   }
 });
 
-test('one lap freezes the first retry verifier before a failed dispatch', { timeout: 60000 }, () => {
-  const setup = setupRuntime('fail');
+test('one lap freezes the repo default verifier before dispatch', { timeout: 60000 }, () => {
+  const setup = setupRuntime('pass');
   try {
     fs.rmSync(path.join(setup.workspace, 'test'), { recursive: true, force: true });
     git(['add', '-A'], setup.workspace, setup.env);
@@ -536,23 +536,17 @@ test('one lap freezes the first retry verifier before a failed dispatch', { time
 
     const initial = cli([ASK, '--engine', 'codex', '--json'], setup);
     assert.equal(initial.status, 0, initial.stderr || initial.stdout);
-    const waiting = json(initial, 'one lap verifier prompt');
-    assert.equal(waiting.status, 'waiting_input');
-    assert.equal(waiting.question, 'what exact command proves this request works?');
-
-    const firstVerifier = 'node --check missing.js';
-    const failed = cli([ASK, '--engine', 'codex', '--verify', firstVerifier, '--json'], setup);
-    assert.equal(failed.status, 1, `stdout:\n${failed.stdout}\nstderr:\n${failed.stderr}`);
-    const failedPayload = json(failed, 'first retry verifier failure');
-    assert.equal(failedPayload.checked, `${firstVerifier} failed (exit 1)`);
-    setup.worktrees.push(failedPayload.worktree);
+    const payload = json(initial, 'one lap default verifier');
+    assert.equal(payload.status, 'done');
+    assert.equal(payload.verifier, 'git diff --check');
+    setup.worktrees.push(payload.worktree);
 
     const missions = fs.readFileSync(path.join(setup.workspace, '.atris', 'state', 'missions.jsonl'), 'utf8')
       .trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
-    const frozen = missions.filter((row) => row.id === waiting.mission_id).at(-1);
-    assert.equal(frozen.verifier, firstVerifier);
+    const frozen = missions.filter((row) => row.id === payload.mission_id).at(-1);
+    assert.equal(frozen.verifier, 'git diff --check');
 
-    const replaced = cli([ASK, '--engine', 'codex', '--verify', 'git diff --check', '--json'], setup);
+    const replaced = cli([ASK, '--engine', 'codex', '--verify', 'node --check missing.js', '--json'], setup);
     assert.equal(replaced.status, 2, replaced.stderr || replaced.stdout);
     assert.match(json(replaced, 'replaced retry verifier').reason, /verifier is frozen/);
     assert.equal(fs.readFileSync(setup.env.ATRIS_ENGINE_COUNT, 'utf8').trim(), '1');

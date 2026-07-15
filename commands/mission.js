@@ -71,6 +71,7 @@ const {
   runCloudMissionCommand,
   statusCloudMissionCommand,
 } = require('../lib/cloud-mission');
+const { resolveDefaultVerifier } = require('../lib/default-verifier');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -7654,8 +7655,9 @@ async function runMission(args) {
     }
 
     // Freeze run-start contract (verifier, lane). Stored on receipts, not the mission record.
+    const storedVerifier = effectiveMissionVerifier(mission);
     const frozen = {
-      verifier: effectiveMissionVerifier(mission),
+      verifier: storedVerifier || (verifyEach ? resolveDefaultVerifier(cwd) : ''),
       lane: mission.lane || 'workspace',
       runner: runtimeMission.runner || 'manual',
       model: runtimeMission.model || null,
@@ -7704,7 +7706,7 @@ async function runMission(args) {
       mission = resolveMission(mission.id) || mission;
       runtimeMission = runtimeView(mission);
       if (['complete', 'stopped', 'paused'].includes(mission.status)) { pauseReason = mission.status; break; }
-      if (effectiveMissionVerifier(mission) !== frozen.verifier) { pauseReason = 'verifier-mutated'; break; }
+      if (effectiveMissionVerifier(mission) !== storedVerifier) { pauseReason = 'verifier-mutated'; break; }
       if ((mission.lane || 'workspace') !== frozen.lane) { pauseReason = 'lane-mutated'; break; }
 
       const tickIdx = Number(mission.last_tick_index || 0) + 1;
