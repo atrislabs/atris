@@ -196,6 +196,7 @@ atris task - durable local task state (SQLite, gitignored)
                                            Advance the scoped current task one safe step
                                            review-state lanes: needs-agent, continue-work, human-accept-waiting, certified
   atris task note <id> "<message>"         Append dialogue/context to a task
+  atris task retitle <id> "<new title>"    Rename a task and preserve the old title in dialogue
   atris task tag <id> --add <tag> [--remove <tag>]
                                            Update tags on an existing task (e.g. --add needs-human to hold it
                                            from sweep + fleet staffing); logs a task_tags_updated event
@@ -6660,6 +6661,58 @@ function cmdNote(args) {
   console.log(`noted ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
 }
 
+function cmdRetitle(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  const title = pos.slice(1).join(' ').trim();
+  if (!id) failTask('atris task retitle', 'missing_id', 'task id required');
+  if (!title) failTask('atris task retitle', 'missing_title', 'new title required');
+  warnIfTaskTitleNeedsOperatorWhy(title);
+
+  const actor = flag(args, '--as') || DEFAULT_OWNER;
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task retitle');
+  const current = taskDb.getTask(db, taskId);
+  const oldTitle = String(current.title || '');
+  const now = Math.max(Date.now(), Number(current.updated_at || 0) + 1);
+  const updated = db.prepare(`
+    UPDATE tasks
+       SET title = ?,
+           updated_at = ?
+     WHERE id = ?
+       AND updated_at = ?
+  `).run(title, now, taskId, current.updated_at);
+  if (updated.changes !== 1) {
+    failTask('atris task retitle', 'stale_task_state', 'retitle failed: stale task state', 1);
+  }
+  const history = taskDb.noteTask(db, {
+    id: taskId,
+    actor: String(actor),
+    content: `previous title: ${oldTitle}`,
+  });
+  if (!history.noted) {
+    failTask('atris task retitle', history.reason || 'history_failed', `retitle history failed: ${history.reason || 'unknown'}`, 1);
+  }
+
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const task = compactTaskFromProjection(projection, taskId);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'retitled',
+      task_id: taskId,
+      old_title: oldTitle,
+      title,
+      version: history.event.version,
+      projection_path: outPath,
+      task,
+    });
+    return;
+  }
+  console.log(`retitled ${taskRef(task)}: ${title}`);
+}
+
 // Collect EVERY value for a repeatable flag (flag() only returns the first),
 // so `--add a --add b` and `--add a,b` both work.
 function collectFlagValues(args, name) {
@@ -11966,6 +12019,7 @@ async function runTaskCommand(args) {
       return cmdPlanPreview(rest);
     case 'note':   return cmdNote(rest);
     case 'say':    return cmdNote(rest);
+    case 'retitle': return cmdRetitle(rest);
     case 'tag':
     case 'tags':
       return cmdTag(rest);
@@ -12035,7 +12089,7 @@ async function runTaskCommand(args) {
 const MUTATING_TASK_COMMANDS = new Set([
   'add', 'new', 'delegate', 'assign', 'plan', 'do', 'backlog', 'unplan',
   'clear-plan', 'clearplan', 'claim', 'start', 'release', 'unclaim', 'next',
-  'continue-work', 'continue', 'chat', 'note', 'say', 'tag', 'tags', 'step',
+  'continue-work', 'continue', 'chat', 'note', 'say', 'retitle', 'tag', 'tags', 'step',
   'ready', 'result', 'accept', 'landing', 'land-review', 'auto-accept-certified',
   'auto-accept', 'sweep', 'audit', 'certify-verified', 'accept-group', 'revise',
   'done', 'finish', 'fail', 'archive', 'relabel-archived', 'review', 'import',
