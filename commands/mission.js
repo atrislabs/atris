@@ -7973,7 +7973,12 @@ async function runMission(args) {
       const xpReadyAction = missionXpReadyAction(mission, receiptPath);
       const budgetRemainingSeconds = missionFullBudgetRemainingSeconds(mission);
       const fullBudgetMode = budgetRemainingSeconds > 0;
-      const newStatus = (verifierResult?.passed && mission.always_on) ? 'ready' :
+      // Worker may call `mission complete` mid-tick. Re-read disk so we do not
+      // demote terminal status back to ready (always-on + verifier-pass used to
+      // reopen closed rooms — mission 32 complete@19:23:33 → ready@19:23:48).
+      const latestOnDisk = loadMissionMap(cwd).get(mission.id) || mission;
+      const alreadyTerminal = TERMINAL_STATUSES.has(String(latestOnDisk.status || ''));
+      let newStatus = (verifierResult?.passed && mission.always_on) ? 'ready' :
                         (verifierResult?.passed && xpReadyAction) ? 'ready' :
                         (verifierResult?.passed && completeOnPass && !fullBudgetMode) ? 'complete' :
                         (verifierResult?.passed && fullBudgetMode) ? 'running' :
@@ -7981,7 +7986,11 @@ async function runMission(args) {
                         (verifierResult ? 'blocked' :
                         (result.status === 'ran' ? 'running' : mission.status)));
       let nextAction = mission.next_action;
-      if (verifierResult?.passed && mission.always_on) {
+      if (alreadyTerminal) {
+        newStatus = latestOnDisk.status;
+        nextAction = latestOnDisk.next_action
+          || (latestOnDisk.status === 'complete' ? 'mission complete' : nextAction);
+      } else if (verifierResult?.passed && mission.always_on) {
         nextAction = nextCandidateTickAction(mission);
       } else if (verifierResult?.passed && xpReadyAction) {
         nextAction = xpReadyAction;
@@ -8001,18 +8010,19 @@ async function runMission(args) {
       const claudeRanTick = Boolean(result.claude) && result.status === 'ran';
       const claudeSessionTicks = claudeRanTick ? Number(mission.claude_session_ticks || 0) + 1 : Number(mission.claude_session_ticks || 0);
       const rotateSessionForContext = claudeRanTick && claudeSessionTicks >= CLAUDE_SESSION_CONTEXT_ROTATE_TICKS;
+      // Base on latestOnDisk so mid-tick complete proof/completed_at survive.
       mission = saveMission({
-        ...mission,
+        ...latestOnDisk,
         status: newStatus,
-        paused_at: null,
-        stop_reason: null,
+        paused_at: alreadyTerminal ? (latestOnDisk.paused_at || null) : null,
+        stop_reason: alreadyTerminal ? (latestOnDisk.stop_reason || null) : null,
         last_tick_at: finishedAt,
         last_tick_status: result.status,
         last_tick_reason: result.reason,
         last_tick_index: tickIdx,
         last_tick_layer: result.layer,
         last_tick_layer_source: result.layer_source,
-        verifier_result: verifierResult || mission.verifier_result || null,
+        verifier_result: verifierResult || latestOnDisk.verifier_result || null,
         receipt_path: receiptPath,
         next_action: nextAction,
         claude_session_ticks: rotateSessionForContext ? 0 : claudeSessionTicks,
