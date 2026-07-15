@@ -4,6 +4,7 @@ const path = require('path');
 const { knownCommands } = require('../lib/known-commands');
 const { readUsage, usagePath } = require('../lib/usage');
 const pulse = require('../lib/pulse');
+const { parseLessons } = require('./autopilot');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const VALID_LANES = new Set(['business', 'life', 'code']);
@@ -617,6 +618,34 @@ function isOlderThan(value, days, now) {
   return ms !== null && now.getTime() - ms > days * DAY_MS;
 }
 
+function lessonFlagsState(cwd, now) {
+  const candidates = [];
+  const candidateSources = new Set();
+
+  for (const lesson of parseLessons(cwd)) {
+    const source = `lesson:${lesson.id}`;
+    const status = normalizeSpaces(lesson.meta && lesson.meta.status).toLowerCase();
+    const detector = normalizeSpaces(lesson.meta && lesson.meta.detector);
+    const needsDetector = lesson.verdict === 'fail'
+      && !lesson.resolvedTag
+      && status !== 'resolved'
+      && !detector
+      && isOlderThan(lesson.date, 7, now);
+    if (!needsDetector) continue;
+
+    candidateSources.add(source);
+    candidates.push({
+      what: `lesson ${lesson.id} has no detector, type one so it can self-heal`,
+      owner: normalizeSpaces(lesson.meta && lesson.meta.scope) || 'operator',
+      lane: 'code',
+      ttlDays: 7,
+      source,
+    });
+  }
+
+  return { candidates, candidateSources };
+}
+
 function taskRef(task) {
   return normalizeSpaces(task && (task.display_id || task.id));
 }
@@ -736,13 +765,13 @@ function shortText(text, maxLength = 70) {
   return clipped || value.slice(0, maxLength).trim();
 }
 
-function appendOpenedFromSource({ what, lane = 'code', ttlDays = 3, source }, cwd, now) {
+function appendOpenedFromSource({ what, owner = 'operator', lane = 'code', ttlDays = 3, source }, cwd, now) {
   const event = {
     kind: 'opened',
     at: now.toISOString(),
     id: closeIdForSource(source),
     what,
-    owner: 'operator',
+    owner: normalizeSpaces(owner) || 'operator',
     lane: VALID_LANES.has(lane) ? lane : 'code',
     opened_at: now.toISOString(),
     ttl_days: Number(ttlDays) || 3,
@@ -777,6 +806,7 @@ function scanState(cwd = process.cwd(), options = {}) {
   const pulseLiveness = pulseLivenessState(cwd, now);
   const experimentLiveness = experimentLivenessState(cwd, now);
   const rewardRegression = rewardRegressionState(cwd, now);
+  const lessonFlags = lessonFlagsState(cwd, now);
   const openBySource = new Map();
   const dissolvedSources = new Set();
   const autoClosed = [];
@@ -832,6 +862,10 @@ function scanState(cwd = process.cwd(), options = {}) {
       if (usedCommands.has(commandName)) closeFlag(flag);
       continue;
     }
+    if (flag.source.startsWith('lesson:')) {
+      if (!lessonFlags.candidateSources.has(flag.source)) closeFlag(flag);
+      continue;
+    }
     if (flag.source === 'liveness:pulse') {
       if (pulseLiveness.healthy) closeFlag(flag);
       continue;
@@ -876,6 +910,10 @@ function scanState(cwd = process.cwd(), options = {}) {
       ttlDays: 3,
       source: failedBatchSource,
     });
+  }
+
+  for (const candidate of lessonFlags.candidates) {
+    openCandidate(candidate);
   }
 
   const staleMissions = missions

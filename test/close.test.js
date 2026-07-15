@@ -311,6 +311,66 @@ test('scan opens stale review and one failed-task batch, then dedupes them', () 
   }
 });
 
+test('scan opens one flag for an old fail lesson without a detector', () => {
+  const dir = makeTempDir();
+  const lessonsPath = path.join(dir, 'atris', 'lessons.md');
+  const metadataPath = path.join(dir, 'atris', 'lessons.json');
+  const now = '2026-01-10T00:00:00.000Z';
+  try {
+    fs.mkdirSync(path.dirname(lessonsPath), { recursive: true });
+    fs.writeFileSync(lessonsPath, '- **[2026-01-01] prose-only-loop** — fail — The failure has no mechanism.\n');
+    writeJson(metadataPath, {
+      'prose-only-loop': { scope: 'self-heal-team', status: 'open' },
+    });
+
+    const first = runClose(['scan', '--json'], dir, now);
+    assert.equal(first.code, 0, first.stderr);
+    const payload = JSON.parse(first.stdout);
+    assert.equal(payload.opened.length, 1);
+    assert.deepEqual(payload.opened[0], {
+      id: close.closeIdForWhat('lesson:prose-only-loop'),
+      what: 'lesson prose-only-loop has no detector, type one so it can self-heal',
+      source: 'lesson:prose-only-loop',
+      lane: 'code',
+      ttl_days: 7,
+    });
+
+    const [opened] = readLedger(dir).filter((event) => event.kind === 'opened');
+    assert.equal(opened.owner, 'self-heal-team');
+    const duplicate = runClose(['scan'], dir, now);
+    assert.equal(duplicate.code, 0, duplicate.stderr);
+    assert.equal(duplicate.stdout, 'nothing new to open, nothing resolved.');
+    assert.equal(readLedger(dir).filter((event) => event.kind === 'opened').length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan ignores fail lessons with a detector or resolved status', () => {
+  const dir = makeTempDir();
+  const lessonsPath = path.join(dir, 'atris', 'lessons.md');
+  const metadataPath = path.join(dir, 'atris', 'lessons.json');
+  try {
+    fs.mkdirSync(path.dirname(lessonsPath), { recursive: true });
+    fs.writeFileSync(lessonsPath, [
+      '- **[2026-01-01] detected-loop** — fail — A detector exists.',
+      '- **[2026-01-01] resolved-loop** — fail — The lesson is resolved.',
+      '',
+    ].join('\n'));
+    writeJson(metadataPath, {
+      'detected-loop': { detector: 'exit 1', status: 'open' },
+      'resolved-loop': { status: 'resolved' },
+    });
+
+    const scan = runClose(['scan'], dir, '2026-01-10T00:00:00.000Z');
+    assert.equal(scan.code, 0, scan.stderr);
+    assert.equal(scan.stdout, 'nothing new to open, nothing resolved.');
+    assert.deepEqual(readLedger(dir), []);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('scan migrates legacy failed-task rows and respects per-task dissolves', () => {
   const dir = makeTempDir();
   const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
