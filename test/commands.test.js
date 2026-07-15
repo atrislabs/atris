@@ -12791,6 +12791,11 @@ test('task auto-accept-certified --all sweeps past the old 12-row cap', () => {
   const ROW_COUNT = 20; // more than the old hardcoded max of 12
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const trustState = path.join(dir, '.atris', 'state');
+    fs.mkdirSync(trustState, { recursive: true });
+    const trustedCodex = Array.from({ length: 10 }, () => JSON.stringify({ claimed_by: 'codex', outcome: 'accepted' }));
+    fs.writeFileSync(path.join(trustState, 'career_xp_receipts.jsonl'), `${trustedCodex.join('\n')}\n`);
+    fs.writeFileSync(path.join(trustState, 'scorecards.jsonl'), '');
     writePolicy(dir, { enabled: false, enabled_by: 'test' });
     for (let i = 0; i < ROW_COUNT; i += 1) {
       const add = runCli(['task', 'add', `Row ${i} lands under --all`, '--tag', 'code', '--json'], { cwd: dir, env });
