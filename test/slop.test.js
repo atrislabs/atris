@@ -106,6 +106,15 @@ test('flags the pastel icon tile but not a plain pastel card or a neutral square
   assert.ok(!scanFile(tmpFile('Ok2.tsx', '<div className="h-12 w-12 rounded-full bg-stone-200" />')).map((f) => f.rule).includes('pastel-icon-tile'));
 });
 
+test('flags the dark premium hero gradient but not a colorful or solid-dark one', () => {
+  const dark = scanFile(tmpFile('Hero.tsx', '<section className="bg-gradient-to-b from-slate-900 via-slate-800 to-black">')).map((f) => f.rule);
+  assert.ok(dark.includes('dark-hero-gradient'), 'near-black slate-to-black gradient');
+  // a solid dark background (no gradient stops) must NOT trip it
+  assert.ok(!scanFile(tmpFile('Ok.tsx', '<section className="bg-black text-white">')).map((f) => f.rule).includes('dark-hero-gradient'));
+  // a dark gradient that stays mid-tone (not fading to black/950) must NOT trip it
+  assert.ok(!scanFile(tmpFile('Ok2.tsx', '<section className="bg-gradient-to-b from-slate-900 to-slate-700">')).map((f) => f.rule).includes('dark-hero-gradient'));
+});
+
 test('findings carry file:line + rule id for the verification gate', () => {
   const f = scanFile(tmpFile('X.css', '\n\n.x { backdrop-filter: blur(8px); }'))[0];
   assert.equal(f.line, 3);
