@@ -1032,7 +1032,7 @@ test('wish review latest appends record', () => {
 
     const list = runCli(['wish', 'list'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /make new thing - done \[reviewed\]/);
+    assert.match(list.stdout, /make new thing clearer - done \[reviewed\]/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1277,15 +1277,15 @@ test('wish list folds older quiet wishes and --all shows them', () => {
     const list = runCli(['wish', 'list'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
     assert.doesNotMatch(list.stdout, /old report calmer/);
-    assert.match(list.stdout, /#2 make fresh report - done/);
-    assert.match(list.stdout, /#3 make old worker - working/);
-    assert.match(list.stdout, /#4 make old answer - waiting on you/);
+    assert.match(list.stdout, /#2 make fresh report clearer - done/);
+    assert.match(list.stdout, /#3 make old worker steady - working/);
+    assert.match(list.stdout, /#4 make old answer clear - waiting on you/);
     assert.match(list.stdout, /1 older wish is resting\. See it with atris wish list --all/);
 
     const all = runCli(['wish', 'list', '--all'], { cwd: dir });
     assert.equal(all.status, 0, all.stderr || all.stdout);
-    assert.match(all.stdout, /#1 make old report - done, needs your review/);
-    assert.match(all.stdout, /#2 make fresh report - done/);
+    assert.match(all.stdout, /#1 make old report calmer - done, needs your review/);
+    assert.match(all.stdout, /#2 make fresh report clearer - done/);
     assert.doesNotMatch(all.stdout, /resting/);
   } finally {
     cleanupTempDir(dir);
@@ -1320,7 +1320,7 @@ test('bare wish stops nudging old shipped wishes without reviews', () => {
 
     const list = runCli(['wish', 'list'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /#2 make stale nudge - done, needs your review/);
+    assert.match(list.stdout, /#2 make stale nudge quieter - done, needs your review/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1344,7 +1344,7 @@ test('wish list stays in plain language without ids', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /#1 make boot screen - working/);
+    assert.match(list.stdout, /#1 make boot screen friendlier - working/);
     assert.doesNotMatch(list.stdout, /in flight/);
     assert.doesNotMatch(list.stdout, /[0-9A-HJKMNP-TV-Z]{26}/);
     assert.doesNotMatch(list.stdout, /wish-|mission-|[A-Z0-9]{3}-\d/);
@@ -1378,7 +1378,7 @@ test('wish list renders stopped when its mission was stopped', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /make boot screen - stuck/);
+    assert.match(list.stdout, /make boot screen friendlier - stuck/);
     assert.doesNotMatch(list.stdout, /working/);
   } finally {
     cleanupTempDir(dir);
@@ -1411,7 +1411,7 @@ test('wish --as builder records a builder slice without delegation', () => {
 
     const list = runCli(['wish', 'list'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /#1 improve tests more - waiting on you/);
+    assert.match(list.stdout, /#1 improve tests more real results - waiting on you/);
     assert.doesNotMatch(list.stdout, /ready for builder/);
   } finally {
     cleanupTempDir(dir);
@@ -2013,10 +2013,10 @@ test('wish list shows only the five plain status words', () => {
 
     const list = runCli(['wish', 'list'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
-    assert.match(list.stdout, /make signups grow - new/);
-    assert.match(list.stdout, /make login flow - working/);
-    assert.match(list.stdout, /make billing page - done/);
-    assert.match(list.stdout, /make search results - stuck/);
+    assert.match(list.stdout, /make signups grow soon - new/);
+    assert.match(list.stdout, /make login flow smoother - working/);
+    assert.match(list.stdout, /make billing page load fast - done/);
+    assert.match(list.stdout, /make search results smarter - stuck/);
     assert.match(list.stdout, /make emails warmer - waiting on you/);
     assert.doesNotMatch(list.stdout, /captured|delegated|in flight|came true|waiting on another home|decomposed/);
   } finally {
