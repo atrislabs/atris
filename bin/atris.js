@@ -1497,28 +1497,26 @@ function printMapBootstrap({ userInput, prefix = 'Bootstrap required' } = {}) {
 // The banner only renders in a real terminal; when a hook or agent captures
 // this output it stays compact so it costs almost nothing in context.
 function showWelcomeVisualization() {
-  const { getTaskCounts } = require('../lib/state-detection');
+  const { getTaskGlance } = require('../lib/state-detection');
   const { readEndgameState } = require('../commands/autopilot');
   const cwd = process.cwd();
   const atrisDir = path.join(cwd, 'atris');
   const projectName = path.basename(cwd);
   const row = (label, value) => `  ${label.padEnd(9)}${value}`;
+  const sub = (text) => `  ${' '.repeat(9)}- ${text}`;
+  const trimTitle = (t) => (String(t).length > 64 ? `${String(t).slice(0, 61)}...` : String(t));
 
-  let tasksInBacklog = 0;
-  let tasksInProgress = 0;
-  let tasksInReview = 0;
-  let tasksCertified = 0;
+  let glance = {
+    backlog: 0, active: 0, review: 0, reviewCertified: 0,
+    activeTitles: [], backlogTitles: [], certifiedTitles: []
+  };
   let journalEntries = 0;
   const isInitialized = fs.existsSync(atrisDir);
   let endgameState = { slug: 'unset', horizon: '' };
 
   if (isInitialized) {
     try {
-      const counts = getTaskCounts(atrisDir);
-      tasksInBacklog = counts.backlog;
-      tasksInProgress = counts.active;
-      tasksInReview = counts.review;
-      tasksCertified = counts.reviewCertified;
+      glance = getTaskGlance(atrisDir);
     } catch {
       // Silently fail - show 0 tasks if reading fails
     }
@@ -1567,17 +1565,30 @@ function showWelcomeVisualization() {
     return;
   }
 
+  // Show the work itself, not counts. A newcomer in any domain (code, docs,
+  // a travel plan) should read actual task names and know what's happening.
   // Waiting-on-you comes first: the one thing only a human can do.
-  if (tasksCertified > 0) {
-    console.log(row('you', `${tasksCertified} done, waiting for your ok`));
+  if (glance.reviewCertified > 0) {
+    console.log(row('you', `${glance.reviewCertified} done, waiting for your ok:`));
+    glance.certifiedTitles.forEach((t) => console.log(sub(trimTitle(t))));
   }
 
-  const workBits = [];
-  if (tasksInProgress > 0) workBits.push(`${tasksInProgress} moving`);
-  if (tasksInBacklog > 0) workBits.push(`${tasksInBacklog} up next`);
-  console.log(row('work', workBits.length ? workBits.join(', ') : 'nothing open'));
-  if (tasksInReview > 0) {
-    console.log(row('checks', `${tasksInReview} getting a final look`));
+  if (glance.active > 0) {
+    console.log(row('now', trimTitle(glance.activeTitles[0] || 'work moving')));
+    glance.activeTitles.slice(1).forEach((t) => console.log(sub(trimTitle(t))));
+    const tail = [];
+    const moreActive = glance.active - glance.activeTitles.length;
+    if (moreActive > 0) tail.push(`${moreActive} more moving`);
+    if (glance.backlog > 0) tail.push(`${glance.backlog} waiting to start`);
+    if (glance.review > 0) tail.push(`${glance.review} getting a final look`);
+    if (tail.length) console.log(`  ${' '.repeat(9)}...and ${tail.join(', ')}`);
+  } else if (glance.backlog > 0) {
+    console.log(row('soon', trimTitle(glance.backlogTitles[0] || 'work queued')));
+    glance.backlogTitles.slice(1).forEach((t) => console.log(sub(trimTitle(t))));
+    const moreBacklog = glance.backlog - glance.backlogTitles.length;
+    if (moreBacklog > 0) console.log(`  ${' '.repeat(9)}...and ${moreBacklog} more waiting`);
+  } else {
+    console.log(row('now', 'nothing on the list yet'));
   }
 
   // landSummary is expensive (git board classification) - compute once per boot.
@@ -1644,7 +1655,7 @@ function showWelcomeVisualization() {
   // The next command always carries a plain-english gloss: a newcomer should
   // know what typing it will do before they type it.
   let next;
-  if (tasksCertified > 0) {
+  if (glance.reviewCertified > 0) {
     next = `atris task reviews  (approve the finished work)`;
   } else if (landInfo && landInfo.due > 0) {
     next = `atris land --reap  (put away the overdue work)`;
