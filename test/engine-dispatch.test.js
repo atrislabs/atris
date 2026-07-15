@@ -545,6 +545,8 @@ test('runDispatchFlight restaffs once when usage-limit output kills the first en
     });
     assert.deepEqual(fleet.DEAD_ENGINE_OUTPUT_PATTERNS, ['usage limit', 'purchase more credits', 'rate limit']);
     const dispatchEngines = [];
+    const failedStderr = `Usage limit reached. Purchase more credits.\n${'stderr-'.repeat(350)}original-stderr-tail`;
+    const failedReport = `${'report-'.repeat(350)}original-report-tail`;
     const flight = await fleet.runDispatchFlight({
       root: tmpRoot,
       taskIds: ['CLI-900'],
@@ -554,7 +556,7 @@ test('runDispatchFlight restaffs once when usage-limit output kills the first en
       dispatcher: (entry) => {
         dispatchEngines.push(entry.engine);
         if (entry.engine === 'codex') {
-          return Promise.resolve({ exitCode: 1, stderr: 'Usage limit reached. Purchase more credits.' });
+          return Promise.resolve({ exitCode: 1, stderr: failedStderr, report: failedReport });
         }
         return Promise.resolve({ exitCode: 0, report: 'cursor finished the same prompt' });
       },
@@ -563,11 +565,27 @@ test('runDispatchFlight restaffs once when usage-limit output kills the first en
     });
 
     assert.deepEqual(dispatchEngines, ['codex', 'cursor']);
-    assert.deepEqual(flight.results[0].restaffed, { from: 'codex', to: 'cursor', reason: 'usage_limit' });
+    assert.deepEqual(flight.results[0].restaffed, {
+      from: 'codex',
+      to: 'cursor',
+      reason: 'usage_limit',
+      failed_legs: [{
+        engine: 'codex',
+        exitCode: 1,
+        stderr: failedStderr.slice(-2000),
+        report: failedReport.slice(-2000),
+      }],
+    });
     assert.equal(flight.results[0].engine, 'cursor');
     assert.equal(flight.landed[0].engine, 'cursor');
-    assert.deepEqual(flight.landed[0].restaffed, { from: 'codex', to: 'cursor', reason: 'usage_limit' });
+    assert.deepEqual(flight.landed[0].restaffed, flight.results[0].restaffed);
     assert.equal(flight.paused.length, 0);
+    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.deepEqual(receipt.results[0].restaffed.failed_legs, flight.results[0].restaffed.failed_legs);
+    assert.equal(receipt.results[0].restaffed.failed_legs[0].stderr.length, 2000);
+    assert.match(receipt.results[0].restaffed.failed_legs[0].stderr, /original-stderr-tail$/);
+    assert.equal(receipt.results[0].restaffed.failed_legs[0].report.length, 2000);
+    assert.match(receipt.results[0].restaffed.failed_legs[0].report, /original-report-tail$/);
     const readyCall = calls.find((c) => c.startsWith('task ready CLI-900'));
     assert.match(readyCall, /Built by cursor engine/);
     assert.match(readyCall, /Restaffed from codex to cursor \(usage_limit\)/);
@@ -637,8 +655,13 @@ test('runDispatchFlight fails the flight when the fallback engine also fails', a
     assert.equal(flight.paused.length, 1);
     assert.equal(flight.paused[0].stage, 'build');
     assert.equal(flight.paused[0].engine, 'cursor');
-    assert.deepEqual(flight.paused[0].restaffed, { from: 'codex', to: 'cursor', reason: 'usage_limit' });
-    assert.deepEqual(flight.results[0].restaffed, { from: 'codex', to: 'cursor', reason: 'usage_limit' });
+    assert.deepEqual(flight.paused[0].restaffed, {
+      from: 'codex',
+      to: 'cursor',
+      reason: 'usage_limit',
+      failed_legs: [{ engine: 'codex', exitCode: 1, stderr: 'rate limit', report: '' }],
+    });
+    assert.deepEqual(flight.results[0].restaffed, flight.paused[0].restaffed);
     assert.deepEqual(verifyCalls, []);
     assert.ok(!calls.some((c) => c.startsWith('task ready')), 'failed fallback must not mark the task ready');
   } finally {

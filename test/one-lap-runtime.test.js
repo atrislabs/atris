@@ -827,7 +827,12 @@ test('one lap reports the engine that actually completed a restaffed build', { t
     setup.worktrees.push(payload.worktree);
     const receipt = JSON.parse(fs.readFileSync(path.join(setup.workspace, payload.receipt), 'utf8'));
     assert.equal(receipt.ready[0].engine, 'cursor');
-    assert.deepEqual(receipt.ready[0].restaffed, { from: 'codex', to: 'cursor', reason: 'usage_limit' });
+    assert.deepEqual(receipt.ready[0].restaffed, {
+      from: 'codex',
+      to: 'cursor',
+      reason: 'usage_limit',
+      failed_legs: [{ engine: 'codex', exitCode: 1, stderr: 'usage limit reached\n', report: '' }],
+    });
 
     const repeated = json(cli([ASK, '--json'], setup), 'resumed restaffed one lap');
     assert.equal(repeated.engine, 'cursor');

@@ -265,6 +265,13 @@ test('runFleetFlight full loop: claims, dispatches in parallel, lands serially, 
     assert.ok(fs.existsSync(flight.receipt));
     const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
     assert.equal(receipt.landed.length, 1);
+    assert.deepEqual(receipt.results[1].restaffed.failed_legs, [{
+      engine: 'cursor',
+      exitCode: 1,
+      stderr: 'engine died',
+      report: 'ok',
+    }]);
+    assert.deepEqual(receipt.paused[0].restaffed.failed_legs, receipt.results[1].restaffed.failed_legs);
     assert.ok(!fs.existsSync(path.join(root, '.atris', 'fleet.json')), 'fleet must not grow a state file');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
