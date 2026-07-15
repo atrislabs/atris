@@ -241,11 +241,15 @@ test('healthy wish delegates a task and records honest proof status', () => {
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
-    assert.deepEqual(Object.keys(payload).sort(), ['budget', 'engine', 'mission_id', 'questions', 'status', 'task_id', 'wish_id']);
+    assert.deepEqual(Object.keys(payload).sort(), ['budget', 'engine', 'mission_id', 'questions', 'status', 'task_id', 'warnings', 'wish_id']);
     assert.equal(payload.status, 'delegated');
     assert.equal(payload.engine, 'claude');
     assert.equal(payload.budget, 'long');
     assert.deepEqual(payload.questions, []);
+    assert.equal(payload.warnings.length, 1);
+    assert.equal(payload.warnings[0].code, 'verifier_may_outlive_window');
+    assert.match(payload.warnings[0].message, /whole test suite/);
+    assert.match(payload.warnings[0].message, /two minutes/);
     assert.ok(payload.task_id);
     assert.ok(payload.mission_id);
 
@@ -265,6 +269,9 @@ test('healthy wish delegates a task and records honest proof status', () => {
     assert.deepEqual(mission.task_ids, [payload.task_id]);
     assert.equal(wishes.at(-1).verify_status, 'needs-review');
     assert.equal(wishes.at(-1).verify_outcome, 'I will show you the result to judge');
+    assert.equal(wishes.at(-1).verify_warning.code, 'verifier_may_outlive_window');
+    assert.equal(mission.verifier_budget_warning.code, 'verifier_may_outlive_window');
+    assert.equal(mission.metadata.verifier_budget_warning.code, 'verifier_may_outlive_window');
 
     const receipt = JSON.parse(fs.readFileSync(path.join(dir, wishes.at(-1).mission_room_receipt_path), 'utf8'));
     assert.equal(receipt.wish_id, payload.wish_id);
@@ -273,6 +280,26 @@ test('healthy wish delegates a task and records honest proof status', () => {
 
     const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
     assert.ok(projection.tasks.some((task) => task.id === payload.task_id && task.metadata.delegate_via === 'local'));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish intake warns when the fallback verifier may outlive the mission window', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const res = runCli(['wish', 'make the boot screen friendlier'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /\nwarning: this wish uses the whole test suite, but mission verification stops after two minutes\./);
+    assert.match(res.stdout, /add a focused check command if that suite runs longer\./);
   } finally {
     cleanupTempDir(dir);
   }
@@ -412,6 +439,40 @@ test('wish intake preserves Check line verifier verbatim', () => {
 
     const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
     assert.equal(missions.find((mission) => mission.id === payload.mission_id).verifier, verifier);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wish intake scopes a derived verifier to named test files', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    fs.mkdirSync(path.join(dir, 'test'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'test', 'boot-panel-counts.test.js'), '');
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const text = 'fix the four failing boot panel tests in test/boot-panel-counts.test.js';
+    const res = runCli(['wish', text, '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.warnings, undefined);
+
+    const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    const stored = wishes.at(-1);
+    assert.equal(stored.verify, 'node --test test/boot-panel-counts.test.js');
+    assert.equal(stored.verify_status, 'derived');
+    assert.equal(stored.verify_warning, undefined);
+
+    const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
+    const mission = missions.find((row) => row.id === payload.mission_id);
+    assert.equal(mission.verifier, 'node --test test/boot-panel-counts.test.js');
+    assert.equal(mission.verifier_budget_warning, undefined);
   } finally {
     cleanupTempDir(dir);
   }
