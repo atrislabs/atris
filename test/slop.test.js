@@ -115,6 +115,15 @@ test('flags the dark premium hero gradient but not a colorful or solid-dark one'
   assert.ok(!scanFile(tmpFile('Ok2.tsx', '<section className="bg-gradient-to-b from-slate-900 to-slate-700">')).map((f) => f.rule).includes('dark-hero-gradient'));
 });
 
+test('flags a colored glow shadow but not a neutral or sizeonly shadow', () => {
+  const glow = scanFile(tmpFile('Cta.tsx', '<button className="rounded-lg shadow-lg shadow-indigo-500/50">Go</button>')).map((f) => f.rule);
+  assert.ok(glow.includes('colored-glow-shadow'), 'tinted neon glow shadow');
+  // a plain sized shadow with no color must NOT trip it
+  assert.ok(!scanFile(tmpFile('Ok.tsx', '<div className="shadow-lg" />')).map((f) => f.rule).includes('colored-glow-shadow'));
+  // a neutral-tinted shadow (stone/gray) must NOT trip it
+  assert.ok(!scanFile(tmpFile('Ok2.tsx', '<div className="shadow-stone-200" />')).map((f) => f.rule).includes('colored-glow-shadow'));
+});
+
 test('findings carry file:line + rule id for the verification gate', () => {
   const f = scanFile(tmpFile('X.css', '\n\n.x { backdrop-filter: blur(8px); }'))[0];
   assert.equal(f.line, 3);
