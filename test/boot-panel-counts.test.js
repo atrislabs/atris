@@ -1,8 +1,9 @@
 'use strict';
 
-// Boot panel (atris atris.md) must show task-lane truth from the task DB —
-// backlog/active counts plus the review lane (the human accept gate) —
-// falling back to TODO.md parsing only when no DB exists.
+// Boot panel (atris atris.md) must show task-lane truth from the task DB:
+// actual task titles for what's moving and what awaits the human ok, with
+// remaining lane counts folded into one trailing line. Falls back to
+// TODO.md parsing only when no DB exists.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -92,9 +93,10 @@ test('boot panel shows DB lane truth including certified review gate', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir, env });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /you\s+1 done, waiting for your ok/);
-    assert.match(boot.stdout, /work\s+1 moving, 2 up next/);
-    assert.match(boot.stdout, /checks\s+1 getting a final look/);
+    assert.match(boot.stdout, /you\s+1 done, waiting for your ok:/);
+    assert.match(boot.stdout, /-\s+Certified review task/);
+    assert.match(boot.stdout, /now\s+Claimed active task/);
+    assert.match(boot.stdout, /\.\.\.and 2 waiting to start, 1 getting a final look/);
     assert.match(boot.stdout, /next\s+atris task reviews\s+\(approve the finished work\)/);
     assert.doesNotMatch(boot.stdout, /—/);
     assert.doesNotMatch(boot.stdout, /[\u{1F300}-\u{1FAFF}]/u);
@@ -114,8 +116,8 @@ test('boot panel hides review line when nothing is in review', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir, env });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /work\s+1 up next/);
-    assert.doesNotMatch(boot.stdout, /^\s*checks\s/m);
+    assert.match(boot.stdout, /soon\s+Lone open task/);
+    assert.doesNotMatch(boot.stdout, /getting a final look/);
     assert.match(boot.stdout, /next\s+atris plan\s+\(plan the first tasks\)/);
   } finally {
     cleanupTempDir(dir);
@@ -144,8 +146,9 @@ test('boot panel falls back to TODO.md parse when no task DB exists', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir, env });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /work\s+1 moving, 3 up next/);
-    assert.doesNotMatch(boot.stdout, /^\s*checks\s/m);
+    assert.match(boot.stdout, /now\s+Active markdown task/);
+    assert.match(boot.stdout, /\.\.\.and 3 waiting to start/);
+    assert.doesNotMatch(boot.stdout, /getting a final look/);
   } finally {
     cleanupTempDir(dir);
   }
