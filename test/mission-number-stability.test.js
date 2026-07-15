@@ -138,12 +138,20 @@ test('duplicate mission numbers prefer a non-terminal mission and warn with both
   const dir = makeWorkspace();
   try {
     appendMission(dir, { id: 'mission-live', n: 30, status: 'paused' });
+    appendMission(dir, { id: 'mission-newer', n: 30, status: 'planning', updated_at: '2026-07-10T11:00:00.000Z' });
     appendMission(dir, { id: 'mission-done', n: 30, status: 'complete', updated_at: '2026-07-10T12:00:00.000Z' });
+
+    const listed = runCli(['mission', 'list', '--local'], dir);
+    assert.equal(listed.status, 0, listed.stderr || listed.stdout);
+    assert.match(listed.stdout, /Mission: #30 mission newer/);
+    assert.match(listed.stdout, /Mission: ion-live mission live/);
+    assert.match(listed.stdout, /Mission: ion-done mission done/);
+    assert.doesNotMatch(listed.stdout, /Mission: #30 mission (?:live|done)/);
 
     const resolved = runCli(['mission', 'status', '#30', '--json'], dir);
     assert.equal(resolved.status, 0, resolved.stderr || resolved.stdout);
-    assert.equal(JSON.parse(resolved.stdout).missions[0].id, 'mission-live');
-    assert.match(resolved.stderr, /warning: mission number #30 is shared by mission-done, mission-live; using mission-live\./);
+    assert.equal(JSON.parse(resolved.stdout).missions[0].id, 'mission-newer');
+    assert.match(resolved.stderr, /warning: mission number #30 is shared by mission-done, mission-newer, mission-live; using mission-newer\./);
   } finally {
     cleanup(dir);
   }
