@@ -960,7 +960,8 @@ test('review prints concise validator prompt by default', () => {
     const res = runCli(['review'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Review is the human checkpoint/);
-    assert.match(res.stdout, /READY FOR APPROVAL/);
+    assert.match(res.stdout, /ready for approval/);
+    assert.doesNotMatch(res.stdout, /READY FOR APPROVAL/);
     assert.match(res.stdout, /Nothing is ready for approval/);
     assert.doesNotMatch(res.stdout, /clear completed tasks out of TODO/);
     assert.match(res.stdout, /Need the legacy Validator prompt\? Run `atris review --verbose`/);
