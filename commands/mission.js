@@ -545,11 +545,24 @@ function missionTaskRef(task) {
   return task?.display_id || task?.legacy_ref || String(task?.id || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 8);
 }
 
+function missionXpTaskTitle(objective) {
+  const prefix = 'Mission XP: ';
+  const normalized = String(objective || '').replace(/\s+/g, ' ').trim();
+  const boundary = normalized.search(/:|[.!?](?=\s|$)/);
+  const firstClause = (boundary > 0 ? normalized.slice(0, boundary) : normalized) || 'mission work';
+  const maxClauseLength = 64 - prefix.length;
+  if (firstClause.length <= maxClauseLength) return `${prefix}${firstClause}`;
+  const clipped = firstClause.slice(0, maxClauseLength + 1);
+  const wordBoundary = clipped.lastIndexOf(' ');
+  const shortClause = clipped.slice(0, wordBoundary > 0 ? wordBoundary : maxClauseLength).trim();
+  return `${prefix}${shortClause || 'mission work'}`;
+}
+
 function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
   const taskDb = loadTaskDb(asJson);
   const db = taskDb.open();
   const workspaceRoot = taskDb.workspaceRoot(root);
-  const title = `Mission XP: ${mission.objective}`;
+  const title = missionXpTaskTitle(mission.objective);
   const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title);
   const ownerResolution = resolveMissionOwner(mission, workspaceRoot);
   const owner = ownerResolution.owner;

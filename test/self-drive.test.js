@@ -7,6 +7,7 @@ const { handleMissionBlocker } = require('../lib/self-drive');
 function harness({ engine = { id: 'codex' }, httpPost, loadSwarloApiKey } = {}) {
   const rows = [];
   const events = [];
+  const dialogue = [];
   let dispatches = 0;
   const taskDb = {
     open: () => ({}),
@@ -19,6 +20,10 @@ function harness({ engine = { id: 'codex' }, httpPost, loadSwarloApiKey } = {}) 
       return { id: task.id, inserted: true };
     },
     getTask: (_db, id) => rows.find((row) => row.id === id),
+    noteTask: (_db, note) => {
+      dialogue.push(note);
+      return { noted: true };
+    },
     claimTask: (_db, { id, claimedBy }) => {
       const row = rows.find((item) => item.id === id);
       row.status = 'claimed';
@@ -43,8 +48,24 @@ function harness({ engine = { id: 'codex' }, httpPost, loadSwarloApiKey } = {}) 
     workspaceRoot: '/tmp/workspace',
     appendEvent: (type, payload) => events.push({ type, payload }),
   }, deps);
-  return { rows, events, run, dispatches: () => dispatches };
+  return { rows, events, dialogue, run, dispatches: () => dispatches };
 }
+
+test('blocker tasks use short plain titles and keep full context in dialogue', () => {
+  const h = harness();
+  h.run('repeated-error:runner-failed-because-the-provider-returned-an-unexpected-response');
+  const task = h.rows[0];
+  assert.equal(task.title.startsWith('get '), true);
+  assert.equal(task.title.includes('"'), false);
+  assert.equal(task.title.includes('Evidence:'), false);
+  assert.ok(task.title.length < 90, task.title);
+  assert.equal(task.metadata.mission_objective, 'ship reliable missions');
+  assert.equal(task.metadata.stop_reason, 'repeated-error:runner-failed-because-the-provider-returned-an-unexpected-response');
+  assert.equal(task.metadata.evidence, 'atris/runs/tick.json');
+  assert.match(h.dialogue[0].content, /Mission objective: ship reliable missions/);
+  assert.match(h.dialogue[0].content, /Stop reason: repeated-error:runner-failed/);
+  assert.match(h.dialogue[0].content, /Evidence: atris\/runs\/tick.json/);
+});
 
 test('dedup returns the existing open blocker task', () => {
   const h = harness();

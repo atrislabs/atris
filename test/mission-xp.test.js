@@ -59,6 +59,37 @@ function ackNativeCodexGoal(dir, mission, env = {}) {
   return JSON.parse(ack.stdout);
 }
 
+test('Mission XP task titles keep the parser prefix and a short objective clause', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'game-manager' };
+  const objective = 'Ship reliable mission generated task titles that every new teammate can understand immediately: include the complete implementation evidence and follow-up context';
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const start = runCli([
+      'mission', 'start', '--no-verify', objective,
+      '--owner', 'game-manager',
+      '--runner', 'codex_goal',
+      '--lane', 'code',
+      '--xp-task',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const mission = JSON.parse(start.stdout).mission;
+    const list = runCli(['task', 'list', '--json'], { cwd: dir, env });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    const task = JSON.parse(list.stdout).tasks.find(row => row.id === mission.xp_task.task_id);
+    const parsed = task.title.match(/^Mission XP:\s*(.+)$/i);
+    assert.ok(parsed, task.title);
+    assert.equal(parsed[1], 'Ship reliable mission generated task titles that');
+    assert.ok(task.title.length <= 64, task.title);
+    assert.equal(task.metadata.mission_objective, objective);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission --xp-task routes verified goal proof into AgentXP acceptance', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
