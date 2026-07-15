@@ -117,6 +117,45 @@ function missionId(objective) {
   return `mission-${todayName()}-${slugify(objective).slice(0, 28)}-${shortHash(`${objective}:${Date.now()}`)}`;
 }
 
+function destinationHash(destination) {
+  return crypto.createHash('sha256').update(String(destination || '')).digest('hex');
+}
+
+function missionDrive(destination) {
+  const value = String(destination || '').trim();
+  if (!value) return null;
+  return {
+    schema: 'atris.mission.drive.v1',
+    destination: value,
+    destination_hash: destinationHash(value),
+    autonomy_level: 'L1',
+    route_version: 1,
+    position: 0,
+    legs: [],
+    hard_gates: [],
+    budget: null,
+    stop_reason: null,
+  };
+}
+
+function proposeMissionDestinationChange(mission, destination) {
+  const value = String(destination || '').trim();
+  if (!mission?.drive || !value || value === mission.drive.destination) return mission;
+  return {
+    ...mission,
+    drive: {
+      ...mission.drive,
+      pending_destination_proposal: {
+        destination: value,
+        destination_hash: destinationHash(value),
+        reason: 'destination changes require operator approval',
+        operator_gated: true,
+        proposed_at: stampIso(),
+      },
+    },
+  };
+}
+
 function hasFlag(args, name) {
   return args.includes(name);
 }
@@ -2356,6 +2395,7 @@ function missionFromArgs(args) {
     '--task',
     '--ask',
     '--model',
+    '--destination',
     '--native-goal-status',
     '--native-goal-objective',
     '--visible-goal-status',
@@ -2389,6 +2429,7 @@ function missionFromArgs(args) {
   const stopCondition = readFlag(args, '--stop', budgetStopCondition(budgetContract) || (verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof'));
   const taskIds = readRepeatedFlag(args, '--task');
   const humanAsks = readRepeatedFlag(args, '--ask');
+  const drive = missionDrive(readFlag(args, '--destination', ''));
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
   const businessBinding = readBusinessBinding(process.cwd());
@@ -2417,6 +2458,7 @@ function missionFromArgs(args) {
     stop_condition: stopCondition,
     task_ids: taskIds,
     human_asks: humanAsks,
+    ...(drive ? { drive } : {}),
     next_action: verifier ? 'run verifier with `atris mission tick <id> --verify`' : 'define verifier or run next task',
     receipt_path: null,
     created_at: stampIso(),
@@ -3604,7 +3646,7 @@ function startMission(args, options = {}) {
   const asJson = wantsJson(args);
   const firstArg = String(args[0] || '').trim().toLowerCase();
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || firstArg === 'help') {
-    console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal|auto]');
+    console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--destination "..."] [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal|auto]');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
@@ -3635,6 +3677,40 @@ function startMission(args, options = {}) {
   if (!hasFlag(args, '--duplicate')) {
     const twin = findActiveTwinMission(mission.objective, mission.owner);
     if (twin) {
+      const requestedDestination = mission.drive?.destination || '';
+      if (requestedDestination && twin.drive?.destination && requestedDestination !== twin.drive.destination) {
+        const proposed = proposeMissionDestinationChange(twin, requestedDestination);
+        const proposal = proposed.drive.pending_destination_proposal;
+        const missionRoot = twin.worktree_root || process.cwd();
+        const { mission: saved } = saveMission(
+          proposed,
+          missionRoot,
+          'mission_destination_change_proposed',
+          {
+            current_destination: twin.drive.destination,
+            proposed_destination: proposal.destination,
+            reason: proposal.reason,
+          },
+        );
+        printJsonOrText(
+          {
+            ok: true,
+            action: 'mission_destination_change_proposed',
+            reused: true,
+            operator_gate_required: true,
+            mission: saved,
+            proposal,
+          },
+          [
+            `Destination change proposed for ${saved.id}.`,
+            `Current destination: ${saved.drive.destination}`,
+            `Proposed destination: ${proposal.destination}`,
+            `Operator gate: ${proposal.reason}.`,
+          ],
+          asJson,
+        );
+        return;
+      }
       printJsonOrText(
         { ok: true, action: 'mission_reused', reused: true, mission: twin, note: 'an active mission with this objective and owner already exists; resumed instead of cloning (pass --duplicate to force a second one)' },
         [
@@ -8964,7 +9040,7 @@ function help() {
   console.log(`
 atris mission - durable goal + loop + owner + proof state
 
-  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--budget quick|long|deep] [--xp-task] [--worktree] [--take-goal-slot]
+  atris mission start "<objective>" --owner <member> [--destination "<text>"] [--verify "..."] [--always-on] [--budget quick|long|deep] [--xp-task] [--worktree] [--take-goal-slot]
                       [--runner manual|claude|atris2|codex_goal] [--model <id>]
                       (runner claude spawns local claude -p per tick, --model passes through;
                        runner atris2 runs each tick as one /atris2/turn on the AtrisOS backend,

@@ -204,6 +204,48 @@ function appendMissionState(dir, mission) {
   }) + '\n', 'utf8');
 }
 
+test('mission status JSON preserves the complete drive schema', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const drive = {
+      schema: 'atris.mission.drive.v1',
+      destination: 'Reach a verified arrival',
+      destination_hash: 'destination-hash',
+      autonomy_level: 'L1',
+      route_version: 1,
+      position: 1,
+      legs: [{
+        objective: 'Persist the trip contract',
+        dependencies: [],
+        files_or_surface: ['commands/mission.js'],
+        verifier: 'node --test test/mission-status.test.js',
+        engine_requirements: ['node'],
+        risk_lane: 'code',
+        fallback: 'return to planning',
+        terminal_state: 'verified',
+      }],
+      hard_gates: ['destination_change'],
+      budget: { max_ticks: 4 },
+      stop_reason: null,
+    };
+    appendMissionState(dir, {
+      id: 'mission-drive-schema',
+      slug: 'drive-schema',
+      objective: 'Preserve the drive schema',
+      status: 'planning',
+      drive,
+    });
+
+    const status = runCli(['mission', 'status', 'mission-drive-schema', '--json'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    const payload = JSON.parse(status.stdout);
+    assert.deepEqual(payload.missions[0].drive, drive);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission status requires end-to-end proof placeholder for golden-path AgentXP receipts', () => {
   const dir = makeTempDir();
   try {
