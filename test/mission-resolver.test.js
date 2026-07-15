@@ -42,6 +42,71 @@ function listMissions(repo) {
   return JSON.parse(res.stdout).missions;
 }
 
+function commitBaseline(repo) {
+  fs.writeFileSync(path.join(repo, 'base.txt'), 'committed\n');
+  for (const args of [['add', 'base.txt'], ['commit', '-m', 'baseline']]) {
+    const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  }
+}
+
+function rewriteMissionNumber(repo, missionId, number, updatedAt) {
+  const stateFile = path.join(repo, '.atris', 'state', 'missions.jsonl');
+  const rows = fs.readFileSync(stateFile, 'utf8')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  for (const row of rows) {
+    if (row.id !== missionId) continue;
+    row.n = number;
+    row.updated_at = updatedAt;
+  }
+  fs.writeFileSync(stateFile, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`);
+}
+
+test('worktree missions allocate from the canonical index and legacy duplicate handles stay runnable', () => {
+  const { base, repo } = makeRepo();
+  try {
+    commitBaseline(repo);
+    const mainMission = startMission(repo, 'main checkout mission', 'alice');
+    const started = runCli([
+      'mission', 'start', '--no-verify', 'worktree mission',
+      '--owner', 'bob', '--worktree', '--json',
+    ], repo);
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const worktreeMission = JSON.parse(started.stdout).mission;
+    assert.equal(worktreeMission.n, mainMission.n + 1, 'worktree mission must use max canonical n + 1');
+
+    // Simulate a legacy collision and make the worktree row the newer active winner.
+    rewriteMissionNumber(worktreeMission.worktree.path, worktreeMission.id, mainMission.n, '2099-01-01T00:00:00.000Z');
+
+    const listed = listMissions(repo);
+    const listedWinner = listed.find((mission) => mission.n === mainMission.n && !mission.display_handle);
+    const listedLoser = listed.find((mission) => mission.id === mainMission.id);
+    assert.equal(listedWinner.id, worktreeMission.id);
+    assert.equal(listedLoser.display_handle, mainMission.id.slice(-8));
+
+    const resolved = runCli([
+      'mission', 'run', String(mainMission.n),
+      '--no-claude', '--no-verify', '--max-ticks', '1', '--json',
+    ], repo);
+    assert.equal(resolved.status, 0, resolved.stderr || resolved.stdout);
+    assert.equal(JSON.parse(resolved.stdout).mission.id, listedWinner.id);
+    assert.match(resolved.stderr, /warning: mission number #1 is shared/);
+
+    const text = runCli(['mission', 'list'], repo);
+    assert.equal(text.status, 0, text.stderr || text.stdout);
+    assert.match(text.stdout, new RegExp(`Mission: ${listedLoser.display_handle} main checkout mission`));
+    assert.doesNotMatch(text.stdout, /Mission: #1 main checkout mission/);
+
+    const byLoserHandle = runCli(['mission', 'show', listedLoser.display_handle, '--json'], repo);
+    assert.equal(byLoserHandle.status, 0, byLoserHandle.stderr || byLoserHandle.stdout);
+    assert.equal(JSON.parse(byLoserHandle.stdout).missions[0].id, mainMission.id);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('list n, full id, and unique id suffix all resolve to the same mission run/tick/show sees', () => {
   const { base, repo } = makeRepo();
   try {

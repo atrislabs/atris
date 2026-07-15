@@ -62,6 +62,7 @@ const {
 } = require('../lib/inspect-fields');
 const {
   displayNumber,
+  meaningfulWords,
   nextRecordNumber,
   recordMatchesRef,
   shortRecordLabel,
@@ -668,14 +669,21 @@ function readJsonLines(file) {
 }
 
 function nextMissionNumber(root = process.cwd()) {
-  return nextRecordNumber(readJsonLines(statePaths(root).missionsJsonl));
+  return nextRecordNumber(canonicalMissionIndex(root));
 }
 
 function missionLabel(mission) {
+  const displayHandle = String(mission && mission.display_handle || '').trim();
+  if (displayHandle) {
+    const words = meaningfulWords(mission && (mission.objective || mission.slug || mission.id), 3);
+    return `${displayHandle}${words.length ? ` ${words.join(' ')}` : ''}`;
+  }
   return shortRecordLabel(mission, mission && (mission.objective || mission.slug || mission.id));
 }
 
 function missionRef(mission) {
+  const displayHandle = String(mission && mission.display_handle || '').trim();
+  if (displayHandle) return displayHandle;
   return shortRecordRef(mission);
 }
 
@@ -903,6 +911,50 @@ function canonicalMissionIndex(root = process.cwd()) {
   return missions;
 }
 
+function missionNumberWinner(records = []) {
+  return records.reduce((winner, candidate) => {
+    if (!winner) return candidate;
+    const winnerTerminal = TERMINAL_STATUSES.has(winner.status);
+    const candidateTerminal = TERMINAL_STATUSES.has(candidate.status);
+    if (winnerTerminal !== candidateTerminal) return candidateTerminal ? winner : candidate;
+    const winnerUpdated = String(winner.updated_at || winner.created_at || '');
+    const candidateUpdated = String(candidate.updated_at || candidate.created_at || '');
+    if (candidateUpdated !== winnerUpdated) return candidateUpdated > winnerUpdated ? candidate : winner;
+    return String(candidate.id || '').localeCompare(String(winner.id || '')) < 0 ? candidate : winner;
+  }, null);
+}
+
+function uniqueMissionSuffix(mission, missions) {
+  const id = String(mission && mission.id || '').trim();
+  if (!id) return 'unknown';
+  const minimum = Math.min(MISSION_REF_SUFFIX_MIN_LENGTH, id.length);
+  for (let length = Math.min(8, id.length); length <= id.length; length += 1) {
+    const suffix = id.slice(-Math.max(length, minimum));
+    if (missions.filter((candidate) => String(candidate.id || '').endsWith(suffix)).length === 1) return suffix;
+  }
+  return id;
+}
+
+function missionNumberDisplayIndex(missions, canonicalMissions = missions) {
+  const recordsByNumber = new Map();
+  for (const mission of canonicalMissions) {
+    const number = displayNumber(mission.n);
+    if (!number) continue;
+    const records = recordsByNumber.get(number) || [];
+    records.push(mission);
+    recordsByNumber.set(number, records);
+  }
+  const winnerIds = new Map();
+  for (const [number, records] of recordsByNumber) {
+    if (records.length > 1) winnerIds.set(number, missionNumberWinner(records)?.id);
+  }
+  return missions.map((mission) => {
+    const number = displayNumber(mission.n);
+    if (!number || !winnerIds.has(number) || winnerIds.get(number) === mission.id) return mission;
+    return { ...mission, display_handle: uniqueMissionSuffix(mission, canonicalMissions) };
+  });
+}
+
 const MISSION_REF_SUFFIX_MIN_LENGTH = 6;
 
 // A ref that "looks like" an id/suffix/number is a single token with no
@@ -1035,13 +1087,9 @@ function exitMissingMission(ref, code = 1, asJson = false, root = process.cwd())
   process.exit(code);
 }
 
-// BCK-1319: id/slug/suffix lookups search the same local+rollup set `mission
-// list` renders (canonicalMissionIndex), so a full id or slug shown by list
-// always resolves here too. Numeric n lookups stay scoped to the local root:
-// n is a durable per-workspace handle (loadMissionMap assigns it once and
-// never renumbers), so it's only guaranteed unique within its own workspace
-// — searching rollups by n would let one worktree's #1 silently resolve to
-// a different worktree's #1.
+// BCK-1319: all handle lookups search the same local+rollup set `mission list`
+// renders. Legacy duplicate numbers use missionNumberWinner here and in list
+// rendering so the bare number always names the row carrying that number.
 function resolveMission(ref, root = process.cwd()) {
   const localMissions = listMissions(root);
   if (!ref) {
@@ -1056,9 +1104,9 @@ function resolveMission(ref, root = process.cwd()) {
 
   const wantedNumber = displayNumber(rawRef.startsWith('#') ? rawRef.slice(1) : rawRef);
   if (wantedNumber) {
-    const matches = localMissions.filter((mission) => recordMatchesRef(mission, ref));
+    const matches = canonicalMissionIndex(root).filter((mission) => recordMatchesRef(mission, ref));
     if (matches.length > 1) {
-      const chosen = matches.find((mission) => !TERMINAL_STATUSES.has(mission.status)) || matches[0];
+      const chosen = missionNumberWinner(matches);
       console.warn(`warning: mission number #${wantedNumber} is shared by ${matches.map((mission) => mission.id).join(', ')}; using ${chosen.id}.`);
       return chosen;
     }
@@ -4164,9 +4212,11 @@ function statusMission(args) {
     exitMissionError(`Invalid --status: ${statusFilter}`, 2, asJson);
   }
   const limit = readPositiveIntegerFlag(args, '--limit', null, { json: asJson });
-  // BCK-1319: same canonical local+rollup index the resolver uses, so the n
-  // this renders is the exact n `mission run/tick/show <n>` resolves.
-  let missions = ref ? [resolveMission(ref)].filter(Boolean) : (localOnly ? listMissions() : canonicalMissionIndex());
+  // Decorate duplicate-number losers before filtering so a filtered list can
+  // never make a losing row look runnable by the winner's bare number.
+  const canonicalMissions = canonicalMissionIndex();
+  let missions = ref ? [resolveMission(ref)].filter(Boolean) : (localOnly ? listMissions() : canonicalMissions);
+  missions = missionNumberDisplayIndex(missions, canonicalMissions);
   if (!ref && statusFilter) missions = missions.filter((mission) => missionMatchesStatusFilter(mission, statusFilter));
   if (!ref && limit) missions = missions.slice(0, limit);
   if (ref && !missions.length) {
