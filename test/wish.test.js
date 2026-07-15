@@ -385,6 +385,38 @@ test('wish --verify records one explicit allowlisted mission verifier', () => {
   }
 });
 
+test('wish intake preserves Check line verifier verbatim', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const body = 'fix wish intake so each acceptance check stays exact';
+    const verifier = 'node --test test/boot-panel-counts.test.js';
+    const text = `${body}\nCheck: ${verifier}`;
+    const res = runCli(['wish', text, '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: path.join(dir, 'tasks.db') },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.status, 'delegated');
+    const wishes = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    const stored = wishes.at(-1);
+    assert.equal(stored.text, text);
+    assert.equal(stored.task_text, body);
+    assert.equal(stored.verify, verifier);
+    assert.equal(stored.verify_status, 'explicit');
+    assert.equal(wishes.some((wish) => wish.status === 'decomposed'), false);
+
+    const missions = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'));
+    assert.equal(missions.find((mission) => mission.id === payload.mission_id).verifier, verifier);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish --engine uses an explicit ready engine for task and mission execution', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
