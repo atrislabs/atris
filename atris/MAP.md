@@ -143,7 +143,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 ### Feature: Natural Language Interface (`atris [anything]`)
 
-**Purpose:** Universal entry point - accepts any input and routes intelligently
+**Purpose:** Make one plain sentence the complete scoped path from intent to verified Review.
 
 - **Entry point:** `lib/known-commands.js:3` (knownCommands list), `bin/atris.js:987` (dispatch check)
 - **Cold-start handler:** `bin/atris.js:1099` (`interactiveEntry`; active missions/work outrank completed history)
@@ -159,8 +159,24 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris fix the auth bug` → Hot start with task
 - `atris build user dashboard` → Hot start with feature
 - **Value:** Single command for everything, natural language input
+- **Argument routing:** `bin/atris.js:127-165` strips only recognized controls, preserves the operator sentence, and keeps single-word command typo behavior.
+- **Natural entry:** `bin/atris.js:1045-1074` routes multiword unknown input into the one-lap path; `bin/atris.js:1135-1335` preserves fresh-workspace context gathering and uses one lap only after MAP/context readiness.
+- **Coordinator:** `commands/one-lap.js:1-361` resumes matching active wishes, requires one exact task and mission, blocks protected actions, selects a ready executor, requires an allowlisted mission verifier, and renders text or `atris.one_lap.v1` JSON.
+- **Execution gate:** `lib/fleet.js:757-1076` atomically claims the exact task, builds in an isolated worktree, reruns the coordinator-owned verifier without a shell, leaves master unchanged, moves passing work to Review, and writes `atris.dispatch_receipt.v1`.
+- **Proof gate:** `lib/receipt-evidence.js:31-66` treats missing verifier state as non-passing.
+- **Regression:** `test/one-lap-router.test.js:1-90` covers flag/alias/JSON routing; `test/one-lap-runtime.test.js:1-236` proves the real task DB, engine process, git worktree, verifier pass/fail, dedupe, receipt, and unchanged master paths.
+- **Argument routing:** `bin/atris.js:132-183` strips only recognized controls and preserves the operator sentence; `bin/atris.js:1039-1086` keeps known commands, voice triggers, one-word work intents, and typo JSON behavior distinct.
+- **Natural entry:** `bin/atris.js:1147-1260` preserves fresh-workspace context gathering and calls one lap only after MAP/context readiness.
+- **Coordinator:** `commands/one-lap.js:184-218` selects distinct ready validators and blocks local requests containing compound outbound actions; `commands/one-lap.js:258-319` accepts only matching complete receipts; `commands/one-lap.js:363-748` leases one normalized ask, resumes its exact wish/task/mission, freezes its verifier, and renders text or `atris.one_lap.v1` JSON.
+- **Execution boundary:** `lib/fleet.js:219-299` supervises sealed process groups with control and exit-status paths outside the sandbox, passes status only on file descriptor 4, and fails closed when the lifecycle dies; `lib/fleet.js:805-920` builds the credential-stripped macOS sandbox environment; `lib/fleet.js:788-947` creates a bundle-seeded temp worktree whose only remote is a local quarantine and compares every quarantine/protected ref.
+- **Trusted import:** `lib/fleet.js:948-1157` ignores worker/global Git config, reads verified blobs directly, creates the protected-origin review worktree only after all untrusted processes exit, and materializes the exact tree without hooks or clean/smudge filters.
+- **Validator:** `lib/one-lap-validator.js:1-60` defines the fresh-context read-only verdict contract; `lib/fleet.js:1201-1387` snapshots source plus git metadata, runs a distinct validator engine without write access, and fails closed on reject, outage, invalid verdict, or mutation attempts.
+- **Execution gate:** `lib/fleet.js:1725-2280` atomically claims the exact task, builds in the sealed worktree, requires a committed change, reruns the frozen verifier without a shell or network, validates independently, leaves every protected ref unchanged, then materializes passing work in Review and writes `atris.dispatch_receipt.v1` before task proof references it.
+- **Proof gate:** `commands/mission.js:653-751` freezes the verifier and requires the exact one-lap mission/task/verifier/ready row, master boundary, and independent validator receipt; `lib/receipt-evidence.js:16-43` makes aggregate failure, missing master proof, or missing validator proof non-passing.
+- **Regression:** `test/one-lap-router.test.js:1-210` covers safety plus flag/alias/JSON routing; `test/one-lap-runtime.test.js:1-704` proves the real task DB/processes, atomic dedupe, verifier freeze/pass/fail, every-ref quarantine, OS isolation, raw import, filter/sidecar attacks, mutation/reject gates, receipt, and protected master; `test/one-lap-mission-ready.test.js:1-106` proves mission certification rejects arbitrary receipts.
+- **Examples:** `atris "fix the failing test"`; `atris "fix the failing test" --engine codex --json`.
 
-**Search:** `rg "interactiveEntry" bin/atris.js`
+**Search:** `rg "runOneLap|prepareReviewSandbox|importReviewCommit|runIndependentValidator|markMissionReviewReady|atris.one_lap" bin/atris.js commands/one-lap.js commands/mission.js lib/fleet.js test/one-lap-*.test.js`
 
 ### Feature: Project Initialization (`atris init`)
 

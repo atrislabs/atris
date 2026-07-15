@@ -342,6 +342,48 @@ test('wish attaches to an active normalized objective and owner twin', () => {
   }
 });
 
+test('wish --verify records one explicit allowlisted mission verifier', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'fix the auth bug', '--verify', 'node --test', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: path.join(dir, 'tasks.db') },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    const mission = readJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'))
+      .find((row) => row.id === payload.mission_id);
+    const wish = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl')).at(-1);
+    assert.equal(mission.verifier, 'node --test');
+    assert.equal(wish.verify, 'node --test');
+    assert.equal(wish.verify_status, 'explicit');
+
+    const refused = runCli(['wish', 'fix the auth bug', '--verify', 'node --test && git push', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: path.join(dir, 'tasks.db') },
+    });
+    assert.equal(refused.status, 2);
+    assert.match(refused.stderr, /wish --verify is not allowed/);
+
+    for (const args of [
+      ['wish', 'fix the auth bug', '--verify', '--json'],
+      ['wish', 'fix the auth bug', '--verify=', '--json'],
+    ]) {
+      const missing = runCli(args, {
+        cwd: dir,
+        env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: path.join(dir, 'tasks.db') },
+      });
+      assert.equal(missing.status, 2);
+      assert.match(missing.stderr, /wish --verify needs a command/);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish --engine uses an explicit ready engine for task and mission execution', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();

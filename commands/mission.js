@@ -729,6 +729,111 @@ function listMissions(root = process.cwd()) {
     .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
 }
 
+function freezeMissionVerifier(missionId, command, root = process.cwd()) {
+  const id = String(missionId || '').trim();
+  const verifier = String(command || '').trim();
+  if (!id || !verifier) throw new Error('mission verifier freeze requires mission and verifier');
+  const lintIssue = lintMissionVerifier(verifier);
+  if (lintIssue) throw new Error(`invalid mission verifier: ${lintIssue}`);
+
+  const lock = acquireMissionLock(id, root, { waitMs: 2000 });
+  if (!lock.ok) throw new Error(`mission verifier freeze lock is busy for ${id}`);
+  try {
+    const mission = loadMissionMap(root).get(id);
+    if (!mission) throw new Error(`mission not found: ${id}`);
+    if (['complete', 'stopped'].includes(String(mission.status || ''))) {
+      throw new Error(`mission is already ${mission.status}: ${mission.id}`);
+    }
+    const frozen = String(effectiveMissionVerifier(mission) || mission.verifier || '').trim();
+    if (frozen && frozen !== verifier) {
+      throw new Error('mission verifier is already frozen to another command');
+    }
+    if (frozen) return mission;
+    return saveMission({ ...mission, verifier }, root, 'mission_verifier_frozen', {
+      verifier,
+      source: 'one_lap',
+    }).mission;
+  } finally {
+    releaseMissionLock(lock);
+  }
+}
+
+function markMissionReviewReady(missionId, options = {}, root = process.cwd()) {
+  const mission = loadMissionMap(root).get(String(missionId || '').trim());
+  if (!mission) throw new Error(`mission not found: ${missionId}`);
+  if (['complete', 'stopped'].includes(String(mission.status || ''))) {
+    throw new Error(`mission is already ${mission.status}: ${mission.id}`);
+  }
+  const verifier = String(options.verifier || '').trim();
+  const frozenVerifier = String(effectiveMissionVerifier(mission) || mission.verifier || '').trim();
+  const receiptInput = String(options.receiptPath || '').trim();
+  if (!verifier || !receiptInput) throw new Error('review-ready mission requires verifier and receipt');
+  if (frozenVerifier && frozenVerifier !== verifier) {
+    throw new Error('review-ready verifier does not match the frozen mission verifier');
+  }
+  const receiptPath = path.isAbsolute(receiptInput) ? path.resolve(receiptInput) : path.resolve(root, receiptInput);
+  const runsRoot = path.resolve(root, 'atris', 'runs');
+  if (receiptPath !== runsRoot && !receiptPath.startsWith(`${runsRoot}${path.sep}`)) {
+    throw new Error('review-ready receipt must be under atris/runs');
+  }
+  let receipt;
+  try { receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8')); } catch {
+    throw new Error('review-ready receipt is missing or invalid');
+  }
+  const taskId = String(options.taskId || '').trim();
+  if (receipt?.schema !== 'atris.dispatch_receipt.v1'
+      || receipt?.review_only !== true
+      || receipt?.context?.source !== 'one_lap'
+      || receipt?.context?.mission_id !== mission.id
+      || receipt?.result?.kind !== 'dispatch_review_ready'
+      || !taskId
+      || !Array.isArray(receipt.tasks)
+      || !receipt.tasks.includes(taskId)) {
+    throw new Error('review-ready receipt does not belong to this one-lap mission and task');
+  }
+  const readyRow = Array.isArray(receipt.ready)
+    ? receipt.ready.find((row) => row && row.task === taskId)
+    : null;
+  const receiptVerifier = receipt && receipt.result && receipt.result.verifier_result;
+  if (receipt?.result?.passed !== true
+      || receiptVerifier?.passed !== true
+      || receiptVerifier.command !== verifier
+      || !readyRow
+      || readyRow.review_recorded !== true
+      || readyRow.verifier_result?.passed !== true
+      || readyRow.verifier_result?.command !== verifier) {
+    throw new Error('review-ready receipt does not contain the passing mission verifier');
+  }
+  if (receipt.result.master_boundary_enforced !== true || receipt.result.master_unchanged !== true) {
+    throw new Error('review-ready receipt does not prove the master boundary');
+  }
+  const validation = receipt?.result?.validator_result;
+  if (validation?.passed !== true
+      || validation?.independent !== true
+      || validation?.worktree_unchanged !== true
+      || !validation?.engine
+      || validation.engine === validation.executor_engine
+      || validation.executor_engine !== readyRow.engine) {
+    throw new Error('review-ready one-lap receipt does not contain an independent validator pass');
+  }
+  const relativeReceipt = path.relative(root, receiptPath);
+  const next = {
+    ...mission,
+    status: 'ready',
+    verifier,
+    verifier_result: { ...receiptVerifier, scope: 'isolated_worktree' },
+    receipt_path: relativeReceipt,
+    review_ready_at: stampIso(),
+    next_action: String(options.nextAction || '').trim() || `review proof at ${relativeReceipt}`,
+  };
+  return saveMission(next, root, 'mission_review_ready', {
+    verifier,
+    receipt_path: relativeReceipt,
+    task_id: taskId,
+    worktree: options.worktree || null,
+  }).mission;
+}
+
 // Cross-worktree rollup: missions started with --worktree keep their state inside
 // that worktree, so a plain `mission status` from any single checkout is blind to
 // them. Enumerate sibling git worktrees and surface their missions read-only.
@@ -9290,6 +9395,8 @@ module.exports = {
   reapPausedMissions,
   missionHeartbeatLines,
   listMissions,
+  freezeMissionVerifier,
+  markMissionReviewReady,
   listWorktreeRollupMissions,
   findActiveTwinMission,
   TWIN_ACTIVE_STATUSES,

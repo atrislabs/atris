@@ -34,6 +34,11 @@ test('dispatchCheck falls back to the full Check: text when it is not a node --t
   assert.equal(fleet.dispatchCheck(task), 'npm run lint && npm run build.');
 });
 
+test('isSafeLane reads the canonical singular task tag', () => {
+  assert.equal(fleet.isSafeLane({ title: 'ship it', tag: 'deploy' }), false);
+  assert.equal(fleet.isSafeLane({ title: 'fix it', tag: 'code' }), true);
+});
+
 test('parseDispatchArgs separates positional task ids from --engine/--prompt-file values', () => {
   const parsed = engine.parseDispatchArgs(['CLI-1', 'CLI-2', '--engine', 'cursor', '--prompt-file', 'p.md', '--json', '--yolo']);
   assert.deepEqual(parsed.taskIds, ['CLI-1', 'CLI-2']);
@@ -62,6 +67,16 @@ test('buildEngineCommand pins yolo flags for codex and claude engines', () => {
   const claude = fleet.buildEngineCommand('claude', '/tmp/p.md', { yolo: true });
   assert.match(claude, /--dangerously-skip-permissions$/);
   assert.doesNotMatch(fleet.buildEngineCommand('claude', '/tmp/p.md'), /dangerously-skip-permissions/);
+});
+
+test('buildEngineCommand enables each engine native sandbox for one-lap execution', () => {
+  assert.match(fleet.buildEngineCommand('codex', '/tmp/p.md', { sealed: true }), /--sandbox workspace-write.*--ephemeral.*--ignore-user-config/);
+  assert.match(fleet.buildEngineCommand('claude', '/tmp/p.md', { sealed: true }), /--safe-mode.*--permission-mode acceptEdits.*"enabled":true/);
+  assert.match(fleet.buildEngineCommand('cursor', '/tmp/p.md', { sealed: true }), /--sandbox enabled/);
+  assert.match(fleet.buildEngineCommand('devin', '/tmp/p.md', { sealed: true }), /--sandbox --permission-mode accept-edits/);
+  const grok = fleet.buildEngineCommand('grok', '/tmp/p.md', { sealed: true });
+  assert.match(grok, /--sandbox enabled.*--permission-mode acceptEdits/);
+  assert.doesNotMatch(grok, /--always-approve/);
 });
 
 test('runDispatchCommand refuses without a task id or engine', () => {
@@ -152,6 +167,33 @@ test('runDispatchFlight refuses --prompt-file with more than one task id', async
   );
 });
 
+test('runDispatchFlight review-only requires an explicit allowlisted verifier', async () => {
+  const tmpRoot = makeTempRoot();
+  try {
+    await assert.rejects(
+      fleet.runDispatchFlight({
+        root: tmpRoot,
+        taskIds: ['CLI-900'],
+        engine: 'cursor',
+        reviewOnly: true,
+      }),
+      /review-only dispatch requires an explicit verifier command/
+    );
+    await assert.rejects(
+      fleet.runDispatchFlight({
+        root: tmpRoot,
+        taskIds: ['CLI-900'],
+        engine: 'cursor',
+        reviewOnly: true,
+        verifierCommand: 'node --test test/widget.test.js && rm -rf .',
+      }),
+      /verifier command is not allowed/
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 function ownCliFake({ tasks, worktreeFor }) {
   const calls = [];
   return {
@@ -210,6 +252,259 @@ test('runDispatchFlight happy path: claims, builds, re-verifies for real, ships,
     assert.match(readyCall, /Check re-run: node --test test\/widget\.test\.js/);
     assert.match(readyCall, /# pass 3/, 'proof must carry the real verify output, not just prose');
     assert.ok(fleet.landArrival, 'sanity: shared land primitive still exported');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight review-only verifies explicitly, readies the task, and leaves master untouched', async () => {
+  const tmpRoot = makeTempRoot();
+  const explicitVerifier = 'node --test test/one-lap-review.test.js';
+  let taskStatus = 'open';
+  const calls = [];
+  const verifyCalls = [];
+  const stages = [];
+  let dispatchCalls = 0;
+  try {
+    const cli = (args) => {
+      calls.push(args.join(' '));
+      if (args[0] === 'task' && args[1] === 'show') {
+        return { status: 0, stdout: JSON.stringify({ ...TASK, status: taskStatus }), stderr: '' };
+      }
+      if (args[0] === 'task' && args[1] === 'claim') {
+        taskStatus = 'claimed';
+        return { status: 0, stdout: 'claimed', stderr: '' };
+      }
+      if (args[0] === 'worktree' && args[1] === 'start') {
+        return { status: 0, stdout: 'next: cd /wt/dispatch-cli-900\n', stderr: '' };
+      }
+      if (args[0] === 'task' && args[1] === 'ready') {
+        stages.push('ready');
+        assert.equal(taskStatus, 'claimed');
+        const proof = args[args.indexOf('--proof') + 1];
+        const receiptRel = proof.match(/Receipt saved at (atris\/runs\/dispatch-[^\s]+[.]json)/)?.[1];
+        assert.ok(receiptRel, 'ready proof must cite its dispatch receipt');
+        const durable = JSON.parse(fs.readFileSync(path.join(tmpRoot, receiptRel), 'utf8'));
+        assert.equal(durable.result.passed, true, 'passing evidence must exist before Review');
+        assert.equal(durable.ready[0].review_recorded, false);
+        taskStatus = 'review';
+        return { status: 0, stdout: 'proof ready', stderr: '' };
+      }
+      if (args[0] === 'worktree' && args[1] === 'ship') {
+        throw new Error('review-only dispatch must not ship or merge');
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    };
+
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      reviewOnly: true,
+      verifierCommand: explicitVerifier,
+      receiptContext: { source: 'one_lap', objective: 'Fix the widget' },
+      ownCli: cli,
+      dispatcher: () => {
+        dispatchCalls += 1;
+        return Promise.resolve({ exitCode: 0, report: 'engine completed the requested change' });
+      },
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: (command, cwd) => {
+        stages.push('verify');
+        verifyCalls.push({ command, cwd });
+        return { status: 0, stdout: '# pass 1\n', stderr: '' };
+      },
+      validatorEngines: ['claude'],
+      validatorDispatcher: ({ engine, prompt }) => {
+        stages.push('validator');
+        assert.equal(engine, 'claude');
+        assert.match(prompt, /independent validator/);
+        assert.match(prompt, /Required verifier: node --test test\/one-lap-review[.]test[.]js/);
+        return Promise.resolve({ exitCode: 0, report: 'cold review complete\nSIGNOFF: focused regression passed' });
+      },
+      validatorStateInspector: () => ({ ok: true, head: '2222222222222222222222222222222222222222', digest: 'clean-state' }),
+      changeInspector: () => ({
+        has_change: true,
+        base: '1111111111111111111111111111111111111111',
+        head: '2222222222222222222222222222222222222222',
+        commit: '2222222222222222222222222222222222222222',
+        dirty: false,
+      }),
+      log: () => {},
+    });
+
+    assert.equal(dispatchCalls, 1);
+    assert.deepEqual(stages, ['verify', 'validator', 'ready']);
+    assert.deepEqual(verifyCalls, [{ command: explicitVerifier, cwd: '/wt/dispatch-cli-900' }]);
+    assert.equal(taskStatus, 'review');
+    assert.deepEqual(flight.landed, []);
+    assert.equal(flight.paused.length, 0);
+    assert.equal(flight.ready.length, 1);
+    assert.equal(flight.ready[0].check, explicitVerifier);
+    assert.equal(flight.ready[0].verifier_result.passed, true);
+    assert.equal(flight.ready[0].verifier_result.status, 0);
+    assert.equal(flight.ready[0].validator_result.engine, 'claude');
+    assert.equal(flight.ready[0].validator_result.passed, true);
+    assert.match(flight.ready[0].verifier_result.output, /# pass 1/);
+    assert.match(flight.ready[0].next_action, /^cd \/wt\/dispatch-cli-900 && atris worktree ship /);
+    assert.match(flight.ready[0].next_action, /--verify 'node --test test\/one-lap-review\.test\.js'/);
+    assert.match(flight.ready[0].next_action, /--target origin\/master --merge$/);
+    assert.ok(!calls.some((call) => call.startsWith('worktree ship')), 'review-only path must not invoke the master landing gate');
+
+    const readyCall = calls.find((call) => call.startsWith('task ready CLI-900'));
+    assert.ok(readyCall, 'a verified review-only build must move the task to Review');
+    assert.match(readyCall, /Check re-run: node --test test\/one-lap-review\.test\.js/);
+    assert.doesNotMatch(readyCall, /test\/widget\.test\.js/, 'operator Check: text must not override the explicit verifier');
+    assert.match(readyCall, /Receipt saved at atris\/runs\/dispatch-/);
+    assert.match(readyCall, /commit 2222222222222222222222222222222222222222; node --test test\/one-lap-review[.]test[.]js passed \(exit 0\)/);
+
+    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.equal(receipt.schema, 'atris.dispatch_receipt.v1');
+    assert.equal(receipt.review_only, true);
+    assert.deepEqual(receipt.context, { source: 'one_lap', objective: 'Fix the widget' });
+    assert.deepEqual(receipt.landed, []);
+    assert.equal(receipt.ready[0].next_action, flight.ready[0].next_action);
+    assert.equal(receipt.result.kind, 'dispatch_review_ready');
+    assert.equal(receipt.result.passed, true);
+    assert.equal(receipt.result.verifier_result.command, explicitVerifier);
+    assert.equal(receipt.result.verifier_result.passed, true);
+    assert.equal(receipt.result.verifier_result.status, 0);
+    assert.equal(receipt.result.validator_result.engine, 'claude');
+    assert.equal(receipt.result.validator_result.executor_engine, 'cursor');
+    assert.equal(receipt.result.validator_result.independent, true);
+    assert.equal(receipt.result.validator_result.passed, true);
+    assert.equal(receipt.result.validator_result.worktree_unchanged, true);
+    assert.match(receipt.result.verifier_result.output, /# pass 1/);
+    assert.equal(receipt.ready[0].review_recorded, true);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight one-lap requires a validator distinct from the actual executor', async () => {
+  const tmpRoot = makeTempRoot();
+  try {
+    const { cli, calls } = ownCliFake({ tasks: { 'CLI-900': TASK }, worktreeFor: () => '/wt/dispatch-cli-900' });
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      reviewOnly: true,
+      verifierCommand: 'node --test test/one-lap-review.test.js',
+      receiptContext: { source: 'one_lap' },
+      ownCli: cli,
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'built' }),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+      changeInspector: () => ({ has_change: true, head: '2222222222222222222222222222222222222222', dirty: false }),
+      validatorEngines: ['cursor'],
+      log: () => {},
+    });
+    assert.equal(flight.result.passed, false);
+    assert.equal(flight.ready.length, 0);
+    assert.equal(flight.paused[0].stage, 'validator_unavailable');
+    assert.equal(flight.result.validator_result.independent, false);
+    assert.ok(!calls.some((call) => call.startsWith('task ready')));
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight one-lap blocks Review when the validator mutates the worktree', async () => {
+  const tmpRoot = makeTempRoot();
+  let snapshot = 0;
+  try {
+    const { cli, calls } = ownCliFake({ tasks: { 'CLI-900': TASK }, worktreeFor: () => '/wt/dispatch-cli-900' });
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      reviewOnly: true,
+      verifierCommand: 'node --test test/one-lap-review.test.js',
+      receiptContext: { source: 'one_lap' },
+      ownCli: cli,
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'built' }),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+      changeInspector: () => ({ has_change: true, head: '2222222222222222222222222222222222222222', dirty: false }),
+      validatorEngines: ['claude'],
+      validatorDispatcher: () => Promise.resolve({ exitCode: 0, report: 'SIGNOFF: looks correct' }),
+      validatorStateInspector: () => ({ ok: true, head: '2222222222222222222222222222222222222222', digest: `state-${snapshot += 1}` }),
+      log: () => {},
+    });
+    assert.equal(flight.result.passed, false);
+    assert.equal(flight.ready.length, 0);
+    assert.equal(flight.paused[0].stage, 'validator_mutated_worktree');
+    assert.equal(flight.result.validator_result.worktree_unchanged, false);
+    assert.ok(!calls.some((call) => call.startsWith('task ready')));
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight review-only pauses a green no-op build before Review', async () => {
+  const tmpRoot = makeTempRoot();
+  let verifierCalled = false;
+  try {
+    const { cli, calls } = ownCliFake({
+      tasks: { 'CLI-900': TASK },
+      worktreeFor: (task) => `/wt/${task}`,
+    });
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      reviewOnly: true,
+      verifierCommand: 'node --test test/one-lap-review.test.js',
+      ownCli: cli,
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'done' }),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => {
+        verifierCalled = true;
+        return { status: 0, stdout: '# pass 1\n', stderr: '' };
+      },
+      changeInspector: () => ({
+        has_change: false,
+        base: '1111111111111111111111111111111111111111',
+        head: '1111111111111111111111111111111111111111',
+      }),
+      log: () => {},
+    });
+
+    assert.deepEqual(flight.ready, []);
+    assert.equal(flight.paused.length, 1);
+    assert.equal(flight.paused[0].stage, 'no_change');
+    assert.equal(flight.result.passed, false);
+    assert.equal(flight.result.verifier_result.passed, false);
+    assert.equal(verifierCalled, false, 'a no-op build must stop before spending the verifier');
+    assert.ok(!calls.some((call) => call.startsWith('task ready')), 'a verifier cannot promote a no-op build');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight review-only refuses a verifier workdir outside its worktree', async () => {
+  const tmpRoot = makeTempRoot();
+  try {
+    const { cli, calls } = ownCliFake({
+      tasks: { 'CLI-900': TASK },
+      worktreeFor: (task) => `/wt/${task}`,
+    });
+    await assert.rejects(
+      fleet.runDispatchFlight({
+        root: tmpRoot,
+        taskIds: ['CLI-900'],
+        engine: 'cursor',
+        reviewOnly: true,
+        verifierCommand: 'cd ../outside && node --test',
+        ownCli: cli,
+        dispatcher: () => Promise.resolve({ exitCode: 0, report: 'done' }),
+        rebase: () => ({ ok: true, stage: 'rebased' }),
+        log: () => {},
+      }),
+      /verifier command is not allowed/
+    );
+    assert.deepEqual(calls, []);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -365,6 +660,9 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
     const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
     assert.equal(receipt.yolo, true);
     assert.equal(receipt.landed[0].landing, 'self');
+    assert.equal(receipt.result.passed, true);
+    assert.equal(receipt.result.verifier_result.command, 'git merge-base --is-ancestor HEAD origin/master');
+    assert.equal(receipt.result.verifier_result.passed, true);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -465,6 +763,90 @@ test('runDispatchFlight pauses a task it cannot find, without touching worktree/
     });
     assert.equal(flight.paused[0].stage, 'task_lookup');
     assert.ok(!calls.some((c) => c.startsWith('task claim')));
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight never reuses a receipt path for rapid flights', async () => {
+  const tmpRoot = makeTempRoot();
+  try {
+    const cli = () => ({ status: 1, stdout: '', stderr: 'not found' });
+    const first = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-MISSING-1'],
+      engine: 'cursor',
+      ownCli: cli,
+      log: () => {},
+    });
+    const second = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-MISSING-2'],
+      engine: 'cursor',
+      ownCli: cli,
+      log: () => {},
+    });
+    assert.notEqual(first.receipt, second.receipt);
+    assert.ok(fs.existsSync(first.receipt));
+    assert.ok(fs.existsSync(second.receipt));
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight stops before worktree creation when the atomic claim fails', async () => {
+  const tmpRoot = makeTempRoot();
+  const calls = [];
+  let dispatchCalled = false;
+  try {
+    const cli = (args) => {
+      calls.push(args.join(' '));
+      if (args[0] === 'task' && args[1] === 'show') {
+        return { status: 0, stdout: JSON.stringify(TASK), stderr: '' };
+      }
+      if (args[0] === 'task' && args[1] === 'claim') {
+        return { status: 1, stdout: '', stderr: 'already claimed by another worker' };
+      }
+      if (args[0] === 'worktree' && args[1] === 'start') {
+        throw new Error('worktree start must not run after a failed claim');
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    };
+
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      reviewOnly: true,
+      verifierCommand: 'node --test test/one-lap-review.test.js',
+      ownCli: cli,
+      dispatcher: () => {
+        dispatchCalled = true;
+        return Promise.resolve({ exitCode: 0 });
+      },
+      rebase: () => { throw new Error('rebase must not run after a failed claim'); },
+      verifier: () => { throw new Error('verifier must not run after a failed claim'); },
+      log: () => {},
+    });
+
+    assert.equal(dispatchCalled, false);
+    assert.deepEqual(calls, [
+      'task show CLI-900 --json',
+      'task claim CLI-900 --as fleet-cursor',
+    ]);
+    assert.deepEqual(flight.results, []);
+    assert.deepEqual(flight.ready, []);
+    assert.deepEqual(flight.landed, []);
+    assert.equal(flight.paused.length, 1);
+    assert.equal(flight.paused[0].task, 'CLI-900');
+    assert.equal(flight.paused[0].stage, 'claim');
+    assert.match(flight.paused[0].detail, /already claimed by another worker/);
+
+    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.equal(receipt.result.passed, false);
+    assert.equal(receipt.paused[0].stage, 'claim');
+    assert.ok(!receipt.ready.length);
+    assert.ok(!receipt.landed.length);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

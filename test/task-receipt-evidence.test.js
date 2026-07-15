@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { withTaskReadyResult } = require('./helpers/task-result');
+const { receiptVerifierPassed } = require('../lib/receipt-evidence');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -67,6 +68,76 @@ function setupCertifiedTask(dir, env, proof, title = 'Evidence surfacing task') 
   return task;
 }
 
+test('aggregate receipt failure overrides a nested passing verifier', () => {
+  assert.equal(receiptVerifierPassed({
+    result: {
+      passed: false,
+      verifier_result: { passed: true },
+      tick: { verifier_passed: true },
+    },
+  }), false);
+});
+
+test('one-lap review evidence requires an independent non-mutating validator', () => {
+  const receipt = {
+    schema: 'atris.dispatch_receipt.v1',
+    review_only: true,
+    context: { source: 'one_lap' },
+    result: {
+      passed: true,
+      master_boundary_enforced: true,
+      master_unchanged: true,
+      verifier_result: { passed: true },
+    },
+  };
+  assert.equal(receiptVerifierPassed(receipt), false, 'executor verification alone is not independent evidence');
+  assert.equal(receiptVerifierPassed({
+    ...receipt,
+    result: {
+      ...receipt.result,
+      validator_result: {
+        engine: 'cursor',
+        executor_engine: 'cursor',
+        independent: true,
+        passed: true,
+        worktree_unchanged: true,
+      },
+    },
+  }), false, 'the executor cannot validate itself');
+  assert.equal(receiptVerifierPassed({
+    ...receipt,
+    result: {
+      ...receipt.result,
+      validator_result: {
+        engine: 'codex',
+        executor_engine: 'cursor',
+        independent: true,
+        passed: true,
+        worktree_unchanged: true,
+      },
+    },
+  }), true);
+  assert.equal(receiptVerifierPassed({
+    ...receipt,
+    result: {
+      ...receipt.result,
+      master_boundary_enforced: false,
+      master_unchanged: null,
+      validator_result: {
+        engine: 'codex',
+        executor_engine: 'cursor',
+        independent: true,
+        passed: true,
+        worktree_unchanged: true,
+      },
+    },
+  }), false, 'one-lap evidence must prove the protected master boundary');
+  assert.equal(receiptVerifierPassed({
+    ...receipt,
+    context: { source: 'engine_dispatch' },
+  }), true, 'generic review-only dispatch keeps its existing verifier contract');
+});
+
 test('review queue surfaces validated receipt evidence from proof text', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -119,6 +190,32 @@ test('review queue flags missing and failing receipts named in proof', () => {
     const text = runCli(['task', 'reviews', '--verbose'], { cwd: dir, env });
     assert.match(text.stdout, /verifier:FAILED/);
     assert.match(text.stdout, /MISSING/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('receipt evidence fails closed when a named receipt has no verifier result', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    const receiptRel = path.join('atris', 'runs', 'fleet-unknown-verifier.json');
+    fs.writeFileSync(path.join(dir, receiptRel), JSON.stringify({
+      schema: 'atris.fleet_receipt.v1',
+      result: { kind: 'fleet_run' },
+    }, null, 2) + '\n', 'utf8');
+    setupCertifiedTask(dir, env, certifiedProofMentioning(receiptRel));
+
+    const queue = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
+    assert.equal(queue.status, 0, queue.stderr);
+    const evidence = JSON.parse(queue.stdout).queue.items[0].evidence;
+    assert.ok(evidence);
+    assert.equal(evidence.receipts.length, 1);
+    assert.equal(evidence.receipts[0].path, receiptRel);
+    assert.equal(evidence.receipts[0].verifier_passed, undefined);
+    assert.equal(evidence.all_passing, false);
   } finally {
     cleanupTempDir(dir);
   }
