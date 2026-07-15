@@ -256,7 +256,7 @@ if (!helpRequested && !dryRunRequested && (['init', 'update', 'upgrade'].include
     const { syncSkills } = require('../commands/sync');
     const skillsUpdated = syncSkills({ silent: true });
     if (skillsUpdated > 0) {
-      console.log(`⬆️  ${skillsUpdated} skill${skillsUpdated > 1 ? 's' : ''} updated`);
+      console.log(`${skillsUpdated} skill${skillsUpdated > 1 ? 's' : ''} updated`);
     }
   } catch (e) {
     // Non-critical
