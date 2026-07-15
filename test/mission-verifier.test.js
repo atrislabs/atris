@@ -55,7 +55,7 @@ test('unverified and failed tick recap text carries a visible warning marker', (
   assert.match(missionVerifierCheckedText({ passed: false, mode: 'engine-unavailable' }, {}), /^VERIFY FAILED:/);
 });
 
-test('mission run uses an engine verify fallback and explicit no-verify stays unverified', () => {
+test('mission run uses the repo default verifier and explicit no-verify stays unverified', () => {
   const dir = makeTempDir();
   const runnerEnv = {
     ATRIS_RUNNER_BIN: process.execPath,
@@ -64,6 +64,7 @@ test('mission run uses an engine verify fallback and explicit no-verify stays un
   try {
     fs.mkdirSync(path.join(dir, 'atris', 'team', 'mission-lead'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'MEMBER.md'), '# Mission Lead\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }));
     const started = runCli([
       'mission', 'start', 'engine verify fallback', '--owner', 'mission-lead',
       '--runner', 'codex', '--no-verify', '--json',
@@ -77,8 +78,8 @@ test('mission run uses an engine verify fallback and explicit no-verify stays un
     assert.equal(verified.status, 0, verified.stderr || verified.stdout);
     const verifiedPayload = JSON.parse(verified.stdout);
     assert.equal(verifiedPayload.ticks[0].verifier_passed, true);
-    assert.equal(verifiedPayload.mission.verifier_result.mode, 'engine');
-    assert.match(verifiedPayload.mission.verifier_result.output, /VERDICT: PASS$/);
+    assert.equal(verifiedPayload.mission.verifier_result.command, 'npm test');
+    assert.equal(verifiedPayload.mission.verifier_result.status, 0);
 
     const skippedStarted = runCli([
       'mission', 'start', 'explicit verify skip', '--owner', 'mission-lead',

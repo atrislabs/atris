@@ -113,7 +113,7 @@ test('mission run stops honestly at the idle-tick threshold instead of burning t
   try {
     const mission = startMission(repo, 'idle stop threshold test', 'alice');
     const res = runCli(
-      ['mission', 'run', mission.id, '--no-claude', '--max-ticks', '10', '--max-idle-ticks', '3', '--json'],
+      ['mission', 'run', mission.id, '--no-claude', '--no-verify', '--max-ticks', '10', '--max-idle-ticks', '3', '--json'],
       repo,
     );
     assert.equal(res.status, 0, res.stderr || res.stdout);
@@ -141,7 +141,7 @@ test('--max-idle-ticks 0 disables the guard and runs out the full tick budget', 
   try {
     const mission = startMission(repo, 'idle stop disabled test', 'alice');
     const res = runCli(
-      ['mission', 'run', mission.id, '--no-claude', '--max-ticks', '5', '--max-idle-ticks', '0', '--json'],
+      ['mission', 'run', mission.id, '--no-claude', '--no-verify', '--max-ticks', '5', '--max-idle-ticks', '0', '--json'],
       repo,
     );
     assert.equal(res.status, 0, res.stderr || res.stdout);
@@ -161,7 +161,7 @@ test('--due (self-drive) mode stops on no-progress without filing or dispatching
   try {
     const mission = startMission(repo, 'idle stop self-drive test', 'alice');
     const res = runCli(
-      ['mission', 'run', mission.id, '--no-claude', '--due', '--max-ticks', '10', '--max-idle-ticks', '2', '--json'],
+      ['mission', 'run', mission.id, '--no-claude', '--no-verify', '--due', '--max-ticks', '10', '--max-idle-ticks', '2', '--json'],
       repo,
     );
     assert.equal(res.status, 0, res.stderr || res.stdout);
@@ -190,7 +190,7 @@ test('a single progressing tick resets the idle counter (default threshold of 3 
     // Two idle ticks, short of the default max-idle-ticks (3) threshold —
     // the run must NOT stop early.
     const res = runCli(
-      ['mission', 'run', mission.id, '--no-claude', '--max-ticks', '2', '--json'],
+      ['mission', 'run', mission.id, '--no-claude', '--no-verify', '--max-ticks', '2', '--json'],
       repo,
     );
     assert.equal(res.status, 0, res.stderr || res.stdout);

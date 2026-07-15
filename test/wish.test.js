@@ -232,6 +232,7 @@ test('healthy wish delegates a task and records honest proof status', () => {
   const dir = makeTempDir();
   try {
     prepareWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
     const fakeBin = makeFakeEngines(dir);
     const dbPath = path.join(dir, 'tasks.db');
     const res = runCli(['wish', 'make the boot screen friendlier', '--json'], {
@@ -260,7 +261,7 @@ test('healthy wish delegates a task and records honest proof status', () => {
     assert.equal(mission.wish_id, payload.wish_id);
     assert.equal(mission.metadata.wish_id, payload.wish_id);
     assert.equal(mission.mission_room_receipt_path, wishes.at(-1).mission_room_receipt_path);
-    assert.equal(mission.verifier, '');
+    assert.equal(mission.verifier, 'npm test');
     assert.deepEqual(mission.task_ids, [payload.task_id]);
     assert.equal(wishes.at(-1).verify_status, 'needs-review');
     assert.equal(wishes.at(-1).verify_outcome, 'I will show you the result to judge');

@@ -159,15 +159,16 @@ test('meta questions with --json return one overview object', () => {
   }
 });
 
-test('an unverifiable local ask pauses for one exact proof command', () => {
+test('an unverifiable local ask dispatches with the repo default verifier', () => {
   const setup = setupRouter();
   try {
     const result = runCli(['fix the auth bug', '--engine', 'codex', '--json'], setup.workspace, setup.env);
-    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(result.status, 1, result.stderr || result.stdout);
     const payload = JSON.parse(result.stdout);
-    assert.equal(payload.status, 'waiting_input');
-    assert.equal(payload.question, 'what exact command proves this request works?');
-    assert.match(payload.next_action, /--verify '<command>' --json$/);
+    assert.equal(payload.status, 'stuck');
+    assert.equal(payload.verifier, 'git diff --check');
+    assert.equal(payload.question, undefined);
+    assert.doesNotMatch(payload.next_action, /--verify/);
     assert.ok(!fs.existsSync(setup.engineMarker));
   } finally {
     fs.rmSync(setup.root, { recursive: true, force: true });
@@ -192,18 +193,17 @@ test('one-word work intents route to clean one-lap JSON while unknown command JS
   }
 });
 
-test('displayed verifier retry commands quote the original ask for a shell', () => {
+test('default-verifier dispatch preserves the original quoted ask', () => {
   const setup = setupRouter();
   try {
     const ask = "fix the user's auth bug";
     const result = runCli([ask, '--engine', 'codex', '--json'], setup.workspace, setup.env);
-    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(result.status, 1, result.stderr || result.stdout);
     const payload = JSON.parse(result.stdout);
-    assert.equal(payload.status, 'waiting_input');
-    assert.equal(payload.question, 'what exact command proves this request works?');
-    assert.match(payload.next_action, /^atris 'fix the user'"'"'s auth bug' --engine codex --verify '<command>' --json$/);
-    const parsed = spawnSync('/bin/sh', ['-n', '-c', payload.next_action], { encoding: 'utf8' });
-    assert.equal(parsed.status, 0, parsed.stderr);
+    assert.equal(payload.status, 'stuck');
+    assert.equal(payload.ask, ask);
+    assert.equal(payload.verifier, 'git diff --check');
+    assert.equal(payload.question, undefined);
   } finally {
     fs.rmSync(setup.root, { recursive: true, force: true });
   }

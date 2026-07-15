@@ -5711,7 +5711,7 @@ test('mission run --due selects acknowledged always-on caller-session missions w
     const due = selectDueMission(dir);
     assert.equal(due.id, 'acked-codex-loop');
 
-    const run = runCli(['mission', 'run', '--due', '--no-claude', '--no-drain', '--max-ticks', '1', '--json'], { cwd: dir });
+    const run = runCli(['mission', 'run', '--due', '--no-claude', '--no-verify', '--no-drain', '--max-ticks', '1', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.action, 'mission_run');
@@ -5720,6 +5720,33 @@ test('mission run --due selects acknowledged always-on caller-session missions w
     assert.equal(payload.mission.next_action, 'next move: run atris mission run acked-codex-loop');
     assert.equal(payload.ticks[0].reason, 'caller-session-runner');
     assert.equal(payload.ticks[0].verifier_passed, undefined);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run uses the repo default when the stored verifier is empty', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }));
+    appendMissionState(dir, {
+      id: 'default-verifier-run',
+      slug: 'default-verifier-run',
+      objective: 'default verifier run',
+      status: 'planning',
+      runner: 'claude',
+      verifier: '',
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const run = runCli(['mission', 'run', 'default-verifier-run', '--no-claude', '--no-drain', '--max-ticks', '1', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.ticks[0].verifier_passed, true);
+    assert.equal(payload.mission.verifier, '');
+    assert.equal(payload.mission.verifier_result.command, 'npm test');
   } finally {
     cleanupTempDir(dir);
   }
