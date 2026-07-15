@@ -331,7 +331,7 @@ test('packed golden path follows printed init mission task and autoland handoffs
     const init = runInstalled(printedAtrisArgs(firstRun.stdout, 'Next'), { timeout: 30000 });
     assertGoldenPathStep(init, 'printed init');
 
-    const missionStart = runInstalled(printedAtrisArgs(init.stdout, 'Next'));
+    const missionStart = runInstalled(printedAtrisArgs(init.stdout, 'agents'));
     assertGoldenPathStep(missionStart, 'printed mission start');
     assert.match(missionStart.stdout, /Started mission: Verify this Atris workspace is ready/);
 
