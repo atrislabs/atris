@@ -1014,7 +1014,7 @@ test('soul displays project identity after init', () => {
     runCli(['init'], { cwd: dir, input: '\n' });
     const res = runCli(['soul'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /SOUL/);
+    assert.match(res.stdout, /soul/);
     assert.match(res.stdout, /IDENTITY/);
     assert.match(res.stdout, /KNOWLEDGE/);
     assert.match(res.stdout, /LEARNED/);
