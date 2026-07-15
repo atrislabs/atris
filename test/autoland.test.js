@@ -21,6 +21,11 @@ function makeTempRepo() {
   fs.writeFileSync(path.join(repo, 'README.md'), '# fixture\n');
   runGit(['add', '.'], repo);
   runGit(['commit', '-m', 'init'], repo);
+  const state = path.join(repo, '.atris', 'state');
+  fs.mkdirSync(state, { recursive: true });
+  const trustedBuilder = Array.from({ length: 10 }, () => JSON.stringify({ claimed_by: 'builder', outcome: 'accepted' }));
+  fs.writeFileSync(path.join(state, 'career_xp_receipts.jsonl'), `${trustedBuilder.join('\n')}\n`);
+  fs.writeFileSync(path.join(state, 'scorecards.jsonl'), '');
   return { base, repo };
 }
 
@@ -546,11 +551,55 @@ test('live update: a landing texts its capability sentence the moment it lands',
   const text = autoland.composeLiveUpdate({ landedRefs: ['CLI-1', 'CLI-2'], tasks, project: 'atris-cli' });
   assert.match(text, /atris atris-cli: just landed/);
   assert.match(text, /- a new user now reaches task setup before any proof tick/);
-  assert.match(text, /\(onboarding\)/);
+  assert.match(text, /\(onboarding, needs review\)/);
   // Clean-stop check-offs never page the operator.
   assert.doesNotMatch(text, /no concrete follow-up/);
   // A landing that is nothing but clean stops sends no text at all.
   assert.equal(autoland.composeLiveUpdate({ landedRefs: ['CLI-2'], tasks, project: 'atris-cli' }), '');
+});
+
+test('digest and live update render plain trust labels without scores', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-autoland-trust-labels-'));
+  const state = path.join(root, '.atris', 'state');
+  fs.mkdirSync(state, { recursive: true });
+  const outcomes = (actor, passed, failed) => [
+    ...Array.from({ length: passed }, () => ({ claimed_by: actor, outcome: 'accepted' })),
+    ...Array.from({ length: failed }, () => ({ claimed_by: actor, outcome: 'rejected' })),
+  ];
+  fs.writeFileSync(path.join(state, 'career_xp_receipts.jsonl'), [
+    ...outcomes('steady', 9, 1),
+    ...outcomes('apprentice', 7, 3),
+    ...outcomes('rookie', 4, 0),
+  ].map(JSON.stringify).join('\n') + '\n');
+  fs.writeFileSync(path.join(state, 'scorecards.jsonl'), '');
+
+  const items = [
+    { ref: 'CLI-1', member: 'steady', title: 'Clear checks save operators time when work lands.' },
+    { ref: 'CLI-2', member: 'apprentice', title: 'Focused checks reduce risk when work lands.' },
+    { ref: 'CLI-3', member: 'rookie', title: 'Independent review prevents failures when work lands.' },
+  ];
+  const digest = autoland.composeDigest({
+    accepted: { auto: items, human: [] },
+    waiting: [],
+    landed: { branches: 0, due: 0 },
+    project: 'atris-cli',
+    root,
+  });
+  assert.match(digest, /\(steady\)/);
+  assert.match(digest, /\(apprentice, newer, spot-checked\)/);
+  assert.match(digest, /\(rookie, needs review\)/);
+  assert.doesNotMatch(digest, /\d+%/);
+
+  const tasks = items.map((item) => ({
+    display_id: item.ref,
+    title: item.title,
+    claimed_by: item.member,
+    metadata: { landing_happened: item.title },
+  }));
+  const live = autoland.composeLiveUpdate({ landedRefs: items.map((item) => item.ref), tasks, project: 'atris-cli', root });
+  assert.match(live, /\(steady\)/);
+  assert.match(live, /\(apprentice, newer, spot-checked\)/);
+  assert.match(live, /\(rookie, needs review\)/);
 });
 
 test('live update receipt keeps the exact sent text when the daily digest is sent too', () => {
@@ -714,7 +763,7 @@ test('autoland status never probes a stalled crontab', () => {
   }
 });
 
-test('autoland status eligibility never executes recorded verifiers', () => {
+test('autoland status holds probation work without executing recorded verifiers', () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-autoland-plan-'));
   const marker = path.join(base, 'verifier-ran');
   const verifyFile = path.join(base, 'slow.test.js');
@@ -729,8 +778,8 @@ test('autoland status eligibility never executes recorded verifiers', () => {
       metadata: { verify: `node --test ${verifyFile}` },
       workspace_root: base,
     }, { acceptAll: true, executeVerify: false });
-    assert.equal(evaluation.eligible, true);
-    assert.equal(evaluation.verification_pending, true);
+    assert.equal(evaluation.eligible, false);
+    assert.equal(evaluation.reason, 'probation_needs_review');
     assert.equal(fs.existsSync(marker), false);
   } finally {
     cleanupTempDir(base);

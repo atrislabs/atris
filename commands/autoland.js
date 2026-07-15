@@ -616,6 +616,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
     reapError: state.last_reap_error?.error || null,
     landingSweep: state.landing_sweep || null,
     fullStory: true,
+    root,
   });
   console.log(text);
   // the full story: what each piece actually was, in its own words
@@ -750,6 +751,7 @@ function runTickBody(root, { json, policy, receipt }) {
       landedRefs: receipt.landed,
       tasks: tasksForLive,
       project: projectName(root),
+      root,
     });
     if (text) {
       // Keep the exact operator surface beside the delivery result. The next
@@ -867,6 +869,7 @@ function runTickBody(root, { json, policy, receipt }) {
       reapError: state.last_reap_error?.error || null,
       janitor: state.janitor || null,
       landingSweep: state.landing_sweep || null,
+      root,
     });
     if (policy.imessage_to) {
       const sent = autoland.sendImessage(root, policy.imessage_to, text);

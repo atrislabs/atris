@@ -7,6 +7,19 @@ const os = require('node:os');
 const path = require('node:path');
 const { evaluateAutoAccept, parseVerifyCommand, runVerifyCommand } = require('../lib/auto-accept-certified');
 
+function trustRoot(actor, passed = 10, failed = 0) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auto-accept-trust-'));
+  const state = path.join(root, '.atris', 'state');
+  fs.mkdirSync(state, { recursive: true });
+  const receipts = [
+    ...Array.from({ length: passed }, () => ({ claimed_by: actor, outcome: 'accepted' })),
+    ...Array.from({ length: failed }, () => ({ claimed_by: actor, outcome: 'rejected' })),
+  ].map(JSON.stringify);
+  fs.writeFileSync(path.join(state, 'career_xp_receipts.jsonl'), `${receipts.join('\n')}\n`);
+  fs.writeFileSync(path.join(state, 'scorecards.jsonl'), '');
+  return root;
+}
+
 function reviewTask(overrides = {}) {
   return {
     id: 'task-1',
@@ -62,7 +75,7 @@ test('rejects three passes from a single actor: passes alone never land work', (
     events: [{ event_type: 'proof_ready', actor: 'codex' }],
   });
   assert.equal(result.eligible, false);
-  assert.equal(result.reason, 'needs_independent_reviewer');
+  assert.equal(result.reason, 'probation_needs_review');
   assert.equal(result.builder, 'codex');
 });
 
@@ -139,7 +152,7 @@ test('rejects single actor with only two passes', () => {
     events: [{ event_type: 'proof_ready', actor: 'codex' }],
   }));
   assert.equal(result.eligible, false);
-  assert.equal(result.reason, 'needs_independent_reviewer');
+  assert.equal(result.reason, 'probation_needs_review');
 });
 
 test('casing and spacing tricks do not fake a second reviewer', () => {
@@ -150,7 +163,26 @@ test('casing and spacing tricks do not fake a second reviewer', () => {
     ],
   }));
   assert.equal(result.eligible, false);
-  assert.equal(result.reason, 'needs_independent_reviewer');
+  assert.equal(result.reason, 'probation_needs_review');
+});
+
+test('probation actor is held back without an independent review', () => {
+  const result = evaluateAutoAccept(reviewTask({
+    metadata: { executed_by: 'new-engine' },
+    events: [{ event_type: 'proof_ready', actor: 'new-engine' }],
+  }), { acceptAll: true });
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'probation_needs_review');
+});
+
+test('standard actor gets a strict verifier rerun under acceptAll', () => {
+  const task = reviewTask({
+    metadata: { executed_by: 'standard-engine', verify: 'pytest tests/' },
+  });
+  task.workspace_root = trustRoot('standard-engine', 7, 3);
+  const result = evaluateAutoAccept(task, { acceptAll: true });
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'verify_command_not_allowed');
 });
 
 test('strict verify rejects compound shell commands', () => {
@@ -329,6 +361,8 @@ test('acceptAll: only protected lanes and hard evidence block; certification doe
     review: { agent_certified: false, agent_review_pass_count: 1, proof: '' },
   });
   delete bare.metadata.verify;
+  bare.claimed_by = 'trusted-member';
+  bare.workspace_root = trustRoot('trusted-member');
   const landed = evaluateAutoAccept(bare, { acceptAll: true });
   assert.equal(landed.eligible, true);
   assert.equal(landed.policy, 'all_but_protected');
@@ -374,8 +408,11 @@ test('acceptAll: a check pointing at a vanished worktree blocks; an un-runnable 
   assert.equal(gone.eligible, false);
   assert.equal(gone.reason, 'verify_worktree_missing');
 
-  const notAllowed = evaluateAutoAccept(reviewTask({
+  const trusted = reviewTask({
     metadata: { verify: 'pytest tests/' },
-  }), { acceptAll: true });
+  });
+  trusted.claimed_by = 'trusted-member';
+  trusted.workspace_root = trustRoot('trusted-member');
+  const notAllowed = evaluateAutoAccept(trusted, { acceptAll: true });
   assert.equal(notAllowed.eligible, true);
 });

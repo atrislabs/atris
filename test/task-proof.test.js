@@ -19,6 +19,24 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
+let proofTrustRoot;
+
+function trustedProofRoot(actor) {
+  if (proofTrustRoot) return proofTrustRoot;
+  const dir = makeTempDir();
+  const state = path.join(dir, '.atris', 'state');
+  fs.mkdirSync(state, { recursive: true });
+  const receipts = Array.from({ length: 10 }, () => JSON.stringify({ claimed_by: actor, outcome: 'accepted' }));
+  fs.writeFileSync(path.join(state, 'career_xp_receipts.jsonl'), `${receipts.join('\n')}\n`);
+  fs.writeFileSync(path.join(state, 'scorecards.jsonl'), '');
+  proofTrustRoot = dir;
+  return proofTrustRoot;
+}
+
+test.after(() => {
+  if (proofTrustRoot) cleanupTempDir(proofTrustRoot);
+});
+
 function runCli(args, { cwd, env = {} } = {}) {
   return spawnSync(process.execPath, [CLI, ...withTaskReadyResult(args)], {
     cwd,
@@ -44,7 +62,8 @@ function certifiedReviewTaskWithProof(proof) {
     display_id: 'CLI-843',
     status: 'review',
     tag: 'code',
-    workspace_root: process.cwd(),
+    workspace_root: trustedProofRoot('codex'),
+    claimed_by: 'codex',
     metadata: {
       approval_status: 'pending',
       agent_certified: true,
