@@ -41,7 +41,7 @@ Font alternatives: instead of Inter: Instrument Sans, Plus Jakarta Sans, Outfit.
 
 **Interaction:** progressive disclosure: start simple, reveal complexity. optimistic UI: update immediately, sync later. every interactive element needs ALL states: default, hover, focus, active, disabled, loading, error, success. don't make every button primary.
 
-**Hover:** make elements feel inviting on hover (brighten, subtle scale 1.02-1.05). never fade out, shift, or hide content behind hover. hover doesn't exist on mobile.
+**Hover:** make elements feel inviting on hover (brighten, subtle scale 1.02-1.05). never fade out, shift, or hide content behind hover. hover doesn't exist on mobile. no hover lift: a translate-y shift or a scale past 1.05 on every card is the generated-card reflex; the shift breaks the never-move-content rule and the big grow reads as a template.
 
 **Scroll:** never override native scroll. use "peeking" (show a few px of next section) instead of full-screen hero + scroll arrow.
 

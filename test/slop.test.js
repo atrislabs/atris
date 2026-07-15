@@ -41,6 +41,14 @@ test('flags em dash as an AI-writing tell', () => {
   assert.equal(scanFile(tmpFile('Ok.tsx', '<p>On-call, half-asleep.</p>')).length, 0);
 });
 
+test('flags the hover-lift reflex but not a subtle hover scale', () => {
+  const lift = scanFile(tmpFile('Card.tsx', '<div className="transition hover:-translate-y-1 hover:scale-110">')).map((f) => f.rule);
+  assert.ok(lift.includes('hover-lift'), 'translate-y lift + big scale');
+  // the blessed subtle scale (1.02-1.05) must NOT trip it
+  assert.ok(!scanFile(tmpFile('Ok.tsx', '<div className="hover:scale-105">')).map((f) => f.rule).includes('hover-lift'));
+  assert.ok(!scanFile(tmpFile('Ok2.tsx', '<div className="hover:scale-100">')).map((f) => f.rule).includes('hover-lift'));
+});
+
 test('clean markup produces zero findings', () => {
   const clean = [
     '<section className="rounded-lg border border-stone-200 bg-stone-50 p-12">',
