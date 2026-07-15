@@ -66,6 +66,18 @@ const RULES = [
   { id: 'hype-copy', sev: 'error',
     re: /\b(boost your productivity|supercharge|unleash|game[- ]?chang(?:er|ing)|seamlessly|effortlessly|revolutioniz(?:e|ing)|take your .{1,30} to the next level|elevate your|cutting[- ]edge|powered by ai|next[- ]generation)\b/i,
     why: 'hype/marketing slop phrase: say the specific thing instead' },
+  { id: 'kicker-dot-caps', sev: 'error',
+    re: /[●◉]\s*[A-Z][A-Z0-9]+(?:\s+[A-Z0-9]+)*\b/,
+    why: 'dot char + all-caps label: the status-dot eyebrow kicker, the #1 banned hero pattern' },
+];
+
+// Pair rules: two regexes that must BOTH hit within a small line window. Catches
+// composites that span JSX lines (a dot element on one line, its label on the next).
+const PAIR_RULES = [
+  { id: 'hero-kicker', sev: 'error', span: 4,
+    a: /rounded-full[^"'`]{0,80}\b[wh]-(?:1(?:\.5)?|2(?:\.5)?|3)\b|\b[wh]-(?:1(?:\.5)?|2(?:\.5)?|3)\b[^"'`]{0,80}rounded-full/i,
+    b: /font-mono|tracking-(?:wide(?:r|st)?|\[)|text-\[?1[01]px|letter-spacing:\s*0?\.\d/i,
+    why: 'tiny status dot next to a small mono/tracked kicker label: banned hero-kicker composite' },
 ];
 
 const ICON = { error: '✗', warn: '⚠' }; // ✗  ⚠
@@ -167,7 +179,7 @@ function walk(target, out) {
   return out;
 }
 
-function scanFile(file, rules = RULES) {
+function scanFile(file, rules = RULES, pairRules = PAIR_RULES) {
   const findings = [];
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch { return findings; }
@@ -181,6 +193,21 @@ function scanFile(file, rules = RULES) {
           file, line: i + 1, rule: rule.id, sev: rule.sev, why: rule.why,
           snippet: m[0].trim().slice(0, 48),
         });
+      }
+    }
+  }
+  for (const pr of pairRules) {
+    for (let i = 0; i < lines.length; i++) {
+      if (!pr.a.test(lines[i])) continue;
+      const lo = Math.max(0, i - pr.span), hi = Math.min(lines.length - 1, i + pr.span);
+      for (let j = lo; j <= hi; j++) {
+        if (pr.b.test(lines[j])) {
+          findings.push({
+            file, line: i + 1, rule: pr.id, sev: pr.sev, why: pr.why,
+            snippet: lines[i].trim().slice(0, 48),
+          });
+          break;
+        }
       }
     }
   }
@@ -304,4 +331,4 @@ function slopCommand(argv) {
   return 0;
 }
 
-module.exports = { slopCommand, detect, scanFile, RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, installHook };
+module.exports = { slopCommand, detect, scanFile, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, installHook };

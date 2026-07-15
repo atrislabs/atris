@@ -50,6 +50,34 @@ test('clean markup produces zero findings', () => {
   assert.equal(scanFile(tmpFile('Clean.tsx', clean)).length, 0);
 });
 
+test('flags the hero-kicker composite across JSX lines', () => {
+  const kicker = [
+    '<div className="flex items-center gap-3">',
+    '  <span className="h-2 w-2 rounded-full bg-orange-500" />',
+    '  <span className="font-mono text-[11px] tracking-widest text-stone-400">Natural voice</span>',
+    '</div>',
+  ].join('\n');
+  const hits = scanFile(tmpFile('Hero.tsx', kicker));
+  assert.ok(hits.some((f) => f.rule === 'hero-kicker'), 'hero-kicker pair rule');
+  assert.equal(hits.find((f) => f.rule === 'hero-kicker').sev, 'error');
+});
+
+test('flags a dot char followed by an all-caps kicker label', () => {
+  const hits = scanFile(tmpFile('Kicker.tsx', '<span>● NATURAL VOICE</span>')).map((f) => f.rule);
+  assert.ok(hits.includes('kicker-dot-caps'));
+  // a bullet separator with normal copy must NOT trip it
+  assert.ok(!scanFile(tmpFile('Sep.tsx', '<span>2 min read ● Updated today</span>')).map((f) => f.rule).includes('kicker-dot-caps'));
+});
+
+test('a lone status dot far from any label does not trip the pair rule', () => {
+  const ok = [
+    '<span className="h-2 w-2 rounded-full bg-stone-300" />',
+    '', '', '', '', '',
+    '<p className="text-sm">All systems normal</p>',
+  ].join('\n');
+  assert.ok(!scanFile(tmpFile('Dot.tsx', ok)).some((f) => f.rule === 'hero-kicker'));
+});
+
 test('findings carry file:line + rule id for the verification gate', () => {
   const f = scanFile(tmpFile('X.css', '\n\n.x { backdrop-filter: blur(8px); }'))[0];
   assert.equal(f.line, 3);
