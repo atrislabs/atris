@@ -121,7 +121,7 @@ function displaySoul(soul) {
   const line = '─'.repeat(W);
 
   console.log(`\n  ┌${line}┐`);
-  console.log(`  │ ${'◉ SOUL — ' + soul.project}${' '.repeat(Math.max(0, W - 10 - soul.project.length))}│`);
+  console.log(`  │ ${'soul · ' + soul.project}${' '.repeat(Math.max(0, W - 8 - soul.project.length))}│`);
   console.log(`  ├${line}┤`);
 
   // Identity
