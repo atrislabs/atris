@@ -124,6 +124,15 @@ test('flags a colored glow shadow but not a neutral or sizeonly shadow', () => {
   assert.ok(!scanFile(tmpFile('Ok2.tsx', '<div className="shadow-stone-200" />')).map((f) => f.rule).includes('colored-glow-shadow'));
 });
 
+test('flags a cross-hue rainbow gradient but not a monochrome or neutral one', () => {
+  const rainbow = scanFile(tmpFile('Cta.tsx', '<button className="bg-gradient-to-r from-pink-500 to-orange-500">Go</button>')).map((f) => f.rule);
+  assert.ok(rainbow.includes('rainbow-gradient'), 'pink-to-orange cross-hue gradient');
+  // a same-family monochrome gradient (blue to blue) must NOT trip it
+  assert.ok(!scanFile(tmpFile('Ok.tsx', '<div className="bg-gradient-to-r from-blue-500 to-blue-700" />')).map((f) => f.rule).includes('rainbow-gradient'));
+  // a subtle neutral light gradient (shade 50, out of the saturated range) must NOT trip it
+  assert.ok(!scanFile(tmpFile('Ok2.tsx', '<div className="bg-gradient-to-b from-gray-50 to-white" />')).map((f) => f.rule).includes('rainbow-gradient'));
+});
+
 test('findings carry file:line + rule id for the verification gate', () => {
   const f = scanFile(tmpFile('X.css', '\n\n.x { backdrop-filter: blur(8px); }'))[0];
   assert.equal(f.line, 3);
