@@ -1136,7 +1136,9 @@ function firstMissionCommand() {
 }
 
 function printFirstUseNext() {
-  console.log(`Next: ${firstMissionCommand()}`);
+  const row = (label, value) => `  ${label.padEnd(9)}${value}`;
+  console.log(row('next', 'run `atris` and describe what you want in plain words.'));
+  console.log(`agents: ${firstMissionCommand()}`);
   console.log(`Then: ${firstUseCommand()}`);
 }
 
@@ -1282,28 +1284,26 @@ async function interactiveEntry(userInput, options = {}) {
   // Build status line
   const parts = [];
   if (wipCount > 0) {
-    parts.push(`WIP: ${wipCount}`);
+    parts.push(`work in progress: ${wipCount}`);
   }
   if (liveMissionsCount > 0) {
-    parts.push(`Missions: ${liveMissionsCount}`);
+    parts.push(`missions: ${liveMissionsCount}`);
   }
   if (inboxCount > 0) {
-    parts.push(`Inbox: ${inboxCount}`);
+    parts.push(`inbox: ${inboxCount}`);
   }
   if (backlogCount > 0) {
-    parts.push(`Backlog: ${backlogCount}`);
+    parts.push(`backlog: ${backlogCount}`);
   }
   if (completedTasksCount > 0) {
-    parts.push(`Done: ${completedTasksCount}`);
+    parts.push(`done: ${completedTasksCount}`);
   }
-  const statusLine = parts.length > 0 ? parts.join('  |  ') : 'Clean slate';
+  const statusLine = parts.length > 0 ? parts.join('  |  ') : 'clean slate';
 
   console.log('');
-  console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ CONTEXT LOADED                                              │');
-  console.log('├─────────────────────────────────────────────────────────────┤');
-  console.log(`│ ${statusLine.padEnd(60)}│`);
-  console.log('└─────────────────────────────────────────────────────────────┘');
+  const contextRow = (label, value) => `  ${label.padEnd(9)}${value}`;
+  console.log(contextRow('context', 'loaded'));
+  console.log(contextRow('status', statusLine));
 
   if (gatherContext) {
     const hotAnswer = String(userInput || '').trim();
@@ -1332,7 +1332,9 @@ async function interactiveEntry(userInput, options = {}) {
     }
     if (shouldSkipContextGatherer()) {
       console.log('');
-      console.log('context gatherer skipped (non-interactive).');
+      if (process.argv.includes('--verbose')) {
+        console.log('context gatherer skipped (non-interactive).');
+      }
       printFirstUseNext();
       return;
     } else {

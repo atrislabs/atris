@@ -582,7 +582,8 @@ test('default entry gathers first-contact context before MAP bootstrap', () => {
     // instead of hanging on a readline prompt (CLI-867)
     const bare = runCli([], { cwd: dir, input: '\n', env });
     assert.equal(bare.status, 0, bare.stderr);
-    assert.match(bare.stdout, /context gatherer skipped \(non-interactive\)/);
+    assert.doesNotMatch(bare.stdout, /context gatherer skipped \(non-interactive\)/);
+    assert.match(bare.stdout, /next\s+run `atris` and describe what you want in plain words\./);
 
     // the hot-start path (answer passed as argv) still gathers context
     const res = runCli(['help me organize college applications'], { cwd: dir, env });

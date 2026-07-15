@@ -8,7 +8,6 @@ const { spawnSync } = require('node:child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const INIT_TIMEOUT_MS = 15000;
-const SKIP_HINT = 'context gatherer skipped (non-interactive).';
 const FIRST_USE_NEXT = 'Next: atris "help me choose the first useful step for this project"';
 const FIRST_MISSION = 'atris mission start "Verify this Atris workspace is ready" --owner validator --runner manual --lane workspace --verify "node -e \\"require(\'fs\').accessSync(\'atris/atris.md\')\\"" --stop "workspace readiness is verified"';
 
@@ -53,8 +52,9 @@ test('init --yes exits without hanging and skips context gatherer', () => {
   try {
     const res = runInit(['--yes'], { cwd: dir });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-    assert.ok(res.stdout.includes(SKIP_HINT));
-    assert.ok(res.stdout.includes(`Next: ${FIRST_MISSION}`));
+    assert.doesNotMatch(res.stdout, /context gatherer skipped/);
+    assert.ok(res.stdout.includes('  next     run `atris` and describe what you want in plain words.'));
+    assert.ok(res.stdout.includes(`agents: ${FIRST_MISSION}`));
     assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
@@ -68,8 +68,9 @@ test('init -y exits without hanging and skips context gatherer', () => {
   try {
     const res = runInit(['-y'], { cwd: dir });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-    assert.ok(res.stdout.includes(SKIP_HINT));
-    assert.ok(res.stdout.includes(`Next: ${FIRST_MISSION}`));
+    assert.doesNotMatch(res.stdout, /context gatherer skipped/);
+    assert.ok(res.stdout.includes('  next     run `atris` and describe what you want in plain words.'));
+    assert.ok(res.stdout.includes(`agents: ${FIRST_MISSION}`));
     assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
@@ -83,8 +84,9 @@ test('init with piped stdin exits without hanging', () => {
   try {
     const res = runInit([], { cwd: dir, input: '' });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-    assert.ok(res.stdout.includes(SKIP_HINT));
-    assert.ok(res.stdout.includes(`Next: ${FIRST_MISSION}`));
+    assert.doesNotMatch(res.stdout, /context gatherer skipped/);
+    assert.ok(res.stdout.includes('  next     run `atris` and describe what you want in plain words.'));
+    assert.ok(res.stdout.includes(`agents: ${FIRST_MISSION}`));
     assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
@@ -98,12 +100,37 @@ test('init with ATRIS_NO_INTERACTIVE skips context gatherer', () => {
   try {
     const res = runInit([], { cwd: dir, env: { ATRIS_NO_INTERACTIVE: '1' } });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-    assert.ok(res.stdout.includes(SKIP_HINT));
-    assert.ok(res.stdout.includes(`Next: ${FIRST_MISSION}`));
+    assert.doesNotMatch(res.stdout, /context gatherer skipped/);
+    assert.ok(res.stdout.includes('  next     run `atris` and describe what you want in plain words.'));
+    assert.ok(res.stdout.includes(`agents: ${FIRST_MISSION}`));
     assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
   } finally {
     cleanupTempDir(dir);
+  }
+});
+
+test('init keeps default output grouped and restores file details with --verbose', () => {
+  const quietDir = makeTempDir();
+  const verboseDir = makeTempDir();
+  try {
+    const quiet = runInit(['--yes'], { cwd: quietDir });
+    assert.equal(quiet.status, 0, `stdout:\n${quiet.stdout}\nstderr:\n${quiet.stderr}`);
+    assert.doesNotMatch(quiet.stdout, /CONTEXT LOADED/);
+    assert.doesNotMatch(quiet.stdout, /✓ Copied skill:|\.claude\/skills\//);
+    assert.match(quiet.stdout, /workspace files ready \(\d+\)/);
+    assert.match(quiet.stdout, /team members ready \(\d+\)/);
+    assert.match(quiet.stdout, /agent adapters ready \(\d+\)/);
+    assert.match(quiet.stdout, /skills installed \(\d+\)/);
+
+    const verbose = runInit(['--yes', '--verbose'], { cwd: verboseDir });
+    assert.equal(verbose.status, 0, `stdout:\n${verbose.stdout}\nstderr:\n${verbose.stderr}`);
+    assert.match(verbose.stdout, /✓ Created GETTING_STARTED\.md/);
+    assert.match(verbose.stdout, /✓ Copied skill:/);
+    assert.match(verbose.stdout, /context gatherer skipped \(non-interactive\)\./);
+  } finally {
+    cleanupTempDir(quietDir);
+    cleanupTempDir(verboseDir);
   }
 });
 
