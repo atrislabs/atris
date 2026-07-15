@@ -13682,20 +13682,37 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(runCli(['task', 'claim', blockingTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', blockingTask.display_id, '--proof', 'one review validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
+    fs.writeFileSync(path.join(dir, 'proof.txt'), 'done\n');
+    const unsafeCreated = runCli(['task', 'new', 'Used a check outside the allowlist', '--tag', 'review', '--json'], { cwd: dir, env });
+    assert.equal(unsafeCreated.status, 0, unsafeCreated.stderr);
+    const unsafeTask = JSON.parse(unsafeCreated.stdout).task;
+    assert.equal(runCli(['task', 'claim', unsafeTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const unsafeReady = runCli([
+      'task', 'ready', unsafeTask.display_id,
+      '--verify', 'test -f proof.txt',
+      '--result', 'Operators can now confirm finished work with a familiar file check, reducing the risk of approving missing proof.',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(unsafeReady.status, 0, unsafeReady.stderr);
+
     const queue = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
     assert.equal(queue.status, 0, queue.stderr);
     const payload = JSON.parse(queue.stdout);
     assert.equal(payload.action, 'review_queue');
     assert.equal(payload.queue.schema, 'atris.task_review_queue.v1');
-    assert.equal(payload.queue.counts.review, 2);
+    assert.equal(payload.queue.counts.review, 3);
     assert.equal(payload.queue.counts.certified, 1);
-    assert.equal(payload.queue.counts.blocking, 1);
-    assert.equal(payload.queue.items.length, 2);
+    assert.equal(payload.queue.counts.blocking, 2);
+    assert.equal(payload.queue.items.length, 3);
     assert.equal(payload.queue.items[0].display_id, certifiedTask.display_id);
     const blockedQueueItem = payload.queue.items.find(item => item.display_id === blockingTask.display_id);
     assert.equal(blockedQueueItem.queue_role, 'blocked');
     assert.equal(blockedQueueItem.reason, 'needs_second_actor_review');
     assert.equal(blockedQueueItem.next_command, `atris task review-chat ${blockingTask.display_id} --as codex-review`);
+    const unsafeQueueItem = payload.queue.items.find(item => item.display_id === unsafeTask.display_id);
+    assert.equal(unsafeQueueItem.queue_role, 'blocked');
+    assert.equal(unsafeQueueItem.reason, 'verify_command_not_allowed');
+    assert.equal(unsafeQueueItem.next_command, `atris task review-chat ${unsafeTask.display_id} --as codex-review`);
 	    assert.deepEqual(payload.queue.items[0].landing, {
 	      happened: 'Operators can now review one compact certified proof packet, reducing the risk of approving against stale context.',
 	      reason: 'Human approval queue shows a compact certified packet without stale objective text.',
@@ -13721,7 +13738,8 @@ test('task reviews gives a compact certified accept queue', () => {
 
     const text = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
-	    assert.match(text.stdout, /READY FOR APPROVAL/);
+	    assert.match(text.stdout, /ready for approval/);
+	    assert.doesNotMatch(text.stdout, /READY FOR APPROVAL/);
 	    assert.match(text.stdout, /Result:/);
 	    assert.match(text.stdout, /What happened: Operators can now review one compact certified proof packet, reducing the risk of approving against stale context\./);
 	    assert.match(text.stdout, /Why it matters: Human approval queue shows a compact certified packet without stale objective text\./);
@@ -13729,7 +13747,9 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.match(text.stdout, /What I tested: I ran the focused review queue test\./);
     assert.match(text.stdout, /Saved: Result is ready for human approval as .*?\./);
     assert.match(text.stdout, /Decision: Accept if the packet is readable; rework if proof is vague\./);
-    assert.match(text.stdout, new RegExp(`blocked: ${blockingTask.display_id}: needs_second_actor_review; next: atris task review-chat ${blockingTask.display_id} --as codex-review`));
+    assert.match(text.stdout, new RegExp(`${blockingTask.display_id} needs a second reviewer before it can land; next: atris task review-chat ${blockingTask.display_id} --as codex-review`));
+    assert.match(text.stdout, new RegExp(`${unsafeTask.display_id} used a check command the system does not allow; rerun with an approved check; next: atris task review-chat ${unsafeTask.display_id} --as codex-review`));
+    assert.doesNotMatch(text.stdout, /needs_second_actor_review|verify_command_not_allowed/);
     assert.doesNotMatch(text.stdout, /   details:/);
     assert.doesNotMatch(text.stdout, /   receipt:/);
     assert.doesNotMatch(text.stdout, /   \/codex:/);
@@ -13744,7 +13764,8 @@ test('task reviews gives a compact certified accept queue', () => {
 
     const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
     assert.equal(grouped.status, 0, grouped.stderr);
-    assert.match(grouped.stdout, /READY FOR APPROVAL - grouped by tag/);
+    assert.match(grouped.stdout, /ready for approval - grouped by tag/);
+    assert.doesNotMatch(grouped.stdout, /READY FOR APPROVAL/);
     assert.match(grouped.stdout, /1 ready for approval across 1 tag group\(s\)/);
     assert.match(grouped.stdout, /approve this group: atris task accept-group tag="review" --spot-check 3 --confirm-human-accept --as <you>/);
     assert.doesNotMatch(grouped.stdout, /CERTIFIED REVIEW|review then accept/);
@@ -19286,7 +19307,8 @@ test('review default mode renders certified task review console', () => {
     const res = runCli(['review'], { cwd: dir, env });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Review is the human checkpoint/);
-    assert.match(res.stdout, /READY FOR APPROVAL/);
+    assert.match(res.stdout, /ready for approval/);
+    assert.doesNotMatch(res.stdout, /READY FOR APPROVAL/);
     assert.match(res.stdout, new RegExp(`approve: atris task accept ${ref}`));
     assert.match(res.stdout, new RegExp(`rework: atris task revise ${ref}`));
     assert.match(res.stdout, /Need the legacy Validator prompt/);

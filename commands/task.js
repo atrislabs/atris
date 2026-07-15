@@ -5209,6 +5209,17 @@ function reviewGroupTextLimit(args, total) {
   return Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 10;
 }
 
+function plainReviewBlockerMessage(item) {
+  const ref = item.display_id || taskRef(item.id);
+  if (item.reason === 'verify_command_not_allowed') {
+    return `${ref} used a check command the system does not allow; rerun with an approved check`;
+  }
+  if (item.reason === 'needs_second_actor_review') {
+    return `${ref} needs a second reviewer before it can land`;
+  }
+  return `${ref} needs another check before it can land`;
+}
+
 // Risk order for human attention: named receipts that are missing/failing (0)
 // beat prose-only proofs (1) beat fully validated green evidence (2).
 function evidenceRiskRank(evidence) {
@@ -5421,7 +5432,7 @@ function cmdReviews(args) {
       });
       return;
     }
-    console.log(`READY FOR APPROVAL - grouped by ${key}`);
+    console.log(`ready for approval - grouped by ${key}`);
     if (autoAcceptRollup.count > 0) {
       console.log(`${autoAcceptRollup.count} reviews auto-accepted since your last look`);
     }
@@ -5456,7 +5467,7 @@ function cmdReviews(args) {
     });
     return;
   }
-  console.log('READY FOR APPROVAL');
+  console.log('ready for approval');
   if (autoAcceptRollup.count > 0) {
     console.log(`${autoAcceptRollup.count} reviews auto-accepted since your last look`);
   }
@@ -5499,7 +5510,7 @@ function cmdReviews(args) {
   });
   for (const item of blockedItems) {
     console.log('');
-    console.log(`blocked: ${item.display_id || taskRef(item.id)}: ${item.reason}; next: ${item.next_command}`);
+    console.log(`${plainReviewBlockerMessage(item)}; next: ${item.next_command}`);
   }
   if (queue.counts.shown < queue.counts.certified) {
     console.log('');
@@ -7076,7 +7087,7 @@ function cmdShow(args) {
   const owner = task.claimed_by ? ` / ${task.claimed_by}` : '';
   const tag = task.tag ? ` #${task.tag}` : '';
   const statusLabel = task.status === 'review'
-    ? 'READY FOR APPROVAL'
+    ? 'ready for approval'
     : task.status === 'done'
       ? 'DONE'
       : task.status.toUpperCase();
