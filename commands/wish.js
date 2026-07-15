@@ -187,23 +187,27 @@ function parseFlagArgs(args, valueFlagNames = []) {
   const valueFlags = new Set(valueFlagNames);
   const values = {};
   const positionals = [];
+  const missingValueFlags = [];
   for (let i = 0; i < args.length; i += 1) {
     const arg = String(args[i] || '');
     if (arg.startsWith('--')) {
       const flagName = arg.split('=')[0];
       if (valueFlags.has(flagName)) {
         const prefix = flagName + '=';
-        if (arg.startsWith(prefix)) values[flagName] = unquote(arg.slice(prefix.length));
+        if (arg.startsWith(prefix)) {
+          values[flagName] = unquote(arg.slice(prefix.length));
+          if (!String(values[flagName]).trim()) missingValueFlags.push(flagName);
+        }
         else if (args[i + 1] && !String(args[i + 1]).startsWith('--')) {
           values[flagName] = unquote(args[i + 1]);
           i += 1;
-        }
+        } else missingValueFlags.push(flagName);
       }
       continue;
     }
     positionals.push(args[i]);
   }
-  return { positionals, values };
+  return { positionals, values, missingValueFlags };
 }
 
 function wishOptions(args) {
@@ -222,6 +226,7 @@ function wishOptions(args) {
     lane: String(parsed.values['--lane'] || '').trim() || 'fast',
     metricRaw: String(parsed.values['--metric'] || '').trim(),
     verifyRaw: String(parsed.values['--verify'] || '').trim(),
+    verifyMissing: parsed.missingValueFlags.includes('--verify'),
     positionals: parsed.positionals,
   };
 }
@@ -279,6 +284,7 @@ async function runCloudWish(text, root, options, deps = {}) {
 }
 
 function resolveVerifyOption(options) {
+  if (options.verifyMissing) return 'wish --verify needs a command.';
   if (!options.verifyRaw) return null;
   const parsed = parseVerifyCommand(options.verifyRaw);
   if (!parsed.ok) return `wish --verify is not allowed (${parsed.reason}).`;

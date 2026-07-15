@@ -240,10 +240,9 @@ test('healthy wish delegates a task and records honest proof status', () => {
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
-    assert.deepEqual(Object.keys(payload).sort(), ['budget', 'engine', 'mission_id', 'questions', 'status', 'task_id', 'validator', 'wish_id']);
+    assert.deepEqual(Object.keys(payload).sort(), ['budget', 'engine', 'mission_id', 'questions', 'status', 'task_id', 'wish_id']);
     assert.equal(payload.status, 'delegated');
     assert.equal(payload.engine, 'claude');
-    assert.equal(payload.validator, 'claude');
     assert.equal(payload.budget, 'long');
     assert.deepEqual(payload.questions, []);
     assert.ok(payload.task_id);
@@ -368,6 +367,18 @@ test('wish --verify records one explicit allowlisted mission verifier', () => {
     });
     assert.equal(refused.status, 2);
     assert.match(refused.stderr, /wish --verify is not allowed/);
+
+    for (const args of [
+      ['wish', 'fix the auth bug', '--verify', '--json'],
+      ['wish', 'fix the auth bug', '--verify=', '--json'],
+    ]) {
+      const missing = runCli(args, {
+        cwd: dir,
+        env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: path.join(dir, 'tasks.db') },
+      });
+      assert.equal(missing.status, 2);
+      assert.match(missing.stderr, /wish --verify needs a command/);
+    }
   } finally {
     cleanupTempDir(dir);
   }
@@ -389,7 +400,6 @@ test('wish --engine uses an explicit ready engine for task and mission execution
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.status, 'delegated');
     assert.equal(payload.engine, 'codex');
-    assert.equal(payload.validator, 'claude');
     assert.equal(payload.requested_engine, 'codex');
     assert.equal(payload.engine_fallback_reason, undefined);
 
@@ -689,12 +699,11 @@ test('json question shape is stable', () => {
     });
     assert.equal(res.status, 1, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
-    assert.deepEqual(Object.keys(payload).sort(), ['budget', 'engine', 'mission_id', 'questions', 'status', 'task_id', 'validator', 'wish_id']);
+    assert.deepEqual(Object.keys(payload).sort(), ['budget', 'engine', 'mission_id', 'questions', 'status', 'task_id', 'wish_id']);
     assert.equal(payload.status, 'needs_input');
     assert.equal(payload.task_id, null);
     assert.equal(payload.mission_id, null);
     assert.equal(payload.engine, 'codex');
-    assert.equal(payload.validator, 'claude');
     assert.equal(payload.budget, 'long');
     assert.ok(Array.isArray(payload.questions));
   } finally {

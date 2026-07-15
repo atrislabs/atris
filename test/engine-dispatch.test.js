@@ -69,6 +69,16 @@ test('buildEngineCommand pins yolo flags for codex and claude engines', () => {
   assert.doesNotMatch(fleet.buildEngineCommand('claude', '/tmp/p.md'), /dangerously-skip-permissions/);
 });
 
+test('buildEngineCommand enables each engine native sandbox for one-lap execution', () => {
+  assert.match(fleet.buildEngineCommand('codex', '/tmp/p.md', { sealed: true }), /--sandbox workspace-write.*--ephemeral.*--ignore-user-config/);
+  assert.match(fleet.buildEngineCommand('claude', '/tmp/p.md', { sealed: true }), /--safe-mode.*--permission-mode acceptEdits.*"enabled":true/);
+  assert.match(fleet.buildEngineCommand('cursor', '/tmp/p.md', { sealed: true }), /--sandbox enabled/);
+  assert.match(fleet.buildEngineCommand('devin', '/tmp/p.md', { sealed: true }), /--sandbox --permission-mode accept-edits/);
+  const grok = fleet.buildEngineCommand('grok', '/tmp/p.md', { sealed: true });
+  assert.match(grok, /--sandbox enabled.*--permission-mode acceptEdits/);
+  assert.doesNotMatch(grok, /--always-approve/);
+});
+
 test('runDispatchCommand refuses without a task id or engine', () => {
   const before = console.error;
   const lines = [];
@@ -650,6 +660,9 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
     const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
     assert.equal(receipt.yolo, true);
     assert.equal(receipt.landed[0].landing, 'self');
+    assert.equal(receipt.result.passed, true);
+    assert.equal(receipt.result.verifier_result.command, 'git merge-base --is-ancestor HEAD origin/master');
+    assert.equal(receipt.result.verifier_result.passed, true);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

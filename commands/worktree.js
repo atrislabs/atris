@@ -7,6 +7,8 @@ const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
 const COMMAND_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+const GIT_OID_PATTERN = /^[0-9a-f]{40,64}$/;
+const ONE_LAP_PROOF_REF_PATTERN = /^refs\/atris\/one-lap\/([0-9a-f]{40,64})$/;
 
 function runGit(args, { cwd = process.cwd(), check = true } = {}) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -45,6 +47,53 @@ function statusSnapshot(root) {
 function newStatusRows(before, after) {
   const seen = new Set(before);
   return after.filter((row) => !seen.has(row));
+}
+
+function readOneLapProofBinding(root, branch) {
+  const sidecarPath = path.join(root, '.atris', 'agent-worktree.json');
+  let sidecar = null;
+  try {
+    sidecar = JSON.parse(fs.readFileSync(sidecarPath, 'utf8'));
+  } catch (error) {
+    if (error && error.code !== 'ENOENT') throw new Error('one-lap proof metadata is unreadable');
+  }
+  const metadata = sidecar && sidecar.one_lap_proof;
+  const configured = runGit(['config', '--get', `branch.${branch}.atris-proof-ref`], { cwd: root, check: false });
+  const configuredRef = configured.status === 0 ? String(configured.stdout || '').trim() : '';
+  if (!metadata && !configuredRef) return null;
+  if (!metadata || !configuredRef) throw new Error('one-lap proof binding is incomplete');
+
+  const proofRef = String(metadata.ref || '');
+  const sourceCommit = String(metadata.commit || '');
+  const sourceTree = String(metadata.tree || '');
+  const refMatch = proofRef.match(ONE_LAP_PROOF_REF_PATTERN);
+  if (!refMatch || proofRef !== configuredRef || !GIT_OID_PATTERN.test(sourceCommit) || !GIT_OID_PATTERN.test(sourceTree)) {
+    throw new Error('one-lap proof binding is invalid');
+  }
+  const resolvedCommit = runGit(['rev-parse', '--verify', `${proofRef}^{commit}`], { cwd: root, check: false });
+  const resolvedTree = runGit(['rev-parse', '--verify', `${proofRef}^{tree}`], { cwd: root, check: false });
+  if (resolvedCommit.status !== 0 || String(resolvedCommit.stdout || '').trim() !== sourceCommit || refMatch[1] !== sourceCommit) {
+    throw new Error('one-lap proof commit no longer matches its retained ref');
+  }
+  if (resolvedTree.status !== 0 || String(resolvedTree.stdout || '').trim() !== sourceTree) {
+    throw new Error('one-lap proof tree no longer matches its retained ref');
+  }
+  return { ref: proofRef, commit: sourceCommit, tree: sourceTree };
+}
+
+function worktreeTree(root, source) {
+  const result = runGit(source === 'index'
+    ? ['write-tree']
+    : ['rev-parse', '--verify', 'HEAD^{tree}'], { cwd: root, check: false });
+  if (result.status !== 0) throw new Error(`could not resolve the ${source} tree for one-lap proof`);
+  return String(result.stdout || '').trim();
+}
+
+function assertOneLapProofTree(root, binding, source) {
+  if (!binding) return;
+  if (worktreeTree(root, source) !== binding.tree) {
+    throw new Error(`one-lap ${source} tree differs from the independently verified proof tree`);
+  }
 }
 
 function repoRoot(cwd = process.cwd()) {
@@ -483,6 +532,23 @@ function shipWorktree(args) {
     return 2;
   }
 
+  let oneLapProof = null;
+  try {
+    oneLapProof = readOneLapProofBinding(root, branch);
+  } catch (error) {
+    console.error(`blocked: ${error.message}`);
+    return 3;
+  }
+  const proofTreeMatches = (source) => {
+    try {
+      assertOneLapProofTree(root, oneLapProof, source);
+      return true;
+    } catch (error) {
+      console.error(`blocked: ${error.message}`);
+      return false;
+    }
+  };
+
   refreshRemoteRef(root, targetRef);
   const skippedAdapters = restoreRegeneratedAdapterChurn(root, message, { dryRun });
   const ignoredUnstagedFiles = dryRun ? new Set(skippedAdapters) : new Set();
@@ -497,10 +563,13 @@ function shipWorktree(args) {
     console.log(`commit: ${message}`);
     if (!dryRun) {
       runGit(['add', '-A'], { cwd: root });
+      if (!proofTreeMatches('index')) return 3;
       runGit(['commit', '-m', message], { cwd: root });
+      if (!proofTreeMatches('head')) return 3;
     }
   } else {
     console.log('commit: skipped (no local changes)');
+    if (!dryRun && !proofTreeMatches('head')) return 3;
   }
 
   if (verify) {
@@ -520,6 +589,7 @@ function shipWorktree(args) {
       }
       return 3;
     }
+    if (!dryRun && !proofTreeMatches('head')) return 3;
   } else {
     console.log('verify: skipped (no --verify)');
   }

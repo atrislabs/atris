@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { listMissions, markMissionReviewReady } = require('./mission');
+const { freezeMissionVerifier, listMissions, markMissionReviewReady } = require('./mission');
 const { readWishes } = require('../lib/wish-store');
 const {
   engineRegistryView,
@@ -16,9 +16,10 @@ const fleet = require('../lib/fleet');
 
 const TERMINAL_MISSION_STATUSES = new Set(['complete', 'stopped']);
 const WAITING_WISH_STATUSES = new Set(['needs_input', 'waiting_input', 'waiting_on_operator']);
-const OUTBOUND_ACTION = /^(?:push|deploy|publish|send|email|charge|refund|purchase|rotate|revoke|drop|truncate|upload|share|transfer|pay|book|schedule|invite|delete|release|land|ship|curl|wget|ssh)\b|^merge\b(?!\s+sort\b)|^post\b.{0,120}\b(?:to|on)\s+(?:x|twitter|linkedin|facebook|slack|discord|the\s+customer|a\s+customer|customers?|external)\b/i;
-const EMBEDDED_OUTBOUND_ACTION = /\b(?:and|then|also|after(?:wards)?)\s+(?:please\s+)?(?:push|merge|deploy|publish|send|email|charge|refund|purchase|rotate|revoke|drop|truncate|upload|share|transfer|pay|book|schedule|invite|delete|release|land|ship)\b|\b(?:push|merge|deploy|publish|release|land|ship)\b.{0,120}\b(?:to|into|on)\s+(?:origin\/)?(?:production|prod|master|main)\b|\b(?:post|send|email|upload|share|transfer)\b.{0,120}\b(?:to|with)\s+(?:x|twitter|linkedin|facebook|slack|discord|customers?|external\b)/i;
-const LOCAL_INTENT = /^(add|analyze|audit|build|change|check|create|debug|document|edit|fix|implement|improve|inspect|investigate|make|merge\s+sort|order\s+validation|patch|post\s+(?:\/|api\b|endpoint\b|handler\b|route\b|request\b)|refactor|remove|rename|research|review|run\s+(the\s+)?(tests?|checks?|lint|build)|test|update|validate|work\s+on|write)\b/i;
+const OUTBOUND_ACTION = /^(?:(?:please|kindly|execute|go|run)\s+)*(?:(?:git\s+)?push(?:ing)?|deploy(?:ing|ment)?|(?:a\s+)?(?:production|prod)\s+deploy(?:ing|ment)?|(?:npm\s+)?publish(?:ing)?|send(?:ing)?|email(?:ing)?|notify(?:ing)?|messag(?:e|ing)|charge|refund|purchase|rotate|revoke|drop|truncate|upload|share|transfer|pay|book|schedule|invite|delete|release|land|ship|curl|wget|ssh)\b|^merg(?:e|ing)\b(?!\s+sort\b)|^post\b.{0,120}\b(?:to|on)\s+(?:x|twitter|linkedin|facebook|slack|discord|the\s+customer|a\s+customer|customers?|external)\b/i;
+const COMPOUND_ACTION_BOUNDARY = /\s*(?:[;,:.!?&+\/]|\b(?:and(?:\s+then)?|then|also|plus|before|after|afterwards|while|meanwhile|followed(?:\s+|-)by)\b)\s*/i;
+const OUTBOUND_TARGET_ACTION = /\b(?:push|merge|deploy|publish|release|land|ship)\b.{0,120}\b(?:to|into|on)\s+(?:origin\/)?(?:production|prod|master|main)\b|\b(?:post|send|email|upload|share|transfer)\b.{0,120}\b(?:to|with)\s+(?:x|twitter|linkedin|facebook|slack|discord|customers?|external\b)/i;
+const LOCAL_INTENT = /^(add|analyze|audit|build|change|check|clean|create|debug|diagnose|document|edit|ensure|find|fix|harden|implement|improve|inspect|investigate|locate|make|merge\s+sort|optimize|order\s+validation|patch|post\s+(?:\/|api\b|endpoint\b|handler\b|route\b|request\b)|reduce|refactor|remove|rename|research|review|run\s+(the\s+)?(tests?|checks?|lint|build)|simplify|test|trace|update|validate|work\s+on|write)\b/i;
 const ONE_LAP_LOCK_STALE_MS = 6 * 60 * 60 * 1000;
 
 function ownCli(root, args, cwd = root) {
@@ -198,11 +199,20 @@ function requestAction(title) {
     .trim();
 }
 
+function includesOutboundAction(title) {
+  const text = String(title || '').replace(/\s+/g, ' ').trim();
+  if (OUTBOUND_TARGET_ACTION.test(text)) return true;
+  return text.split(COMPOUND_ACTION_BOUNDARY)
+    .map(requestAction)
+    .filter(Boolean)
+    .some((clause) => OUTBOUND_ACTION.test(clause));
+}
+
 function oneLapSafetyIssue(task) {
   if (!fleet.isSafeLane(task)) return 'the task is in a protected lane';
   const title = String(task && task.title || '').replace(/\s+/g, ' ').trim();
   const action = requestAction(title);
-  if (OUTBOUND_ACTION.test(action) || EMBEDDED_OUTBOUND_ACTION.test(title)) {
+  if (includesOutboundAction(title)) {
     return 'the request includes an outbound or irreversible action';
   }
   if (!LOCAL_INTENT.test(action)) return 'one lap only dispatches local build, test, review, or research work';
@@ -257,6 +267,8 @@ function passingReadyProof(candidate, { taskId, wishId, missionId, verifier }) {
   const resultVerifier = receipt.result && receipt.result.verifier_result || {};
   const validator = receipt.result && receipt.result.validator_result || {};
   return receipt.schema === 'atris.dispatch_receipt.v1'
+    && receipt.review_only === true
+    && context.source === 'one_lap'
     && Array.isArray(receipt.tasks)
     && receipt.tasks.includes(taskId)
     && receipt.result
@@ -264,6 +276,7 @@ function passingReadyProof(candidate, { taskId, wishId, missionId, verifier }) {
     && receipt.result.master_boundary_enforced === true
     && receipt.result.master_unchanged === true
     && ready.task === taskId
+    && ready.review_recorded === true
     && readyVerifier.passed === true
     && readyVerifier.status === 0
     && readyVerifier.command === verifier
@@ -276,6 +289,7 @@ function passingReadyProof(candidate, { taskId, wishId, missionId, verifier }) {
     && Boolean(validator.engine)
     && Boolean(validator.executor_engine)
     && validator.engine !== validator.executor_engine
+    && validator.executor_engine === ready.engine
     && (!wishId || context.wish_id === wishId)
     && (!missionId || context.mission_id === missionId);
 }
@@ -399,6 +413,18 @@ async function runOneLap(ask, options = {}) {
   let wish = existing && existing.wish;
   let mission = existing && existing.mission;
   let task = wish && wish.task_id ? taskById(runCli, wish.task_id) : null;
+  const retryVerifier = String(options.verifier || '').trim();
+  const existingVerifier = missionVerifier(mission);
+  if (existingVerifier && retryVerifier && retryVerifier !== existingVerifier) {
+    const result = {
+      ...resultBase({ status: 'stuck', ask: text, wish, mission, task, verifier: existingVerifier }),
+      resumed: true,
+      reason: 'the lap verifier is frozen after intake and cannot be replaced on retry',
+      next_action: oneLapRetryCommand(text, { engine: options.engine || '', verifier: existingVerifier }),
+    };
+    emit(result, asJson);
+    return 2;
+  }
   if (task && ['review', 'done'].includes(String(task.status || ''))) {
     const verifier = missionVerifier(mission);
     const prior = verifier ? findDispatchReceipt(root, task.display_id, {
@@ -553,7 +579,18 @@ async function runOneLap(ask, options = {}) {
     emit(result, asJson);
     return 2;
   }
-  const verifier = String(options.verifier || '').trim() || missionVerifier(mission) || projectVerifier(root);
+  let frozenVerifier = missionVerifier(mission);
+  const requestedVerifier = String(options.verifier || '').trim();
+  if (frozenVerifier && requestedVerifier && requestedVerifier !== frozenVerifier) {
+    const result = {
+      ...resultBase({ status: 'stuck', ask: text, wish, mission, task, engine: executor, verifier: frozenVerifier }),
+      reason: 'the lap verifier is frozen after intake and cannot be replaced on retry',
+      next_action: oneLapRetryCommand(text, { engine: options.engine || '', verifier: frozenVerifier }),
+    };
+    emit(result, asJson);
+    return 2;
+  }
+  const verifier = frozenVerifier || requestedVerifier || projectVerifier(root);
   if (!verifier) {
     const result = waitingResult({
       ask: text,
@@ -572,6 +609,20 @@ async function runOneLap(ask, options = {}) {
     const result = { ...resultBase({ status: 'stuck', ask: text, wish, mission, task, engine: executor, verifier }), reason: `the mission has no safe runnable verifier (${parsedVerifier.reason})`, next_action: `atris mission status ${mission.id}` };
     emit(result, asJson);
     return 2;
+  }
+  if (!frozenVerifier) {
+    try {
+      mission = freezeMissionVerifier(mission.id, verifier, root);
+      frozenVerifier = missionVerifier(mission);
+    } catch (error) {
+      const result = {
+        ...resultBase({ status: 'stuck', ask: text, wish, mission, task, engine: executor, verifier }),
+        reason: `the verifier could not be frozen before dispatch: ${error.message}`,
+        next_action: `atris mission status ${mission.id}`,
+      };
+      emit(result, asJson);
+      return 1;
+    }
   }
 
   const validators = readyValidators(root, wish && wish.validator || '', executor.id);

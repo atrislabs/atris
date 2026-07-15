@@ -83,7 +83,12 @@ test('one-lap review evidence requires an independent non-mutating validator', (
     schema: 'atris.dispatch_receipt.v1',
     review_only: true,
     context: { source: 'one_lap' },
-    result: { passed: true, verifier_result: { passed: true } },
+    result: {
+      passed: true,
+      master_boundary_enforced: true,
+      master_unchanged: true,
+      verifier_result: { passed: true },
+    },
   };
   assert.equal(receiptVerifierPassed(receipt), false, 'executor verification alone is not independent evidence');
   assert.equal(receiptVerifierPassed({
@@ -112,6 +117,21 @@ test('one-lap review evidence requires an independent non-mutating validator', (
       },
     },
   }), true);
+  assert.equal(receiptVerifierPassed({
+    ...receipt,
+    result: {
+      ...receipt.result,
+      master_boundary_enforced: false,
+      master_unchanged: null,
+      validator_result: {
+        engine: 'codex',
+        executor_engine: 'cursor',
+        independent: true,
+        passed: true,
+        worktree_unchanged: true,
+      },
+    },
+  }), false, 'one-lap evidence must prove the protected master boundary');
   assert.equal(receiptVerifierPassed({
     ...receipt,
     context: { source: 'engine_dispatch' },
