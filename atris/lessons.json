@@ -209,5 +209,16 @@
     "mechanism": "lib/codex-flight.js buildPrompt hook-stop instruction, asserted by test/codex-flight-brief.test.js",
     "status": "resolved",
     "resolved_at": "2026-07-13"
+  },
+  "wish-intake-preserves-check-verbatim": {
+    "scope": "atris-cli",
+    "applies_to": [
+      "lib/wish-audit.js",
+      "lib/wish-delegate.js"
+    ],
+    "detector": "node --test --test-name-pattern \"wish intake preserves Check line verifier verbatim\" test/wish.test.js",
+    "mechanism": "lib/wish-audit.js extracts standalone Check lines before decomposition and lib/wish-delegate.js passes the exact verifier through wish and mission storage; test/wish.test.js pins the full intake path.",
+    "status": "resolved",
+    "resolved_at": "2026-07-15"
   }
 }
