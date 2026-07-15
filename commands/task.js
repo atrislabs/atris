@@ -210,6 +210,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task archive <id> --reason "..." [--from-failed]
                                            Sweep off-roadmap/duplicate work as archived (not failed);
                                            --from-failed opts in to relabel a fail-closed row (never done)
+  atris task clear-done [--before <days>] [--dry-run] [--json]  Archive completed rows, oldest first
   atris task relabel-archived [--dry-run|--apply]
                                            One-time OBL-1622 migration: relabel June-10 backlog-reset rows failed -> archived
   atris task finish <id> --proof "..."     Legacy alias for done with proof
@@ -9008,6 +9009,86 @@ function cmdArchive(args) {
   }
 }
 
+function taskCompletionTime(row) {
+  const doneAt = Number(row && row.done_at);
+  if (Number.isFinite(doneAt) && doneAt > 0) return doneAt;
+  const acceptedAt = Date.parse(String(row && row.metadata && row.metadata.accepted_at || ''));
+  if (Number.isFinite(acceptedAt)) return acceptedAt;
+  return Number(row && (row.updated_at || row.created_at) || 0);
+}
+
+function cmdClearDone(args) {
+  const beforeRaw = flag(args, '--before');
+  let beforeDays = null;
+  if (beforeRaw !== null) {
+    beforeDays = Number(beforeRaw);
+    if (beforeRaw === true || !Number.isFinite(beforeDays) || beforeDays < 0) {
+      failTask('atris task clear-done', 'invalid_before', '--before requires a non-negative number of days');
+    }
+  }
+
+  const dryRun = hasFlag(args, '--dry-run');
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const workspaceRoot = taskDb.workspaceRoot();
+  const cutoff = beforeDays === null ? null : Date.now() - (beforeDays * 24 * 60 * 60 * 1000);
+  const candidates = taskDb.listTasks(db, { workspaceRoot, status: 'done', limit: null })
+    .filter(row => cutoff === null || taskCompletionTime(row) < cutoff)
+    .sort((a, b) => taskCompletionTime(a) - taskCompletionTime(b) || String(a.id).localeCompare(String(b.id)));
+  const sample = candidates.slice(0, 5).map(row => ({
+    task_id: row.id,
+    title: row.title,
+    completed_at: new Date(taskCompletionTime(row)).toISOString(),
+  }));
+
+  if (dryRun) {
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: 'clear-done',
+        dry_run: true,
+        before_days: beforeDays,
+        count: candidates.length,
+        sample,
+      });
+      return;
+    }
+    console.log(`clear-done dry-run: ${candidates.length} completed task(s) would be archived.`);
+    for (const row of sample) console.log(`  - ${row.title}`);
+    if (candidates.length > sample.length) console.log(`  ...and ${candidates.length - sample.length} more`);
+    return;
+  }
+
+  const reason = 'cleared by clear-done sweep';
+  for (const row of candidates) {
+    const result = taskDb.archiveTask(db, {
+      id: row.id,
+      actor: String(flag(args, '--as') || DEFAULT_OWNER),
+      reason,
+      fromDone: true,
+    });
+    if (!result.archived) {
+      failTask('atris task clear-done', result.reason, `clear-done failed: ${row.id} ${result.reason}`, 1);
+    }
+  }
+  const { outPath } = writeDefaultProjection(taskDb, db);
+
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'clear-done',
+      dry_run: false,
+      before_days: beforeDays,
+      count: candidates.length,
+      reason,
+      sample,
+      projection_path: outPath,
+    });
+    return;
+  }
+  console.log(`cleared ${candidates.length} completed task(s).`);
+}
+
 // One-time migration for OBL-1622: the 2026-06-10 "first-principles backlog
 // reset" archived ~125 certified, proof-backed tasks by writing status
 // 'failed' (no distinct archived status existed yet). This relabels exactly
@@ -12063,6 +12144,7 @@ async function runTaskCommand(args) {
     case 'finish': return cmdFinish(rest);
     case 'fail':   return cmdDone([...rest, '--failed']);
     case 'archive': return cmdArchive(rest);
+    case 'clear-done': return cmdClearDone(rest);
     case 'relabel-archived': return cmdRelabelArchived(rest);
     case 'review': return cmdReview(rest);
     case 'reviews':
@@ -12103,7 +12185,7 @@ const MUTATING_TASK_COMMANDS = new Set([
   'continue-work', 'continue', 'chat', 'note', 'say', 'retitle', 'tag', 'tags', 'step',
   'ready', 'result', 'accept', 'landing', 'land-review', 'auto-accept-certified',
   'auto-accept', 'sweep', 'audit', 'certify-verified', 'accept-group', 'revise',
-  'done', 'finish', 'fail', 'archive', 'relabel-archived', 'review', 'import',
+  'done', 'finish', 'fail', 'archive', 'clear-done', 'relabel-archived', 'review', 'import',
   'setup', 'review-lane-act', 'review-act', 'act-review', 'review-lane-loop',
   'review-loop', 'loop-review', 'review-lane-run', 'review-run', 'run-review',
 ]);
@@ -12112,7 +12194,8 @@ async function run(args) {
   const raw = args || [];
   const sub = !raw[0] || raw[0].startsWith('--') ? 'desk' : raw[0];
   const result = await runTaskCommand(raw);
-  if (MUTATING_TASK_COMMANDS.has(sub)) autoRenderTodoFromDb();
+  const skipsRender = sub === 'clear-done' && hasFlag(raw, '--dry-run');
+  if (MUTATING_TASK_COMMANDS.has(sub) && !skipsRender) autoRenderTodoFromDb();
   return result;
 }
 
