@@ -77,6 +77,7 @@ const {
   resolveDefaultVerifier,
 } = require('../lib/default-verifier');
 const { redirectToWorkspaceRoot } = require('../lib/mission-root');
+const { defaultObjectiveRunner } = require('../lib/default-runner');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -526,6 +527,11 @@ function codexNativeGoalOptionsFromArgs(args) {
     ...(hasFlag(args, '--allow-native-goal-supersede') || hasFlag(args, '--supersede-paused-native-goal') ? { allowNativeGoalSupersede: true } : {}),
   };
 }
+
+// defaultObjectiveRunner (lib/default-runner.js) picks codex_goal only when a
+// live codex session is driving this run; otherwise claude, which drives itself
+// headless. codex_goal unattended stalls waiting for a native goal start that
+// never comes (proven footgun 2026-07-16). Shared with `member run`.
 
 function lintMissionVerifier(command) {
   const text = String(command || '').trim();
@@ -4018,7 +4024,7 @@ async function startMissionFromRunObjective(objective, args) {
     '--owner',
     runOwner,
     '--runner',
-    readFlag(args, '--runner', 'codex_goal'),
+    readFlag(args, '--runner', defaultObjectiveRunner(args)),
     '--lane',
     readFlag(args, '--lane', 'workspace'),
     '--cadence',

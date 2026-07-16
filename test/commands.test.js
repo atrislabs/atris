@@ -253,7 +253,10 @@ test('member run starts a budgeted isolated mission from plain text', () => {
     assert.equal(payload.action, 'mission_started');
     assert.equal(mission.owner, 'growth');
     assert.equal(mission.objective, 'Improve onboarding proof');
-    assert.equal(mission.runner, 'codex_goal');
+    // No live codex session drove this run, so the runner defaults to claude
+    // (which drives itself headless) rather than codex_goal (which would stall
+    // waiting for a native goal start that never comes).
+    assert.equal(mission.runner, 'claude');
     assert.equal(mission.budget_contract.requested_seconds, 600);
     assert.equal(mission.budget_contract.policy, 'spend_full_budget');
     assert.equal(mission.max_wall_seconds, 600);

@@ -6,6 +6,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { runAliveTick } = require('../lib/member-alive');
+const { defaultObjectiveRunner } = require('../lib/default-runner');
 
 function todayLogName() {
   const now = new Date();
@@ -814,8 +815,11 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
     missionText,
     '--owner',
     owner,
+    // codex_goal stalls unattended (no live codex session drives its native goal
+    // slot). Default to claude unless a live codex session is signalled; explicit
+    // --runner still wins. Proven footgun 2026-07-16. See lib/default-runner.js.
     '--runner',
-    readFlag(args, '--runner', 'codex_goal'),
+    readFlag(args, '--runner', defaultObjectiveRunner(args)),
     '--lane',
     readFlag(args, '--lane', 'workspace'),
   ];
