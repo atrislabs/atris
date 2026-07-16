@@ -10,6 +10,7 @@ const {
   parseCloudRunArgs,
   runCloudMissionCommand,
   statusCloudMissionCommand,
+  withReceiptVoice,
 } = require('../lib/cloud-mission');
 
 const cliPath = path.resolve(__dirname, '..', 'bin', 'atris.js');
@@ -59,7 +60,7 @@ test('cloud mission enqueue sends the backend contract and appends a local recei
       options: {
         method: 'POST',
         token: 'test-token',
-        body: { text: 'ship cloud missions', lane: 'pro' },
+        body: { text: withReceiptVoice('ship cloud missions'), lane: 'pro' },
       },
     }]);
     assert.deepEqual(
@@ -103,7 +104,7 @@ test('cloud mission enqueue passes an explicit agent id to the backend', async (
 
     assert.equal(result.exitCode, 0);
     assert.deepEqual(calls[0].options.body, {
-      text: 'ship with a business agent',
+      text: withReceiptVoice('ship with a business agent'),
       lane: 'fast',
       agent_id: 'agent-business-1',
     });
