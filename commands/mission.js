@@ -76,6 +76,7 @@ const {
   missionVerifierTimeoutMs,
   resolveDefaultVerifier,
 } = require('../lib/default-verifier');
+const { redirectToWorkspaceRoot } = require('../lib/mission-root');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -9720,6 +9721,15 @@ function pingMission(args, opts = {}) {
 function missionCommand(args) {
   const subcommand = args[0] || 'status';
   const rest = args.slice(1);
+  // Every mission verb resolves its state store from process.cwd(). Running one
+  // from a subdirectory used to create a nested .atris store the fleet never
+  // reads (proven footgun: a nested .atris appeared under
+  // atris/features/food-ordering). Anchor to the git toplevel first so mission
+  // state always lands at the workspace root, and say so loudly when it moves.
+  const rootRedirect = redirectToWorkspaceRoot();
+  if (rootRedirect) {
+    console.error(`[mission] ran from a subdirectory (${path.relative(rootRedirect.root, rootRedirect.from) || '.'}); anchoring mission state to the workspace root ${rootRedirect.root} instead of a nested .atris.`);
+  }
   switch (subcommand) {
     case 'start':
     case 'create':
