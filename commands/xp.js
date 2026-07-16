@@ -18,6 +18,21 @@ const CAREER_XP_CURSOR_FILE = path.join('.atris', 'state', 'career_xp.cursor.jso
 const CAREER_XP_SESSIONS_DIR = path.join('.atris', 'state', 'career_xp_sessions');
 const TASK_PROJECTION_FILE = path.join('.atris', 'state', 'tasks.projection.json');
 const CODEX_STATE_FILE = path.join(os.homedir(), '.codex', 'state_5.sqlite');
+
+// Default single-workspace XP root. Local XP reads task_episodes.jsonl (written
+// by task-db at the resolved workspace root) and writes its projection beside
+// it, so the `--workspace` default must resolve the same shared root — otherwise
+// `xp --local` from a subdir (e.g. backend/) read the wrong/empty episodes and
+// split the projection into a nested .atris. Explicit --workspace still wins;
+// the multi-root roster path (discoverCareerXpWorkspaces) is untouched. Falls
+// back to raw cwd if the resolver can't load.
+function defaultXpWorkspace() {
+  try {
+    return require('../lib/mission-root').resolveWorkspaceRoot(process.cwd());
+  } catch {
+    return process.cwd();
+  }
+}
 // Codex moved native goals to goals_1.sqlite; thread metadata (cwd/title) stayed in state_5.sqlite.
 const CODEX_GOALS_FILE = path.join(os.homedir(), '.codex', 'goals_1.sqlite');
 const AGENT_XP_LABEL = 'AgentXP';
@@ -1025,7 +1040,7 @@ function buildCareerXpProjection(receipts, workspace, integrity = {}) {
 }
 
 function collectLocalXpProjectionState(args = [], { write = true } = {}) {
-  const workspace = path.resolve(readFlag(args, '--workspace', process.cwd()));
+  const workspace = path.resolve(readFlag(args, '--workspace', defaultXpWorkspace()));
   const episodePath = path.join(workspace, TASK_EPISODES_FILE);
   const receiptsPath = path.join(workspace, CAREER_XP_RECEIPTS_FILE);
   const projectionPath = path.join(workspace, CAREER_XP_PROJECTION_FILE);
@@ -1617,7 +1632,7 @@ LIMIT 25
 }
 
 function buildCareerXpSessionCapsule(args = []) {
-  const workspace = path.resolve(readFlag(args, '--workspace', process.cwd()));
+  const workspace = path.resolve(readFlag(args, '--workspace', defaultXpWorkspace()));
   const sinceInput = readFlag(args, '--since', 'today');
   const untilInput = readFlag(args, '--until', null);
   const since = parseSessionBoundary(sinceInput, startOfToday());
