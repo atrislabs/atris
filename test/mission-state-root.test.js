@@ -60,6 +60,44 @@ test('mission start from a subdirectory anchors state at the workspace root', ()
   }
 });
 
+// The redirect lives at the top of missionCommand, before the subcommand
+// switch, so it must cover the mutation hot-path (`tick`), not just `start`.
+// A refactor that moved the redirect into specific cases could silently drop it
+// for `tick` — the verb the fleet runs every cycle. Pin it explicitly.
+test('mission tick from a subdirectory anchors state at the workspace root', () => {
+  const { base, repo } = makeRepo();
+  try {
+    const started = runCli(
+      ['mission', 'start', '--no-verify', 'tick anchors to root', '--owner', 'app-pm', '--json'],
+      repo,
+    );
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const missionId = JSON.parse(started.stdout).mission.id;
+
+    const subdir = path.join(repo, 'atris', 'features', 'food-ordering');
+    fs.mkdirSync(subdir, { recursive: true });
+
+    const ticked = runCli(
+      ['mission', 'tick', missionId, '--summary', 'recorded from a subdir', '--json'],
+      subdir,
+    );
+    assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
+    assert.match(ticked.stderr, /anchoring mission state to the workspace root/);
+    assert.ok(
+      !fs.existsSync(path.join(subdir, '.atris')),
+      'no nested .atris store may be created by a tick from a subdirectory',
+    );
+
+    // The tick landed in the ROOT store, not a nested one.
+    const status = runCli(['mission', 'status', missionId, '--json'], repo);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    const mission = JSON.parse(status.stdout).missions[0];
+    assert.ok(Number(mission.last_tick_index) >= 1, 'the tick must be recorded in the root store');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 // Running from the root itself must not warn or move anything.
 test('mission start from the workspace root does not redirect', () => {
   const { base, repo } = makeRepo();
