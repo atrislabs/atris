@@ -185,7 +185,12 @@ function showFrontHelp() {
 }
 
 async function autopilotFront(args = []) {
-  const root = process.cwd();
+  // Anchor autopilot state (autopilot.json / autopilot.stop) to the shared
+  // workspace root, not the raw cwd. Otherwise `atris autopilot` from a subdir
+  // (e.g. backend/) wrote its loop state into a nested .atris, so a later
+  // `autopilot stop`/`status` from the root couldn't see the running loop.
+  // Same resolver the mission/task/usage stores use; falls back to cwd.
+  const root = require('../lib/mission-root').resolveWorkspaceRoot(process.cwd());
   if (args[0] === 'stop') return autopilotStop(root);
   if (args[0] === 'status') return autopilotStatus(root);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') { showFrontHelp(); return 0; }
