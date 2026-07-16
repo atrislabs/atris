@@ -212,6 +212,12 @@ function resolveMemberRuntime(name) {
 function memberPaths(name) {
   const teamDir = path.join(process.cwd(), 'atris', 'team');
   const memberDir = path.join(teamDir, name || '');
+  // Steering signals live in the workspace's single .atris/state store. Resolve
+  // the shared workspace root (spine -> git -> cwd) so a member run from a
+  // subdirectory reads steering from the real store instead of a nonexistent
+  // nested .atris — the same resolver the mission/task/usage/autopilot state
+  // uses. (teamDir markdown discovery is a separate cwd concern, filed.)
+  const workspaceRoot = require('../lib/mission-root').resolveWorkspaceRoot(process.cwd());
   return {
     teamDir,
     memberDir,
@@ -219,7 +225,7 @@ function memberPaths(name) {
     missionFile: path.join(memberDir, 'MISSION.md'),
     goalsJson: path.join(memberDir, 'goals.json'),
     goalsMd: path.join(memberDir, 'goals.md'),
-    steeringJsonl: path.join(process.cwd(), '.atris', 'state', 'steering.jsonl'),
+    steeringJsonl: path.join(workspaceRoot, '.atris', 'state', 'steering.jsonl'),
   };
 }
 
