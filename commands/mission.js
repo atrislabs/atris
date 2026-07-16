@@ -8696,6 +8696,22 @@ function tickMission(args) {
     }
     if (returnIfCodexNativeGoalNotStarted(mission, asJson, nativeGoalOptions)) return;
 
+    if (mission.status === 'paused') {
+      // Resume exactly like `mission run` does (see runMission): re-open the full
+      // budget window from now BEFORE the budget check below reads it. Without this,
+      // a spend-full-budget mission whose original window already elapsed, resumed
+      // via `mission tick` rather than `mission run`, would compute zero remaining
+      // budget on this very tick and land immediately — the footgun `mission run`
+      // already closes. Stamping resumed_at here makes both resume paths agree.
+      mission = saveMission({
+        ...mission,
+        status: 'running',
+        paused_at: null,
+        resumed_at: stampIso(),
+        stop_reason: null,
+      }, process.cwd(), 'mission_tick_resumed', { reason: 'operator-resume-via-tick' }).mission;
+    }
+
     // Per the /mission skill design, the calling Claude session IS the per-tick LLM.
     // This CLI subcommand records the tick: writes a structured receipt (matching the
     // `mission_run_tick` envelope) and runs the verifier when asked. Always emit a
