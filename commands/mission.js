@@ -2159,7 +2159,16 @@ function missionFullBudgetRemainingSeconds(mission, nowMs = Date.now()) {
   if (!missionSpendsFullBudget(mission)) return 0;
   const budgetSeconds = Number(mission?.budget_contract?.requested_seconds || mission?.max_wall_seconds || 0);
   if (!Number.isFinite(budgetSeconds) || budgetSeconds <= 0) return 0;
-  const startedMs = Date.parse(mission.started_at || mission.created_at || mission.updated_at || '');
+  // Anchor the promised-time window to the most recent run start. A resume
+  // (paused -> running, which stamps resumed_at) re-opens the full budget so a
+  // mission resumed after its original window elapsed keeps working instead of
+  // landing on the first tick. Never-paused missions have no resumed_at and
+  // fall back to started_at, so behavior is unchanged for them.
+  const baseMs = Date.parse(mission.started_at || mission.created_at || mission.updated_at || '');
+  const resumedMs = Date.parse(mission.resumed_at || '');
+  const startedMs = Number.isFinite(resumedMs)
+    ? (Number.isFinite(baseMs) ? Math.max(baseMs, resumedMs) : resumedMs)
+    : baseMs;
   if (!Number.isFinite(startedMs)) return 0;
   return Math.max(0, Math.ceil((startedMs + budgetSeconds * 1000 - nowMs) / 1000));
 }
