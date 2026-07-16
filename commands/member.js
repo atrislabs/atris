@@ -8146,6 +8146,13 @@ async function memberLoop(name, ...args) {
   let earlyExit = null;
   let consecutiveIdle = 0;
   const idleBreakThreshold = 2;
+  // Repeated identical `ask:*` wake decisions (e.g. ask:mission_missing_or_placeholder) mean the
+  // member is stuck asking the same question every tick regardless of --execute; the idle
+  // early-exit above only fires in execute mode, so without this a dry-run loop burns every
+  // remaining tick re-asking. Reuse the same blocked_on_human handoff once we see the ask repeat.
+  let lastAskKey = null;
+  let consecutiveIdenticalAsk = 0;
+  const identicalAskBreakThreshold = 2;
 
   try {
     for (let index = 0; index < ticks; index += 1) {
@@ -8217,6 +8224,29 @@ async function memberLoop(name, ...args) {
         };
         tickResults.push(tick);
         fs.appendFileSync(tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
+
+        if (wake.decision === 'ask') {
+          if (key === lastAskKey) {
+            consecutiveIdenticalAsk += 1;
+          } else {
+            lastAskKey = key;
+            consecutiveIdenticalAsk = 1;
+          }
+          if (consecutiveIdenticalAsk >= identicalAskBreakThreshold) {
+            earlyExit = {
+              after_tick: tick.tick,
+              decision: tick.decision || null,
+              reason: tick.reason || 'idle',
+              needs_user: tick.needs_user === true,
+              blocked_on_human: true,
+              next_command: tick.next_command || null,
+              stop: 'repeated_identical_ask',
+            };
+          }
+        } else {
+          lastAskKey = null;
+          consecutiveIdenticalAsk = 0;
+        }
         }
       } catch (error) {
         failed = true;
@@ -8231,6 +8261,7 @@ async function memberLoop(name, ...args) {
         fs.appendFileSync(tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
         break;
       }
+      if (earlyExit) break;
       if (execute) {
         const last = tickResults[tickResults.length - 1];
         if (last && last.productive) {
@@ -8279,6 +8310,7 @@ async function memberLoop(name, ...args) {
     duration_ms_actual: Date.parse(finishedAt) - Date.parse(startedAt),
     decisions,
     early_exit: earlyExit,
+    stop: earlyExit?.stop || null,
     blocked_on_human: earlyExit?.blocked_on_human === true,
     needs_user: earlyExit?.needs_user === true,
     next_command: earlyExit?.next_command || null,

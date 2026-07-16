@@ -3676,6 +3676,42 @@ test('member loop repeats wake quickly and skips an active lease', () => {
   }
 });
 
+test('member loop early-exits after two identical ask decisions in dry-run mode', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'architect'], { cwd: dir }).status, 0);
+    // Overwrite MISSION.md with the literal placeholder North Star so every wake tick returns
+    // the same ask:mission_missing_or_placeholder decision — this used to burn all 10 ticks
+    // re-asking (live bug OBL 2026-07-16) because the idle early-exit only ran under --execute.
+    fs.writeFileSync(
+      path.join(dir, 'atris', 'team', 'architect', 'MISSION.md'),
+      '# Mission\n\n## North Star\n\nDefine why this member exists and how it chooses goals.\n\n## How To Choose Goals\n\n- placeholder\n',
+      'utf8',
+    );
+
+    const loop = runCli([
+      'member', 'loop', 'architect',
+      '--ticks', '10',
+      '--interval', '0',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(loop.status, 0, loop.stderr || loop.stdout);
+    const payload = JSON.parse(loop.stdout);
+    assert.equal(payload.action, 'loop');
+    assert.equal(payload.mode, 'dry_run');
+    assert.equal(payload.ticks, 2, 'should stop after the 2nd identical ask, not run all 10 ticks');
+    assert.equal(payload.status, 'blocked_on_human');
+    assert.equal(payload.blocked_on_human, true);
+    assert.equal(payload.early_exit.stop, 'repeated_identical_ask');
+    assert.equal(payload.early_exit.reason, 'mission_missing_or_placeholder');
+    assert.ok(payload.next_command);
+    assert.equal(payload.decisions['ask:mission_missing_or_placeholder'], 2);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member alive supports hourly forever contract with a stop command', () => {
   const dir = makeTempDir();
   try {
