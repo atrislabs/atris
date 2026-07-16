@@ -76,8 +76,12 @@ test('mission run uses the repo default verifier and explicit no-verify stays un
     ATRIS_RUNNER_COMMAND_TEMPLATE: `${process.execPath} -e "process.stdout.write('tick receipt\\nlayer: capabilities\\nVERDICT: PASS\\n')"`,
   };
   try {
+    spawnSync('git', ['init', '-q', '-b', 'master'], { cwd: dir });
     fs.mkdirSync(path.join(dir, 'atris', 'team', 'mission-lead'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'MEMBER.md'), '# Mission Lead\n', 'utf8');
+    // A repo test script is present, but the mission lane must NOT silently
+    // freeze a broad suite (`npm test`) as a default — it killed missions here
+    // 2026-07-16. The safe baseline `git diff --check` is frozen instead.
     fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }));
     const started = runCli([
       'mission', 'start', 'engine verify fallback', '--owner', 'mission-lead',
@@ -92,7 +96,7 @@ test('mission run uses the repo default verifier and explicit no-verify stays un
     assert.equal(verified.status, 0, verified.stderr || verified.stdout);
     const verifiedPayload = JSON.parse(verified.stdout);
     assert.equal(verifiedPayload.ticks[0].verifier_passed, true);
-    assert.equal(verifiedPayload.mission.verifier_result.command, 'npm test');
+    assert.equal(verifiedPayload.mission.verifier_result.command, 'git diff --check');
     assert.equal(verifiedPayload.mission.verifier_result.status, 0);
 
     const skippedStarted = runCli([

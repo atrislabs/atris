@@ -8072,7 +8072,7 @@ async function runMission(args) {
     // Freeze run-start contract (verifier, lane). Stored on receipts, not the mission record.
     const storedVerifier = effectiveMissionVerifier(mission);
     const frozen = {
-      verifier: storedVerifier || (verifyEach ? resolveDefaultVerifier(cwd) : ''),
+      verifier: storedVerifier || (verifyEach ? resolveDefaultVerifier(cwd, { allowBroadSuite: false }) : ''),
       lane: mission.lane || 'workspace',
       runner: runtimeMission.runner || 'manual',
       model: runtimeMission.model || null,

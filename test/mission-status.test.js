@@ -5770,7 +5770,11 @@ test('mission run --due selects acknowledged always-on caller-session missions w
 test('mission run uses the repo default when the stored verifier is empty', () => {
   const dir = makeTempDir();
   try {
+    spawnSync('git', ['init', '-q', '-b', 'master'], { cwd: dir });
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // A repo test script exists, but the mission lane must not silently freeze
+    // a broad suite as the default (it killed missions 2026-07-16); the safe
+    // baseline `git diff --check` is frozen instead.
     fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }));
     appendMissionState(dir, {
       id: 'default-verifier-run',
@@ -5788,7 +5792,7 @@ test('mission run uses the repo default when the stored verifier is empty', () =
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.ticks[0].verifier_passed, true);
     assert.equal(payload.mission.verifier, '');
-    assert.equal(payload.mission.verifier_result.command, 'npm test');
+    assert.equal(payload.mission.verifier_result.command, 'git diff --check');
   } finally {
     cleanupTempDir(dir);
   }
