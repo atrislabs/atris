@@ -61,7 +61,7 @@ test('real atris binary fast smoke covers core read-only commands', () => {
 
     const help = runCli(['--help'], { cwd: dir, env: { HOME: home, PATH: systemPath } });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /atris - an operating system for intelligence|atris .* operating system for intelligence/);
+    assert.match(help.stdout, /you say what you want in plain words\. atris builds it, checks it, and shows you proof\./);
 
     const engines = runCli(['engine', 'list', '--json'], { cwd: dir, env: { HOME: home, PATH: systemPath } });
     assert.equal(engines.status, 0, engines.stderr || engines.stdout);

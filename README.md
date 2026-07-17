@@ -1,6 +1,8 @@
 # atris
 
-**atris** is an operating system for AI work. It turns any repo into a workspace an agent can actually operate: shared context it reads before it acts, a `plan -> do -> review` loop, durable tasks and daily logs, and verification that ends work on a real check instead of a promise.
+**atris**: you say what you want in plain words. atris builds it, checks it, and shows you proof.
+
+Under the hood it is an operating system for AI work. It turns any repo into a workspace an agent can actually operate: shared context it reads before it acts, a `plan -> do -> review` loop, durable tasks and daily logs, and verification that ends work on a real check instead of a promise.
 
 Every owner gets persistent computers to run it:
 
