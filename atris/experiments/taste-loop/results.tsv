@@ -1,0 +1,37 @@
+timestamp	run	trial	modality	status	old_score	new_score	proposal	description
+2026-07-17T02:32:06.759408+00:00	20260717T023206Z	0	writing	baseline		0.0000		frozen baseline
+2026-07-17T02:32:06.759413+00:00	20260717T023206Z	0	website	baseline		0.0000		frozen baseline
+2026-07-17T02:32:06.759415+00:00	20260717T023206Z	0	video_prompt	baseline		0.0000		frozen baseline
+2026-07-17T02:32:06.759416+00:00	20260717T023206Z	0	aggregate	baseline		0.0000		frozen baseline
+2026-07-17T02:32:06.783826+00:00	20260717T023206Z	1	writing	reverted	0.0000	1.0000	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:32:06.783839+00:00	20260717T023206Z	1	website	reverted	0.0000	0.0000	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:32:06.783841+00:00	20260717T023206Z	1	video_prompt	reverted	0.0000	0.0000	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:32:06.783843+00:00	20260717T023206Z	1	aggregate	reverted	0.0000	0.3333	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:32:06.809313+00:00	20260717T023206Z	2	writing	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality
+2026-07-17T02:32:06.809330+00:00	20260717T023206Z	2	website	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality
+2026-07-17T02:32:06.809331+00:00	20260717T023206Z	2	video_prompt	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality
+2026-07-17T02:32:06.809333+00:00	20260717T023206Z	2	aggregate	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality
+2026-07-17T02:33:16.344813+00:00	20260717T023316Z	0	writing	baseline		0.0000		frozen baseline
+2026-07-17T02:33:16.344818+00:00	20260717T023316Z	0	website	baseline		0.0000		frozen baseline
+2026-07-17T02:33:16.344821+00:00	20260717T023316Z	0	video_prompt	baseline		0.0000		frozen baseline
+2026-07-17T02:33:16.344822+00:00	20260717T023316Z	0	aggregate	baseline		0.0000		frozen baseline
+2026-07-17T02:33:16.369147+00:00	20260717T023316Z	1	writing	reverted	0.0000	1.0000	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:33:16.369159+00:00	20260717T023316Z	1	website	reverted	0.0000	0.0000	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:33:16.369161+00:00	20260717T023316Z	1	video_prompt	reverted	0.0000	0.0000	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:33:16.369163+00:00	20260717T023316Z	1	aggregate	reverted	0.0000	0.3333	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:33:16.398931+00:00	20260717T023316Z	2	writing	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality
+2026-07-17T02:33:16.398944+00:00	20260717T023316Z	2	website	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality
+2026-07-17T02:33:16.398947+00:00	20260717T023316Z	2	video_prompt	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality
+2026-07-17T02:33:16.398949+00:00	20260717T023316Z	2	aggregate	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality
+2026-07-17T02:35:57.746251+00:00	20260717T023557Z	0	writing	baseline		0.0000		frozen baseline
+2026-07-17T02:35:57.746257+00:00	20260717T023557Z	0	website	baseline		0.0000		frozen baseline
+2026-07-17T02:35:57.746259+00:00	20260717T023557Z	0	video_prompt	baseline		0.0000		frozen baseline
+2026-07-17T02:35:57.746260+00:00	20260717T023557Z	0	aggregate	baseline		0.0000		frozen baseline
+2026-07-17T02:35:57.771964+00:00	20260717T023557Z	1	writing	reverted	0.0000	1.0000	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:35:57.771975+00:00	20260717T023557Z	1	website	reverted	0.0000	0.0000	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:35:57.771977+00:00	20260717T023557Z	1	video_prompt	reverted	0.0000	0.0000	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:35:57.771979+00:00	20260717T023557Z	1	aggregate	reverted	0.0000	0.3333	regression.py	improved writing while leaving website and video generic
+2026-07-17T02:35:57.798224+00:00	20260717T023557Z	2	writing	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality
+2026-07-17T02:35:57.798237+00:00	20260717T023557Z	2	website	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality
+2026-07-17T02:35:57.798239+00:00	20260717T023557Z	2	video_prompt	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality
+2026-07-17T02:35:57.798241+00:00	20260717T023557Z	2	aggregate	kept	0.0000	1.0000	reference_first.py	applied the positive-reference contract across every modality

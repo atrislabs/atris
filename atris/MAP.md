@@ -293,6 +293,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris/experiments/_examples/smoke-keep-revert/`
 - `atris/experiments/daily/queue.jsonl`
 - `atris/experiments/daily/apply/`
+- `atris/experiments/taste-loop/` - Frozen writing, website, and video-prompt references with an independent scorer and all-modality keep/revert gate
 - **Value:** Makes self-improvement loops and scoreable benchmark runs first-class Atris CLI concepts instead of repo-local convention
 
 **Search:** `rg "experimentsCommand|experimentsRun|experimentsCompare|experimentsReplay|buildBenchmarkArtifact|ensureExperimentsFramework|experimentsDaily|experimentsQueue" commands/experiments.js commands/init.js lib/experiments/daily.js commands/autoland.js`

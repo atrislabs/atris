@@ -1,0 +1,40 @@
+{
+  "candidate": "candidate.json",
+  "keep_margin": 0.05,
+  "latest_decision": "kept",
+  "modalities": {
+    "video_prompt": {
+      "generic_hits": [],
+      "generic_structure": 0.0,
+      "product_specificity": 1.0,
+      "reference_adherence": 1.0,
+      "repeated_slop": 0.0,
+      "score": 1.0,
+      "slop_hits": []
+    },
+    "website": {
+      "generic_hits": [],
+      "generic_structure": 0.0,
+      "product_specificity": 1.0,
+      "reference_adherence": 1.0,
+      "repeated_slop": 0.0,
+      "score": 1.0,
+      "slop_hits": []
+    },
+    "writing": {
+      "generic_hits": [],
+      "generic_structure": 0.0,
+      "product_specificity": 1.0,
+      "reference_adherence": 1.0,
+      "repeated_slop": 0.0,
+      "score": 1.0,
+      "slop_hits": []
+    }
+  },
+  "passed": 3,
+  "run": "20260717T023557Z",
+  "schema": "atris.taste_scorecard.v1",
+  "score": 1.0,
+  "status": "pass",
+  "total": 3
+}

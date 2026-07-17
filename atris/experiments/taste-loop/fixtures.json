@@ -1,0 +1,59 @@
+{
+  "schema": "atris.taste_fixtures.v1",
+  "modalities": {
+    "writing": {
+      "positive_reference": "Yesterday our agent shipped a polished sentence that hid a failed test. I rejected the sentence, saved the sentence I kept, and wrote down the reason so the next draft could name the failure.",
+      "rejected_reference": "The future is not just about better tools, it is about unlocking human potential. This pivotal shift will reshape the landscape. This is only the beginning.",
+      "product_terms": ["agent", "sentence", "rejected", "kept", "failed test"],
+      "reference_cues": ["polished sentence", "hid a failed test", "sentence i kept", "wrote down the reason"],
+      "generic_patterns": [
+        "not\\s+just.+(?:it is|it's)",
+        "pivotal\\s+shift",
+        "reshape.+landscape",
+        "only\\s+the\\s+beginning"
+      ],
+      "slop_patterns": [
+        "unlock(?:ing)?\\s+human\\s+potential",
+        "future\\s+of",
+        "marks?\\s+a\\s+shift",
+        "—"
+      ]
+    },
+    "website": {
+      "positive_reference": "Use one quiet column on warm paper. Set the live mission sentence in a serif face, then show the latest proof receipt, one next action, and the human review boundary in ink and rust. Use rules and whitespace instead of cards.",
+      "rejected_reference": "Build a premium AI SaaS landing page with a purple blue gradient, glass cards, glowing orbs, three feature cards, pill badges, and sections that fade on scroll.",
+      "product_terms": ["mission sentence", "proof receipt", "next action", "human review"],
+      "reference_cues": ["one quiet column", "warm paper", "serif", "ink and rust", "instead of cards"],
+      "generic_patterns": [
+        "three\\s+feature\\s+cards",
+        "premium\\s+ai\\s+saas",
+        "pill\\s+badges",
+        "fade\\s+on\\s+scroll"
+      ],
+      "slop_patterns": [
+        "purple.+gradient",
+        "glass\\s+cards",
+        "glowing\\s+orbs?",
+        "backdrop\\s+blur"
+      ]
+    },
+    "video_prompt": {
+      "positive_reference": "Shoot a 12-second handheld sequence in the real workspace. Open on the rejected draft, hold while the cursor deletes the generic line, cut to the rendered site, and end on the test receipt. Keep natural room sound and hard cuts.",
+      "rejected_reference": "Create a cinematic montage with sweeping camera moves, glowing particles, inspirational music, seamless transitions, dramatic lighting, and a triumphant logo reveal.",
+      "product_terms": ["rejected draft", "cursor", "rendered site", "test receipt"],
+      "reference_cues": ["12-second", "handheld", "natural room sound", "hard cuts"],
+      "generic_patterns": [
+        "cinematic\\s+montage",
+        "sweeping\\s+camera",
+        "seamless\\s+transitions",
+        "logo\\s+reveal"
+      ],
+      "slop_patterns": [
+        "glowing\\s+particles",
+        "inspirational\\s+music",
+        "dramatic\\s+lighting",
+        "triumphant"
+      ]
+    }
+  }
+}
