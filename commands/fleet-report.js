@@ -96,13 +96,17 @@ async function deliverToBusiness(token, biz, { wake, dryRun }) {
   }
 
   const report = await fetchDailyReport(token, biz.id);
+  const board = report.scoreboard || null;
+  const pnl = board
+    ? ` | mrr $${board.revenue_mrr_usd} cost $${(board.compute_cost_usd + (board.ec2_cost_usd || 0)).toFixed(2)}/d profit $${board.profit_daily_usd}/d`
+    : '';
   if (dryRun) {
-    console.log(`  ${label}: dry-run, report ${String(report.markdown || '').length} chars`);
-    return { business: label, delivered: false, reason: 'dry-run' };
+    console.log(`  ${label}: dry-run, report ${String(report.markdown || '').length} chars${pnl}`);
+    return { business: label, delivered: false, reason: 'dry-run', scoreboard: board };
   }
   const remotePath = await writeReportToComputer(token, biz.id, biz.workspace_id, report);
-  console.log(`  ${label}: delivered ${remotePath}`);
-  return { business: label, delivered: true, path: remotePath };
+  console.log(`  ${label}: delivered ${remotePath}${pnl}`);
+  return { business: label, delivered: true, path: remotePath, scoreboard: board };
 }
 
 async function fleetReport() {
@@ -146,6 +150,12 @@ async function fleetReport() {
     }
   }
   const delivered = results.filter((r) => r.delivered).length;
+  const boards = results.map((r) => r.scoreboard).filter(Boolean);
+  if (boards.length > 0) {
+    const mrr = boards.reduce((s, b) => s + (b.revenue_mrr_usd || 0), 0);
+    const profit = boards.reduce((s, b) => s + (b.profit_daily_usd || 0), 0);
+    console.log(`Fleet: $${mrr} MRR, $${profit.toFixed(2)}/day profit across ${boards.length} scoreboards`);
+  }
   console.log(`Done: ${delivered}/${targets.length} delivered`);
   process.exitCode = delivered > 0 || dryRun || results.every((r) => r.reason === 'asleep') ? 0 : 1;
 }
