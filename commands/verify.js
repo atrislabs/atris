@@ -531,9 +531,105 @@ function verifyRubric(slug, section, opts = {}) {
   }
 }
 
+// Words too common to count as objective coverage signal.
+const OBJECTIVE_STOPWORDS = new Set([
+  'the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'each', 'their',
+  'have', 'has', 'are', 'was', 'were', 'will', 'would', 'should', 'could',
+  'about', 'them', 'then', 'than', 'when', 'what', 'where', 'which', 'while',
+  'your', 'yours', 'ours', 'over', 'under', 'after', 'before', 'between',
+  'make', 'made', 'making', 'work', 'working', 'draft', 'write', 'written',
+  'save', 'saved', 'file', 'files', 'become', 'becomes', 'gets', 'also',
+]);
+
+const PLACEHOLDER_LINE_RE = /\b(todo|tbd|fixme|xxx|lorem ipsum|placeholder|fill (?:this|me) in|coming soon)\b/i;
+const HEADING_OR_DIVIDER_RE = /^(#{1,6}\s|[-=*_]{3,}\s*$|\s*[|+][-\s|+]*$)/;
+
+function objectiveKeywords(objective) {
+  const words = String(objective || '').toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) || [];
+  return [...new Set(words.filter((word) => !OBJECTIVE_STOPWORDS.has(word)))];
+}
+
+/**
+ * atris verify artifact <path> - deterministic substance checks for a
+ * mission artifact. This is a pre-filter, not a quality judgment: it kills
+ * empty, skeleton, and placeholder-dominated artifacts that `test -s` lets
+ * through, and (optionally) checks the artifact mentions enough of the
+ * mission objective's vocabulary to plausibly be about it.
+ */
+function verifyArtifact(target, opts = {}) {
+  const cwd = opts.cwd || process.cwd();
+  const minLines = Number.isFinite(opts.minLines) ? opts.minLines : 10;
+  const checks = [];
+  const fail = (name, detail) => checks.push({ name, passed: false, detail });
+  const pass = (name, detail) => checks.push({ name, passed: true, detail });
+
+  const resolved = path.resolve(cwd, String(target || ''));
+  let content = null;
+  try {
+    content = fs.readFileSync(resolved, 'utf8');
+    pass('exists', path.relative(cwd, resolved));
+  } catch {
+    fail('exists', `cannot read ${target}`);
+  }
+
+  if (content !== null) {
+    const lines = content.split('\n');
+    const substantive = lines.filter((line) => line.trim() && !HEADING_OR_DIVIDER_RE.test(line.trim()));
+    if (substantive.length >= minLines) {
+      pass('substance', `${substantive.length} substantive lines (min ${minLines})`);
+    } else {
+      fail('substance', `${substantive.length} substantive lines, need ${minLines}; headings and dividers do not count`);
+    }
+
+    const placeholderLines = substantive.filter((line) => PLACEHOLDER_LINE_RE.test(line));
+    const placeholderShare = substantive.length ? placeholderLines.length / substantive.length : 1;
+    if (placeholderShare <= 0.3) {
+      pass('not_placeholder', `${placeholderLines.length}/${substantive.length} placeholder lines`);
+    } else {
+      fail('not_placeholder', `${placeholderLines.length}/${substantive.length} lines are TODO/TBD/placeholder`);
+    }
+
+    if (opts.objective) {
+      const keywords = objectiveKeywords(opts.objective);
+      const haystack = content.toLowerCase();
+      const hit = keywords.filter((word) => haystack.includes(word));
+      const coverage = keywords.length ? hit.length / keywords.length : 1;
+      if (coverage >= 0.4) {
+        pass('objective_coverage', `${hit.length}/${keywords.length} objective keywords present`);
+      } else {
+        fail('objective_coverage', `only ${hit.length}/${keywords.length} objective keywords present (need 40%): missing ${keywords.filter((w) => !hit.includes(w)).slice(0, 8).join(', ')}`);
+      }
+    }
+
+    if (Number.isFinite(opts.maxAgeHours)) {
+      const ageHours = (Date.now() - fs.statSync(resolved).mtimeMs) / 3600000;
+      if (ageHours <= opts.maxAgeHours) {
+        pass('freshness', `modified ${ageHours.toFixed(1)}h ago (max ${opts.maxAgeHours}h)`);
+      } else {
+        fail('freshness', `modified ${ageHours.toFixed(1)}h ago, older than ${opts.maxAgeHours}h window`);
+      }
+    }
+  }
+
+  const passed = checks.length > 0 && checks.every((check) => check.passed);
+  const result = { ok: passed, artifact: target, checks };
+  if (opts.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    for (const check of checks) {
+      console.log(`${check.passed ? '✓' : '✗'} ${check.name}: ${check.detail}`);
+    }
+    console.log(passed
+      ? `artifact passes the substance pre-filter (not a quality judgment)`
+      : `artifact FAILS the substance pre-filter`);
+  }
+  return passed ? 0 : 1;
+}
+
 module.exports = {
   verifyAtris,
   verifyRubric,
+  verifyArtifact,
   findTaskInContent,
   escapeRegExp
 };

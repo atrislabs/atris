@@ -766,12 +766,18 @@ function showVerifyHelp() {
   console.log('');
   console.log('Usage: atris verify [task]');
   console.log('Usage: atris verify <feature-slug> --section <name>');
+  console.log('Usage: atris verify artifact <path> [--objective "<text>"] [--min-lines N] [--max-age-hours H] [--json]');
   console.log('');
   console.log('Description:');
   console.log('  Validate workspace health, a specific task, or a feature rubric section.');
+  console.log('  The artifact form runs deterministic substance checks on a mission artifact');
+  console.log('  (a pre-filter for empty/skeleton/placeholder output, not a quality judgment).');
   console.log('');
   console.log('Options:');
   console.log('  --section <name>  Run a fenced bash check from atris/features/<slug>/validate.md.');
+  console.log('  --objective <t>   Require the artifact to cover the objective vocabulary.');
+  console.log('  --min-lines <n>   Minimum substantive lines (default 10).');
+  console.log('  --max-age-hours <h>  Require the artifact to be modified within this window.');
   console.log('  --help, -h        Show this help.');
   console.log('');
 }
@@ -2390,6 +2396,26 @@ if (command === 'init') {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     showVerifyHelp();
     process.exit(0);
+  }
+  if (args[0] === 'artifact') {
+    const target = args[1] && !args[1].startsWith('--') ? args[1] : null;
+    if (!target) {
+      showVerifyHelp();
+      process.exit(2);
+    }
+    const readValue = (flag) => {
+      const idx = args.indexOf(flag);
+      return idx > 0 && args[idx + 1] ? args[idx + 1] : null;
+    };
+    const minLinesRaw = readValue('--min-lines');
+    const maxAgeRaw = readValue('--max-age-hours');
+    const code = require('../commands/verify').verifyArtifact(target, {
+      objective: readValue('--objective') || undefined,
+      minLines: minLinesRaw !== null ? Number(minLinesRaw) : undefined,
+      maxAgeHours: maxAgeRaw !== null ? Number(maxAgeRaw) : undefined,
+      json: args.includes('--json'),
+    });
+    process.exit(code);
   }
   const sectionIdx = process.argv.indexOf('--section');
   if (sectionIdx > 0 && process.argv[sectionIdx + 1]) {
