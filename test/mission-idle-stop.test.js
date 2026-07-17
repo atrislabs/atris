@@ -7,7 +7,11 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-const { tickMadeProgress, consecutiveNoProgressTicks } = require('../commands/mission');
+const {
+  tickMadeProgress,
+  consecutiveNoProgressTicks,
+  consecutiveIdenticalSummaryTicks,
+} = require('../commands/mission');
 
 // BCK-1324: a mission run loop that keeps ticking after there is nothing left
 // to do burns the whole tick budget on "holding" ticks — live evidence is the
@@ -99,6 +103,17 @@ test('consecutiveNoProgressTicks: only counts the trailing idle streak, resets o
     { status: 'ran', worktree: { available: true, new_dirty_count: 0, cleared_dirty_count: 0 } }, // idle 2
   ];
   assert.equal(consecutiveNoProgressTicks(ticks), 2);
+});
+
+test('consecutiveIdenticalSummaryTicks: only counts matching non-empty summaries at the tail', () => {
+  const ticks = [
+    { claude: { summary: 'first result' } },
+    { drill: { summary: 'same result' } },
+    { drill: { summary: 'same result' } },
+    { drill: { summary: 'same result' } },
+  ];
+  assert.equal(consecutiveIdenticalSummaryTicks(ticks), 3);
+  assert.equal(consecutiveIdenticalSummaryTicks([{ drill: { summary: '' } }]), 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -197,6 +212,31 @@ test('a single progressing tick resets the idle counter (default threshold of 3 
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.tick_count, 2);
     assert.notEqual(payload.pause_reason, 'no-progress', 'two idle ticks must not trip the default 3-tick threshold');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('mission run pauses when the drill worker repeats the same summary 3 times', () => {
+  const { base, repo } = makeRepo();
+  try {
+    const mission = startMission(repo, 'stuck repeating test', 'alice', ['--runner', 'drill']);
+    const res = runCli([
+      'mission', 'run', mission.id, '--no-verify', '--max-ticks', '10', '--max-idle-ticks', '10', '--json',
+    ], repo);
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+
+    assert.equal(payload.pause_reason, 'stuck-repeating');
+    assert.equal(payload.tick_count, 3);
+    assert.equal(payload.mission.status, 'paused');
+    assert.equal(payload.mission.stop_reason, 'stuck-repeating');
+    assert.equal(payload.mission.next_action, 'stopped: the worker kept reporting the same thing 3 times in a row');
+    assert.deepEqual(payload.ticks.map((tick) => tick.drill.summary), [
+      'drill runner touched .atris/state/drill-runner-touch.txt',
+      'drill runner touched .atris/state/drill-runner-touch.txt',
+      'drill runner touched .atris/state/drill-runner-touch.txt',
+    ]);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
