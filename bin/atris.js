@@ -438,7 +438,8 @@ function consoleCmd() {
 function showHelp() {
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('atris — an operating system for intelligence');
+  console.log('atris');
+  console.log('you say what you want in plain words. atris builds it, checks it, and shows you proof.');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
   console.log('Quick Start:');
