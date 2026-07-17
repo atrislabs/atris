@@ -87,6 +87,59 @@ test('rejects denied tags and weak proof', () => {
   })).eligible, false);
 });
 
+function receiptWorkspace({ missionId = 'mission-forced-1', passed = true, forced = true } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auto-accept-receipt-'));
+  fs.mkdirSync(path.join(root, 'atris', 'runs'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  const rel = 'atris/runs/mission-receipt.json';
+  fs.writeFileSync(path.join(root, rel), JSON.stringify({
+    schema: 'atris.mission_receipt.v1',
+    mission_id: missionId,
+    result: { kind: 'mission_tick', tick: { verifier_passed: passed } },
+  }) + '\n');
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'missions.jsonl'), JSON.stringify({
+    mission: { id: missionId, status: 'complete', completion_gate: { ok: !forced, forced } },
+  }) + '\n');
+  const proof = `${'context '.repeat(35)}Verifiers: node --test passed, receipt ${rel} attached, git diff --check clean`;
+  return { root, proof };
+}
+
+test('forced mission receipts block auto-accept in certified and accept-all policies', () => {
+  const { root, proof } = receiptWorkspace({ forced: true });
+  const task = reviewTask({
+    metadata: { latest_agent_proof: proof },
+    review: { proof },
+  });
+  task.workspace_root = root;
+  const certified = evaluateAutoAccept(task);
+  assert.equal(certified.eligible, false);
+  assert.equal(certified.reason, 'forced_completion_needs_human');
+  const acceptAll = evaluateAutoAccept(task, { acceptAll: true });
+  assert.equal(acceptAll.eligible, false);
+  assert.equal(acceptAll.reason, 'forced_completion_needs_human');
+});
+
+test('failing receipt verifier blocks auto-accept; unforced passing receipt does not', () => {
+  const failing = receiptWorkspace({ forced: false, passed: false });
+  const failingTask = reviewTask({
+    metadata: { latest_agent_proof: failing.proof },
+    review: { proof: failing.proof },
+  });
+  failingTask.workspace_root = failing.root;
+  const blocked = evaluateAutoAccept(failingTask, { acceptAll: true });
+  assert.equal(blocked.eligible, false);
+  assert.equal(blocked.reason, 'receipt_verifier_failed');
+
+  const green = receiptWorkspace({ forced: false, passed: true });
+  const greenTask = reviewTask({
+    metadata: { latest_agent_proof: green.proof },
+    review: { proof: green.proof },
+  });
+  greenTask.workspace_root = green.root;
+  const allowed = evaluateAutoAccept(greenTask, { acceptAll: true, executeVerify: false });
+  assert.equal(allowed.eligible, true);
+});
+
 test('rejects proof that names an open draft PR boundary', () => {
   const proof = 'PR #1611 is still OPEN and draft=true, mergedAt=null. git diff --check passed.';
   const result = evaluateAutoAccept(reviewTask({
