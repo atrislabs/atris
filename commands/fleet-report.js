@@ -109,15 +109,54 @@ async function deliverToBusiness(token, biz, { wake, dryRun }) {
   return { business: label, delivered: true, path: remotePath, scoreboard: board };
 }
 
+async function leaderboard(token, businesses) {
+  const rows = [];
+  const pool = [...businesses];
+  const workers = Array.from({ length: 5 }, async () => {
+    let biz;
+    while ((biz = pool.shift())) {
+      try {
+        const report = await fetchDailyReport(token, biz.id);
+        const b = report.scoreboard;
+        if (b) rows.push({ slug: biz.slug || biz.name, ...b });
+      } catch {
+        /* business without a readable report stays off the board */
+      }
+    }
+  });
+  await Promise.all(workers);
+
+  rows.sort(
+    (a, b) =>
+      (b.revenue_collected_30d_usd || 0) - (a.revenue_collected_30d_usd || 0) ||
+      (b.profit_daily_usd || 0) - (a.profit_daily_usd || 0) ||
+      (b.revenue_mrr_usd || 0) - (a.revenue_mrr_usd || 0)
+  );
+
+  console.log('Computer leaderboard - collected 30d, then profit/day');
+  const fmt = (n) => `$${(n || 0).toFixed(2)}`;
+  rows.forEach((r, i) => {
+    console.log(
+      `  ${String(i + 1).padStart(2)}. ${r.slug.padEnd(22)} collected ${fmt(
+        r.revenue_collected_30d_usd
+      ).padStart(10)}  mrr ${fmt(r.revenue_mrr_usd).padStart(10)}  profit/d ${fmt(
+        r.profit_daily_usd
+      ).padStart(9)}`
+    );
+  });
+  if (rows.length === 0) console.log('  (no scoreboards yet)');
+}
+
 async function fleetReport() {
   const args = process.argv.slice(3);
   const allAlive = args.includes('--all-alive');
   const wake = args.includes('--wake');
   const dryRun = args.includes('--dry-run');
+  const board = args.includes('--leaderboard');
   const slug = args.find((a) => !a.startsWith('--'));
 
-  if (!allAlive && !slug) {
-    console.log('Usage: atris fleet-report <business> [--wake] | --all-alive [--dry-run]');
+  if (!allAlive && !slug && !board) {
+    console.log('Usage: atris fleet-report <business> [--wake] | --all-alive [--dry-run] | --leaderboard');
     process.exit(1);
   }
 
@@ -129,6 +168,10 @@ async function fleetReport() {
   const token = creds.token;
 
   const businesses = await listBusinesses(token);
+  if (board) {
+    await leaderboard(token, businesses);
+    return;
+  }
   const targets = allAlive
     ? businesses
     : businesses.filter(
