@@ -7234,6 +7234,28 @@ function consecutiveNoProgressTicks(ticks) {
   return n;
 }
 
+function tickWorkerSummary(tick) {
+  return String(
+    tick?.summary
+    || tick?.claude?.summary
+    || tick?.drill?.summary
+    || tick?.atris2?.summary
+    || tick?.atris2?.receipt_text
+    || '',
+  ).trim();
+}
+
+function consecutiveIdenticalSummaryTicks(ticks) {
+  const lastSummary = tickWorkerSummary(ticks[ticks.length - 1]);
+  if (!lastSummary) return 0;
+  let n = 0;
+  for (let i = ticks.length - 1; i >= 0; i--) {
+    if (tickWorkerSummary(ticks[i]) !== lastSummary) break;
+    n++;
+  }
+  return n;
+}
+
 // Count the trailing run of errored ticks that all share the most-recent error's
 // reason. Backoff caps at 10min, so an error that recurs identically (claude-timeout,
 // atris2-error, a dead model) otherwise retries forever until max-ticks/max-wall.
@@ -7440,6 +7462,12 @@ function detectUnavailableModel(text) {
 // need a resume; a model-unavailable pause is a config error a bare resume won't fix,
 // so name the dead id and the two knobs that change it.
 function missionPauseNextAction(pauseReason, missionId, deadModel = null, lastErrorReason = null) {
+  if (pauseReason === 'too-deep') {
+    return 'stopped: helpers were spawning helpers too many levels deep';
+  }
+  if (pauseReason === 'stuck-repeating') {
+    return 'stopped: the worker kept reporting the same thing 3 times in a row';
+  }
   if (pauseReason === 'model-unavailable' && deadModel) {
     return `model "${deadModel}" is unavailable — set a live model (mission.model, ATRIS_RUNNER_MODEL, or legacy ATRIS_CLAUDE_MODEL), then: atris mission run ${missionId}`;
   }
@@ -7564,8 +7592,38 @@ function writeRunnerPromptFile(cwd, missionId, prompt) {
   return file;
 }
 
+function missionDispatchDepth(env = process.env) {
+  const readNonNegativeInteger = (value, fallback) => {
+    const text = String(value ?? '').trim();
+    if (!/^\d+$/.test(text)) return fallback;
+    return Number.parseInt(text, 10);
+  };
+  const depth = readNonNegativeInteger(env.ATRIS_DISPATCH_DEPTH, 0);
+  const maxDepth = readNonNegativeInteger(env.ATRIS_DISPATCH_MAX_DEPTH, 2);
+  return { depth, maxDepth, tooDeep: depth >= maxDepth };
+}
+
+function tooDeepRunnerResult(depth) {
+  const message = 'stopped: helpers were spawning helpers too many levels deep';
+  return {
+    ok: false,
+    reason: 'too-deep',
+    error: message,
+    summary: message,
+    receipt_text: message,
+    sessionIds: [],
+    aborted: false,
+    timedOut: false,
+    authExpired: false,
+    dispatch_depth: depth.depth,
+    dispatch_max_depth: depth.maxDepth,
+  };
+}
+
 function spawnGenericRunnerTick(mission, opts) {
   const { sessionId, cwd, signal, timeoutMs, prompt, model } = opts;
+  const dispatchDepth = missionDispatchDepth();
+  if (dispatchDepth.tooDeep) return Promise.resolve(tooDeepRunnerResult(dispatchDepth));
   return new Promise((resolve) => {
     let promptFile = null;
     let cmd = '';
@@ -7594,7 +7652,12 @@ function spawnGenericRunnerTick(mission, opts) {
     }
 
     const startedAt = Date.now();
-    const proc = spawn('sh', ['-lc', cmd], { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    const proc = spawn('sh', ['-lc', cmd], {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+      env: { ...process.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
+    });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -7694,6 +7757,8 @@ function runDrillRunnerTick(cwd, mission, tickIdx) {
 function spawnClaudeTick(mission, opts) {
   if (resolveClaudeRunnerCommandTemplate()) return spawnGenericRunnerTick(mission, opts);
   const { sessionMode, sessionId, cwd, signal, timeoutMs, prompt, model } = opts;
+  const dispatchDepth = missionDispatchDepth();
+  if (dispatchDepth.tooDeep) return Promise.resolve(tooDeepRunnerResult(dispatchDepth));
   return new Promise((resolve) => {
     const args = [
       '-p', prompt,
@@ -7710,7 +7775,12 @@ function spawnClaudeTick(mission, opts) {
     // detached: the runner spawns its own children; killing only the direct
     // child on timeout leaves them holding the session lock, and the next
     // tick's resume fails with "Session ID ... is already in use".
-    const proc = spawn(resolveClaudeRunnerBin(), args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    const proc = spawn(resolveClaudeRunnerBin(), args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+      env: { ...process.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
+    });
 
     let stdoutBuf = '';
     let observedSessionIds = new Set();
@@ -8262,6 +8332,7 @@ async function runMission(args) {
         }
         result.claude = {
           ok: claudeResult.ok,
+          reason: claudeResult.reason,
           brief_id: claudeResult.brief_id || null,
           summary: claudeResult.summary,
           receipt_text: claudeResult.receipt_text,
@@ -8288,7 +8359,9 @@ async function runMission(args) {
         if (!claudeResult.ok) {
           const deadModel = detectUnavailableModel(claudeResult.summary || claudeResult.receipt_text);
           const wallBoundTimeout = remainingWall * 1000 <= MISSION_RUN_DEFAULTS.claudeTimeoutMs;
-          let reason = claudeResult.timedOut
+          let reason = claudeResult.reason === 'too-deep'
+            ? 'too-deep'
+            : claudeResult.timedOut
             ? (wallBoundTimeout ? 'wall-exceeded-during-tick' : 'claude-timeout')
             : 'claude-error';
           if (deadModel) { reason = 'model-unavailable'; result.model_unavailable = deadModel; }
@@ -8499,6 +8572,8 @@ async function runMission(args) {
       if (callerSessionRunner && result.status === 'ran') break;
       if (newStatus === 'complete' || (newStatus === 'ready' && !mission.always_on && !fullBudgetMode)) break;
       if (consecutiveVerifierFails(ticks) >= 2) { pauseReason = 'consecutive-verifier-fails'; break; }
+      if (result.status === 'errored' && result.reason === 'too-deep') { pauseReason = 'too-deep'; break; }
+      if (consecutiveIdenticalSummaryTicks(ticks) >= 3) { pauseReason = 'stuck-repeating'; break; }
       // BCK-1324: N consecutive ticks that each self-report "ran" but leave no
       // structural trace is a manufactured-busywork loop, not progress. Stop
       // honestly (clean stop, not a pause/blocker) rather than burn the rest
@@ -9908,4 +9983,5 @@ module.exports = {
   recordMissionEngineTickOutcome,
   tickMadeProgress,
   consecutiveNoProgressTicks,
+  consecutiveIdenticalSummaryTicks,
 };
