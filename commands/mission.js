@@ -5717,6 +5717,28 @@ function runVerifier(command, root = process.cwd()) {
   };
 }
 
+const CHECK_FEEDBACK_LIMIT = 1500;
+const CHECK_FEEDBACK_TRIM_MARKER = 'output trimmed';
+
+function extractCheckFeedback(verifierResult) {
+  if (!verifierResult || verifierResult.passed !== false) return '';
+  const lines = [verifierResult.output, verifierResult.stdout, verifierResult.stderr]
+    .filter((value) => String(value || '').trim())
+    .flatMap((value) => String(value).split(/\r?\n/))
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return '';
+
+  const usefulPattern = /\b(?:error|fail|expected|assert)\w*\b|(?:^|\s|\()[^:\s()]+:\d+(?::\d+)?(?:\b|$)/i;
+  const useful = lines.filter((line) => usefulPattern.test(line));
+  const context = lines.filter((line) => !usefulPattern.test(line));
+  const feedback = [...useful, ...context].join('\n');
+  if (feedback.length <= CHECK_FEEDBACK_LIMIT) return feedback;
+
+  const contentLimit = CHECK_FEEDBACK_LIMIT - CHECK_FEEDBACK_TRIM_MARKER.length - 1;
+  return `${feedback.slice(0, contentLimit).trimEnd()}\n${CHECK_FEEDBACK_TRIM_MARKER}`;
+}
+
 const REVIEW_LANE_DRAIN_TIMEOUT_MS = 120000;
 
 // Bounded agent-side review sweep, recorded on the tick. Failures never break
@@ -7399,6 +7421,15 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
       ...pings.map((p) => `- [${p.at}] ${p.from || 'operator'}: ${p.text}`),
     ]
     : [];
+  const checkFeedback = String(mission.last_check_feedback || '').trim();
+  const checkFeedbackLines = checkFeedback
+    ? [
+      ``,
+      `## errors from the last check`,
+      `the last check failed. these are the real errors. fix these first.`,
+      checkFeedback,
+    ]
+    : [];
   const lines = [
     `# Mission Tick ${tickIndex}/${maxTicks}`,
     ...pingLines,
@@ -7412,6 +7443,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
     `**Last status:** ${mission.status}`,
     `**Last tick:** ${mission.last_tick_at || 'never'}`,
     ...missionBudgetPromptLines(mission),
+    ...checkFeedbackLines,
     ``,
     `## Your task`,
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
@@ -8516,6 +8548,9 @@ async function runMission(args) {
         last_tick_layer: result.layer,
         last_tick_layer_source: result.layer_source,
         verifier_result: verifierResult || latestOnDisk.verifier_result || null,
+        last_check_feedback: verifierResult
+          ? extractCheckFeedback(verifierResult)
+          : latestOnDisk.last_check_feedback || '',
         receipt_path: receiptPath,
         next_action: nextAction,
         claude_session_ticks: rotateSessionForContext ? 0 : claudeSessionTicks,
@@ -8885,6 +8920,9 @@ function tickMission(args) {
 	      last_tick_layer: tickRecord.layer,
 	      last_tick_layer_source: tickRecord.layer_source,
 	      verifier_result: verifierResult || mission.verifier_result || null,
+	      last_check_feedback: verifierResult
+	        ? extractCheckFeedback(verifierResult)
+	        : mission.last_check_feedback || '',
 	      ...(nextGoalChain ? { goal_chain: nextGoalChain } : {}),
 	      next_action: nextAction,
 	    };
@@ -9947,6 +9985,7 @@ module.exports = {
   TWIN_ACTIVE_STATUSES,
   pingMission,
   buildTickPrompt,
+  extractCheckFeedback,
   loadMissionMap,
   renderMissionStatus,
   selectDueMission,
