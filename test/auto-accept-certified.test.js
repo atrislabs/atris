@@ -221,6 +221,22 @@ test('strict verify parser rejects path and npm config escapes', () => {
   assert.equal(parseVerifyCommand('node --check file:///tmp/pwn.js').ok, false);
 });
 
+test('strict verify parser accepts mission-style file checks and rejects unsafe test shapes', () => {
+  assert.deepEqual(parseVerifyCommand('test -s atris/team/researcher/casa-naranja/week-one.md'), {
+    ok: true,
+    argv: ['test', '-s', 'atris/team/researcher/casa-naranja/week-one.md'],
+  });
+  assert.deepEqual(parseVerifyCommand('test -f atris/runs/receipt.json'), {
+    ok: true,
+    argv: ['test', '-f', 'atris/runs/receipt.json'],
+  });
+  assert.equal(parseVerifyCommand('test -s /etc/passwd').ok, false);
+  assert.equal(parseVerifyCommand('test -s ../outside.md').ok, false);
+  assert.equal(parseVerifyCommand('test -e atris/runs').ok, false);
+  assert.equal(parseVerifyCommand('test -s a.md -o -s b.md').ok, false);
+  assert.equal(parseVerifyCommand('test -s').ok, false);
+});
+
 test('strict verify parser accepts quoted node test filters without enabling shell operators', () => {
   const command = "node --test --test-name-pattern='update and sync --help|upgrade --help|help invocations skip background' test/commands.test.js";
   assert.deepEqual(parseVerifyCommand(command), {

@@ -221,6 +221,77 @@ test('receipt evidence fails closed when a named receipt has no verifier result'
   }
 });
 
+function writeMissionState(dir, records) {
+  const stateDir = path.join(dir, '.atris', 'state');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(stateDir, 'missions.jsonl'),
+    records.map((record) => JSON.stringify(record)).join('\n') + '\n',
+    'utf8'
+  );
+}
+
+test('forced mission completion is surfaced and never counts as passing evidence', () => {
+  const { extractReceiptEvidence } = require('../lib/receipt-evidence');
+  const dir = makeTempDir();
+  try {
+    const receiptRel = writeMissionReceipt(dir, 'mission-forced-receipt.json', {
+      missionId: 'mission-forced-1',
+      passed: true,
+    });
+    writeMissionState(dir, [
+      { mission: { id: 'mission-forced-1', status: 'complete', completion_gate: { ok: false, forced: true } } },
+    ]);
+    const evidence = extractReceiptEvidence(certifiedProofMentioning(receiptRel), dir);
+    assert.ok(evidence);
+    assert.equal(evidence.receipts[0].verifier_passed, true, 'the verifier itself still passed');
+    assert.equal(evidence.receipts[0].forced, true);
+    assert.equal(evidence.any_forced, true);
+    assert.equal(evidence.all_passing, false, 'forced completion must fail closed');
+
+    // Last record wins: an honest unforced re-completion clears the flag.
+    writeMissionState(dir, [
+      { mission: { id: 'mission-forced-1', status: 'complete', completion_gate: { ok: false, forced: true } } },
+      { mission: { id: 'mission-forced-1', status: 'complete', completion_gate: { ok: true, forced: false } } },
+    ]);
+    const cleared = extractReceiptEvidence(certifiedProofMentioning(receiptRel), dir);
+    assert.equal(cleared.any_forced, false);
+    assert.equal(cleared.all_passing, true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('review queue badges forced evidence as forced, not passing', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const receiptRel = writeMissionReceipt(dir, 'mission-forced-receipt.json', {
+      missionId: 'mission-forced-1',
+      passed: true,
+    });
+    writeMissionState(dir, [
+      { mission: { id: 'mission-forced-1', status: 'complete', completion_gate: { ok: false, forced: true } } },
+    ]);
+    const task = setupCertifiedTask(dir, env, certifiedProofMentioning(receiptRel), 'Forced completion task');
+
+    const queue = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
+    assert.equal(queue.status, 0, queue.stderr);
+    const item = JSON.parse(queue.stdout).queue.items[0];
+    assert.equal(item.evidence.any_forced, true);
+    assert.equal(item.evidence.all_passing, false);
+
+    const text = runCli(['task', 'reviews'], { cwd: dir, env });
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, new RegExp(`${task.display_id}.*\\[evidence:forced\\]`));
+    assert.doesNotMatch(text.stdout, new RegExp(`${task.display_id}.*\\[evidence:passing\\]`));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task accept surfaces receipt evidence without blocking the human', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();

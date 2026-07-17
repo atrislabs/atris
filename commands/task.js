@@ -5482,7 +5482,9 @@ function cmdReviews(args) {
   approvalItems.forEach((item, index) => {
     const tag = item.tag ? ` [${item.tag}]` : '';
     const passes = item.review_pass_count ? ` (${item.review_pass_count} reviews)` : '';
-    const badge = item.evidence?.all_passing ? ' [evidence:passing]' : '';
+    const badge = item.evidence?.any_forced
+      ? ' [evidence:forced]'
+      : item.evidence?.all_passing ? ' [evidence:passing]' : '';
     console.log('');
     console.log(`${index + 1}. ${item.display_id || taskRef(item.id)}${tag}${passes}: ${item.title}${badge}`);
     if (item.landing) {
