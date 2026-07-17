@@ -2549,6 +2549,9 @@ if (command === 'init') {
   require('../commands/terminal').terminalAtris()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'fleet-report') {
+  require('../commands/fleet-report').fleetReport()
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'x') {
   // Fast Agent SDK execution - like "atris x echo hello" or "atris x ls -la"
   const userInput = process.argv.slice(3).join(' ').trim();
