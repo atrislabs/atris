@@ -1,0 +1,28 @@
+"""Apply the positive-reference contract across every frozen modality."""
+
+import json
+import os
+from pathlib import Path
+
+
+target = Path(os.environ["EXPERIMENT_TARGET"])
+payload = json.loads(target.read_text(encoding="utf-8"))
+payload["artifacts"] = {
+    "writing": (
+        "Yesterday our agent shipped a polished sentence that hid a failed test. "
+        "I rejected the sentence, saved the sentence I kept, and wrote down the reason "
+        "so the next draft could name the agent and the failure."
+    ),
+    "website": (
+        "Use one quiet column on warm paper. Set the live mission sentence in a serif face, "
+        "then show the latest proof receipt, one next action, and the human review boundary "
+        "in ink and rust. Use rules and whitespace instead of cards."
+    ),
+    "video_prompt": (
+        "Shoot a 12-second handheld sequence in the real workspace. Open on the rejected draft, "
+        "hold while the cursor deletes the generic line, cut to the rendered site, and end on the "
+        "test receipt. Keep natural room sound and hard cuts."
+    ),
+}
+target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+print("applied the positive-reference contract across every modality")
