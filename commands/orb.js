@@ -6,6 +6,11 @@ const readline = require('node:readline');
 const { spawn } = require('node:child_process');
 const { workspaceRoot } = require('../lib/task-db');
 const { collectOrbContext, appendOrbChoice } = require('../lib/orb-context');
+const {
+  readOrbScorecard,
+  renderOrbScorecard,
+  parseOrbScorecardDays,
+} = require('../lib/orb-scorecard');
 
 const MAX_VISIBLE_SUGGESTIONS = 9;
 const MAX_CONCURRENT_JOBS = 3;
@@ -42,6 +47,26 @@ function engineInvocation(engine, prompt) {
   return { command: 'claude', args: ['-p', prompt] };
 }
 
+function findExecutableOnPath(command, pathValue = process.env.PATH) {
+  const candidates = String(command || '').includes(path.sep)
+    ? [command]
+    : String(pathValue || '').split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, command));
+  for (const candidate of candidates) {
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {}
+  }
+  return null;
+}
+
+function formatJobNotification(job) {
+  const failed = Boolean(job && job.error) || Number(job && job.exitCode) !== 0;
+  return failed
+    ? `✗ failed: ${job.label} (o to open)`
+    : `✔ ready: ${job.label} (o to open)`;
+}
+
 function renderContext(context) {
   console.log('');
   for (const beat of context.beats || []) console.log(beat);
@@ -62,6 +87,7 @@ function renderHint() {
 
 function showHelp() {
   console.log('Usage: atris orb [--once] [--engine claude|codex|fast]');
+  console.log('       atris orb scorecard [--days N]');
   console.log('');
   console.log('Choose a next move while background engine jobs keep working.');
 }
@@ -78,10 +104,26 @@ async function runOrb(args = []) {
     return 0;
   }
 
+  if (args[0] === 'scorecard') {
+    const parsed = parseOrbScorecardDays(args.slice(1));
+    if (!parsed.ok) {
+      console.error(`orb scorecard: ${parsed.error}`);
+      return 2;
+    }
+    const scorecard = readOrbScorecard(workspaceRoot(), { days: parsed.days });
+    console.log(renderOrbScorecard(scorecard));
+    return 0;
+  }
+
   const engine = parseEngine(args);
   if (!VALID_ENGINES.has(engine)) {
     console.error(`Unknown orb engine: ${engine || '(empty)'}. Use claude, codex, or fast.`);
     return 2;
+  }
+
+  const engineCommand = engineInvocation(engine, '').command;
+  if (!findExecutableOnPath(engineCommand)) {
+    console.error(`orb warning: engine binary "${engineCommand}" is missing from PATH; picks will fail until it is installed.`);
   }
 
   const root = workspaceRoot();
@@ -105,7 +147,7 @@ async function runOrb(args = []) {
     if (closing) return;
     readline.clearLine(process.stdout, 0);
     readline.cursorTo(process.stdout, 0);
-    console.log(`✔ ready: ${job.label} (o to open)`);
+    console.log(formatJobNotification(job));
     prompt();
   }
 
@@ -120,9 +162,10 @@ async function runOrb(args = []) {
 
   function finishJob(job, code, error) {
     if (job.status !== 'running') return;
-    job.status = 'ready';
-    job.unread = true;
     job.exitCode = Number.isInteger(code) ? code : 1;
+    job.error = error ? String(error.message || error) : null;
+    job.status = job.exitCode === 0 && !job.error ? 'ready' : 'failed';
+    job.unread = true;
     job.durationMs = Date.now() - job.startedAtMs;
     if (error) {
       try {
@@ -137,6 +180,7 @@ async function runOrb(args = []) {
       exitCode: job.exitCode,
       durationMs: job.durationMs,
       logPath: path.relative(root, job.logPath),
+      error: job.error,
     };
     fs.promises.appendFile(indexPath, `${JSON.stringify(record)}\n`, 'utf8').catch(() => {});
     notifyReady(job);
@@ -201,7 +245,7 @@ async function runOrb(args = []) {
   }
 
   async function openReady() {
-    const job = jobs.find((candidate) => candidate.status === 'ready' && candidate.unread);
+    const job = jobs.find((candidate) => ['ready', 'failed'].includes(candidate.status) && candidate.unread);
     if (!job) {
       console.log('No ready result yet.');
       return;
@@ -247,6 +291,8 @@ async function runOrb(args = []) {
 module.exports = {
   runOrb,
   engineInvocation,
+  findExecutableOnPath,
+  formatJobNotification,
   parseEngine,
   renderContext,
   tailLines,
