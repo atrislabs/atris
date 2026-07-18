@@ -491,6 +491,7 @@ function showHelp() {
   console.log('  wish       - Say one plain sentence, then Atris asks only for gaps or delegates it');
   console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
+  console.log('  orb        - Pick next moves while engine jobs work in the background');
   console.log('  activate   - Load Atris context');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  stream     - Watch the whole team work live in one terminal');
@@ -979,6 +980,7 @@ const { logAtris: logCmd } = require('../commands/log');
 const { activateAtris: activateCmd } = require('../commands/activate');
 const { statusAtris: statusCmd } = require('../commands/status');
 const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('../commands/workflow');
+const { runOrb: orbCmd } = require('../commands/orb');
 
 // All other commands are lazy-loaded inline (require() only when invoked)
 
@@ -1801,6 +1803,10 @@ if (command === 'init') {
   Promise.resolve(require('../commands/drive').driveCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'orb') {
+  Promise.resolve(orbCmd(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\nError: ${err.message || err}`); process.exit(1); });
 } else if (command === 'radar' || command === 'ctop') {
   const radarArgs = command === 'ctop' ? ['--agents', ...process.argv.slice(3)] : process.argv.slice(3);
   Promise.resolve(require('../commands/radar').radarCommand(radarArgs))

@@ -80,6 +80,7 @@ test/mission-worktree-baseline.test.js
 test/mission-worktree-receipt.test.js
 test/moves.test.js
 test/now.test.js
+test/orb.test.js
 test/outbound-artifact-gate.test.js
 test/outbound-send-gate.test.js
 test/permission-grants.test.js
