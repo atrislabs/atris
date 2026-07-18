@@ -65,7 +65,7 @@ const {
   DEFAULT_CLIENT_ID, DEFAULT_USER_AGENT,
 } = require('../utils/api');
 const missionRuntime = require('../lib/mission-runtime-loop');
-const { knownCommands } = require('../lib/known-commands');
+const { knownCommands, suggestCommand } = require('../lib/known-commands');
 const { recordUsage } = require('../lib/usage');
 
 // Bind DI wrappers (utils/auth uses dependency injection for apiRequestJson)
@@ -1082,6 +1082,10 @@ if (!command || !knownCommands.includes(command)) {
   // Warn if this looks like a mistyped single-word command (no spaces)
   if (command && !natural.multiword && !directSingleWordNatural) {
     console.log(`⚠ Unknown command: "${command}". Run "atris help" for available commands.`);
+    const suggestion = suggestCommand(command);
+    if (suggestion) {
+      console.log(`  Did you mean "atris ${suggestion}"?`);
+    }
     console.log('  Treating as natural language input...\n');
   }
 

@@ -502,7 +502,11 @@ async function runOneLap(ask, options = {}) {
   if (!wish) {
     const intakeSafetyIssue = oneLapSafetyIssue({ title: text, tag: 'wish' });
     if (intakeSafetyIssue) {
-      const result = { ...resultBase({ status: 'stuck', ask: text }), reason: intakeSafetyIssue, next_action: 'use a protected workflow with explicit approval' };
+      // A one-lap only auto-dispatches safe local build/test/review/research
+      // work. Anything else (protected lane, outbound action, non-local intent)
+      // still has a front door: `atris wish` runs it through the gated flow.
+      // Hand the new person that exact command, not unactionable prose.
+      const result = { ...resultBase({ status: 'stuck', ask: text }), reason: intakeSafetyIssue, next_action: `atris wish ${shellQuote(text)}` };
       emit(result, asJson);
       return 2;
     }

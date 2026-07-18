@@ -745,3 +745,26 @@ test('ATRIS_BACKEND_URL is accepted as a backend root for API paths', () => {
     else process.env.ATRIS_BACKEND_URL = previousBackend;
   }
 });
+
+test('unknown engine name fails cleanly with no stack trace (text + json)', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['engine', 'bogus'], dir);
+    assert.equal(res.status, 2, res.stderr);
+    // A new person must see a plain message, never a raw Node stack trace.
+    assert.doesNotMatch(res.stderr, /at Object\.|throw new Error|\.js:\d+/);
+    assert.match(res.stderr, /Unknown engine "bogus"/);
+    assert.match(res.stderr, /known engines:/);
+    // No engine file gets written for a typo.
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'engines.json')), false);
+
+    const jsonRes = runCli(['engine', 'bogus', '--json'], dir);
+    assert.equal(jsonRes.status, 2, jsonRes.stderr);
+    const parsed = JSON.parse(jsonRes.stdout);
+    assert.equal(parsed.ok, false);
+    assert.match(parsed.error, /Unknown engine "bogus"/);
+    assert.ok(Array.isArray(parsed.known) && parsed.known.includes('codex'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
