@@ -7118,13 +7118,17 @@ test('mission lock busy errors are JSON-readable', () => {
       assert.equal(result.stderr, '', name);
       const payload = JSON.parse(result.stdout);
       assert.equal(payload.ok, false, name);
-      assert.match(payload.error, new RegExp(`\\[mission ${name}\\] lock busy`), name);
+      if (name === 'run') {
+        assert.equal(payload.error, `another driver is already running mission ${mission.id} (pid ${process.pid})`);
+      } else {
+        assert.match(payload.error, new RegExp(`\\[mission ${name}\\] lock busy`), name);
+      }
     }
 
     const humanRun = runCli(['mission', 'run', mission.id, '--no-claude'], { cwd: dir });
     assert.equal(humanRun.status, 3);
     assert.equal(humanRun.stdout, '');
-    assert.match(humanRun.stderr, /\[mission run\] lock busy/);
+    assert.match(humanRun.stderr, new RegExp(`another driver is already running mission ${mission.id} \\(pid ${process.pid}\\)`));
   } finally {
     cleanupTempDir(dir);
   }

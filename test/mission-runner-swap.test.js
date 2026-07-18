@@ -157,7 +157,7 @@ test('mission runner swaps refuse while the mission tick lock is held', () => {
 
     const runRes = runCli(['mission', 'run', mission.id, '--engine', 'cursor', '--json'], { cwd: dir });
     assert.equal(runRes.status, 3);
-    assert.match(runRes.stdout, /lock busy/);
+    assert.match(runRes.stdout, /another driver is already running mission/);
 
     const saved = readMission(dir, mission.id);
     assert.equal(saved.runner, 'atris2');

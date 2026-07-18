@@ -597,6 +597,7 @@ const MISSION_RUN_VALUE_FLAGS = [
 const MISSION_RUN_BOOLEAN_FLAGS = [
   '--json',
   '--due',
+  '--detach',
   '--headless',
   '--self-drive',
   '--fleet',
@@ -2794,7 +2795,6 @@ function budgetContractFromTier(tier, args = []) {
 
 function inferRunObjectiveBudgetContract(objective, args = []) {
   const budgetTier = readMissionBudgetTier(args, { json: wantsJson(args) });
-  if (budgetTier) return budgetContractFromTier(budgetTier, args);
   const text = `${objective || ''} ${Array.isArray(args) ? args.join(' ') : ''}`;
   const explicitHours = Number(readFlag(args, '--hours', ''));
   const explicitMinutes = Number(readFlag(args, '--minutes', ''));
@@ -2804,6 +2804,14 @@ function inferRunObjectiveBudgetContract(objective, args = []) {
     : (Number.isFinite(explicitMinutes) && explicitMinutes > 0
       ? Math.round(explicitMinutes * 60)
       : (Number.isFinite(explicitMaxWall) && explicitMaxWall > 0 ? Math.round(explicitMaxWall) : null));
+  if (explicitSeconds) {
+    return buildMissionBudgetContract(explicitSeconds, args, {
+      text,
+      budgetLabel: durationLabel(explicitSeconds),
+      ...(budgetTier ? { budgetTier: budgetTier.name } : {}),
+    });
+  }
+  if (budgetTier) return budgetContractFromTier(budgetTier, args);
   const requestedSeconds = explicitSeconds || durationSecondsFromText(text);
   const overnight = /\bovernight\b/i.test(text);
   if (!requestedSeconds && !overnight) return null;
@@ -4592,7 +4600,12 @@ function statusMission(args) {
   if (ref && !missions.length) {
     exitMissingMission(ref, 1, asJson);
   }
-  const missionViews = missions.map(missionStatusView);
+  const statusNow = new Date();
+  const missionViews = missions.map((mission) => {
+    const view = missionStatusView(mission);
+    const stall = missionStallInfo(view, view.worktree_root || process.cwd(), statusNow);
+    return stall ? { ...view, stall } : view;
+  });
   // Member state renders are cwd-local writes; rolled-up missions stay read-only.
   for (const owner of new Set(missionViews.filter((mission) => !mission.worktree_root).map((mission) => mission.owner).filter(Boolean))) {
     renderMemberMissionState(owner);
@@ -4616,6 +4629,7 @@ function statusMission(args) {
 	        `  state: ${missionHumanStatusText(mission)}`,
 	        ...missionMetricLine(mission),
 	        ...missionHeartbeatLines(mission),
+	        ...missionStallWarningLines(mission, mission.worktree_root || process.cwd(), statusNow),
 	        ...(mission.worktree_root ? [`  worktree: ${mission.worktree_root}`] : []),
 	        `  next: ${missionDisplayText(mission, mission.next_action || 'tick or verify')}`,
 	        ...(mission.next_action_preview?.feynman?.what ? [`  preview: ${mission.next_action_preview.feynman.what}`] : []),
@@ -5505,6 +5519,21 @@ function collectMissionDoctorFindings(root = process.cwd(), options = {}) {
     const status = String(mission.status || '');
     const active = !TERMINAL_STATUSES.has(status);
     const objective = String(mission.objective || '').trim();
+    const stall = missionStallInfo(mission, mission.worktree_root || root);
+    if (stall) {
+      add(
+        mission,
+        'stalled_driver',
+        stall.message,
+        'high',
+        {
+          next: stall.restart,
+          age_seconds: stall.age_seconds,
+          cadence_seconds: stall.cadence_seconds,
+          driver: stall.driver,
+        },
+      );
+    }
     // Only drive's explicit auto-park reason settles a no-verifier mission.
     // Other paused no-verifier missions still need a verifier or a deliberate
     // park, otherwise doctor and drive silently disagree about stale work.
@@ -5582,7 +5611,9 @@ function doctorMission(args) {
   const lines = findings.length
     ? [
       `Mission doctor: ${findings.length} problem(s) across ${missions.length} mission(s)`,
-      ...findings.map((finding) => `${finding.severity.toUpperCase()} ${finding.code}: ${finding.objective} -> ${finding.next}`),
+      ...findings.map((finding) => finding.code === 'stalled_driver'
+        ? `${finding.severity.toUpperCase()} ${finding.code}: ${finding.objective} - ${finding.message}`
+        : `${finding.severity.toUpperCase()} ${finding.code}: ${finding.objective} -> ${finding.next}`),
     ]
     : [`Mission doctor: clean (${missions.length} mission(s) checked)`];
   printJsonOrText(payload, lines, asJson);
@@ -5992,11 +6023,49 @@ function formatDurationShort(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return null;
   if (seconds < 60) return `${Math.round(seconds)}s`;
   if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
+  if (seconds < 86400) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.round((seconds % 3600) / 60);
+    if (minutes === 60) return `${hours + 1}h`;
+    return `${hours}h ${minutes}m`;
+  }
   return `${Math.floor(seconds / 86400)}d`;
 }
 
 const HEARTBEAT_TERMINAL_STATUSES = new Set(['complete', 'stopped', 'paused']);
+
+function missionStallInfo(mission, root = process.cwd(), now = new Date()) {
+  const status = String(mission?.status || '');
+  const activeWorking = status === 'running'
+    || (GOAL_LOOP_STATUSES.has(status) && mission?.always_on === true)
+    || (GOAL_LOOP_STATUSES.has(status) && Boolean(missionBudgetContinuationText(mission, now.getTime())));
+  const cadenceSeconds = parseCadenceSeconds(mission?.cadence);
+  const lastTickAt = mission?.last_tick_at ? Date.parse(mission.last_tick_at) : NaN;
+  if (!activeWorking || cadenceSeconds <= 0 || !Number.isFinite(lastTickAt)) return null;
+  const ageSeconds = (now.getTime() - lastTickAt) / 1000;
+  if (!Number.isFinite(ageSeconds) || ageSeconds <= cadenceSeconds * 2) return null;
+  const driver = missionDriverHealth(mission, root);
+  const age = formatDurationShort(ageSeconds);
+  const cadence = String(mission.cadence || formatDurationShort(cadenceSeconds));
+  const restart = `atris mission run ${mission.id}`;
+  const driverText = driver.alive
+    ? `driver pid ${driver.pid} is alive; inspect ${driver.log_path || 'its driver log'}`
+    : (driver.pid ? `driver pid ${driver.pid} is not alive` : 'no live driver?');
+  const message = `stalled: last receipt ${age} ago, cadence ${cadence} - ${driverText}; restart: ${restart}`;
+  return {
+    stalled: true,
+    age_seconds: ageSeconds,
+    cadence_seconds: cadenceSeconds,
+    driver,
+    restart,
+    message,
+  };
+}
+
+function missionStallWarningLines(mission, root = process.cwd(), now = new Date()) {
+  const stall = mission?.stall || missionStallInfo(mission, root, now);
+  return stall ? [`  ${stall.message}`] : [];
+}
 
 function missionHeartbeatLines(mission, now = new Date()) {
   const lines = [];
@@ -7345,6 +7414,45 @@ function missionLockOwnerIsAlive(pid) {
   }
 }
 
+function missionDriverShortId(mission) {
+  const id = String(mission?.id || mission || 'mission').trim();
+  return id.slice(-8).replace(/[^a-zA-Z0-9_-]/g, '') || shortHash(id);
+}
+
+function missionDriverPaths(mission, root = process.cwd()) {
+  const shortId = missionDriverShortId(mission);
+  return {
+    shortId,
+    stateFile: path.join(root, '.atris', 'state', `mission-driver-${shortId}.json`),
+    logFile: path.join(root, 'atris', 'logs', `mission-${shortId}-driver.log`),
+    lockFile: path.join(root, '.atris', 'state', `mission-${mission.id}.lock`),
+  };
+}
+
+function missionDriverHealth(mission, root = process.cwd()) {
+  const paths = missionDriverPaths(mission, root);
+  let driverState = null;
+  let lockState = null;
+  try { driverState = JSON.parse(fs.readFileSync(paths.stateFile, 'utf8')); } catch {}
+  try { lockState = JSON.parse(fs.readFileSync(paths.lockFile, 'utf8')); } catch {}
+  const candidates = [
+    driverState ? { ...driverState, source: 'driver_state' } : null,
+    lockState ? { ...lockState, source: 'mission_lock' } : null,
+  ].filter(Boolean);
+  const selected = candidates.find((candidate) => missionLockOwnerIsAlive(candidate.pid))
+    || candidates[0]
+    || null;
+  const pid = selected ? Number(selected.pid) : null;
+  return {
+    alive: missionLockOwnerIsAlive(pid),
+    pid: Number.isInteger(pid) && pid > 0 ? pid : null,
+    started_at: selected?.started_at || null,
+    source: selected?.source || null,
+    state_path: fs.existsSync(paths.stateFile) ? path.relative(root, paths.stateFile) : null,
+    log_path: driverState?.log_path || path.relative(root, paths.logFile),
+  };
+}
+
 function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
   const dir = path.join(root, '.atris', 'state');
   fs.mkdirSync(dir, { recursive: true });
@@ -7355,8 +7463,10 @@ function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
   while (true) {
     try {
       fd = fs.openSync(lockFile, 'wx');
-      fs.writeSync(fd, JSON.stringify({ pid: process.pid, started_at: stampIso(), mission_id: missionId }));
-      return { ok: true, lockFile, fd };
+      const startedAt = stampIso();
+      const record = JSON.stringify({ pid: process.pid, started_at: startedAt, mission_id: missionId });
+      fs.writeSync(fd, record);
+      return { ok: true, lockFile, fd, missionId, driverPid: process.pid, startedAt, recordLength: record.length };
     } catch (e) {
       if (e.code === 'EEXIST') {
         let info = {};
@@ -7378,10 +7488,81 @@ function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
   }
 }
 
+function updateMissionLockOwner(lock, pid, extra = {}) {
+  if (!lock?.ok || lock.fd == null) return;
+  const ownerPid = Number(pid);
+  if (!Number.isInteger(ownerPid) || ownerPid <= 0) return;
+  const payload = JSON.stringify({
+    pid: ownerPid,
+    started_at: lock.startedAt || stampIso(),
+    mission_id: lock.missionId,
+    ...(ownerPid !== lock.driverPid ? { driver_pid: lock.driverPid } : {}),
+    ...extra,
+  });
+  try {
+    const recordLength = Math.max(Number(lock.recordLength) || 0, payload.length);
+    fs.writeSync(lock.fd, payload.padEnd(recordLength, ' '), 0, 'utf8');
+    lock.recordLength = recordLength;
+  } catch {}
+}
+
 function releaseMissionLock(lock) {
   if (!lock || !lock.ok) return;
   try { if (lock.fd != null) fs.closeSync(lock.fd); } catch {}
   try { fs.unlinkSync(lock.lockFile); } catch {}
+}
+
+function detachMissionRun(args, mission, root = process.cwd(), asJson = false) {
+  const existing = missionDriverHealth(mission, root);
+  if (existing.alive) {
+    exitMissionError(`another driver is already running mission ${mission.id} (pid ${existing.pid})`, 3, asJson);
+  }
+  const paths = missionDriverPaths(mission, root);
+  fs.mkdirSync(path.dirname(paths.stateFile), { recursive: true });
+  fs.mkdirSync(path.dirname(paths.logFile), { recursive: true });
+  const logFd = fs.openSync(paths.logFile, 'a');
+  let child = null;
+  try {
+    const childArgs = process.argv.slice(1).filter((arg) => arg !== '--detach');
+    child = spawn(process.execPath, childArgs, {
+      cwd: root,
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+      env: { ...process.env, ATRIS_MISSION_DRIVER_DETACHED: '1' },
+    });
+    const startedAt = stampIso();
+    const logPath = path.relative(root, paths.logFile);
+    fs.writeFileSync(paths.stateFile, JSON.stringify({
+      mission_id: mission.id,
+      pid: child.pid,
+      started_at: startedAt,
+      log_path: logPath,
+    }, null, 2) + '\n', 'utf8');
+    child.unref();
+    printJsonOrText(
+      {
+        ok: true,
+        action: 'mission_run_detached',
+        mission_id: mission.id,
+        pid: child.pid,
+        started_at: startedAt,
+        log_path: logPath,
+        state_path: path.relative(root, paths.stateFile),
+      },
+      [
+        `mission driver started: pid ${child.pid}`,
+        `log: ${logPath}`,
+      ],
+      asJson,
+    );
+  } catch (error) {
+    if (child?.pid) {
+      try { process.kill(child.pid, 'SIGTERM'); } catch {}
+    }
+    exitMissionError(`could not detach mission driver: ${error.message}`, 1, asJson);
+  } finally {
+    try { fs.closeSync(logFd); } catch {}
+  }
 }
 
 function probeClaudeBinary() {
@@ -7653,7 +7834,7 @@ function tooDeepRunnerResult(depth) {
 }
 
 function spawnGenericRunnerTick(mission, opts) {
-  const { sessionId, cwd, signal, timeoutMs, prompt, model } = opts;
+  const { sessionId, cwd, signal, timeoutMs, prompt, model, missionLock } = opts;
   const dispatchDepth = missionDispatchDepth();
   if (dispatchDepth.tooDeep) return Promise.resolve(tooDeepRunnerResult(dispatchDepth));
   return new Promise((resolve) => {
@@ -7690,6 +7871,7 @@ function spawnGenericRunnerTick(mission, opts) {
       detached: true,
       env: { ...process.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
+    updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -7719,6 +7901,7 @@ function spawnGenericRunnerTick(mission, opts) {
       clearTimeout(timer);
       cleanupPrompt();
       if (signal) signal.removeEventListener?.('abort', onAbort);
+      updateMissionLockOwner(missionLock, missionLock?.driverPid);
       const finalText = String(stdout || '').trim();
       const errStr = String(stderr || '').slice(-2000);
       const ok = code === 0 && !timedOut && !aborted;
@@ -7746,6 +7929,7 @@ function spawnGenericRunnerTick(mission, opts) {
       clearTimeout(timer);
       cleanupPrompt();
       if (signal) signal.removeEventListener?.('abort', onAbort);
+      updateMissionLockOwner(missionLock, missionLock?.driverPid);
       resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false, brief_id: briefId });
     });
   });
@@ -7788,7 +7972,7 @@ function runDrillRunnerTick(cwd, mission, tickIdx) {
 
 function spawnClaudeTick(mission, opts) {
   if (resolveClaudeRunnerCommandTemplate()) return spawnGenericRunnerTick(mission, opts);
-  const { sessionMode, sessionId, cwd, signal, timeoutMs, prompt, model } = opts;
+  const { sessionMode, sessionId, cwd, signal, timeoutMs, prompt, model, missionLock } = opts;
   const dispatchDepth = missionDispatchDepth();
   if (dispatchDepth.tooDeep) return Promise.resolve(tooDeepRunnerResult(dispatchDepth));
   return new Promise((resolve) => {
@@ -7813,6 +7997,7 @@ function spawnClaudeTick(mission, opts) {
       detached: true,
       env: { ...process.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
+    updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
 
     let stdoutBuf = '';
     let observedSessionIds = new Set();
@@ -7874,6 +8059,7 @@ function spawnClaudeTick(mission, opts) {
     proc.on('close', (code) => {
       clearTimeout(timer);
       if (signal) signal.removeEventListener?.('abort', onAbort);
+      updateMissionLockOwner(missionLock, missionLock?.driverPid);
       const ok = code === 0 && !isError && !timedOut && !aborted;
       const errStr = stderr.slice(-2000);
       const authExpired = /not authenticated|please log in|login required|auth(?:entication)? expired/i.test(errStr);
@@ -7901,6 +8087,7 @@ function spawnClaudeTick(mission, opts) {
 
     proc.on('error', (e) => {
       clearTimeout(timer);
+      updateMissionLockOwner(missionLock, missionLock?.driverPid);
       resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });
     });
   });
@@ -8037,7 +8224,6 @@ async function runMission(args) {
   const skipDrain = hasFlag(args, '--no-drain');
   const createNext = hasFlag(args, '--create-next');
   const budgetTier = readMissionBudgetTier(args, { json: asJson });
-  const runBudgetContract = budgetContractFromTier(budgetTier, args);
   const maxTicksFlag = readFlag(args, '--max-ticks', '');
   let maxTicks = Math.max(1, Number(maxTicksFlag) || (budgetTier ? budgetTier.max_ticks : MISSION_RUN_DEFAULTS.maxTicks));
   // BCK-1324: a tick that "ran" but left no structural trace (no new/cleared
@@ -8047,7 +8233,17 @@ async function runMission(args) {
   // instead of grinding the tick budget. 0 disables the guard.
   const maxIdleTicks = readNonNegativeIntegerFlag(args, '--max-idle-ticks', MISSION_RUN_DEFAULTS.maxIdleTicks);
   const maxWallFlag = readFlag(args, '--max-wall', '');
-  let maxWallSeconds = Math.max(0.001, Number(maxWallFlag) || (budgetTier ? budgetTier.requested_seconds : MISSION_RUN_DEFAULTS.maxWallSeconds));
+  const explicitMaxWallSeconds = Number.isFinite(Number(maxWallFlag)) && Number(maxWallFlag) > 0
+    ? Number(maxWallFlag)
+    : null;
+  const runBudgetContract = explicitMaxWallSeconds
+    ? buildMissionBudgetContract(explicitMaxWallSeconds, args, {
+      text: Array.isArray(args) ? args.join(' ') : '',
+      budgetLabel: durationLabel(explicitMaxWallSeconds),
+      ...(budgetTier ? { budgetTier: budgetTier.name } : {}),
+    })
+    : budgetContractFromTier(budgetTier, args);
+  let maxWallSeconds = Math.max(0.001, explicitMaxWallSeconds || (budgetTier ? budgetTier.requested_seconds : MISSION_RUN_DEFAULTS.maxWallSeconds));
   const cadenceOverride = readFlag(args, '--cadence', '');
   const engineOverrideRaw = readFlag(args, '--engine', '');
   const runnerOverride = engineOverrideRaw
@@ -8113,6 +8309,10 @@ async function runMission(args) {
     console.error(`Mission ${mission.id} is ${mission.status}; nothing to run.`);
     process.exit(0);
   }
+  if (hasFlag(args, '--detach')) {
+    detachMissionRun(args, mission, process.cwd(), asJson);
+    return;
+  }
 
   const nativeGoalRunOptions = codexNativeGoalOptionsFromArgs(args);
   const autoAck = maybeAutoAckCodexNativeGoal(mission, process.cwd(), nativeGoalRunOptions);
@@ -8126,7 +8326,7 @@ async function runMission(args) {
 
   const lock = acquireMissionLock(mission.id);
   if (!lock.ok) {
-    exitMissionError(`[mission run] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`, 3, asJson);
+    exitMissionError(`another driver is already running mission ${mission.id} (pid ${lock.holder?.pid || '?'})`, 3, asJson);
   }
 
   // Everything past lock acquisition runs inside try/finally so the lock + signal handlers
@@ -8152,6 +8352,16 @@ async function runMission(args) {
     // Derive sessionId, pendingSessionId, and the frozen contract from the fresh record
     // so a fast tick's writes can't be silently overwritten by this run loop.
     mission = resolveMission(mission.id) || mission;
+    if (explicitMaxWallSeconds && runBudgetContract) {
+      mission = saveMission({
+        ...mission,
+        max_wall_seconds: explicitMaxWallSeconds,
+        budget_contract: runBudgetContract,
+      }, cwd, 'mission_budget_updated', {
+        source: 'explicit-max-wall',
+        requested_seconds: explicitMaxWallSeconds,
+      }).mission;
+    }
     let runtimeMission = runtimeView(mission);
     if (['complete', 'stopped'].includes(mission.status)) {
       console.error(`Mission ${mission.id} is ${mission.status}; nothing to run.`);
@@ -8345,20 +8555,39 @@ async function runMission(args) {
           result = { ...result, status: 'ran', reason: 'tick-ok', ran: true };
         }
       } else {
-        const sessionMode = sessionId ? 'resume' : 'set';
-        const useId = sessionId || pendingSessionId;
+        let sessionMode = sessionId ? 'resume' : 'set';
+        let useId = sessionId || pendingSessionId;
         const pingDrain = consumeMissionPings(mission, cwd);
         mission = pingDrain.mission;
         runtimeMission = runtimeView(mission);
         const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
         const restoreTickRunnerProfile = tickEngineId ? applyMissionRunnerProfile(tickEngineId) : () => {};
         let claudeResult;
+        let sessionBusyRetried = false;
+        const runClaudeSession = () => spawnClaudeTick(tickRuntimeMission, {
+          sessionMode, sessionId: useId, cwd, signal: controller.signal,
+          missionLock: lock,
+          timeoutMs: Math.min(
+            MISSION_RUN_DEFAULTS.claudeTimeoutMs,
+            Math.max(1, Math.floor((maxWallSeconds - ((Date.now() - startedAt) / 1000)) * 1000)),
+          ),
+          prompt,
+          model: resolveClaudeRunnerModel(tickRuntimeMission),
+        });
         try {
-          claudeResult = await spawnClaudeTick(tickRuntimeMission, {
-            sessionMode, sessionId: useId, cwd, signal: controller.signal,
-            timeoutMs: Math.min(MISSION_RUN_DEFAULTS.claudeTimeoutMs, Math.max(1, Math.floor(remainingWall * 1000))), prompt,
-            model: resolveClaudeRunnerModel(tickRuntimeMission),
-          });
+          claudeResult = await runClaudeSession();
+          if (!claudeResult.ok && /Session ID .* is already in use/i.test(claudeResult.stderr || '')) {
+            sessionBusyRetried = true;
+            pendingSessionId = crypto.randomUUID();
+            sessionId = null;
+            mission = saveMission(
+              { ...mission, claude_session_id: null, pending_session_id: pendingSessionId },
+              cwd, 'mission_session_rotated', { reason: 'session-lock-busy-retry', session_id: pendingSessionId },
+            ).mission;
+            sessionMode = 'set';
+            useId = pendingSessionId;
+            claudeResult = await runClaudeSession();
+          }
         } finally {
           restoreTickRunnerProfile();
         }
@@ -8377,6 +8606,7 @@ async function runMission(args) {
           stderr: claudeResult.stderr?.slice(-1000),
           timed_out: claudeResult.timedOut,
           aborted: claudeResult.aborted,
+          session_busy_retry: sessionBusyRetried || undefined,
         };
         if (claudeResult.rate_limit_info) {
           // Claude reports the five-hour window's resetsAt on every turn, even
@@ -9493,7 +9723,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
   atris mission run "<objective>" --cloud [--lane fast|pro|max] [--agent <id>]   Enqueue on the Atris backend instead of running local ticks
-  atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--budget quick|long|deep] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"] [--land --repo <path> --verify "git diff --check"]
+  atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--budget quick|long|deep] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"] [--detach] [--land --repo <path> --verify "git diff --check"]
                                 [--native-goal-status active|paused|usageLimited] [--native-goal-objective "..."] [--manual-ack] [--allow-native-goal-supersede] [--take-goal-slot]
                                 [--engine <name>]
                                 [--spend-full-budget|--use-whole-budget|--stop-when-done] [--preflight|--no-preflight|--room-preflight|--no-room-preflight]
