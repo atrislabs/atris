@@ -66,6 +66,23 @@ test('an outbound ask is refused before wish or engine state is created', () => 
   }
 });
 
+test('a refused one-lap points at the real wish front door, not unactionable prose', () => {
+  const setup = setupRouter();
+  try {
+    const result = runCli(['celebrate the release', '--json'], setup.workspace, setup.env);
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, 'stuck');
+    assert.match(payload.reason, /one lap only dispatches local/);
+    // The next step must be a runnable command carrying the request forward,
+    // never vague prose a new person cannot act on.
+    assert.equal(payload.next_action, "atris wish 'celebrate the release'");
+    assert.doesNotMatch(payload.next_action, /protected workflow|explicit approval/);
+  } finally {
+    fs.rmSync(setup.root, { recursive: true, force: true });
+  }
+});
+
 function runCli(args, cwd, env) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
