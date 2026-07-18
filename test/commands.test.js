@@ -4328,18 +4328,19 @@ test('stale session lock rotates to a fresh session instead of grinding the erro
     const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--json'], { cwd: dir, env });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
-    // tick 1 ran (verifier fail), tick 2 hit the lock and rotated, ticks 3-4
-    // ran on the fresh session until the verifier breaker stopped the run.
-    // Without rotation the resume error repeats and the run pauses at
-    // repeated-error:claude-error after tick 3.
+    // Tick 1 ran with a verifier failure. Tick 2 hit the stale lock, retried
+    // immediately on a fresh session, then ran with the second verifier
+    // failure. The failed resume is not recorded as its own errored tick.
     assert.equal(payload.pause_reason, 'consecutive-verifier-fails');
-    assert.equal(payload.tick_count, 4);
-    assert.equal(payload.ran_ticks, 3);
+    assert.equal(payload.tick_count, 2);
+    assert.equal(payload.ran_ticks, 2);
 
-    // The rotation is visible as the busy tick's dedicated reason; without it
-    // the tick records plain claude-error and no fresh session id ever appears.
+    // The rotation is visible as a retry event, while mission tick history has
+    // no standalone claude-session-busy error row.
     const stateLog = fs.readFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), 'utf8');
-    assert.match(stateLog, /claude-session-busy/);
+    assert.doesNotMatch(stateLog, /"last_tick_reason":"claude-session-busy"/);
+    const eventLog = fs.readFileSync(path.join(dir, '.atris', 'state', 'mission_events.jsonl'), 'utf8');
+    assert.match(eventLog, /session-lock-busy-retry/);
     const sessionIds = new Set([...stateLog.matchAll(/"claude_session_id":"([0-9a-f-]+)"/g)].map((m) => m[1]));
     assert.equal(sessionIds.size, 2, `expected a rotated second session id, saw: ${[...sessionIds].join(', ')}`);
   } finally {
