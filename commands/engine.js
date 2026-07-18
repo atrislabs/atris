@@ -1057,7 +1057,19 @@ function engineCommand(args = []) {
     return 0;
   }
 
-  // atris engine <name> — flip the default.
+  // atris engine <name> — flip the default. An unknown name is a plain user
+  // typo, not a crash: report it cleanly (and as JSON on demand) instead of
+  // letting setEngine throw a raw stack trace at a new person.
+  if (!canonicalEngineName(sub)) {
+    const known = RUNNER_PROFILE_NAMES.join(', ');
+    if (json) {
+      console.log(JSON.stringify({ ok: false, error: `Unknown engine "${sub}"`, known: RUNNER_PROFILE_NAMES }, null, 2));
+    } else {
+      console.error(`\n  Unknown engine "${sub}". known engines: ${known}`);
+      console.error('  run "atris engine" to see the roster, or "atris engine help".\n');
+    }
+    return 2;
+  }
   const canonical = setEngine(sub, root);
   const def = RUNNER_PROFILE_DEFS[canonical];
   const installed = binInstalled(def.bin);
