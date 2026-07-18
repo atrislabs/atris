@@ -37,11 +37,21 @@ module.exports = {
 
     const boot = ctx.runCli(['atris.md']);
     assert.equal(boot.status, 0, boot.stderr || boot.stdout);
-    const taskLine = boot.stdout.split(/\r?\n/).find((line) => line.includes('Tasks:')) || '';
-    const reviewLine = boot.stdout.split(/\r?\n/).find((line) => line.includes('Review:')) || '';
-    const taskNumbers = (taskLine.match(/\d+/g) || []).map(Number);
-    const reviewNumbers = (reviewLine.match(/\d+/g) || []).map(Number);
-    assert.deepEqual(taskNumbers.slice(0, 2), [2, 1]);
-    assert.deepEqual(reviewNumbers.slice(0, 2), [1, 1]);
+    const out = boot.stdout;
+
+    // The boot panel speaks in operator voice (plain phrases, not "Tasks: N open").
+    // It must still reflect the real lane counts from task state: 2 backlog,
+    // 1 active, 1 in review, 1 of those certified and waiting for a human ok.
+    const numberBefore = (phrase) => {
+      const match = out.match(new RegExp(`(\\d+)\\s+${phrase}`));
+      return match ? Number(match[1]) : null;
+    };
+    assert.equal(numberBefore('done, waiting for your ok'), 1, `certified review count in boot:\n${out}`);
+    assert.equal(numberBefore('waiting to start'), 2, `backlog count in boot:\n${out}`);
+    assert.equal(numberBefore('getting a final look'), 1, `review count in boot:\n${out}`);
+
+    // The single active task is surfaced by name (not rolled into "N more moving").
+    assert.ok(/\bnow\b/.test(out), `active lane row missing from boot:\n${out}`);
+    assert.ok(out.includes('claim the active count'), `active task title missing from boot:\n${out}`);
   },
 };
