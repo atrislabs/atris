@@ -179,6 +179,29 @@ function runVerify(root, verifyCmd, timeoutMs = 1800000) {
   return { passed: r.status === 0, cmd: verifyCmd, status: r.status };
 }
 
+function refreshOrbPolicyLessons(root, ingestion, now = new Date()) {
+  if (!ingestion || ingestion.historical_failures < 1) return null;
+  const {
+    loadHistory,
+    mineProofPolicy,
+    writePolicyLessons,
+    syncLessonsMd,
+  } = require('../lib/policy-lessons');
+  const mined = mineProofPolicy(loadHistory(root), {
+    now,
+    orbWindowDays: ingestion.summary && ingestion.summary.days,
+  });
+  const statePath = writePolicyLessons(root, mined);
+  const lessonsMd = syncLessonsMd(root, mined);
+  const orbLesson = mined.lessons.find((lesson) => lesson.id === 'orb-job-failures') || null;
+  return {
+    status: orbLesson ? orbLesson.status : null,
+    state_path: statePath,
+    lessons_md_path: lessonsMd.path,
+    lessons_md_written: lessonsMd.written,
+  };
+}
+
 // --- atris pulse tick ---
 
 function tickCommand(args, root = process.cwd()) {
@@ -200,6 +223,20 @@ function tickCommand(args, root = process.cwd()) {
   }
 
   const tickIndex = pulse.nextTickIndex(root);
+  let orbIngestion = {
+    summary: null,
+    improvement_candidates: [],
+    scorecards_written: 0,
+    historical_failures: 0,
+  };
+  let orbPolicy = null;
+  let orbIngestError = null;
+  try {
+    orbIngestion = pulse.ingestOrbScorecard(root);
+    orbPolicy = refreshOrbPolicyLessons(root, orbIngestion);
+  } catch (error) {
+    orbIngestError = String(error && error.message ? error.message : error);
+  }
   const signalExitCode = { SIGINT: 130, SIGTERM: 143 };
   let interrupted = false;
   const finishInterrupted = (signal) => {
@@ -226,6 +263,9 @@ function tickCommand(args, root = process.cwd()) {
     tickIndex,
     phase: 'started',
     prevTickStale: priorStale.stale,
+    orbScorecard: orbIngestion.summary,
+    improvementCandidates: orbIngestion.improvement_candidates,
+    orbIngestError,
   }));
 
   let engine;
@@ -281,6 +321,9 @@ function tickCommand(args, root = process.cwd()) {
       elapsedMs,
       prevTickStale: priorStale.stale,
       reward,
+      orbScorecard: orbIngestion.summary,
+      improvementCandidates: orbIngestion.improvement_candidates,
+      orbIngestError,
     });
     pulse.appendPulseReceipt(root, receipt);
 
@@ -294,6 +337,8 @@ function tickCommand(args, root = process.cwd()) {
         changedFiles,
         elapsedMs,
         model: process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || DEFAULT_CLAUDE_RUNNER_MODEL,
+        orbScorecard: orbIngestion.summary,
+        improvementCandidates: orbIngestion.improvement_candidates,
       }));
       scorecardWritten = true;
     }
@@ -332,12 +377,20 @@ function tickCommand(args, root = process.cwd()) {
       prev_tick_stale: priorStale.stale,
       elapsed_ms: elapsedMs,
       receipts_path: pulse.pulseReceiptsPath(root),
+      orb_scorecard: orbIngestion.summary,
+      orb_improvement_candidates: orbIngestion.improvement_candidates,
+      orb_scorecards_written: orbIngestion.scorecards_written,
+      orb_policy_lesson: orbPolicy,
     };
+    if (orbIngestError) out.orb_ingest_error = orbIngestError;
     if (closure) out.closure = closure;
     if (!asJson) {
       const ghost = priorStale.stale ? ` (recovered ghost tick #${priorStale.tick_index || '?'})` : '';
       const r = reward > 0 ? `+${reward}` : String(reward);
       process.stdout.write(`pulse tick #${tickIndex}: ${what} - verify ${verify.passed === null ? 'n/a' : verify.passed ? 'pass' : 'FAIL'} - reward ${r}${ghost}\n`);
+      if (orbIngestion.summary && orbIngestion.summary.fail > 0) {
+        process.stdout.write(`orb: ${orbIngestion.summary.fail} failed job${orbIngestion.summary.fail === 1 ? '' : 's'} in the ${orbIngestion.summary.days}-day window; ${orbIngestion.scorecards_written} new improvement candidate${orbIngestion.scorecards_written === 1 ? '' : 's'} recorded.\n`);
+      }
       if (closure && closure.overdue > 0) {
         process.stdout.write(`closure: ${closure.overdue} open loop${closure.overdue === 1 ? '' : 's'} overdue, run: atris close sweep\n`);
       }
@@ -354,8 +407,21 @@ function tickCommand(args, root = process.cwd()) {
       what: `tick crashed: ${err && err.message ? err.message : String(err)}`,
       elapsedMs: Date.now() - startedAt,
       reward: -1,
+      orbScorecard: orbIngestion.summary,
+      improvementCandidates: orbIngestion.improvement_candidates,
+      orbIngestError,
     }));
-    const out = { ok: false, action: 'pulse_tick', tick_index: tickIndex, error: err && err.message ? err.message : String(err) };
+    const out = {
+      ok: false,
+      action: 'pulse_tick',
+      tick_index: tickIndex,
+      error: err && err.message ? err.message : String(err),
+      orb_scorecard: orbIngestion.summary,
+      orb_improvement_candidates: orbIngestion.improvement_candidates,
+      orb_scorecards_written: orbIngestion.scorecards_written,
+      orb_policy_lesson: orbPolicy,
+    };
+    if (orbIngestError) out.orb_ingest_error = orbIngestError;
     if (!asJson) process.stdout.write(`pulse tick #${tickIndex} crashed: ${out.error}\n`);
     return emit(out, asJson);
   } finally {
@@ -643,5 +709,6 @@ module.exports = {
   runEngine,
   gitChangedFiles,
   runVerify,
+  refreshOrbPolicyLessons,
   stripMarkedCrontabLines,
 };
