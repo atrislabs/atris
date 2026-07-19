@@ -20,6 +20,7 @@ const {
 const { extractReceiptEvidence, RECEIPT_PATH_PATTERN } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const reviewIntegrity = require('../lib/review-integrity');
+const { gateForHuman } = require('../lib/voice-gate');
 const {
   normalizeOwnerSlug,
   resolveFunctionalOwner: resolveFunctionalTaskOwner,
@@ -5398,6 +5399,24 @@ function taskReviewGroups(projection, key) {
   };
 }
 
+function taskReviewLandingLines(item) {
+  if (!item?.landing) return [];
+  const fields = [
+    ['What happened', item.landing.happened],
+    ['Why it matters', item.landing.reason],
+    ['How I checked', item.landing.checked],
+    ['What I tested', item.landing.tested],
+    ['Decision', item.landing.decision],
+  ];
+  return fields
+    .filter(([, value]) => value)
+    .map(([label, value]) => {
+      const prose = gateForHuman(value, { title: item.title }).text;
+      return prose ? `     ${label}: ${prose}` : '';
+    })
+    .filter(Boolean);
+}
+
 function cmdReviews(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -5433,11 +5452,11 @@ function cmdReviews(args) {
       });
       return;
     }
-    console.log(`ready for approval - grouped by ${key}`);
+    console.log(gateForHuman(`ready for approval - grouped by ${key}`).text);
     if (autoAcceptRollup.count > 0) {
-      console.log(`${autoAcceptRollup.count} reviews auto-accepted since your last look`);
+      console.log(gateForHuman(`${autoAcceptRollup.count} reviews auto-accepted since your last look`).text);
     }
-    console.log(`${groups.total_certified} ready for approval across ${groups.group_count} ${key} group(s)`);
+    console.log(gateForHuman(`${groups.total_certified} ready for approval across ${groups.group_count} ${key} group(s)`).text);
     const visibleGroups = groups.groups.slice(0, reviewGroupTextLimit(args, groups.groups.length));
     visibleGroups.forEach((g, index) => {
       console.log('');
@@ -5468,11 +5487,11 @@ function cmdReviews(args) {
     });
     return;
   }
-  console.log('ready for approval');
+  console.log(gateForHuman('ready for approval').text);
   if (autoAcceptRollup.count > 0) {
-    console.log(`${autoAcceptRollup.count} reviews auto-accepted since your last look`);
+    console.log(gateForHuman(`${autoAcceptRollup.count} reviews auto-accepted since your last look`).text);
   }
-  console.log(`${queue.counts.certified} ready for approval / ${queue.counts.blocking} need one more check / ${queue.counts.review} total waiting`);
+  console.log(gateForHuman(`${queue.counts.certified} ready for approval / ${queue.counts.blocking} need one more check / ${queue.counts.review} total waiting`).text);
   const approvalItems = queue.items.filter(item => item.queue_role !== 'blocked');
   const blockedItems = queue.items.filter(item => item.queue_role === 'blocked');
   if (!approvalItems.length && !blockedItems.length) {
@@ -5489,12 +5508,8 @@ function cmdReviews(args) {
     console.log(`${index + 1}. ${item.display_id || taskRef(item.id)}${tag}${passes}: ${item.title}${badge}`);
     if (item.landing) {
       console.log('   Result:');
-      if (item.landing.happened) console.log(`     What happened: ${item.landing.happened}`);
-      if (item.landing.reason) console.log(`     Why it matters: ${item.landing.reason}`);
-      if (item.landing.checked) console.log(`     How I checked: ${item.landing.checked}`);
-      if (item.landing.tested) console.log(`     What I tested: ${item.landing.tested}`);
+      taskReviewLandingLines(item).forEach(line => console.log(line));
       if (item.result?.saved) console.log(`     Saved: ${item.result.saved}`);
-      if (item.landing.decision) console.log(`     Decision: ${item.landing.decision}`);
     }
     if (verbose && item.proof) console.log(`   details: ${item.proof}`);
     if (verbose && item.evidence) {
@@ -12201,4 +12216,13 @@ async function run(args) {
   return result;
 }
 
-module.exports = { run, taskDayGroups, taskDayTextGroups, taskDayTitle, delegateTask, AGENT_ENV_MARKERS, autoRenderTodoFromDb };
+module.exports = {
+  run,
+  taskDayGroups,
+  taskDayTextGroups,
+  taskDayTitle,
+  taskReviewLandingLines,
+  delegateTask,
+  AGENT_ENV_MARKERS,
+  autoRenderTodoFromDb,
+};
