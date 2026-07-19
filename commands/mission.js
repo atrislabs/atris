@@ -826,6 +826,7 @@ function statePaths(root = process.cwd()) {
     atrisGoalJson: path.join(stateDir, 'atris_goal.json'),
     atrisGoalStatus: path.join(root, 'atris', 'status', 'atris-goal.md'),
     statusNow: path.join(root, 'atris', 'status', 'now.md'),
+    statusForYou: path.join(root, 'atris', 'status', 'for-you.md'),
     runsDir: path.join(root, 'atris', 'runs'),
   };
 }
@@ -5962,8 +5963,6 @@ const MISSION_RUN_DEFAULTS = {
   maxWallSeconds: 3600,
   claudeTimeoutMs: 10 * 60 * 1000,
   backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
-  // BCK-1324: consecutive no-progress ticks before an honest early stop.
-  maxIdleTicks: 3,
 };
 
 // Claude sessions accumulate context across resumed ticks; an always-on
@@ -7325,6 +7324,81 @@ function consecutiveNoProgressTicks(ticks) {
   return n;
 }
 
+function missionJudgmentPlainText(value) {
+  return String(value || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\bmission-\d{4}-\d{2}-\d{2}-[a-z0-9-]+\b/gi, ' ')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, ' ')
+    .replace(/\b[0-9A-HJKMNP-TV-Z]{26}\b/gi, ' ')
+    .replace(/\b[0-9a-f]{12,40}\b/gi, ' ')
+    .replace(/\b[A-Z][A-Z0-9]{1,9}-\d+\b/g, ' ')
+    .replace(/[—–]/g, ' ')
+    .replace(/[*_~#>]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s:;,.-]+|[\s:;,.-]+$/g, '')
+    .trim();
+}
+
+function missionJudgmentTopic(mission) {
+  const plain = (missionJudgmentPlainText(mission?.objective) || 'this work')
+    .replace(/[".!?]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return plain.split(/\s+/).filter(Boolean).slice(0, 14).join(' ');
+}
+
+function missionJudgmentTitle(mission) {
+  const words = missionJudgmentTopic(mission).split(/\s+/).filter(Boolean).slice(0, 8);
+  const title = words.join(' ') || 'Mission needs a new direction';
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}
+
+function missionJudgmentCard(mission, ticks = [], receiptPath = '') {
+  const topic = missionJudgmentTopic(mission);
+  const recentContext = ticks
+    .slice(-2)
+    .map((tick) => missionJudgmentPlainText(tickWorkerSummary(tick)))
+    .filter(Boolean)
+    .join(' ');
+  const needsDecision = /\b(?:approval|answer|clarif|decision|input|waiting|wait for|need(?:ed|s)? someone|human)\b/i.test(recentContext);
+  const stuck = needsDecision
+    ? `The last two attempts still needed a decision or new input before "${topic}" could continue.`
+    : `The last two attempts on "${topic}" produced no change and passed no check, so the mission could not continue safely.`;
+  const recommend = needsDecision
+    ? 'Talk through the missing decision, then restart with one concrete next step.'
+    : 'Park this mission and restart only with new context or one concrete next step.';
+  const trace = [
+    mission?.id ? `mission: ${mission.id}` : '',
+    receiptPath ? `receipt: ${receiptPath}` : '',
+  ].filter(Boolean).join('; ');
+  return [
+    `## ${missionJudgmentTitle(mission)}`,
+    `- stuck: ${stuck}`,
+    `- recommend: ${recommend}`,
+    '- reply: go / park / talk',
+    ...(trace ? [`<small>${trace}</small>`] : []),
+  ].join('\n');
+}
+
+function appendMissionJudgmentCard(mission, ticks = [], root = process.cwd(), receiptPath = '') {
+  const file = statePaths(root).statusForYou;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  let prefix = '';
+  if (!existing.trim()) {
+    fs.writeFileSync(file, '# For you\n\n', 'utf8');
+  } else if (!/^# For you\s*$/m.test(existing)) {
+    prefix = `${existing.endsWith('\n') ? '\n' : '\n\n'}# For you\n\n`;
+  } else if (!existing.endsWith('\n\n')) {
+    prefix = existing.endsWith('\n') ? '\n' : '\n\n';
+  }
+  fs.appendFileSync(file, `${prefix}${missionJudgmentCard(mission, ticks, receiptPath)}\n\n`, 'utf8');
+  return file;
+}
+
 function tickWorkerSummary(tick) {
   return String(
     tick?.summary
@@ -8226,12 +8300,6 @@ async function runMission(args) {
   const budgetTier = readMissionBudgetTier(args, { json: asJson });
   const maxTicksFlag = readFlag(args, '--max-ticks', '');
   let maxTicks = Math.max(1, Number(maxTicksFlag) || (budgetTier ? budgetTier.max_ticks : MISSION_RUN_DEFAULTS.maxTicks));
-  // BCK-1324: a tick that "ran" but left no structural trace (no new/cleared
-  // dirty files, no verifier pass) is a no-op wearing a success label — the
-  // live 6h run e7b93c4d burned 15 consecutive ticks stuck at
-  // new_since_baseline_count=4 with reason=tick-ok every time. Stop honestly
-  // instead of grinding the tick budget. 0 disables the guard.
-  const maxIdleTicks = readNonNegativeIntegerFlag(args, '--max-idle-ticks', MISSION_RUN_DEFAULTS.maxIdleTicks);
   const maxWallFlag = readFlag(args, '--max-wall', '');
   const explicitMaxWallSeconds = Number.isFinite(Number(maxWallFlag)) && Number(maxWallFlag) > 0
     ? Number(maxWallFlag)
@@ -8836,14 +8904,14 @@ async function runMission(args) {
 
       if (callerSessionRunner && result.status === 'ran') break;
       if (newStatus === 'complete' || (newStatus === 'ready' && !mission.always_on && !fullBudgetMode)) break;
+      // BCK-1324: two consecutive ticks that each self-report "ran" but leave no
+      // structural trace is a manufactured-busywork loop, not progress. Stop
+      // honestly (clean stop, not a pause/blocker) rather than burn the rest
+      // of the tick budget on heartbeats.
+      if (consecutiveNoProgressTicks(ticks) >= 2) { pauseReason = 'no-progress'; break; }
       if (consecutiveVerifierFails(ticks) >= 2) { pauseReason = 'consecutive-verifier-fails'; break; }
       if (result.status === 'errored' && result.reason === 'too-deep') { pauseReason = 'too-deep'; break; }
       if (consecutiveIdenticalSummaryTicks(ticks) >= 3) { pauseReason = 'stuck-repeating'; break; }
-      // BCK-1324: N consecutive ticks that each self-report "ran" but leave no
-      // structural trace is a manufactured-busywork loop, not progress. Stop
-      // honestly (clean stop, not a pause/blocker) rather than burn the rest
-      // of the tick budget. --max-idle-ticks 0 disables this guard.
-      if (maxIdleTicks > 0 && consecutiveNoProgressTicks(ticks) >= maxIdleTicks) { pauseReason = 'no-progress'; break; }
       // A retired/inaccessible model is deterministic: the id is fixed for the run, so
       // every remaining tick (and every future cron firing) fails identically. Backoff
       // only slows the bleeding. Stop on first detection and surface the dead id —
@@ -8910,6 +8978,7 @@ async function runMission(args) {
         idle_ticks: idleCount,
         receipt_path: noProgressReceipt,
       }).mission;
+      appendMissionJudgmentCard(mission, ticks, cwd, noProgressReceipt);
       clearDirectRunCodexGoalRequestForMission(mission.id, cwd);
       appendMemberLog(mission.owner, 'Mission stopped: no progress', { mission: mission.objective, reason: noProgressReason });
     } else if (pauseReason && !['complete', 'ready', 'max-wall-reached'].includes(pauseReason)) {
@@ -10253,4 +10322,6 @@ module.exports = {
   tickMadeProgress,
   consecutiveNoProgressTicks,
   consecutiveIdenticalSummaryTicks,
+  missionJudgmentCard,
+  appendMissionJudgmentCard,
 };
