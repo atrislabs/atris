@@ -4205,15 +4205,16 @@ test('allowed rate-limit info with a future resetsAt does not pause a timed run'
     assert.equal(start.status, 0, start.stderr || start.stdout);
     const mission = JSON.parse(start.stdout).mission;
 
-    const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--max-idle-ticks', '0', '--no-verify', '--json'], { cwd: dir, env });
+    const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--no-verify', '--json'], { cwd: dir, env });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
-    // The budgeted run should spend its 4-tick budget; a rate-limit pause after
-    // one tick means the allowed-status window info was mistaken for a cooldown.
+    // The allowed-status window must never become a rate-limit pause. This
+    // fixture repeats the same result, so the independent repeated-summary
+    // breaker stops it after three attempts.
     assert.notEqual(payload.pause_reason, 'rate-limit-exceeded-wall');
-    assert.equal(payload.tick_count, 4);
-    assert.equal(payload.ran_ticks, 4);
-    assert.equal(payload.pause_reason, null);
+    assert.equal(payload.tick_count, 3);
+    assert.equal(payload.ran_ticks, 3);
+    assert.equal(payload.pause_reason, 'stuck-repeating');
   } finally {
     cleanupTempDir(dir);
   }
