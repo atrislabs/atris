@@ -1052,7 +1052,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 **Purpose:** The durable overnight self-improvement heartbeat for atris-cli itself. Unlike `/loop` (Claude Code CronCreate — dies when Claude Code closes) this installs an OS cron that fires regardless, runs the existing mission engine, verifies, and writes a pulse receipt + reward scorecard so the loop compounds without a human turning the crank.
 
 - **Pure core:** `lib/pulse.js` — receipts (`buildPulseReceipt`, `buildInterruptedPulseReceipt`), reward gating (`scoreTick`, `shouldWriteScorecard`), ghost/stale detection (`findOrphanStarts`, `detectStaleTick`), summary (`summarizePulse`), cron cadence normalization (`normalizeCronCadence`: `13m` -> `*/13 * * * *`), cron-script generation (`buildTickScript`, `buildCrontabLine`), IO (`appendPulseReceipt`, `nextTickIndex`, `acquireLock`)
-- **Command:** `commands/pulse.js` (`pulseCommand`) — subcommands `tick|status|install|uninstall|run`; `crontabHasActiveMarker()` makes status and improve vitals ignore commented/disabled marker history instead of falsely reporting the heartbeat installed
+- **Command:** `commands/pulse.js` (`pulseCommand`): subcommands `tick|status|install|uninstall|run`; `crontabHasActiveMarker()` makes status and improve vitals ignore commented/disabled marker history instead of falsely reporting the heartbeat installed; status surfaces `.atris/state/pulse-expired.json` only while cron is absent, and install clears that breadcrumb after a successful renewal
 - `atris improve` labels pulse age and install state as the scheduled improve heartbeat/loop, so direct mission work is not mistaken for idle metabolism. Regression: `test/improve-vitals.test.js`.
   - `tickCommand` — lock → 'started' receipt → `runMissionEngine` (`atris mission run --due --max-ticks 1 --complete-on-pass`) → `runVerify` → 'finished' receipt + gated scorecard → release lock
   - `statusCommand` — liveness, reward sum, ghost-tick detection, cron-installed check
@@ -1060,6 +1060,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Channels written:**
   - `.atris/state/pulse_agi_loop_receipts.jsonl` (schema `atris.pulse_tick.v1`) — revives the **Pulse AGI** loop-health channel `commands/brain.js:43` watches
   - `.atris/state/scorecards.jsonl` (schema `atris.improve_tick.v1`, `source:'pulse'`) — revives the reward signal `lib/policy-lessons.js` mines
+  - `atris/logs/YYYY/YYYY-MM-DD.md` + `.atris/state/pulse-expired.json`: append-only expiry alerts that preserve the dead-man switch while making renewal visible to humans and status surfaces
 - **Routing:** `bin/atris.js` (`command === 'pulse'` dispatch) + `knownCommands` array + `showHelp`
 - **Tests:** `test/pulse.test.js` (29 tests — scoring, ghost detection, lock, cron-script generation)
 - **Cron template lineage:** modeled on the proven `~/.atris/overnight/commander-obelisk-swarlo/tick.sh` (deadline self-removal + lock + run + proof), but all real logic lives in JS (`atris pulse tick`), not duplicated shell
