@@ -50,6 +50,7 @@ const {
   formatBytes,
 } = require('../lib/runs-prune');
 const autolandLib = require('../lib/autoland');
+const { gateForHuman } = require('../lib/voice-gate');
 const { operatorReady, hasAgentJargon } = require('./autoland');
 const {
   MISSION_INSPECT_FIELDS,
@@ -2187,9 +2188,11 @@ function missionBudgetContinuationText(mission, nowMs = Date.now()) {
 }
 
 function missionHumanStatusText(mission, nowMs = Date.now()) {
-  if (!missionBudgetContinuationText(mission, nowMs)) return String(mission?.status || 'unknown');
-  const budget = String(mission?.budget_contract?.budget_label || 'promised time').trim();
-  return `working for the full ${budget}`;
+  const continuation = missionBudgetContinuationText(mission, nowMs);
+  const status = continuation
+    ? `working for the full ${String(mission?.budget_contract?.budget_label || 'promised time').trim()}`
+    : String(mission?.status || 'unknown');
+  return gateForHuman(status).text;
 }
 
 function missionGoalChainIntent(text) {
@@ -10342,6 +10345,7 @@ module.exports = {
   engineVerifierResultFromRun,
   missionFullBudgetRemainingSeconds,
   missionBudgetContinuationText,
+  missionHumanStatusText,
   resolveMissionRunnerSelection,
   resolveMissionTickRunner,
   engineFailureHealthStatus,
