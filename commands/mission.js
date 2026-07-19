@@ -7383,6 +7383,18 @@ function missionJudgmentCard(mission, ticks = [], receiptPath = '') {
   ].join('\n');
 }
 
+function missionShippedCard({ title, shipped, proof } = {}) {
+  const plainTitle = missionJudgmentPlainText(title) || '<plain title>';
+  const plainShipped = missionJudgmentPlainText(shipped) || '<one sentence>';
+  const plainProof = missionJudgmentPlainText(proof) || '<command + exit code>';
+  return [
+    `## ${plainTitle}`,
+    `- shipped: ${plainShipped}`,
+    `- proof: ${plainProof}`,
+    '- reply: keep / revert',
+  ].join('\n');
+}
+
 function appendMissionJudgmentCard(mission, ticks = [], root = process.cwd(), receiptPath = '') {
   const file = statePaths(root).statusForYou;
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -7707,10 +7719,25 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
     `- Pick the smallest concrete action that moves the mission forward.`,
     `- Before acting, state your single next move in one sentence.`,
     `- Edit / run / research as needed for the lane.`,
-    `- The tick is not done until the verify step passes. If a frozen verifier exists, the harness runs it. If no frozen verifier exists, finish by actually running the surface you changed on this computer and paste the real command output into your receipt.`,
+    `- The tick is not done until the verify step passes. If a frozen verifier exists, the harness runs it, but that does not replace the real-surface proof below. If no frozen verifier exists, finish by actually running the surface you changed on this computer and paste the real command output into your receipt.`,
     `- After that one verify step, STOP. Never start a second slice in one tick.`,
     `- Write the tick summary in operator language: what changed and what it buys or costs in plain words, with no flags, task ids, or code identifiers.`,
-    `- If you can't make progress this tick, say why explicitly. Don't fake it.`,
+    ``,
+    `## No claimable work? Work the backstop ladder`,
+    `If the mission and task state offer no claimable work, inspect these rungs in order. Pick the FIRST rung with real fuel and do ONE bounded slice:`,
+    `1. A failing or flaky test in this repo: fix it.`,
+    `2. One stale or unproven feature in atris/features/ in this repo, if present: prove or repair one slice.`,
+    `3. One unblocked item from the atris/TODO.md backlog.`,
+    `4. Debloat: remove dead code or docs, with grep proof that nothing references what you remove.`,
+    `If every rung is dry, report what you checked and why no safe slice exists. Do not hold or invent progress.`,
+    ``,
+    `## Proof rule`,
+    `Verification must be a real invocation of the changed surface. Run the actual CLI command or endpoint and paste the command, an output excerpt, and its exit code. Self-description such as "it works now" is never proof. If you changed a CLI behavior, run that CLI command for real and show its output.`,
+    ``,
+    `## Landing rule`,
+    `Safe-lane work (internal code, tests, docs, and proofs) must be committed and pushed or landed WITHOUT asking a human. Protected lanes (external sends, payments, credentials, auth/CSP/iframe/sandbox surfaces, and deletes of user data) are never self-landed: file a decision card instead.`,
+    `After landing a ladder-sourced slice, append a judge card to atris/status/for-you.md in this SHIPPED format:`,
+    missionShippedCard(),
     ``,
     `## Constraints`,
     `- Lane = ${frozen.lane}: stay inside that lane.`,
@@ -10323,5 +10350,6 @@ module.exports = {
   consecutiveNoProgressTicks,
   consecutiveIdenticalSummaryTicks,
   missionJudgmentCard,
+  missionShippedCard,
   appendMissionJudgmentCard,
 };
