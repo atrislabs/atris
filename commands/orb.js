@@ -173,6 +173,7 @@ async function runOrb(args = []) {
       } catch {}
     }
     const record = {
+      status: job.status,
       ts: new Date().toISOString(),
       label: job.label,
       kind: job.kind,
@@ -220,11 +221,25 @@ async function runOrb(args = []) {
       fs.closeSync(logFd);
     }
 
+    const startedAt = new Date().toISOString();
+    const relativeLogPath = path.relative(root, logPath);
+    if (Number.isInteger(child.pid) && child.pid > 0) {
+      fs.appendFileSync(indexPath, `${JSON.stringify({
+        status: 'dispatched',
+        ts: startedAt,
+        label,
+        kind: choice.kind || 'freeform',
+        engine,
+        logPath: relativeLogPath,
+        pid: child.pid,
+      })}\n`, 'utf8');
+    }
+
     const job = {
       label,
       kind: choice.kind || 'freeform',
       engine,
-      startedAt: new Date().toISOString(),
+      startedAt,
       startedAtMs: Date.now(),
       logPath,
       child,

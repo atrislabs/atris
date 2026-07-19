@@ -75,7 +75,7 @@ test('orb --once prints deterministic suggestions without spawning an engine', (
   }
 });
 
-test('orb scorecard reads picks and finished jobs for a deterministic window', () => {
+test('orb scorecard keeps legacy terminal records unchanged for a deterministic window', () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-orb-scorecard-'));
   const now = Date.parse('2026-07-18T12:00:00.000Z');
   try {
@@ -106,6 +106,7 @@ test('orb scorecard reads picks and finished jobs for a deterministic window', (
     assert.deepEqual(scorecard.dispatches_by_engine, { claude: 2, codex: 1 });
     assert.equal(scorecard.ok, 2);
     assert.equal(scorecard.fail, 1);
+    assert.equal(scorecard.orphaned, 0);
     assert.equal(scorecard.completion_rate, 2 / 3);
     assert.equal(scorecard.median_duration_ms, 2000);
     assert.deepEqual(scorecard.failures.map((row) => row.label), ['repair the worker']);
@@ -116,11 +117,83 @@ test('orb scorecard reads picks and finished jobs for a deterministic window', (
       'by kind: freeform 1, review 2',
       'by engine: claude 2, codex 1',
       'outcomes: 2 ok, 1 fail',
+      'orphaned: 0',
       'completion rate: 66.7%',
       'median duration: 2000 ms',
     ].join('\n'));
     assert.equal(fs.readFileSync(indexPath, 'utf8'), beforeIndex, 'scorecard leaves the run index unchanged');
     assert.equal(fs.readFileSync(nowPath, 'utf8'), beforeNow, 'scorecard leaves now.md unchanged');
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test('orb scorecard pairs dispatched and terminal records by log path', () => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-orb-paired-'));
+  const now = Date.parse('2026-07-18T12:00:00.000Z');
+  try {
+    writeJsonl(path.join(fixture, '.atris', 'state', 'orb-runs', 'index.jsonl'), [
+      { status: 'dispatched', ts: '2026-07-18T10:00:00.000Z', label: 'paired job', kind: 'task', engine: 'codex', logPath: 'paired.log', pid: 999999999 },
+      { status: 'ready', ts: '2026-07-18T10:00:01.000Z', label: 'paired job', kind: 'task', engine: 'codex', exitCode: 0, durationMs: 1000, logPath: 'paired.log', error: null },
+      { status: 'dispatched', ts: '2026-07-18T10:01:00.000Z', label: 'paired legacy job', kind: 'review', engine: 'claude', logPath: 'paired-legacy.log', pid: 999999999 },
+      { ts: '2026-07-18T10:01:01.000Z', label: 'paired legacy job', kind: 'review', engine: 'claude', exitCode: 1, durationMs: 2000, logPath: 'paired-legacy.log', error: null },
+    ]);
+
+    const scorecard = readOrbScorecard(fixture, { days: 7, now });
+    assert.equal(scorecard.dispatches, 2);
+    assert.deepEqual(scorecard.dispatches_by_kind, { review: 1, task: 1 });
+    assert.equal(scorecard.ok, 1);
+    assert.equal(scorecard.fail, 1);
+    assert.equal(scorecard.orphaned, 0);
+    assert.equal(scorecard.median_duration_ms, 1500);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test('orb scorecard counts a dead unmatched dispatch as orphaned and pulse ingests it once', () => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-orb-orphaned-'));
+  const now = Date.parse('2026-07-18T12:00:00.000Z');
+  try {
+    writeJsonl(path.join(fixture, '.atris', 'state', 'orb-runs', 'index.jsonl'), [
+      { status: 'dispatched', ts: '2026-07-18T10:00:00.000Z', label: 'lost job', kind: 'freeform', engine: 'claude', logPath: 'lost.log', pid: 999999999 },
+    ]);
+
+    const scorecard = readOrbScorecard(fixture, { days: 7, now });
+    assert.equal(scorecard.dispatches, 1);
+    assert.equal(scorecard.ok, 0);
+    assert.equal(scorecard.fail, 1);
+    assert.equal(scorecard.orphaned, 1);
+    assert.equal(scorecard.completion_rate, 0);
+    assert.deepEqual(scorecard.orphans.map((row) => row.label), ['lost job']);
+    assert.match(renderOrbScorecard(scorecard), /^orphaned: 1$/m);
+
+    const first = pulse.ingestOrbScorecard(fixture, { days: 7, now });
+    const second = pulse.ingestOrbScorecard(fixture, { days: 7, now });
+    assert.equal(first.scorecards_written, 1);
+    assert.equal(second.scorecards_written, 0);
+    assert.match(first.improvement_candidates[0].next_task, /investigate orphaned orb job "lost job"/);
+    assert.equal(first.written[0].mode, 'orb_orphan');
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test('orb scorecard leaves a live unmatched dispatch out of orphan outcomes', () => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-orb-live-'));
+  const now = Date.parse('2026-07-18T12:00:00.000Z');
+  try {
+    writeJsonl(path.join(fixture, '.atris', 'state', 'orb-runs', 'index.jsonl'), [
+      { status: 'dispatched', ts: '2026-07-18T10:00:00.000Z', label: 'live job', kind: 'review', engine: 'codex', logPath: 'live.log', pid: process.pid },
+    ]);
+
+    const scorecard = readOrbScorecard(fixture, { days: 7, now });
+    assert.equal(scorecard.dispatches, 1);
+    assert.equal(scorecard.ok, 0);
+    assert.equal(scorecard.fail, 0);
+    assert.equal(scorecard.orphaned, 0);
+    assert.equal(scorecard.completion_rate, null);
+    assert.deepEqual(scorecard.orphans, []);
   } finally {
     fs.rmSync(fixture, { recursive: true, force: true });
   }
