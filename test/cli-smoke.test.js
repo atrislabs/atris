@@ -104,17 +104,17 @@ test('log writes numbered inbox items (I#)', () => {
   }
 });
 
-test('activate prints core file paths', () => {
+test('activate narrates the current workspace', () => {
   const dir = makeTempDir();
   try {
     runCli(['init'], { cwd: dir, input: '\n' });
 
     const res = runCli(['activate'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris Activate: context loaded/);
-    assert.match(res.stdout, /atris[\\/]+TODO\.md/);
-    assert.match(res.stdout, /atris[\\/]+wiki[\\/]+STATUS\.md/);
-    assert.match(res.stdout, /Wiki:/);
+    assert.match(res.stdout, /^atris is up\./);
+    assert.match(res.stdout, /^right now: /m);
+    assert.match(res.stdout, /^waiting on you: \w+ approvals?\. see them: atris task reviews$/m);
+    assert.doesNotMatch(res.stdout, /[\u2500-\u257f]/u);
   } finally {
     cleanupTempDir(dir);
   }

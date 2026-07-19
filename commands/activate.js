@@ -3,6 +3,12 @@ const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
 const { readWikiStatus } = require('../lib/wiki');
+const { gateForHuman } = require('../lib/voice-gate');
+
+const SMALL_NUMBER_WORDS = [
+  'zero', 'one', 'two', 'three', 'four', 'five', 'six',
+  'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
+];
 
 const CLARITY_FIELDS = [
   { key: 'focus', label: 'Focus' },
@@ -51,6 +57,68 @@ function formatClarityLine(profile, mdRelPath) {
     .filter(Boolean);
   if (!parts.length) return null;
   return `clarity: ${parts.join(', ')} (see ${mdRelPath})`;
+}
+
+function countWord(value) {
+  const count = Math.max(0, Math.trunc(Number(value) || 0));
+  return SMALL_NUMBER_WORDS[count] || String(count);
+}
+
+function sentenceFragment(value) {
+  return String(value || '')
+    .replace(/[`*_#>]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.!?]+$/, '');
+}
+
+function humanSentence(value) {
+  return gateForHuman(value).text.toLowerCase();
+}
+
+function completionSentence(completions) {
+  if (!Array.isArray(completions) || !completions.length) return null;
+  const count = completions.length;
+  const biggest = sentenceFragment(completions[0]?.desc);
+  if (!biggest) return null;
+  const landed = count === 1 ? 'one thing landed' : `${countWord(count)} things landed`;
+  return humanSentence(`since last time: ${landed}; the biggest: ${biggest}.`);
+}
+
+function activeWorkSentence(state, context) {
+  const tasks = Array.isArray(context?.inProgressTasks) ? context.inProgressTasks : [];
+  if (tasks.length) {
+    const count = tasks.length;
+    const focus = sentenceFragment(tasks[0]);
+    const subject = count === 1 ? 'task is' : 'tasks are';
+    return humanSentence(`right now: ${countWord(count)} ${subject} in progress; the focus is ${focus}.`);
+  }
+
+  const features = Array.isArray(context?.inProgressFeatures) ? context.inProgressFeatures : [];
+  const featureCount = Number(context?.inProgressFeaturesCount) || features.length;
+  if (featureCount > 0 && features.length) {
+    const focus = sentenceFragment(features[0]).replace(/[-_]+/g, ' ');
+    const subject = featureCount === 1 ? 'feature is' : 'features are';
+    return humanSentence(`right now: ${countWord(featureCount)} ${subject} in progress; the focus is ${focus}.`);
+  }
+
+  const inboxCount = Number(context?.inboxCount) || 0;
+  const inboxItem = sentenceFragment(context?.inboxItems?.[0]);
+  if (inboxCount > 0 && inboxItem) {
+    const subject = inboxCount === 1 ? 'inbox item is' : 'inbox items are';
+    return humanSentence(`right now: ${countWord(inboxCount)} ${subject} waiting; first: ${inboxItem}.`);
+  }
+
+  if (state?.state === 'blocked' && state.reason) {
+    return humanSentence(`right now: work is blocked by ${sentenceFragment(state.reason)}.`);
+  }
+  if (state?.state === 'ready') {
+    return humanSentence('right now: no active work is in progress.');
+  }
+  if (state?.state) {
+    return humanSentence(`right now: the workspace is ${sentenceFragment(state.state)}.`);
+  }
+  return null;
 }
 
 function activateAtris() {
@@ -105,7 +173,7 @@ function activateAtris() {
     allLogs.sort().reverse();
 
     // Extract C# items from logs until we have 3. Dedupe by ID across files
-    // since per-day numbering reuses C1, C2, etc. — the same ID appearing
+    // since per-day numbering reuses C1, C2, etc. the same ID appearing
     // in two day-files would otherwise render as duplicate rows.
     const seenIds = new Set();
     for (const logPath of allLogs) {
@@ -114,7 +182,7 @@ function activateAtris() {
       const completedSection = content.match(/## Completed ✅\n([\s\S]*?)(?=\n## |$)/);
       if (completedSection) {
         // Match `- **C#: Title**` (title between the bold markers). If extra
-        // prose follows after `**`, ignore it — the activation panel shows
+        // prose follows after `**`, ignore it. the activation view shows
         // titles only, truncated to 59 chars.
         const matches = completedSection[1].matchAll(/- \*\*C(\d+):\s*([^*\n]+?)\*\*/gm);
         for (const match of matches) {
@@ -133,116 +201,66 @@ function activateAtris() {
     ? todoFile
     : (fs.existsSync(legacyTaskContextsFile) ? legacyTaskContextsFile : null);
 
-  const summaryParts = [];
-  if (context.inProgressFeatures?.length) summaryParts.push(`⚡ ${context.inProgressFeatures.length} in progress`);
-  if (context.backlogTasks?.length) summaryParts.push(`📋 ${context.backlogTasks.length} backlog`);
-  if (context.inboxItems?.length) summaryParts.push(`📥 ${context.inboxItems.length} inbox`);
-  const summaryLine = summaryParts.length ? summaryParts.join('  |  ') : 'Clean slate';
-
-  console.log('');
-  console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ Atris Activate: context loaded                              │');
-  console.log('└─────────────────────────────────────────────────────────────┘');
-
-  // Display handoff prominently if present
-  if (handoffContent) {
-    console.log('');
-    console.log('┌─────────────────────────────────────────────────────────────┐');
-    console.log('│ 📋 Handoff from last session                                │');
-    console.log('├─────────────────────────────────────────────────────────────┤');
-    const lines = handoffContent.split('\n').slice(0, 5); // Max 5 lines
-    lines.forEach(line => {
-      const padded = line.substring(0, 59).padEnd(59);
-      console.log(`│ ${padded} │`);
-    });
-    console.log('└─────────────────────────────────────────────────────────────┘');
-  }
-
-  // Display recent completions if any
-  if (recentCompletions.length > 0) {
-    console.log('');
-    console.log('┌─────────────────────────────────────────────────────────────┐');
-    console.log('│ ✅ Recent completions                                       │');
-    console.log('├─────────────────────────────────────────────────────────────┤');
-    recentCompletions.forEach(c => {
-      const line = `${c.id}: ${c.desc}`;
-      const padded = line.substring(0, 59).padEnd(59);
-      console.log(`│ ${padded} │`);
-    });
-    console.log('└─────────────────────────────────────────────────────────────┘');
-  }
-
-  // Show learning count if learnings exist
-  let learningLine = '';
+  // Keep loading learnings for parity with the existing activation path.
+  let learningCount = 0;
   try {
     const learningsPath = path.join(targetDir, 'learnings.jsonl');
     if (fs.existsSync(learningsPath)) {
       const lines = fs.readFileSync(learningsPath, 'utf8').trim().split('\n').filter(Boolean);
-      if (lines.length > 0) {
-        learningLine = `  •  🧠 ${lines.length} learnings`;
-      }
+      learningCount = lines.length;
     }
   } catch {}
 
-  console.log('');
-  console.log(`📅 ${dateFormatted}  •  State: ${state.state}${learningLine}`);
-  console.log(`   ${summaryLine}`);
-  if (wikiStatus) {
-    const healthLine = wikiStatus.bullets.find((line) => line.startsWith('- Health:'));
-    const wikiSummary = (healthLine || wikiStatus.bullets[0] || '- wiki scaffold ready').replace(/^- /, '');
-    console.log(`   🧠 Wiki: ${wikiSummary}`);
-  }
-  console.log('');
-  console.log('Core files:');
-  console.log(`- ${fs.existsSync(personaFile) ? rel(personaFile) : 'atris/PERSONA.md (missing)'}`);
-  console.log(`- ${fs.existsSync(mapFile) ? rel(mapFile) : 'atris/MAP.md (missing)'}`);
-  console.log(`- ${taskFilePath ? rel(taskFilePath) : 'atris/TODO.md (missing)'}`);
-  console.log(`- ${rel(logFile)}`);
-  if (wikiStatus?.statusPath) {
-    console.log(`- ${rel(wikiStatus.statusPath)}`);
-  }
-  if (wikiStatus?.bullets?.length) {
-    console.log('');
-    console.log('Wiki:');
-    wikiStatus.bullets.forEach((line) => console.log(`- ${line.replace(/^- /, '')}`));
-  }
-  console.log('');
+  let moves = [];
   try {
     const { nextMoves } = require('../lib/next-moves');
-    const { isEmptyProfile, profilePaths } = require('../lib/clarity');
+    const { profilePaths } = require('../lib/clarity');
     const root = process.cwd();
-    const moves = nextMoves(root, 3);
-    console.log('Your next moves:');
-    if (moves.length) {
-      moves.forEach((m, i) => console.log(`  ${i + 1}. ${m.title}`));
-      console.log('  steer them: atris moves');
-    } else {
-      console.log('  none queued. add to ROADMAP.md under "## Open loop items", or jot one with atris log');
-    }
+    moves = nextMoves(root, 3);
     const { profile, mdPath } = readActivationClarityProfile(root, profilePaths);
-    const clarityLine = formatClarityLine(profile, rel(mdPath));
-    console.log('');
-    if (isEmptyProfile(profile)) {
-      console.log('Tip: run atris clarity once so agents learn how you work.');
-    } else {
-      console.log(clarityLine);
-    }
-    console.log('');
+    formatClarityLine(profile, rel(mdPath));
   } catch { /* alive onboarding is best-effort; never block activate */ }
-  console.log('Next: atris plan → do → review (or atris log)');
-  console.log('');
 
-  // One-line brief + one-line cloud sync status. Best-effort: never block boot.
+  let briefData = null;
   try {
-    const { buildBriefData, renderBrief } = require('./brief');
-    const briefLine = renderBrief(buildBriefData(workspaceDir)).split('\n')[0];
-    if (briefLine) console.log(briefLine);
+    const { buildBriefData } = require('./brief');
+    briefData = buildBriefData(workspaceDir);
   } catch { /* brief is best-effort */ }
   try {
     const { syncStatus } = require('../lib/sync-status');
-    console.log(`sync: ${syncStatus(workspaceDir)}`);
+    syncStatus(workspaceDir);
   } catch { /* sync status is best-effort */ }
-  console.log('');
+
+  void dateFormatted;
+  void handoffContent;
+  void learningCount;
+  void wikiStatus;
+  fs.existsSync(personaFile);
+  fs.existsSync(mapFile);
+  void taskFilePath;
+
+  console.log(humanSentence('atris is up.'));
+
+  const statusLines = [
+    completionSentence(recentCompletions),
+    activeWorkSentence(state, context),
+  ].filter(Boolean);
+  if (Array.isArray(briefData?.waiting)) {
+    const approvalCount = briefData.waiting.length;
+    const approvalLabel = approvalCount === 1 ? 'approval' : 'approvals';
+    statusLines.push(`waiting on you: ${countWord(approvalCount)} ${approvalLabel}. see them: atris task reviews`);
+  }
+  if (statusLines.length) {
+    console.log('');
+    statusLines.forEach((line) => console.log(line));
+  }
+
+  const nextMove = moves[0] || briefData?.moves?.[0];
+  const nextMoveTitle = sentenceFragment(nextMove?.title);
+  if (nextMoveTitle) {
+    console.log('');
+    console.log(humanSentence(`today's move: ${nextMoveTitle}.`));
+  }
 }
 
 module.exports = { activateAtris };
