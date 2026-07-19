@@ -90,9 +90,9 @@ test('syncStatus: manifest matches local → in sync; edit → drifted', () => {
   }
 });
 
-// --- integration: activate boot output ends with brief + sync line ---
+// --- integration: activate boot output is a short narration ---
 
-test('activateAtris output ends with the one-line brief plus a sync line', () => {
+test('activateAtris output narrates the current workspace without boot internals', () => {
   const root = mkTmp('atris-boot-activate-');
   const prevCwd = process.cwd();
   const logs = [];
@@ -105,8 +105,10 @@ test('activateAtris output ends with the one-line brief plus a sync line', () =>
     process.chdir(root);
     activateAtris();
     const out = logs.join('\n');
-    assert.match(out, /atris brief: \d+ landed, \d+ waiting, \d+ next moves/);
-    assert.match(out, /^sync: (in sync|offline|\d+ files? drifted)$/m);
+    assert.strictEqual(logs[0], 'atris is up.');
+    assert.match(out, /^right now: /m);
+    assert.match(out, /^waiting on you: zero approvals\. see them: atris task reviews$/m);
+    assert.doesNotMatch(out, /atris brief:|^sync:/m);
   } finally {
     console.log = origLog;
     process.chdir(prevCwd);
