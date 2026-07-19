@@ -107,7 +107,8 @@ test('activateAtris output narrates the current workspace without boot internals
     const out = logs.join('\n');
     assert.strictEqual(logs[0], 'atris is up.');
     assert.match(out, /^right now: /m);
-    assert.match(out, /^waiting on you: zero approvals\. see them: atris task reviews$/m);
+    assert.match(out, /^nothing is waiting on you\.$/m);
+    assert.doesNotMatch(out, /zero approvals/);
     assert.doesNotMatch(out, /atris brief:|^sync:/m);
   } finally {
     console.log = origLog;

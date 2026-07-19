@@ -113,7 +113,7 @@ test('activate narrates the current workspace', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /^atris is up\./);
     assert.match(res.stdout, /^right now: /m);
-    assert.match(res.stdout, /^waiting on you: \w+ approvals?\. see them: atris task reviews$/m);
+    assert.match(res.stdout, /^(nothing is waiting on you\.|waiting on you: \w+ approvals?\. see them: atris task reviews)$/m);
     assert.doesNotMatch(res.stdout, /[\u2500-\u257f]/u);
   } finally {
     cleanupTempDir(dir);
