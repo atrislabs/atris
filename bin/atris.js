@@ -495,6 +495,7 @@ function showHelp() {
   console.log('  activate   - Load Atris context');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  stream     - Watch the whole team work live in one terminal');
+  console.log('  team       - Show who is awake, what they are doing, and running loops');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
@@ -1740,6 +1741,10 @@ if (command === 'init') {
   Promise.resolve(require('../commands/task').run(process.argv.slice(3)))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'team') {
+  Promise.resolve(require('../commands/team').teamCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'wish') {
   Promise.resolve(require('../commands/wish').wishCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
