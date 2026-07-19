@@ -3,12 +3,7 @@ const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
 const { readWikiStatus } = require('../lib/wiki');
-const { gateForHuman } = require('../lib/voice-gate');
-
-const SMALL_NUMBER_WORDS = [
-  'zero', 'one', 'two', 'three', 'four', 'five', 'six',
-  'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
-];
+const { gateForHuman, numberWord } = require('../lib/voice-gate');
 
 const CLARITY_FIELDS = [
   { key: 'focus', label: 'Focus' },
@@ -61,7 +56,7 @@ function formatClarityLine(profile, mdRelPath) {
 
 function countWord(value) {
   const count = Math.max(0, Math.trunc(Number(value) || 0));
-  return SMALL_NUMBER_WORDS[count] || String(count);
+  return numberWord(count);
 }
 
 function sentenceFragment(value) {
@@ -94,6 +89,16 @@ function focusFragment(value, max = 72) {
 // would render four dots.
 function closeSentence(fragment) {
   return fragment.endsWith('...') ? fragment : `${fragment}.`;
+}
+
+// The handoff block is markdown for agents; the operator gets its context
+// line as one plain sentence.
+function handoffSentence(handoffContent) {
+  if (!handoffContent) return null;
+  const contextMatch = String(handoffContent).match(/\*\*Context:\*\*\s*(.+)/);
+  const note = focusFragment(contextMatch?.[1] || handoffContent, 100);
+  if (!note) return null;
+  return humanSentence(`last session left a note: ${closeSentence(note)}`);
 }
 
 function completionSentence(completions) {
@@ -252,7 +257,6 @@ function activateAtris() {
   } catch { /* sync status is best-effort */ }
 
   void dateFormatted;
-  void handoffContent;
   void learningCount;
   void wikiStatus;
   fs.existsSync(personaFile);
@@ -262,6 +266,7 @@ function activateAtris() {
   console.log(humanSentence('atris is up.'));
 
   const statusLines = [
+    handoffSentence(handoffContent),
     completionSentence(recentCompletions),
     activeWorkSentence(state, context),
   ].filter(Boolean);
