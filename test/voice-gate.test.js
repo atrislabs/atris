@@ -75,7 +75,7 @@ test('task reviews sends landing prose through the human voice gate', () => {
   assert.deepEqual(lines, [
     "   what's new: review queue removed internal flag noise, operators decide faster",
     '   why it matters: the approval path is easier to read',
-    '   checked: the review queue stayed readable; tested: the task reviews command stayed readable',
+    '   checked: the review queue stayed readable; tested: the task reviews command stayed readable.',
   ]);
   assert.doesNotMatch(lines.join('\n'), /decision:/i);
 });

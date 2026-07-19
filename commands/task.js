@@ -5406,12 +5406,13 @@ function taskReviewLandingLines(item) {
     : '';
   const happened = clean(item.landing.happened);
   const reason = clean(item.landing.reason);
-  const checked = clean(item.landing.checked);
-  const tested = clean(item.landing.tested);
+  const unperiod = value => value.replace(/\.$/, '');
+  const checked = unperiod(clean(item.landing.checked));
+  const tested = unperiod(clean(item.landing.tested));
   return [
     happened ? `   what's new: ${happened}` : '',
     reason ? `   why it matters: ${reason}` : '',
-    checked ? `   checked: ${checked}${tested && tested !== checked ? `; tested: ${tested}` : ''}` : '',
+    checked ? `   checked: ${checked}${tested && tested !== checked ? `; tested: ${tested}` : ''}.` : '',
   ].filter(Boolean);
 }
 
