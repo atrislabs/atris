@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { gateForHuman, scanText } = require('../lib/voice-gate');
+const { gateForHuman, numberWord, scanText } = require('../lib/voice-gate');
 const { taskReviewLandingLines } = require('../commands/task');
 const { missionHumanStatusText } = require('../commands/mission');
 
@@ -54,18 +54,30 @@ test('gateForHuman keeps information without a clean substitute and reports it',
   assert.ok(result.issues.some(issue => issue.rule === 'shell-command' && issue.snippet === 'npm test'));
 });
 
+test('numberWord spells compact human counts', () => {
+  assert.deepEqual(
+    [0, 1, 2, 12, 13].map(numberWord),
+    ['no', 'one', 'two', 'twelve', '13'],
+  );
+});
+
 test('task reviews sends landing prose through the human voice gate', () => {
   const lines = taskReviewLandingLines({
     title: 'readable approval result',
     landing: {
       happened: 'review_queue removed --internal-flag noise\u2014operators decide faster',
       reason: 'the approval_path is easier to read',
+      checked: 'the review_queue stayed readable',
+      tested: 'the task_reviews command stayed readable',
+      decision: 'approve this now',
     },
   });
   assert.deepEqual(lines, [
-    '     What happened: review queue removed internal flag noise, operators decide faster',
-    '     Why it matters: the approval path is easier to read',
+    "   what's new: review queue removed internal flag noise, operators decide faster",
+    '   why it matters: the approval path is easier to read',
+    '   checked: the review queue stayed readable; tested: the task reviews command stayed readable',
   ]);
+  assert.doesNotMatch(lines.join('\n'), /decision:/i);
 });
 
 test('missionHumanStatusText sends status prose through the human voice gate', () => {

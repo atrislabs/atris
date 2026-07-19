@@ -20,7 +20,7 @@ const {
 const { extractReceiptEvidence, RECEIPT_PATH_PATTERN } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const reviewIntegrity = require('../lib/review-integrity');
-const { gateForHuman } = require('../lib/voice-gate');
+const { gateForHuman, numberWord } = require('../lib/voice-gate');
 const {
   normalizeOwnerSlug,
   resolveFunctionalOwner: resolveFunctionalTaskOwner,
@@ -5401,20 +5401,18 @@ function taskReviewGroups(projection, key) {
 
 function taskReviewLandingLines(item) {
   if (!item?.landing) return [];
-  const fields = [
-    ['What happened', item.landing.happened],
-    ['Why it matters', item.landing.reason],
-    ['How I checked', item.landing.checked],
-    ['What I tested', item.landing.tested],
-    ['Decision', item.landing.decision],
-  ];
-  return fields
-    .filter(([, value]) => value)
-    .map(([label, value]) => {
-      const prose = gateForHuman(value, { title: item.title }).text;
-      return prose ? `     ${label}: ${prose}` : '';
-    })
-    .filter(Boolean);
+  const clean = value => value
+    ? gateForHuman(value, { title: item.title }).text
+    : '';
+  const happened = clean(item.landing.happened);
+  const reason = clean(item.landing.reason);
+  const checked = clean(item.landing.checked);
+  const tested = clean(item.landing.tested);
+  return [
+    happened ? `   what's new: ${happened}` : '',
+    reason ? `   why it matters: ${reason}` : '',
+    checked ? `   checked: ${checked}${tested && tested !== checked ? `; tested: ${tested}` : ''}` : '',
+  ].filter(Boolean);
 }
 
 function cmdReviews(args) {
@@ -5452,21 +5450,20 @@ function cmdReviews(args) {
       });
       return;
     }
-    console.log(gateForHuman(`ready for approval - grouped by ${key}`).text);
+    console.log(gateForHuman(`${numberWord(groups.total_certified)} finished things are waiting, grouped by ${key}.`).text);
     if (autoAcceptRollup.count > 0) {
-      console.log(gateForHuman(`${autoAcceptRollup.count} reviews auto-accepted since your last look`).text);
+      console.log(gateForHuman(`${numberWord(autoAcceptRollup.count)} landed on their own since you last looked.`).text);
     }
-    console.log(gateForHuman(`${groups.total_certified} ready for approval across ${groups.group_count} ${key} group(s)`).text);
     const visibleGroups = groups.groups.slice(0, reviewGroupTextLimit(args, groups.groups.length));
     visibleGroups.forEach((g, index) => {
       console.log('');
-      console.log(`${index + 1}. ${g.value} - ${g.count} task${g.count === 1 ? '' : 's'}`);
-      g.sample_titles.forEach(title => console.log(`   • ${title}`));
+      console.log(`${index + 1}. ${g.value} - ${numberWord(g.count)} task${g.count === 1 ? '' : 's'}`);
+      g.sample_titles.forEach(title => console.log(`   • ${gateForHuman(title, { title }).text}`));
       console.log(`   approve this group: ${g.accept_group_command} --confirm-human-accept --as <you>`);
     });
     if (visibleGroups.length < groups.groups.length) {
       console.log('');
-      console.log(`Showing ${visibleGroups.length}/${groups.groups.length} groups; rerun with --all for every group or --limit N to adjust.`);
+      console.log(`showing ${numberWord(visibleGroups.length)} of ${numberWord(groups.groups.length)} groups; rerun with --all for every group or --limit N to adjust.`);
     }
     return;
   }
@@ -5487,29 +5484,33 @@ function cmdReviews(args) {
     });
     return;
   }
-  console.log(gateForHuman('ready for approval').text);
-  if (autoAcceptRollup.count > 0) {
-    console.log(gateForHuman(`${autoAcceptRollup.count} reviews auto-accepted since your last look`).text);
-  }
-  console.log(gateForHuman(`${queue.counts.certified} ready for approval / ${queue.counts.blocking} need one more check / ${queue.counts.review} total waiting`).text);
   const approvalItems = queue.items.filter(item => item.queue_role !== 'blocked');
   const blockedItems = queue.items.filter(item => item.queue_role === 'blocked');
   if (!approvalItems.length && !blockedItems.length) {
-    console.log('Nothing is ready for approval.');
+    console.log('nothing is waiting on you. everything that finished has already landed.');
+    if (autoAcceptRollup.count > 0) {
+      console.log(gateForHuman(`${numberWord(autoAcceptRollup.count)} landed on their own since you last looked.`).text);
+    }
     return;
   }
+  if (queue.counts.certified > 0) {
+    const header = queue.counts.certified === 1
+      ? 'one finished thing is waiting for your ok. it passed both checks.'
+      : `${numberWord(queue.counts.certified)} finished things are waiting for your ok. all of them passed both checks.`;
+    console.log(gateForHuman(header).text);
+  }
+  if (queue.counts.blocking > 0) {
+    console.log(gateForHuman(`${numberWord(queue.counts.blocking)} more are almost ready; a second check is still running.`).text);
+  }
+  if (autoAcceptRollup.count > 0) {
+    console.log(gateForHuman(`${numberWord(autoAcceptRollup.count)} landed on their own since you last looked.`).text);
+  }
   approvalItems.forEach((item, index) => {
-    const tag = item.tag ? ` [${item.tag}]` : '';
-    const passes = item.review_pass_count ? ` (${item.review_pass_count} reviews)` : '';
-    const badge = item.evidence?.any_forced
-      ? ' [evidence:forced]'
-      : item.evidence?.all_passing ? ' [evidence:passing]' : '';
-    console.log('');
-    console.log(`${index + 1}. ${item.display_id || taskRef(item.id)}${tag}${passes}: ${item.title}${badge}`);
+    if (index > 0) console.log('');
+    console.log(`${index + 1}. ${gateForHuman(item.title, { title: item.title }).text}`);
     if (item.landing) {
-      console.log('   Result:');
       taskReviewLandingLines(item).forEach(line => console.log(line));
-      if (item.result?.saved) console.log(`     Saved: ${item.result.saved}`);
+      if (verbose && item.result?.saved) console.log(`   saved: ${item.result.saved}`);
     }
     if (verbose && item.proof) console.log(`   details: ${item.proof}`);
     if (verbose && item.evidence) {
@@ -5521,18 +5522,23 @@ function cmdReviews(args) {
       item.evidence.missing.forEach((missingPath) => console.log(`   receipt: ${missingPath} MISSING`));
     }
     if (verbose && item.review_chat_command) console.log(`   /codex: ${item.review_chat_command}`);
-    if (item.continue_work_command) console.log(`   continue: ${item.continue_work_command}`);
-    if (item.accept_command) console.log(`   approve: ${item.accept_command}`);
-    else if (item.blocked_accept_reason) console.log(`   approve: blocked (${item.blocked_accept_reason})`);
-    console.log(`   rework: ${item.revise_command}`);
+    if (item.accept_command) {
+      console.log(`   say yes: atris task accept ${item.display_id || taskRef(item.id)}`);
+    } else if (item.blocked_accept_reason) {
+      console.log(`   approve: blocked (${item.blocked_accept_reason})`);
+      console.log(`   rework: ${item.revise_command}`);
+    }
   });
-  for (const item of blockedItems) {
-    console.log('');
-    console.log(`${plainReviewBlockerMessage(item)}; next: ${item.next_command}`);
+  if (blockedItems.length > 0) {
+    if (approvalItems.length > 0) console.log('');
+    console.log('still being checked:');
+    for (const item of blockedItems) {
+      console.log(`${plainReviewBlockerMessage(item)}; next: ${item.next_command}`);
+    }
   }
   if (queue.counts.shown < queue.counts.certified) {
     console.log('');
-    console.log(`Showing ${queue.counts.shown}/${queue.counts.certified}; rerun with --all for every row or --verbose for proof details.`);
+    console.log(`showing ${numberWord(queue.counts.shown)} of ${numberWord(queue.counts.certified)}; rerun with --all for every row or --verbose for proof details.`);
   }
 }
 
