@@ -76,6 +76,26 @@ function humanSentence(value) {
   return gateForHuman(value).text.toLowerCase();
 }
 
+// Titles arrive with tracker tags and stacked clauses; the narration keeps
+// one readable clause so the operator can take it in at a glance.
+function focusFragment(value, max = 72) {
+  const first = sentenceFragment(value)
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(';')[0]
+    .trim();
+  if (first.length <= max) return first;
+  const cut = first.slice(0, max);
+  return `${cut.slice(0, cut.lastIndexOf(' '))}...`;
+}
+
+// A truncated fragment already ends with '...'; adding the template's period
+// would render four dots.
+function closeSentence(fragment) {
+  return fragment.endsWith('...') ? fragment : `${fragment}.`;
+}
+
 function completionSentence(completions) {
   if (!Array.isArray(completions) || !completions.length) return null;
   const count = completions.length;
@@ -89,24 +109,24 @@ function activeWorkSentence(state, context) {
   const tasks = Array.isArray(context?.inProgressTasks) ? context.inProgressTasks : [];
   if (tasks.length) {
     const count = tasks.length;
-    const focus = sentenceFragment(tasks[0]);
+    const focus = focusFragment(tasks[0]);
     const subject = count === 1 ? 'task is' : 'tasks are';
-    return humanSentence(`right now: ${countWord(count)} ${subject} in progress; the focus is ${focus}.`);
+    return humanSentence(`right now: ${countWord(count)} ${subject} in progress; the focus is ${closeSentence(focus)}`);
   }
 
   const features = Array.isArray(context?.inProgressFeatures) ? context.inProgressFeatures : [];
   const featureCount = Number(context?.inProgressFeaturesCount) || features.length;
   if (featureCount > 0 && features.length) {
-    const focus = sentenceFragment(features[0]).replace(/[-_]+/g, ' ');
+    const focus = focusFragment(features[0]).replace(/[-_]+/g, ' ');
     const subject = featureCount === 1 ? 'feature is' : 'features are';
-    return humanSentence(`right now: ${countWord(featureCount)} ${subject} in progress; the focus is ${focus}.`);
+    return humanSentence(`right now: ${countWord(featureCount)} ${subject} in progress; the focus is ${closeSentence(focus)}`);
   }
 
   const inboxCount = Number(context?.inboxCount) || 0;
   const inboxItem = sentenceFragment(context?.inboxItems?.[0]);
   if (inboxCount > 0 && inboxItem) {
     const subject = inboxCount === 1 ? 'inbox item is' : 'inbox items are';
-    return humanSentence(`right now: ${countWord(inboxCount)} ${subject} waiting; first: ${inboxItem}.`);
+    return humanSentence(`right now: ${countWord(inboxCount)} ${subject} waiting; first: ${closeSentence(inboxItem)}`);
   }
 
   if (state?.state === 'blocked' && state.reason) {
@@ -247,8 +267,12 @@ function activateAtris() {
   ].filter(Boolean);
   if (Array.isArray(briefData?.waiting)) {
     const approvalCount = briefData.waiting.length;
-    const approvalLabel = approvalCount === 1 ? 'approval' : 'approvals';
-    statusLines.push(`waiting on you: ${countWord(approvalCount)} ${approvalLabel}. see them: atris task reviews`);
+    if (approvalCount === 0) {
+      statusLines.push('nothing is waiting on you.');
+    } else {
+      const approvalLabel = approvalCount === 1 ? 'approval' : 'approvals';
+      statusLines.push(`waiting on you: ${countWord(approvalCount)} ${approvalLabel}. see them: atris task reviews`);
+    }
   }
   if (statusLines.length) {
     console.log('');
@@ -256,10 +280,10 @@ function activateAtris() {
   }
 
   const nextMove = moves[0] || briefData?.moves?.[0];
-  const nextMoveTitle = sentenceFragment(nextMove?.title);
+  const nextMoveTitle = focusFragment(nextMove?.title, 100);
   if (nextMoveTitle) {
     console.log('');
-    console.log(humanSentence(`today's move: ${nextMoveTitle}.`));
+    console.log(humanSentence(`today's move: ${closeSentence(nextMoveTitle)}`));
   }
 }
 
