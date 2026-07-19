@@ -7,7 +7,12 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
-const { crontabHasActiveMarker } = require('../commands/pulse');
+const {
+  crontabHasActiveMarker,
+  installCommand,
+  pulseExpiryBreadcrumbPath,
+  statusCommand,
+} = require('../commands/pulse');
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
@@ -27,6 +32,67 @@ test('pulse status ignores disabled cron marker history', () => {
   assert.equal(crontabHasActiveMarker(`   # ${marker}\n`, marker), false);
   assert.equal(crontabHasActiveMarker(`*/20 * * * * /tmp/tick.sh # ${marker}\n`, marker), true);
   assert.equal(crontabHasActiveMarker(`*/20 * * * * /tmp/other.sh # OTHER\n`, marker), false);
+});
+
+test('pulse status surfaces expiry and install clears the breadcrumb', () => {
+  const root = tmpRoot();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-home-'));
+  let crontab = '';
+  const fakeSpawnSync = (command, args, options = {}) => {
+    if (command === 'which') return { status: 1, stdout: '', stderr: '' };
+    if (command === 'crontab' && args[0] === '-l') {
+      return crontab
+        ? { status: 0, stdout: crontab, stderr: '' }
+        : { status: 1, stdout: '', stderr: '' };
+    }
+    if (command === 'crontab' && args[0] === '-') {
+      crontab = String(options.input || '');
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+  };
+  const breadcrumb = {
+    expired_at: '2026-07-19T04:32:32+02:00',
+    state_home: '/tmp/pulse-state',
+    renew_command: 'atris pulse install',
+  };
+  const breadcrumbPath = pulseExpiryBreadcrumbPath(root);
+  fs.writeFileSync(breadcrumbPath, `${JSON.stringify(breadcrumb)}\n`, 'utf8');
+
+  try {
+    const beforeOutput = [];
+    const before = statusCommand([], root, {
+      homeDir: home,
+      spawnSync: fakeSpawnSync,
+      writeOutput: (text) => beforeOutput.push(text),
+    });
+    assert.equal(before.cron_installed, false);
+    assert.deepEqual(before.expiry_breadcrumb, breadcrumb);
+    assert.match(beforeOutput.join(''), /heartbeat expired on 2026-07-19T04:32:32\+02:00; renew with: atris pulse install/);
+
+    const installed = installCommand(['--hours', '1'], root, {
+      homeDir: home,
+      spawnSync: fakeSpawnSync,
+      writeOutput: () => {},
+    });
+    assert.equal(installed.ok, true);
+    assert.equal(installed.expiry_breadcrumb_cleared, true);
+    assert.equal(fs.existsSync(breadcrumbPath), false);
+
+    fs.writeFileSync(breadcrumbPath, `${JSON.stringify(breadcrumb)}\n`, 'utf8');
+    const afterOutput = [];
+    const after = statusCommand([], root, {
+      homeDir: home,
+      spawnSync: fakeSpawnSync,
+      writeOutput: (text) => afterOutput.push(text),
+    });
+    assert.equal(after.cron_installed, true);
+    assert.equal(after.expiry_breadcrumb, null);
+    assert.doesNotMatch(afterOutput.join(''), /heartbeat expired/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('scoreTick rewards a verified, work-producing tick with +1', () => {
@@ -297,6 +363,12 @@ test('buildTickScript embeds root, bin, deadline, marker, and calls pulse tick',
   assert.match(script, /"\$ATRIS" pulse tick --json --verify 'npm test'/);
   // deadline self-removal (the commander tick.sh pattern) must be present
   assert.match(script, /crontab -l .* grep -v "\$MARKER" .* crontab -/);
+  const expiryBranch = script.slice(script.indexOf('if [ "$now" -ge "$DEADLINE_EPOCH" ]'), script.indexOf('\nfi\n'));
+  assert.match(expiryBranch, /mkdir -p "\$ROOT\/atris\/logs\/\$journal_year" \|\| true/);
+  assert.match(expiryBranch, /pulse heartbeat expired; renew with: atris pulse install\\n.*>> "\$journal_file" \|\| true/);
+  assert.match(expiryBranch, /mkdir -p "\$ROOT\/\.atris\/state" \|\| true/);
+  assert.match(expiryBranch, /"expired_at":"%s","state_home":"%s","renew_command":"atris pulse install".*>> "\$ROOT\/\.atris\/state\/pulse-expired\.json" \|\| true/);
+  assert.ok(expiryBranch.indexOf('crontab -l') < expiryBranch.indexOf('pulse-expired.json'));
   // runner-agnostic model default so a retired model can't silently kill the loop
   assert.match(script, /export ATRIS_RUNNER_MODEL='opus'/);
   assert.match(script, /export ATRIS_CLAUDE_MODEL="\$\{ATRIS_RUNNER_MODEL\}"/);

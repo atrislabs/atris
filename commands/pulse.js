@@ -442,9 +442,9 @@ function crontabHasActiveMarker(crontab, markers = pulse.PULSE_MARKER) {
     .some((line) => markerList.some((marker) => line.includes(marker)));
 }
 
-function cronInstalled(markers = pulse.PULSE_MARKER) {
+function cronInstalled(markers = pulse.PULSE_MARKER, commandSpawn = spawnSync) {
   try {
-    const r = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
+    const r = commandSpawn('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
     if (r.status !== 0) return false;
     return crontabHasActiveMarker(r.stdout, markers);
   } catch {
@@ -452,16 +452,54 @@ function cronInstalled(markers = pulse.PULSE_MARKER) {
   }
 }
 
-function statusCommand(args, root = process.cwd()) {
+function pulseExpiryBreadcrumbPath(root) {
+  return path.join(root, '.atris', 'state', 'pulse-expired.json');
+}
+
+function readPulseExpiryBreadcrumb(root) {
+  try {
+    const raw = fs.readFileSync(pulseExpiryBreadcrumbPath(root), 'utf8').trim();
+    const candidates = [];
+    if (raw) candidates.push(raw, ...raw.split('\n').reverse());
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate);
+        if (parsed
+          && typeof parsed.expired_at === 'string'
+          && typeof parsed.state_home === 'string'
+          && typeof parsed.renew_command === 'string') {
+          return parsed;
+        }
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
+function clearPulseExpiryBreadcrumb(root) {
+  const file = pulseExpiryBreadcrumbPath(root);
+  try {
+    if (!fs.existsSync(file)) return false;
+    fs.rmSync(file, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function statusCommand(args, root = process.cwd(), options = {}) {
   const asJson = wantsJson(args);
-  const slot = pulse.resolvePulseSlot(root);
+  const slot = pulse.resolvePulseSlot(root, options.homeDir ? { homeDir: options.homeDir } : {});
   const receipts = pulse.readPulseReceipts(root);
   const summary = pulse.summarizePulse(receipts);
-  const installed = cronInstalled(slot.markers);
+  const installed = cronInstalled(slot.markers, options.spawnSync || spawnSync);
+  const expiryBreadcrumb = installed ? null : readPulseExpiryBreadcrumb(root);
+  const writeOutput = options.writeOutput || ((text) => process.stdout.write(text));
   const out = {
     ok: true,
     action: 'pulse_status',
     cron_installed: installed,
+    expiry_breadcrumb: expiryBreadcrumb,
     state_home: slot.activeStateHome,
     marker: slot.activeMarker,
     install_state_home: slot.stateHome,
@@ -470,8 +508,9 @@ function statusCommand(args, root = process.cwd()) {
     ...summary,
   };
   if (!asJson) {
-    process.stdout.write([
+    writeOutput([
       `pulse: ${installed ? 'cron installed' : 'cron not installed (run: atris pulse install)'}`,
+      expiryBreadcrumb ? `heartbeat expired on ${expiryBreadcrumb.expired_at}; renew with: ${expiryBreadcrumb.renew_command}` : '',
       `state home: ${slot.activeStateHome} marker: ${slot.activeMarker}`,
       `ticks: ${summary.total_ticks} | reward: ${summary.reward_sum} | verify pass/fail: ${summary.verify_pass}/${summary.verify_fail}`,
       `last tick: ${summary.last_tick_ts || 'never'} (verify ${summary.last_verify_passed === null ? 'n/a' : summary.last_verify_passed ? 'pass' : 'fail'})`,
@@ -484,9 +523,9 @@ function statusCommand(args, root = process.cwd()) {
 
 // --- atris pulse install / uninstall ---
 
-function resolveAtrisBin() {
+function resolveAtrisBin(commandSpawn = spawnSync) {
   // Prefer a globally linked `atris`; fall back to this checkout's bin.
-  const which = spawnSync('which', ['atris'], { encoding: 'utf8', timeout: 8000 });
+  const which = commandSpawn('which', ['atris'], { encoding: 'utf8', timeout: 8000 });
   if (which.status === 0 && which.stdout.trim()) return which.stdout.trim();
   return `${process.execPath} ${path.join(__dirname, '..', 'bin', 'atris.js')}`;
 }
@@ -494,17 +533,17 @@ function resolveAtrisBin() {
 // The dirs holding the binaries the engine spawns by bare name (claude, node,
 // git, atris). Baked into the cron script's PATH so a minimal cron environment
 // can still find them. Missing tools just contribute nothing.
-function resolveEngineBinDirs(extraBins = []) {
+function resolveEngineBinDirs(extraBins = [], commandSpawn = spawnSync) {
   const dirs = new Set([path.dirname(process.execPath)]); // node
   for (const tool of ['ax', 'claude', 'git', 'atris']) {
-    const r = spawnSync('which', [tool], { encoding: 'utf8', timeout: 8000 });
+    const r = commandSpawn('which', [tool], { encoding: 'utf8', timeout: 8000 });
     if (r.status === 0 && r.stdout.trim()) dirs.add(path.dirname(r.stdout.trim()));
   }
   for (const bin of [process.env.ATRIS_RUNNER_BIN, process.env.ATRIS_CLAUDE_BIN, ...extraBins]) {
     const configured = String(bin || '').trim();
     if (configured && configured.includes(path.sep)) dirs.add(path.dirname(configured));
     if (configured && !configured.includes(path.sep)) {
-      const r = spawnSync('which', [configured], { encoding: 'utf8', timeout: 8000 });
+      const r = commandSpawn('which', [configured], { encoding: 'utf8', timeout: 8000 });
       if (r.status === 0 && r.stdout.trim()) dirs.add(path.dirname(r.stdout.trim()));
     }
   }
@@ -520,9 +559,11 @@ function stripMarkedCrontabLines(crontab, markers) {
     .join('\n');
 }
 
-function installCommand(args, root = process.cwd()) {
+function installCommand(args, root = process.cwd(), options = {}) {
   const asJson = wantsJson(args);
-  const slot = pulse.resolvePulseSlot(root);
+  const commandSpawn = options.spawnSync || spawnSync;
+  const writeOutput = options.writeOutput || ((text) => process.stdout.write(text));
+  const slot = pulse.resolvePulseSlot(root, options.homeDir ? { homeDir: options.homeDir } : {});
   const cadenceInput = readFlag(args, '--cadence', pulse.DEFAULT_CADENCE_CRON);
   let cron;
   try {
@@ -567,10 +608,10 @@ function installCommand(args, root = process.cwd()) {
   const scriptPath = path.join(slot.stateHome, 'tick.sh');
   // Resolve the real bin dirs the engine spawns by bare name, so cron's minimal
   // PATH doesn't silently break the worker spawn (claude lives in ~/.local/bin).
-  const pathDirs = resolveEngineBinDirs([runnerBin]);
+  const pathDirs = resolveEngineBinDirs([runnerBin], commandSpawn);
   const script = pulse.buildTickScript({
     root,
-    atrisBin: resolveAtrisBin(),
+    atrisBin: resolveAtrisBin(commandSpawn),
     stateHome: slot.stateHome,
     deadlineEpoch,
     marker: slot.marker,
@@ -586,11 +627,12 @@ function installCommand(args, root = process.cwd()) {
   const line = pulse.buildCrontabLine({ cron, scriptPath, marker: slot.marker });
   // Append our line to the existing crontab. Strip this repo's new marker and,
   // when the legacy tick.sh belongs to this root, strip the old single-slot marker too.
-  const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
+  const existing = commandSpawn('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
   const prior = existing.status === 0 ? String(existing.stdout || '') : '';
   const cleaned = stripMarkedCrontabLines(prior, slot.markers);
   const next = `${cleaned ? cleaned + '\n' : ''}${line}\n`;
-  const apply = spawnSync('crontab', ['-'], { input: next, encoding: 'utf8', timeout: 10000 });
+  const apply = commandSpawn('crontab', ['-'], { input: next, encoding: 'utf8', timeout: 10000 });
+  const expiryBreadcrumbCleared = apply.status === 0 && clearPulseExpiryBreadcrumb(root);
 
   const out = {
     ok: apply.status === 0,
@@ -609,16 +651,17 @@ function installCommand(args, root = process.cwd()) {
     runner_profile: runnerProfile || null,
     runner_bin: runnerBin || null,
     runner_template_configured: Boolean(runnerCommandTemplate),
+    expiry_breadcrumb_cleared: expiryBreadcrumbCleared,
   };
   if (!asJson) {
     if (apply.status === 0) {
-      process.stdout.write([
+      writeOutput([
         `pulse installed. heartbeat fires '${cron}' against ${root}.`,
         `script: ${scriptPath}`,
         `auto-expires in ${expiry.hours ? `${expiry.hours} hours` : `${expiry.days} days`}. stop early: atris pulse uninstall`,
       ].join('\n') + '\n');
     } else {
-      process.stdout.write(`pulse install failed to write crontab: ${apply.stderr || apply.status}\nscript written to ${scriptPath}; add this line to your crontab manually:\n${line}\n`);
+      writeOutput(`pulse install failed to write crontab: ${apply.stderr || apply.status}\nscript written to ${scriptPath}; add this line to your crontab manually:\n${line}\n`);
     }
   }
   return emit(out, asJson);
@@ -701,6 +744,9 @@ module.exports = {
   statusCommand,
   cronInstalled,
   crontabHasActiveMarker,
+  pulseExpiryBreadcrumbPath,
+  readPulseExpiryBreadcrumb,
+  clearPulseExpiryBreadcrumb,
   installCommand,
   uninstallCommand,
   runCommand,
