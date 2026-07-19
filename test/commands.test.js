@@ -10909,7 +10909,6 @@ test('task ready holds work in review until human accept', () => {
       '--as', 'codex',
     ], { cwd: dir, env });
     assert.equal(readyText.status, 0, readyText.stderr);
-    assert.match(readyText.stdout, /ready for approval .*/);
     assert.match(readyText.stdout, /proof is ready; one more agent check before human approval\. XP waits for the human\./);
 
     const accept = runCli([
@@ -11031,10 +11030,9 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
     assert.equal(externalAdd.status, 0, externalAdd.stderr);
     const externalRef = JSON.parse(externalAdd.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', externalRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    fs.writeFileSync(path.join(dir, 'proof.txt'), 'done\n');
     const externalReady = runCli([
       'task', 'ready', externalRef,
-      '--verify', 'test -f proof.txt',
+      '--verify', 'printf proof',
       '--result', 'Teammates can trust the handoff faster because the finished proof is checked before review.',
       '--as', 'codex',
     ], { cwd: dir, env });
@@ -12257,7 +12255,7 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', () =
     const scopedText = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding'], { cwd: dir, env });
     assert.equal(scopedText.status, 0, scopedText.stderr);
     assert.match(scopedText.stdout, /No open tasks for tag=golden-path/);
-    assert.match(scopedText.stdout, /ready for approval/);
+    assert.match(scopedText.stdout, new RegExp(ref));
     assert.match(scopedText.stdout, /No next agent task is attached/);
     assert.doesNotMatch(scopedText.stdout, /Create the next bounded task/);
     assert.doesNotMatch(scopedText.stdout, /runner swaps should be config-only/);
@@ -13723,14 +13721,13 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(runCli(['task', 'claim', blockingTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', blockingTask.display_id, '--proof', 'one review validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
-    fs.writeFileSync(path.join(dir, 'proof.txt'), 'done\n');
     const unsafeCreated = runCli(['task', 'new', 'Used a check outside the allowlist', '--tag', 'review', '--json'], { cwd: dir, env });
     assert.equal(unsafeCreated.status, 0, unsafeCreated.stderr);
     const unsafeTask = JSON.parse(unsafeCreated.stdout).task;
     assert.equal(runCli(['task', 'claim', unsafeTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const unsafeReady = runCli([
       'task', 'ready', unsafeTask.display_id,
-      '--verify', 'test -f proof.txt',
+      '--verify', 'printf proof',
       '--result', 'Operators can now confirm finished work with a familiar file check, reducing the risk of approving missing proof.',
       '--as', 'codex',
     ], { cwd: dir, env });
@@ -13779,35 +13776,34 @@ test('task reviews gives a compact certified accept queue', () => {
 
     const text = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
-	    assert.match(text.stdout, /ready for approval/);
-	    assert.doesNotMatch(text.stdout, /READY FOR APPROVAL/);
-	    assert.match(text.stdout, /Result:/);
-	    assert.match(text.stdout, /What happened: Operators can now review one compact certified proof packet, reducing the risk of approving against stale context\./);
-	    assert.match(text.stdout, /Why it matters: Human approval queue shows a compact certified packet without stale objective text\./);
-    assert.match(text.stdout, /How I checked: I checked the verifier claims and review thread\./);
-    assert.match(text.stdout, /What I tested: I ran the focused review queue test\./);
-    assert.match(text.stdout, /Saved: Result is ready for human approval as .*?\./);
-    assert.match(text.stdout, /Decision: Accept if the packet is readable; rework if proof is vague\./);
+    assert.match(text.stdout, /one finished thing is waiting for your ok\. it passed both checks\./);
+    assert.match(text.stdout, /two more are almost ready; a second check is still running\./);
+    assert.match(text.stdout, /1\. Ship certified proof packet/);
+    assert.match(text.stdout, /what's new: Operators can now review one compact certified proof packet, reducing the risk of approving against stale context\./);
+    assert.match(text.stdout, /why it matters: Human approval queue shows a compact certified packet without stale objective text\./);
+    assert.match(text.stdout, /checked: I checked the verifier claims and review thread\.; tested: I ran the focused review queue test\./);
+    assert.doesNotMatch(text.stdout, /saved:/i);
+    assert.doesNotMatch(text.stdout, /decision:/i);
     assert.match(text.stdout, new RegExp(`${blockingTask.display_id} needs a second reviewer before it can land; next: atris task review-chat ${blockingTask.display_id} --as codex-review`));
     assert.match(text.stdout, new RegExp(`${unsafeTask.display_id} used a check command the system does not allow; rerun with an approved check; next: atris task review-chat ${unsafeTask.display_id} --as codex-review`));
+    assert.match(text.stdout, /still being checked:/);
     assert.doesNotMatch(text.stdout, /needs_second_actor_review|verify_command_not_allowed/);
     assert.doesNotMatch(text.stdout, /   details:/);
     assert.doesNotMatch(text.stdout, /   receipt:/);
     assert.doesNotMatch(text.stdout, /   \/codex:/);
-    assert.match(text.stdout, new RegExp(`approve: atris task accept ${certifiedTask.display_id}`));
-    assert.match(text.stdout, new RegExp(`rework: atris task revise ${certifiedTask.display_id}`));
-    assert.doesNotMatch(text.stdout, new RegExp(`approve: atris task accept ${blockingTask.display_id}`));
+    assert.match(text.stdout, new RegExp(`say yes: atris task accept ${certifiedTask.display_id}`));
+    assert.doesNotMatch(text.stdout, new RegExp(`say yes: atris task accept ${blockingTask.display_id}`));
 
     const verbose = runCli(['task', 'reviews', '--verbose'], { cwd: dir, env });
     assert.equal(verbose.status, 0, verbose.stderr);
-    assert.ok(verbose.stdout.indexOf('   Result:') < verbose.stdout.indexOf('   details:'), 'Result should appear before raw details');
+    assert.ok(verbose.stdout.indexOf("   what's new:") < verbose.stdout.indexOf('   details:'), 'summary should appear before raw details');
+    assert.match(verbose.stdout, /saved: Result is ready for human approval as .*?\./);
     assert.match(verbose.stdout, new RegExp(`/codex: atris task review-chat ${certifiedTask.display_id} --as codex-review`));
 
     const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
     assert.equal(grouped.status, 0, grouped.stderr);
-    assert.match(grouped.stdout, /ready for approval - grouped by tag/);
-    assert.doesNotMatch(grouped.stdout, /READY FOR APPROVAL/);
-    assert.match(grouped.stdout, /1 ready for approval across 1 tag group\(s\)/);
+    assert.match(grouped.stdout, /one finished things are waiting, grouped by tag\./);
+    assert.match(grouped.stdout, /1\. review - one task/);
     assert.match(grouped.stdout, /approve this group: atris task accept-group tag="review" --spot-check 3 --confirm-human-accept --as <you>/);
     assert.doesNotMatch(grouped.stdout, /CERTIFIED REVIEW|review then accept/);
   } finally {
@@ -13835,17 +13831,21 @@ test('task review groups are capped by default for human scan', () => {
 
     const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
     assert.equal(grouped.status, 0, grouped.stderr);
-    assert.match(grouped.stdout, /12 ready for approval across 12 tag group\(s\)/);
+    assert.match(grouped.stdout, /twelve finished things are waiting, grouped by tag\./);
     assert.match(grouped.stdout, /1\. tag-01/);
     assert.match(grouped.stdout, /10\. tag-10/);
     assert.doesNotMatch(grouped.stdout, /11\. tag-11/);
-    assert.match(grouped.stdout, /Showing 10\/12 groups; rerun with --all for every group or --limit N to adjust\./);
+    assert.match(grouped.stdout, /showing ten of twelve groups; rerun with --all for every group or --limit N to adjust\./);
+
+    const ungrouped = runCli(['task', 'reviews'], { cwd: dir, env });
+    assert.equal(ungrouped.status, 0, ungrouped.stderr);
+    assert.match(ungrouped.stdout, /twelve finished things are waiting for your ok\. all of them passed both checks\./);
 
     const limited = runCli(['task', 'reviews', '--group-by', 'tag', '--limit', '3'], { cwd: dir, env });
     assert.equal(limited.status, 0, limited.stderr);
     assert.match(limited.stdout, /3\. tag-03/);
     assert.doesNotMatch(limited.stdout, /4\. tag-04/);
-    assert.match(limited.stdout, /Showing 3\/12 groups/);
+    assert.match(limited.stdout, /showing three of twelve groups/);
 
     const all = runCli(['task', 'reviews', '--group-by', 'tag', '--all'], { cwd: dir, env });
     assert.equal(all.status, 0, all.stderr);
@@ -19348,10 +19348,8 @@ test('review default mode renders certified task review console', () => {
     const res = runCli(['review'], { cwd: dir, env });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Review is the human checkpoint/);
-    assert.match(res.stdout, /ready for approval/);
-    assert.doesNotMatch(res.stdout, /READY FOR APPROVAL/);
-    assert.match(res.stdout, new RegExp(`approve: atris task accept ${ref}`));
-    assert.match(res.stdout, new RegExp(`rework: atris task revise ${ref}`));
+    assert.match(res.stdout, /one finished thing is waiting for your ok\. it passed both checks\./);
+    assert.match(res.stdout, new RegExp(`say yes: atris task accept ${ref}`));
     assert.match(res.stdout, /Need the legacy Validator prompt/);
     assert.doesNotMatch(res.stdout, /I checked the review setup\./);
     assert.doesNotMatch(res.stdout, /┌|└|│|Validator Agent Activated/);
