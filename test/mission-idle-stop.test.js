@@ -11,7 +11,9 @@ const {
   tickMadeProgress,
   consecutiveNoProgressTicks,
   consecutiveIdenticalSummaryTicks,
+  buildTickPrompt,
   missionJudgmentCard,
+  missionShippedCard,
   appendMissionJudgmentCard,
 } = require('../commands/mission');
 
@@ -153,6 +155,37 @@ test('appendMissionJudgmentCard preserves the existing for-you page and appends 
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('buildTickPrompt gives idle workers a proof-backed self-landing backstop ladder', () => {
+  const prompt = buildTickPrompt(
+    {
+      id: 'mission-backstop-ladder',
+      objective: 'Keep useful work moving',
+      owner: 'alice',
+      cadence: 'manual',
+      status: 'running',
+    },
+    1,
+    4,
+    { lane: 'code', verifier: 'node --test test/mission-idle-stop.test.js' },
+  );
+
+  assert.match(prompt, /## No claimable work\? Work the backstop ladder/);
+  assert.match(prompt, /Pick the FIRST rung with real fuel and do ONE bounded slice/);
+  assert.match(prompt, /1\. A failing or flaky test in this repo: fix it\./);
+  assert.match(prompt, /2\. One stale or unproven feature in atris\/features\//);
+  assert.match(prompt, /3\. One unblocked item from the atris\/TODO\.md backlog\./);
+  assert.match(prompt, /4\. Debloat: remove dead code or docs, with grep proof/);
+  assert.match(prompt, /## Proof rule/);
+  assert.match(prompt, /Run the actual CLI command or endpoint and paste the command, an output excerpt, and its exit code\./);
+  assert.match(prompt, /Self-description such as "it works now" is never proof\./);
+  assert.match(prompt, /## Landing rule/);
+  assert.match(prompt, /Safe-lane work \(internal code, tests, docs, and proofs\) must be committed and pushed or landed WITHOUT asking a human\./);
+  assert.match(prompt, /Protected lanes \(external sends, payments, credentials, auth\/CSP\/iframe\/sandbox surfaces, and deletes of user data\) are never self-landed/);
+  assert.match(prompt, /After landing a ladder-sourced slice, append a judge card to atris\/status\/for-you\.md in this SHIPPED format:/);
+  assert.ok(prompt.includes(missionShippedCard()));
+  assert.doesNotMatch(prompt, /If you can't make progress this tick/);
 });
 
 // ---------------------------------------------------------------------------
