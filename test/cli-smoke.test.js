@@ -86,14 +86,18 @@ test('log writes numbered inbox items (I#)', () => {
     assert.equal(res.status, 0, res.stderr);
 
     const logsDir = path.join(dir, 'atris', 'logs');
-    const yearDirs = fs.readdirSync(logsDir);
+    const yearDirs = fs.readdirSync(logsDir).filter((entry) => /^\d{4}$/.test(entry));
     assert.ok(yearDirs.length > 0, 'logs year directory should exist');
 
-    const yearDir = path.join(logsDir, yearDirs[0]);
-    const logFiles = fs.readdirSync(yearDir).filter((f) => f.endsWith('.md'));
+    const logFiles = yearDirs.flatMap((year) => {
+      const yearDir = path.join(logsDir, year);
+      return fs.readdirSync(yearDir)
+        .filter((file) => file.endsWith('.md'))
+        .map((file) => path.join(yearDir, file));
+    });
     assert.ok(logFiles.length > 0, 'a log file should be created');
 
-    const content = fs.readFileSync(path.join(yearDir, logFiles[0]), 'utf8');
+    const content = logFiles.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
     assert.match(content, /- \*\*I1:\*\*\s+First idea/);
   } finally {
     cleanupTempDir(dir);
