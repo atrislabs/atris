@@ -2,6 +2,7 @@
  * Atris Computer — interact with your EC2 AI Computer
  *
  *   atris computer                  — Open SMART mode (cloud in business workspace, local elsewhere)
+ *   atris computer setup            — Connect coding accounts to a computer
  *   atris computer --cloud          — Open CLOUD workspace mode
  *   atris computer create <name>    — Create and wake a business computer
  *   atris computer wake             — Start the computer
@@ -21,9 +22,16 @@ const os = require('os');
 const path = require('path');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
-const { loadCredentials, decodeJwtClaims } = require('../utils/auth');
+const { loadCredentials, decodeJwtClaims, promptUser } = require('../utils/auth');
 const { apiRequestJson, getApiBaseUrl, getAppBaseUrl } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
+const {
+  engineLoginSeatError,
+  listEngineLogins,
+  normalizeEngineLoginSeat,
+  runEngineDeviceLoginCommand,
+  validEngineLoginSeat,
+} = require('./engine');
 const { consoleCommand, gatherAtrisContext, buildSystemPrompt } = require('./console');
 const { streamSession } = require('./serve');
 const { buildRemoteAtrisBootstrapCommand } = require('../lib/runtime-bootstrap');
@@ -39,6 +47,153 @@ function getToken() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function askComputerSetup(question, deps = {}) {
+  const prompt = deps.prompt || promptUser;
+  return String(await prompt(question) || '').trim();
+}
+
+function setupComputerChoices(data) {
+  const businesses = Array.isArray(data)
+    ? data
+    : (Array.isArray(data?.businesses) ? data.businesses : []);
+  return businesses
+    .filter((business) => business && business.id)
+    .map((business) => {
+      const owner = business.name || business.slug || 'business';
+      const computer = business.computer_name || business.workspace_name || '';
+      return {
+        label: computer ? `${owner}: ${computer}` : `${owner} computer`,
+        target: { type: 'business', id: business.id },
+      };
+    });
+}
+
+async function chooseSetupComputer(computers, deps = {}) {
+  const choices = computers.length
+    ? computers
+    : [{ label: 'your personal computer', target: { type: 'user' } }];
+  if (choices.length === 1) {
+    console.log(`using ${choices[0].label}.`);
+    return choices[0];
+  }
+
+  choices.forEach((computer, index) => console.log(`${index + 1}. ${computer.label}`));
+  const answer = await askComputerSetup('which computer? [1] ', deps);
+  const selected = Number.parseInt(answer || '1', 10);
+  return choices[selected >= 1 && selected <= choices.length ? selected - 1 : 0];
+}
+
+async function chooseSetupProviders(deps = {}) {
+  while (true) {
+    const answer = (await askComputerSetup(
+      'which coding accounts do you want to connect? (codex / claude / both) [both] ',
+      deps
+    ) || 'both').toLowerCase();
+    if (answer === 'codex') return ['codex'];
+    if (answer === 'claude') return ['claude'];
+    if (answer === 'both') return ['codex', 'claude'];
+    console.error('choose codex, claude, or both.');
+  }
+}
+
+function vaultedEngineLoginRows(data) {
+  const source = Array.isArray(data?.logins) ? data.logins
+    : Array.isArray(data?.items) ? data.items
+      : data;
+  if (Array.isArray(source)) return source.filter((row) => row && typeof row === 'object');
+  if (!source || typeof source !== 'object') return [];
+
+  const rows = [];
+  for (const [provider, value] of Object.entries(source)) {
+    if (Array.isArray(value)) {
+      for (const row of value) {
+        if (row && typeof row === 'object') rows.push({ provider, ...row });
+      }
+    } else if (value && typeof value === 'object') {
+      rows.push({ provider, ...value });
+    }
+  }
+  return rows;
+}
+
+function receiptAccountFor(linked, vaultedRows) {
+  const match = vaultedRows.find((row) => {
+    const provider = String(row.provider || row.engine || '').trim().toLowerCase();
+    const seat = normalizeEngineLoginSeat(row.seat);
+    return provider === linked.provider && (!seat || seat === linked.seat);
+  });
+  return match?.account_email || match?.email || '';
+}
+
+async function computerSetup(deps = {}) {
+  try {
+    const load = deps.loadCredentials || loadCredentials;
+    const credentials = await load();
+    if (!credentials?.token) {
+      console.error('run: atris login');
+      return 1;
+    }
+
+    const api = deps.apiRequestJson || apiRequestJson;
+    const computersResult = await api('/business/', {
+      method: 'GET',
+      token: credentials.token,
+      timeoutMs: 15000,
+      retries: 0,
+    });
+    if (!computersResult.ok) {
+      console.error('could not load your computers; please try again.');
+      return 1;
+    }
+
+    const computer = await chooseSetupComputer(setupComputerChoices(computersResult.data), deps);
+    const providers = await chooseSetupProviders(deps);
+    const linked = [];
+    const deviceLogin = deps.runEngineDeviceLoginCommand || runEngineDeviceLoginCommand;
+
+    for (const provider of providers) {
+      while (true) {
+        const rawSeat = await askComputerSetup(
+          `connect a ${provider} account? give it a short name like personal or work (enter to finish) `,
+          deps
+        );
+        if (!rawSeat) break;
+        const seat = normalizeEngineLoginSeat(rawSeat);
+        if (!validEngineLoginSeat(seat)) {
+          console.error(engineLoginSeatError());
+          continue;
+        }
+
+        const code = await deviceLogin(provider, {
+          target: computer.target,
+          seat,
+          setup: true,
+        }, deps);
+        if (code !== 0) return 1;
+        linked.push({ provider, seat });
+      }
+    }
+
+    const listLogins = deps.listEngineLogins || listEngineLogins;
+    const vaulted = await listLogins(deps);
+    if (!vaulted.ok) {
+      console.error('could not check the linked accounts; please try again.');
+      return 1;
+    }
+
+    const vaultedRows = vaultedEngineLoginRows(vaulted.data);
+    for (const login of linked) {
+      const account = receiptAccountFor(login, vaultedRows);
+      console.log(`${login.provider}: ${login.seat}${account ? ` (${account})` : ''}`);
+    }
+    console.log('Done. Your computer can now work on these accounts.');
+    return 0;
+  } catch {
+    console.error('could not finish computer setup; please try again.');
+    return 1;
+  }
 }
 
 const VALID_CLOUD_WORKERS = new Set(['claude', 'openai']);
@@ -3974,11 +4129,17 @@ async function runRecruitingComputerShortcut(token, args, cloudOptions = {}) {
   }
 }
 
-async function runComputer() {
-  const parsed = parseComputerOptions(process.argv.slice(3));
+async function runComputer(argv = process.argv.slice(3), deps = {}) {
+  const parsed = parseComputerOptions(argv);
   const args = parsed.positional;
   const cloudOptions = parsed.options;
   const sub = args[0];
+
+  if (sub === 'setup') {
+    const code = await computerSetup(deps);
+    if (code !== 0) process.exitCode = code;
+    return code;
+  }
 
   if (!sub) {
     if (cloudOptions.businessSlug || cloudOptions.workspaceId) {
@@ -4085,6 +4246,7 @@ async function runComputer() {
     console.log('');
     console.log('Modes:');
     console.log('  (default)       Choose CLOUD vs LOCAL when both are available');
+    console.log('  setup           Connect named Codex or Claude accounts to a computer');
     console.log('  card            Show the local owner/computer card, no login required');
     console.log('  local           Open LOCAL Atris mode; cloud brain edits this folder');
     console.log('  proof           Run the local-edit + cloud-isolation + audit proof');
@@ -4124,6 +4286,7 @@ async function runComputer() {
     console.log('');
     console.log('Examples:');
     console.log('  atris computer');
+    console.log('  atris computer setup');
     console.log('  atris computer card --write');
     console.log('  atris business init "My Lab"     # first/default computer with Atris + operator');
     console.log('  atris computer create "Hiring Computer" --business my-lab --type recruiting');
@@ -4245,6 +4408,8 @@ async function runComputer() {
 
 module.exports = {
   runComputer,
+  computerSetup,
+  setupComputerChoices,
   buildComputerCard,
   renderComputerCard,
   renderComputerCardMarkdown,
