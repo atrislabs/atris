@@ -482,6 +482,53 @@ async function listEngineLogins(deps = {}) {
   }, deps);
 }
 
+async function listEngineSeats(deps = {}) {
+  return authenticatedEngineApi('/engines/logins/seats', {
+    method: 'GET',
+    timeoutMs: 15000,
+    retries: 0,
+  }, deps);
+}
+
+async function readyCheckEngineLogin(provider, target, deps = {}) {
+  return authenticatedEngineApi(`/engines/logins/${encodeURIComponent(provider)}/ready-check`, {
+    method: 'POST',
+    body: { target },
+    timeoutMs: 30000,
+    retries: 0,
+  }, deps);
+}
+
+function formatEngineSeats(data, now = Date.now()) {
+  const seats = Array.isArray(data?.seats) ? data.seats : [];
+  if (!seats.length) return 'No accounts linked yet. Run: atris computer setup';
+
+  const nowValue = now instanceof Date ? now.getTime() : Number(now);
+  const nowSeconds = Number.isFinite(nowValue) ? nowValue / 1000 : Date.now() / 1000;
+  return seats.map((seat) => {
+    const engine = String(seat?.engine || 'engine').trim().toLowerCase();
+    const name = String(seat?.name || 'account').trim().toLowerCase();
+    const coolingUntil = Number(seat?.cooling_until);
+    if (!Number.isFinite(coolingUntil) || coolingUntil <= nowSeconds) {
+      return `${engine} ${name} - ready`;
+    }
+    const minutes = Math.ceil((coolingUntil - nowSeconds) / 60);
+    const hours = Math.floor(minutes / 60);
+    return `${engine} ${name} - cooling down, back ${hours}h ${minutes % 60}m`;
+  }).join('\n');
+}
+
+async function runEngineSeatsCommand(deps = {}) {
+  const result = await listEngineSeats(deps);
+  if (!result.ok) {
+    console.error(result.authError ? 'Run atris login first.' : `engine seats failed: ${result.error || result.status}`);
+    return 1;
+  }
+  const now = typeof deps.now === 'function' ? deps.now() : Date.now();
+  console.log(formatEngineSeats(result.data, now));
+  return 0;
+}
+
 async function buildEngineLoginPayload(provider, deps = {}) {
   const manifest = ENGINE_LOGIN_MANIFESTS[provider];
   if (!manifest) {
@@ -1079,7 +1126,7 @@ function runDispatchCommand(args, root) {
   });
 }
 
-function engineCommand(args = []) {
+function engineCommand(args = [], deps = {}) {
   const root = process.cwd();
   if ((args[0] || '').trim() === 'dispatch') {
     return runDispatchCommand(args.slice(1), root);
@@ -1095,6 +1142,10 @@ function engineCommand(args = []) {
 
   if (sub === 'seed') {
     return runEngineSeedCommand(args.slice(args.indexOf('seed') + 1), root);
+  }
+
+  if (sub === 'seats') {
+    return runEngineSeatsCommand(deps);
   }
 
   if (sub === 'test') {
@@ -1127,7 +1178,7 @@ function engineCommand(args = []) {
   }
 
   if (sub === 'help') {
-    console.log('\n  atris engine            roster + current default\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+    console.log('\n  atris engine            roster + current default\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
     return 0;
   }
 
@@ -1186,6 +1237,10 @@ module.exports = {
   redactBackendResponse,
   buildEngineLoginPayload,
   listEngineLogins,
+  listEngineSeats,
+  readyCheckEngineLogin,
+  formatEngineSeats,
+  runEngineSeatsCommand,
   runEngineDeviceLoginCommand,
   runEngineLoginCommand,
   runEngineSeedCommand,

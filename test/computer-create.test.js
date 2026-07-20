@@ -6,10 +6,13 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const {
+  computerSetup,
   contextForAttachedWorkspaceMismatch,
   extractAttachedWorkspaceMismatch,
+  formatEngineSeats,
   printRecruitingLocalSyncOutcome,
 } = require('../commands/computer');
+const engine = require('../commands/engine');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -270,6 +273,60 @@ function captureStdout(fn) {
   }
   return `${lines.join('\n')}\n`;
 }
+
+async function captureConsole(fn) {
+  const beforeLog = console.log;
+  const beforeError = console.error;
+  const stdout = [];
+  const stderr = [];
+  console.log = (...parts) => stdout.push(parts.map(String).join(' '));
+  console.error = (...parts) => stderr.push(parts.map(String).join(' '));
+  try {
+    const code = await fn();
+    return { code, stdout: stdout.join('\n'), stderr: stderr.join('\n') };
+  } finally {
+    console.log = beforeLog;
+    console.error = beforeError;
+  }
+}
+
+test('computer setup shares seat formatting and continues when live proof throws', async () => {
+  assert.strictEqual(formatEngineSeats, engine.formatEngineSeats);
+  const questions = ['codex', 'personal', ''];
+  const deviceCalls = [];
+  const readyCalls = [];
+  const result = await captureConsole(() => computerSetup({
+    loadCredentials: async () => ({ token: 'test-token' }),
+    prompt: async () => questions.shift() || '',
+    apiRequestJson: async (pathname) => {
+      assert.equal(pathname, '/business/');
+      return { ok: true, status: 200, data: [] };
+    },
+    runEngineDeviceLoginCommand: async (provider, options) => {
+      deviceCalls.push({ provider, options });
+      return 0;
+    },
+    readyCheckEngineLogin: async (provider, target) => {
+      readyCalls.push({ provider, target });
+      throw new Error('proof unavailable');
+    },
+    listEngineSeats: async () => ({
+      ok: true,
+      status: 200,
+      data: { seats: [{ engine: 'codex', name: 'PERSONAL', cooling_until: null }] },
+    }),
+    now: () => 1_800_000_000_000,
+  }));
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /personal: linked, but the check failed - it may still work, try: atris engine seats/);
+  assert.match(result.stdout, /^codex personal - ready$/m);
+  assert.deepEqual(deviceCalls, [{
+    provider: 'codex',
+    options: { target: { type: 'user' }, seat: 'PERSONAL', setup: true },
+  }]);
+  assert.deepEqual(readyCalls, [{ provider: 'codex', target: { type: 'user' } }]);
+});
 
 test('computer proof can parse active workspace mismatch errors', () => {
   const message = 'AI computer is attached to workspace 51803cee-f153-4ac1-9cd4-eab97fd4aa3a. Activate workspace 89e8432e-e796-4e7b-9a40-e536c454fa9a to switch.';

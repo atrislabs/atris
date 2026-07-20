@@ -467,6 +467,43 @@ test('engine login help shows named seats for computer logins', async () => {
   assert.match(result.stdout, /--business <id> \[--seat <name>\]/);
 });
 
+test('engine seats renders ready, cooling, and empty accounts in plain words', async () => {
+  const now = 1_800_000_000_000;
+  assert.equal(engine.formatEngineSeats({ seats: [
+    { engine: 'codex', name: 'PERSONAL', secret_name: 'hidden-1', cooling_until: null },
+    { engine: 'claude', name: 'WORK', secret_name: 'hidden-2', cooling_until: (now / 1000) + 9000 },
+  ] }, now), [
+    'codex personal - ready',
+    'claude work - cooling down, back 2h 30m',
+  ].join('\n'));
+  assert.equal(
+    engine.formatEngineSeats({ seats: [] }, now),
+    'No accounts linked yet. Run: atris computer setup'
+  );
+
+  const calls = [];
+  const result = await captureConsole(() => engine.engineCommand(['seats'], {
+    now: () => now,
+    ensureValidCredentials: async () => ({ credentials: { token: 'test-token' } }),
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return {
+        ok: true,
+        status: 200,
+        data: { seats: [{ engine: 'codex', name: 'PERSONAL', cooling_until: null }] },
+      };
+    },
+  }));
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout, 'codex personal - ready');
+  assert.deepEqual(calls.map((call) => [call.pathname, call.options.method, call.options.token]), [
+    ['/engines/logins/seats', 'GET', 'test-token'],
+  ]);
+
+  const help = await captureConsole(() => engine.engineCommand(['help']));
+  assert.match(help.stdout, /atris engine seats +show which named accounts are ready to work/);
+});
+
 test('engine login refuses a missing whitelisted file with a plain hint', async () => {
   const dir = makeTempDir();
   let authCalls = 0;
@@ -637,6 +674,7 @@ test('computer setup links named codex and claude seats on one computer', async 
     },
     sleep: async () => {},
     deviceLoginPollMs: 1,
+    now: () => 1_800_000_000_000,
     apiRequestJson: async (pathname, options) => {
       calls.push({ pathname, options });
       if (pathname === '/business/') {
@@ -646,14 +684,14 @@ test('computer setup links named codex and claude seats on one computer', async 
           data: [{ id: 'biz-1', name: 'Acme', workspace_id: 'ws-1' }],
         };
       }
-      if (pathname === '/engines/logins') {
+      if (pathname === '/engines/logins/seats') {
         return {
           ok: true,
           status: 200,
-          data: [
-            { provider: 'codex', seat: 'PERSONAL_WORK', account_email: 'codex@example.com' },
-            { provider: 'claude', seat: 'WORK', account_email: 'claude@example.com' },
-          ],
+          data: { seats: [
+            { engine: 'codex', name: 'PERSONAL_WORK', secret_name: 'hidden-1', cooling_until: null },
+            { engine: 'claude', name: 'WORK', secret_name: 'hidden-2', cooling_until: null },
+          ] },
         };
       }
       const start = pathname.match(/^\/engines\/logins\/(codex|claude)\/device-login$/);
@@ -678,6 +716,14 @@ test('computer setup links named codex and claude seats on one computer', async 
           },
         };
       }
+      const readyCheck = pathname.match(/^\/engines\/logins\/(codex|claude)\/ready-check$/);
+      if (readyCheck && options.method === 'POST') {
+        return {
+          ok: true,
+          status: 200,
+          data: { provider: readyCheck[1], status: readyCheck[1] === 'codex' ? 'ready' : 'failed' },
+        };
+      }
       return { ok: false, status: 404, error: 'not found' };
     },
   };
@@ -689,16 +735,23 @@ test('computer setup links named codex and claude seats on one computer', async 
   assert.match(result.stdout, /^On your phone, open: https:\/\/example\.com\/claude  and type the code: CODE-C$/m);
   assert.match(result.stdout, /PERSONAL_WORK linked\./);
   assert.match(result.stdout, /WORK linked\./);
-  assert.match(result.stdout, /codex: PERSONAL_WORK \(codex@example\.com\)/);
-  assert.match(result.stdout, /claude: WORK \(claude@example\.com\)/);
+  assert.match(result.stdout, /personal_work: working/);
+  assert.match(result.stdout, /work: linked, but the check failed - it may still work, try: atris engine seats/);
+  assert.match(result.stdout, /^codex personal_work - ready$/m);
+  assert.match(result.stdout, /^claude work - ready$/m);
   assert.match(result.stdout, /Done\. Your computer can now work on these accounts\./);
 
-  const starts = calls.filter((call) => call.options.method === 'POST');
+  const starts = calls.filter((call) => /\/device-login$/.test(call.pathname));
   assert.deepEqual(starts.map((call) => call.options.body), [
     { target: { type: 'business', id: 'biz-1' }, seat: 'PERSONAL_WORK' },
     { target: { type: 'business', id: 'biz-1' }, seat: 'WORK' },
   ]);
-  assert.equal(calls.at(-1).pathname, '/engines/logins');
+  const readyChecks = calls.filter((call) => /\/ready-check$/.test(call.pathname));
+  assert.deepEqual(readyChecks.map((call) => [call.pathname, call.options.body]), [
+    ['/engines/logins/codex/ready-check', { target: { type: 'business', id: 'biz-1' } }],
+    ['/engines/logins/claude/ready-check', { target: { type: 'business', id: 'biz-1' } }],
+  ]);
+  assert.equal(calls.at(-1).pathname, '/engines/logins/seats');
   assert.ok(calls.every((call) => call.options.token === 'test-token'));
   assert.equal(questions[0], 'which coding accounts do you want to connect? (codex / claude / both) [both] ');
   assert.equal(questions[1], 'connect a codex account? give it a short name like personal or work (enter to finish) ');
