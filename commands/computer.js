@@ -128,8 +128,11 @@ async function computerSetup(deps = {}) {
 
     for (const provider of providers) {
       while (true) {
+        const providerHint = provider === 'claude'
+          ? ' you will get a code in the browser, paste it back here.'
+          : '';
         const rawSeat = await askComputerSetup(
-          `connect a ${provider} account? give it a short name like personal or work (enter to finish) `,
+          `connect a ${provider} account?${providerHint} give it a short name like personal or work (enter to finish) `,
           deps
         );
         if (!rawSeat) break;

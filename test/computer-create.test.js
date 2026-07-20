@@ -328,6 +328,40 @@ test('computer setup shares seat formatting and continues when live proof throws
   assert.deepEqual(readyCalls, [{ provider: 'codex', target: { type: 'user' } }]);
 });
 
+test('computer setup gives claude paste-back guidance and forwards readline deps', async () => {
+  const questions = ['claude', 'work', ''];
+  const readlineDep = { createInterface: () => { throw new Error('not called by stub'); } };
+  let forwardedDeps;
+  const result = await captureConsole(() => computerSetup({
+    loadCredentials: async () => ({ token: 'test-token' }),
+    prompt: async (question) => {
+      if (question.startsWith('connect a claude account?')) {
+        assert.match(question, /you will get a code in the browser, paste it back here/);
+      }
+      return questions.shift() || '';
+    },
+    readline: readlineDep,
+    apiRequestJson: async (pathname) => {
+      assert.equal(pathname, '/business/');
+      return { ok: true, status: 200, data: [] };
+    },
+    runEngineDeviceLoginCommand: async (_provider, _options, deps) => {
+      forwardedDeps = deps;
+      return 0;
+    },
+    readyCheckEngineLogin: async () => ({ ok: true, data: { status: 'ready' } }),
+    listEngineSeats: async () => ({
+      ok: true,
+      status: 200,
+      data: { seats: [{ engine: 'claude', name: 'WORK', cooling_until: null }] },
+    }),
+  }));
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.strictEqual(forwardedDeps.readline, readlineDep);
+  assert.match(result.stdout, /^claude work - ready$/m);
+});
+
 test('computer proof can parse active workspace mismatch errors', () => {
   const message = 'AI computer is attached to workspace 51803cee-f153-4ac1-9cd4-eab97fd4aa3a. Activate workspace 89e8432e-e796-4e7b-9a40-e536c454fa9a to switch.';
 

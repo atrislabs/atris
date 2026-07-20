@@ -615,6 +615,18 @@ async function waitForDeviceLoginPoll(ms, deps = {}) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function readDeviceLoginPasteBackCode(deps = {}) {
+  const readlineDep = deps.readline || readline;
+  const input = deps.stdin || process.stdin;
+  const output = deps.stdout || process.stdout;
+  const rl = readlineDep.createInterface({ input, output });
+  try {
+    return String(await new Promise((resolve) => rl.question('', resolve)) || '').trim();
+  } finally {
+    rl.close();
+  }
+}
+
 async function runEngineDeviceLoginCommand(provider, options, deps = {}) {
   let target;
   let seat;
@@ -656,6 +668,7 @@ async function runEngineDeviceLoginCommand(provider, options, deps = {}) {
 
   let finalStatus = startStatus;
   let codePrinted = false;
+  let pasteBackSubmitted = false;
   const pollMs = Math.max(1, Number(deps.deviceLoginPollMs ?? ENGINE_DEVICE_LOGIN_POLL_MS));
   const timeoutMs = Math.max(0, Number(deps.deviceLoginTimeoutMs ?? ENGINE_DEVICE_LOGIN_TIMEOUT_MS));
   const maxPolls = Math.ceil(timeoutMs / pollMs);
@@ -674,6 +687,7 @@ async function runEngineDeviceLoginCommand(provider, options, deps = {}) {
     }
 
     finalStatus = normalizeDeviceLoginStatus(polled.data, provider, sessionId, seat);
+    const status = String(finalStatus.status || '').toLowerCase();
     if (!codePrinted && finalStatus.verify_url && finalStatus.code) {
       if (options.setup) {
         console.log(`On your phone, open: ${finalStatus.verify_url}  and type the code: ${finalStatus.code}`);
@@ -683,7 +697,42 @@ async function runEngineDeviceLoginCommand(provider, options, deps = {}) {
       codePrinted = true;
     }
 
-    const status = String(finalStatus.status || '').toLowerCase();
+    const pasteBackRequired = !pasteBackSubmitted
+      && status === 'pending_user'
+      && finalStatus.verify_url
+      && !finalStatus.code
+      && String(finalStatus.provider || provider).toLowerCase() === 'claude';
+    if (pasteBackRequired) {
+      const printPrompt = options.json ? console.error : console.log;
+      printPrompt(`On your phone, open: ${finalStatus.verify_url}`);
+      let submitted = false;
+      for (let submitAttempt = 0; submitAttempt < 2; submitAttempt += 1) {
+        printPrompt('When the browser shows you a code, paste it here:');
+        const pastedCode = await readDeviceLoginPasteBackCode(deps);
+        const codeResult = await authenticatedEngineApi(
+          `/engines/logins/device-login/${encodeURIComponent(sessionId)}/code`,
+          {
+            method: 'POST',
+            body: { code: pastedCode },
+            timeoutMs: 30000,
+            retries: 0,
+          },
+          deps
+        );
+        if (codeResult.ok) {
+          submitted = true;
+          pasteBackSubmitted = true;
+          break;
+        }
+        if (submitAttempt === 0) {
+          console.error('that code did not work; paste it again.');
+        } else {
+          console.error('that code did not work; please start the login again.');
+        }
+      }
+      if (!submitted) return 1;
+    }
+
     if (status === 'completed') {
       if (options.setup) console.log(`${seat} linked.`);
       else printDeviceLoginCompleted(finalStatus, { json: options.json });
