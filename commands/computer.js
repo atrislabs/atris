@@ -27,8 +27,10 @@ const { apiRequestJson, getApiBaseUrl, getAppBaseUrl } = require('../utils/api')
 const { loadBusinesses, saveBusinesses } = require('./business');
 const {
   engineLoginSeatError,
-  listEngineLogins,
+  formatEngineSeats,
+  listEngineSeats,
   normalizeEngineLoginSeat,
+  readyCheckEngineLogin,
   runEngineDeviceLoginCommand,
   validEngineLoginSeat,
 } = require('./engine');
@@ -98,35 +100,6 @@ async function chooseSetupProviders(deps = {}) {
   }
 }
 
-function vaultedEngineLoginRows(data) {
-  const source = Array.isArray(data?.logins) ? data.logins
-    : Array.isArray(data?.items) ? data.items
-      : data;
-  if (Array.isArray(source)) return source.filter((row) => row && typeof row === 'object');
-  if (!source || typeof source !== 'object') return [];
-
-  const rows = [];
-  for (const [provider, value] of Object.entries(source)) {
-    if (Array.isArray(value)) {
-      for (const row of value) {
-        if (row && typeof row === 'object') rows.push({ provider, ...row });
-      }
-    } else if (value && typeof value === 'object') {
-      rows.push({ provider, ...value });
-    }
-  }
-  return rows;
-}
-
-function receiptAccountFor(linked, vaultedRows) {
-  const match = vaultedRows.find((row) => {
-    const provider = String(row.provider || row.engine || '').trim().toLowerCase();
-    const seat = normalizeEngineLoginSeat(row.seat);
-    return provider === linked.provider && (!seat || seat === linked.seat);
-  });
-  return match?.account_email || match?.email || '';
-}
-
 async function computerSetup(deps = {}) {
   try {
     const load = deps.loadCredentials || loadCredentials;
@@ -150,8 +123,8 @@ async function computerSetup(deps = {}) {
 
     const computer = await chooseSetupComputer(setupComputerChoices(computersResult.data), deps);
     const providers = await chooseSetupProviders(deps);
-    const linked = [];
     const deviceLogin = deps.runEngineDeviceLoginCommand || runEngineDeviceLoginCommand;
+    const readyCheck = deps.readyCheckEngineLogin || readyCheckEngineLogin;
 
     for (const provider of providers) {
       while (true) {
@@ -172,22 +145,27 @@ async function computerSetup(deps = {}) {
           setup: true,
         }, deps);
         if (code !== 0) return 1;
-        linked.push({ provider, seat });
+        let working = false;
+        try {
+          const checked = await readyCheck(provider, computer.target, deps);
+          working = Boolean(checked?.ok && checked.data?.status === 'ready');
+        } catch {}
+        const seatName = seat.toLowerCase();
+        console.log(working
+          ? `${seatName}: working`
+          : `${seatName}: linked, but the check failed - it may still work, try: atris engine seats`);
       }
     }
 
-    const listLogins = deps.listEngineLogins || listEngineLogins;
-    const vaulted = await listLogins(deps);
-    if (!vaulted.ok) {
+    const listSeats = deps.listEngineSeats || listEngineSeats;
+    const seats = await listSeats(deps);
+    if (!seats.ok) {
       console.error('could not check the linked accounts; please try again.');
       return 1;
     }
 
-    const vaultedRows = vaultedEngineLoginRows(vaulted.data);
-    for (const login of linked) {
-      const account = receiptAccountFor(login, vaultedRows);
-      console.log(`${login.provider}: ${login.seat}${account ? ` (${account})` : ''}`);
-    }
+    const now = typeof deps.now === 'function' ? deps.now() : Date.now();
+    console.log(formatEngineSeats(seats.data, now));
     console.log('Done. Your computer can now work on these accounts.');
     return 0;
   } catch {
@@ -4410,6 +4388,7 @@ module.exports = {
   runComputer,
   computerSetup,
   setupComputerChoices,
+  formatEngineSeats,
   buildComputerCard,
   renderComputerCard,
   renderComputerCardMarkdown,
