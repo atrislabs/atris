@@ -7549,7 +7549,21 @@ function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
       if (e.code === 'EEXIST') {
         let info = {};
         try { info = JSON.parse(fs.readFileSync(lockFile, 'utf8') || '{}'); } catch {}
-        if (!missionLockOwnerIsAlive(info.pid)) {
+        const holderPid = Number(info.pid);
+        const holderKnown = Number.isInteger(holderPid) && holderPid > 0;
+        // A lock is created empty (openSync 'wx') and its pid record is written a
+        // moment later. A racing waiter that reads the file inside that window sees
+        // no pid — do NOT treat that as a dead owner, or two processes both "own"
+        // the lock and clobber each other's writes. Only steal when the holder pid
+        // is known-dead, or when a pidless lock has sat abandoned past the tiny
+        // creation window (guards against a crash between openSync and writeSync).
+        let stealable = holderKnown && !missionLockOwnerIsAlive(holderPid);
+        if (!holderKnown) {
+          let ageMs = 0;
+          try { ageMs = Date.now() - fs.statSync(lockFile).mtimeMs; } catch { ageMs = 0; }
+          stealable = ageMs > 1000;
+        }
+        if (stealable) {
           try {
             fs.unlinkSync(lockFile);
             continue;
