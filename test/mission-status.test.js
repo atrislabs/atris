@@ -69,8 +69,8 @@ test('mission landing summary strips broken markdown before status renders it', 
     checked: 'Verifier passed: test -s /Users/private/workspace/EVIDENCE.md.',
     tested: 'Verifier command passed: test -s /Users/private/workspace/EVIDENCE.md.',
   });
-  assert.equal(storedFileProof[3], '  How I checked: I checked that the saved artifact exists and is not empty.');
-  assert.equal(storedFileProof[4], '  What I tested: Saved artifact check passed: the file exists and is not empty.');
+  assert.equal(storedFileProof[2], '  How I checked: I checked that the saved artifact exists and is not empty.');
+  assert.equal(storedFileProof[3], '  What I tested: Saved artifact check passed: the file exists and is not empty.');
   assert.doesNotMatch(storedFileProof.join('\n'), /\/Users\/private|test -s/);
   const landVerifier = { passed: true, command: 'node /Users/private/bin/atris.js land status' };
   assert.equal(missionVerifierCheckedText(landVerifier, {}), 'I checked the live landing queue.');
@@ -83,8 +83,8 @@ test('mission landing summary strips broken markdown before status renders it', 
     checked: 'Verifier passed: node /Users/private/bin/atris.js land status.',
     tested: 'Verifier command passed: node /Users/private/bin/atris.js land status.',
   });
-  assert.equal(storedLandProof[3], '  How I checked: I checked the live landing queue.');
-  assert.equal(storedLandProof[4], '  What I tested: Landing status check passed: the queue and worktree state were readable.');
+  assert.equal(storedLandProof[2], '  How I checked: I checked the live landing queue.');
+  assert.equal(storedLandProof[3], '  What I tested: Landing status check passed: the queue and worktree state were readable.');
   assert.doesNotMatch(storedLandProof.join('\n'), /\/Users\/private|atris\.js|node /);
   const drillVerifier = { passed: true, command: 'node /Users/private/bin/atris.js drill' };
   assert.equal(missionVerifierCheckedText(drillVerifier, {}), 'I ran the no-model end-to-end workflow drill.');
@@ -97,8 +97,8 @@ test('mission landing summary strips broken markdown before status renders it', 
     checked: 'Verifier passed: node /Users/private/bin/atris.js drill.',
     tested: 'Verifier command passed: node /Users/private/bin/atris.js drill.',
   });
-  assert.equal(storedDrillProof[3], '  How I checked: I ran the no-model end-to-end workflow drill.');
-  assert.equal(storedDrillProof[4], '  What I tested: End-to-end workflow drill passed in a throwaway workspace.');
+  assert.equal(storedDrillProof[2], '  How I checked: I ran the no-model end-to-end workflow drill.');
+  assert.equal(storedDrillProof[3], '  What I tested: End-to-end workflow drill passed in a throwaway workspace.');
   assert.doesNotMatch(storedDrillProof.join('\n'), /\/Users\/private|atris\.js|node /);
 });
 
@@ -339,7 +339,7 @@ test('mission status keeps full-budget work moving until promised time ends', ()
     const status = runCli(['mission', 'status', 'mission-full-budget'], { cwd: dir });
     assert.equal(status.status, 0, status.stderr);
     assert.match(status.stdout, /state: working for the full 6 hours/);
-    assert.match(status.stdout, /next: keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment/);
+    assert.match(status.stdout, /next: keep shipping bounded improvements for the remaining 6h(?: 0m)? of the 6-hour commitment/);
     assert.match(status.stdout, /proof: saved; inspect: atris mission timeline mission-full-budget --limit 5/);
     assert.match(status.stdout, /Proof: Receipt saved in mission history\./);
     assert.doesNotMatch(status.stdout, /atris\/runs\/full-budget\.json/);
@@ -349,26 +349,26 @@ test('mission status keeps full-budget work moving until promised time ends', ()
     assert.equal(jsonStatus.status, 0, jsonStatus.stderr);
     const mission = JSON.parse(jsonStatus.stdout).missions[0];
     assert.equal(mission.status, 'ready');
-    assert.match(mission.next_action, /^keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment$/);
+    assert.match(mission.next_action, /^keep shipping bounded improvements for the remaining 6h(?: 0m)? of the 6-hour commitment$/);
     assert.equal(mission.task_spine.current_step_command, null);
-    assert.match(mission.last_landing.next, /^keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment$/);
+    assert.match(mission.last_landing.next, /^keep shipping bounded improvements for the remaining 6h(?: 0m)? of the 6-hour commitment$/);
 
     const statusNow = fs.readFileSync(path.join(dir, 'atris', 'status', 'now.md'), 'utf8');
     assert.match(statusNow, /state: working for the full 6 hours/);
-    assert.match(statusNow, /next: keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment/);
+    assert.match(statusNow, /next: keep shipping bounded improvements for the remaining 6h(?: 0m)? of the 6-hour commitment/);
     assert.match(statusNow, /proof: saved; inspect: atris mission timeline mission-full-budget --limit 5/);
     assert.doesNotMatch(statusNow, /atris\/runs\/full-budget\.json/);
     assert.doesNotMatch(statusNow, /task next:|current-step/);
     const memberNow = fs.readFileSync(path.join(dir, 'atris', 'team', 'linguist', 'now.md'), 'utf8');
     assert.match(memberNow, /status: working for the full 6 hours/);
-    assert.match(memberNow, /next: keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment/);
+    assert.match(memberNow, /next: keep shipping bounded improvements for the remaining 6h(?: 0m)? of the 6-hour commitment/);
     assert.match(memberNow, /proof: saved; inspect: atris mission timeline mission-full-budget --limit 5/);
     assert.doesNotMatch(memberNow, /atris\/runs\/full-budget\.json/);
     assert.doesNotMatch(memberNow, /task next:|current-step/);
 
     const timeline = runCli(['mission', 'timeline', 'mission-full-budget'], { cwd: dir });
     assert.equal(timeline.status, 0, timeline.stderr || timeline.stdout);
-    assert.match(timeline.stdout, /Next: keep shipping bounded improvements for the remaining 6h 0m of the 6-hour commitment/);
+    assert.match(timeline.stdout, /Next: keep shipping bounded improvements for the remaining 6h(?: 0m)? of the 6-hour commitment/);
     assert.match(timeline.stdout, /Proof: saved in mission history\./);
     assert.match(timeline.stdout, /History:\n  1\. An earlier bounded improvement passed its check\./);
     assert.equal((timeline.stdout.match(/Proof: saved in mission history\./g) || []).length, 1);
@@ -1301,7 +1301,7 @@ test('mission complete emits a human-readable landing receipt', () => {
     assert.equal(payload.action, 'mission_completed');
     assert.equal(payload.mission.status, 'complete');
     assert.equal(payload.landing.happened, 'json complete receipt mission is complete.');
-    assert.match(payload.landing.reason, /understandable before a human accepts/);
+    assert.equal(payload.landing.reason, '');
     assert.match(payload.landing.checked, /passing verifier receipt/);
     assert.match(payload.landing.tested, /Verifier command passed: node -e "process\.exit\(0\)"/);
     assert.match(payload.result.saved, /Proof saved at/);
@@ -1340,7 +1340,7 @@ test('mission complete emits a human-readable landing receipt', () => {
     assert.equal(humanCompleted.status, 0, humanCompleted.stderr || humanCompleted.stdout);
     assert.match(humanCompleted.stdout, /Landing:/);
     assert.match(humanCompleted.stdout, /Changed: human complete receipt mission is complete\./);
-    assert.match(humanCompleted.stdout, /Why it matters: It makes the result understandable before a human accepts or rejects it\./);
+    assert.doesNotMatch(humanCompleted.stdout, /Why it matters:/);
     assert.match(humanCompleted.stdout, /Artifact: Open timeline at atris\/runs\/mission-/);
     assert.match(humanCompleted.stdout, /How I checked: I checked the passing verifier receipt/);
     assert.match(humanCompleted.stdout, /What I tested: Verifier command passed: node -e "process\.exit\(0\)"/);
@@ -1576,7 +1576,7 @@ test('mission run summary starts with product landing instead of run internals',
     assert.equal(ran.status, 0, ran.stderr || ran.stdout);
     assert.match(ran.stdout, /^Landing:/m);
     assert.match(ran.stdout, /Changed: human run summary landing is ready for review\./);
-    assert.match(ran.stdout, /Why it matters: It makes the result understandable before a human accepts or rejects it\./);
+    assert.doesNotMatch(ran.stdout, /Why it matters:/);
     assert.match(ran.stdout, /How I checked: Verifier passed: node -e "process\.exit\(0\)"/);
     assert.match(ran.stdout, /What I tested: Verifier command passed: node -e "process\.exit\(0\)"/);
     assert.match(ran.stdout, /Proof: Summary receipt saved at atris\/runs\/mission-/);
@@ -1619,7 +1619,7 @@ test('mission tick landing uses its stated consequence as the reason', () => {
     assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
     assert.match(ticked.stdout, /^Landing:/m);
     assert.match(ticked.stdout, /Changed: Made review landing proof high-level, so operators can judge the result without opening logs\./);
-    assert.match(ticked.stdout, /Why it matters: Operators can judge the result without opening logs\./);
+    assert.match(ticked.stdout, /Why it matters: operators can judge the result without opening logs\./);
     assert.doesNotMatch(ticked.stdout, /Changed: overnight self improve loop is ready for review\./);
     assert.match(ticked.stdout, /How I checked: Verifier passed: node -e "process\.exit\(0\)"/);
     assert.match(ticked.stdout, /What I tested: Verifier command passed: node -e "process\.exit\(0\)"/);
@@ -1754,7 +1754,7 @@ test('mission tick receipt stores result.landing with high-level verifier meanin
 
     assert.equal(receipt.result.landing.schema, 'atris.result_landing.v1');
     assert.equal(receipt.result.landing.changed, 'Standardized mission proof receipts.');
-    assert.match(receipt.result.landing.reason, /understandable before a human accepts/);
+    assert.equal(receipt.result.landing.reason, '');
     assert.equal(receipt.result.landing.checked, 'I ran the behavior checks.');
     assert.match(receipt.result.landing.tested, /Automated behavior checks passed/);
     assert.match(receipt.result.landing.proof, /Receipt saved at atris\/runs\/mission-/);

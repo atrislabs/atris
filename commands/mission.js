@@ -50,7 +50,7 @@ const {
   formatBytes,
 } = require('../lib/runs-prune');
 const autolandLib = require('../lib/autoland');
-const { gateForHuman } = require('../lib/voice-gate');
+const { gateForHuman, landingWhyClause } = require('../lib/voice-gate');
 const { operatorReady, hasAgentJargon } = require('./autoland');
 const {
   MISSION_INSPECT_FIELDS,
@@ -1655,20 +1655,8 @@ function missionLandingStepSummary(summary) {
 }
 
 function missionHumanReasonText(mission, changed = '') {
-  const consequence = String(changed || '').match(/,\s+so\s+(.+?)\s*[.!?]*$/i)?.[1]?.trim();
-  if (consequence) {
-    const sentence = consequence.charAt(0).toUpperCase() + consequence.slice(1);
-    return `${sentence.replace(/[.!?]+$/g, '')}.`;
-  }
-  const objective = String(mission?.objective || '').trim();
-  const text = `${objective} ${changed}`.toLowerCase();
-  if (/\b(human|plain|language|landing|proof|receipt|understand|readable)\b/.test(text)) {
-    return 'It makes the result understandable before a human accepts or rejects it.';
-  }
-  if (/\b(update|install|runner|autopilot|mission run|heartbeat)\b/.test(text)) {
-    return 'It proves the workflow works in the place people actually use it.';
-  }
-  return 'It turns the mission into a concrete result a human can accept, reject, or run again.';
+  const clause = landingWhyClause(changed);
+  return clause ? clause.why : '';
 }
 
 function missionPlainVerifiedSummary(text) {
@@ -1865,10 +1853,11 @@ function missionLandingLines(landing) {
       : (/(?:node\s+\S*atris\.js|\batris)\s+drill\b/i.test(rawTested)
         ? 'End-to-end workflow drill passed in a throwaway workspace.'
         : rawTested));
+  const reason = landing.reason || landing.why || '';
   return [
     'Landing:',
     `  Changed: ${changed}`,
-    `  Why it matters: ${landing.reason || landing.why || 'This makes the work easier to judge.'}`,
+    ...(reason ? [`  Why it matters: ${reason}`] : []),
     `  How I checked: ${checked}`,
     `  What I tested: ${tested}`,
     `  Proof: ${landing.proof || landing.saved || 'No proof path recorded.'}`,
@@ -2344,7 +2333,7 @@ function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalRecei
   const lines = [
     'Landing:',
     `  Changed: ${changed}`,
-    `  Why it matters: ${reason}`,
+    ...(reason ? [`  Why it matters: ${reason}`] : []),
     ...(missionBudgetLine(mission) ? [`  Budget: ${missionBudgetLine(mission)}`] : []),
     `  How I checked: ${checked}`,
     `  What I tested: ${tested}`,

@@ -121,6 +121,38 @@ test('an explicit reason wins and the landing sentence stays whole', () => {
   assert.equal(landing.reason, 'old approvals stop running after their context changes.');
 });
 
+test('a mission-bridged landing lifts the receipt sentence instead of echoing the title', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const pathMod = require('node:path');
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'atris-receipt-lift-'));
+  try {
+    fs.mkdirSync(pathMod.join(dir, 'atris', 'runs'), { recursive: true });
+    fs.writeFileSync(pathMod.join(dir, 'atris', 'runs', 'mission-lift.json'), JSON.stringify({
+      mission_id: 'm1',
+      result: {
+        landing: {
+          changed: 'Every pitch number now comes from real records, so nothing in the story is estimated.',
+          reason: '',
+        },
+      },
+    }));
+    const landing = taskReviewLanding({
+      title: 'Mission XP: Build Numbers Pack Mission Room',
+      status: 'review',
+      workspace_root: dir,
+      metadata: {
+        mission_id: 'm1',
+        latest_agent_proof: 'Mission receipt: atris/runs/mission-lift.json; checks passed',
+      },
+    });
+    assert.equal(landing.happened, 'Every pitch number now comes from real records.');
+    assert.equal(landing.reason, 'nothing in the story is estimated.');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('missionHumanStatusText sends status prose through the human voice gate', () => {
   assert.equal(missionHumanStatusText({ status: 'waiting_for_human' }), 'waiting for human');
 });

@@ -20,7 +20,7 @@ const {
 const { extractReceiptEvidence, RECEIPT_PATH_PATTERN } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const reviewIntegrity = require('../lib/review-integrity');
-const { gateForHuman, numberWord } = require('../lib/voice-gate');
+const { gateForHuman, isRetiredFillerReason, landingWhyClause, numberWord } = require('../lib/voice-gate');
 const {
   normalizeOwnerSlug,
   resolveFunctionalOwner: resolveFunctionalTaskOwner,
@@ -565,6 +565,31 @@ function receiptTextForProof(proof, root = process.cwd()) {
   return chunks.join(' ');
 }
 
+// Mission ticks already compose a real landing sentence into the run receipt.
+// When a mission-bridged task lands with only a receipt proof, lift that
+// sentence so the review queue shows the work instead of echoing the title.
+function missionReceiptResultForProof(task, proof, root = process.cwd()) {
+  const metadata = task?.metadata || {};
+  if (!metadata.mission_id && !metadata.goal_id) return null;
+  const pattern = new RegExp(RECEIPT_PATH_PATTERN.source, 'g');
+  let match;
+  while ((match = pattern.exec(String(proof || '')))) {
+    const rel = match[1];
+    if (!rel || rel.includes('*')) continue;
+    let landing = null;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(path.resolve(root, rel), 'utf8'));
+      landing = parsed?.result?.landing || parsed?.landing || parsed?.last_landing || null;
+    } catch { continue; }
+    const changed = String(landing?.changed || landing?.happened || '').replace(/\s+/g, ' ').trim();
+    if (!changed) continue;
+    if (/\brecorded tick \d+\.?$/i.test(changed) || /^recorded a proof heartbeat\b/i.test(changed)) continue;
+    const reason = String(landing?.reason || landing?.why || '').replace(/\s+/g, ' ').trim();
+    return { changed, reason: reason && !isRetiredFillerReason(reason) ? reason : null };
+  }
+  return null;
+}
+
 function missionXpEndToEndProofIssue(task, proof, root = process.cwd()) {
   if (!goldenPathMissionXpTask(task)) return null;
   const corpus = `${String(proof || '')} ${receiptTextForProof(proof, root)}`
@@ -1051,40 +1076,8 @@ function proofToReasonText(proof) {
 // A landing sentence written for --result already carries its own why
 // ("..., so operators keep deciding instead of waiting"). Reuse that clause
 // as the reason instead of inventing one; with no clause, stay silent.
-const LANDING_PARTICIPLE_WHY = {
-  avoiding: 'it avoids',
-  cutting: 'it cuts',
-  eliminating: 'it eliminates',
-  giving: 'it gives',
-  keeping: 'it keeps',
-  making: 'it makes',
-  preventing: 'it prevents',
-  reducing: 'it reduces',
-  removing: 'it removes',
-  saving: 'it saves',
-  stopping: 'it stops',
-};
-
-function landingWhyClause(sentence) {
-  const text = String(sentence || '').replace(/\s+/g, ' ').trim();
-  const finish = (change, why) => {
-    const cleanChange = String(change || '').replace(/[,;:]+$/, '').trim();
-    const cleanWhy = String(why || '').trim();
-    if (!cleanChange || !cleanWhy) return null;
-    return {
-      change: /[.!?]$/.test(cleanChange) ? cleanChange : `${cleanChange}.`,
-      why: /[.!?]$/.test(cleanWhy) ? cleanWhy : `${cleanWhy}.`,
-    };
-  };
-  const connective = text.match(/^(.{12,}?),?\s+(?:so(?:\s+that)?|because|which means)\s+(.{8,}?)[.!?]?$/i);
-  if (connective) return finish(connective[1], connective[2]);
-  const participles = Object.keys(LANDING_PARTICIPLE_WHY).join('|');
-  const participial = text.match(new RegExp(`^(.{12,}?),\\s+(${participles})\\s+(.{4,}?)[.!?]?$`, 'i'));
-  if (participial) {
-    return finish(participial[1], `${LANDING_PARTICIPLE_WHY[participial[2].toLowerCase()]} ${participial[3]}`);
-  }
-  return null;
-}
+// landingWhyClause lives in lib/voice-gate.js so every human-bound landing
+// composer (task reviews, mission receipts) shares the same why extraction.
 
 function proofToHumanCheck(proof) {
   const text = String(proof || '').replace(/\s+/g, ' ').trim();
@@ -1199,11 +1192,15 @@ function taskReviewLanding(task, review = {}, payload = {}) {
     || payload.checked || metadata.result_checked || metadata.human_checked || metadata.checked;
   const explicitTested = landingPayloadValue(payload, metadata, 'tested');
   const explicitDecision = landingPayloadValue(payload, metadata, 'decision');
-  const explicitReason = landingPayloadValue(payload, metadata, 'reason')
+  const explicitReasonRaw = landingPayloadValue(payload, metadata, 'reason')
     || landingPayloadValue(payload, metadata, 'why')
     || payload.reason || payload.why || metadata.result_reason || metadata.review_reason || metadata.why_it_matters;
-  let happened = clipStatusText(explicitHappened || titleToResultText(task.title), 220);
-  let reason = clipStatusText(explicitReason || proofToReasonText(proof), 220);
+  const explicitReason = explicitReasonRaw && !isRetiredFillerReason(explicitReasonRaw) ? explicitReasonRaw : null;
+  const missionLift = explicitHappened
+    ? null
+    : missionReceiptResultForProof(task, proof, task.workspace_root || process.cwd());
+  let happened = clipStatusText(explicitHappened || (missionLift && missionLift.changed) || titleToResultText(task.title), 220);
+  let reason = clipStatusText(explicitReason || proofToReasonText(proof) || (missionLift && missionLift.reason) || '', 220);
   if (!reason) {
     const clause = landingWhyClause(happened);
     if (clause) {
@@ -8482,6 +8479,7 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
     const lesson = String(options.lesson || '');
     const nextTask = String(options.nextTask || '');
     const resultTrace = buildAutomaticResultTrace(taskDb, db, taskId, { actor, proof });
+    const missionResult = missionReceiptResultForProof(task, proof, task.workspace_root || process.cwd());
     const ready = taskDb.readyTask(db, {
       id: taskId,
       actor,
@@ -8489,6 +8487,8 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
       lesson,
       nextTask,
       resultTrace: resultTrace && resultTrace.trace,
+      result: missionResult ? missionResult.changed : undefined,
+      reason: missionResult ? missionResult.reason : undefined,
     });
     if (!ready.ready) taskStepFailure('atris task step', ready, actionPage);
     task = taskDetail(taskDb, db, taskId) || task;
