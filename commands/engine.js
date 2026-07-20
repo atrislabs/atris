@@ -137,6 +137,21 @@ function normalizeLoginProvider(name) {
   return ENGINE_LOGIN_MANIFESTS[canonical] ? canonical : '';
 }
 
+function normalizeEngineLoginSeat(name) {
+  return String(name || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+}
+
+function validEngineLoginSeat(name) {
+  return /^[A-Z0-9][A-Z0-9_]{0,47}$/.test(String(name || ''));
+}
+
+function engineLoginSeatError() {
+  return 'seat names are letters, numbers, underscores - like personal or work';
+}
+
 function byteLength(value) {
   return Buffer.byteLength(String(value || ''), 'utf8');
 }
@@ -227,6 +242,8 @@ function parseEngineLoginArgs(args = []) {
     computer: false,
     business: '',
     businessFlag: false,
+    seat: '',
+    seatFlag: false,
     help: false,
   };
   for (let i = 0; i < args.length; i += 1) {
@@ -276,6 +293,20 @@ function parseEngineLoginArgs(args = []) {
       options.business = arg.slice('--business='.length).trim();
       continue;
     }
+    if (arg === '--seat') {
+      options.seatFlag = true;
+      const next = args[i + 1] === undefined ? '' : String(args[i + 1] || '');
+      if (next && !next.startsWith('--')) {
+        options.seat = normalizeEngineLoginSeat(next);
+        i += 1;
+      }
+      continue;
+    }
+    if (arg.startsWith('--seat=')) {
+      options.seatFlag = true;
+      options.seat = normalizeEngineLoginSeat(arg.slice('--seat='.length));
+      continue;
+    }
     if (arg.startsWith('--')) continue;
     if (!options.provider) options.provider = arg;
   }
@@ -320,7 +351,7 @@ function parseEngineSeedArgs(args = []) {
 }
 
 function printEngineLoginHelp() {
-  console.log('\n  atris engine login <provider> --yes\n                           upload a local whitelisted engine login to the Atris vault\n  atris engine login <provider> --computer\n                           sign in on one of your Atris computers by device flow\n  atris engine login <provider> --business <id>\n                           sign in on a business Atris computer by device flow\n  atris engine login --list\n                           list vaulted engine logins\n  atris engine login --remove <provider>\n                           remove a vaulted engine login\n  providers: codex, claude, cursor, devin, grok\n');
+  console.log('\n  atris engine login <provider> --yes\n                           upload a local whitelisted engine login to the Atris vault\n  atris engine login <provider> --computer [--seat <name>]\n                           sign in on one of your Atris computers by device flow\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on a business Atris computer by device flow\n  atris engine login --list\n                           list vaulted engine logins\n  atris engine login --remove <provider>\n                           remove a vaulted engine login\n  providers: codex, claude, cursor, devin, grok\n');
 }
 
 function printEngineSeedHelp() {
@@ -443,6 +474,14 @@ async function authenticatedEngineApi(pathname, options, deps = {}) {
   });
 }
 
+async function listEngineLogins(deps = {}) {
+  return authenticatedEngineApi('/engines/logins', {
+    method: 'GET',
+    timeoutMs: 15000,
+    retries: 0,
+  }, deps);
+}
+
 async function buildEngineLoginPayload(provider, deps = {}) {
   const manifest = ENGINE_LOGIN_MANIFESTS[provider];
   if (!manifest) {
@@ -471,6 +510,7 @@ async function buildEngineLoginPayload(provider, deps = {}) {
 }
 
 function engineDeviceLoginTarget(options) {
+  if (options.target) return options.target;
   if (!options.computer) return null;
   if (options.businessFlag && !options.business) {
     const err = new Error('usage: atris engine login <provider> --business <id>');
@@ -481,12 +521,13 @@ function engineDeviceLoginTarget(options) {
   return { type: 'user' };
 }
 
-function normalizeDeviceLoginStatus(data, provider, sessionId) {
+function normalizeDeviceLoginStatus(data, provider, sessionId, seat = '') {
   const payload = data && typeof data === 'object' ? data : {};
   return {
     ...payload,
     session_id: payload.session_id || sessionId || '',
     provider: payload.provider || provider,
+    ...(payload.seat || seat ? { seat: payload.seat || seat } : {}),
   };
 }
 
@@ -511,6 +552,7 @@ function printDeviceLoginCompleted(status, { json = false } = {}) {
   const registered = status.registered === true ? 'true' : status.registered === false ? 'false' : String(status.registered ?? '');
   console.log('');
   console.log(`engine login ready: ${status.provider}`);
+  if (status.seat) console.log(`seat: ${status.seat}`);
   console.log(`account_email: ${status.account_email || '(none)'}`);
   console.log(`registered: ${registered}`);
   console.log(`ready-check: provider=${status.provider} session_id=${status.session_id || ''} status=${status.status} registered=${registered}`);
@@ -528,28 +570,40 @@ async function waitForDeviceLoginPoll(ms, deps = {}) {
 
 async function runEngineDeviceLoginCommand(provider, options, deps = {}) {
   let target;
+  let seat;
   try {
     target = engineDeviceLoginTarget(options);
+    seat = normalizeEngineLoginSeat(options.seat);
+    if ((options.seatFlag || options.seat) && !validEngineLoginSeat(seat)) {
+      const err = new Error(engineLoginSeatError());
+      err.code = 'usage';
+      throw err;
+    }
   } catch (err) {
     console.error(err.message);
     return 2;
   }
 
+  const body = seat ? { target, seat } : { target };
   const started = await authenticatedEngineApi(`/engines/logins/${encodeURIComponent(provider)}/device-login`, {
     method: 'POST',
-    body: { target },
+    body,
     timeoutMs: 30000,
     retries: 0,
   }, deps);
   if (!started.ok) {
-    console.error(started.authError ? 'Run atris login first.' : `engine login device flow failed: ${started.error || started.status}`);
+    console.error(options.setup
+      ? `could not connect the ${provider} account; please try again.`
+      : (started.authError ? 'Run atris login first.' : `engine login device flow failed: ${started.error || started.status}`));
     return 1;
   }
 
-  const startStatus = normalizeDeviceLoginStatus(started.data, provider, '');
+  const startStatus = normalizeDeviceLoginStatus(started.data, provider, '', seat);
   const sessionId = startStatus.session_id;
   if (!sessionId) {
-    console.error('engine login device flow failed: missing session_id');
+    console.error(options.setup
+      ? `could not connect the ${provider} account; please try again.`
+      : 'engine login device flow failed: missing session_id');
     return 1;
   }
 
@@ -566,24 +620,35 @@ async function runEngineDeviceLoginCommand(provider, options, deps = {}) {
       retries: 0,
     }, deps);
     if (!polled.ok) {
-      console.error(polled.authError ? 'Run atris login first.' : `engine login device poll failed: ${polled.error || polled.status}`);
+      console.error(options.setup
+        ? `could not connect the ${provider} account; please try again.`
+        : (polled.authError ? 'Run atris login first.' : `engine login device poll failed: ${polled.error || polled.status}`));
       return 1;
     }
 
-    finalStatus = normalizeDeviceLoginStatus(polled.data, provider, sessionId);
+    finalStatus = normalizeDeviceLoginStatus(polled.data, provider, sessionId, seat);
     if (!codePrinted && finalStatus.verify_url && finalStatus.code) {
-      printDeviceLoginCode(finalStatus, { json: options.json });
+      if (options.setup) {
+        console.log(`On your phone, open: ${finalStatus.verify_url}  and type the code: ${finalStatus.code}`);
+      } else {
+        printDeviceLoginCode(finalStatus, { json: options.json });
+      }
       codePrinted = true;
     }
 
     const status = String(finalStatus.status || '').toLowerCase();
     if (status === 'completed') {
-      printDeviceLoginCompleted(finalStatus, { json: options.json });
+      if (options.setup) console.log(`${seat} linked.`);
+      else printDeviceLoginCompleted(finalStatus, { json: options.json });
       return 0;
     }
     if (status === 'failed' || status === 'expired') {
-      printDeviceLoginFinalJson(finalStatus, options);
-      console.error(`engine login device flow ended: ${status}`);
+      if (options.setup) {
+        console.error(`could not connect the ${provider} account; please try again.`);
+      } else {
+        printDeviceLoginFinalJson(finalStatus, options);
+        console.error(`engine login device flow ended: ${status}`);
+      }
       return 1;
     }
 
@@ -595,8 +660,12 @@ async function runEngineDeviceLoginCommand(provider, options, deps = {}) {
     status: 'timeout',
     error: `device login did not complete within ${Math.round(timeoutMs / 60000)} minutes`,
   };
-  printDeviceLoginFinalJson(finalStatus, options);
-  console.error('engine login device flow timed out');
+  if (options.setup) {
+    console.error(`could not connect the ${provider} account; please try again.`);
+  } else {
+    printDeviceLoginFinalJson(finalStatus, options);
+    console.error('engine login device flow timed out');
+  }
   return 1;
 }
 
@@ -608,7 +677,7 @@ async function runEngineLoginCommand(args, root, deps = {}) {
   }
 
   if (options.list) {
-    const result = await authenticatedEngineApi('/engines/logins', { method: 'GET', timeoutMs: 15000, retries: 0 }, deps);
+    const result = await listEngineLogins(deps);
     if (!result.ok) {
       console.error(result.authError ? 'Run atris login first.' : `engine login list failed: ${result.error || result.status}`);
       return 1;
@@ -639,6 +708,11 @@ async function runEngineLoginCommand(args, root, deps = {}) {
   const provider = normalizeLoginProvider(options.provider);
   if (!provider) {
     console.error(`usage: atris engine login <provider> --yes; providers: ${knownLoginProviders().join(', ')}`);
+    return 2;
+  }
+
+  if (options.seatFlag && !options.computer) {
+    console.error('use --seat with --computer or --business');
     return 2;
   }
 
@@ -1053,7 +1127,7 @@ function engineCommand(args = []) {
   }
 
   if (sub === 'help') {
-    console.log('\n  atris engine            roster + current default\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer | --business <id>\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+    console.log('\n  atris engine            roster + current default\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
     return 0;
   }
 
@@ -1102,12 +1176,16 @@ module.exports = {
   MAX_ENGINE_LOGIN_FILE_BYTES,
   expandHomePath,
   normalizeLoginProvider,
+  normalizeEngineLoginSeat,
+  validEngineLoginSeat,
+  engineLoginSeatError,
   detectedEmailFromContent,
   readEngineLoginFiles,
   parseEngineLoginArgs,
   parseEngineSeedArgs,
   redactBackendResponse,
   buildEngineLoginPayload,
+  listEngineLogins,
   runEngineDeviceLoginCommand,
   runEngineLoginCommand,
   runEngineSeedCommand,

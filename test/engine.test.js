@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const engine = require('../commands/engine');
+const computer = require('../commands/computer');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-engine-test-'));
@@ -412,20 +413,58 @@ test('engine login manifest is a hard whitelist', () => {
 });
 
 test('engine login parses --computer and --business device targets', () => {
-  const user = engine.parseEngineLoginArgs(['codex', '--computer']);
+  const user = engine.parseEngineLoginArgs(['codex', '--computer', '--seat', 'personal-work']);
   assert.equal(user.provider, 'codex');
   assert.equal(user.computer, true);
   assert.equal(user.business, '');
+  assert.equal(user.seat, 'PERSONAL_WORK');
+  assert.equal(user.seatFlag, true);
 
-  const business = engine.parseEngineLoginArgs(['codex', '--business', 'biz-1', '--json']);
+  const business = engine.parseEngineLoginArgs(['codex', '--business', 'biz-1', '--seat=team alpha', '--json']);
   assert.equal(business.provider, 'codex');
   assert.equal(business.computer, true);
   assert.equal(business.business, 'biz-1');
+  assert.equal(business.seat, 'TEAM_ALPHA');
   assert.equal(business.json, true);
 
   const businessEquals = engine.parseEngineLoginArgs(['codex', '--business=biz-2']);
   assert.equal(businessEquals.computer, true);
   assert.equal(businessEquals.business, 'biz-2');
+});
+
+test('engine login normalizes and validates named seats', async () => {
+  assert.equal(engine.normalizeEngineLoginSeat(' Personal-work '), 'PERSONAL_WORK');
+  assert.equal(engine.validEngineLoginSeat('PERSONAL_WORK'), true);
+  assert.equal(engine.validEngineLoginSeat('_PERSONAL'), false);
+  assert.equal(engine.validEngineLoginSeat(`A${'B'.repeat(48)}`), false);
+
+  const dir = makeTempDir();
+  let apiCalls = 0;
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(
+      ['codex', '--computer', '--seat', 'personal!'],
+      dir,
+      {
+        ensureValidCredentials: async () => ({ credentials: { token: 'test-token' } }),
+        apiRequestJson: async () => {
+          apiCalls += 1;
+          return { ok: true, status: 200, data: {} };
+        },
+      }
+    ));
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /seat names are letters, numbers, underscores - like personal or work/);
+    assert.equal(apiCalls, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine login help shows named seats for computer logins', async () => {
+  const result = await captureConsole(() => engine.runEngineLoginCommand(['--help'], process.cwd()));
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /--computer \[--seat <name>\]/);
+  assert.match(result.stdout, /--business <id> \[--seat <name>\]/);
 });
 
 test('engine login refuses a missing whitelisted file with a plain hint', async () => {
@@ -532,7 +571,7 @@ test('engine login captures devin API key through a secret prompt', async () => 
   }
 });
 
-test('engine login --computer posts a user device-login target', async () => {
+test('engine login --computer passes a normalized named seat', async () => {
   const dir = makeTempDir();
   const { calls, deps } = fakeDeviceLoginDeps([
     {
@@ -544,14 +583,19 @@ test('engine login --computer posts a user device-login target', async () => {
     },
   ]);
   try {
-    const result = await captureConsole(() => engine.runEngineLoginCommand(['codex', '--computer'], dir, deps));
+    const result = await captureConsole(() => engine.runEngineLoginCommand(
+      ['codex', '--computer', '--seat', 'personal-work'],
+      dir,
+      deps
+    ));
     assert.equal(result.code, 0, result.stderr);
     assert.equal(calls[0].pathname, '/engines/logins/codex/device-login');
     assert.equal(calls[0].options.method, 'POST');
     assert.equal(calls[0].options.token, 'test-token');
-    assert.deepEqual(calls[0].options.body, { target: { type: 'user' } });
+    assert.deepEqual(calls[0].options.body, { target: { type: 'user' }, seat: 'PERSONAL_WORK' });
     assert.equal(calls[1].pathname, '/engines/logins/device-login/s-device-1');
     assert.match(result.stdout, /account_email: codex@example\.com/);
+    assert.match(result.stdout, /seat: PERSONAL_WORK/);
     assert.match(result.stdout, /registered: true/);
     assert.match(result.stdout, /ready-check: provider=codex/);
   } finally {
@@ -578,6 +622,94 @@ test('engine login --business posts a business device-login target', async () =>
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('computer setup links named codex and claude seats on one computer', async () => {
+  const calls = [];
+  const questions = [];
+  const answers = ['both', 'personal-work', '', 'work', ''];
+  const deps = {
+    loadCredentials: async () => ({ token: 'test-token' }),
+    ensureValidCredentials: async () => ({ credentials: { token: 'test-token' } }),
+    prompt: async (question) => {
+      questions.push(question);
+      return answers.shift() || '';
+    },
+    sleep: async () => {},
+    deviceLoginPollMs: 1,
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      if (pathname === '/business/') {
+        return {
+          ok: true,
+          status: 200,
+          data: [{ id: 'biz-1', name: 'Acme', workspace_id: 'ws-1' }],
+        };
+      }
+      if (pathname === '/engines/logins') {
+        return {
+          ok: true,
+          status: 200,
+          data: [
+            { provider: 'codex', seat: 'PERSONAL_WORK', account_email: 'codex@example.com' },
+            { provider: 'claude', seat: 'WORK', account_email: 'claude@example.com' },
+          ],
+        };
+      }
+      const start = pathname.match(/^\/engines\/logins\/(codex|claude)\/device-login$/);
+      if (start && options.method === 'POST') {
+        return {
+          ok: true,
+          status: 200,
+          data: { session_id: `s-${start[1]}`, provider: start[1], status: 'starting' },
+        };
+      }
+      const poll = pathname.match(/^\/engines\/logins\/device-login\/s-(codex|claude)$/);
+      if (poll) {
+        return {
+          ok: true,
+          status: 200,
+          data: {
+            provider: poll[1],
+            status: 'completed',
+            verify_url: `https://example.com/${poll[1]}`,
+            code: poll[1] === 'codex' ? 'CODE-X' : 'CODE-C',
+            registered: true,
+          },
+        };
+      }
+      return { ok: false, status: 404, error: 'not found' };
+    },
+  };
+
+  const result = await captureConsole(() => computer.computerSetup(deps));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /using Acme computer\./);
+  assert.match(result.stdout, /^On your phone, open: https:\/\/example\.com\/codex  and type the code: CODE-X$/m);
+  assert.match(result.stdout, /^On your phone, open: https:\/\/example\.com\/claude  and type the code: CODE-C$/m);
+  assert.match(result.stdout, /PERSONAL_WORK linked\./);
+  assert.match(result.stdout, /WORK linked\./);
+  assert.match(result.stdout, /codex: PERSONAL_WORK \(codex@example\.com\)/);
+  assert.match(result.stdout, /claude: WORK \(claude@example\.com\)/);
+  assert.match(result.stdout, /Done\. Your computer can now work on these accounts\./);
+
+  const starts = calls.filter((call) => call.options.method === 'POST');
+  assert.deepEqual(starts.map((call) => call.options.body), [
+    { target: { type: 'business', id: 'biz-1' }, seat: 'PERSONAL_WORK' },
+    { target: { type: 'business', id: 'biz-1' }, seat: 'WORK' },
+  ]);
+  assert.equal(calls.at(-1).pathname, '/engines/logins');
+  assert.ok(calls.every((call) => call.options.token === 'test-token'));
+  assert.equal(questions[0], 'which coding accounts do you want to connect? (codex / claude / both) [both] ');
+  assert.equal(questions[1], 'connect a codex account? give it a short name like personal or work (enter to finish) ');
+});
+
+test('computer setup tells logged-out users the one next command', async () => {
+  const result = await captureConsole(() => computer.computerSetup({
+    loadCredentials: async () => null,
+  }));
+  assert.equal(result.code, 1);
+  assert.equal(result.stderr, 'run: atris login');
 });
 
 test('engine login device flow prints url and code once, then completes', async () => {

@@ -553,6 +553,19 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Search:** `rg "buildComputerCard|computerCard" commands/computer.js`
 
+### Feature: Computer Account Setup (`atris computer setup`)
+
+**Purpose:** Guide a non-technical operator through choosing a computer and connecting named Codex or Claude accounts.
+
+- **Entry point:** `commands/computer.js` (`runComputer` dispatches `setup` to `computerSetup`)
+- **Computer list:** reuses `GET /business/`, with the personal computer as the fallback when no business computer is returned
+- **Login flow:** reuses `runEngineDeviceLoginCommand()` from `commands/engine.js` with `{ target, seat }`
+- **Named seats:** `normalizeEngineLoginSeat()` converts spaces and dashes to uppercase underscores and validates the backend's 1-48 character rule before any API call
+- **Receipt:** reuses `listEngineLogins()` and prints each account linked during setup
+- **Tests:** `test/engine.test.js` covers seat parsing, normalization, validation, passthrough, help, logged-out setup, and the full mocked setup flow
+
+**Search:** `rg "computerSetup|setupComputerChoices|normalizeEngineLoginSeat|listEngineLogins" commands/computer.js commands/engine.js test/engine.test.js`
+
 ### Feature: Agent Task Plane (`atris task`)
 
 **Purpose:** Provide durable local task state for agents while keeping `atris/TODO.md` as the human-readable regenerated project board.
@@ -1649,7 +1662,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `commands/slop.js` (`slopCommand`, `RULES` `:28-72`, `PAIR_RULES` `:76-81` — windowed multi-line composites, e.g. `hero-kicker` dot+eyebrow) — deterministic frontend/prose slop detector (HOW copy reads); `detect --fix/--diff/--staged`, project rules in `.atris/slop.rules.json`, `installHook` pre-commit gate
 - `commands/strings.js` (`stringsCommand`) — content design system from live code (WHAT words you ship): `scan` extracts user-facing strings → `.atris/strings.json` (`isUserFacing` `:53`, `extractStrings` `:75`), `variants` flags the same string written N ways (`variantClusters` `:112`), `term --ban/--prefer` codifies preferred terms, `check --staged` gates banned terms (exit 1, reuses slop's `gitChangedLines`); wired in `bin/atris.js` `command === 'strings'`
 - `test/strings.test.js` — extraction precision, variant clustering, and scan→variants→term→check round trip
-- `commands/engine.js` (`engineCommand`, `resolveDefaultEngine`, `roster`) - bring any intelligence: roster of installed coding CLIs (detected via `command -v`), workspace default in `.atris/engine.json` (`atris engine <name>` / `reset`), house default atris-fast; profiles in `lib/runner-command.js` `RUNNER_PROFILE_DEFS` (atris-fast/claude/codex/cursor/devin/hermes, alias hermes-agent); `--engine <name>` maps to `ATRIS_RUNNER_PROFILE` at the CLI boundary (`bin/atris.js` `applyRunnerFlags`) so mission run / autopilot / run / pulse ride any engine with zero loop changes; `test/engine.test.js`
+- `commands/engine.js` (`engineCommand`, `resolveDefaultEngine`, `roster`, `runEngineDeviceLoginCommand`) - bring any intelligence: roster of installed coding CLIs (detected via `command -v`), workspace default in `.atris/engine.json` (`atris engine <name>` / `reset`), house default atris-fast; computer device login accepts normalized `--seat <name>` values so several Codex or Claude accounts do not overwrite one default slot; profiles in `lib/runner-command.js` `RUNNER_PROFILE_DEFS` (atris-fast/claude/codex/cursor/devin/hermes, alias hermes-agent); `--engine <name>` maps to `ATRIS_RUNNER_PROFILE` at the CLI boundary (`bin/atris.js` `applyRunnerFlags`) so mission run / autopilot / run / pulse ride any engine with zero loop changes; `test/engine.test.js`
 - `lib/fleet.js` (`runFleetFlight`, `staffFlight`, `dispatchToEngine`, `landArrival`) - the fleet conductor behind `atris mission run --fleet [--slots N] [--dry-run]` (wired in `commands/mission.js` `runMission`): staffs claimable safe-lane tasks (denied tags mirror autoland, disjoint-file heuristic, max one surface-blind pick), generates bounded prompts from each task's own Done:/Check: lines and uses `lib/default-verifier.js` when Check is absent, dispatches capable engines (claude/codex/cursor/devin; hermes is available in the shared engine roster; atris-fast stays the chat lane) in parallel worktrees, preserves stderr/report tails from abandoned engine legs inside restaff receipt metadata, lands serially with rebase-before-ship (conflict = pause + keep worktree, never auto-resolve), writes a flight receipt to `atris/runs/fleet-*.json`; INVARIANT: no fleet state file - flight state IS missions + worktrees + receipts; `test/fleet.test.js`, `test/engine-dispatch.test.js`
 - `commands/sign.js` (`signCommand`, `installSignHook` `:26-40`) — co-author trailer on every commit in an atris workspace: prepare-commit-msg hook appends `Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>` (the atrislabs `atris-builder` GitHub App, so the avatar renders) when `atris/` exists (skips merge/squash, dedupes on `^co-authored-by: atris`); `atris sign` / `sign off` / `sign status`; auto-installed by `atris init`, marked-block removal only; this repo gets it via `scripts/prepare-commit-msg` + npm prepare
 
