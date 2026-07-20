@@ -559,10 +559,10 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Entry point:** `commands/computer.js` (`runComputer` dispatches `setup` to `computerSetup`)
 - **Computer list:** reuses `GET /business/`, with the personal computer as the fallback when no business computer is returned
-- **Login flow:** reuses `runEngineDeviceLoginCommand()` from `commands/engine.js` with `{ target, seat }`
+- **Login flow:** reuses `runEngineDeviceLoginCommand()` from `commands/engine.js` with `{ target, seat }`; Codex shows its device code, while Claude reads the browser-generated code through injected readline and posts it back to the login session
 - **Named seats:** `normalizeEngineLoginSeat()` converts spaces and dashes to uppercase underscores and validates the backend's 1-48 character rule before any API call
 - **Receipt:** reuses `listEngineLogins()` and prints each account linked during setup
-- **Tests:** `test/engine.test.js` covers seat parsing, normalization, validation, passthrough, help, logged-out setup, and the full mocked setup flow
+- **Tests:** `test/engine.test.js` covers device-code and Claude paste-back flows; `test/computer-create.test.js` covers setup guidance and dependency passthrough
 
 **Search:** `rg "computerSetup|setupComputerChoices|normalizeEngineLoginSeat|listEngineLogins" commands/computer.js commands/engine.js test/engine.test.js`
 

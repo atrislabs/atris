@@ -376,6 +376,7 @@ function fakeDeviceLoginDeps(pollResponses, settings = {}) {
   const calls = [];
   const sleepCalls = [];
   const queue = pollResponses.slice();
+  const codeResponses = Array.isArray(settings.codeResponses) ? settings.codeResponses.slice() : [];
   return {
     calls,
     sleepCalls,
@@ -384,6 +385,11 @@ function fakeDeviceLoginDeps(pollResponses, settings = {}) {
       sleep: async (ms) => { sleepCalls.push(ms); },
       apiRequestJson: async (pathname, options) => {
         calls.push({ pathname, options });
+        if (options.method === 'POST' && /\/device-login\/[^/]+\/code$/.test(pathname)) {
+          return codeResponses.length
+            ? codeResponses.shift()
+            : { ok: true, status: 200, data: { status: 'submitted' } };
+        }
         if (options.method === 'POST') {
           return {
             ok: true,
@@ -665,6 +671,8 @@ test('computer setup links named codex and claude seats on one computer', async 
   const calls = [];
   const questions = [];
   const answers = ['both', 'personal-work', '', 'work', ''];
+  const pastedCodes = ['CLAUDE-PASTE-BACK'];
+  let claudeCodeSubmitted = false;
   const deps = {
     loadCredentials: async () => ({ token: 'test-token' }),
     ensureValidCredentials: async () => ({ credentials: { token: 'test-token' } }),
@@ -673,6 +681,12 @@ test('computer setup links named codex and claude seats on one computer', async 
       return answers.shift() || '';
     },
     sleep: async () => {},
+    readline: {
+      createInterface: () => ({
+        question: (_prompt, callback) => callback(pastedCodes.shift() || ''),
+        close: () => {},
+      }),
+    },
     deviceLoginPollMs: 1,
     now: () => 1_800_000_000_000,
     apiRequestJson: async (pathname, options) => {
@@ -704,17 +718,22 @@ test('computer setup links named codex and claude seats on one computer', async 
       }
       const poll = pathname.match(/^\/engines\/logins\/device-login\/s-(codex|claude)$/);
       if (poll) {
+        const pasteBackPending = poll[1] === 'claude' && !claudeCodeSubmitted;
         return {
           ok: true,
           status: 200,
           data: {
             provider: poll[1],
-            status: 'completed',
+            status: pasteBackPending ? 'pending_user' : 'completed',
             verify_url: `https://example.com/${poll[1]}`,
-            code: poll[1] === 'codex' ? 'CODE-X' : 'CODE-C',
+            code: poll[1] === 'codex' ? 'CODE-X' : null,
             registered: true,
           },
         };
+      }
+      if (pathname === '/engines/logins/device-login/s-claude/code' && options.method === 'POST') {
+        claudeCodeSubmitted = true;
+        return { ok: true, status: 200, data: { status: 'submitted' } };
       }
       const readyCheck = pathname.match(/^\/engines\/logins\/(codex|claude)\/ready-check$/);
       if (readyCheck && options.method === 'POST') {
@@ -732,7 +751,8 @@ test('computer setup links named codex and claude seats on one computer', async 
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /using Acme computer\./);
   assert.match(result.stdout, /^On your phone, open: https:\/\/example\.com\/codex  and type the code: CODE-X$/m);
-  assert.match(result.stdout, /^On your phone, open: https:\/\/example\.com\/claude  and type the code: CODE-C$/m);
+  assert.match(result.stdout, /^On your phone, open: https:\/\/example\.com\/claude$/m);
+  assert.match(result.stdout, /^When the browser shows you a code, paste it here:$/m);
   assert.match(result.stdout, /PERSONAL_WORK linked\./);
   assert.match(result.stdout, /WORK linked\./);
   assert.match(result.stdout, /personal_work: working/);
@@ -752,9 +772,12 @@ test('computer setup links named codex and claude seats on one computer', async 
     ['/engines/logins/claude/ready-check', { target: { type: 'business', id: 'biz-1' } }],
   ]);
   assert.equal(calls.at(-1).pathname, '/engines/logins/seats');
+  const pastedCode = calls.find((call) => call.pathname === '/engines/logins/device-login/s-claude/code');
+  assert.deepEqual(pastedCode.options.body, { code: 'CLAUDE-PASTE-BACK' });
   assert.ok(calls.every((call) => call.options.token === 'test-token'));
   assert.equal(questions[0], 'which coding accounts do you want to connect? (codex / claude / both) [both] ');
   assert.equal(questions[1], 'connect a codex account? give it a short name like personal or work (enter to finish) ');
+  assert.match(questions[3], /you will get a code in the browser, paste it back here/);
 });
 
 test('computer setup tells logged-out users the one next command', async () => {
@@ -767,6 +790,7 @@ test('computer setup tells logged-out users the one next command', async () => {
 
 test('engine login device flow prints url and code once, then completes', async () => {
   const dir = makeTempDir();
+  let readlineCalls = 0;
   const { calls, sleepCalls, deps } = fakeDeviceLoginDeps([
     {
       status: 'pending_user',
@@ -789,7 +813,16 @@ test('engine login device flow prints url and code once, then completes', async 
       account_email: 'codex@example.com',
       registered: true,
     },
-  ]);
+  ], {
+    extraDeps: {
+      readline: {
+        createInterface: () => {
+          readlineCalls += 1;
+          throw new Error('codex device login should not read stdin');
+        },
+      },
+    },
+  });
   try {
     const result = await captureConsole(() => engine.runEngineLoginCommand(['codex', '--computer'], dir, deps));
     assert.equal(result.code, 0, result.stderr);
@@ -799,6 +832,104 @@ test('engine login device flow prints url and code once, then completes', async 
     assert.match(result.stdout, /Code:    ABCD-EFGH   \(expires in 15 minutes; never share this code\)/);
     assert.equal((result.stdout.match(/ABCD-EFGH/g) || []).length, 1);
     assert.match(result.stdout, /account_email: codex@example\.com/);
+    assert.equal(readlineCalls, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('claude device login pastes the browser code back and completes', async () => {
+  const dir = makeTempDir();
+  const readlineCalls = [];
+  const { calls, deps } = fakeDeviceLoginDeps([
+    {
+      provider: 'claude',
+      status: 'pending_user',
+      verify_url: 'https://claude.ai/oauth/authorize?code=true',
+      code: null,
+      registered: false,
+    },
+    {
+      provider: 'claude',
+      status: 'completed',
+      verify_url: null,
+      code: null,
+      account_email: 'claude@example.com',
+      registered: true,
+    },
+  ], {
+    startData: { session_id: 's-claude-1', provider: 'claude', status: 'starting' },
+    extraDeps: {
+      readline: {
+        createInterface: () => ({
+          question: (prompt, callback) => {
+            readlineCalls.push(prompt);
+            callback('  browser-code-1  ');
+          },
+          close: () => {},
+        }),
+      },
+    },
+  });
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['claude', '--computer'], dir, deps));
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /^On your phone, open: https:\/\/claude\.ai\/oauth\/authorize\?code=true$/m);
+    assert.match(result.stdout, /^When the browser shows you a code, paste it here:$/m);
+    assert.equal(readlineCalls.length, 1);
+    const codeCall = calls.find((call) => call.pathname === '/engines/logins/device-login/s-claude-1/code');
+    assert.equal(codeCall.options.method, 'POST');
+    assert.deepEqual(codeCall.options.body, { code: 'browser-code-1' });
+    assert.match(result.stdout, /account_email: claude@example\.com/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('claude device login allows one paste-back retry after a 400', async () => {
+  const dir = makeTempDir();
+  const answers = ['mistyped-code', 'correct-code'];
+  const { calls, deps } = fakeDeviceLoginDeps([
+    {
+      provider: 'claude',
+      status: 'pending_user',
+      verify_url: 'https://claude.ai/oauth/authorize?code=true',
+      code: null,
+      registered: false,
+    },
+    {
+      provider: 'claude',
+      status: 'completed',
+      verify_url: null,
+      code: null,
+      account_email: 'claude@example.com',
+      registered: true,
+    },
+  ], {
+    startData: { session_id: 's-claude-retry', provider: 'claude', status: 'starting' },
+    codeResponses: [
+      { ok: false, status: 400, error: 'bad request' },
+      { ok: true, status: 200, data: { status: 'submitted' } },
+    ],
+    extraDeps: {
+      readline: {
+        createInterface: () => ({
+          question: (_prompt, callback) => callback(answers.shift()),
+          close: () => {},
+        }),
+      },
+    },
+  });
+  try {
+    const result = await captureConsole(() => engine.runEngineLoginCommand(['claude', '--computer'], dir, deps));
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal((result.stdout.match(/When the browser shows you a code, paste it here:/g) || []).length, 2);
+    assert.equal((result.stderr.match(/that code did not work; paste it again\./g) || []).length, 1);
+    const codeCalls = calls.filter((call) => /\/device-login\/s-claude-retry\/code$/.test(call.pathname));
+    assert.deepEqual(codeCalls.map((call) => call.options.body), [
+      { code: 'mistyped-code' },
+      { code: 'correct-code' },
+    ]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
