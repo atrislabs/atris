@@ -5930,7 +5930,8 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     const payload = JSON.parse(scorecard.stdout);
     const acceptedCard = payload.scorecards.find(row => row.task_title === 'Landing accepted task');
     const revisedCard = payload.scorecards.find(row => row.task_title === 'Landing reworked task');
-    assert.equal(acceptedCard.review_landing.happened, 'Operators can now read the approval receipt without opening raw proof, saving time at the human gate.');
+    assert.equal(acceptedCard.review_landing.happened, 'Operators can now read the approval receipt without opening raw proof.');
+    assert.equal(acceptedCard.review_landing.reason, 'it saves time at the human gate.');
     assert.equal(acceptedCard.landing_quality.completeness, 1);
     assert.equal(acceptedCard.approval_status, 'accepted');
     assert.equal(acceptedCard.rl_label, 'accepted');
@@ -10740,15 +10741,15 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(readyPayload.task.status, 'review');
     assert.equal(readyPayload.task.review.summary, 'approve autonomous work before XP: proof is ready for human approval; approve only if the evidence is real.');
     assert.deepEqual(readyPayload.task.review.landing, {
-      happened: 'Operators can now hold autonomous work for human approval before XP is awarded, preventing unapproved rewards.',
-      reason: 'It keeps real-world side effects behind a clear human decision.',
+      happened: 'Operators can now hold autonomous work for human approval before XP is awarded.',
+      reason: 'it prevents unapproved rewards.',
       checked: 'I checked the task stayed in Review and did not mint XP.',
       tested: 'I ran the typecheck proof and inspected the diff.',
       decision: 'Accept if XP should land; rework if proof is missing.',
     });
     assert.deepEqual(readyPayload.task.review.result, {
-      changed: 'Operators can now hold autonomous work for human approval before XP is awarded, preventing unapproved rewards.',
-      reason: 'It keeps real-world side effects behind a clear human decision.',
+      changed: 'Operators can now hold autonomous work for human approval before XP is awarded.',
+      reason: 'it prevents unapproved rewards.',
       checked: 'I checked the task stayed in Review and did not mint XP.',
       saved: `Completed result saved for review as ${ref}.`,
       accept: 'Accept if XP should land; rework if proof is missing.',
@@ -10763,8 +10764,8 @@ test('task ready holds work in review until human accept', () => {
     const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(readyShow.status, 0, readyShow.stderr);
     assert.match(readyShow.stdout, /Result:/);
-    assert.match(readyShow.stdout, /What happened: Operators can now hold autonomous work for human approval before XP is awarded, preventing unapproved rewards\./);
-    assert.match(readyShow.stdout, /Why it matters: It keeps real-world side effects behind a clear human decision\./);
+    assert.match(readyShow.stdout, /What happened: Operators can now hold autonomous work for human approval before XP is awarded\./);
+    assert.match(readyShow.stdout, /Why it matters: it prevents unapproved rewards\./);
     assert.match(readyShow.stdout, /How I checked: I checked the task stayed in Review and did not mint XP\./);
     assert.match(readyShow.stdout, /What I tested: I ran the typecheck proof and inspected the diff\./);
     assert.match(readyShow.stdout, new RegExp(`Saved: Completed result saved for review as ${ref}\\.`));
@@ -12361,23 +12362,23 @@ test('task review summary does not treat incidental XP wording as AgentXP work',
     const readyPayload = JSON.parse(ready.stdout);
     assert.equal(readyPayload.task.review.summary, 'clean stale claimed task queue after XP review: review the completed result, then approve or ask for rework.');
     assert.deepEqual(readyPayload.task.review.landing, {
-      happened: FIXTURE_RESULT_SENTENCE,
-      reason: 'It turns the task title into a concrete result the human can approve.',
+      happened: 'Operators can now understand completed test work faster.',
+      reason: 'the result is named.',
       checked: 'I ran the validation check.',
       tested: 'I attached the proof below.',
       decision: 'Needs one more check; ask for rework if the receipt misses the point.',
     });
-    assert.equal(readyPayload.task.review.result.changed, FIXTURE_RESULT_SENTENCE);
+    assert.equal(readyPayload.task.review.result.changed, 'Operators can now understand completed test work faster.');
     assert.equal(readyPayload.task.review.result.checked, 'I ran the validation check.');
     assert.equal(readyPayload.task.review.proof, 'closed stale duplicate scheduler claims; validation passed reward 0');
 
     const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(readyShow.status, 0, readyShow.stderr);
     assert.match(readyShow.stdout, /Result:/);
-    assert.match(readyShow.stdout, new RegExp(`What happened: ${FIXTURE_RESULT_SENTENCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(readyShow.stdout, /What happened: Operators can now understand completed test work faster\./);
     assert.match(readyShow.stdout, /How I checked: I ran the validation check\./);
     assert.match(readyShow.stdout, /What I tested: I attached the proof below\./);
-    assert.match(readyShow.stdout, /Why it matters: It turns the task title into a concrete result the human can approve\./);
+    assert.match(readyShow.stdout, /Why it matters: the result is named\./);
     assert.match(readyShow.stdout, /Decision: Needs one more check; ask for rework if the receipt misses the point\./);
     assert.match(readyShow.stdout, /Short version: clean stale claimed task queue after XP review: review the completed result, then approve or ask for rework\./);
     assert.match(readyShow.stdout, /Details: closed stale duplicate scheduler claims; validation passed reward 0/);
@@ -12412,12 +12413,14 @@ test('task ready default landing describes completed work for unmapped titles', 
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
     const readyPayload = JSON.parse(ready.stdout);
-    assert.equal(readyPayload.task.review.landing.happened, FIXTURE_RESULT_SENTENCE);
-    assert.equal(readyPayload.task.review.result.changed, FIXTURE_RESULT_SENTENCE);
+    assert.equal(readyPayload.task.review.landing.happened, 'Operators can now understand completed test work faster.');
+    assert.equal(readyPayload.task.review.landing.reason, 'the result is named.');
+    assert.equal(readyPayload.task.review.result.changed, 'Operators can now understand completed test work faster.');
 
     const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(readyShow.status, 0, readyShow.stderr);
-    assert.match(readyShow.stdout, new RegExp(`What happened: ${FIXTURE_RESULT_SENTENCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(readyShow.stdout, /What happened: Operators can now understand completed test work faster\./);
+    assert.match(readyShow.stdout, /Why it matters: the result is named\./);
     assert.doesNotMatch(readyShow.stdout, /Explore review landing output is ready to review/);
   } finally {
     cleanupTempDir(dir);
@@ -13781,7 +13784,7 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.match(text.stdout, /1\. Ship certified proof packet/);
     assert.match(text.stdout, /what's new: Operators can now review one compact certified proof packet, reducing the risk of approving against stale context\./);
     assert.match(text.stdout, /why it matters: Human approval queue shows a compact certified packet without stale objective text\./);
-    assert.match(text.stdout, /checked: I checked the verifier claims and review thread\.; tested: I ran the focused review queue test\./);
+    assert.match(text.stdout, /checked: I checked the verifier claims and review thread; tested: I ran the focused review queue test\./);
     assert.doesNotMatch(text.stdout, /saved:/i);
     assert.doesNotMatch(text.stdout, /decision:/i);
     assert.match(text.stdout, new RegExp(`${blockingTask.display_id} needs a second reviewer before it can land; next: atris task review-chat ${blockingTask.display_id} --as codex-review`));

@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { gateForHuman, numberWord, scanText } = require('../lib/voice-gate');
-const { taskReviewLandingLines } = require('../commands/task');
+const { taskReviewLanding, taskReviewLandingLines } = require('../commands/task');
 const { missionHumanStatusText } = require('../commands/mission');
 
 const RAW_ULID = '01JABCDEFGHJKMNPQRSTVWXYZ12';
@@ -78,6 +78,47 @@ test('task reviews sends landing prose through the human voice gate', () => {
     '   checked: the review queue stayed readable; tested: the task reviews command stayed readable.',
   ]);
   assert.doesNotMatch(lines.join('\n'), /decision:/i);
+});
+
+test('why it matters comes from the landing sentence itself, not a canned line', () => {
+  const landing = taskReviewLanding({
+    title: 'wire orb menu',
+    status: 'review',
+    metadata: {
+      result: 'Operators can now pick next moves from a terminal menu, so they keep deciding instead of waiting on each job.',
+      latest_agent_proof: 'Checks: node --test passed',
+    },
+  });
+  assert.equal(landing.happened, 'Operators can now pick next moves from a terminal menu.');
+  assert.equal(landing.reason, 'they keep deciding instead of waiting on each job.');
+});
+
+test('a landing with no real why says nothing instead of boilerplate', () => {
+  const landing = taskReviewLanding({
+    title: 'Mission XP: Build Mission Room with architect',
+    status: 'review',
+    metadata: { latest_agent_proof: 'Checks: npm run build passed' },
+  });
+  assert.equal(landing.reason, '');
+  const lines = taskReviewLandingLines({
+    title: 'Mission XP: Build Mission Room with architect',
+    landing,
+  });
+  assert.doesNotMatch(lines.join('\n'), /why it matters/);
+  assert.doesNotMatch(lines.join('\n'), /repeatable check before approval|concrete result the human can approve/);
+});
+
+test('an explicit reason wins and the landing sentence stays whole', () => {
+  const landing = taskReviewLanding({
+    title: 'harden approvals',
+    status: 'review',
+    metadata: {
+      result: 'Approvals now expire after a day, so stale work cannot land itself.',
+      review_reason: 'old approvals stop running after their context changes.',
+    },
+  });
+  assert.equal(landing.happened, 'Approvals now expire after a day, so stale work cannot land itself.');
+  assert.equal(landing.reason, 'old approvals stop running after their context changes.');
 });
 
 test('missionHumanStatusText sends status prose through the human voice gate', () => {

@@ -1048,25 +1048,42 @@ function proofToReasonText(proof) {
   return /[.!?]$/.test(section) ? section : `${section}.`;
 }
 
-function titleToReasonText(task, proof = '') {
-  const title = String(task?.title || '').replace(/\s+/g, ' ').trim();
-  const text = `${title} ${proof || ''}`.toLowerCase();
-  if (/\b(priv(?:ate|acy)|secret|payload|leak|redact)\b/.test(text)) {
-    return 'It keeps private data out of the fast human decision screen.';
+// A landing sentence written for --result already carries its own why
+// ("..., so operators keep deciding instead of waiting"). Reuse that clause
+// as the reason instead of inventing one; with no clause, stay silent.
+const LANDING_PARTICIPLE_WHY = {
+  avoiding: 'it avoids',
+  cutting: 'it cuts',
+  eliminating: 'it eliminates',
+  giving: 'it gives',
+  keeping: 'it keeps',
+  making: 'it makes',
+  preventing: 'it prevents',
+  reducing: 'it reduces',
+  removing: 'it removes',
+  saving: 'it saves',
+  stopping: 'it stops',
+};
+
+function landingWhyClause(sentence) {
+  const text = String(sentence || '').replace(/\s+/g, ' ').trim();
+  const finish = (change, why) => {
+    const cleanChange = String(change || '').replace(/[,;:]+$/, '').trim();
+    const cleanWhy = String(why || '').trim();
+    if (!cleanChange || !cleanWhy) return null;
+    return {
+      change: /[.!?]$/.test(cleanChange) ? cleanChange : `${cleanChange}.`,
+      why: /[.!?]$/.test(cleanWhy) ? cleanWhy : `${cleanWhy}.`,
+    };
+  };
+  const connective = text.match(/^(.{12,}?),?\s+(?:so(?:\s+that)?|because|which means)\s+(.{8,}?)[.!?]?$/i);
+  if (connective) return finish(connective[1], connective[2]);
+  const participles = Object.keys(LANDING_PARTICIPLE_WHY).join('|');
+  const participial = text.match(new RegExp(`^(.{12,}?),\\s+(${participles})\\s+(.{4,}?)[.!?]?$`, 'i'));
+  if (participial) {
+    return finish(participial[1], `${LANDING_PARTICIPLE_WHY[participial[2].toLowerCase()]} ${participial[3]}`);
   }
-  if (/\bapprove\b/.test(text) && /\b(command|exact|preview|ux)\b/.test(text)) {
-    return 'It lets the operator see the next command without hunting.';
-  }
-  if (/\b(stale|expire|expired)\b/.test(text) && /\bapproval/.test(text)) {
-    return 'It stops old approvals from running after their context has gone stale.';
-  }
-  if (/\bapproval|approve|permission\b/.test(text)) {
-    return 'It keeps real-world side effects behind a clear human decision.';
-  }
-  if (/\btest|self-test|harness|verifier|proof\b/.test(text)) {
-    return 'It gives the human a repeatable check before approval.';
-  }
-  return 'It turns the task title into a concrete result the human can approve.';
+  return null;
 }
 
 function proofToHumanCheck(proof) {
@@ -1185,9 +1202,18 @@ function taskReviewLanding(task, review = {}, payload = {}) {
   const explicitReason = landingPayloadValue(payload, metadata, 'reason')
     || landingPayloadValue(payload, metadata, 'why')
     || payload.reason || payload.why || metadata.result_reason || metadata.review_reason || metadata.why_it_matters;
+  let happened = clipStatusText(explicitHappened || titleToResultText(task.title), 220);
+  let reason = clipStatusText(explicitReason || proofToReasonText(proof), 220);
+  if (!reason) {
+    const clause = landingWhyClause(happened);
+    if (clause) {
+      happened = clipStatusText(clause.change, 220);
+      reason = clipStatusText(clause.why, 220);
+    }
+  }
   return {
-    happened: clipStatusText(explicitHappened || titleToResultText(task.title), 220),
-    reason: clipStatusText(explicitReason || proofToReasonText(proof) || titleToReasonText(task, proof), 220),
+    happened,
+    reason,
     checked: clipStatusText(explicitChecked || proofToHumanCheck(proof), 220),
     tested: clipStatusText(explicitTested || taskReviewLandingTested(proof), 260),
     decision: clipStatusText(explicitDecision || (task.status === 'done'
@@ -12228,6 +12254,7 @@ module.exports = {
   taskDayGroups,
   taskDayTextGroups,
   taskDayTitle,
+  taskReviewLanding,
   taskReviewLandingLines,
   delegateTask,
   AGENT_ENV_MARKERS,
