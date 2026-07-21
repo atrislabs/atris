@@ -75,3 +75,12 @@ test('pickLane reasons are lowercase sentences', () => {
     assert.match(reason, /^[a-z][^.]*\.$/);
   }
 });
+
+test('pickLane holds a 95 percent floor on the labeled dev set', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const gold = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'det', 'data', 'ax-lane-gold.jsonl'), 'utf8')
+    .split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line));
+  const correct = gold.filter((row) => pickLane(row.message).lane === row.lane).length;
+  assert.ok(correct / gold.length >= 0.95, `dev set accuracy ${correct}/${gold.length} fell below the floor`);
+});

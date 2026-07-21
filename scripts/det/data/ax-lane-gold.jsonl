@@ -1,0 +1,52 @@
+{"message": "what is the capital of france", "lane": "fast", "why": "short factual lookup"}
+{"message": "list the files in the atris runs folder", "lane": "fast", "why": "simple enumeration"}
+{"message": "who wrote the little prince", "lane": "fast", "why": "single fact"}
+{"message": "define idempotent", "lane": "fast", "why": "definition lookup"}
+{"message": "when was node 22 released", "lane": "fast", "why": "date lookup"}
+{"message": "show me the npm version command", "lane": "fast", "why": "one-liner recall"}
+{"message": "what does http 429 mean", "lane": "fast", "why": "status code lookup"}
+{"message": "where does atris store credentials", "lane": "fast", "why": "single known fact"}
+{"message": "list 5 postgres index types", "lane": "fast", "why": "bounded list recall"}
+{"message": "what port does redis use by default", "lane": "fast", "why": "single fact"}
+{"message": "convert 90 fahrenheit to celsius", "lane": "fast", "why": "single computation"}
+{"message": "what is a monad", "lane": "fast", "why": "definition lookup"}
+{"message": "summarize this in one line: the meeting moved to thursday and derrick will demo the orb", "lane": "fast", "why": "trivial transform"}
+{"message": "write a friendly two line slack message telling the team the deploy is done", "lane": "pro", "why": "light generation with tone"}
+{"message": "explain how our wish loop works to a new hire", "lane": "pro", "why": "explanation needs context and structure"}
+{"message": "draft a short email to a customer asking to reschedule tomorrows call", "lane": "pro", "why": "everyday writing"}
+{"message": "give me three name ideas for a cli that routes work between ai models", "lane": "pro", "why": "light creative generation"}
+{"message": "rewrite this paragraph so it sounds less formal: our organization has determined that the aforementioned initiative shall proceed", "lane": "pro", "why": "mid-weight rewrite"}
+{"message": "whats a good way to onboard a non technical founder to git", "lane": "pro", "why": "advice, some judgment"}
+{"message": "turn these bullet points into a short update for investors: shipped router, closed two deals, hired one engineer", "lane": "pro", "why": "structured writing"}
+{"message": "help me think through whether to charge per seat or per usage", "lane": "pro", "why": "reasoning but conversational scope"}
+{"message": "explain the difference between optimistic and pessimistic locking with an example", "lane": "pro", "why": "explanation with example"}
+{"message": "make this tweet punchier: we launched a thing that picks the right ai model for you", "lane": "pro", "why": "short edit with taste"}
+{"message": "what should i ask in a reference call for a senior engineer", "lane": "pro", "why": "judgment list"}
+{"message": "design a database schema for a multi tenant task system with per org roles, audit history, and soft deletes, and explain the tradeoffs of your choices", "lane": "max", "why": "design plus tradeoff analysis"}
+{"message": "architect a migration plan to move our monolith to services without downtime, including rollout order and rollback points", "lane": "max", "why": "long horizon architecture"}
+{"message": "prove that this retry strategy cannot livelock, or show a counterexample", "lane": "max", "why": "proof style reasoning"}
+{"message": "analyze the tradeoffs between event sourcing and crud for our billing system and recommend one with reasoning", "lane": "max", "why": "deep comparison and recommendation"}
+{"message": "plan a three month roadmap to take the router from heuristic to learned routing, with milestones, risks, and what we measure at each step", "lane": "max", "why": "multi step planning"}
+{"message": "compare the tradeoffs of thompson sampling versus epsilon greedy for picking models when feedback is delayed and noisy, and which fits our receipt data", "lane": "max", "why": "deep technical comparison"}
+{"message": "why might a distributed lock built on redis fail under network partition, and how would you design around each failure mode", "lane": "max", "why": "failure mode analysis"}
+{"message": "design an experiment to test whether our auto router saves money without hurting answer quality, including sample size reasoning", "lane": "max", "why": "experiment design"}
+{"message": "walk through what happens when two mission ticks race on the same task file and design a fix that keeps receipts consistent", "lane": "max", "why": "concurrency analysis and design"}
+{"message": "should atris build its own inference layer or stay on provider apis for the next two years, argue both sides then commit", "lane": "max", "why": "strategic analysis"}
+{"message": "fix this: TypeError: Cannot read properties of undefined (reading 'map')\n    at buildRoster (lib/fleet.js:412)\n    at dispatch (lib/fleet.js:2101)", "lane": "code-fast", "why": "stack trace plus fix verb"}
+{"message": "refactor this function to use early returns:\n```js\nfunction pick(a){ if(a){ if(a.ok){ return a.v } else { return null } } else { return null } }\n```", "lane": "code-fast", "why": "code fence plus refactor verb"}
+{"message": "debug why this test fails:\n```js\nassert.equal(pickLane('what is x').lane, 'fast')\n```\nit returns pro", "lane": "code-fast", "why": "code fence plus debug verb"}
+{"message": "rename the variable cnt to receiptCount in this snippet:\n```js\nlet cnt = rows.length\nreturn cnt\n```", "lane": "code-fast", "why": "bounded mechanical edit"}
+{"message": "fix the off by one in this loop:\n```python\nfor i in range(len(xs) - 1):\n    print(xs[i])\n```", "lane": "code-fast", "why": "small bounded code fix"}
+{"message": "why is this promise never resolving:\n```js\nnew Promise((resolve) => { if (ready) resolve() })\n```", "lane": "code-fast", "why": "bounded code diagnosis"}
+{"message": "what is the difference between let and const", "lane": "fast", "why": "boundary: code topic but pure lookup, no edit"}
+{"message": "prove p equals np", "lane": "max", "why": "boundary: very short but proof depth"}
+{"message": "is rust better than go", "lane": "pro", "why": "boundary: short but needs judgment not a fact"}
+{"message": "summarize the plot of hamlet", "lane": "fast", "why": "boundary: summary of known fact, no reasoning"}
+{"message": "write a haiku about deploy friday", "lane": "pro", "why": "boundary: short creative, taste over recall"}
+{"message": "list the tradeoffs of microservices", "lane": "pro", "why": "boundary: list verb but needs judgment beyond recall"}
+{"message": "should we rewrite the backend in rust, consider team skills, hiring, our latency needs, migration cost, and what we lose by pausing features for two quarters", "lane": "max", "why": "boundary: starts casual but multi factor decision"}
+{"message": "fix my code", "lane": "pro", "why": "boundary: fix verb but no code included, needs clarification not a code lane"}
+{"message": "what are the seven capabilities in our router checklist and which two are unfinished, and for the unfinished ones sketch the implementation approach and the riskiest assumption in each", "lane": "max", "why": "boundary: starts as lookup, second half is analysis"}
+{"message": "hey", "lane": "fast", "why": "boundary: greeting, cheapest lane"}
+{"message": "thanks that worked", "lane": "fast", "why": "boundary: acknowledgment, cheapest lane"}
+{"message": "explain this error in plain words: ENOTEMPTY directory not empty rm", "lane": "fast", "why": "boundary: error text but explanation lookup, no code to edit"}

@@ -1,0 +1,20 @@
+{"message": "whats the flag to skip git hooks", "lane": "fast", "why": "single flag lookup"}
+{"message": "how many megabytes in a gigabyte", "lane": "fast", "why": "single fact"}
+{"message": "show the last 5 commits", "lane": "fast", "why": "one command recall"}
+{"message": "define eventual consistency", "lane": "fast", "why": "definition"}
+{"message": "translate good morning to spanish", "lane": "fast", "why": "tiny transform"}
+{"message": "gm", "lane": "fast", "why": "greeting"}
+{"message": "sounds good", "lane": "fast", "why": "acknowledgment"}
+{"message": "write a birthday message for my cofounder who loves espresso", "lane": "pro", "why": "light personal writing"}
+{"message": "make this subject line better: quarterly update for investors q3", "lane": "pro", "why": "short edit with taste"}
+{"message": "how do i tell a customer their feature request is not happening without losing them", "lane": "pro", "why": "delicate wording, judgment"}
+{"message": "give me a checklist for taking the laptop abroad for a month of remote work", "lane": "pro", "why": "practical list with judgment"}
+{"message": "is it worth adding typescript to a 5k line node project", "lane": "pro", "why": "short judgment question"}
+{"message": "explain webhooks to a marketer", "lane": "pro", "why": "audience-shaped explanation"}
+{"message": "design a rate limiter for our public api that is fair across tenants, survives restarts, and degrades gracefully under redis loss, justify each choice", "lane": "max", "why": "design with justification"}
+{"message": "our churn doubled last quarter while nps stayed flat, lay out the possible causes, how you would test each, and what data we need", "lane": "max", "why": "causal analysis plan"}
+{"message": "prove this scheduler never starves a low priority task, or find the case where it does", "lane": "max", "why": "proof style"}
+{"message": "plan how we migrate 40 million rows to a new schema with zero downtime, include batch sizing, verification, and rollback", "lane": "max", "why": "long horizon plan"}
+{"message": "should we open source the router, weigh community growth, competitive risk, maintenance burden, and monetization paths", "lane": "max", "why": "multi factor decision"}
+{"message": "fix this test:\n```js\nassert.equal(sum([1,2]), 4)\n```\nsum works fine elsewhere", "lane": "code-fast", "why": "code fence plus fix"}
+{"message": "why does this throw:\n```python\nx = {}\nprint(x['missing'])\n```", "lane": "code-fast", "why": "code fence plus diagnosis"}
