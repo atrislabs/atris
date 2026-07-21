@@ -58,3 +58,7 @@
 {"message": "my mac fan is screaming when i run the test suite, is that normal", "lane": "pro", "why": "lookup word mid sentence is not a lookup, found in dogfood tick 2"}
 {"message": "estimate how much we save per month if fast handles 40% of turns, pro 50%, max 10%, versus everything on max, show your math", "lane": "max", "why": "multi step estimation, found in dogfood tick 2"}
 {"message": "if we double the price and lose a third of customers is that good, walk through the revenue and support load math", "lane": "max", "why": "walk through the math is analysis, found in dogfood tick 2"}
+{"message": "how do i exit vim lol", "lane": "fast", "why": "muscle memory lookup, found in dogfood tick 3"}
+{"message": "so we have 3 pricing ideas, flat 20 a month, usage based, or free with paid packs, think about who each attracts, what support looks like, and which one kills us if we guess wrong", "lane": "max", "why": "multi option strategy weighing, found in dogfood tick 3"}
+{"message": "WHATS THE WIFI PASSWORD FORMAT WE USE FOR GUESTS", "lane": "fast", "why": "caps lookup held in dogfood tick 3"}
+{"message": "im getting 401s from the backend since an hour ago but only on the mac app, web works fine, where do i even start", "lane": "pro", "why": "troubleshooting with mid sentence where, held in dogfood tick 3"}
