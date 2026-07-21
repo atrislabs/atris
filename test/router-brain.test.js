@@ -35,6 +35,15 @@ function writeMissionEvents(root, rows) {
   fs.writeFileSync(file, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8');
 }
 
+function writeDispatchReceipt(root, name, results) {
+  const dir = path.join(root, 'atris', 'runs');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `dispatch-${name}.json`), `${JSON.stringify({
+    schema: 'atris.dispatch_receipt.v1',
+    results,
+  })}\n`, 'utf8');
+}
+
 function taskReceipt(engine, taskType, passed, durationMs, at) {
   return {
     schema: 'atris.task_receipt.v1',
@@ -89,6 +98,39 @@ test('scorer combines task receipts and mission events with pass rate, median du
     assert.equal(cursor.verified_pass_rate, codex.verified_pass_rate);
     assert.equal(cursor.median_duration_ms, codex.median_duration_ms);
     assert.ok(cursor.recency_weighted_score > codex.recency_weighted_score);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('dispatch receipt ingestion counts enriched entries and skips thin or malformed fixtures', () => {
+  const root = makeRoot();
+  try {
+    writeDispatchReceipt(root, 'enriched', [{
+      task: 'CLI-900',
+      engine: 'cursor',
+      task_type: 'executor',
+      verified_passed: true,
+      duration_ms: 1250,
+      at: '2026-07-21T12:00:00.000Z',
+      exitCode: 0,
+    }]);
+    writeDispatchReceipt(root, 'legacy-thin', [{
+      task: 'CLI-899',
+      engine: 'codex',
+      exitCode: 0,
+    }]);
+    const runsDir = path.join(root, 'atris', 'runs');
+    fs.writeFileSync(path.join(runsDir, 'dispatch-malformed.json'), '{not json\n', 'utf8');
+
+    assert.deepEqual(loadRouterHistory(root), [{
+      engine: 'cursor',
+      task_type: 'executor',
+      verified_passed: true,
+      duration_ms: 1250,
+      at_ms: NOW,
+      source: 'atris/runs/dispatch-enriched.json#results[0]',
+    }]);
   } finally {
     cleanup(root);
   }

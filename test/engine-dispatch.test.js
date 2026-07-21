@@ -268,6 +268,11 @@ test('runDispatchFlight happy path: claims, builds, re-verifies for real, ships,
     assert.equal(flight.paused.length, 0);
     assert.equal(flight.results[0].engine, 'cursor');
     assert.equal(flight.results[0].restaffed, undefined);
+    assert.equal(flight.results[0].task_type, 'executor');
+    assert.equal(flight.results[0].verified_passed, true);
+    assert.ok(Number.isInteger(flight.results[0].duration_ms));
+    assert.ok(flight.results[0].duration_ms >= 0);
+    assert.ok(Number.isFinite(Date.parse(flight.results[0].at)));
     assert.equal(verifyCalls.length, 1);
     assert.equal(verifyCalls[0].command, 'node --test test/widget.test.js');
     assert.equal(verifyCalls[0].cwd, '/wt/dispatch-cli-900');
@@ -713,6 +718,7 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
     assert.equal(receipt.result.passed, true);
     assert.equal(receipt.result.verifier_result.command, 'git merge-base --is-ancestor HEAD origin/master');
     assert.equal(receipt.result.verifier_result.passed, true);
+    assert.equal(receipt.results[0].verified_passed, null);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -771,6 +777,7 @@ test('runDispatchFlight pauses (never ships) when the real Check: re-run fails',
     assert.equal(flight.landed.length, 0);
     assert.equal(flight.paused.length, 1);
     assert.equal(flight.paused[0].stage, 'verify_failed');
+    assert.equal(flight.results[0].verified_passed, false);
     assert.ok(!calls.some((c) => c.startsWith('worktree ship')), 'must never reach the ship gate on a failed verify');
     assert.ok(!calls.some((c) => c.startsWith('task ready')), 'must never ready a task whose verify failed');
   } finally {
@@ -794,6 +801,7 @@ test('runDispatchFlight pauses when the build itself fails, keeping the worktree
     });
     assert.equal(flight.landed.length, 0);
     assert.equal(flight.paused[0].stage, 'build');
+    assert.equal(flight.results[0].verified_passed, null);
     assert.ok(!calls.some((c) => c.startsWith('task ready')));
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });

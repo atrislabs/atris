@@ -13,6 +13,27 @@ const TASK = {
   title: 'Fix the widget so operators stop retyping. Done: widget renders once, test included. Check: focused node --test test/widget.test.js.',
 };
 
+function writeExecutorDispatchHistory(root, outcomes) {
+  const runsDir = path.join(root, 'atris', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  for (let index = 0; index < 3; index += 1) {
+    const at = `2026-07-${18 + index}T12:00:00.000Z`;
+    const results = Object.entries(outcomes).map(([engine, verifiedPassed]) => ({
+      task: `CLI-${engine}-${index}`,
+      engine,
+      task_type: 'executor',
+      verified_passed: verifiedPassed,
+      duration_ms: 1000,
+      at,
+      exitCode: verifiedPassed ? 0 : 1,
+    }));
+    fs.writeFileSync(path.join(runsDir, `dispatch-history-${index}.json`), `${JSON.stringify({
+      schema: 'atris.dispatch_receipt.v1',
+      results,
+    })}\n`, 'utf8');
+  }
+}
+
 test('parseDoneCheck extracts the task spec from board convention text', () => {
   const { done, check } = fleet.parseDoneCheck(TASK.title);
   assert.match(done, /widget renders once/);
@@ -160,6 +181,25 @@ test('assignEngines round-robins the installed roster', () => {
   assert.deepEqual(fleet.assignEngines(staffed, []), []);
 });
 
+test('restaffing keeps legacy rotation when history is thin and follows rich executor outcomes', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-router-'));
+  try {
+    const installedEngines = ['codex', 'cursor', 'claude'];
+    assert.equal(
+      fleet.nextInstalledFleetEngine('codex', { root, installedEngines }),
+      'cursor',
+    );
+
+    writeExecutorDispatchHistory(root, { cursor: false, claude: true });
+    assert.equal(
+      fleet.nextInstalledFleetEngine('codex', { root, installedEngines }),
+      'claude',
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('landArrival rebases clean arrivals and pauses on conflict without resolving', () => {
   const log = [];
   const gitOk = (args) => { log.push(args[0]); return { status: 0, stdout: '', stderr: '' }; };
@@ -218,6 +258,35 @@ test('runFleetFlight dry-run staffs from the projection without dispatching', as
     assert.ok(lines.some((l) => /2 tasks staffed/.test(l)));
     assert.equal(flight.results.length, 0, 'dry run must not dispatch');
   } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runFleetFlight ranks its default primary engine only when executor history is rich', { concurrency: false }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-primary-router-'));
+  const binDir = path.join(root, 'bin');
+  const previousPath = process.env.PATH;
+  try {
+    fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [{ display_id: 'F-1', status: 'open', title: 'edits lib/a.js Done: x. Check: node --test test/a.test.js.' }],
+    }));
+    for (const name of ['claude', 'codex']) {
+      fs.writeFileSync(path.join(binDir, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    }
+    process.env.PATH = `${binDir}${path.delimiter}/usr/bin${path.delimiter}/bin`;
+
+    const thin = await fleet.runFleetFlight({ root, dryRun: true, log: () => {} });
+    assert.deepEqual(thin.roster, ['claude', 'codex']);
+    assert.equal(thin.staffed[0].engine, 'claude');
+
+    writeExecutorDispatchHistory(root, { claude: false, codex: true });
+    const rich = await fleet.runFleetFlight({ root, dryRun: true, log: () => {} });
+    assert.deepEqual(rich.roster, ['codex', 'claude']);
+    assert.equal(rich.staffed[0].engine, 'codex');
+  } finally {
+    process.env.PATH = previousPath;
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
