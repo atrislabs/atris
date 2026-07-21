@@ -5533,7 +5533,11 @@ function cmdReviews(args) {
   }
   approvalItems.forEach((item, index) => {
     if (index > 0) console.log('');
-    console.log(`${index + 1}. ${gateForHuman(item.title, { title: item.title }).text}`);
+    const ref = item.display_id || taskRef(item.id);
+    const badge = item.evidence?.any_forced
+      ? ' [evidence:forced]'
+      : item.evidence?.all_passing ? ' [evidence:passing]' : '';
+    console.log(`${index + 1}. ${gateForHuman(item.title, { title: item.title }).text} (${ref})${badge}`);
     if (item.landing) {
       taskReviewLandingLines(item).forEach(line => console.log(line));
       if (verbose && item.result?.saved) console.log(`   saved: ${item.result.saved}`);
