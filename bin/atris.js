@@ -14,6 +14,15 @@ const os = require('os');
 const crypto = require('crypto');
 const PACKAGE_JSON_PATH = path.join(__dirname, '..', 'package.json');
 
+// Exit without truncating piped stdout: process.exit() drops whatever is still
+// queued in the pipe buffer (large outputs died at 512-byte boundaries). Let
+// the event loop drain naturally; an unref'd timer forces exit if a stray
+// handle keeps the process alive.
+function exitWhenFlushed(code) {
+  process.exitCode = code;
+  setTimeout(() => process.exit(code), 3000).unref();
+}
+
 let CLI_VERSION = 'unknown';
 try {
   const pkgRaw = fs.readFileSync(PACKAGE_JSON_PATH, 'utf8');
@@ -2100,8 +2109,8 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'youtube') {
   require('../commands/youtube').youtubeCommand(process.argv.slice(3))
-    .then(() => process.exit(0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+    .then(() => exitWhenFlushed(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitWhenFlushed(1); });
 } else if (command === 'run') {
   const args = process.argv.slice(3);
   if (args[0] === 'logs') {
