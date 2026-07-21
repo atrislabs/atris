@@ -5038,10 +5038,16 @@ function defaultMissionTimelinePath(root, mission) {
 function missionReportFor(mission, root = process.cwd()) {
   const verifierReceiptPath = mission.receipt_path || null;
   const receipt = readMissionReceipt(verifierReceiptPath, root);
+  const explicitWorkerReceipt = readMissionReceipt(mission.worker_receipt_path, root);
+  const timeline = missionReportTimeline(mission, root);
+  const workerCheckedIn = Boolean(explicitWorkerReceipt) || timeline.length > 0;
   const workerReceiptPath = mission.worker_receipt_path || (receipt && verifierReceiptPath) || null;
   const verifierPassed = mission.verifier_result && mission.verifier_result.passed === true;
-  const budgetContinuation = missionBudgetContinuationText(mission);
-  const operatorOutcome = budgetContinuation
+  const pendingBudgetContinuation = missionBudgetContinuationText(mission);
+  const budgetContinuation = workerCheckedIn ? pendingBudgetContinuation : null;
+  const operatorOutcome = !workerCheckedIn && pendingBudgetContinuation
+    ? 'No worker has checked in yet.'
+    : budgetContinuation
     ? 'The last verifier passed; full-budget work is continuing.'
     : mission.operator_outcome
     || (verifierPassed ? 'Verifier passed.' : mission.status === 'complete' ? 'Mission is complete.' : mission.status === 'blocked' ? 'Mission is blocked.' : 'Mission is still in progress.');
@@ -5049,16 +5055,22 @@ function missionReportFor(mission, root = process.cwd()) {
     id: mission.id,
     objective: mission.objective,
     status: mission.status,
-    human_status: missionHumanStatusText(mission),
+    human_status: !workerCheckedIn && pendingBudgetContinuation
+      ? 'waiting for the first worker check-in'
+      : missionHumanStatusText(mission),
     budget_continuation: budgetContinuation,
     operator_outcome: operatorOutcome,
     worker: mission.worker || missionWorkerLabel(mission),
     worker_summary: missionWorkerSummary(mission, receipt),
-    timeline: missionReportTimeline(mission, root),
+    timeline,
     worker_receipt_path: workerReceiptPath,
     verifier_receipt_path: verifierReceiptPath,
     proof_text: mission.receipt_path ? missionStatusProofText(mission) : null,
-    operator_next: budgetContinuation || mission.operator_next || mission.next_action || 'Review the mission state.',
+    operator_next: budgetContinuation
+      || (!workerCheckedIn && pendingBudgetContinuation ? 'Wait for the first worker check-in.' : null)
+      || mission.operator_next
+      || mission.next_action
+      || 'Review the mission state.',
   };
 }
 

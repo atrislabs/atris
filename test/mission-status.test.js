@@ -2089,6 +2089,44 @@ test('mission report keeps full-budget work active until promised time is used',
   }
 });
 
+test('mission report waits for a worker check-in before claiming full-budget work continues', () => {
+  const dir = makeTempDir();
+  try {
+    const missionId = 'mission-report-awaiting-worker';
+    appendMissionState(dir, {
+      id: missionId,
+      slug: missionId,
+      objective: 'keep no-check-in report honest',
+      runner: 'codex_goal',
+      owner: 'mission-lead',
+      status: 'planning',
+      created_at: new Date(Date.now() - 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+      budget_contract: {
+        policy: 'spend_full_budget',
+        requested_seconds: 3600,
+        budget_label: '1 hour',
+      },
+    });
+
+    const report = runCli(['mission', 'report', missionId], { cwd: dir });
+    assert.equal(report.status, 0, report.stderr || report.stdout);
+    assert.match(report.stdout, /state: waiting for the first worker check-in/);
+    assert.match(report.stdout, /What happened: No worker has checked in yet\./);
+    assert.match(report.stdout, /Worker summary: No worker receipt yet\./);
+    assert.match(report.stdout, /Next: Wait for the first worker check-in\./);
+    assert.doesNotMatch(report.stdout, /working for the full|work is continuing|keep shipping bounded improvements/);
+
+    const json = runCli(['mission', 'report', missionId, '--json'], { cwd: dir });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.reports[0].human_status, 'waiting for the first worker check-in');
+    assert.equal(payload.reports[0].budget_continuation, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission inspect shows live budget in text while JSON keeps lifecycle status', () => {
   const dir = makeTempDir();
   try {
