@@ -1,7 +1,7 @@
 ---
 name: youtube
 description: "Process YouTube videos — extract insights, answer questions, store as knowledge. 5 credits per video. Triggers on: youtube, video, process video, watch this, learn from video."
-version: 2.2.0
+version: 2.3.0
 tags:
   - youtube
   - research
@@ -12,6 +12,15 @@ tags:
 # YouTube Skill
 
 Process any YouTube video through Atris transcript-first analysis. The CLI extracts local captions with timestamps when available, sends that transcript to Atris, and falls back to cloud video processing when captions are unavailable or unusable. 5 credits per video, refunded if processing fails.
+
+## Route first: learning vs product
+
+Two rails process YouTube videos — pick before running anything:
+
+- **Learning / work rail** → use the `alpha-learn` skill (ytnotes). Local yt-dlp + grok, zero credits, podcastnotes-style notes, tweet-feed output, `[claimable]` entries in today's journal for other agents. Use this when the goal is to LEARN from a video or mine it for Atris work.
+- **Product rail** → this skill (`atris youtube process`). Credits-billed, stores knowledge in the Atris backend, customer-facing path. Use this when a customer/agent needs the video stored as Atris knowledge or answered via the API.
+
+If the user says "learn from", "notes on", "alpha", or "rabbit hole" → alpha-learn. If they say "process", "store", "add to knowledge" → this skill.
 
 ## Bootstrap (ALWAYS Run First)
 
