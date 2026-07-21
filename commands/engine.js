@@ -1052,6 +1052,37 @@ function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS } = {}) {
   };
 }
 
+// A probe is a real engine round trip on the same command shape dispatches
+// use, so its pass/fail and latency are routing evidence. Record one receipt
+// per role the engine serves so the router brain (lib/router-brain.js) can
+// learn from every preflight. Liveness evidence only: real build outcomes
+// land in the same pool via task receipts and outweigh probes over time.
+function writeProbeReceipt(result, root = process.cwd()) {
+  const runsDir = path.join(root, 'atris', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  let roles = [];
+  try {
+    const engine = engineRegistryView(root).find((row) => row.id === result.engine);
+    roles = engine && Array.isArray(engine.roles) ? engine.roles : [];
+  } catch { /* registry unavailable: still record the probe */ }
+  if (!roles.length) roles = ['executor'];
+  const at = new Date().toISOString();
+  const stampMs = Date.now();
+  for (const role of roles) {
+    const receipt = {
+      schema: 'atris.engine_probe_receipt.v1',
+      engine: result.engine,
+      task_type: role,
+      verified_passed: Boolean(result.pass),
+      duration_ms: result.durationMs,
+      reason: result.reason,
+      at,
+    };
+    const file = path.join(runsDir, `engine-probe-task-${result.engine}-${role}-${stampMs}.json`);
+    fs.writeFileSync(file, `${JSON.stringify(receipt, null, 2)}\n`);
+  }
+}
+
 function runEngineTest(targets, { json, root } = {}) {
   let enginesToTest;
   if (targets && targets.length) {
@@ -1080,6 +1111,9 @@ function runEngineTest(targets, { json, root } = {}) {
   // a transient failure does not leave an engine stuck on error forever.
   for (const r of results) {
     try { setEngineHealth(r.engine, r.pass ? 'ready' : 'error', root); } catch { /* best-effort */ }
+    if (r.reason !== 'not-installed') {
+      try { writeProbeReceipt(r, root); } catch { /* best-effort */ }
+    }
   }
   if (json) {
     console.log(JSON.stringify({

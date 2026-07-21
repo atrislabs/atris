@@ -247,6 +247,33 @@ test('engine test <name> exits 0 with a pass line when the CLI replies OK', () =
   }
 });
 
+test('engine test writes a probe receipt per role that the router brain can read', () => {
+  const dir = makeTempDir();
+  const binDir = makeBinDir();
+  writeFakeBin(binDir, 'cursor-agent', '#!/bin/sh\necho OK\n');
+  try {
+    const res = runCli(['engine', 'test', 'cursor'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const runsDir = path.join(dir, 'atris', 'runs');
+    const receipts = fs.readdirSync(runsDir).filter((name) => name.startsWith('engine-probe-task-cursor-'));
+    assert.ok(receipts.length >= 1, `expected probe receipts in ${runsDir}`);
+    const receipt = JSON.parse(fs.readFileSync(path.join(runsDir, receipts[0]), 'utf8'));
+    assert.equal(receipt.engine, 'cursor');
+    assert.equal(typeof receipt.task_type, 'string');
+    assert.equal(receipt.verified_passed, true);
+    assert.equal(typeof receipt.duration_ms, 'number');
+    const { loadRouterHistory } = require('../lib/router-brain');
+    const observations = loadRouterHistory(dir);
+    assert.ok(
+      observations.some((row) => row.engine === 'cursor' && row.verified_passed === true),
+      'router brain should read the probe receipt as an observation',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
 test('engine test <name> exits nonzero naming the failing engine when it cannot reply', () => {
   const dir = makeTempDir();
   const binDir = makeBinDir();
