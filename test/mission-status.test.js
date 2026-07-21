@@ -102,16 +102,23 @@ test('mission landing summary strips broken markdown before status renders it', 
   assert.doesNotMatch(storedDrillProof.join('\n'), /\/Users\/private|atris\.js|node /);
 });
 
+function isolatedCliEnv(overrides = {}) {
+  const inherited = { ...process.env };
+  delete inherited.ATRIS_MISSION_DRIVER_DETACHED;
+  delete inherited.ATRIS_MISSION_DRIVER_PARENT_PID;
+  return {
+    ...inherited,
+    ATRIS_SKIP_UPDATE_CHECK: '1',
+    ...overrides,
+  };
+}
+
 function runCli(args, { cwd, env = {} } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
     timeout: 15000,
-    env: {
-      ...process.env,
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      ...env,
-    },
+    env: isolatedCliEnv(env),
   });
   if (result.error) throw result.error;
   return result;
@@ -121,11 +128,7 @@ function runCliAsync(args, { cwd, env = {} } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
       cwd,
-      env: {
-        ...process.env,
-        ATRIS_SKIP_UPDATE_CHECK: '1',
-        ...env,
-      },
+      env: isolatedCliEnv(env),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
