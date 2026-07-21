@@ -5666,6 +5666,99 @@ test('mission run kills a worker that exceeds the remaining wall', () => {
   }
 });
 
+test('detached mission driver records its exit reason in state and log', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission', 'start', 'record detached driver exit', '--owner', 'mission-lead',
+      '--runner', 'claude', '--no-verify', '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+
+    const run = runCli([
+      'mission', 'run', mission.id, '--max-wall', '1', '--max-ticks', '1',
+      '--no-claude', '--no-verify', '--json',
+    ], {
+      cwd: dir,
+      env: { ATRIS_MISSION_DRIVER_DETACHED: '1' },
+    });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+
+    const shortId = mission.id.slice(-8).replace(/[^a-zA-Z0-9_-]/g, '');
+    const state = JSON.parse(fs.readFileSync(
+      path.join(dir, '.atris', 'state', `mission-driver-${shortId}.json`),
+      'utf8',
+    ));
+    assert.match(state.exited_at, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(state.exit_reason, 'max-ticks-reached');
+    assert.equal(typeof state.remaining_budget_seconds, 'number');
+
+    const logLines = fs.readFileSync(
+      path.join(dir, 'atris', 'logs', `mission-${shortId}-driver.log`),
+      'utf8',
+    ).trim().split('\n');
+    const exitRecord = JSON.parse(logLines.at(-1));
+    assert.equal(exitRecord.event, 'mission_driver_exit');
+    assert.equal(exitRecord.exit_reason, 'max-ticks-reached');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('detached always-on full-budget driver continues past a healthy max-ticks boundary', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const now = new Date().toISOString();
+    const missionId = 'mission-detached-full-budget-loop';
+    appendMissionState(dir, {
+      id: missionId,
+      slug: missionId,
+      objective: 'keep the detached loop alive for the full budget',
+      status: 'running',
+      runner: 'claude',
+      verifier: 'node -e "process.exit(0)"',
+      always_on: true,
+      cadence: '1s',
+      max_ticks: 1,
+      max_wall_seconds: 2,
+      created_at: now,
+      started_at: now,
+      updated_at: now,
+      budget_contract: {
+        policy: 'spend_full_budget',
+        requested_seconds: 2,
+        budget_label: '2 seconds',
+        plain_language: 'Use the whole time.',
+        stop_rule: 'keep picking the next useful move until time is up',
+      },
+    });
+
+    const run = runCli([
+      'mission', 'run', missionId, '--max-ticks', '1', '--no-claude', '--json',
+    ], {
+      cwd: dir,
+      env: { ATRIS_MISSION_DRIVER_DETACHED: '1' },
+    });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.pause_reason, 'budget-exhausted');
+    assert.ok(payload.tick_count >= 2, `expected at least two ticks, got ${payload.tick_count}`);
+
+    const shortId = missionId.slice(-8).replace(/[^a-zA-Z0-9_-]/g, '');
+    const state = JSON.parse(fs.readFileSync(
+      path.join(dir, '.atris', 'state', `mission-driver-${shortId}.json`),
+      'utf8',
+    ));
+    assert.equal(state.exit_reason, 'budget-exhausted');
+    assert.equal(state.remaining_budget_seconds, 0);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run --due selects an active verifier mission for loop heartbeats', () => {
   const dir = makeTempDir();
   try {

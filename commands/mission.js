@@ -7507,6 +7507,103 @@ function missionDriverPaths(mission, root = process.cwd()) {
   };
 }
 
+function readMissionDriverState(stateFile) {
+  try { return JSON.parse(fs.readFileSync(stateFile, 'utf8')) || {}; } catch { return {}; }
+}
+
+function writeMissionDriverState(stateFile, state) {
+  fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+  fs.writeFileSync(stateFile, JSON.stringify(state, null, 2) + '\n', 'utf8');
+}
+
+function missionDriverError(error) {
+  if (error instanceof Error) {
+    return {
+      name: error.name || 'Error',
+      message: error.message || String(error),
+      stack: error.stack || undefined,
+    };
+  }
+  return { name: 'Error', message: String(error) };
+}
+
+function installDetachedMissionDriverLifecycle(mission, root = process.cwd()) {
+  if (process.env.ATRIS_MISSION_DRIVER_DETACHED !== '1') return null;
+  const paths = missionDriverPaths(mission, root);
+  const parentManaged = Boolean(process.env.ATRIS_MISSION_DRIVER_PARENT_PID);
+  if (parentManaged) {
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const state = readMissionDriverState(paths.stateFile);
+      if (Number(state.pid) === process.pid) break;
+      sleepSync(10);
+    }
+  }
+  const previous = readMissionDriverState(paths.stateFile);
+  const sameProcess = Number(previous.pid) === process.pid
+    && previous.mission_id === mission.id
+    && !previous.exited_at;
+  const { exited_at: _exitedAt, exit_reason: _exitReason, remaining_budget_seconds: _remaining, ...activeState } = sameProcess
+    ? previous
+    : {};
+  writeMissionDriverState(paths.stateFile, {
+    ...activeState,
+    mission_id: mission.id,
+    pid: process.pid,
+    started_at: sameProcess && previous.started_at ? previous.started_at : stampIso(),
+    log_path: path.relative(root, paths.logFile),
+  });
+
+  let exitReason = 'process-exit';
+  let recorded = false;
+  const finish = (reason = exitReason, error = null) => {
+    if (recorded) return;
+    recorded = true;
+    const latestMission = resolveMission(mission.id) || mission;
+    const exitedAt = stampIso();
+    const remainingBudgetSeconds = missionFullBudgetRemainingSeconds(latestMission);
+    const finalReason = String(reason || exitReason || 'process-exit').trim().toLowerCase();
+    const errorRecord = error ? missionDriverError(error) : null;
+    const record = {
+      event: 'mission_driver_exit',
+      mission_id: mission.id,
+      pid: process.pid,
+      exited_at: exitedAt,
+      exit_reason: finalReason,
+      remaining_budget_seconds: remainingBudgetSeconds,
+      ...(errorRecord ? { error: errorRecord } : {}),
+    };
+    try {
+      fs.mkdirSync(path.dirname(paths.logFile), { recursive: true });
+      fs.appendFileSync(paths.logFile, JSON.stringify(record) + '\n', 'utf8');
+    } catch {}
+    try {
+      writeMissionDriverState(paths.stateFile, {
+        ...readMissionDriverState(paths.stateFile),
+        mission_id: mission.id,
+        pid: process.pid,
+        exited_at: exitedAt,
+        exit_reason: finalReason,
+        remaining_budget_seconds: remainingBudgetSeconds,
+        ...(errorRecord ? { error: errorRecord } : {}),
+      });
+    } catch {}
+  };
+  const setExitReason = (reason) => {
+    if (reason) exitReason = String(reason).trim().toLowerCase();
+  };
+  process.once('exit', (code) => finish(exitReason === 'process-exit' ? `process-exit:${code ?? 0}` : exitReason));
+  process.once('uncaughtException', (error) => {
+    finish('uncaught-exception', error);
+    process.exit(1);
+  });
+  process.once('unhandledRejection', (error) => {
+    finish('unhandled-rejection', error);
+    process.exit(1);
+  });
+  return { finish, setExitReason };
+}
+
 function missionDriverHealth(mission, root = process.cwd()) {
   const paths = missionDriverPaths(mission, root);
   let driverState = null;
@@ -7620,16 +7717,20 @@ function detachMissionRun(args, mission, root = process.cwd(), asJson = false) {
       cwd: root,
       detached: true,
       stdio: ['ignore', logFd, logFd],
-      env: { ...process.env, ATRIS_MISSION_DRIVER_DETACHED: '1' },
+      env: {
+        ...process.env,
+        ATRIS_MISSION_DRIVER_DETACHED: '1',
+        ATRIS_MISSION_DRIVER_PARENT_PID: String(process.pid),
+      },
     });
     const startedAt = stampIso();
     const logPath = path.relative(root, paths.logFile);
-    fs.writeFileSync(paths.stateFile, JSON.stringify({
+    writeMissionDriverState(paths.stateFile, {
       mission_id: mission.id,
       pid: child.pid,
       started_at: startedAt,
       log_path: logPath,
-    }, null, 2) + '\n', 'utf8');
+    });
     child.unref();
     printJsonOrText(
       {
@@ -8398,7 +8499,9 @@ async function runMission(args) {
   } else if (!maxWallFlag && Number(mission.budget_contract?.requested_seconds) > 0) {
     maxWallSeconds = Math.max(60, Number(mission.budget_contract.requested_seconds));
   }
+  const detachedDriverLifecycle = installDetachedMissionDriverLifecycle(mission, process.cwd());
   if (['complete', 'stopped'].includes(mission.status)) {
+    detachedDriverLifecycle?.setExitReason(mission.status);
     if (asJson) {
       printJsonOrText(
         { ok: true, action: 'run_skipped', reason: mission.status, mission },
@@ -8444,7 +8547,10 @@ async function runMission(args) {
   try {
     const cwd = process.cwd();
     const controller = new AbortController();
-    onSig = () => { controller.abort(); };
+    onSig = (signal) => {
+      detachedDriverLifecycle?.setExitReason(`signal-${String(signal || 'abort').toLowerCase()}`);
+      controller.abort();
+    };
     process.on('SIGINT', onSig);
     process.on('SIGTERM', onSig);
 
@@ -8465,10 +8571,14 @@ async function runMission(args) {
     }
     let runtimeMission = runtimeView(mission);
     if (['complete', 'stopped'].includes(mission.status)) {
+      detachedDriverLifecycle?.setExitReason(mission.status);
       console.error(`Mission ${mission.id} is ${mission.status}; nothing to run.`);
       return;
     }
-    if (returnIfCodexNativeGoalNotStarted(runtimeMission, asJson, nativeGoalRunOptions)) return;
+    if (returnIfCodexNativeGoalNotStarted(runtimeMission, asJson, nativeGoalRunOptions)) {
+      detachedDriverLifecycle?.setExitReason('native-goal-not-started');
+      return;
+    }
     if (mission.status === 'paused') {
       mission = saveMission({
         ...mission,
@@ -8492,6 +8602,7 @@ async function runMission(args) {
     if (!autoRunner && !skipClaude && !callerSessionRunner && !atris2Runner && !drillRunner) {
       const probe = probeClaudeBinary();
       if (!probe.ok) {
+        detachedDriverLifecycle?.setExitReason('claude-probe-failed');
         console.error(`[mission run] claude probe failed: ${probe.error}`);
         process.exit(2);
       }
@@ -8539,15 +8650,26 @@ async function runMission(args) {
       console.error(`[mission run] ${mission.id}\n  objective: ${mission.objective}\n  lane: ${frozen.lane}\n  cadence: ${cadence} (${cadenceSeconds}s)\n  max_ticks: ${effectiveMaxTicks}, max_wall: ${maxWallSeconds}s\n  session: ${sessionLabel}`);
     }
 
-    while (ticks.length < effectiveMaxTicks) {
-      const elapsedSec = (Date.now() - startedAt) / 1000;
-      const remainingWall = maxWallSeconds - elapsedSec;
-      if (remainingWall <= 0) { pauseReason = 'max-wall-reached'; break; }
-      if (controller.signal.aborted) { pauseReason = 'aborted'; break; }
+    let cycleTickLimit = effectiveMaxTicks;
+    while (true) {
+      while (ticks.length < cycleTickLimit) {
+        // Re-read before measuring the wall. Detached full-budget drivers use
+        // the mission contract as their wall so process startup drift cannot
+        // shorten the promised work window.
+        mission = resolveMission(mission.id) || mission;
+        runtimeMission = runtimeView(mission);
+        const contractualRemaining = detachedDriverLifecycle && mission.always_on && missionSpendsFullBudget(mission)
+          ? missionFullBudgetRemainingSeconds(mission)
+          : null;
+        const elapsedSec = (Date.now() - startedAt) / 1000;
+        const remainingWall = contractualRemaining != null ? contractualRemaining : maxWallSeconds - elapsedSec;
+        if (remainingWall <= 0) {
+          pauseReason = contractualRemaining != null ? 'budget-exhausted' : 'max-wall-reached';
+          break;
+        }
+        if (controller.signal.aborted) { pauseReason = 'aborted'; break; }
 
-      // Re-read mission, detect mutation of frozen fields
-      mission = resolveMission(mission.id) || mission;
-      runtimeMission = runtimeView(mission);
+        // Detect mutation of frozen fields after the fresh read above.
       if (['complete', 'stopped', 'paused'].includes(mission.status)) { pauseReason = mission.status; break; }
       if (effectiveMissionVerifier(mission) !== storedVerifier) { pauseReason = 'verifier-mutated'; break; }
       if ((mission.lane || 'workspace') !== frozen.lane) { pauseReason = 'lane-mutated'; break; }
@@ -8971,15 +9093,47 @@ async function runMission(args) {
       }
       const remainingMs = remainingWall * 1000 - 1;
       sleepMs = Math.min(Math.max(0, sleepMs), Math.max(0, remainingMs));
-      if (sleepMs > 0 && ticks.length < effectiveMaxTicks) {
+      if (sleepMs > 0 && ticks.length < cycleTickLimit) {
         try { await sleep(sleepMs, controller.signal); }
         catch (e) { if (e.code === 'ABORTED') { pauseReason = 'aborted'; break; } throw e; }
       }
-    }
+      }
 
-    if (!pauseReason && ticks.length >= effectiveMaxTicks) {
-      const lastTick = ticks[ticks.length - 1];
-      if (lastTick && lastTick.status !== 'ran' && !missionRunKeepsRetryingError(lastTick.reason)) pauseReason = 'max-ticks-reached';
+      if (!pauseReason && ticks.length >= cycleTickLimit) {
+        const lastTick = ticks[ticks.length - 1];
+        if (lastTick && lastTick.status !== 'ran' && !missionRunKeepsRetryingError(lastTick.reason)) pauseReason = 'max-ticks-reached';
+      }
+
+      mission = resolveMission(mission.id) || mission;
+      const remainingBudgetSeconds = missionFullBudgetRemainingSeconds(mission);
+      const explicitExit = ['complete', 'stopped', 'paused'].includes(String(mission.status || ''));
+      const healthyCycleBoundary = !pauseReason || pauseReason === 'max-ticks-reached';
+      const keepDetachedFullBudgetDriverAlive = Boolean(
+        detachedDriverLifecycle
+        && mission.always_on
+        && missionSpendsFullBudget(mission)
+        && remainingBudgetSeconds > 0
+        && !explicitExit
+        && !controller.signal.aborted
+        && healthyCycleBoundary
+      );
+      if (!keepDetachedFullBudgetDriverAlive) break;
+
+      // Production root cause, observed 2026-07-20: a detached child reused the
+      // foreground loop's effectiveMaxTicks as its lifetime bound. A healthy
+      // final tick left pauseReason null, so the process returned silently while
+      // spend_full_budget still had hours left. A detached always-on driver now
+      // treats that bound as one cycle, waits for cadence, then starts another.
+      pauseReason = null;
+      const dueSeconds = secondsUntilMissionDue(mission);
+      const cadenceWaitSeconds = Math.max(1, dueSeconds || cadenceSeconds || 60);
+      const cadenceWaitMs = Math.min(cadenceWaitSeconds * 1000, remainingBudgetSeconds * 1000);
+      try { await sleep(cadenceWaitMs, controller.signal); }
+      catch (e) {
+        if (e.code === 'ABORTED') { pauseReason = 'aborted'; break; }
+        throw e;
+      }
+      cycleTickLimit = ticks.length + effectiveMaxTicks;
     }
 
     // BCK-1324: no-progress is a clean, honest stop — the run did what it
@@ -9014,7 +9168,7 @@ async function runMission(args) {
       appendMissionJudgmentCard(mission, ticks, cwd, noProgressReceipt);
       clearDirectRunCodexGoalRequestForMission(mission.id, cwd);
       appendMemberLog(mission.owner, 'Mission stopped: no progress', { mission: mission.objective, reason: noProgressReason });
-    } else if (pauseReason && !['complete', 'ready', 'max-wall-reached'].includes(pauseReason)) {
+    } else if (pauseReason && !['complete', 'ready', 'max-wall-reached', 'budget-exhausted'].includes(pauseReason)) {
       const lastTick = ticks[ticks.length - 1];
       const deadModel = pauseReason === 'model-unavailable' ? (lastTick && lastTick.model_unavailable) || null : null;
       const lastErrorReason = lastTick && lastTick.status === 'errored' ? lastTick.reason : null;
@@ -9037,7 +9191,7 @@ async function runMission(args) {
     // 'no-progress' is a clean stop the run diagnosed itself — never route it
     // through handleMissionBlocker (that would file a blocker task and
     // dispatch an engine to "fix" a mission that correctly stopped itself).
-    const blockerReason = pauseReason === 'no-progress'
+    const blockerReason = ['no-progress', 'budget-exhausted'].includes(pauseReason)
       ? null
       : (pauseReason || mission.stop_reason || (mission.status === 'blocked' ? 'verifier-failed' : null));
     if (selfDrive && blockerReason) {
@@ -9081,11 +9235,19 @@ async function runMission(args) {
     const atrisGoalState = refreshAtrisGoalController(cwd, { missionId: mission.id });
     const codexGoalState = refreshCodexGoalController(cwd);
 
+    const finalDriverReason = ['complete', 'stopped', 'paused'].includes(String(mission.status || ''))
+      ? String(mission.status)
+      : (pauseReason || (ticks.length >= effectiveMaxTicks ? 'max-ticks-reached' : 'run-returned'));
+    detachedDriverLifecycle?.setExitReason(finalDriverReason);
+
     printJsonOrText(
       { ok: true, action: 'mission_run', mission, runner_override: runnerOverride ? finalRuntimeMission.run_runner_override : null, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, blocker, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: effectiveBudgetContract, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext },
       missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal, ticks, createdNext, blocker),
       asJson,
     );
+  } catch (error) {
+    detachedDriverLifecycle?.finish('run-error', error);
+    throw error;
   } finally {
     if (onSig) {
       try { process.removeListener('SIGINT', onSig); } catch {}
@@ -9095,6 +9257,7 @@ async function runMission(args) {
       try { restoreRunnerProfile(); } catch {}
     }
     releaseMissionLock(lock);
+    detachedDriverLifecycle?.finish();
   }
 }
 
