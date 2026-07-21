@@ -35,6 +35,8 @@ Routing surfaces still hardcoded (full audit in the 2026-07-21 recon): one-lap e
 
 ## known gaps
 
+- Stateless fragments ("and the second one?") route to the cheapest lane; the right fix is session stickiness (checklist 5), not keywords. Found in the 7/21 overnight run.
+
 - Wish intake splits semicolon wishes and drops clauses (logged on wish #29).
 - One-lap sometimes dispatches an ask it should refuse: CLI-1170.
 - `atris engine resolve` explanation surface: CLI-1171.

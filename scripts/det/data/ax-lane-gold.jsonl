@@ -66,3 +66,7 @@
 {"message": "que significa el error 502 bad gateway", "lane": "fast", "why": "spanish lookup, found in dogfood tick 4"}
 {"message": "why is my regex not matching: /^[a-z]+$/ against the string Hello", "lane": "code-fast", "why": "regex diagnosis without a fence, found in dogfood tick 4"}
 {"message": "summarize what changed in our router this week for the changelog", "lane": "pro", "why": "possessive context work not a paste transform, found in dogfood tick 4"}
+{"message": "is consciousness computable", "lane": "pro", "why": "short but bottomless, yes/no shape is a trap, found in dogfood tick 5"}
+{"message": "settle it once and for all, tabs or spaces", "lane": "pro", "why": "banter judgment, held in dogfood tick 5"}
+{"message": "and the second one?", "lane": "fast", "why": "context fragment, cheapest lane until session stickiness exists, held in dogfood tick 5"}
+{"message": "whats blocking the demo", "lane": "fast", "why": "bounded workspace status lookup, held in dogfood tick 5"}
