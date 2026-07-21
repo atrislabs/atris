@@ -1487,7 +1487,7 @@ function missionMetricLine(mission, indent = '  ') {
   return [`${indent}metric: ${metric}${last === null ? '' : ` (last: ${last})`}`];
 }
 
-function renderMemberNowMarkdown(owner, missions) {
+function renderMemberNowMarkdown(owner, missions, root = process.cwd()) {
   const lines = [
     '# Now',
     '',
@@ -1505,6 +1505,8 @@ function renderMemberNowMarkdown(owner, missions) {
     lines.push('');
     lines.push(`- id: ${mission.id}`);
     lines.push(`- status: ${missionHumanStatusText(mission)}`);
+    const debtLine = missionVerificationDebtLine(missionVerificationDebt(mission, root));
+    if (debtLine) lines.push(`- ${debtLine}`);
     lines.push(`- cadence: ${mission.cadence}`);
     lines.push(`- runner: ${mission.runner}${mission.model ? ` (${mission.model})` : ''}`);
     lines.push(`- lane: ${mission.lane}`);
@@ -1533,7 +1535,7 @@ function renderMemberMissionState(owner, root = process.cwd()) {
   const missions = listMissions(root).filter((mission) => mission.owner === owner);
   const nowPath = path.join(dir, 'now.md');
   removeLegacyGeneratedMissionViews(dir);
-  fs.writeFileSync(nowPath, renderMemberNowMarkdown(owner, missions), 'utf8');
+  fs.writeFileSync(nowPath, renderMemberNowMarkdown(owner, missions, root), 'utf8');
   return { missionPath, nowPath };
 }
 
@@ -4749,6 +4751,68 @@ function missionTimelineTickIndex(tick) {
   return Number.isInteger(tickIndex) && tickIndex > 0 ? tickIndex : null;
 }
 
+// A tick's verification state, made first-class so an unchecked increment reads
+// as a red in `atris mission report` and now.md instead of hiding inside a
+// receipt. A ran tick with no verifier result is the debt this surfaces: the
+// tick was recorded but nothing was checked, so the increment is unproven.
+function missionTickVerification(tick) {
+  const ran = !!tick && typeof tick === 'object' && tick.status === 'ran';
+  if (tick && tick.verifier_passed === true) {
+    return { verified: true, state: 'verified', unchecked: false };
+  }
+  if (tick && tick.verifier_passed === false) {
+    return { verified: false, state: 'failed', unchecked: false };
+  }
+  return { verified: false, state: ran ? 'unchecked' : 'skipped', unchecked: ran };
+}
+
+// Roll every ran tick for a mission into a verification-debt tally. `unchecked`
+// counts ran ticks that recorded no verifier result at all — the "tick recorded
+// but nothing was checked" red the report and now.md rollup surface and count
+// against the mission.
+function missionVerificationDebt(mission, root = process.cwd()) {
+  const paths = statePaths(root);
+  let files = [];
+  try {
+    files = fs.readdirSync(paths.runsDir)
+      .filter((file) => file.startsWith('mission-') && file.endsWith('.json'))
+      .map((file) => path.join(paths.runsDir, file));
+  } catch {
+    files = [];
+  }
+  let ran = 0;
+  let verified = 0;
+  let unchecked = 0;
+  const seen = new Set();
+  for (const file of files) {
+    let receipt = null;
+    try {
+      receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (!receipt || receipt.mission_id !== mission.id) continue;
+    for (const tick of missionReceiptTicks(receipt)) {
+      if (!tick || tick.status !== 'ran') continue;
+      const key = `${tick.tick_index || ''}:${tick.finished_at || tick.started_at || ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      ran += 1;
+      const verification = missionTickVerification(tick);
+      if (verification.verified) verified += 1;
+      if (verification.unchecked) unchecked += 1;
+    }
+  }
+  return { ran, verified, unchecked };
+}
+
+// One glanceable red line for a mission carrying unverified-tick debt. Empty
+// when every ran tick was checked, so clean missions stay quiet.
+function missionVerificationDebtLine(debt) {
+  if (!debt || !debt.unchecked) return '';
+  return `unverified ticks: ${debt.unchecked} of ${debt.ran} ran no check ⚠ — treat those increments as unproven`;
+}
+
 function missionReportTimeline(mission, root = process.cwd(), limit = 6) {
   const paths = statePaths(root);
   let files = [];
@@ -4778,11 +4842,14 @@ function missionReportTimeline(mission, root = process.cwd(), limit = 6) {
       const key = `${tick.tick_index || ''}:${at}:${summary}`;
       if (seen.has(key)) continue;
       seen.add(key);
+      const verification = missionTickVerification(tick);
       items.push({
         at,
         tick_index: missionTimelineTickIndex(tick),
         title: missionTimelineTitle(tick, summary),
         summary,
+        verified: verification.verified,
+        verify_state: verification.state,
         receipt_path: receiptPath,
       });
     }
@@ -5040,6 +5107,7 @@ function missionReportFor(mission, root = process.cwd()) {
   const receipt = readMissionReceipt(verifierReceiptPath, root);
   const explicitWorkerReceipt = readMissionReceipt(mission.worker_receipt_path, root);
   const timeline = missionReportTimeline(mission, root);
+  const verificationDebt = missionVerificationDebt(mission, root);
   const workerCheckedIn = Boolean(explicitWorkerReceipt) || timeline.length > 0;
   const workerReceiptPath = mission.worker_receipt_path || (receipt && verifierReceiptPath) || null;
   const verifierPassed = mission.verifier_result && mission.verifier_result.passed === true;
@@ -5060,6 +5128,7 @@ function missionReportFor(mission, root = process.cwd()) {
       : missionHumanStatusText(mission),
     budget_continuation: budgetContinuation,
     operator_outcome: operatorOutcome,
+    verification: verificationDebt,
     worker: mission.worker || missionWorkerLabel(mission),
     worker_summary: missionWorkerSummary(mission, receipt),
     timeline,
@@ -5114,6 +5183,9 @@ function reportMission(args) {
         `  What happened: ${report.operator_outcome}`,
         `  Worker: ${report.worker}`,
         `  Worker summary: ${report.worker_summary}`,
+        ...(report.verification && report.verification.unchecked ? [
+          `  ⚠ Unverified: ${report.verification.unchecked} of ${report.verification.ran} tick(s) recorded but ran no check; treat those increments as unproven.`,
+        ] : []),
         ...(report.timeline && report.timeline.length ? [
           '  Timeline:',
           ...report.timeline.map((item) => `    - ${report.budget_continuation ? item.summary : item.title}`),
@@ -10587,6 +10659,11 @@ module.exports = {
   missionLandingLines,
   missionVerifierCheckedText,
   missionVerifierHighLevelTestText,
+  missionTickVerification,
+  missionVerificationDebt,
+  missionVerificationDebtLine,
+  missionReportFor,
+  renderMemberNowMarkdown,
   buildEngineVerifyPrompt,
   engineVerifierResultFromRun,
   missionFullBudgetRemainingSeconds,
