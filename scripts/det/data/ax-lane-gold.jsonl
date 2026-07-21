@@ -53,3 +53,8 @@
 {"message": "does postgres support partial indexes", "lane": "fast", "why": "yes/no capability lookup, found in dogfood 7/21"}
 {"message": "my build fails with ELIFECYCLE after npm install, what do i check first", "lane": "pro", "why": "troubleshooting advice not recall, found in dogfood 7/21"}
 {"message": "rank our 5 engines by cost per successful task and tell me which to cancel, consider subscription price, pass rate, and speed", "lane": "max", "why": "multi factor ranking decision, found in dogfood 7/21"}
+{"message": "whos on call this week", "lane": "fast", "why": "contracted lookup word, found in dogfood tick 2"}
+{"message": "whats the git command to undo the last commit but keep changes", "lane": "fast", "why": "command recall, found in dogfood tick 2"}
+{"message": "my mac fan is screaming when i run the test suite, is that normal", "lane": "pro", "why": "lookup word mid sentence is not a lookup, found in dogfood tick 2"}
+{"message": "estimate how much we save per month if fast handles 40% of turns, pro 50%, max 10%, versus everything on max, show your math", "lane": "max", "why": "multi step estimation, found in dogfood tick 2"}
+{"message": "if we double the price and lose a third of customers is that good, walk through the revenue and support load math", "lane": "max", "why": "walk through the math is analysis, found in dogfood tick 2"}
