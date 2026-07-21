@@ -1,3 +1,4 @@
+process.env.ATRIS_WISH_NO_DRIVER = process.env.ATRIS_WISH_NO_DRIVER || '1';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -55,6 +56,7 @@ function runCli(args, { cwd, env = {} } = {}) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_WISH_NO_DRIVER: '1',
       NODE_NO_WARNINGS: '1',
       ...env,
     },
@@ -280,6 +282,53 @@ test('healthy wish delegates a task and records honest proof status', () => {
 
     const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
     assert.ok(projection.tasks.some((task) => task.id === payload.task_id && task.metadata.delegate_via === 'local'));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('a delegated wish starts a live worker, not just a filed mission', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  let driverPid = null;
+  try {
+    prepareWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'make the boot screen friendlier', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), ATRIS_WISH_NO_DRIVER: '', NODE_TEST_CONTEXT: '' },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const wish = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl')).at(-1);
+    assert.equal(wish.worker_started, true);
+    assert.ok(wish.driver_pid, 'driver pid recorded on the wish');
+    driverPid = wish.driver_pid;
+    const shortId = String(wish.mission_id).slice(-8);
+    const state = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', `mission-driver-${shortId}.json`), 'utf8'));
+    assert.equal(state.mission_id, wish.mission_id);
+    assert.equal(state.pid, wish.driver_pid);
+  } finally {
+    if (driverPid) { try { process.kill(driverPid, 'SIGTERM'); } catch {} }
+    cleanupTempDir(dir);
+  }
+});
+
+test('a wish whose worker cannot start says so instead of pretending', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    const fakeBin = makeFakeEngines(dir);
+    const res = runCli(['wish', 'make the boot screen friendlier', '--json'], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: path.join(dir, 'tasks.db') },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const wish = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl')).at(-1);
+    assert.equal(wish.worker_started, false);
+    assert.match(wish.worker_note, /worker did not start; run: atris mission run/);
   } finally {
     cleanupTempDir(dir);
   }

@@ -1,3 +1,4 @@
+process.env.ATRIS_WISH_NO_DRIVER = process.env.ATRIS_WISH_NO_DRIVER || '1';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -28,6 +29,7 @@ function runCli(args, { cwd, env = {} } = {}) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_WISH_NO_DRIVER: '1',
       NODE_NO_WARNINGS: '1',
       ...env,
     },

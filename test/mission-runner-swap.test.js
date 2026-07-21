@@ -128,6 +128,25 @@ test('mission set-runner persists runner, model, and event', () => {
   }
 });
 
+test('switching off the codex runner drops the stale codex approval gate', () => {
+  const dir = makeTempDir();
+  try {
+    const mission = startMission(dir, ['--runner', 'codex_goal']);
+    const requestPath = path.join(dir, '.atris', 'state', 'codex_goal_request.json');
+    fs.mkdirSync(path.dirname(requestPath), { recursive: true });
+    fs.writeFileSync(requestPath, JSON.stringify({ mission_id: mission.id, requires_native_goal_start: true }), 'utf8');
+
+    const setRes = runCli(['mission', 'set-runner', mission.id, 'claude', '--json'], { cwd: dir });
+    assert.equal(setRes.status, 0, setRes.stderr || setRes.stdout);
+    const payload = JSON.parse(setRes.stdout);
+    assert.equal(payload.mission.runner, 'claude');
+    assert.equal(payload.codex_gate_cleared, true);
+    assert.equal(fs.existsSync(requestPath), false, 'stale codex goal request removed');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission runner swaps reject unknown runners and engines', () => {
   const dir = makeTempDir();
   try {

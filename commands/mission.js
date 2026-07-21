@@ -4387,6 +4387,17 @@ function setMissionRunner(args) {
         model: nextMission.model || null,
       },
     );
+    // Switching a mission off a caller-session (codex) runner must drop the
+    // old codex approval gate. Otherwise the persisted controller keeps
+    // pointing at this mission with requires_native_goal_start=true, waiting on
+    // a codex ack that will never come now that the runner changed -- the loop
+    // stalls instead of continuing under the new runner.
+    let codexGateCleared = false;
+    if (runnerUsesCallerSession(previous.runner) && !runnerUsesCallerSession(saved.runner)) {
+      clearDirectRunCodexGoalRequestForMission(saved.id, process.cwd());
+      refreshCodexGoalController(process.cwd());
+      codexGateCleared = true;
+    }
     const logPath = appendMemberLog(saved.owner, 'Mission runner changed', {
       mission: saved.objective,
       previous_runner: previous.runner || undefined,
@@ -4394,7 +4405,7 @@ function setMissionRunner(args) {
       model: saved.model || undefined,
     });
     printJsonOrText(
-      { ok: true, action: 'mission_runner_changed', mission: saved, event, log_path: logPath },
+      { ok: true, action: 'mission_runner_changed', mission: saved, event, log_path: logPath, codex_gate_cleared: codexGateCleared },
       [
         `Mission runner changed: ${saved.id}`,
         `Runner: ${previous.runner || 'none'} -> ${saved.runner}${saved.model ? ` (${saved.model})` : ''}`,
@@ -7701,6 +7712,61 @@ function releaseMissionLock(lock) {
   try { fs.unlinkSync(lock.lockFile); } catch {}
 }
 
+// Runners that need a live human session cannot be driven headlessly; every
+// other runner can be started as a detached driver the moment work is filed.
+function missionRunnerNeedsLiveSession(runner) {
+  const value = String(runner || '').toLowerCase();
+  return value === 'codex_goal' || value === 'manual' || value === '';
+}
+
+// Programmatic twin of detachMissionRun for callers that are not already
+// inside a `mission run` argv (wish delegation). A filed mission without a
+// running driver is a promise nobody is keeping.
+function spawnMissionDriver(mission, root = process.cwd()) {
+  const existing = missionDriverHealth(mission, root);
+  if (existing.alive) return { ok: true, already_running: true, pid: existing.pid };
+  const paths = missionDriverPaths(mission, root);
+  fs.mkdirSync(path.dirname(paths.stateFile), { recursive: true });
+  fs.mkdirSync(path.dirname(paths.logFile), { recursive: true });
+  if (process.env.NODE_TEST_CONTEXT) return { ok: false, error: 'driver spawn disabled inside test runners' };
+  const logFd = fs.openSync(paths.logFile, 'a');
+  try {
+    // Never process.argv[1]: when delegation runs in-process (tests, embeds),
+    // argv[1] is the caller's script and the "driver" would re-run that file.
+    const script = path.join(__dirname, '..', 'bin', 'atris.js');
+    const child = spawn(process.execPath, [script, 'mission', 'run', mission.id], {
+      cwd: root,
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+      env: {
+        ...process.env,
+        ATRIS_MISSION_DRIVER_DETACHED: '1',
+        ATRIS_MISSION_DRIVER_PARENT_PID: String(process.pid),
+      },
+    });
+    const startedAt = stampIso();
+    const logPath = path.relative(root, paths.logFile);
+    fs.writeFileSync(paths.stateFile, JSON.stringify({
+      mission_id: mission.id,
+      pid: child.pid,
+      started_at: startedAt,
+      log_path: logPath,
+    }, null, 2) + '\n', 'utf8');
+    child.unref();
+    return {
+      ok: true,
+      pid: child.pid,
+      started_at: startedAt,
+      log_path: logPath,
+      state_path: path.relative(root, paths.stateFile),
+    };
+  } catch (error) {
+    return { ok: false, error: error.message || String(error) };
+  } finally {
+    try { fs.closeSync(logFd); } catch {}
+  }
+}
+
 function detachMissionRun(args, mission, root = process.cwd(), asJson = false) {
   const existing = missionDriverHealth(mission, root);
   if (existing.alive) {
@@ -10467,6 +10533,8 @@ function missionCommand(args) {
 module.exports = {
   missionCommand,
   startMission,
+  spawnMissionDriver,
+  missionRunnerNeedsLiveSession,
   completeMission,
   inspectMission,
   expireStaleMissions,

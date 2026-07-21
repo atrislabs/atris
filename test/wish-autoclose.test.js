@@ -1,5 +1,6 @@
 'use strict';
 
+process.env.ATRIS_WISH_NO_DRIVER = process.env.ATRIS_WISH_NO_DRIVER || '1';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
