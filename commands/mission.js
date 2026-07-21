@@ -2008,6 +2008,39 @@ function missionRunTrustedObjective(rawObjective, room, target) {
   return missionRunPreflightObjective(rawObjective, room, room?.owner || 'mission-lead');
 }
 
+const MISSION_RUN_SHAPING_STOPWORDS = new Set([
+  'should', 'would', 'could', 'with', 'that', 'this', 'from', 'into',
+  'atris', 'mission', 'room', 'just', 'work', 'works',
+]);
+
+function missionRunSignificantTokens(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z]+/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 4 && !MISSION_RUN_SHAPING_STOPWORDS.has(token));
+}
+
+function guardMissionRunShaping(rawObjective, shapedObjective, selectedTarget) {
+  const rawTokens = missionRunSignificantTokens(rawObjective);
+  const shapedTokens = new Set(missionRunSignificantTokens(shapedObjective));
+  const sharesSignificantToken = [...rawTokens].some((token) => shapedTokens.has(token));
+  if (rawTokens.length < 4 || sharesSignificantToken) {
+    return { shapedObjective, selectedTarget, shapingRejected: false, shapingRejectedReason: '' };
+  }
+
+  const rejectedTitle = missionRunConcreteTitle(selectedTarget?.title)
+    || missionRunConcreteTitle(shapedObjective)
+    || 'untitled shaping';
+  const rejectedRef = selectedTarget?.ref || selectedTarget?.task_id || 'no ref';
+  return {
+    shapedObjective: rawObjective,
+    selectedTarget: null,
+    shapingRejected: true,
+    shapingRejectedReason: `shaping rejected: "${rejectedTitle}" (${rejectedRef}) shares no significant tokens with the raw objective`,
+  };
+}
+
 function buildMissionRunRoomPreflight(rawObjective, args = [], options = {}) {
   if (!shouldMissionRunRoomPreflight(rawObjective, args)) return null;
   const root = options.root || process.cwd();
@@ -2036,27 +2069,33 @@ function buildMissionRunRoomPreflight(rawObjective, args = [], options = {}) {
   const shapedObjective = trustedRun
     ? missionRunTrustedObjective(rawObjective, written.room, selectedTarget)
     : missionRunPreflightObjective(rawObjective, written.room, ownerResolution.owner);
-  const taskSpineRequired = !selectedTarget && (explicitPreflight || signalPreflight);
+  const shaping = guardMissionRunShaping(rawObjective, shapedObjective, selectedTarget);
+  const acceptedTarget = shaping.selectedTarget;
+  const taskSpineRequired = !acceptedTarget && (explicitPreflight || signalPreflight);
   return {
     schema: 'atris.mission_run_preflight.v1',
     source: 'mission_room',
     raw_objective: rawObjective,
-    shaped_objective: shapedObjective,
-    visible_goal_objective: shapedObjective,
+    shaped_objective: shaping.shapedObjective,
+    visible_goal_objective: shaping.shapedObjective,
     room_name: written.room.name,
     room_receipt_path: written.relativePath,
     owner: ownerResolution.owner,
     owner_resolution: ownerResolution.reason,
     trusted_run: trustedRun,
-    selected_target: selectedTarget ? {
-      title: selectedTarget.title,
-      source: selectedTarget.source,
-      task_id: selectedTarget.task_id || null,
-      ref: selectedTarget.ref || null,
-      why: selectedTarget.why || '',
+    selected_target: acceptedTarget ? {
+      title: acceptedTarget.title,
+      source: acceptedTarget.source,
+      task_id: acceptedTarget.task_id || null,
+      ref: acceptedTarget.ref || null,
+      why: acceptedTarget.why || '',
     } : null,
+    ...(shaping.shapingRejected ? {
+      shaping_rejected: true,
+      shaping_rejected_reason: shaping.shapingRejectedReason,
+    } : {}),
     task_spine_required: taskSpineRequired,
-    next_action: selectedTarget
+    next_action: acceptedTarget
       ? 'run one proof tick for the selected existing task'
       : (taskSpineRequired ? 'attach task spine, then run one proof tick' : 'run one proof tick'),
   };

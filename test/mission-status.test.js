@@ -4035,7 +4035,7 @@ test('mission run trusted room selects real task before creating mission state',
       ],
     }, null, 2), 'utf8');
 
-    const input = 'one-message autonomy: improve atris-cli usefully without creating junk state';
+    const input = 'one-message autonomy: execute one useful atris-cli slice without creating junk state';
     const res = runCli(['mission', 'run', input, '--owner', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
 
@@ -4062,6 +4062,63 @@ test('mission run trusted room selects real task before creating mission state',
     assert.equal(attached.action, 'mission_task_spine_exists');
     assert.equal(attached.task_spine.task_ref, 'CLI-758');
     assert.match(attached.task_spine.current_step_command, /--goal-id CLI-758/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run rejects unrelated wish shaping and preserves the raw objective', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'wishes.jsonl'), `${JSON.stringify({
+      id: '065b3d7e',
+      text: 'magic wand should work on blocks not just apps',
+      status: 'needs_input',
+      questions: ['Which surface should change?'],
+    })}\n`, 'utf8');
+
+    const rawObjective = 'activation preflight receipt schema EXECUTE';
+    const res = runCli([
+      'mission', 'run', rawObjective, '--room-auto-run', '--owner', 'mission-lead', '--json',
+    ], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.mission.objective, rawObjective);
+    assert.equal(payload.mission.mission_run_preflight.shaping_rejected, true);
+    assert.match(payload.mission.mission_run_preflight.shaping_rejected_reason, /magic wand should work on blocks not just apps/);
+    assert.match(payload.mission.mission_run_preflight.shaping_rejected_reason, /065b3d7e/);
+    assert.equal(payload.mission.mission_run_preflight.selected_target, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run keeps shaping when the selected wish shares a significant token', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    const wishTitle = 'activation preflight should produce a receipt';
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'wishes.jsonl'), `${JSON.stringify({
+      id: 'shared99',
+      text: wishTitle,
+      status: 'needs_input',
+      questions: ['Which receipt format?'],
+    })}\n`, 'utf8');
+
+    const rawObjective = 'activation readiness receipt schema EXECUTE';
+    const res = runCli([
+      'mission', 'run', rawObjective, '--room-auto-run', '--owner', 'mission-lead', '--json',
+    ], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.mission.objective, wishTitle);
+    assert.equal(payload.mission.mission_run_preflight.shaping_rejected, undefined);
+    assert.equal(payload.mission.mission_run_preflight.selected_target.ref, 'shared99');
   } finally {
     cleanupTempDir(dir);
   }
