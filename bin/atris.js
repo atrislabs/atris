@@ -1528,6 +1528,7 @@ function showWelcomeVisualization() {
     activeTitles: [], backlogTitles: [], certifiedTitles: []
   };
   let journalEntries = 0;
+  let latestBriefName = '';
   const isInitialized = fs.existsSync(atrisDir);
   let endgameState = { slug: 'unset', horizon: '' };
 
@@ -1542,6 +1543,16 @@ function showWelcomeVisualization() {
       endgameState = readEndgameState(cwd);
     } catch {
       // Silently fail - show unset if reading fails
+    }
+
+    try {
+      const briefsDir = path.join(atrisDir, 'wiki', 'briefs');
+      latestBriefName = fs.readdirSync(briefsDir, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+        .map((entry) => ({ name: entry.name, mtimeMs: fs.statSync(path.join(briefsDir, entry.name)).mtimeMs }))
+        .sort((a, b) => b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name))[0]?.name || '';
+    } catch {
+      // Briefs are optional, so missing or unreadable directories stay silent.
     }
 
     // Count journal entries today
@@ -1580,6 +1591,10 @@ function showWelcomeVisualization() {
     console.log(row('next', 'atris init  (set up this folder)'));
     console.log('');
     return;
+  }
+
+  if (latestBriefName) {
+    console.log(`  learned ${path.basename(latestBriefName, '.md')} overnight -> atris/wiki/briefs/${latestBriefName}`);
   }
 
   // Show the work itself, not counts. A newcomer in any domain (code, docs,

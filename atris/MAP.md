@@ -649,7 +649,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris task lineage <id> [--json]` — endgame → parents → target → children chain + commits grepped by display refs (`cmdLineage` in `commands/task.js`; test: `test/commands.test.js` 'task lineage')
 - `atris member history <name> [--limit N] [--json]` — git log per identity file (MEMBER.md/SOUL.md) (`memberHistory` in `commands/member.js`; test: `test/member-history.test.js`)
 - `atris lesson sweep [--dry-run] [--json]` — contradiction detection (opposite outcomes, dead file refs) → idempotent dissolve tasks (`lib/lesson-contradiction.js`, `commands/lesson.js`; test: `test/lesson-sweep.test.js`)
-- Boot impression: boot status `endgame` row renders active slug+horizon verbatim (`bin/atris.js` showWelcomeVisualization); `listTasks` ranks `tag='endgame'` first within status (`lib/task-db.js`; test: `test/boot-impression.test.js`)
+- Boot impression: boot status shows the newest `atris/wiki/briefs/*.md` mtime as one `learned ... overnight` line, renders the active endgame slug+horizon verbatim (`bin/atris.js` showWelcomeVisualization), and `listTasks` ranks `tag='endgame'` first within status (`lib/task-db.js`; test: `test/boot-impression.test.js`)
 - Layer receipts: every mission tick stores `layer`/`layer_source` (explicit `layer: x` receipt line or path-class fallback) + `last_tick_layer` on the mission; heartbeat shows it (`extractLayerFromReceiptText`/`classifyPathsByLayer` in `commands/mission.js`; test: `test/mission-layer-receipts.test.js`)
 
 ### Feature: Task Production Readiness
