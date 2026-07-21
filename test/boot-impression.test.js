@@ -115,7 +115,7 @@ test('boot panel shows only the newest wiki brief and stays silent without brief
     const olderBrief = path.join(briefsDir, 'zzz-older-brief.md');
     const newestBrief = path.join(briefsDir, 'aaa-newest-brief.md');
     fs.writeFileSync(olderBrief, '# Older brief\n', 'utf8');
-    fs.writeFileSync(newestBrief, '# Newest brief\n', 'utf8');
+    fs.writeFileSync(newestBrief, '# YouTube brief: How agents compound\n', 'utf8');
     fs.utimesSync(olderBrief, new Date('2026-07-20T00:00:00Z'), new Date('2026-07-20T00:00:00Z'));
     fs.utimesSync(newestBrief, new Date('2026-07-21T00:00:00Z'), new Date('2026-07-21T00:00:00Z'));
 
@@ -123,7 +123,7 @@ test('boot panel shows only the newest wiki brief and stays silent without brief
     assert.equal(boot.status, 0, boot.stderr);
     assert.deepEqual(
       boot.stdout.split('\n').filter((line) => line.includes('learned ')),
-      ['  learned aaa-newest-brief overnight -> atris/wiki/briefs/aaa-newest-brief.md'],
+      ['  learned "How agents compound" overnight -> atris/wiki/briefs/aaa-newest-brief.md'],
     );
   } finally {
     cleanupTempDir(dir);

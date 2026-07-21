@@ -1529,6 +1529,7 @@ function showWelcomeVisualization() {
   };
   let journalEntries = 0;
   let latestBriefName = '';
+  let latestBriefTitle = '';
   const isInitialized = fs.existsSync(atrisDir);
   let endgameState = { slug: 'unset', horizon: '' };
 
@@ -1551,6 +1552,16 @@ function showWelcomeVisualization() {
         .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
         .map((entry) => ({ name: entry.name, mtimeMs: fs.statSync(path.join(briefsDir, entry.name)).mtimeMs }))
         .sort((a, b) => b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name))[0]?.name || '';
+      if (latestBriefName) {
+        // Prefer the brief's own H1 over its filename; strip miner boilerplate
+        // like "YouTube brief: <slug>" so boot reads like a sentence.
+        const head = fs.readFileSync(path.join(briefsDir, latestBriefName), 'utf8').slice(0, 2000);
+        const h1 = head.split('\n').find((line) => line.startsWith('# '));
+        let title = h1 ? h1.slice(2).trim() : '';
+        title = title.replace(/^youtube brief:\s*/i, '').trim();
+        const slug = path.basename(latestBriefName, '.md');
+        latestBriefTitle = title && title.toLowerCase() !== slug.toLowerCase() ? title : slug;
+      }
     } catch {
       // Briefs are optional, so missing or unreadable directories stay silent.
     }
@@ -1594,7 +1605,7 @@ function showWelcomeVisualization() {
   }
 
   if (latestBriefName) {
-    console.log(`  learned ${path.basename(latestBriefName, '.md')} overnight -> atris/wiki/briefs/${latestBriefName}`);
+    console.log(`  learned \"${latestBriefTitle}\" overnight -> atris/wiki/briefs/${latestBriefName}`);
   }
 
   // Show the work itself, not counts. A newcomer in any domain (code, docs,
