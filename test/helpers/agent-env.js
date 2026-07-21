@@ -13,11 +13,22 @@ const { AGENT_ENV_MARKERS } = require('../../commands/task');
 // profile exported. Tests that exercise identity set these explicitly.
 const PLAYER_IDENTITY_VARS = ['ATRIS_PROFILE', 'ATRIS_PLAYER', 'ATRIS_USERNAME'];
 
+// The mission driver exports its own identity the same way: ATRIS_AGENT_ID
+// and driver vars leak into spawned CLIs and flip task/mission flows into
+// agent identity when a suite runs under `atris mission tick --verify`.
+// Tests that exercise agent identity set these explicitly.
+const MISSION_DRIVER_VARS = [
+  'ATRIS_AGENT_ID',
+  'ATRIS_MISSION_DRIVER_DETACHED',
+  'ATRIS_MISSION_DRIVER_PARENT_PID',
+];
+
 function scrubAgentEnv(base = process.env) {
   const env = { ...base };
   for (const marker of AGENT_ENV_MARKERS) delete env[marker];
   delete env.ATRIS_AGENT_PROOF_ONLY;
   for (const key of PLAYER_IDENTITY_VARS) delete env[key];
+  for (const key of MISSION_DRIVER_VARS) delete env[key];
   return env;
 }
 
