@@ -12,6 +12,7 @@ const permissionGrants = require(path.join(__dirname, 'lib', 'permission-grants.
 const { loadCredentials } = require('./utils/auth');
 const { apiRequestJson, getApiBaseUrl } = require('./utils/api');
 const missionRuntime = require('./lib/mission-runtime-loop');
+const { pickLane } = require('./lib/ax-auto-lane');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
 const BACKEND = {
@@ -161,9 +162,9 @@ function formatUsage() {
     'ax - Atris local/code agent',
     '',
     'Usage:',
-    '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] <message>',
-    '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] --print <message>',
-    '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] --chat',
+    '  ax [--auto|--max|--pro|--fast|--code-fast] [--local|--cloud] <message>',
+    '  ax [--auto|--max|--pro|--fast|--code-fast] [--local|--cloud] --print <message>',
+    '  ax [--auto|--max|--pro|--fast|--code-fast] [--local|--cloud] --chat',
     '  ax [--max|--pro|--fast] --business <slug> [<message>|--chat]',
     '  ax [--max|--pro|--fast|--code-fast] --doctor',
     '  ax --approvals',
@@ -177,13 +178,14 @@ function formatUsage() {
     '  ax [--max|--fast] --benchmark',
     '',
     'Modes:',
+    '  --auto  pick a lane for each message and say why',
     '  --max   hosted Atris 2, highest reasoning, slowest turns',
     '  --pro   hosted Atris 2, deeper tool loop',
     '  --fast  hosted Atris 2, faster low-latency turns',
     '  --code-fast  Atris Code Fast public lane',
     '  --local opt into local backend/workspace tools',
     '  --cloud force authenticated cloud connectors/chat',
-    '  --print  headless JSON result: { ok, model, output, durationMs }',
+    '  --print  headless JSON result, including auto_lane and auto_reason with --auto',
     '  --business <slug>  run tools on that business cloud workspace (EC2)',
     '  --verify <cmd>  gate the turn on this command passing (default: no verifier)',
     '',
@@ -953,6 +955,30 @@ function normalizeMode(mode) {
   if (mode === 'code-fast' || mode === 'code') return 'code-fast';
   if (mode === 'max') return 'max';
   return mode === 'fast' ? 'fast' : 'pro';
+}
+
+function appendAutoPick(message, picked, options = {}) {
+  try {
+    const dir = path.join(os.homedir(), '.atris');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'ax-auto-picks.jsonl'), `${JSON.stringify({
+      at: new Date().toISOString(),
+      lane: picked.lane,
+      reason: picked.reason,
+      message_chars: String(message || '').length,
+      print: Boolean(options.print),
+    })}\n`);
+  } catch (_) {
+    // Lane telemetry is best-effort and must never block a turn.
+  }
+}
+
+function autoLaneForMessage(message, options = {}) {
+  const picked = pickLane(message);
+  appendAutoPick(message, picked, options);
+  const errorOutput = options.errorOutput || process.stderr;
+  errorOutput.write(`${picked.reason}\n`);
+  return picked;
 }
 
 function formatPrompt(mode, options = {}) {
@@ -2990,6 +3016,9 @@ async function runHeadlessTurn(message, options = {}) {
   const startedAt = Date.now();
   const sink = options.output || bufferedOutput();
   const turnFunction = options.turnFunction || turnFunctionForMode(mode);
+  const autoFields = options.autoLane && options.autoReason
+    ? { auto_lane: normalizeMode(options.autoLane), auto_reason: String(options.autoReason) }
+    : {};
 
   try {
     const result = await turnFunction(message, {
@@ -3006,6 +3035,7 @@ async function runHeadlessTurn(message, options = {}) {
       model: modelForMode(mode),
       output: String((result && result.output) || '').trim(),
       durationMs: Number((result && result.durationMs) || 0) || (Date.now() - startedAt),
+      ...autoFields,
     };
   } catch (error) {
     return {
@@ -3014,6 +3044,7 @@ async function runHeadlessTurn(message, options = {}) {
       output: '',
       durationMs: Date.now() - startedAt,
       error: String((error && error.message) || error || 'headless turn failed'),
+      ...autoFields,
     };
   }
 }
@@ -3092,6 +3123,13 @@ async function chat(options = {}) {
     if (trimmed.startsWith('/')) {
       output.write(`${chatMenu(output)}\n\n`);
       return false;
+    }
+
+    if (options.auto) {
+      mode = autoLaneForMessage(trimmed, {
+        errorOutput: options.errorOutput,
+        print: false,
+      }).lane;
     }
 
     if (logger) logger.write(`${formatPrompt(mode)}${trimmed}\n`);
@@ -4021,7 +4059,17 @@ async function main() {
     args.splice(verifyIdx, 2);
   }
 
-  const mode = args.includes('--code-fast') || args.includes('--code') ? 'code-fast' : args.includes('--max') ? 'max' : args.includes('--fast') ? 'fast' : 'pro';
+  const explicitLane = args.includes('--code-fast') || args.includes('--code')
+    ? 'code-fast'
+    : args.includes('--max')
+      ? 'max'
+      : args.includes('--fast')
+        ? 'fast'
+        : args.includes('--pro')
+          ? 'pro'
+          : null;
+  const autoEnabled = args.includes('--auto') && !explicitLane;
+  let mode = explicitLane || 'pro';
   const doctor = args.includes('--doctor');
   const selfTest = args.includes('--self-test');
   const benchmark = args.includes('--benchmark');
@@ -4082,7 +4130,7 @@ async function main() {
 
   const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
   const prompt = args
-    .filter(arg => !['--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h'].includes(arg))
+    .filter(arg => !['--auto', '--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h'].includes(arg))
     .join(' ')
     .trim();
 
@@ -4103,6 +4151,12 @@ async function main() {
     if (!result.ok) process.exit(result.status || 1);
     return;
   }
+
+  const startsChat = !printMode && (!prompt || args.includes('--chat'));
+  const autoPick = autoEnabled && prompt && !startsChat
+    ? autoLaneForMessage(prompt, { print: printMode })
+    : null;
+  if (autoPick) mode = autoPick.lane;
 
   let business = null;
   if (businessSlug) {
@@ -4228,14 +4282,22 @@ async function main() {
 
     if (printMode) {
       const payload = prompt
-        ? await runHeadlessTurn(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify })
+        ? await runHeadlessTurn(prompt, {
+          mode,
+          cwd: process.cwd(),
+          route: route === 'auto' ? undefined : route,
+          business,
+          verify,
+          autoLane: autoPick && autoPick.lane,
+          autoReason: autoPick && autoPick.reason,
+        })
         : { ok: false, model: modelForMode(mode), output: '', durationMs: 0, error: 'missing prompt' };
       console.log(JSON.stringify(payload));
       process.exit(payload.ok ? 0 : 1);
     }
 
     if (!prompt || args.includes('--chat')) {
-      await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
+      await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify, auto: autoEnabled });
       return;
     }
 
