@@ -5524,7 +5524,9 @@ function cmdReviews(args) {
     console.log(gateForHuman(header).text);
   }
   if (queue.counts.blocking > 0) {
-    console.log(gateForHuman(`${numberWord(queue.counts.blocking)} more are almost ready; a second check is still running.`).text);
+    console.log(gateForHuman(queue.counts.blocking === 1
+      ? 'one more is almost ready; a second check is still running.'
+      : `${numberWord(queue.counts.blocking)} more are almost ready; second checks are still running.`).text);
   }
   if (autoAcceptRollup.count > 0) {
     console.log(gateForHuman(`${numberWord(autoAcceptRollup.count)} landed on their own since you last looked.`).text);

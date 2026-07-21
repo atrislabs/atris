@@ -13780,7 +13780,7 @@ test('task reviews gives a compact certified accept queue', () => {
     const text = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /one finished thing is waiting for your ok\. it passed both checks\./);
-    assert.match(text.stdout, /two more are almost ready; a second check is still running\./);
+    assert.match(text.stdout, /two more are almost ready; second checks are still running\./);
     assert.match(text.stdout, /1\. Ship certified proof packet/);
     assert.match(text.stdout, /what's new: Operators can now review one compact certified proof packet, reducing the risk of approving against stale context\./);
     assert.match(text.stdout, /why it matters: Human approval queue shows a compact certified packet without stale objective text\./);
