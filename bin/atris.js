@@ -550,6 +550,7 @@ function showHelp() {
   console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
   console.log('  autoland   - Approve the policy once; certified work lands itself, you keep irreversible calls');
   console.log('  engine     - Engine registry: list/resolve roles, health flips, default engine, `engine test`, and dispatch flights');
+  console.log('  router     - inspect ax lane outcomes and promote gated reflex overrides');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('  youtube    - Process YouTube videos with timestamped transcript-first analysis');
@@ -1792,6 +1793,9 @@ if (command === 'init') {
   Promise.resolve(require('../commands/bench').benchCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(2); });
+} else if (command === 'router') {
+  const code = require('../commands/router').routerCommand(process.argv.slice(3));
+  if (Number.isInteger(code) && code !== 0) process.exit(code);
 } else if (command === 'mission') {
   // process.exit() can outrun a piped stdout: writes beyond the 64KB pipe
   // buffer are async, so large --json payloads truncate at 64KB multiples.

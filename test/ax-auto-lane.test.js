@@ -1,11 +1,81 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   LONG_INPUT_MIN_CHARS,
   SHORT_LOOKUP_MAX_CHARS,
+  loadOverrides,
   pickLane,
 } = require('../lib/ax-auto-lane');
+
+test('pickLane applies the first matching override before built-in rules', () => {
+  const overrides = [
+    {
+      id: 'learned-first',
+      test: { startsWith: 'what is', includesAll: ['capital'], maxChars: 80 },
+      lane: 'max',
+      reason: 'learned from 4 misses',
+    },
+    {
+      id: 'learned-second',
+      test: { startsWith: 'what is' },
+      lane: 'pro',
+      reason: 'learned from 3 misses',
+    },
+  ];
+  assert.deepEqual(pickLane('What is the capital of France?', { overrides }), {
+    lane: 'max',
+    reason: 'learned from 4 misses',
+    override_id: 'learned-first',
+  });
+});
+
+test('loadOverrides tolerates missing and corrupt files', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-overrides-'));
+  try {
+    const missing = path.join(dir, 'missing.json');
+    const corrupt = path.join(dir, 'corrupt.json');
+    fs.writeFileSync(corrupt, '{not json', 'utf8');
+    assert.deepEqual(loadOverrides(missing), []);
+    assert.deepEqual(loadOverrides(corrupt), []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('auto pick traces join completed and rephrased outcomes by pick id', async () => {
+  const ax = require('../ax');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-auto-traces-'));
+  try {
+    const pickLogPath = path.join(dir, 'picks.jsonl');
+    const first = ax.appendAutoPick('what is alpha', pickLane('what is alpha'), { pickLogPath, print: true });
+    ax.appendAutoOutcome(first, {
+      ok: false,
+      model: 'atris:fast',
+      durationMs: 11,
+      error: 'miss',
+    });
+    const second = ax.appendAutoPick('what is beta', pickLane('what is beta'), { pickLogPath, print: true });
+    const payload = await ax.runHeadlessTurn('what is beta', {
+      mode: second.lane,
+      autoPick: second,
+      turnFunction: async () => ({ output: 'beta', durationMs: 12 }),
+    });
+    assert.equal(payload.ok, true);
+    const rows = fs.readFileSync(pickLogPath, 'utf8')
+      .trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    assert.equal(rows[0].pick_id, first.pick_id);
+    assert.equal(rows[0].message, 'what is alpha');
+    assert.ok(rows[0].pick_id);
+    assert.ok(rows.some((row) => row.pick_id === first.pick_id && row.outcome === 'rephrased'));
+    assert.ok(rows.some((row) => row.pick_id === second.pick_id && row.ok === true && row.duration_ms === 12));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('pickLane sends short factual lookups to fast', () => {
   assert.equal(pickLane('what is the capital of france?').lane, 'fast');
