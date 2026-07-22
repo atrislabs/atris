@@ -12,7 +12,7 @@ const permissionGrants = require(path.join(__dirname, 'lib', 'permission-grants.
 const { loadCredentials } = require('./utils/auth');
 const { apiRequestJson, getApiBaseUrl } = require('./utils/api');
 const missionRuntime = require('./lib/mission-runtime-loop');
-const { pickLane } = require('./lib/ax-auto-lane');
+const { loadOverrides, pickLane } = require('./lib/ax-auto-lane');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
 const BACKEND = {
@@ -957,16 +957,92 @@ function normalizeMode(mode) {
   return mode === 'fast' ? 'fast' : 'pro';
 }
 
-function appendAutoPick(message, picked, options = {}) {
+function autoPickLogPath(options = {}) {
+  return options.pickLogPath
+    || process.env.ATRIS_ROUTER_PICKS_PATH
+    || path.join(os.homedir(), '.atris', 'ax-auto-picks.jsonl');
+}
+
+function autoMessageWords(message) {
+  return new Set(String(message || '').toLowerCase().match(/[a-z0-9]+/g) || []);
+}
+
+function autoMessageOverlap(left, right) {
+  const leftWords = autoMessageWords(left);
+  const rightWords = autoMessageWords(right);
+  const union = new Set([...leftWords, ...rightWords]);
+  if (!union.size) return 0;
+  let shared = 0;
+  for (const word of leftWords) {
+    if (rightWords.has(word)) shared += 1;
+  }
+  return shared / union.size;
+}
+
+function appendRephrasedOutcome(message, logPath) {
   try {
-    const dir = path.join(os.homedir(), '.atris');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'ax-auto-picks.jsonl'), `${JSON.stringify({
+    const rows = fs.readFileSync(logPath, 'utf8').split(/\r?\n/).filter((line) => line.trim());
+    let previous = null;
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      try {
+        const row = JSON.parse(rows[index]);
+        if (row && row.pick_id && row.lane && row.message) {
+          previous = row;
+          break;
+        }
+      } catch (_) {
+        // Ignore malformed historical lines.
+      }
+    }
+    if (!previous) return;
+    const ageMs = Date.now() - Date.parse(previous.at);
+    if (ageMs < 0 || ageMs >= 10 * 60 * 1000) return;
+    if (autoMessageOverlap(previous.message, message) < 0.5) return;
+    fs.appendFileSync(logPath, `${JSON.stringify({
+      event: 'outcome',
+      pick_id: previous.pick_id,
+      outcome: 'rephrased',
+    })}\n`);
+  } catch (_) {
+    // Rephrase detection is best-effort and must never block a turn.
+  }
+}
+
+function appendAutoPick(message, picked, options = {}) {
+  const pick = { ...picked, pick_id: crypto.randomUUID() };
+  const logPath = autoPickLogPath(options);
+  Object.defineProperty(pick, '_logPath', { value: logPath, enumerable: false });
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    appendRephrasedOutcome(message, logPath);
+    fs.appendFileSync(logPath, `${JSON.stringify({
       at: new Date().toISOString(),
-      lane: picked.lane,
-      reason: picked.reason,
+      pick_id: pick.pick_id,
+      lane: pick.lane,
+      reason: pick.reason,
+      message: String(message || ''),
       message_chars: String(message || '').length,
       print: Boolean(options.print),
+      ...(pick.override_id ? { override_id: pick.override_id } : {}),
+    })}\n`);
+  } catch (_) {
+    // Lane telemetry is best-effort and must never block a turn.
+  }
+  return pick;
+}
+
+function appendAutoOutcome(picked, result, options = {}) {
+  if (!picked || !picked.pick_id) return;
+  try {
+    const logPath = autoPickLogPath({ pickLogPath: options.pickLogPath || picked._logPath });
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, `${JSON.stringify({
+      event: 'outcome',
+      pick_id: picked.pick_id,
+      ok: Boolean(result && result.ok),
+      model: String((result && result.model) || modelForMode(picked.lane)),
+      duration_ms: Number((result && (result.duration_ms || result.durationMs)) || 0),
+      error: result && result.error ? String(result.error) : null,
     })}\n`);
   } catch (_) {
     // Lane telemetry is best-effort and must never block a turn.
@@ -974,8 +1050,10 @@ function appendAutoPick(message, picked, options = {}) {
 }
 
 function autoLaneForMessage(message, options = {}) {
-  const picked = pickLane(message);
-  appendAutoPick(message, picked, options);
+  const overrides = Array.isArray(options.overrides)
+    ? options.overrides
+    : loadOverrides(options.overridesPath);
+  const picked = appendAutoPick(message, pickLane(message, { overrides }), options);
   const errorOutput = options.errorOutput || process.stderr;
   errorOutput.write(`${picked.reason}\n`);
   return picked;
@@ -3016,8 +3094,11 @@ async function runHeadlessTurn(message, options = {}) {
   const startedAt = Date.now();
   const sink = options.output || bufferedOutput();
   const turnFunction = options.turnFunction || turnFunctionForMode(mode);
-  const autoFields = options.autoLane && options.autoReason
-    ? { auto_lane: normalizeMode(options.autoLane), auto_reason: String(options.autoReason) }
+  const autoPick = options.autoPick || null;
+  const autoFields = autoPick
+    ? { auto_lane: normalizeMode(autoPick.lane), auto_reason: String(autoPick.reason) }
+    : options.autoLane && options.autoReason
+      ? { auto_lane: normalizeMode(options.autoLane), auto_reason: String(options.autoReason) }
     : {};
 
   try {
@@ -3030,15 +3111,17 @@ async function runHeadlessTurn(message, options = {}) {
       output: sink,
       showProgress: false,
     });
-    return {
+    const payload = {
       ok: true,
       model: modelForMode(mode),
       output: String((result && result.output) || '').trim(),
       durationMs: Number((result && result.durationMs) || 0) || (Date.now() - startedAt),
       ...autoFields,
     };
+    appendAutoOutcome(autoPick, payload);
+    return payload;
   } catch (error) {
-    return {
+    const payload = {
       ok: false,
       model: modelForMode(mode),
       output: '',
@@ -3046,6 +3129,8 @@ async function runHeadlessTurn(message, options = {}) {
       error: String((error && error.message) || error || 'headless turn failed'),
       ...autoFields,
     };
+    appendAutoOutcome(autoPick, payload);
+    return payload;
   }
 }
 
@@ -3125,11 +3210,16 @@ async function chat(options = {}) {
       return false;
     }
 
+    let autoPick = null;
     if (options.auto) {
-      mode = autoLaneForMessage(trimmed, {
+      autoPick = autoLaneForMessage(trimmed, {
         errorOutput: options.errorOutput,
         print: false,
-      }).lane;
+        overrides: options.overrides,
+        overridesPath: options.overridesPath,
+        pickLogPath: options.pickLogPath,
+      });
+      mode = autoPick.lane;
     }
 
     if (logger) logger.write(`${formatPrompt(mode)}${trimmed}\n`);
@@ -3230,22 +3320,38 @@ async function chat(options = {}) {
       lastCompactionNotice = compactedTurns;
       output.write(`${paint(`· context: ${compactedTurns} earlier turn${compactedTurns === 1 ? '' : 's'} compacted into a digest`, [ANSI.muted], output)}\n`);
     }
-    const result = await turnFunction(trimmed, {
-      mode,
-      cwd,
-      history,
-      input,
-      output,
-      route,
-      business: options.business,
-      verify: options.verify,
-      conversationId,
-      turnId,
-      approveBackendApi: options.approveBackendApi,
-      apiRequestJson: options.apiRequestJson,
-      loadCredentials: options.loadCredentials,
-      getApiBaseUrl: options.getApiBaseUrl,
-    });
+    let result;
+    try {
+      result = await turnFunction(trimmed, {
+        mode,
+        cwd,
+        history,
+        input,
+        output,
+        route,
+        business: options.business,
+        verify: options.verify,
+        conversationId,
+        turnId,
+        approveBackendApi: options.approveBackendApi,
+        apiRequestJson: options.apiRequestJson,
+        loadCredentials: options.loadCredentials,
+        getApiBaseUrl: options.getApiBaseUrl,
+      });
+      appendAutoOutcome(autoPick, {
+        ok: true,
+        model: modelForMode(mode),
+        durationMs: Number(result && result.durationMs) || (Date.now() - turnStartedAt),
+      });
+    } catch (error) {
+      appendAutoOutcome(autoPick, {
+        ok: false,
+        model: modelForMode(mode),
+        durationMs: Date.now() - turnStartedAt,
+        error: String((error && error.message) || error),
+      });
+      throw error;
+    }
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
     const approvalExecution = normalizeMode(mode) === 'code-fast'
       ? null
@@ -4288,8 +4394,7 @@ async function main() {
           route: route === 'auto' ? undefined : route,
           business,
           verify,
-          autoLane: autoPick && autoPick.lane,
-          autoReason: autoPick && autoPick.reason,
+          autoPick,
         })
         : { ok: false, model: modelForMode(mode), output: '', durationMs: 0, error: 'missing prompt' };
       console.log(JSON.stringify(payload));
@@ -4305,7 +4410,23 @@ async function main() {
     console.log('');
     maybeWriteAtrisGoalBanner(process.stdout, process.cwd());
     const turnStartedAt = Date.now();
-    const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
+    let result;
+    try {
+      result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
+      appendAutoOutcome(autoPick, {
+        ok: true,
+        model: modelForMode(mode),
+        durationMs: Number(result && result.durationMs) || (Date.now() - turnStartedAt),
+      });
+    } catch (error) {
+      appendAutoOutcome(autoPick, {
+        ok: false,
+        model: modelForMode(mode),
+        durationMs: Date.now() - turnStartedAt,
+        error: String((error && error.message) || error),
+      });
+      throw error;
+    }
     const receipt = receiptFromState(result);
     const approvalRequest = normalizeMode(mode) === 'code-fast' ? null : approvalRequestFromReceipt(receipt);
     const approvalRecord = approvalRequest
@@ -4338,6 +4459,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  appendAutoOutcome,
+  appendAutoPick,
+  autoLaneForMessage,
+  autoMessageOverlap,
   authToken,
   authUserId,
   approvalExecutionRequestFromReceipt,
