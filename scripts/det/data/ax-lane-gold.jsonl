@@ -75,3 +75,7 @@
 {"message": "if the router picks wrong lanes 20% of the time but each wrong pick costs 2 cents extra, do we even care, math it out", "lane": "max", "why": "expected value analysis, found in dogfood tick 6"}
 {"message": "is bun faster than node", "lane": "fast", "why": "measurable comparative, held as fast in dogfood tick 6"}
 {"message": "translate our tagline to german and french", "lane": "pro", "why": "possessive needs workspace context, held in dogfood tick 6"}
+{"message": "PROD IS DOWN users cant login everything 500s since 5 min ago", "lane": "max", "why": "live incident, stakes beat size, found in dogfood tick 7"}
+{"message": "do we log ip addresses anywhere, legal is asking", "lane": "pro", "why": "compliance question must not route cheap, found in dogfood tick 7"}
+{"message": "draft terms of service for the router beta, cover liability for wrong lane picks, data retention for the picks log, and how we handle eu users", "lane": "max", "why": "legal drafting with multiple requirements, found in dogfood tick 7"}
+{"message": "urgent: investor asked for our churn number before their 9am, where do i pull it and whats the caveat i should mention", "lane": "pro", "why": "urgent workspace pull with judgment, held in dogfood tick 7"}
