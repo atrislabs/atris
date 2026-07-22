@@ -70,3 +70,8 @@
 {"message": "settle it once and for all, tabs or spaces", "lane": "pro", "why": "banter judgment, held in dogfood tick 5"}
 {"message": "and the second one?", "lane": "fast", "why": "context fragment, cheapest lane until session stickiness exists, held in dogfood tick 5"}
 {"message": "whats blocking the demo", "lane": "fast", "why": "bounded workspace status lookup, held in dogfood tick 5"}
+{"message": "whens the next stripe payout", "lane": "fast", "why": "contracted when lookup, found in dogfood tick 6"}
+{"message": "este codigo tiene un bug:\n```js\nconst total = items.reduce((a,b) => a + b.price)\n```", "lane": "code-fast", "why": "spanish bug report with fence, found in dogfood tick 6"}
+{"message": "if the router picks wrong lanes 20% of the time but each wrong pick costs 2 cents extra, do we even care, math it out", "lane": "max", "why": "expected value analysis, found in dogfood tick 6"}
+{"message": "is bun faster than node", "lane": "fast", "why": "measurable comparative, held as fast in dogfood tick 6"}
+{"message": "translate our tagline to german and french", "lane": "pro", "why": "possessive needs workspace context, held in dogfood tick 6"}
