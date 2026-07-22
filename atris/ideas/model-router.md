@@ -19,6 +19,8 @@ Every atris dispatch already writes a receipt: which engine ran, what kind of wo
 
 ## current state
 
+Auto lane (ax --auto) hardened overnight 7/21-22: seven dogfood rounds, dev set 81 cases at 100%, sealed holdout 90% (was 80% pre-run, holdout never trained on), weighted error halved to 6.7%. Known open misses: how-many quantity lookups, causal analysis with no keyword cue (the churn case). Stakes-beat-size rule added: incidents and legal never route cheap.
+
 Slice 1 landed: `lib/router-brain.js` scores engines per task type from receipts (verified pass rate, median duration, 30-day-half-life recency) and reranks `resolveEngineForRole` in `lib/engine-registry.js`. Thin data (under 3 receipts per engine+task type) falls back to the legacy order, so behavior only changes once the data earns it. `ATRIS_ROUTER_EXPLAIN=1` prints why a pick won.
 
 Routing surfaces still hardcoded (full audit in the 2026-07-21 recon): one-lap executor/validator pick, fleet restaffing ladder, mission auto-runner, backend tier/provider selection, the dormant cost map in the backend openrouter client.
