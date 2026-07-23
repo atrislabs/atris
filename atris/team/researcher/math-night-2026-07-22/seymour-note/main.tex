@@ -1,0 +1,579 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{conjecture}{Conjecture}
+\newtheorem{claim}{Claim}
+
+\newcommand{\Nout}{N^{+}}
+\newcommand{\Nsec}{N^{++}}
+
+\title{Exhaustive verification of Seymour's Second Neighborhood Conjecture
+for oriented graphs on at most 14 vertices\thanks{Working note, not
+peer reviewed. The computations and this text were produced by an automated
+agent pipeline (Claude Fable 5, Atris workspace of Keshav Rao) on a single
+shared Apple Silicon laptop, 2026-07-22/23. Section~\ref{sec:audit} lists
+exactly what a human reviewer must audit before any of this is submitted
+anywhere. No claim in this note should be trusted beyond the evidence
+described in it.}}
+\author{Automated verification pipeline (Atris workspace)}
+\date{July 23, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Seymour's Second Neighborhood Conjecture states that every oriented graph
+(finite simple digraph with no loops and no 2-cycles) contains a vertex $v$
+with $|\Nsec(v)| \ge |\Nout(v)|$, where $\Nsec(v)$ is the set of vertices at
+directed distance exactly two from $v$. We report an exhaustive computational
+verification: no counterexample exists on $n \le 14$ vertices. The result
+rests on 33 unsatisfiable SAT instances solved by CaDiCaL 3.0.1 with DRAT
+proof logging, every proof checked by drat-trim; the instances cover the
+search space through a minimum out-degree sharding scheme whose covering and
+symmetry-breaking arguments are short pen-and-paper proofs reproduced here.
+(The full artifact set spans $n \le 18$ and 63 CNF instances, of which 59
+refutations are complete; the 33 form the $n \le 14$ claim.)
+Independently of the SAT chain, all oriented graphs on $n \le 8$ vertices
+(575{,}016{,}219 at $n=8$) were enumerated with nauty and checked by a
+from-scratch C program, with per-order counts matching OEIS A001174 exactly
+and zero counterexamples. The CaDiCaL runs also close every shard for
+$n = 15$ and $n = 16$; at the time of writing the DRAT proofs of the two
+largest shards (0.6\,GB and 4.2\,GB) had not finished re-verification, so we
+state $n \le 14$ as the fully machine-checked claim and report $n = 15, 16$
+separately with their exact status. We found no previously published
+exhaustive verification of the conjecture over all oriented graphs of a
+given order, so we state the small-order record here explicitly rather than
+compare against one.
+\end{abstract}
+
+\section{The conjecture and its history}\label{sec:intro}
+
+Let $D$ be an \emph{oriented graph}: a finite directed graph with no loops,
+no parallel arcs, and no digons (if $(u,v)$ is an arc then $(v,u)$ is not).
+For a vertex $v$ write $\Nout(v)$ for its out-neighborhood and
+$\Nsec(v)$ for its \emph{second out-neighborhood}, the set of vertices at
+directed distance exactly $2$ from $v$. A vertex $v$ with
+$|\Nsec(v)| \ge |\Nout(v)|$ is called a \emph{Seymour vertex}.
+
+\begin{conjecture}[Seymour, c.~1990; see Dean and Latka~\cite{DeanLatka95}]
+\label{conj:ssnc}
+Every oriented graph has a Seymour vertex.
+\end{conjecture}
+
+A counterexample is an oriented graph in which \emph{every} vertex $v$
+satisfies $|\Nsec(v)| < |\Nout(v)|$. The conjecture is open. The main
+published partial results are:
+
+\begin{itemize}
+\item \textbf{Tournaments.} Dean's conjecture (the tournament case) was
+proved by Fisher~\cite{Fisher96} using an averaging argument over
+probability distributions; Havet and Thomass\'e~\cite{HavetThomasse00} gave
+a combinatorial proof via median orders, producing two Seymour vertices when
+the tournament has no dominated vertex.
+\item \textbf{Small minimum out-degree.} Kaneko and Locke~\cite{KanekoLocke01}
+proved the conjecture for oriented graphs with minimum out-degree at most
+$6$. A June 2026 preprint by Sadhukhan, Sandeep, and
+Sen~\cite{SadhukhanSandeepSen26} claims the case of minimum out-degree
+exactly $7$, using local reductions plus computer-assisted infeasibility
+checks; it has not, to our knowledge, been refereed.
+\item \textbf{Approximate versions.} Chen, Shen, and Yuster~\cite{ChenShenYuster03}
+proved every oriented graph has a vertex with
+$|\Nsec(v)| \ge \gamma\,|\Nout(v)|$ for $\gamma = 0.657\ldots$, with later
+improvements to the constant by others.
+\item \textbf{Random and dense settings.} Cohn, Godbole, Wright Harkness,
+and Zhang~\cite{CohnGodbole16} showed the conjecture holds asymptotically
+almost surely for random tournaments and random digraphs. Espuny D\'iaz,
+Gir\~ao, Granet, and Kronenberg~\cite{EspunyDiaz25} proved that a.a.s.\
+every orientation of $G(n,p)$ satisfies the conjecture for fixed $p<1/2$,
+and gave two reductions; their Proposition~4 shows a vertex-minimal
+counterexample $D$ must have minimum out-degree greater than
+$\sqrt{|V(D)|}$.
+\item \textbf{Structural classes.} Fidler and Yuster~\cite{FidlerYuster07}
+handled tournaments minus a star or a subtournament and digraphs of minimum
+degree $|V(D)|-2$; Brantner, Brockman, Kay, and Snively~\cite{Brantner09}
+handled digraphs whose underlying graph is triangle-free.
+\end{itemize}
+
+\paragraph{On the exhaustive small-order record.}
+We searched for a published exhaustive verification of
+Conjecture~\ref{conj:ssnc} over \emph{all} oriented graphs on $n \le k$
+vertices for any $k$ and found none: neither the standard open-problem
+surveys~\cite{MoharPage,WestPage} nor the papers above report one. An
+earlier internal working note of ours asserted a published record of
+$n \le 7$; we could not trace that assertion to any source and we withdraw
+it. The correct statement appears to be that no such record was published,
+presumably because checks up to $n \approx 8$ are routine with nauty. The
+contribution of this note is therefore not the beating of a record but the
+explicit, certificate-backed statement of one.
+
+\begin{theorem}[main claim, machine-checked]\label{thm:main}
+No oriented graph on at most $14$ vertices is a counterexample to
+Conjecture~\ref{conj:ssnc}.
+\end{theorem}
+
+Combined with Kaneko and Locke~\cite{KanekoLocke01} (any counterexample has
+minimum out-degree at least $7$) and the arc-counting bound of
+Section~\ref{sec:shards} (minimum out-degree at most
+$\lfloor (n-1)/2 \rfloor$), a hypothetical counterexample must in fact have
+$n \ge 15$; Theorem~\ref{thm:main} is the unconditional statement that does
+not rely on~\cite{KanekoLocke01}, and our shards re-prove the low-degree
+cases for $n \le 14$ from scratch rather than citing them.
+
+\section{Method}\label{sec:method}
+
+The overall shape: for each order $n$, we encode ``an oriented graph on $n$
+labeled vertices in which every vertex violates the Seymour inequality''
+as a CNF formula, split the space into minimum out-degree shards with
+symmetry breaking, obtain UNSAT verdicts with DRAT proofs from CaDiCaL
+3.0.1~\cite{Cadical}, and check every proof with
+drat-trim~\cite{DratTrim}. The DRAT certificates prove the CNFs
+unsatisfiable; the link from the CNFs to the conjecture is the soundness
+chain below, which is deliberately short and must be audited by a human.
+
+\subsection{Encoding}\label{sec:encoding}
+
+The encoder is \texttt{encode.py} (about 150 lines, PySAT~\cite{PySAT}
+1.9). Variables: $x_{uv}$ for each ordered pair ($u \to v$ arc), and
+$y_{vw}$ for each ordered pair with $v \ne w$, an \emph{upper indicator}
+for $w \in \Nsec(v)$. Clauses:
+
+\begin{enumerate}
+\item $(\lnot x_{uv} \lor \lnot x_{vu})$ for all $u < v$: no digons. No
+variable $x_{vv}$ exists, so loops cannot be represented.
+\item $(x_{vu} \land x_{uw} \land \lnot x_{vw}) \to y_{vw}$ for all
+distinct $u, v, w$: every genuine 2-path not shortcut by an arc forces
+$y_{vw}$ up. Hence in every model,
+$\sum_w y_{vw} \ge |\Nsec(v)|$.
+\item For each $v$: a totalizer cardinality
+constraint~\cite{Bailleux03} encoding
+$\sum_{w} y_{vw} + \sum_{u} \lnot x_{vu} \le n-2$, which given the
+previous point is equivalent to $|\Nsec(v)| \le |\Nout(v)| - 1$, i.e.,
+$v$ violates the Seymour inequality.
+\end{enumerate}
+
+\emph{Completeness} (the direction that matters for a nonexistence claim):
+if a counterexample $D$ on $n$ labeled vertices exists, set $x$ from the
+arcs of $D$ and set $y_{vw}$ to the exact indicator of $w \in \Nsec(v)$.
+Group (1) holds because $D$ is an oriented graph; group (2) holds because
+any 2-path $v \to u \to w$ with no arc $v \to w$ witnesses
+$w \in \Nsec(v)$; group (3) holds because every vertex of $D$ violates the
+inequality. So the CNF is satisfiable, and UNSAT verdicts rule out every
+labeled counterexample on $n$ vertices. Spurious $y = 1$ assignments only
+tighten constraint (3), so soundness of the search is not an issue for the
+nonexistence direction.
+
+For $n \le 9$ we ran this formula over the whole space with no symmetry
+breaking and a single additional constraint, minimum out-degree $\ge 1$
+(the encoder's default): this excludes only graphs containing a sink, and
+a sink $v$ has $|\Nsec(v)| = 0 = |\Nout(v)|$, so it is itself a Seymour
+vertex and no graph containing one is a counterexample. Beyond that one
+elementary observation the four instances are assumption-free: their
+verified refutations alone prove Theorem~\ref{thm:main} for $n \le 9$.
+
+\subsection{Degree shards and symmetry breaking}\label{sec:shards}
+
+For $n \ge 10$ the whole-space formula becomes slow, so the space is split.
+In a counterexample no vertex is a sink (a sink $v$ has
+$|\Nsec(v)| = 0 = |\Nout(v)|$ and would be a Seymour vertex), so the
+minimum out-degree $d_0$ satisfies $d_0 \ge 1$; counting arcs,
+$n \, d_0 \le \sum_v \deg^+(v) = |A(D)| \le \binom{n}{2}$, so
+$d_0 \le \lfloor (n-1)/2 \rfloor$. Shard $s_d$ (for
+$1 \le d \le \lfloor (n-1)/2 \rfloor$) asserts:
+\begin{itemize}
+\item every vertex has out-degree $\ge d$ (totalizers),
+\item vertex $0$ has out-degree exactly $d$ (totalizers),
+\item $\Nout(0) = \{1, \dots, d\}$ (unit clauses),
+\item two-block lex-leader symmetry breaking: for every adjacent
+transposition $\sigma$ acting within $\{1,\dots,d\}$ or within
+$\{d+1,\dots,n-1\}$, the adjacency matrix $A$ satisfies
+$A \le_{\mathrm{lex}} A \circ \sigma$~\cite{Crawford96}.
+\end{itemize}
+
+\emph{Covering argument.} Suppose a counterexample $D$ on $n$ vertices
+exists and let $d_0$ be its minimum out-degree, so
+$1 \le d_0 \le \lfloor (n-1)/2 \rfloor$. Relabel a minimum out-degree
+vertex to $0$ and its out-neighbors to $1, \dots, d_0$. The residual
+relabeling freedom is exactly the subgroup
+$H = \mathrm{Sym}\{1,\dots,d_0\} \times \mathrm{Sym}\{d_0+1,\dots,n-1\}$,
+which preserves the pinned constraints. Choose the labeling whose adjacency
+matrix is lexicographically minimal over the $H$-orbit; it satisfies
+$A \le_{\mathrm{lex}} A \circ \sigma$ for \emph{every} $\sigma \in H$, in
+particular for the encoded adjacent transpositions. Hence some assignment
+satisfies shard $s_{d_0}$, and UNSAT verdicts on all shards of order $n$
+rule out all counterexamples on $n$ vertices. Note the encoded constraints
+are a \emph{subset} (adjacent transpositions only) of the full lex-leader
+condition; using a subset weakens the formula and therefore cannot cause a
+false UNSAT.
+
+For $n = 10$ we additionally ran the whole space in one piece (minimum
+out-degree $\ge 1$, full-lex symmetry breaking over all adjacent
+transpositions of the symmetric group, which is sound because the formula
+without pinning is invariant under all vertex permutations), so
+Theorem~\ref{thm:main} at $n = 10$ does not depend on the shard argument
+either. Cross-checks at $n = 10, 11$ with the (audited, elementary) bound
+``any counterexample has minimum out-degree $\ge 3$'' agree; that lemma is
+stated in the artifact repository but is not load-bearing anywhere in this
+note, precisely because shards $s_1$ and $s_2$ were machine-proved
+directly.
+
+\subsection{Tournament-forced shards and Lemma T}\label{sec:lemmat}
+
+For odd $n$, the top shard $d = (n-1)/2$ forces
+$\sum_v \deg^+(v) \ge n(n-1)/2$, i.e., every pair adjacent: the graph is a
+$\frac{n-1}{2}$-regular tournament. These shards are closed twice over:
+
+\begin{enumerate}
+\item By Fisher's theorem~\cite{Fisher96}: every tournament has a Seymour
+vertex, so no tournament is a counterexample. This is published,
+peer-reviewed mathematics and is the citation we prefer.
+\item By the following elementary argument, produced in-session and
+\textbf{not yet reviewed by any human}; we record it because it is short
+enough to audit in one sitting.
+\end{enumerate}
+
+\begin{lemma}[Lemma T, \textbf{unreviewed}]\label{lem:t}
+In a $k$-regular tournament, every vertex $v$ satisfies
+$|\Nsec(v)| = |\Nout(v)| = k$, so no such tournament is a counterexample.
+\end{lemma}
+
+\begin{proof}[Proof (to be audited)]
+Fix $v$ and take any $w \notin \{v\} \cup \Nout(v)$. If $w \notin
+\Nsec(v)$, then no $u \in \Nout(v)$ has $u \to w$; by totality of the
+tournament, $w \to u$ for all $u \in \Nout(v)$, and also $w \to v$ (since
+$v \to w$ would put $w$ in $\Nout(v)$). Then $\deg^+(w) \ge k + 1$,
+contradicting $k$-regularity. Hence $\Nsec(v) = V \setminus (\{v\} \cup
+\Nout(v))$, which has size $n - 1 - k = k$ since $n = 2k+1$.
+\end{proof}
+
+For $n \le 14$ neither item is needed (no tournament-forced shard occurs
+with an unfinished SAT run there). They matter only for the $n = 15$ and
+$n = 17$ top shards discussed in Section~\ref{sec:beyond}; and for
+$n = 15$ the SAT run of the tournament shard itself finished UNSAT as well,
+so Lemma~T is a third line of defense there, not a dependency.
+
+\section{Two independent pipelines}\label{sec:pipelines}
+
+\subsection{Pipeline A: SAT with DRAT certificates}
+
+Every instance in Table~\ref{tab:instances} was solved by CaDiCaL
+3.0.1~\cite{Cadical} with binary DRAT proof output. Every completed proof
+was checked with drat-trim~\cite{DratTrim} built from source (commit
+\texttt{2e3b2dc}, upstream \texttt{marijnheule/drat-trim}). Of the 59 completed refutations,
+57 have \texttt{s VERIFIED} receipts at freeze time; the remaining two are
+the giant $n15\_s7$ and $n16\_s7$ proofs whose checks were still running
+(see \texttt{receipts/SUMMARY.txt} for the final word; every receipt
+generated so far reports \texttt{s VERIFIED} and none has ever failed).
+The receipts were \emph{regenerated from scratch in the write-up session}
+(2026-07-23) by a different agent than the one that ran the solver, and are
+stored alongside this note (\texttt{receipts/}). As a negative control, a truncated copy of
+one proof was rejected by drat-trim (\texttt{s NOT VERIFIED}), confirming
+the checker does not rubber-stamp.
+
+Additionally, all 63 CNF files on disk were regenerated byte-identically
+from \texttt{encode.py} with their documented flags in the write-up
+session, tying the artifacts that were solved to the encoder that was
+audited: the four whole-space files ($n = 6,\dots,9$) with no flags, the
+three cross-check files with \texttt{--mindeg} and full-lex flags, and all
+56 shard files with
+\texttt{--mindeg $d$ --exactdeg0 $d$ --pin-nbhd --sb-mode twoblock}.
+
+\subsection{Pipeline B: exhaustive enumeration, $n \le 8$}
+
+Independently of SAT, encoder, and solver: nauty's~\cite{Nauty}
+\texttt{geng} generated all graphs, \texttt{directg -o} all their
+orientations, and a from-scratch C checker (\texttt{check\_d6.c}, about 80
+lines, reading digraph6 directly and re-checking the no-loop/no-digon
+property itself) tested every oriented graph on $n \le 8$ vertices. Counts
+match OEIS A001174~\cite{OEIS} (number of oriented graphs on $n$ unlabeled
+vertices) exactly at every order, which is strong evidence the enumeration
+is complete:
+
+\begin{center}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+$n$ & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 \\
+\midrule
+oriented graphs & 1 & 2 & 7 & 42 & 582 & 21{,}480 & 2{,}142{,}288 & 575{,}016{,}219 \\
+counterexamples & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The $n \le 7$ runs were re-executed live during the write-up session
+(seconds); the $n = 8$ run was sharded ten ways
+(\texttt{geng}'s \texttt{res/mod} splitting) and the per-shard
+\texttt{checked} counts sum to exactly 575{,}016{,}219. A positive control
+(\texttt{check\_weak}, the same checker with the comparison deliberately
+weakened) flags all 7 oriented graphs on 3 vertices, as it must.
+
+So for $n \le 8$ the result is double-proved by disjoint toolchains
+(PySAT/CaDiCaL/drat-trim versus nauty/hand-written C), and for
+$n = 9,\dots,14$ it rests on Pipeline A plus the written arguments of
+Section~\ref{sec:method}.
+
+\subsection{Auxiliary lane: Cayley digraphs of small groups}
+
+As a targeted probe beyond $n = 14$ (not part of the headline claim), all
+$55$ groups of orders $12$ through $24$ were constructed and brute-force
+verified to be groups, with isomorphism-type counts per order matching the
+classification ($5,1,2,1,14,1,5,1,5,2,2,1,15$); for each group, every
+connection set $S$ with $S \cap S^{-1} = \emptyset$ was enumerated
+($1{,}505{,}160$ sets total) and the resulting Cayley digraph checked at
+the identity vertex, vertex-transitivity justifying the single-vertex
+check; that shortcut was itself revalidated by full all-vertex checks on
+every 250th set. Zero counterexamples. This lane shares no code with either
+pipeline above but has not been independently re-audited; treat it as a
+search result, not a certified one.
+
+\section{Controls}\label{sec:controls}
+
+Beyond the negative proof-checker control and the byte-identical CNF
+regeneration already described:
+\begin{itemize}
+\item \textbf{Slack controls (SAT expected).} Relaxing the per-vertex bound
+by one (encoding $|\Nsec(v)| \le |\Nout(v)|$) must be satisfiable, since,
+e.g., directed cycles and their blowups sit exactly on the boundary. This
+was confirmed at $n = 3$ (plain) and, critically, at $n = 6$ and $n = 12$
+\emph{through the full shard machinery} (pinning, exact degree, two-block
+lex): the shard path is not accidentally over-constrained. The $n = 12$
+control model was decoded back into an explicit digraph and checked to be a
+genuine boundary witness, validating the totalizer calibration end to end.
+\item \textbf{Shard UNSAT control.} A shard instance at $n = 7$, where
+Pipeline B independently proves no counterexample exists, is UNSAT as
+expected. All four control instances were re-solved from the stored CNF
+files during the write-up session with the expected verdicts
+(SAT, SAT, UNSAT, SAT).
+\item \textbf{Solver agreement.} Spot-checked shards were re-solved with
+Glucose 4.2 and MiniSat 2.2 with agreeing verdicts (no proofs logged from
+those; CaDiCaL's DRAT proofs are the receipts).
+\end{itemize}
+
+\section{Results}\label{sec:results}
+
+Table~\ref{tab:instances} lists every SAT instance with its DIMACS size,
+CaDiCaL wall time, DRAT proof size, verdict, and this session's drat-trim
+receipt. The table is generated mechanically from the artifacts by
+\texttt{gen\_tables.py}; no number in it was typed by hand.
+Wall times are from a heavily shared machine and should be read as upper
+bounds. Shard counts per order equal $\lfloor (n-1)/2 \rfloor$ exactly:
+$4$ shards at $n=10$, then $5,5,6,6,7,7,8,8$ through $n=18$.
+
+\input{tables.tex}
+
+\subsection{Fully verified claim}
+
+For $n \le 14$: every listed instance is UNSAT with a drat-trim-verified
+DRAT proof. By the completeness argument of Section~\ref{sec:encoding}
+(for $n \le 9$; the $n = 10$ whole-space instance additionally uses the
+full-lex soundness argument of Section~\ref{sec:shards}) and the covering
+argument of Section~\ref{sec:shards} (for the sharded orders), this proves
+Theorem~\ref{thm:main}. For $n \le 8$, Pipeline B independently confirms
+it.
+
+\subsection{Beyond 14: exact status at write-up time}\label{sec:beyond}
+
+\begin{itemize}
+\item $\mathbf{n = 15}$: all $7$ shards UNSAT by CaDiCaL (top shard
+$s_7$: $4{,}643$\,s wall, $0.60$\,GB proof). Shards $s_1$ through $s_6$
+have verified DRAT proofs; verification of the $s_7$ proof was still
+running when this note was frozen (its receipt, if present in
+\texttt{receipts/}, supersedes this sentence). Independently of that one
+certificate, shard $s_7$ forces a $7$-regular tournament and is closed by
+Fisher's theorem~\cite{Fisher96}, and also by the unreviewed
+Lemma~\ref{lem:t}. We therefore regard $n = 15$ as established modulo one
+of: (a) the pending big-proof verification, or (b) reliance on
+Fisher~\cite{Fisher96}, and we deliberately keep it out of the headline.
+\item $\mathbf{n = 16}$: all $7$ shards UNSAT by CaDiCaL ($s_7$:
+$19{,}080$\,s wall, $4.23$\,GB proof); $s_1$ through $s_6$ verified;
+verification of the $s_7$ proof still running. No tournament argument
+applies at even $n$, so $n = 16$ waits on that verification.
+\item $\mathbf{n = 17, 18}$: shards $s_1$ through $s_6$ UNSAT and
+verified. The near-tournament shards ($n17\_s7$, $n17\_s8$, $n18\_s7$,
+$n18\_s8$) were still being solved at write-up time ($>5$ hours each).
+$n17\_s8$ forces an $8$-regular tournament and is closed by
+Fisher~\cite{Fisher96} (or Lemma~\ref{lem:t}) regardless of its SAT run;
+$n17\_s7$, $n18\_s7$, $n18\_s8$ are genuinely open runs. So $n = 17, 18$
+are \emph{not} claimed.
+\end{itemize}
+
+\section{What an external reviewer must audit}\label{sec:audit}
+
+This note was produced by an automated pipeline. Before any submission, a
+human must independently check, at minimum:
+
+\begin{enumerate}
+\item \textbf{The soundness chain (Section~\ref{sec:method}).} The DRAT
+certificates prove only that specific CNF files are unsatisfiable. The
+encoding-completeness argument, the sink and arc-count bounds on $d_0$,
+and the two-block lex-leader covering argument are pen-and-paper claims
+living outside all certificates. They are short; audit every line.
+\item \textbf{\texttt{encode.py} against Section~\ref{sec:encoding}.}
+About 150 lines. Confirm the clause groups match the stated encoding and
+that PySAT's totalizer (\texttt{CardEnc.atmost}, \texttt{EncType.totalizer})
+is used correctly (auxiliary variables must not be shared across
+constraints incorrectly; the slack controls test this but do not prove it).
+\item \textbf{Lemma~\ref{lem:t}}, or simply replace every use of it by the
+citation to Fisher~\cite{Fisher96} and delete it.
+\item \textbf{Re-verification of all certificates on independent hardware},
+rebuilding CaDiCaL and drat-trim from upstream sources. The full artifact
+set is about 28\,GB; SHA-256 checksums of every CNF, every completed proof,
+and the three load-bearing source files are in
+\texttt{receipts/SHA256SUMS.txt}. Ideally re-check with a second,
+independently implemented DRAT checker (e.g., the formally verified
+\texttt{cake\_lpr}).
+\item \textbf{Pipeline B.} Read \texttt{check\_d6.c} (about 80 lines,
+including its own digraph6 parser and digon check); confirm the
+\texttt{geng}/\texttt{directg -o} invocations enumerate exactly the
+oriented graphs; re-derive the OEIS comparison.
+\item \textbf{Provenance discipline.} Only \texttt{encode.py},
+\texttt{check\_d6.c}, the CNF/DRAT artifacts, and the receipts are
+load-bearing. Earlier search code from the same overnight runs (local
+search, circulant search, the round-1 SAT stack) is untrusted by policy
+and cited nowhere in the argument. Confirm nothing in the chain silently
+depends on it.
+\item \textbf{Literature claims.} Re-check the history of
+Section~\ref{sec:intro} against the primary sources, in particular the
+exact statement of Kaneko--Locke and the status of the 2026 minimum
+out-degree 7 preprint, and re-run the search for any published exhaustive
+small-order verification we may have missed.
+\item \textbf{The $n = 15, 16$ upgrades.} If the two large proof
+verifications complete with \texttt{s VERIFIED} receipts, the headline can
+move to $n \le 16$; that decision, and the wording, should be a human's.
+\end{enumerate}
+
+\section*{Reproduction appendix}
+
+All commands assume macOS with Homebrew; everything is CPU-only. On a
+shared machine, prefix heavy runs with \texttt{nice -n 15}.
+
+\begin{enumerate}
+\item Toolchain:
+\begin{verbatim}
+brew install cadical nauty python
+pip install python-sat
+git clone https://github.com/marijnheule/drat-trim && make -C drat-trim
+\end{verbatim}
+\item Whole-space instances (assumption-free), $n = 6, \dots, 9$:
+\begin{verbatim}
+python3 encode.py N --out nN.cnf
+cadical -q nN.cnf nN.drat          # expect: s UNSATISFIABLE
+drat-trim/drat-trim nN.cnf nN.drat # expect: s VERIFIED
+\end{verbatim}
+\item Shard instances, $n = 10, \dots, 18$, $d = 1, \dots,
+\lfloor (n-1)/2 \rfloor$:
+\begin{verbatim}
+python3 encode.py N --mindeg D --exactdeg0 D --pin-nbhd \
+    --sb-mode twoblock --out nN_sD.cnf
+cadical -q nN_sD.cnf nN_sD.drat
+drat-trim/drat-trim nN_sD.cnf nN_sD.drat
+\end{verbatim}
+\item Whole-space cross-checks at $n = 10, 11$:
+\texttt{--mindeg 1 --sb-mode full} (and \texttt{--mindeg 3} for the
+lemma-conditioned variants).
+\item Controls: \texttt{--slack} variants must come back SAT; truncating
+any \texttt{.drat} must make drat-trim report \texttt{s NOT VERIFIED}.
+\item Pipeline B ($n \le 8$; shard $n = 8$ via \texttt{res/mod}):
+\begin{verbatim}
+cc -O2 -o check_d6 check_d6.c
+geng -q N | directg -o -q | ./check_d6
+geng -q 8 r/10 | directg -o -q | ./check_d6  # r = 0..9, sum counts
+\end{verbatim}
+\item Regenerate Table~\ref{tab:instances} from the artifacts, and
+re-verify every stored proof:
+\begin{verbatim}
+python3 gen_tables.py
+sh verify_all_drat.sh
+\end{verbatim}
+\end{enumerate}
+
+\begin{thebibliography}{99}
+
+\bibitem{DeanLatka95} N.~Dean and B.~J.~Latka, Squaring the tournament: an
+open problem, \emph{Congressus Numerantium} \textbf{109} (1995), 73--80.
+
+\bibitem{Fisher96} D.~C.~Fisher, Squaring a tournament: a proof of Dean's
+conjecture, \emph{Journal of Graph Theory} \textbf{23} (1996), 43--48.
+
+\bibitem{HavetThomasse00} F.~Havet and S.~Thomass\'e, Median orders of
+tournaments: a tool for the second neighborhood problem and Sumner's
+conjecture, \emph{Journal of Graph Theory} \textbf{35} (2000), 244--256.
+
+\bibitem{KanekoLocke01} Y.~Kaneko and S.~C.~Locke, The minimum degree
+approach for Paul Seymour's distance 2 conjecture, \emph{Congressus
+Numerantium} \textbf{148} (2001), 201--206.
+
+\bibitem{ChenShenYuster03} G.~Chen, J.~Shen, and R.~Yuster, Second
+neighborhood via first neighborhood in digraphs, \emph{Annals of
+Combinatorics} \textbf{7} (2003), 15--20.
+
+\bibitem{FidlerYuster07} D.~Fidler and R.~Yuster, Remarks on the second
+neighborhood problem, \emph{Journal of Graph Theory} \textbf{55} (2007),
+208--220.
+
+\bibitem{Brantner09} J.~Brantner, G.~Brockman, B.~Kay, and E.~Snively,
+Contributions to Seymour's second neighborhood conjecture, \emph{Involve}
+\textbf{2} (2009), 387--395.
+
+\bibitem{CohnGodbole16} Z.~Cohn, A.~Godbole, E.~Wright Harkness, and
+Y.~Zhang, The number of Seymour vertices in random tournaments and
+digraphs, \emph{Graphs and Combinatorics} \textbf{32} (2016), 1805--1816.
+
+\bibitem{EspunyDiaz25} A.~Espuny D\'iaz, A.~Gir\~ao, B.~Granet, and
+G.~Kronenberg, Seymour's second neighbourhood conjecture: random graphs
+and reductions, \emph{Random Structures \& Algorithms} (2025),
+arXiv:2403.02842.
+
+\bibitem{SadhukhanSandeepSen26} A.~Sadhukhan, R.~B.~Sandeep, and S.~Sen,
+A proof of Seymour's second neighborhood conjecture for oriented graphs
+with minimum out-degree equal to 7, arXiv:2606.30588 (2026). Preprint,
+unrefereed as far as we know.
+
+\bibitem{MoharPage} B.~Mohar, Seymour's Second Neighborhood Conjecture,
+problem page,
+\url{https://www.sfu.ca/~mohar/Problems/P0601_SeymourSecondNbdConj.html},
+accessed 2026-07-23.
+
+\bibitem{WestPage} D.~B.~West, Seymour's 2nd Neighborhood Conjecture, open
+problem page, \url{https://dwest.web.illinois.edu/openp/2ndnbhd.html},
+accessed 2026-07-23.
+
+\bibitem{Cadical} A.~Biere, K.~Fazekas, M.~Fleury, and M.~Heisinger,
+CaDiCaL, Kissat, Paracooba, Plingeling and Treengeling entering the SAT
+Competition 2020, in \emph{Proc.\ SAT Competition 2020}, University of
+Helsinki, 2020. Version used here: CaDiCaL 3.0.1.
+
+\bibitem{DratTrim} N.~Wetzler, M.~J.~H.~Heule, and W.~A.~Hunt~Jr.,
+DRAT-trim: efficient checking and trimming using expressive clausal
+proofs, in \emph{Theory and Applications of Satisfiability Testing (SAT
+2014)}, LNCS 8561, Springer, 2014, 422--429.
+
+\bibitem{PySAT} A.~Ignatiev, A.~Morgado, and J.~Marques-Silva, PySAT: a
+Python toolkit for prototyping with SAT oracles, in \emph{SAT 2018}, LNCS
+10929, Springer, 2018, 428--437.
+
+\bibitem{Bailleux03} O.~Bailleux and Y.~Boufkhad, Efficient CNF encoding
+of Boolean cardinality constraints, in \emph{Principles and Practice of
+Constraint Programming (CP 2003)}, LNCS 2833, Springer, 2003, 108--122.
+
+\bibitem{Crawford96} J.~Crawford, M.~Ginsberg, E.~Luks, and A.~Roy,
+Symmetry-breaking predicates for search problems, in \emph{Proc.\ 5th
+International Conference on Principles of Knowledge Representation and
+Reasoning (KR'96)}, 1996, 148--159.
+
+\bibitem{Nauty} B.~D.~McKay and A.~Piperno, Practical graph isomorphism,
+II, \emph{Journal of Symbolic Computation} \textbf{60} (2014), 94--112.
+
+\bibitem{OEIS} OEIS Foundation Inc., entry A001174 (number of oriented
+graphs on $n$ nodes), \emph{The On-Line Encyclopedia of Integer
+Sequences}, \url{https://oeis.org/A001174}.
+
+\end{thebibliography}
+
+\end{document}

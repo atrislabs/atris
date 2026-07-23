@@ -1,0 +1,2 @@
+>A geng -d5D5 n=14 e=35
+>Z 3459386 graphs generated in 366.72 sec

@@ -1,0 +1,15 @@
+[reg8n14-s0] progress 20000 elapsed=136s hist={5: 8792, 4: 9275, 6: 1933} escal=0 unknown=0
+[reg8n14-s0] progress 40000 elapsed=272s hist={5: 17302, 4: 18819, 6: 3879} escal=0 unknown=0
+[reg8n14-s0] progress 60000 elapsed=402s hist={5: 25936, 4: 28257, 6: 5807} escal=0 unknown=0
+[reg8n14-s0] progress 80000 elapsed=539s hist={5: 34648, 4: 37708, 6: 7644} escal=0 unknown=0
+[reg8n14-s0] progress 100000 elapsed=679s hist={5: 43389, 4: 47108, 6: 9503} escal=0 unknown=0
+[reg8n14-s0] progress 120000 elapsed=810s hist={5: 52118, 4: 56484, 6: 11398} escal=0 unknown=0
+[reg8n14-s0] progress 140000 elapsed=930s hist={5: 60869, 4: 65775, 6: 13356} escal=0 unknown=0
+[reg8n14-s0] progress 160000 elapsed=1040s hist={5: 69451, 4: 75304, 6: 15245} escal=0 unknown=0
+[reg8n14-s0] progress 180000 elapsed=1147s hist={5: 78162, 4: 84708, 6: 17130} escal=0 unknown=0
+[reg8n14-s0] progress 200000 elapsed=1249s hist={5: 86874, 4: 94099, 6: 19027} escal=0 unknown=0
+[reg8n14-s0] progress 220000 elapsed=1350s hist={5: 95555, 4: 103507, 6: 20938} escal=0 unknown=0
+[reg8n14-s0] progress 240000 elapsed=1452s hist={5: 104199, 4: 113038, 6: 22763} escal=0 unknown=0
+[reg8n14-s0] progress 260000 elapsed=1555s hist={5: 112905, 4: 122513, 6: 24582} escal=0 unknown=0
+[reg8n14-s0] progress 280000 elapsed=1653s hist={5: 121582, 4: 131973, 6: 26445} escal=0 unknown=0
+[reg8n14-s0] DONE CLEAN total=290592 escal=0 unknown=0 hist={5: 126230, 4: 136977, 6: 27385} elapsed=1704s

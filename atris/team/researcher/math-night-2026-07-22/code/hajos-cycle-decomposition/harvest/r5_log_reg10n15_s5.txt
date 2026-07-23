@@ -1,0 +1,5 @@
+[reg10n15-s5] progress 20000 elapsed=198s hist={7: 2207, 5: 8901, 6: 8892} escal=0 unknown=0
+[reg10n15-s5] progress 40000 elapsed=391s hist={7: 4494, 5: 17716, 6: 17790} escal=0 unknown=0
+[reg10n15-s5] progress 60000 elapsed=594s hist={7: 6776, 5: 26474, 6: 26750} escal=0 unknown=0
+[reg10n15-s5] progress 80000 elapsed=787s hist={7: 8979, 5: 35336, 6: 35685} escal=0 unknown=0
+[reg10n15-s5] DONE CLEAN total=83553 escal=0 unknown=0 hist={7: 9371, 5: 36927, 6: 37255} elapsed=818s

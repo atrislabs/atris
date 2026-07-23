@@ -1,0 +1,13 @@
+g6=N?AAD@OwO]M_f?IgBS? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+g6=N?AA@a`YBHAqf?aoJO? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+g6=N?AACGoiGjR_SoY_LO? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+g6=N??E@aKiAX@ws_\?EI? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+g6=N?AAD?oyFCJ_BoEgAk? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+g6=N?AAD@Oy@XDoeODoIS? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+g6=N?AACGoYIs\?M_@wQg? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+g6=N?AAD?orCiDWHgUGJO? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+g6=N?AA@_giUIYCEgJ_Io? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+g6=N?AACGoyEcIoAwJOFC? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+g6=N?AA@agW`bPgu?F_Gq? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+g6=N?ACJBCE`oWgSoIKF@? exact BnB: feasible <= 7 (7 cycles), partition ok=True
+crosscheck done: 12 sampled, alarms=0

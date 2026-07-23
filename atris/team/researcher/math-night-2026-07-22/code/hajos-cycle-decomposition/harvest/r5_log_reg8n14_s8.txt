@@ -1,0 +1,21 @@
+[reg8n14-s8] progress 20000 elapsed=138s hist={5: 8630, 4: 9437, 6: 1933} escal=0 unknown=0
+[reg8n14-s8] progress 40000 elapsed=275s hist={5: 17393, 4: 18802, 6: 3805} escal=0 unknown=0
+[reg8n14-s8] progress 60000 elapsed=407s hist={5: 26131, 4: 28134, 6: 5735} escal=0 unknown=0
+[reg8n14-s8] progress 80000 elapsed=541s hist={5: 34826, 4: 37583, 6: 7591} escal=0 unknown=0
+[reg8n14-s8] progress 100000 elapsed=680s hist={5: 43428, 4: 47104, 6: 9468} escal=0 unknown=0
+[reg8n14-s8] progress 120000 elapsed=810s hist={5: 52283, 4: 56396, 6: 11321} escal=0 unknown=0
+[reg8n14-s8] progress 140000 elapsed=929s hist={5: 60985, 4: 65754, 6: 13261} escal=0 unknown=0
+[reg8n14-s8] progress 160000 elapsed=1040s hist={5: 69711, 4: 75159, 6: 15130} escal=0 unknown=0
+[reg8n14-s8] progress 180000 elapsed=1149s hist={5: 78289, 4: 84719, 6: 16992} escal=0 unknown=0
+[reg8n14-s8] progress 200000 elapsed=1248s hist={5: 86923, 4: 94208, 6: 18869} escal=0 unknown=0
+[reg8n14-s8] progress 220000 elapsed=1351s hist={5: 95494, 4: 103763, 6: 20743} escal=0 unknown=0
+[reg8n14-s8] progress 240000 elapsed=1455s hist={5: 104266, 4: 113096, 6: 22638} escal=0 unknown=0
+[reg8n14-s8] progress 260000 elapsed=1559s hist={5: 112922, 4: 122592, 6: 24486} escal=0 unknown=0
+[reg8n14-s8] progress 280000 elapsed=1655s hist={5: 121601, 4: 132022, 6: 26377} escal=0 unknown=0
+[reg8n14-s8] progress 300000 elapsed=1746s hist={5: 130249, 4: 141559, 6: 28192} escal=0 unknown=0
+[reg8n14-s8] progress 320000 elapsed=1835s hist={5: 139035, 4: 150902, 6: 30063} escal=0 unknown=0
+[reg8n14-s8] progress 340000 elapsed=1918s hist={5: 147815, 4: 160275, 6: 31910} escal=0 unknown=0
+[reg8n14-s8] progress 360000 elapsed=1999s hist={5: 156358, 4: 169895, 6: 33747} escal=0 unknown=0
+[reg8n14-s8] progress 380000 elapsed=2082s hist={5: 165003, 4: 179415, 6: 35582} escal=0 unknown=0
+[reg8n14-s8] progress 400000 elapsed=2160s hist={5: 173707, 4: 188886, 6: 37407} escal=0 unknown=0
+[reg8n14-s8] DONE CLEAN total=407076 escal=0 unknown=0 hist={5: 176745, 4: 192272, 6: 38059} elapsed=2187s
