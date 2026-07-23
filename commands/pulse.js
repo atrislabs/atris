@@ -2,16 +2,16 @@
 
 // `atris pulse` - the durable overnight self-improvement heartbeat for atris-cli.
 //
-//   atris pulse tick      run ONE self-improvement tick (what the cron calls)
+//   atris pulse tick      run ONE self-improvement tick (what launchd calls)
 //   atris pulse status    liveness, reward sum, ghost-tick detection
-//   atris pulse install   write the OS-cron tick script + install the crontab line
-//   atris pulse uninstall remove the crontab line
+//   atris pulse install   write the tick script + install a launchd agent
+//   atris pulse uninstall remove the launchd agent
 //   atris pulse run       run N ticks in the foreground (manual / testing)
 //
 // One tick: lock -> 'started' receipt -> run mission engine -> verify -> write
 // 'finished' receipt (pulse_agi_loop_receipts.jsonl) + reward scorecard
 // (scorecards.jsonl, gated) -> release lock. The whole point is that this fires
-// from an OS cron, so it self-improves overnight without Claude Code open.
+// from launchd, so it self-improves overnight without Claude Code open.
 
 const fs = require('fs');
 const os = require('os');
@@ -41,8 +41,8 @@ Durable overnight self-improvement heartbeat.
 Commands:
   tick        Run one heartbeat tick
   status      Show liveness, reward, and ghost-tick detection
-  install     Install the OS cron heartbeat
-  uninstall   Remove the OS cron heartbeat
+  install     Install the launchd heartbeat
+  uninstall   Remove the launchd heartbeat
   run         Run bounded ticks in the foreground
 
 Options:
@@ -492,13 +492,21 @@ function statusCommand(args, root = process.cwd(), options = {}) {
   const slot = pulse.resolvePulseSlot(root, options.homeDir ? { homeDir: options.homeDir } : {});
   const receipts = pulse.readPulseReceipts(root);
   const summary = pulse.summarizePulse(receipts);
-  const installed = cronInstalled(slot.markers, options.spawnSync || spawnSync);
+  const label = `com.atris.pulse.${slot.marker.toLowerCase().replace(/^atris_pulse_/, '').replace(/[^a-z0-9]+/g, '-')}`;
+  const homeDir = options.homeDir || os.homedir();
+  const plistPath = path.join(homeDir, 'Library', 'LaunchAgents', `${label}.plist`);
+  const legacyCronInstalled = cronInstalled(slot.markers, options.spawnSync || spawnSync);
+  const installed = fs.existsSync(plistPath) || legacyCronInstalled;
   const expiryBreadcrumb = installed ? null : readPulseExpiryBreadcrumb(root);
   const writeOutput = options.writeOutput || ((text) => process.stdout.write(text));
   const out = {
     ok: true,
     action: 'pulse_status',
     cron_installed: installed,
+    launchd_installed: fs.existsSync(plistPath),
+    legacy_cron_installed: legacyCronInstalled,
+    label,
+    plist_path: plistPath,
     expiry_breadcrumb: expiryBreadcrumb,
     state_home: slot.activeStateHome,
     marker: slot.activeMarker,
@@ -509,7 +517,7 @@ function statusCommand(args, root = process.cwd(), options = {}) {
   };
   if (!asJson) {
     writeOutput([
-      `pulse: ${installed ? 'cron installed' : 'cron not installed (run: atris pulse install)'}`,
+      `pulse: ${installed ? 'scheduler installed' : 'scheduler not installed (run: atris pulse install)'}`,
       expiryBreadcrumb ? `heartbeat expired on ${expiryBreadcrumb.expired_at}; renew with: ${expiryBreadcrumb.renew_command}` : '',
       `state home: ${slot.activeStateHome} marker: ${slot.activeMarker}`,
       `ticks: ${summary.total_ticks} | reward: ${summary.reward_sum} | verify pass/fail: ${summary.verify_pass}/${summary.verify_fail}`,
@@ -606,8 +614,12 @@ function installCommand(args, root = process.cwd(), options = {}) {
 
   fs.mkdirSync(slot.stateHome, { recursive: true });
   const scriptPath = path.join(slot.stateHome, 'tick.sh');
-  // Resolve the real bin dirs the engine spawns by bare name, so cron's minimal
-  // PATH doesn't silently break the worker spawn (claude lives in ~/.local/bin).
+  const label = `com.atris.pulse.${slot.marker.toLowerCase().replace(/^atris_pulse_/, '').replace(/[^a-z0-9]+/g, '-')}`;
+  const homeDir = options.homeDir || os.homedir();
+  const launchAgentsDir = path.join(homeDir, 'Library', 'LaunchAgents');
+  const plistPath = path.join(launchAgentsDir, `${label}.plist`);
+  // Resolve the real bin dirs the engine spawns by bare name, so launchd's
+  // minimal PATH doesn't break the worker spawn (claude lives in ~/.local/bin).
   const pathDirs = resolveEngineBinDirs([runnerBin], commandSpawn);
   const script = pulse.buildTickScript({
     root,
@@ -621,18 +633,26 @@ function installCommand(args, root = process.cwd(), options = {}) {
     runnerCommandTemplate,
     verifyCmd,
     pathDirs,
+    launchLabel: label,
+    launchPlistPath: plistPath,
   });
   fs.writeFileSync(scriptPath, script, { mode: 0o755 });
 
-  const line = pulse.buildCrontabLine({ cron, scriptPath, marker: slot.marker });
-  // Append our line to the existing crontab. Strip this repo's new marker and,
-  // when the legacy tick.sh belongs to this root, strip the old single-slot marker too.
+  fs.mkdirSync(path.join(slot.stateHome, 'logs'), { recursive: true });
+  fs.mkdirSync(launchAgentsDir, { recursive: true });
+  fs.writeFileSync(plistPath, pulse.buildLaunchAgentPlist({ label, scriptPath, cron, stateHome: slot.stateHome }), 'utf8');
+
+  // Strip old cron entries while migrating existing installations.
   const existing = commandSpawn('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
   const prior = existing.status === 0 ? String(existing.stdout || '') : '';
   const cleaned = stripMarkedCrontabLines(prior, slot.markers);
-  const next = `${cleaned ? cleaned + '\n' : ''}${line}\n`;
-  const apply = commandSpawn('crontab', ['-'], { input: next, encoding: 'utf8', timeout: 10000 });
+  const legacyHad = slot.markers.some((marker) => prior.includes(marker));
+  if (existing.status === 0 && legacyHad) commandSpawn('crontab', ['-'], { input: cleaned ? `${cleaned}\n` : '', encoding: 'utf8', timeout: 10000 });
+  const uid = options.uid != null ? options.uid : process.getuid();
+  commandSpawn('launchctl', ['bootout', `gui/${uid}/${label}`], { encoding: 'utf8', timeout: 10000 });
+  const apply = commandSpawn('launchctl', ['bootstrap', `gui/${uid}`, plistPath], { encoding: 'utf8', timeout: 10000 });
   const expiryBreadcrumbCleared = apply.status === 0 && clearPulseExpiryBreadcrumb(root);
+  const cadenceMapping = pulse.launchIntervalFromCadence({ cron });
 
   const out = {
     ok: apply.status === 0,
@@ -641,7 +661,11 @@ function installCommand(args, root = process.cwd(), options = {}) {
     state_home: slot.stateHome,
     marker: slot.marker,
     legacy_migrated: slot.legacyMatches,
-    crontab_line: line,
+    label,
+    plist_path: plistPath,
+    crontab_line: null,
+    removed_legacy_crontab: legacyHad,
+    cadence_fallback: cadenceMapping.fallback,
     cadence: cron,
     cadence_input: cadenceInput,
     expires_in_days: expiry.days,
@@ -656,46 +680,49 @@ function installCommand(args, root = process.cwd(), options = {}) {
   if (!asJson) {
     if (apply.status === 0) {
       writeOutput([
-        `pulse installed. heartbeat fires '${cron}' against ${root}.`,
+        `pulse installed. launchd heartbeat fires '${cron}' against ${root}.`,
+        `label: ${label}`,
+        `plist: ${plistPath}`,
         `script: ${scriptPath}`,
+        cadenceMapping.fallback ? `cadence '${cron}' is not directly mappable; using 3600 seconds.` : '',
         `auto-expires in ${expiry.hours ? `${expiry.hours} hours` : `${expiry.days} days`}. stop early: atris pulse uninstall`,
-      ].join('\n') + '\n');
+      ].filter(Boolean).join('\n') + '\n');
     } else {
-      writeOutput(`pulse install failed to write crontab: ${apply.stderr || apply.status}\nscript written to ${scriptPath}; add this line to your crontab manually:\n${line}\n`);
+      writeOutput(`pulse install failed to bootstrap ${label}: ${apply.stderr || apply.status}\nplist: ${plistPath}\n`);
     }
   }
   return emit(out, asJson);
 }
 
-function uninstallCommand(args, root = process.cwd()) {
+function uninstallCommand(args, root = process.cwd(), options = {}) {
   const asJson = wantsJson(args);
-  const slot = pulse.resolvePulseSlot(root);
-  const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
-  if (existing.status !== 0) {
-    const out = {
-      ok: true,
-      action: 'pulse_uninstall',
-      removed: false,
-      reason: 'no_crontab',
-      state_home: slot.activeStateHome,
-      marker: slot.activeMarker,
-    };
-    if (!asJson) process.stdout.write('pulse: no crontab to clean.\n');
-    return emit(out, asJson);
-  }
+  const slot = pulse.resolvePulseSlot(root, options.homeDir ? { homeDir: options.homeDir } : {});
+  const commandSpawn = options.spawnSync || spawnSync;
+  const homeDir = options.homeDir || os.homedir();
+  const label = `com.atris.pulse.${slot.marker.toLowerCase().replace(/^atris_pulse_/, '').replace(/[^a-z0-9]+/g, '-')}`;
+  const plistPath = path.join(homeDir, 'Library', 'LaunchAgents', `${label}.plist`);
+  const uid = options.uid != null ? options.uid : process.getuid();
+  commandSpawn('launchctl', ['bootout', `gui/${uid}/${label}`], { encoding: 'utf8', timeout: 10000 });
+  const plistHad = fs.existsSync(plistPath);
+  fs.rmSync(plistPath, { force: true });
+  const existing = commandSpawn('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
   const prior = String(existing.stdout || '');
   const had = slot.markers.some((marker) => prior.includes(marker));
   const cleaned = stripMarkedCrontabLines(prior, slot.markers);
-  const apply = spawnSync('crontab', ['-'], { input: cleaned ? cleaned + '\n' : '', encoding: 'utf8', timeout: 10000 });
+  let apply = { status: 0 };
+  if (existing.status === 0 && had) apply = commandSpawn('crontab', ['-'], { input: cleaned ? cleaned + '\n' : '', encoding: 'utf8', timeout: 10000 });
   const out = {
     ok: apply.status === 0,
     action: 'pulse_uninstall',
-    removed: had,
+    removed: plistHad || had,
+    label,
+    plist_path: plistPath,
+    removed_legacy_crontab: had,
     state_home: slot.activeStateHome,
     marker: slot.activeMarker,
     legacy_slot: slot.legacyMatches,
   };
-  if (!asJson) process.stdout.write(had ? 'pulse uninstalled (crontab line removed).\n' : 'pulse: no heartbeat line found.\n');
+  if (!asJson) process.stdout.write(plistHad || had ? `pulse uninstalled (${label}).\n` : 'pulse: no heartbeat agent found.\n');
   return emit(out, asJson);
 }
 

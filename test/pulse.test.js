@@ -38,6 +38,7 @@ test('pulse status surfaces expiry and install clears the breadcrumb', () => {
   const root = tmpRoot();
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-home-'));
   let crontab = '';
+  let launchdInstalled = false;
   const fakeSpawnSync = (command, args, options = {}) => {
     if (command === 'which') return { status: 1, stdout: '', stderr: '' };
     if (command === 'crontab' && args[0] === '-l') {
@@ -47,6 +48,14 @@ test('pulse status surfaces expiry and install clears the breadcrumb', () => {
     }
     if (command === 'crontab' && args[0] === '-') {
       crontab = String(options.input || '');
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'launchctl' && args[0] === 'bootout') {
+      launchdInstalled = false;
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'launchctl' && args[0] === 'bootstrap') {
+      launchdInstalled = true;
       return { status: 0, stdout: '', stderr: '' };
     }
     throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
@@ -76,6 +85,9 @@ test('pulse status surfaces expiry and install clears the breadcrumb', () => {
       writeOutput: () => {},
     });
     assert.equal(installed.ok, true);
+    assert.equal(launchdInstalled, true);
+    assert.match(installed.label, /^com\.atris\.pulse\./);
+    assert.equal(installed.plist_path, path.join(home, 'Library', 'LaunchAgents', `${installed.label}.plist`));
     assert.equal(installed.expiry_breadcrumb_cleared, true);
     assert.equal(fs.existsSync(breadcrumbPath), false);
 
@@ -360,6 +372,7 @@ test('buildTickScript embeds root, bin, deadline, marker, and calls pulse tick',
   assert.match(script, /ATRIS="\/usr\/local\/bin\/atris"/);
   assert.match(script, /DEADLINE_EPOCH="1777568422"/);
   assert.match(script, /ATRIS_PULSE_SELF_IMPROVE/);
+  assert.match(script, /unset ANTHROPIC_API_KEY/);
   assert.match(script, /"\$ATRIS" pulse tick --json --verify 'npm test'/);
   // deadline self-removal (the commander tick.sh pattern) must be present
   assert.match(script, /crontab -l .* grep -v "\$MARKER" .* crontab -/);
@@ -489,6 +502,25 @@ test('normalizeExpiryDuration rejects invalid expiry values', () => {
 
 test('buildCrontabLine requires a scriptPath', () => {
   assert.throws(() => pulse.buildCrontabLine({}), /scriptPath is required/);
+});
+
+test('buildLaunchAgentPlist maps pulse cadences and configures launchd logging', () => {
+  const plist = pulse.buildLaunchAgentPlist({
+    label: 'com.atris.pulse.repo-123abc',
+    scriptPath: '/home/x/pulse/tick.sh',
+    cron: '*/13 * * * *',
+    stateHome: '/home/x/pulse',
+  });
+  assert.match(plist, /<string>com\.atris\.pulse\.repo-123abc<\/string>/);
+  assert.match(plist, /<array><string>\/bin\/bash<\/string><string>\/home\/x\/pulse\/tick\.sh<\/string><\/array>/);
+  assert.match(plist, /<key>StartInterval<\/key><integer>780<\/integer>/);
+  assert.match(plist, /<key>AbandonProcessGroup<\/key><true\/>/);
+  assert.match(plist, /\/home\/x\/pulse\/logs\/launchd\.log/);
+});
+
+test('launchd cadence mapping uses hourly and fallback intervals', () => {
+  assert.deepEqual(pulse.launchIntervalFromCadence({ cron: '11 * * * *' }), { seconds: 3600, fallback: false });
+  assert.deepEqual(pulse.launchIntervalFromCadence({ cron: '11,40 * * * *' }), { seconds: 3600, fallback: true });
 });
 
 // --- non-git workspace blindness (the reward-0-forever bug) ---
