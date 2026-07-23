@@ -1964,12 +1964,22 @@ function shouldMissionRunTrustedRoom(rawObjective, args = []) {
   return missionRunTrustedRoomSignals(rawObjective);
 }
 
+const MISSION_BARE_COMMAND_WORDS = new Set(['go', 'keep', 'going', 'do', 'it', 'start', 'run', 'continue']);
+
+function missionObjectiveIsJunk(value) {
+  const objective = String(value || '').trim();
+  if (!objective || objective.startsWith('-')) return true;
+  if (/[\u0000-\u001f\u007f-\u009f\ufffd]/u.test(objective)) return true;
+  if (objective.replace(/\s/g, '').length < 8) return true;
+  const words = objective.toLowerCase().match(/[a-z]+/g) || [];
+  return words.length > 0
+    && objective.replace(/[^a-z]+/gi, '').length > 0
+    && words.every((word) => MISSION_BARE_COMMAND_WORDS.has(word));
+}
+
 function missionRunConcreteTitle(value) {
   const title = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!title) return '';
-  if (/^(go|go go|go go go|keep going|do it|start|run|continue)$/i.test(title)) return '';
-  if (title.length < 8) return '';
-  return title;
+  return missionObjectiveIsJunk(title) ? '' : title;
 }
 
 function selectMissionRunUsefulTarget(rawObjective, root = process.cwd()) {
@@ -3852,16 +3862,15 @@ function findActiveTwinMission(objective, owner, root = process.cwd()) {
 function startMission(args, options = {}) {
   const asJson = wantsJson(args);
   const firstArg = String(args[0] || '').trim().toLowerCase();
-  if (hasFlag(args, '--help') || hasFlag(args, '-h') || firstArg === 'help') {
+  if (args.length === 1 && (firstArg === '--help' || firstArg === '-h' || firstArg === 'help')) {
     console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--destination "..."] [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal|auto]');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
   let mission = applyMissionStartPatch(missionFromArgs(args), options.missionPatch);
-  // A flag-looking or empty objective is a typo, not a mission.
   const rawObjective = String(mission.objective || '').trim();
-  if (!rawObjective || rawObjective.startsWith('-')) {
-    exitMissionError(`mission start needs a quoted objective (got ${rawObjective ? `"${rawObjective}"` : 'nothing'}). Usage: atris mission start "<objective>" --owner <member>`, 1, asJson);
+  if (missionObjectiveIsJunk(rawObjective)) {
+    exitMissionError(`mission start refused junk objective: ${rawObjective ? `"${rawObjective}"` : 'nothing'}`, 1, asJson);
   }
   // Pasting a mission id where an objective goes is an id mismatch, not a new
   // mission: recover the existing record or explain where it actually lives.
@@ -6264,7 +6273,14 @@ function missionSortTime(mission) {
 }
 
 function selectDueMission(root = process.cwd(), now = new Date(), options = {}) {
-  const candidates = listMissions(root)
+  const missions = listMissions(root);
+  for (const mission of missions) {
+    if (!missionIsRunnable(mission) || !missionObjectiveIsJunk(mission.objective)) continue;
+    stopMissionRecord(mission, 'junk_objective_gate', root, { writeStopReceipt: false });
+    console.error(`auto-stopped junk mission: "${String(mission.objective || '')}"`);
+  }
+  const candidates = missions
+    .filter((mission) => !missionObjectiveIsJunk(mission.objective))
     .filter((mission) => missionSelectableForLoop(mission, now))
     .filter((mission) => !options.headlessOnly || !runnerUsesCallerSession(mission.runner))
     .filter((mission) => !missionTaskHumanAcceptWaiting(mission))
@@ -9773,6 +9789,37 @@ function completeMission(args) {
   );
 }
 
+function stopMissionRecord(mission, reason, root = process.cwd(), options = {}) {
+  const pause = options.pause === true;
+  const status = pause ? 'paused' : 'stopped';
+  // Full stops abandon work, so leave evidence: snapshot the worktree against
+  // the mission baseline (what did this mission leave dirty?) before pruning it.
+  let receiptPath = null;
+  if (!pause && options.writeStopReceipt !== false) {
+    const snapshot = gitWorktreeSnapshot(root);
+    const worktree = worktreeReceipt(snapshot, snapshot, {
+      verifier: mission.verifier,
+      baseline: loadMissionWorktreeBaseline(mission.id, root),
+    });
+    receiptPath = writeReceipt(mission, { kind: 'mission_stop', reason, worktree }, root);
+  }
+  const baselineSummary = pause ? null : pruneMissionWorktreeBaseline(mission, root);
+  const next = {
+    ...mission,
+    status,
+    stopped_at: status === 'stopped' ? stampIso() : mission.stopped_at || null,
+    paused_at: status === 'paused' ? stampIso() : mission.paused_at || null,
+    stop_reason: reason,
+    receipt_path: receiptPath || mission.receipt_path || null,
+    worktree_baseline: baselineSummary || mission.worktree_baseline || null,
+    next_action: status === 'paused' ? `resume with: atris mission tick ${mission.id}` : 'mission stopped',
+  };
+  const { mission: saved } = saveMission(next, root, pause ? 'mission_paused' : 'mission_stopped', { reason, receipt_path: receiptPath });
+  const directGoalRequestCleared = pause ? false : clearDirectRunCodexGoalRequestForMission(saved.id, root);
+  const logPath = appendMemberLog(saved.owner, pause ? 'Mission paused' : 'Mission stopped', { mission: saved.objective, reason }, root);
+  return { saved, receiptPath, directGoalRequestCleared, logPath };
+}
+
 function stopMission(args) {
   const asJson = wantsJson(args);
   const reason = readFlag(args, '--reason', 'stopped by operator');
@@ -9785,32 +9832,7 @@ function stopMission(args) {
   if (!mission) {
     exitMissingMission(ref, 1, asJson);
   }
-  const status = pause ? 'paused' : 'stopped';
-  // Full stops abandon work, so leave evidence: snapshot the worktree against
-  // the mission baseline (what did this mission leave dirty?) before pruning it.
-  let receiptPath = null;
-  if (!pause) {
-    const snapshot = gitWorktreeSnapshot(process.cwd());
-    const worktree = worktreeReceipt(snapshot, snapshot, {
-      verifier: mission.verifier,
-      baseline: loadMissionWorktreeBaseline(mission.id, process.cwd()),
-    });
-    receiptPath = writeReceipt(mission, { kind: 'mission_stop', reason, worktree });
-  }
-  const baselineSummary = pause ? null : pruneMissionWorktreeBaseline(mission, process.cwd());
-  const next = {
-    ...mission,
-    status,
-    stopped_at: status === 'stopped' ? stampIso() : mission.stopped_at || null,
-    paused_at: status === 'paused' ? stampIso() : mission.paused_at || null,
-    stop_reason: reason,
-    receipt_path: receiptPath || mission.receipt_path || null,
-    worktree_baseline: baselineSummary || mission.worktree_baseline || null,
-    next_action: status === 'paused' ? `resume with: atris mission tick ${mission.id}` : 'mission stopped',
-  };
-  const { mission: saved } = saveMission(next, process.cwd(), pause ? 'mission_paused' : 'mission_stopped', { reason, receipt_path: receiptPath });
-  const directGoalRequestCleared = pause ? false : clearDirectRunCodexGoalRequestForMission(saved.id, process.cwd());
-  const logPath = appendMemberLog(saved.owner, pause ? 'Mission paused' : 'Mission stopped', { mission: saved.objective, reason });
+  const { saved, receiptPath, directGoalRequestCleared, logPath } = stopMissionRecord(mission, reason, process.cwd(), { pause });
   printJsonOrText(
     { ok: true, action: pause ? 'mission_paused' : 'mission_stopped', mission: saved, receipt_path: receiptPath, log_path: logPath, direct_goal_request_cleared: directGoalRequestCleared },
     [
@@ -10674,6 +10696,7 @@ module.exports = {
   extractCheckFeedback,
   loadMissionMap,
   renderMissionStatus,
+  missionObjectiveIsJunk,
   selectDueMission,
   selectAtrisGoalMission,
   selectCodexGoalMission,
