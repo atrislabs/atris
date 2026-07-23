@@ -15,7 +15,7 @@
 \newcommand{\Nsec}{N^{++}}
 
 \title{Exhaustive verification of Seymour's Second Neighborhood Conjecture
-for oriented graphs on at most 14 vertices\thanks{Working note, not
+for oriented graphs on at most 16 vertices\thanks{Working note, not
 peer reviewed. The computations and this text were produced by an automated
 agent pipeline (Claude Fable 5, Atris workspace of Keshav Rao) on a single
 shared Apple Silicon laptop, 2026-07-22/23. Section~\ref{sec:audit} lists
@@ -33,21 +33,24 @@ Seymour's Second Neighborhood Conjecture states that every oriented graph
 (finite simple digraph with no loops and no 2-cycles) contains a vertex $v$
 with $|\Nsec(v)| \ge |\Nout(v)|$, where $\Nsec(v)$ is the set of vertices at
 directed distance exactly two from $v$. We report an exhaustive computational
-verification: no counterexample exists on $n \le 14$ vertices. The result
-rests on 33 unsatisfiable SAT instances solved by CaDiCaL 3.0.1 with DRAT
+verification, fully machine-verified for all oriented graphs on at most 16
+vertices: no counterexample exists on $n \le 16$ vertices. The result
+rests on 47 unsatisfiable SAT instances solved by CaDiCaL 3.0.1 with DRAT
 proof logging, every proof checked by drat-trim; the instances cover the
 search space through a minimum out-degree sharding scheme whose covering and
 symmetry-breaking arguments are short pen-and-paper proofs reproduced here.
-(The full artifact set spans $n \le 18$ and 63 CNF instances, of which 59
-refutations are complete; the 33 form the $n \le 14$ claim.)
+(The full artifact set spans $n \le 18$ and 63 CNF instances; all 59
+completed refutations are drat-trim-verified, including the two largest
+proofs, $0.60$\,GB checked in $1{,}689$\,s and $4.23$\,GB checked in
+$9{,}671$\,s; the 47 form the $n \le 16$ claim.)
 Independently of the SAT chain, all oriented graphs on $n \le 8$ vertices
 (575{,}016{,}219 at $n=8$) were enumerated with nauty and checked by a
 from-scratch C program, with per-order counts matching OEIS A001174 exactly
-and zero counterexamples. The CaDiCaL runs also close every shard for
-$n = 15$ and $n = 16$; at the time of writing the DRAT proofs of the two
-largest shards (0.6\,GB and 4.2\,GB) had not finished re-verification, so we
-state $n \le 14$ as the fully machine-checked claim and report $n = 15, 16$
-separately with their exact status. We found no previously published
+and zero counterexamples. At $n = 17, 18$ the six lowest-degree shards are
+likewise refuted and verified; the near-tournament top shards hit the
+solver cap with no verdict and remain open as machine results, except that
+the $n = 17$ tournament shard is closed by Fisher's theorem, so those
+orders are reported separately and not claimed. We found no previously published
 exhaustive verification of the conjecture over all oriented graphs of a
 given order, so we state the small-order record here explicitly rather than
 compare against one.
@@ -114,17 +117,18 @@ contribution of this note is therefore not the beating of a record but the
 explicit, certificate-backed statement of one.
 
 \begin{theorem}[main claim, machine-checked]\label{thm:main}
-No oriented graph on at most $14$ vertices is a counterexample to
+No oriented graph on at most $16$ vertices is a counterexample to
 Conjecture~\ref{conj:ssnc}.
 \end{theorem}
 
-Combined with Kaneko and Locke~\cite{KanekoLocke01} (any counterexample has
-minimum out-degree at least $7$) and the arc-counting bound of
+Kaneko and Locke~\cite{KanekoLocke01} (any counterexample has minimum
+out-degree at least $7$) together with the arc-counting bound of
 Section~\ref{sec:shards} (minimum out-degree at most
-$\lfloor (n-1)/2 \rfloor$), a hypothetical counterexample must in fact have
-$n \ge 15$; Theorem~\ref{thm:main} is the unconditional statement that does
-not rely on~\cite{KanekoLocke01}, and our shards re-prove the low-degree
-cases for $n \le 14$ from scratch rather than citing them.
+$\lfloor (n-1)/2 \rfloor$) already force $n \ge 15$ for a hypothetical
+counterexample; combined with Theorem~\ref{thm:main} it must have
+$n \ge 17$. Theorem~\ref{thm:main} itself is the unconditional statement
+that does not rely on~\cite{KanekoLocke01}: our shards re-prove the
+low-degree cases for $n \le 16$ from scratch rather than citing them.
 
 \section{Method}\label{sec:method}
 
@@ -252,11 +256,17 @@ contradicting $k$-regularity. Hence $\Nsec(v) = V \setminus (\{v\} \cup
 \Nout(v))$, which has size $n - 1 - k = k$ since $n = 2k+1$.
 \end{proof}
 
-For $n \le 14$ neither item is needed (no tournament-forced shard occurs
-with an unfinished SAT run there). They matter only for the $n = 15$ and
-$n = 17$ top shards discussed in Section~\ref{sec:beyond}; and for
-$n = 15$ the SAT run of the tournament shard itself finished UNSAT as well,
-so Lemma~T is a third line of defense there, not a dependency.
+Neither item is load-bearing for Theorem~\ref{thm:main}: the only
+tournament-forced shard in range, $n15\_s7$, finished UNSAT and its DRAT
+proof is drat-trim-verified, so at $n = 15$ Fisher's theorem and Lemma~T
+are independent confirmations, not dependencies. They are load-bearing
+only for the $n = 17$ tournament shard $n17\_s8$ discussed in
+Section~\ref{sec:beyond}, whose SAT run hit the solver cap with no
+verdict; there the closure comes from the published
+literature~\cite{Fisher96}, with Lemma~T as the unreviewed in-house
+alternative. We keep Lemma~T documented because it is short enough to
+audit in one sitting, while noting it is now redundant for the headline
+claim.
 
 \section{Two independent pipelines}\label{sec:pipelines}
 
@@ -265,12 +275,11 @@ so Lemma~T is a third line of defense there, not a dependency.
 Every instance in Table~\ref{tab:instances} was solved by CaDiCaL
 3.0.1~\cite{Cadical} with binary DRAT proof output. Every completed proof
 was checked with drat-trim~\cite{DratTrim} built from source (commit
-\texttt{2e3b2dc}, upstream \texttt{marijnheule/drat-trim}). Of the 59 completed refutations,
-57 have \texttt{s VERIFIED} receipts at freeze time; the remaining two are
-the giant $n15\_s7$ and $n16\_s7$ proofs whose checks were still running
-(see \texttt{receipts/SUMMARY.txt} for the final word; every receipt
-generated so far reports \texttt{s VERIFIED} and none has ever failed).
-The receipts were \emph{regenerated from scratch in the write-up session}
+\texttt{2e3b2dc}, upstream \texttt{marijnheule/drat-trim}). All 59
+completed refutations have \texttt{s VERIFIED} receipts, including the two
+giants: $n15\_s7$ ($0.60$\,GB proof, verified in $1{,}689$\,s) and
+$n16\_s7$ ($4.23$\,GB proof, verified in $9{,}671$\,s). No receipt has
+ever failed. The receipts were \emph{regenerated from scratch in the write-up session}
 (2026-07-23) by a different agent than the one that ran the solver, and are
 stored alongside this note (\texttt{receipts/}). As a negative control, a truncated copy of
 one proof was rejected by drat-trim (\texttt{s NOT VERIFIED}), confirming
@@ -315,12 +324,13 @@ weakened) flags all 7 oriented graphs on 3 vertices, as it must.
 
 So for $n \le 8$ the result is double-proved by disjoint toolchains
 (PySAT/CaDiCaL/drat-trim versus nauty/hand-written C), and for
-$n = 9,\dots,14$ it rests on Pipeline A plus the written arguments of
+$n = 9,\dots,16$ it rests on Pipeline A plus the written arguments of
 Section~\ref{sec:method}.
 
 \subsection{Auxiliary lane: Cayley digraphs of small groups}
 
-As a targeted probe beyond $n = 14$ (not part of the headline claim), all
+As a targeted probe outside the SAT chain (not part of the headline
+claim), all
 $55$ groups of orders $12$ through $24$ were constructed and brute-force
 verified to be groups, with isomorphism-type counts per order matching the
 classification ($5,1,2,1,14,1,5,1,5,2,2,1,15$); for each group, every
@@ -369,7 +379,7 @@ $4$ shards at $n=10$, then $5,5,6,6,7,7,8,8$ through $n=18$.
 
 \subsection{Fully verified claim}
 
-For $n \le 14$: every listed instance is UNSAT with a drat-trim-verified
+For $n \le 16$: every listed instance is UNSAT with a drat-trim-verified
 DRAT proof. By the completeness argument of Section~\ref{sec:encoding}
 (for $n \le 9$; the $n = 10$ whole-space instance additionally uses the
 full-lex soundness argument of Section~\ref{sec:shards}) and the covering
@@ -377,30 +387,31 @@ argument of Section~\ref{sec:shards} (for the sharded orders), this proves
 Theorem~\ref{thm:main}. For $n \le 8$, Pipeline B independently confirms
 it.
 
-\subsection{Beyond 14: exact status at write-up time}\label{sec:beyond}
+\subsection{Per-order status}\label{sec:beyond}
 
 \begin{itemize}
 \item $\mathbf{n = 15}$: all $7$ shards UNSAT by CaDiCaL (top shard
-$s_7$: $4{,}643$\,s wall, $0.60$\,GB proof). Shards $s_1$ through $s_6$
-have verified DRAT proofs; verification of the $s_7$ proof was still
-running when this note was frozen (its receipt, if present in
-\texttt{receipts/}, supersedes this sentence). Independently of that one
-certificate, shard $s_7$ forces a $7$-regular tournament and is closed by
-Fisher's theorem~\cite{Fisher96}, and also by the unreviewed
-Lemma~\ref{lem:t}. We therefore regard $n = 15$ as established modulo one
-of: (a) the pending big-proof verification, or (b) reliance on
-Fisher~\cite{Fisher96}, and we deliberately keep it out of the headline.
+$s_7$: $4{,}643$\,s wall, $0.60$\,GB proof), all $7$ DRAT proofs
+drat-trim-verified ($s_7$ receipt: \texttt{s VERIFIED}, $1{,}689$\,s).
+Shard $s_7$ forces a $7$-regular tournament, so $n = 15$ is closed twice
+over: by the verified DRAT proof and, independently, by Fisher's
+theorem~\cite{Fisher96} (or the unreviewed Lemma~\ref{lem:t}). Part of
+the headline claim.
 \item $\mathbf{n = 16}$: all $7$ shards UNSAT by CaDiCaL ($s_7$:
-$19{,}080$\,s wall, $4.23$\,GB proof); $s_1$ through $s_6$ verified;
-verification of the $s_7$ proof still running. No tournament argument
-applies at even $n$, so $n = 16$ waits on that verification.
+$19{,}080$\,s wall, $4.23$\,GB proof), all $7$ DRAT proofs
+drat-trim-verified ($s_7$ receipt: \texttt{s VERIFIED}, $9{,}671$\,s).
+No tournament argument applies at even $n$; the certificate chain alone
+carries $n = 16$, and it is now fully proof-verified. Part of the
+headline claim.
 \item $\mathbf{n = 17, 18}$: shards $s_1$ through $s_6$ UNSAT and
 verified. The near-tournament shards ($n17\_s7$, $n17\_s8$, $n18\_s7$,
-$n18\_s8$) were still being solved at write-up time ($>5$ hours each).
-$n17\_s8$ forces an $8$-regular tournament and is closed by
-Fisher~\cite{Fisher96} (or Lemma~\ref{lem:t}) regardless of its SAT run;
-$n17\_s7$, $n18\_s7$, $n18\_s8$ are genuinely open runs. So $n = 17, 18$
-are \emph{not} claimed.
+$n18\_s8$) were attempted and hit the solver cap with verdict
+\texttt{c UNKNOWN}: as machine results they are open. $n17\_s8$ forces
+an $8$-regular tournament and is closed by Fisher~\cite{Fisher96} (or
+Lemma~\ref{lem:t}) regardless of its SAT run; that closure comes from the
+literature, not from a certificate. So $n = 17$ is open only at shard
+$s_7$, while $n = 18$ is open at shards $s_7$ and $s_8$; neither order
+is claimed.
 \end{itemize}
 
 \section{What an external reviewer must audit}\label{sec:audit}
@@ -443,9 +454,14 @@ Section~\ref{sec:intro} against the primary sources, in particular the
 exact statement of Kaneko--Locke and the status of the 2026 minimum
 out-degree 7 preprint, and re-run the search for any published exhaustive
 small-order verification we may have missed.
-\item \textbf{The $n = 15, 16$ upgrades.} If the two large proof
-verifications complete with \texttt{s VERIFIED} receipts, the headline can
-move to $n \le 16$; that decision, and the wording, should be a human's.
+\item \textbf{The $n = 15, 16$ upgrade.} The two large proof
+verifications completed with \texttt{s VERIFIED} receipts
+($n15\_s7$: $1{,}689$\,s; $n16\_s7$: $9{,}671$\,s), and the headline of
+this note was moved to $n \le 16$ on that basis, by the automated
+pipeline. A human should re-read those two receipts
+(\texttt{receipts/n15\_s7.drattrim.txt},
+\texttt{receipts/n16\_s7.drattrim.txt}) and confirm the wording of the
+upgraded claim.
 \end{enumerate}
 
 \section*{Reproduction appendix}

@@ -43,19 +43,21 @@ n16_s6 VERIFIED 38s
 n17_s2 VERIFIED 0s
 n17_s3 VERIFIED 0s
 n17_s4 VERIFIED 0s
-n17_s7 SKIP (no UNSAT verdict yet)
+n17_s7 SKIP (solver capped, c UNKNOWN)
 n17_s5 VERIFIED 0s
 n17_s6 VERIFIED 27s
-n17_s8 SKIP (no UNSAT verdict yet)
+n17_s8 SKIP (solver capped, c UNKNOWN)
 n18_s1 VERIFIED 0s
 n18_s2 VERIFIED 0s
 n18_s3 VERIFIED 0s
 n18_s4 VERIFIED 0s
 n18_s5 VERIFIED 0s
-n18_s7 SKIP (no UNSAT verdict yet)
-n18_s8 SKIP (no UNSAT verdict yet)
+n18_s7 SKIP (solver capped, c UNKNOWN)
+n18_s8 SKIP (solver capped, c UNKNOWN)
 n6 VERIFIED 1s
 n7 VERIFIED 0s
 n8 VERIFIED 3s
 n18_s6 VERIFIED 31s
 n9 VERIFIED 108s
+n15_s7 VERIFIED 1689s
+n16_s7 VERIFIED 9671s

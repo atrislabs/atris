@@ -1,8 +1,12 @@
 # Morning report, math night 2026-07-22
 
+## Update since this report was written
+
+The last two proof checks landed after dawn. Both giants verified: n15_s7 (s VERIFIED, 1,689 s) and n16_s7 (s VERIFIED, 9,671 s on the 4.23 GB proof). The headline is now: Seymour's second neighborhood conjecture is fully machine-certified for all oriented graphs on at most 16 vertices, 59 of 59 completed refutations verified. The note, tables, and PDF are updated to claim n <= 16 and re-mirrored. The four n=17/18 top shards capped at UNKNOWN and remain honestly open (n=17 open only at its s7 shard; Fisher's theorem closes n17_s8).
+
 ## Waiting on you
 
-1. Review the Seymour note. It claims the exhaustive record for the second neighborhood conjecture doubled from 7 to 14 vertices, 15 with one short lemma, backed by 57 machine-checked DRAT proofs; the draft PDF is at atris/team/researcher/math-night-2026-07-22/seymour-note/main.pdf and every proof receipt sits next to it.
+1. Review the Seymour note. It claims the exhaustive record for the second neighborhood conjecture went from 7 to 16 vertices, backed by 59 machine-checked DRAT proofs; the PDF is at atris/team/researcher/math-night-2026-07-22/seymour-note/main.pdf and every proof receipt sits next to it.
 2. Decide whether the note goes to an outside mathematician for review or gets posted as is. The machine parts are checked; the two short human arguments (the shard-covering argument and Lemma T) have been reviewed by no one, which is the only real submission risk.
 3. Decide whether to archive the proof artifacts before cleanup. They are about 30GB, almost all Seymour DRAT files, sitting in a session temp folder that will eventually be wiped; without them the note's proofs are no longer independently re-checkable.
 4. Close the mission when satisfied. It is verified and ready: `atris mission complete mission-2026-07-23-overnight-math-fleet-harvest-51db0080 --proof "atris/runs/mission-mission-2026-07-23-overnight-math-fleet-harvest-51db0080-2026-07-23T05-44-58-354Z.json"`

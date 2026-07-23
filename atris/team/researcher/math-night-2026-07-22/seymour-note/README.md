@@ -1,24 +1,29 @@
-# Seymour second neighborhood: exhaustive verification note (n <= 14)
+# Seymour second neighborhood: exhaustive verification note (n <= 16)
 
 Working note, produced by an automated agent pipeline on 2026-07-23.
 Not peer reviewed. Nothing here has been checked by a human mathematician.
 
 ## What is claimed
 
-No oriented graph on at most 14 vertices is a counterexample to Seymour's
-Second Neighborhood Conjecture. Evidence:
+No oriented graph on at most 16 vertices is a counterexample to Seymour's
+Second Neighborhood Conjecture, fully machine-verified. Evidence:
 
 - 63 CNF instances (whole-space for n = 6..10, minimum out-degree shards
-  for n = 10..14 and beyond), all UNSAT under CaDiCaL 3.0.1, every proof
-  checked by drat-trim. Receipts regenerated from scratch in the write-up
-  session live in `receipts/`.
+  for n = 10..18); all 59 completed refutations are UNSAT under CaDiCaL
+  3.0.1 with every DRAT proof checked by drat-trim (s VERIFIED),
+  including the two giants n15_s7 (0.60 GB, verified in 1689 s) and
+  n16_s7 (4.23 GB, verified in 9671 s). The 47 instances covering
+  n <= 16 form the headline claim. Receipts regenerated from scratch in
+  the write-up session live in `receipts/`.
 - An independent pipeline (nauty geng | directg -o | check_d6.c) exhausted
   all oriented graphs on n <= 8 (575,016,219 at n = 8), counts matching
   OEIS A001174 exactly, zero counterexamples.
-- n = 15 and n = 16 have all shards UNSAT by CaDiCaL as well; their giant
-  top-shard proofs (0.6 GB, 4.2 GB) were still re-verifying when the note
-  was frozen. See Section "Beyond 14" in the note and check `receipts/`
-  for the final word. n = 17, 18 are NOT claimed (top shards still solving).
+- n = 17, 18 are NOT claimed: shards s1..s6 are refuted and verified,
+  but the near-tournament top shards (n17_s7, n17_s8, n18_s7, n18_s8)
+  hit the solver cap with verdict "c UNKNOWN" and are open as machine
+  results. n17_s8 forces an 8-regular tournament and is closed by
+  Fisher's theorem (a literature closure, not a certificate), so n = 17
+  is open only at shard s7. See Section "Per-order status" in the note.
 
 We found no previously published exhaustive small-order verification of
 the conjecture. An "n <= 7 published record" statement in an earlier
