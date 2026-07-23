@@ -782,13 +782,14 @@ function appendOpenedFromSource({ what, owner = 'operator', lane = 'code', ttlDa
   return event;
 }
 
-function appendClosedFromSource(flag, cwd, now) {
+function appendClosedFromSource(flag, cwd, now, note) {
   const event = {
     kind: 'closed',
     at: now.toISOString(),
     id: flag.id,
     proof: RESOLVED_IN_SOURCE_PROOF,
   };
+  if (note) event.note = note;
   appendEvent(event, cwd);
   return event;
 }
@@ -809,12 +810,20 @@ function scanState(cwd = process.cwd(), options = {}) {
   const lessonFlags = lessonFlagsState(cwd, now);
   const openBySource = new Map();
   const dissolvedSources = new Set();
+  const recentlyClosedSources = new Set();
   const autoClosed = [];
 
   // Dissolve is a durable verdict: a source the operator declared dead on
-  // purpose must never re-open on a later scan.
+  // purpose must never re-open on a later scan. Recent closes get a 30-day
+  // quiet period so a resolved source cannot immediately breed a new flag.
   for (const flag of foldEvents(readEvents(cwd), { now })) {
     if (flag.status === 'dissolved' && flag.source) dissolvedSources.add(flag.source);
+    const closedAt = parseDate(flag.closed_at);
+    const closedAge = closedAt === null ? null : now.getTime() - closedAt;
+    if (flag.status === 'closed' && flag.source && closedAge !== null
+      && closedAge >= 0 && closedAge <= 30 * DAY_MS) {
+      recentlyClosedSources.add(flag.source);
+    }
   }
 
   const failedTasks = Array.from(tasksById.values())
@@ -827,17 +836,22 @@ function scanState(cwd = process.cwd(), options = {}) {
     if (flag.source) openBySource.set(flag.source, flag);
   }
 
-  const closeFlag = (flag) => {
-    const event = appendClosedFromSource(flag, cwd, now);
+  const closeFlag = (flag, note) => {
+    const event = appendClosedFromSource(flag, cwd, now, note);
     autoClosed.push({ flag, event });
     openBySource.delete(flag.source);
+    recentlyClosedSources.add(flag.source);
   };
 
   for (const flag of Array.from(openBySource.values())) {
     if (flag.source.startsWith('task:')) {
       const task = tasksById.get(flag.source.slice('task:'.length));
       const status = normalizeSpaces(task && task.status).toLowerCase();
-      if (task && (taskResolved(task) || status === 'failed')) closeFlag(flag);
+      if (!task) {
+        closeFlag(flag, 'task no longer in projection (done/archived)');
+      } else if (!taskWaitingOnHumanAccept(task) || taskResolved(task) || status === 'failed') {
+        closeFlag(flag);
+      }
       continue;
     }
     if (flag.source.startsWith(FAILED_TASK_BATCH_PREFIX)) {
@@ -881,7 +895,8 @@ function scanState(cwd = process.cwd(), options = {}) {
 
   const opened = [];
   const openCandidate = (candidate) => {
-    if (!candidate.source || openBySource.has(candidate.source) || dissolvedSources.has(candidate.source)) return null;
+    if (!candidate.source || openBySource.has(candidate.source)
+      || dissolvedSources.has(candidate.source) || recentlyClosedSources.has(candidate.source)) return null;
     const event = appendOpenedFromSource(candidate, cwd, now);
     opened.push(event);
     openBySource.set(candidate.source, { ...event, status: 'open' });
@@ -889,10 +904,11 @@ function scanState(cwd = process.cwd(), options = {}) {
   };
 
   for (const task of tasks) {
-    const source = taskSource(task);
-    const ref = taskRef(task);
+    const currentTask = tasksById.get(normalizeSpaces(task && task.id));
+    const source = taskSource(currentTask);
+    const ref = taskRef(currentTask);
     if (!source || !ref) continue;
-    if (taskWaitingOnHumanAccept(task) && isOlderThan(task.updated_at, 5, now)) {
+    if (taskWaitingOnHumanAccept(currentTask) && isOlderThan(currentTask.updated_at, 5, now)) {
       openCandidate({
         what: `task ${ref} has waited in review too long, accept it or send it back`,
         lane: 'code',

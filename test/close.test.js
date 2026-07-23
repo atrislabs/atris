@@ -311,6 +311,84 @@ test('scan opens stale review and one failed-task batch, then dedupes them', () 
   }
 });
 
+test('scan auto-closes a review flag when its task leaves the projection', () => {
+  const dir = makeTempDir();
+  const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+  const now = '2026-01-10T00:00:00.000Z';
+  try {
+    writeJson(projectionPath, { schema: 'test', tasks: [{
+      id: 'task-archived',
+      display_id: 'T-1',
+      status: 'review',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      review: { approval_status: 'pending', agent_certified: true },
+    }] });
+    assert.match(runClose(['scan'], dir, now).stdout, /^opened task t-1 /);
+
+    writeJson(projectionPath, { schema: 'test', tasks: [] });
+    const closed = runClose(['scan'], dir, now);
+    assert.equal(closed.code, 0, closed.stderr);
+    assert.match(closed.stdout, /^auto-closed task t-1 /);
+    const event = readLedger(dir).findLast((row) => row.kind === 'closed');
+    assert.equal(event.note, 'task no longer in projection (done/archived)');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan uses the latest task projection row before opening review flags', () => {
+  const dir = makeTempDir();
+  const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+  try {
+    writeJson(projectionPath, { schema: 'test', tasks: [
+      {
+        id: 'task-resolved',
+        display_id: 'T-1',
+        status: 'review',
+        updated_at: '2026-01-01T00:00:00.000Z',
+        review: { approval_status: 'pending', agent_certified: true },
+      },
+      {
+        id: 'task-resolved',
+        display_id: 'T-1',
+        status: 'done',
+        updated_at: '2026-01-09T00:00:00.000Z',
+        review: { approval_status: 'accepted', agent_certified: true },
+      },
+    ] });
+    const scan = runClose(['scan'], dir, '2026-01-10T00:00:00.000Z');
+    assert.equal(scan.code, 0, scan.stderr);
+    assert.equal(scan.stdout, 'nothing new to open, nothing resolved.');
+    assert.deepEqual(readLedger(dir), []);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scan does not re-open a source closed within 30 days', () => {
+  const dir = makeTempDir();
+  const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+  try {
+    writeJson(projectionPath, { schema: 'test', tasks: [{
+      id: 'task-closed',
+      display_id: 'T-1',
+      status: 'review',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      review: { approval_status: 'pending', agent_certified: true },
+    }] });
+    runClose(['scan'], dir, '2026-01-10T00:00:00.000Z');
+    const [flag] = close.openFlags(dir, { now: '2026-01-10T00:00:00.000Z' });
+    assert.equal(runClose(['done', flag.id, '--proof', 'handled'], dir, '2026-01-10T00:00:00.000Z').code, 0);
+
+    const scan = runClose(['scan'], dir, '2026-01-11T00:00:00.000Z');
+    assert.equal(scan.code, 0, scan.stderr);
+    assert.equal(scan.stdout, 'nothing new to open, nothing resolved.');
+    assert.equal(readLedger(dir).filter((row) => row.kind === 'opened').length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('scan opens one flag for an old fail lesson without a detector', () => {
   const dir = makeTempDir();
   const lessonsPath = path.join(dir, 'atris', 'lessons.md');
