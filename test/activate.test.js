@@ -86,6 +86,8 @@ test('activate narrates the session start without visual markers', () => {
       'right now: one task is in progress; the focus is keep the session story moving.',
       'waiting on you: three approvals. see them: atris task reviews',
       '',
+      'Tip: run atris clarity once so agents learn how you work.',
+      '',
       "today's move: make the first screen tell one story.",
     ]);
     assert.match(output, /waiting on you: three approvals/);
