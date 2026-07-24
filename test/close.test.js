@@ -231,6 +231,29 @@ test('sweep prints operator sentences and escalates once per day per loop', () =
   }
 });
 
+test('sweep --help shows usage and never mutates the ledger', () => {
+  const dir = makeTempDir();
+  try {
+    runClose(['add', 'Approve payroll', '--owner', 'you', '--ttl', '1', '--when', 'payroll is approved'], dir, '2026-04-01T00:00:00.000Z');
+
+    // Asking for help on a mutating subcommand must not run it: no escalation
+    // events, exit 0, and the usage banner instead of the sweep output.
+    const help = runClose(['sweep', '--help'], dir, '2026-04-04T00:00:00.000Z');
+    assert.equal(help.code, 0, help.stderr);
+    assert.match(help.stdout, /usage: atris close/);
+    assert.doesNotMatch(help.stdout, /waiting on you/);
+    assert.equal(readLedger(dir).filter((event) => event.kind === 'escalated').length, 0);
+
+    // scan --help must not open new flags either.
+    const scanHelp = runClose(['scan', '--help'], dir, '2026-04-04T00:00:00.000Z');
+    assert.equal(scanHelp.code, 0, scanHelp.stderr);
+    assert.match(scanHelp.stdout, /usage: atris close/);
+    assert.equal(readLedger(dir).filter((event) => event.kind === 'escalated').length, 0);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('scan opens stale review and one failed-task batch, then dedupes them', () => {
   const dir = makeTempDir();
   const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');

@@ -10,9 +10,22 @@ const pulse = require('../lib/pulse');
 const {
   crontabHasActiveMarker,
   installCommand,
+  pulseCommand,
   pulseExpiryBreadcrumbPath,
   statusCommand,
 } = require('../commands/pulse');
+
+function captureStdout(fn) {
+  const original = process.stdout.write;
+  const chunks = [];
+  process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true; };
+  try {
+    const value = fn();
+    return { value, out: chunks.join('') };
+  } finally {
+    process.stdout.write = original;
+  }
+}
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
@@ -579,4 +592,13 @@ test('buildTickScript omits --verify when verifyCmd is null and includes the pus
   });
   assert.ok(!script.includes('--verify'), 'null verifyCmd must not emit --verify');
   assert.ok(script.includes('git -C "$ROOT" push origin'), 'tick script must push landed commits');
+});
+
+test('pulse <sub> --help shows usage instead of running the subcommand', () => {
+  // A help request on a subcommand must route to help, never execute the
+  // subcommand (tick/run have real side effects). status is read-only, so this
+  // stays safe even if the guard regresses.
+  const { value, out } = captureStdout(() => pulseCommand(['status', '--help']));
+  assert.equal(value.action, 'pulse_help');
+  assert.ok(/Usage: atris pulse/.test(out), 'must print the pulse usage banner');
 });
