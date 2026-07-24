@@ -184,6 +184,30 @@ test('slop dead: finds the unreachable file, spares live/test-only/dynamic ones'
   assert.ok(r.candidates >= 6);
 });
 
+test('slop dead: a bin using require(path.join(...)) plus a test import is not test-only', () => {
+  // Regression: `ax` reaches lib/permission-grants.js only via a computed
+  // require(path.join(__dirname, 'lib', 'permission-grants.js')) that the static
+  // edge parser can't follow, while a test imports it statically. The prod
+  // string-mention must outrank the test-only classification.
+  const root = fixtureRepo();
+  const w = (rel, content) => {
+    const p = path.join(root, rel);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, content);
+  };
+  w('lib/grants.js', 'module.exports = { matchGrant: () => null };');
+  w('bin/fx.js', "const { live } = require('../cmds/live.js'); require('../cmds/uses-loader.js');"
+    + " const path = require('path'); const g = require(path.join(__dirname, '..', 'lib', 'grants.js'));"
+    + ' live(); g.matchGrant();');
+  w('test/grants.test.js', "require('../lib/grants');");
+  const r = findDeadCode(root, { dirs: ['cmds', 'lib'] });
+  const rel = (f) => path.relative(root, f);
+  assert.ok(!r.testOnly.map(rel).includes('lib/grants.js'), 'prod computed-require rescues it from test-only');
+  assert.ok(!r.dead.map(rel).includes('lib/grants.js'), 'and it is not dead');
+  // the genuinely test-only file is still flagged
+  assert.ok(r.testOnly.map(rel).includes('lib/lonely.js'), 'true test-only file still flagged');
+});
+
 test('slop dead: clean repo reports zero dead', () => {
   const root = fixtureRepo();
   fs.rmSync(path.join(root, 'cmds/orphan.js'));

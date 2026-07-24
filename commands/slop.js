@@ -399,22 +399,33 @@ function findDeadCode(root = process.cwd(), opts = {}) {
     tq.push(...requireEdges(f));
   }
 
-  // 3) string-mention safety net: basename (sans ext) named anywhere outside itself
+  // 3) string-mention safety net: basename (sans ext) named as a string literal
+  //    outside itself. Split by scope: a mention in a NON-test file (prod code, a
+  //    bin entry like `ax`) means the file is dynamically dispatched — e.g.
+  //    require(path.join(__dirname, 'lib', 'permission-grants.js')) — and is
+  //    genuinely reachable even though the static edge parser and the test BFS
+  //    can't see the edge. That must outrank the test-only classification, or a
+  //    live feature imported by both `ax` and a test reads as "feature gone".
+  const testDir = path.join(root, 'test');
+  const isTestFile = (f) => f === testDir || f.startsWith(testDir + path.sep);
   const allRepoJs = [...new Set([...listJsFiles(root)])];
-  const mentioned = (file) => {
+  const mentionedBy = (file, predicate) => {
     const stem = path.basename(file).replace(/\.(js|mjs|cjs)$/, '');
     const re = new RegExp(`['"\`/]${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\.js)?['"\`]`);
     return allRepoJs.some((f) => {
-      if (f === file) return false;
+      if (f === file || !predicate(f)) return false;
       try { return re.test(fs.readFileSync(f, 'utf8')); } catch { return false; }
     });
   };
+  const mentionedInProd = (file) => mentionedBy(file, (f) => !isTestFile(f));
+  const mentioned = (file) => mentionedBy(file, () => true);
 
   const dead = [], testOnly = [];
   for (const c of candidates) {
     if (reached.has(c)) continue;
+    if (mentionedInProd(c)) continue; // dynamically dispatched from prod (e.g. the `ax` bin) — reachable
     if (testReached.has(c)) { testOnly.push(c); continue; }
-    if (mentioned(c)) continue; // dynamic dispatch / docs-driven — not provably dead
+    if (mentioned(c)) continue; // docs-driven / other dynamic dispatch — not provably dead
     dead.push(c);
   }
   return { root, candidates: candidates.length, dead: dead.sort(), testOnly: testOnly.sort() };
