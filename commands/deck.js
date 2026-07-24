@@ -141,6 +141,18 @@ function readSpec(specPath) {
   return JSON.parse(fs.readFileSync(specPath, 'utf8'));
 }
 
+// Pluralize a count + noun ("1 error", "2 errors").
+function countLabel(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+// One-line lint tally with correct singular/plural nouns.
+function lintSummary(findings) {
+  const errs = findings.filter((f) => f.severity === 'error').length;
+  const warns = findings.filter((f) => f.severity === 'warn').length;
+  return `${countLabel(errs, 'error')}, ${countLabel(warns, 'warning')}`;
+}
+
 function printLint(findings) {
   if (!findings.length) {
     console.log('\n  ✓ spec lint clean\n');
@@ -369,15 +381,13 @@ async function run(argv) {
     const findings = checkSpec(spec, lintSpec);
     if (out) {
       fs.writeFileSync(out, `${JSON.stringify(spec, null, 2)}\n`);
-      console.error(`\n  ✓ composed ${spec.slides.length} slides (${spec.theme}) -> ${out}`);
+      console.error(`\n  ✓ composed ${countLabel(spec.slides.length, 'slide')} (${spec.theme}) -> ${out}`);
       printLint(findings);
       console.error(`  next: atris deck build ${out} --review\n`);
     } else {
       // stdout stays clean JSON for piping; lint goes to stderr
       console.log(JSON.stringify(spec, null, 2));
-      const errs = findings.filter((f) => f.severity === 'error').length;
-      const warns = findings.filter((f) => f.severity === 'warn').length;
-      console.error(`  composed ${spec.slides.length} slides (${spec.theme}) · lint: ${errs} errors, ${warns} warnings`);
+      console.error(`  composed ${countLabel(spec.slides.length, 'slide')} (${spec.theme}) · lint: ${lintSummary(findings)}`);
     }
     return hasErrors(findings) ? 1 : 0;
   }
@@ -576,6 +586,8 @@ module.exports = {
   lintSpec,
   validateSpec,
   checkSpec,
+  countLabel,
+  lintSummary,
   planBatch,
   publishDeck,
   videoToDeck,
