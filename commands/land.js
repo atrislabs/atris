@@ -9,6 +9,11 @@ const DEFAULT_STALE_HOURS = 48;
 const WORKTREE_REAP_GRACE_MS = 60 * 60 * 1000;
 const PROTECTED_BRANCHES = new Set(['main', 'master']);
 
+// Pluralize a count + noun ("1 change", "2 changes").
+function countLabel(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
 function runGit(args, { cwd = process.cwd(), check = true, maxBuffer } = {}) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8', ...(maxBuffer ? { maxBuffer } : {}) });
   if (check && result.status !== 0) {
@@ -472,7 +477,7 @@ function printStory(story) {
   const who = [...new Set(story.changes.map((c) => c.author))].join(', ');
   const when = story.changes[story.changes.length - 1].date;
   const last = story.changes[0].date;
-  const age = story.ageDays === null ? '' : ` (${story.ageDays} days ago)`;
+  const age = story.ageDays === null ? '' : ` (${countLabel(story.ageDays, 'day')} ago)`;
   console.log(`  started ${when}, last touched ${last}${age}, by ${who}.`);
   console.log('');
   console.log('  what it tried to do:');
@@ -488,7 +493,7 @@ function printStory(story) {
     console.log('');
   }
   if (story.uniqueChanges === 0) {
-    console.log(`  bottom line: all ${story.changes.length} changes made it into ${story.base}`);
+    console.log(`  bottom line: all ${countLabel(story.changes.length, 'change')} made it into ${story.base}`);
     console.log('  some other way. nothing here would be lost by clearing it.');
   } else if (story.landedElsewhere > 0) {
     console.log(`  bottom line: ${story.landedElsewhere} of ${story.changes.length} changes made it into ${story.base} another`);
@@ -637,6 +642,7 @@ function landCommand(args = []) {
 
 module.exports = {
   collectBoard,
+  countLabel,
   landCommand,
   landSummary,
   reap,

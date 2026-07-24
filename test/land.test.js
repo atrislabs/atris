@@ -373,3 +373,11 @@ test('reap salvages a worktree whose dirty diff exceeds the 1MB spawn buffer', (
     cleanupTempDir(base);
   }
 });
+
+test('countLabel uses singular nouns for a count of one', () => {
+  const { countLabel } = require('../commands/land');
+  assert.equal(countLabel(1, 'day'), '1 day');
+  assert.equal(countLabel(1, 'change'), '1 change');
+  assert.equal(countLabel(0, 'day'), '0 days');
+  assert.equal(countLabel(2, 'change'), '2 changes');
+});
