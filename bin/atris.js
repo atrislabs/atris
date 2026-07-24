@@ -519,6 +519,7 @@ function showHelp() {
   console.log('  close      - track open loops with deadlines and daily escalation');
   console.log('  harvest    - Find bugs and next actions from receipts, run logs, and thinking');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
+  console.log('  recover    - Explain stopped missions; --apply performs safe recovery only');
   console.log('  task       - Local agent task plane (atomic claims, TODO import)');
   console.log('  golden path (zero human turns):');
   console.log('    atris task delegate "fix the login bug" --to <member>');
@@ -1808,6 +1809,10 @@ if (command === 'init') {
   Promise.resolve(require('../commands/mission').missionCommand(process.argv.slice(3)))
     .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitAfterStdoutDrain(1); });
+} else if (command === 'recover') {
+  Promise.resolve(require('../commands/recover').recoverCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'agents') {
   // Glanceable view of every member's state: stuck, waiting on you, working, resting.
   const code = require('../commands/agents').agentsCommand(process.argv.slice(3));
