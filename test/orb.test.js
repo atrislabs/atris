@@ -311,3 +311,13 @@ test('pulse ingests each orb failure once and mines an actionable fail lesson', 
     fs.rmSync(fixture, { recursive: true, force: true });
   }
 });
+
+test('orb choice appends to atris/now.md, not a stray root now.md', async () => {
+  const { appendOrbChoice } = require('../lib/orb-context');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'orb-now-'));
+  fs.mkdirSync(path.join(root, 'atris'));
+  const res = await appendOrbChoice(root, 'ship the fix', new Date('2026-07-24T00:00:00Z'));
+  assert.ok(res.ok);
+  assert.ok(fs.readFileSync(path.join(root, 'atris', 'now.md'), 'utf8').includes('orb: ship the fix'));
+  assert.ok(!fs.existsSync(path.join(root, 'now.md')), 'no stray root now.md');
+});
