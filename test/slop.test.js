@@ -133,6 +133,13 @@ test('flags a cross-hue rainbow gradient but not a monochrome or neutral one', (
   assert.ok(!scanFile(tmpFile('Ok2.tsx', '<div className="bg-gradient-to-b from-gray-50 to-white" />')).map((f) => f.rule).includes('rainbow-gradient'));
 });
 
+test('flags an svg noise-grain overlay but not plain markup', () => {
+  const grain = scanFile(tmpFile('Grain.tsx', '<filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.8" /></filter>')).map((f) => f.rule);
+  assert.ok(grain.includes('noise-grain-overlay'), 'svg turbulence grain texture');
+  // ordinary markup with no turbulence filter must NOT trip it
+  assert.ok(!scanFile(tmpFile('Ok.tsx', '<div className="bg-white p-8">clean</div>')).map((f) => f.rule).includes('noise-grain-overlay'));
+});
+
 test('findings carry file:line + rule id for the verification gate', () => {
   const f = scanFile(tmpFile('X.css', '\n\n.x { backdrop-filter: blur(8px); }'))[0];
   assert.equal(f.line, 3);
