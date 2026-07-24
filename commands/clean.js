@@ -60,6 +60,14 @@ function cleanAtris(options = {}) {
   const stalePages = findStalePages(cwd, atrisDir);
   results.stalePages = stalePages;
 
+  // 6. Dead code report (report-only: deletion is a human/reviewed call)
+  try {
+    const { findDeadCode } = require('./slop');
+    const dead = findDeadCode(cwd);
+    results.deadFiles = dead.dead.map((f) => path.relative(cwd, f));
+    results.testOnlyFiles = dead.testOnly.map((f) => path.relative(cwd, f));
+  } catch { results.deadFiles = []; results.testOnlyFiles = []; }
+
   if (options.json) {
     console.log(JSON.stringify(cleanResultPayload(results, options, cwd), null, 2));
     return results;
@@ -140,6 +148,16 @@ function cleanAtris(options = {}) {
     console.log('✓ No stale wiki pages');
   }
 
+  // Dead code
+  if ((results.deadFiles || []).length > 0) {
+    console.log(`⚠ ${results.deadFiles.length} dead ${results.deadFiles.length === 1 ? 'file' : 'files'} (unreachable and unreferenced — atris slop dead for detail):`);
+    results.deadFiles.slice(0, 5).forEach((f) => console.log(`   • ${f}`));
+    if (results.deadFiles.length > 5) console.log(`   ... and ${results.deadFiles.length - 5} more`);
+    console.log('');
+  } else {
+    console.log('✓ No dead code');
+  }
+
   const hasIssues = staleTasks.length > 0 || unhealable.length > 0 || stalePages.length > 0;
   if (hasIssues) {
     console.log('Manual action needed:');
@@ -165,6 +183,7 @@ function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
   if (results.staleTasks.length > 0) manualAction.push('Delete stale tasks or finish them');
   if (results.unhealableRefs.length > 0) manualAction.push('Manually fix unhealable MAP.md refs');
   if (results.stalePages.length > 0) manualAction.push('Re-compile stale pages');
+  if ((results.deadFiles || []).length > 0) manualAction.push('Delete dead files (atris slop dead)');
   return {
     ok: manualAction.length === 0,
     action: 'clean',
@@ -195,6 +214,11 @@ function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
           page: path.relative(cwd, page.page),
           stale_source: page.staleSource,
         })),
+      },
+      dead_code: {
+        count: (results.deadFiles || []).length,
+        items: results.deadFiles || [],
+        test_only: results.testOnlyFiles || [],
       },
     },
     manual_action: manualAction,
@@ -656,6 +680,7 @@ function cleanEmptySections(atrisDir, dryRun = false) {
 
 module.exports = {
   cleanAtris,
+  cleanResultPayload,
   findStaleTasks,
   healBrokenMapRefs,
   findStalePages,

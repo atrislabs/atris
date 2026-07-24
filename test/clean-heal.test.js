@@ -346,3 +346,15 @@ test('healer re-pins python async def symbols', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('clean payload reports dead code and flags it as manual action', () => {
+  const { cleanResultPayload } = require('../commands/clean');
+  const base = { staleTasks: [], brokenRefs: [], healedRefs: 0, healedRefDetails: [], unhealableRefs: [], archivedJournals: 0, cleanedSections: 0, stalePages: [] };
+  const clean = cleanResultPayload({ ...base, deadFiles: [], testOnlyFiles: [] });
+  assert.equal(clean.results.dead_code.count, 0);
+  assert.ok(clean.ok);
+  const dirty = cleanResultPayload({ ...base, deadFiles: ['lib/gone.js'], testOnlyFiles: [] });
+  assert.equal(dirty.results.dead_code.count, 1);
+  assert.ok(!dirty.ok);
+  assert.ok(dirty.manual_action.some((a) => a.includes('dead files')));
+});
