@@ -232,6 +232,13 @@ function setupRuntime(mode) {
     ATRIS_TASKS_DB: db,
     ATRIS_NO_INTERACTIVE: '1',
     ATRIS_SKIP_UPDATE_CHECK: '1',
+    // These tests assert exact engine/validator run counts and a stable
+    // origin/master for the foreground lap. Wish delegation also spawns a
+    // detached `atris mission run` driver (lib/wish-delegate.js ->
+    // spawnMissionDriver) because NODE_TEST_CONTEXT is scrubbed below; that
+    // driver races the foreground lap (extra engine legs, unsandboxed
+    // dispatch, concurrent landings) and made whole-file runs flaky.
+    ATRIS_WISH_NO_DRIVER: '1',
     ATRIS_ENGINE_MODE: mode,
     ATRIS_ENGINE_COUNT: path.join(base, 'engine-count.txt'),
     ATRIS_ENGINE_PROMPT: path.join(base, 'engine-prompt.txt'),
