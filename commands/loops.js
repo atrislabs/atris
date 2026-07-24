@@ -382,6 +382,12 @@ function showLoopsHelp() {
 }
 
 function loopsCommand(subcommand, ...args) {
+  // `loops <sub> --help` is a help request, not a run — tick/start/stop/init
+  // mutate loop state, so never execute a subcommand just to show usage.
+  if (subcommand === '--help' || subcommand === '-h' || subcommand === 'help'
+      || args.includes('--help') || args.includes('-h')) {
+    return showLoopsHelp();
+  }
   switch (subcommand) {
     case undefined:
     case 'audit':
