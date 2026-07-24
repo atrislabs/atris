@@ -1083,6 +1083,13 @@ function run(args = [], context = {}) {
       printHelp();
       return 0;
     }
+    // `close <sub> --help` is a help request, not a run — sweep and scan mutate
+    // the ledger (escalations, auto-closes), so never execute a subcommand just
+    // to show usage.
+    if (rest.includes('--help') || rest.includes('-h')) {
+      printHelp();
+      return 0;
+    }
     if (subcommand === 'add') return commandAdd(rest, context);
     if (subcommand === 'list') return commandList(rest, context);
     if (subcommand === 'done') return commandDone(rest, context);
