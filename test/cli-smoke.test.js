@@ -349,7 +349,7 @@ test('ax help stays local and does not start an agent turn', () => {
 
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /ax - Atris local\/code agent/);
-  assert.match(res.stdout, /ax \[--max\|--pro\|--fast\|--code-fast\] \[--local\|--cloud\] <message>/);
+  assert.match(res.stdout, /ax \[--auto\|--max\|--pro\|--fast\|--code-fast\] \[--local\|--cloud\] <message>/);
   assert.match(res.stdout, /--max {3}hosted Atris 2, highest reasoning/);
   assert.match(res.stdout, /--code-fast  Atris Code Fast public lane/);
   assert.doesNotMatch(res.stdout, /run\s+local workspace/);
