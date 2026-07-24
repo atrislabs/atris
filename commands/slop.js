@@ -506,8 +506,9 @@ function deadCommand(argv) {
 }
 
 function slopCommand(argv) {
-  const sub = argv[0];
+  let sub = argv[0];
   if (sub === 'dead') return deadCommand(argv.slice(1));
+  if (sub === '-h' || sub === '--help') sub = 'help';
   if (!sub || sub === 'detect' || sub.startsWith('-') || !['detect', 'rules', 'help', 'hook', 'install-hook'].includes(sub)) {
     // default + `detect`: scan. Bare `atris slop` scans cwd too.
     const rest = sub === 'detect' ? argv.slice(1) : argv;

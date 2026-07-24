@@ -248,3 +248,18 @@ test('slop dead --exports: flags an export nothing names, spares used and short 
   const orphans = findOrphanedExports(root, files, all).map((o) => o.name);
   assert.deepEqual(orphans, ['orphanHelperFn'], 'only the truly unnamed export flags');
 });
+
+test('slop --help and -h print usage and exit 0 instead of scanning', () => {
+  const { slopCommand } = require('../commands/slop');
+  for (const flag of ['--help', '-h']) {
+    const lines = [];
+    const orig = console.log;
+    console.log = (...a) => lines.push(a.join(' '));
+    let code;
+    try { code = slopCommand([flag]); } finally { console.log = orig; }
+    const out = lines.join('\n');
+    assert.equal(code, 0, `${flag} exits 0`);
+    assert.match(out, /atris slop — deterministic slop detector/, `${flag} prints usage`);
+    assert.doesNotMatch(out, /em-dash|⚠/, `${flag} does not run a scan`);
+  }
+});
