@@ -52,6 +52,11 @@ function getFrontmatterRaw(content) {
   return match ? match[1] : null;
 }
 
+// Pluralize a count + noun ("1 error", "2 errors").
+function countLabel(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
 // --- Skill Discovery ---
 
 function findAllSkills(skillsDir) {
@@ -504,7 +509,7 @@ function skillAudit(name) {
     }
 
     console.log('');
-    console.log(`  Score: ${passing}/${checks.length} (${errors} errors, ${warns} warnings)`);
+    console.log(`  Score: ${passing}/${checks.length} (${countLabel(errors, 'error')}, ${countLabel(warns, 'warning')})`);
 
     if (errors > 0 || warns > 0) {
       console.log(`  Run: atris skill fix ${skill.folder}`);
@@ -972,4 +977,4 @@ function skillCommand(subcommand, ...args) {
   }
 }
 
-module.exports = { skillCommand, parseFrontmatter, runAuditChecks, findAllSkills };
+module.exports = { skillCommand, parseFrontmatter, runAuditChecks, findAllSkills, countLabel };
