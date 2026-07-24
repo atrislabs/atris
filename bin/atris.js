@@ -1941,8 +1941,17 @@ if (command === 'init') {
     logCmd();
   }
 } else if (command === 'logs') {
+  const logsArgs = process.argv.slice(3);
+  if (logsArgs.includes('--help') || logsArgs.includes('-h') || logsArgs[0] === 'help') {
+    console.log('Usage: atris logs [--date YYYY-MM-DD] [--json]');
+    console.log('');
+    console.log('  atris logs               Show today\'s workspace + team journal digest');
+    console.log('  atris logs --date <day>  Show the digest for a specific day');
+    console.log('  atris logs --json        Emit the digest as JSON');
+    process.exit(0);
+  }
   try {
-    require('../commands/log').logsDigest(process.argv.slice(3));
+    require('../commands/log').logsDigest(logsArgs);
     process.exit(0);
   } catch (error) {
     console.error(error.message || String(error));

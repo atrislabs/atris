@@ -93,3 +93,27 @@ test('top-level logs route prints the digest instead of navigator output', () =>
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+for (const flag of ['--help', '-h']) {
+  test(`logs ${flag} prints usage and does not dump the journal`, () => {
+    const dir = makeTempDir();
+    try {
+      // A journal that would show up if the help flag were ignored.
+      const date = '2026-07-12';
+      const workspaceLog = path.join(dir, 'atris', 'logs', '2026', `${date}.md`);
+      fs.mkdirSync(path.dirname(workspaceLog), { recursive: true });
+      fs.writeFileSync(workspaceLog, 'SECRET-JOURNAL-LINE\n', 'utf8');
+
+      const result = spawnSync(process.execPath, [cliPath, 'logs', flag], {
+        cwd: dir,
+        encoding: 'utf8',
+        env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+      });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      assert.match(result.stdout, /Usage: atris logs/);
+      assert.doesNotMatch(result.stdout, /SECRET-JOURNAL-LINE/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
