@@ -587,3 +587,19 @@ test('pack publish from a pack root ships the whole folder except junk', () => {
     cleanupTempDir(dir);
   }
 });
+
+for (const sub of ['list', 'status', 'pull', 'update', 'publish']) {
+  for (const flag of ['--help', '-h']) {
+    test(`pack ${sub} ${flag} shows usage and exits 0 (not "unknown argument")`, () => {
+      const dir = makeTempDir();
+      try {
+        const r = runCli(['pack', sub, flag], { cwd: dir });
+        assert.equal(r.status, 0, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+        assert.match(r.stdout, /usage: atris pack/);
+        assert.doesNotMatch(`${r.stdout}${r.stderr}`, /unknown pack .* argument/);
+      } finally {
+        cleanupTempDir(dir);
+      }
+    });
+  }
+}

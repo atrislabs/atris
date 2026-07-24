@@ -777,6 +777,12 @@ async function run(argv = []) {
       showHelp();
       return subcommand ? 0 : 2;
     }
+    // `pack <sub> --help/-h` is a help request, not a subcommand argument: show
+    // usage and exit 0 instead of letting the subcommand throw "unknown argument".
+    if (args.includes('--help') || args.includes('-h')) {
+      showHelp();
+      return 0;
+    }
     if (subcommand === 'craft') {
       const result = craftPack(args);
       if (result && result.needsHelp) {
