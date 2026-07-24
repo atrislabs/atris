@@ -335,9 +335,6 @@ function recoverCommand(args = [], options = {}) {
 }
 
 module.exports = {
-  RECOVERY_CATALOG,
   classifyRecovery,
-  missionStopReason,
-  selectRows,
   recoverCommand,
 };
