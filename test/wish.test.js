@@ -58,6 +58,11 @@ function runCli(args, { cwd, env = {} } = {}) {
       ATRIS_SKIP_UPDATE_CHECK: '1',
       ATRIS_WISH_NO_DRIVER: '1',
       NODE_NO_WARNINGS: '1',
+      // Pin the verifier window to its default so the window-warning assertions
+      // ("two minutes") are env-independent. The mission harness exports
+      // ATRIS_MISSION_VERIFIER_TIMEOUT_MS=300000, which otherwise leaks in and
+      // renders the warning as "5 minutes". Empty string parses to the default.
+      ATRIS_MISSION_VERIFIER_TIMEOUT_MS: '',
       ...env,
     },
   });
