@@ -226,6 +226,8 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris experiments` | Run small experiments and compare results |
 | `atris computer card` | Show or write the local owner/computer card |
 | `atris release` | Draft or publish a version bump, tag, GitHub release, and launch post |
+| `atris slop` | Deterministic slop detector: frontend/prose tells, plus `slop dead --exports` for dead code |
+| `atris clean` | Housekeeping: heal MAP refs, archive journals, report stale pages and dead code |
 
 ## Built-In Systems
 
