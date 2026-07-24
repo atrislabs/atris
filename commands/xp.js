@@ -2353,6 +2353,7 @@ async function xpCommand(...args) {
   });
   if (!result.ok) {
     console.error(`Failed to load XP graph: ${result.error || result.status}`);
+    console.error('Run: atris xp --local  to render your AgentXP from proof receipts in this workspace.');
     process.exit(1);
   }
 
