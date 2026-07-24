@@ -1082,7 +1082,6 @@ module.exports = {
   buildConflictMarkers,
   canPreviewPush,
   collectBrainSnapshot,
-  collectWorkspaceSnapshot,
   collectWorkspaceWarnings,
   collectLocalSyncStatus,
   collectConflictResolutionEntries,

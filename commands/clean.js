@@ -656,11 +656,8 @@ function cleanEmptySections(atrisDir, dryRun = false) {
 
 module.exports = {
   cleanAtris,
-  cleanResultPayload,
   findStaleTasks,
   healBrokenMapRefs,
-  archiveOldJournals,
-  cleanEmptySections,
   findStalePages,
   checkPageStaleness
 };

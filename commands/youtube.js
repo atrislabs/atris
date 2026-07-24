@@ -452,13 +452,11 @@ async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
 module.exports = {
   DEFAULT_QUERY,
   DEFAULT_TIMEOUT_MS,
-  showYoutubeHelp,
   parseYoutubeArgs,
   buildYoutubePayload,
   extractLocalTranscript,
   processYoutube,
   shouldRetryWithLocalTranscript,
   formatYoutubeResult,
-  formatTimestampFromMs,
   youtubeCommand,
 };

@@ -855,7 +855,5 @@ module.exports = {
   renderRecords,
   renderTextLine,
   repoRoot,
-  sanitizeSummary,
-  snapshotRecords,
   streamCommand,
 };

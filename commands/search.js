@@ -355,9 +355,6 @@ function searchCommand(args = [], options = {}) {
 }
 
 module.exports = {
-  collectSearchResults,
-  renderCompactSearch,
-  renderRawSearch,
   searchCommand,
   showSearchHelp,
 };

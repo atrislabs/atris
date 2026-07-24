@@ -2366,14 +2366,8 @@ async function xpCommand(...args) {
 
 module.exports = {
   xpCommand,
-  buildContributionRows,
   buildCareerXpProjection,
-  buildAllCareerXpProjection,
-  buildCareerXpSessionCapsule,
-  collectAllLocalXpProjection,
   collectLocalXpProjection,
-  buildAgentXpSyncPacket,
   syncAgentXp,
-  receiptFromTaskEpisode,
   render,
 };

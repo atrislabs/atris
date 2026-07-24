@@ -353,13 +353,6 @@ async function dreamCommand(args = [], root = process.cwd(), options = {}) {
 }
 
 module.exports = {
-  DREAM_TIMEOUT_MS,
   dreamsPath,
-  collectDreamMaterial,
-  buildDreamPrompt,
-  parseDreamCards,
-  dreamModels,
-  defaultDreamRunner,
-  runDream,
   dreamCommand,
 };

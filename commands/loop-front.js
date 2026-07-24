@@ -396,11 +396,9 @@ function loopFront(argv = []) {
 module.exports = {
   routeLoop,
   renderLoopHome,
-  printLoopHome,
   startLocalOptions,
   localRunSummary,
   loopStatusJson,
-  loopSeedMove,
   createNextLoopTask,
   loopReport,
   renderLoopReport,

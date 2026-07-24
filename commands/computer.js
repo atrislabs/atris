@@ -4390,11 +4390,8 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
 module.exports = {
   runComputer,
   computerSetup,
-  setupComputerChoices,
   formatEngineSeats,
   buildComputerCard,
-  renderComputerCard,
-  renderComputerCardMarkdown,
   extractAttachedWorkspaceMismatch,
   contextForAttachedWorkspaceMismatch,
   printRecruitingLocalSyncOutcome,

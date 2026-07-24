@@ -293,11 +293,5 @@ function watchAtris() {
 
 module.exports = {
   watchAtris,
-  watchCommand,
-  showWatchHelp,
   slugify,
-  buildWatchObjective,
-  activeWatchMissions,
-  resolveWatchMission,
-  watchStatePath,
 };

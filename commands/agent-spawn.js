@@ -463,18 +463,11 @@ function agentSpawnStatusCommand(args = [], deps = {}) {
 }
 
 module.exports = {
-  SPAWN_SCHEMA,
-  SPAWN_STATE_REL,
   parseSpawnArgs,
-  buildDelegatePrompt,
   commandForEngine,
   createSpawnRequest,
   agentDogfoodCommand,
-  parseDogfoodArgs,
-  runDogfoodEngine,
-  loadSpawnRequests,
   agentSpawnCommand,
   agentSpawnListCommand,
   agentSpawnStatusCommand,
-  showSpawnHelp,
 };

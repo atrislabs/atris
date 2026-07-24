@@ -1188,16 +1188,10 @@ function radarCommand(args = [], options = {}) {
 module.exports = {
   agentTypeForCommand,
   agentTopPayload,
-  branchIdentityAtCwd,
   collectRadar,
-  isInteractiveClaudeCommand,
-  loadAgentWorktreeSidecar,
   parsePsOutput,
-  parseSessionIdFromCommand,
   parseWorktrees,
   radarCommand,
   renderAgentTop,
   renderRadar,
-  resolveAgentTaskBinding,
-  taskForOwner,
 };

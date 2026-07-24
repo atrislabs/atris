@@ -379,7 +379,5 @@ function codexGoalCommand(args = []) {
 
 module.exports = {
   codexGoalCommand,
-  CONFIRM_RESET_FLAG,
-  resolveStatePath,
   sqlString,
 };

@@ -765,12 +765,6 @@ async function runOneLap(ask, options = {}) {
 }
 
 module.exports = {
-  OUTBOUND_ACTION,
-  activeWishForAsk,
-  normalizedAsk,
   oneLapSafetyIssue,
-  projectVerifier,
-  readyExecutor,
-  readyValidators,
   runOneLap,
 };

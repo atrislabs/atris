@@ -990,8 +990,6 @@ module.exports = {
   syncSkills,
   syncBusinessCanonical,
   syncWorkspaceTemplate,
-  resolveWorkspaceTemplate,
   ensureWorkspaceStateFiles,
-  renderBusinessAgentAdapter,
   ensureBusinessRootAgentAdapters,
 };

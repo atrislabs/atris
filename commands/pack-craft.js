@@ -174,6 +174,5 @@ function craftPack(rawArgs, cwd = process.cwd()) {
 module.exports = {
   craftPack,
   slugify,
-  isNonEmptyTarget,
   buildCraftManifest,
 };

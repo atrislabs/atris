@@ -174,6 +174,5 @@ function harvestCommand(args = []) {
 }
 
 module.exports = {
-  harvestActions,
   harvestCommand,
 };

@@ -305,10 +305,6 @@ async function runOrb(args = []) {
 
 module.exports = {
   runOrb,
-  engineInvocation,
-  findExecutableOnPath,
   formatJobNotification,
-  parseEngine,
-  renderContext,
   tailLines,
 };

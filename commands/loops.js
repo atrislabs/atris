@@ -408,9 +408,4 @@ function loopsCommand(subcommand, ...args) {
 
 module.exports = {
   loopsCommand,
-  showBoard,
-  initLoops,
-  auditLoops,
-  tickLoops,
-  structuralProblems,
 };

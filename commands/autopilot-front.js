@@ -279,10 +279,6 @@ async function autopilotFront(args = []) {
 module.exports = {
   autopilotFront,
   maxLegsFlag,
-  autopilotStop,
-  autopilotStatus,
-  legPlan,
-  pickMember,
   stopRequested,
   requestStop,
   clearStop,

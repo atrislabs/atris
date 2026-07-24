@@ -487,7 +487,6 @@ module.exports = {
   printRewards,
   readWishEvents,
   readWishes,
-  runCloudWish,
   runAgainWish,
   sayWish,
   sharesMeaningfulWords,

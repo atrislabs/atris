@@ -269,4 +269,3 @@ function lessonAtris(subcommand, ...args) {
 
 module.exports = lessonAtris;
 module.exports.autoResolveLessons = autoResolveLessons;
-module.exports.tagLessonResolvedInMd = tagLessonResolvedInMd;

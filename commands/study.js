@@ -685,9 +685,6 @@ async function run(argv = []) {
 module.exports = {
   run,
   parseArgs,
-  detectLanguage,
   showHelp,
-  BACKEND_ROOT,
   wrapText,
-  createWhileChild,
 };

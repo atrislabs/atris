@@ -365,7 +365,6 @@ async function drillCommand(args = []) {
 
 module.exports = {
   COAUTHOR,
-  VERIFY_COMMAND,
   drillCommand,
   runDrill,
 };

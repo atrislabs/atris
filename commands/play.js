@@ -485,6 +485,4 @@ async function playCommand(...args) {
 
 module.exports = {
   playCommand,
-  modeState,
-  selectMission,
 };

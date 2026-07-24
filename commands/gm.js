@@ -671,6 +671,4 @@ async function gmCommand(...args) {
 
 module.exports = {
   gmCommand,
-  gmState,
-  gmWatchSnapshot,
 };

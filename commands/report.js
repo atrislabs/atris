@@ -409,7 +409,6 @@ function reportCommand(args = []) {
 module.exports = {
   buildWeekReportData,
   renderWeekReport,
-  renderWeekReportHtml,
   reportCommand,
   showReportHelp,
 };

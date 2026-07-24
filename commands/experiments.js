@@ -588,8 +588,4 @@ function experimentsCommand(subcommand, ...args) {
 module.exports = {
   experimentsCommand,
   ensureExperimentsFramework,
-  buildBenchmarkArtifact,
-  parseRunOptions,
-  experimentsDaily,
-  experimentsQueue,
 };

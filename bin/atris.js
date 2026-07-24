@@ -519,6 +519,7 @@ function showHelp() {
   console.log('  close      - track open loops with deadlines and daily escalation');
   console.log('  harvest    - Find bugs and next actions from receipts, run logs, and thinking');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
+  console.log('  slop       - Deterministic slop detector: frontend/prose tells, dead code (slop dead --exports)');
   console.log('  task       - Local agent task plane (atomic claims, TODO import)');
   console.log('  golden path (zero human turns):');
   console.log('    atris task delegate "fix the login bug" --to <member>');

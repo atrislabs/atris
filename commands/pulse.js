@@ -767,21 +767,11 @@ function pulseCommand(argv = []) {
 
 module.exports = {
   pulseCommand,
-  tickCommand,
   statusCommand,
   cronInstalled,
   crontabHasActiveMarker,
   pulseExpiryBreadcrumbPath,
-  readPulseExpiryBreadcrumb,
-  clearPulseExpiryBreadcrumb,
   installCommand,
-  uninstallCommand,
   runCommand,
-  runMissionEngine,
-  runAutopilotTick,
-  runEngine,
-  gitChangedFiles,
-  runVerify,
   refreshOrbPolicyLessons,
-  stripMarkedCrontabLines,
 };

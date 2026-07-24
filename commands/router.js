@@ -311,14 +311,9 @@ if (require.main === module) {
 }
 
 module.exports = {
-  evaluateCandidateGate,
-  evaluateRows,
   groupPicksBySignature,
   nextLane,
-  outcomeKind,
   promotionCandidates,
   readJsonl,
-  resolveRouterPaths,
   routerCommand,
-  routerStatus,
 };

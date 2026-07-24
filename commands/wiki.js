@@ -572,12 +572,4 @@ async function wikiCommand(subcommand, ...args) {
 
 module.exports = {
   wikiCommand,
-  wikiIngest,
-  wikiQuery,
-  wikiLint,
-  wikiSearch,
-  wikiLog,
-  wikiVerify,
-  wikiEntities,
-  wikiRelated,
 };

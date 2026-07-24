@@ -1014,18 +1014,14 @@ function autolandCommand(args = []) {
 
 module.exports = {
   autolandCommand,
-  attachedTasksForMission,
   digestNextMoves,
   digestStoryRows,
   digestTickStatus,
   explainResult,
-  missionReadyForClosedTaskVerify,
   operatorReady,
   readAcceptedTaskHistory,
   hasAgentJargon,
   runTickBody,
-  persistTickReceipt,
   sweepLanding,
   verifyClosedTaskMissions,
-  wishSweepSummaryLine,
 };

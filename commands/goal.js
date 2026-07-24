@@ -237,11 +237,5 @@ function run(args = [], context = {}) {
 }
 
 module.exports = {
-  SCOREBOARD_FILE,
-  buildGoalView,
-  readScoreboard,
-  renderGoalView,
   run,
-  scoreboardPath,
-  writeScoreboard,
 };

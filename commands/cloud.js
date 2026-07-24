@@ -240,6 +240,5 @@ module.exports = {
   cloudClean,
   collectCloudOrphans,
   parseCloudCleanArgs,
-  readCloudCleanSlug,
   renderCloudCleanSummary,
 };

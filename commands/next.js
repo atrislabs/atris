@@ -131,7 +131,6 @@ function nextCommand(args = [], root = process.cwd()) {
 }
 
 module.exports = {
-  cardLabel,
   nextCommand,
   renderCard,
 };

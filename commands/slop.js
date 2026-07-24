@@ -318,8 +318,20 @@ function listJsFiles(dir, out = []) {
     let st; try { st = fs.statSync(p); } catch { continue; }
     if (st.isDirectory()) listJsFiles(p, out);
     else if (/\.(js|mjs|cjs)$/.test(name)) out.push(p);
+    else if (!name.includes('.') && st.isFile() && isNodeScript(p)) out.push(p); // extensionless node scripts (bin entries, `ax`) consume exports too
   }
   return out;
+}
+
+function isNodeScript(file) {
+  try {
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(80);
+    const n = fs.readSync(fd, buf, 0, 80, 0);
+    fs.closeSync(fd);
+    const head = buf.toString('utf8', 0, n);
+    return head.startsWith('#!') && head.includes('node');
+  } catch { return false; }
 }
 
 // Resolve a relative specifier from `fromFile` to an absolute file path, or null.
@@ -539,4 +551,4 @@ function slopCommand(argv) {
   return 0;
 }
 
-module.exports = { slopCommand, detect, scanFile, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, installHook, findDeadCode, findOrphanedExports };
+module.exports = { slopCommand, detect, scanFile, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, installHook, findDeadCode, findOrphanedExports, listJsFiles };

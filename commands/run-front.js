@@ -136,8 +136,6 @@ async function runMissionFront(args = []) {
 module.exports = {
   runMissionFront,
   pickRunnableMission,
-  liveCodexSession,
-  runnerDrivableForFrontDoor,
   runObjective,
   runBudgetSeconds,
   runTickBudget,

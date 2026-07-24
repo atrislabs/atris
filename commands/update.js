@@ -40,5 +40,4 @@ function updateSelf(options = {}) {
 
 module.exports = {
   updateSelf,
-  DEFAULT_PACKAGE_ROOT,
 };

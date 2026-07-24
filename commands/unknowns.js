@@ -613,15 +613,5 @@ async function unknownsCommand(args = []) {
 module.exports = {
   unknownsCommand,
   showHelp,
-  ensureUnknownsSchema,
-  gatherTerritoryContext,
-  buildUnknownsPrompt,
-  analyzeWithModel,
-  normalizeUnknowns,
-  normalizeQuestions,
   fallbackPayload,
-  insertUnknowns,
-  listUnknownRows,
-  renderUnknownsMarkdown,
-  resolveUnknown,
 };

@@ -389,9 +389,4 @@ async function visualizeAtris(args = process.argv.slice(3)) {
 
 module.exports = {
   visualizeAtris,
-  parseVisualizeArgs,
-  buildImagePrompt,
-  classifyArtifact,
-  resolveOutputPath,
-  generateVisual,
 };

@@ -215,6 +215,4 @@ async function meetCommand(args = [], root = process.cwd()) {
 module.exports = {
   meetCommand,
   slugify,
-  buildBookingProfile,
-  renderProfile,
 };

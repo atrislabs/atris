@@ -632,7 +632,5 @@ function launchpadCommand(args = []) {
 }
 
 module.exports = {
-  collectLaunchpad,
   launchpadCommand,
-  renderLaunchpad,
 };
