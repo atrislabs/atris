@@ -213,7 +213,23 @@ function mineLessons(args) {
   }
 }
 
+function printLessonUsage() {
+  console.log('');
+  console.log('  Usage: atris lesson add <slug> <pass|fail> "<text>"');
+  console.log('         atris lesson mine [--json] [--dry-run]');
+  console.log('         atris lesson sweep [--json] [--dry-run]');
+  console.log('         atris lesson resolve [--json] [--dry-run]');
+  console.log('');
+}
+
 function lessonAtris(subcommand, ...args) {
+  // -h/--help is an explicit help request: print usage and exit 0, before any
+  // filesystem check, so `atris lesson --help` works everywhere.
+  if (subcommand === '-h' || subcommand === '--help') {
+    printLessonUsage();
+    process.exit(0);
+  }
+
   const atrisDir = path.join(process.cwd(), 'atris');
   if (!fs.existsSync(atrisDir)) {
     console.error('  ✗ atris/ folder not found. Run "atris init" first.');
@@ -236,12 +252,7 @@ function lessonAtris(subcommand, ...args) {
   }
 
   if (subcommand !== 'add') {
-    console.log('');
-    console.log('  Usage: atris lesson add <slug> <pass|fail> "<text>"');
-    console.log('         atris lesson mine [--json] [--dry-run]');
-    console.log('         atris lesson sweep [--json] [--dry-run]');
-    console.log('         atris lesson resolve [--json] [--dry-run]');
-    console.log('');
+    printLessonUsage();
     process.exit(subcommand ? 1 : 0);
   }
 
