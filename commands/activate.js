@@ -237,13 +237,14 @@ function activateAtris() {
   } catch {}
 
   let moves = [];
+  let clarityLine = null;
   try {
     const { nextMoves } = require('../lib/next-moves');
     const { profilePaths } = require('../lib/clarity');
     const root = process.cwd();
     moves = nextMoves(root, 3);
     const { profile, mdPath } = readActivationClarityProfile(root, profilePaths);
-    formatClarityLine(profile, rel(mdPath));
+    clarityLine = formatClarityLine(profile, rel(mdPath));
   } catch { /* alive onboarding is best-effort; never block activate */ }
 
   let briefData = null;
@@ -283,6 +284,9 @@ function activateAtris() {
     console.log('');
     statusLines.forEach((line) => console.log(line));
   }
+
+  console.log('');
+  console.log(clarityLine || 'Tip: run atris clarity once so agents learn how you work.');
 
   const nextMove = moves[0] || briefData?.moves?.[0];
   const nextMoveTitle = focusFragment(nextMove?.title, 100);
