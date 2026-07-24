@@ -7,7 +7,7 @@ const { encodeToolResult } = require('../lib/tool-result-encode');
 test('tool result encoding round-trips relay output that can trigger the WAF', () => {
   const result = {
     status: 'error',
-    stdout: '$(whoami)\nSELECT * FROM tasks;\n<script>alert(1)</script>',
+    stdout: '$(cat /etc/passwd)\nSELECT * FROM tasks;\n<script>alert(1)</script>',
     exit_code: 1,
   };
 
