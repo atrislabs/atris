@@ -168,9 +168,8 @@ function readyExecutor(root, preferred = '') {
 
 function readyValidators(root, preferred = '', exclude = '') {
   const blocked = String(exclude || '').trim();
-  return engineRegistryView(root)
+  const candidates = engineRegistryView(root)
     .filter((engine) => engine.roles.includes('validator'))
-    .filter((engine) => engine.health && engine.health.status === 'ready')
     .filter((engine) => engine.id !== blocked)
     .sort((a, b) => {
       const aPreferred = preferred && a.id === preferred ? 0 : 1;
@@ -179,6 +178,13 @@ function readyValidators(root, preferred = '', exclude = '') {
         || Number(a.fallback_order) - Number(b.fallback_order)
         || String(a.id).localeCompare(String(b.id));
     });
+  const ready = candidates.filter((engine) => engine.health && engine.health.status === 'ready');
+  // Route-time determinism: which validator binaries exist on this machine
+  // must not change the lap's route. When none are ready, dispatch with the
+  // policy-ordered distinct validators; the flight still enforces judge !=
+  // worker and fails honestly at the validation stage if the engine is
+  // missing when validation actually runs.
+  return ready.length ? ready : candidates;
 }
 
 function taskById(runCli, taskId) {
