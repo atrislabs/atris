@@ -146,3 +146,54 @@ test('findings carry file:line + rule id for the verification gate', () => {
   assert.equal(f.rule, 'glassmorphism');
   assert.ok(f.file.endsWith('X.css'));
 });
+
+// --- atris slop dead: require-graph dead-code detection ------------------------
+
+const { findDeadCode } = require('../commands/slop');
+
+function fixtureRepo() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-dead-'));
+  const w = (rel, content) => {
+    const p = path.join(root, rel);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, content);
+    return p;
+  };
+  w('package.json', JSON.stringify({ name: 'fx', bin: { fx: 'bin/fx.js' } }));
+  w('bin/fx.js', "const { live } = require('../cmds/live.js'); require('../cmds/uses-loader.js'); live();");
+  w('cmds/live.js', "const h = require('../lib/helper'); module.exports = { live: () => h() };");
+  w('lib/helper.js', 'module.exports = () => 1;');
+  w('cmds/orphan.js', 'module.exports = () => "nobody requires me";'); // dead
+  w('lib/lonely.js', 'module.exports = () => "only a test imports me";');
+  w('test/lonely.test.js', "require('../lib/lonely');");
+  // dynamic dispatch: named as a string, never statically required
+  w('cmds/dynamic.js', 'module.exports = () => "loaded by name";');
+  w('lib/loader.js', "const n = 'dynamic'; module.exports = () => require('../cmds/' + n);");
+  w('cmds/uses-loader.js', "require('../lib/loader');");
+  return root;
+}
+
+test('slop dead: finds the unreachable file, spares live/test-only/dynamic ones', () => {
+  const root = fixtureRepo();
+  const r = findDeadCode(root, { dirs: ['cmds', 'lib'] });
+  const rel = (f) => path.relative(root, f);
+  assert.deepEqual(r.dead.map(rel), ['cmds/orphan.js'], 'only the true orphan is dead');
+  assert.deepEqual(r.testOnly.map(rel), ['lib/lonely.js'], 'test-only file is flagged separately');
+  // dynamic.js is unreachable statically but string-mentioned — must NOT be dead
+  assert.ok(!r.dead.map(rel).includes('cmds/dynamic.js'), 'string-mention safety net holds');
+  assert.ok(r.candidates >= 6);
+});
+
+test('slop dead: clean repo reports zero dead', () => {
+  const root = fixtureRepo();
+  fs.rmSync(path.join(root, 'cmds/orphan.js'));
+  const r = findDeadCode(root, { dirs: ['cmds', 'lib'] });
+  assert.equal(r.dead.length, 0);
+});
+
+test('slop dead: empty/missing dirs do not throw', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-dead-empty-'));
+  const r = findDeadCode(root, { dirs: ['cmds', 'lib'] });
+  assert.equal(r.candidates, 0);
+  assert.deepEqual(r.dead, []);
+});

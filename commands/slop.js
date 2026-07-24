@@ -300,8 +300,140 @@ function detect(argv) {
   return findings.length ? 1 : 0;
 }
 
+// --- dead-code detector: `atris slop dead` ------------------------------------
+// Dead code is slop too. Deterministic require-graph reachability: BFS from the
+// package entrypoints (package.json bin/scripts, bin/, scripts/) over static
+// require()/import edges. A JS file nothing reaches AND nothing names is dead.
+// Safety net for dynamic dispatch: any file whose basename appears as a string
+// literal anywhere in the repo is treated as referenced (protects --legacy
+// loops, docs-driven loading, and require(path.join(...)) patterns).
+
+const REQUIRE_RE = /require\(\s*['"]([^'"]+)['"]\s*\)|(?:^|\n)\s*(?:import|export)\s[^'"\n]*['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)/g;
+
+function listJsFiles(dir, out = []) {
+  let names; try { names = fs.readdirSync(dir); } catch { return out; }
+  for (const name of names) {
+    if (name.startsWith('.') || SKIP_DIRS.has(name)) continue;
+    const p = path.join(dir, name);
+    let st; try { st = fs.statSync(p); } catch { continue; }
+    if (st.isDirectory()) listJsFiles(p, out);
+    else if (/\.(js|mjs|cjs)$/.test(name)) out.push(p);
+  }
+  return out;
+}
+
+// Resolve a relative specifier from `fromFile` to an absolute file path, or null.
+function resolveSpec(spec, fromFile) {
+  if (!spec || !spec.startsWith('.')) return null; // bare specifiers = node builtins/deps
+  const base = path.resolve(path.dirname(fromFile), spec);
+  for (const cand of [base, `${base}.js`, `${base}.mjs`, `${base}.cjs`, path.join(base, 'index.js')]) {
+    try { if (fs.statSync(cand).isFile()) return cand; } catch {}
+  }
+  return null;
+}
+
+function requireEdges(file) {
+  let text; try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
+  const edges = [];
+  let m;
+  REQUIRE_RE.lastIndex = 0;
+  while ((m = REQUIRE_RE.exec(text))) {
+    const resolved = resolveSpec(m[1] || m[2] || m[3], file);
+    if (resolved) edges.push(resolved);
+  }
+  return edges;
+}
+
+// Entrypoints: package.json bin values, node-invoking scripts, bin/, scripts/.
+function deadEntrypoints(root) {
+  const entries = new Set();
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    const bins = typeof pkg.bin === 'string' ? [pkg.bin] : Object.values(pkg.bin || {});
+    for (const b of bins) { const p = path.resolve(root, b); if (fs.existsSync(p)) entries.add(p); }
+    for (const cmd of Object.values(pkg.scripts || {})) {
+      for (const ref of String(cmd).match(/[\w./-]+\.(?:js|mjs|cjs)\b/g) || []) {
+        const p = path.resolve(root, ref); if (fs.existsSync(p)) entries.add(p);
+      }
+    }
+  } catch {}
+  for (const dir of ['bin', 'scripts']) listJsFiles(path.join(root, dir)).forEach((f) => entries.add(f));
+  return entries;
+}
+
+function findDeadCode(root = process.cwd(), opts = {}) {
+  root = path.resolve(root);
+  const scanDirs = (opts.dirs || ['commands', 'lib']).map((d) => path.join(root, d));
+  const candidates = scanDirs.flatMap((d) => listJsFiles(d));
+  if (!candidates.length) return { root, candidates: 0, dead: [], testOnly: [] };
+
+  // 1) reachability BFS from entrypoints over static edges
+  const reached = new Set();
+  const queue = [...deadEntrypoints(root)];
+  while (queue.length) {
+    const f = queue.pop();
+    if (reached.has(f)) continue;
+    reached.add(f);
+    queue.push(...requireEdges(f));
+  }
+
+  // 2) test reachability (a file only tests import = suspicious, not proven dead)
+  const testReached = new Set();
+  const tq = listJsFiles(path.join(root, 'test'));
+  while (tq.length) {
+    const f = tq.pop();
+    if (testReached.has(f)) continue;
+    testReached.add(f);
+    tq.push(...requireEdges(f));
+  }
+
+  // 3) string-mention safety net: basename (sans ext) named anywhere outside itself
+  const allRepoJs = [...new Set([...listJsFiles(root)])];
+  const mentioned = (file) => {
+    const stem = path.basename(file).replace(/\.(js|mjs|cjs)$/, '');
+    const re = new RegExp(`['"\`/]${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\.js)?['"\`]`);
+    return allRepoJs.some((f) => {
+      if (f === file) return false;
+      try { return re.test(fs.readFileSync(f, 'utf8')); } catch { return false; }
+    });
+  };
+
+  const dead = [], testOnly = [];
+  for (const c of candidates) {
+    if (reached.has(c)) continue;
+    if (testReached.has(c)) { testOnly.push(c); continue; }
+    if (mentioned(c)) continue; // dynamic dispatch / docs-driven — not provably dead
+    dead.push(c);
+  }
+  return { root, candidates: candidates.length, dead: dead.sort(), testOnly: testOnly.sort() };
+}
+
+function deadCommand(argv) {
+  const json = argv.includes('--json');
+  const root = argv.find((a) => !a.startsWith('-')) || '.';
+  const res = findDeadCode(root);
+  const rel = (f) => path.relative(res.root, f);
+  if (json) {
+    console.log(JSON.stringify({
+      ok: res.dead.length === 0, candidates: res.candidates,
+      dead: res.dead.map(rel), test_only: res.testOnly.map(rel),
+    }, null, 2));
+    return res.dead.length ? 1 : 0;
+  }
+  if (!res.dead.length && !res.testOnly.length) {
+    console.log(`\n  ✓ no dead code — all ${res.candidates} files reachable from the entrypoints\n`);
+    return 0;
+  }
+  console.log('');
+  for (const f of res.dead) console.log(`  ✗ ${rel(f).padEnd(40)} unreachable and unreferenced — delete it`);
+  for (const f of res.testOnly) console.log(`  ⚠ ${rel(f).padEnd(40)} only tests import it — feature gone, test lingers?`);
+  console.log(`\n  ${res.dead.length} dead, ${res.testOnly.length} test-only of ${res.candidates} files · exit ${res.dead.length ? 1 : 0}\n`);
+  return res.dead.length ? 1 : 0;
+}
+
 function slopCommand(argv) {
   const sub = argv[0];
+  if (sub === 'dead') return deadCommand(argv.slice(1));
   if (!sub || sub === 'detect' || sub.startsWith('-') || !['detect', 'rules', 'help', 'hook', 'install-hook'].includes(sub)) {
     // default + `detect`: scan. Bare `atris slop` scans cwd too.
     const rest = sub === 'detect' ? argv.slice(1) : argv;
@@ -348,6 +480,7 @@ function slopCommand(argv) {
     atris slop rules              list active rules (built-in + project)
     atris slop rules --add <id> <pattern> <why>   grow the project ruleset
     atris slop hook               install a pre-commit gate (runs --staged)
+    atris slop dead [root]        find dead JS (unreachable + unreferenced files)
 
   Project rules live in .atris/slop.rules.json and compound over time.
   exit 0 = clean, 1 = slop found. Wire into PR checks and the autopilot gate.
@@ -355,4 +488,4 @@ function slopCommand(argv) {
   return 0;
 }
 
-module.exports = { slopCommand, detect, scanFile, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, installHook };
+module.exports = { slopCommand, detect, scanFile, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, installHook, findDeadCode };
