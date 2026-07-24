@@ -517,14 +517,27 @@ function pulseLivenessState(cwd, now) {
 // pulse liveness check only sees silence; this sees a run of negative reward.
 // Sums reward over the last N finished ticks; unhealthy when the trend is net
 // negative, healthy once it climbs back to zero or better.
+//
+// Recency guard: this sensor only speaks to a *live* run of ticks. A
+// decommissioned or intermittent loop leaves stale receipts frozen; without a
+// guard the last N finished ticks stay net-negative forever and the flag can
+// never clear (no fresh positive receipt arrives). It also must not treat a
+// scattered set — e.g. one tick today plus five from days ago — as a "run":
+// summing rewards across a multi-day gap is meaningless. So we only consider
+// finished ticks from the last few days and require a full window of them; a
+// silent or sparse loop is the pulse-liveness sensor's concern, and here it
+// reports healthy so any open reward flag auto-closes.
 const REWARD_REGRESSION_WINDOW = 6;
+const REWARD_REGRESSION_RECENCY_MS = 2 * DAY_MS;
 
 function rewardRegressionState(cwd, now) {
   const receipts = pulse.readJsonl(pulse.pulseReceiptsPath(cwd));
   const finished = receipts
     .filter((r) => r && r.phase === 'finished' && parseDate(r.ts || r.at) !== null)
+    .filter((r) => now.getTime() - parseDate(r.ts || r.at) <= REWARD_REGRESSION_RECENCY_MS)
     .sort((a, b) => parseDate(a.ts || a.at) - parseDate(b.ts || b.at));
-  if (finished.length < REWARD_REGRESSION_WINDOW) return { healthy: false, unhealthy: false };
+  // Not enough recent signal to call a degradation run: leave it to pulse liveness.
+  if (finished.length < REWARD_REGRESSION_WINDOW) return { healthy: true, unhealthy: false, sparse: true };
   const window = finished.slice(-REWARD_REGRESSION_WINDOW);
   const sum = window.reduce((acc, r) => acc + (Number(r.reward) || 0), 0);
   return { healthy: sum >= 0, unhealthy: sum < 0, sum };
@@ -1094,6 +1107,5 @@ module.exports = {
   openFlags,
   ledgerPath,
   readEvents,
-  listLine,
   sweepLine,
 };
