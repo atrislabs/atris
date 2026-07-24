@@ -767,13 +767,14 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Dispatch:** `bin/atris.js:1924` handles `--help`, `--dry-run`, and `--json` before routing to `cleanAtris`
 - **Help:** `bin/atris.js:866` (`showCleanHelp`) prints usage without touching workspace state
-- **Entry point:** `commands/clean.js:12` (cleanAtris function)
-- **JSON payload:** `commands/clean.js:162` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, and manual actions without text chrome
+- **Entry point:** `commands/clean.js:14` (cleanAtris function)
+- **JSON payload:** `commands/clean.js:181` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, dead code, and manual actions without text chrome
 - **Helpers:**
 - `findStaleTasks()`: Find tasks claimed >3 days ago
 - `healBrokenMapRefs()`: Validate + auto-fix MAP.md file:line refs (range + drift detection)
-- `findStalePages()` (`commands/clean.js:457`): Scan atris/ for markdown with `last_compiled` frontmatter, compare source mtime
-- `checkPageStaleness()` (`commands/clean.js:482`): Parse frontmatter, check each source file's mtime vs compiled date
+- `findStalePages()` (`commands/clean.js:504`): Scan atris/ for markdown with `last_compiled` frontmatter, compare source mtime
+- `checkPageStaleness()` (`commands/clean.js:541`): Parse frontmatter, check each source file's mtime vs compiled date
+- dead-code report: step 6 in `cleanAtris` calls slop's `findDeadCode` (report-only, feeds manual actions)
 - `archiveOldJournals()`: Move journals >30 days to archive/
 - `cleanEmptySections()`: Remove placeholder sections
 - **Output:**
