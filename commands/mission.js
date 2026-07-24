@@ -10733,4 +10733,6 @@ module.exports = {
   missionJudgmentCard,
   missionShippedCard,
   appendMissionJudgmentCard,
+  acquireMissionLock,
+  releaseMissionLock,
 };
