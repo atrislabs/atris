@@ -7965,7 +7965,13 @@ function detachMissionRun(args, mission, root = process.cwd(), asJson = false) {
 
 function probeClaudeBinary() {
   const runnerBin = resolveClaudeRunnerBin();
-  if (resolveClaudeRunnerCommandTemplate()) {
+  const commandTemplate = resolveClaudeRunnerCommandTemplate();
+  if (commandTemplate) {
+    // A command template fully replaces the claude invocation (GLM/OpenAI/
+    // local runners). The runner bin only matters when the template actually
+    // references {bin}; requiring `claude` on PATH otherwise defeats the
+    // template's purpose and breaks generic runners on claude-less machines.
+    if (!commandTemplate.includes('{bin}')) return { ok: true };
     const probe = spawnSync('sh', ['-c', `command -v ${shellQuote(runnerBin)}`], { encoding: 'utf8', timeout: 8000 });
     if (probe.status !== 0) return { ok: false, error: `${runnerBin} CLI not found` };
     return { ok: true };
