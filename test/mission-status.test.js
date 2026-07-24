@@ -7418,6 +7418,23 @@ test('mission help documents status filters', () => {
         assert.doesNotMatch(subcommandHelp.stdout, /Codex \/goal:|"ran_heavy_work":true/);
       }
     }
+    // These mutating verbs used to fall through to the handler on --help:
+    // `mission stop <id> --help` resolved the id and STOPPED the mission. The
+    // dangerous form carries an id before the flag, so test that shape — a
+    // regression would resolve the (non-existent) id and print "not found"
+    // instead of usage.
+    for (const subcommand of ['stop', 'complete', 'attach-task', 'ping']) {
+      for (const args of [
+        ['mission', subcommand, 'mission-9999-99-99-none', '--help'],
+        ['mission', subcommand, 'mission-9999-99-99-none', '-h'],
+        ['mission', subcommand, 'help'],
+      ]) {
+        const h = runCli(args, { cwd: dir });
+        assert.equal(h.status, 0, `${args.join(' ')}: ${h.stderr || h.stdout}`);
+        assert.match(h.stdout, new RegExp(`^Usage: atris mission ${subcommand}`));
+        assert.doesNotMatch(`${h.stdout}\n${h.stderr}`, /not found/);
+      }
+    }
   } finally {
     cleanupTempDir(dir);
   }

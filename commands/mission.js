@@ -4260,6 +4260,11 @@ async function startMissionFromRunObjective(objective, args) {
 
 function attachMissionTask(args) {
   const asJson = wantsJson(args);
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission attach-task <id> [--json]');
+    console.log('Run `atris mission --help` for the full option list.');
+    process.exit(0);
+  }
   const ref = stripKnownFlags(args, [], ['--json'])[0] || '';
   if (!ref) {
     exitMissionError('Usage: atris mission attach-task <id> [--json]', 1, asJson);
@@ -9720,6 +9725,11 @@ function missionCompletionGate(mission, proof, root = process.cwd()) {
 
 function completeMission(args) {
   const asJson = wantsJson(args);
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission complete <id> --proof "..."');
+    console.log('Run `atris mission --help` for the full option list.');
+    process.exit(0);
+  }
   const force = hasFlag(args, '--force');
   const proof = readFlag(args, '--proof', '');
   const ref = stripKnownFlags(args, ['--proof'], ['--json', '--force'])[0] || '';
@@ -9828,6 +9838,13 @@ function stopMissionRecord(mission, reason, root = process.cwd(), options = {}) 
 
 function stopMission(args) {
   const asJson = wantsJson(args);
+  // Help is read-only: `mission stop <id> --help` must never resolve the id and
+  // stop the mission just to be asked for usage.
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
+    console.log('Usage: atris mission stop <id> [--pause] [--reason "..."]');
+    console.log('Run `atris mission --help` for the full option list.');
+    process.exit(0);
+  }
   const reason = readFlag(args, '--reason', 'stopped by operator');
   const pause = hasFlag(args, '--pause');
   const ref = stripKnownFlags(args, ['--reason'], ['--json', '--pause'])[0] || '';
@@ -10534,6 +10551,11 @@ function inspectMission(args) {
 // output so callers (member ping) can compose their own multi-lane report.
 function pingMission(args, opts = {}) {
   const asJson = args.includes('--json');
+  if (!opts.silent && (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help')) {
+    console.log('Usage: atris mission ping <id> "<note>" [--from <who>] [--json]');
+    console.log('Run `atris mission --help` for the full option list.');
+    process.exit(0);
+  }
   const rest = args.filter((a) => a !== '--json');
   let from = process.env.USER || 'operator';
   const fromIdx = rest.indexOf('--from');
