@@ -174,7 +174,9 @@ function injectProjectPatterns(agentTeamDir, profile) {
   const navigatorFile = path.join(agentTeamDir, 'navigator', 'MEMBER.md');
   const validatorFile = path.join(agentTeamDir, 'validator', 'MEMBER.md');
 
+  // Injection is best-effort: a read-only or vanished MEMBER.md must not crash init.
   // Inject into executor.md
+  try {
   if (fs.existsSync(executorFile)) {
     let executorContent = fs.readFileSync(executorFile, 'utf8');
     
@@ -199,8 +201,10 @@ ${profile.hasCode ? `**Validation:** Run \`${profile.testCommand}\` before marki
       fs.writeFileSync(executorFile, executorContent);
     }
   }
+  } catch {}
 
   // Inject into navigator.md
+  try {
   if (fs.existsSync(navigatorFile)) {
     let navigatorContent = fs.readFileSync(navigatorFile, 'utf8');
     
@@ -221,8 +225,10 @@ When planning tasks, consider the project structure and conventions above.
       fs.writeFileSync(navigatorFile, navigatorContent);
     }
   }
+  } catch {}
 
   // Inject into validator.md
+  try {
   if (fs.existsSync(validatorFile)) {
     let validatorContent = fs.readFileSync(validatorFile, 'utf8');
     
@@ -241,6 +247,7 @@ ${profile.hasCode ? `**Validation:** Run \`${profile.testCommand}\` to verify ch
       fs.writeFileSync(validatorFile, validatorContent);
     }
   }
+  } catch {}
 }
 
 function initAtris() {

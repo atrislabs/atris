@@ -37,9 +37,9 @@ rg "runCloudWish|cloudWishOptionError|--cloud|findActiveWishFlight|attached_to_e
 rg "Self-driving mission|Autonomy Ladder|Driving Contract|verified time-to-arrival" atris/features/self-driving-mission  # L4 destination-to-proof product contract: route graph, evidence-based engine broker, recovery, human gates, arrival receipt, build plan, and validation
 rg "missionDrive|destinationHash|mission_destination_change_proposed|pending_destination_proposal|routeMission|validateMissionRouteProposal|mission_route_(set|rejected)|pending_route_proposal" commands/mission.js test/mission-status.test.js test/self-driving-mission.test.js  # Self-driving mission Steps 1-2: optional destination trip contract, operator-gated destination changes, and route compilation with falsifiable legs, dependency validation, supported hard gates, scoped surfaces, version bumps, and preserved rejection reasons
 rg "firstMissionCommand|workspace files ready|skills installed|packed golden path|printedAtrisArgs|golden path e2e|what someone can do now" commands/init.js bin/atris.js commands/task.js test/init-non-interactive.test.js test/golden-path-e2e.test.js atris/GOLDEN_PATH_PAPERCUTS.md  # Quiet first-run output plus packed-install zero-knowledge contract: grouped setup counts, ready-on-init mission, clean HOME, printed mission/task handoffs, autoland, and durable papercut status
-rg "function planAtris" commands/workflow.js   # Plan command (line 66)
-rg "function doAtris" commands/workflow.js     # Do command (line 394)
-rg "function reviewAtris" commands/workflow.js  # Review command: default certified queue, --verbose legacy validator prompt
+rg "function planAtris" commands/workflow.js   # Plan command (line 363)
+rg "function doAtris" commands/workflow.js     # Do command (line 709)
+rg "function reviewAtris" commands/workflow.js  # Review command (line 1062): default certified queue, --verbose legacy validator prompt
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
 rg "analyticsAtris|showAnalyticsHelp|status and analytics --help" bin/atris.js commands/analytics.js test/commands.test.js  # Analytics command + workspace-free help
