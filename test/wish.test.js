@@ -334,6 +334,36 @@ test('a wish whose worker cannot start says so instead of pretending', () => {
   }
 });
 
+test('answering a one-lap wish question does not spawn a mission driver', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    const env = { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath, ATRIS_WISH_NO_DRIVER: '', NODE_TEST_CONTEXT: '' };
+
+    const created = runCli(['wish', 'make onboarding better', '--one-lap', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 1, created.stderr || created.stdout);
+    const captured = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'))[0];
+    assert.equal(captured.one_lap, true, 'one-lap provenance recorded at capture');
+
+    const answered = runCli(['wish', 'answer', 'make onboarding better for new users during account setup'], { cwd: dir, env });
+    assert.equal(answered.status, 0, answered.stderr || answered.stdout);
+    const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
+    const wish = records.find((record) => record.status === 'delegated');
+    assert.ok(wish, 'wish delegated after the answer');
+    assert.equal(wish.worker_started, false);
+    assert.equal(wish.driver_pid, undefined);
+    assert.equal(wish.worker_note, 'the one-lap dispatches this in-process');
+    const shortId = String(wish.mission_id).slice(-8);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', `mission-driver-${shortId}.json`)), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish intake warns when the fallback verifier may outlive the mission window', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
