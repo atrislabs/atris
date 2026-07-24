@@ -46,6 +46,22 @@ test('loops board shows registry jobs with health and retired count', () => {
   assert.match(res.stdout, /atris loops stop <id>/);
 });
 
+test('loops <sub> --help shows usage and never runs the subcommand', () => {
+  const dir = makeHeartbeatFixture();
+  // board --help used to dump the registry; stop --help used to disable a job.
+  const boardHelp = runLoops(['board', '--help'], dir);
+  assert.equal(boardHelp.status, 0, boardHelp.stderr);
+  assert.match(boardHelp.stdout, /Usage: atris loops \[audit\|init\|tick\|board\|start\|stop\]/);
+  assert.doesNotMatch(boardHelp.stdout, /heartbeat registry|background loops/);
+
+  const stopHelp = runLoops(['stop', 'demo-loop', '--help'], dir);
+  assert.equal(stopHelp.status, 0, stopHelp.stderr);
+  assert.match(stopHelp.stdout, /Usage: atris loops/);
+  const registry = JSON.parse(fs.readFileSync(path.join(dir, 'registry.json'), 'utf8'));
+  const job = registry.jobs.find(row => row.id === 'demo-loop');
+  assert.equal(job.enabled, true, 'stop --help must not disable the job');
+});
+
 test('loops stop disables a registry job with a backup', () => {
   const dir = makeHeartbeatFixture();
   const res = runLoops(['stop', 'demo-loop'], dir);

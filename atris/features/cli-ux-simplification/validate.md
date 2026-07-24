@@ -1,15 +1,15 @@
 ---
-last_compiled: 2026-07-12
-validated_by: executor
-validation_notes: Re-verified 2026-07-12. Reconciled the top-level help against the current AI-computer front door, mission/task/brain context commands, business/cloud sections, and durable TODO rendering. TODO.md remains a readable board regenerated from durable task state, not ownership truth.
+last_compiled: 2026-07-24
+validated_by: mission-lead
+validation_notes: Re-verified 2026-07-24. The `sources:` anchors had drifted since 2026-07-12 as the code grew; re-pinned them against the live symbols (showHelp now bin/atris.js:447-675, TODO.md creation commands/init.js:455-481, reviewAtris read commands/workflow.js:1124-1129, renderTodoMarkdown lib/task-db.js:1952-1984). The behavior is unchanged and still complete; only the navigation line-refs were reconciled.
 sources:
-  - bin/atris.js:388-606 (showHelp function - quick start, setup, workflow, context/tracking, sync, business, cloud agents, skills, team)
-  - commands/init.js:416-441 (TODO.md placeholder creation via fs.writeFileSync)
+  - bin/atris.js:447-675 (showHelp function - quick start, setup, workflow, context/tracking, sync, business, cloud agents, skills, team)
+  - commands/init.js:455-481 (TODO.md placeholder creation via fs.writeFileSync)
   - commands/workflow.js:411-413 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
   - commands/workflow.js:619-633 (planAtris — include TODO.md in user prompt)
   - commands/workflow.js:768-779 (doAtris — load TODO.md or legacy TASK_CONTEXTS.md)
-  - commands/workflow.js:1118-1121 (reviewAtris — read TODO.md or legacy TASK_CONTEXTS.md)
-  - lib/task-db.js:1611-1719 (renderTodoMarkdown — regenerated TODO.md board)
+  - commands/workflow.js:1124-1129 (reviewAtris — read TODO.md or legacy TASK_CONTEXTS.md)
+  - lib/task-db.js:1952-1984 (renderTodoMarkdown — regenerated TODO.md board)
 ---
 
 # CLI UX Simplification — Validation
