@@ -408,27 +408,78 @@ function findDeadCode(root = process.cwd(), opts = {}) {
   return { root, candidates: candidates.length, dead: dead.sort(), testOnly: testOnly.sort() };
 }
 
+// Orphaned exports: names a module exports that no other file ever mentions.
+// Word-boundary search across every other JS file keeps this high-precision:
+// a name used anywhere (import, dynamic access, test, doc string) never flags.
+function exportedNames(file) {
+  let text; try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
+  const names = new Set();
+  // module.exports = { a, b: c, ... }  — shorthand entries and keys
+  const block = text.match(/module\.exports\s*=\s*\{([\s\S]*?)\n\}/);
+  if (block) {
+    for (const line of block[1].split('\n')) {
+      const m = line.match(/^\s*([A-Za-z_$][\w$]*)\s*[,:]?\s*(?:\/\/.*)?$/) || line.match(/^\s*([A-Za-z_$][\w$]*)\s*:/);
+      if (m) names.add(m[1]);
+    }
+  }
+  // exports.foo = / module.exports.foo =
+  for (const m of text.matchAll(/(?:module\.)?exports\.([A-Za-z_$][\w$]*)\s*=/g)) names.add(m[1]);
+  return [...names];
+}
+
+function findOrphanedExports(root, files, allRepoJs) {
+  const texts = new Map();
+  const readText = (f) => {
+    if (!texts.has(f)) { try { texts.set(f, fs.readFileSync(f, 'utf8')); } catch { texts.set(f, ''); } }
+    return texts.get(f);
+  };
+  const orphans = [];
+  for (const file of files) {
+    for (const name of exportedNames(file)) {
+      if (name.length < 4) continue; // generic short names drown in noise either way
+      const re = new RegExp(`\\b${name}\\b`);
+      const used = allRepoJs.some((f) => f !== file && re.test(readText(f)));
+      if (!used) orphans.push({ file, name });
+    }
+  }
+  return orphans;
+}
+
 function deadCommand(argv) {
   const json = argv.includes('--json');
+  const withExports = argv.includes('--exports');
   const root = argv.find((a) => !a.startsWith('-')) || '.';
   const res = findDeadCode(root);
   const rel = (f) => path.relative(res.root, f);
+
+  let orphans = null;
+  if (withExports && res.candidates) {
+    const scanDirs = ['commands', 'lib'].map((d) => path.join(res.root, d));
+    const files = scanDirs.flatMap((d) => listJsFiles(d));
+    orphans = findOrphanedExports(res.root, files, listJsFiles(res.root));
+  }
+
+  const bad = res.dead.length + (orphans ? orphans.length : 0);
   if (json) {
     console.log(JSON.stringify({
-      ok: res.dead.length === 0, candidates: res.candidates,
+      ok: bad === 0, candidates: res.candidates,
       dead: res.dead.map(rel), test_only: res.testOnly.map(rel),
+      ...(orphans ? { orphaned_exports: orphans.map((o) => ({ file: rel(o.file), name: o.name })) } : {}),
     }, null, 2));
-    return res.dead.length ? 1 : 0;
+    return bad ? 1 : 0;
   }
-  if (!res.dead.length && !res.testOnly.length) {
+  if (!bad && !res.testOnly.length) {
     console.log(`\n  ✓ no dead code — all ${res.candidates} files reachable from the entrypoints\n`);
     return 0;
   }
   console.log('');
   for (const f of res.dead) console.log(`  ✗ ${rel(f).padEnd(40)} unreachable and unreferenced — delete it`);
   for (const f of res.testOnly) console.log(`  ⚠ ${rel(f).padEnd(40)} only tests import it — feature gone, test lingers?`);
-  console.log(`\n  ${res.dead.length} dead, ${res.testOnly.length} test-only of ${res.candidates} files · exit ${res.dead.length ? 1 : 0}\n`);
-  return res.dead.length ? 1 : 0;
+  if (orphans) for (const o of orphans) console.log(`  ⚠ ${`${rel(o.file)} → ${o.name}`.padEnd(40)} exported but nothing anywhere names it — drop the export entry`);
+  const parts = [`${res.dead.length} dead`, `${res.testOnly.length} test-only`];
+  if (orphans) parts.push(`${orphans.length} orphaned export${orphans.length === 1 ? '' : 's'}`);
+  console.log(`\n  ${parts.join(', ')} of ${res.candidates} files · exit ${bad ? 1 : 0}\n`);
+  return bad ? 1 : 0;
 }
 
 function slopCommand(argv) {
@@ -488,4 +539,4 @@ function slopCommand(argv) {
   return 0;
 }
 
-module.exports = { slopCommand, detect, scanFile, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, installHook, findDeadCode };
+module.exports = { slopCommand, detect, scanFile, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, installHook, findDeadCode, findOrphanedExports };

@@ -197,3 +197,30 @@ test('slop dead: empty/missing dirs do not throw', () => {
   assert.equal(r.candidates, 0);
   assert.deepEqual(r.dead, []);
 });
+
+test('slop dead --exports: flags an export nothing names, spares used and short ones', () => {
+  const root = fixtureRepo();
+  const w = (rel, content) => {
+    const p = path.join(root, rel);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, content);
+  };
+  // helper exports: usedFn (imported by live.js via destructure name below), orphanFn (nobody), run (too short)
+  w('lib/helper.js', [
+    'function usedHelperFn() { return 1; }',
+    'function orphanHelperFn() { return 2; }',
+    'function run() { return 3; }',
+    'module.exports = {',
+    '  usedHelperFn,',
+    '  orphanHelperFn,',
+    '  run,',
+    '};',
+  ].join('\n'));
+  w('cmds/live.js', "const { usedHelperFn } = require('../lib/helper'); module.exports = { live: () => usedHelperFn() };");
+  const { findOrphanedExports } = require('../commands/slop');
+  const files = [path.join(root, 'lib/helper.js')];
+  const all = [];
+  (function walkAll(d) { for (const n of fs.readdirSync(d)) { const p = path.join(d, n); const st = fs.statSync(p); if (st.isDirectory()) walkAll(p); else if (p.endsWith('.js')) all.push(p); } })(root);
+  const orphans = findOrphanedExports(root, files, all).map((o) => o.name);
+  assert.deepEqual(orphans, ['orphanHelperFn'], 'only the truly unnamed export flags');
+});
