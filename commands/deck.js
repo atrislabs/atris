@@ -146,6 +146,11 @@ function countLabel(n, word) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
+// True when the args carry an explicit help flag.
+function wantsHelp(argv) {
+  return argv.includes('--help') || argv.includes('-h');
+}
+
 // One-line lint tally with correct singular/plural nouns.
 function lintSummary(findings) {
   const errs = findings.filter((f) => f.severity === 'error').length;
@@ -395,8 +400,11 @@ async function run(argv) {
   if (sub === 'lint') {
     const specPath = argv.slice(1).find((a) => !a.startsWith('-'));
     if (!specPath) {
-      console.error('  usage: atris deck lint <spec.json>');
-      return 2;
+      // Explicit -h/--help is a help request (stdout, exit 0); a genuinely
+      // missing spec path is a usage error (stderr, exit 2).
+      const help = wantsHelp(argv);
+      console[help ? 'log' : 'error']('  usage: atris deck lint <spec.json>');
+      return help ? 0 : 2;
     }
     let spec;
     try { spec = readSpec(specPath); }
@@ -498,8 +506,9 @@ async function run(argv) {
     }
     const specPath = specPaths[0];
     if (!specPath) {
-      console.error('  usage: atris deck build <spec.json> [<spec2.json> ...] [--title T] [--theme x] [--review]');
-      return 2;
+      const help = wantsHelp(argv);
+      console[help ? 'log' : 'error']('  usage: atris deck build <spec.json> [<spec2.json> ...] [--title T] [--theme x] [--review]');
+      return help ? 0 : 2;
     }
     let spec;
     try { spec = readSpec(specPath); }
