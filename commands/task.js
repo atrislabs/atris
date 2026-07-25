@@ -9927,11 +9927,19 @@ function cmdAutoAcceptCertified(args) {
     }
     const landingVerify = reverifyBeforeLanding(taskDb, db, task, { verifyCache });
     if (!landingVerify.ok) {
+      // A refused landing whose revise also failed is the worst state in the
+      // loop: the work does not land AND nobody is told to fix it, so the row
+      // sits in review forever being re-refused every hour. Mark it so the
+      // heartbeat can raise it instead of counting it as routine.
       results.push({
         ...evaluation,
         eligible: false,
         action: landingVerify.revised ? 'revised' : 'revise_failed',
         reason: landingVerify.result.reason || landingVerify.revise_reason || 'verify_failed',
+        ...(landingVerify.result.unrunnable_cause
+          ? { unrunnable_cause: landingVerify.result.unrunnable_cause }
+          : {}),
+        alarm: landingVerify.revised !== true || landingVerify.result.reason === 'verify_unrunnable',
         verify: landingVerify.verify,
         exit_code: landingVerify.result.status,
         revision_note: landingVerify.note,

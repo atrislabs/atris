@@ -696,6 +696,25 @@ function persistTickReceipt(root, receipt) {
   return receipt.receipt_path;
 }
 
+// A tick that scans a backlog, lands none of it, and prints only zeros is
+// indistinguishable from a tick with no work. Say the standing numbers out
+// loud, and call out the two states that mean the loop is wedged rather than
+// idle: work blocked behind a check the harness could not execute, and work
+// that passed every gate and still did not land.
+function stuckBacklogNote(receipt) {
+  const parts = [];
+  const scanned = Number(receipt.scanned || 0);
+  const certified = Number(receipt.certified || 0);
+  if (scanned > 0 && receipt.landed.length === 0) {
+    parts.push(`${certified}/${scanned} certified in review, none landed`);
+  }
+  const unrunnable = Array.isArray(receipt.unrunnable_verifiers) ? receipt.unrunnable_verifiers.length : 0;
+  if (unrunnable > 0) {
+    parts.push(`${unrunnable} blocked by a check this machine could not run`);
+  }
+  return parts.length ? `, ${parts.join(', ')}` : '';
+}
+
 function digestTickStatus(receipt) {
   if (receipt.digest_sent) return 'sent';
   if (receipt.digest_due) return 'saved';
@@ -734,6 +753,23 @@ function runTickBody(root, { json, policy, receipt }) {
       .filter((r) => r.action === 'skipped' && r.proof_state === 'suite_green_citation_required')
       .map((r) => ({ ref: r.ref, reason: r.reason }));
     if (citationBlocks.length) receipt.citation_blocks = citationBlocks;
+    // A verifier the machine cannot execute is a broken harness, not a verdict
+    // on the diff. It must never sit quietly in the skipped pile: surface it
+    // as an alarm so a wedged loop is visible on the first tick, not the 480th.
+    // Not filtered by action: an unrunnable check surfaces as `skipped` from
+    // the eligibility gate and as `revised`/`revise_failed` from the landing
+    // gate. The reason is the signal, not the lane it came through.
+    const unrunnable = results
+      .filter((r) => r && r.action !== 'accepted' && r.reason === 'verify_unrunnable')
+      .map((r) => ({
+        ref: r.ref,
+        cause: r.unrunnable_cause || 'unknown',
+        command: r.command || r.verify || null,
+      }));
+    if (unrunnable.length) {
+      receipt.unrunnable_verifiers = unrunnable;
+      receipt.alarms = Number(receipt.alarms || 0) + unrunnable.length;
+    }
     receipt.certified = parsed.certified ?? null;
     receipt.scanned = parsed.scanned ?? null;
     receipt.revised = parsed.revised ?? null;
@@ -956,7 +992,12 @@ function runTickBody(root, { json, policy, receipt }) {
     const heldNote = receipt.missions_held ? `, held ${receipt.missions_held} human-blocked mission${receipt.missions_held === 1 ? '' : 's'}` : '';
     const wishNote = `, ${wishSweepSummaryLine(receipt.wish_dispatch, receipt.wish_dispatch_error)}`;
     const receiptNote = receipt.receipt_path ? `, receipt ${receipt.receipt_path}` : '';
-    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${receiptNote}`;
+    // Deltas alone ("0 certified, 0 landed") are true and useless: they read
+    // as "nothing to do" whether the queue is empty or 19-deep and wedged.
+    // Always print the standing backlog, and name work that cleared every
+    // gate and still did not land — that is the shape of a stuck loop.
+    const stuckNote = stuckBacklogNote(receipt);
+    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${receiptNote}`;
     console.log(gateForHuman(summary).text);
     for (const fulfilled of receipt.wish_dispatch?.fulfilled_results || []) {
       if (fulfilled.review_ask) console.log(fulfilled.review_ask);

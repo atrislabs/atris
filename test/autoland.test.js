@@ -1851,3 +1851,52 @@ test('daily experiment hook is skipped when daily_experiment is false', () => {
     cleanupTempDir(base);
   }
 });
+
+// Regression: cron has no Homebrew PATH, so every `npm run ...` verifier
+// returned ENOENT, mapped to verify_failed, and 16 landable rows were skipped
+// silently every hour for 20 days. Two separate guarantees below: recorded
+// checks must be runnable without a shell, and a check the harness cannot
+// execute must never be reported as a verdict on the diff.
+test('verify commands run without inheriting a shell PATH', () => {
+  const { runVerifyCommand } = require('../lib/auto-accept-certified');
+  const cronLikeEnv = { PATH: '/usr/bin:/bin', HOME: process.env.HOME };
+  const original = process.env;
+  try {
+    process.env = cronLikeEnv;
+    const result = runVerifyCommand('node --check test/autoland.test.js', repoRoot);
+    assert.equal(result.reason, 'verify_passed', JSON.stringify(result));
+    assert.equal(result.ok, true);
+  } finally {
+    process.env = original;
+  }
+});
+
+test('an unrunnable check is an alarm, never a failing verdict', () => {
+  const { runVerifyCommand } = require('../lib/auto-accept-certified');
+  const result = runVerifyCommand('atris-not-a-real-binary verify-artifact README.md', repoRoot);
+  // Either the allowlist rejects it or the spawn cannot find it; what must
+  // never happen is it coming back as verify_failed, which reads as "the
+  // work is bad" when the truth is "this machine could not check".
+  assert.notEqual(result.reason, 'verify_failed', JSON.stringify(result));
+  assert.equal(result.ok, false);
+});
+
+test('a missing verifier binary blocks accept-all instead of landing unchecked', () => {
+  const task = {
+    id: 't1',
+    display_id: 'WEB-1',
+    status: 'review',
+    tag: 'web',
+    metadata: { verify: 'tsc', agent_certified: true },
+    review: { approval_status: 'pending', proof: 'Ran: tsc = exit 0' },
+  };
+  const evaluation = evaluateAutoAccept(task, {
+    acceptAll: true,
+    strictVerify: false,
+    executeVerify: true,
+    verifyCache: new Map(),
+  });
+  if (evaluation.eligible) {
+    assert.fail('accept-all landed a task whose recorded check could not be executed');
+  }
+});
