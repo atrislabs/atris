@@ -49,6 +49,7 @@ rg "gmState|AgentXP General Manager|pickSeedPlayer|inferManager" commands/gm.js 
 # Modular commands
 rg "initAtris" commands/init.js             # Init command
 rg "syncAtris" commands/sync.js             # Update/sync command
+rg "syncCheckoutCommand|checkoutBehindMessage|trackedTreeIsClean" commands/sync-checkout.js lib/checkout-sync.js bin/atris.js commands/status.js test/sync-checkout.test.js  # Clean current-branch fetch + fast-forward command and boot/status upstream-behind warning
 rg "logAtris|logsDigest" commands/log.js bin/atris.js test/logs-digest.test.js  # Interactive log writer and read-only daily workspace/team digest
 rg "logSyncAtris" commands/log-sync.js      # Log sync command
 rg "experimentsCommand" commands/experiments.js  # Experiments CLI command

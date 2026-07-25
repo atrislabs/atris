@@ -578,6 +578,7 @@ function showHelp() {
   console.log('Sync:');
   console.log('  pull       - Pull journals + member data from cloud');
   console.log('  push       - Push workspace files to cloud');
+  console.log('  sync-checkout - fetch and fast-forward a clean current branch');
   console.log('  cloud      - Delete cloud files not present locally (cloud clean --dry-run|--yes)');
   console.log('  live       - Keep a business brain fresh (doctor, pull, watch, push)');
   console.log('  clean-workspace <slug> - Analyze & remove junk files from a workspace (alias: cw)');
@@ -1620,6 +1621,11 @@ function showWelcomeVisualization() {
     console.log(`  learned \"${latestBriefTitle}\" overnight -> atris/wiki/briefs/${latestBriefName}`);
   }
 
+  const checkoutWarning = require('../lib/checkout-sync').checkoutBehindMessage(cwd);
+  if (checkoutWarning) {
+    console.log(`  ${checkoutWarning}`);
+  }
+
   // Show the work itself, not counts. A newcomer in any domain (code, docs,
   // a travel plan) should read actual task names and know what's happening.
   // Waiting-on-you comes first: the one thing only a human can do.
@@ -1975,6 +1981,9 @@ if (command === 'init') {
   activateCmd();
 } else if (command === 'watch') {
   require('../commands/watch').watchAtris();
+} else if (command === 'sync-checkout') {
+  const code = require('../commands/sync-checkout').syncCheckoutCommand(process.argv.slice(3));
+  process.exit(code);
 } else if (command === 'update' || command === 'sync') {
   const args = process.argv.slice(3);
   const firstSyncArg = process.argv[3];
