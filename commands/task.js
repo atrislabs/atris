@@ -1583,7 +1583,72 @@ function enrichTaskProjection(projection) {
     },
     streams: buildTaskStreams(enrichedTasks, goalSource.goals),
     tasks: enrichedTasks,
+    missions: projectionMissions(root),
+    wishes: projectionWishes(root),
   };
+}
+
+// The desktop app renders projection.missions but the writer never filled it,
+// so live workers were invisible on every dashboard. Best-effort: a broken
+// mission or wish store must never take the task projection down with it.
+const PROJECTION_MISSION_LIMIT = 50;
+const PROJECTION_WISH_LIMIT = 30;
+const PROJECTION_CLIP = 240;
+
+function clipForProjection(value) {
+  const text = String(value || '');
+  return text.length > PROJECTION_CLIP ? `${text.slice(0, PROJECTION_CLIP - 3)}...` : text;
+}
+
+function projectionMissions(root) {
+  try {
+    const { listMissions } = require('./mission.js');
+    const recentCutoff = Date.now() - 48 * 60 * 60 * 1000;
+    return listMissions(root)
+      .filter(mission => {
+        const status = String(mission.status || '');
+        if (!['complete', 'stopped'].includes(status)) return true;
+        const updated = Date.parse(mission.updated_at || mission.created_at || '') || 0;
+        return updated >= recentCutoff;
+      })
+      .slice(0, PROJECTION_MISSION_LIMIT)
+      .map(mission => ({
+        id: mission.id,
+        objective: clipForProjection(String(mission.objective || '')),
+        status: mission.status || null,
+        owner: mission.owner || null,
+        runner: mission.runner || null,
+        cadence: mission.cadence || null,
+        lane: mission.lane || null,
+        next_action: clipForProjection(String(mission.next_action || '')),
+        last_tick_at: mission.last_tick_at || null,
+        last_tick_status: mission.last_tick_status || null,
+        receipt_path: mission.receipt_path || null,
+        wish_id: mission.wish_id || null,
+        created_at: mission.created_at || null,
+        updated_at: mission.updated_at || null,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function projectionWishes(root) {
+  try {
+    const { readWishes } = require('../lib/wish-store');
+    return readWishes(root)
+      .filter(wish => String(wish.status || '') !== 'closed')
+      .slice(-PROJECTION_WISH_LIMIT)
+      .map(wish => ({
+        id: wish.id,
+        n: wish.n ?? null,
+        text: clipForProjection(String(wish.text || '')),
+        status: wish.status || null,
+        created_at: wish.first_ts || wish.ts || null,
+      }));
+  } catch {
+    return [];
+  }
 }
 
 function taskTypeForCloud(task) {
@@ -12273,4 +12338,6 @@ module.exports = {
   delegateTask,
   AGENT_ENV_MARKERS,
   autoRenderTodoFromDb,
+  projectionMissions,
+  projectionWishes,
 };
