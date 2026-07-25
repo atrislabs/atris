@@ -1697,6 +1697,16 @@ function missionLastStepSummary(ticks = []) {
   return '';
 }
 
+function verifierElapsedSeconds(verifierResult) {
+  const ms = Number(verifierResult && verifierResult.elapsed_ms);
+  return Number.isFinite(ms) ? Math.round(ms / 1000) : 0;
+}
+
+function verifierTimeoutSeconds(verifierResult) {
+  const ms = Number(verifierResult && verifierResult.timeout_ms);
+  return Number.isFinite(ms) ? Math.round(ms / 1000) : 0;
+}
+
 function missionVerifierCheckedText(verifierResult, mission) {
   if (!verifierResult) return 'UNVERIFIED: tick recorded but nothing was checked; treat this increment as unproven.';
   if (verifierResult.mode === 'engine-unavailable') {
@@ -1708,6 +1718,9 @@ function missionVerifierCheckedText(verifierResult, mission) {
       : 'VERIFY FAILED: the engine verify pass did not end with VERDICT: PASS.';
   }
   const command = verifierResult.command || mission.verifier || 'configured verifier';
+  if (!verifierResult.passed && verifierResult.timed_out) {
+    return `VERIFY TIMED OUT: the check ran past its ${verifierTimeoutSeconds(verifierResult)}s window (took ${verifierElapsedSeconds(verifierResult)}s); the code is not failing, the suite is slow. Rerun with more room.`;
+  }
   if (verifierResult.passed) {
     if (/^git\s+diff\s+--check\b/i.test(command)) return 'I ran the diff cleanliness check.';
     if (/\bnode\s+--test\b/i.test(command)) return 'I ran the behavior checks.';
@@ -1732,6 +1745,9 @@ function missionVerifierHighLevelTestText(verifierResult, mission) {
       : 'The verify engine did not provide a passing changed-surface verdict.';
   }
   const command = verifierResult.command || mission.verifier || 'configured verifier';
+  if (!verifierResult.passed && verifierResult.timed_out) {
+    return `Verifier command timed out after ${verifierElapsedSeconds(verifierResult)}s against a ${verifierTimeoutSeconds(verifierResult)}s window: ${command}. No pass/fail verdict was reached; the suite outran the window rather than the code failing.`;
+  }
   const outcome = verifierResult.passed ? 'passed' : 'failed';
   if (/^git\s+diff\s+--check\b/i.test(command)) {
     return `Diff cleanliness check ${outcome}: no whitespace or patch-format issues in the changed files.`;
@@ -5871,19 +5887,29 @@ function runVerifier(command, root = process.cwd()) {
   if (!command) return null;
   const resolvedCommand = resolveVerifierCommand(command);
   const { envWithNodeDir } = require('../lib/spawn-env');
+  const timeoutMs = missionVerifierTimeoutMs();
+  const startedAt = Date.now();
   const result = spawnSync(resolvedCommand, {
     cwd: root,
     shell: true,
     encoding: 'utf8',
-    timeout: missionVerifierTimeoutMs(),
+    timeout: timeoutMs,
     env: envWithNodeDir(process.env),
   });
+  const elapsedMs = Date.now() - startedAt;
+  // A verifier that blows its window is not a failing check: the code may be
+  // fine and the suite merely slow (or starved by a concurrent flight). Report
+  // it as a distinct timed-out state so operators do not read slow as broken.
+  const timedOut = result.error ? result.error.code === 'ETIMEDOUT' : false;
   return {
     command,
     resolved_command: resolvedCommand === command ? null : resolvedCommand,
     status: result.status,
     signal: result.signal || null,
     passed: result.status === 0,
+    timed_out: timedOut,
+    elapsed_ms: elapsedMs,
+    timeout_ms: timeoutMs,
     stdout: String(result.stdout || '').slice(-4000),
     stderr: String(result.stderr || '').slice(-4000),
   };
@@ -10748,6 +10774,7 @@ module.exports = {
   missionVerifierHighLevelTestText,
   buildEngineVerifyPrompt,
   engineVerifierResultFromRun,
+  runVerifier,
   missionFullBudgetRemainingSeconds,
   missionBudgetContinuationText,
   missionHumanStatusText,

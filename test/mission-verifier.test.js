@@ -11,6 +11,8 @@ const {
   buildEngineVerifyPrompt,
   engineVerifierResultFromRun,
   missionVerifierCheckedText,
+  missionVerifierHighLevelTestText,
+  runVerifier,
 } = require('../commands/mission');
 const {
   missionVerifierTimeoutMs,
@@ -51,6 +53,36 @@ test('engine verify contract requires real execution and parses only the final v
     engineVerifierResultFromRun({ ok: false, timedOut: true, stderr: 'timed out' }),
     { passed: false, mode: 'engine-unavailable', engine: 'codex', timed_out: true, output: 'timed out' },
   );
+});
+
+test('a verifier that outruns its window reports timed_out, elapsed, and window, separate from a failing check', () => {
+  const prev = process.env.ATRIS_MISSION_VERIFIER_TIMEOUT_MS;
+  process.env.ATRIS_MISSION_VERIFIER_TIMEOUT_MS = '1000';
+  try {
+    // A slow-but-clean suite: it never fails, it just outlives the window
+    // (the atrisos-web mission-5 case: 81s work killed at a 120s window by a
+    // concurrent flight). This must NOT be reported the same as `false`.
+    const timedOut = runVerifier('sleep 2');
+    assert.equal(timedOut.timed_out, true);
+    assert.equal(timedOut.passed, false);
+    assert.equal(timedOut.status, null);
+    assert.equal(timedOut.timeout_ms, 1000);
+    assert.ok(timedOut.elapsed_ms >= 1000, `elapsed ${timedOut.elapsed_ms}ms should be >= the window`);
+
+    // A genuinely failing check inside the window stays a plain failure.
+    const failed = runVerifier('node -e "process.exit(1)"');
+    assert.equal(failed.passed, false);
+    assert.equal(failed.timed_out, false);
+    assert.equal(failed.status, 1);
+
+    // The recap text an operator reads distinguishes the two states.
+    assert.match(missionVerifierCheckedText(timedOut, {}), /^VERIFY TIMED OUT:/);
+    assert.match(missionVerifierCheckedText(failed, {}), /^VERIFY FAILED:/);
+    assert.match(missionVerifierHighLevelTestText(timedOut, {}), /timed out/i);
+  } finally {
+    if (prev === undefined) delete process.env.ATRIS_MISSION_VERIFIER_TIMEOUT_MS;
+    else process.env.ATRIS_MISSION_VERIFIER_TIMEOUT_MS = prev;
+  }
 });
 
 test('unverified and failed tick recap text carries a visible warning marker', () => {
