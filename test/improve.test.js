@@ -143,7 +143,7 @@ test('summarizeLocalMissionRun accepts one verified tick and rejects missing pro
       status: 'ran',
       verifier_passed: true,
       claude: { summary: 'fixed the fallback' },
-      worktree: { new_since_baseline_sample: ['commands/improve.js'] },
+      worktree: { new_dirty_sample: [' M commands/improve.js'] },
     }],
   });
   assert.equal(verified.verify, true);
@@ -168,6 +168,26 @@ test('summarizeLocalMissionRun accepts one verified tick and rejects missing pro
     }),
     /worker did not run/
   );
+});
+
+test('summarizeLocalMissionRun reports only files dirtied by this tick', () => {
+  const summary = summarizeLocalMissionRun({
+    ok: true,
+    action: 'mission_run',
+    mission: { objective: 'fix the receipt' },
+    tick_count: 1,
+    ticks: [{
+      status: 'ran',
+      verifier_passed: true,
+      claude: { summary: 'fixed the receipt' },
+      worktree: {
+        new_since_baseline_sample: ['unrelated-dirty.js', 'commands/improve.js'],
+        new_dirty_sample: [' M commands/improve.js'],
+      },
+    }],
+  });
+
+  assert.deepEqual(summary.files, ['commands/improve.js']);
 });
 
 test('real local improve fallback runs one drill tick, verifies it, and writes one scorecard', () => {

@@ -584,6 +584,15 @@ function localSummaryText(tick = {}, mission = {}) {
     .trim();
 }
 
+function tickTouchedFiles(worktree = {}) {
+  if (!Array.isArray(worktree.new_dirty_sample)) return [];
+  return worktree.new_dirty_sample.map((entry) => {
+    const pathText = String(entry || '').slice(3);
+    const arrow = pathText.indexOf(' -> ');
+    return arrow >= 0 ? pathText.slice(arrow + 4) : pathText;
+  }).filter(Boolean);
+}
+
 /**
  * Turn one mission-run JSON result into the same stable summary the paid API
  * returns. A local tick earns the conservative local reward (+1) only after
@@ -609,9 +618,7 @@ function summarizeLocalMissionRun(payload = {}) {
     throw new Error('local improve verifier did not pass');
   }
   const mission = payload.mission || {};
-  const files = tick.worktree && Array.isArray(tick.worktree.new_since_baseline_sample)
-    ? tick.worktree.new_since_baseline_sample
-    : [];
+  const files = tickTouchedFiles(tick.worktree);
   return {
     shipped: localSummaryText(tick, mission),
     reward: 1,
