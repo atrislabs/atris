@@ -3,6 +3,7 @@ const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo, getTeamActivity } = require('../lib/todo');
 const { clarify } = require('../lib/autoland');
+const { checkoutBehindMessage } = require('../lib/checkout-sync');
 
 // Box drawing helpers
 const W = 64; // inner width
@@ -200,6 +201,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
 
   // Get team activity
   const teamActivity = getTeamActivity(targetDir);
+  const checkoutWarning = checkoutBehindMessage(process.cwd());
 
   // JSON mode — structured output for scripting
   if (jsonMode) {
@@ -215,6 +217,10 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
     };
     console.log(JSON.stringify(output, null, 2));
     return;
+  }
+
+  if (checkoutWarning) {
+    console.log(checkoutWarning);
   }
 
   // Quick mode
