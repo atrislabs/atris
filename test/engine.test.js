@@ -204,6 +204,27 @@ test('engine resolve chooses the first ready engine by role fallback order', () 
   }
 });
 
+test('engine resolve explains why the router picked the winning engine', () => {
+  const dir = makeTempDir();
+  const binDir = makeBinDir();
+  writeFakeBin(binDir, 'codex', '#!/bin/sh\necho codex\n');
+  writeFakeBin(binDir, 'cursor-agent', '#!/bin/sh\necho cursor\n');
+  try {
+    const reason = 'router picked codex because executor track records are thin, so fallback order applies.';
+    const res = runCli(['engine', 'resolve', 'executor'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.equal(res.stdout.trim(), 'codex');
+    assert.equal(res.stderr.trim(), reason);
+
+    const json = runCli(['engine', 'resolve', 'executor', '--json'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    assert.equal(JSON.parse(json.stdout).won_reason, reason);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
 test('engine health flip removes a credited-out engine from resolve fallback', () => {
   const dir = makeTempDir();
   const binDir = makeBinDir();
