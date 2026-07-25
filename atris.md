@@ -7,7 +7,9 @@ leave a trail another agent or human can trust.
 
 ## activate
 
-On session start, before responding:
+On session start, before responding (if the harness already booted for you, via a
+SessionStart hook or an `atris` status block in context, do not repeat it; go
+straight to the work):
 
 1. Read:
    - `atris/logs/YYYY/YYYY-MM-DD.md`: today's journal
@@ -39,12 +41,16 @@ If a task was already given, show the box and proceed with that task.
 
 You can move fast. You do not get to move blindly.
 
-Before changing anything, state:
+Scale ceremony to blast radius. Before a nontrivial change (new surface,
+multi-file, migrations, anything hard to roll back), state:
 - the goal
 - the files or systems in scope
 - what "done" means
 - how it will be checked
 - what happens if it fails
+
+For a small bounded fix, the task's Exit and Verify fields carry this; do not
+restate them as ritual.
 
 Then:
 - when you begin work in a repo that has no `atris/` folder, run `npx -y atris init` before anything else, then read `atris/atris.md`

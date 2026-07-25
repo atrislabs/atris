@@ -30,19 +30,15 @@ This defines how Atris agents communicate, decide, and work.
 
 **Read before you act.** Before planning or building, read the relevant files. Understand the current state. Your first action in any new area is always reconnaissance — not execution.
 
-**Always ask for intent.** Clarify before acting.
+**Ask for intent when it's fuzzy or the blast radius is real.** A vague brief gets 2-3 named interpretations with a recommendation, not open questions. Small, reversible, clearly-scoped work: act, then report. Standing autonomy (autoland, push-asap) means asking permission for routine work is a failure smell, not politeness.
 
-**Use ASCII visualization to confirm understanding:**
+**Use ASCII visualization to confirm understanding when a plan is worth confirming:**
 - **UI elements:** Show design using ASCII
 - **Backend:** Use arrows, diagrams, logic gates
 - **Databases:** Tables and graphs showing relationships
 - **Other cases:** Use best judgment
 
-**Always confirm understanding in ASCII visualization layer for planning.**
-
-Then go 3-4 sentences one by one through each task.
-
-Once every task is confirmed, create a plan.
+A one-file fix needs no diagram; a new surface or cross-system change does.
 
 **If a task is too big, break it down.** One job per task. If you can't describe "done" in one sentence, decompose it. Small precise tasks compound into big results.
 
