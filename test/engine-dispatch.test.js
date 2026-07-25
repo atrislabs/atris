@@ -542,6 +542,37 @@ test('runDispatchFlight review-only refuses a verifier workdir outside its workt
   }
 });
 
+test('prepareReviewSandbox refuses a root that is not its own git top level', () => {
+  // `git rev-parse` walks up to the nearest enclosing repository. If review-only
+  // dispatch ran against a root that is only *inside* some outer repo (or a bare
+  // scratch dir), it would fetch and trust that outer repo's origin/master and
+  // build against it. The guard must refuse before any fetch happens.
+  const nonGitRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'review-sandbox-nogit-'));
+  try {
+    const result = fleet.prepareReviewSandbox({ root: nonGitRoot, taskId: 'CLI-900', engine: 'cursor' });
+    assert.equal(result.ok, false);
+    assert.match(result.detail, /its own git repository/);
+  } finally {
+    fs.rmSync(nonGitRoot, { recursive: true, force: true });
+  }
+});
+
+test('prepareReviewSandbox clears the git-top-level guard for a real repository', () => {
+  // A root that IS its own git top level must get past the toplevel guard and
+  // fail later, on the protected-origin check, not on the ownership guard.
+  const gitRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'review-sandbox-git-'));
+  try {
+    const init = require('node:child_process').spawnSync('git', ['init', '-q', gitRoot], { encoding: 'utf8' });
+    assert.equal(init.status, 0, 'git init must succeed for this fixture');
+    const result = fleet.prepareReviewSandbox({ root: gitRoot, taskId: 'CLI-900', engine: 'cursor' });
+    assert.equal(result.ok, false);
+    assert.doesNotMatch(result.detail, /its own git repository/, 'a real repo must clear the ownership guard');
+    assert.match(result.detail, /protected origin\/master/);
+  } finally {
+    fs.rmSync(gitRoot, { recursive: true, force: true });
+  }
+});
+
 test('runDispatchFlight restaffs once when usage-limit output kills the first engine', async () => {
   const tmpRoot = makeTempRoot();
   try {    const { cli, calls } = ownCliFake({
