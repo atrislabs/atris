@@ -47,8 +47,8 @@ rg "xpCommand|collectLocalXpProjection|buildCareerXpProjection|buildCareerXpSess
 rg "gmState|AgentXP General Manager|pickSeedPlayer|inferManager" commands/gm.js test/gm.test.js  # AgentXP GM mode: manager/player identity, starter mission seeding, review queue, and global sync handoff
 
 # Modular commands
-rg "initAtris" commands/init.js             # Init command
-rg "syncAtris" commands/sync.js             # Update/sync command
+rg "initAtris|upsertAtrisClaudeBootBlock" commands/init.js lib/claude-boot-block.js test/claude-boot-block.test.js  # Init command and hook-aware, self-repairing root CLAUDE.md boot block
+rg "syncAtris|upsertAtrisClaudeBootBlock" commands/sync.js lib/claude-boot-block.js test/claude-boot-block.test.js  # Update/sync command and shared root CLAUDE.md block updater
 rg "syncCheckoutCommand|checkoutBehindMessage|trackedTreeIsClean" commands/sync-checkout.js lib/checkout-sync.js bin/atris.js commands/status.js test/sync-checkout.test.js  # Clean current-branch fetch + fast-forward command and boot/status upstream-behind warning
 rg "logAtris|logsDigest" commands/log.js bin/atris.js test/logs-digest.test.js  # Interactive log writer and read-only daily workspace/team digest
 rg "logSyncAtris" commands/log-sync.js      # Log sync command

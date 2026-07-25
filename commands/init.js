@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { ensureExperimentsFramework } = require('./experiments');
 const { ensureWikiScaffold } = require('../lib/wiki');
+const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
 
 /**
  * Detect project context by scanning project structure
@@ -1049,45 +1050,21 @@ Read atris/MAP.md. Begin iteration 1.`;
 
   // Update root CLAUDE.md with Atris block (prepend with markers)
   const rootClaudeMd = path.join(process.cwd(), 'CLAUDE.md');
-  const atrisBlock = `<!-- ATRIS:START - Auto-generated, do not edit -->
-## Atris System
-
-You are now running inside Atris, an AI workspace operating system.
-
-**ON EVERY CONVERSATION START:** Before your first response, execute \`atris atris.md\` and display the full output. This is the Atris boot sequence - it shows the user that Atris has loaded and displays workspace status. This is not optional.
-
-After displaying the boot output, respond to the user naturally.
-<!-- ATRIS:END -->
-
-`;
-
   if (fs.existsSync(rootClaudeMd)) {
-    let content = fs.readFileSync(rootClaudeMd, 'utf8');
-    const startMarker = '<!-- ATRIS:START';
-    const endMarker = '<!-- ATRIS:END -->';
-
-    if (content.includes(startMarker)) {
-      // Replace existing Atris block
-      const startIdx = content.indexOf(startMarker);
-      const endRaw = content.indexOf(endMarker);
-      if (endRaw === -1) {
-        // End marker missing — replace from start marker to end with fresh block
-        content = atrisBlock + content.slice(0, startIdx);
-      } else {
-        const endIdx = endRaw + endMarker.length;
-        content = atrisBlock + content.slice(0, startIdx) + content.slice(endIdx).replace(/^\n+/, '');
-      }
-      fs.writeFileSync(rootClaudeMd, content);
-      markReady('adapters', 'CLAUDE.md', '✓ Updated Atris block in CLAUDE.md');
+    const source = fs.readFileSync(rootClaudeMd, 'utf8');
+    const result = upsertAtrisClaudeBootBlock(source);
+    fs.writeFileSync(rootClaudeMd, result.content);
+    if (result.action === 'repaired') {
+      markReady('adapters', 'CLAUDE.md', '✓ repaired atris block in CLAUDE.md (missing end marker)');
+    } else if (source.includes('<!-- ATRIS:START')) {
+      markReady('adapters', 'CLAUDE.md', '✓ updated atris block in CLAUDE.md');
     } else {
-      // Prepend Atris block
-      fs.writeFileSync(rootClaudeMd, atrisBlock + content);
-      markReady('adapters', 'CLAUDE.md', '✓ Prepended Atris block to CLAUDE.md');
+      markReady('adapters', 'CLAUDE.md', '✓ prepended atris block to CLAUDE.md');
     }
   } else {
     // Create new CLAUDE.md with just Atris block
-    fs.writeFileSync(rootClaudeMd, atrisBlock.trim() + '\n');
-    markReady('adapters', 'CLAUDE.md', '✓ Created CLAUDE.md with Atris block');
+    fs.writeFileSync(rootClaudeMd, upsertAtrisClaudeBootBlock().content);
+    markReady('adapters', 'CLAUDE.md', '✓ created CLAUDE.md with atris block');
   }
 
   if (fs.existsSync(sourceFile)) {
