@@ -470,9 +470,12 @@ function showStatus(root, args) {
   const blocked = results.filter((r) => r.action !== 'would_accept');
   const tasks = readProjection(root);
   const waiting = autoland.waitingOnHuman(tasks);
-  const heartbeatInstalled = typeof policy?.heartbeat_installed === 'boolean'
-    ? policy.heartbeat_installed
-    : null;
+  // Ask the crontab, not the policy file. The cached flag is written once at
+  // `autoland on` time, so it reports "unknown" for a cron that has been
+  // running hourly for weeks, and would keep reporting "running" for one
+  // someone deleted. A loop that cannot confirm its own liveness from
+  // evidence cannot be trusted to say it is healthy.
+  const heartbeatInstalled = heartbeatLiveness(root, policy);
 
   if (json) {
     console.log(JSON.stringify({
@@ -498,12 +501,7 @@ function showStatus(root, args) {
     : 'off - everything waits for you';
   console.log(`  policy: ${policyText}`);
   if (enabled && acceptAll) console.log('  bar: everything lands except the protected lanes (money, deploys, security, customer, outward)');
-  const heartbeatText = heartbeatInstalled === true
-    ? 'running hourly'
-    : heartbeatInstalled === false
-      ? 'not installed'
-      : 'unknown - run atris autoland on to check and repair';
-  console.log(`  heartbeat: ${heartbeatText}`);
+  console.log(`  heartbeat: ${heartbeatStatusText(root, policy)}`);
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
   const reapTrouble = autoland.readState(root).last_reap_error;
   if (reapTrouble) console.log(`  cleanup trouble: landing sweep failed on ${reapTrouble.date} (${reapTrouble.error}) - run: atris land --reap`);
@@ -701,6 +699,49 @@ function persistTickReceipt(root, receipt) {
 // loud, and call out the two states that mean the loop is wedged rather than
 // idle: work blocked behind a check the harness could not execute, and work
 // that passed every gate and still did not land.
+// Installed and alive are different claims, and only one of them is worth
+// printing. Deliberately does NOT shell out to crontab: `autoland status` is
+// read-only and must stay fast (a stalled crontab would block it for the full
+// 10s read timeout — see 'autoland status never probes a stalled crontab').
+// Tick receipts are local file reads and are stronger evidence anyway: a
+// crontab line proves configuration, a recent receipt proves the loop ran.
+function heartbeatLiveness(root, policy) {
+  return typeof policy?.heartbeat_installed === 'boolean' ? policy.heartbeat_installed : null;
+}
+
+function lastTickAgeHours(root) {
+  try {
+    const runsDir = path.join(root, 'atris', 'runs');
+    const newest = fs.readdirSync(runsDir)
+      .filter((f) => f.startsWith('autoland-tick-') && f.endsWith('.json'))
+      .sort()
+      .pop();
+    if (!newest) return null;
+    const stamp = fs.statSync(path.join(runsDir, newest)).mtimeMs;
+    return (Date.now() - stamp) / 3_600_000;
+  } catch {
+    return null;
+  }
+}
+
+function heartbeatStatusText(root, policy) {
+  const ageHours = lastTickAgeHours(root);
+  const ageText = ageHours === null
+    ? null
+    : ageHours < 1 ? 'under an hour' : `${Math.floor(ageHours)}h`;
+  // Evidence first: a receipt from the last couple of hours proves the loop is
+  // alive no matter what the policy file remembers. The hourly cron makes two
+  // missed hours an outage rather than jitter — and a heartbeat that has gone
+  // quiet is the single most useful thing this line can say, because that is
+  // the state nobody notices.
+  if (ageHours !== null && ageHours <= 2) return `running hourly (last tick ${ageText} ago)`;
+  if (ageHours !== null) return `SILENT - last tick ${ageText} ago; run atris autoland tick`;
+  const installed = heartbeatLiveness(root, policy);
+  if (installed === false) return 'not installed - run atris autoland on';
+  if (installed === true) return 'installed, but no tick has ever run - run atris autoland tick';
+  return 'unknown - run atris autoland on to check and repair';
+}
+
 function stuckBacklogNote(receipt) {
   const parts = [];
   const scanned = Number(receipt.scanned || 0);

@@ -1900,3 +1900,65 @@ test('a missing verifier binary blocks accept-all instead of landing unchecked',
     assert.fail('accept-all landed a task whose recorded check could not be executed');
   }
 });
+
+// Regression: WEB-410 declared "PROTECTED LANE: auth/session minting ...
+// never self-land" in its own title, carried tag 'endgame', and auto-landed
+// on 2026-07-25. Safety routed through a tag field authors leave empty fails
+// open silently.
+test('a protected lane declared in the task text blocks auto-accept', () => {
+  const { declaredProtectedLane } = require('../lib/auto-accept-certified');
+  const task = {
+    id: 't1',
+    display_id: 'WEB-410',
+    status: 'review',
+    tag: 'endgame',
+    title: 'Seeded-session funnel smoke. PROTECTED LANE: auth/session minting — engine proposes the diff, orchestrator reviews pre-land, never self-land.',
+    metadata: { agent_certified: true },
+    review: { approval_status: 'pending', proof: 'Ran: npm test = exit 0' },
+  };
+  assert.ok(declaredProtectedLane(task), 'declaration not detected');
+  const evaluation = evaluateAutoAccept(task, {
+    acceptAll: true, strictVerify: false, executeVerify: false, verifyCache: new Map(),
+  });
+  assert.equal(evaluation.eligible, false);
+  assert.equal(evaluation.reason, 'declared_protected_lane');
+});
+
+// An untagged row cannot be assumed safe: WEB-406 (Stripe checkout + paywall)
+// landed carrying no tag at all.
+test('an untagged money-lane task is caught by its text', () => {
+  const { sniffedProtectedLane } = require('../lib/auto-accept-certified');
+  const task = {
+    id: 't2',
+    display_id: 'WEB-406',
+    status: 'review',
+    tag: null,
+    title: 'Free-user personal computer paywall screen (Pro/Business checkout) + fix execute slug uuid bug',
+    metadata: { agent_certified: true },
+    review: { approval_status: 'pending', proof: 'Ran: npm test = exit 0' },
+  };
+  assert.equal(sniffedProtectedLane(task).lane, 'billing');
+  const evaluation = evaluateAutoAccept(task, {
+    acceptAll: true, strictVerify: false, executeVerify: false, verifyCache: new Map(),
+  });
+  assert.equal(evaluation.eligible, false);
+  assert.equal(evaluation.reason, 'untagged_protected_lane_text');
+});
+
+// The failure mode of an over-eager guard is a wedged loop, which is the same
+// outage as failing open. Ordinary untagged frontend work must still land.
+test('ordinary untagged work is not held by the protected-lane guards', () => {
+  const { declaredProtectedLane, sniffedProtectedLane } = require('../lib/auto-accept-certified');
+  const ordinary = [
+    'Fix design-gate red on master: LoginOptions.tsx shipped 13 arbitrary-hex classes',
+    'GM tidy pack: drop duplicate dashboard refetch on group-chip change',
+    'OrbChatPanel: tool calls must render above assistant text',
+    'Member view v1: click a member to see their real process (receipts as RunTimeline)',
+    'Fix member detail wake refresh and inline chat focus',
+  ];
+  for (const title of ordinary) {
+    const task = { title, tag: null, objective: '' };
+    assert.equal(declaredProtectedLane(task), null, `false declared match: ${title}`);
+    assert.equal(sniffedProtectedLane(task), null, `false lane match: ${title}`);
+  }
+});
