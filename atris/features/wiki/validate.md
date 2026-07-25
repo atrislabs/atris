@@ -1,31 +1,32 @@
 ---
-last_compiled: 2026-07-12
+last_compiled: 2026-07-25
 sources:
   - lib/wiki.js:15-25 (public/private wiki root getters)
-  - lib/wiki.js:192-217 (wiki and context scaffold)
+  - lib/wiki.js:192-218 (wiki and context scaffold)
   - lib/wiki.js:246-326 (staged ingest packs and manifests)
   - lib/wiki.js:436-619 (stale, orphan, and agent-readable checks)
-  - lib/wiki.js:620-805 (status/log writes and prompt builders)
+  - lib/wiki.js:620-825 (status/log writes and prompt builders)
   - commands/wiki.js:501-510 (local/private ingest and query)
-  - commands/wiki.js:511-560 (lint, search, log, verify)
-  - commands/wiki.js:484-583 (wiki dispatch and help)
+  - commands/wiki.js:511-570 (lint, search, log, verify)
+  - commands/wiki.js:484-571 (wiki dispatch and help)
   - commands/loop.js:1-114 (local wiki upkeep loop)
-  - commands/init.js:371-374 (wiki scaffold during init)
-  - commands/activate.js:141-158 (session-start wiki status)
-  - commands/pull.js:225 (wiki prefix normalization)
-  - commands/push.js:307 (wiki prefix normalization)
-  - bin/atris.js:349-354 (top-level wiki help — ingest/query/lint/loop lines)
-  - bin/atris.js:1824-1844 (wiki, ingest, query, lint, loop routes)
-  - test/commands.test.js:13666 (wiki scaffold coverage)
-  - test/commands.test.js:15982-16043 (wiki loop stale/suggest coverage)
+  - commands/init.js:410 (ensureWikiScaffold during init; imported at commands/init.js:4)
+  - commands/activate.js:172 (session-start readWikiStatus)
+  - commands/activate.js:262 (void wikiStatus, read but no longer rendered)
+  - commands/pull.js:238 (wiki prefix normalization)
+  - commands/push.js:68 (wiki prefix normalization)
+  - bin/atris.js:540-543 (top-level wiki help, the ingest/query/lint/loop lines)
+  - bin/atris.js:2732-2751 (wiki, ingest, query, lint, loop routes)
+  - test/commands.test.js:19492 (wiki scaffold coverage)
+  - test/commands.test.js:19715-19784 (wiki loop stale/suggest/alias coverage)
   - atris/skills/wiki/SKILL.md
 ---
 
 # Wiki — Validation
 
-> **Status:** v3 — local-first wiki plus clean upkeep baseline
-> **Validated:** 2026-07-12
-> **Exit condition:** local/public and private wiki flows work, canonical root is `atris/wiki/`, init scaffolds it, activate surfaces it, agent/spec docs reference it, stale/orphan upkeep is executable, and this repo dogfoods it.
+> **Status:** v3, local-first wiki with executable upkeep; the repo baseline is no longer clean
+> **Validated:** 2026-07-25
+> **Exit condition:** local/public and private wiki flows work, canonical root is `atris/wiki/`, init scaffolds it, activate reads it, agent/spec docs reference it, stale/orphan upkeep is executable, and this repo dogfoods it.
 
 ## Checks
 
@@ -37,11 +38,12 @@ sources:
 - [x] `atris wiki search` reads `atris/wiki/index.md`
 - [x] `atris wiki log` reads `atris/wiki/log.md`
 - [x] `atris wiki verify` checks sources, `last_compiled`, `last_verified`, confidence, dependencies, actionability, and stale sources
-- [x] `atris loop` flags stale wiki pages, orphan pages, and next ingest candidates while refreshing `STATUS.md` and `log.md`
+- [x] `atris loop wiki` flags stale wiki pages, orphan pages, and next ingest candidates while refreshing `STATUS.md` and `log.md`
 - [x] `atris wiki loop` aliases the same upkeep analysis
+- [ ] Bare `atris loop` runs wiki upkeep. It no longer does: `bin/atris.js:2743` routes `loop` to `commands/loop-front.js`, the self-improvement front door, which forwards only the `wiki` subcommand to `commands/loop.js`. The top-level help line at `bin/atris.js:543` still describes `loop` as the wiki upkeep loop and is now wrong.
 - [x] `pull --only wiki` and `push --only wiki` normalize to `atris/wiki/`
 - [x] `atris init` creates the wiki scaffold
-- [x] `atris activate` reads `atris/wiki/STATUS.md`
+- [~] `atris activate` reads `atris/wiki/STATUS.md` (`commands/activate.js:172`) but no longer shows it. The boot narration rewrite dropped the wiki line and the value is now discarded at `commands/activate.js:262` (`void wikiStatus`), so wiki health is not surfaced at session start.
 - [x] A project-local wiki skill exists
 - [x] Agent/spec docs mention the wiki loop
 - [x] `atris-cli` itself has a seeded `atris/wiki/`
@@ -63,9 +65,11 @@ node bin/atris.js clean --dry-run --json
 
 ## Current Repo Proof
 
-- `node bin/atris.js wiki verify` passes this repo's public wiki with 22 pages and 0 findings.
-- `node bin/atris.js loop wiki --json` reports 22 pages, 0 stale pages, 0 orphan pages, 0 next-ingest candidates, and `health: "wiki is in good shape"`.
-- `node bin/atris.js clean --dry-run --json` now shows no public wiki stale pages; remaining stale pages are feature-pack validation/build docs.
+Measured 2026-07-25. The wiki has grown from 22 to 26 pages and the clean baseline recorded on 2026-07-12 has since regressed.
+
+- `node bin/atris.js wiki verify` now reports `fail` on this repo's public wiki: 26 pages, 24 findings. The findings are missing frontmatter contract keys (`sources`, `last_compiled`, `last_verified`, `confidence`, `dependencies`, actionability) concentrated in `atris/wiki/systems/loops.md`, `atris/wiki/concepts/loops-missions-members.md`, and `atris/wiki/concepts/wisdom-traditions-operating-doctrine.md`.
+- `node bin/atris.js loop wiki --json` reports 26 pages, 1 stale page (`atris/wiki/concepts/wisdom-traditions-operating-doctrine.md`, missing `last_compiled`), 1 orphan page (`atris/wiki/systems/loops.md`), 0 next-ingest candidates, and `health: "1 stale page need recompiling"`.
+- The upkeep machinery is what is being validated here, and it works: it correctly detects the three uncompiled pages. Fixing those pages is wiki content work, not a defect in this feature.
 
 ## Notes
 

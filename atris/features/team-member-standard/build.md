@@ -1,17 +1,17 @@
 ---
-last_compiled: 2026-07-12
+last_compiled: 2026-07-25
 sources:
-  - commands/member.js:211-223 (memberPaths and MISSION.md wiring)
-  - commands/member.js:422-452 (member run bridge to Mission Runtime)
-  - commands/member.js:2988-3035 (member list)
-  - commands/member.js:3043-3146 (member create scaffold)
-  - commands/member.js:3540-3870 (goal, goal-from-mission, goal-from-score)
-  - commands/member.js:6734-6758 (wake decision and receipts)
-  - commands/member.js:6765-7077 (member loop)
-  - commands/member.js:7079-7319 (tick, review, block, status)
-  - commands/member.js:8891-9028 (member command dispatch and help)
-  - commands/mission.js:412-443 (renderMemberNowMarkdown — member now.md rendering)
-  - bin/atris.js:1742 (member command route)
+  - commands/member.js:212-230 (memberPaths and MISSION.md wiring)
+  - commands/member.js:972-1016 (member run bridge to Mission Runtime)
+  - commands/member.js:3942-3996 (member list)
+  - commands/member.js:3997-4126 (member create scaffold)
+  - commands/member.js:4520-4859 (goal, goal-from-mission, goal-from-score)
+  - commands/member.js:7845-7874 (wake decision and receipts)
+  - commands/member.js:7924-8348 (member loop, including memberLoopAll)
+  - commands/member.js:8349-8704 (tick, review, block, status)
+  - commands/member.js:8933-9072 (member command dispatch and help)
+  - commands/mission.js:1490-1536 (renderMemberNowMarkdown, member now.md rendering)
+  - bin/atris.js:2625 (member command route)
   - atris/team/_template/MEMBER.md
   - atris/features/team-member-standard/idea.md
 ---
@@ -26,7 +26,7 @@ sources:
 |------|------|
 | `commands/member.js` | Member CRUD, cloud sync, mission-derived goals, wake/tick/review loop, status, block, archive |
 | `commands/mission.js` | Renders member `now.md` and workspace `atris/status/now.md` from active missions |
-| `bin/atris.js:1742` | Routes `atris member <subcommand>` to `memberCommand` |
+| `bin/atris.js:2625` | Routes `atris member <subcommand>` to `memberCommand` |
 | `atris/skills/create-member/SKILL.md` | Skill for creating members via conversation |
 | `atris/team/_template/MEMBER.md` | Canonical frontmatter template |
 | `atris/team/*/MEMBER.md` | Local member identity contracts |
@@ -34,7 +34,7 @@ sources:
 | `atris/team/*/goals.json` | Machine-readable active goals, experiments, reviews, and value |
 | `atris/team/*/goals.md` | Generated human readout for goals and experiments |
 | `atris/team/*/logs/*.md` | Dated member receipts |
-| `.atris/state/steering.jsonl` | Cross-member steering directives consumed by wake decisions |
+| `.atris/state/steering.jsonl` | Cross-member steering directives consumed by wake decisions. Resolved from the shared workspace root (spine, then git, then cwd) via `lib/mission-root.resolveWorkspaceRoot`, so a member run from a subdirectory reads the real store instead of a nested `.atris` that does not exist |
 | `atris/runs/member-*` | Wake and loop receipts |
 
 ## Subcommands
@@ -54,7 +54,7 @@ sources:
 | `goal-from-score <name>` / `score-goal` | `memberGoalFromScore` | Derive one active self-improvement goal from Team score evidence |
 | `wake <name>` | `memberWake` | Decide `tick`, `wait`, `ask`, or `stop` from mission, goals, steering, task evidence, and workspace state |
 | `run <name>` | `memberRun` | Run the member's active Mission Runtime through `atris mission run` |
-| `loop <name>` | `memberLoop` | Repeat wake on a bounded cadence with a no-overlap lease, stop file, latest status, and receipts |
+| `loop <name>` | `memberLoop` | Repeat wake on a bounded cadence with a no-overlap lease, stop file, latest status, and receipts. Exits early when wake returns the same `ask` decision twice in a row, so a blocked member stops burning cycles |
 | `alive <name>` | `memberAlive` | Run `loop` in always-on liveness mode (forces the `--alive` flag) |
 | `tick <name>` | `memberTick` | Propose or reuse the next bounded experiment for the active goal |
 | `review <name> <id>` | `memberReview` | Accept or discard an experiment with proof, optional value, lesson, and next experiment |
@@ -141,7 +141,7 @@ MISSION.md + now.md
 - `goal-from-mission` refuses placeholder missions and creates one active goal from the member North Star.
 - `goal-from-score` can replace direction from Team score evidence and supersedes older open experiments.
 - `wake` checks mission, active goal, open/blocked experiments, steering directives, task projection evidence, recent receipts, and member-scoped dirty work.
-- `loop` repeats wake with a lease so two loops do not run the same member at once.
+- `loop` repeats wake with a lease so two loops do not run the same member at once, and stops early on a repeated identical `ask`.
 - `review` refuses missing proof and records optional value/lesson/next experiment.
 
 ## What's Done

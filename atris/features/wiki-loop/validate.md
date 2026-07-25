@@ -1,26 +1,27 @@
 ---
-last_compiled: 2026-07-12
+last_compiled: 2026-07-25
 sources:
   - commands/loop.js:1-114 (report builder, dry-run/json/limit, STATUS/log writes)
   - commands/wiki.js:549-557 (wiki loop alias)
   - lib/wiki.js:436-619 (page reads, stale checks, orphan checks)
-  - lib/wiki.js:620-704 (suggested sources, STATUS, log)
-  - bin/atris.js:832-849 (showLoopHelp)
-  - bin/atris.js:1835-1843 (top-level loop route)
-  - test/commands.test.js:14430 (loop help coverage)
-  - test/commands.test.js:15982-16051 (loop stale/suggest coverage)
+  - lib/wiki.js:620-705 (suggested sources, STATUS, log)
+  - bin/atris.js:922-940 (showLoopHelp)
+  - bin/atris.js:2743-2751 (top-level loop route, now via commands/loop-front.js)
+  - test/commands.test.js:18016 (loop help coverage)
+  - test/commands.test.js:19715-19784 (loop stale/suggest/alias coverage)
 ---
 
 # Wiki Upkeep Loop — Validation
 
-> **Status:** shipped local upkeep command with clean public-wiki baseline
-> **Validated:** 2026-07-12
-> **Exit condition:** `atris loop` reports local wiki health deterministically, writes STATUS/log unless `--dry-run`, `atris wiki loop` aliases it, and test coverage proves stale/orphan/suggestion behavior.
+> **Status:** shipped local upkeep command; the entry point moved to `atris loop wiki`
+> **Validated:** 2026-07-25
+> **Exit condition:** `atris loop wiki` reports local wiki health deterministically, writes STATUS/log unless `--dry-run`, `atris wiki loop` aliases it, and test coverage proves stale/orphan/suggestion behavior.
 
 ## Checks
 
-- [x] `atris loop` runs against `atris/wiki/`
+- [x] `atris loop wiki` runs against `atris/wiki/`
 - [x] `atris wiki loop` routes to the same upkeep logic
+- [ ] Bare `atris loop` runs wiki upkeep. It no longer does. `bin/atris.js:2743` now routes `loop` to `commands/loop-front.js`, the single front door to the self-improvement loop, which delegates to `run.js` and `pulse.js` and forwards only the `wiki` subcommand to `commands/loop.js`. Bare `atris loop` prints the self-improvement loop home screen. The `loop` help line at `bin/atris.js:543` still describes the old wiki behavior and is now wrong.
 - [x] `--dry-run` reports without rewriting `STATUS.md` or `log.md`
 - [x] `--json` emits the same report object for tools
 - [x] `--limit=N` bounds next-ingest suggestions
@@ -30,7 +31,7 @@ sources:
 - [x] orphan page detection works
 - [x] next-ingest suggestions work
 - [x] targeted tests pass
-- [x] current repo reports a clean public wiki after recompilation
+- [ ] current repo reports a clean public wiki. It does not, as of 2026-07-25: 1 stale page and 1 orphan page. The detector working is the point of this feature; the content debt is tracked on the wiki side.
 
 ## Current Verification
 
@@ -40,19 +41,20 @@ node -c commands/loop.js
 node -c commands/wiki.js
 node -c lib/wiki.js
 node bin/atris.js loop --help
-node bin/atris.js loop --dry-run
-node bin/atris.js loop --dry-run --json
+node bin/atris.js loop wiki --dry-run
+node bin/atris.js loop wiki --dry-run --json
 node bin/atris.js wiki loop --dry-run
 node bin/atris.js loop wiki --json
 ```
 
 ## Current Repo Report
 
-_Point-in-time snapshot from `node bin/atris.js loop wiki --json` on 2026-06-30 - recompiling or ingesting wiki pages changes these counts, so a mismatch here is drift, not a bug._
+_Point-in-time snapshot from `node bin/atris.js loop wiki --json` on 2026-07-25 - recompiling or ingesting wiki pages changes these counts, so a mismatch here is drift, not a bug._
 
-- Reports 22 pages, 0 stale pages, 0 orphan pages, and 0 next-ingest candidates.
-- Health is `wiki is in good shape`.
-- Next move is to use the wiki, ingest new source material, or clear stale feature-pack docs reported by `atris clean --dry-run --json`.
+- Reports 26 pages, 1 stale page, 1 orphan page, and 0 next-ingest candidates.
+- Stale: `atris/wiki/concepts/wisdom-traditions-operating-doctrine.md`, reason `missing last_compiled`. Orphan: `atris/wiki/systems/loops.md`.
+- Health is `1 stale page need recompiling`.
+- Next move is to recompile `atris/wiki/concepts/wisdom-traditions-operating-doctrine.md` from its source.
 
 ## Notes
 
