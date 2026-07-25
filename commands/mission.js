@@ -78,6 +78,11 @@ const {
   resolveDefaultVerifier,
 } = require('../lib/default-verifier');
 const { redirectToWorkspaceRoot } = require('../lib/mission-root');
+const {
+  inspectMissionProtectedDiff,
+  prepareMissionGitGuard,
+  unreadableMissionGuard,
+} = require('../lib/mission-protected-lane');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -5992,13 +5997,62 @@ function gitWorktreeSnapshot(root = process.cwd()) {
   }
   const entries = String(status.stdout || '').split(/\r?\n/).filter(Boolean).sort();
   const digest = crypto.createHash('sha1').update(entries.join('\n')).digest('hex');
+  const head = spawnSync('git', ['rev-parse', '--verify', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 5000,
+  });
   return {
     available: true,
+    head: head.status === 0 ? String(head.stdout || '').trim() : null,
     dirty_count: entries.length,
     dirty_hash: digest,
     dirty_sample: entries.slice(0, 25),
     entries,
   };
+}
+
+function missionProtectedTags(mission, root = process.cwd()) {
+  const tags = [
+    mission?.tag,
+    mission?.lane,
+    ...(Array.isArray(mission?.tags) ? mission.tags : []),
+  ].filter(Boolean);
+  const taskRefs = new Set([
+    mission?.task_id,
+    mission?.task_ref,
+    ...(Array.isArray(mission?.task_ids) ? mission.task_ids : []),
+  ].filter(Boolean).map(String));
+  if (!taskRefs.size) return tags;
+  try {
+    const projection = JSON.parse(fs.readFileSync(path.join(root, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    for (const task of Array.isArray(projection?.tasks) ? projection.tasks : []) {
+      if (!task || ![task.id, task.display_id, task.legacy_ref].some((ref) => taskRefs.has(String(ref || '')))) continue;
+      if (task.tag) tags.push(task.tag);
+      if (Array.isArray(task.tags)) tags.push(...task.tags);
+    }
+  } catch {}
+  return tags;
+}
+
+function inspectMissionTickProtectedDiff(mission, before, root = process.cwd()) {
+  const after = gitWorktreeSnapshot(root);
+  if (before?.reason === 'not-git-worktree' && after?.reason === 'not-git-worktree') {
+    return {
+      ok: true,
+      allowed: true,
+      status: 'clear',
+      reason: 'no git worktree exists, so this tick cannot commit or land',
+      unreadable: false,
+      surfaces: [],
+      matches: [],
+    };
+  }
+  return inspectMissionProtectedDiff({
+    root,
+    baseRef: before?.head || '',
+    tags: missionProtectedTags(mission, root),
+  });
 }
 
 // Porcelain v1 entries are "XY path" or "XY old -> new"; baselines compare by
@@ -8125,6 +8179,9 @@ function detectUnavailableModel(text) {
 // need a resume; a model-unavailable pause is a config error a bare resume won't fix,
 // so name the dead id and the two knobs that change it.
 function missionPauseNextAction(pauseReason, missionId, deadModel = null, lastErrorReason = null) {
+  if (pauseReason === 'protected-lane-review') {
+    return `review the protected diff and its receipt before resuming: atris mission run ${missionId}`;
+  }
   if (pauseReason === 'too-deep') {
     return 'stopped: helpers were spawning helpers too many levels deep';
   }
@@ -8313,13 +8370,31 @@ function spawnGenericRunnerTick(mission, opts) {
       resolve({ ok: false, error: e.message, sessionIds: [], aborted: false, timedOut: false, authExpired: false, brief_id: briefId });
       return;
     }
+    let gitGuard;
+    try {
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+    } catch (error) {
+      resolve({
+        ok: false,
+        reason: 'protected-diff-unreadable',
+        error: error.message || String(error),
+        protected_lane_guard: unreadableMissionGuard(error),
+        sessionIds: [],
+        aborted: false,
+        timedOut: false,
+        authExpired: false,
+        brief_id: briefId,
+      });
+      return;
+    }
 
     const startedAt = Date.now();
-    const proc = spawn('sh', ['-lc', cmd], {
+    const guardedCommand = `PATH=${shellQuote(gitGuard.pathPrefix)}:$PATH; export PATH; ${cmd}`;
+    const proc = spawn('sh', ['-lc', guardedCommand], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      env: { ...process.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
+      env: { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
     let stdout = '';
@@ -8350,6 +8425,7 @@ function spawnGenericRunnerTick(mission, opts) {
     proc.on('close', (code) => {
       clearTimeout(timer);
       cleanupPrompt();
+      gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       const finalText = String(stdout || '').trim();
@@ -8378,6 +8454,7 @@ function spawnGenericRunnerTick(mission, opts) {
     proc.on('error', (e) => {
       clearTimeout(timer);
       cleanupPrompt();
+      gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false, brief_id: briefId });
@@ -8426,6 +8503,22 @@ function spawnClaudeTick(mission, opts) {
   const dispatchDepth = missionDispatchDepth();
   if (dispatchDepth.tooDeep) return Promise.resolve(tooDeepRunnerResult(dispatchDepth));
   return new Promise((resolve) => {
+    let gitGuard;
+    try {
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+    } catch (error) {
+      resolve({
+        ok: false,
+        reason: 'protected-diff-unreadable',
+        error: error.message || String(error),
+        protected_lane_guard: unreadableMissionGuard(error),
+        sessionIds: [],
+        aborted: false,
+        timedOut: false,
+        authExpired: false,
+      });
+      return;
+    }
     const args = [
       '-p', prompt,
       '--output-format', 'stream-json',
@@ -8445,7 +8538,7 @@ function spawnClaudeTick(mission, opts) {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      env: { ...process.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
+      env: { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
 
@@ -8508,6 +8601,7 @@ function spawnClaudeTick(mission, opts) {
 
     proc.on('close', (code) => {
       clearTimeout(timer);
+      gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       const ok = code === 0 && !isError && !timedOut && !aborted;
@@ -8537,6 +8631,7 @@ function spawnClaudeTick(mission, opts) {
 
     proc.on('error', (e) => {
       clearTimeout(timer);
+      gitGuard.cleanup();
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });
     });
@@ -8969,55 +9064,76 @@ async function runMission(args) {
           drill: drillResult,
         };
       } else if (tickAtris2Runner) {
-        const pingDrain = consumeMissionPings(mission, cwd);
-        mission = pingDrain.mission;
-        runtimeMission = runtimeView(mission);
-        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
-        const { runAtris2Turn } = require('./probe');
-        const businessId = businessIdForAtris2Mission(tickRuntimeMission, cwd);
-        const tickController = new AbortController();
-        let wallExpired = false;
-        const abortTick = () => tickController.abort();
-        controller.signal.addEventListener('abort', abortTick, { once: true });
-        const tickTimer = setTimeout(() => {
-          wallExpired = true;
-          tickController.abort();
-        }, Math.max(1, Math.floor(remainingWall * 1000)));
-        let turn;
+        let atris2GitGuard = null;
         try {
-          turn = await runAtris2Turn({
-            prompt,
-            model: tickRuntimeMission.model || 'atris:fast',
-            business: businessId,
-            maxTurns: 16,
-            signal: tickController.signal,
-            // CLI-231: mission ticks execute relayed ops in the mission's own
-            // workspace, not the hosted ai-computer filesystem.
-            localCwd: cwd,
-          });
-        } finally {
-          clearTimeout(tickTimer);
-          controller.signal.removeEventListener('abort', abortTick);
+          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+        } catch (error) {
+          result = {
+            ...result,
+            status: 'ran',
+            reason: 'protected-diff-unreadable',
+            ran: true,
+            atris2: {
+              ok: false,
+              error: error.message || String(error),
+              protected_lane_guard: unreadableMissionGuard(error),
+            },
+          };
         }
-        result.atris2 = {
-          ok: turn.ok,
-          engine: turn.engine,
-          model: tickRuntimeMission.model || 'atris:fast',
-          tools_run: turn.tools_run,
-          unsupported: turn.unsupported,
-          duration_ms: turn.duration_ms,
-          error: turn.error,
-          backend_unavailable: isTransientAtris2BackendError(turn.error) || undefined,
-          receipt_text: String(turn.text || '').slice(0, 4000),
-        };
-        if (controller.signal.aborted) { pauseReason = 'aborted-during-atris2'; break; }
-        if (turn.error === 'not-logged-in') { pauseReason = 'auth-required'; break; }
-        if (wallExpired) {
-          result = { ...result, status: 'errored', reason: 'wall-exceeded-during-tick' };
-        } else if (!turn.ok || !String(turn.text || '').trim()) {
-          result = { ...result, status: 'errored', reason: atris2TurnErrorReason(turn.error) };
-        } else {
-          result = { ...result, status: 'ran', reason: 'tick-ok', ran: true };
+        if (atris2GitGuard) {
+          const pingDrain = consumeMissionPings(mission, cwd);
+          mission = pingDrain.mission;
+          runtimeMission = runtimeView(mission);
+          const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
+          const { runAtris2Turn } = require('./probe');
+          const businessId = businessIdForAtris2Mission(tickRuntimeMission, cwd);
+          const tickController = new AbortController();
+          let wallExpired = false;
+          const abortTick = () => tickController.abort();
+          controller.signal.addEventListener('abort', abortTick, { once: true });
+          const tickTimer = setTimeout(() => {
+            wallExpired = true;
+            tickController.abort();
+          }, Math.max(1, Math.floor(remainingWall * 1000)));
+          let turn;
+          try {
+            turn = await runAtris2Turn({
+              prompt,
+              model: tickRuntimeMission.model || 'atris:fast',
+              business: businessId,
+              maxTurns: 16,
+              signal: tickController.signal,
+              // CLI-231: mission ticks execute relayed ops in the mission's own
+              // workspace, not the hosted ai-computer filesystem.
+              localCwd: cwd,
+              localEnv: atris2GitGuard.env,
+              localPathPrefix: atris2GitGuard.pathPrefix,
+            });
+          } finally {
+            atris2GitGuard.cleanup();
+            clearTimeout(tickTimer);
+            controller.signal.removeEventListener('abort', abortTick);
+          }
+          result.atris2 = {
+            ok: turn.ok,
+            engine: turn.engine,
+            model: tickRuntimeMission.model || 'atris:fast',
+            tools_run: turn.tools_run,
+            unsupported: turn.unsupported,
+            duration_ms: turn.duration_ms,
+            error: turn.error,
+            backend_unavailable: isTransientAtris2BackendError(turn.error) || undefined,
+            receipt_text: String(turn.text || '').slice(0, 4000),
+          };
+          if (controller.signal.aborted) { pauseReason = 'aborted-during-atris2'; break; }
+          if (turn.error === 'not-logged-in') { pauseReason = 'auth-required'; break; }
+          if (wallExpired) {
+            result = { ...result, status: 'errored', reason: 'wall-exceeded-during-tick' };
+          } else if (!turn.ok || !String(turn.text || '').trim()) {
+            result = { ...result, status: 'errored', reason: atris2TurnErrorReason(turn.error) };
+          } else {
+            result = { ...result, status: 'ran', reason: 'tick-ok', ran: true };
+          }
         }
       } else {
         let sessionMode = sessionId ? 'resume' : 'set';
@@ -9059,6 +9175,7 @@ async function runMission(args) {
         result.claude = {
           ok: claudeResult.ok,
           reason: claudeResult.reason,
+          protected_lane_guard: claudeResult.protected_lane_guard || null,
           brief_id: claudeResult.brief_id || null,
           summary: claudeResult.summary,
           receipt_text: claudeResult.receipt_text,
@@ -9144,6 +9261,19 @@ async function runMission(args) {
       // and caller-session ticks must not launch it behind the operator's
       // back. Leaving verifier_passed unset also lets the idle-stop breaker
       // judge these ticks from the worktree signal instead of hanging here.
+      const runnerGuard = result.claude?.protected_lane_guard || result.atris2?.protected_lane_guard || null;
+      if (result.status === 'ran' || runnerGuard) {
+        const protectedLaneGuard = runnerGuard?.allowed === false
+          ? runnerGuard
+          : inspectMissionTickProtectedDiff(mission, tickWorktreeBefore, cwd);
+        result.protected_lane_guard = protectedLaneGuard;
+        if (!protectedLaneGuard.allowed) {
+          result.status = 'paused-for-review';
+          result.reason = 'protected-lane-review';
+          result.ran = false;
+          pauseReason = 'protected-lane-review';
+        }
+      }
       let verifierResult = null;
       let receiptPath = null;
       if (result.status === 'ran' && verifyEach) {
@@ -9299,6 +9429,7 @@ async function runMission(args) {
         break;
       }
 
+      if (pauseReason === 'protected-lane-review') break;
       if (callerSessionRunner && result.status === 'ran') break;
       if (newStatus === 'complete' || (newStatus === 'ready' && !mission.always_on && !fullBudgetMode)) break;
       // BCK-1324: two consecutive ticks that each self-report "ran" but leave no
@@ -9569,6 +9700,7 @@ function tickMission(args) {
     const tickIdx = lastTickIndex + 1;
     const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
     const worktreeBaseline = loadMissionWorktreeBaseline(mission.id, cwd);
+    const protectedLaneGuard = inspectMissionTickProtectedDiff(mission, tickWorktreeBefore, cwd);
 
     const effectiveVerifier = effectiveMissionVerifier(mission);
     const verifierCommand = verify
@@ -9577,7 +9709,7 @@ function tickMission(args) {
     if (verifierCommand) assertMissionVerifier(verifierCommand, asJson);
 
     let verifierResult = null;
-    if (verify && verifierCommand) {
+    if (protectedLaneGuard.allowed && verify && verifierCommand) {
       verifierResult = runVerifier(verifierCommand);
     }
     const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: verifierCommand || effectiveVerifier, baseline: worktreeBaseline });
@@ -9586,16 +9718,17 @@ function tickMission(args) {
     // receipt text in --summary.
     const layerInfo = extractLayerFromReceiptText(summary || '', tickWorktree?.new_since_baseline_sample);
     const tickRecord = {
-      status: 'ran',
-      reason: 'tick-recorded',
+      status: protectedLaneGuard.allowed ? 'ran' : 'paused-for-review',
+      reason: protectedLaneGuard.allowed ? 'tick-recorded' : 'protected-lane-review',
       tick_index: tickIdx,
-      ran: true,
+      ran: protectedLaneGuard.allowed,
       started_at: tickStart,
       claude: { skipped: true, reason: 'orchestrator-is-caller-session' },
       summary: summary || null,
       layer: layerInfo.layer,
       layer_source: layerInfo.source,
       verifier_passed: verifierResult ? !!verifierResult.passed : null,
+      protected_lane_guard: protectedLaneGuard,
       finished_at: stampIso(),
       worktree: tickWorktree,
     };
@@ -9608,6 +9741,7 @@ function tickMission(args) {
         started_at: tickStart,
       },
       verifier_result: verifierResult,
+      protected_lane_guard: protectedLaneGuard,
       rate_limit_info: null,
       worktree: tickWorktree,
     });
@@ -9619,7 +9753,10 @@ function tickMission(args) {
 	        ? nextCandidateTickAction(mission)
 	        : 'attach task, verifier, or proof');
 	    const nextGoalChain = advanceMissionGoalChain(mission.goal_chain, summary, verifierResult);
-	    if (verifierResult?.passed && nextGoalChain && !nextGoalChain.pause_ready) {
+	    if (!protectedLaneGuard.allowed) {
+	      status = 'paused';
+	      nextAction = `review the protected diff and receipt before resuming: atris mission run ${mission.id}`;
+	    } else if (verifierResult?.passed && nextGoalChain && !nextGoalChain.pause_ready) {
 	      status = 'running';
 	      nextAction = missionGoalChainNextAction(nextGoalChain);
     } else if (verifierResult?.passed) {
@@ -9644,10 +9781,10 @@ function tickMission(args) {
 	    }
 	    const clearsPauseState = !['paused', 'stopped'].includes(status);
 	    const nextMission = {
-	      ...mission,
-	      status,
-      paused_at: clearsPauseState ? null : mission.paused_at || null,
-      stop_reason: clearsPauseState ? null : mission.stop_reason || null,
+      ...mission,
+      status,
+      paused_at: clearsPauseState ? null : tickRecord.finished_at,
+      stop_reason: clearsPauseState ? null : tickRecord.reason,
       resumed_at: clearsPauseState && mission.status === 'paused' ? tickRecord.finished_at : mission.resumed_at || null,
       receipt_path: receiptPath,
       last_tick_at: tickRecord.finished_at,

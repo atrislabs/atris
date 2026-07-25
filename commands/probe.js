@@ -26,6 +26,7 @@
 
 const https = require('https');
 const http = require('http');
+const path = require('path');
 const { getApiBaseUrl } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
 const { encodeToolResult } = require('../lib/tool-result-encode');
@@ -188,10 +189,13 @@ function runTerminal(base, token, command, businessId) {
 // command runs in the mission's OWN workspace directory instead of the hosted
 // ai-computer. Without this, a mission tick in a local workspace read the
 // remote computer's files and reported local members (e.g. maze) as missing.
-function runLocalTerminal(command, cwd) {
+function runLocalTerminal(command, cwd, environment = process.env, pathPrefix = '') {
   const { exec } = require('child_process');
   const { envWithNodeDir } = require('../lib/spawn-env');
-  const env = envWithNodeDir(process.env);
+  const baseEnv = envWithNodeDir(environment);
+  const env = pathPrefix
+    ? { ...baseEnv, PATH: `${pathPrefix}${path.delimiter}${baseEnv.PATH || ''}` }
+    : baseEnv;
   return new Promise((resolve) => {
     exec(command, { cwd, env, timeout: 60000, maxBuffer: 4 * 1024 * 1024, shell: '/bin/bash' }, (error, stdout, stderr) => {
       resolve({
@@ -237,6 +241,8 @@ async function runAtris2Turn(opts = {}) {
     connectTimeoutMs = 60000,
     signal = null,
     localCwd = null,
+    localEnv = null,
+    localPathPrefix = '',
   } = opts;
   const t0 = Date.now();
   const out = { ok: false, text: '', engine: null, tools_run: 0, cli_ops: [], unsupported: [], error: null, duration_ms: 0 };
@@ -322,7 +328,7 @@ async function runAtris2Turn(opts = {}) {
                   unsupported.push(`file_op:${op}`);
                 } else {
                   const term = localCwd
-                    ? await runLocalTerminal(cmd, localCwd)
+                    ? await runLocalTerminal(cmd, localCwd, localEnv || process.env, localPathPrefix)
                     : await runTerminal(base, token, cmd, business);
                   const ok = term.exit_code === 0;
                   out = ok
@@ -341,7 +347,7 @@ async function runAtris2Turn(opts = {}) {
                   unsupported.push(`cli_op:${op || '?'}`);
                 } else {
                   const term = localCwd
-                    ? await runLocalTerminal(cmd, localCwd)
+                    ? await runLocalTerminal(cmd, localCwd, localEnv || process.env, localPathPrefix)
                     : await runTerminal(base, token, cmd, business);
                   out = atrisCliResult(cmd, term);
                   cliOps.push(op || '?');
