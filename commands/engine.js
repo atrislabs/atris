@@ -33,6 +33,7 @@ const {
   engineRegistryView,
   readEngineRegistry,
   resolveEngineForRole,
+  resolveEngineForRoleRanked,
   setEngineHealth,
 } = require('../lib/engine-registry');
 const { FLEET_CAPABLE, runDispatchFlight } = require('../lib/fleet');
@@ -932,22 +933,26 @@ function runResolveCommand(args, root) {
     else console.error(message);
     return 2;
   }
-  let engine;
+  let picked;
   try {
-    engine = resolveEngineForRole(role, root);
+    picked = resolveEngineForRoleRanked(role, root);
   } catch (err) {
     if (json) console.log(JSON.stringify({ ok: false, error: err.message }, null, 2));
     else console.error(err.message);
     return 2;
   }
+  const engine = picked.engine;
   if (!engine) {
     const message = `No ready installed engine can fill role "${role}".`;
-    if (json) console.log(JSON.stringify({ ok: false, role, error: message }, null, 2));
+    if (json) console.log(JSON.stringify({ ok: false, role, error: message, won_reason: picked.reason }, null, 2));
     else console.error(message);
     return 1;
   }
-  if (json) console.log(JSON.stringify(engine, null, 2));
-  else console.log(engine.id);
+  if (json) console.log(JSON.stringify({ ...engine, won_reason: picked.reason }, null, 2));
+  else {
+    console.error(picked.reason);
+    console.log(engine.id);
+  }
   return 0;
 }
 
