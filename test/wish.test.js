@@ -369,6 +369,43 @@ test('answering a one-lap wish question does not spawn a mission driver', () => 
   }
 });
 
+test('wish sweep keeps one-lap ownership and skips the mission driver', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    const fakeBin = makeFakeEngines(dir);
+    const dbPath = path.join(dir, 'tasks.db');
+    appendWishEvent(dir, {
+      id: 'wish-one-lap-sweep',
+      ts: new Date().toISOString(),
+      text: 'fix the auth bug',
+      status: 'captured',
+      one_lap: true,
+    });
+
+    const sweep = withProcessEnv({
+      PATH: `${fakeBin}:${systemPath}`,
+      ATRIS_TASKS_DB: dbPath,
+      ATRIS_WISH_NO_DRIVER: '',
+      NODE_TEST_CONTEXT: '',
+    }, () => sweepWishes(dir));
+    assert.equal(sweep.dispatched, 1);
+
+    const wish = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'))
+      .find((record) => record.status === 'delegated');
+    assert.ok(wish);
+    assert.equal(wish.worker_started, false);
+    assert.equal(wish.driver_pid, undefined);
+    assert.equal(wish.worker_note, 'the one-lap dispatches this in-process');
+    const shortId = String(wish.mission_id).slice(-8);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', `mission-driver-${shortId}.json`)), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wish intake warns when the fallback verifier may outlive the mission window', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
