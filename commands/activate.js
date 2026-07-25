@@ -110,6 +110,15 @@ function completionSentence(completions) {
   return humanSentence(`since last time: ${landed}; the biggest: ${biggest}.`);
 }
 
+// STATUS.md bullets can carry paths and counts the gate would reject, so the
+// narration only says that attention is needed, never quotes the bullet.
+function wikiHealthSentence(wikiStatus) {
+  if (!wikiStatus || !Array.isArray(wikiStatus.bullets)) return null;
+  const needsAttention = wikiStatus.bullets.some((b) => /stale|orphan/i.test(b));
+  if (!needsAttention) return null;
+  return humanSentence('the wiki has pages going stale; refresh them: atris loop wiki');
+}
+
 function activeWorkSentence(state, context) {
   const tasks = Array.isArray(context?.inProgressTasks) ? context.inProgressTasks : [];
   if (tasks.length) {
@@ -259,7 +268,6 @@ function activateAtris() {
 
   void dateFormatted;
   void learningCount;
-  void wikiStatus;
   fs.existsSync(personaFile);
   fs.existsSync(mapFile);
   void taskFilePath;
@@ -270,6 +278,7 @@ function activateAtris() {
     handoffSentence(handoffContent),
     completionSentence(recentCompletions),
     activeWorkSentence(state, context),
+    wikiHealthSentence(wikiStatus),
   ].filter(Boolean);
   if (Array.isArray(briefData?.waiting)) {
     const approvalCount = briefData.waiting.length;
@@ -296,4 +305,4 @@ function activateAtris() {
   }
 }
 
-module.exports = { activateAtris };
+module.exports = { activateAtris, wikiHealthSentence };

@@ -540,7 +540,7 @@ function showHelp() {
   console.log('  ingest     - Local-first wiki ingest into atris/wiki/');
   console.log('  query      - Local-first wiki query against atris/wiki/');
   console.log('  lint       - Local-first wiki lint for atris/wiki/');
-  console.log('  loop       - Local wiki upkeep loop (stale pages, orphans, next ingest)');
+  console.log('  loop       - Recurring loops front door (wiki upkeep lives under: loop wiki)');
   console.log('  write      - Guided writing sessions: you write every word, atris structures + reviews');
   console.log('');
   console.log('Optional helpers:');
