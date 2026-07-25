@@ -298,7 +298,12 @@ function tickCommand(args, root = process.cwd()) {
     }
 
     const elapsedMs = Date.now() - startedAt;
-    const reward = pulse.scoreTick({ verifyPassed: verify.passed, producedWork });
+    const reward = pulse.scoreTick({
+      verifyPassed: verify.passed,
+      producedWork,
+      actorOk: engine.ok,
+      actorReason: engine.reason,
+    });
     const changedTail = committed
       ? ' - committed'
       : (changedFiles.length ? ` - ${changedFiles.length} file(s) changed` : '');

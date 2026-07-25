@@ -135,6 +135,24 @@ test('scoreTick does not reward unverified work', () => {
   assert.equal(pulse.scoreTick({ verifyPassed: null, producedWork: true }), 0);
 });
 
+// Regression: the 2026-07-16 silent heartbeat death. 25 consecutive
+// `mission error` ticks each produced no work and ran no verifier, so each
+// scored 0 — the same as a healthy idle tick. reward_sum stayed flat, nothing
+// escalated, and the loop stopped looking green. A crashed engine is a failure.
+test('scoreTick punishes a crashed engine tick with -1, not 0', () => {
+  assert.equal(pulse.scoreTick({
+    verifyPassed: null, producedWork: false, actorOk: false, actorReason: 'error',
+  }), -1);
+});
+
+// An idle tick must stay 0 — a heartbeat with nothing due is not a failure,
+// and punishing it would drown the real error signal in noise.
+test('scoreTick keeps a healthy idle tick at 0', () => {
+  assert.equal(pulse.scoreTick({
+    verifyPassed: null, producedWork: false, actorOk: true, actorReason: 'no_due_mission',
+  }), 0);
+});
+
 test('shouldWriteScorecard gates pure no-op ticks out of the reward channel', () => {
   assert.equal(pulse.shouldWriteScorecard({ reward: 0 }), false);
   assert.equal(pulse.shouldWriteScorecard({ reward: 1 }), true);
