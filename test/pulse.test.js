@@ -47,6 +47,27 @@ test('pulse status ignores disabled cron marker history', () => {
   assert.equal(crontabHasActiveMarker(`*/20 * * * * /tmp/other.sh # OTHER\n`, marker), false);
 });
 
+test('pulse status keeps internal paths and markers out of human output', () => {
+  const root = tmpRoot();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-home-'));
+  const output = [];
+  const fakeSpawnSync = () => ({ status: 1, stdout: '', stderr: '' });
+
+  try {
+    const result = statusCommand([], root, {
+      homeDir: home,
+      spawnSync: fakeSpawnSync,
+      writeOutput: (text) => output.push(text),
+    });
+    assert.doesNotMatch(output.join(''), /state home:|ATRIS_PULSE_|\/Users\//);
+    assert.equal(typeof result.state_home, 'string');
+    assert.match(result.marker, /^ATRIS_PULSE_/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('pulse status surfaces expiry and install clears the breadcrumb', () => {
   const root = tmpRoot();
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-home-'));

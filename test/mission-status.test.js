@@ -52,6 +52,18 @@ test('mission landing summary strips broken markdown before status renders it', 
     '  Changed: Killed a trap number before it reached the pitch.',
   );
   assert.equal(
+    missionLandingStepSummary('The full suite continues progressing (no hang — individual CLI-subprocess tests like autoland and digest run 300-750ms each, which compounds across 276 files and keeps the release proof moving without exposing internal runner details to the operator.'),
+    'The full suite continues progressing.',
+  );
+  assert.equal(
+    missionLandingStepSummary('The release summary is clear — owners can see what changed and what to do next.'),
+    'The release summary is clear - owners can see what changed and what to do next.',
+  );
+  assert.equal(
+    missionLandingStepSummary('I turned the feature on.'),
+    'I turned the feature on.',
+  );
+  assert.equal(
     missionLandingLines({ changed: 'Verifier passes (45 tests). Now I need to read yesterday\'s operator surfaces. Let me look at the latest receipt.' })[1],
     '  Changed: This proof step recorded no operator-facing result.',
   );

@@ -1631,6 +1631,7 @@ function missionHumanNextAction(mission, root = process.cwd(), options = {}) {
 
 function missionLandingStepSummary(summary) {
   const clean = String(summary || '')
+    .replace(/[\u2013\u2014]/g, '-')
     .replace(/[`*~]/g, '')
     .replace(/__+/g, '')
     .replace(/\s+/g, ' ')
@@ -1653,7 +1654,9 @@ function missionLandingStepSummary(summary) {
     .replace(/,\s*(?:verifier|proof|checks?)\s+(?:still|pending)[.!]?$/i, '')
     .trim();
   const clipped = missionLandingSentenceClip(beforeChecks, 220);
-  return clipped ? `${clipped}.` : '';
+  const openParen = clipped.lastIndexOf('(');
+  const complete = openParen > clipped.lastIndexOf(')') ? clipped.slice(0, openParen).trim() : clipped;
+  return complete ? `${complete}.` : '';
 }
 
 function missionHumanReasonText(mission, changed = '') {

@@ -524,7 +524,6 @@ function statusCommand(args, root = process.cwd(), options = {}) {
     writeOutput([
       `pulse: ${installed ? 'scheduler installed' : 'scheduler not installed (run: atris pulse install)'}`,
       expiryBreadcrumb ? `heartbeat expired on ${expiryBreadcrumb.expired_at}; renew with: ${expiryBreadcrumb.renew_command}` : '',
-      `state home: ${slot.activeStateHome} marker: ${slot.activeMarker}`,
       `ticks: ${summary.total_ticks} | reward: ${summary.reward_sum} | verify pass/fail: ${summary.verify_pass}/${summary.verify_fail}`,
       `last tick: ${summary.last_tick_ts || 'never'} (verify ${summary.last_verify_passed === null ? 'n/a' : summary.last_verify_passed ? 'pass' : 'fail'})`,
       summary.stale.stale ? `stale: ${summary.stale.reason}${summary.stale.tick_index ? ` (ghost tick #${summary.stale.tick_index})` : ''}` : 'liveness: fresh',
