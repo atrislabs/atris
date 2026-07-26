@@ -537,6 +537,7 @@ function showHelp() {
   console.log('  avail      - Booking availability (/book/{username} weekly windows)');
   console.log('  brain      - Compile MAP/TODO/wiki/state into a loadable agent brain');
   console.log('  lesson     - Append a one-line lesson to atris/lessons.md (mine: distill receipts/episodes/scorecards into policy lessons)');
+  console.log('  teach      - Turn a bad turn into a failing benchmark, then a permanent guard (red gate: no promotion without a proven failure)');
   console.log('  ingest     - Local-first wiki ingest into atris/wiki/');
   console.log('  query      - Local-first wiki query against atris/wiki/');
   console.log('  lint       - Local-first wiki lint for atris/wiki/');
@@ -2618,6 +2619,10 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/lesson')(subcommand, ...args);
+} else if (command === 'teach') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  require('../commands/teach')(subcommand, ...args);
 } else if (command === 'skill') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
