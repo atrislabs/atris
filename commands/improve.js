@@ -149,6 +149,10 @@ function summarizeImproveResponse(data = {}) {
     files,
     model: d.model_used || d.model || null,
     taskId: d.task_id || d.taskId || null,
+    // The backend returns both of these; a failing tick is unteachable without
+    // them — "verify_passed: false" says nothing about WHICH task or WHY.
+    taskDescription: d.task_description || d.task_title || null,
+    verifyOutput: typeof d.verify_output === 'string' ? d.verify_output : null,
     elapsedMs: typeof d.elapsed_ms === 'number' ? d.elapsed_ms : null,
     scorecardWritten: d.scorecard_written === true,
     error: d.error || null,
@@ -189,7 +193,20 @@ function isWorkspaceNotAllowedError(apiResult = {}) {
   return candidates.some((c) => typeof c === 'string' && c.includes(WORKSPACE_NOT_ALLOWED_TEXT));
 }
 
+/** Keep the failure tail bounded: the last lines are where the reason is. */
+const VERIFY_OUTPUT_TAIL_CHARS = 2000;
+
+function verifyOutputTail(output) {
+  if (typeof output !== 'string') return null;
+  const text = output.trim();
+  if (!text) return null;
+  return text.length > VERIFY_OUTPUT_TAIL_CHARS ? text.slice(-VERIFY_OUTPUT_TAIL_CHARS) : text;
+}
+
 function buildScorecardRow(summary = {}, meta = {}) {
+  // Only failures carry the verify tail. A passing tick does not need it, and
+  // 2KB per row would bloat a ledger that is already ~2000 rows.
+  const failed = summary.verify === false;
   return {
     schema: SCORECARD_SCHEMA,
     ts: meta.ts || new Date().toISOString(),
@@ -203,6 +220,8 @@ function buildScorecardRow(summary = {}, meta = {}) {
     files_written: Array.isArray(summary.files) ? summary.files : [],
     model_used: summary.model || null,
     task_id: summary.taskId || null,
+    task_description: summary.taskDescription || null,
+    verify_output: failed ? verifyOutputTail(summary.verifyOutput) : null,
     elapsed_ms: summary.elapsedMs != null ? summary.elapsedMs : null,
   };
 }

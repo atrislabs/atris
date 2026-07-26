@@ -49,6 +49,7 @@ function buildArgs(subcommand, args) {
   if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') return null;
   if (subcommand === 'add') return ['add', ...args];
   if (subcommand === 'guards') return ['run', '--guards', ...args];
+  if (subcommand === 'mine') return ['mine', ...args];
   if (subcommand === 'run') {
     // `atris teach run <id>` -> `run --case <id>`; bare `run` runs every case.
     if (args.length && !args[0].startsWith('-')) return ['run', '--case', args[0], ...args.slice(1)];
