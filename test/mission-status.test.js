@@ -2172,6 +2172,54 @@ test('mission report waits for a worker check-in before claiming full-budget wor
   }
 });
 
+test('mission report refuses to claim work when there is no receipt and no live driver', () => {
+  const dir = makeTempDir();
+  try {
+    const missionId = 'mission-report-no-live-worker';
+    // Active status with no receipt, no timeline, no budget contract, and no
+    // driver state/lock: nothing is actually running.
+    appendMissionState(dir, {
+      id: missionId,
+      slug: missionId,
+      objective: 'make the boot screen friendlier',
+      runner: 'codex_goal',
+      owner: 'mission-lead',
+      status: 'running',
+      next_action: null,
+      created_at: new Date(Date.now() - 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const report = runCli(['mission', 'report', missionId], { cwd: dir });
+    assert.equal(report.status, 0, report.stderr || report.stdout);
+    assert.match(report.stdout, /state: no live worker \(nothing is running\)/);
+    assert.match(report.stdout, /What happened: No worker is running; nothing has produced a receipt yet\./);
+    assert.match(report.stdout, new RegExp(`Next: Start a worker: atris mission run ${missionId}`));
+    assert.doesNotMatch(report.stdout, /Mission is still in progress|working for the full|work is continuing/);
+
+    const json = runCli(['mission', 'report', missionId, '--json'], { cwd: dir });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.reports[0].status, 'running');
+    assert.equal(payload.reports[0].human_status, 'no live worker (nothing is running)');
+    assert.equal(payload.reports[0].budget_continuation, null);
+
+    // A live driver is a real worker: the same active status then reads as
+    // running rather than the no-worker message.
+    fs.writeFileSync(
+      path.join(dir, '.atris', 'state', `mission-${missionId}.lock`),
+      JSON.stringify({ pid: process.pid, mission_id: missionId, started_at: new Date().toISOString() }),
+      'utf8',
+    );
+    const live = runCli(['mission', 'report', missionId], { cwd: dir });
+    assert.equal(live.status, 0, live.stderr || live.stdout);
+    assert.doesNotMatch(live.stdout, /no live worker/);
+    assert.match(live.stdout, /state: running/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission inspect shows live budget in text while JSON keeps lifecycle status', () => {
   const dir = makeTempDir();
   try {

@@ -5191,12 +5191,24 @@ function missionReportFor(mission, root = process.cwd()) {
   const timeline = missionReportTimeline(mission, root);
   const verificationDebt = missionVerificationDebt(mission, root);
   const workerCheckedIn = Boolean(explicitWorkerReceipt) || timeline.length > 0;
+  const driver = missionDriverHealth(mission, root);
+  const driverAlive = Boolean(driver && driver.alive);
   const workerReceiptPath = mission.worker_receipt_path || (receipt && verifierReceiptPath) || null;
   const verifierPassed = mission.verifier_result && mission.verifier_result.passed === true;
   const pendingBudgetContinuation = missionBudgetContinuationText(mission);
   const budgetContinuation = workerCheckedIn ? pendingBudgetContinuation : null;
-  const operatorOutcome = !workerCheckedIn && pendingBudgetContinuation
+  const awaitingFirstWorker = !workerCheckedIn && Boolean(pendingBudgetContinuation);
+  // An active status implies a worker is running. With no receipt AND no live
+  // driver, that claim is a lie: report that no worker is running and name the
+  // command that starts one instead of saying the mission is in progress.
+  const noLiveWorker = !workerCheckedIn
+    && !driverAlive
+    && !pendingBudgetContinuation
+    && GOAL_LOOP_STATUSES.has(String(mission.status || ''));
+  const operatorOutcome = awaitingFirstWorker
     ? 'No worker has checked in yet.'
+    : noLiveWorker
+    ? 'No worker is running; nothing has produced a receipt yet.'
     : budgetContinuation
     ? 'The last verifier passed; full-budget work is continuing.'
     : mission.operator_outcome
@@ -5205,8 +5217,10 @@ function missionReportFor(mission, root = process.cwd()) {
     id: mission.id,
     objective: mission.objective,
     status: mission.status,
-    human_status: !workerCheckedIn && pendingBudgetContinuation
+    human_status: awaitingFirstWorker
       ? 'waiting for the first worker check-in'
+      : noLiveWorker
+      ? 'no live worker (nothing is running)'
       : missionHumanStatusText(mission),
     budget_continuation: budgetContinuation,
     operator_outcome: operatorOutcome,
@@ -5218,9 +5232,10 @@ function missionReportFor(mission, root = process.cwd()) {
     verifier_receipt_path: verifierReceiptPath,
     proof_text: mission.receipt_path ? missionStatusProofText(mission) : null,
     operator_next: budgetContinuation
-      || (!workerCheckedIn && pendingBudgetContinuation ? 'Wait for the first worker check-in.' : null)
+      || (awaitingFirstWorker ? 'Wait for the first worker check-in.' : null)
       || mission.operator_next
       || mission.next_action
+      || (noLiveWorker ? `Start a worker: atris mission run ${mission.id}` : null)
       || 'Review the mission state.',
   };
 }
@@ -7985,6 +8000,14 @@ function spawnMissionDriver(mission, root = process.cwd()) {
       log_path: logPath,
     }, null, 2) + '\n', 'utf8');
     child.unref();
+    // A returned pid is not proof the engine is running: spawn can hand back a
+    // pid for a child that never execs or exits immediately. Verify the process
+    // is actually alive before claiming a live worker, and drop the misleading
+    // driver-state file when it is not.
+    if (!child.pid || !missionLockOwnerIsAlive(child.pid)) {
+      try { fs.rmSync(paths.stateFile, { force: true }); } catch {}
+      return { ok: false, error: 'mission driver exited before it could start', pid: child.pid || null };
+    }
     return {
       ok: true,
       pid: child.pid,
