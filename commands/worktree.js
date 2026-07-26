@@ -642,7 +642,12 @@ function shipWorktree(args) {
     if (!dryRun) runCommand(verify, { cwd: root });
     const afterVerifyRows = dryRun ? [] : statusSnapshot(root);
     const verifyDelta = newStatusRows(beforeVerify, afterVerifyRows);
-    const afterVerify = dryRun ? { staged: 0, unstaged: 0, untracked: 0 } : statusCounts(root) || { staged: 0, unstaged: 0, untracked: 0 };
+    // This check exists to catch a verifier that writes files. Conductor plumbing was
+    // already present before the verifier ran, so counting it here blocks a clean ship.
+    const afterVerify = dryRun
+      ? { staged: 0, unstaged: 0, untracked: 0 }
+      : statusCounts(root, { ignoreUntracked: isConductorArtifact })
+        || { staged: 0, unstaged: 0, untracked: 0 };
     if (!dryRun && (afterVerify.staged || afterVerify.unstaged || afterVerify.untracked)) {
       console.error(
         `blocked: verifier left checkout dirty staged=${afterVerify.staged} ` +
