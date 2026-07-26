@@ -459,3 +459,59 @@ test('fleet landings ship with an explicit master target, never the launcher bra
   assert.ok(args.includes('--merge'));
   assert.ok(args.join(' ').includes('(F-9, built by cursor)'));
 });
+
+test('clipHeadTail keeps MODULE_NOT_FOUND head with a stack tail', () => {
+  const head = "Error: Cannot find module 'missing-mod'\nMODULE_NOT_FOUND: cannot find missing-mod\n";
+  const stack = Array.from({ length: 80 }, (_, i) =>
+    `    at Object.<anonymous> (node:internal/modules/cjs/loader:${1000 + i}:10)`
+  ).join('\n');
+  const text = head + stack;
+  const clipped = fleet.clipHeadTail(text, { head: 400, tail: 300 });
+  assert.match(clipped, /MODULE_NOT_FOUND: cannot find missing-mod/);
+  assert.match(clipped, /node:internal\/modules\/cjs\/loader/);
+  assert.ok(clipped.includes('\n...\n'));
+  assert.ok(clipped.length < text.length);
+  assert.equal(fleet.clipHeadTail('short'), 'short');
+});
+
+test('runFleetFlight ship failure receipt keeps the failing module at the head', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-ship-fail-'));
+  try {
+    const stateDir = path.join(root, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({
+      tasks: [{ display_id: 'F-1', status: 'open', title: 'edits lib/a.js Done: x. Check: node --test test/a.test.js.' }],
+    }));
+    const head = "Error: Cannot find module 'atris-ship-helper'\nMODULE_NOT_FOUND: cannot find atris-ship-helper\nRequire stack:\n";
+    const stack = Array.from({ length: 100 }, (_, i) =>
+      `    at Module.require (node:internal/modules/cjs/loader:${2000 + i}:17)`
+    ).join('\n');
+    const shipErr = head + stack;
+    const ownCli = (args) => {
+      if (args[0] === 'worktree' && args[1] === 'start') {
+        return { status: 0, stdout: `next: cd ${root}/wt\n`, stderr: '' };
+      }
+      if (args[0] === 'worktree' && args[1] === 'ship') {
+        return { status: 1, stdout: '', stderr: shipErr };
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    };
+    const flight = await fleet.runFleetFlight({
+      root,
+      engines: ['cursor'],
+      log: () => {},
+      ownCli,
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'ok', stderr: '' }),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+    });
+    assert.equal(flight.landed.length, 0);
+    assert.equal(flight.paused.length, 1);
+    assert.equal(flight.paused[0].stage, 'ship');
+    assert.match(flight.paused[0].detail, /MODULE_NOT_FOUND: cannot find atris-ship-helper/);
+    assert.match(flight.paused[0].detail, /node:internal\/modules\/cjs\/loader/);
+    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.match(receipt.paused[0].detail, /MODULE_NOT_FOUND: cannot find atris-ship-helper/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -816,6 +816,45 @@ test('runDispatchFlight pauses (never ships) when the real Check: re-run fails',
   }
 });
 
+test('runDispatchFlight ship failure receipt keeps MODULE_NOT_FOUND at the head', async () => {
+  const tmpRoot = makeTempRoot();
+  try {
+    const head = "Error: Cannot find module 'atris-ship-helper'\nMODULE_NOT_FOUND: cannot find atris-ship-helper\nRequire stack:\n";
+    const stack = Array.from({ length: 100 }, (_, i) =>
+      `    at Module.require (node:internal/modules/cjs/loader:${2000 + i}:17)`
+    ).join('\n');
+    const shipErr = head + stack;
+    const { cli } = ownCliFake({
+      tasks: { 'CLI-900': TASK },
+      worktreeFor: (t) => `/wt/${t}`,
+    });
+    const failingCli = (args) => {
+      if (args[0] === 'worktree' && args[1] === 'ship') {
+        return { status: 1, stdout: '', stderr: shipErr };
+      }
+      return cli(args);
+    };
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      ownCli: failingCli,
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'ok' }),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => ({ status: 0, stdout: 'ok\n', stderr: '' }),
+      log: () => {},
+    });
+    assert.equal(flight.landed.length, 0);
+    assert.equal(flight.paused.length, 1);
+    assert.equal(flight.paused[0].stage, 'ship');
+    assert.match(flight.paused[0].detail, /MODULE_NOT_FOUND: cannot find atris-ship-helper/);
+    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.match(receipt.paused[0].detail, /MODULE_NOT_FOUND: cannot find atris-ship-helper/);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 test('runDispatchFlight pauses when the build itself fails, keeping the worktree', async () => {
   const tmpRoot = makeTempRoot();
   try {    const { cli, calls } = ownCliFake({
