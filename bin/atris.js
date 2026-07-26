@@ -616,7 +616,6 @@ function showHelp() {
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
   console.log('  soul       - Show, snapshot, or fork workspace identity');
   console.log('  fleet      - Inspect local fleet status');
-  console.log('  gift       - Buy and send a gift card (`rails`, `catalog`, `airbnb`, `receipt`)');
   console.log('  loops      - Self-improving loop audit/scaffold (`init`, `audit`, `tick`, `board`)');
   console.log('  self-improve - Alias for `atris loops init`');
   console.log('  agent      - Select cloud agent, spawn worker requests, or run `agent doctor`');
@@ -2705,11 +2704,6 @@ if (command === 'init') {
   require('../commands/fleet').fleet(args)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
-} else if (command === 'gift') {
-  const args = process.argv.slice(3);
-  require('../commands/gift').giftCommand(args)
-    .then((code) => exitWhenFlushed(typeof code === 'number' ? code : 0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitWhenFlushed(1); });
 } else if (command === 'loops' || command === 'self-improve') {
   try {
     const loops = require('../commands/loops');
