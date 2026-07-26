@@ -52,6 +52,7 @@ function showHelp() {
   console.log('       atris wish board');
   console.log('       atris wish answer "<your answer>" [--engine <id>] [--json] [--no-mission]');
   console.log('       atris wish grant <n> "<answer>" [--engine <id>] [--json] [--no-mission]');
+  console.log('       atris wish grant <n> "<answer>" --cloud [--lane fast|pro|max] [--agent <id>]');
   console.log('       atris wish say "<note>" [wish-id]');
   console.log('       atris wish close <n|id> [<n|id> ...]');
   console.log('       atris wish again <id> "<tweak text>" [--engine <id>]');
@@ -283,6 +284,46 @@ async function runCloudWish(text, root, options, deps = {}) {
   }
 }
 
+// A granted wish already has a number and an id, so the cloud receipt updates
+// that row instead of opening a second one.
+async function runCloudWishGrant(wish, text, root, options, deps = {}) {
+  try {
+    const mission = await enqueueCloudMission({
+      text,
+      lane: options.lane,
+      ...(options.agentId ? { agentId: options.agentId } : {}),
+    }, deps);
+    const ts = deps.ts || stampIso();
+    const record = {
+      id: wish.id,
+      n: wish.n || undefined,
+      ts,
+      text: wish.text,
+      status: 'delegated',
+      dispatched_at: ts,
+      cloud: true,
+      task_id: mission.task_id,
+      lane: mission.lane || options.lane,
+      answers: wish.answers || undefined,
+      parent_id: wish.parent_id || undefined,
+      decomposed_part: wish.decomposed_part || undefined,
+    };
+    appendWishRecord(root, record);
+    const log = deps.log || console.log;
+    if (options.asJson) {
+      log(JSON.stringify({ ok: true, action: 'cloud_wish_granted', mission, wish: record }, null, 2));
+      return 0;
+    }
+    log('i answered the question and sent the wish to cloud work, and we know it is queued because the cloud accepted it.');
+    log(`task_id: ${record.task_id}`);
+    log(`watch: atris mission status --cloud ${record.task_id} --watch`);
+    return 0;
+  } catch (error) {
+    (deps.error || console.error)(error.message || String(error));
+    return error.exitCode || 1;
+  }
+}
+
 function resolveVerifyOption(options) {
   if (options.verifyMissing) return 'wish --verify needs a command.';
   if (!options.verifyRaw) return null;
@@ -417,6 +458,15 @@ function wishCommand(args = [], deps = {}) {
   }
   if (first === 'grant') {
     const options = wishOptions(args);
+    if (options.cloud) {
+      const optionError = cloudWishOptionError(args, options);
+      if (optionError) {
+        (deps.error || console.error)(optionError);
+        return 2;
+      }
+      options.cloudDispatch = (answeredWish, auditText, root) =>
+        runCloudWishGrant(answeredWish, auditText, root, options, deps);
+    }
     return grantWish(options.positionals, process.cwd(), options);
   }
   if (first === 'review') {
