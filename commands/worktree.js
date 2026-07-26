@@ -489,6 +489,14 @@ function createOrFindPr(root, branch, targetRef, title, dryRun) {
     `Target: ${targetBranch}`,
   ].join('\n');
   if (dryRun) return `dry-run: gh pr create --base ${targetBranch} --head ${branch}`;
+  // An engine that produced nothing leaves a branch level with its base. Asking
+  // GitHub for a PR there fails with "No commits between ...", and that throw used
+  // to escape the flight and abort the whole run. Say it plainly instead.
+  const ahead = runGit(['rev-list', '--count', `${targetRef}..HEAD`], { cwd: root, check: false });
+  if (ahead.status === 0 && String(ahead.stdout || '').trim() === '0') {
+    console.log('pr: skipped (no commits ahead of base)');
+    return '';
+  }
   const created = spawnSync(
     'gh',
     ['pr', 'create', '--base', targetBranch, '--head', branch, '--title', title, '--body', body],
