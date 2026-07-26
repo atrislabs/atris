@@ -9,7 +9,7 @@
 // Zero external deps (Node built-ins only) — repo contract.
 //
 // Usage:
-//   atris slop detect [path]        # scan a file or dir (default: .)
+//   atris slop detect [path...]      # scan one or more files or dirs (default: .)
 //   atris slop detect src/ --json   # machine output for CI / the loop
 //   atris slop detect src/ --quiet  # only print the summary line
 //
@@ -252,8 +252,15 @@ function detect(argv) {
     changed = gitChangedLines(staged);
     files = [...changed.keys()].filter((f) => SCAN_EXTS.has(path.extname(f)) && fs.existsSync(f));
   } else {
-    const target = argv.find((a) => !a.startsWith('-')) || '.';
-    files = walk(path.resolve(target), []);
+    let targets = argv.filter((a) => !a.startsWith('-'));
+    if (!targets.length) targets = ['.'];
+    const seen = new Set();
+    files = [];
+    for (const target of targets) {
+      for (const f of walk(path.resolve(target), [])) {
+        if (!seen.has(f)) { seen.add(f); files.push(f); }
+      }
+    }
   }
 
   let fixed = null;
@@ -547,11 +554,11 @@ function slopCommand(argv) {
   console.log(`
   atris slop — deterministic slop detector + repairer (no LLM)
 
-    atris slop detect [path]      scan a file or dir (default: .)
+    atris slop detect [path...]   scan one or more files or dirs (default: .)
     atris slop detect --diff      scan only changed lines (commit/PR gate)
     atris slop detect --staged    scan only staged changes (pre-commit hook)
     atris slop detect --fix       auto-repair the safe tells (em dashes), report the rest
-    atris slop detect [path] --json   machine output for CI / the loop
+    atris slop detect [path...] --json   machine output for CI / the loop
     atris slop rules              list active rules (built-in + project)
     atris slop rules --add <id> <pattern> <why>   grow the project ruleset
     atris slop hook               install a pre-commit gate (runs --staged)
