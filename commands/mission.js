@@ -8982,6 +8982,10 @@ async function runMission(args) {
     const startedAt = Date.now();
     let backoffAttempt = 0;
     let lastRateLimit = null;
+    // A usage-wall cooldown belongs to the engine that hit it, not the whole run.
+    // Tracking which engine set it lets an auto-runner swap to another ready engine
+    // and keep working instead of waiting the wall out (or pausing for a human).
+    let rateLimitedEngineId = null;
     let continuationGoal = null;
 
     const sessionLabel = skipWorker
@@ -9039,6 +9043,18 @@ async function runMission(args) {
         result.engine_id = tickEngineId;
         result.requested_engine = tickSelection.requested_engine;
         result.engine_fallback_reason = tickSelection.engine_fallback_reason;
+      }
+
+      // Usage-wall engine swap: when a prior tick's engine hit a rate-limit wall and
+      // the auto runner has already resolved this tick to a *different* ready engine
+      // (the walled one is now credit_out and excluded from resolution), the run-wide
+      // cooldown no longer applies. Clear it so the fresh engine runs now instead of
+      // the loop sleeping through — or pausing on `rate-limit-exceeded-wall` for — a
+      // wall this engine never hit.
+      if (lastRateLimit && rateLimitedEngineId && tickEngineId && tickEngineId !== rateLimitedEngineId) {
+        result.engine_swapped_from = rateLimitedEngineId;
+        lastRateLimit = null;
+        rateLimitedEngineId = null;
       }
 
       // Active-hours gate
@@ -9204,6 +9220,7 @@ async function runMission(args) {
           // treating an allowed resetsAt as one pauses every timed run after
           // tick 1 with rate-limit-exceeded-wall.
           lastRateLimit = claudeResult.rate_limit_info.status === 'allowed' ? null : claudeResult.rate_limit_info;
+          rateLimitedEngineId = lastRateLimit ? tickEngineId : null;
         }
         if (claudeResult.aborted) { pauseReason = 'aborted-during-claude'; break; }
         if (claudeResult.authExpired) { pauseReason = 'auth-required'; break; }
