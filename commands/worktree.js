@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
+const { isConductorArtifact } = require('../lib/conductor-artifacts');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
 const COMMAND_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
@@ -261,11 +262,16 @@ function baseBranchName(ref) {
   return String(ref || '').replace(/^refs\/heads\//, '').replace(/^origin\//, '');
 }
 
-function statusCounts(root, { ignoredUnstagedFiles = new Set(), ignoredUntrackedFiles = new Set() } = {}) {
+function statusCounts(root, {
+  ignoredUnstagedFiles = new Set(),
+  ignoredUntrackedFiles = new Set(),
+  ignoreUntracked = null,
+} = {}) {
   if (!fs.existsSync(root)) return null;
   // -uall expands untracked directories to individual files so ignoredUntrackedFiles
-  // can match exact paths (plain porcelain collapses them to "?? dir/").
-  const statusArgs = ignoredUntrackedFiles.size ? ['status', '--porcelain', '-uall'] : ['status', '--porcelain'];
+  // and ignoreUntracked can match exact paths (plain porcelain collapses them to "?? dir/").
+  const expandUntracked = ignoredUntrackedFiles.size || typeof ignoreUntracked === 'function';
+  const statusArgs = expandUntracked ? ['status', '--porcelain', '-uall'] : ['status', '--porcelain'];
   const result = runGit(statusArgs, { cwd: root, check: false });
   if (result.status !== 0) return null;
   let staged = 0;
@@ -276,6 +282,7 @@ function statusCounts(root, { ignoredUnstagedFiles = new Set(), ignoredUntracked
     if (ignoredUnstagedFiles.has(file) && line[0] === ' ' && line[1] !== ' ') continue;
     if (line.startsWith('??')) {
       if (ignoredUntrackedFiles.has(file)) continue;
+      if (typeof ignoreUntracked === 'function' && ignoreUntracked(file)) continue;
       untracked += 1;
       continue;
     }
@@ -728,8 +735,10 @@ function guard(args) {
     console.error('run: atris worktree start --member <member>|--agent <name> --task "<short task>" --claim');
     return 2;
   }
-  // The CLI's own worktree metadata (written by `worktree start`) must not count as dirt.
-  const counts = statusCounts(root, { ignoredUntrackedFiles: new Set(['.atris/agent-worktree.json']) });
+  // Conductor plumbing (worktree metadata, the fleet prompt written for this very
+  // engine, runtime scratch, the brief ledger) must not count as dirt — otherwise the
+  // harness blocks the engine with the harness's own files.
+  const counts = statusCounts(root, { ignoreUntracked: isConductorArtifact });
   if (counts && (counts.staged || counts.unstaged || counts.untracked) && !hasFlag(args, '--allow-dirty')) {
     console.error(`blocked: checkout is dirty staged=${counts.staged} unstaged=${counts.unstaged} untracked=${counts.untracked}`);
     return 3;
