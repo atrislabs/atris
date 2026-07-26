@@ -498,6 +498,36 @@ function shipHelp() {
   console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
 }
 
+function deniedLaneForShip(root, branch, message) {
+  try {
+    const { DENIED_TAGS } = require('../lib/fleet');
+    const refs = new Set();
+    for (const source of [String(branch || ''), String(message || '')]) {
+      for (const m of source.toUpperCase().matchAll(/([A-Z]{2,6}-\d+)/g)) refs.add(m[1]);
+      for (const m of source.toLowerCase().matchAll(/([a-z]{2,6})-(\d+)/g)) refs.add(`${m[1].toUpperCase()}-${m[2]}`);
+    }
+    if (!refs.size) return null;
+    const projectionPath = path.join(findPrimaryRoot(root), '.atris', 'state', 'tasks.projection.json');
+    if (!fs.existsSync(projectionPath)) return null;
+    const projection = JSON.parse(fs.readFileSync(projectionPath, 'utf8'));
+    for (const task of projection.tasks || []) {
+      const ids = [task.display_id, task.legacy_ref].filter(Boolean).map(v => String(v).toUpperCase());
+      if (!ids.some(id => refs.has(id))) continue;
+      const tags = [task.tag, ...(task.metadata?.todo_tags || [])].filter(Boolean).map(t => String(t).toLowerCase());
+      const hit = tags.find(t => DENIED_TAGS.includes(t));
+      if (hit) return { taskId: ids[0], tag: hit };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function findPrimaryRoot(root) {
+  const worktrees = listWorktrees(root);
+  return worktrees[0]?.path || root;
+}
+
 function shipWorktree(args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help') {
     shipHelp();
@@ -530,6 +560,17 @@ function shipWorktree(args) {
   if (path.resolve(root) === path.resolve(primary) && !hasFlag(args, '--allow-primary')) {
     console.error('blocked: ship from an isolated worktree, not the primary checkout');
     return 2;
+  }
+  // Denied lanes are checked at dispatch, but a flight that was staffed
+  // before a task entered a denied lane (or killed mid-flight) could still
+  // ship: a payments command self-landed twice this way on 2026-07-26. The
+  // ship gate is the last door, so it re-checks.
+  if (!hasFlag(args, '--allow-denied-lane')) {
+    const denied = deniedLaneForShip(root, branch, message);
+    if (denied) {
+      console.error(`blocked: this branch carries ${denied.taskId} which sits in the protected ${denied.tag} lane; a human lands it (or pass --allow-denied-lane on written order)`);
+      return 2;
+    }
   }
 
   let oneLapProof = null;
@@ -881,6 +922,7 @@ function worktreeCommand(args = []) {
 module.exports = {
   branchName,
   createAgentWorktree,
+  deniedLaneForShip,
   createOrFindPr,
   cleanupWorktrees,
   defaultStartBase,
