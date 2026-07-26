@@ -292,6 +292,16 @@ function statusCounts(root, {
   return { staged, unstaged, untracked };
 }
 
+// Remove conductor plumbing from the index after a broad `git add -A`, so the commit
+// records engine output only. Paths that were never staged are simply not listed.
+function unstageConductorArtifacts(root) {
+  const staged = runGit(['diff', '--cached', '--name-only'], { cwd: root, check: false });
+  if (staged.status !== 0) return [];
+  const drop = String(staged.stdout || '').split(/\r?\n/).filter(Boolean).filter(isConductorArtifact);
+  if (drop.length) runGit(['reset', '-q', 'HEAD', '--', ...drop], { cwd: root, check: false });
+  return drop;
+}
+
 function changedFiles(root, args) {
   const result = runGit([...args, '--', ...REGEN_ADAPTER_FILES], { cwd: root, check: false });
   if (result.status !== 0) return new Set();
@@ -600,7 +610,10 @@ function shipWorktree(args) {
   refreshRemoteRef(root, targetRef);
   const skippedAdapters = restoreRegeneratedAdapterChurn(root, message, { dryRun });
   const ignoredUnstagedFiles = dryRun ? new Set(skippedAdapters) : new Set();
-  const counts = statusCounts(root, { ignoredUnstagedFiles }) || { staged: 0, unstaged: 0, untracked: 0 };
+  // Conductor plumbing must not make the checkout look dirty, or a flight where the
+  // engine wrote nothing commits the fleet's own prompt file and calls it work.
+  const counts = statusCounts(root, { ignoredUnstagedFiles, ignoreUntracked: isConductorArtifact })
+    || { staged: 0, unstaged: 0, untracked: 0 };
   const dirty = counts.staged || counts.unstaged || counts.untracked;
   if (dirty && !message) {
     console.error('blocked: --message is required when there are local changes to commit');
@@ -611,6 +624,9 @@ function shipWorktree(args) {
     console.log(`commit: ${message}`);
     if (!dryRun) {
       runGit(['add', '-A'], { cwd: root });
+      // `add -A` sweeps in the fleet's own prompt file and friends. Drop them from the
+      // index so a work commit carries work, not harness plumbing. Safe when absent.
+      unstageConductorArtifacts(root);
       if (!proofTreeMatches('index')) return 3;
       runGit(['commit', '-m', message], { cwd: root });
       if (!proofTreeMatches('head')) return 3;
