@@ -396,16 +396,21 @@ function loadLoop(missions, root, deps) {
   const events = readJsonLines(path.join(root, '.atris', 'state', 'mission_events.jsonl'), deps.readFile, deps.exists);
   const codexGoal = readJsonFile(path.join(root, '.atris', 'state', 'codex_goal.json'), deps, {}) || {};
   const tickEvents = events.filter(event => event.type === 'mission_tick');
+  // Live missions sit in planning/ready/running; counting only 'running'
+  // reported 0 while a worker was mid-flight (CLI-1183, seen live 2026-07-25).
+  const ACTIVE_MISSION_STATUSES = new Set(['planning', 'running', 'ready']);
+  const isActive = (mission) => ACTIVE_MISSION_STATUSES.has(String(mission.status || ''));
   return {
-    running: missions.filter(mission => mission.status === 'running').length,
+    running: missions.filter(isActive).length,
+    paused: missions.filter(mission => mission.status === 'paused').length,
     always_on: missions.filter(mission => mission.always_on).length,
     stale: missions.filter(mission => mission.stale).length,
-    no_verifier: missions.filter(mission => mission.status === 'running' && !mission.verifier).length,
+    no_verifier: missions.filter(mission => isActive(mission) && !mission.verifier).length,
     ticks: tickEvents.length,
     last_event_at: events[events.length - 1]?.at || null,
     codex_goal: codexGoal.goal?.objective || null,
     codex_goal_mission: codexGoal.goal?.mission_id || null,
-    infinite_loop_risk: missions.some(mission => mission.stale || (mission.status === 'running' && !mission.verifier)),
+    infinite_loop_risk: missions.some(mission => mission.stale || (isActive(mission) && !mission.verifier)),
   };
 }
 
@@ -735,7 +740,11 @@ function summarize(tasks, missions, worktrees, agents) {
       review: count(tasks, t => t.status === 'review'),
       certifiedReview: count(tasks, t => t.status === 'review' && t.metadata && t.metadata.agent_certified),
     },
-    missions: { running: count(missions, m => m.status === 'running'), stale: count(missions, m => m.stale) },
+    missions: {
+      running: count(missions, m => ['planning', 'running', 'ready'].includes(String(m.status || ''))),
+      paused: count(missions, m => m.status === 'paused'),
+      stale: count(missions, m => m.stale),
+    },
     worktrees: { total: worktrees.length, dirty: count(worktrees, w => Number(w.dirty) > 0) },
   };
 }
@@ -832,7 +841,7 @@ function renderRadar(data) {
   lines.push('');
   lines.push(`Agents: ${s.agents.active}/${s.agents.total} active`);
   lines.push(`Tasks: ${s.tasks.open} open, ${s.tasks.claimed} claimed, ${s.tasks.review} review (${s.tasks.certifiedReview} certified)`);
-  lines.push(`Missions: ${s.missions.running} running, ${s.missions.stale} stale/no-verifier`);
+  lines.push(`Missions: ${s.missions.running} active, ${s.missions.paused || 0} paused, ${s.missions.stale} stale/no-verifier`);
   lines.push(`Worktrees: ${s.worktrees.total} registered, ${s.worktrees.dirty} dirty`);
   lines.push(`Next: ${data.next_action}`);
   if (data.os) {

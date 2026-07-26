@@ -776,3 +776,25 @@ test('renderAgentTop prioritizes pileups before untasked cleanup', () => {
   assert.match(top, /Untasked: 1 sessions \(1 no active task\)/);
   assert.match(top, /Task load: 1 pileup, 0 review-bound tasks/);
 });
+
+test('mission counts treat planning/ready/running as active and paused separately', () => {
+  const root = '/tmp/atris-radar-active';
+  const missionFile = path.join(root, '.atris', 'state', 'missions.jsonl');
+  const rows = [
+    { id: 'm-ready', status: 'ready', verifier: 'true', next_action: 'tick' },
+    { id: 'm-planning', status: 'planning', verifier: 'true', next_action: 'tick' },
+    { id: 'm-paused', status: 'paused', verifier: 'true', next_action: 'resume' },
+    { id: 'm-done', status: 'complete', verifier: 'true', next_action: '' },
+  ].map(row => JSON.stringify(row)).join('\n') + '\n';
+  const data = collectRadar({
+    root,
+    platform: 'darwin',
+    nowMs: Date.parse('2026-07-26T06:00:00.000Z'),
+    execFileSync: () => '',
+    existsSync: file => file === missionFile || file === path.join(root, '.atris', 'state', 'tasks.projection.json'),
+    readFileSync: file => (file === missionFile ? rows : '{"tasks":[]}'),
+    readdirSync: () => [],
+  });
+  assert.equal(data.summary.missions.running, 2, 'planning + ready count as active');
+  assert.equal(data.summary.missions.paused, 1, 'paused is its own count');
+});
