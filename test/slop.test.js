@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { scanFile, RULES } = require('../commands/slop');
+const { scanFile, detect, RULES } = require('../commands/slop');
 
 function tmpFile(name, content) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-'));
@@ -262,4 +262,23 @@ test('slop --help and -h print usage and exit 0 instead of scanning', () => {
     assert.match(out, /atris slop — deterministic slop detector/, `${flag} prints usage`);
     assert.doesNotMatch(out, /em-dash|⚠/, `${flag} does not run a scan`);
   }
+});
+
+test('detect scans every path, not just the first', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-detect-multi-'));
+  const clean = path.join(dir, 'clean.tsx');
+  const bad = path.join(dir, 'bad.tsx');
+  fs.writeFileSync(clean, '<div className="bg-stone-50 p-4">clean</div>\n');
+  fs.writeFileSync(bad, '<div className="bg-gradient-to-r from-purple-500 text-transparent bg-clip-text">bad</div>\n');
+  const lines = [];
+  const orig = console.log;
+  console.log = (...a) => lines.push(a.join(' '));
+  let code;
+  try { code = detect([clean, bad, '--json']); } finally { console.log = orig; }
+  const out = lines.join('\n');
+  assert.equal(code, 1, 'second path is scanned so slop is found');
+  const result = JSON.parse(out);
+  assert.equal(result.scanned, 2, 'both files scanned');
+  assert.ok(result.slop >= 1, 'at least one slop tell found');
+  assert.ok(result.findings.some((f) => f.file.endsWith('bad.tsx')), 'finding is from the second file');
 });
