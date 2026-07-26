@@ -381,6 +381,48 @@ test('mission status keeps full-budget work moving until promised time ends', ()
   }
 });
 
+test('mission status shows paused reason instead of remaining budget time', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-paused-budget',
+      slug: 'paused-budget',
+      objective: 'Overnight loop that self-paused after repeating ticks',
+      owner: 'mission-lead',
+      status: 'paused',
+      stop_reason: 'stuck-repeating',
+      cadence: '15m',
+      started_at: new Date(Date.now() - 60_000).toISOString(),
+      created_at: new Date(Date.now() - 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+      next_action: 'resume with: atris mission tick mission-paused-budget',
+      budget_contract: {
+        policy: 'spend_full_budget',
+        requested_seconds: 8400,
+        budget_label: '140 minutes',
+      },
+    });
+
+    const status = runCli(['mission', 'status', 'mission-paused-budget'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.match(status.stdout, /state: paused: stuck-repeating/);
+    assert.doesNotMatch(status.stdout, /working for the full/);
+    assert.doesNotMatch(status.stdout, /remaining/);
+
+    const inspect = runCli(['mission', 'inspect', 'mission-paused-budget', '--fields', 'status,runner'], { cwd: dir });
+    assert.equal(inspect.status, 0, inspect.stderr || inspect.stdout);
+    assert.match(inspect.stdout, /^status: paused: stuck-repeating$/m);
+    assert.doesNotMatch(inspect.stdout, /working for the full|remaining/);
+
+    const json = runCli(['mission', 'inspect', 'mission-paused-budget', '--fields', 'status', '--json'], { cwd: dir });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    assert.equal(JSON.parse(json.stdout).fields.status, 'paused');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 function writeMemberProfile(dir, slug, role) {
   fs.mkdirSync(path.join(dir, 'atris', 'team', slug), { recursive: true });
   fs.writeFileSync(path.join(dir, 'atris', 'team', slug, 'MEMBER.md'), [

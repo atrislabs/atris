@@ -156,3 +156,19 @@ test('a mission-bridged landing lifts the receipt sentence instead of echoing th
 test('missionHumanStatusText sends status prose through the human voice gate', () => {
   assert.equal(missionHumanStatusText({ status: 'waiting_for_human' }), 'waiting for human');
 });
+
+test('missionHumanStatusText names paused reason instead of remaining budget', () => {
+  assert.equal(
+    missionHumanStatusText({
+      status: 'paused',
+      stop_reason: 'stuck-repeating',
+      budget_contract: {
+        policy: 'spend_full_budget',
+        requested_seconds: 8400,
+        budget_label: '140 minutes',
+      },
+      started_at: new Date().toISOString(),
+    }),
+    'paused: stuck-repeating',
+  );
+});
