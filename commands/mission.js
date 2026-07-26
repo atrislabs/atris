@@ -6202,6 +6202,24 @@ const CLAUDE_SESSION_CONTEXT_ROTATE_TICKS = Math.max(
   Number(process.env.ATRIS_CLAUDE_SESSION_ROTATE_TICKS) || 8,
 );
 
+// A mission that sits in a protected lane must not tick unattended: the
+// worker lands its own diffs, so the only safe moment to stop a wrong one is
+// before the tick fires. Same tag-plus-text routing the task lane uses
+// (CLI-1189). An operator override is explicit: protected_lane_ack in the
+// mission metadata, set by a human, or ATRIS_ALLOW_PROTECTED_MISSION=1.
+function missionProtectedLaneHold(mission) {
+  if (process.env.ATRIS_ALLOW_PROTECTED_MISSION === '1') return null;
+  if (mission?.metadata?.protected_lane_ack) return null;
+  const { declaredProtectedLane, sniffedProtectedLane, DENIED_TAGS } = require('../lib/auto-accept-certified');
+  const lane = String(mission?.lane || '').toLowerCase();
+  if (DENIED_TAGS.has ? DENIED_TAGS.has(lane) : DENIED_TAGS.includes(lane)) return { pause_reason: `protected-lane-${lane}` };
+  const probe = { title: mission?.objective, objective: mission?.stop_condition, metadata: mission?.metadata || {} };
+  if (declaredProtectedLane(probe)) return { pause_reason: 'protected-lane-declared' };
+  const sniffed = sniffedProtectedLane(probe);
+  if (sniffed) return { pause_reason: `protected-lane-${sniffed.lane}` };
+  return null;
+}
+
 function runnerUsesCallerSession(runner) {
   return new Set(['codex_goal', 'caller_session', 'current_agent']).has(String(runner || '').trim().toLowerCase());
 }
@@ -9022,6 +9040,8 @@ async function runMission(args) {
       if (['complete', 'stopped', 'paused'].includes(mission.status)) { pauseReason = mission.status; break; }
       if (effectiveMissionVerifier(mission) !== storedVerifier) { pauseReason = 'verifier-mutated'; break; }
       if ((mission.lane || 'workspace') !== frozen.lane) { pauseReason = 'lane-mutated'; break; }
+      const protectedHold = missionProtectedLaneHold(mission);
+      if (protectedHold) { pauseReason = protectedHold.pause_reason; break; }
 
       const tickIdx = Number(mission.last_tick_index || 0) + 1;
       const tickStart = stampIso();
@@ -10892,6 +10912,7 @@ function missionCommand(args) {
 }
 
 module.exports = {
+  missionProtectedLaneHold,
   missionCommand,
   startMission,
   spawnMissionDriver,
