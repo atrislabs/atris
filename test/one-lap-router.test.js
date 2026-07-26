@@ -186,7 +186,23 @@ test('an unverifiable local ask dispatches with the repo default verifier', () =
     assert.equal(payload.verifier, 'git diff --check');
     assert.equal(payload.question, undefined);
     assert.doesNotMatch(payload.next_action, /--verify/);
-    assert.ok(!fs.existsSync(setup.engineMarker));
+    // CLI-1170: stuck must not race an ungated mission-driver dispatch.
+    // NODE_TEST_CONTEXT is scrubbed below so a leaked driver would really run
+    // the fake codex and write engineMarker; that used to flake ~1 in 3.
+    assert.ok(!fs.existsSync(setup.engineMarker), 'stuck lap must not run the executor');
+    const wishesPath = path.join(setup.workspace, '.atris', 'state', 'wishes.jsonl');
+    const wishes = fs.readFileSync(wishesPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.equal(wishes[0].one_lap, true);
+    const delegated = wishes.find((row) => row.status === 'delegated');
+    assert.ok(delegated, 'intake must produce a delegated wish');
+    assert.equal(delegated.worker_started, false);
+    assert.equal(delegated.driver_pid, undefined);
+    assert.equal(delegated.worker_note, 'the one-lap dispatches this in-process');
+    const shortId = String(delegated.mission_id).slice(-8);
+    assert.equal(
+      fs.existsSync(path.join(setup.workspace, '.atris', 'state', `mission-driver-${shortId}.json`)),
+      false,
+    );
   } finally {
     fs.rmSync(setup.root, { recursive: true, force: true });
   }
@@ -221,6 +237,7 @@ test('default-verifier dispatch preserves the original quoted ask', () => {
     assert.equal(payload.ask, ask);
     assert.equal(payload.verifier, 'git diff --check');
     assert.equal(payload.question, undefined);
+    assert.ok(!fs.existsSync(setup.engineMarker), 'quoted stuck ask must not run the executor');
   } finally {
     fs.rmSync(setup.root, { recursive: true, force: true });
   }
