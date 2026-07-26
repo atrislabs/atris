@@ -217,7 +217,7 @@ test('missing and malformed history is ignored without changing legacy routing',
   }
 });
 
-test('role resolution uses rich history and explains exactly one lowercase pick only when enabled', () => {
+test('role resolution uses rich history and logs exactly one lowercase pick by default', () => {
   const root = makeRoot();
   const previousPath = process.env.PATH;
   const previousExplain = process.env.ATRIS_ROUTER_EXPLAIN;
@@ -241,15 +241,27 @@ test('role resolution uses rich history and explains exactly one lowercase pick 
 
     const lines = [];
     console.error = (line) => lines.push(String(line));
+
+    // default: every pick logs one plain lowercase sentence saying which engine won and why.
     delete process.env.ATRIS_ROUTER_EXPLAIN;
     assert.equal(resolveEngineForRole('executor', root).id, 'cursor');
-    assert.deepEqual(lines, []);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], lines[0].toLowerCase());
+    assert.match(lines[0], /^router picked cursor because .*\.$/);
 
+    // explicit opt-in stays a single line.
+    lines.length = 0;
     process.env.ATRIS_ROUTER_EXPLAIN = '1';
     assert.equal(resolveEngineForRole('executor', root).id, 'cursor');
     assert.equal(lines.length, 1);
     assert.equal(lines[0], lines[0].toLowerCase());
     assert.match(lines[0], /^router picked cursor because .*\.$/);
+
+    // opt-out silences the log.
+    lines.length = 0;
+    process.env.ATRIS_ROUTER_EXPLAIN = '0';
+    assert.equal(resolveEngineForRole('executor', root).id, 'cursor');
+    assert.deepEqual(lines, []);
   } finally {
     console.error = previousError;
     process.env.PATH = previousPath;
