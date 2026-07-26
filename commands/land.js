@@ -94,6 +94,14 @@ function aheadCount(root, base, ref) {
   return Number(result.stdout.trim()) || 0;
 }
 
+// The subject lines of the commits a ref carries beyond base, oldest last —
+// what a stranded worktree is actually holding, so surfacing it names the work.
+function commitSubjects(cwd, base, ref, limit = 6) {
+  const result = runGit(['log', '--format=%s', `${base}..${ref}`], { cwd, check: false });
+  if (result.status !== 0) return [];
+  return result.stdout.split(/\r?\n/).filter(Boolean).slice(0, limit);
+}
+
 function cherryStats(root, base, ref) {
   const result = runGit(['cherry', base, ref], { cwd: root, check: false });
   if (result.status !== 0) return { landedElsewhere: 0, unique: 0 };
@@ -149,11 +157,36 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
     const counts = (light ? null : statusCounts(wt.path)) || { staged: 0, unstaged: 0, untracked: 0 };
     const dirty = counts.staged + counts.unstaged + counts.untracked;
     const entry = branches.find((b) => b.name === branch) || null;
+    // Committed-but-unlanded work is invisible in the dirty count — a clean
+    // worktree can still hold commits ahead of base that silently never land.
+    // Carry the ahead/unique counts (and, off the light path, the subjects)
+    // so a stranded worktree is surfaced by what it is actually holding.
+    let ahead = entry ? entry.ahead : 0;
+    let unlandedCommits = entry ? entry.uniqueChanges : 0;
+    let ageDaysVal = entry ? entry.ageDays : null;
+    let subjects = [];
+    if (!branch) {
+      // Detached HEAD has no row in the branch table — ask the worktree itself.
+      const cnt = runGit(['rev-list', '--count', `${base}..HEAD`], { cwd: wt.path, check: false });
+      ahead = cnt.status === 0 ? Number(cnt.stdout.trim()) || 0 : 0;
+      if (ahead > 0) {
+        unlandedCommits = cherryStats(wt.path, base, 'HEAD').unique;
+        const ts = runGit(['log', '-1', '--format=%ct', 'HEAD'], { cwd: wt.path, check: false });
+        if (ts.status === 0) ageDaysVal = ageDays(Number(ts.stdout.trim()), now);
+        if (!light) subjects = commitSubjects(wt.path, base, 'HEAD');
+      }
+    } else if (!light && ahead > 0) {
+      subjects = commitSubjects(root, base, branch);
+    }
     worktrees.push({
       path: wt.path,
       branch,
       dirty,
-      ageDays: entry ? entry.ageDays : null,
+      ahead,
+      unlandedCommits,
+      subjects,
+      stranded: unlandedCommits > 0,
+      ageDays: ageDaysVal,
       ageHours: entry ? entry.ageHours : null,
       state: entry ? entry.state : 'detached',
     });
@@ -179,12 +212,14 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
   const landed = branches.filter((b) => b.state === 'landed');
   const active = branches.filter((b) => b.state === 'active');
   const stale = active.filter((b) => b.stale);
+  const strandedWorktrees = worktrees.filter((w) => w.stranded);
   return {
     base,
     ttlDays,
     staleHours,
     branches,
     worktrees,
+    strandedWorktrees,
     summary: {
       unlanded: branches.length,
       active: active.length,
@@ -192,6 +227,7 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
       landed: landed.length,
       stale: stale.length,
       worktrees: worktrees.length,
+      stranded: strandedWorktrees.length,
     },
   };
 }
@@ -274,12 +310,12 @@ function salvageWorktree(w, dir, receipt) {
 // includeDetached: detached-HEAD worktrees have no branch, so the salvage
 // bundle cannot cover their commits — unattended reaps (autoland) pass false
 // and leave them for a human reap.
-function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true, protectCurrent = true, now = Date.now() } = {}) {
+function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true, protectCurrent = true, force = false, now = Date.now() } = {}) {
   const board = collectBoard(root, { ttlDays, staleHours, base: baseOverride, now });
   const targets = board.branches.filter((b) => b.state === 'landed' || b.state === 'due');
   const targetNames = new Set(targets.map((b) => b.name));
   const candidateWorktrees = board.worktrees.filter(
-    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached') || (typeof w.ageDays === 'number' && w.ageDays > ttlDays)
+    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached') || (typeof w.ageDays === 'number' && w.ageDays > ttlDays) || w.unlandedCommits > 0
   );
   const protectedWorktrees = [];
   const worktreeTargets = [];
@@ -296,6 +332,18 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     }
     if (worktreeWithinReapGrace(w.path, now)) {
       protectedWorktrees.push({ ...w, reason: 'fresh_worktree_grace' });
+      continue;
+    }
+    // Unlanded commits that no branch salvage bundle will cover are lost by a
+    // force-remove: a detached worktree's commits ride no branch, and an active
+    // branch worktree is not a reap target so its commits are never bundled.
+    // Keep the worktree (and name what it holds) unless the operator forces it.
+    // A due/landed branch worktree still reaps normally — its commits ride the
+    // branch bundle, so removal is loss-free.
+    const bundleCovered = w.branch && targetNames.has(w.branch);
+    if (w.unlandedCommits > 0 && !force && !bundleCovered) {
+      const oldest = typeof w.ageDays === 'number' ? `, oldest ${w.ageDays}d` : '';
+      protectedWorktrees.push({ ...w, reason: `unlanded commits: ${w.unlandedCommits} never landed${oldest}, needs landing` });
       continue;
     }
     worktreeTargets.push(w);
@@ -527,8 +575,15 @@ function printBoard(board) {
     console.log(`  ${label.padEnd(11)} ${String(b.ageDays).padStart(3)}d  ${changes}  ${b.name}`);
   }
   for (const w of board.worktrees) {
-    const edits = w.dirty === 1 ? '1 unsaved edit' : `${w.dirty} unsaved edits`;
-    console.log(`  side copy   ${w.path} (${edits})`);
+    const bits = [];
+    if (w.stranded) bits.push(w.unlandedCommits === 1 ? '1 commit never landed' : `${w.unlandedCommits} commits never landed`);
+    if (w.dirty > 0) bits.push(w.dirty === 1 ? '1 unsaved edit' : `${w.dirty} unsaved edits`);
+    const age = typeof w.ageDays === 'number' ? `, ${countLabel(w.ageDays, 'day')} old` : '';
+    const detail = bits.length ? ` (${bits.join(', ')}${age})` : '';
+    console.log(`  side copy   ${w.path}${detail}`);
+    if (w.stranded) {
+      for (const s of w.subjects) console.log(`                - ${s}`);
+    }
   }
   console.log('');
   const s = board.summary;
@@ -591,6 +646,8 @@ function showHelp() {
   console.log('  atris land --reap              back up, then clear anything overdue');
   console.log('                                 or already landed (here and on github)');
   console.log('  atris land --reap --dry-run    preview what would be cleared');
+  console.log('  atris land --reap --force      also clear side copies holding');
+  console.log('                                 commits that never landed (backs up first)');
   console.log('  atris land --ttl <days>        change the 7-day overdue line');
   console.log('  atris land --json              machine-readable output');
   console.log('');
@@ -615,7 +672,7 @@ function landCommand(args = []) {
   const json = args.includes('--json');
 
   if (args.includes('--reap')) {
-    const receipt = reap(root, { ttlDays, base, dryRun: args.includes('--dry-run'), remote: !args.includes('--no-remote') });
+    const receipt = reap(root, { ttlDays, base, dryRun: args.includes('--dry-run'), remote: !args.includes('--no-remote'), force: args.includes('--force') });
     if (json) console.log(JSON.stringify(receipt, null, 2));
     else printReceipt(receipt);
     return 0;
