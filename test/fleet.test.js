@@ -219,6 +219,49 @@ test('landArrival rebases clean arrivals and pauses on conflict without resolvin
   assert.ok(log.includes('rebase --abort'), 'conflict must be aborted, never auto-resolved');
 });
 
+// CLI-1190: a killed predecessor leaves modified/untracked files behind, so
+// git rebase refuses before any conflict can occur — the unmerged-file list is
+// empty. Reporting that as rebase_conflict sends the operator chasing a merge
+// problem that does not exist. It must report a distinct dirty_worktree state
+// naming the uncommitted paths, and an empty conflicts list is never a conflict.
+test('landArrival reports dirty_worktree, not an empty rebase_conflict', () => {
+  const dirtyGit = (args) => {
+    if (args[0] === 'rebase' && args[1] === 'origin/master') {
+      return { status: 1, stdout: '', stderr: 'cannot rebase: you have unstaged changes' };
+    }
+    if (args[0] === 'diff') return { status: 0, stdout: '', stderr: '' }; // no unmerged files
+    if (args[0] === 'status') return { status: 0, stdout: ' M lib/web.js\n?? scratch.txt\n', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const dirty = fleet.landArrival({ worktreePath: '/wt', git: dirtyGit });
+  assert.equal(dirty.ok, false);
+  assert.equal(dirty.stage, 'dirty_worktree');
+  assert.deepEqual(dirty.dirty, ['lib/web.js', 'scratch.txt']);
+  assert.equal(dirty.conflicts, undefined, 'an empty conflicts list is never reported as a conflict');
+});
+
+// CLI-1190: a claude engine killed mid-flight (exit 143 / SIGTERM) returns an
+// empty report. The restaff leg must name the signal instead of a silent no-op.
+test('failedDispatchLeg names the signal for a killed engine with an empty report', () => {
+  const exitLeg = fleet.failedDispatchLeg({ exitCode: 143, report: '', stderr: '' }, 'claude');
+  assert.equal(exitLeg.signal, 'SIGTERM');
+  assert.equal(exitLeg.report, '(no report: killed by SIGTERM)');
+
+  const signalLeg = fleet.failedDispatchLeg({ status: null, signal: 'SIGKILL', report: '', stderr: '' }, 'claude');
+  assert.equal(signalLeg.signal, 'SIGKILL');
+  assert.equal(signalLeg.report, '(no report: killed by SIGKILL)');
+
+  // a normal non-signal failure keeps its own report and grows no signal field.
+  const plain = fleet.failedDispatchLeg({ exitCode: 1, report: 'engine died', stderr: 'boom' }, 'codex');
+  assert.equal(plain.signal, undefined);
+  assert.equal(plain.report, 'engine died');
+});
+
+test('detectDeadEngineDispatch flags a signalled leg distinctly from a plain nonzero exit', () => {
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 143, report: '' }), { reason: 'signalled', signal: 'SIGTERM', exitCode: 143 });
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 2, report: 'boom' }), { reason: 'nonzero_exit', exitCode: 2 });
+});
+
 test('defaultSelfLandCheck fetches the target ref and checks HEAD ancestry', () => {
   const calls = [];
   const result = fleet.defaultSelfLandCheck({
