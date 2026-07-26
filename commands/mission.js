@@ -1712,8 +1712,21 @@ function verifierTimeoutSeconds(verifierResult) {
   return Number.isFinite(ms) ? Math.round(ms / 1000) : 0;
 }
 
-function missionVerifierCheckedText(verifierResult, mission) {
-  if (!verifierResult) return 'UNVERIFIED: tick recorded but nothing was checked; treat this increment as unproven.';
+// A guard that blocked the tick is the reason no verifier ran. Saying only
+// "nothing was checked" reads like the operator forgot to ask for a check,
+// so name the block and its cause instead.
+function missionGuardBlockedText(guard) {
+  if (!guard || guard.allowed !== false) return '';
+  const detail = String(guard.detail || '').trim();
+  const reason = String(guard.reason || 'the tick was paused for human review').trim();
+  return `PAUSED FOR REVIEW: no verifier ran because ${reason}${detail ? ` (${detail})` : ''}; treat this increment as unproven.`;
+}
+
+function missionVerifierCheckedText(verifierResult, mission, guard = null) {
+  if (!verifierResult) {
+    return missionGuardBlockedText(guard)
+      || 'UNVERIFIED: tick recorded but nothing was checked; treat this increment as unproven.';
+  }
   if (verifierResult.mode === 'engine-unavailable') {
     return 'VERIFY FAILED: the engine verify pass was unavailable; treat this increment as unproven.';
   }
@@ -1739,8 +1752,14 @@ function missionVerifierCheckedText(verifierResult, mission) {
   return `VERIFY FAILED: ${command}.`;
 }
 
-function missionVerifierHighLevelTestText(verifierResult, mission) {
-  if (!verifierResult) return 'No automated verifier ran for this receipt; judge it from the receipt, changed files, and next action.';
+function missionVerifierHighLevelTestText(verifierResult, mission, guard = null) {
+  if (!verifierResult) {
+    if (guard && guard.allowed === false) {
+      const detail = String(guard.detail || '').trim();
+      return `No automated verifier ran because the tick was held for human review: ${String(guard.reason || 'reason not recorded').trim()}${detail ? ` (${detail})` : ''}. Clear the hold, then re-run the tick to get a real verdict.`;
+    }
+    return 'No automated verifier ran for this receipt; judge it from the receipt, changed files, and next action.';
+  }
   if (verifierResult.mode === 'engine-unavailable') {
     return 'No changed-surface commands were confirmed because the engine verify pass was unavailable.';
   }
@@ -1840,8 +1859,9 @@ function missionReceiptLanding(mission, result, receiptPath = '') {
   const summary = missionReceiptSummaryText(result);
   const changed = missionLandingStepSummary(summary)
     || missionFallbackChangedText(mission, status, missionReceiptTickIndex(mission, result));
-  const checked = missionVerifierCheckedText(verifierResult, mission);
-  const tested = missionVerifierHighLevelTestText(verifierResult, mission);
+  const guard = result?.protected_lane_guard || result?.tick?.protected_lane_guard || null;
+  const checked = missionVerifierCheckedText(verifierResult, mission, guard);
+  const tested = missionVerifierHighLevelTestText(verifierResult, mission, guard);
   const reason = missionHumanReasonText(mission, changed);
   return {
     schema: 'atris.result_landing.v1',

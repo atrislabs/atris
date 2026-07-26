@@ -9,9 +9,14 @@ const { spawnSync } = require('node:child_process');
 
 const {
   guardMissionLanding,
+  inspectMissionProtectedDiff,
   matchProtectedMissionDiff,
   prepareMissionGitGuard,
 } = require('../lib/mission-protected-lane');
+const {
+  missionVerifierCheckedText,
+  missionVerifierHighLevelTestText,
+} = require('../commands/mission');
 const { runLocalTerminal } = require('../commands/probe');
 
 const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
@@ -94,6 +99,54 @@ test('an unreadable diff fails closed and pauses before landing', () => {
   assert.equal(landed, false);
   assert.deepEqual(result.surfaces, ['unreadable diff']);
   assert.match(result.detail, /permission denied/);
+});
+
+test('a diff bigger than the default spawn buffer still reads instead of pausing the tick', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-big-diff-'));
+  try {
+    const git = (args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+    git(['init', '-q']);
+    git(['config', 'user.email', 'test@example.com']);
+    git(['config', 'user.name', 'test']);
+    const file = path.join(root, 'notes.txt');
+    fs.writeFileSync(file, 'start\n');
+    git(['add', '-A']);
+    git(['commit', '-qm', 'base']);
+    // Well past spawnSync's 1 MB default, which used to surface as ENOBUFS and
+    // get misread as an unreadable diff.
+    fs.writeFileSync(file, `${'a plain line of ordinary prose\n'.repeat(120_000)}`);
+
+    const result = inspectMissionProtectedDiff({ root, baseRef: '', tags: [] });
+
+    assert.equal(result.allowed, true, `${result.reason} (${result.detail || 'no detail'})`);
+    assert.equal(result.status, 'clear');
+    assert.notEqual(result.unreadable, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a tick held by the guard says why nothing was checked', () => {
+  const guard = {
+    allowed: false,
+    status: 'paused-for-review',
+    reason: 'mission diff could not be read; human review is required',
+    detail: 'spawnSync git ENOBUFS',
+    unreadable: true,
+  };
+
+  const checked = missionVerifierCheckedText(null, { verifier: 'npm test' }, guard);
+  assert.match(checked, /PAUSED FOR REVIEW/);
+  assert.match(checked, /mission diff could not be read/);
+  assert.match(checked, /ENOBUFS/);
+
+  const tested = missionVerifierHighLevelTestText(null, { verifier: 'npm test' }, guard);
+  assert.match(tested, /held for human review/);
+  assert.match(tested, /re-run the tick/);
+
+  // With no guard the old plain wording stays put.
+  assert.match(missionVerifierCheckedText(null, {}), /^UNVERIFIED:/);
+  assert.match(missionVerifierCheckedText(null, {}, { allowed: true }), /^UNVERIFIED:/);
 });
 
 test('a denied task tag pauses even when the changed text looks neutral', () => {
