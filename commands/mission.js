@@ -2238,6 +2238,9 @@ function missionFullBudgetRemainingSeconds(mission, nowMs = Date.now()) {
 }
 
 function missionBudgetContinuationText(mission, nowMs = Date.now()) {
+  // Paused/stopped/blocked missions are not running: never sell remaining time
+  // as a live commitment (CLI-1192: paused overnight loops read as healthy).
+  if (!GOAL_LOOP_STATUSES.has(String(mission?.status || ''))) return null;
   const remaining = missionFullBudgetRemainingSeconds(mission, nowMs);
   if (remaining <= 0) return null;
   const budget = String(mission?.budget_contract?.budget_label || 'promised time').trim();
@@ -2249,10 +2252,15 @@ function missionBudgetContinuationText(mission, nowMs = Date.now()) {
 }
 
 function missionHumanStatusText(mission, nowMs = Date.now()) {
+  const rawStatus = String(mission?.status || 'unknown');
+  if (rawStatus === 'paused') {
+    const reason = String(mission?.stop_reason || mission?.pause_reason || '').trim();
+    return gateForHuman(reason ? `paused: ${reason}` : 'paused').text;
+  }
   const continuation = missionBudgetContinuationText(mission, nowMs);
   const status = continuation
     ? `working for the full ${String(mission?.budget_contract?.budget_label || 'promised time').trim()}`
-    : String(mission?.status || 'unknown');
+    : rawStatus;
   return gateForHuman(status).text;
 }
 
