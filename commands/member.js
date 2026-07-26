@@ -2394,6 +2394,27 @@ function experimentIsClosed(experiment) {
   return ['accepted', 'discarded', 'superseded'].includes(String(experiment?.status || '').toLowerCase());
 }
 
+// A proposal that cannot be reviewed must not gate the member.
+//
+// wake returns decision 'wait' for any open experiment, on the theory that the
+// ball is with a human reviewer. That is right for a real proposal. It is a
+// permanent deadlock for a FALLBACK proposal: those carry verifier=null and
+// generation.mode='fallback' (template text emitted when LLM authoring did not
+// happen), and the review executor correctly refuses to accept anything
+// unverifiable. So the member waits on a gate nothing can pass -- observed
+// 2026-07-26 in project-obelisk with validator blocked 52 days, signal-scout 48,
+// and land-keeper 22, three of six rostered members doing no work at all.
+//
+// Deliberately narrow: a proposal WITH a verifier still blocks (a human genuinely
+// owes it a review), and 'running'/'blocked' still block regardless of shape.
+function experimentIsUnreviewable(experiment) {
+  if (String(experiment?.status || '').toLowerCase() !== 'proposed') return false;
+  const verifier = experiment?.verifier;
+  const hasVerifier = Array.isArray(verifier) ? verifier.length > 0 : Boolean(String(verifier || '').trim());
+  if (hasVerifier) return false;
+  return String(experiment?.generation?.mode || '').toLowerCase() === 'fallback';
+}
+
 function supersedeOtherOpenExperiments(state, activeGoal, proof) {
   const superseded = [];
   for (const goal of state.goals || []) {
@@ -7459,7 +7480,9 @@ function wakeDecision(name, paths, { force = false, runtimeKind = memberRuntimeK
     };
   }
 
-  if (current) {
+  // Skip the wait when the only thing "open" is an unreviewable fallback proposal;
+  // otherwise the member is parked forever on a gate no reviewer can clear.
+  if (current && !experimentIsUnreviewable(current)) {
     return {
       decision: 'wait',
       reason: `open_experiment_${current.status}`,
