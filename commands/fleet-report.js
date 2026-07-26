@@ -79,6 +79,16 @@ async function writeReportToComputer(token, businessId, workspaceId, report) {
   return remotePath;
 }
 
+// A missing scoreboard field must never reach the owner as "$NaN" or
+// "$undefined"; coerce every number to 0 before it renders.
+function formatScoreboardPnl(board) {
+  if (!board) return '';
+  const mrr = Number(board.revenue_mrr_usd) || 0;
+  const cost = (Number(board.compute_cost_usd) || 0) + (Number(board.ec2_cost_usd) || 0);
+  const profit = Number(board.profit_daily_usd) || 0;
+  return ` | mrr $${mrr} cost $${cost.toFixed(2)}/d profit $${profit}/d`;
+}
+
 async function deliverToBusiness(token, biz, { wake, dryRun }) {
   const label = biz.slug || biz.name || biz.id;
   const status = await computerStatus(token, biz.id);
@@ -97,9 +107,7 @@ async function deliverToBusiness(token, biz, { wake, dryRun }) {
 
   const report = await fetchDailyReport(token, biz.id);
   const board = report.scoreboard || null;
-  const pnl = board
-    ? ` | mrr $${board.revenue_mrr_usd} cost $${(board.compute_cost_usd + (board.ec2_cost_usd || 0)).toFixed(2)}/d profit $${board.profit_daily_usd}/d`
-    : '';
+  const pnl = formatScoreboardPnl(board);
   if (dryRun) {
     console.log(`  ${label}: dry-run, report ${String(report.markdown || '').length} chars${pnl}`);
     return { business: label, delivered: false, reason: 'dry-run', scoreboard: board };
@@ -203,4 +211,4 @@ async function fleetReport() {
   process.exitCode = delivered > 0 || dryRun || results.every((r) => r.reason === 'asleep') ? 0 : 1;
 }
 
-module.exports = { fleetReport };
+module.exports = { fleetReport, formatScoreboardPnl };
