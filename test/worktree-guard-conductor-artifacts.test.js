@@ -35,6 +35,18 @@ test('porcelain status lines are classified by untracked marker', () => {
   assert.equal(isConductorStatusLine(' M .atris/agent-worktree.json'), false);
 });
 
+test('a prompt-only worktree reads as no change, so the flight cannot land it', () => {
+  // The fabrication path: the fleet writes its prompt into the worktree, the change
+  // inspector counts it as dirt, has_change goes true, the no_change pause never
+  // fires, and the flight commits the prompt file and reports "landed" for an engine
+  // that said "nothing to commit".
+  const promptOnly = ['?? .atris/fleet-prompt-BCK-9999.md'];
+  assert.equal(promptOnly.filter((l) => !isConductorStatusLine(l)).length, 0);
+
+  const realWork = ['?? .atris/fleet-prompt-BCK-9999.md', '?? backend/new_module.py'];
+  assert.equal(realWork.filter((l) => !isConductorStatusLine(l)).length, 1);
+});
+
 test('the guard and the sealed-review import read one shared list', () => {
   // Drift between these two call sites is what caused the original incident:
   // lib/fleet.js knew fleet-prompt files were plumbing, commands/worktree.js did not.
