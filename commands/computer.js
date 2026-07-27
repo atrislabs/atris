@@ -4390,6 +4390,10 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
 module.exports = {
   runComputer,
   computerSetup,
+  // `atris pack run` starts a packet as a free local computer, so it needs the
+  // local starter and the business-binding check as seams, not copies.
+  computerLocal,
+  readBusinessBinding,
   formatEngineSeats,
   buildComputerCard,
   extractAttachedWorkspaceMismatch,

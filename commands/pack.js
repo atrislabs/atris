@@ -9,10 +9,105 @@ const { craftPack } = require('./pack-craft');
 
 const REGISTRY_TIMEOUT_MS = 60000;
 
+// The web registry caps every upload (atrisos-web app/api/pack/registry/route.ts).
+// Keep these in one place so a preflight failure can name the limit it broke.
+const REGISTRY_LIMITS = {
+  maxZipBytes: 5 * 1024 * 1024,
+  maxUnpackedBytes: 20 * 1024 * 1024,
+  maxEntries: 500,
+};
+
+// The web viewer rejects anything else (atrisos-web app/lib/pack/manifests.ts).
+const SLUG_RULE = /^[a-z0-9-]{3,40}$/;
+
+// ── The packet allowlist ────────────────────────────────────────────────────
+// A packet is the shareable knowledge spine of a workspace, not the folder it
+// lives in. Only what a stranger could read and learn from ships: the map and
+// readme layer, member and team definitions, the wiki, skills, policies, refs,
+// features. Runtime exhaust (runs/, logs/, journal/, status/, .atris/),
+// dependencies, binaries and lockfiles never ship.
+//
+// This table is the whole rule. Audit it here, not in scattered ifs.
+// (2026-07-27: the denylist that preceded it shipped a 94 MB zip containing
+// node_modules, customer folders and a live JWT.)
+const PACKET = {
+  // Folders whose contents ship. Checked at the first level under the pack
+  // root and under atris/. Anything not listed here is skipped.
+  directories: [
+    'features',    // what got built, and why
+    'wiki',        // ingested knowledge
+    'skills',      // reusable procedures
+    'team',        // member and role definitions
+    'policies',    // house rules
+    'refs',        // stable reference tables
+    'reference',
+    'checklists',
+    'templates',
+    'guides',
+    'docs',
+    'briefs',
+    'playbooks',
+  ],
+  // Root-level files ship only as documents: the map, the readme, the persona.
+  rootExtensions: ['.md', '.markdown', '.txt'],
+  // ...plus the manifest itself.
+  rootFiles: ['pack.json'],
+  // Inside an allowed folder, only these extensions ship. Text only.
+  extensions: ['.md', '.markdown', '.txt', '.yml', '.yaml', '.json', '.toml', '.csv'],
+  // Path segments that never ship, at any depth. Runtime exhaust and deps.
+  deniedSegments: [
+    'runs', 'logs', 'journal', 'status', 'missions', 'queue', 'tmp', 'cache',
+    '.atris', '.git', '.upstream', '.venv', 'venv', 'node_modules',
+    '__pycache__', 'dist', 'build', 'coverage', '_archive',
+    // Proof folders are receipts of runs that already happened, not knowledge a
+    // stranger can use. A packet ships the feature definition, not its history.
+    // (2026-07-27: features/*/proof was 1,253 files and 76% of the unpacked
+    // weight of the atrisos-backend workspace.)
+    'proof',
+  ],
+  // Segments that get their own skip reason, because "runtime exhaust" does not
+  // explain why a folder full of readable markdown was left out.
+  segmentReasons: {
+    proof: 'proof artifacts are excluded (receipts of past runs, not knowledge)',
+  },
+  // Exact filenames that never ship.
+  deniedNames: [
+    'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock',
+    'cargo.lock', 'uv.lock', '.ds_store',
+  ],
+  // Secret-shaped filenames that never ship, at any depth.
+  deniedPatterns: [
+    /^credentials/i, /^\.env/i, /\.pem$/i, /\.key$/i, /^id_rsa/i, /^id_ed25519/i,
+  ],
+};
+
+// Credential shapes. A hit blocks the publish; the match is redacted, never
+// echoed, because the point of the scan is to stop the secret from travelling.
+const SECRET_PATTERNS = [
+  { label: 'jwt', regex: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g },
+  { label: 'api key', regex: /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{16,}|gho_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})/g },
+  { label: 'private key', regex: /-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/g },
+  { label: 'database url with password', regex: /\b(?:postgres(?:ql)?|mysql):\/\/[^\s:/@]+:[^\s/@]{3,}@\S+/g },
+  { label: 'inline credential', regex: /\b(?:api[_-]?key|secret|token|password)\s*[:=]\s*(\S{12,})/gi },
+];
+
+// Docs are full of examples. A value that is obviously a stand-in is not a leak.
+const SECRET_PLACEHOLDER = /^(?:<|\{|\$|\.\.\.|x{6,}|\*{4,}|-{4,}|your[-_ ]|my[-_]|some[-_]|placeholder|example|redacted|changeme|dummy|fake|test[-_]|null|true|false|undefined)/i;
+
+// The generic `token = ...` rule fires on code samples far more often than on
+// real leaks, so a hit must also look like an opaque credential: one run of
+// credential characters, not an expression, an env lookup, or a CONSTANT_NAME.
+const CREDENTIAL_VALUE = /^[A-Za-z0-9_\-.+/=:~]{16,}$/;
+const CREDENTIAL_REFERENCE = /process\.env|os\.environ|os\.getenv|getenv|ENV\[|env\.|config\.|settings\.|self\.|this\.|_el\./i;
+const CONSTANT_NAME = /^[A-Z][A-Z0-9_]*$/;
+const FILE_PATH_VALUE = /^[~/]|^\.{1,2}\//;
+const ENV_ASSIGNMENT = /=(?!=*$)/;
+
 function showHelp() {
   console.log('usage: atris pack craft "<topic>" [--dir <target>] [--force]');
-  console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push]');
+  console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push] [--dry-run] [--allow-secrets]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
+  console.log('       atris pack run <slug|dir> [--dir <target>] [--cloud] [--force]');
   console.log('       atris pack pull [<slug>] [--dir <path>]');
   console.log('       atris pack status [--dir <path>]');
   console.log('       atris pack update [<dir>]');
@@ -129,81 +224,180 @@ function buildManifest(existing, options) {
   return manifest;
 }
 
-function shouldSkipRelative(relativePath, includeLogs) {
-  const normalized = relativePath.replace(/\\/g, '/');
+function packetDirectories(includeLogs) {
+  return includeLogs ? [...PACKET.directories, 'logs', 'journal'] : PACKET.directories;
+}
+
+function packetDeniedSegments(includeLogs) {
+  if (!includeLogs) return PACKET.deniedSegments;
+  return PACKET.deniedSegments.filter((segment) => segment !== 'logs' && segment !== 'journal');
+}
+
+// Paths are judged relative to the pack root, so `atris/` is transparent: the
+// same table decides `wiki/page.md` in a crafted pack and `atris/wiki/page.md`
+// in a workspace publish.
+function classifyPacketPath(relativePath, { includeLogs = false, isDirectory = false } = {}) {
+  const normalized = String(relativePath).replace(/\\/g, '/');
   const parts = normalized.split('/').filter(Boolean);
   const basename = parts[parts.length - 1] || '';
   const lowerBase = basename.toLowerCase();
+  const denied = packetDeniedSegments(includeLogs);
 
-  if (parts.includes('.git')) return true;
-  for (let i = 0; i < parts.length - 1; i += 1) {
-    if (parts[i] === '.atris' && parts[i + 1] === 'state') return true;
+  for (const part of parts) {
+    if (denied.includes(part)) {
+      const reason = PACKET.segmentReasons[part];
+      return { ok: false, reason: reason || `runtime exhaust or dependency (${part}/)` };
+    }
   }
-  if (!includeLogs && parts[0] === 'logs') return true;
-  if (lowerBase.startsWith('credentials')) return true;
-  if (lowerBase.startsWith('.env')) return true;
-  if (lowerBase.endsWith('.pem')) return true;
-  if (lowerBase.endsWith('.key')) return true;
-  if (lowerBase.startsWith('id_rsa')) return true;
-  return false;
+  if (PACKET.deniedNames.includes(lowerBase)) return { ok: false, reason: 'lockfile or editor junk' };
+  if (PACKET.deniedPatterns.some((pattern) => pattern.test(basename))) {
+    return { ok: false, reason: 'secret-shaped filename' };
+  }
+
+  const inner = parts[0] === 'atris' ? parts.slice(1) : parts;
+  if (!inner.length) return { ok: true };
+  if (isDirectory) {
+    if (inner.length > 1) return { ok: true };
+    return packetDirectories(includeLogs).includes(inner[0])
+      ? { ok: true }
+      : { ok: false, reason: `not in the packet allowlist (${inner[0]}/)` };
+  }
+
+  const extension = path.extname(lowerBase);
+  if (inner.length === 1) {
+    if (PACKET.rootFiles.includes(lowerBase)) return { ok: true };
+    return PACKET.rootExtensions.includes(extension)
+      ? { ok: true }
+      : { ok: false, reason: 'not a root document (.md/.txt)' };
+  }
+  if (!packetDirectories(includeLogs).includes(inner[0])) {
+    return { ok: false, reason: `not in the packet allowlist (${inner[0]}/)` };
+  }
+  return PACKET.extensions.includes(extension)
+    ? { ok: true }
+    : { ok: false, reason: `not a text file type (${extension || 'no extension'})` };
 }
 
-function collectAtrisEntries(sourceDir, includeLogs) {
+// The registry rejects non-UTF-8 members, and a stranger cannot read a binary
+// anyway, so prove it decodes before shipping it.
+function isUtf8Text(buffer) {
+  if (buffer.includes(0)) return false;
+  return Buffer.compare(Buffer.from(buffer.toString('utf8'), 'utf8'), buffer) === 0;
+}
+
+// A crafted pack keeps wiki/, README.md, and friends at the pack root, so a
+// root publish walks the whole folder, not just atris/ (2026-07-09: the first
+// dogfooded pack shipped without its research).
+function collectPacketEntries(sourceDir, { prefix = '', includeLogs = false } = {}) {
   const entries = [];
+  const skipped = [];
+
+  function record(relative, reason) {
+    skipped.push({ path: prefix ? `${prefix}/${relative}` : relative, reason });
+  }
 
   function walk(dir, relativeDir = '') {
     const names = fs.readdirSync(dir).sort();
     for (const name of names) {
       const abs = path.join(dir, name);
-      const rel = relativeDir ? path.join(relativeDir, name) : name;
-      if (shouldSkipRelative(rel, includeLogs)) continue;
-      const stat = fs.statSync(abs);
-      if (stat.isDirectory()) {
-        walk(abs, rel);
-      } else if (stat.isFile()) {
-        entries.push({
-          name: `atris/${rel.replace(/\\/g, '/')}`,
-          data: fs.readFileSync(abs),
-          mtime: stat.mtime,
-        });
+      const rel = (relativeDir ? `${relativeDir}/${name}` : name).replace(/\\/g, '/');
+      const scoped = prefix ? `${prefix}/${rel}` : rel;
+      let stat;
+      try {
+        stat = fs.statSync(abs);
+      } catch {
+        record(rel, 'unreadable');
+        continue;
       }
+      if (stat.isDirectory()) {
+        const verdict = classifyPacketPath(scoped, { includeLogs, isDirectory: true });
+        if (!verdict.ok) {
+          record(`${rel}/`, verdict.reason);
+          continue;
+        }
+        walk(abs, rel);
+        continue;
+      }
+      if (!stat.isFile()) continue;
+      const verdict = classifyPacketPath(scoped, { includeLogs });
+      if (!verdict.ok) {
+        record(rel, verdict.reason);
+        continue;
+      }
+      const data = fs.readFileSync(abs);
+      if (!isUtf8Text(data)) {
+        record(rel, 'not valid utf-8 text');
+        continue;
+      }
+      entries.push({ name: scoped, data, mtime: stat.mtime });
     }
   }
 
   walk(sourceDir);
-  return entries;
+  return { entries, skipped };
 }
 
-// A crafted pack keeps wiki/, README.md, and friends at the pack root, so a
-// root publish must ship the whole folder, not just atris/ (2026-07-09: the
-// first dogfooded pack shipped without its research).
-function collectPackRootEntries(rootDir, includeLogs) {
-  const entries = [];
+function redactSecret(value) {
+  const text = String(value || '');
+  if (text.length <= 8) return '*'.repeat(Math.max(text.length, 3));
+  const masked = '*'.repeat(Math.min(12, text.length - 6));
+  return `${text.slice(0, 4)}${masked}${text.slice(-2)}`;
+}
 
-  function walk(dir, relativeDir = '') {
-    const names = fs.readdirSync(dir).sort();
-    for (const name of names) {
-      const abs = path.join(dir, name);
-      const rel = relativeDir ? path.join(relativeDir, name) : name;
-      const normalized = rel.replace(/\\/g, '/');
-      if (normalized === 'pack.json') continue;
-      if (normalized === '.upstream' || normalized.startsWith('.upstream/')) continue;
-      if (name === 'node_modules' || name === '.atris' || name === '.DS_Store') continue;
-      if (normalized === 'atris/logs' || normalized.startsWith('atris/logs/')) {
-        if (!includeLogs) continue;
-      }
-      if (shouldSkipRelative(normalized, includeLogs)) continue;
-      const stat = fs.statSync(abs);
-      if (stat.isDirectory()) {
-        walk(abs, rel);
-      } else if (stat.isFile()) {
-        entries.push({ name: normalized, data: fs.readFileSync(abs), mtime: stat.mtime });
+function trimSecretValue(value) {
+  return String(value || '')
+    .replace(/^[`'"]+/, '')
+    .replace(/[`'"]+$/, '')
+    .replace(/[,;.)\]}>|]+$/, '');
+}
+
+function looksLikePlaceholder(value) {
+  return SECRET_PLACEHOLDER.test(trimSecretValue(value));
+}
+
+function looksLikeCredentialValue(value) {
+  const trimmed = trimSecretValue(value);
+  if (!CREDENTIAL_VALUE.test(trimmed)) return false;
+  if (CREDENTIAL_REFERENCE.test(trimmed)) return false;
+  if (CONSTANT_NAME.test(trimmed)) return false;
+  if (FILE_PATH_VALUE.test(trimmed)) return false;
+  if (ENV_ASSIGNMENT.test(trimmed)) return false;
+  // Real credentials carry entropy: a digit, or at least mixed case.
+  return /\d/.test(trimmed) || (/[a-z]/.test(trimmed) && /[A-Z]/.test(trimmed));
+}
+
+function scanTextForSecrets(text) {
+  const findings = [];
+  const lines = String(text).split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    for (const pattern of SECRET_PATTERNS) {
+      pattern.regex.lastIndex = 0;
+      let match = pattern.regex.exec(line);
+      while (match) {
+        const value = match[1] !== undefined ? match[1] : match[0];
+        // The shaped patterns (jwt, sk-, AKIA, BEGIN PRIVATE KEY) are specific
+        // enough to stand on their own; only the generic rule needs filtering.
+        const generic = match[1] !== undefined;
+        if (!generic || (!looksLikePlaceholder(value) && looksLikeCredentialValue(value))) {
+          findings.push({ line: i + 1, label: pattern.label, redacted: redactSecret(trimSecretValue(value)) });
+        }
+        match = pattern.regex.exec(line);
       }
     }
   }
+  return findings;
+}
 
-  walk(rootDir);
-  return entries;
+function scanEntriesForSecrets(entries) {
+  const findings = [];
+  for (const entry of entries) {
+    if (!entry || !entry.data) continue;
+    for (const hit of scanTextForSecrets(entry.data.toString('utf8'))) {
+      findings.push({ file: entry.name, ...hit });
+    }
+  }
+  return findings;
 }
 
 function parseJsonBody(buffer) {
@@ -265,9 +459,7 @@ async function postPackToRegistry(manifest, zipBuffer, deps = {}) {
   const url = registryUrl('/api/pack/registry', deps);
   const body = JSON.stringify({ manifest, zipBase64: zipBuffer.toString('base64') });
   const authHeaders = requiredAuthHeaders(deps);
-  if (!manifest.author || !String(manifest.author).trim()) {
-    throw new Error('registry packs need an author. re-run with --author "<your name>" (or set "author" in pack.json).');
-  }
+  assertPublishableAuthor(manifest);
   let response;
   try {
     response = await request(url, {
@@ -317,6 +509,98 @@ async function fetchRegistryZip(slug, deps = {}) {
   return response.body;
 }
 
+function assertPublishableSlug(slug) {
+  if (!SLUG_RULE.test(String(slug || ''))) {
+    throw new Error(
+      `pack slug "${slug}" is not viewable on the web. use 3-40 characters of a-z, 0-9 and dashes: --slug <slug>`,
+    );
+  }
+}
+
+function assertPublishableAuthor(manifest) {
+  if (!manifest.author || !String(manifest.author).trim()) {
+    throw new Error('registry packs need an author. re-run with --author "<your name>" (or set "author" in pack.json).');
+  }
+}
+
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function printPacketTree(entries) {
+  console.log('tree:');
+  if (entries.length <= 200) {
+    for (const entry of entries) console.log(`  ${entry.name}`);
+    return;
+  }
+  const byDir = new Map();
+  for (const entry of entries) {
+    const dir = entry.name.includes('/') ? `${entry.name.slice(0, entry.name.lastIndexOf('/'))}/` : './';
+    const current = byDir.get(dir) || { files: 0, bytes: 0 };
+    current.files += 1;
+    current.bytes += entry.data.length;
+    byDir.set(dir, current);
+  }
+  console.log(`  (${entries.length} files across ${byDir.size} folders, rolled up by folder)`);
+  for (const [dir, stats] of [...byDir.entries()].sort()) {
+    console.log(`  ${dir}  ${stats.files} files  ${formatBytes(stats.bytes)}`);
+  }
+}
+
+function printSkipped(skipped) {
+  if (!skipped.length) return;
+  const byReason = new Map();
+  for (const item of skipped) {
+    const list = byReason.get(item.reason) || [];
+    list.push(item.path);
+    byReason.set(item.reason, list);
+  }
+  console.log('skipped:');
+  for (const [reason, paths] of [...byReason.entries()].sort((a, b) => b[1].length - a[1].length)) {
+    console.log(`  ${reason}: ${paths.length}`);
+    for (const item of paths.slice(0, 5)) console.log(`    ${item}`);
+    if (paths.length > 5) console.log(`    ... ${paths.length - 5} more`);
+  }
+}
+
+function printPacketSummary(manifest, entries, skipped, zipBytes) {
+  const unpacked = entries.reduce((total, entry) => total + entry.data.length, 0);
+  console.log(`packet ${manifest.slug} ${manifest.version}`);
+  console.log(`  files     ${entries.length} (limit ${REGISTRY_LIMITS.maxEntries})`);
+  console.log(`  unpacked  ${formatBytes(unpacked)} (limit ${formatBytes(REGISTRY_LIMITS.maxUnpackedBytes)})`);
+  console.log(`  zip       ${formatBytes(zipBytes)} (limit ${formatBytes(REGISTRY_LIMITS.maxZipBytes)})`);
+  printPacketTree(entries);
+  printSkipped(skipped);
+  return { unpacked, zipBytes, files: entries.length };
+}
+
+function registryLimitFailures(entries, zipBytes) {
+  const unpacked = entries.reduce((total, entry) => total + entry.data.length, 0);
+  const failures = [];
+  if (entries.length > REGISTRY_LIMITS.maxEntries) {
+    failures.push(`entry count: ${entries.length} files exceeds the ${REGISTRY_LIMITS.maxEntries} file registry limit`);
+  }
+  if (unpacked > REGISTRY_LIMITS.maxUnpackedBytes) {
+    failures.push(`unpacked size: ${formatBytes(unpacked)} exceeds the ${formatBytes(REGISTRY_LIMITS.maxUnpackedBytes)} registry limit`);
+  }
+  if (zipBytes > REGISTRY_LIMITS.maxZipBytes) {
+    failures.push(`zip size: ${formatBytes(zipBytes)} exceeds the ${formatBytes(REGISTRY_LIMITS.maxZipBytes)} registry limit`);
+  }
+  return failures;
+}
+
+function reportSecretFindings(findings) {
+  console.error(`refusing to publish: found ${findings.length} credential-shaped match${findings.length === 1 ? '' : 'es'}.`);
+  for (const finding of findings.slice(0, 20)) {
+    console.error(`  ${finding.file}:${finding.line}  ${finding.label}  ${finding.redacted}`);
+  }
+  if (findings.length > 20) console.error(`  ... ${findings.length - 20} more`);
+  console.error('remove the credentials, or re-run with --allow-secrets if every match is a false positive.');
+}
+
 async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   const args = [...rawArgs];
   const dirArg = takeValue(args, '--dir');
@@ -327,6 +611,8 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   const notes = takeValue(args, '--notes') || '';
   const out = takeValue(args, '--out');
   const includeLogs = takeFlag(args, '--include-logs');
+  const dryRun = takeFlag(args, '--dry-run');
+  const allowSecrets = takeFlag(args, '--allow-secrets');
   const major = takeFlag(args, '--major');
   const minor = takeFlag(args, '--minor');
   const push = takeFlag(args, '--push');
@@ -336,28 +622,68 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
     throw new Error(`pack source not found: ${path.relative(cwd, sourceDir) || sourceDir}`);
   }
 
-  const manifestPath = packRootMode
-    ? path.join(sourceDir, 'pack.json')
-    : path.join(path.dirname(sourceDir), 'pack.json');
+  // pack.json belongs to the pack, not to whatever repo happens to contain it
+  // (2026-07-27: publishing ~/arena/atrisos-backend/atris wrote a pack.json
+  // into atrisos-backend/ and polluted the source repo).
+  const manifestPath = path.join(sourceDir, 'pack.json');
   const existing = readJson(manifestPath);
   const manifest = buildManifest(existing, {
     slug,
     author,
     notes,
     bump: major ? 'major' : minor ? 'minor' : 'patch',
-    fallbackSlug: packRootMode
-      ? path.basename(sourceDir)
-      : path.basename(path.dirname(sourceDir)) || path.basename(sourceDir),
+    fallbackSlug: path.basename(sourceDir),
   });
-  writeJson(manifestPath, manifest);
+  assertPublishableSlug(manifest.slug);
+  const shipping = Boolean(out || push);
+  if (shipping || dryRun) assertPublishableAuthor(manifest);
+  if (!dryRun) writeJson(manifestPath, manifest);
 
+  const collected = collectPacketEntries(sourceDir, {
+    prefix: packRootMode ? '' : 'atris',
+    includeLogs,
+  });
+  // The manifest is always synthesized at the zip root, never copied from the
+  // source, so drop whatever pack.json the walker picked up.
+  const sourceManifestName = packRootMode ? 'pack.json' : 'atris/pack.json';
   const entries = [
     { name: 'pack.json', data: Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8'), mtime: new Date() },
-    ...(packRootMode
-      ? collectPackRootEntries(sourceDir, includeLogs)
-      : collectAtrisEntries(sourceDir, includeLogs)),
+    ...collected.entries.filter((entry) => entry.name !== sourceManifestName),
   ];
-  const zipBuffer = out || push ? createZipBuffer(entries) : null;
+
+  // Scan before a zip exists anywhere: on disk, in the registry, or in a temp.
+  if (!allowSecrets) {
+    const findings = scanEntriesForSecrets(entries);
+    if (findings.length) {
+      reportSecretFindings(findings);
+      return 1;
+    }
+  } else {
+    console.log('WARNING: --allow-secrets is on. Credential scanning is disabled for this publish.');
+    console.log('WARNING: anything you ship is readable by every person who installs this packet.');
+  }
+
+  const zipBuffer = createZipBuffer(entries);
+  printPacketSummary(manifest, entries, collected.skipped, zipBuffer.length);
+  const failures = registryLimitFailures(entries, zipBuffer.length);
+
+  if (dryRun) {
+    if (failures.length) {
+      console.error('dry run: this packet would be rejected by the registry.');
+      for (const failure of failures) console.error(`  ${failure}`);
+      return 1;
+    }
+    console.log('dry run: nothing written. re-run without --dry-run to publish.');
+    return 0;
+  }
+
+  if (shipping && failures.length) {
+    console.error('refusing to publish: packet exceeds the registry limits.');
+    for (const failure of failures) console.error(`  ${failure}`);
+    console.error('trim the workspace or split the packet, then re-run.');
+    return 1;
+  }
+
   if (out) {
     const outPath = path.resolve(cwd, out);
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -371,9 +697,13 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
     console.log(`published ${publishedSlug} ${publishedVersion}`);
     console.log(`install with: atris pack install ${publishedSlug}`);
   }
-  if (!out && !push) {
+  if (!shipping) {
     console.log(`wrote pack.json for ${manifest.slug} ${manifest.version}`);
     console.log('share with: atris pack publish --out <file.zip> or atris pack publish --push');
+    if (failures.length) {
+      console.log('note: this packet is too big for the registry today:');
+      for (const failure of failures) console.log(`  ${failure}`);
+    }
     if (!manifest.author || !String(manifest.author).trim()) {
       console.log('note: publishing to the registry needs an author. add --author "<your name>".');
     }
@@ -640,8 +970,141 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
 
   const displayTarget = path.relative(cwd, targetDir) || '.';
   console.log(`installed ${slug} -> ${displayTarget}`);
-  console.log(`cd ${shellQuote(displayTarget)} && claude`);
+  console.log(`run it:  atris pack run ${shellQuote(displayTarget)}`);
+  console.log(`or open: cd ${shellQuote(displayTarget)} && claude`);
   return 0;
+}
+
+// ── pack run ────────────────────────────────────────────────────────────────
+// Install is half a product: it leaves a folder and a suggestion. `pack run`
+// is the other half — packet in, running workspace out.
+//
+// It defaults to LOCAL on purpose. The cloud path is gated: activating a
+// business workspace needs auth, an existing business record, and a paid plan
+// (backend/routers/business/workspace.py `_require_owner_paid_plan`). A
+// stranger who receives a shared packet link has none of those, so the free
+// local computer is the only honest default. --cloud opts in, and when the
+// gate bites it says so instead of silently degrading.
+
+function packRunLocalHint(displayTarget) {
+  return `atris pack run ${shellQuote(displayTarget)}`;
+}
+
+// A packet folder is a folder with a readable pack.json. Anything else is a
+// mistake worth naming.
+function assertPacketDir(dir, cwd) {
+  const display = path.relative(cwd, dir) || '.';
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    throw new Error(`packet folder not found: ${display}`);
+  }
+  if (!fs.existsSync(path.join(dir, 'pack.json'))) {
+    throw new Error(`not an atris packet (no pack.json): ${display}`);
+  }
+  try {
+    return readPackManifestFromDir(dir);
+  } catch {
+    throw new Error(`packet is invalid (unreadable pack.json): ${display}`);
+  }
+}
+
+function looksLikeExistingDir(source, cwd) {
+  if (/^https?:\/\//i.test(source)) return false;
+  const resolved = path.resolve(cwd, source);
+  return fs.existsSync(resolved) && fs.statSync(resolved).isDirectory();
+}
+
+// The gates, checked in the order a stranger hits them, each with the free way
+// out. No fallback: a paywall you route around quietly is a paywall you lied
+// about.
+function cloudGateFailure(packDir, displayTarget, deps = {}) {
+  const readCredentials = deps.loadCredentials || loadCredentials;
+  const credentials = readCredentials();
+  if (!credentials || !credentials.token) {
+    return ['not logged in, so the cloud workspace is out of reach.', 'run: atris login'];
+  }
+  const readBinding = deps.readBusinessBinding || require('./computer').readBusinessBinding;
+  const binding = readBinding(packDir);
+  if (!binding) {
+    return [
+      'no business is bound to this packet folder, so there is no cloud workspace to run in.',
+      'run: atris business init "<name>"',
+    ];
+  }
+  return null;
+}
+
+async function startPackCloud(packDir, displayTarget, deps = {}) {
+  const failure = cloudGateFailure(packDir, displayTarget, deps);
+  if (failure) {
+    console.error(`cloud is unavailable: ${failure[0]}`);
+    console.error(`  ${failure[1]}`);
+    console.error('cloud workspaces also need a paid plan on the owner account.');
+    console.error('local runs free and needs none of that:');
+    console.error(`  ${packRunLocalHint(displayTarget)}`);
+    return 1;
+  }
+  const start = deps.runComputer || require('./computer').runComputer;
+  const previous = process.cwd();
+  process.chdir(packDir);
+  try {
+    await start(['cloud']);
+  } finally {
+    process.chdir(previous);
+  }
+  return 0;
+}
+
+function startPackLocal(packDir, deps = {}) {
+  const start = deps.computerLocal || require('./computer').computerLocal;
+  const previous = process.cwd();
+  process.chdir(packDir);
+  try {
+    start([]);
+  } finally {
+    process.chdir(previous);
+  }
+  return 0;
+}
+
+async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  const source = args.shift();
+  if (!source || source === 'help' || source === '--help' || source === '-h') {
+    showHelp();
+    return source ? 0 : 2;
+  }
+  const targetArg = takeValue(args, '--dir');
+  const cloud = takeFlag(args, '--cloud');
+  const force = takeFlag(args, '--force');
+  if (args.length) throw new Error(`unknown pack run argument: ${args.join(' ')}`);
+
+  const deps = options.deps || {};
+  const install = deps.installPack || installPack;
+  let packDir;
+
+  if (looksLikeExistingDir(source, cwd)) {
+    if (targetArg) throw new Error('--dir applies when installing a packet, not when running a folder');
+    packDir = path.resolve(cwd, source);
+    assertPacketDir(packDir, cwd);
+  } else {
+    packDir = path.resolve(cwd, targetArg || slugify(source));
+    const alreadyThere = !force && fs.existsSync(path.join(packDir, 'pack.json'));
+    if (alreadyThere) {
+      assertPacketDir(packDir, cwd);
+      console.log(`using installed packet ${path.relative(cwd, packDir) || '.'}`);
+    } else {
+      const installArgs = [source, '--dir', packDir];
+      if (force) installArgs.push('--force');
+      const code = await install(installArgs, cwd, options);
+      if (code !== 0) return code;
+      assertPacketDir(packDir, cwd);
+    }
+  }
+
+  const displayTarget = path.relative(cwd, packDir) || '.';
+  if (cloud) return startPackCloud(packDir, displayTarget, deps);
+  console.log(`starting local computer in ${displayTarget}`);
+  return startPackLocal(packDir, deps);
 }
 
 async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
@@ -793,6 +1256,7 @@ async function run(argv = []) {
     }
     if (subcommand === 'publish') return await publishPack(args);
     if (subcommand === 'install') return await installPack(args);
+    if (subcommand === 'run') return await runPack(args);
     if (subcommand === 'pull') return await pullPack(args);
     if (subcommand === 'status') return statusPack(args);
     if (subcommand === 'update') return await updatePack(args);
@@ -810,9 +1274,19 @@ module.exports = {
   run,
   craftPack,
   installPack,
+  runPack,
   pullPack,
   updatePack,
   listInstalledPacks,
   buildManifest,
   comparePackVersions,
+  classifyPacketPath,
+  collectPacketEntries,
+  scanTextForSecrets,
+  scanEntriesForSecrets,
+  redactSecret,
+  registryLimitFailures,
+  PACKET,
+  REGISTRY_LIMITS,
+  SLUG_RULE,
 };
