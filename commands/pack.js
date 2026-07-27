@@ -64,11 +64,16 @@ const PACKET = {
     // (2026-07-27: features/*/proof was 1,253 files and 76% of the unpacked
     // weight of the atrisos-backend workspace.)
     'proof',
+    // Same class as proof: a receipt records that a run happened. Kept as its
+    // own entry so the principle stays legible rather than reading as one
+    // grab-bag of excluded words.
+    'receipts',
   ],
   // Segments that get their own skip reason, because "runtime exhaust" does not
   // explain why a folder full of readable markdown was left out.
   segmentReasons: {
     proof: 'proof artifacts are excluded (receipts of past runs, not knowledge)',
+    receipts: 'receipts are excluded (records of past runs, not knowledge)',
   },
 
   // ── definitions, not state ────────────────────────────────────────────────
