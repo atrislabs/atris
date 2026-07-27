@@ -1401,7 +1401,6 @@ module.exports = {
   craftPack,
   installPack,
   runPack,
-  sharePack,
   sanitizePersonalizationName,
   pullPack,
   updatePack,
@@ -1411,10 +1410,7 @@ module.exports = {
   classifyPacketPath,
   collectPacketEntries,
   scanTextForSecrets,
-  scanEntriesForSecrets,
   redactSecret,
   registryLimitFailures,
-  PACKET,
   REGISTRY_LIMITS,
-  SLUG_RULE,
 };
