@@ -11033,7 +11033,7 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
     assert.equal(runCli(['task', 'claim', externalRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const externalReady = runCli([
       'task', 'ready', externalRef,
-      '--verify', 'printf proof',
+      '--verify', 'ls atris',
       '--result', 'Teammates can trust the handoff faster because the finished proof is checked before review.',
       '--as', 'codex',
     ], { cwd: dir, env });
@@ -13730,7 +13730,7 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(runCli(['task', 'claim', unsafeTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const unsafeReady = runCli([
       'task', 'ready', unsafeTask.display_id,
-      '--verify', 'printf proof',
+      '--verify', 'ls atris',
       '--result', 'Operators can now confirm finished work with a familiar file check, reducing the risk of approving missing proof.',
       '--as', 'codex',
     ], { cwd: dir, env });
