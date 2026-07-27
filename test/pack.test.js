@@ -566,7 +566,7 @@ test('pack publish from a pack root ships the whole folder except junk', () => {
       versions: [{ version: '0.0.1', date: '2026-07-09', notes: 'seed' }],
     }));
     fs.writeFileSync(path.join(dir, 'atris', 'atris.md'), '# boot\n');
-    fs.writeFileSync(path.join(dir, 'wiki', 'idea.md'), '# idea\nsource: https://example.com\n');
+    fs.writeFileSync(path.join(dir, 'wiki', 'concept.md'), '# concept\nsource: https://example.com\n');
     fs.writeFileSync(path.join(dir, 'README.md'), '# root pack\n');
     fs.writeFileSync(path.join(dir, '.upstream', 'STATE.json'), '{}');
     fs.writeFileSync(path.join(dir, 'node_modules', 'x', 'index.js'), 'x');
@@ -577,7 +577,7 @@ test('pack publish from a pack root ships the whole folder except junk', () => {
     assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
 
     const names = readZipFile(zipPath).map((entry) => entry.name);
-    assert.ok(names.includes('wiki/idea.md'), `missing wiki page in ${names.join(', ')}`);
+    assert.ok(names.includes('wiki/concept.md'), `missing wiki page in ${names.join(', ')}`);
     assert.ok(names.includes('README.md'));
     assert.ok(names.includes('atris/atris.md'));
     assert.ok(!names.some((n) => n.startsWith('.upstream')));

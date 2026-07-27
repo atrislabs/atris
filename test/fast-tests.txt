@@ -89,6 +89,7 @@ test/probe.test.js
 test/pack-craft.test.js
 test/pack-safety.test.js
 test/pack-run.test.js
+test/pack-share.test.js
 test/publish-release.test.js
 test/pulse.test.js
 test/push-delete-safety.test.js

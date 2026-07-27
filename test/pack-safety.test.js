@@ -37,9 +37,17 @@ function seedWorkspace(dir) {
   write(path.join(atrisDir, 'atris.md'), '# Atris\n');
   write(path.join(atrisDir, 'wiki', 'page.md'), '# Page\n');
   write(path.join(atrisDir, 'team', 'architect', 'MEMBER.md'), '# Architect\n');
-  write(path.join(atrisDir, 'features', 'orb', 'idea.md'), '# Orb\n');
+  write(path.join(atrisDir, 'features', 'orb', 'README.md'), '# Orb\n');
   write(path.join(atrisDir, 'policies', 'OUTBOUND.md'), 'never outbound to customers\n');
   write(path.join(atrisDir, 'refs', 'MODELS.md'), '# Models\n');
+  // running state: a live workspace talking to itself, not a definition
+  write(path.join(atrisDir, 'now.md'), 'today: ship the packet\n');
+  write(path.join(atrisDir, 'team', 'architect', 'now.md'), 'reviewing\n');
+  write(path.join(atrisDir, 'team', 'architect', 'goals.md'), 'ship it\n');
+  write(path.join(atrisDir, 'team', 'architect', '2026-07-06.md'), 'journal\n');
+  write(path.join(atrisDir, 'features', 'orb', 'idea.md'), '# idea\n');
+  write(path.join(atrisDir, 'features', 'orb', 'build.md'), '# build\n');
+  write(path.join(atrisDir, 'features', 'orb', 'validate.md'), '# validate\n');
   // exhaust
   write(path.join(atrisDir, 'runs', 'mission-1.json'), '{"ok":true}\n');
   write(path.join(atrisDir, 'logs', '2026-07-27.md'), 'log\n');
@@ -81,7 +89,7 @@ test('packet allowlist ships the knowledge spine and nothing else', () => {
     assert.deepEqual(names, [
       'atris/MAP.md',
       'atris/atris.md',
-      'atris/features/orb/idea.md',
+      'atris/features/orb/README.md',
       'atris/policies/OUTBOUND.md',
       'atris/refs/MODELS.md',
       'atris/team/architect/MEMBER.md',
@@ -100,9 +108,64 @@ test('packet allowlist ships the knowledge spine and nothing else', () => {
     assert.match(reasons.get('atris/features/orb/package-lock.json'), /lockfile/);
     assert.match(reasons.get('atris/features/orb/proof/'), /proof artifacts are excluded/);
     assert.match(reasons.get('atris/features/orb/shot.png'), /not a text file type/);
+    assert.match(reasons.get('atris/now.md'), /running state is excluded/);
+    assert.match(reasons.get('atris/team/architect/now.md'), /running state is excluded/);
+    assert.match(reasons.get('atris/features/orb/build.md'), /running state is excluded/);
   } finally {
     cleanupTempDir(dir);
   }
+});
+
+// ── definitions, not state ──────────────────────────────────────────────────
+// The workspace this was measured on had 1,975 eligible files against a 500
+// file cap, and the bulk was project-management exhaust: now.md, goals.md,
+// dated journals and the idea/build/validate triplet. A stranger wants the
+// knowledge and the people, not someone else's standup.
+test('packet allowlist excludes running state and keeps definitions', () => {
+  for (const prefix of ['', 'atris/']) {
+    const state = [
+      `${prefix}team/architect/now.md`,
+      `${prefix}team/architect/goals.md`,
+      `${prefix}features/orb/idea.md`,
+      `${prefix}features/orb/build.md`,
+      `${prefix}features/orb/validate.md`,
+      `${prefix}now.md`,
+    ];
+    for (const item of state) {
+      const verdict = classifyPacketPath(item);
+      assert.equal(verdict.ok, false, `${item} is running state`);
+      assert.match(verdict.reason, /a packet carries definitions, not state/);
+    }
+
+    const definitions = [
+      `${prefix}team/architect/MEMBER.md`,
+      `${prefix}team/architect/MISSION.md`,
+      `${prefix}team/architect/SOUL.md`,
+      `${prefix}skills/atris/SKILL.md`,
+      `${prefix}features/orb/README.md`,
+      `${prefix}wiki/page.md`,
+      `${prefix}MAP.md`,
+    ];
+    for (const item of definitions) {
+      assert.equal(classifyPacketPath(item).ok, true, `${item} is a definition and must ship`);
+    }
+  }
+});
+
+test('packet allowlist excludes dated journal files at any depth', () => {
+  for (const item of [
+    'team/ponderer/ponders/2026-07-15.md',
+    'atris/team/ponderer/ponders/2026-07-15-1m-arr.md',
+    'skills/writing/learnings/2026-03-27-anti-slop.md',
+    'wiki/2026-01-01.md',
+  ]) {
+    const verdict = classifyPacketPath(item);
+    assert.equal(verdict.ok, false, `${item} is a dated journal`);
+    assert.match(verdict.reason, /a packet carries definitions, not state/);
+  }
+  // a date inside the name is not a dated journal, and a folder is never one
+  assert.equal(classifyPacketPath('wiki/retro-2026-07-15.md').ok, true);
+  assert.equal(classifyPacketPath('wiki/2026-07-15', { isDirectory: true }).ok, true);
 });
 
 test('packet allowlist judges atris/ and pack-root paths by the same table', () => {
@@ -252,6 +315,11 @@ test('pack publish --dry-run prints the summary and writes nothing', () => {
     assert.match(dryRun.stdout, /unpacked\s+\d/);
     assert.match(dryRun.stdout, /zip\s+\d/);
     assert.match(dryRun.stdout, /atris\/wiki\/page\.md/);
+    // the shape of what a stranger receives, before the file-by-file tree
+    assert.match(dryRun.stdout, /composition:/);
+    assert.match(dryRun.stdout, /wiki\/\s+1/);
+    assert.match(dryRun.stdout, /team\/\s+1/);
+    assert.match(dryRun.stdout, /policies\/\s+1/);
     assert.match(dryRun.stdout, /skipped:/);
     assert.match(dryRun.stdout, /runtime exhaust or dependency \(runs\/\): 1/);
     assert.match(dryRun.stdout, /dry run: nothing written/);

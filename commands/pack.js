@@ -70,6 +70,30 @@ const PACKET = {
   segmentReasons: {
     proof: 'proof artifacts are excluded (receipts of past runs, not knowledge)',
   },
+
+  // ── definitions, not state ────────────────────────────────────────────────
+  // A packet carries what a thing IS, never what it is currently DOING. The
+  // definition files travel — MEMBER.md, MISSION.md, SKILL.md, SOUL.md,
+  // README.md, wiki pages, policies. The running state a live workspace keeps
+  // beside them stays home: a stranger cannot use someone else's standup notes,
+  // and project-management exhaust is most of the file count.
+  //
+  // The rule is matched on FILENAME, not on folder path, so it generalizes to
+  // any Atris workspace instead of naming the folders of one.
+  // (2026-07-27, atrisos-backend/atris: team/ was 939 eligible files of which
+  // only ~129 were definitions; features/ was 1,183 of which only 43 were
+  // README.md. The rest were now.md/goals.md, dated journals, and the
+  // idea/build/validate plan-do-review triplet.)
+  runningStateNames: [
+    'now.md',       // what this member/feature is doing right now
+    'goals.md',     // this workspace's current targets
+    'idea.md',      // the plan-do-review triplet: an internal tracker, not a
+    'build.md',     // description of the thing. features/*/README.md is the
+    'validate.md',  // definition and it still ships.
+  ],
+  // Dated journal entries, at any depth: 2026-07-06.md, 2026-07-06-retro.md.
+  runningStatePatterns: [/^\d{4}-\d{2}-\d{2}(?:[-_][^.]*)?\.[a-z0-9]+$/i],
+  runningStateReason: 'running state is excluded (a packet carries definitions, not state)',
   // Exact filenames that never ship.
   deniedNames: [
     'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock',
@@ -108,6 +132,7 @@ function showHelp() {
   console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push] [--dry-run] [--allow-secrets]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
   console.log('       atris pack run <slug|dir> [--dir <target>] [--cloud] [--force]');
+  console.log('       atris pack share <slug> [--for "<Name>"]');
   console.log('       atris pack pull [<slug>] [--dir <path>]');
   console.log('       atris pack status [--dir <path>]');
   console.log('       atris pack update [<dir>]');
@@ -233,6 +258,13 @@ function packetDeniedSegments(includeLogs) {
   return PACKET.deniedSegments.filter((segment) => segment !== 'logs' && segment !== 'journal');
 }
 
+// Definitions travel, running state stays home. Judged on the filename alone
+// so the rule holds in any workspace, whatever its folders are called.
+function isRunningStateName(lowerBase) {
+  if (PACKET.runningStateNames.includes(lowerBase)) return true;
+  return PACKET.runningStatePatterns.some((pattern) => pattern.test(lowerBase));
+}
+
 // Paths are judged relative to the pack root, so `atris/` is transparent: the
 // same table decides `wiki/page.md` in a crafted pack and `atris/wiki/page.md`
 // in a workspace publish.
@@ -252,6 +284,9 @@ function classifyPacketPath(relativePath, { includeLogs = false, isDirectory = f
   if (PACKET.deniedNames.includes(lowerBase)) return { ok: false, reason: 'lockfile or editor junk' };
   if (PACKET.deniedPatterns.some((pattern) => pattern.test(basename))) {
     return { ok: false, reason: 'secret-shaped filename' };
+  }
+  if (!isDirectory && isRunningStateName(lowerBase)) {
+    return { ok: false, reason: PACKET.runningStateReason };
   }
 
   const inner = parts[0] === 'atris' ? parts.slice(1) : parts;
@@ -523,11 +558,85 @@ function assertPublishableAuthor(manifest) {
   }
 }
 
+// ── pack share ──────────────────────────────────────────────────────────────
+// The web renders /packs/<slug>?for=<name> and silently drops a `for` value it
+// cannot display (atrisos-web app/lib/pack/personalize.ts). Mirroring that
+// sanitizer here means the CLI never hands you a link that looks personalized
+// and isn't — it says no instead.
+const PERSONALIZATION_MAX_LENGTH = 40;
+const PERSONALIZATION_MARKUP = /[<>&"`\\/]/;
+const PERSONALIZATION_DISALLOWED = /[^\p{L}\p{M} '’.\-]/gu;
+const PERSONALIZATION_HAS_LETTER = /\p{L}/u;
+
+function sanitizePersonalizationName(raw) {
+  if (typeof raw !== 'string') return null;
+  if (PERSONALIZATION_MARKUP.test(raw)) return null;
+  const cleaned = raw
+    .normalize('NFC')
+    .replace(/\s/g, ' ')
+    .replace(PERSONALIZATION_DISALLOWED, '')
+    .replace(/ +/g, ' ')
+    .trim();
+  if (!cleaned) return null;
+  const capped = cleaned.slice(0, PERSONALIZATION_MAX_LENGTH).trim();
+  if (!capped || !PERSONALIZATION_HAS_LETTER.test(capped)) return null;
+  return capped;
+}
+
+function sharePack(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  const forName = takeValue(args, '--for');
+  const slug = args.shift();
+  if (!slug) throw new Error('pack share needs a slug: atris pack share <slug> [--for "<Name>"]');
+  if (args.length) throw new Error(`unknown pack share argument: ${args.join(' ')}`);
+  assertPublishableSlug(slug);
+
+  const deps = options.deps || {};
+  const base = registryUrl(`/packs/${encodeURIComponent(slug)}`, deps);
+  if (forName === null) {
+    console.log(base);
+    console.log(`share this packet, or personalize it: atris pack share ${slug} --for "<Name>"`);
+    return 0;
+  }
+
+  const name = sanitizePersonalizationName(forName);
+  if (!name) {
+    throw new Error(
+      `--for "${forName}" is not a name the share page will display, so the link would render as if it were plain. `
+      + `use letters, spaces and ' . - (no < > & " \` \\ /), at least one letter, up to ${PERSONALIZATION_MAX_LENGTH} characters.`,
+    );
+  }
+  console.log(`${base}?for=${encodeURIComponent(name)}`);
+  console.log(
+    name === forName
+      ? `personalized for ${name}`
+      : `personalized for ${name} (trimmed from "${forName}" to match what the page will show)`,
+  );
+  return 0;
+}
+
 function formatBytes(value) {
   const bytes = Number(value) || 0;
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// What a stranger actually receives, in one glance. The tree below is the
+// detail; this is the shape — enough to see that the wiki, the skills, the
+// members and the policies are all still in the box.
+function printPacketComposition(entries) {
+  const byTop = new Map();
+  for (const entry of entries) {
+    const parts = entry.name.split('/');
+    const inner = parts[0] === 'atris' ? parts.slice(1) : parts;
+    const top = inner.length > 1 ? `${inner[0]}/` : '(root)';
+    byTop.set(top, (byTop.get(top) || 0) + 1);
+  }
+  console.log('composition:');
+  for (const [top, count] of [...byTop.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
+    console.log(`  ${top.padEnd(16)} ${count}`);
+  }
 }
 
 function printPacketTree(entries) {
@@ -572,6 +681,7 @@ function printPacketSummary(manifest, entries, skipped, zipBytes) {
   console.log(`  files     ${entries.length} (limit ${REGISTRY_LIMITS.maxEntries})`);
   console.log(`  unpacked  ${formatBytes(unpacked)} (limit ${formatBytes(REGISTRY_LIMITS.maxUnpackedBytes)})`);
   console.log(`  zip       ${formatBytes(zipBytes)} (limit ${formatBytes(REGISTRY_LIMITS.maxZipBytes)})`);
+  printPacketComposition(entries);
   printPacketTree(entries);
   printSkipped(skipped);
   return { unpacked, zipBytes, files: entries.length };
@@ -1257,6 +1367,7 @@ async function run(argv = []) {
     if (subcommand === 'publish') return await publishPack(args);
     if (subcommand === 'install') return await installPack(args);
     if (subcommand === 'run') return await runPack(args);
+    if (subcommand === 'share') return sharePack(args);
     if (subcommand === 'pull') return await pullPack(args);
     if (subcommand === 'status') return statusPack(args);
     if (subcommand === 'update') return await updatePack(args);
@@ -1275,6 +1386,8 @@ module.exports = {
   craftPack,
   installPack,
   runPack,
+  sharePack,
+  sanitizePersonalizationName,
   pullPack,
   updatePack,
   listInstalledPacks,
