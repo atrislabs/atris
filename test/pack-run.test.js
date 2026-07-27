@@ -35,7 +35,7 @@ function stubDeps(overrides = {}) {
   return {
     calls,
     deps: {
-      computerLocal: (args) => { calls.local.push({ cwd: process.cwd(), args }); },
+      computerLocal: (args, options) => { calls.local.push({ cwd: process.cwd(), args, options }); },
       runComputer: async (args) => { calls.cloud.push({ cwd: process.cwd(), args }); },
       loadCredentials: () => ({ token: 'test-token' }),
       readBusinessBinding: () => ({ slug: 'acme', business_id: 'b1', workspace_id: 'w1' }),
@@ -188,6 +188,114 @@ test('pack run says plainly when the packet folder is missing or invalid', async
       () => runPack([path.join(dir, 'not-a-pack')], dir, { deps }),
       /packet is invalid/
     );
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack run keeps permission prompts on for a packet someone else wrote', async () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir);
+    const { calls, deps } = stubDeps();
+    const { code, output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
+
+    assert.equal(code, 0);
+    assert.equal(calls.local[0].options.skipPermissions, false);
+    assert.match(output, /permission prompts are on/);
+    assert.match(output, /--trust/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack run --trust is the explicit opt-out for a packet you have read', async () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir);
+    const { calls, deps } = stubDeps();
+    const { code, output } = await captureConsole(() => runPack(['g-brain', '--trust'], dir, { deps }));
+
+    assert.equal(code, 0);
+    assert.equal(calls.local[0].options.skipPermissions, true);
+    assert.doesNotMatch(output, /permission prompts are on/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// The end-to-end proof: what actually reaches the agent binary. A stubbed
+// runner records its argv, so this fails if any layer between pack run and the
+// spawn puts --dangerously-skip-permissions back.
+function seedFakeRunner(dir, argsFile) {
+  const runner = path.join(dir, 'fake-runner.sh');
+  fs.writeFileSync(runner, `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(argsFile)}\n`);
+  fs.chmodSync(runner, 0o755);
+  return runner;
+}
+
+function runPackCli(dir, extraArgs, runner) {
+  const result = spawnSync(process.execPath, [cliPath, 'pack', 'run', 'g-brain', ...extraArgs], {
+    cwd: dir,
+    encoding: 'utf8',
+    timeout: 30000,
+    input: '',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_BIN: runner },
+  });
+  return result;
+}
+
+test('pack run does not hand --dangerously-skip-permissions to the agent by default', () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir);
+    const argsFile = path.join(dir, 'argv-default.txt');
+    const runner = seedFakeRunner(dir, argsFile);
+    const result = runPackCli(dir, [], runner);
+
+    assert.equal(fs.existsSync(argsFile), true, `runner never launched: ${result.stdout}${result.stderr}`);
+    const argv = fs.readFileSync(argsFile, 'utf8').split('\n');
+    assert.equal(argv.includes('--dangerously-skip-permissions'), false);
+    assert.equal(argv.includes('--append-system-prompt'), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack run --trust hands the skip flag through to the agent', () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir);
+    const argsFile = path.join(dir, 'argv-trust.txt');
+    const runner = seedFakeRunner(dir, argsFile);
+    const result = runPackCli(dir, ['--trust'], runner);
+
+    assert.equal(fs.existsSync(argsFile), true, `runner never launched: ${result.stdout}${result.stderr}`);
+    const argv = fs.readFileSync(argsFile, 'utf8').split('\n');
+    assert.equal(argv.includes('--dangerously-skip-permissions'), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris console keeps skipping permissions on your own workspace', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n');
+    const argsFile = path.join(dir, 'argv-console.txt');
+    const runner = seedFakeRunner(dir, argsFile);
+    const result = spawnSync(process.execPath, [cliPath, 'console', 'claude'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+      input: '',
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_BIN: runner },
+    });
+
+    assert.equal(fs.existsSync(argsFile), true, `runner never launched: ${result.stdout}${result.stderr}`);
+    const argv = fs.readFileSync(argsFile, 'utf8').split('\n');
+    assert.equal(argv.includes('--dangerously-skip-permissions'), true);
   } finally {
     cleanupTempDir(dir);
   }

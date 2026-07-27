@@ -136,7 +136,7 @@ function showHelp() {
   console.log('usage: atris pack craft "<topic>" [--dir <target>] [--force]');
   console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push] [--dry-run] [--allow-secrets]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
-  console.log('       atris pack run <slug|dir> [--dir <target>] [--cloud] [--force]');
+  console.log('       atris pack run <slug|dir> [--dir <target>] [--cloud] [--force] [--trust]');
   console.log('       atris pack share <slug> [--for "<Name>"]');
   console.log('       atris pack pull [<slug>] [--dir <path>]');
   console.log('       atris pack status [--dir <path>]');
@@ -1169,12 +1169,18 @@ async function startPackCloud(packDir, displayTarget, deps = {}) {
   return 0;
 }
 
-function startPackLocal(packDir, deps = {}) {
+// A packet is markdown an agent reads as instructions, and it usually came
+// from someone else. `atris console` skips permission prompts because it runs
+// on a workspace you wrote; that assumption does not survive being pointed at
+// a stranger's folder, so pack run keeps prompts on unless --trust says the
+// reader vouched for it.
+function startPackLocal(packDir, deps = {}, options = {}) {
+  const trust = options.trust === true;
   const start = deps.computerLocal || require('./computer').computerLocal;
   const previous = process.cwd();
   process.chdir(packDir);
   try {
-    start([]);
+    start([], { skipPermissions: trust });
   } finally {
     process.chdir(previous);
   }
@@ -1191,6 +1197,7 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
   const targetArg = takeValue(args, '--dir');
   const cloud = takeFlag(args, '--cloud');
   const force = takeFlag(args, '--force');
+  const trust = takeFlag(args, '--trust');
   if (args.length) throw new Error(`unknown pack run argument: ${args.join(' ')}`);
 
   const deps = options.deps || {};
@@ -1219,7 +1226,10 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
   const displayTarget = path.relative(cwd, packDir) || '.';
   if (cloud) return startPackCloud(packDir, displayTarget, deps);
   console.log(`starting local computer in ${displayTarget}`);
-  return startPackLocal(packDir, deps);
+  if (!trust) {
+    console.log('permission prompts are on because this packet came from somewhere else; add --trust to turn them off.');
+  }
+  return startPackLocal(packDir, deps, { trust });
 }
 
 async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
