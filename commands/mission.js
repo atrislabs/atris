@@ -79,6 +79,10 @@ const {
 } = require('../lib/default-verifier');
 const { redirectToWorkspaceRoot } = require('../lib/mission-root');
 const {
+  normalizeHumanAsks,
+  openHumanAsks,
+} = require('../lib/mission-human-asks');
+const {
   inspectMissionProtectedDiff,
   prepareMissionGitGuard,
   unreadableMissionGuard,
@@ -935,9 +939,11 @@ function terminalNextAction(status) {
 
 function normalizeMissionState(mission) {
   if (!mission) return mission;
-  let normalized = mission;
-  const nextAction = terminalNextAction(mission.status);
-  if (nextAction && mission.next_action !== nextAction) {
+  let normalized = Array.isArray(mission.human_asks)
+    ? { ...mission, human_asks: normalizeHumanAsks(mission.human_asks) }
+    : mission;
+  const nextAction = terminalNextAction(normalized.status);
+  if (nextAction && normalized.next_action !== nextAction) {
     normalized = { ...normalized, next_action: nextAction };
   }
   const effectiveVerifier = effectiveMissionVerifier(normalized);
@@ -1524,9 +1530,10 @@ function renderMemberNowMarkdown(owner, missions, root = process.cwd()) {
     if (mission.stop_condition) lines.push(`- stop: ${mission.stop_condition}`);
     if (budgetContinuation || mission.next_action) lines.push(`- next: ${budgetContinuation || mission.next_action}`);
     if (mission.receipt_path) lines.push(`- proof: ${missionStatusProofText(mission)}`);
-    if (mission.human_asks?.length) {
+    const humanAsks = openHumanAsks(mission.human_asks);
+    if (humanAsks.length) {
       lines.push('- human asks:');
-      for (const ask of mission.human_asks) lines.push(`  - ${ask}`);
+      for (const ask of humanAsks) lines.push(`  - ${ask.text}`);
     }
     lines.push('');
   }
@@ -6339,8 +6346,7 @@ function missionHeartbeatLines(mission, now = new Date()) {
 }
 
 function missionHasHumanAsks(mission) {
-  return Array.isArray(mission?.human_asks)
-    && mission.human_asks.some((ask) => String(ask || '').trim());
+  return openHumanAsks(mission?.human_asks).length > 0;
 }
 
 function missionTaskHumanAcceptWaiting(mission) {
@@ -8184,8 +8190,9 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
   if (mission.task_ids?.length) {
     lines.push('', `## Task ids`, mission.task_ids.map((t) => `- ${t}`).join('\n'));
   }
-  if (mission.human_asks?.length) {
-    lines.push('', `## Human asks (don't act on these — surface them)`, mission.human_asks.map((t) => `- ${t}`).join('\n'));
+  const humanAsks = openHumanAsks(mission.human_asks);
+  if (humanAsks.length) {
+    lines.push('', `## Human asks (don't act on these — surface them)`, humanAsks.map((ask) => `- ${ask.text}`).join('\n'));
   }
   return lines.join('\n');
 }
@@ -10807,6 +10814,36 @@ function pingMission(args, opts = {}) {
   return saved;
 }
 
+function answerMissionHumanAsk(ref, askIndex, answer, note = '') {
+  const found = findMissionAcrossWorktrees(ref);
+  if (!found) throw new Error(`mission not found: ${ref}`);
+  const { mission, root } = found;
+  const humanAsks = normalizeHumanAsks(mission.human_asks);
+  const ask = humanAsks[askIndex];
+  if (!ask || !ask.text.trim()) throw new Error(`human ask not found at index ${askIndex}`);
+  if (ask.answered_at) throw new Error('human ask is already answered');
+  const normalizedAnswer = String(answer || '').toLowerCase();
+  if (!['yes', 'no'].includes(normalizedAnswer)) throw new Error('human ask answer must be yes or no');
+  const answeredAt = stampIso();
+  humanAsks[askIndex] = {
+    ...ask,
+    answered_at: answeredAt,
+    answer: normalizedAnswer,
+    note: String(note || '').trim(),
+  };
+  return saveMission(
+    { ...mission, human_asks: humanAsks },
+    root,
+    'mission_human_ask_answered',
+    {
+      ask_index: askIndex,
+      text: ask.text.slice(0, 200),
+      answer: normalizedAnswer,
+      note: String(note || '').trim(),
+    },
+  ).mission;
+}
+
 function missionCommand(args) {
   const subcommand = args[0] || 'status';
   const rest = args.slice(1);
@@ -10931,6 +10968,7 @@ module.exports = {
   findActiveTwinMission,
   TWIN_ACTIVE_STATUSES,
   pingMission,
+  answerMissionHumanAsk,
   buildTickPrompt,
   extractCheckFeedback,
   loadMissionMap,
