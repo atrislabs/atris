@@ -35,6 +35,9 @@ function usage() {
   console.log('  atris teach add …            record a misbehavior as a red case');
   console.log('  atris teach run [<id>]       run a case; a red case is SUPPOSED to fail');
   console.log('  atris teach guards           rerun every guard; nonzero exit = regression');
+  console.log('  atris teach drafts           corrections captured from live turns');
+  console.log('  atris teach scaffold …       turn a captured correction into a red case');
+  console.log('  atris teach mine             which recorded tick failures could become cases');
   console.log('');
   console.log('  add flags: --id <kebab> --prompt "…" --require "<fragment>" (repeatable)');
   console.log('             --complaint "…" --file path=@localfile --forbid-changed-files');
@@ -50,6 +53,8 @@ function buildArgs(subcommand, args) {
   if (subcommand === 'add') return ['add', ...args];
   if (subcommand === 'guards') return ['run', '--guards', ...args];
   if (subcommand === 'mine') return ['mine', ...args];
+  if (subcommand === 'drafts') return ['drafts', ...args];
+  if (subcommand === 'scaffold') return ['scaffold', ...args];
   if (subcommand === 'run') {
     // `atris teach run <id>` -> `run --case <id>`; bare `run` runs every case.
     if (args.length && !args[0].startsWith('-')) return ['run', '--case', args[0], ...args.slice(1)];
