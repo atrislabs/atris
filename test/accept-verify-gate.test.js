@@ -31,10 +31,13 @@ test('a bare file path is a receipt, not a check (1 of the 131)', () => {
   assert.equal(r.ok, false);
 });
 
-test('prose joined by commas does not parse as a command', () => {
-  const r = evaluateAcceptVerify(
-    task('node --check, focused heartbeat test, aggregate heartbeat test, live dry run'), ROOT);
-  assert.equal(r.ok, false);
+test('a command that cannot be safely run here is marked unchecked, not refused', () => {
+  // Refusing everything outside the execution allow-list flagged 455 accepted tasks,
+  // and sampling found ordinary verifiers (npm run type-check, npx vitest run) mixed
+  // in with prose. The gate judges falsifiability, not runnability.
+  const r = evaluateAcceptVerify(task('npx vitest run'), ROOT);
+  assert.equal(r.ok, true);
+  assert.equal(r.unchecked, true);
   assert.equal(r.ran, false);
 });
 
