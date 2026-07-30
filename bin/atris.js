@@ -2542,6 +2542,10 @@ if (command === 'init') {
   require('../commands/gm').gmCommand(...process.argv.slice(3))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'game') {
+  require('../commands/game').gameCommand(process.argv.slice(3))
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'github') {
   const status = require('../commands/github').githubCommand(process.argv.slice(3));
   process.exit(status);
