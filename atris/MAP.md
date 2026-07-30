@@ -44,7 +44,7 @@ rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-g
 rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
 rg "analyticsAtris|showAnalyticsHelp|status and analytics --help" bin/atris.js commands/analytics.js test/commands.test.js  # Analytics command + workspace-free help
 rg "xpCommand|collectLocalXpProjection|buildCareerXpProjection|buildCareerXpSessionCapsule|buildAgentXpSyncPacket|syncAgentXp|parseJsonlContent|readTaskProjectionState|loadLocalPayload" commands/xp.js bin/atris.js  # AgentXP command: remote graph, local status/collect, all-workspace profile, session capsule, and hosted leaderboard sync packet/upload
-rg "gmState|AgentXP General Manager|renderGameDashboard|loadGameState|pickSeedPlayer|inferManager" commands/gm.js commands/game.js test/gm.test.js test/game-dashboard.test.js  # AgentXP GM mode plus the game-state terminal dashboard: storyline, chapter rail, current mission, streak, live missions, next move, and local Python sync loading
+rg "gmState|AgentXP General Manager|renderGameDashboard|parseGameArgs|loadGameState|pickSeedPlayer|inferManager" commands/gm.js commands/game.js test/gm.test.js test/game-dashboard.test.js  # AgentXP GM mode plus the game-state terminal dashboard: selectable storyline, chapter rail, current mission, streak, live missions, next move, and local Python sync loading
 
 # Modular commands
 rg "initAtris|upsertAtrisClaudeBootBlock" commands/init.js lib/claude-boot-block.js test/claude-boot-block.test.js  # Init command and hook-aware, self-repairing root CLAUDE.md boot block

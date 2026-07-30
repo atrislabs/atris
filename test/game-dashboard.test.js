@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { renderGameDashboard } = require('../commands/game');
+const {
+  renderGameDashboard,
+  isValidStorylineSlug,
+  parseGameArgs,
+} = require('../commands/game');
 
 const fixture = {
   schema: 'atris.game_state.v1',
@@ -62,4 +66,20 @@ test('game dashboard tolerates a null storyline', () => {
 
   assert.doesNotThrow(() => renderGameDashboard(payload, { color: false, width: 60 }));
   assert.match(renderGameDashboard(payload, { color: false, width: 60 }), /No storyline loaded/);
+});
+
+test('storyline slug validation rejects unsafe names and accepts slugs', () => {
+  assert.equal(isValidStorylineSlug('BAD_SLUG!'), false);
+  assert.equal(isValidStorylineSlug('agentgrads'), true);
+});
+
+test('positional storyline maps to the publisher storyline flag', () => {
+  assert.deepEqual(parseGameArgs(['agentgrads']), {
+    storyline: 'agentgrads',
+    publisherArgs: ['--json', '--storyline', 'agentgrads'],
+  });
+  assert.deepEqual(parseGameArgs(['--storyline', 'agentgrads']), {
+    storyline: 'agentgrads',
+    publisherArgs: ['--json', '--storyline', 'agentgrads'],
+  });
 });
