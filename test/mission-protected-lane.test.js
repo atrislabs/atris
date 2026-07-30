@@ -9,6 +9,7 @@ const { spawnSync } = require('node:child_process');
 
 const {
   guardMissionLanding,
+  inspectMissionProtectedDiff,
   matchProtectedMissionDiff,
   prepareMissionGitGuard,
 } = require('../lib/mission-protected-lane');
@@ -94,6 +95,111 @@ test('an unreadable diff fails closed and pauses before landing', () => {
   assert.equal(landed, false);
   assert.deepEqual(result.surfaces, ['unreadable diff']);
   assert.match(result.detail, /permission denied/);
+});
+
+test('a huge unprotected diff passes after the name-only scan', () => {
+  const calls = [];
+  const git = (args) => {
+    calls.push(args);
+    if (args.includes('--name-only')) {
+      const paths = Array.from(
+        { length: 500 },
+        (_, index) => `atris/runs/mission-${index}/receipt-with-a-long-unprotected-name.md`,
+      );
+      return { status: 0, stdout: `${paths.join('\0')}\0`, stderr: '' };
+    }
+    return {
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: Object.assign(new Error('spawnSync git ENOBUFS'), { code: 'ENOBUFS' }),
+    };
+  };
+
+  const result = inspectMissionProtectedDiff({ git, includeUnstaged: false });
+
+  assert.equal(result.allowed, true);
+  assert.equal(result.status, 'clear');
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].includes('--name-only'));
+});
+
+test('a protected path is read after name-only and still blocks', () => {
+  const calls = [];
+  const git = (args) => {
+    calls.push(args);
+    if (args.includes('--name-only')) {
+      return { status: 0, stdout: 'app/csp/policy.js\0', stderr: '' };
+    }
+    return {
+      status: 0,
+      stdout: diffFor('app/csp/policy.js', 'plain value'),
+      stderr: '',
+    };
+  };
+
+  const result = inspectMissionProtectedDiff({ git, includeUnstaged: false });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.status, 'paused-for-review');
+  assert.deepEqual(result.surfaces, ['csp']);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1].includes('app/csp/policy.js'));
+});
+
+test('protected content on a neutral code path is still read and blocks', () => {
+  const git = (args) => {
+    if (args.includes('--name-only')) {
+      return { status: 0, stdout: 'lib/request.js\0', stderr: '' };
+    }
+    return {
+      status: 0,
+      stdout: diffFor('lib/request.js', "headers.Authorization = `Bearer ${token}`;"),
+      stderr: '',
+    };
+  };
+
+  const result = inspectMissionProtectedDiff({ git, includeUnstaged: false });
+
+  assert.equal(result.allowed, false);
+  assert.deepEqual(result.surfaces, ['auth header']);
+});
+
+test('a filtered diff ENOBUFS pause names the matched paths', () => {
+  const git = (args) => {
+    if (args.includes('--name-only')) {
+      return { status: 0, stdout: 'app/csp/policy.js\0', stderr: '' };
+    }
+    return {
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: Object.assign(new Error('spawnSync git ENOBUFS'), { code: 'ENOBUFS' }),
+    };
+  };
+
+  const result = inspectMissionProtectedDiff({ git, includeUnstaged: false });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.unreadable, true);
+  assert.match(result.detail, /too large after name-only filtering/);
+  assert.match(result.detail, /app\/csp\/policy\.js/);
+});
+
+test('an unreadable name-only pass still fails closed with a distinct detail', () => {
+  const git = () => ({
+    status: null,
+    stdout: '',
+    stderr: '',
+    error: Object.assign(new Error('spawnSync git ENOBUFS'), { code: 'ENOBUFS' }),
+  });
+
+  const result = inspectMissionProtectedDiff({ git, includeUnstaged: false });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.unreadable, true);
+  assert.match(result.detail, /name-only output was too large/);
+  assert.match(result.detail, /matched paths could not be read/);
 });
 
 test('a denied task tag pauses even when the changed text looks neutral', () => {
