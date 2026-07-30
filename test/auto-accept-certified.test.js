@@ -485,3 +485,48 @@ test('acceptAll: a check pointing at a vanished worktree blocks; an un-runnable 
   const notAllowed = evaluateAutoAccept(trusted, { acceptAll: true });
   assert.equal(notAllowed.eligible, true);
 });
+
+test('re-entrancy: a verify refuses to run when ATRIS_VERIFY_IN_PROGRESS is set', () => {
+  const key = 'ATRIS_VERIFY_IN_PROGRESS';
+  const prior = process.env[key];
+  process.env[key] = '1';
+  try {
+    const result = runVerifyCommand('node --check lib/auto-accept-certified.js', process.cwd());
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'verify_unrunnable');
+    assert.equal(result.unrunnable_cause, 'verify_reentrant');
+    assert.equal(result.alarm, true);
+  } finally {
+    if (prior === undefined) delete process.env[key];
+    else process.env[key] = prior;
+  }
+});
+
+test('verify children inherit ATRIS_VERIFY_IN_PROGRESS=1', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-verify-env-'));
+  fs.mkdirSync(path.join(workspace, 'scripts'), { recursive: true });
+  fs.writeFileSync(
+    path.join(workspace, 'scripts', 'probe-env.js'),
+    "process.exit(process.env.ATRIS_VERIFY_IN_PROGRESS === '1' ? 0 : 1);\n"
+  );
+  const result = runVerifyCommand('node scripts/probe-env.js', workspace);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.reason, 'verify_passed');
+});
+
+// Keep last: the spawn cap is process-global, so this test consumes the
+// remaining budget and must not run before tests that need real spawns.
+test('spawn cap: verifies beyond the cap refuse loudly instead of looping', () => {
+  let refused = null;
+  for (let i = 0; i < 40 && !refused; i += 1) {
+    const result = runVerifyCommand('node --check lib/auto-accept-certified.js', process.cwd());
+    if (result.unrunnable_cause === 'verify_spawn_cap') refused = result;
+    else assert.equal(result.ok, true, JSON.stringify(result));
+  }
+  assert.ok(refused, 'expected the spawn cap to trip within 40 verifies');
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, 'verify_unrunnable');
+  assert.equal(refused.alarm, true);
+  const after = runVerifyCommand('node --check lib/auto-accept-certified.js', process.cwd());
+  assert.equal(after.unrunnable_cause, 'verify_spawn_cap');
+});

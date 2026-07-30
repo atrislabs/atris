@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const http = require('http');
+const { execSync } = require('node:child_process');
 const path = require('path');
 const os = require('os');
 const { taskProofState } = require('../lib/task-proof');
@@ -883,8 +884,11 @@ function proofBoundaryBlockedEvaluation(task) {
   if (missionXpBoundary) return missionXpBoundary;
   // strictVerify stays off here: this is a render-path probe for the boundary
   // reason only, and the default-true strict mode would spawn the verify
-  // subprocess for every certified row just to draw the desk.
-  const evaluation = evaluateAutoAccept(task, { strictVerify: false, minPasses: 0 });
+  // subprocess for every certified row just to draw the desk. strictVerify:
+  // false alone does NOT stop the spawn — an untrusted trust tier re-enables
+  // the strict block inside evaluateAutoAccept — so executeVerify: false is
+  // what actually keeps this probe read-only.
+  const evaluation = evaluateAutoAccept(task, { strictVerify: false, minPasses: 0, executeVerify: false });
   return evaluation && evaluation.reason === 'proof_unmerged_or_draft_pr_boundary'
     ? evaluation
     : null;
@@ -5171,10 +5175,46 @@ function evaluateReviewAutoAccept(task, root) {
   if (!protectedGate.ok) return { eligible: false, ref, reason: protectedGate.reason };
   const sizeGate = reviewAutoAcceptSizeGate(task, root);
   if (!sizeGate.ok) return { eligible: false, ref, reason: sizeGate.reason, size: sizeGate.stats };
-  const evaluation = evaluateAutoAccept(task, { strictVerify: true });
+  // executeVerify: false — this is a READ path. The verdict comes from
+  // metadata.verify_cache, stamped by the two lanes allowed to spawn
+  // checks (certify-verified, autoland landing re-check). Spawning here is
+  // what turned `atris task reviews` into a fork-bomb multiplier.
+  const evaluation = evaluateAutoAccept(task, { strictVerify: true, executeVerify: false });
   if (!evaluation.eligible) {
     return {
       ...evaluation,
+      size: sizeGate.stats,
+    };
+  }
+  if (evaluation.verification_pending) {
+    const verdict = cachedVerifyVerdict(task, root);
+    if (!verdict.fresh) {
+      return {
+        eligible: false,
+        ref,
+        reason: 'verification_pending',
+        verify: verdict.command || null,
+        next_action: 'no fresh executed verify on record; `atris task certify-verified` or the autoland tick runs the stored check and stamps metadata.verify_cache',
+        size: sizeGate.stats,
+      };
+    }
+    if (!verdict.ok) {
+      return {
+        eligible: false,
+        ref,
+        reason: verdict.reason || 'verify_failed',
+        verify: verdict.command,
+        verify_cache: verdict,
+        size: sizeGate.stats,
+      };
+    }
+    return {
+      ...evaluation,
+      verification_pending: false,
+      verify_cache: verdict,
+      eligible: true,
+      reason: 'certified_small',
+      policy: REVIEW_AUTO_ACCEPT_POLICY,
       size: sizeGate.stats,
     };
   }
@@ -9697,6 +9737,52 @@ function stampCertifyVerifyMetadata(taskDb, db, taskId, actor, verify) {
   `).run(JSON.stringify(metadata), Date.now(), taskId);
 }
 
+function currentHeadSha(workspaceRoot) {
+  try {
+    return execSync('git rev-parse HEAD', {
+      cwd: workspaceRoot || process.cwd(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+// metadata.verify_cache is the read path's only verify verdict: `reviews`
+// must never spawn a check (that read-side execution fork-bombed the fleet
+// on 2026-07-29), so the two lanes that legitimately execute verifies —
+// certify-verified and the autoland landing re-check — persist the outcome
+// here for the read path to consult.
+function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot }) {
+  const row = taskDb.getTask(db, taskId);
+  if (!row) return;
+  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
+  metadata.verify_cache = {
+    command: verify,
+    ok: result && result.ok === true,
+    reason: (result && result.reason) || null,
+    ran_at: new Date().toISOString(),
+    ran_by: actor,
+    code_sha: currentHeadSha(workspaceRoot),
+  };
+  db.prepare(`
+    UPDATE tasks
+       SET metadata = ?,
+           updated_at = ?
+     WHERE id = ?
+  `).run(JSON.stringify(metadata), Date.now(), taskId);
+}
+
+function cachedVerifyVerdict(task, root) {
+  const metadata = (task && task.metadata) || {};
+  const cache = metadata.verify_cache;
+  if (!cache || typeof cache !== 'object') return { fresh: false, command: metadata.verify || null };
+  const fresh = cache.command === metadata.verify
+    && (!cache.code_sha || cache.code_sha === currentHeadSha(task.workspace_root || root));
+  return { ...cache, fresh: Boolean(fresh) };
+}
+
 // `atris task ready --verify "<cmd>"` already runs the command live and
 // gates on exit 0, but that alone leaves no machine re-runnable trace once
 // the proof text scrolls out of easy reach: storing the exact command on
@@ -9738,6 +9824,7 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
     };
   }
   const result = runVerifyCommandCached(verify, task.workspace_root || process.cwd(), verifyCache);
+  stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root });
   if (result.ok) return { ok: true, verify, result };
   const note = landingVerifyFailureNote(verify, result);
   const revised = taskDb.reviseTask(db, {
@@ -9807,8 +9894,10 @@ function cmdCertifyVerified(args, options = {}) {
     // "certified" alone is not landable.
     // strictVerify stays off in this eligibility probe: certify-verified runs
     // the check itself right below, and strict mode here would execute it a
-    // second time per row before the real run.
-    const evaluation = evaluateAutoAccept(task, { strictVerify: false });
+    // second time per row before the real run. executeVerify: false as well —
+    // an untrusted trust tier re-enables the strict block internally even
+    // with strictVerify off, which is how this probe spawned a verify per row.
+    const evaluation = evaluateAutoAccept(task, { strictVerify: false, executeVerify: false });
     if (evaluation.eligible) {
       results.push({ ref, action: 'skipped', reason: 'already_landable' });
       continue;
@@ -9837,6 +9926,7 @@ function cmdCertifyVerified(args, options = {}) {
       continue;
     }
     const run = runVerifyCommandCached(verify, task.workspace_root || process.cwd(), verifyCache);
+    stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root });
     if (!run.ok) {
       results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
       continue;
