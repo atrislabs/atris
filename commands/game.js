@@ -7,6 +7,58 @@ const { execFileSync } = require('child_process');
 const DEFAULT_WIDTH = 80;
 const MIN_WIDTH = 20;
 const MAX_WIDTH = 120;
+const STORYLINE_SLUG_PATTERN = /^[a-z0-9-]+$/;
+
+function isValidStorylineSlug(slug) {
+  return typeof slug === 'string' && STORYLINE_SLUG_PATTERN.test(slug);
+}
+
+function parseGameArgs(args = []) {
+  let storyline = null;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--storyline') {
+      const value = args[index + 1];
+      if (!value || value.startsWith('--')) {
+        return { error: 'missing storyline slug' };
+      }
+      if (storyline) return { error: 'choose one storyline' };
+      storyline = value;
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--')) return { error: `unknown game option: ${arg}` };
+    if (storyline) return { error: 'choose one storyline' };
+    storyline = arg;
+  }
+
+  return {
+    storyline,
+    publisherArgs: storyline ? ['--json', '--storyline', storyline] : ['--json'],
+  };
+}
+
+function availableStorylines(workspaceRoot) {
+  const directory = path.join(workspaceRoot, 'atris', 'storylines');
+  try {
+    return fs.readdirSync(directory, { withFileTypes: true })
+      .filter(entry => entry.isFile() && entry.name.endsWith('.md'))
+      .map(entry => path.basename(entry.name, '.md'))
+      .filter(slug => slug !== 'resume-log')
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function publisherSupportsStoryline(script) {
+  try {
+    return fs.readFileSync(script, 'utf8').includes('--storyline');
+  } catch {
+    return false;
+  }
+}
 
 function clean(value, fallback = '') {
   const text = String(value == null ? '' : value)
@@ -143,13 +195,13 @@ function renderGameDashboard(payload, opts = {}) {
   return lines.join('\n');
 }
 
-function loadGameState(workspaceRoot = process.cwd()) {
+function loadGameState(workspaceRoot = process.cwd(), publisherArgs = ['--json']) {
   const script = path.join(workspaceRoot, 'scripts', 'game_state_sync.py');
   const python = path.join(workspaceRoot, 'venv', 'bin', 'python');
   if (!fs.existsSync(script) || !fs.existsSync(python)) return null;
 
   try {
-    const stdout = execFileSync(python, [script, '--json'], {
+    const stdout = execFileSync(python, [script, ...publisherArgs], {
       cwd: workspaceRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -163,8 +215,30 @@ function loadGameState(workspaceRoot = process.cwd()) {
 }
 
 async function gameCommand(args = [], opts = {}) {
-  void args;
-  const payload = loadGameState(process.cwd());
+  const parsed = parseGameArgs(args);
+  if (parsed.error) {
+    console.error(parsed.error);
+    return 1;
+  }
+  if (parsed.storyline && !isValidStorylineSlug(parsed.storyline)) {
+    console.error(`invalid storyline slug: ${parsed.storyline}`);
+    return 1;
+  }
+
+  const workspaceRoot = process.cwd();
+  if (parsed.storyline) {
+    const storylines = availableStorylines(workspaceRoot);
+    if (!storylines.includes(parsed.storyline)) {
+      console.error(`storyline not found: ${parsed.storyline}. available: ${storylines.join(', ') || 'none'}`);
+      return 1;
+    }
+  }
+
+  const script = path.join(workspaceRoot, 'scripts', 'game_state_sync.py');
+  const publisherArgs = parsed.storyline && publisherSupportsStoryline(script)
+    ? parsed.publisherArgs
+    : ['--json'];
+  const payload = loadGameState(workspaceRoot, publisherArgs);
   if (!payload) {
     if (!opts.silentMissing) {
       console.log('no game state in this workspace (needs atris/storylines/)');
@@ -181,5 +255,7 @@ async function gameCommand(args = [], opts = {}) {
 
 module.exports = {
   renderGameDashboard,
+  isValidStorylineSlug,
+  parseGameArgs,
   gameCommand,
 };

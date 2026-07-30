@@ -2544,7 +2544,7 @@ if (command === 'init') {
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'game') {
   require('../commands/game').gameCommand(process.argv.slice(3))
-    .then(() => process.exit(0))
+    .then((status) => process.exit(status === 1 ? 1 : 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'github') {
   const status = require('../commands/github').githubCommand(process.argv.slice(3));
