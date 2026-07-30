@@ -28,6 +28,11 @@ const {
 
 const REGISTRY_TIMEOUT_MS = 60000;
 const PACK_RUN_INPUT_MAX_BYTES = 256 * 1024;
+const PACK_VISIBILITIES = new Set(['public', 'unlisted', 'private']);
+const DEFAULT_SHARE_DAYS = 30;
+const MAX_SHARE_DAYS = 365;
+const MAX_SHARE_RECIPIENT_LENGTH = 120;
+const PACK_BROWSE_LIMIT = 50;
 
 // The web registry caps every upload (atrisos-web app/api/pack/registry/route.ts).
 // The ZIP reader uses the same limits so inbound packs cannot expand past them.
@@ -150,11 +155,13 @@ const ENV_ASSIGNMENT = /=(?!=*$)/;
 
 function showHelp() {
   console.log('usage: atris pack craft "<topic>" [--dir <target>] [--force]');
-  console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push] [--dry-run] [--allow-secrets]');
+  console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--visibility public|unlisted|private] [--minor|--major] [--out <file.zip>] [--push] [--dry-run] [--allow-secrets]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
   console.log('       atris pack run <slug|dir> [--dir <target>] [--input <file>] [--cloud] [--force] [--trust] [--grant <capability>]');
   console.log('       atris pack runs [--dir <receipt-dir>] [--limit <n>] [--json]');
-  console.log('       atris pack share <slug> [--for "<Name>"]');
+  console.log('       atris pack share <slug> --for "<Name>" [--days 30]');
+  console.log('       atris pack share <slug> --revoke');
+  console.log('       atris pack browse [--mine]');
   console.log('       atris pack pull [<slug>] [--dir <path>] [--allow-downgrade]');
   console.log('       atris pack status [--dir <path>]');
   console.log('       atris pack update [<dir>] [--allow-downgrade]');
@@ -263,10 +270,7 @@ function writeJson(filePath, value) {
 
 function buildManifest(existing, options) {
   const existingManifest = existing && typeof existing === 'object' ? existing : {};
-  const visibility = existingManifest.visibility;
-  if (visibility !== undefined && !['public', 'unlisted', 'private'].includes(visibility)) {
-    throw new Error('pack.json visibility must be public, unlisted, or private');
-  }
+  const hasExistingManifest = existing && typeof existing === 'object';
   const priceCents = existingManifest.priceCents;
   if (priceCents !== undefined && (!Number.isSafeInteger(priceCents) || priceCents < 0)) {
     throw new Error('pack.json priceCents must be a non-negative integer');
@@ -276,6 +280,17 @@ function buildManifest(existing, options) {
     ? bumpVersion(existingManifest.version, options.bump)
     : '0.1.0';
   const title = existingManifest.title || titleFromSlug(slug);
+  let visibility;
+  if (options.visibility !== null && options.visibility !== undefined) {
+    visibility = String(options.visibility);
+  } else if (Object.prototype.hasOwnProperty.call(existingManifest, 'visibility')) {
+    visibility = existingManifest.visibility;
+  } else if (!hasExistingManifest) {
+    visibility = 'unlisted';
+  }
+  if (visibility !== undefined && !PACK_VISIBILITIES.has(visibility)) {
+    throw new Error('pack visibility must be public, unlisted, or private');
+  }
   const manifest = {
     name: existingManifest.name || slug,
     slug,
@@ -677,10 +692,10 @@ function registryNotFoundError(slug, authenticated) {
   return new Error(`pack not found: ${slug}`);
 }
 
-function requiredAuthHeaders(deps = {}) {
+function requiredAuthHeaders(deps = {}, purpose = 'publish packs') {
   const headers = optionalAuthHeaders(deps);
   if (!headers.Authorization) {
-    throw new Error('not logged in. run atris login first to publish packs.');
+    throw new Error(`not logged in. run atris login first to ${purpose}.`);
   }
   return headers;
 }
@@ -754,10 +769,9 @@ function assertPublishableAuthor(manifest) {
 }
 
 // ── pack share ──────────────────────────────────────────────────────────────
-// The web renders /packs/<slug>?for=<name> and silently drops a `for` value it
-// cannot display (atrisos-web app/lib/pack/personalize.ts). Mirroring that
-// sanitizer here means the CLI never hands you a link that looks personalized
-// and isn't — it says no instead.
+// Signed links are the primary handoff. The old /packs/<slug>?for=<name> link
+// is retained only when minting fails for a pack the public registry confirms
+// is public.
 const PERSONALIZATION_MAX_LENGTH = 40;
 const PERSONALIZATION_MARKUP = /[<>&"`\\/]/;
 const PERSONALIZATION_DISALLOWED = /[^\p{L}\p{M} '’.\-]/gu;
@@ -778,35 +792,319 @@ function sanitizePersonalizationName(raw) {
   return capped;
 }
 
-function sharePack(rawArgs, cwd = process.cwd(), options = {}) {
+function parsePackShareArgs(rawArgs) {
   const args = [...rawArgs];
   const forName = takeValue(args, '--for');
+  const daysValue = takeValue(args, '--days');
+  const revoke = takeFlag(args, '--revoke');
   const slug = args.shift();
-  if (!slug) throw new Error('pack share needs a slug: atris pack share <slug> [--for "<Name>"]');
+  if (!slug) throw new Error('pack share needs a slug: atris pack share <slug> --for "<Name>"');
   if (args.length) throw new Error(`unknown pack share argument: ${args.join(' ')}`);
   assertPublishableSlug(slug);
 
-  const deps = options.deps || {};
-  const base = registryUrl(`/packs/${encodeURIComponent(slug)}`, deps);
+  if (revoke) {
+    if (forName !== null || daysValue !== null) {
+      throw new Error('pack share --revoke cannot be combined with --for or --days');
+    }
+    return { mode: 'revoke', slug };
+  }
+
   if (forName === null) {
-    console.log(base);
-    console.log(`share this packet, or personalize it: atris pack share ${slug} --for "<Name>"`);
+    if (daysValue !== null) throw new Error('pack share --days requires --for "<Name>"');
+    return { mode: 'plain', slug };
+  }
+
+  const recipientLabel = String(forName).trim();
+  if (!recipientLabel || recipientLabel.length > MAX_SHARE_RECIPIENT_LENGTH) {
+    throw new Error(
+      `--for needs a recipient label between 1 and ${MAX_SHARE_RECIPIENT_LENGTH} characters`,
+    );
+  }
+
+  const expiresInDays = daysValue === null ? DEFAULT_SHARE_DAYS : Number(daysValue);
+  if (!Number.isSafeInteger(expiresInDays) || expiresInDays < 1 || expiresInDays > MAX_SHARE_DAYS) {
+    throw new Error(`--days must be a whole number from 1 to ${MAX_SHARE_DAYS}`);
+  }
+  return { mode: 'mint', slug, recipientLabel, expiresInDays };
+}
+
+async function requestRegistryJson(pathname, requestOptions = {}, deps = {}) {
+  const request = deps.httpRequest || httpRequest;
+  const method = requestOptions.method || 'GET';
+  const headers = {
+    Accept: 'application/json',
+    ...(requestOptions.authPurpose
+      ? requiredAuthHeaders(deps, requestOptions.authPurpose)
+      : {}),
+  };
+  if (requestOptions.sendOrigin) {
+    const origin = registryOrigin(deps);
+    if (origin) headers.Origin = origin;
+  }
+
+  let body;
+  if (requestOptions.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(requestOptions.body);
+  }
+
+  let response;
+  try {
+    response = await request(registryUrl(pathname, deps), {
+      method,
+      timeoutMs: REGISTRY_TIMEOUT_MS,
+      headers,
+      ...(body !== undefined ? { body } : {}),
+    });
+  } catch {
+    throw new Error(requestOptions.unreachableMessage || 'could not reach pack registry. check your connection and try again.');
+  }
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(responseErrorText(response, `registry request failed with status ${response.status}`));
+  }
+  const parsed = parseJsonBody(response.body);
+  if (!parsed.data || typeof parsed.data !== 'object') {
+    throw new Error(requestOptions.invalidMessage || 'pack registry returned an invalid response');
+  }
+  return parsed.data;
+}
+
+async function mintPackShare(slug, recipientLabel, expiresInDays, deps = {}) {
+  const data = await requestRegistryJson(
+    `/api/pack/registry/${encodeURIComponent(slug)}/share`,
+    {
+      method: 'POST',
+      authPurpose: 'share packs',
+      sendOrigin: true,
+      body: { recipientLabel, expiresInDays },
+      unreachableMessage: 'could not mint a pack share link. check your connection and try again.',
+      invalidMessage: 'pack registry did not return a share link',
+    },
+    deps,
+  );
+  if (typeof data.shareUrl !== 'string' || !data.shareUrl.trim()) {
+    throw new Error('pack registry did not return a share link');
+  }
+  if (!Number.isFinite(Number(data.expiresAt))) {
+    throw new Error('pack registry did not return the share link expiry');
+  }
+  return {
+    shareUrl: data.shareUrl,
+    expiresAt: Number(data.expiresAt),
+  };
+}
+
+async function revokePackShares(slug, deps = {}) {
+  return requestRegistryJson(
+    `/api/pack/registry/${encodeURIComponent(slug)}/share`,
+    {
+      method: 'DELETE',
+      authPurpose: 'revoke pack share links',
+      sendOrigin: true,
+      unreachableMessage: 'could not revoke pack share links. check your connection and try again.',
+    },
+    deps,
+  );
+}
+
+function registryPackItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.packs)) return payload.packs;
+  return [];
+}
+
+function packManifestFromItem(item) {
+  if (item && item.manifest && typeof item.manifest === 'object') return item.manifest;
+  return item && typeof item === 'object' ? item : {};
+}
+
+function isPublicPackPayload(payload, slug) {
+  return registryPackItems(payload).some((item) => {
+    const manifest = packManifestFromItem(item);
+    return manifest.slug === slug
+      && (manifest.visibility === undefined || manifest.visibility === 'public');
+  });
+}
+
+async function registryConfirmsPublicPack(slug, deps = {}) {
+  try {
+    const payload = await requestRegistryJson(
+      '/api/pack/registry',
+      {
+        unreachableMessage: 'could not check public pack visibility',
+        invalidMessage: 'pack registry returned an invalid public listing',
+      },
+      deps,
+    );
+    return isPublicPackPayload(payload, slug);
+  } catch {
+    return false;
+  }
+}
+
+function legacyPersonalizedShareUrl(slug, recipientLabel, deps = {}) {
+  const name = sanitizePersonalizationName(recipientLabel);
+  if (!name) return null;
+  const base = registryUrl(`/packs/${encodeURIComponent(slug)}`, deps);
+  return `${base}?for=${encodeURIComponent(name)}`;
+}
+
+function formatShareExpiry(expiresAt) {
+  const value = Number(expiresAt);
+  const milliseconds = value < 1000000000000 ? value * 1000 : value;
+  const date = new Date(milliseconds);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  return date.toISOString().replace('T', ' ').replace('.000Z', ' utc');
+}
+
+async function sharePack(rawArgs, cwd = process.cwd(), options = {}) {
+  const parsed = parsePackShareArgs(rawArgs);
+  const deps = options.deps || {};
+  const print = options.print || console.log;
+
+  if (parsed.mode === 'plain') {
+    print(registryUrl(`/packs/${encodeURIComponent(parsed.slug)}`, deps));
+    print(`mint a personal link with: atris pack share ${parsed.slug} --for "<Name>"`);
     return 0;
   }
 
-  const name = sanitizePersonalizationName(forName);
-  if (!name) {
-    throw new Error(
-      `--for "${forName}" is not a name the share page will display, so the link would render as if it were plain. `
-      + `use letters, spaces and ' . - (no < > & " \` \\ /), at least one letter, up to ${PERSONALIZATION_MAX_LENGTH} characters.`,
-    );
+  if (parsed.mode === 'revoke') {
+    await revokePackShares(parsed.slug, deps);
+    print('every outstanding link is now dead. sharing again mints fresh links.');
+    return 0;
   }
-  console.log(`${base}?for=${encodeURIComponent(name)}`);
-  console.log(
-    name === forName
-      ? `personalized for ${name}`
-      : `personalized for ${name} (trimmed from "${forName}" to match what the page will show)`,
+
+  try {
+    const result = await mintPackShare(
+      parsed.slug,
+      parsed.recipientLabel,
+      parsed.expiresInDays,
+      deps,
+    );
+    print(result.shareUrl);
+    print(`expires at ${formatShareExpiry(result.expiresAt)}`);
+    return 0;
+  } catch (error) {
+    const publicPack = await registryConfirmsPublicPack(parsed.slug, deps);
+    const fallbackUrl = publicPack
+      ? legacyPersonalizedShareUrl(parsed.slug, parsed.recipientLabel, deps)
+      : null;
+    if (!fallbackUrl) throw error;
+    print(fallbackUrl);
+    print('signed link minting failed, so this public pack is using a personal public link with no expiry.');
+    return 0;
+  }
+}
+
+function browseStarValue(item, payload, slug) {
+  const manifest = packManifestFromItem(item);
+  const summary = payload && payload.summaries && payload.summaries[slug];
+  const mapped = payload && payload.stars && payload.stars[slug];
+  const candidates = [
+    item && item.stars,
+    item && item.starCount,
+    manifest.stars,
+    manifest.starCount,
+    summary && summary.stars,
+    summary && summary.starCount,
+    mapped,
+  ];
+  for (const candidate of candidates) {
+    if (Number.isFinite(candidate)) return Number(candidate);
+    if (candidate && typeof candidate === 'object' && Number.isFinite(candidate.count)) {
+      return Number(candidate.count);
+    }
+  }
+  return null;
+}
+
+function cleanTableCell(value, fallback, maxLength) {
+  const clean = String(value === undefined || value === null || value === '' ? fallback : value)
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (clean.length <= maxLength) return clean;
+  return `${clean.slice(0, Math.max(1, maxLength - 3))}...`;
+}
+
+function packBrowseRows(payload, { mine = false, limit = PACK_BROWSE_LIMIT } = {}) {
+  return registryPackItems(payload).slice(0, limit).map((item) => {
+    const manifest = packManifestFromItem(item);
+    return {
+      slug: cleanTableCell(manifest.slug, 'unknown', 40),
+      title: cleanTableCell(manifest.title || manifest.name, manifest.slug || 'untitled', 42),
+      version: cleanTableCell(manifest.version, 'unknown', 20),
+      ...(mine
+        ? { visibility: cleanTableCell(manifest.visibility, 'public', 10) }
+        : {}),
+      stars: browseStarValue(item, payload, manifest.slug),
+    };
+  });
+}
+
+function formatPackBrowseTable(payload, options = {}) {
+  const mine = Boolean(options.mine);
+  const rows = packBrowseRows(payload, {
+    mine,
+    limit: options.limit || PACK_BROWSE_LIMIT,
+  });
+  if (!rows.length) return '';
+
+  const showStars = rows.some((row) => row.stars !== null);
+  const columns = [
+    { key: 'slug', label: 'slug' },
+    { key: 'title', label: 'title' },
+    { key: 'version', label: 'version' },
+    ...(mine ? [{ key: 'visibility', label: 'visibility' }] : []),
+    ...(showStars ? [{ key: 'stars', label: 'stars' }] : []),
+  ];
+  const widths = columns.map((column) => Math.max(
+    column.label.length,
+    ...rows.map((row) => String(row[column.key] === null ? '-' : row[column.key]).length),
+  ));
+  const render = (row) => columns
+    .map((column, index) => {
+      const value = row[column.key] === null ? '-' : String(row[column.key]);
+      return index === columns.length - 1 ? value : value.padEnd(widths[index]);
+    })
+    .join('  ');
+  return [
+    render(Object.fromEntries(columns.map((column) => [column.key, column.label]))),
+    ...rows.map(render),
+  ].join('\n');
+}
+
+async function browsePacks(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  const mine = takeFlag(args, '--mine');
+  if (args.length) throw new Error(`unknown pack browse argument: ${args.join(' ')}`);
+
+  const deps = options.deps || {};
+  const print = options.print || console.log;
+  const payload = await requestRegistryJson(
+    `/api/pack/registry${mine ? '?scope=mine' : ''}`,
+    {
+      ...(mine ? { authPurpose: 'browse your packs' } : {}),
+      unreachableMessage: 'could not browse pack registry. check your connection and try again.',
+      invalidMessage: 'pack registry returned an invalid pack listing',
+    },
+    deps,
   );
+  if (!Array.isArray(payload) && !Array.isArray(payload.packs)) {
+    throw new Error('pack registry returned an invalid pack listing');
+  }
+
+  const items = registryPackItems(payload);
+  const table = formatPackBrowseTable(payload, { mine });
+  if (!table) {
+    print(mine ? 'no packs found for your account.' : 'no public packs found.');
+    print('publish one with: atris pack publish --push');
+    return 0;
+  }
+  print(table);
+  if (items.length > PACK_BROWSE_LIMIT) print(`showing the first ${PACK_BROWSE_LIMIT} packs.`);
+  const firstManifest = packManifestFromItem(items[0]);
+  if (firstManifest.slug) print(`install with: atris pack install ${firstManifest.slug}`);
   return 0;
 }
 
@@ -914,6 +1212,7 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   const slug = takeValue(args, '--slug');
   const author = takeValue(args, '--author');
   const notes = takeValue(args, '--notes') || '';
+  const visibility = takeValue(args, '--visibility');
   const out = takeValue(args, '--out');
   const includeLogs = takeFlag(args, '--include-logs');
   const dryRun = takeFlag(args, '--dry-run');
@@ -936,6 +1235,7 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
     slug,
     author,
     notes,
+    visibility,
     bump: major ? 'major' : minor ? 'minor' : 'patch',
     fallbackSlug: path.basename(sourceDir),
   });
@@ -3315,7 +3615,8 @@ async function run(argv = []) {
     if (subcommand === 'install') return await installPack(args);
     if (subcommand === 'run') return await runPack(args);
     if (subcommand === 'runs') return runsPack(args);
-    if (subcommand === 'share') return sharePack(args);
+    if (subcommand === 'share') return await sharePack(args);
+    if (subcommand === 'browse') return await browsePacks(args);
     if (subcommand === 'pull') return await pullPack(args);
     if (subcommand === 'status') return statusPack(args);
     if (subcommand === 'update') return await updatePack(args);
@@ -3337,7 +3638,12 @@ module.exports = {
   craftPack,
   installPack,
   runPack,
+  sharePack,
+  browsePacks,
   sanitizePersonalizationName,
+  parsePackShareArgs,
+  formatShareExpiry,
+  formatPackBrowseTable,
   pullPack,
   updatePack,
   listInstalledPacks,

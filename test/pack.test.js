@@ -7,7 +7,14 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { readZipFile, writeZipFile, ZIP_LIMITS } = require('../lib/zip');
-const { comparePackVersions, installPack, listInstalledPacks, pullPack, updatePack } = require('../commands/pack');
+const {
+  buildManifest,
+  comparePackVersions,
+  installPack,
+  listInstalledPacks,
+  pullPack,
+  updatePack,
+} = require('../commands/pack');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -115,6 +122,97 @@ test('pack publish --author writes the author into the manifest', () => {
     assert.equal(install.status, 0, `stdout:\n${install.stdout}\nstderr:\n${install.stderr}`);
     const manifest = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'));
     assert.equal(manifest.author, 'Ada Lovelace');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('new pack manifests default to unlisted visibility', () => {
+  const manifest = buildManifest(null, {
+    slug: 'new-pack',
+    author: 'Ada Lovelace',
+    notes: '',
+    visibility: null,
+    bump: 'patch',
+    fallbackSlug: 'new-pack',
+  });
+  assert.equal(manifest.visibility, 'unlisted');
+});
+
+test('pack publish preserves omitted and existing visibility unless explicitly changed', () => {
+  const dir = makeTempDir();
+  try {
+    const atrisDir = seedAtris(dir);
+    const manifestPath = path.join(atrisDir, 'pack.json');
+    fs.writeFileSync(manifestPath, `${JSON.stringify(sampleManifest({
+      slug: 'visibility-pack',
+      author: 'Ada Lovelace',
+    }), null, 2)}\n`);
+
+    const legacyPublish = runCli(['pack', 'publish', '--dir', 'atris'], { cwd: dir });
+    assert.equal(legacyPublish.status, 0, `stdout:\n${legacyPublish.stdout}\nstderr:\n${legacyPublish.stderr}`);
+    const legacyManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.equal(Object.prototype.hasOwnProperty.call(legacyManifest, 'visibility'), false);
+
+    legacyManifest.visibility = 'private';
+    fs.writeFileSync(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
+    const privatePublish = runCli(['pack', 'publish', '--dir', 'atris'], { cwd: dir });
+    assert.equal(privatePublish.status, 0, `stdout:\n${privatePublish.stdout}\nstderr:\n${privatePublish.stderr}`);
+    assert.equal(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).visibility, 'private');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack publish --visibility writes the disk and registry manifests', () => {
+  const dir = makeTempDir();
+  try {
+    const atrisDir = seedAtris(dir);
+    const zipPath = path.join(dir, 'public-pack.zip');
+    const publish = runCli([
+      'pack',
+      'publish',
+      '--dir',
+      'atris',
+      '--slug',
+      'public-pack',
+      '--author',
+      'Ada Lovelace',
+      '--visibility',
+      'public',
+      '--out',
+      zipPath,
+    ], { cwd: dir });
+    assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
+
+    const diskManifest = JSON.parse(fs.readFileSync(path.join(atrisDir, 'pack.json'), 'utf8'));
+    const zipManifest = JSON.parse(
+      readZipFile(zipPath).find((entry) => entry.name === 'pack.json').data.toString('utf8'),
+    );
+    assert.equal(diskManifest.visibility, 'public');
+    assert.equal(zipManifest.visibility, 'public');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack publish rejects unknown visibility without writing pack.json', () => {
+  const dir = makeTempDir();
+  try {
+    const atrisDir = seedAtris(dir);
+    const publish = runCli([
+      'pack',
+      'publish',
+      '--dir',
+      'atris',
+      '--slug',
+      'invalid-visibility',
+      '--visibility',
+      'friends',
+    ], { cwd: dir });
+    assert.equal(publish.status, 1, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
+    assert.match(publish.stderr, /visibility must be public, unlisted, or private/);
+    assert.equal(fs.existsSync(path.join(atrisDir, 'pack.json')), false);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2082,3 +2180,12 @@ for (const sub of ['list', 'status', 'pull', 'update', 'show', 'inspect', 'docto
     });
   }
 }
+
+test('pack help lists visibility, signed sharing, revocation, and browse', () => {
+  const result = runCli(['pack', 'help'], { cwd: repoRoot });
+  assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.match(result.stdout, /--visibility public\|unlisted\|private/);
+  assert.match(result.stdout, /pack share <slug> --for "<Name>" \[--days 30\]/);
+  assert.match(result.stdout, /pack share <slug> --revoke/);
+  assert.match(result.stdout, /pack browse \[--mine\]/);
+});

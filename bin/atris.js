@@ -590,7 +590,7 @@ function showHelp() {
   console.log('  browse [query]     - Discover workspace templates');
   console.log('  fork <template>    - Clone a template into a new workspace');
   console.log('  publish            - Share your workspace as a template');
-  console.log('  pack               - Publish or install an Atris brain zip');
+  console.log('  pack               - Craft, publish, share, browse, or install an Atris brain zip');
   console.log('  sleep [business|member] [--loop id] - Pause compute or flip a member switch');
   console.log('  wake [business|member] [--loop id]  - Resume compute or flip a member switch');
   console.log('');
