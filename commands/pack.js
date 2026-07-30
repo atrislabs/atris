@@ -6,7 +6,7 @@ const path = require('path');
 const { isUtf8 } = require('buffer');
 const { createHash } = require('crypto');
 const { spawnSync } = require('child_process');
-const { apiRequestJson, getAppBaseUrl, httpRequest } = require('../utils/api');
+const { apiRequestJson, getApiBaseUrl, getAppBaseUrl, httpRequest } = require('../utils/api');
 const { loadCredentials, performTokenRefresh } = require('../utils/auth');
 const { createZipBuffer, readZipBuffer, ZIP_LIMITS } = require('../lib/zip');
 const { craftPack } = require('./pack-craft');
@@ -162,6 +162,7 @@ function showHelp() {
   console.log('       atris pack share <slug> --for "<Name>" [--days 30]');
   console.log('       atris pack share <slug> --revoke');
   console.log('       atris pack browse [--mine]');
+  console.log('       atris pack sales');
   console.log('       atris pack pull [<slug>] [--dir <path>] [--allow-downgrade]');
   console.log('       atris pack status [--dir <path>]');
   console.log('       atris pack update [<dir>] [--allow-downgrade]');
@@ -1105,6 +1106,112 @@ async function browsePacks(rawArgs, cwd = process.cwd(), options = {}) {
   if (items.length > PACK_BROWSE_LIMIT) print(`showing the first ${PACK_BROWSE_LIMIT} packs.`);
   const firstManifest = packManifestFromItem(items[0]);
   if (firstManifest.slug) print(`install with: atris pack install ${firstManifest.slug}`);
+  return 0;
+}
+
+// ── pack sales ──────────────────────────────────────────────────────────────
+const PACK_SALES_LOGIN_NUDGE = 'not logged in. run atris login first to view pack sales.';
+
+function packSalesUrl(apiBaseUrl = getApiBaseUrl()) {
+  return `${String(apiBaseUrl || '').replace(/\/+$/, '')}/pack/purchases/sales`;
+}
+
+function formatSalesDollars(priceCents) {
+  const cents = Math.round(Number(priceCents));
+  if (!Number.isFinite(cents)) return '$0';
+  const sign = cents < 0 ? '-' : '';
+  const absoluteCents = Math.abs(cents);
+  const dollars = Math.floor(absoluteCents / 100).toLocaleString('en-US');
+  const remainder = absoluteCents % 100;
+  return `${sign}$${dollars}${remainder ? `.${String(remainder).padStart(2, '0')}` : ''}`;
+}
+
+function formatPackSaleDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
+function formatPackSalesTable(sales) {
+  const rows = sales.map((sale) => ({
+    pack: cleanTableCell(sale && sale.slug, 'unknown', 40),
+    buyer: cleanTableCell(sale && sale.buyer, 'unknown', 40),
+    price: formatSalesDollars(sale && sale.price_cents),
+    date: formatPackSaleDate(sale && sale.granted_at),
+  }));
+  if (!rows.length) return '';
+
+  const columns = [
+    { key: 'pack', label: 'pack' },
+    { key: 'buyer', label: 'buyer' },
+    { key: 'price', label: 'price' },
+    { key: 'date', label: 'date' },
+  ];
+  const widths = columns.map((column) => Math.max(
+    column.label.length,
+    ...rows.map((row) => row[column.key].length),
+  ));
+  const render = (row) => columns
+    .map((column, index) => (
+      index === columns.length - 1
+        ? row[column.key]
+        : row[column.key].padEnd(widths[index])
+    ))
+    .join('  ');
+  return [
+    render(Object.fromEntries(columns.map((column) => [column.key, column.label]))),
+    ...rows.map(render),
+  ].join('\n');
+}
+
+async function showPackSales(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  if (args.length) throw new Error(`unknown pack sales argument: ${args.join(' ')}`);
+
+  const deps = options.deps || {};
+  const print = options.print || console.log;
+  const request = deps.httpRequest || httpRequest;
+  const authHeaders = requiredAuthHeaders(deps, 'view pack sales');
+
+  let response;
+  try {
+    const apiBaseUrl = (deps.getApiBaseUrl || getApiBaseUrl)();
+    response = await request(packSalesUrl(apiBaseUrl), {
+      method: 'GET',
+      timeoutMs: REGISTRY_TIMEOUT_MS,
+      headers: {
+        Accept: 'application/json',
+        ...authHeaders,
+      },
+    });
+  } catch {
+    throw new Error('could not load pack sales. check your connection and try again.');
+  }
+
+  if (response.status === 401) throw new Error(PACK_SALES_LOGIN_NUDGE);
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`could not load pack sales (status ${response.status}).`);
+  }
+
+  const parsed = parseJsonBody(response.body);
+  if (!Array.isArray(parsed.data)) throw new Error('pack sales returned an invalid response.');
+  const sales = parsed.data;
+  if (!sales.length) {
+    print('No sales yet.');
+    print('set priceCents in pack.json, then run: atris pack publish --visibility public --push');
+    return 0;
+  }
+
+  const totalCents = sales.reduce((total, sale) => {
+    const cents = Number(sale && sale.price_cents);
+    return total + (Number.isFinite(cents) ? cents : 0);
+  }, 0);
+  print(`${formatSalesDollars(totalCents)} earned across ${sales.length} ${sales.length === 1 ? 'sale' : 'sales'}.`);
+  print(formatPackSalesTable(sales));
   return 0;
 }
 
@@ -3617,6 +3724,7 @@ async function run(argv = []) {
     if (subcommand === 'runs') return runsPack(args);
     if (subcommand === 'share') return await sharePack(args);
     if (subcommand === 'browse') return await browsePacks(args);
+    if (subcommand === 'sales') return await showPackSales(args);
     if (subcommand === 'pull') return await pullPack(args);
     if (subcommand === 'status') return statusPack(args);
     if (subcommand === 'update') return await updatePack(args);
@@ -3640,10 +3748,14 @@ module.exports = {
   runPack,
   sharePack,
   browsePacks,
+  showPackSales,
   sanitizePersonalizationName,
   parsePackShareArgs,
   formatShareExpiry,
   formatPackBrowseTable,
+  packSalesUrl,
+  formatSalesDollars,
+  formatPackSalesTable,
   pullPack,
   updatePack,
   listInstalledPacks,

@@ -4,11 +4,15 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const {
   browsePacks,
+  formatPackSalesTable,
   formatPackBrowseTable,
+  formatSalesDollars,
   formatShareExpiry,
+  packSalesUrl,
   parsePackShareArgs,
   sanitizePersonalizationName,
   sharePack,
+  showPackSales,
 } = require('../commands/pack');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -309,4 +313,125 @@ test('pack browse table caps output at 50 rows with no pagination', () => {
   assert.equal(lines.length, 51);
   assert.match(lines[50], /pack-49/);
   assert.doesNotMatch(table, /pack-50/);
+});
+
+test('pack sales formats cents as compact dollar amounts', () => {
+  assert.equal(formatSalesDollars(1200), '$12');
+  assert.equal(formatSalesDollars(1250), '$12.50');
+  assert.equal(formatSalesDollars(99), '$0.99');
+  assert.equal(formatSalesDollars(1234567), '$12,345.67');
+});
+
+test('pack sales builds its backend URL without a doubled slash', () => {
+  assert.equal(
+    packSalesUrl('https://api.example.com/api/'),
+    'https://api.example.com/api/pack/purchases/sales',
+  );
+});
+
+test('pack sales table shows pack, masked buyer, dollar price, and short date', () => {
+  const table = formatPackSalesTable([
+    {
+      slug: 'design-brain',
+      buyer: 'a***@example.com',
+      price_cents: 1200,
+      granted_at: '2026-07-30T19:45:00Z',
+    },
+    {
+      slug: 'sales-playbook',
+      buyer: 'b***@example.com',
+      price_cents: 250,
+      granted_at: '2026-07-29T08:00:00Z',
+    },
+  ]);
+
+  assert.match(table, /^pack\s+buyer\s+price\s+date/m);
+  assert.match(table, /design-brain\s+a\*\*\*@example\.com\s+\$12\s+Jul 30/);
+  assert.match(table, /sales-playbook\s+b\*\*\*@example\.com\s+\$2\.50\s+Jul 29/);
+});
+
+test('pack sales fetches with bearer auth and prints total before the table', async () => {
+  const calls = [];
+  const output = [];
+  const deps = {
+    getApiBaseUrl: () => 'https://api.example.com/api',
+    loadCredentials: () => ({ token: 'seller-token' }),
+    httpRequest: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse(200, [
+        { slug: 'alpha-pack', buyer: 'a***@mail.com', price_cents: 500, granted_at: '2026-07-30T10:00:00Z' },
+        { slug: 'beta-pack', buyer: 'b***@mail.com', price_cents: 650, granted_at: '2026-07-29T10:00:00Z' },
+        { slug: 'tiny-pack', buyer: 'c***@mail.com', price_cents: 50, granted_at: '2026-07-28T10:00:00Z' },
+      ]);
+    },
+  };
+
+  const result = await showPackSales([], repoRoot, {
+    deps,
+    print: (line) => output.push(line),
+  });
+
+  assert.equal(result, 0);
+  assert.equal(calls[0].url, 'https://api.example.com/api/pack/purchases/sales');
+  assert.equal(calls[0].options.method, 'GET');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer seller-token');
+  assert.equal(output[0], '$12 earned across 3 sales.');
+  assert.match(output[1], /^pack\s+buyer\s+price\s+date/m);
+});
+
+test('pack sales prints the exact zero state and pricing nudge', async () => {
+  const output = [];
+  const result = await showPackSales([], repoRoot, {
+    deps: {
+      getApiBaseUrl: () => 'https://api.example.com/api',
+      loadCredentials: () => ({ token: 'seller-token' }),
+      httpRequest: async () => jsonResponse(200, []),
+    },
+    print: (line) => output.push(line),
+  });
+
+  assert.equal(result, 0);
+  assert.deepEqual(output, [
+    'No sales yet.',
+    'set priceCents in pack.json, then run: atris pack publish --visibility public --push',
+  ]);
+});
+
+test('pack sales gives the same login nudge for missing auth and a 401', async () => {
+  const expected = 'not logged in. run atris login first to view pack sales.';
+  await assert.rejects(
+    () => showPackSales([], repoRoot, {
+      deps: { loadCredentials: () => null },
+      print: () => {},
+    }),
+    (error) => error.message === expected,
+  );
+  await assert.rejects(
+    () => showPackSales([], repoRoot, {
+      deps: {
+        getApiBaseUrl: () => 'https://api.example.com/api',
+        loadCredentials: () => ({ token: 'expired-token' }),
+        httpRequest: async () => jsonResponse(401, { error: 'expired' }),
+      },
+      print: () => {},
+    }),
+    (error) => error.message === expected,
+  );
+});
+
+test('pack help lists sales with share and browse', () => {
+  const result = spawnSync(process.execPath, [cliPath, 'pack', '--help'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    },
+  });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.match(result.stdout, /atris pack share/);
+  assert.match(result.stdout, /atris pack browse/);
+  assert.match(result.stdout, /atris pack sales/);
 });
