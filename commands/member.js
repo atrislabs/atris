@@ -8,6 +8,24 @@ const { apiRequestJson } = require('../utils/api');
 const { runAliveTick } = require('../lib/member-alive');
 const { defaultObjectiveRunner } = require('../lib/default-runner');
 
+function findWorkspaceBusinessId(startDir = process.cwd()) {
+  let dir = path.resolve(startDir);
+  while (true) {
+    const file = path.join(dir, '.atris', 'business.json');
+    if (fs.existsSync(file)) {
+      try {
+        return JSON.parse(fs.readFileSync(file, 'utf8')).business_id || null;
+      } catch (error) {
+        console.warn(`Warning: could not parse ${file}: ${error.message}`);
+        return null;
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
 function todayLogName() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.md`;
@@ -4335,7 +4353,11 @@ async function memberPush(name) {
     console.log(`Pushing member "${name}" to cloud (creating new agent)...`);
   }
 
-  const result = await apiRequestJson('/agent/import-member', {
+  const businessId = findWorkspaceBusinessId();
+  const endpoint = businessId
+    ? `/agent/import-member?business_id=${encodeURIComponent(businessId)}`
+    : '/agent/import-member';
+  const result = await apiRequestJson(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'text/markdown' },
     body: content,
@@ -4361,6 +4383,7 @@ async function memberPush(name) {
 
   const action = existingAgentId ? 'Updated' : 'Created';
   console.log(`${action} successfully. Agent ID: ${agentId}`);
+  if (businessId) console.log(`Bound to business ${businessId}`);
 }
 
 // --- PULL subcommand ---
@@ -9092,4 +9115,11 @@ async function memberCommand(subcommand, ...args) {
   }
 }
 
-module.exports = { memberCommand, findAllMembers, parseFrontmatter, wakeBootLines, buildMemberRunStartArgs };
+module.exports = {
+  memberCommand,
+  findAllMembers,
+  findWorkspaceBusinessId,
+  parseFrontmatter,
+  wakeBootLines,
+  buildMemberRunStartArgs,
+};
