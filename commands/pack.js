@@ -32,6 +32,7 @@ const PACK_VISIBILITIES = new Set(['public', 'unlisted', 'private']);
 const DEFAULT_SHARE_DAYS = 30;
 const MAX_SHARE_DAYS = 365;
 const MAX_SHARE_RECIPIENT_LENGTH = 120;
+const SHARE_NONCE_RULE = /^[A-Za-z0-9_-]{22}$/;
 const PACK_BROWSE_LIMIT = 50;
 
 // The web registry caps every upload (atrisos-web app/api/pack/registry/route.ts).
@@ -160,6 +161,8 @@ function showHelp() {
   console.log('       atris pack run <slug|dir> [--dir <target>] [--input <file>] [--cloud] [--force] [--trust] [--grant <capability>]');
   console.log('       atris pack runs [--dir <receipt-dir>] [--limit <n>] [--json]');
   console.log('       atris pack share <slug> --for "<Name>" [--days 30]');
+  console.log('       atris pack share <slug> --list');
+  console.log('       atris pack share <slug> --revoke <nonce>');
   console.log('       atris pack share <slug> --revoke');
   console.log('       atris pack browse [--mine]');
   console.log('       atris pack sales');
@@ -220,9 +223,14 @@ function takeValues(args, name) {
   return values;
 }
 
-function takeFlag(args, name) {
+function takeFlag(args, name, options = {}) {
   const index = args.indexOf(name);
   if (index === -1) return false;
+  const next = args[index + 1];
+  if (options.optionalValue && next !== undefined && !String(next).startsWith('--')) {
+    args.splice(index, 2);
+    return next;
+  }
   args.splice(index, 1);
   return true;
 }
@@ -797,17 +805,32 @@ function parsePackShareArgs(rawArgs) {
   const args = [...rawArgs];
   const forName = takeValue(args, '--for');
   const daysValue = takeValue(args, '--days');
-  const revoke = takeFlag(args, '--revoke');
+  const list = takeFlag(args, '--list');
+  const revoke = takeFlag(args, '--revoke', { optionalValue: true });
   const slug = args.shift();
   if (!slug) throw new Error('pack share needs a slug: atris pack share <slug> --for "<Name>"');
   if (args.length) throw new Error(`unknown pack share argument: ${args.join(' ')}`);
   assertPublishableSlug(slug);
 
-  if (revoke) {
+  if (list) {
+    if (forName !== null || daysValue !== null || revoke !== false) {
+      throw new Error('pack share --list cannot be combined with --for, --days, or --revoke');
+    }
+    return { mode: 'list', slug };
+  }
+
+  if (revoke !== false) {
     if (forName !== null || daysValue !== null) {
       throw new Error('pack share --revoke cannot be combined with --for or --days');
     }
-    return { mode: 'revoke', slug };
+    if (typeof revoke === 'string' && !SHARE_NONCE_RULE.test(revoke)) {
+      throw new Error('--revoke link id must be a 22-character base64url value');
+    }
+    return {
+      mode: 'revoke',
+      slug,
+      ...(typeof revoke === 'string' ? { nonce: revoke } : {}),
+    };
   }
 
   if (forName === null) {
@@ -862,7 +885,9 @@ async function requestRegistryJson(pathname, requestOptions = {}, deps = {}) {
   }
 
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(responseErrorText(response, `registry request failed with status ${response.status}`));
+    const error = new Error(responseErrorText(response, `registry request failed with status ${response.status}`));
+    error.status = response.status;
+    throw error;
   }
   const parsed = parseJsonBody(response.body);
   if (!parsed.data || typeof parsed.data !== 'object') {
@@ -893,7 +918,26 @@ async function mintPackShare(slug, recipientLabel, expiresInDays, deps = {}) {
   return {
     shareUrl: data.shareUrl,
     expiresAt: Number(data.expiresAt),
+    ...(typeof data.nonce === 'string' && SHARE_NONCE_RULE.test(data.nonce)
+      ? { nonce: data.nonce }
+      : {}),
   };
+}
+
+async function listPackShares(slug, deps = {}) {
+  const data = await requestRegistryJson(
+    `/api/pack/registry/${encodeURIComponent(slug)}/share`,
+    {
+      authPurpose: 'list pack share links',
+      unreachableMessage: 'could not list pack share links. check your connection and try again.',
+      invalidMessage: 'pack share links returned an invalid response',
+    },
+    deps,
+  );
+  if (!Array.isArray(data.links)) {
+    throw new Error('pack share links returned an invalid response');
+  }
+  return data.links;
 }
 
 async function revokePackShares(slug, deps = {}) {
@@ -904,6 +948,20 @@ async function revokePackShares(slug, deps = {}) {
       authPurpose: 'revoke pack share links',
       sendOrigin: true,
       unreachableMessage: 'could not revoke pack share links. check your connection and try again.',
+    },
+    deps,
+  );
+}
+
+async function revokePackShare(slug, nonce, deps = {}) {
+  return requestRegistryJson(
+    `/api/pack/registry/${encodeURIComponent(slug)}/share`,
+    {
+      method: 'DELETE',
+      authPurpose: 'revoke a pack share link',
+      sendOrigin: true,
+      body: { nonce },
+      unreachableMessage: 'could not revoke that pack share link. check your connection and try again.',
     },
     deps,
   );
@@ -952,11 +1010,44 @@ function legacyPersonalizedShareUrl(slug, recipientLabel, deps = {}) {
 }
 
 function formatShareExpiry(expiresAt) {
-  const value = Number(expiresAt);
-  const milliseconds = value < 1000000000000 ? value * 1000 : value;
-  const date = new Date(milliseconds);
+  if (expiresAt === undefined || expiresAt === null || expiresAt === '') return 'unknown';
+  const numeric = Number(expiresAt);
+  const date = Number.isFinite(numeric)
+    ? new Date(numeric < 1000000000000 ? numeric * 1000 : numeric)
+    : new Date(expiresAt);
   if (Number.isNaN(date.getTime())) return 'unknown';
   return date.toISOString().replace('T', ' ').replace('.000Z', ' utc');
+}
+
+function formatPackShareLinksTable(links) {
+  if (!Array.isArray(links) || !links.length) return '';
+  const rows = links.map((link) => ({
+    label: cleanTableCell(link && link.label, 'unlabeled', 40),
+    expires: formatShareExpiry(link && link.expiresAt),
+    state: link && link.revoked ? 'revoked' : 'active',
+    nonce: cleanTableCell(link && link.nonce, 'unknown', 64),
+  }));
+  const columns = [
+    { key: 'label', label: 'label' },
+    { key: 'expires', label: 'expires' },
+    { key: 'state', label: 'state' },
+    { key: 'nonce', label: 'nonce' },
+  ];
+  const widths = columns.map((column) => Math.max(
+    column.label.length,
+    ...rows.map((row) => row[column.key].length),
+  ));
+  const render = (row) => columns
+    .map((column, index) => (
+      index === columns.length - 1
+        ? row[column.key]
+        : row[column.key].padEnd(widths[index])
+    ))
+    .join('  ');
+  return [
+    render(Object.fromEntries(columns.map((column) => [column.key, column.label]))),
+    ...rows.map(render),
+  ].join('\n');
 }
 
 async function sharePack(rawArgs, cwd = process.cwd(), options = {}) {
@@ -970,7 +1061,26 @@ async function sharePack(rawArgs, cwd = process.cwd(), options = {}) {
     return 0;
   }
 
+  if (parsed.mode === 'list') {
+    const links = await listPackShares(parsed.slug, deps);
+    const table = formatPackShareLinksTable(links);
+    print(table || 'no share links recorded for this pack.');
+    return 0;
+  }
+
   if (parsed.mode === 'revoke') {
+    if (parsed.nonce) {
+      try {
+        await revokePackShare(parsed.slug, parsed.nonce, deps);
+      } catch (error) {
+        if (error && error.status === 404) {
+          throw new Error(`no link found with that id. run: atris pack share ${parsed.slug} --list`);
+        }
+        throw error;
+      }
+      print('that link is now dead. others keep working.');
+      return 0;
+    }
     await revokePackShares(parsed.slug, deps);
     print('every outstanding link is now dead. sharing again mints fresh links.');
     return 0;
@@ -984,6 +1094,9 @@ async function sharePack(rawArgs, cwd = process.cwd(), options = {}) {
       deps,
     );
     print(result.shareUrl);
+    if (result.nonce) {
+      print(`take this one back later with: atris pack share ${parsed.slug} --revoke ${result.nonce}`);
+    }
     print(`expires at ${formatShareExpiry(result.expiresAt)}`);
     return 0;
   } catch (error) {
@@ -3752,6 +3865,7 @@ module.exports = {
   sanitizePersonalizationName,
   parsePackShareArgs,
   formatShareExpiry,
+  formatPackShareLinksTable,
   formatPackBrowseTable,
   packSalesUrl,
   formatSalesDollars,
