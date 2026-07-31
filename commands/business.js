@@ -6,6 +6,12 @@ const { apiRequestJson } = require('../utils/api');
 const { syncBusinessCanonical, ensureWorkspaceStateFiles, ensureBusinessRootAgentAdapters } = require('./sync');
 const { ensureContextScaffold, writeWikiStatus, appendWikiLog } = require('../lib/wiki');
 const { writeRuntimeReceipt } = require('../lib/runtime-bootstrap');
+const {
+  SIMULATE_USAGE,
+  buildSimulationPlan,
+  parseSimulationArgs,
+  renderDryRun,
+} = require('../lib/business-simulate');
 
 function getBusinessConfigPath() {
   const home = require('os').homedir();
@@ -2386,6 +2392,7 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
     options.here ||
     Boolean(options.root)
   );
+  let workspaceRoot = null;
 
   // Scaffold legacy local directory if in an atris project
   const atrisDir = !shouldCreateCanonicalWorkspace ? findAtrisDir() : null;
@@ -2405,7 +2412,7 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
       console.log(`  Local scaffold: ${bizDir}/`);
     }
   } else if (shouldCreateCanonicalWorkspace) {
-    const workspaceRoot = resolveWorkspaceRoot(biz.slug, options);
+    workspaceRoot = resolveWorkspaceRoot(biz.slug, options);
     const scaffold = createCanonicalBusinessWorkspace(workspaceRoot, {
       business_id: biz.id,
       workspace_id: biz.workspace_id,
@@ -2446,10 +2453,10 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
   console.log(`  Agent:     ${biz.agent_id || '(none)'}`);
   console.log(`  Dashboard: https://atris.ai/dashboard/gm/${biz.id}`);
   if (shouldCreateCanonicalWorkspace) {
-    const workspaceRoot = resolveWorkspaceRoot(biz.slug, options);
     console.log(renderBusinessCreatedNextSteps(biz, workspaceRoot));
   }
   console.log('');
+  return { business: biz, workspaceRoot };
 }
 
 async function createBusiness(name, ...flags) {
@@ -2875,6 +2882,96 @@ function findAtrisDir() {
   return null;
 }
 
+function printBusinessSimulateHelp() {
+  console.log(SIMULATE_USAGE);
+  console.log('');
+  console.log('Creates a business workspace, four simulation members, their missions, and atris/ENDGAME.md.');
+  console.log('Use --dry-run to preview every simulation file without cloud calls or writes.');
+}
+
+async function simulateBusiness(args = [], dependencies = {}) {
+  const options = parseSimulationArgs(args);
+  const createdAt = new Date().toISOString();
+  const preview = buildSimulationPlan({
+    idea: options.idea,
+    businessName: options.businessName,
+    roleNames: options.roleNames,
+    createdAt,
+  });
+
+  if (options.dryRun) {
+    console.log(renderDryRun(preview));
+    return preview;
+  }
+
+  const init = dependencies.initBusinessWorkspace || initBusinessWorkspace;
+  const runMemberCommand = dependencies.memberCommand || require('./member').memberCommand;
+  const initialized = await init(options.businessName);
+  const business = initialized?.business || {};
+  const workspaceRoot = initialized?.workspaceRoot
+    || resolveWorkspaceRoot(business.slug || options.businessSlug, {});
+  const plan = buildSimulationPlan({
+    idea: options.idea,
+    businessName: business.name || options.businessName,
+    businessSlug: business.slug || options.businessSlug,
+    roleNames: options.roleNames,
+    createdAt,
+    workspacePath: workspaceRoot,
+  });
+
+  const businessJson = path.join(workspaceRoot, '.atris', 'business.json');
+  if (!fs.existsSync(businessJson)) {
+    throw new Error(`Business init did not create the expected workspace: ${workspaceRoot}`);
+  }
+
+  const originalCwd = process.cwd();
+  try {
+    process.chdir(workspaceRoot);
+
+    const endgame = plan.files.find((file) => file.kind === 'endgame');
+    fs.writeFileSync(path.join(workspaceRoot, endgame.path), endgame.content, 'utf8');
+
+    for (const role of plan.roles) {
+      const memberDir = path.join(workspaceRoot, 'atris', 'team', role.name);
+      const memberFile = path.join(memberDir, 'MEMBER.md');
+      if (!fs.existsSync(memberFile)) {
+        await runMemberCommand(
+          'create',
+          role.name,
+          `--role=${role.title}`,
+          `--description=${role.description}`,
+        );
+      } else {
+        console.log(`Using existing team/${role.name}/ scaffold from business init.`);
+      }
+
+      for (const directory of ['skills', 'tools', 'context', 'logs']) {
+        fs.mkdirSync(path.join(memberDir, directory), { recursive: true });
+      }
+
+      const roleFiles = plan.files.filter((file) => file.role?.name === role.name);
+      for (const file of roleFiles) {
+        fs.writeFileSync(path.join(workspaceRoot, file.path), file.content, 'utf8');
+      }
+
+      await runMemberCommand('push', role.name);
+    }
+  } finally {
+    process.chdir(originalCwd);
+  }
+
+  console.log('');
+  console.log('business simulation ready');
+  console.log(`workspace: ${workspaceRoot}`);
+  console.log('roster:');
+  for (const role of plan.roles) {
+    console.log(`  - ${role.name}: ${role.role}`);
+  }
+  console.log('next: open an agent session in the workspace and run the loop against atris/ENDGAME.md');
+  console.log('');
+  return plan;
+}
+
 
 async function quickstart() {
   console.log(`
@@ -2945,6 +3042,7 @@ function printBusinessHelp() {
   console.log('  init <name>          RECOMMENDED: create a business environment (cloud + local)');
   console.log('  workspace <name>     Alias for init');
   console.log('  create <name>        Cloud-only business record; add --workspace to also scaffold local');
+  console.log('  simulate <idea>      Create a business, four-role team, missions, and endgame loop');
   console.log('  add <slug>           Register an existing cloud business');
   console.log('  list                 Show registered businesses');
   console.log('  team [slug]          Show members, roles, and admin access');
@@ -2973,6 +3071,10 @@ async function businessCommand(subcommand, ...args) {
     printBusinessHelp();
     return;
   }
+  if (subcommand === 'simulate' && args.some(isHelpToken)) {
+    printBusinessSimulateHelp();
+    return;
+  }
   const nameTakingSubcommands = new Set(['create', 'new', 'init', 'workspace']);
   if (nameTakingSubcommands.has(subcommand) && args.some(isHelpToken)) {
     printBusinessHelp();
@@ -2994,6 +3096,9 @@ async function businessCommand(subcommand, ...args) {
     case 'init':
     case 'workspace':
       await initBusinessWorkspace(args[0], ...args.slice(1));
+      break;
+    case 'simulate':
+      await simulateBusiness(args);
       break;
     case 'list':
     case 'ls': {
