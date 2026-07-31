@@ -106,7 +106,7 @@ function certifyTask(dir, env, dbPath, {
   return task;
 }
 
-test('review auto-accepts small certified work and leaves big file-count work queued', () => {
+test('review is read-only for small and large certified work', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -130,22 +130,28 @@ test('review auto-accepts small certified work and leaves big file-count work qu
       },
     });
 
-    const review = runCli(['review'], { cwd: dir, env });
+    const review = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
     assert.equal(review.status, 0, review.stderr);
-    assert.match(review.stdout, /one landed on their own since you last looked/);
-    assert.match(review.stdout, new RegExp(`say yes: atris task accept ${big.display_id}`));
-    assert.doesNotMatch(review.stdout, new RegExp(`say yes: atris task accept ${small.display_id}`));
+    const payload = JSON.parse(review.stdout);
+    assert.deepEqual(payload.autoaccept, {
+      enabled: false,
+      read_only: true,
+      accepted_now: 0,
+      accepted_since_last_look: 0,
+      results: [],
+    });
+    assert.equal(payload.queue.counts.certified, 2);
+    assert.ok(payload.queue.items.some(item => item.display_id === small.display_id));
+    assert.ok(payload.queue.items.some(item => item.display_id === big.display_id));
 
-    const accepted = showTask(dir, env, small.display_id);
-    assert.equal(accepted.status, 'done');
-    assert.equal(accepted.metadata.accepted_by, 'auto (certified, small)');
-    assert.equal(accepted.metadata.auto_accepted_by, 'auto (certified, small)');
-    assert.equal(accepted.metadata.auto_accept_policy, 'review_autoaccept_certified_small');
-    assert.match(accepted.metadata.accepted_at, /^\d{4}-\d{2}-\d{2}T/);
+    const smallQueued = showTask(dir, env, small.display_id);
+    assert.equal(smallQueued.status, 'review');
+    assert.equal(smallQueued.review.approval_status, 'pending');
+    assert.equal(smallQueued.metadata.auto_accepted_by, undefined);
 
-    const queued = showTask(dir, env, big.display_id);
-    assert.equal(queued.status, 'review');
-    assert.equal(queued.review.approval_status, 'pending');
+    const bigQueued = showTask(dir, env, big.display_id);
+    assert.equal(bigQueued.status, 'review');
+    assert.equal(bigQueued.review.approval_status, 'pending');
   } finally {
     cleanupTempDir(dir);
   }
