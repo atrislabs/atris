@@ -22,6 +22,7 @@ test('deriveBusinessName returns at most three meaningful title-case words with 
   assert.equal(deriveBusinessName(IDEA), 'T-Shirt Brand Sunset');
   assert.equal(deriveBusinessName('build a neighborhood coffee subscription service'), 'Neighborhood Coffee Subscription');
   assert.equal(deriveBusinessName('the and for'), 'Business Simulation');
+  assert.equal(deriveBusinessName('espresso cart at farmers markets'), 'Espresso Cart Farmers');
   assert.equal(deriveBusinessName('!!!'), 'Business Simulation');
 });
 
