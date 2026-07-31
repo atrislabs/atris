@@ -11,6 +11,7 @@ const {
   buildManifest,
   comparePackVersions,
   formatPackBrowseTable,
+  showPackPurchases,
   installPack,
   listInstalledPacks,
   pullPack,
@@ -108,6 +109,13 @@ function closeServer(server) {
   return new Promise((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
+}
+
+function jsonResponse(status, value) {
+  return {
+    status,
+    body: Buffer.from(JSON.stringify(value)),
+  };
 }
 
 test('pack publish --author writes the author into the manifest', () => {
@@ -2189,6 +2197,74 @@ test('pack help lists visibility, signed sharing, revocation, and browse', () =>
   assert.match(result.stdout, /pack share <slug> --for "<Name>" \[--days 30\]/);
   assert.match(result.stdout, /pack share <slug> --revoke/);
   assert.match(result.stdout, /pack browse \[--mine\]/);
+  assert.match(result.stdout, /atris pack sales\n\s+atris pack purchases/);
+});
+
+test('pack purchases fetches with bearer auth and prints total before the table', async () => {
+  const calls = [];
+  const output = [];
+  const result = await showPackPurchases([], repoRoot, {
+    deps: {
+      getAppBaseUrl: () => 'https://packs.example.com/',
+      loadCredentials: () => ({ token: 'buyer-token' }),
+      httpRequest: async (url, options) => {
+        calls.push({ url, options });
+        return jsonResponse(200, [
+          { slug: 'alpha-pack', seller: 'Ada', price_cents: 500, granted_at: '2026-07-30T10:00:00Z' },
+          { slug: 'beta-pack', seller: 'Grace', price_cents: 700, granted_at: '2026-07-29T10:00:00Z' },
+        ]);
+      },
+    },
+    print: (line) => output.push(line),
+  });
+
+  assert.equal(result, 0);
+  assert.equal(calls[0].url, 'https://packs.example.com/api/pack/purchases');
+  assert.equal(calls[0].options.method, 'GET');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer buyer-token');
+  assert.equal(output[0], '2 packs bought for $12 total.');
+  assert.match(output[1], /^pack\s+seller\s+price\s+date/m);
+  assert.match(output[1], /alpha-pack\s+Ada\s+\$5\s+Jul 30/);
+  assert.equal(output[2], 'install one with: atris pack install <slug>');
+});
+
+test('pack purchases prints the exact empty state for a wrapped response', async () => {
+  const output = [];
+  const result = await showPackPurchases([], repoRoot, {
+    deps: {
+      getAppBaseUrl: () => 'https://packs.example.com',
+      loadCredentials: () => ({ token: 'buyer-token' }),
+      httpRequest: async () => jsonResponse(200, { purchases: [] }),
+    },
+    print: (line) => output.push(line),
+  });
+
+  assert.equal(result, 0);
+  assert.deepEqual(output, [
+    'no purchased packs yet. browse with: atris pack browse',
+  ]);
+});
+
+test('pack purchases gives the same login nudge for missing auth and a 401', async () => {
+  const expected = 'not logged in. run atris login first to view pack purchases.';
+  await assert.rejects(
+    () => showPackPurchases([], repoRoot, {
+      deps: { loadCredentials: () => null },
+      print: () => {},
+    }),
+    (error) => error.message === expected,
+  );
+  await assert.rejects(
+    () => showPackPurchases([], repoRoot, {
+      deps: {
+        getAppBaseUrl: () => 'https://packs.example.com',
+        loadCredentials: () => ({ token: 'expired-token' }),
+        httpRequest: async () => jsonResponse(401, { error: 'expired' }),
+      },
+      print: () => {},
+    }),
+    (error) => error.message === expected,
+  );
 });
 
 test('pack browse shows priced and free packs when any listed pack is priced', () => {
