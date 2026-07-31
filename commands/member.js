@@ -7650,6 +7650,18 @@ async function runMemberWake(name, { execute = false, confirmed = false, force =
       evidence: planned.evidence,
       mission: planned.mission,
     });
+    // An unreviewable fallback proposal no longer blocks wake (it deadlocked
+    // members for weeks), but it must not accumulate either: one open
+    // proposal per goal stays the invariant, so the stale fallback is
+    // superseded by the one being proposed now.
+    for (const prior of goal.experiments) {
+      if (experimentIsUnreviewable(prior)) {
+        prior.status = 'superseded';
+        prior.superseded_at = now;
+        prior.superseded_by = experiment.id;
+        prior.superseded_reason = 'unreviewable_fallback_replaced_by_next_proposal';
+      }
+    }
     goal.experiments.push(experiment);
     goal.history = Array.isArray(goal.history) ? goal.history : [];
     goal.history.push({ at: now, event: 'wake_tick_proposed_experiment', experiment_id: experiment.id });
