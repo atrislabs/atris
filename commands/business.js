@@ -3189,5 +3189,4 @@ module.exports = {
   collectBusinessShareState,
   renderBusinessCreatedNextSteps,
   recordBusinessRun,
-  simulateBusiness,
 };
