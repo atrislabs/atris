@@ -658,6 +658,16 @@ async function gmCommand(...args) {
     return memberCommand('wake', member, ...passthrough);
   }
 
+  if (!hasFlag(args, '--json') && !hasFlag(args, '--watch')) {
+    try {
+      const { gameCommand } = require('./game');
+      const dashboardShown = await gameCommand([], { silentMissing: true });
+      if (dashboardShown) console.log('');
+    } catch {
+      // The dashboard is an optional opening screen and must never block GM mode.
+    }
+  }
+
   const state = gmState(args);
   if (hasFlag(args, '--json')) {
     console.log(JSON.stringify(state, null, 2));
