@@ -34,6 +34,7 @@ test/codex-goal.test.js
 test/company-brain-sync.test.js
 test/compile.test.js
 test/confidence-gate.test.js
+test/console-packet-shape.test.js
 test/context-gatherer.test.js
 test/coverage.fast.test.js
 test/deck-build.test.js
@@ -87,6 +88,9 @@ test/permission-grants.test.js
 test/policy-lessons.test.js
 test/probe.test.js
 test/pack-craft.test.js
+test/pack-safety.test.js
+test/pack-run.test.js
+test/pack-share.test.js
 test/publish-release.test.js
 test/pulse.test.js
 test/push-delete-safety.test.js

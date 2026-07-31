@@ -863,3 +863,46 @@ test('doctor does not credit a filed repair while its finding still fires', () =
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('summarizeImproveResponse: keeps task_description and verify_output', () => {
+  const summary = summarizeImproveResponse({
+    reward: -1,
+    verify_passed: false,
+    task_description: 'wire the guard suite into the tick',
+    verify_output: 'FAILED tests/test_guard.py::test_holds - AssertionError',
+  });
+  assert.equal(summary.taskDescription, 'wire the guard suite into the tick');
+  assert.match(summary.verifyOutput, /AssertionError/);
+});
+
+test('buildScorecardRow: a failing tick records which task and why', () => {
+  const row = buildScorecardRow(
+    {
+      reward: -1,
+      verify: false,
+      shipped: 'autopilot advanced a goal',
+      taskDescription: 'wire the guard suite into the tick',
+      verifyOutput: 'FAILED tests/test_guard.py::test_holds - AssertionError',
+    },
+    { source: 'pulse', mode: 'tick', ts: '2026-07-26T00:00:00.000Z' }
+  );
+  assert.equal(row.task_description, 'wire the guard suite into the tick');
+  assert.match(row.verify_output, /AssertionError/);
+});
+
+test('buildScorecardRow: a passing tick carries no verify tail', () => {
+  const row = buildScorecardRow(
+    { reward: 4, verify: true, verifyOutput: 'ok\n'.repeat(500) },
+    { source: 'api' }
+  );
+  assert.equal(row.verify_output, null);
+});
+
+test('buildScorecardRow: verify tail is bounded to the last 2000 chars', () => {
+  const row = buildScorecardRow(
+    { verify: false, verifyOutput: `${'x'.repeat(5000)}THE REASON` },
+    { source: 'pulse' }
+  );
+  assert.equal(row.verify_output.length, 2000);
+  assert.ok(row.verify_output.endsWith('THE REASON'));
+});

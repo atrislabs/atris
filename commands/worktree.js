@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
+const { isConductorArtifact } = require('../lib/conductor-artifacts');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
 const COMMAND_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
@@ -261,11 +262,16 @@ function baseBranchName(ref) {
   return String(ref || '').replace(/^refs\/heads\//, '').replace(/^origin\//, '');
 }
 
-function statusCounts(root, { ignoredUnstagedFiles = new Set(), ignoredUntrackedFiles = new Set() } = {}) {
+function statusCounts(root, {
+  ignoredUnstagedFiles = new Set(),
+  ignoredUntrackedFiles = new Set(),
+  ignoreUntracked = null,
+} = {}) {
   if (!fs.existsSync(root)) return null;
   // -uall expands untracked directories to individual files so ignoredUntrackedFiles
-  // can match exact paths (plain porcelain collapses them to "?? dir/").
-  const statusArgs = ignoredUntrackedFiles.size ? ['status', '--porcelain', '-uall'] : ['status', '--porcelain'];
+  // and ignoreUntracked can match exact paths (plain porcelain collapses them to "?? dir/").
+  const expandUntracked = ignoredUntrackedFiles.size || typeof ignoreUntracked === 'function';
+  const statusArgs = expandUntracked ? ['status', '--porcelain', '-uall'] : ['status', '--porcelain'];
   const result = runGit(statusArgs, { cwd: root, check: false });
   if (result.status !== 0) return null;
   let staged = 0;
@@ -276,6 +282,7 @@ function statusCounts(root, { ignoredUnstagedFiles = new Set(), ignoredUntracked
     if (ignoredUnstagedFiles.has(file) && line[0] === ' ' && line[1] !== ' ') continue;
     if (line.startsWith('??')) {
       if (ignoredUntrackedFiles.has(file)) continue;
+      if (typeof ignoreUntracked === 'function' && ignoreUntracked(file)) continue;
       untracked += 1;
       continue;
     }
@@ -283,6 +290,16 @@ function statusCounts(root, { ignoredUnstagedFiles = new Set(), ignoredUntracked
     if (line[1] !== ' ') unstaged += 1;
   }
   return { staged, unstaged, untracked };
+}
+
+// Remove conductor plumbing from the index after a broad `git add -A`, so the commit
+// records engine output only. Paths that were never staged are simply not listed.
+function unstageConductorArtifacts(root) {
+  const staged = runGit(['diff', '--cached', '--name-only'], { cwd: root, check: false });
+  if (staged.status !== 0) return [];
+  const drop = String(staged.stdout || '').split(/\r?\n/).filter(Boolean).filter(isConductorArtifact);
+  if (drop.length) runGit(['reset', '-q', 'HEAD', '--', ...drop], { cwd: root, check: false });
+  return drop;
 }
 
 function changedFiles(root, args) {
@@ -472,6 +489,14 @@ function createOrFindPr(root, branch, targetRef, title, dryRun) {
     `Target: ${targetBranch}`,
   ].join('\n');
   if (dryRun) return `dry-run: gh pr create --base ${targetBranch} --head ${branch}`;
+  // An engine that produced nothing leaves a branch level with its base. Asking
+  // GitHub for a PR there fails with "No commits between ...", and that throw used
+  // to escape the flight and abort the whole run. Say it plainly instead.
+  const ahead = runGit(['rev-list', '--count', `${targetRef}..HEAD`], { cwd: root, check: false });
+  if (ahead.status === 0 && String(ahead.stdout || '').trim() === '0') {
+    console.log('pr: skipped (no commits ahead of base)');
+    return '';
+  }
   const created = spawnSync(
     'gh',
     ['pr', 'create', '--base', targetBranch, '--head', branch, '--title', title, '--body', body],
@@ -593,7 +618,10 @@ function shipWorktree(args) {
   refreshRemoteRef(root, targetRef);
   const skippedAdapters = restoreRegeneratedAdapterChurn(root, message, { dryRun });
   const ignoredUnstagedFiles = dryRun ? new Set(skippedAdapters) : new Set();
-  const counts = statusCounts(root, { ignoredUnstagedFiles }) || { staged: 0, unstaged: 0, untracked: 0 };
+  // Conductor plumbing must not make the checkout look dirty, or a flight where the
+  // engine wrote nothing commits the fleet's own prompt file and calls it work.
+  const counts = statusCounts(root, { ignoredUnstagedFiles, ignoreUntracked: isConductorArtifact })
+    || { staged: 0, unstaged: 0, untracked: 0 };
   const dirty = counts.staged || counts.unstaged || counts.untracked;
   if (dirty && !message) {
     console.error('blocked: --message is required when there are local changes to commit');
@@ -604,6 +632,9 @@ function shipWorktree(args) {
     console.log(`commit: ${message}`);
     if (!dryRun) {
       runGit(['add', '-A'], { cwd: root });
+      // `add -A` sweeps in the fleet's own prompt file and friends. Drop them from the
+      // index so a work commit carries work, not harness plumbing. Safe when absent.
+      unstageConductorArtifacts(root);
       if (!proofTreeMatches('index')) return 3;
       runGit(['commit', '-m', message], { cwd: root });
       if (!proofTreeMatches('head')) return 3;
@@ -619,7 +650,12 @@ function shipWorktree(args) {
     if (!dryRun) runCommand(verify, { cwd: root });
     const afterVerifyRows = dryRun ? [] : statusSnapshot(root);
     const verifyDelta = newStatusRows(beforeVerify, afterVerifyRows);
-    const afterVerify = dryRun ? { staged: 0, unstaged: 0, untracked: 0 } : statusCounts(root) || { staged: 0, unstaged: 0, untracked: 0 };
+    // This check exists to catch a verifier that writes files. Conductor plumbing was
+    // already present before the verifier ran, so counting it here blocks a clean ship.
+    const afterVerify = dryRun
+      ? { staged: 0, unstaged: 0, untracked: 0 }
+      : statusCounts(root, { ignoreUntracked: isConductorArtifact })
+        || { staged: 0, unstaged: 0, untracked: 0 };
     if (!dryRun && (afterVerify.staged || afterVerify.unstaged || afterVerify.untracked)) {
       console.error(
         `blocked: verifier left checkout dirty staged=${afterVerify.staged} ` +
@@ -728,8 +764,10 @@ function guard(args) {
     console.error('run: atris worktree start --member <member>|--agent <name> --task "<short task>" --claim');
     return 2;
   }
-  // The CLI's own worktree metadata (written by `worktree start`) must not count as dirt.
-  const counts = statusCounts(root, { ignoredUntrackedFiles: new Set(['.atris/agent-worktree.json']) });
+  // Conductor plumbing (worktree metadata, the fleet prompt written for this very
+  // engine, runtime scratch, the brief ledger) must not count as dirt — otherwise the
+  // harness blocks the engine with the harness's own files.
+  const counts = statusCounts(root, { ignoreUntracked: isConductorArtifact });
   if (counts && (counts.staged || counts.unstaged || counts.untracked) && !hasFlag(args, '--allow-dirty')) {
     console.error(`blocked: checkout is dirty staged=${counts.staged} unstaged=${counts.unstaged} untracked=${counts.untracked}`);
     return 3;

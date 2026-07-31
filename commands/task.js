@@ -17,6 +17,7 @@ const {
   runVerifyCommandCached,
   DENIED_TAGS,
 } = require('../lib/auto-accept-certified');
+const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
 const { extractReceiptEvidence, RECEIPT_PATH_PATTERN } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const reviewIntegrity = require('../lib/review-integrity');
@@ -9488,6 +9489,28 @@ async function cmdAccept(args) {
   const missionXpIssue = missionXpEndToEndProofIssue(beforeTask, proof, taskDb.workspaceRoot());
   if (missionXpIssue) {
     failTask('atris task accept', MISSION_XP_END_TO_END_REASON, missionXpIssue);
+  }
+  // The proof must be able to fail. Run the stored verify command and refuse the
+  // accept if it does not parse, does not run, or does not pass. Prose describing a
+  // check is not a check.
+  const acceptVerify = evaluateAcceptVerify(beforeTask, taskDb.workspaceRoot());
+  const verifyOverride = hasFlag(args, '--accept-unverified');
+  const overrideReason = String(flag(args, '--reason') || '').trim();
+  if (!acceptVerify.ok && !verifyOverride) {
+    failTask(
+      'atris task accept',
+      acceptVerify.reason,
+      `${acceptVerify.detail}. Stored verify: ${acceptVerify.command || '(none)'}. `
+        + 'Fix the verify command and re-run, or accept deliberately with '
+        + '--accept-unverified --reason "why this cannot be machine-checked".',
+    );
+  }
+  if (!acceptVerify.ok && verifyOverride && !overrideReason) {
+    failTask(
+      'atris task accept',
+      'unverified_accept_needs_reason',
+      '--accept-unverified records an unfalsifiable accept in the ledger, so it requires --reason "<why>".',
+    );
   }
   const readyReview = beforeTask?.review || {};
   const clearLesson = hasEmptyFlagValue(args, '--lesson');

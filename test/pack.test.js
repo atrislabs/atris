@@ -108,7 +108,7 @@ test('pack publish --out then install round trips atris and manifest', () => {
   try {
     seedAtris(dir);
     const zipPath = path.join(dir, 'demo.zip');
-    const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'demo-pack', '--notes', 'first publish', '--out', zipPath], { cwd: dir });
+    const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'demo-pack', '--author', 'Ada Lovelace', '--notes', 'first publish', '--out', zipPath], { cwd: dir });
     assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
 
     const target = path.join(dir, 'installed');
@@ -142,7 +142,7 @@ test('pack publish excludes credentials, env files, state, git, and logs by defa
     fs.writeFileSync(path.join(atrisDir, 'logs', '2026-07-09.md'), 'log\n');
 
     const zipPath = path.join(dir, 'demo.zip');
-    const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'safe-pack', '--out', zipPath], { cwd: dir });
+    const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'safe-pack', '--author', 'Ada Lovelace', '--out', zipPath], { cwd: dir });
     assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
 
     const names = readZipFile(zipPath).map((entry) => entry.name);
@@ -187,12 +187,12 @@ test('pack publish bumps patch version on subsequent publish', () => {
     seedAtris(dir);
     const firstZip = path.join(dir, 'first.zip');
     const secondZip = path.join(dir, 'second.zip');
-    const first = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'version-pack', '--out', firstZip], { cwd: dir });
+    const first = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'version-pack', '--author', 'Ada Lovelace', '--out', firstZip], { cwd: dir });
     assert.equal(first.status, 0, `stdout:\n${first.stdout}\nstderr:\n${first.stderr}`);
-    const second = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'version-pack', '--out', secondZip], { cwd: dir });
+    const second = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'version-pack', '--author', 'Ada Lovelace', '--out', secondZip], { cwd: dir });
     assert.equal(second.status, 0, `stdout:\n${second.stdout}\nstderr:\n${second.stderr}`);
 
-    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'pack.json'), 'utf8'));
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'pack.json'), 'utf8'));
     assert.equal(manifest.version, '0.1.1');
     assert.deepEqual(manifest.versions.map((entry) => entry.version), ['0.1.0', '0.1.1']);
     const zipManifest = JSON.parse(readZipFile(secondZip).find((entry) => entry.name === 'pack.json').data.toString('utf8'));
@@ -210,7 +210,8 @@ test('pack publish without output still writes pack.json and sharing hint', () =
     assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
     assert.match(publish.stdout, /wrote pack\.json for hint-pack 0\.1\.0/);
     assert.match(publish.stdout, /share with: atris pack publish --out <file\.zip> or atris pack publish --push/);
-    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'pack.json'), 'utf8'));
+    assert.ok(!fs.existsSync(path.join(dir, 'pack.json')), 'publish must not write pack.json outside the pack dir');
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'pack.json'), 'utf8'));
     assert.equal(manifest.slug, 'hint-pack');
   } finally {
     cleanupTempDir(dir);
@@ -222,7 +223,7 @@ test('pack publish --push exits with login hint when not logged in', () => {
   const home = makeTempDir();
   try {
     seedAtris(dir);
-    const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'push-pack', '--push'], {
+    const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'push-pack', '--author', 'Ada Lovelace', '--push'], {
       cwd: dir,
       env: {
         HOME: home,
@@ -565,18 +566,18 @@ test('pack publish from a pack root ships the whole folder except junk', () => {
       versions: [{ version: '0.0.1', date: '2026-07-09', notes: 'seed' }],
     }));
     fs.writeFileSync(path.join(dir, 'atris', 'atris.md'), '# boot\n');
-    fs.writeFileSync(path.join(dir, 'wiki', 'idea.md'), '# idea\nsource: https://example.com\n');
+    fs.writeFileSync(path.join(dir, 'wiki', 'concept.md'), '# concept\nsource: https://example.com\n');
     fs.writeFileSync(path.join(dir, 'README.md'), '# root pack\n');
     fs.writeFileSync(path.join(dir, '.upstream', 'STATE.json'), '{}');
     fs.writeFileSync(path.join(dir, 'node_modules', 'x', 'index.js'), 'x');
     fs.writeFileSync(path.join(dir, '.env'), 'SECRET=1');
 
     const zipPath = path.join(os.tmpdir(), `root-pack-${process.pid}.zip`);
-    const publish = runCli(['pack', 'publish', '--out', zipPath], { cwd: dir });
+    const publish = runCli(['pack', 'publish', '--author', 'Ada Lovelace', '--out', zipPath], { cwd: dir });
     assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
 
     const names = readZipFile(zipPath).map((entry) => entry.name);
-    assert.ok(names.includes('wiki/idea.md'), `missing wiki page in ${names.join(', ')}`);
+    assert.ok(names.includes('wiki/concept.md'), `missing wiki page in ${names.join(', ')}`);
     assert.ok(names.includes('README.md'));
     assert.ok(names.includes('atris/atris.md'));
     assert.ok(!names.some((n) => n.startsWith('.upstream')));

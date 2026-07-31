@@ -1405,7 +1405,7 @@ function computerLocalLegacy(extraArgs = []) {
   }
 }
 
-function computerLocal(extraArgs = []) {
+function computerLocal(extraArgs = [], options = {}) {
   printLocalWordmark();
   printModeBanner('LOCAL', process.cwd(), [
     'Claude Code + Atris workspace context.',
@@ -1417,7 +1417,7 @@ function computerLocal(extraArgs = []) {
   const originalArgv = process.argv;
   process.argv = [originalArgv[0], originalArgv[1], originalArgv[2], 'claude', ...extraArgs];
   try {
-    consoleCommand();
+    consoleCommand(options);
   } finally {
     process.argv = originalArgv;
   }
@@ -4390,6 +4390,10 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
 module.exports = {
   runComputer,
   computerSetup,
+  // `atris pack run` starts a packet as a free local computer, so it needs the
+  // local starter and the business-binding check as seams, not copies.
+  computerLocal,
+  readBusinessBinding,
   formatEngineSeats,
   buildComputerCard,
   extractAttachedWorkspaceMismatch,

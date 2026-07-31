@@ -7,10 +7,40 @@ const { resolveClaudeRunnerBin } = require('../lib/runner-command');
 
 // ── Context Gathering ──────────────────────────────────────────────
 
+// Atris content lives in two shapes on disk, and the console has to read both.
+//
+//   workspace: <dir>/atris/{skills,team,TODO.md,...}
+//     The normal repo shape. A project keeps its Atris brain in a subfolder so
+//     it does not collide with the project's own files. This is the common case.
+//
+//   packet:    <dir>/{pack.json,skills,team,docs,...}
+//     A packet built in root mode (pack.js exports with prefix '' when the
+//     source dir has pack.json at its root — this is how the shipped packs are
+//     built and what the web /packs/<slug>/download route serves). `pack
+//     install` preserves that flat layout, so the packet folder IS the atris
+//     root; there is no nested atris/ to find.
+//
+// Nested wins when both exist: never change what an existing workspace loads.
+// Returns the directory that actually holds the atris content, or null.
+function resolveAtrisRoot(workspaceDir) {
+  const nested = path.join(workspaceDir, 'atris');
+  try {
+    if (fs.statSync(nested).isDirectory()) return nested;
+  } catch {}
+  const manifest = path.join(workspaceDir, 'pack.json');
+  try {
+    if (!fs.statSync(manifest).isFile()) return null;
+    JSON.parse(fs.readFileSync(manifest, 'utf8'));
+    return workspaceDir;
+  } catch {}
+  return null;
+}
+
 function gatherAtrisContext(workspaceDir) {
-  const atrisDir = path.join(workspaceDir, 'atris');
+  const atrisDir = resolveAtrisRoot(workspaceDir);
   const ctx = {
-    hasAtris: fs.existsSync(atrisDir),
+    hasAtris: Boolean(atrisDir),
+    atrisRoot: atrisDir,
     skills: [],
     teamMembers: [],
     backlogCount: 0,
@@ -119,7 +149,8 @@ function buildSystemPrompt(ctx) {
   if (ctx.teamMembers.length > 0) {
     lines.push('## Team Members');
     lines.push(`Available: ${ctx.teamMembers.join(', ')}`);
-    lines.push('Each has a MEMBER.md in atris/team/<name>/ defining their role.');
+    const teamRoot = ctx.atrisRoot ? path.join(ctx.atrisRoot, 'team') : 'atris/team';
+    lines.push(`Each has a MEMBER.md in ${teamRoot}/<name>/ defining their role.`);
     lines.push('');
   }
 
@@ -135,7 +166,8 @@ function buildSystemPrompt(ctx) {
 
   if (ctx.backlogCount > 0) {
     lines.push(`## Current Work`);
-    lines.push(`${ctx.backlogCount} task${ctx.backlogCount > 1 ? 's' : ''} in backlog. Check atris/TODO.md for details.`);
+    const todoPath = ctx.atrisRoot ? path.join(ctx.atrisRoot, 'TODO.md') : 'atris/TODO.md';
+    lines.push(`${ctx.backlogCount} task${ctx.backlogCount > 1 ? 's' : ''} in backlog. Check ${todoPath} for details.`);
     lines.push('');
   }
 
@@ -280,10 +312,11 @@ function checkAuth(backend) {
 
 // ── Launch ──────────────────────────────────────────────────────────
 
-function launchClaude(systemPrompt, extraArgs) {
+function launchClaude(systemPrompt, extraArgs, options = {}) {
+  const skipPermissions = options.skipPermissions !== false;
   const runnerBin = resolveClaudeRunnerBin();
   const args = [
-    '--dangerously-skip-permissions',
+    ...(skipPermissions ? ['--dangerously-skip-permissions'] : []),
     '--append-system-prompt', systemPrompt,
     ...extraArgs,
   ];
@@ -342,7 +375,11 @@ function launchCodex(systemPrompt, extraArgs) {
 
 // ── Main ────────────────────────────────────────────────────────────
 
-function consoleCommand() {
+// skipPermissions defaults to true: `atris console` runs on a workspace you
+// wrote. Callers that launch an agent inside content someone else authored
+// (`atris pack run`) pass false so permission prompts stay on.
+function consoleCommand(options = {}) {
+  const skipPermissions = options.skipPermissions !== false;
   const args = process.argv.slice(3);
   let requested = args[0];
 
@@ -385,7 +422,7 @@ function consoleCommand() {
 
     // Launch
     if (backend === 'claude') {
-      launchClaude(systemPrompt, extraArgs);
+      launchClaude(systemPrompt, extraArgs, { skipPermissions });
     } else {
       launchCodex(systemPrompt, extraArgs);
     }
@@ -399,4 +436,4 @@ function consoleCommand() {
   }
 }
 
-module.exports = { consoleCommand, gatherAtrisContext, buildSystemPrompt };
+module.exports = { consoleCommand, gatherAtrisContext, buildSystemPrompt, resolveAtrisRoot, launchClaude };
