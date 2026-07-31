@@ -84,4 +84,3 @@ module.exports = function teach(subcommand, ...args) {
   process.exit(result.status === null ? 1 : result.status);
 };
 
-module.exports.buildArgs = buildArgs;
