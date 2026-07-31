@@ -11,6 +11,8 @@ const {
   buildManifest,
   comparePackVersions,
   formatPackBrowseTable,
+  formatPackPurchasesTable,
+  showPackSales,
   showPackPurchases,
   installPack,
   listInstalledPacks,
@@ -2200,7 +2202,28 @@ test('pack help lists visibility, signed sharing, revocation, and browse', () =>
   assert.match(result.stdout, /atris pack sales\n\s+atris pack purchases/);
 });
 
-test('pack purchases fetches with bearer auth and prints total before the table', async () => {
+test('pack sales excludes refunded rows from its summary and shows their status', async () => {
+  const output = [];
+  const result = await showPackSales([], repoRoot, {
+    deps: {
+      getApiBaseUrl: () => 'https://api.example.com/api',
+      loadCredentials: () => ({ token: 'seller-token' }),
+      httpRequest: async () => jsonResponse(200, [
+        { slug: 'alpha-pack', buyer: 'a***@mail.com', price_cents: 500, granted_at: '2026-07-30T10:00:00Z' },
+        { slug: 'beta-pack', buyer: 'b***@mail.com', price_cents: 700, granted_at: '2026-07-29T10:00:00Z', refunded: true },
+      ]),
+    },
+    print: (line) => output.push(line),
+  });
+
+  assert.equal(result, 0);
+  assert.equal(output[0], '$5 earned across 1 sale.');
+  assert.match(output[1], /^pack\s+buyer\s+price\s+date\s+status/m);
+  assert.match(output[1], /alpha-pack\s+a\*\*\*@mail\.com\s+\$5\s+Jul 30/);
+  assert.match(output[1], /beta-pack\s+b\*\*\*@mail\.com\s+\$7\s+Jul 29\s+refunded/);
+});
+
+test('pack purchases excludes refunded rows from its summary and shows their status', async () => {
   const calls = [];
   const output = [];
   const result = await showPackPurchases([], repoRoot, {
@@ -2211,7 +2234,7 @@ test('pack purchases fetches with bearer auth and prints total before the table'
         calls.push({ url, options });
         return jsonResponse(200, [
           { slug: 'alpha-pack', seller: 'Ada', price_cents: 500, granted_at: '2026-07-30T10:00:00Z' },
-          { slug: 'beta-pack', seller: 'Grace', price_cents: 700, granted_at: '2026-07-29T10:00:00Z' },
+          { slug: 'beta-pack', seller: 'Grace', price_cents: 700, granted_at: '2026-07-29T10:00:00Z', refunded: true },
         ]);
       },
     },
@@ -2222,10 +2245,21 @@ test('pack purchases fetches with bearer auth and prints total before the table'
   assert.equal(calls[0].url, 'https://packs.example.com/api/pack/purchases');
   assert.equal(calls[0].options.method, 'GET');
   assert.equal(calls[0].options.headers.Authorization, 'Bearer buyer-token');
-  assert.equal(output[0], '2 packs bought for $12 total.');
-  assert.match(output[1], /^pack\s+seller\s+price\s+date/m);
+  assert.equal(output[0], '1 pack bought for $5 total.');
+  assert.match(output[1], /^pack\s+seller\s+price\s+date\s+status/m);
   assert.match(output[1], /alpha-pack\s+Ada\s+\$5\s+Jul 30/);
+  assert.match(output[1], /beta-pack\s+Grace\s+\$7\s+Jul 29\s+refunded/);
   assert.equal(output[2], 'install one with: atris pack install <slug>');
+});
+
+test('pack purchases hides status when refunded is false or missing', () => {
+  const table = formatPackPurchasesTable([
+    { slug: 'alpha-pack', seller: 'Ada', price_cents: 500, granted_at: '2026-07-30T10:00:00Z' },
+    { slug: 'beta-pack', seller: 'Grace', price_cents: 700, granted_at: '2026-07-29T10:00:00Z', refunded: false },
+  ]);
+
+  assert.doesNotMatch(table.split('\n')[0], /\bstatus\b/);
+  assert.doesNotMatch(table, /\brefunded\b/);
 });
 
 test('pack purchases prints the exact empty state for a wrapped response', async () => {

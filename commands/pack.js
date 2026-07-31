@@ -1266,20 +1266,27 @@ function formatPackSaleDate(value) {
   }).format(date);
 }
 
+function isPackTransactionRefunded(item) {
+  return Boolean(item && item.refunded === true);
+}
+
 function formatPackTransactionsTable(items, personKey, personLabel) {
   const rows = items.map((item) => ({
     pack: cleanTableCell(item && item.slug, 'unknown', 40),
     person: cleanTableCell(item && item[personKey], 'unknown', 40),
     price: formatSalesDollars(item && item.price_cents),
     date: formatPackSaleDate(item && item.granted_at),
+    status: isPackTransactionRefunded(item) ? 'refunded' : '',
   }));
   if (!rows.length) return '';
 
+  const showStatus = rows.some((row) => row.status === 'refunded');
   const columns = [
     { key: 'pack', label: 'pack' },
     { key: 'person', label: personLabel },
     { key: 'price', label: 'price' },
     { key: 'date', label: 'date' },
+    ...(showStatus ? [{ key: 'status', label: 'status' }] : []),
   ];
   const widths = columns.map((column) => Math.max(
     column.label.length,
@@ -1344,11 +1351,12 @@ async function showPackSales(rawArgs, cwd = process.cwd(), options = {}) {
     return 0;
   }
 
-  const totalCents = sales.reduce((total, sale) => {
+  const completedSales = sales.filter((sale) => !isPackTransactionRefunded(sale));
+  const totalCents = completedSales.reduce((total, sale) => {
     const cents = Number(sale && sale.price_cents);
     return total + (Number.isFinite(cents) ? cents : 0);
   }, 0);
-  print(`${formatSalesDollars(totalCents)} earned across ${sales.length} ${sales.length === 1 ? 'sale' : 'sales'}.`);
+  print(`${formatSalesDollars(totalCents)} earned across ${completedSales.length} ${completedSales.length === 1 ? 'sale' : 'sales'}.`);
   print(formatPackSalesTable(sales));
   return 0;
 }
@@ -1399,11 +1407,12 @@ async function showPackPurchases(rawArgs, cwd = process.cwd(), options = {}) {
     return 0;
   }
 
-  const totalCents = purchases.reduce((total, purchase) => {
+  const completedPurchases = purchases.filter((purchase) => !isPackTransactionRefunded(purchase));
+  const totalCents = completedPurchases.reduce((total, purchase) => {
     const cents = Number(purchase && purchase.price_cents);
     return total + (Number.isFinite(cents) ? cents : 0);
   }, 0);
-  print(`${purchases.length} ${purchases.length === 1 ? 'pack' : 'packs'} bought for ${formatSalesDollars(totalCents)} total.`);
+  print(`${completedPurchases.length} ${completedPurchases.length === 1 ? 'pack' : 'packs'} bought for ${formatSalesDollars(totalCents)} total.`);
   print(formatPackPurchasesTable(purchases));
   print('install one with: atris pack install <slug>');
   return 0;
