@@ -881,10 +881,15 @@ function certifiedReviewNextAction(nextTaskTitle) {
 function proofBoundaryBlockedEvaluation(task) {
   const missionXpBoundary = missionXpProofBoundaryEvaluation(task);
   if (missionXpBoundary) return missionXpBoundary;
-  // strictVerify stays off here: this is a render-path probe for the boundary
-  // reason only, and the default-true strict mode would spawn the verify
-  // subprocess for every certified row just to draw the desk.
-  const evaluation = evaluateAutoAccept(task, { strictVerify: false, minPasses: 0 });
+  // This is a render-path probe for the boundary reason only. strictVerify
+  // alone is not enough to keep it read-only because probationary actors
+  // still require strict verification. Never execute a stored verifier while
+  // drawing task reviews, status, queues, or projections.
+  const evaluation = evaluateAutoAccept(task, {
+    strictVerify: false,
+    minPasses: 0,
+    executeVerify: false,
+  });
   return evaluation && evaluation.reason === 'proof_unmerged_or_draft_pr_boundary'
     ? evaluation
     : null;
@@ -5508,19 +5513,17 @@ function taskReviewLandingLines(item) {
 function cmdReviews(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  let { projection, outPath } = writeDefaultProjection(taskDb, db);
-  const workspaceRoot = projection.workspace_root || process.cwd();
-  const previousAutoAcceptState = readReviewAutoAcceptState(workspaceRoot);
-  const autoAcceptRun = autoAcceptCertifiedSmallReviews(taskDb, db, projection);
-  if (autoAcceptRun.changed) {
-    ({ projection, outPath } = writeDefaultProjection(taskDb, db));
-  }
-  const autoAcceptRollup = reviewAutoAcceptRollup(taskDb, db, workspaceRoot, previousAutoAcceptState, autoAcceptRun);
-  writeReviewAutoAcceptState(workspaceRoot, {
-    ...previousAutoAcceptState,
-    last_look_at: new Date().toISOString(),
-    last_count: autoAcceptRollup.count,
-  });
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  // Reviews is a view, not an execution lane. Certification and landing are
+  // persisted by certify-verified, explicit receipt/ready commands, sweep,
+  // and autoland; this command only reports that stored state.
+  const autoAcceptView = {
+    enabled: false,
+    read_only: true,
+    accepted_now: 0,
+    accepted_since_last_look: 0,
+    results: [],
+  };
   const groupByRaw = flag(args, '--group-by');
   if (groupByRaw) {
     const key = reviewGroupKey(groupByRaw);
@@ -5530,20 +5533,12 @@ function cmdReviews(args) {
         ok: true,
         action: 'review_groups',
         projection_path: outPath,
-        autoaccept: {
-          enabled: autoAcceptRun.enabled,
-          accepted_now: autoAcceptRun.accepted,
-          accepted_since_last_look: autoAcceptRollup.count,
-          results: autoAcceptRun.results,
-        },
+        autoaccept: autoAcceptView,
         groups,
       });
       return;
     }
     console.log(gateForHuman(`${numberWord(groups.total_certified)} finished things are waiting, grouped by ${key}.`).text);
-    if (autoAcceptRollup.count > 0) {
-      console.log(gateForHuman(`${numberWord(autoAcceptRollup.count)} landed on their own since you last looked.`).text);
-    }
     const visibleGroups = groups.groups.slice(0, reviewGroupTextLimit(args, groups.groups.length));
     visibleGroups.forEach((g, index) => {
       console.log('');
@@ -5564,12 +5559,7 @@ function cmdReviews(args) {
       ok: true,
       action: 'review_queue',
       projection_path: outPath,
-      autoaccept: {
-        enabled: autoAcceptRun.enabled,
-        accepted_now: autoAcceptRun.accepted,
-        accepted_since_last_look: autoAcceptRollup.count,
-        results: autoAcceptRun.results,
-      },
+      autoaccept: autoAcceptView,
       queue,
     });
     return;
@@ -5578,9 +5568,6 @@ function cmdReviews(args) {
   const blockedItems = queue.items.filter(item => item.queue_role === 'blocked');
   if (!approvalItems.length && !blockedItems.length) {
     console.log('nothing is waiting on you. everything that finished has already landed.');
-    if (autoAcceptRollup.count > 0) {
-      console.log(gateForHuman(`${numberWord(autoAcceptRollup.count)} landed on their own since you last looked.`).text);
-    }
     return;
   }
   if (queue.counts.certified > 0) {
@@ -5593,9 +5580,6 @@ function cmdReviews(args) {
     console.log(gateForHuman(queue.counts.blocking === 1
       ? 'one more is almost ready; a second check is still running.'
       : `${numberWord(queue.counts.blocking)} more are almost ready; second checks are still running.`).text);
-  }
-  if (autoAcceptRollup.count > 0) {
-    console.log(gateForHuman(`${numberWord(autoAcceptRollup.count)} landed on their own since you last looked.`).text);
   }
   approvalItems.forEach((item, index) => {
     if (index > 0) console.log('');
