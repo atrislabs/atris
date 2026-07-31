@@ -1141,9 +1141,22 @@ function cleanTableCell(value, fallback, maxLength) {
   return `${clean.slice(0, Math.max(1, maxLength - 3))}...`;
 }
 
+function browsePriceCents(item) {
+  const manifestPriceCents = item
+    && item.manifest
+    && typeof item.manifest === 'object'
+    ? item.manifest.priceCents
+    : undefined;
+  if (manifestPriceCents !== undefined && manifestPriceCents !== null) {
+    return manifestPriceCents;
+  }
+  return item && typeof item === 'object' ? item.priceCents : undefined;
+}
+
 function packBrowseRows(payload, { mine = false, limit = PACK_BROWSE_LIMIT } = {}) {
   return registryPackItems(payload).slice(0, limit).map((item) => {
     const manifest = packManifestFromItem(item);
+    const priceCents = browsePriceCents(item);
     return {
       slug: cleanTableCell(manifest.slug, 'unknown', 40),
       title: cleanTableCell(manifest.title || manifest.name, manifest.slug || 'untitled', 42),
@@ -1151,6 +1164,7 @@ function packBrowseRows(payload, { mine = false, limit = PACK_BROWSE_LIMIT } = {
       ...(mine
         ? { visibility: cleanTableCell(manifest.visibility, 'public', 10) }
         : {}),
+      price: Number(priceCents) > 0 ? formatSalesDollars(priceCents) : 'free',
       stars: browseStarValue(item, payload, manifest.slug),
     };
   });
@@ -1164,12 +1178,14 @@ function formatPackBrowseTable(payload, options = {}) {
   });
   if (!rows.length) return '';
 
+  const showPrice = rows.some((row) => row.price !== 'free');
   const showStars = rows.some((row) => row.stars !== null);
   const columns = [
     { key: 'slug', label: 'slug' },
     { key: 'title', label: 'title' },
     { key: 'version', label: 'version' },
     ...(mine ? [{ key: 'visibility', label: 'visibility' }] : []),
+    ...(showPrice ? [{ key: 'price', label: 'price' }] : []),
     ...(showStars ? [{ key: 'stars', label: 'stars' }] : []),
   ];
   const widths = columns.map((column) => Math.max(

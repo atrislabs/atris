@@ -10,6 +10,7 @@ const { readZipFile, writeZipFile, ZIP_LIMITS } = require('../lib/zip');
 const {
   buildManifest,
   comparePackVersions,
+  formatPackBrowseTable,
   installPack,
   listInstalledPacks,
   pullPack,
@@ -2188,4 +2189,49 @@ test('pack help lists visibility, signed sharing, revocation, and browse', () =>
   assert.match(result.stdout, /pack share <slug> --for "<Name>" \[--days 30\]/);
   assert.match(result.stdout, /pack share <slug> --revoke/);
   assert.match(result.stdout, /pack browse \[--mine\]/);
+});
+
+test('pack browse shows priced and free packs when any listed pack is priced', () => {
+  const table = formatPackBrowseTable({
+    packs: [
+      {
+        manifest: {
+          slug: 'pro-pack',
+          title: 'Pro Pack',
+          version: '1.0.0',
+          priceCents: 1250,
+        },
+      },
+      {
+        slug: 'tiny-pack',
+        title: 'Tiny Pack',
+        version: '1.0.0',
+        priceCents: 99,
+      },
+      {
+        slug: 'free-pack',
+        title: 'Free Pack',
+        version: '1.0.0',
+      },
+    ],
+  });
+
+  assert.match(table, /^slug\s+title\s+version\s+price/m);
+  assert.match(table, /pro-pack\s+Pro Pack\s+1\.0\.0\s+\$12\.50/);
+  assert.match(table, /tiny-pack\s+Tiny Pack\s+1\.0\.0\s+\$0\.99/);
+  assert.match(table, /free-pack\s+Free Pack\s+1\.0\.0\s+free/);
+});
+
+test('pack browse hides price when no listed pack is priced', () => {
+  const table = formatPackBrowseTable({
+    packs: [
+      { slug: 'free-pack', title: 'Free Pack', version: '1.0.0' },
+      { slug: 'zero-pack', title: 'Zero Pack', version: '1.0.0', priceCents: 0 },
+    ],
+  });
+
+  assert.match(table, /^slug\s+title\s+version$/m);
+  assert.doesNotMatch(table.split('\n')[0], /\bprice\b/);
+  assert.match(table, /free-pack\s+Free Pack\s+1\.0\.0$/m);
+  assert.match(table, /zero-pack\s+Zero Pack\s+1\.0\.0$/m);
 });
