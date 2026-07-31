@@ -1553,14 +1553,20 @@ test('member wake returns one finite decision and refuses to pile onto open work
     assert.equal(executedPayload.current_experiment.status, 'proposed');
     assert.ok(fs.existsSync(executedPayload.receipt_path));
 
+    // The open proposal is an unreviewable fallback (no verifier), so wake no
+    // longer parks the member on a gate nobody can clear: it offers the next
+    // bounded tick instead. The stale fallback is superseded only when the
+    // next executed tick proposes its replacement; a dry wake mutates nothing.
     const wait = runCli(['member', 'wake', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(wait.status, 0, wait.stderr || wait.stdout);
     const waitPayload = JSON.parse(wait.stdout);
-    assert.equal(waitPayload.decision, 'wait');
-    assert.equal(waitPayload.reason, 'open_experiment_proposed');
-    assert.equal(waitPayload.current_experiment.id, executedPayload.current_experiment.id);
+    assert.equal(waitPayload.decision, 'tick');
+    assert.equal(waitPayload.reason, 'safe_next_bounded_step');
+    assert.equal(waitPayload.current_experiment, null);
+    assert.match(waitPayload.next_command, new RegExp(`member tick mission-lead --goal ${goalPayload.goal.id}`));
     state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json'), 'utf8'));
     assert.equal(state.goals[0].experiments.length, 1);
+    assert.equal(state.goals[0].experiments[0].status, 'proposed');
     const logText = fs.readdirSync(path.join(dir, 'atris', 'team', 'mission-lead', 'logs'))
       .filter((name) => /^\d{4}-\d{2}-\d{2}\.md$/.test(name))
       .map((name) => fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'logs', name), 'utf8'))
@@ -3619,15 +3625,22 @@ test('member loop repeats wake quickly and skips an active lease', () => {
     assert.equal(payload.status, 'completed');
     assert.equal(payload.ticks, 2);
     assert.equal(payload.mode, 'execute');
-    assert.equal(payload.decisions['wait:tick_executed_experiment_proposed'], 1);
-    assert.equal(payload.decisions['wait:open_experiment_proposed'], 1);
+    // Fallback proposals are unreviewable, so tick 2 does not wait on tick
+    // 1's proposal (that deadlocked members for weeks); it proposes again and
+    // the stale fallback is superseded. One open proposal stays the invariant.
+    assert.equal(payload.decisions['wait:tick_executed_experiment_proposed'], 2);
+    assert.equal(payload.decisions['wait:open_experiment_proposed'], undefined);
     assert.ok(fs.existsSync(payload.receipt_path));
     assert.ok(fs.existsSync(payload.log_path));
     assert.ok(fs.existsSync(payload.latest_path));
     const latest = JSON.parse(fs.readFileSync(payload.latest_path, 'utf8'));
     assert.equal(latest.receipt_path, payload.receipt_path);
     const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json'), 'utf8'));
-    assert.equal(state.goals[0].experiments.length, 1);
+    const experiments = state.goals[0].experiments;
+    assert.equal(experiments.length, 2);
+    assert.equal(experiments.filter((experiment) => experiment.status === 'proposed').length, 1, 'exactly one open proposal');
+    assert.equal(experiments[0].status, 'superseded');
+    assert.equal(experiments[0].superseded_reason, 'unreviewable_fallback_replaced_by_next_proposal');
 
     const status = runCli(['member', 'loop', 'mission-lead', '--status', '--json'], { cwd: dir });
     assert.equal(status.status, 0, status.stderr || status.stdout);
