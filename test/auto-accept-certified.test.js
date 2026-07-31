@@ -382,8 +382,10 @@ test('strict verify runtime uses cd cwd and env assignments without a shell', ()
 });
 
 test('strict verify runtime rejects absolute venv python outside the workspace arena', () => {
-  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-verify-workspace-'));
-  const outsidePython = path.join(os.homedir(), '.atris-verify-outside', 'venv', 'bin', 'python');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-verify-boundary-'));
+  const workspace = path.join(root, 'arena', 'workspace');
+  const outsidePython = path.join(root, 'outside', 'venv', 'bin', 'python');
+  fs.mkdirSync(workspace, { recursive: true });
   const command = `${outsidePython} -m pytest tests/a.py`;
 
   assert.equal(parseVerifyCommand(command).ok, true);

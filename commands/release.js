@@ -7,7 +7,7 @@ const { execFileSync } = require('child_process');
  *
  * - Reads git log since last tag
  * - Determines bump type (minor if any scorecard has reward>=5, else patch)
- * - Bumps package.json version
+ * - Bumps package.json and package-lock.json together
  * - Commits, tags, pushes
  * - Creates GitHub release via `gh`
  * - Drafts a /launch post (3 emoji bullets)
@@ -79,16 +79,17 @@ async function releaseAtris({ dryRun = false } = {}) {
     return;
   }
 
-  // 7. Bump package.json
-  const updatedPkgRaw = pkgRaw.replace(
-    `"version": "${currentVersion}"`,
-    `"version": "${nextVersion}"`
-  );
-  fs.writeFileSync(pkgPath, updatedPkgRaw);
-  console.log(`bumped package.json to ${nextVersion}`);
+  // 7. Let npm keep package.json and package-lock.json aligned.
+  execFileSync('npm', [
+    'version',
+    nextVersion,
+    '--no-git-tag-version',
+    '--ignore-scripts',
+  ], { cwd, stdio: 'ignore' });
+  console.log(`bumped package.json and package-lock.json to ${nextVersion}`);
 
   // 8. Commit
-  execFileSync('git', ['add', 'package.json'], { cwd });
+  execFileSync('git', ['add', 'package.json', 'package-lock.json'], { cwd });
   execFileSync('git', ['commit', '-m', `v${nextVersion}`], { cwd });
   console.log('committed');
 
