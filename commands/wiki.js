@@ -14,8 +14,11 @@ const {
   buildIngestPrompt,
   buildQueryPrompt,
   buildLintPrompt,
+  buildConsolidatePrompt,
   writeWikiStatus,
   appendWikiLog,
+  findWikiMetabolismFindings,
+  recordWikiConsolidation,
   validateAgentReadableWikiPages,
 } = require('../lib/wiki');
 
@@ -171,7 +174,7 @@ function hasHelpFlag(args) {
 }
 
 function printWikiHelp(scope = null) {
-  const normalized = scope === 'ingest' || scope === 'query' || scope === 'lint' || scope === 'search' || scope === 'log' || scope === 'loop' || scope === 'verify'
+  const normalized = scope === 'ingest' || scope === 'query' || scope === 'lint' || scope === 'consolidate' || scope === 'search' || scope === 'log' || scope === 'loop' || scope === 'verify'
     ? scope
     : null;
 
@@ -191,12 +194,17 @@ function printWikiHelp(scope = null) {
     console.log('Usage: atris wiki lint [--private|--cloud] [business]');
     console.log('');
     console.log('Build a local or cloud wiki lint prompt.');
+  } else if (normalized === 'consolidate') {
+    console.log('Usage: atris wiki consolidate [--private]');
+    console.log('');
+    console.log('Build a local wiki pruning prompt and reset the growth marker.');
   } else {
-    console.log('Usage: atris wiki <ingest|query|lint|search|log|loop|verify|entities|related> [business] [args]');
+    console.log('Usage: atris wiki <ingest|query|lint|consolidate|search|log|loop|verify|entities|related> [business] [args]');
     console.log('');
     console.log('  ingest <path>                 Local-first ingest into atris/wiki/');
     console.log('  query  "question"             Local-first query against atris/wiki/');
     console.log('  lint                          Local-first lint for atris/wiki/');
+    console.log('  consolidate                   Build a local pruning prompt and reset wiki growth');
     console.log('  search [business] <term>      Search local atris/wiki/index.md');
     console.log('  log    [business] [N]         Show recent atris/wiki/log.md entries');
     console.log('  loop                          Run local wiki upkeep analysis and refresh STATUS/log');
@@ -366,7 +374,11 @@ async function wikiLint(mode, slug) {
       console.error(`No local wiki found at ${getWikiRoot(wikiMode)}. Run: atris wiki ingest${wikiMode === 'private' ? ' --private' : ''} <path>`);
       process.exit(1);
     }
-    printLocalPrompt(mode === 'private' ? 'Private wiki lint' : 'Local wiki lint', buildLintPrompt(wikiMode), getWikiRoot(wikiMode), [`Wiki dir: ${wikiDir}`]);
+    const metabolismFindings = findWikiMetabolismFindings(process.cwd(), wikiMode);
+    printLocalPrompt(mode === 'private' ? 'Private wiki lint' : 'Local wiki lint', buildLintPrompt(wikiMode), getWikiRoot(wikiMode), [
+      `Wiki dir: ${wikiDir}`,
+      ...metabolismFindings.map((finding) => `${finding.code}: ${finding.message}`),
+    ]);
     return;
   }
 
@@ -374,6 +386,28 @@ async function wikiLint(mode, slug) {
   const business = await resolveBusiness(slug, creds.token);
   console.log(`\nLinting ${business.name} wiki...\n`);
   await runChat(business, buildLintPrompt(), creds.token);
+}
+
+function wikiConsolidate(mode, slug) {
+  if (mode === 'cloud') {
+    console.error('Wiki consolidation is local-only. Pull the wiki before consolidating it.');
+    process.exit(1);
+  }
+
+  const wikiMode = mode === 'private' ? 'private' : 'public';
+  const wikiDir = findLocalWikiDir(process.cwd(), slug, wikiMode);
+  if (!wikiDir) {
+    console.error(`No local wiki found at ${getWikiRoot(wikiMode)}.`);
+    process.exit(1);
+  }
+
+  printLocalPrompt(
+    mode === 'private' ? 'private wiki consolidate' : 'local wiki consolidate',
+    buildConsolidatePrompt(wikiMode),
+    getWikiRoot(wikiMode),
+    [`wiki dir: ${wikiDir}`]
+  );
+  recordWikiConsolidation(process.cwd(), wikiMode);
 }
 
 function wikiSearch(mode, slug, query) {
@@ -511,6 +545,10 @@ async function wikiCommand(subcommand, ...args) {
     case 'lint': {
       const slug = mode === 'cloud' ? (cleanArgs[0] || autoDetectSlug()) : null;
       await wikiLint(mode, slug);
+      break;
+    }
+    case 'consolidate': {
+      wikiConsolidate(mode, null);
       break;
     }
     case 'search': {
