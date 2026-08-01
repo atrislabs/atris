@@ -807,6 +807,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris wiki ingest|query|lint --cloud` routes the same prompt builders through business chat
 - `atris wiki search <term>` searches local `atris/wiki/index.md`
 - `atris wiki log [N]` shows recent `atris/wiki/log.md` activity
+- `atris wiki consolidate` prints a local pruning prompt and records per-surface counts in `.atris/state/wiki.metabolism.json`; lint flags over-budget surfaces and growth of 10 or more entries
 - `atris wiki loop` routes to the same local upkeep analysis as `atris loop`
 - `atris pull --only wiki` / `atris push --only wiki` normalize to `atris/wiki/`
 - **Wiki structure:**
