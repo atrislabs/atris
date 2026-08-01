@@ -756,12 +756,25 @@ async function fetchRegistryZip(slug, deps = {}) {
   const { response, authenticated } = result;
   if (response.status < 200 || response.status >= 300) {
     if (response.status === 404) throw registryNotFoundError(slug, authenticated);
-    throw new Error(responseErrorText(response, `registry lookup failed for ${slug} with status ${response.status}`));
+    const error = new Error(responseErrorText(response, `registry lookup failed for ${slug} with status ${response.status}`));
+    error.status = response.status;
+    throw error;
   }
   if (!response.body || response.body.length === 0) {
     throw new Error(`registry returned an empty zip for ${slug}`);
   }
   return response.body;
+}
+
+async function fetchRegistryZipForUser(slug, deps = {}) {
+  try {
+    return await fetchRegistryZip(slug, deps);
+  } catch (error) {
+    if (error.status !== 402) throw error;
+    console.error('this pack is paid. buy it on its page, then run this again.');
+    console.error(registryUrl(`/packs/${encodeURIComponent(slug)}`, deps));
+    return null;
+  }
 }
 
 function assertPublishableSlug(slug) {
@@ -1666,7 +1679,8 @@ async function loadZipPayload(source, cwd, deps = {}) {
   }
 
   const slug = slugify(source);
-  const buffer = await fetchRegistryZip(slug, deps);
+  const buffer = await fetchRegistryZipForUser(slug, deps);
+  if (!buffer) return null;
   return { buffer, fallbackSlug: slug, sourceType: 'registry', sourceSlug: slug };
 }
 
@@ -1854,7 +1868,8 @@ async function pullPack(rawArgs, cwd = process.cwd(), options = {}) {
   const existing = readPackManifestFromDir(packDir);
   const slug = slugify(slugArg || existing.slug);
   const deps = options.deps || {};
-  const zipBuffer = await fetchRegistryZip(slug, deps);
+  const zipBuffer = await fetchRegistryZipForUser(slug, deps);
+  if (!zipBuffer) return 1;
   const entries = readZipBuffer(zipBuffer);
   return stagePackUpdate({
     entries,
@@ -2121,6 +2136,7 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
   if (args.length) throw new Error(`unknown pack install argument: ${args.join(' ')}`);
 
   const payload = await loadZipPayload(source, cwd, options.deps || {});
+  if (!payload) return 1;
   const entries = readZipBuffer(payload.buffer);
   const zipManifest = parseManifest(entries);
   const slug = slugify(zipManifest.slug);
@@ -2721,6 +2737,11 @@ async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
   if (response.status < 200 || response.status >= 300) {
     if (origin.type === 'registry' && response.status === 404) {
       throw registryNotFoundError(origin.slug, authenticated);
+    }
+    if (origin.type === 'registry' && response.status === 402) {
+      console.error('this pack is paid. buy it on its page, then run this again.');
+      console.error(registryUrl(`/packs/${encodeURIComponent(origin.slug)}`, deps));
+      return 1;
     }
     throw new Error(`download failed with status ${response.status}`);
   }

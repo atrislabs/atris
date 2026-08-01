@@ -1462,6 +1462,36 @@ test('pack install accepts registry slugs and https zip urls', async () => {
   }
 });
 
+test('pack install points unpaid priced slugs to their page and keeps other errors raw', async () => {
+  const dir = makeTempDir();
+  const errors = [];
+  const originalError = console.error;
+  try {
+    console.error = (line) => errors.push(line);
+    const deps = {
+      getAppBaseUrl: () => 'https://app.test/',
+      loadCredentials: () => ({ token: 'test-token' }),
+      httpRequest: async () => jsonResponse(402, { error: 'Purchase required.' }),
+    };
+
+    assert.equal(await installPack(['paid-pack'], dir, { deps }), 1);
+    assert.deepEqual(errors, [
+      'this pack is paid. buy it on its page, then run this again.',
+      'https://app.test/packs/paid-pack',
+    ]);
+
+    deps.httpRequest = async () => jsonResponse(500, { error: 'service unavailable' });
+    await assert.rejects(
+      () => installPack(['broken-pack'], dir, { deps }),
+      /service unavailable/,
+    );
+    assert.equal(errors.length, 2);
+  } finally {
+    console.error = originalError;
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack install stamps file origin for local zip installs', async () => {
   const dir = makeTempDir();
   try {
@@ -1928,6 +1958,34 @@ test('pack pull stages newer remote in upstream and preserves local edits', asyn
       process.env.ATRIS_APP_URL = previousAppUrl;
     }
     if (server) await closeServer(server);
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack pull points unpaid priced slugs to their page', async () => {
+  const dir = makeTempDir();
+  const target = path.join(dir, 'demo-pack');
+  const errors = [];
+  const originalError = console.error;
+  try {
+    writePackDir(target, { slug: 'paid-pack', version: '0.1.0' });
+    console.error = (line) => errors.push(line);
+
+    const result = await pullPack(['--dir', target], dir, {
+      deps: {
+        getAppBaseUrl: () => 'https://app.test/',
+        loadCredentials: () => ({ token: 'test-token' }),
+        httpRequest: async () => jsonResponse(402, { error: 'Purchase required.' }),
+      },
+    });
+
+    assert.equal(result, 1);
+    assert.deepEqual(errors, [
+      'this pack is paid. buy it on its page, then run this again.',
+      'https://app.test/packs/paid-pack',
+    ]);
+  } finally {
+    console.error = originalError;
     cleanupTempDir(dir);
   }
 });
