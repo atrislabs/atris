@@ -120,7 +120,7 @@ const PACKET = {
   ],
   // Dated journal entries, at any depth: 2026-07-06.md, 2026-07-06-retro.md.
   runningStatePatterns: [/^\d{4}-\d{2}-\d{2}(?:[-_][^.]*)?\.[a-z0-9]+$/i],
-  runningStateReason: 'running state is excluded (a packet carries definitions, not state)',
+  runningStateReason: 'running state is excluded (a pack carries definitions, not state)',
   // Exact filenames that never ship.
   deniedNames: [
     'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock',
@@ -378,7 +378,7 @@ function classifyPacketPath(relativePath, { includeLogs = false, isDirectory = f
     if (inner.length > 1) return { ok: true };
     return packetDirectories(includeLogs).includes(inner[0])
       ? { ok: true }
-      : { ok: false, reason: `not in the packet allowlist (${inner[0]}/)` };
+      : { ok: false, reason: `not in the pack allowlist (${inner[0]}/)` };
   }
 
   const extension = path.extname(lowerBase);
@@ -389,7 +389,7 @@ function classifyPacketPath(relativePath, { includeLogs = false, isDirectory = f
       : { ok: false, reason: 'not a root document (.md/.txt)' };
   }
   if (!packetDirectories(includeLogs).includes(inner[0])) {
-    return { ok: false, reason: `not in the packet allowlist (${inner[0]}/)` };
+    return { ok: false, reason: `not in the pack allowlist (${inner[0]}/)` };
   }
   return PACKET.extensions.includes(extension)
     ? { ok: true }
@@ -787,7 +787,7 @@ function assertPublishableSlug(slug) {
 
 function assertPublishableAuthor(manifest) {
   if (!manifest.author || !String(manifest.author).trim()) {
-    throw new Error('registry packs need an author. re-run with --author "<your name>" (or set "author" in pack.json).');
+    throw new Error('publishing needs an author. re-run with --author "<your name>" (or set "author" in pack.json).');
   }
 }
 
@@ -942,7 +942,7 @@ async function listPackShares(slug, deps = {}) {
   const data = await requestRegistryJson(
     `/api/pack/registry/${encodeURIComponent(slug)}/share`,
     {
-      authPurpose: 'list pack share links',
+      authPurpose: 'list personal links for packs',
       unreachableMessage: 'could not list pack share links. check your connection and try again.',
       invalidMessage: 'pack share links returned an invalid response',
     },
@@ -959,7 +959,7 @@ async function revokePackShares(slug, deps = {}) {
     `/api/pack/registry/${encodeURIComponent(slug)}/share`,
     {
       method: 'DELETE',
-      authPurpose: 'revoke pack share links',
+      authPurpose: 'revoke personal links for packs',
       sendOrigin: true,
       unreachableMessage: 'could not revoke pack share links. check your connection and try again.',
     },
@@ -972,7 +972,7 @@ async function revokePackShare(slug, nonce, deps = {}) {
     `/api/pack/registry/${encodeURIComponent(slug)}/share`,
     {
       method: 'DELETE',
-      authPurpose: 'revoke a pack share link',
+      authPurpose: 'revoke a personal link for a pack',
       sendOrigin: true,
       body: { nonce },
       unreachableMessage: 'could not revoke that pack share link. check your connection and try again.',
@@ -1078,7 +1078,7 @@ async function sharePack(rawArgs, cwd = process.cwd(), options = {}) {
   if (parsed.mode === 'list') {
     const links = await listPackShares(parsed.slug, deps);
     const table = formatPackShareLinksTable(links);
-    print(table || 'no share links recorded for this pack.');
+    print(table || 'no personal links minted for this pack.');
     return 0;
   }
 
@@ -1088,15 +1088,15 @@ async function sharePack(rawArgs, cwd = process.cwd(), options = {}) {
         await revokePackShare(parsed.slug, parsed.nonce, deps);
       } catch (error) {
         if (error && error.status === 404) {
-          throw new Error(`no link found with that id. run: atris pack share ${parsed.slug} --list`);
+          throw new Error(`no personal link found with that id. run: atris pack share ${parsed.slug} --list`);
         }
         throw error;
       }
-      print('that link is now dead. others keep working.');
+      print('that personal link is now dead. other personal links keep working.');
       return 0;
     }
     await revokePackShares(parsed.slug, deps);
-    print('every outstanding link is now dead. sharing again mints fresh links.');
+    print('every outstanding personal link is now dead. sharing again mints fresh personal links.');
     return 0;
   }
 
@@ -1120,7 +1120,7 @@ async function sharePack(rawArgs, cwd = process.cwd(), options = {}) {
       : null;
     if (!fallbackUrl) throw error;
     print(fallbackUrl);
-    print('signed link minting failed, so this public pack is using a personal public link with no expiry.');
+    print('personal link minting failed, so this public pack is using a personal link with no expiry.');
     return 0;
   }
 }
@@ -1493,7 +1493,7 @@ function printSkipped(skipped) {
 
 function printPacketSummary(manifest, entries, skipped, zipBytes) {
   const unpacked = entries.reduce((total, entry) => total + entry.data.length, 0);
-  console.log(`packet ${manifest.slug} ${manifest.version}`);
+  console.log(`pack ${manifest.slug} ${manifest.version}`);
   console.log(`  files     ${entries.length} (limit ${REGISTRY_LIMITS.maxEntries})`);
   console.log(`  unpacked  ${formatBytes(unpacked)} (limit ${formatBytes(REGISTRY_LIMITS.maxUnpackedBytes)})`);
   console.log(`  zip       ${formatBytes(zipBytes)} (limit ${formatBytes(REGISTRY_LIMITS.maxZipBytes)})`);
@@ -1507,13 +1507,13 @@ function registryLimitFailures(entries, zipBytes) {
   const unpacked = entries.reduce((total, entry) => total + entry.data.length, 0);
   const failures = [];
   if (entries.length > REGISTRY_LIMITS.maxEntries) {
-    failures.push(`entry count: ${entries.length} files exceeds the ${REGISTRY_LIMITS.maxEntries} file registry limit`);
+    failures.push(`entry count: ${entries.length} files exceeds the ${REGISTRY_LIMITS.maxEntries} file limit`);
   }
   if (unpacked > REGISTRY_LIMITS.maxUnpackedBytes) {
-    failures.push(`unpacked size: ${formatBytes(unpacked)} exceeds the ${formatBytes(REGISTRY_LIMITS.maxUnpackedBytes)} registry limit`);
+    failures.push(`unpacked size: ${formatBytes(unpacked)} exceeds the ${formatBytes(REGISTRY_LIMITS.maxUnpackedBytes)} unpacked limit`);
   }
   if (zipBytes > REGISTRY_LIMITS.maxZipBytes) {
-    failures.push(`zip size: ${formatBytes(zipBytes)} exceeds the ${formatBytes(REGISTRY_LIMITS.maxZipBytes)} registry limit`);
+    failures.push(`zip size: ${formatBytes(zipBytes)} exceeds the ${formatBytes(REGISTRY_LIMITS.maxZipBytes)} zip limit`);
   }
   return failures;
 }
@@ -1589,8 +1589,8 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
       return 1;
     }
   } else {
-    console.log('WARNING: --allow-secrets is on. Credential scanning is disabled for this publish.');
-    console.log('WARNING: anything you ship is readable by every person who installs this packet.');
+    console.log('warning: --allow-secrets is on. Credential scanning is disabled for this publish.');
+    console.log('warning: anything you ship is readable by every person who installs this pack.');
   }
 
   const zipBuffer = createZipBuffer(entries);
@@ -1599,7 +1599,7 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
 
   if (dryRun) {
     if (failures.length) {
-      console.error('dry run: this packet would be rejected by the registry.');
+      console.error('dry run: this pack would be rejected.');
       for (const failure of failures) console.error(`  ${failure}`);
       return 1;
     }
@@ -1608,9 +1608,9 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   }
 
   if (shipping && failures.length) {
-    console.error('refusing to publish: packet exceeds the registry limits.');
+    console.error('refusing to publish: this pack exceeds the size limits.');
     for (const failure of failures) console.error(`  ${failure}`);
-    console.error('trim the workspace or split the packet, then re-run.');
+    console.error('trim the workspace or split the pack, then re-run.');
     return 1;
   }
 
@@ -1631,11 +1631,11 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
     console.log(`wrote pack.json for ${manifest.slug} ${manifest.version}`);
     console.log('share with: atris pack publish --out <file.zip> or atris pack publish --push');
     if (failures.length) {
-      console.log('note: this packet is too big for the registry today:');
+      console.log('note: this pack is too big to publish today:');
       for (const failure of failures) console.log(`  ${failure}`);
     }
     if (!manifest.author || !String(manifest.author).trim()) {
-      console.log('note: publishing to the registry needs an author. add --author "<your name>".');
+      console.log('note: publishing needs an author. add --author "<your name>".');
     }
   }
   return 0;
@@ -2203,15 +2203,15 @@ function packRunLocalHint(displayTarget) {
 function assertPacketDir(dir, cwd) {
   const display = path.relative(cwd, dir) || '.';
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
-    throw new Error(`packet folder not found: ${display}`);
+    throw new Error(`pack folder not found: ${display}`);
   }
   if (!fs.existsSync(path.join(dir, 'pack.json'))) {
-    throw new Error(`not an atris packet (no pack.json): ${display}`);
+    throw new Error(`not an atris pack (no pack.json): ${display}`);
   }
   try {
     return readPackManifestFromDir(dir);
   } catch {
-    throw new Error(`packet is invalid (unreadable pack.json): ${display}`);
+    throw new Error(`pack is invalid (unreadable pack.json): ${display}`);
   }
 }
 
@@ -2234,7 +2234,7 @@ function cloudGateFailure(packDir, displayTarget, deps = {}) {
   const binding = readBinding(packDir);
   if (!binding) {
     return [
-      'no business is bound to this packet folder, so there is no cloud workspace to run in.',
+      'no business is bound to this pack folder, so there is no cloud workspace to run in.',
       'run: atris business init "<name>"',
     ];
   }
@@ -2637,7 +2637,7 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
   let manifest;
 
   if (looksLikeExistingDir(source, cwd)) {
-    if (targetArg) throw new Error('--dir applies when installing a packet, not when running a folder');
+    if (targetArg) throw new Error('--dir applies when installing a pack, not when running a folder');
     packDir = path.resolve(cwd, source);
     manifest = assertPacketDir(packDir, cwd);
   } else {
@@ -2645,7 +2645,7 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
     const alreadyThere = !force && fs.existsSync(path.join(packDir, 'pack.json'));
     if (alreadyThere) {
       manifest = assertPacketDir(packDir, cwd);
-      console.log(`using installed packet ${path.relative(cwd, packDir) || '.'}`);
+      console.log(`using installed pack ${path.relative(cwd, packDir) || '.'}`);
     } else {
       const installArgs = [source, '--dir', packDir];
       if (force) installArgs.push('--force');
@@ -3792,9 +3792,9 @@ function printPackDoctorJsonError(code, message) {
 
 function packLocalErrorCode(error, fallback) {
   const message = error && error.message ? error.message : String(error);
-  if (/^(?:installed pack|packet folder) not found:/.test(message)) return 'pack-not-found';
+  if (/^(?:installed pack|(?:pack|packet) folder) not found:/.test(message)) return 'pack-not-found';
   if (/^multiple installed packs match /.test(message)) return 'ambiguous-pack';
-  if (/^(?:not an atris packet|packet is invalid) /.test(message)) return 'invalid-pack';
+  if (/^(?:not an atris (?:pack|packet)|(?:pack|packet) is invalid) /.test(message)) return 'invalid-pack';
   return fallback;
 }
 

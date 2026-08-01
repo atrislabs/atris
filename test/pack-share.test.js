@@ -132,7 +132,7 @@ test('pack share falls back to ?for only after minting fails for a public pack',
   assert.equal(result, 0);
   assert.deepEqual(calls.map((call) => call.options.method), ['POST', 'GET']);
   assert.equal(output[0], 'https://packs.example.com/packs/design-brain?for=Ada%20Lovelace');
-  assert.match(output[1], /public link with no expiry/);
+  assert.match(output[1], /personal link with no expiry/);
 });
 
 test('pack share does not fall back for an unlisted or private pack', async () => {
@@ -192,7 +192,7 @@ test('pack share --revoke deletes all signed links with auth and origin', async 
   assert.equal(calls[0].options.headers.Origin, 'https://packs.example.com');
   assert.equal(calls[0].options.body, undefined);
   assert.deepEqual(output, [
-    'every outstanding link is now dead. sharing again mints fresh links.',
+    'every outstanding personal link is now dead. sharing again mints fresh personal links.',
   ]);
 });
 
@@ -248,7 +248,7 @@ test('pack share --list prints one sentence when no links remain', async () => {
   );
 
   assert.equal(result, 0);
-  assert.deepEqual(output, ['no share links recorded for this pack.']);
+  assert.deepEqual(output, ['no personal links minted for this pack.']);
 });
 
 test('pack share --revoke with an id deletes only that link', async () => {
@@ -276,7 +276,7 @@ test('pack share --revoke with an id deletes only that link', async () => {
   assert.equal(calls[0].options.headers.Authorization, 'Bearer test-token');
   assert.equal(calls[0].options.headers.Origin, 'https://packs.example.com');
   assert.deepEqual(JSON.parse(calls[0].options.body), { nonce: shareNonce });
-  assert.deepEqual(output, ['that link is now dead. others keep working.']);
+  assert.deepEqual(output, ['that personal link is now dead. other personal links keep working.']);
 });
 
 test('pack share --revoke with an unknown id points to the link list', async () => {
@@ -290,7 +290,7 @@ test('pack share --revoke with an unknown id points to the link list', async () 
       repoRoot,
       { deps, print: () => {} },
     ),
-    /no link found with that id\. run: atris pack share design-brain --list/,
+    /no personal link found with that id\. run: atris pack share design-brain --list/,
   );
 });
 
