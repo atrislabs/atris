@@ -336,7 +336,12 @@ test('declared --trust auto-approves only inside the tool ceiling and never bypa
     assert.equal(call.options.skipPermissions, false, 'declared --trust must never request bypassPermissions');
     assert.equal(call.args[call.args.indexOf('--permission-mode') + 1], 'dontAsk');
     const settings = JSON.parse(call.args[call.args.indexOf('--settings') + 1]);
-    assert.deepEqual(settings.permissions.allow, ['Read(/**)', 'Edit(/**)', 'Skill']);
+    assert.deepEqual(
+      settings.permissions.allow,
+      ['Read', 'Glob', 'Grep', 'Skill', 'Edit', 'Write'],
+      'dontAsk must pre-approve every granted tool by its exact Claude permission name',
+    );
+    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write');
     assert.match(output, /automatic inside the declared ceiling/);
   } finally {
     cleanupTempDir(dir);
