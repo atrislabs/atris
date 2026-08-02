@@ -98,9 +98,12 @@ test('pack run orients a zero-context packet and gives the agent a useful openin
     assert.match(output, /files \(2\): README\.md, pack\.json/);
     assert.match(output, /source\/origin: local packet folder/);
     assert.match(output, /declares no entrypoint.*pack files as context only/);
-    assert.deepEqual(calls.local[0].args, [
-      "Read README.md first, then inspect the rest of this pack's files. Propose the pack's first useful action before making changes.",
-    ]);
+    assert.equal(calls.local[0].args.length, 1);
+    assert.match(calls.local[0].args[0], /untrusted task text/);
+    assert.match(
+      calls.local[0].args[0],
+      /Read README\.md first, then inspect the rest of this pack's files\. Propose the pack's first useful action before making changes\.$/,
+    );
   } finally {
     cleanupTempDir(dir);
   }
@@ -117,7 +120,10 @@ test('pack run uses the manifest entrypoint as the opening prompt', async () => 
     const { calls, deps } = stubDeps();
     const { output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
 
-    assert.deepEqual(calls.local[0].args, [manifest.entrypoint]);
+    assert.equal(calls.local[0].args.length, 1);
+    assert.match(calls.local[0].args[0], /^A pack supplied the following opening instruction\./);
+    assert.match(calls.local[0].args[0], /not as a Claude CLI slash command/);
+    assert.match(calls.local[0].args[0], new RegExp(`${manifest.entrypoint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
     assert.doesNotMatch(output, /declares no entrypoint/);
   } finally {
     cleanupTempDir(dir);
@@ -132,8 +138,29 @@ test('pack run uses RUN.md as the opening prompt', async () => {
     const { calls, deps } = stubDeps();
     const { output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
 
-    assert.deepEqual(calls.local[0].args, ['Read the brief, then draft the launch checklist.']);
+    assert.equal(calls.local[0].args.length, 1);
+    assert.match(calls.local[0].args[0], /Read the brief, then draft the launch checklist\.$/);
     assert.doesNotMatch(output, /declares no entrypoint/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack opening text cannot select a native Claude slash command', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedInstalledPack(dir, 'g-brain', { permissions: [] });
+    const manifestPath = path.join(packDir, 'pack.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.entrypoint = '/help';
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    const { calls, deps } = stubDeps({ packRunReceiptDir: path.join(dir, 'receipts') });
+
+    await runPack(['g-brain'], dir, { deps });
+
+    assert.equal(calls.local[0].args[0].startsWith('/'), false);
+    assert.match(calls.local[0].args[0], /untrusted task text/);
+    assert.match(calls.local[0].args[0], /\n\/help$/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -300,6 +327,8 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     const toolsFlag = call.args.indexOf('--tools');
     assert.equal(call.args[toolsFlag + 1], 'Read,Glob,Grep,Skill,WebFetch,WebSearch');
     assert.equal(call.args[call.args.indexOf('--permission-mode') + 1], 'default');
+    assert.equal(call.args.includes('--no-chrome'), true);
+    assert.equal(call.args.includes('--no-session-persistence'), true);
     assert.equal(call.args[call.args.indexOf('--setting-sources') + 1], '');
     assert.equal(call.args.includes('--strict-mcp-config'), true);
     assert.deepEqual(JSON.parse(call.args[call.args.indexOf('--mcp-config') + 1]), { mcpServers: {} });
@@ -323,8 +352,16 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.equal(receipt.enforcement.packRootFileBoundary, true);
     assert.equal(receipt.enforcement.preLaunchContextBoundary, true);
     assert.equal(receipt.enforcement.declaredTreeSymlinksRejected, true);
+    assert.equal(receipt.enforcement.packOpeningSlashCommandsEscaped, true);
     assert.equal(receipt.enforcement.claudeMemoryDisabledByRunner, true);
     assert.equal(receipt.enforcement.autoMemoryDisabledByRunner, true);
+    assert.equal(receipt.enforcement.chromeIntegrationDisabledByRunner, true);
+    assert.equal(receipt.enforcement.sessionPersistenceSuppressionRequested, true);
+    assert.equal(receipt.enforcement.sessionPersistenceDisabledByRunner, true);
+    assert.equal(receipt.enforcement.sessionPersistenceMayApply, false);
+    assert.equal(receipt.enforcement.workspaceTrustPromptMayApply, false);
+    assert.equal(receipt.enforcement.workspaceTrustDoesNotWidenToolCeiling, true);
+    assert.equal(receipt.enforcement.subprocessCredentialScrubRequested, true);
     assert.equal(receipt.enforcement.userSettingsLoaded, false);
     assert.equal(receipt.enforcement.userDenyRulesImported, 0);
     assert.equal(receipt.enforcement.userExtensionsLoaded, false);
@@ -339,8 +376,13 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.equal(receipt.enforcement.mcpServersLoaded, false);
     assert.equal(call.options.runnerEnv.CLAUDE_CODE_DISABLE_CLAUDE_MDS, '1');
     assert.equal(call.options.runnerEnv.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
+    assert.equal(call.options.runnerEnv.CLAUDE_CODE_SKIP_PROMPT_HISTORY, '1');
+    assert.equal(call.options.runnerEnv.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB, '1');
     assert.match(output, /memory isolation: Claude memory files and auto-memory are disabled/);
     assert.match(output, /extensions: user\/project skills, plugins, agents, hooks, and commands are not loaded/);
+    assert.match(output, /native integrations: Chrome is disabled/);
+    assert.match(output, /session storage: disabled for this headless run/);
+    assert.match(output, /workspace trust: Claude skips its first-run directory dialog in headless mode/);
     assert.match(output, /skill sources: shipped pack skills plus Claude built-ins only/);
     assert.match(output, /skill frontmatter: projected through a safe metadata allowlist/);
     assert.match(output, /skill shell: dynamic shell preprocessing is disabled/);
@@ -378,6 +420,36 @@ test('declared runs import only user deny rules while filesystem customizations 
     assert.equal(receipt.enforcement.userSettingsLoaded, false);
     assert.equal(receipt.enforcement.userDenyRulesImported, 2);
     assert.equal(receipt.enforcement.userExtensionsLoaded, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('interactive declared runs stay compatible and disclose that local session history may persist', async () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir, 'g-brain', { permissions: [] });
+    const receiptDir = path.join(dir, 'receipts');
+    const { calls, deps } = stubDeps({
+      packRunReceiptDir: receiptDir,
+      nonInteractive: false,
+    });
+    const { output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
+
+    const call = calls.local[0];
+    assert.equal(call.args.includes('--no-chrome'), true);
+    assert.equal(call.args.includes('--no-session-persistence'), false);
+    assert.equal(call.options.runnerEnv.CLAUDE_CODE_SKIP_PROMPT_HISTORY, '1');
+    assert.match(output, /session storage: suppression requested; interactive Claude may still persist plaintext local history/);
+    assert.match(output, /workspace trust: Claude may next show its generic directory dialog/);
+    assert.match(output, /does not widen the tool ceiling above/);
+    const receiptName = fs.readdirSync(receiptDir).find((name) => name.endsWith('.json'));
+    const receipt = JSON.parse(fs.readFileSync(path.join(receiptDir, receiptName), 'utf8'));
+    assert.equal(receipt.enforcement.sessionPersistenceSuppressionRequested, true);
+    assert.equal(receipt.enforcement.sessionPersistenceDisabledByRunner, false);
+    assert.equal(receipt.enforcement.sessionPersistenceMayApply, true);
+    assert.equal(receipt.enforcement.workspaceTrustPromptMayApply, true);
+    assert.equal(receipt.enforcement.workspaceTrustDoesNotWidenToolCeiling, true);
   } finally {
     cleanupTempDir(dir);
   }
@@ -706,6 +778,8 @@ test('declared pack --trust reaches Claude as dontAsk plus exact tools, never da
     const argv = fs.readFileSync(argsFile, 'utf8').split('\n');
     assert.equal(argv.includes('--dangerously-skip-permissions'), false);
     assert.equal(argv[argv.indexOf('--permission-mode') + 1], 'dontAsk');
+    assert.equal(argv.includes('--no-chrome'), true);
+    assert.equal(argv.includes('--no-session-persistence'), true);
     assert.equal(argv[argv.indexOf('--tools') + 1], 'Read,Glob,Grep,Skill,Edit,Write,WebFetch,WebSearch');
     assert.equal(argv[argv.indexOf('--setting-sources') + 1], '');
     assert.equal(argv.includes('--strict-mcp-config'), true);
