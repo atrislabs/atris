@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const { runPack } = require('../commands/pack');
 const {
   resolvePackCapabilityPolicy,
@@ -150,6 +151,124 @@ test('pack run uses RUN.md as the opening prompt', async () => {
   } finally {
     cleanupTempDir(dir);
   }
+});
+
+test('pack run injects bounded operator input without exposing its host path or contents in the receipt', async () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir, 'g-brain', {
+      permissions: ['pack.read'],
+      entrypoint: 'Evaluate the supplied lifecycle record.',
+    });
+    const inputPath = path.join(dir, 'private-target-evidence.json');
+    const input = '{"schema":"atris.pack-inspect.v1","secret":"TARGET_INPUT_CANARY"}\n';
+    fs.writeFileSync(inputPath, input, 'utf8');
+    const receiptDir = path.join(dir, 'receipts');
+    const { calls, deps } = stubDeps({ packRunReceiptDir: receiptDir });
+
+    const { code, output } = await captureConsole(() => runPack([
+      'g-brain', '--input', inputPath, '--trust',
+    ], dir, { deps }));
+
+    assert.equal(code, 0);
+    assert.equal(calls.local.length, 1);
+    const prompt = calls.local[0].args[0];
+    assert.match(prompt, /^A pack supplied the following opening instruction\./);
+    assert.match(prompt, /Evaluate the supplied lifecycle record\./);
+    assert.match(prompt, /The operator supplied the following run input\./);
+    assert.match(prompt, /TARGET_INPUT_CANARY/);
+    assert.ok(prompt.indexOf('opening instruction') < prompt.indexOf('operator supplied'));
+    assert.equal(prompt.includes(inputPath), false, 'the host input path must not enter the pack prompt');
+    assert.match(output, new RegExp(`operator input: ${Buffer.byteLength(input)} bytes injected`));
+
+    const receiptName = fs.readdirSync(receiptDir).find((name) => name.endsWith('.json'));
+    const receipt = JSON.parse(fs.readFileSync(path.join(receiptDir, receiptName), 'utf8'));
+    assert.deepEqual(receipt.operatorInput, {
+      bytes: Buffer.byteLength(input),
+      sha256: createHash('sha256').update(input).digest('hex'),
+    });
+    const serializedReceipt = JSON.stringify(receipt);
+    assert.equal(serializedReceipt.includes(inputPath), false);
+    assert.equal(serializedReceipt.includes('TARGET_INPUT_CANARY'), false);
+    assert.deepEqual(receipt.grantedCapabilities, ['pack.read']);
+    assert.deepEqual(receipt.grantedTools, ['Read', 'Glob', 'Grep', 'Skill']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack run rejects unsafe input files before install or runner launch', async () => {
+  const dir = makeTempDir();
+  try {
+    const directory = path.join(dir, 'directory-input');
+    fs.mkdirSync(directory);
+    const regular = path.join(dir, 'regular.txt');
+    fs.writeFileSync(regular, 'evidence\n', 'utf8');
+    const symlink = path.join(dir, 'symlink-input');
+    fs.symlinkSync(regular, symlink);
+    const empty = path.join(dir, 'empty.txt');
+    fs.writeFileSync(empty, '');
+    const oversized = path.join(dir, 'oversized.txt');
+    fs.writeFileSync(oversized, Buffer.alloc((256 * 1024) + 1, 0x61));
+    const invalidUtf8 = path.join(dir, 'invalid-utf8.txt');
+    fs.writeFileSync(invalidUtf8, Buffer.from([0xff]));
+
+    for (const [inputPath, expected] of [
+      [path.join(dir, 'missing.txt'), /input file not found/],
+      [directory, /must be a regular file/],
+      [symlink, /must be a regular file/],
+      [empty, /input file is empty/],
+      [oversized, /exceeds the 262144-byte limit/],
+      [invalidUtf8, /must be UTF-8 text/],
+    ]) {
+      const { calls, deps } = stubDeps({
+        installPack: async () => { calls.install.push('unexpected'); return 0; },
+      });
+      await assert.rejects(
+        () => runPack(['not-installed', '--input', inputPath], dir, { deps }),
+        expected,
+      );
+      assert.equal(calls.install.length, 0);
+      assert.equal(calls.local.length, 0);
+      assert.equal(calls.cloud.length, 0);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack run input fails closed for cloud and unbounded legacy runs', async () => {
+  const dir = makeTempDir();
+  try {
+    const inputPath = path.join(dir, 'evidence.json');
+    fs.writeFileSync(inputPath, '{}\n', 'utf8');
+
+    const cloud = stubDeps({
+      installPack: async () => { cloud.calls.install.push('unexpected'); return 0; },
+    });
+    await assert.rejects(
+      () => runPack(['not-installed', '--cloud', '--input', inputPath], dir, { deps: cloud.deps }),
+      /--input is local-only/,
+    );
+    assert.equal(cloud.calls.install.length, 0);
+    assert.equal(cloud.calls.cloud.length, 0);
+
+    seedInstalledPack(dir, 'legacy-pack');
+    const legacy = stubDeps();
+    await assert.rejects(
+      () => runPack(['legacy-pack', '--input', inputPath], dir, { deps: legacy.deps }),
+      /--input requires an enforced capability ceiling/,
+    );
+    assert.equal(legacy.calls.local.length, 0);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack run help documents bounded operator input', async () => {
+  const { code, output } = await captureConsole(() => runPack(['--help']));
+  assert.equal(code, 0);
+  assert.match(output, /atris pack run <slug\|dir> \[--dir <target>\] \[--input <file>\]/);
 });
 
 test('pack opening text cannot select a native Claude slash command', async () => {
