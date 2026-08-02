@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const escapeRegExp = require('../lib/escape-regexp');
+const { wikiMetabolismNudge } = require('../lib/wiki');
 
 /**
  * atris clean - Workspace housekeeping with auto-heal
@@ -82,6 +83,12 @@ function cleanAtris(options = {}) {
   // Report results
   console.log('Results:');
   console.log('');
+
+  const wikiNudge = wikiMetabolismNudge(cwd);
+  if (wikiNudge) {
+    console.log(wikiNudge);
+    console.log('');
+  }
 
   // Stale tasks
   if (staleTasks.length > 0) {

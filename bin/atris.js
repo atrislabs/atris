@@ -1704,6 +1704,16 @@ function showWelcomeVisualization() {
     console.log(row('tidy', tidyBits.join(', ')));
   }
 
+  let wikiNudge = '';
+  try {
+    wikiNudge = require('../lib/wiki').wikiMetabolismNudge(cwd);
+  } catch {
+    wikiNudge = '';
+  }
+  if (wikiNudge) {
+    console.log(`  ${wikiNudge}`);
+  }
+
   console.log(row('logs', journalEntries > 0
     ? `${journalEntries} note${journalEntries === 1 ? '' : 's'} today`
     : 'nothing yet today'));
