@@ -136,9 +136,9 @@ function showHelp() {
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
   console.log('       atris pack run <slug|dir> [--dir <target>] [--cloud] [--force] [--trust]');
   console.log('       atris pack share <slug> [--for "<Name>"]');
-  console.log('       atris pack pull [<slug>] [--dir <path>]');
+  console.log('       atris pack pull [<slug>] [--dir <path>] [--allow-downgrade]');
   console.log('       atris pack status [--dir <path>]');
-  console.log('       atris pack update [<dir>]');
+  console.log('       atris pack update [<dir>] [--allow-downgrade]');
   console.log('       atris pack inspect <slug|dir>');
   console.log('       atris pack list [--dir <path>]');
 }
@@ -1029,8 +1029,77 @@ function writeUpstreamZip(entries, packDir, state, writes = null) {
   writeUpstreamState(packDir, state);
 }
 
+function stagePackUpdate({
+  entries,
+  packDir,
+  existing,
+  slug,
+  origin,
+  allowDowngrade = false,
+  deps = {},
+}) {
+  const remoteManifest = parseManifest(entries);
+  if (slugify(remoteManifest.slug || slug) !== slug) {
+    throw new Error(`remote returned different slug: ${remoteManifest.slug}`);
+  }
+
+  const localVersion = manifestVersion(existing);
+  const remoteVersion = manifestVersion(remoteManifest);
+  const comparison = comparePackVersions(remoteVersion, localVersion);
+  if (comparison === null) {
+    throw new Error(`could not compare pack versions: local ${localVersion}, remote ${remoteVersion}`);
+  }
+
+  // Plan every write before recording the check or replacing an older staged
+  // review. Invalid archives therefore leave both pack state surfaces intact.
+  const upstreamWrites = planZipWrites(entries, path.join(packDir, '.upstream'));
+  recordRemoteCheck(packDir, {
+    slug,
+    origin,
+    remoteVersion,
+  }, deps);
+
+  if (comparison < 0 && !allowDowngrade) {
+    throw new Error(
+      `refusing downgrade: local v${localVersion} is newer than remote v${remoteVersion}. `
+      + 'rerun with --allow-downgrade to stage it for review.',
+    );
+  }
+
+  if (comparison === 0) {
+    console.log(`already up to date v${localVersion}`);
+    return {
+      ok: true,
+      upToDate: true,
+      staged: false,
+      manifest: existing,
+      remoteManifest,
+      localVersion,
+      remoteVersion,
+      targetDir: packDir,
+    };
+  }
+
+  const state = buildUpstreamState(slug, localVersion, remoteVersion);
+  writeUpstreamZip(entries, packDir, state, upstreamWrites);
+  const direction = comparison < 0 ? 'staged downgrade' : 'staged';
+  console.log(`${direction} ${slug} local v${localVersion} -> remote v${remoteVersion}`);
+  console.log('upstream lives in .upstream/ for a deliberate merge.');
+  return {
+    ok: true,
+    upToDate: false,
+    staged: true,
+    manifest: existing,
+    remoteManifest,
+    localVersion,
+    remoteVersion,
+    targetDir: packDir,
+  };
+}
+
 async function pullPack(rawArgs, cwd = process.cwd(), options = {}) {
   const args = [...rawArgs];
+  const allowDowngrade = takeFlag(args, '--allow-downgrade');
   const packDir = path.resolve(cwd, takeValue(args, '--dir') || '.');
   const slugArg = args.shift() || null;
   if (args.length) throw new Error(`unknown pack pull argument: ${args.join(' ')}`);
@@ -1040,39 +1109,15 @@ async function pullPack(rawArgs, cwd = process.cwd(), options = {}) {
   const deps = options.deps || {};
   const zipBuffer = await fetchRegistryZip(slug, deps);
   const entries = readZipBuffer(zipBuffer);
-  const remoteManifest = parseManifest(entries);
-  if (slugify(remoteManifest.slug || slug) !== slug) {
-    throw new Error(`registry returned different slug: ${remoteManifest.slug}`);
-  }
-
-  const localVersion = manifestVersion(existing);
-  const remoteVersion = manifestVersion(remoteManifest);
-  const comparison = comparePackVersions(remoteVersion, localVersion);
-  if (comparison === null) {
-    throw new Error(`could not compare pack versions: local ${localVersion}, remote ${remoteVersion}`);
-  }
-  const upstreamWrites = planZipWrites(entries, path.join(packDir, '.upstream'));
-
-  recordRemoteCheck(packDir, {
+  return stagePackUpdate({
+    entries,
+    packDir,
+    existing,
     slug,
     origin: { type: 'registry', slug },
-    remoteVersion,
-  }, deps);
-
-  const state = buildUpstreamState(slug, localVersion, remoteVersion);
-  if (comparison > 0) {
-    writeUpstreamZip(entries, packDir, state, upstreamWrites);
-    console.log(`pulled ${slug} local v${localVersion} -> remote v${remoteVersion}`);
-    console.log('upstream lives in .upstream/ for a deliberate merge.');
-    return { ok: true, upToDate: false, localVersion, remoteVersion, targetDir: packDir };
-  }
-
-  if (comparison === 0) {
-    console.log(`already up to date v${localVersion}`);
-  } else {
-    console.log(`local v${localVersion} is newer than remote v${remoteVersion}`);
-  }
-  return { ok: true, upToDate: true, localVersion, remoteVersion, targetDir: packDir };
+    allowDowngrade,
+    deps,
+  });
 }
 
 function statusPack(rawArgs, cwd = process.cwd()) {
@@ -1607,6 +1652,7 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
 
 async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
   const args = [...rawArgs];
+  const allowDowngrade = takeFlag(args, '--allow-downgrade');
   const packDir = args.shift() || '.';
   if (args.length) throw new Error(`unknown pack update argument: ${args.join(' ')}`);
 
@@ -1651,30 +1697,15 @@ async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
   }
 
   const entries = readZipBuffer(response.body);
-  const zipManifest = parseManifest(entries);
-  if (slugify(zipManifest.slug) !== slugify(existing.slug)) {
-    throw new Error(`download returned different slug: ${zipManifest.slug}`);
-  }
-
-  const oldVersion = manifestVersion(existing);
-  const newVersion = manifestVersion(zipManifest);
-  const writes = planZipWrites(entries, resolved);
-  recordRemoteCheck(resolved, {
-    slug: existing.slug,
+  return stagePackUpdate({
+    entries,
+    packDir: resolved,
+    existing,
+    slug: slugify(existing.slug),
     origin,
-    remoteVersion: newVersion,
-  }, deps);
-  if (oldVersion === newVersion) {
-    console.log(`already up to date v${oldVersion}`);
-    return { ok: true, upToDate: true, manifest: existing, targetDir: resolved };
-  }
-
-  writePlannedZipEntries(writes);
-  const installed = readPackManifestFromDir(resolved);
-  const manifest = { ...installed, origin: existing.origin };
-  writeInstalledPackJson(resolved, manifest);
-  console.log(`updated v${oldVersion} -> v${newVersion}`);
-  return { ok: true, upToDate: false, manifest, targetDir: resolved };
+    allowDowngrade,
+    deps,
+  });
 }
 
 function readPackManifestFromDir(packDir) {
