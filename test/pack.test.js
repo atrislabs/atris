@@ -5,6 +5,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const { readZipFile, writeZipFile, ZIP_LIMITS } = require('../lib/zip');
 const { comparePackVersions, installPack, listInstalledPacks, pullPack, updatePack } = require('../commands/pack');
 
@@ -35,6 +36,10 @@ function sampleManifest(overrides = {}) {
     version: '0.1.0',
     ...overrides,
   };
+}
+
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 function writePackDir(dir, overrides = {}) {
@@ -131,6 +136,10 @@ test('pack publish --out then install round trips atris and manifest', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'));
     assert.equal(manifest.version, '0.1.0');
     assert.equal(manifest.slug, 'demo-pack');
+    assert.deepEqual(manifest['content-hashes'], {
+      'atris/atris.md': sha256('# Atris\n'),
+    });
+    assert.match(install.stdout, /content hashes: verified \(1\/1 files\)/);
     assert.match(install.stdout, /cd .* && claude/);
   } finally {
     cleanupTempDir(dir);
@@ -315,6 +324,77 @@ test('pack install rejects invalid manifest shapes before writing any files', as
       await assert.rejects(() => installPack([zipPath, '--dir', target], dir), item.error);
       assert.equal(fs.existsSync(target), false, `${item.name} must not leave a partial target`);
     }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install rejects false, malformed, missing, and noncanonical content hashes before writing', async () => {
+  const dir = makeTempDir();
+  try {
+    const cases = [
+      {
+        name: 'false-digest',
+        hashes: { 'README.md': '0'.repeat(64) },
+        error: /pack content hash mismatch: README\.md/,
+      },
+      {
+        name: 'malformed-digest',
+        hashes: { 'README.md': `sha256:${sha256('# pack\n')}` },
+        error: /invalid SHA-256 for README\.md/,
+      },
+      {
+        name: 'missing-file',
+        hashes: { 'MISSING.md': sha256('# missing\n') },
+        error: /claims missing file: MISSING\.md/,
+      },
+      {
+        name: 'noncanonical-path',
+        hashes: { './README.md': sha256('# pack\n') },
+        error: /invalid path: \.\/README\.md/,
+      },
+      {
+        name: 'noncanonical-archive-path',
+        hashes: { 'README.md': sha256('# pack\n') },
+        entryName: './README.md',
+        error: /requires canonical archive path: \.\/README\.md/,
+      },
+    ];
+
+    for (const item of cases) {
+      const zipPath = path.join(dir, `${item.name}.zip`);
+      const target = path.join(dir, `${item.name}-target`);
+      const manifest = sampleManifest({ 'content-hashes': item.hashes });
+      writeZipFile(zipPath, [
+        { name: 'pack.json', data: Buffer.from(JSON.stringify(manifest)) },
+        { name: item.entryName || 'README.md', data: Buffer.from('# pack\n') },
+      ]);
+      await assert.rejects(() => installPack([zipPath, '--dir', target], dir), item.error);
+      assert.equal(fs.existsSync(target), false, `${item.name} must not leave a partial target`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install allows valid partial hashes but says the remaining bytes are unverified', () => {
+  const dir = makeTempDir();
+  try {
+    const zipPath = path.join(dir, 'partial.zip');
+    const target = path.join(dir, 'target');
+    const manifest = sampleManifest({
+      'content-hashes': { 'README.md': sha256('# pack\n') },
+    });
+    writeZipFile(zipPath, [
+      { name: 'pack.json', data: Buffer.from(JSON.stringify(manifest)) },
+      { name: 'README.md', data: Buffer.from('# pack\n') },
+      { name: 'docs/guide.md', data: Buffer.from('# guide\n') },
+    ]);
+
+    const installed = runCli(['pack', 'install', zipPath, '--dir', target], { cwd: dir });
+    assert.equal(installed.status, 0, `stdout:\n${installed.stdout}\nstderr:\n${installed.stderr}`);
+    assert.match(installed.stdout, /content hashes: partial \(1\/2 files verified\)/);
+    assert.equal(fs.readFileSync(path.join(target, 'docs', 'guide.md'), 'utf8'), '# guide\n');
   } finally {
     cleanupTempDir(dir);
   }
@@ -519,10 +599,10 @@ test('pack inspect resolves an installed slug and prints its trust surface', () 
       type: 'workflow',
       entrypoint: { command: 'node run.js', verifier: 'node --test' },
       permissions: { network: 'read', filesystem: 'pack only' },
+      'content-hashes': { 'README.md': sha256('# pack\n') },
       provenance: {
         'created-in': 'browser',
         'source-urls': ['https://example.com/source'],
-        'content-hashes': { 'README.md': 'sha256:abc123' },
       },
       origin: { type: 'registry', slug: 'trust-pack' },
     });
@@ -555,7 +635,8 @@ test('pack inspect resolves an installed slug and prints its trust surface', () 
     assert.match(inspected.stdout, /author: Ada Lovelace \[present\]/);
     assert.match(inspected.stdout, /created-in: browser \[present\]/);
     assert.match(inspected.stdout, /source urls: \["https:\/\/example\.com\/source"\] \[present\]/);
-    assert.match(inspected.stdout, /content hashes: \{"README\.md":"sha256:abc123"\} \[present\]/);
+    assert.match(inspected.stdout, /content hashes: partial \(1\/2 files verified\)/);
+    assert.match(inspected.stdout, /unclaimed: docs\/guide\.md/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -583,7 +664,26 @@ test('pack inspect accepts a directory and makes missing contracts visible', () 
     assert.match(inspected.stdout, /author: ABSENT/);
     assert.match(inspected.stdout, /created-in: ABSENT/);
     assert.match(inspected.stdout, /source urls: ABSENT/);
-    assert.match(inspected.stdout, /content hashes: ABSENT/);
+    assert.match(inspected.stdout, /content hashes: absent \(legacy pack, bytes unverified\)/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack inspect reports failed after a declared file is changed locally', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'signed-pack');
+    writePackDir(target, {
+      slug: 'signed-pack',
+      'content-hashes': { 'README.md': sha256('# pack\n') },
+    });
+    fs.writeFileSync(path.join(target, 'README.md'), '# edited locally\n', 'utf8');
+
+    const inspected = runCli(['pack', 'inspect', target], { cwd: dir });
+    assert.equal(inspected.status, 0, `stdout:\n${inspected.stdout}\nstderr:\n${inspected.stderr}`);
+    assert.match(inspected.stdout, /content hashes: failed \(0\/1 claims verified\)/);
+    assert.match(inspected.stdout, /README\.md: mismatch/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1132,6 +1232,44 @@ test('pack pull records an equal remote check without staging a review', async (
   }
 });
 
+test('pack pull rejects changed signed content at the same version before recording remote state', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-pack');
+    writePackDir(target, {
+      slug: 'demo-pack',
+      version: '0.1.0',
+      'content-hashes': { 'README.md': sha256('# pack\n') },
+    });
+    const remoteZip = path.join(dir, 'remote.zip');
+    const remoteManifest = sampleManifest({
+      slug: 'demo-pack',
+      version: '0.1.0',
+      'content-hashes': { 'README.md': sha256('# changed upstream\n') },
+    });
+    writeZipFile(remoteZip, [
+      { name: 'pack.json', data: Buffer.from(JSON.stringify(remoteManifest)) },
+      { name: 'README.md', data: Buffer.from('# changed upstream\n') },
+    ]);
+
+    await assert.rejects(
+      () => pullPack(['--dir', target], dir, {
+        deps: {
+          getAppBaseUrl: () => 'https://app.test',
+          loadCredentials: () => null,
+          httpRequest: async () => ({ status: 200, body: fs.readFileSync(remoteZip) }),
+        },
+      }),
+      /refusing changed content at unchanged version v0\.1\.0.*must bump the pack version/,
+    );
+    assert.equal(fs.existsSync(path.join(target, '.atris', 'state', 'pack.json')), false);
+    assert.equal(fs.existsSync(path.join(target, '.upstream')), false);
+    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# pack\n');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack pull rejects registry downgrades unless explicitly allowed, then stages them', async () => {
   const dir = makeTempDir();
   try {
@@ -1235,7 +1373,7 @@ test('pack publish preserves entry contract and provenance fields', () => {
       entrypoint: 'RUN.md',
       'created-in': 'test suite',
       'source-urls': ['https://example.com/source'],
-      'content-hashes': { 'RUN.md': 'abc123' },
+      'content-hashes': { 'RUN.md': '0'.repeat(64) },
     }));
     fs.writeFileSync(path.join(dir, 'RUN.md'), '# first action\n');
 
@@ -1251,12 +1389,13 @@ test('pack publish preserves entry contract and provenance fields', () => {
     assert.equal(installed.entrypoint, 'RUN.md');
     assert.equal(installed['created-in'], 'test suite');
     assert.deepEqual(installed['source-urls'], ['https://example.com/source']);
-    assert.deepEqual(installed['content-hashes'], { 'RUN.md': 'abc123' });
+    assert.deepEqual(installed['content-hashes'], { 'RUN.md': sha256('# first action\n') });
 
     const inspected = runCli(['pack', 'inspect', target], { cwd: dir });
     assert.equal(inspected.status, 0);
     assert.match(inspected.stdout, /entrypoint: RUN.md/);
     assert.doesNotMatch(inspected.stdout, /source urls: ABSENT/);
+    assert.match(inspected.stdout, /content hashes: verified \(1\/1 files\)/);
     fs.rmSync(zipPath, { force: true });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
