@@ -1975,7 +1975,6 @@ module.exports = {
   sanitizePersonalizationName,
   pullPack,
   updatePack,
-  inspectPack,
   listInstalledPacks,
   buildManifest,
   comparePackVersions,
