@@ -2427,30 +2427,62 @@ function isGeneratedMetadataReadme(relativePath, absolutePath, manifest) {
   }
 }
 
+function inspectDoctorFileContent(relativePath, absolutePath) {
+  const stat = fs.statSync(absolutePath);
+  if (!stat.size) return { usable: false, sample: '' };
+  if (!PACK_DOCTOR_TEXT_EXTENSIONS.has(path.extname(relativePath).toLowerCase())) {
+    return { usable: true, sample: '' };
+  }
+
+  let descriptor;
+  try {
+    descriptor = fs.openSync(absolutePath, 'r');
+    const sample = Buffer.alloc(Math.min(PACK_DOCTOR_TEXT_FILE_LIMIT, stat.size));
+    const bytesRead = fs.readSync(descriptor, sample, 0, sample.length, 0);
+    const text = sample.subarray(0, bytesRead).toString('utf8');
+    return {
+      // Installed archives are size-bounded. For an unusually large local
+      // text file, do not reject unseen content merely because its prefix is
+      // whitespace; alignment remains explicitly a bounded lexical sample.
+      usable: text.trim().length > 0 || stat.size > bytesRead,
+      sample: text,
+    };
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
+}
+
 function inspectDoctorPayload(packDir, manifest) {
   const installed = collectInstalledContentFiles(packDir);
-  const payload = [...installed.entries()].filter(
+  const candidates = [...installed.entries()].filter(
     ([relativePath, absolutePath]) => !isGeneratedMetadataReadme(relativePath, absolutePath, manifest),
   );
-  const corpus = payload.map(([relativePath]) => relativePath);
+  const payload = [];
+  const emptyFiles = [];
+  const corpus = [];
   let remainingBytes = PACK_DOCTOR_TEXT_TOTAL_LIMIT;
-  for (const [relativePath, absolutePath] of payload) {
-    if (remainingBytes <= 0) break;
-    if (!PACK_DOCTOR_TEXT_EXTENSIONS.has(path.extname(relativePath).toLowerCase())) continue;
-    let descriptor;
+  for (const [relativePath, absolutePath] of candidates) {
+    let content;
     try {
-      descriptor = fs.openSync(absolutePath, 'r');
-      const sample = Buffer.alloc(Math.min(PACK_DOCTOR_TEXT_FILE_LIMIT, remainingBytes));
-      const bytesRead = fs.readSync(descriptor, sample, 0, sample.length, 0);
-      corpus.push(sample.subarray(0, bytesRead).toString('utf8'));
-      remainingBytes -= bytesRead;
+      content = inspectDoctorFileContent(relativePath, absolutePath);
     } catch { /* unreadable content is reported through integrity or payload checks */
-    } finally {
-      if (descriptor !== undefined) fs.closeSync(descriptor);
+      content = { usable: false, sample: '' };
     }
+    if (!content.usable) {
+      emptyFiles.push(relativePath);
+      continue;
+    }
+    payload.push([relativePath, absolutePath]);
+    corpus.push(relativePath);
+    if (remainingBytes <= 0 || !content.sample) continue;
+    const sampleBytes = Buffer.from(content.sample).subarray(0, remainingBytes);
+    const sample = sampleBytes.toString('utf8');
+    corpus.push(sample);
+    remainingBytes -= sampleBytes.length;
   }
   return {
     payloadFiles: payload.map(([relativePath]) => relativePath),
+    emptyFiles,
     tokens: new Set(packDoctorTokens(corpus.join('\n'))),
   };
 }
@@ -2482,6 +2514,10 @@ function inspectDoctorEntrypoint(packDir, manifest) {
         return { status: 'fail', message: `entrypoint cannot be a symlink: ${declared}` };
       }
       if (stat.isFile()) {
+        const content = inspectDoctorFileContent(declared, candidate);
+        if (!content.usable) {
+          return { status: 'fail', message: `entrypoint has no usable content: ${declared}` };
+        }
         return {
           status: 'pass',
           message: `entrypoint resolves to ${path.relative(root, candidate).split(path.sep).join('/')}`,
@@ -2509,7 +2545,7 @@ function evaluatePackDoctor(source, cwd = process.cwd()) {
     payload.payloadFiles.length ? 'pass' : 'fail',
     payload.payloadFiles.length
       ? `${payload.payloadFiles.length} user payload file${payload.payloadFiles.length === 1 ? '' : 's'} found`
-      : 'no user payload remains after generated metadata is excluded',
+      : 'no usable user payload remains after generated metadata, empty files, and whitespace-only text are excluded',
   ));
 
   const packType = declaredManifestValue(manifest, ['type', 'packType', 'pack_type', 'pack-type']);

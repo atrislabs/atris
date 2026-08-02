@@ -875,6 +875,79 @@ test('pack doctor rejects missing entrypoints, invalid permissions, and partial 
   }
 });
 
+test('pack doctor rejects fully hashed whitespace-only payload and entrypoint content', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'empty-evidence');
+    const readme = '# Empty Evidence\n\nA fully empty proof.\n\nFiles: 2\n';
+    const emptyEvidence = '\n';
+    writePackDir(target, {
+      slug: 'empty-evidence',
+      title: 'Empty Evidence',
+      description: 'A fully empty proof.',
+      author: 'Ada Lovelace',
+      type: 'knowledge',
+      entrypoint: 'empty-evidence.md',
+      permissions: ['pack.read'],
+      'created-in': 'Atris browser',
+      'content-hashes': {
+        'README.md': sha256(readme),
+        'empty-evidence.md': sha256(emptyEvidence),
+      },
+    });
+    fs.writeFileSync(path.join(target, 'README.md'), readme, 'utf8');
+    fs.writeFileSync(path.join(target, 'empty-evidence.md'), emptyEvidence, 'utf8');
+
+    const diagnosed = runCli(['pack', 'doctor', target, '--json'], { cwd: dir });
+    assert.equal(diagnosed.status, 1, `stdout:\n${diagnosed.stdout}\nstderr:\n${diagnosed.stderr}`);
+    const result = JSON.parse(diagnosed.stdout);
+    assert.equal(result.status, 'reject');
+    assert.deepEqual(result.summary, { pass: 5, warn: 0, fail: 3 });
+    assert.equal(result.checks.find((check) => check.id === 'payload').status, 'fail');
+    assert.match(result.checks.find((check) => check.id === 'payload').message, /no usable user payload/);
+    assert.equal(result.checks.find((check) => check.id === 'entrypoint').status, 'fail');
+    assert.match(result.checks.find((check) => check.id === 'entrypoint').message, /no usable content/);
+    assert.equal(result.checks.find((check) => check.id === 'integrity').status, 'pass');
+    assert.equal(result.checks.find((check) => check.id === 'alignment').status, 'fail');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack doctor keeps a non-empty binary entrypoint eligible for ready', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'binary-evidence');
+    const readme = '# Binary Evidence\n\nA small binary artifact.\n\nFiles: 2\n';
+    const binaryEvidence = Buffer.from([0, 1, 2, 3]);
+    writePackDir(target, {
+      slug: 'binary-evidence',
+      title: 'Binary Evidence',
+      description: 'A small binary artifact.',
+      author: 'Ada Lovelace',
+      type: 'knowledge',
+      entrypoint: 'binary-evidence.bin',
+      permissions: ['pack.read'],
+      'created-in': 'Atris browser',
+      'content-hashes': {
+        'README.md': sha256(readme),
+        'binary-evidence.bin': sha256(binaryEvidence),
+      },
+    });
+    fs.writeFileSync(path.join(target, 'README.md'), readme, 'utf8');
+    fs.writeFileSync(path.join(target, 'binary-evidence.bin'), binaryEvidence);
+
+    const diagnosed = runCli(['pack', 'doctor', target, '--json'], { cwd: dir });
+    assert.equal(diagnosed.status, 0, `stdout:\n${diagnosed.stdout}\nstderr:\n${diagnosed.stderr}`);
+    const result = JSON.parse(diagnosed.stdout);
+    assert.equal(result.status, 'ready');
+    assert.equal(result.checks.find((check) => check.id === 'payload').status, 'pass');
+    assert.equal(result.checks.find((check) => check.id === 'entrypoint').status, 'pass');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack install accepts registry slugs and https zip urls', async () => {
   const dir = makeTempDir();
   try {
