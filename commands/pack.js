@@ -1547,10 +1547,10 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
     console.log(`updated v${oldVersion} -> v${newVersion}`);
   }
 
-  const displayTarget = path.relative(cwd, targetDir) || '.';
+  const displayTarget = path.relative(fs.realpathSync(cwd), fs.realpathSync(targetDir)) || '.';
   console.log(`installed ${slug} -> ${displayTarget}`);
-  console.log(`run it:  atris pack run ${shellQuote(displayTarget)}`);
-  console.log(`or open: cd ${shellQuote(displayTarget)} && claude`);
+  console.log(`check it: atris pack doctor ${shellQuote(displayTarget)}`);
+  console.log(`then run: atris pack run ${shellQuote(displayTarget)}`);
   return 0;
 }
 
