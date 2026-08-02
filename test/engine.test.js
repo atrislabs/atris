@@ -27,7 +27,7 @@ test('engine roster lists every profile with detection state', () => {
     assert.equal(res.status, 0, res.stderr);
     const parsed = JSON.parse(res.stdout);
     const names = parsed.engines.map((e) => e.name);
-    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'hermes', 'droid']);
+    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'droid']);
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'engines.json')));
     const codex = parsed.engines.find((e) => e.id === 'codex');
     assert.equal(codex.tier, 'pro');
@@ -43,8 +43,9 @@ test('engine roster lists every profile with detection state', () => {
     assert.deepEqual(parsed.engines.find((e) => e.id === 'devin').models, ['built-in router']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'droid').models, ['built-in router']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'haiku').models, ['haiku']);
-    assert.deepEqual(parsed.engines.find((e) => e.id === 'hermes').models, ['hermes']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'atris-fast').models, ['atris fast']);
+    assert.equal(parsed.engines.find((e) => e.id === 'atris-fast').duty, 'learning');
+    assert.equal(parsed.engines.find((e) => e.id === 'fable').duty, 'leader');
     assert.equal(parsed.engines.find((e) => e.id === 'devin').duty, 'errands');
     assert.equal(parsed.engines.find((e) => e.id === 'droid').duty, 'errands');
     for (const entry of parsed.engines) {
@@ -104,7 +105,7 @@ test('--engine flag rides a loop for one run and validates at the boundary', () 
     const bad = runCli(['run', '--legacy', '--dry-run', '--engine', 'gpt-11'], dir);
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /Unknown --engine "gpt-11"/);
-    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, hermes, droid/);
+    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, droid/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -139,26 +140,8 @@ test('house default is atris-fast and profile templates stay engine-shaped', () 
   assert.match(RUNNER_PROFILES.cursor.commandTemplate, /--trust -p/);
   assert.match(RUNNER_PROFILES.devin.commandTemplate, /-p --/);
   assert.match(RUNNER_PROFILES.grok.commandTemplate, /--always-approve -p/);
-  assert.match(RUNNER_PROFILES.hermes.commandTemplate, /-p --/);
   // claude rides the default claude-shaped spawn, no template needed
   assert.equal(RUNNER_PROFILES.claude.commandTemplate, '');
-});
-
-test('hermes resolves through the shared engine and runner profile lookup', () => {
-  const { RUNNER_PROFILE_DEFS, RUNNER_PROFILES, buildRunnerCommand } = require('../lib/runner-command');
-  assert.equal(engine.canonicalEngineName('hermes'), 'hermes');
-  assert.equal(engine.canonicalEngineName('hermes-agent'), 'hermes');
-  assert.strictEqual(RUNNER_PROFILES['hermes-agent'], RUNNER_PROFILE_DEFS.hermes);
-
-  const prev = process.env.ATRIS_RUNNER_PROFILE;
-  process.env.ATRIS_RUNNER_PROFILE = 'hermes';
-  try {
-    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.md' });
-    assert.equal(cmd, 'hermes -p -- "$(cat /tmp/p.md)"');
-  } finally {
-    if (prev === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
-    else process.env.ATRIS_RUNNER_PROFILE = prev;
-  }
 });
 
 function makeBinDir() {
@@ -216,6 +199,65 @@ test('saved engine models override the seed without code edits', () => {
   }
 });
 
+test('engine duty and model overrides round-trip through the saved registry', () => {
+  const dir = makeTempDir();
+  try {
+    const set = runCli(['engine', 'set', 'codex', '--duty', 'leader', '--models', 'gpt 5, o3'], dir, { PATH: CLEAN_PATH });
+    assert.equal(set.status, 0, set.stderr || set.stdout);
+    assert.equal(set.stdout.trim(), 'codex updated: duty leader; models gpt 5, o3');
+
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'engines.json'), 'utf8'));
+    assert.deepEqual(saved.engines.find((entry) => entry.id === 'codex').models, ['gpt 5', 'o3']);
+    assert.equal(saved.engines.find((entry) => entry.id === 'codex').duty, 'leader');
+    assert.equal(saved.engines.find((entry) => entry.id === 'fable').duty, '');
+
+    const list = runCli(['engine', 'list', '--json'], dir, { PATH: CLEAN_PATH });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    const parsed = JSON.parse(list.stdout);
+    assert.deepEqual(parsed.engines.find((entry) => entry.id === 'codex').models, ['gpt 5', 'o3']);
+    assert.equal(parsed.engines.find((entry) => entry.id === 'codex').duty, 'leader');
+    assert.equal(parsed.engines.find((entry) => entry.id === 'fable').duty, '');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine chart renders every registry group without engine-name assumptions', () => {
+  const rendered = engine.renderEngineChart({ engines: [
+    { id: 'captain', duty: 'leader', roles: ['validator'], models: ['lead model'] },
+    { id: 'maker', duty: '', roles: ['executor'], models: ['build model'] },
+    { id: 'reviewer', duty: '', roles: ['validator'], models: ['check model'] },
+    { id: 'runner', duty: 'errands', roles: ['executor'], models: ['errand model'] },
+    { id: 'student', duty: 'learning', roles: ['navigator'], models: ['learn model'] },
+  ] });
+  for (const label of ['owner', 'leader', 'captain', 'builders', 'maker', 'checkers', 'reviewer', 'errands', 'runner', 'apprentice', 'student', 'learning the system']) {
+    assert.match(rendered, new RegExp(label));
+  }
+  assert.ok(rendered.indexOf('owner') < rendered.indexOf('leader'));
+  assert.ok(rendered.indexOf('leader') < rendered.indexOf('builders'));
+  assert.ok(rendered.indexOf('builders') < rendered.indexOf('apprentice'));
+  assert.doesNotMatch(rendered, /\u001b\[/);
+  assert.doesNotMatch(rendered, /—/);
+});
+
+test('engines chart aliases render the seeded leader and apprentice', () => {
+  for (const args of [['engines', '--chart'], ['engines', 'chart']]) {
+    const dir = makeTempDir();
+    try {
+      const res = runCli(args, dir, { PATH: CLEAN_PATH });
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+      assert.match(res.stdout, /│ owner\s+│/);
+      assert.match(res.stdout, /leader/);
+      assert.match(res.stdout, /fable/);
+      assert.match(res.stdout, /apprentice/);
+      assert.match(res.stdout, /atris-fast/);
+      assert.match(res.stdout, /learning the system/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test('engines list renders models and errand duty', () => {
   const dir = makeTempDir();
   try {
@@ -230,7 +272,7 @@ test('engines list renders models and errand duty', () => {
   }
 });
 
-test('errand duty leaves existing executor role resolution unchanged', () => {
+test('duty overrides leave existing executor role resolution unchanged', () => {
   const dir = makeTempDir();
   const binDir = makeBinDir();
   writeFakeBin(binDir, 'codex', '#!/bin/sh\necho codex\n');
@@ -241,6 +283,9 @@ test('errand duty leaves existing executor role resolution unchanged', () => {
     const parsed = JSON.parse(registry.stdout);
     assert.deepEqual(parsed.engines.find((entry) => entry.id === 'devin').roles, ['executor']);
     assert.deepEqual(parsed.engines.find((entry) => entry.id === 'droid').roles, ['executor']);
+
+    const set = runCli(['engine', 'set', 'codex', '--duty', 'errands'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(set.status, 0, set.stderr || set.stdout);
 
     const res = runCli(['engine', 'resolve', 'executor'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
     assert.equal(res.status, 0, res.stderr || res.stdout);
@@ -516,7 +561,6 @@ test('engine login manifest is a hard whitelist', () => {
   assert.equal(engine.normalizeLoginProvider('codex'), 'codex');
   assert.equal(engine.normalizeLoginProvider('grok'), 'grok');
   assert.equal(engine.normalizeLoginProvider('composer'), '');
-  assert.equal(engine.normalizeLoginProvider('hermes'), '');
 });
 
 test('engine login parses --computer and --business device targets', () => {

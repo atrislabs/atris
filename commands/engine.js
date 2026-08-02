@@ -26,6 +26,7 @@ const {
 } = require('../lib/runner-command');
 const {
   ENGINE_ROLES,
+  ENGINE_DUTIES,
   ENGINE_HEALTH_STATUSES,
   binInstalled,
   canonicalEngineName,
@@ -34,6 +35,7 @@ const {
   readEngineRegistry,
   resolveEngineForRole,
   resolveEngineForRoleRanked,
+  setEngineOverrides,
   setEngineHealth,
 } = require('../lib/engine-registry');
 const { FLEET_CAPABLE, runDispatchFlight } = require('../lib/fleet');
@@ -904,6 +906,139 @@ function printRoster(root) {
   console.log('');
 }
 
+function chartEngineLabel(engine) {
+  const id = String(engine && (engine.id || engine.name) || '').trim();
+  const models = Array.isArray(engine && engine.models)
+    ? engine.models.map((model) => String(model || '').trim()).filter(Boolean)
+    : [];
+  return models.length ? `${id}: ${models.join(', ')}` : id;
+}
+
+function chartBox(title, engines, note = '', emptyLabel = 'unassigned') {
+  const labels = engines.length ? engines.map(chartEngineLabel) : (emptyLabel ? [emptyLabel] : []);
+  const body = [title, ...labels, ...(note ? [note] : [])];
+  const innerWidth = Math.max(...body.map((line) => line.length)) + 2;
+  return {
+    width: innerWidth + 2,
+    lines: [
+      `┌${'─'.repeat(innerWidth)}┐`,
+      ...body.map((line) => `│ ${line.padEnd(innerWidth - 2)} │`),
+      `└${'─'.repeat(innerWidth)}┘`,
+    ],
+  };
+}
+
+function centerChartLine(line, width, center = Math.floor((width - 1) / 2)) {
+  const left = Math.max(0, center - Math.floor(line.length / 2));
+  return `${' '.repeat(left)}${line}`.padEnd(width);
+}
+
+function renderEngineChart(registry) {
+  const engines = Array.isArray(registry) ? registry : ((registry && registry.engines) || []);
+  const specialDuties = new Set(ENGINE_DUTIES);
+  const leaders = engines.filter((entry) => entry.duty === 'leader');
+  const rolePool = engines.filter((entry) => !specialDuties.has(entry.duty));
+  const builders = rolePool.filter((entry) => Array.isArray(entry.roles) && entry.roles.includes('executor'));
+  const checkers = rolePool.filter((entry) => Array.isArray(entry.roles) && entry.roles.includes('validator'));
+  const errands = engines.filter((entry) => entry.duty === 'errands');
+  const apprentices = engines.filter((entry) => entry.duty === 'learning');
+
+  const ownerBox = chartBox('owner', [], '', '');
+  const leaderBox = chartBox('leader', leaders);
+  const columns = [
+    chartBox('builders', builders),
+    chartBox('checkers', checkers),
+    chartBox('errands', errands),
+  ];
+  const gap = 3;
+  const totalWidth = columns.reduce((sum, column) => sum + column.width, 0) + (gap * (columns.length - 1));
+  const columnHeight = Math.max(...columns.map((column) => column.lines.length));
+  const columnLines = [];
+  for (let row = 0; row < columnHeight; row += 1) {
+    columnLines.push(columns.map((column) => (column.lines[row] || '').padEnd(column.width)).join(' '.repeat(gap)));
+  }
+
+  const centers = [];
+  let offset = 0;
+  for (const column of columns) {
+    centers.push(offset + Math.floor(column.width / 2));
+    offset += column.width + gap;
+  }
+  const fleetCenter = centers[1];
+  const branch = Array(totalWidth).fill(' ');
+  for (let i = centers[0]; i <= centers[centers.length - 1]; i += 1) branch[i] = '─';
+  branch[centers[0]] = '┌';
+  branch[centers[centers.length - 1]] = '┐';
+  for (const center of centers.slice(1, -1)) branch[center] = '┬';
+  branch[fleetCenter] = centers.includes(fleetCenter) ? '┼' : '┴';
+  const stems = Array(totalWidth).fill(' ');
+  for (const center of centers) stems[center] = '│';
+
+  const lines = [
+    ...ownerBox.lines.map((line) => centerChartLine(line, totalWidth, fleetCenter)),
+    centerChartLine('│', totalWidth, fleetCenter),
+    ...leaderBox.lines.map((line) => centerChartLine(line, totalWidth, fleetCenter)),
+    centerChartLine('│', totalWidth, fleetCenter),
+    branch.join(''),
+    stems.join(''),
+    ...columnLines,
+  ];
+  if (apprentices.length) {
+    const apprenticeBox = chartBox('apprentice', apprentices, 'learning the system');
+    lines.push(centerChartLine('│', totalWidth, fleetCenter));
+    lines.push(...apprenticeBox.lines.map((line) => centerChartLine(line, totalWidth, fleetCenter)));
+  }
+  return lines.map((line) => line.replace(/\s+$/, '')).join('\n');
+}
+
+function printEngineChart(root) {
+  console.log(renderEngineChart(readEngineRegistry(root)));
+}
+
+function flagValue(args, flag) {
+  const equals = `${flag}=`;
+  for (let i = 0; i < args.length; i += 1) {
+    const value = String(args[i] || '');
+    if (value === flag) return { present: true, value: args[i + 1] || '' };
+    if (value.startsWith(equals)) return { present: true, value: value.slice(equals.length) };
+  }
+  return { present: false, value: '' };
+}
+
+function runSetEngineCommand(args, root) {
+  const name = String(args[0] || '').trim();
+  const dutyFlag = flagValue(args.slice(1), '--duty');
+  const modelsFlag = flagValue(args.slice(1), '--models');
+  const duty = String(dutyFlag.value || '').trim();
+  const models = String(modelsFlag.value || '').split(',').map((model) => model.trim()).filter(Boolean);
+  if (!name || (!dutyFlag.present && !modelsFlag.present)) {
+    console.error('usage: atris engine set <name> [--duty leader|errands|learning] [--models "a, b"]');
+    return 2;
+  }
+  if (dutyFlag.present && !ENGINE_DUTIES.includes(duty)) {
+    console.error(`unknown duty "${duty}". known duties: ${ENGINE_DUTIES.join(', ')}`);
+    return 2;
+  }
+  if (modelsFlag.present && !models.length) {
+    console.error('models must include at least one name');
+    return 2;
+  }
+  try {
+    const updated = setEngineOverrides(name, {
+      ...(dutyFlag.present ? { duty } : {}),
+      ...(modelsFlag.present ? { models } : {}),
+    }, root);
+    const details = [];
+    if (updated.duty) details.push(`duty ${updated.duty}`);
+    if (updated.models) details.push(`models ${updated.models.join(', ')}`);
+    console.log(`${updated.id} updated: ${details.join('; ')}`);
+    return 0;
+  } catch (err) {
+    console.error(String(err.message || err).replace(/^Unknown/, 'unknown'));
+    return 2;
+  }
+}
+
 function registryPayload(root) {
   const current = resolveDefaultEngine(root);
   const registry = readEngineRegistry(root);
@@ -1251,6 +1386,15 @@ function engineCommand(args = [], deps = {}) {
     return runHealthCommand(args.slice(args.indexOf('health') + 1), root);
   }
 
+  if (sub === 'set') {
+    return runSetEngineCommand(args.slice(args.indexOf('set') + 1), root);
+  }
+
+  if (sub === 'chart' || args.includes('--chart')) {
+    printEngineChart(root);
+    return 0;
+  }
+
   if (!sub || sub === 'list' || sub === 'status') {
     if (json) {
       console.log(JSON.stringify(registryPayload(root), null, 2));
@@ -1269,7 +1413,7 @@ function engineCommand(args = [], deps = {}) {
   }
 
   if (sub === 'help') {
-    console.log('\n  atris engine            roster + current default\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+    console.log('\n  atris engine            roster + current default\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
     return 0;
   }
 
@@ -1307,6 +1451,8 @@ module.exports = {
   readEngineRegistry,
   resolveEngineForRole,
   setEngineHealth,
+  setEngineOverrides,
+  renderEngineChart,
   parseDispatchArgs,
   runDispatchCommand,
   ENGINE_LOGIN_MANIFESTS,
