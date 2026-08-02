@@ -2,6 +2,8 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const { suggestCommand, editDistance, knownCommands } = require('../lib/known-commands');
@@ -41,12 +43,25 @@ test('every known command is its own closest match', () => {
 });
 
 test('CLI prints a did-you-mean line for a typo', () => {
-  let out;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-suggest-command-test-'));
   try {
-    out = execFileSync('node', [CLI, 'taks'], { encoding: 'utf8' });
-  } catch (err) {
-    // The natural-language fallthrough may exit nonzero; we only care about stdout.
-    out = err.stdout || '';
+    let out;
+    try {
+      out = execFileSync('node', [CLI, 'taks'], {
+        cwd: dir,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ATRIS_SKIP_UPDATE_CHECK: '1',
+          ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+        },
+      });
+    } catch (err) {
+      // The natural-language fallthrough may exit nonzero; we only care about stdout.
+      out = err.stdout || '';
+    }
+    assert.match(out, /Did you mean "atris task"\?/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
-  assert.match(out, /Did you mean "atris task"\?/);
 });
