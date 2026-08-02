@@ -54,6 +54,52 @@ test('gateForHuman keeps information without a clean substitute and reports it',
   assert.ok(result.issues.some(issue => issue.rule === 'shell-command' && issue.snippet === 'npm test'));
 });
 
+test('gateForHuman flags a paragraph with more than two sentences without changing its substance', () => {
+  const input = 'the review is ready. the proof is clear. the owner can decide.';
+  const result = gateForHuman(input);
+  const finding = result.issues.find(issue => issue.rule === 'dense-block');
+  assert.equal(result.text, input);
+  assert.equal(finding.snippet, input);
+  assert.match(finding.why, /blank line/);
+});
+
+test('gateForHuman flags a message with more than three paragraphs', () => {
+  const input = 'the change is ready.\n\nthe proof passed.\n\nthe risk is low.\n\nthe owner can decide.';
+  const result = gateForHuman(input);
+  const finding = result.issues.find(issue => issue.rule === 'too-many-ideas');
+  assert.equal(result.text, 'the change is ready. the proof passed. the risk is low. the owner can decide.');
+  assert.equal(finding.snippet, 'the owner can decide.');
+  assert.match(finding.why, /three paragraphs/);
+});
+
+test('gateForHuman suggests a plain replacement for every denied jargon term', () => {
+  const suggestions = {
+    idempotent: 'safe to repeat',
+    deterministic: 'predictable',
+    substrate: 'base',
+    orchestration: 'coordination',
+    invariant: 'rule that must stay true',
+    canonical: 'standard',
+    materialize: 'create',
+    heuristic: 'rule of thumb',
+  };
+  const input = Object.keys(suggestions).join(' ');
+  const result = gateForHuman(input);
+  const findings = result.issues
+    .filter(finding => finding.rule === 'jargon');
+  assert.equal(result.text, input);
+  assert.equal(findings.length, Object.keys(suggestions).length);
+  for (const finding of findings) {
+    assert.match(finding.why, new RegExp(`"${suggestions[finding.snippet]}"`));
+  }
+});
+
+test('gateForHuman accepts a short message with clear spacing and plain words', () => {
+  const result = gateForHuman('the review is ready. the proof passed.\n\nthe risk is low.\n\nthe owner can decide.');
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.issues, []);
+});
+
 test('numberWord spells compact human counts', () => {
   assert.deepEqual(
     [0, 1, 2, 12, 13].map(numberWord),
