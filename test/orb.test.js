@@ -15,6 +15,7 @@ const {
 const {
   formatJobNotification,
 } = require('../commands/orb');
+const { cleanTitle } = require('../lib/orb-context');
 const pulse = require('../lib/pulse');
 const { refreshOrbPolicyLessons } = require('../commands/pulse');
 
@@ -25,6 +26,29 @@ function writeJsonl(file, rows) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8');
 }
+
+test('cleanTitle truncates on a word boundary, never mid-word', () => {
+  const long = 'one command draws the whole team as a chart and lets the owner steer';
+  const cut = cleanTitle(long, 48);
+  assert.ok(cut.endsWith('…'), `expected an ellipsis, got "${cut}"`);
+  assert.ok(cut.length <= 48, `expected <= 48 chars, got ${cut.length}: "${cut}"`);
+  // The body before the ellipsis must be a whole-word prefix of the original:
+  // every word in it, including the last, is a complete token from the title.
+  const body = cut.slice(0, -1).trim();
+  assert.ok(long.startsWith(body), `"${body}" is not a clean prefix of the title`);
+  const originalWords = long.split(' ');
+  const bodyWords = body.split(' ');
+  assert.deepEqual(
+    bodyWords,
+    originalWords.slice(0, bodyWords.length),
+    `last word "${bodyWords[bodyWords.length - 1]}" was cut mid-word`,
+  );
+  // A single word longer than the limit still gets bounded (hard fallback).
+  const oneWord = cleanTitle('supercalifragilisticexpialidocious', 12);
+  assert.ok(oneWord.length <= 12 && oneWord.endsWith('…'), `unbounded single word: "${oneWord}"`);
+  // Short titles pass through untouched.
+  assert.equal(cleanTitle('short title', 48), 'short title');
+});
 
 test('orb --once prints deterministic suggestions without spawning an engine', () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-orb-'));
