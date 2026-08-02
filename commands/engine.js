@@ -887,13 +887,16 @@ function printRoster(root) {
   const found = list.filter((e) => e.installed).length;
   const current = resolveDefaultEngine(root);
   console.log('');
-  console.log(`  engines — ${found} intelligence${found === 1 ? '' : 's'} found`);
+  console.log(`  engines: ${found} intelligence${found === 1 ? '' : 's'} found`);
   console.log('');
   for (const engine of list) {
     const mark = engine.default ? '→' : ' ';
     const state = engine.health.status === 'not_installed' ? 'not installed' : engine.health.status.replace(/_/g, ' ');
     const roles = engine.roles.join(',');
     console.log(`  ${mark} ${engine.id.padEnd(12)} ${state.padEnd(13)} ${engine.tier.padEnd(4)} ${roles}`);
+    const details = [`models: ${engine.models.join(', ')}`];
+    if (engine.duty) details.push(`duty: ${engine.duty}`);
+    console.log(`      ${details.join('   ')}`);
   }
   console.log('');
   console.log(`  default: ${current.name}${current.source === 'saved' ? ' (set here)' : current.source === 'env' ? ' (this session)' : ''}`);

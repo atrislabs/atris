@@ -32,8 +32,21 @@ test('engine roster lists every profile with detection state', () => {
     const codex = parsed.engines.find((e) => e.id === 'codex');
     assert.equal(codex.tier, 'pro');
     assert.deepEqual(codex.roles, ['executor']);
+    assert.deepEqual(codex.models, ['codex']);
     assert.equal(codex.fallback_order, 10);
     assert.ok(codex.health);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'claude').models, ['opus 5', 'opus 4.8', 'fable', 'haiku']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'fable').models, ['opus 5', 'opus 4.8', 'fable', 'haiku']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'cursor').models, ['composer 2.5', 'grok 4.5', 'kimi 3']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'composer').models, ['composer 2.5']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'grok').models, ['grok 4.5']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'devin').models, ['built-in router']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'droid').models, ['built-in router']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'haiku').models, ['haiku']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'hermes').models, ['hermes']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'atris-fast').models, ['atris fast']);
+    assert.equal(parsed.engines.find((e) => e.id === 'devin').duty, 'errands');
+    assert.equal(parsed.engines.find((e) => e.id === 'droid').duty, 'errands');
     for (const entry of parsed.engines) {
       assert.equal(typeof entry.installed, 'boolean');
       assert.ok(entry.bin);
@@ -176,6 +189,7 @@ test('engine list --json exposes the registry contract', () => {
     assert.ok(atrisFast, 'atris-fast entry present');
     assert.equal(atrisFast.tier, 'fast');
     assert.deepEqual(atrisFast.roles, ['navigator']);
+    assert.deepEqual(atrisFast.models, ['atris fast']);
     assert.equal(typeof atrisFast.fallback_order, 'number');
     assert.equal(atrisFast.health.status, 'not_installed');
   } finally {
@@ -183,12 +197,51 @@ test('engine list --json exposes the registry contract', () => {
   }
 });
 
-test('engine resolve chooses the first ready engine by role fallback order', () => {
+test('saved engine models override the seed without code edits', () => {
+  const dir = makeTempDir();
+  try {
+    const initial = runCli(['engine', 'list', '--json'], dir, { PATH: CLEAN_PATH });
+    assert.equal(initial.status, 0, initial.stderr || initial.stdout);
+    const registryFile = path.join(dir, '.atris', 'state', 'engines.json');
+    const registry = JSON.parse(fs.readFileSync(registryFile, 'utf8'));
+    registry.engines.find((entry) => entry.id === 'cursor').models = ['composer 3'];
+    fs.writeFileSync(registryFile, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');
+
+    const swapped = runCli(['engine', 'list', '--json'], dir, { PATH: CLEAN_PATH });
+    assert.equal(swapped.status, 0, swapped.stderr || swapped.stdout);
+    const cursor = JSON.parse(swapped.stdout).engines.find((entry) => entry.id === 'cursor');
+    assert.deepEqual(cursor.models, ['composer 3']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engines list renders models and errand duty', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['engines'], dir, { PATH: CLEAN_PATH });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /models: opus 5, opus 4\.8, fable, haiku/);
+    assert.match(res.stdout, /models: composer 2\.5, grok 4\.5, kimi 3/);
+    assert.match(res.stdout, /models: built-in router\s+duty: errands/);
+    assert.doesNotMatch(res.stdout, /—/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('errand duty leaves existing executor role resolution unchanged', () => {
   const dir = makeTempDir();
   const binDir = makeBinDir();
   writeFakeBin(binDir, 'codex', '#!/bin/sh\necho codex\n');
   writeFakeBin(binDir, 'cursor-agent', '#!/bin/sh\necho cursor\n');
   try {
+    const registry = runCli(['engine', 'list', '--json'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(registry.status, 0, registry.stderr || registry.stdout);
+    const parsed = JSON.parse(registry.stdout);
+    assert.deepEqual(parsed.engines.find((entry) => entry.id === 'devin').roles, ['executor']);
+    assert.deepEqual(parsed.engines.find((entry) => entry.id === 'droid').roles, ['executor']);
+
     const res = runCli(['engine', 'resolve', 'executor'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.equal(res.stdout.trim(), 'codex');
