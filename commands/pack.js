@@ -15,6 +15,7 @@ const {
   assertPackCapabilityPolicy,
   applyPackCapabilityGrants,
   assertPackExecutionTree,
+  readClaudeUserDenyRules,
   resolvePackCapabilityPolicy,
   buildClaudeCapabilityArgs,
   beginPackRunReceipt,
@@ -1662,7 +1663,7 @@ function createSkillsOnlyPlugin(packDir) {
   }
 }
 
-function printCapabilityTrustCard(policy, trust, receiptPath) {
+function printCapabilityTrustCard(policy, trust, receiptPath, userDenyRuleCount = 0) {
   console.log('capability trust card:');
   console.log(`  requested by pack: ${policy.requested.length ? policy.requested.join(', ') : 'none'}`);
   console.log(`  granted for this run: ${policy.grantedCapabilities.length ? policy.grantedCapabilities.join(', ') : 'none'}`);
@@ -1670,7 +1671,10 @@ function printCapabilityTrustCard(policy, trust, receiptPath) {
   console.log('  file boundary: built-in file tools are confined to this pack root');
   console.log('  pre-launch context: declared pack symlinks are rejected before Atris reads context');
   console.log('  memory isolation: Claude memory files and auto-memory are disabled for this pack run');
-  console.log(`  approvals: ${trust ? 'pre-approved inside the declared ceiling (--trust); user/managed deny rules still win' : 'prompted inside the declared ceiling'}`);
+  console.log('  extensions: user/project skills, plugins, agents, hooks, and commands are not loaded');
+  console.log('  skill sources: shipped pack skills plus Claude built-ins only');
+  console.log(`  operator policy: ${userDenyRuleCount} user deny rule${userDenyRuleCount === 1 ? '' : 's'} imported; managed policy may still apply`);
+  console.log(`  approvals: ${trust ? 'pre-approved inside the declared ceiling (--trust); imported/managed deny rules still win' : 'prompted inside the declared ceiling'}`);
   console.log(`  host shell: ${policy.grantedCapabilities.includes('host.shell') ? 'GRANTED — Bash can reach host files and network' : 'denied'}`);
   console.log('  receipt coverage: Atris hook use/denial events; later Claude or policy denials may not appear');
   console.log(`  receipt: ${receiptPath}`);
@@ -1691,6 +1695,9 @@ function startPackLocal(packDir, deps = {}, options = {}) {
 
   if (capabilityPolicy.status === 'enforced') {
     runnerOptions.skipPermissions = false;
+    const userDenyRules = deps.readUserDenyRules
+      ? deps.readUserDenyRules()
+      : readClaudeUserDenyRules();
     if (capabilityPolicy.tools.includes('Skill')) {
       pluginDir = createSkillsOnlyPlugin(packDir);
       if (pluginDir) runnerArgs.push('--plugin-dir', pluginDir);
@@ -1698,8 +1705,10 @@ function startPackLocal(packDir, deps = {}, options = {}) {
     receipt = beginPackRunReceipt(packDir, options.manifest || {}, capabilityPolicy, {
       trust,
       receiptDir: deps.packRunReceiptDir,
+      userDenyRulesImported: userDenyRules.length,
+      packSkillsPluginLoaded: Boolean(pluginDir),
     });
-    runnerArgs.push(...buildClaudeCapabilityArgs(capabilityPolicy, { trust }));
+    runnerArgs.push(...buildClaudeCapabilityArgs(capabilityPolicy, { trust, userDenyRules }));
     runnerOptions.runnerEnv = {
       ATRIS_PACK_ROOT: fs.realpathSync(packDir),
       ATRIS_PACK_RECEIPT: receipt.receiptPath,
@@ -1715,7 +1724,7 @@ function startPackLocal(packDir, deps = {}, options = {}) {
       });
       finalizePackRunReceipt(receipt.receiptPath, receipt.eventsPath);
     };
-    printCapabilityTrustCard(capabilityPolicy, trust, receipt.receiptPath);
+    printCapabilityTrustCard(capabilityPolicy, trust, receipt.receiptPath, userDenyRules.length);
   } else {
     const skillsDir = path.join(packDir, 'skills');
     const hasShippedSkill = fs.existsSync(skillsDir)

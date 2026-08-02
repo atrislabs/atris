@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 const { runPack } = require('../commands/pack');
 const {
   resolvePackCapabilityPolicy,
+  readClaudeUserDenyRules,
   beginPackRunReceipt,
   enforcePackRoot,
   runHook,
@@ -45,6 +46,7 @@ function stubDeps(overrides = {}) {
       runComputer: async (args) => { calls.cloud.push({ cwd: process.cwd(), args }); },
       loadCredentials: () => ({ token: 'test-token' }),
       readBusinessBinding: () => ({ slug: 'acme', business_id: 'b1', workspace_id: 'w1' }),
+      readUserDenyRules: () => [],
       ...overrides,
     },
   };
@@ -298,7 +300,7 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     const toolsFlag = call.args.indexOf('--tools');
     assert.equal(call.args[toolsFlag + 1], 'Read,Glob,Grep,Skill,WebFetch,WebSearch');
     assert.equal(call.args[call.args.indexOf('--permission-mode') + 1], 'default');
-    assert.equal(call.args[call.args.indexOf('--setting-sources') + 1], 'user');
+    assert.equal(call.args[call.args.indexOf('--setting-sources') + 1], '');
     assert.equal(call.args.includes('--strict-mcp-config'), true);
     assert.deepEqual(JSON.parse(call.args[call.args.indexOf('--mcp-config') + 1]), { mcpServers: {} });
     const settings = JSON.parse(call.args[call.args.indexOf('--settings') + 1]);
@@ -322,18 +324,65 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.equal(receipt.enforcement.declaredTreeSymlinksRejected, true);
     assert.equal(receipt.enforcement.claudeMemoryDisabledByRunner, true);
     assert.equal(receipt.enforcement.autoMemoryDisabledByRunner, true);
-    assert.equal(receipt.enforcement.userSettingsLoaded, true);
+    assert.equal(receipt.enforcement.userSettingsLoaded, false);
+    assert.equal(receipt.enforcement.userDenyRulesImported, 0);
+    assert.equal(receipt.enforcement.userExtensionsLoaded, false);
     assert.equal(receipt.enforcement.projectSettingsLoaded, false);
     assert.equal(receipt.enforcement.managedPoliciesMayApply, true);
+    assert.equal(receipt.enforcement.bundledClaudeSkillsMayApply, true);
+    assert.equal(receipt.enforcement.packSkillsPluginLoaded, false);
     assert.equal(receipt.enforcement.mcpServersLoaded, false);
     assert.equal(call.options.runnerEnv.CLAUDE_CODE_DISABLE_CLAUDE_MDS, '1');
     assert.equal(call.options.runnerEnv.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
     assert.match(output, /memory isolation: Claude memory files and auto-memory are disabled/);
+    assert.match(output, /extensions: user\/project skills, plugins, agents, hooks, and commands are not loaded/);
+    assert.match(output, /skill sources: shipped pack skills plus Claude built-ins only/);
+    assert.match(output, /operator policy: 0 user deny rules imported; managed policy may still apply/);
     assert.deepEqual(receipt.observability, {
       denialCoverage: 'atris-hooks-only',
       runtimePermissionDenialsCaptured: false,
       toolInputsLogged: false,
     });
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('declared runs import only user deny rules while filesystem customizations stay disabled', async () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir, 'g-brain', { permissions: ['pack.read'] });
+    const receiptDir = path.join(dir, 'receipts');
+    const { calls, deps } = stubDeps({
+      packRunReceiptDir: receiptDir,
+      readUserDenyRules: () => ['Read(/private/**)', 'Bash(rm *)'],
+    });
+    const { output } = await captureConsole(() => runPack(['g-brain', '--trust'], dir, { deps }));
+
+    const call = calls.local[0];
+    assert.equal(call.args[call.args.indexOf('--setting-sources') + 1], '');
+    const settings = JSON.parse(call.args[call.args.indexOf('--settings') + 1]);
+    assert.deepEqual(settings.permissions.deny, ['Read(/private/**)', 'Bash(rm *)']);
+    assert.deepEqual(settings.permissions.allow, ['Read', 'Glob', 'Grep', 'Skill']);
+    assert.match(output, /operator policy: 2 user deny rules imported/);
+    const receiptName = fs.readdirSync(receiptDir).find((name) => name.endsWith('.json'));
+    const receipt = JSON.parse(fs.readFileSync(path.join(receiptDir, receiptName), 'utf8'));
+    assert.equal(receipt.enforcement.userSettingsLoaded, false);
+    assert.equal(receipt.enforcement.userDenyRulesImported, 2);
+    assert.equal(receipt.enforcement.userExtensionsLoaded, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('user deny rule import is bounded to non-empty strings in user settings', () => {
+  const dir = makeTempDir();
+  try {
+    fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({
+      permissions: { deny: ['Read(/private/**)', '', 42, 'Read(/private/**)'] },
+      enabledPlugins: { surprise: true },
+    }));
+    assert.deepEqual(readClaudeUserDenyRules({ configDir: dir }), ['Read(/private/**)']);
   } finally {
     cleanupTempDir(dir);
   }
@@ -399,7 +448,7 @@ test('declared --trust auto-approves only inside the tool ceiling and never bypa
     );
     assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write');
     assert.match(output, /pre-approved inside the declared ceiling/);
-    assert.match(output, /user\/managed deny rules still win/);
+    assert.match(output, /imported\/managed deny rules still win/);
     assert.match(output, /later Claude or policy denials may not appear/);
     const receiptName = fs.readdirSync(path.join(dir, 'receipts')).find((name) => name.endsWith('.json'));
     const receipt = JSON.parse(fs.readFileSync(path.join(dir, 'receipts', receiptName), 'utf8'));
@@ -650,7 +699,7 @@ test('declared pack --trust reaches Claude as dontAsk plus exact tools, never da
     assert.equal(argv.includes('--dangerously-skip-permissions'), false);
     assert.equal(argv[argv.indexOf('--permission-mode') + 1], 'dontAsk');
     assert.equal(argv[argv.indexOf('--tools') + 1], 'Read,Glob,Grep,Skill,Edit,Write,WebFetch,WebSearch');
-    assert.equal(argv[argv.indexOf('--setting-sources') + 1], 'user');
+    assert.equal(argv[argv.indexOf('--setting-sources') + 1], '');
     assert.equal(argv.includes('--strict-mcp-config'), true);
     const receipts = fs.readdirSync(receiptDir).filter((name) => name.endsWith('.json'));
     assert.equal(receipts.length, 1);
@@ -718,6 +767,9 @@ test('declared pack exposes only its skills through a transient plugin adapter',
     assert.notEqual(path.resolve(adapter), path.resolve(packDir));
     assert.equal(fs.existsSync(adapter), false, 'transient plugin must be removed after the runner returns');
     assert.deepEqual(fs.readdirSync(packDir).sort(), before, 'the installed pack remains immutable');
+    const receiptName = fs.readdirSync(path.join(dir, 'receipts')).find((name) => name.endsWith('.json'));
+    const receipt = JSON.parse(fs.readFileSync(path.join(dir, 'receipts', receiptName), 'utf8'));
+    assert.equal(receipt.enforcement.packSkillsPluginLoaded, true);
   } finally {
     cleanupTempDir(dir);
   }
