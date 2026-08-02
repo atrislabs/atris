@@ -290,7 +290,7 @@ function buildManifest(existing, options) {
   // Entry-contract and provenance fields must survive republish, or inspect's
   // trust surface goes blank the moment a pack ships.
   for (const key of [
-    'type', 'entrypoint', 'permissions', 'origin',
+    'type', 'entrypoint', 'verifier', 'permissions', 'origin',
     'created-in', 'createdIn', 'learned-at', 'learnedAt',
     'source-urls', 'sourceUrls', 'sources',
   ]) {
@@ -2425,6 +2425,65 @@ function printInstalledTree(summary) {
 
 const PACK_INSPECT_SCHEMA = 'atris.pack-inspect.v1';
 
+function inspectDeclaredVerifier(packDir, manifest) {
+  if (!Object.prototype.hasOwnProperty.call(manifest, 'verifier')) {
+    return {
+      status: 'absent',
+      declared: null,
+      resolved: null,
+      executed: false,
+      reason: 'manifest verifier is absent',
+    };
+  }
+
+  const declared = manifest.verifier;
+  const base = { declared, resolved: null, executed: false };
+  if (
+    typeof declared !== 'string'
+    || !declared.trim()
+    || declared !== declared.trim()
+    || declared.includes('\n')
+    || canonicalContentPath(declared) !== declared
+  ) {
+    return {
+      status: 'invalid',
+      ...base,
+      reason: 'verifier must be one canonical relative file path',
+    };
+  }
+
+  const root = path.resolve(packDir);
+  const contentFiles = collectInstalledContentFiles(root);
+  for (const relativePath of [declared, `atris/${declared}`]) {
+    const candidate = contentFiles.get(relativePath);
+    if (!candidate) {
+      try {
+        fs.lstatSync(path.resolve(root, relativePath));
+        return {
+          status: 'invalid',
+          ...base,
+          reason: `verifier must resolve to a regular pack content file: ${declared}`,
+        };
+      } catch { /* missing candidate; keep looking */ }
+      continue;
+    }
+    try {
+      const content = inspectDoctorFileContent(declared, candidate);
+      if (!content.usable) {
+        return { status: 'invalid', ...base, reason: `verifier has no usable content: ${declared}` };
+      }
+      return {
+        status: 'available',
+        declared,
+        resolved: relativePath,
+        executed: false,
+        reason: null,
+      };
+    } catch { /* keep looking */ }
+  }
+  return { status: 'missing', ...base, reason: `verifier file is missing: ${declared}` };
+}
+
 function evaluatePackInspection(source, cwd = process.cwd(), options = {}) {
   const resolved = resolveInstalledPack(source, cwd);
   const packDir = fs.realpathSync(resolved.dir);
@@ -2439,6 +2498,7 @@ function evaluatePackInspection(source, cwd = process.cwd(), options = {}) {
   const entrypoint = hasInspectValue(manifest.entrypoint)
     ? manifest.entrypoint
     : (resolvePackEntryFile(packDir, 'RUN.md') ? 'RUN.md' : null);
+  const verifier = inspectDeclaredVerifier(packDir, manifest);
   const permissions = declaredManifestValue(manifest, ['permissions']);
   const capabilityPolicy = resolvePackCapabilityPolicy(manifest.permissions);
   const sourceUrls = inspectManifestValue(manifest, [
@@ -2517,6 +2577,7 @@ function evaluatePackInspection(source, cwd = process.cwd(), options = {}) {
     contract: {
       type: packType,
       entrypoint,
+      verifier,
       capabilities: {
         status: capabilityPolicy.status,
         declared: permissions,
@@ -2550,6 +2611,7 @@ function evaluatePackInspection(source, cwd = process.cwd(), options = {}) {
     summary,
     packType,
     entrypoint,
+    verifier,
     permissions,
     capabilityPolicy,
     sourceUrls,
@@ -2566,6 +2628,7 @@ function printPackInspection(inspection) {
     summary,
     packType,
     entrypoint,
+    verifier,
     permissions,
     capabilityPolicy,
     sourceUrls,
@@ -2588,6 +2651,13 @@ function printPackInspection(inspection) {
   printInstalledTree(summary);
   console.log(`pack type: ${packType === null ? 'undeclared' : formatInspectValue(packType)}`);
   console.log(`entrypoint: ${entrypoint === null ? 'none: this pack has no actionable entry contract' : formatInspectValue(entrypoint)}`);
+  if (verifier.status === 'available') {
+    console.log(`verifier: ${formatInspectValue(verifier.declared)} (resolved to ${verifier.resolved}; not run)`);
+  } else if (verifier.status === 'absent') {
+    console.log('verifier: none declared (not run)');
+  } else {
+    console.log(`verifier: ${formatInspectValue(verifier.declared)} (${verifier.status}; ${verifier.reason}; not run)`);
+  }
   if (capabilityPolicy.status === 'enforced') {
     console.log(`permissions (enforced on local run): ${capabilityPolicy.requested.length ? capabilityPolicy.requested.join(', ') : 'none'}`);
     console.log(`granted local tools: ${capabilityPolicy.tools.length ? capabilityPolicy.tools.join(', ') : 'none'}`);
