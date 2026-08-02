@@ -10,7 +10,10 @@ const {
   readClaudeUserDenyRules,
   beginPackRunReceipt,
   enforcePackRoot,
+  publicWebUrlPreflight,
+  enforcePublicWeb,
   runHook,
+  runHookAsync,
 } = require('../lib/pack-capabilities');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -336,7 +339,7 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.equal(settings.permissions.disableBypassPermissionsMode, 'disable');
     assert.equal(settings.permissions.disableAutoMode, 'disable');
     assert.equal(settings.disableSkillShellExecution, true);
-    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write');
+    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write|WebFetch');
     assert.match(output, /capability trust card:/);
     assert.match(output, /requested by pack: pack\.read, web\.read/);
     assert.match(output, /granted for this run: pack\.read, web\.read/);
@@ -361,6 +364,8 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.equal(receipt.enforcement.sessionPersistenceMayApply, false);
     assert.equal(receipt.enforcement.workspaceTrustPromptMayApply, false);
     assert.equal(receipt.enforcement.workspaceTrustDoesNotWidenToolCeiling, true);
+    assert.equal(receipt.enforcement.webReadDestinationPreflight, 'literal-and-dns-private-address-deny');
+    assert.equal(receipt.enforcement.webReadDnsRebindingNotPrevented, true);
     assert.equal(receipt.enforcement.subprocessCredentialScrubRequested, true);
     assert.equal(receipt.enforcement.userSettingsLoaded, false);
     assert.equal(receipt.enforcement.userDenyRulesImported, 0);
@@ -381,6 +386,8 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.match(output, /memory isolation: Claude memory files and auto-memory are disabled/);
     assert.match(output, /extensions: user\/project skills, plugins, agents, hooks, and commands are not loaded/);
     assert.match(output, /native integrations: Chrome is disabled/);
+    assert.match(output, /public web boundary: WebFetch rejects literal and DNS-resolved local\/private addresses/);
+    assert.match(output, /DNS rebinding remains a runner limit/);
     assert.match(output, /session storage: disabled for this headless run/);
     assert.match(output, /workspace trust: Claude skips its first-run directory dialog in headless mode/);
     assert.match(output, /skill sources: shipped pack skills plus Claude built-ins only/);
@@ -526,7 +533,7 @@ test('declared --trust auto-approves only inside the tool ceiling and never bypa
       ['Read', 'Glob', 'Grep', 'Skill', 'Edit', 'Write'],
       'dontAsk must pre-approve every granted tool by its exact Claude permission name',
     );
-    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write');
+    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write|WebFetch');
     assert.match(output, /pre-approved inside the declared ceiling/);
     assert.match(output, /imported\/managed deny rules still win/);
     assert.match(output, /later Claude or policy denials may not appear/);
@@ -662,6 +669,71 @@ test('pack-root hook blocks traversal and symlink escapes while allowing in-pack
     );
     assert.equal(enforcePackRoot({ tool_name: 'Write', tool_input: {} }, root).allowed, false);
   } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('web.read preflight rejects local and private destinations without logging their URLs', async () => {
+  assert.equal(publicWebUrlPreflight({
+    tool_name: 'WebFetch', tool_input: { url: 'http://127.0.0.1:43817/canary.txt' },
+  }).allowed, false);
+  assert.equal(publicWebUrlPreflight({
+    tool_name: 'WebFetch', tool_input: { url: 'http://2130706433/canary.txt' },
+  }).allowed, false);
+  assert.equal(publicWebUrlPreflight({
+    tool_name: 'WebFetch', tool_input: { url: 'https://[::1]/canary.txt' },
+  }).allowed, false);
+  assert.equal(publicWebUrlPreflight({
+    tool_name: 'WebFetch', tool_input: { url: 'https://service.internal/canary.txt' },
+  }).allowed, false);
+  assert.equal(publicWebUrlPreflight({
+    tool_name: 'WebFetch', tool_input: { url: 'https://example.com/' },
+  }).allowed, true);
+
+  assert.equal((await enforcePublicWeb({
+    tool_name: 'WebFetch', tool_input: { url: 'https://private.example/canary.txt' },
+  }, { lookup: async () => [{ address: '10.1.2.3', family: 4 }] })).allowed, false);
+  assert.deepEqual(await enforcePublicWeb({
+    tool_name: 'WebFetch', tool_input: { url: 'https://public.example/' },
+  }, { lookup: async () => [{ address: '93.184.216.34', family: 4 }] }), { allowed: true });
+});
+
+test('web.read private-network denial is receipted without recording the destination', async () => {
+  const dir = makeTempDir();
+  const prior = {
+    root: process.env.ATRIS_PACK_ROOT,
+    receipt: process.env.ATRIS_PACK_RECEIPT,
+    events: process.env.ATRIS_PACK_RECEIPT_EVENTS,
+    capabilities: process.env.ATRIS_PACK_GRANTED_CAPABILITIES,
+  };
+  try {
+    const packDir = seedInstalledPack(dir, 'g-brain', { permissions: ['web.read'] });
+    const policy = resolvePackCapabilityPolicy(['web.read']);
+    const receipt = beginPackRunReceipt(packDir, { slug: 'g-brain', version: '0.1.0' }, policy, {
+      receiptDir: path.join(dir, 'receipts'),
+    });
+    process.env.ATRIS_PACK_ROOT = packDir;
+    process.env.ATRIS_PACK_RECEIPT = receipt.receiptPath;
+    process.env.ATRIS_PACK_RECEIPT_EVENTS = receipt.eventsPath;
+    process.env.ATRIS_PACK_GRANTED_CAPABILITIES = JSON.stringify(policy.grantedCapabilities);
+
+    const result = await runHookAsync('pre', JSON.stringify({
+      tool_name: 'WebFetch', tool_input: { url: 'https://metadata.private.example/secret-canary' },
+    }), { lookup: async () => [{ address: '169.254.169.254', family: 4 }] });
+    assert.equal(result.hookSpecificOutput.permissionDecision, 'deny');
+    assert.match(result.hookSpecificOutput.permissionDecisionReason, /public network destinations/);
+    const summary = JSON.parse(fs.readFileSync(receipt.receiptPath, 'utf8'));
+    assert.deepEqual(summary.deniedUses.map(({ tool }) => tool), ['WebFetch']);
+    assert.doesNotMatch(fs.readFileSync(receipt.eventsPath, 'utf8'), /metadata\.private|secret-canary|169\.254/);
+  } finally {
+    for (const [key, value] of Object.entries(prior)) {
+      const envName = {
+        root: 'ATRIS_PACK_ROOT', receipt: 'ATRIS_PACK_RECEIPT',
+        events: 'ATRIS_PACK_RECEIPT_EVENTS', capabilities: 'ATRIS_PACK_GRANTED_CAPABILITIES',
+      }[key];
+      if (value === undefined) delete process.env[envName];
+      else process.env[envName] = value;
+    }
     cleanupTempDir(dir);
   }
 });
