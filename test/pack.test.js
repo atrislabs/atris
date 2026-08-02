@@ -765,8 +765,10 @@ test('pack inspect --json returns one local lifecycle record without prose parsi
       remoteVersion: '0.3.0',
       pulledAt: '2026-08-02T03:00:00.000Z',
     }, null, 2)}\n`, 'utf8');
+    const targetAlias = path.join(dir, 'inspect-pack-alias');
+    fs.symlinkSync(target, targetAlias, process.platform === 'win32' ? 'junction' : 'dir');
 
-    const inspected = runCli(['pack', 'inspect', 'inspect-pack', '--json'], {
+    const inspected = runCli(['pack', 'inspect', targetAlias, '--json'], {
       cwd: dir,
       env: { ATRIS_APP_URL: 'https://registry.test' },
     });
@@ -1938,6 +1940,7 @@ for (const sub of ['list', 'status', 'pull', 'update', 'inspect', 'doctor', 'pub
         const r = runCli(['pack', sub, flag], { cwd: dir });
         assert.equal(r.status, 0, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
         assert.match(r.stdout, /usage: atris pack/);
+        if (sub === 'inspect') assert.match(r.stdout, /atris pack inspect <slug\|dir> \[--json\]/);
         assert.doesNotMatch(`${r.stdout}${r.stderr}`, /unknown pack .* argument/);
       } finally {
         cleanupTempDir(dir);

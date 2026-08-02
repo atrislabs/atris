@@ -156,7 +156,7 @@ function showHelp() {
   console.log('       atris pack pull [<slug>] [--dir <path>] [--allow-downgrade]');
   console.log('       atris pack status [--dir <path>]');
   console.log('       atris pack update [<dir>] [--allow-downgrade]');
-  console.log('       atris pack inspect <slug|dir>');
+  console.log('       atris pack inspect <slug|dir> [--json]');
   console.log('       atris pack doctor <slug|dir> [--json]');
   console.log('       atris pack list [--dir <path>]');
   console.log('');
@@ -2333,7 +2333,7 @@ const PACK_INSPECT_SCHEMA = 'atris.pack-inspect.v1';
 
 function evaluatePackInspection(source, cwd = process.cwd(), options = {}) {
   const resolved = resolveInstalledPack(source, cwd);
-  const packDir = path.resolve(resolved.dir);
+  const packDir = fs.realpathSync(resolved.dir);
   const manifest = resolved.manifest;
   const state = readJson(upstreamStatePath(packDir));
   const remoteState = readJson(packStatePath(packDir));
