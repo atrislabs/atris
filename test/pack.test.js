@@ -767,7 +767,7 @@ test('pack update is a no-op when version is unchanged', async () => {
   }
 });
 
-test('pack update upgrades registry packs and preserves user files', async () => {
+test('pack update stages registry upgrades and preserves installed files', async () => {
   const dir = makeTempDir();
   try {
     const target = path.join(dir, 'demo-pack');
@@ -776,6 +776,7 @@ test('pack update upgrades registry packs and preserves user files', async () =>
       version: '0.1.0',
       origin: { type: 'registry', slug: 'demo-pack' },
     });
+    fs.writeFileSync(path.join(target, 'README.md'), '# local edit\n', 'utf8');
     fs.writeFileSync(path.join(target, 'notes.txt'), 'user journal', 'utf8');
 
     const zipBuffer = packZipBuffer(dir, sampleManifest({ slug: 'demo-pack', version: '0.2.0' }));
@@ -788,12 +789,16 @@ test('pack update upgrades registry packs and preserves user files', async () =>
     });
 
     assert.equal(result.upToDate, false);
+    assert.equal(result.staged, true);
     assert.ok(fs.existsSync(path.join(target, 'notes.txt')));
     assert.equal(fs.readFileSync(path.join(target, 'notes.txt'), 'utf8'), 'user journal');
     const installed = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'));
-    assert.equal(installed.version, '0.2.0');
+    assert.equal(installed.version, '0.1.0');
     assert.deepEqual(installed.origin, { type: 'registry', slug: 'demo-pack' });
-    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# pack\n');
+    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# local edit\n');
+    const staged = JSON.parse(fs.readFileSync(path.join(target, '.upstream', 'pack.json'), 'utf8'));
+    assert.equal(staged.version, '0.2.0');
+    assert.equal(fs.readFileSync(path.join(target, '.upstream', 'README.md'), 'utf8'), '# pack\n');
     const state = JSON.parse(fs.readFileSync(path.join(target, '.atris', 'state', 'pack.json'), 'utf8'));
     assert.equal(state.remoteVersion, '0.2.0');
     assert.ok(state.lastRemoteCheckAt);
@@ -854,7 +859,87 @@ test('pack update refreshes stale credentials after a private registry 404', asy
     assert.equal(refreshCalls.length, 1);
     assert.equal(refreshCalls[0].pathname, '/auth/refresh');
     assert.deepEqual(refreshCalls[0].options.body, { refresh_token: 'refresh-token' });
-    assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8')).version, '0.2.0');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8')).version, '0.1.0');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, '.upstream', 'pack.json'), 'utf8')).version, '0.2.0');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack update stages URL upgrades without overwriting local edits', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-pack');
+    const sourceUrl = 'https://packs.test/demo-pack.zip';
+    writePackDir(target, {
+      slug: 'demo-pack',
+      version: '0.1.0',
+      origin: { type: 'url', url: sourceUrl },
+    });
+    fs.writeFileSync(path.join(target, 'README.md'), '# local author edit\n', 'utf8');
+
+    const remoteZip = path.join(dir, 'remote.zip');
+    writeZipFile(remoteZip, [
+      { name: 'pack.json', data: Buffer.from(`${JSON.stringify(sampleManifest({ version: '0.2.0' }), null, 2)}\n`) },
+      { name: 'README.md', data: Buffer.from('# remote readme\n') },
+    ]);
+    const calls = [];
+    const { result, output } = await captureConsole(() => updatePack([target], dir, {
+      deps: {
+        loadCredentials: () => null,
+        httpRequest: async (url) => {
+          calls.push(url);
+          return { status: 200, body: fs.readFileSync(remoteZip) };
+        },
+      },
+    }));
+
+    assert.deepEqual(calls, [sourceUrl]);
+    assert.equal(result.upToDate, false);
+    assert.equal(result.staged, true);
+    assert.match(output, /staged demo-pack local v0\.1\.0 -> remote v0\.2\.0/);
+    assert.match(output, /upstream lives in \.upstream\/ for a deliberate merge/);
+    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# local author edit\n');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8')).version, '0.1.0');
+    assert.equal(fs.readFileSync(path.join(target, '.upstream', 'README.md'), 'utf8'), '# remote readme\n');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, '.upstream', 'pack.json'), 'utf8')).version, '0.2.0');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack update rejects URL downgrades unless explicitly allowed, then stages them', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-pack');
+    writePackDir(target, {
+      slug: 'demo-pack',
+      version: '2.0.0',
+      origin: { type: 'url', url: 'https://packs.test/demo-pack.zip' },
+    });
+    fs.writeFileSync(path.join(target, 'README.md'), '# local author edit\n', 'utf8');
+    const zipBuffer = packZipBuffer(dir, sampleManifest({ version: '1.0.0' }));
+    const options = {
+      deps: {
+        loadCredentials: () => null,
+        httpRequest: async () => ({ status: 200, body: zipBuffer }),
+      },
+    };
+
+    await assert.rejects(
+      () => updatePack([target], dir, options),
+      /refusing downgrade: local v2\.0\.0 is newer than remote v1\.0\.0.*--allow-downgrade/,
+    );
+    assert.equal(fs.existsSync(path.join(target, '.upstream')), false);
+    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# local author edit\n');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8')).version, '2.0.0');
+
+    const result = await updatePack([target, '--allow-downgrade'], dir, options);
+    assert.equal(result.upToDate, false);
+    assert.equal(result.staged, true);
+    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# local author edit\n');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8')).version, '2.0.0');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, '.upstream', 'pack.json'), 'utf8')).version, '1.0.0');
   } finally {
     cleanupTempDir(dir);
   }
@@ -1042,6 +1127,42 @@ test('pack pull records an equal remote check without staging a review', async (
     const status = runCli(['pack', 'status', '--dir', target], { cwd: dir });
     assert.match(status.stdout, /last remote check 2026-07-09T14:00:00\.000Z, remote v0\.1\.0/);
     assert.doesNotMatch(status.stdout, /staged upstream review/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack pull rejects registry downgrades unless explicitly allowed, then stages them', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-pack');
+    writePackDir(target, {
+      slug: 'demo-pack',
+      version: '2.0.0',
+      origin: { type: 'registry', slug: 'demo-pack' },
+    });
+    fs.writeFileSync(path.join(target, 'README.md'), '# local edit\n', 'utf8');
+    const zipBuffer = packZipBuffer(dir, sampleManifest({ version: '1.0.0' }));
+    const options = {
+      deps: {
+        getAppBaseUrl: () => 'https://app.test',
+        loadCredentials: () => null,
+        httpRequest: async () => ({ status: 200, body: zipBuffer }),
+      },
+    };
+
+    await assert.rejects(
+      () => pullPack(['--dir', target], dir, options),
+      /refusing downgrade: local v2\.0\.0 is newer than remote v1\.0\.0.*--allow-downgrade/,
+    );
+    assert.equal(fs.existsSync(path.join(target, '.upstream')), false);
+    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# local edit\n');
+
+    const result = await pullPack(['--dir', target, '--allow-downgrade'], dir, options);
+    assert.equal(result.staged, true);
+    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# local edit\n');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8')).version, '2.0.0');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, '.upstream', 'pack.json'), 'utf8')).version, '1.0.0');
   } finally {
     cleanupTempDir(dir);
   }
