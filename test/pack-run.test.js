@@ -5,6 +5,12 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { runPack } = require('../commands/pack');
+const {
+  resolvePackCapabilityPolicy,
+  beginPackRunReceipt,
+  enforcePackRoot,
+  runHook,
+} = require('../lib/pack-capabilities');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -18,12 +24,12 @@ function cleanupTempDir(dir) {
 }
 
 // An installed packet: a folder with a readable pack.json.
-function seedInstalledPack(dir, slug = 'g-brain') {
+function seedInstalledPack(dir, slug = 'g-brain', extraManifest = {}) {
   const packDir = path.join(dir, slug);
   fs.mkdirSync(packDir, { recursive: true });
   fs.writeFileSync(
     path.join(packDir, 'pack.json'),
-    `${JSON.stringify({ slug, title: 'G Brain', version: '0.1.0' }, null, 2)}\n`
+    `${JSON.stringify({ slug, title: 'G Brain', version: '0.1.0', ...extraManifest }, null, 2)}\n`
   );
   fs.writeFileSync(path.join(packDir, 'README.md'), '# G Brain\n');
   return packDir;
@@ -277,6 +283,232 @@ test('pack run --trust is the explicit opt-out for a packet you have read', asyn
   }
 });
 
+test('declared capabilities become an exact local Claude tool ceiling and trust card', async () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir, 'g-brain', { permissions: ['pack.read', 'web.read'] });
+    const receiptDir = path.join(dir, 'receipts');
+    const { calls, deps } = stubDeps({ packRunReceiptDir: receiptDir });
+    const { code, output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
+
+    assert.equal(code, 0);
+    assert.equal(calls.local.length, 1);
+    const call = calls.local[0];
+    assert.equal(call.options.skipPermissions, false);
+    const toolsFlag = call.args.indexOf('--tools');
+    assert.equal(call.args[toolsFlag + 1], 'Read,Glob,Grep,Skill,WebFetch,WebSearch');
+    assert.equal(call.args[call.args.indexOf('--permission-mode') + 1], 'default');
+    assert.equal(call.args[call.args.indexOf('--setting-sources') + 1], 'user');
+    assert.equal(call.args.includes('--strict-mcp-config'), true);
+    assert.deepEqual(JSON.parse(call.args[call.args.indexOf('--mcp-config') + 1]), { mcpServers: {} });
+    const settings = JSON.parse(call.args[call.args.indexOf('--settings') + 1]);
+    assert.equal(settings.permissions.disableBypassPermissionsMode, 'disable');
+    assert.equal(settings.permissions.disableAutoMode, 'disable');
+    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write');
+    assert.match(output, /capability trust card:/);
+    assert.match(output, /requested by pack: pack\.read, web\.read/);
+    assert.match(output, /granted for this run: pack\.read, web\.read/);
+    assert.match(output, /host shell: denied/);
+
+    const receipts = fs.readdirSync(receiptDir).filter((name) => name.endsWith('.json'));
+    assert.equal(receipts.length, 1);
+    const receipt = JSON.parse(fs.readFileSync(path.join(receiptDir, receipts[0]), 'utf8'));
+    assert.deepEqual(receipt.requestedCapabilities, ['pack.read', 'web.read']);
+    assert.deepEqual(receipt.grantedCapabilities, ['pack.read', 'web.read']);
+    assert.deepEqual(receipt.grantedTools, ['Read', 'Glob', 'Grep', 'Skill', 'WebFetch', 'WebSearch']);
+    assert.deepEqual(receipt.usedTools, []);
+    assert.equal(receipt.enforcement.packRootFileBoundary, true);
+    assert.equal(receipt.enforcement.projectSettingsLoaded, false);
+    assert.equal(receipt.enforcement.mcpServersLoaded, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('declared --trust auto-approves only inside the tool ceiling and never bypasses it', async () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir, 'g-brain', { permissions: ['pack.write'] });
+    const { calls, deps } = stubDeps({ packRunReceiptDir: path.join(dir, 'receipts') });
+    const { output } = await captureConsole(() => runPack(['g-brain', '--trust'], dir, { deps }));
+
+    const call = calls.local[0];
+    assert.equal(call.options.skipPermissions, false, 'declared --trust must never request bypassPermissions');
+    assert.equal(call.args[call.args.indexOf('--permission-mode') + 1], 'dontAsk');
+    const settings = JSON.parse(call.args[call.args.indexOf('--settings') + 1]);
+    assert.deepEqual(settings.permissions.allow, ['Read(/**)', 'Edit(/**)', 'Skill']);
+    assert.match(output, /automatic inside the declared ceiling/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('unknown and legacy-shaped declared permissions fail before any runner starts', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedInstalledPack(dir, 'g-brain', { permissions: ['pack.read', 'database.admin'] });
+    const { calls, deps } = stubDeps({ packRunReceiptDir: path.join(dir, 'receipts') });
+    await assert.rejects(
+      () => runPack(['g-brain'], dir, { deps }),
+      /unknown capability "database\.admin"/,
+    );
+    assert.equal(calls.local.length, 0);
+    assert.equal(calls.cloud.length, 0);
+    assert.equal(fs.existsSync(path.join(dir, 'receipts')), false);
+
+    const manifestPath = path.join(packDir, 'pack.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.permissions = { network: 'read' };
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    await assert.rejects(
+      () => runPack(['g-brain'], dir, { deps }),
+      /permissions must be an array of canonical capabilities/,
+    );
+    assert.equal(calls.local.length, 0);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('declared capability packs fail closed in cloud before auth or workspace launch', async () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir, 'g-brain', { permissions: ['pack.read'] });
+    const { calls, deps } = stubDeps({
+      loadCredentials: () => { throw new Error('cloud auth gate should not run'); },
+      readBusinessBinding: () => { throw new Error('binding gate should not run'); },
+    });
+    const { code, output } = await captureConsole(() => runPack(['g-brain', '--cloud'], dir, { deps }));
+    assert.equal(code, 1);
+    assert.match(output, /cloud runner does not accept that contract yet/);
+    assert.match(output, /will not silently widen/);
+    assert.equal(calls.cloud.length, 0);
+    assert.equal(calls.local.length, 0);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('host.shell is explicit in both the tool grant and high-risk trust card', async () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir, 'g-brain', { permissions: ['host.shell'] });
+    const { calls, deps } = stubDeps({ packRunReceiptDir: path.join(dir, 'receipts') });
+    const { output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
+    const call = calls.local[0];
+    assert.equal(call.args[call.args.indexOf('--tools') + 1], 'Bash');
+    assert.match(output, /host shell: GRANTED — Bash can reach host files and network/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('--grant is an explicit per-run escalation recorded separately from pack requests', async () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir, 'g-brain', { permissions: ['pack.read'] });
+    const receiptDir = path.join(dir, 'receipts');
+    const { calls, deps } = stubDeps({ packRunReceiptDir: receiptDir });
+    const { output } = await captureConsole(() => (
+      runPack(['g-brain', '--grant', 'host.shell'], dir, { deps })
+    ));
+
+    const call = calls.local[0];
+    assert.equal(call.args[call.args.indexOf('--tools') + 1], 'Read,Glob,Grep,Skill,Bash');
+    assert.match(output, /requested by pack: pack\.read/);
+    assert.match(output, /granted for this run: pack\.read, host\.shell/);
+    assert.match(output, /host shell: GRANTED — Bash can reach host files and network/);
+    const receiptName = fs.readdirSync(receiptDir).find((name) => name.endsWith('.json'));
+    const receipt = JSON.parse(fs.readFileSync(path.join(receiptDir, receiptName), 'utf8'));
+    assert.deepEqual(receipt.requestedCapabilities, ['pack.read']);
+    assert.deepEqual(receipt.grantedCapabilities, ['pack.read', 'host.shell']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('--grant can put a legacy pack inside an explicit boundary without editing its manifest', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedInstalledPack(dir);
+    const before = fs.readFileSync(path.join(packDir, 'pack.json'), 'utf8');
+    const { calls, deps } = stubDeps({ packRunReceiptDir: path.join(dir, 'receipts') });
+    const { output } = await captureConsole(() => runPack(['g-brain', '--grant=pack.read'], dir, { deps }));
+
+    assert.equal(calls.local[0].args[calls.local[0].args.indexOf('--tools') + 1], 'Read,Glob,Grep,Skill');
+    assert.match(output, /requested by pack: none/);
+    assert.match(output, /granted for this run: pack\.read/);
+    assert.doesNotMatch(output, /capabilities: LEGACY/);
+    assert.equal(fs.readFileSync(path.join(packDir, 'pack.json'), 'utf8'), before);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack-root hook blocks traversal and symlink escapes while allowing in-pack reads and writes', () => {
+  const dir = makeTempDir();
+  try {
+    const root = path.join(dir, 'pack');
+    const outside = path.join(dir, 'outside');
+    fs.mkdirSync(root);
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(root, 'inside.md'), '# inside\n');
+    fs.writeFileSync(path.join(outside, 'secret.md'), 'secret\n');
+    fs.symlinkSync(outside, path.join(root, 'escape'));
+
+    assert.deepEqual(enforcePackRoot({ tool_name: 'Read', tool_input: { file_path: 'inside.md' } }, root), { allowed: true });
+    assert.deepEqual(enforcePackRoot({ tool_name: 'Write', tool_input: { file_path: 'new/note.md' } }, root), { allowed: true });
+    assert.equal(enforcePackRoot({ tool_name: 'Read', tool_input: { file_path: '../outside/secret.md' } }, root).allowed, false);
+    assert.equal(enforcePackRoot({ tool_name: 'Glob', tool_input: { pattern: '../outside/**' } }, root).allowed, false);
+    assert.equal(enforcePackRoot({ tool_name: 'Grep', tool_input: { pattern: 'secret', glob: '../../*.md' } }, root).allowed, false);
+    assert.match(
+      enforcePackRoot({ tool_name: 'Read', tool_input: { file_path: 'escape/secret.md' } }, root).reason,
+      /symlink outside/,
+    );
+    assert.equal(enforcePackRoot({ tool_name: 'Write', tool_input: {} }, root).allowed, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('usage hook keeps a live requested/granted/used receipt without recording tool inputs', () => {
+  const dir = makeTempDir();
+  const prior = {
+    root: process.env.ATRIS_PACK_ROOT,
+    receipt: process.env.ATRIS_PACK_RECEIPT,
+    events: process.env.ATRIS_PACK_RECEIPT_EVENTS,
+    capabilities: process.env.ATRIS_PACK_GRANTED_CAPABILITIES,
+  };
+  try {
+    const packDir = seedInstalledPack(dir, 'g-brain', { permissions: ['pack.read', 'web.read'] });
+    const policy = resolvePackCapabilityPolicy(['pack.read', 'web.read']);
+    const receipt = beginPackRunReceipt(packDir, { slug: 'g-brain', version: '0.1.0' }, policy, {
+      receiptDir: path.join(dir, 'receipts'),
+    });
+    process.env.ATRIS_PACK_ROOT = packDir;
+    process.env.ATRIS_PACK_RECEIPT = receipt.receiptPath;
+    process.env.ATRIS_PACK_RECEIPT_EVENTS = receipt.eventsPath;
+    process.env.ATRIS_PACK_GRANTED_CAPABILITIES = JSON.stringify(policy.grantedCapabilities);
+
+    runHook('used', JSON.stringify({ tool_name: 'Read', tool_input: { file_path: 'README.md', secret: 'do-not-log' } }));
+    runHook('used', JSON.stringify({ tool_name: 'WebSearch', tool_input: { query: 'private query' } }));
+    const summary = JSON.parse(fs.readFileSync(receipt.receiptPath, 'utf8'));
+    assert.deepEqual(summary.usedCapabilities, ['pack.read', 'web.read']);
+    assert.deepEqual(summary.usedTools, ['Read', 'WebSearch']);
+    assert.doesNotMatch(fs.readFileSync(receipt.eventsPath, 'utf8'), /do-not-log|private query/);
+  } finally {
+    for (const [key, value] of Object.entries(prior)) {
+      const envName = {
+        root: 'ATRIS_PACK_ROOT', receipt: 'ATRIS_PACK_RECEIPT',
+        events: 'ATRIS_PACK_RECEIPT_EVENTS', capabilities: 'ATRIS_PACK_GRANTED_CAPABILITIES',
+      }[key];
+      if (value === undefined) delete process.env[envName];
+      else process.env[envName] = value;
+    }
+    cleanupTempDir(dir);
+  }
+});
+
 // The end-to-end proof: what actually reaches the agent binary. A stubbed
 // runner records its argv, so this fails if any layer between pack run and the
 // spawn puts --dangerously-skip-permissions back.
@@ -287,13 +519,13 @@ function seedFakeRunner(dir, argsFile) {
   return runner;
 }
 
-function runPackCli(dir, extraArgs, runner) {
+function runPackCli(dir, extraArgs, runner, env = {}) {
   const result = spawnSync(process.execPath, [cliPath, 'pack', 'run', 'g-brain', ...extraArgs], {
     cwd: dir,
     encoding: 'utf8',
     timeout: 30000,
     input: '',
-    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_BIN: runner },
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_BIN: runner, ...env },
   });
   return result;
 }
@@ -335,6 +567,33 @@ test('pack run --trust hands the skip flag through to the agent', () => {
   }
 });
 
+test('declared pack --trust reaches Claude as dontAsk plus exact tools, never dangerous bypass', () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir, 'g-brain', { permissions: ['pack.write', 'web.read'] });
+    const argsFile = path.join(dir, 'argv-declared-trust.txt');
+    const runner = seedFakeRunner(dir, argsFile);
+    const receiptDir = path.join(dir, 'receipts');
+    const result = runPackCli(dir, ['--trust'], runner, { ATRIS_PACK_RUNS_DIR: receiptDir });
+
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+    const argv = fs.readFileSync(argsFile, 'utf8').split('\n');
+    assert.equal(argv.includes('--dangerously-skip-permissions'), false);
+    assert.equal(argv[argv.indexOf('--permission-mode') + 1], 'dontAsk');
+    assert.equal(argv[argv.indexOf('--tools') + 1], 'Read,Glob,Grep,Skill,Edit,Write,WebFetch,WebSearch');
+    assert.equal(argv[argv.indexOf('--setting-sources') + 1], 'user');
+    assert.equal(argv.includes('--strict-mcp-config'), true);
+    const receipts = fs.readdirSync(receiptDir).filter((name) => name.endsWith('.json'));
+    assert.equal(receipts.length, 1);
+    const receipt = JSON.parse(fs.readFileSync(path.join(receiptDir, receipts[0]), 'utf8'));
+    assert.equal(receipt.status, 'finished');
+    assert.equal(receipt.exitStatus, 0);
+    assert.deepEqual(receipt.usedTools, []);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack run loads shipped skills into Claude without mutating the packet', () => {
   const dir = makeTempDir();
   try {
@@ -357,6 +616,39 @@ test('pack run loads shipped skills into Claude without mutating the packet', ()
     assert.equal(fs.realpathSync(argv[pluginFlag + 1]), fs.realpathSync(packDir));
     assert.deepEqual(fs.readdirSync(packDir).sort(), before, 'pack run must not generate adapter files');
     assert.equal(fs.existsSync(path.join(packDir, '.claude')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('declared pack exposes only its skills through a transient plugin adapter', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedInstalledPack(dir, 'g-brain', { permissions: ['pack.read'] });
+    const skillDir = path.join(packDir, 'skills', 'pack-dogfood');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: pack-dogfood\n---\n');
+    fs.mkdirSync(path.join(packDir, 'hooks'));
+    fs.writeFileSync(path.join(packDir, 'hooks', 'hooks.json'), '{"hooks":{"PreToolUse":[]}}\n');
+    fs.writeFileSync(path.join(packDir, '.mcp.json'), '{"mcpServers":{"surprise":{}}}\n');
+    const before = fs.readdirSync(packDir).sort();
+    let adapter = null;
+    let adapterEntries = null;
+    const { deps } = stubDeps({
+      packRunReceiptDir: path.join(dir, 'receipts'),
+      computerLocal: (args) => {
+        adapter = args[args.indexOf('--plugin-dir') + 1];
+        adapterEntries = fs.readdirSync(adapter).sort();
+        assert.equal(fs.existsSync(path.join(adapter, 'skills', 'pack-dogfood', 'SKILL.md')), true);
+      },
+    });
+    const code = await runPack(['g-brain'], dir, { deps });
+
+    assert.equal(code, 0);
+    assert.deepEqual(adapterEntries, ['skills']);
+    assert.notEqual(path.resolve(adapter), path.resolve(packDir));
+    assert.equal(fs.existsSync(adapter), false, 'transient plugin must be removed after the runner returns');
+    assert.deepEqual(fs.readdirSync(packDir).sort(), before, 'the installed pack remains immutable');
   } finally {
     cleanupTempDir(dir);
   }

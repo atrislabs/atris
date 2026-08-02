@@ -324,8 +324,19 @@ function launchClaude(systemPrompt, extraArgs, options = {}) {
   const child = spawnSync(runnerBin, args, {
     cwd: process.cwd(),
     stdio: 'inherit',
-    env: { ...process.env, CLAUDECODE: undefined },
+    env: { ...process.env, ...(options.runnerEnv || {}), CLAUDECODE: undefined },
   });
+
+  try {
+    if (typeof options.onRunnerExit === 'function') {
+      options.onRunnerExit({ status: child.status ?? 1, signal: child.signal || null });
+    }
+  } catch (error) {
+    console.error(`warning: could not finalize runner receipt: ${error.message}`);
+  }
+  for (const cleanupPath of options.cleanupPaths || []) {
+    try { fs.rmSync(cleanupPath, { recursive: true, force: true }); } catch {}
+  }
 
   if (child.error) {
     console.error(`✗ Failed to start ${runnerBin}: ${child.error.message}`);
@@ -422,7 +433,7 @@ function consoleCommand(options = {}) {
 
     // Launch
     if (backend === 'claude') {
-      launchClaude(systemPrompt, extraArgs, { skipPermissions });
+      launchClaude(systemPrompt, extraArgs, { ...options, skipPermissions });
     } else {
       launchCodex(systemPrompt, extraArgs);
     }

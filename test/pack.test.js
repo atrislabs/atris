@@ -515,6 +515,29 @@ test('pack publish preserves private visibility and price in the archive manifes
   }
 });
 
+test('pack publish rejects noncanonical permissions before changing the source manifest', () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = path.join(dir, 'invalid-permissions');
+    writePackDir(packDir, {
+      slug: 'invalid-permissions',
+      author: 'Ada Lovelace',
+      permissions: ['pack.read', 'secrets.export'],
+    });
+    const manifestPath = path.join(packDir, 'pack.json');
+    const before = fs.readFileSync(manifestPath, 'utf8');
+    const zipPath = path.join(dir, 'invalid.zip');
+    const publish = runCli(['pack', 'publish', '--dir', packDir, '--out', zipPath], { cwd: dir });
+
+    assert.notEqual(publish.status, 0);
+    assert.match(`${publish.stdout}\n${publish.stderr}`, /unknown capability "secrets\.export"/);
+    assert.equal(fs.readFileSync(manifestPath, 'utf8'), before);
+    assert.equal(fs.existsSync(zipPath), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack publish without output still writes pack.json and sharing hint', () => {
   const dir = makeTempDir();
   try {
@@ -631,7 +654,8 @@ test('pack inspect resolves an installed slug and prints its trust surface', () 
     assert.match(inspected.stdout, /docs\/ \(1 file, 8 B\)/);
     assert.match(inspected.stdout, /pack type: workflow/);
     assert.match(inspected.stdout, /entrypoint: \{"command":"node run\.js","verifier":"node --test"\}/);
-    assert.match(inspected.stdout, /permissions: \{"network":"read","filesystem":"pack only"\}/);
+    assert.match(inspected.stdout, /permissions \(legacy intent, not enforced\): \{"network":"read","filesystem":"pack only"\}/);
+    assert.match(inspected.stdout, /capability error: permissions must be an array of canonical capabilities/);
     assert.match(inspected.stdout, /author: Ada Lovelace \[present\]/);
     assert.match(inspected.stdout, /created-in: browser \[present\]/);
     assert.match(inspected.stdout, /source urls: \["https:\/\/example\.com\/source"\] \[present\]/);
@@ -660,11 +684,27 @@ test('pack inspect accepts a directory and makes missing contracts visible', () 
     assert.match(inspected.stdout, /update state: remote not checked yet/);
     assert.match(inspected.stdout, /pack type: undeclared/);
     assert.match(inspected.stdout, /entrypoint: RUN\.md/);
-    assert.match(inspected.stdout, /permissions: none declared/);
+    assert.match(inspected.stdout, /permissions: none declared \(legacy run; prompts are the only capability boundary\)/);
     assert.match(inspected.stdout, /author: ABSENT/);
     assert.match(inspected.stdout, /created-in: ABSENT/);
     assert.match(inspected.stdout, /source urls: ABSENT/);
     assert.match(inspected.stdout, /content hashes: absent \(legacy pack, bytes unverified\)/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack inspect shows canonical permissions as enforced tools, not manifest decoration', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'bounded-pack');
+    writePackDir(target, { slug: 'bounded-pack', permissions: ['pack.read', 'web.read'] });
+    const inspected = runCli(['pack', 'inspect', target], { cwd: dir });
+
+    assert.equal(inspected.status, 0, `stdout:\n${inspected.stdout}\nstderr:\n${inspected.stderr}`);
+    assert.match(inspected.stdout, /permissions \(enforced on local run\): pack\.read, web\.read/);
+    assert.match(inspected.stdout, /granted local tools: Read, Glob, Grep, Skill, WebFetch, WebSearch/);
+    assert.match(inspected.stdout, /cloud capability enforcement: unavailable \(declared-capability runs fail closed\)/);
   } finally {
     cleanupTempDir(dir);
   }
