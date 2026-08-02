@@ -2725,11 +2725,18 @@ function inspectDoctorFileContent(relativePath, absolutePath) {
 
 function inspectDoctorPayload(packDir, manifest) {
   const installed = collectInstalledContentFiles(packDir);
-  const candidates = [...installed.entries()].filter(
-    ([relativePath, absolutePath]) => !isGeneratedMetadataReadme(relativePath, absolutePath, manifest),
-  );
+  const candidates = [];
+  const generatedMetadataFiles = [];
+  for (const [relativePath, absolutePath] of installed) {
+    if (isGeneratedMetadataReadme(relativePath, absolutePath, manifest)) {
+      generatedMetadataFiles.push(relativePath);
+    } else {
+      candidates.push([relativePath, absolutePath]);
+    }
+  }
   const payload = [];
   const emptyFiles = [];
+  const fileEvidence = [];
   const corpus = [];
   let remainingBytes = PACK_DOCTOR_TEXT_TOTAL_LIMIT;
   for (const [relativePath, absolutePath] of candidates) {
@@ -2745,15 +2752,21 @@ function inspectDoctorPayload(packDir, manifest) {
     }
     payload.push([relativePath, absolutePath]);
     corpus.push(relativePath);
-    if (remainingBytes <= 0 || !content.sample) continue;
-    const sampleBytes = Buffer.from(content.sample).subarray(0, remainingBytes);
-    const sample = sampleBytes.toString('utf8');
-    corpus.push(sample);
-    remainingBytes -= sampleBytes.length;
+    let textBytesScanned = 0;
+    if (remainingBytes > 0 && content.sample) {
+      const sampleBytes = Buffer.from(content.sample).subarray(0, remainingBytes);
+      const sample = sampleBytes.toString('utf8');
+      corpus.push(sample);
+      textBytesScanned = sampleBytes.length;
+      remainingBytes -= textBytesScanned;
+    }
+    fileEvidence.push({ path: relativePath, filenameScanned: true, textBytesScanned });
   }
   return {
     payloadFiles: payload.map(([relativePath]) => relativePath),
     emptyFiles,
+    generatedMetadataFiles,
+    fileEvidence,
     tokens: new Set(packDoctorTokens(corpus.join('\n'))),
   };
 }
@@ -2872,21 +2885,40 @@ function evaluatePackDoctor(source, cwd = process.cwd()) {
     missingProvenance.length ? `missing ${missingProvenance.join(' and ')}` : `author and created-in are present`,
   ));
 
-  const promise = hasInspectValue(manifest.title)
-    ? manifest.title
-    : (hasInspectValue(manifest.description) ? manifest.description : manifest.slug);
+  const promise = typeof manifest.description === 'string' && manifest.description.trim()
+    ? manifest.description.trim()
+    : null;
+  const promiseSource = promise === null ? null : 'description';
   const promiseTokens = packDoctorTokens(promise);
   const overlap = promiseTokens.filter((token) => payload.tokens.has(token));
   let alignmentStatus = 'pass';
-  let alignmentMessage = `payload overlaps the promise on: ${overlap.join(', ')}`;
-  if (!promiseTokens.length) {
+  let alignmentMessage = `payload overlaps description words on: ${overlap.join(', ')}`;
+  if (promiseSource === null) {
     alignmentStatus = 'warn';
-    alignmentMessage = 'title has no useful words for a lexical alignment check';
+    alignmentMessage = 'manifest description is absent; lexical promise alignment was not run';
+  } else if (!promiseTokens.length) {
+    alignmentStatus = 'warn';
+    alignmentMessage = 'description has no useful words for a lexical alignment check';
   } else if (!overlap.length) {
     alignmentStatus = 'fail';
-    alignmentMessage = `no obvious lexical overlap with title words: ${promiseTokens.join(', ')}`;
+    alignmentMessage = `no obvious lexical overlap with description words: ${promiseTokens.join(', ')}`;
   }
   checks.push(packDoctorCheck('alignment', 'promise alignment', alignmentStatus, alignmentMessage));
+  const alignment = {
+    method: 'bounded-lexical-overlap',
+    promiseSource,
+    promiseTokens,
+    files: payload.fileEvidence,
+    excluded: {
+      generatedMetadata: payload.generatedMetadataFiles,
+      emptyOrWhitespace: payload.emptyFiles,
+    },
+    limits: {
+      textBytesPerFile: PACK_DOCTOR_TEXT_FILE_LIMIT,
+      textBytesTotal: PACK_DOCTOR_TEXT_TOTAL_LIMIT,
+    },
+    overlap,
+  };
 
   const counts = {
     pass: checks.filter((check) => check.status === 'pass').length,
@@ -2909,6 +2941,7 @@ function evaluatePackDoctor(source, cwd = process.cwd()) {
     location: packDir,
     summary: counts,
     checks,
+    alignment,
     nextAction,
   };
 }
@@ -2923,6 +2956,18 @@ function printPackDoctor(result) {
     const label = check.status === 'pass' ? 'pass' : (check.status === 'warn' ? 'revise' : 'reject');
     console.log(`  ${label} ${check.name}: ${check.message}`);
   }
+  const source = result.alignment.promiseSource || 'none';
+  const files = result.alignment.files;
+  console.log(`alignment evidence: ${source} against ${files.length} payload file${files.length === 1 ? '' : 's'}`);
+  for (const file of files.slice(0, 10)) {
+    const text = file.textBytesScanned ? `filename + ${file.textBytesScanned} text bytes` : 'filename only';
+    console.log(`  scanned: ${file.path} (${text})`);
+  }
+  if (files.length > 10) console.log(`  ... ${files.length - 10} more payload files`);
+  const generated = result.alignment.excluded.generatedMetadata;
+  if (generated.length) console.log(`  excluded generated metadata: ${generated.join(', ')}`);
+  const empty = result.alignment.excluded.emptyOrWhitespace;
+  if (empty.length) console.log(`  excluded empty/whitespace: ${empty.join(', ')}`);
   console.log(`next: ${result.nextAction}`);
 }
 
