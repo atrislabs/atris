@@ -318,8 +318,15 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.deepEqual(receipt.grantedTools, ['Read', 'Glob', 'Grep', 'Skill', 'WebFetch', 'WebSearch']);
     assert.deepEqual(receipt.usedTools, []);
     assert.equal(receipt.enforcement.packRootFileBoundary, true);
+    assert.equal(receipt.enforcement.userSettingsLoaded, true);
     assert.equal(receipt.enforcement.projectSettingsLoaded, false);
+    assert.equal(receipt.enforcement.managedPoliciesMayApply, true);
     assert.equal(receipt.enforcement.mcpServersLoaded, false);
+    assert.deepEqual(receipt.observability, {
+      denialCoverage: 'atris-hooks-only',
+      runtimePermissionDenialsCaptured: false,
+      toolInputsLogged: false,
+    });
   } finally {
     cleanupTempDir(dir);
   }
@@ -342,7 +349,12 @@ test('declared --trust auto-approves only inside the tool ceiling and never bypa
       'dontAsk must pre-approve every granted tool by its exact Claude permission name',
     );
     assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write');
-    assert.match(output, /automatic inside the declared ceiling/);
+    assert.match(output, /pre-approved inside the declared ceiling/);
+    assert.match(output, /user\/managed deny rules still win/);
+    assert.match(output, /later Claude or policy denials may not appear/);
+    const receiptName = fs.readdirSync(path.join(dir, 'receipts')).find((name) => name.endsWith('.json'));
+    const receipt = JSON.parse(fs.readFileSync(path.join(dir, 'receipts', receiptName), 'utf8'));
+    assert.equal(receipt.approvalMode, 'pre-approved-within-declared-ceiling');
   } finally {
     cleanupTempDir(dir);
   }
@@ -500,6 +512,9 @@ test('usage hook keeps a live requested/granted/used receipt without recording t
     const summary = JSON.parse(fs.readFileSync(receipt.receiptPath, 'utf8'));
     assert.deepEqual(summary.usedCapabilities, ['pack.read', 'web.read']);
     assert.deepEqual(summary.usedTools, ['Read', 'WebSearch']);
+    assert.equal(summary.observability.denialCoverage, 'atris-hooks-only');
+    assert.equal(summary.observability.runtimePermissionDenialsCaptured, false);
+    assert.equal(summary.observability.toolInputsLogged, false);
     assert.doesNotMatch(fs.readFileSync(receipt.eventsPath, 'utf8'), /do-not-log|private query/);
   } finally {
     for (const [key, value] of Object.entries(prior)) {

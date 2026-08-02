@@ -1667,8 +1667,9 @@ function printCapabilityTrustCard(policy, trust, receiptPath) {
   console.log(`  granted for this run: ${policy.grantedCapabilities.length ? policy.grantedCapabilities.join(', ') : 'none'}`);
   console.log(`  granted Claude tools: ${policy.tools.length ? policy.tools.join(', ') : 'none'}`);
   console.log('  file boundary: built-in file tools are confined to this pack root');
-  console.log(`  approvals: ${trust ? 'automatic inside the declared ceiling (--trust)' : 'prompted inside the declared ceiling'}`);
+  console.log(`  approvals: ${trust ? 'pre-approved inside the declared ceiling (--trust); user/managed deny rules still win' : 'prompted inside the declared ceiling'}`);
   console.log(`  host shell: ${policy.grantedCapabilities.includes('host.shell') ? 'GRANTED — Bash can reach host files and network' : 'denied'}`);
+  console.log('  receipt coverage: Atris hook use/denial events; later Claude or policy denials may not appear');
   console.log(`  receipt: ${receiptPath}`);
 }
 
