@@ -15,11 +15,21 @@ function harness({ engine = { id: 'codex' }, httpPost, loadSwarloApiKey } = {}) 
     listTasks: () => rows,
     withTaskDisplayRefs: (tasks) => tasks.map((task, index) => ({ ...task, display_id: `CLI-${index + 1}` })),
     addTask: (_db, input) => {
-      const task = { id: `task-${rows.length + 1}`, status: 'open', ...input };
+      const now = Date.now();
+      const task = { id: `task-${rows.length + 1}`, status: 'open', created_at: now, updated_at: now, ...input };
       rows.push(task);
       return { id: task.id, inserted: true };
     },
     getTask: (_db, id) => rows.find((row) => row.id === id),
+    reopenTask: (_db, { id, metadata }) => {
+      const row = rows.find((item) => item.id === id);
+      row.status = 'open';
+      row.claimed_by = null;
+      row.done_at = null;
+      row.updated_at = Date.now();
+      row.metadata = { ...row.metadata, ...metadata };
+      return { reopened: true, row };
+    },
     noteTask: (_db, note) => {
       dialogue.push(note);
       return { noted: true };
@@ -78,12 +88,57 @@ test('dedup returns the existing open blocker task', () => {
   assert.equal(h.events.filter((event) => event.type === 'mission_blocker_task_filed').length, 1);
 });
 
+test('refiling reopens the most recent closed blocker instead of creating another row', () => {
+  const h = harness();
+  const metadata = {
+    mission_id: 'mission-1',
+    mission_blocker_class: 'repeated-error:runner-failed',
+  };
+  h.rows.push(
+    { id: 'older', status: 'done', created_at: 10, updated_at: 20, metadata },
+    { id: 'newer', status: 'failed', created_at: 30, updated_at: 40, metadata },
+  );
+
+  const result = h.run();
+
+  assert.equal(result.taskId, 'CLI-2');
+  assert.equal(result.dispatched, true);
+  assert.equal(h.rows.length, 2);
+  assert.equal(h.rows[0].status, 'done');
+  assert.equal(h.rows[1].status, 'claimed');
+  assert.equal(h.dialogue[0].content.startsWith('Mission blocker reopened.'), true);
+  assert.deepEqual(h.events.map(event => event.type), [
+    'mission_blocker_task_reopened',
+    'mission_blocker_dispatched',
+  ]);
+});
+
+test('new blocker source keys do not include closed-row counts', () => {
+  const h = harness({ engine: null });
+  h.run();
+  assert.equal(h.rows[0].sourceKey, 'mission-blocker:mission-1:repeated-error:runner-failed');
+});
+
 test('human-blocking reasons do not file or dispatch tasks', () => {
   const h = harness();
   const result = h.run('auth-required');
   assert.deepEqual(result, { taskId: null, dispatched: false, engine: null, reason: 'human-blocking' });
   assert.equal(h.rows.length, 0);
   assert.equal(h.dispatches(), 0);
+});
+
+test('stopped missions do not file or dispatch blocker tasks', () => {
+  const h = harness();
+  const result = handleMissionBlocker({
+    mission: { id: 'mission-stopped', objective: 'already stopped', status: 'stopped' },
+    stopReason: 'runner-failed',
+    workspaceRoot: '/tmp/workspace',
+  }, {
+    taskDb: {
+      open: () => { throw new Error('task db should not open for a stopped mission'); },
+    },
+  });
+  assert.deepEqual(result, { taskId: null, dispatched: false, engine: null, reason: 'stop condition met' });
 });
 
 test('no ready engine leaves the blocker filed', () => {

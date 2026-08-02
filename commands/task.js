@@ -137,7 +137,7 @@ atris task - durable local task state (SQLite, gitignored)
     atris autoland tick   # second check runs, task lands
 
   atris task                              Show the task desk
-  atris task new "<title>"                Create a task
+  atris task new "<title>" [--verify <cmd>]  Create a task; weak or missing checks are marked degraded
   atris task next [--tag <tag>] [--create-next]
                                            Claim/show next open task; optionally create the generated Endgame fallback
   atris task continue-work <id>           Create/reuse a certified Review follow-up task
@@ -169,8 +169,8 @@ atris task - durable local task state (SQLite, gitignored)
   atris task audit [--limit <n>] [--revise] re-run stored verifies for newest accepted tasks; report-only unless --revise
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
-  atris task add "<title>" [--tag <tag>] [--goal-id <id>]  Create a task
-  atris task delegate "<title>" [--to <member>] [--executed-by <engine>] [--goal-id <id>] [--tag <tag>]  Create assigned work
+  atris task add "<title>" [--tag <tag>] [--goal-id <id>] [--verify <cmd>]  Create a task
+  atris task delegate "<title>" [--to <member>] [--executed-by <engine>] [--goal-id <id>] [--tag <tag>] [--verify <cmd>]  Create assigned work
   atris task plan <id> --goal "..." --exit "..." --proof-needed "..."
                                            Record a task-owned Plan stage
   atris task do <id> --as <owner> --first-move "..."
@@ -213,6 +213,7 @@ atris task - durable local task state (SQLite, gitignored)
                                            Sweep off-roadmap/duplicate work as archived (not failed);
                                            --from-failed opts in to relabel a fail-closed row (never done)
   atris task clear-done [--before <days>] [--dry-run] [--json]  Archive completed rows, oldest first
+  atris task reap-mission-blockers [--json] Close blocker rows whose missions are complete or stopped
   atris task relabel-archived [--dry-run|--apply]
                                            One-time OBL-1622 migration: relabel June-10 backlog-reset rows failed -> archived
   atris task finish <id> --proof "..."     Legacy alias for done with proof
@@ -5927,12 +5928,14 @@ function cmdAdd(args) {
   const tag = flag(args, '--tag');
   const goalId = flag(args, '--goal-id');
   const goalObjective = flag(args, '--goal-objective') || flag(args, '--goal');
+  const verify = flag(args, '--verify');
   const metadata = {};
   if (goalId && goalId !== true) metadata.goal_id = String(goalId);
   if (goalObjective && goalObjective !== true) {
     metadata.task_goal = String(goalObjective);
     metadata.goal_objective = String(goalObjective);
   }
+  if (typeof verify === 'string' && verify.trim()) metadata.verify = verify.trim();
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
@@ -5999,6 +6002,7 @@ function delegateTask(args, options = {}) {
   const note = flag(args, '--note');
   const goalId = flag(args, '--goal-id');
   const goalObjective = flag(args, '--goal-objective') || flag(args, '--goal');
+  const verify = flag(args, '--verify');
   const claimNow = hasFlag(args, '--claim');
   const requestedOwner = flag(args, '--to') || flag(args, '--as');
   const explicitExecutedBy = flag(args, '--executed-by');
@@ -6036,6 +6040,7 @@ function delegateTask(args, options = {}) {
     metadata.task_goal = String(goalObjective);
     metadata.goal_objective = String(goalObjective);
   }
+  if (typeof verify === 'string' && verify.trim()) metadata.verify = verify.trim();
   const result = taskDb.addTask(db, {
     title,
     tag: typeof tag === 'string' ? tag : null,
@@ -7197,6 +7202,12 @@ function cmdShow(args) {
       : task.status.toUpperCase();
   console.log(`${statusLabel} ${taskRef(task)} v${task.current_version}${owner}${tag}`);
   console.log(task.title);
+  if (task.metadata?.verification_status === 'degraded') {
+    const reason = task.metadata.verification_degraded_reason === 'diff_only_verify'
+      ? 'diff-only verify command'
+      : 'missing verify command';
+    console.log(`verification: degraded (${reason})`);
+  }
   if (task.review) {
     console.log('');
     printReviewLanding(task.review);
@@ -9193,6 +9204,36 @@ function cmdClearDone(args) {
     return;
   }
   console.log(`cleared ${candidates.length} completed task(s).`);
+}
+
+function cmdReapMissionBlockers(args) {
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const workspaceRoot = taskDb.workspaceRoot();
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const missions = require('./mission').listMissions(workspaceRoot);
+  const result = taskDb.reapMissionBlockerTasks(db, { workspaceRoot, missions, actor });
+  const { outPath } = writeDefaultProjection(taskDb, db);
+  const taskById = new Map(taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot, limit: null }))
+    .map(task => [task.id, task]));
+  const closed = result.closed.map(row => ({
+    ...row,
+    task_ref: taskRef(taskById.get(row.task_id)),
+  }));
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'reaped_mission_blockers',
+      closed_count: closed.length,
+      closed,
+      projection_path: outPath,
+    });
+    return;
+  }
+  console.log(`closed ${closed.length} mission blocker task(s).`);
+  for (const row of closed) {
+    console.log(`closed ${row.task_ref} because its mission is ${row.mission_status}.`);
+  }
 }
 
 // One-time migration for OBL-1622: the 2026-06-10 "first-principles backlog
@@ -11741,6 +11782,7 @@ async function handleTaskApi(req, res, taskDb, db) {
       title,
       tag: body.tag ? String(body.tag) : 'tasks',
       workspaceRoot: taskDb.workspaceRoot(),
+      metadata: body.verify ? { verify: String(body.verify).trim() } : null,
     });
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     return sendJson(res, 200, { ok: true, action: 'created', task_id: result.id, operator_title_warning: operatorTitleWarning, projection_path: outPath, task: taskFromProjection(projection, result.id) });
@@ -12281,6 +12323,9 @@ async function runTaskCommand(args) {
     case 'fail':   return cmdDone([...rest, '--failed']);
     case 'archive': return cmdArchive(rest);
     case 'clear-done': return cmdClearDone(rest);
+    case 'reap-mission-blockers':
+    case 'reap-blockers':
+      return cmdReapMissionBlockers(rest);
     case 'relabel-archived': return cmdRelabelArchived(rest);
     case 'review': return cmdReview(rest);
     case 'reviews':
@@ -12321,7 +12366,7 @@ const MUTATING_TASK_COMMANDS = new Set([
   'continue-work', 'continue', 'chat', 'note', 'say', 'retitle', 'tag', 'tags', 'step',
   'ready', 'result', 'accept', 'landing', 'land-review', 'auto-accept-certified',
   'auto-accept', 'sweep', 'audit', 'certify-verified', 'accept-group', 'revise',
-  'done', 'finish', 'fail', 'archive', 'clear-done', 'relabel-archived', 'review', 'import',
+  'done', 'finish', 'fail', 'archive', 'clear-done', 'reap-mission-blockers', 'reap-blockers', 'relabel-archived', 'review', 'import',
   'setup', 'review-lane-act', 'review-act', 'act-review', 'review-lane-loop',
   'review-loop', 'loop-review', 'review-lane-run', 'review-run', 'run-review',
 ]);
