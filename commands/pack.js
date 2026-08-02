@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { createHash } = require('crypto');
 const { spawnSync } = require('child_process');
@@ -9,6 +10,16 @@ const { loadCredentials, performTokenRefresh } = require('../utils/auth');
 const { createZipBuffer, readZipBuffer, ZIP_LIMITS } = require('../lib/zip');
 const { craftPack } = require('./pack-craft');
 const { gatherAtrisContext } = require('./console');
+const {
+  canonicalCapabilityNames,
+  assertPackCapabilityPolicy,
+  applyPackCapabilityGrants,
+  resolvePackCapabilityPolicy,
+  buildClaudeCapabilityArgs,
+  beginPackRunReceipt,
+  appendReceiptEvent,
+  finalizePackRunReceipt,
+} = require('../lib/pack-capabilities');
 
 const REGISTRY_TIMEOUT_MS = 60000;
 
@@ -135,13 +146,16 @@ function showHelp() {
   console.log('usage: atris pack craft "<topic>" [--dir <target>] [--force]');
   console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push] [--dry-run] [--allow-secrets]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
-  console.log('       atris pack run <slug|dir> [--dir <target>] [--cloud] [--force] [--trust]');
+  console.log('       atris pack run <slug|dir> [--dir <target>] [--cloud] [--force] [--trust] [--grant <capability>]');
   console.log('       atris pack share <slug> [--for "<Name>"]');
   console.log('       atris pack pull [<slug>] [--dir <path>] [--allow-downgrade]');
   console.log('       atris pack status [--dir <path>]');
   console.log('       atris pack update [<dir>] [--allow-downgrade]');
   console.log('       atris pack inspect <slug|dir>');
   console.log('       atris pack list [--dir <path>]');
+  console.log('');
+  console.log('pack.json permissions: pack.read, pack.write, web.read, host.shell');
+  console.log('declared permissions are enforced locally; declared-capability cloud runs fail closed.');
 }
 
 function slugify(value, fallback = 'atris-pack') {
@@ -177,6 +191,14 @@ function takeValue(args, name) {
     }
   }
   return null;
+}
+
+function takeValues(args, name) {
+  const values = [];
+  while (args.some((arg) => String(arg) === name || String(arg).startsWith(`${name}=`))) {
+    values.push(takeValue(args, name));
+  }
+  return values;
 }
 
 function takeFlag(args, name) {
@@ -264,6 +286,7 @@ function buildManifest(existing, options) {
   ]) {
     if (existingManifest[key] !== undefined) manifest[key] = existingManifest[key];
   }
+  if (manifest.permissions !== undefined) assertPackCapabilityPolicy(manifest.permissions);
   manifest.versions.push({
     version,
     date: new Date().toISOString(),
@@ -1582,7 +1605,14 @@ function cloudGateFailure(packDir, displayTarget, deps = {}) {
   return null;
 }
 
-async function startPackCloud(packDir, displayTarget, deps = {}) {
+async function startPackCloud(packDir, displayTarget, deps = {}, options = {}) {
+  if (options.capabilityPolicy && options.capabilityPolicy.status === 'enforced') {
+    console.error('cloud is unavailable: this pack declares enforced capabilities, but the cloud runner does not accept that contract yet.');
+    console.error('nothing was started; Atris will not silently widen the pack in cloud.');
+    console.error('run it locally with the declared boundary:');
+    console.error(`  ${packRunLocalHint(displayTarget)}`);
+    return 1;
+  }
   const failure = cloudGateFailure(packDir, displayTarget, deps);
   if (failure) {
     console.error(`cloud is unavailable: ${failure[0]}`);
@@ -1603,29 +1633,100 @@ async function startPackCloud(packDir, displayTarget, deps = {}) {
   return 0;
 }
 
-// A packet is markdown an agent reads as instructions, and it usually came
-// from someone else. `atris console` skips permission prompts because it runs
-// on a workspace you wrote; that assumption does not survive being pointed at
-// a stranger's folder, so pack run keeps prompts on unless --trust says the
-// reader vouched for it.
-function startPackLocal(packDir, deps = {}, options = {}) {
-  const trust = options.trust === true;
-  const openingPrompt = options.openingPrompt || null;
-  const start = deps.computerLocal || require('./computer').computerLocal;
-  const runnerArgs = openingPrompt ? [openingPrompt] : [];
+function createSkillsOnlyPlugin(packDir) {
   const skillsDir = path.join(packDir, 'skills');
   const hasShippedSkill = fs.existsSync(skillsDir)
     && fs.readdirSync(skillsDir).some((name) => fs.existsSync(path.join(skillsDir, name, 'SKILL.md')));
-  // A flat packet's skills/ tree is already a valid Claude plugin layout.
-  // Load it for this session only so the advertised /skill is real without
-  // mutating an installed packet with generated .claude/ symlinks.
-  if (hasShippedSkill) runnerArgs.push('--plugin-dir', packDir);
+  if (!hasShippedSkill) return null;
+
+  const pluginDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-pack-skills-'));
+  try {
+    fs.cpSync(skillsDir, path.join(pluginDir, 'skills'), {
+      recursive: true,
+      filter(source) {
+        const stat = fs.lstatSync(source);
+        if (stat.isSymbolicLink()) {
+          throw new Error(`pack skill tree contains a symlink: ${path.relative(packDir, source)}`);
+        }
+        if (!stat.isDirectory() && !stat.isFile()) {
+          throw new Error(`pack skill tree contains an unsupported file: ${path.relative(packDir, source)}`);
+        }
+        return true;
+      },
+    });
+    return pluginDir;
+  } catch (error) {
+    fs.rmSync(pluginDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function printCapabilityTrustCard(policy, trust, receiptPath) {
+  console.log('capability trust card:');
+  console.log(`  requested by pack: ${policy.requested.length ? policy.requested.join(', ') : 'none'}`);
+  console.log(`  granted for this run: ${policy.grantedCapabilities.length ? policy.grantedCapabilities.join(', ') : 'none'}`);
+  console.log(`  granted Claude tools: ${policy.tools.length ? policy.tools.join(', ') : 'none'}`);
+  console.log('  file boundary: built-in file tools are confined to this pack root');
+  console.log(`  approvals: ${trust ? 'automatic inside the declared ceiling (--trust)' : 'prompted inside the declared ceiling'}`);
+  console.log(`  host shell: ${policy.grantedCapabilities.includes('host.shell') ? 'GRANTED — Bash can reach host files and network' : 'denied'}`);
+  console.log(`  receipt: ${receiptPath}`);
+}
+
+// Declared packs get a machine-enforced tool ceiling and an append-only usage
+// receipt. Legacy packs keep the old prompt-based behavior for compatibility,
+// but run/inspect label that weaker contract instead of calling it enforced.
+function startPackLocal(packDir, deps = {}, options = {}) {
+  const trust = options.trust === true;
+  const openingPrompt = options.openingPrompt || null;
+  const capabilityPolicy = options.capabilityPolicy || { status: 'legacy', requested: [], tools: [] };
+  const start = deps.computerLocal || require('./computer').computerLocal;
+  const runnerArgs = openingPrompt ? [openingPrompt] : [];
+  let pluginDir = null;
+  let receipt = null;
+  const runnerOptions = { skipPermissions: trust };
+
+  if (capabilityPolicy.status === 'enforced') {
+    runnerOptions.skipPermissions = false;
+    if (capabilityPolicy.tools.includes('Skill')) {
+      pluginDir = createSkillsOnlyPlugin(packDir);
+      if (pluginDir) runnerArgs.push('--plugin-dir', pluginDir);
+    }
+    receipt = beginPackRunReceipt(packDir, options.manifest || {}, capabilityPolicy, {
+      trust,
+      receiptDir: deps.packRunReceiptDir,
+    });
+    runnerArgs.push(...buildClaudeCapabilityArgs(capabilityPolicy, { trust }));
+    runnerOptions.runnerEnv = {
+      ATRIS_PACK_ROOT: fs.realpathSync(packDir),
+      ATRIS_PACK_RECEIPT: receipt.receiptPath,
+      ATRIS_PACK_RECEIPT_EVENTS: receipt.eventsPath,
+      ATRIS_PACK_GRANTED_CAPABILITIES: JSON.stringify(capabilityPolicy.grantedCapabilities),
+    };
+    runnerOptions.cleanupPaths = pluginDir ? [pluginDir] : [];
+    runnerOptions.onRunnerExit = ({ status, signal }) => {
+      appendReceiptEvent(receipt.eventsPath, {
+        event: 'exit', at: new Date().toISOString(), status, signal: signal || null,
+      });
+      finalizePackRunReceipt(receipt.receiptPath, receipt.eventsPath);
+    };
+    printCapabilityTrustCard(capabilityPolicy, trust, receipt.receiptPath);
+  } else {
+    const skillsDir = path.join(packDir, 'skills');
+    const hasShippedSkill = fs.existsSync(skillsDir)
+      && fs.readdirSync(skillsDir).some((name) => fs.existsSync(path.join(skillsDir, name, 'SKILL.md')));
+    if (hasShippedSkill) runnerArgs.push('--plugin-dir', packDir);
+  }
+
   const previous = process.cwd();
   process.chdir(packDir);
   try {
-    start(runnerArgs, { skipPermissions: trust });
+    start(runnerArgs, runnerOptions);
   } finally {
     process.chdir(previous);
+    // The real console exits the process after its child finishes and performs
+    // this cleanup there. Injected test runners return normally, so clean their
+    // transient adapter here as well.
+    if (deps.computerLocal && pluginDir) fs.rmSync(pluginDir, { recursive: true, force: true });
   }
   return 0;
 }
@@ -1721,6 +1822,7 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
   const cloud = takeFlag(args, '--cloud');
   const force = takeFlag(args, '--force');
   const trust = takeFlag(args, '--trust');
+  const grants = takeValues(args, '--grant');
   if (args.length) throw new Error(`unknown pack run argument: ${args.join(' ')}`);
 
   const deps = options.deps || {};
@@ -1748,17 +1850,31 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
   }
 
   const displayTarget = path.relative(cwd, packDir) || '.';
-  if (cloud) return startPackCloud(packDir, displayTarget, deps);
+  const capabilityPolicy = applyPackCapabilityGrants(
+    assertPackCapabilityPolicy(manifest.permissions),
+    grants,
+  );
+  if (cloud) return startPackCloud(packDir, displayTarget, deps, { capabilityPolicy });
   let openingPrompt = packOpeningPrompt(packDir, manifest);
   if (!openingPrompt && hasZeroAgentContext(packDir)) {
     printContextOnlyOrientation(packDir, manifest);
     openingPrompt = 'Read README.md first, then inspect the rest of this pack\'s files. Propose the pack\'s first useful action before making changes.';
   }
   console.log(`starting local computer in ${displayTarget}`);
-  if (!trust) {
-    console.log('permission prompts are on because this packet came from somewhere else; add --trust to turn them off.');
+  if (capabilityPolicy.status === 'legacy') {
+    console.log('capabilities: LEGACY — this pack declares no enforceable capability ceiling.');
   }
-  return startPackLocal(packDir, deps, { trust, openingPrompt });
+  if (!trust && capabilityPolicy.status === 'legacy') {
+    console.log('permission prompts are on because this packet came from somewhere else; add --trust to turn them off.');
+  } else if (trust && capabilityPolicy.status === 'legacy') {
+    console.log('warning: --trust on a legacy pack bypasses prompts without a declared tool ceiling.');
+  }
+  return startPackLocal(packDir, deps, {
+    trust,
+    openingPrompt,
+    capabilityPolicy,
+    manifest,
+  });
 }
 
 async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
@@ -2127,6 +2243,7 @@ function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
     ? manifest.entrypoint
     : (resolvePackEntryFile(packDir, 'RUN.md') ? 'RUN.md' : null);
   const permissions = declaredManifestValue(manifest, ['permissions']);
+  const capabilityPolicy = resolvePackCapabilityPolicy(manifest.permissions);
   const sourceUrls = inspectManifestValue(manifest, [
     'source-urls', 'sourceUrls', 'sourceURLs', 'source_urls', 'source-url', 'sourceUrl', 'source_url', 'sources',
   ]);
@@ -2148,7 +2265,17 @@ function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
   printInstalledTree(summary);
   console.log(`pack type: ${packType === null ? 'undeclared' : formatInspectValue(packType)}`);
   console.log(`entrypoint: ${entrypoint === null ? 'none: this pack has no actionable entry contract' : formatInspectValue(entrypoint)}`);
-  console.log(`permissions: ${permissions === null ? 'none declared' : formatInspectValue(permissions)}`);
+  if (capabilityPolicy.status === 'enforced') {
+    console.log(`permissions (enforced on local run): ${capabilityPolicy.requested.length ? capabilityPolicy.requested.join(', ') : 'none'}`);
+    console.log(`granted local tools: ${capabilityPolicy.tools.length ? capabilityPolicy.tools.join(', ') : 'none'}`);
+    console.log('cloud capability enforcement: unavailable (declared-capability runs fail closed)');
+  } else if (capabilityPolicy.status === 'invalid') {
+    console.log(`permissions (legacy intent, not enforced): ${formatInspectValue(permissions)}`);
+    console.log(`capability error: ${capabilityPolicy.reason}`);
+  } else {
+    console.log('permissions: none declared (legacy run; prompts are the only capability boundary)');
+    console.log(`canonical capabilities: ${canonicalCapabilityNames().join(', ')}`);
+  }
   console.log('provenance:');
   printProvenanceField('author', inspectManifestValue(manifest, ['author']));
   printProvenanceField('created-in', createdInValue(manifest));
