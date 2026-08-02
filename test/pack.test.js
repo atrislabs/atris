@@ -667,6 +667,122 @@ test('pack update upgrades registry packs and preserves user files', async () =>
   }
 });
 
+test('pack update refreshes stale credentials after a private registry 404', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'private-pack');
+    writePackDir(target, {
+      slug: 'private-pack',
+      version: '0.1.0',
+      origin: { type: 'registry', slug: 'private-pack' },
+    });
+    const zipBuffer = packZipBuffer(dir, sampleManifest({ slug: 'private-pack', version: '0.2.0' }));
+    let credentials = {
+      token: 'stale-token',
+      refresh_token: 'refresh-token',
+      provider: 'google',
+    };
+    const downloadCalls = [];
+    const refreshCalls = [];
+
+    const result = await updatePack([target], dir, {
+      deps: {
+        getAppBaseUrl: () => 'https://app.test',
+        loadCredentials: () => credentials,
+        httpRequest: async (url, options) => {
+          downloadCalls.push({ url, options });
+          if (downloadCalls.length === 1) return { status: 404, body: Buffer.alloc(0) };
+          return { status: 200, body: zipBuffer };
+        },
+        apiRequestJson: async (pathname, options) => {
+          refreshCalls.push({ pathname, options });
+          return { ok: true, status: 200, data: { access_token: 'fresh-token' } };
+        },
+        performTokenRefresh: async (loadedCredentials, requestJson) => {
+          const refreshed = await requestJson('/auth/refresh', {
+            method: 'POST',
+            body: {
+              refresh_token: loadedCredentials.refresh_token,
+              provider: loadedCredentials.provider,
+            },
+          });
+          credentials = { ...loadedCredentials, token: refreshed.data.access_token };
+          return { ok: true, payload: { credentials } };
+        },
+      },
+    });
+
+    assert.equal(result.upToDate, false);
+    assert.equal(downloadCalls.length, 2);
+    assert.equal(downloadCalls[0].options.headers.Authorization, 'Bearer stale-token');
+    assert.equal(downloadCalls[1].options.headers.Authorization, 'Bearer fresh-token');
+    assert.equal(refreshCalls.length, 1);
+    assert.equal(refreshCalls[0].pathname, '/auth/refresh');
+    assert.deepEqual(refreshCalls[0].options.body, { refresh_token: 'refresh-token' });
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8')).version, '0.2.0');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack update reports stale access after one refreshed retry still returns 404', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'private-pack');
+    writePackDir(target, {
+      slug: 'private-pack',
+      origin: { type: 'registry', slug: 'private-pack' },
+    });
+    const calls = [];
+
+    await assert.rejects(
+      () => updatePack([target], dir, {
+        deps: {
+          getAppBaseUrl: () => 'https://app.test',
+          loadCredentials: () => ({ token: 'stale-token', refresh_token: 'refresh-token' }),
+          httpRequest: async (url, options) => {
+            calls.push({ url, options });
+            return { status: 404, body: Buffer.alloc(0) };
+          },
+          performTokenRefresh: async () => ({
+            ok: true,
+            payload: { credentials: { token: 'fresh-token', refresh_token: 'refresh-token' } },
+          }),
+        },
+      }),
+      /pack not found or you do not have access \(your login may be stale; try atris login\)/,
+    );
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].options.headers.Authorization, 'Bearer fresh-token');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('anonymous registry 404 stays a plain pack not found error', async () => {
+  const dir = makeTempDir();
+  try {
+    const calls = [];
+    await assert.rejects(
+      () => installPack(['missing-pack', '--dir', path.join(dir, 'target')], dir, {
+        deps: {
+          getAppBaseUrl: () => 'https://app.test',
+          loadCredentials: () => null,
+          httpRequest: async (url, options) => {
+            calls.push({ url, options });
+            return { status: 404, body: Buffer.alloc(0) };
+          },
+        },
+      }),
+      /pack not found: missing-pack/,
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].options.headers.Authorization, undefined);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack pull stages newer remote in upstream and preserves local edits', async () => {
   const dir = makeTempDir();
   let server = null;

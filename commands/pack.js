@@ -3,8 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { getAppBaseUrl, httpRequest } = require('../utils/api');
-const { loadCredentials } = require('../utils/auth');
+const { apiRequestJson, getAppBaseUrl, httpRequest } = require('../utils/api');
+const { loadCredentials, performTokenRefresh } = require('../utils/auth');
 const { createZipBuffer, readZipBuffer } = require('../lib/zip');
 const { craftPack } = require('./pack-craft');
 const { gatherAtrisContext } = require('./console');
@@ -509,6 +509,55 @@ function optionalAuthHeaders(deps = {}) {
   return credentials && credentials.token ? { Authorization: `Bearer ${credentials.token}` } : {};
 }
 
+function refreshApiWithoutProviderHint(deps = {}) {
+  const requestJson = deps.apiRequestJson || apiRequestJson;
+  return (pathname, options = {}) => {
+    if (pathname !== '/auth/refresh') return requestJson(pathname, options);
+    const body = options.body && typeof options.body === 'object' ? { ...options.body } : {};
+    delete body.provider;
+    return requestJson(pathname, { ...options, body });
+  };
+}
+
+async function refreshRegistryCredentials(credentials, deps = {}) {
+  const refresh = deps.performTokenRefresh || performTokenRefresh;
+  try {
+    const result = await refresh(credentials, refreshApiWithoutProviderHint(deps));
+    if (!result || !result.ok) return null;
+    return result.payload?.credentials || (deps.loadCredentials || loadCredentials)();
+  } catch {
+    return null;
+  }
+}
+
+async function requestRegistryZip(url, deps = {}, options = {}) {
+  const request = deps.httpRequest || httpRequest;
+  const readCredentials = deps.loadCredentials || loadCredentials;
+  const credentials = readCredentials();
+  const authenticated = Boolean(credentials && credentials.token);
+  const requestWithToken = (token) => request(url, {
+    ...options,
+    method: 'GET',
+    headers: token ? { ...(options.headers || {}), Authorization: `Bearer ${token}` } : { ...(options.headers || {}) },
+  });
+
+  let response = await requestWithToken(credentials?.token);
+  if (response.status === 404 && authenticated) {
+    const refreshedCredentials = await refreshRegistryCredentials(credentials, deps);
+    if (refreshedCredentials && refreshedCredentials.token) {
+      response = await requestWithToken(refreshedCredentials.token);
+    }
+  }
+  return { response, authenticated };
+}
+
+function registryNotFoundError(slug, authenticated) {
+  if (authenticated) {
+    return new Error('pack not found or you do not have access (your login may be stale; try atris login)');
+  }
+  return new Error(`pack not found: ${slug}`);
+}
+
 function requiredAuthHeaders(deps = {}) {
   const headers = optionalAuthHeaders(deps);
   if (!headers.Authorization) {
@@ -551,19 +600,18 @@ async function postPackToRegistry(manifest, zipBuffer, deps = {}) {
 }
 
 async function fetchRegistryZip(slug, deps = {}) {
-  const request = deps.httpRequest || httpRequest;
   const url = registryUrl(`/api/pack/registry/${encodeURIComponent(slug)}`, deps);
-  let response;
+  let result;
   try {
-    response = await request(url, {
-      method: 'GET',
+    result = await requestRegistryZip(url, deps, {
       timeoutMs: REGISTRY_TIMEOUT_MS,
-      headers: optionalAuthHeaders(deps),
     });
   } catch {
     throw new Error('could not reach pack registry. check your connection and try again.');
   }
+  const { response, authenticated } = result;
   if (response.status < 200 || response.status >= 300) {
+    if (response.status === 404) throw registryNotFoundError(slug, authenticated);
     throw new Error(responseErrorText(response, `registry lookup failed for ${slug} with status ${response.status}`));
   }
   if (!response.body || response.body.length === 0) {
@@ -887,16 +935,8 @@ async function loadZipPayload(source, cwd, deps = {}) {
   }
 
   const slug = slugify(source);
-  const readCredentials = deps.loadCredentials || loadCredentials;
-  const credentials = readCredentials();
-  const headers = credentials && credentials.token ? { Authorization: `Bearer ${credentials.token}` } : {};
-  const apiBaseUrl = deps.getAppBaseUrl || getAppBaseUrl;
-  const url = `${apiBaseUrl()}/api/pack/registry/${encodeURIComponent(slug)}`;
-  const response = await request(url, { method: 'GET', headers });
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error(`registry lookup failed for ${slug} with status ${response.status}`);
-  }
-  return { buffer: response.body, fallbackSlug: slug, sourceType: 'registry', sourceSlug: slug };
+  const buffer = await fetchRegistryZip(slug, deps);
+  return { buffer, fallbackSlug: slug, sourceType: 'registry', sourceSlug: slug };
 }
 
 function parseManifest(entries, fallbackSlug) {
@@ -1509,11 +1549,22 @@ async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
   const url = origin.type === 'registry'
     ? `${(deps.getAppBaseUrl || getAppBaseUrl)()}/api/pack/registry/${encodeURIComponent(origin.slug)}`
     : origin.url;
-  const readCredentials = deps.loadCredentials || loadCredentials;
-  const credentials = readCredentials();
-  const headers = credentials && credentials.token ? { Authorization: `Bearer ${credentials.token}` } : {};
-  const response = await request(url, { method: 'GET', headers });
+  let response;
+  let authenticated = false;
+  if (origin.type === 'registry') {
+    const result = await requestRegistryZip(url, deps);
+    response = result.response;
+    authenticated = result.authenticated;
+  } else {
+    const readCredentials = deps.loadCredentials || loadCredentials;
+    const credentials = readCredentials();
+    const headers = credentials && credentials.token ? { Authorization: `Bearer ${credentials.token}` } : {};
+    response = await request(url, { method: 'GET', headers });
+  }
   if (response.status < 200 || response.status >= 300) {
+    if (origin.type === 'registry' && response.status === 404) {
+      throw registryNotFoundError(origin.slug, authenticated);
+    }
     throw new Error(`download failed with status ${response.status}`);
   }
 
