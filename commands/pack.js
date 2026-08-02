@@ -1729,6 +1729,7 @@ function printCapabilityTrustCard(policy, trust, receiptPath, userDenyRuleCount 
   console.log('  memory isolation: Claude memory files and auto-memory are disabled for this pack run');
   console.log('  extensions: user/project skills, plugins, agents, hooks, and commands are not loaded');
   console.log('  native integrations: Chrome is disabled and pack opening text cannot select Claude slash commands');
+  console.log('  public web boundary: WebFetch rejects literal and DNS-resolved local/private addresses; DNS rebinding remains a runner limit');
   console.log(`  session storage: ${options.nonInteractive
     ? 'disabled for this headless run'
     : 'suppression requested; interactive Claude may still persist plaintext local history'}`);
