@@ -2401,6 +2401,7 @@ const PACK_DOCTOR_TEXT_EXTENSIONS = new Set([
   '.csv', '.html', '.htm', '.js', '.json', '.jsx', '.md', '.markdown', '.mjs',
   '.toml', '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml',
 ]);
+const PACK_DOCTOR_SCHEMA = 'atris.pack-doctor.v1';
 const PACK_DOCTOR_TEXT_FILE_LIMIT = 128 * 1024;
 const PACK_DOCTOR_TEXT_TOTAL_LIMIT = 1024 * 1024;
 
@@ -2629,7 +2630,7 @@ function evaluatePackDoctor(source, cwd = process.cwd()) {
       ? `add the missing contract fields, then rerun atris pack doctor ${shellQuote(packDir)}`
       : 'fix every rejected check before running this pack');
   return {
-    schema: 'atris.pack-doctor.v1',
+    schema: PACK_DOCTOR_SCHEMA,
     ok: status === 'ready',
     status,
     slug: manifest.slug,
@@ -2655,16 +2656,66 @@ function printPackDoctor(result) {
   console.log(`next: ${result.nextAction}`);
 }
 
+function printPackDoctorJsonError(code, message) {
+  console.log(JSON.stringify({
+    schema: PACK_DOCTOR_SCHEMA,
+    ok: false,
+    status: 'error',
+    error: { code, message },
+  }, null, 2));
+}
+
+function packDoctorErrorCode(error) {
+  const message = error && error.message ? error.message : String(error);
+  if (/^(?:installed pack|packet folder) not found:/.test(message)) return 'pack-not-found';
+  if (/^multiple installed packs match /.test(message)) return 'ambiguous-pack';
+  if (/^(?:not an atris packet|packet is invalid) /.test(message)) return 'invalid-pack';
+  return 'doctor-failed';
+}
+
 function doctorPack(rawArgs, cwd = process.cwd()) {
   const args = [...rawArgs];
   const json = takeFlag(args, '--json');
-  const source = args.shift();
-  if (!source || source === 'help' || source === '--help' || source === '-h') {
+  const help = args.includes('help') || args.includes('--help') || args.includes('-h');
+  if (help) {
+    if (json) {
+      console.log(JSON.stringify({
+        schema: PACK_DOCTOR_SCHEMA,
+        ok: true,
+        status: 'help',
+        usage: 'atris pack doctor <slug|dir> [--json]',
+      }, null, 2));
+      return 0;
+    }
     showHelp();
-    return source ? 0 : 2;
+    return 0;
   }
-  if (args.length) throw new Error(`unknown pack doctor argument: ${args.join(' ')}`);
-  const result = evaluatePackDoctor(source, cwd);
+  const source = args.shift();
+  if (!source) {
+    if (json) {
+      printPackDoctorJsonError('missing-source', 'pack doctor requires an installed pack slug or directory');
+      return 2;
+    }
+    showHelp();
+    return 2;
+  }
+  if (args.length) {
+    const message = `unknown pack doctor argument: ${args.join(' ')}`;
+    if (json) {
+      printPackDoctorJsonError('invalid-argument', message);
+      return 2;
+    }
+    throw new Error(message);
+  }
+  let result;
+  try {
+    result = evaluatePackDoctor(source, cwd);
+  } catch (error) {
+    if (!json) throw error;
+    const message = error && error.message ? error.message : String(error);
+    printPackDoctorJsonError(packDoctorErrorCode(error), message);
+    return 1;
+  }
   if (json) console.log(JSON.stringify(result, null, 2));
   else printPackDoctor(result);
   return result.ok ? 0 : 1;
@@ -2754,7 +2805,7 @@ async function run(argv = []) {
     }
     // `pack <sub> --help/-h` is a help request, not a subcommand argument: show
     // usage and exit 0 instead of letting the subcommand throw "unknown argument".
-    if (args.includes('--help') || args.includes('-h')) {
+    if (subcommand !== 'doctor' && (args.includes('--help') || args.includes('-h'))) {
       showHelp();
       return 0;
     }
