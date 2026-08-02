@@ -140,6 +140,23 @@ test('missionJudgmentCard turns objective and tick context into one plain decisi
   assert.match(card, /<small>mission: mission-2026-07-19-hold-judgment-a1b2c3d4; receipt: atris\/runs\/mission-stop\.json<\/small>$/);
 });
 
+test('missionJudgmentCard titles end on a real word, never a dangling function word', () => {
+  const danglers = [
+    'when I switch a mission\'s runner away from codex, the old codex approval gate lingers',
+    'the mission report should never say work is continuing when no worker has checked',
+    'refresh the pack credentials so the install can keep going after',
+  ];
+  for (const objective of danglers) {
+    const title = missionJudgmentCard({ objective }, []).split('\n')[0].replace(/^##\s+/, '');
+    const lastWord = title.trim().split(/\s+/).pop().toLowerCase();
+    const danglers2 = ['from', 'is', 'after', 'away', 'the', 'a', 'an', 'to', 'of', 'and', 'when'];
+    assert.ok(
+      !danglers2.includes(lastWord),
+      `title "${title}" dangles on "${lastWord}"`,
+    );
+  }
+});
+
 test('appendMissionJudgmentCard preserves the existing for-you page and appends one section', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-judgment-card-'));
   try {

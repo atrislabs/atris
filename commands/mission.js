@@ -7600,8 +7600,37 @@ function missionJudgmentTopic(mission) {
   return plain.split(/\s+/).filter(Boolean).slice(0, 14).join(' ');
 }
 
+// Words that leave a title hanging mid-thought when they land at the end:
+// articles, prepositions, conjunctions, subordinators, and auxiliary/linking
+// verbs. A hard 8-word slice of an objective often stops on one of these
+// ("...runner away from", "...say work is"), which reads as a truncation bug.
+const DANGLING_TAIL_WORDS = new Set([
+  'a', 'an', 'the',
+  'of', 'to', 'in', 'on', 'at', 'for', 'from', 'with', 'by', 'into', 'onto',
+  'over', 'under', 'about', 'after', 'before', 'between', 'through', 'during',
+  'without', 'within', 'away', 'up', 'off', 'out',
+  'and', 'or', 'but', 'nor', 'so', 'yet', 'when', 'while', 'if', 'that',
+  'which', 'because', 'although', 'though', 'since', 'whether', 'as',
+  'is', 'are', 'was', 'were', 'be', 'been', 'being', 'am', 'has', 'have',
+  'had', 'do', 'does', 'did', 'will', 'would', 'shall', 'should', 'can',
+  'could', 'may', 'might', 'must',
+]);
+
+// Drop trailing function words so the title ends where a thought ends, never
+// on a preposition or auxiliary. Falls back to the raw slice if trimming would
+// empty the title.
+function trimDanglingTail(words) {
+  const trimmed = [...words];
+  while (trimmed.length > 1 && DANGLING_TAIL_WORDS.has(trimmed[trimmed.length - 1].toLowerCase())) {
+    trimmed.pop();
+  }
+  return trimmed.length ? trimmed : words;
+}
+
 function missionJudgmentTitle(mission) {
-  const words = missionJudgmentTopic(mission).split(/\s+/).filter(Boolean).slice(0, 8);
+  const words = trimDanglingTail(
+    missionJudgmentTopic(mission).split(/\s+/).filter(Boolean).slice(0, 8),
+  );
   const title = words.join(' ') || 'Mission needs a new direction';
   return title.charAt(0).toUpperCase() + title.slice(1);
 }
