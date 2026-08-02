@@ -21,6 +21,8 @@ const {
   beginPackRunReceipt,
   appendReceiptEvent,
   finalizePackRunReceipt,
+  receiptDirectory,
+  classifyPackRunLifecycle,
 } = require('../lib/pack-capabilities');
 
 const REGISTRY_TIMEOUT_MS = 60000;
@@ -149,6 +151,7 @@ function showHelp() {
   console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push] [--dry-run] [--allow-secrets]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
   console.log('       atris pack run <slug|dir> [--dir <target>] [--cloud] [--force] [--trust] [--grant <capability>]');
+  console.log('       atris pack runs [--dir <receipt-dir>] [--limit <n>] [--json]');
   console.log('       atris pack share <slug> [--for "<Name>"]');
   console.log('       atris pack pull [<slug>] [--dir <path>] [--allow-downgrade]');
   console.log('       atris pack status [--dir <path>]');
@@ -2389,6 +2392,81 @@ function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
   return 0;
 }
 
+function runsPack(rawArgs) {
+  const args = [...rawArgs];
+  const json = takeFlag(args, '--json');
+  const requestedDir = takeValue(args, '--dir');
+  const rawLimit = takeValue(args, '--limit');
+  if (args.length) throw new Error(`unknown pack runs argument: ${args.join(' ')}`);
+  const limit = rawLimit === null ? 20 : Number(rawLimit);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+    throw new Error('pack runs --limit must be an integer from 1 to 1000');
+  }
+
+  const runsDir = receiptDirectory(requestedDir ? { receiptDir: requestedDir } : {});
+  let unreadable = 0;
+  let names = [];
+  try {
+    names = fs.readdirSync(runsDir)
+      .filter((name) => name.endsWith('.json'));
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') throw error;
+  }
+
+  const runs = names.map((name) => {
+    const receiptPath = path.join(runsDir, name);
+    let receipt;
+    try {
+      receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+    } catch {
+      unreadable += 1;
+      return null;
+    }
+    if (!receipt || receipt.schema !== 'atris.pack-run.v1') return null;
+    const lifecycle = classifyPackRunLifecycle(receipt);
+    return {
+      runId: receipt.runId || null,
+      ...lifecycle,
+      startedAt: receipt.startedAt || null,
+      sessionEndedAt: receipt.sessionEndedAt || null,
+      finishedAt: receipt.finishedAt || null,
+      pack: receipt.pack || null,
+      launcherPid: receipt.launcher && Number.isSafeInteger(receipt.launcher.pid)
+        ? receipt.launcher.pid
+        : null,
+      runnerExitCaptured: Boolean(receipt.observability && receipt.observability.runnerExitCaptured),
+      receiptPath,
+    };
+  }).filter(Boolean)
+    .sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')))
+    .slice(0, limit);
+
+  if (json) {
+    console.log(JSON.stringify({ runsDir, count: runs.length, unreadable, runs }, null, 2));
+    return 0;
+  }
+
+  console.log(`pack runs: ${runsDir}`);
+  if (!runs.length) {
+    console.log('no pack run receipts yet.');
+  }
+  for (const run of runs) {
+    const slug = run.pack && run.pack.slug ? run.pack.slug : 'unknown pack';
+    const version = run.pack && run.pack.version ? ` v${run.pack.version}` : '';
+    console.log(`${run.status}: ${slug}${version} (${run.startedAt || 'start time unknown'})`);
+    if (run.status === 'launcher-lost') {
+      console.log('  Atris launcher is gone; runner state is unknown and it may still be active.');
+    } else if (run.status === 'unknown' && run.recordedStatus === 'running') {
+      console.log('  this receipt predates launcher tracking; runner state is unknown.');
+    } else if (run.status === 'running') {
+      console.log(`  Atris launcher ${run.launcherPid} is active; runner state is still observed through it.`);
+    }
+    console.log(`  receipt: ${run.receiptPath}`);
+  }
+  if (unreadable) console.log(`unreadable receipts skipped: ${unreadable}`);
+  return 0;
+}
+
 async function run(argv = []) {
   const [subcommand, ...args] = argv;
   try {
@@ -2413,6 +2491,7 @@ async function run(argv = []) {
     if (subcommand === 'publish') return await publishPack(args);
     if (subcommand === 'install') return await installPack(args);
     if (subcommand === 'run') return await runPack(args);
+    if (subcommand === 'runs') return runsPack(args);
     if (subcommand === 'share') return sharePack(args);
     if (subcommand === 'pull') return await pullPack(args);
     if (subcommand === 'status') return statusPack(args);

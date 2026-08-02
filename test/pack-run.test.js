@@ -11,6 +11,7 @@ const {
   beginPackRunReceipt,
   appendReceiptEvent,
   finalizePackRunReceipt,
+  classifyPackRunLifecycle,
   enforcePackRoot,
   publicWebUrlPreflight,
   enforcePublicWeb,
@@ -840,6 +841,67 @@ test('session end stops reporting a pack run as live before runner exit is captu
   }
 });
 
+test('pack run lifecycle distinguishes active launchers from lost control without guessing runner exit', () => {
+  const running = { status: 'running', launcher: { pid: 4242 } };
+  assert.deepEqual(classifyPackRunLifecycle(running, { processExists: () => true }), {
+    status: 'running',
+    recordedStatus: 'running',
+    launcherStatus: 'active',
+    runnerStatus: 'unknown',
+  });
+  assert.deepEqual(classifyPackRunLifecycle(running, { processExists: () => false }), {
+    status: 'launcher-lost',
+    recordedStatus: 'running',
+    launcherStatus: 'lost',
+    runnerStatus: 'unknown',
+  });
+  assert.deepEqual(classifyPackRunLifecycle({ status: 'running' }), {
+    status: 'unknown',
+    recordedStatus: 'running',
+    launcherStatus: 'unknown',
+    runnerStatus: 'unknown',
+  });
+  assert.deepEqual(classifyPackRunLifecycle({ status: 'finished', launcher: { pid: 4242 } }), {
+    status: 'finished',
+    recordedStatus: 'finished',
+    launcherStatus: 'not-needed',
+    runnerStatus: 'ended',
+  });
+});
+
+test('pack runs reports launcher-lost read-only when an abrupt kill left no terminal event', () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedInstalledPack(dir, 'lost-launcher', { permissions: ['pack.read'] });
+    const receiptDir = path.join(dir, 'receipts');
+    const policy = resolvePackCapabilityPolicy(['pack.read']);
+    const receipt = beginPackRunReceipt(packDir, { slug: 'lost-launcher', version: '0.1.0' }, policy, {
+      receiptDir,
+      launcherPid: 987654321,
+    });
+    const before = fs.readFileSync(receipt.receiptPath, 'utf8');
+
+    const result = spawnSync(process.execPath, [cliPath, 'pack', 'runs', '--json'], {
+      encoding: 'utf8',
+      timeout: 20000,
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_PACK_RUNS_DIR: receiptDir },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.runs.length, 1);
+    assert.equal(output.runs[0].status, 'launcher-lost');
+    assert.equal(output.runs[0].recordedStatus, 'running');
+    assert.equal(output.runs[0].launcherStatus, 'lost');
+    assert.equal(output.runs[0].runnerStatus, 'unknown');
+    assert.equal(output.runs[0].launcherPid, 987654321);
+    assert.equal(output.runs[0].receiptPath, receipt.receiptPath);
+    assert.equal(fs.readFileSync(receipt.receiptPath, 'utf8'), before, 'history inspection must not rewrite evidence');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 // The end-to-end proof: what actually reaches the agent binary. A stubbed
 // runner records its argv, so this fails if any layer between pack run and the
 // spawn puts --dangerously-skip-permissions back.
@@ -1081,5 +1143,6 @@ test('atris pack help lists run', () => {
   });
   assert.equal(result.status, 0);
   assert.match(result.stdout, /atris pack run <slug\|dir>/);
+  assert.match(result.stdout, /atris pack runs/);
   assert.match(result.stdout, /legacy packs need an explicit --grant before --trust/);
 });
