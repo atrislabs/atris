@@ -137,7 +137,7 @@ test('pack publish --out then install round trips atris and manifest', () => {
   }
 });
 
-test('pack install prints its absolute destination and registry url before writing', async () => {
+test('pack install prints its absolute destination and local source before writing', async () => {
   const dir = makeTempDir();
   try {
     const zipPath = path.join(dir, 'demo.zip');
@@ -166,7 +166,7 @@ test('pack install prints its absolute destination and registry url before writi
 
     assert.equal(destinationPrintedBeforeWrite, true);
     assert.equal(lines[0], `destination: ${target}`);
-    assert.equal(lines[1], 'registry url: https://app.test/api/pack/registry/demo-pack');
+    assert.equal(lines[1], `source file: ${zipPath}`);
   } finally {
     cleanupTempDir(dir);
   }
@@ -268,6 +268,33 @@ test('pack publish bumps patch version on subsequent publish', () => {
     assert.deepEqual(manifest.versions.map((entry) => entry.version), ['0.1.0', '0.1.1']);
     const zipManifest = JSON.parse(readZipFile(secondZip).find((entry) => entry.name === 'pack.json').data.toString('utf8'));
     assert.equal(zipManifest.version, '0.1.1');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack publish preserves private visibility and price in the archive manifest', () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = path.join(dir, 'private-pack');
+    writePackDir(packDir, {
+      slug: 'private-pack',
+      author: 'Ada Lovelace',
+      visibility: 'private',
+      priceCents: 2500,
+    });
+    const zipPath = path.join(dir, 'private-pack.zip');
+    const publish = runCli(['pack', 'publish', '--dir', packDir, '--out', zipPath], { cwd: dir });
+
+    assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
+    const sourceManifest = JSON.parse(fs.readFileSync(path.join(packDir, 'pack.json'), 'utf8'));
+    const zipManifest = JSON.parse(
+      readZipFile(zipPath).find((entry) => entry.name === 'pack.json').data.toString('utf8'),
+    );
+    assert.equal(sourceManifest.visibility, 'private');
+    assert.equal(sourceManifest.priceCents, 2500);
+    assert.equal(zipManifest.visibility, 'private');
+    assert.equal(zipManifest.priceCents, 2500);
   } finally {
     cleanupTempDir(dir);
   }
@@ -443,8 +470,13 @@ test('pack install accepts registry slugs and https zip urls', async () => {
 
     const slugTarget = path.join(dir, 'from-slug');
     const urlTarget = path.join(dir, 'from-url');
-    assert.equal(await installPack(['g-brain', '--dir', slugTarget], dir, { deps }), 0);
-    assert.equal(await installPack(['https://packs.test/g-brain.zip', '--dir', urlTarget], dir, { deps }), 0);
+    const slugInstall = await captureConsole(() => installPack(['g-brain', '--dir', slugTarget], dir, { deps }));
+    const urlInstall = await captureConsole(() => installPack(['https://packs.test/g-brain.zip', '--dir', urlTarget], dir, { deps }));
+    assert.equal(slugInstall.result, 0);
+    assert.equal(urlInstall.result, 0);
+    assert.match(slugInstall.output, /registry url: https:\/\/app\.test\/api\/pack\/registry\/g-brain/);
+    assert.match(urlInstall.output, /source url: https:\/\/packs\.test\/g-brain\.zip/);
+    assert.doesNotMatch(urlInstall.output, /registry url:/);
 
     assert.equal(calls[0].url, 'https://app.test/api/pack/registry/g-brain');
     assert.equal(calls[0].options.headers.Authorization, 'Bearer test-token');
@@ -783,6 +815,45 @@ test('pack status separates remote checks from staged upstream review', () => {
     assert.match(pulled.stdout, /staged upstream review remote v0\.2\.0 at 2026-07-09T12:00:00\.000Z/);
   } finally {
     cleanupTempDir(dir);
+  }
+});
+
+test('pack publish preserves entry contract and provenance fields', () => {
+  const dir = makeTempDir();
+  try {
+    fs.writeFileSync(path.join(dir, 'pack.json'), JSON.stringify({
+      name: 'contract-pack', slug: 'contract-pack', title: 'Contract Pack', description: 'd',
+      author: 'Ada', tags: [], version: '0.0.1',
+      versions: [{ version: '0.0.1', date: '2026-08-02', notes: 'seed' }],
+      type: 'skill',
+      entrypoint: 'RUN.md',
+      'created-in': 'test suite',
+      'source-urls': ['https://example.com/source'],
+      'content-hashes': { 'RUN.md': 'abc123' },
+    }));
+    fs.writeFileSync(path.join(dir, 'RUN.md'), '# first action\n');
+
+    const zipPath = path.join(os.tmpdir(), `contract-pack-${process.pid}.zip`);
+    const publish = runCli(['pack', 'publish', '--author', 'Ada', '--out', zipPath], { cwd: dir });
+    assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
+
+    const target = path.join(dir, 'installed');
+    const install = runCli(['pack', 'install', zipPath, '--dir', target], { cwd: dir });
+    assert.equal(install.status, 0, `stdout:\n${install.stdout}\nstderr:\n${install.stderr}`);
+    const installed = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'));
+    assert.equal(installed.type, 'skill');
+    assert.equal(installed.entrypoint, 'RUN.md');
+    assert.equal(installed['created-in'], 'test suite');
+    assert.deepEqual(installed['source-urls'], ['https://example.com/source']);
+    assert.deepEqual(installed['content-hashes'], { 'RUN.md': 'abc123' });
+
+    const inspected = runCli(['pack', 'inspect', target], { cwd: dir });
+    assert.equal(inspected.status, 0);
+    assert.match(inspected.stdout, /entrypoint: RUN.md/);
+    assert.doesNotMatch(inspected.stdout, /source urls: ABSENT/);
+    fs.rmSync(zipPath, { force: true });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

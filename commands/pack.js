@@ -233,6 +233,14 @@ function writeJson(filePath, value) {
 
 function buildManifest(existing, options) {
   const existingManifest = existing && typeof existing === 'object' ? existing : {};
+  const visibility = existingManifest.visibility;
+  if (visibility !== undefined && !['public', 'unlisted', 'private'].includes(visibility)) {
+    throw new Error('pack.json visibility must be public, unlisted, or private');
+  }
+  const priceCents = existingManifest.priceCents;
+  if (priceCents !== undefined && (!Number.isSafeInteger(priceCents) || priceCents < 0)) {
+    throw new Error('pack.json priceCents must be a non-negative integer');
+  }
   const slug = slugify(options.slug || existingManifest.slug || options.fallbackSlug);
   const version = existingManifest.version
     ? bumpVersion(existingManifest.version, options.bump)
@@ -248,6 +256,18 @@ function buildManifest(existing, options) {
     version,
     versions: Array.isArray(existingManifest.versions) ? [...existingManifest.versions] : [],
   };
+  if (visibility !== undefined) manifest.visibility = visibility;
+  if (priceCents !== undefined) manifest.priceCents = priceCents;
+  // Entry-contract and provenance fields must survive republish, or inspect's
+  // trust surface goes blank the moment a pack ships.
+  for (const key of [
+    'type', 'entrypoint', 'permissions', 'origin',
+    'created-in', 'createdIn', 'learned-at', 'learnedAt',
+    'source-urls', 'sourceUrls', 'sources',
+    'content-hashes', 'contentHashes',
+  ]) {
+    if (existingManifest[key] !== undefined) manifest[key] = existingManifest[key];
+  }
   manifest.versions.push({
     version,
     date: new Date().toISOString(),
@@ -862,6 +882,7 @@ async function loadZipPayload(source, cwd, deps = {}) {
       buffer: fs.readFileSync(localPath),
       fallbackSlug: fallbackSlugFromZipPath(localPath),
       sourceType: 'file',
+      sourcePath: localPath,
     };
   }
 
@@ -1161,9 +1182,15 @@ function untrackedInstallCount(writes, repoDir) {
   }).length;
 }
 
-function printInstallPreflight(targetDir, slug, writes, deps = {}) {
+function printInstallPreflight(targetDir, slug, writes, payload, deps = {}) {
   console.log(`destination: ${targetDir}`);
-  console.log(`registry url: ${registryUrl(`/api/pack/registry/${encodeURIComponent(slug)}`, deps)}`);
+  if (payload.sourceType === 'registry') {
+    console.log(`registry url: ${registryUrl(`/api/pack/registry/${encodeURIComponent(slug)}`, deps)}`);
+  } else if (payload.sourceType === 'url') {
+    console.log(`source url: ${payload.sourceUrl}`);
+  } else {
+    console.log(`source file: ${payload.sourcePath}`);
+  }
 
   const repoDir = containingGitRepo(targetDir);
   if (!repoDir) return;
@@ -1195,7 +1222,7 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
   const preserveOrigin = existing && existing.origin ? existing.origin : null;
   const writes = planZipWrites(entries, targetDir);
 
-  printInstallPreflight(targetDir, slug, writes, options.deps || {});
+  printInstallPreflight(targetDir, slug, writes, payload, options.deps || {});
   writePlannedZipEntries(writes);
   const manifest = finalizeInstalledPack(targetDir, payload, preserveOrigin);
   if (payload.sourceType === 'registry') {
@@ -1307,19 +1334,39 @@ function startPackLocal(packDir, deps = {}, options = {}) {
   const trust = options.trust === true;
   const openingPrompt = options.openingPrompt || null;
   const start = deps.computerLocal || require('./computer').computerLocal;
+  const runnerArgs = openingPrompt ? [openingPrompt] : [];
+  const skillsDir = path.join(packDir, 'skills');
+  const hasShippedSkill = fs.existsSync(skillsDir)
+    && fs.readdirSync(skillsDir).some((name) => fs.existsSync(path.join(skillsDir, name, 'SKILL.md')));
+  // A flat packet's skills/ tree is already a valid Claude plugin layout.
+  // Load it for this session only so the advertised /skill is real without
+  // mutating an installed packet with generated .claude/ symlinks.
+  if (hasShippedSkill) runnerArgs.push('--plugin-dir', packDir);
   const previous = process.cwd();
   process.chdir(packDir);
   try {
-    start(openingPrompt ? [openingPrompt] : [], { skipPermissions: trust });
+    start(runnerArgs, { skipPermissions: trust });
   } finally {
     process.chdir(previous);
   }
   return 0;
 }
 
+// Published brain zips nest content under atris/, so a declared entrypoint or
+// RUN.md may live one level down from the install root.
+function resolvePackEntryFile(packDir, name) {
+  for (const candidate of [path.join(packDir, name), path.join(packDir, 'atris', name)]) {
+    try {
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch { /* keep looking */ }
+  }
+  return null;
+}
+
 function entrypointFilePrompt(packDir, entrypoint) {
   if (!entrypoint || entrypoint.includes('\n')) return null;
-  const candidate = path.resolve(packDir, entrypoint);
+  const resolved = resolvePackEntryFile(packDir, entrypoint);
+  const candidate = resolved || path.resolve(packDir, entrypoint);
   const root = path.resolve(packDir);
   const rootWithSep = `${root}${path.sep}`;
   if (candidate !== root && !candidate.startsWith(rootWithSep)) return null;
@@ -1336,8 +1383,8 @@ function packOpeningPrompt(packDir, manifest) {
   const declared = typeof manifest.entrypoint === 'string' ? manifest.entrypoint.trim() : '';
   if (declared) return entrypointFilePrompt(packDir, declared) || declared;
 
-  const runPath = path.join(packDir, 'RUN.md');
-  if (!fs.existsSync(runPath)) return null;
+  const runPath = resolvePackEntryFile(packDir, 'RUN.md');
+  if (!runPath) return null;
   return fs.readFileSync(runPath, 'utf8').trim()
     || 'Read RUN.md and follow its instructions.';
 }
@@ -1709,7 +1756,7 @@ function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
   const packType = declaredManifestValue(manifest, ['type', 'packType', 'pack_type', 'pack-type']);
   const entrypoint = hasInspectValue(manifest.entrypoint)
     ? manifest.entrypoint
-    : (fs.existsSync(path.join(packDir, 'RUN.md')) ? 'RUN.md' : null);
+    : (resolvePackEntryFile(packDir, 'RUN.md') ? 'RUN.md' : null);
   const permissions = declaredManifestValue(manifest, ['permissions']);
   const sourceUrls = inspectManifestValue(manifest, [
     'source-urls', 'sourceUrls', 'sourceURLs', 'source_urls', 'source-url', 'sourceUrl', 'source_url', 'sources',
