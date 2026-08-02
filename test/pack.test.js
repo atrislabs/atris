@@ -733,6 +733,178 @@ test('pack inspect reports failed after a declared file is changed locally', () 
   }
 });
 
+test('pack inspect --json returns one local lifecycle record without prose parsing', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'packs', 'inspect-pack');
+    writePackDir(target, {
+      slug: 'inspect-pack',
+      title: 'Inspect Pack',
+      version: '0.1.0',
+      author: 'Ada Lovelace',
+      type: 'knowledge',
+      entrypoint: 'README.md',
+      permissions: ['pack.read'],
+      'created-in': 'Atris browser',
+      'source-urls': ['https://example.com/source'],
+      'content-hashes': { 'README.md': sha256('# pack\n') },
+      origin: { type: 'registry', slug: 'inspect-pack' },
+    });
+    fs.mkdirSync(path.join(target, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(target, '.atris', 'state', 'pack.json'), `${JSON.stringify({
+      slug: 'inspect-pack',
+      origin: { type: 'registry', slug: 'inspect-pack' },
+      remoteVersion: '0.2.0',
+      lastRemoteCheckAt: '2026-08-02T02:00:00.000Z',
+    }, null, 2)}\n`, 'utf8');
+    fs.mkdirSync(path.join(target, '.upstream'), { recursive: true });
+    fs.writeFileSync(path.join(target, '.upstream', 'pack.json'), '{}\n', 'utf8');
+    fs.writeFileSync(path.join(target, '.upstream', 'STATE.json'), `${JSON.stringify({
+      slug: 'inspect-pack',
+      localVersion: '0.1.0',
+      remoteVersion: '0.3.0',
+      pulledAt: '2026-08-02T03:00:00.000Z',
+    }, null, 2)}\n`, 'utf8');
+
+    const inspected = runCli(['pack', 'inspect', 'inspect-pack', '--json'], {
+      cwd: dir,
+      env: { ATRIS_APP_URL: 'https://registry.test' },
+    });
+    assert.equal(inspected.status, 0, `stdout:\n${inspected.stdout}\nstderr:\n${inspected.stderr}`);
+    assert.equal(inspected.stderr, '');
+    const result = JSON.parse(inspected.stdout);
+    assert.equal(result.schema, 'atris.pack-inspect.v1');
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'inspected');
+    assert.equal(result.slug, 'inspect-pack');
+    assert.equal(result.title, 'Inspect Pack');
+    assert.equal(result.location, fs.realpathSync(target));
+    assert.equal(result.installedVersion, '0.1.0');
+    assert.deepEqual(result.origin, {
+      type: 'registry',
+      fetchedByAtris: true,
+      registrySlug: 'inspect-pack',
+      registryUrl: 'https://registry.test/packs/inspect-pack',
+    });
+    assert.deepEqual(result.update, {
+      supported: true,
+      status: 'review-staged',
+      checkedAt: '2026-08-02T02:00:00.000Z',
+      remoteVersion: '0.2.0',
+      staged: true,
+      stagedVersion: '0.3.0',
+      stagedAt: '2026-08-02T03:00:00.000Z',
+    });
+    assert.ok(result.files.topLevel.some((entry) => entry.name === '.atris' && entry.kind === 'directory'));
+    assert.ok(result.files.topLevel.some((entry) => entry.name === '.upstream' && entry.kind === 'directory'));
+    assert.equal(result.contract.type, 'knowledge');
+    assert.equal(result.contract.entrypoint, 'README.md');
+    assert.deepEqual(result.contract.capabilities, {
+      status: 'enforced',
+      declared: ['pack.read'],
+      requested: ['pack.read'],
+      localTools: ['Read', 'Glob', 'Grep', 'Skill'],
+      canonical: ['pack.read', 'pack.write', 'web.read', 'host.shell'],
+      localEnforced: true,
+      cloudEnforced: false,
+      reason: null,
+    });
+    assert.deepEqual(result.provenance, {
+      author: 'Ada Lovelace',
+      createdIn: 'Atris browser',
+      sourceUrls: ['https://example.com/source'],
+    });
+    assert.deepEqual(result.contentHashes, {
+      status: 'verified',
+      declared: 1,
+      files: 1,
+      verified: 1,
+      issues: [],
+      uncovered: [],
+    });
+
+    const fileTarget = path.join(dir, 'file-pack');
+    writePackDir(fileTarget, { slug: 'file-pack', origin: { type: 'file' } });
+    const fileResult = runCli(['pack', 'inspect', fileTarget, '--json'], { cwd: dir });
+    assert.equal(fileResult.status, 0);
+    const fileInspection = JSON.parse(fileResult.stdout);
+    assert.equal(fileInspection.origin.type, 'file');
+    assert.equal(fileInspection.origin.fetchedByAtris, false);
+    assert.equal(fileInspection.update.supported, false);
+    assert.equal(fileInspection.update.status, 'unsupported');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack inspect --json returns one parseable envelope for help and failures', () => {
+  const dir = makeTempDir();
+  try {
+    const missingSource = runCli(['pack', 'inspect', '--json'], { cwd: dir });
+    assert.equal(missingSource.status, 2);
+    assert.equal(missingSource.stderr, '');
+    assert.deepEqual(JSON.parse(missingSource.stdout), {
+      schema: 'atris.pack-inspect.v1',
+      ok: false,
+      status: 'error',
+      error: {
+        code: 'missing-source',
+        message: 'pack inspect requires an installed pack slug or directory',
+      },
+    });
+
+    const missingPack = runCli(['pack', 'inspect', 'missing-pack', '--json'], { cwd: dir });
+    assert.equal(missingPack.status, 1);
+    assert.equal(missingPack.stderr, '');
+    assert.deepEqual(JSON.parse(missingPack.stdout).error, {
+      code: 'pack-not-found',
+      message: 'installed pack not found: missing-pack',
+    });
+
+    const target = path.join(dir, 'valid-pack');
+    writePackDir(target);
+    const badArgument = runCli(['pack', 'inspect', target, '--json', '--wat'], { cwd: dir });
+    assert.equal(badArgument.status, 2);
+    assert.equal(badArgument.stderr, '');
+    assert.deepEqual(JSON.parse(badArgument.stdout).error, {
+      code: 'invalid-argument',
+      message: 'unknown pack inspect argument: --wat',
+    });
+
+    const invalidPack = path.join(dir, 'invalid-pack');
+    fs.mkdirSync(invalidPack);
+    fs.writeFileSync(path.join(invalidPack, 'pack.json'), '{not json}\n', 'utf8');
+    const invalid = runCli(['pack', 'inspect', invalidPack, '--json'], { cwd: dir });
+    assert.equal(invalid.status, 1);
+    assert.equal(invalid.stderr, '');
+    assert.equal(JSON.parse(invalid.stdout).error.code, 'invalid-pack');
+
+    writePackDir(path.join(dir, 'first-shared'), { slug: 'shared-pack' });
+    writePackDir(path.join(dir, 'second-shared'), { slug: 'shared-pack' });
+    const ambiguous = runCli(['pack', 'inspect', 'shared-pack', '--json'], { cwd: dir });
+    assert.equal(ambiguous.status, 1);
+    assert.equal(ambiguous.stderr, '');
+    assert.equal(JSON.parse(ambiguous.stdout).error.code, 'ambiguous-pack');
+
+    const help = runCli(['pack', 'inspect', '--json', '--help'], { cwd: dir });
+    assert.equal(help.status, 0);
+    assert.equal(help.stderr, '');
+    assert.deepEqual(JSON.parse(help.stdout), {
+      schema: 'atris.pack-inspect.v1',
+      ok: true,
+      status: 'help',
+      usage: 'atris pack inspect <slug|dir> [--json]',
+    });
+
+    const human = runCli(['pack', 'inspect', 'missing-pack'], { cwd: dir });
+    assert.equal(human.status, 1);
+    assert.equal(human.stdout, '');
+    assert.match(human.stderr, /installed pack not found: missing-pack/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack doctor rejects a misleading payload after excluding the generated README echo', () => {
   const dir = makeTempDir();
   try {
