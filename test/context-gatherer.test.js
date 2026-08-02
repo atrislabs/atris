@@ -73,6 +73,25 @@ test('context gatherer creates an onboarding task when Atris workspace exists', 
   }
 });
 
+test('starterTaskTitle truncates a long answer on a word boundary, never mid-word', () => {
+  const answer = 'build an autonomous onboarding assistant that greets every new teammate and sets up their first project end to end';
+  const title = starterTaskTitle(answer);
+  assert.ok(title.startsWith('First useful step: '), `unexpected prefix: "${title}"`);
+  const summary = title.slice('First useful step: '.length);
+  assert.ok(summary.endsWith('...'), `expected an ellipsis, got "${summary}"`);
+  // The words before the ellipsis are a whole-word prefix of the answer.
+  const body = summary.slice(0, -3).trim();
+  const answerWords = answer.split(' ');
+  const bodyWords = body.split(' ');
+  assert.deepEqual(
+    bodyWords,
+    answerWords.slice(0, bodyWords.length),
+    `last word "${bodyWords[bodyWords.length - 1]}" was cut mid-word`,
+  );
+  // A short answer passes through untouched, no ellipsis.
+  assert.equal(starterTaskTitle('ship the landing page'), 'First useful step: ship the landing page');
+});
+
 test('isAtrisMetaQuestion distinguishes questions about Atris from task requests', () => {
   // Questions about the product itself → show the overview.
   assert.equal(isAtrisMetaQuestion('what is atris'), true);
