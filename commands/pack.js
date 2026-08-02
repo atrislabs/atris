@@ -896,6 +896,30 @@ function upstreamStatePath(packDir) {
   return path.join(packDir, '.upstream', 'STATE.json');
 }
 
+function packStatePath(packDir) {
+  return path.join(packDir, '.atris', 'state', 'pack.json');
+}
+
+function remoteCheckTime(deps = {}) {
+  const value = typeof deps.now === 'function' ? deps.now() : new Date();
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toISOString();
+}
+
+function recordRemoteCheck(packDir, details, deps = {}) {
+  const statePath = packStatePath(packDir);
+  const existing = readJson(statePath);
+  const state = {
+    ...(existing && typeof existing === 'object' ? existing : {}),
+    slug: details.slug,
+    origin: details.origin,
+    remoteVersion: details.remoteVersion,
+    lastRemoteCheckAt: remoteCheckTime(deps),
+  };
+  writeJson(statePath, state);
+  return state;
+}
+
 function buildUpstreamState(slug, localVersion, remoteVersion) {
   return {
     slug,
@@ -907,6 +931,12 @@ function buildUpstreamState(slug, localVersion, remoteVersion) {
 
 function writeUpstreamState(packDir, state) {
   writeJson(upstreamStatePath(packDir), state);
+}
+
+function hasStagedUpstream(packDir) {
+  const upstreamDir = path.join(packDir, '.upstream');
+  if (!fs.existsSync(upstreamDir)) return false;
+  return fs.readdirSync(upstreamDir).some((name) => name !== 'STATE.json');
 }
 
 function writeUpstreamZip(entries, packDir, state) {
@@ -925,7 +955,8 @@ async function pullPack(rawArgs, cwd = process.cwd(), options = {}) {
 
   const existing = readPackManifestFromDir(packDir);
   const slug = slugify(slugArg || existing.slug);
-  const zipBuffer = await fetchRegistryZip(slug, options.deps || {});
+  const deps = options.deps || {};
+  const zipBuffer = await fetchRegistryZip(slug, deps);
   const entries = readZipBuffer(zipBuffer);
   const remoteManifest = parseManifest(entries, slug);
   if (slugify(remoteManifest.slug || slug) !== slug) {
@@ -939,6 +970,12 @@ async function pullPack(rawArgs, cwd = process.cwd(), options = {}) {
     throw new Error(`could not compare pack versions: local ${localVersion}, remote ${remoteVersion}`);
   }
 
+  recordRemoteCheck(packDir, {
+    slug,
+    origin: { type: 'registry', slug },
+    remoteVersion,
+  }, deps);
+
   const state = buildUpstreamState(slug, localVersion, remoteVersion);
   if (comparison > 0) {
     writeUpstreamZip(entries, packDir, state);
@@ -947,7 +984,6 @@ async function pullPack(rawArgs, cwd = process.cwd(), options = {}) {
     return { ok: true, upToDate: false, localVersion, remoteVersion, targetDir: packDir };
   }
 
-  writeUpstreamState(packDir, state);
   if (comparison === 0) {
     console.log(`already up to date v${localVersion}`);
   } else {
@@ -963,16 +999,47 @@ function statusPack(rawArgs, cwd = process.cwd()) {
 
   const manifest = readPackManifestFromDir(packDir);
   const localVersion = manifestVersion(manifest);
-  const state = readJson(upstreamStatePath(packDir));
-  if (!state) {
-    console.log(`${manifest.slug} local v${localVersion}, remote never pulled`);
-    return { ok: true, manifest, state: null };
+  const remoteState = readJson(packStatePath(packDir));
+  const upstreamState = readJson(upstreamStatePath(packDir));
+  const manifestOrigin = manifest.origin && typeof manifest.origin === 'object' ? manifest.origin : null;
+  const remoteOrigin = remoteState && typeof remoteState.origin === 'object' ? remoteState.origin : null;
+  const registrySlug = manifestOrigin && manifestOrigin.type === 'registry'
+    ? manifestOrigin.slug
+    : remoteOrigin && remoteOrigin.type === 'registry'
+      ? remoteOrigin.slug
+      : upstreamState && upstreamState.slug;
+
+  console.log(`${manifest.slug} installed v${localVersion}`);
+  console.log(`registry origin ${registrySlug || 'none'}`);
+
+  const checkedState = remoteState && remoteState.remoteVersion
+    ? {
+      remoteVersion: remoteState.remoteVersion,
+      checkedAt: remoteState.lastRemoteCheckAt,
+    }
+    : upstreamState && upstreamState.remoteVersion
+      ? {
+        remoteVersion: upstreamState.remoteVersion,
+        checkedAt: upstreamState.pulledAt,
+      }
+      : manifestOrigin && (manifestOrigin.type === 'registry' || manifestOrigin.type === 'url')
+        ? {
+          remoteVersion: localVersion,
+          checkedAt: null,
+        }
+      : null;
+  if (checkedState) {
+    console.log(`last remote check ${checkedState.checkedAt || 'time unknown'}, remote v${checkedState.remoteVersion}`);
+  } else {
+    console.log('remote not checked yet');
   }
 
-  const remoteVersion = state.remoteVersion || 'unknown';
-  console.log(`${state.slug || manifest.slug} local v${localVersion}, last pulled remote v${remoteVersion}`);
-  if (state.pulledAt) console.log(`pulled at ${state.pulledAt}`);
-  return { ok: true, manifest, state };
+  if (upstreamState && hasStagedUpstream(packDir)) {
+    const stagedVersion = upstreamState.remoteVersion || 'unknown';
+    const stagedAt = upstreamState.pulledAt ? ` at ${upstreamState.pulledAt}` : '';
+    console.log(`staged upstream review remote v${stagedVersion}${stagedAt}`);
+  }
+  return { ok: true, manifest, remoteState, upstreamState, state: upstreamState };
 }
 
 function originForPayload(payload) {
@@ -1076,6 +1143,13 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
 
   writeZipEntries(entries, targetDir);
   const manifest = finalizeInstalledPack(targetDir, payload, preserveOrigin);
+  if (payload.sourceType === 'registry') {
+    recordRemoteCheck(targetDir, {
+      slug,
+      origin: { type: 'registry', slug: payload.sourceSlug },
+      remoteVersion: manifestVersion(manifest),
+    }, options.deps || {});
+  }
 
   if (force && existing) {
     const oldVersion = manifestVersion(existing);
@@ -1274,6 +1348,11 @@ async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
 
   const oldVersion = manifestVersion(existing);
   const newVersion = manifestVersion(zipManifest);
+  recordRemoteCheck(resolved, {
+    slug: existing.slug,
+    origin,
+    remoteVersion: newVersion,
+  }, deps);
   if (oldVersion === newVersion) {
     console.log(`already up to date v${oldVersion}`);
     return { ok: true, upToDate: true, manifest: existing, targetDir: resolved };
