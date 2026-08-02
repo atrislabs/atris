@@ -925,6 +925,8 @@ test('pack doctor rejects a misleading payload after excluding the generated REA
   try {
     const target = path.join(dir, 'bilbaoinspiration');
     const description = 'a nice bilbao inspiration list';
+    const post = 'Atris turns videos into tasks.\n';
+    const landing = '<h1>Atris agent workspace</h1>\n';
     writePackDir(target, {
       slug: 'bilbaoinspiration',
       title: 'BilbaoInspiration',
@@ -933,8 +935,8 @@ test('pack doctor rejects a misleading payload after excluding the generated REA
       versions: [{ version: '0.1.0', date: '2026-08-02', notes: 'Created in the browser' }],
     });
     fs.writeFileSync(path.join(target, 'README.md'), `# BilbaoInspiration\n\n${description}\n\nFiles: 3\n`, 'utf8');
-    fs.writeFileSync(path.join(target, 'post.md'), 'Atris turns videos into tasks.\n', 'utf8');
-    fs.writeFileSync(path.join(target, 'landing.html'), '<h1>Atris agent workspace</h1>\n', 'utf8');
+    fs.writeFileSync(path.join(target, 'post.md'), post, 'utf8');
+    fs.writeFileSync(path.join(target, 'landing.html'), landing, 'utf8');
 
     const diagnosed = runCli(['pack', 'doctor', target, '--json'], { cwd: dir });
     assert.equal(diagnosed.status, 1, `stdout:\n${diagnosed.stdout}\nstderr:\n${diagnosed.stderr}`);
@@ -950,9 +952,27 @@ test('pack doctor rejects a misleading payload after excluding the generated REA
         id: 'alignment',
         name: 'promise alignment',
         status: 'fail',
-        message: 'no obvious lexical overlap with title words: bilbao, inspiration',
+        message: 'no obvious lexical overlap with description words: bilbao, inspiration',
       },
     );
+    assert.deepEqual(result.alignment, {
+      method: 'bounded-lexical-overlap',
+      promiseSource: 'description',
+      promiseTokens: ['bilbao', 'inspiration'],
+      files: [
+        { path: 'landing.html', filenameScanned: true, textBytesScanned: Buffer.byteLength(landing) },
+        { path: 'post.md', filenameScanned: true, textBytesScanned: Buffer.byteLength(post) },
+      ],
+      excluded: {
+        generatedMetadata: ['README.md'],
+        emptyOrWhitespace: [],
+      },
+      limits: {
+        textBytesPerFile: 128 * 1024,
+        textBytesTotal: 1024 * 1024,
+      },
+      overlap: [],
+    });
   } finally {
     cleanupTempDir(dir);
   }
@@ -962,11 +982,11 @@ test('pack doctor reports ready for a complete aligned local contract', () => {
   const dir = makeTempDir();
   try {
     const target = path.join(dir, 'bilbao-inspiration');
-    const readme = '# Bilbao Inspiration\n\nA practical Bilbao inspiration guide.\n\nFiles: 2\n';
+    const readme = '# Unrelated Catalog\n\nA practical Bilbao inspiration guide.\n\nFiles: 2\n';
     const guide = '# Bilbao inspiration\n\nChoose one Bilbao place and explain why it fits.\n';
     writePackDir(target, {
       slug: 'bilbao-inspiration',
-      title: 'Bilbao Inspiration',
+      title: 'Unrelated Catalog',
       description: 'A practical Bilbao inspiration guide.',
       author: 'Ada Lovelace',
       type: 'knowledge',
@@ -995,20 +1015,23 @@ test('pack doctor reports ready for a complete aligned local contract', () => {
     assert.match(human.stdout, /pack doctor: bilbao-inspiration/);
     assert.match(human.stdout, /verdict: ready/);
     assert.match(human.stdout, /summary: 8 pass, 0 revise, 0 reject/);
-    assert.match(human.stdout, /pass promise alignment: payload overlaps the promise on: bilbao, inspiration/);
+    assert.match(human.stdout, /pass promise alignment: payload overlaps description words on: bilbao, inspiration/);
+    assert.match(human.stdout, /alignment evidence: description against 1 payload file/);
+    assert.match(human.stdout, /scanned: guide\.md \(filename \+ \d+ text bytes\)/);
+    assert.match(human.stdout, /excluded generated metadata: README\.md/);
   } finally {
     cleanupTempDir(dir);
   }
 });
 
-test('pack doctor revises an aligned legacy pack instead of rejecting it', () => {
+test('pack doctor revises a legacy pack with no description instead of inferring one from title', () => {
   const dir = makeTempDir();
   try {
     const target = path.join(dir, 'demo-research');
     writePackDir(target, {
       slug: 'demo-research',
       title: 'Demo Research',
-      description: 'Original observations.',
+      description: '',
       author: '',
     });
     fs.writeFileSync(path.join(target, 'README.md'), '# Demo Research\n\nOriginal demo research observations.\n', 'utf8');
@@ -1019,7 +1042,14 @@ test('pack doctor revises an aligned legacy pack instead of rejecting it', () =>
     assert.equal(result.status, 'revise');
     assert.equal(result.summary.fail, 0);
     assert.ok(result.summary.warn > 0);
-    assert.equal(result.checks.find((check) => check.id === 'alignment').status, 'pass');
+    assert.deepEqual(result.checks.find((check) => check.id === 'alignment'), {
+      id: 'alignment',
+      name: 'promise alignment',
+      status: 'warn',
+      message: 'manifest description is absent; lexical promise alignment was not run',
+    });
+    assert.equal(result.alignment.promiseSource, null);
+    assert.deepEqual(result.alignment.promiseTokens, []);
   } finally {
     cleanupTempDir(dir);
   }
