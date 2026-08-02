@@ -157,6 +157,7 @@ function showHelp() {
   console.log('       atris pack status [--dir <path>]');
   console.log('       atris pack update [<dir>] [--allow-downgrade]');
   console.log('       atris pack inspect <slug|dir>');
+  console.log('       atris pack doctor <slug|dir> [--json]');
   console.log('       atris pack list [--dir <path>]');
   console.log('');
   console.log('pack.json permissions: pack.read, pack.write, web.read, host.shell');
@@ -2392,6 +2393,247 @@ function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
   return 0;
 }
 
+const PACK_DOCTOR_STOP_WORDS = new Set([
+  'and', 'for', 'from', 'into', 'list', 'nice', 'pack', 'practical', 'the', 'this',
+  'tool', 'with', 'workflow', 'guide', 'template', 'example', 'your', 'you', 'use',
+]);
+const PACK_DOCTOR_TEXT_EXTENSIONS = new Set([
+  '.csv', '.html', '.htm', '.js', '.json', '.jsx', '.md', '.markdown', '.mjs',
+  '.toml', '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml',
+]);
+const PACK_DOCTOR_TEXT_FILE_LIMIT = 128 * 1024;
+const PACK_DOCTOR_TEXT_TOTAL_LIMIT = 1024 * 1024;
+
+function packDoctorTokens(value) {
+  const expanded = String(value || '').replace(/([\p{Ll}\d])(\p{Lu})/gu, '$1 $2');
+  return [...new Set(
+    (expanded.normalize('NFKD').replace(/\p{Mark}/gu, '').toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])
+      .filter((token) => token.length >= 2 && !PACK_DOCTOR_STOP_WORDS.has(token)),
+  )];
+}
+
+function isGeneratedMetadataReadme(relativePath, absolutePath, manifest) {
+  if (relativePath.toLowerCase() !== 'readme.md') return false;
+  const title = typeof manifest.title === 'string' ? manifest.title.trim() : '';
+  const description = typeof manifest.description === 'string' ? manifest.description.trim() : '';
+  if (!title || !description) return false;
+  try {
+    if (fs.statSync(absolutePath).size > PACK_DOCTOR_TEXT_FILE_LIMIT) return false;
+    const content = fs.readFileSync(absolutePath, 'utf8').replace(/\r\n/g, '\n').trim();
+    const prefix = `# ${title}\n\n${description}\n\nFiles: `;
+    return content.startsWith(prefix) && /^\d+$/.test(content.slice(prefix.length));
+  } catch {
+    return false;
+  }
+}
+
+function inspectDoctorPayload(packDir, manifest) {
+  const installed = collectInstalledContentFiles(packDir);
+  const payload = [...installed.entries()].filter(
+    ([relativePath, absolutePath]) => !isGeneratedMetadataReadme(relativePath, absolutePath, manifest),
+  );
+  const corpus = payload.map(([relativePath]) => relativePath);
+  let remainingBytes = PACK_DOCTOR_TEXT_TOTAL_LIMIT;
+  for (const [relativePath, absolutePath] of payload) {
+    if (remainingBytes <= 0) break;
+    if (!PACK_DOCTOR_TEXT_EXTENSIONS.has(path.extname(relativePath).toLowerCase())) continue;
+    let descriptor;
+    try {
+      descriptor = fs.openSync(absolutePath, 'r');
+      const sample = Buffer.alloc(Math.min(PACK_DOCTOR_TEXT_FILE_LIMIT, remainingBytes));
+      const bytesRead = fs.readSync(descriptor, sample, 0, sample.length, 0);
+      corpus.push(sample.subarray(0, bytesRead).toString('utf8'));
+      remainingBytes -= bytesRead;
+    } catch { /* unreadable content is reported through integrity or payload checks */
+    } finally {
+      if (descriptor !== undefined) fs.closeSync(descriptor);
+    }
+  }
+  return {
+    payloadFiles: payload.map(([relativePath]) => relativePath),
+    tokens: new Set(packDoctorTokens(corpus.join('\n'))),
+  };
+}
+
+function inspectDoctorEntrypoint(packDir, manifest) {
+  if (!Object.prototype.hasOwnProperty.call(manifest, 'entrypoint')) {
+    const fallback = resolvePackEntryFile(packDir, 'RUN.md');
+    return fallback
+      ? { status: 'warn', message: 'entrypoint is undeclared; RUN.md is only a legacy fallback' }
+      : { status: 'warn', message: 'entrypoint is undeclared; runs start as context only' };
+  }
+  if (typeof manifest.entrypoint !== 'string' || !manifest.entrypoint.trim() || manifest.entrypoint.includes('\n')) {
+    return { status: 'fail', message: 'entrypoint must be one non-empty relative file path' };
+  }
+
+  const declared = manifest.entrypoint;
+  if (declared !== declared.trim() || canonicalContentPath(declared) !== declared) {
+    return { status: 'fail', message: `entrypoint must be a canonical relative file path: ${declared}` };
+  }
+  const root = path.resolve(packDir);
+  const rootWithSep = `${root}${path.sep}`;
+  const candidates = [path.resolve(root, declared), path.resolve(root, 'atris', declared)];
+  const inside = candidates.filter((candidate) => candidate === root || candidate.startsWith(rootWithSep));
+  if (!inside.length) return { status: 'fail', message: `entrypoint escapes the pack root: ${declared}` };
+  for (const candidate of inside) {
+    try {
+      const stat = fs.lstatSync(candidate);
+      if (stat.isSymbolicLink()) {
+        return { status: 'fail', message: `entrypoint cannot be a symlink: ${declared}` };
+      }
+      if (stat.isFile()) {
+        return {
+          status: 'pass',
+          message: `entrypoint resolves to ${path.relative(root, candidate).split(path.sep).join('/')}`,
+        };
+      }
+    } catch { /* keep looking */ }
+  }
+  return { status: 'fail', message: `entrypoint file is missing: ${declared}` };
+}
+
+function packDoctorCheck(id, name, status, message) {
+  return { id, name, status, message };
+}
+
+function evaluatePackDoctor(source, cwd = process.cwd()) {
+  const resolved = resolveInstalledPack(source, cwd);
+  const packDir = fs.realpathSync(resolved.dir);
+  const manifest = resolved.manifest;
+  const checks = [];
+  const payload = inspectDoctorPayload(packDir, manifest);
+
+  checks.push(packDoctorCheck(
+    'payload',
+    'payload',
+    payload.payloadFiles.length ? 'pass' : 'fail',
+    payload.payloadFiles.length
+      ? `${payload.payloadFiles.length} user payload file${payload.payloadFiles.length === 1 ? '' : 's'} found`
+      : 'no user payload remains after generated metadata is excluded',
+  ));
+
+  const packType = declaredManifestValue(manifest, ['type', 'packType', 'pack_type', 'pack-type']);
+  checks.push(packDoctorCheck(
+    'type',
+    'type',
+    packType === null ? 'warn' : (typeof packType === 'string' && packType.trim() ? 'pass' : 'fail'),
+    packType === null
+      ? 'pack type is undeclared'
+      : (typeof packType === 'string' && packType.trim() ? `pack type is ${packType.trim()}` : 'pack type must be a non-empty string'),
+  ));
+
+  const entrypoint = inspectDoctorEntrypoint(packDir, manifest);
+  checks.push(packDoctorCheck('entrypoint', 'entrypoint', entrypoint.status, entrypoint.message));
+
+  const capabilityPolicy = resolvePackCapabilityPolicy(manifest.permissions);
+  checks.push(packDoctorCheck(
+    'permissions',
+    'permissions',
+    capabilityPolicy.status === 'enforced' ? 'pass' : (capabilityPolicy.status === 'legacy' ? 'warn' : 'fail'),
+    capabilityPolicy.status === 'enforced'
+      ? `canonical capability ceiling: ${capabilityPolicy.requested.length ? capabilityPolicy.requested.join(', ') : 'none'}`
+      : (capabilityPolicy.status === 'legacy'
+        ? 'permissions are undeclared; the legacy run has no manifest ceiling'
+        : capabilityPolicy.reason),
+  ));
+
+  try {
+    assertPackExecutionTree(packDir);
+    checks.push(packDoctorCheck('execution-tree', 'execution tree', 'pass', 'tree contains regular files and directories only'));
+  } catch (error) {
+    checks.push(packDoctorCheck('execution-tree', 'execution tree', 'fail', error.message || String(error)));
+  }
+
+  const integrity = inspectInstalledContentHashes(packDir, manifest);
+  const integrityStatus = integrity.status === 'verified'
+    ? 'pass'
+    : (integrity.status === 'absent' ? 'warn' : 'fail');
+  let integrityMessage;
+  if (integrity.status === 'verified') integrityMessage = `${integrity.verified}/${integrity.files} content hashes verified`;
+  else if (integrity.status === 'absent') integrityMessage = 'content hashes are absent; installed bytes are unverified';
+  else if (integrity.status === 'partial') integrityMessage = `${integrity.uncovered.length} installed file${integrity.uncovered.length === 1 ? '' : 's'} are not claimed by content hashes`;
+  else integrityMessage = integrity.issues[0] || 'content hash verification failed';
+  checks.push(packDoctorCheck('integrity', 'integrity', integrityStatus, integrityMessage));
+
+  const author = inspectManifestValue(manifest, ['author']);
+  const createdIn = createdInValue(manifest);
+  const missingProvenance = [!hasInspectValue(author) ? 'author' : null, !hasInspectValue(createdIn) ? 'created-in' : null].filter(Boolean);
+  checks.push(packDoctorCheck(
+    'provenance',
+    'provenance',
+    missingProvenance.length ? 'warn' : 'pass',
+    missingProvenance.length ? `missing ${missingProvenance.join(' and ')}` : `author and created-in are present`,
+  ));
+
+  const promise = hasInspectValue(manifest.title)
+    ? manifest.title
+    : (hasInspectValue(manifest.description) ? manifest.description : manifest.slug);
+  const promiseTokens = packDoctorTokens(promise);
+  const overlap = promiseTokens.filter((token) => payload.tokens.has(token));
+  let alignmentStatus = 'pass';
+  let alignmentMessage = `payload overlaps the promise on: ${overlap.join(', ')}`;
+  if (!promiseTokens.length) {
+    alignmentStatus = 'warn';
+    alignmentMessage = 'title has no useful words for a lexical alignment check';
+  } else if (!overlap.length) {
+    alignmentStatus = 'fail';
+    alignmentMessage = `no obvious lexical overlap with title words: ${promiseTokens.join(', ')}`;
+  }
+  checks.push(packDoctorCheck('alignment', 'promise alignment', alignmentStatus, alignmentMessage));
+
+  const counts = {
+    pass: checks.filter((check) => check.status === 'pass').length,
+    warn: checks.filter((check) => check.status === 'warn').length,
+    fail: checks.filter((check) => check.status === 'fail').length,
+  };
+  const status = counts.fail ? 'reject' : (counts.warn ? 'revise' : 'ready');
+  const nextAction = status === 'ready'
+    ? `review the trust surface with atris pack inspect ${shellQuote(packDir)} before running`
+    : (status === 'revise'
+      ? `add the missing contract fields, then rerun atris pack doctor ${shellQuote(packDir)}`
+      : 'fix every rejected check before running this pack');
+  return {
+    schema: 'atris.pack-doctor.v1',
+    ok: status === 'ready',
+    status,
+    slug: manifest.slug,
+    title: manifest.title || manifest.name || manifest.slug,
+    version: manifestVersion(manifest),
+    location: packDir,
+    summary: counts,
+    checks,
+    nextAction,
+  };
+}
+
+function printPackDoctor(result) {
+  console.log(`pack doctor: ${result.slug}`);
+  console.log(`verdict: ${result.status}`);
+  console.log(`location: ${result.location}`);
+  console.log(`summary: ${result.summary.pass} pass, ${result.summary.warn} revise, ${result.summary.fail} reject`);
+  console.log('checks:');
+  for (const check of result.checks) {
+    const label = check.status === 'pass' ? 'pass' : (check.status === 'warn' ? 'revise' : 'reject');
+    console.log(`  ${label} ${check.name}: ${check.message}`);
+  }
+  console.log(`next: ${result.nextAction}`);
+}
+
+function doctorPack(rawArgs, cwd = process.cwd()) {
+  const args = [...rawArgs];
+  const json = takeFlag(args, '--json');
+  const source = args.shift();
+  if (!source || source === 'help' || source === '--help' || source === '-h') {
+    showHelp();
+    return source ? 0 : 2;
+  }
+  if (args.length) throw new Error(`unknown pack doctor argument: ${args.join(' ')}`);
+  const result = evaluatePackDoctor(source, cwd);
+  if (json) console.log(JSON.stringify(result, null, 2));
+  else printPackDoctor(result);
+  return result.ok ? 0 : 1;
+}
+
 function runsPack(rawArgs) {
   const args = [...rawArgs];
   const json = takeFlag(args, '--json');
@@ -2497,6 +2739,7 @@ async function run(argv = []) {
     if (subcommand === 'status') return statusPack(args);
     if (subcommand === 'update') return await updatePack(args);
     if (subcommand === 'inspect') return inspectPack(args);
+    if (subcommand === 'doctor') return doctorPack(args);
     if (subcommand === 'list') return listPackCommand(args);
     console.error(`unknown pack command: ${subcommand}`);
     showHelp();
