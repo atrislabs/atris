@@ -9,6 +9,8 @@ const {
   resolvePackCapabilityPolicy,
   readClaudeUserDenyRules,
   beginPackRunReceipt,
+  appendReceiptEvent,
+  finalizePackRunReceipt,
   enforcePackRoot,
   publicWebUrlPreflight,
   enforcePublicWeb,
@@ -399,6 +401,7 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
       runtimePermissionDenialsCaptured: false,
       toolInputsLogged: false,
       directSkillInvocationsCaptured: false,
+      runnerExitCaptured: false,
     });
   } finally {
     cleanupTempDir(dir);
@@ -766,6 +769,64 @@ test('usage hook keeps a live requested/granted/used receipt without recording t
     assert.equal(summary.observability.runtimePermissionDenialsCaptured, false);
     assert.equal(summary.observability.toolInputsLogged, false);
     assert.doesNotMatch(fs.readFileSync(receipt.eventsPath, 'utf8'), /do-not-log|private query/);
+  } finally {
+    for (const [key, value] of Object.entries(prior)) {
+      const envName = {
+        root: 'ATRIS_PACK_ROOT', receipt: 'ATRIS_PACK_RECEIPT',
+        events: 'ATRIS_PACK_RECEIPT_EVENTS', capabilities: 'ATRIS_PACK_GRANTED_CAPABILITIES',
+      }[key];
+      if (value === undefined) delete process.env[envName];
+      else process.env[envName] = value;
+    }
+    cleanupTempDir(dir);
+  }
+});
+
+test('session end stops reporting a pack run as live before runner exit is captured', () => {
+  const dir = makeTempDir();
+  const prior = {
+    root: process.env.ATRIS_PACK_ROOT,
+    receipt: process.env.ATRIS_PACK_RECEIPT,
+    events: process.env.ATRIS_PACK_RECEIPT_EVENTS,
+    capabilities: process.env.ATRIS_PACK_GRANTED_CAPABILITIES,
+  };
+  try {
+    const packDir = seedInstalledPack(dir, 'g-brain', { permissions: ['pack.read'] });
+    const policy = resolvePackCapabilityPolicy(['pack.read']);
+    const receipt = beginPackRunReceipt(packDir, { slug: 'g-brain', version: '0.1.0' }, policy, {
+      receiptDir: path.join(dir, 'receipts'),
+    });
+    process.env.ATRIS_PACK_ROOT = packDir;
+    process.env.ATRIS_PACK_RECEIPT = receipt.receiptPath;
+    process.env.ATRIS_PACK_RECEIPT_EVENTS = receipt.eventsPath;
+    process.env.ATRIS_PACK_GRANTED_CAPABILITIES = JSON.stringify(policy.grantedCapabilities);
+
+    runHook('session-end', JSON.stringify({ reason: 'private-custom-reason' }));
+    let summary = JSON.parse(fs.readFileSync(receipt.receiptPath, 'utf8'));
+    assert.equal(summary.status, 'session-ended');
+    assert.equal(summary.sessionEndReason, 'other');
+    assert.doesNotMatch(fs.readFileSync(receipt.eventsPath, 'utf8'), /private-custom-reason/);
+
+    runHook('session-end', JSON.stringify({
+      reason: 'prompt_input_exit',
+      transcript_path: '/private/plaintext/session.jsonl',
+    }));
+    summary = JSON.parse(fs.readFileSync(receipt.receiptPath, 'utf8'));
+    assert.equal(summary.status, 'session-ended');
+    assert.equal(summary.sessionEndReason, 'prompt_input_exit');
+    assert.match(summary.sessionEndedAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(summary.observability.runnerExitCaptured, false);
+    assert.doesNotMatch(fs.readFileSync(receipt.eventsPath, 'utf8'), /plaintext|session\.jsonl/);
+
+    appendReceiptEvent(receipt.eventsPath, {
+      event: 'exit', at: '2026-08-02T09:00:00.000Z', status: 130, signal: 'SIGINT',
+    });
+    summary = finalizePackRunReceipt(receipt.receiptPath, receipt.eventsPath);
+    assert.equal(summary.status, 'finished');
+    assert.equal(summary.exitStatus, 130);
+    assert.equal(summary.signal, 'SIGINT');
+    assert.equal(summary.sessionEndReason, 'prompt_input_exit');
+    assert.equal(summary.observability.runnerExitCaptured, true);
   } finally {
     for (const [key, value] of Object.entries(prior)) {
       const envName = {
