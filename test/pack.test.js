@@ -5,7 +5,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { readZipFile, writeZipFile } = require('../lib/zip');
+const { readZipFile, writeZipFile, ZIP_LIMITS } = require('../lib/zip');
 const { comparePackVersions, installPack, listInstalledPacks, pullPack, updatePack } = require('../commands/pack');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -167,6 +167,33 @@ test('pack install prints its absolute destination and local source before writi
     assert.equal(destinationPrintedBeforeWrite, true);
     assert.equal(lines[0], `destination: ${target}`);
     assert.equal(lines[1], `source file: ${zipPath}`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install rejects oversized declared content before writing', async () => {
+  const dir = makeTempDir();
+  try {
+    const zipPath = path.join(dir, 'declared-bomb.zip');
+    writeZipFile(zipPath, [
+      { name: 'pack.json', data: Buffer.from(`${JSON.stringify(sampleManifest(), null, 2)}\n`) },
+      { name: 'README.md', data: Buffer.from('# tiny compressed body\n') },
+    ]);
+    const zip = fs.readFileSync(zipPath);
+    const centralHeader = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+    const firstCentralOffset = zip.indexOf(centralHeader);
+    const secondCentralOffset = zip.indexOf(centralHeader, firstCentralOffset + centralHeader.length);
+    assert.notEqual(secondCentralOffset, -1);
+    zip.writeUInt32LE(ZIP_LIMITS.maxEntryBytes + 1, secondCentralOffset + 24);
+    fs.writeFileSync(zipPath, zip);
+
+    const target = path.join(dir, 'installed');
+    await assert.rejects(
+      () => installPack([zipPath, '--dir', target], dir),
+      /entry README\.md declares .* exceeding .* byte entry limit/,
+    );
+    assert.equal(fs.existsSync(target), false);
   } finally {
     cleanupTempDir(dir);
   }

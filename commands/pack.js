@@ -5,19 +5,15 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { apiRequestJson, getAppBaseUrl, httpRequest } = require('../utils/api');
 const { loadCredentials, performTokenRefresh } = require('../utils/auth');
-const { createZipBuffer, readZipBuffer } = require('../lib/zip');
+const { createZipBuffer, readZipBuffer, ZIP_LIMITS } = require('../lib/zip');
 const { craftPack } = require('./pack-craft');
 const { gatherAtrisContext } = require('./console');
 
 const REGISTRY_TIMEOUT_MS = 60000;
 
 // The web registry caps every upload (atrisos-web app/api/pack/registry/route.ts).
-// Keep these in one place so a preflight failure can name the limit it broke.
-const REGISTRY_LIMITS = {
-  maxZipBytes: 5 * 1024 * 1024,
-  maxUnpackedBytes: 20 * 1024 * 1024,
-  maxEntries: 500,
-};
+// The ZIP reader uses the same limits so inbound packs cannot expand past them.
+const REGISTRY_LIMITS = ZIP_LIMITS;
 
 // The web viewer rejects anything else (atrisos-web app/lib/pack/manifests.ts).
 const SLUG_RULE = /^[a-z0-9-]{3,40}$/;
