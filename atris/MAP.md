@@ -149,7 +149,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **atris report:** `commands/report.js` renders a weekly operator block from landings, journals, and Career XP with coverage in `test/report.test.js`.
 - **atris brief:** `commands/brief.js` renders the one-glance operator brief from done tasks, review waits, next moves, and the weekly report line with coverage in `test/brief.test.js`.
 - **atris meet:** `commands/meet.js` composes interview flags, `init`, `theme init`, and `avail` helpers to create a first profile plus a `/book/{username}` link with coverage in `test/meet.test.js`.
-- **atris pack:** `commands/pack-craft.js:1` scaffolds a research pack with `atris pack craft "<topic>" [--dir <target>] [--force]`; `commands/pack.js` publishes, installs, updates, lists, and runs packs, records successful registry observations in `.atris/state/pack.json`, stages pull reviews in `.upstream/`, reports installed, origin, remote-check, and staged-review truth, resolves `atris pack inspect <slug|dir>` locally for a read-only location, provenance, entry-contract, permission, update-state, and file-summary report, prints install destination/registry/git preflight before writing, resolves manifest entrypoints and `RUN.md`, and runs packets with honest zero-context orientation; `lib/zip.js` provides zero-dependency zip reads and writes; `bin/atris.js` routes the command; `test/pack*.test.js` covers publishing, install/update/pull/status, craft/run/share, inspect, install preflight, run orientation, and packet safety.
+- **atris pack:** `commands/pack-craft.js:1` scaffolds a research pack with `atris pack craft "<topic>" [--dir <target>] [--force]`; `commands/pack.js` publishes, installs, updates, lists, and runs packs, preserves browser-authored visibility and price while rebuilding manifests, validates a single root manifest plus normalized paths and symlink-safe destinations before archive writes, records successful registry observations in `.atris/state/pack.json`, stages pull reviews in `.upstream/`, reports installed, origin, remote-check, and staged-review truth, resolves `atris pack inspect <slug|dir>` locally for a read-only location, provenance, entry-contract, permission, update-state, and file-summary report, prints source-aware install destination/source/git preflight before writing, resolves manifest entrypoints and `RUN.md`, exposes shipped root `skills/` to Claude with a session-only `--plugin-dir` without mutating the packet, and runs packets with honest zero-context orientation; `lib/zip.js` provides zero-dependency zip reads and writes; `bin/atris.js` routes the command; `test/pack*.test.js` covers publishing, install/update/pull/status, craft/run/share, inspect, install preflight, run orientation, skill loading, and packet safety.
 
 ### Feature: Natural Language Interface (`atris [anything]`)
 
@@ -743,7 +743,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `--verbose` / `-v`: Legacy visual task board
 - `--quick` / `-q`: One-line emoji summary
 - `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team)
-- **Routing:** `bin/atris.js:2449-2453` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
+- **Routing:** `bin/atris.js:2460-2464` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
 - **Value:** Parallel work visibility + machine-readable output for scripting
 
 **Search:** `rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js`
@@ -770,7 +770,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Dispatch:** `bin/atris.js:1924` handles `--help`, `--dry-run`, and `--json` before routing to `cleanAtris`
 - **Help:** `bin/atris.js:942` (`showCleanHelp`) prints usage without touching workspace state
 - **Entry point:** `commands/clean.js:14` (cleanAtris function)
-- **JSON payload:** `commands/clean.js:181` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, dead code, and manual actions without text chrome
+- **JSON payload:** `commands/clean.js:188` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, dead code, and manual actions without text chrome
 - **Helpers:**
 - `findStaleTasks()`: Find tasks claimed >3 days ago
 - `healBrokenMapRefs()`: Validate + auto-fix MAP.md file:line refs (range + drift detection)
@@ -796,7 +796,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Entry points:** `bin/atris.js` (help text, known commands, wiki + alias routing)
 - **Handlers:** `commands/wiki.js` (ingest/query/lint/search/log), `lib/wiki.js` (scaffold + prompt builders), `commands/init.js` (wiki bootstrap), `commands/activate.js` (wiki status load)
-- **Help:** `commands/wiki.js:169-214` (`hasHelpFlag`/`printWikiHelp`) and `commands/wiki.js:408-412` short-circuit wiki help before ingest/query/lint workers can scaffold state
+- **Help:** `commands/wiki.js:172-174` (`hasHelpFlag`/`printWikiHelp`) and `commands/wiki.js:408-412` short-circuit wiki help before ingest/query/lint workers can scaffold state
 - **Regression:** `test/commands.test.js:5078-5100` covers `ingest|query|lint --help`, `wiki --help`, and `wiki ingest --help` without `atris/` or `$HOME/.atris` creation
 - **How it works:**
 - `atris ingest <path>` scaffolds `atris/wiki/`, stages local evidence into `atris/context/_ingest/`, writes a manifest receipt, refreshes wiki STATUS/log, and prints the local ingest prompt against the staged source
@@ -1179,7 +1179,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:2919-2971` (upgradeAtris function)
+- **Entry point:** `bin/atris.js:2938-2990` (upgradeAtris function)
 - **Dispatch/help:** `bin/atris.js:1432-1438` handles `upgrade --help` before npm checks or global installs
 - **Logic:**
 - Shows current version
@@ -1230,7 +1230,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:3212-3300` (chatAtris function)
+- **Entry point:** `bin/atris.js:3231-3319` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
@@ -1244,7 +1244,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Load Atris context - MAP.md, journal, tasks - and display system status
 
-- **Entry point:** `commands/activate.js:149-297` (activateAtris function)
+- **Entry point:** `commands/activate.js:158-306` (activateAtris function)
 - **Routing:** `bin/atris.js:1153-1159`
 - **Help:** `bin/atris.js:757-767` (`showActivateHelp`) prints usage before context loading or journal creation
 - **Regression:** `test/commands.test.js:4310-4324` covers activate help without context panels or temp state creation; `test/activate-boot.test.js` covers the boot brief + sync-status line
@@ -1720,8 +1720,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `askHuman()` → `commands/autopilot.js:428-437`
 - `isStillTrue()` → `commands/autopilot.js:3709-3767`
 - `askModel()` → `commands/autopilot.js:3778-3818`
-- `activateAtris()` → `commands/activate.js:149-297`
-- `cleanAtris()` → `commands/clean.js:12-117`
+- `activateAtris()` → `commands/activate.js:158-306`
+- `cleanAtris()` → `commands/clean.js:15-186`
 - `verifyAtris()` → `commands/verify.js:13-35`
 - `releaseAtris()` → `commands/release.js:15-122`
 - `gmailCommand()` etc. → `commands/integrations.js`

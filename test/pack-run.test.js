@@ -335,6 +335,33 @@ test('pack run --trust hands the skip flag through to the agent', () => {
   }
 });
 
+test('pack run loads shipped skills into Claude without mutating the packet', () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedInstalledPack(dir);
+    const skillDir = path.join(packDir, 'skills', 'pack-dogfood');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(skillDir, 'SKILL.md'),
+      '---\nname: pack-dogfood\ndescription: evaluate a pack\n---\n\n# Pack dogfood\n'
+    );
+    const argsFile = path.join(dir, 'argv-skill.txt');
+    const runner = seedFakeRunner(dir, argsFile);
+    const before = fs.readdirSync(packDir).sort();
+    const result = runPackCli(dir, [], runner);
+
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+    const argv = fs.readFileSync(argsFile, 'utf8').split('\n');
+    const pluginFlag = argv.indexOf('--plugin-dir');
+    assert.notEqual(pluginFlag, -1, 'the shipped skill tree must reach Claude as a local plugin');
+    assert.equal(fs.realpathSync(argv[pluginFlag + 1]), fs.realpathSync(packDir));
+    assert.deepEqual(fs.readdirSync(packDir).sort(), before, 'pack run must not generate adapter files');
+    assert.equal(fs.existsSync(path.join(packDir, '.claude')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris console keeps skipping permissions on your own workspace', () => {
   const dir = makeTempDir();
   try {

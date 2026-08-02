@@ -939,15 +939,36 @@ async function loadZipPayload(source, cwd, deps = {}) {
   return { buffer, fallbackSlug: slug, sourceType: 'registry', sourceSlug: slug };
 }
 
-function parseManifest(entries, fallbackSlug) {
-  const manifestEntry = entries.find((entry) => entry.name === 'pack.json');
-  if (!manifestEntry) return { slug: fallbackSlug };
-  try {
-    const parsed = JSON.parse(manifestEntry.data.toString('utf8'));
-    return parsed && typeof parsed === 'object' ? parsed : { slug: fallbackSlug };
-  } catch {
-    return { slug: fallbackSlug };
+function canonicalZipEntryName(name) {
+  return path.posix.normalize(String(name || '').replace(/\\/g, '/'));
+}
+
+function parseManifest(entries) {
+  const manifestEntries = entries.filter((entry) => (
+    canonicalZipEntryName(entry.name) === 'pack.json'
+    && !String(entry.name || '').replace(/\\/g, '/').endsWith('/')
+  ));
+  if (manifestEntries.length === 0) {
+    throw new Error('pack archive is missing root pack.json');
   }
+  if (manifestEntries.length > 1) {
+    throw new Error('pack archive contains duplicate pack.json entries');
+  }
+
+  const manifestEntry = manifestEntries[0];
+  let parsed;
+  try {
+    parsed = JSON.parse(manifestEntry.data.toString('utf8'));
+  } catch (error) {
+    throw new Error(`pack archive has invalid pack.json: ${error.message}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('pack archive pack.json must contain an object');
+  }
+  if (typeof parsed.slug !== 'string' || !parsed.slug.trim()) {
+    throw new Error('pack archive pack.json is missing slug');
+  }
+  return parsed;
 }
 
 function manifestVersion(manifest) {
@@ -1003,11 +1024,12 @@ function hasStagedUpstream(packDir) {
   return fs.readdirSync(upstreamDir).some((name) => name !== 'STATE.json');
 }
 
-function writeUpstreamZip(entries, packDir, state) {
+function writeUpstreamZip(entries, packDir, state, writes = null) {
   const upstreamDir = path.join(packDir, '.upstream');
+  const plannedWrites = writes || planZipWrites(entries, upstreamDir);
   fs.rmSync(upstreamDir, { recursive: true, force: true });
   fs.mkdirSync(upstreamDir, { recursive: true });
-  writeZipEntries(entries, upstreamDir);
+  writePlannedZipEntries(plannedWrites);
   writeUpstreamState(packDir, state);
 }
 
@@ -1022,7 +1044,7 @@ async function pullPack(rawArgs, cwd = process.cwd(), options = {}) {
   const deps = options.deps || {};
   const zipBuffer = await fetchRegistryZip(slug, deps);
   const entries = readZipBuffer(zipBuffer);
-  const remoteManifest = parseManifest(entries, slug);
+  const remoteManifest = parseManifest(entries);
   if (slugify(remoteManifest.slug || slug) !== slug) {
     throw new Error(`registry returned different slug: ${remoteManifest.slug}`);
   }
@@ -1033,6 +1055,7 @@ async function pullPack(rawArgs, cwd = process.cwd(), options = {}) {
   if (comparison === null) {
     throw new Error(`could not compare pack versions: local ${localVersion}, remote ${remoteVersion}`);
   }
+  const upstreamWrites = planZipWrites(entries, path.join(packDir, '.upstream'));
 
   recordRemoteCheck(packDir, {
     slug,
@@ -1042,7 +1065,7 @@ async function pullPack(rawArgs, cwd = process.cwd(), options = {}) {
 
   const state = buildUpstreamState(slug, localVersion, remoteVersion);
   if (comparison > 0) {
-    writeUpstreamZip(entries, packDir, state);
+    writeUpstreamZip(entries, packDir, state, upstreamWrites);
     console.log(`pulled ${slug} local v${localVersion} -> remote v${remoteVersion}`);
     console.log('upstream lives in .upstream/ for a deliberate merge.');
     return { ok: true, upToDate: false, localVersion, remoteVersion, targetDir: packDir };
@@ -1155,11 +1178,75 @@ function assertForceInstallAllowed(targetDir, slug) {
   return existing;
 }
 
+function lstatIfPresent(filePath) {
+  try {
+    return fs.lstatSync(filePath);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function assertSafeWritePath(targetDir, destination, isDirectory, entryName) {
+  const targetRoot = path.resolve(targetDir);
+  const relative = path.relative(targetRoot, destination);
+  const parts = relative.split(path.sep).filter(Boolean);
+  let current = targetRoot;
+
+  const rootStat = lstatIfPresent(current);
+  if (rootStat && rootStat.isSymbolicLink()) {
+    throw new Error(`refusing zip entry through symlinked target: ${entryName}`);
+  }
+  if (rootStat && !rootStat.isDirectory()) {
+    throw new Error(`refusing zip entry through non-directory target: ${entryName}`);
+  }
+
+  for (let index = 0; index < parts.length; index += 1) {
+    current = path.join(current, parts[index]);
+    const stat = lstatIfPresent(current);
+    if (!stat) continue;
+    if (stat.isSymbolicLink()) {
+      throw new Error(`refusing zip entry through symlinked target: ${entryName}`);
+    }
+    const isLast = index === parts.length - 1;
+    if (!isLast && !stat.isDirectory()) {
+      throw new Error(`refusing zip entry through non-directory target: ${entryName}`);
+    }
+    if (isLast && isDirectory !== stat.isDirectory()) {
+      throw new Error(`refusing zip entry with conflicting target type: ${entryName}`);
+    }
+  }
+}
+
 function planZipWrites(entries, targetDir) {
   const writes = [];
+  const planned = [];
+  const destinations = new Map();
   for (const entry of entries) {
-    if (!entry.name || entry.name.endsWith('/')) continue;
-    writes.push({ destination: resolveEntryTarget(targetDir, entry.name), data: entry.data });
+    const rawName = String(entry.name || '').replace(/\\/g, '/');
+    const isDirectory = rawName.endsWith('/');
+    const entryName = isDirectory ? rawName.slice(0, -1) : rawName;
+    const destination = resolveEntryTarget(targetDir, entryName);
+    if (destinations.has(destination)) {
+      throw new Error(`refusing duplicate zip entry: ${entry.name}`);
+    }
+    destinations.set(destination, { isDirectory, entryName: entry.name });
+    planned.push({ destination, isDirectory, entryName: entry.name });
+    if (!isDirectory) writes.push({ destination, data: entry.data });
+  }
+
+  const fileDestinations = new Set(
+    planned.filter((entry) => !entry.isDirectory).map((entry) => entry.destination),
+  );
+  for (const entry of planned) {
+    let ancestor = path.dirname(entry.destination);
+    while (ancestor !== path.dirname(ancestor) && ancestor !== path.resolve(targetDir)) {
+      if (fileDestinations.has(ancestor)) {
+        throw new Error(`refusing zip entry below file entry: ${entry.entryName}`);
+      }
+      ancestor = path.dirname(ancestor);
+    }
+    assertSafeWritePath(targetDir, entry.destination, entry.isDirectory, entry.entryName);
   }
   return writes;
 }
@@ -1169,10 +1256,6 @@ function writePlannedZipEntries(writes) {
     fs.mkdirSync(path.dirname(write.destination), { recursive: true });
     fs.writeFileSync(write.destination, write.data);
   }
-}
-
-function writeZipEntries(entries, targetDir) {
-  writePlannedZipEntries(planZipWrites(entries, targetDir));
 }
 
 function resolveEntryTarget(targetDir, entryName) {
@@ -1251,8 +1334,11 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
 
   const payload = await loadZipPayload(source, cwd, options.deps || {});
   const entries = readZipBuffer(payload.buffer);
-  const zipManifest = parseManifest(entries, payload.fallbackSlug);
-  const slug = slugify(zipManifest.slug || payload.fallbackSlug);
+  const zipManifest = parseManifest(entries);
+  const slug = slugify(zipManifest.slug);
+  if (payload.sourceType === 'registry' && slug !== slugify(payload.sourceSlug)) {
+    throw new Error(`registry returned different slug: ${zipManifest.slug}`);
+  }
   const targetDir = path.resolve(cwd, targetArg || slug);
   if (fs.existsSync(path.join(targetDir, 'atris')) && !force) {
     throw new Error(`target already contains atris/: ${path.relative(cwd, targetDir) || targetDir}. rerun with --force to overwrite.`);
@@ -1569,13 +1655,14 @@ async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
   }
 
   const entries = readZipBuffer(response.body);
-  const zipManifest = parseManifest(entries, existing.slug);
+  const zipManifest = parseManifest(entries);
   if (slugify(zipManifest.slug) !== slugify(existing.slug)) {
     throw new Error(`download returned different slug: ${zipManifest.slug}`);
   }
 
   const oldVersion = manifestVersion(existing);
   const newVersion = manifestVersion(zipManifest);
+  const writes = planZipWrites(entries, resolved);
   recordRemoteCheck(resolved, {
     slug: existing.slug,
     origin,
@@ -1586,7 +1673,7 @@ async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
     return { ok: true, upToDate: true, manifest: existing, targetDir: resolved };
   }
 
-  writeZipEntries(entries, resolved);
+  writePlannedZipEntries(writes);
   const installed = readPackManifestFromDir(resolved);
   const manifest = { ...installed, origin: existing.origin };
   writeInstalledPackJson(resolved, manifest);

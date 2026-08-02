@@ -252,6 +252,114 @@ test('pack install refuses zip entries that escape the target dir', () => {
   }
 });
 
+test('pack install rejects invalid manifest shapes before writing any files', async () => {
+  const dir = makeTempDir();
+  try {
+    const cases = [
+      {
+        name: 'missing',
+        entries: [{ name: 'README.md', data: Buffer.from('# no manifest\n') }],
+        error: /missing root pack\.json/,
+      },
+      {
+        name: 'malformed',
+        entries: [{ name: 'pack.json', data: Buffer.from('{not json') }],
+        error: /invalid pack\.json/,
+      },
+      {
+        name: 'missing-slug',
+        entries: [{ name: 'pack.json', data: Buffer.from('{}') }],
+        error: /pack\.json is missing slug/,
+      },
+      {
+        name: 'duplicate-manifest',
+        entries: [
+          { name: 'pack.json', data: Buffer.from(JSON.stringify({ slug: 'first-pack' })) },
+          { name: './pack.json', data: Buffer.from(JSON.stringify({ slug: 'swapped-pack' })) },
+        ],
+        error: /duplicate pack\.json entries/,
+      },
+    ];
+
+    for (const item of cases) {
+      const zipPath = path.join(dir, `${item.name}.zip`);
+      const target = path.join(dir, `${item.name}-target`);
+      writeZipFile(zipPath, item.entries);
+      await assert.rejects(() => installPack([zipPath, '--dir', target], dir), item.error);
+      assert.equal(fs.existsSync(target), false, `${item.name} must not leave a partial target`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install rejects duplicate normalized paths before writing', async () => {
+  const dir = makeTempDir();
+  try {
+    const zipPath = path.join(dir, 'duplicate-path.zip');
+    const target = path.join(dir, 'target');
+    writeZipFile(zipPath, [
+      { name: 'pack.json', data: Buffer.from(JSON.stringify(sampleManifest())) },
+      { name: 'README.md', data: Buffer.from('# first\n') },
+      { name: './README.md', data: Buffer.from('# second\n') },
+    ]);
+
+    await assert.rejects(
+      () => installPack([zipPath, '--dir', target], dir),
+      /refusing duplicate zip entry/,
+    );
+    assert.equal(fs.existsSync(target), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install refuses writes through symlinked target components', async () => {
+  const dir = makeTempDir();
+  try {
+    const zipPath = path.join(dir, 'symlink.zip');
+    const target = path.join(dir, 'target');
+    const outside = path.join(dir, 'outside');
+    fs.mkdirSync(target, { recursive: true });
+    fs.mkdirSync(outside, { recursive: true });
+    fs.symlinkSync(outside, path.join(target, 'linked'), 'dir');
+    writeZipFile(zipPath, [
+      { name: 'pack.json', data: Buffer.from(JSON.stringify(sampleManifest())) },
+      { name: 'linked/escaped.txt', data: Buffer.from('escaped\n') },
+    ]);
+
+    await assert.rejects(
+      () => installPack([zipPath, '--dir', target], dir),
+      /refusing zip entry through symlinked target/,
+    );
+    assert.equal(fs.existsSync(path.join(outside, 'escaped.txt')), false);
+    assert.equal(fs.existsSync(path.join(target, 'pack.json')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('registry install rejects a manifest slug that differs from the requested slug', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'target');
+    const zipBuffer = packZipBuffer(dir, sampleManifest({ slug: 'different-pack' }));
+    const deps = {
+      getAppBaseUrl: () => 'https://app.test',
+      loadCredentials: () => null,
+      httpRequest: async () => ({ status: 200, body: zipBuffer }),
+    };
+
+    await assert.rejects(
+      () => installPack(['expected-pack', '--dir', target], dir, { deps }),
+      /registry returned different slug: different-pack/,
+    );
+    assert.equal(fs.existsSync(target), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack publish bumps patch version on subsequent publish', () => {
   const dir = makeTempDir();
   try {
@@ -778,6 +886,40 @@ test('anonymous registry 404 stays a plain pack not found error', async () => {
     );
     assert.equal(calls.length, 1);
     assert.equal(calls[0].options.headers.Authorization, undefined);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack update validates duplicate paths before changing files or remote state', async () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-pack');
+    writePackDir(target, {
+      slug: 'demo-pack',
+      version: '0.1.0',
+      origin: { type: 'registry', slug: 'demo-pack' },
+    });
+    const remoteZip = path.join(dir, 'remote.zip');
+    writeZipFile(remoteZip, [
+      { name: 'pack.json', data: Buffer.from(JSON.stringify(sampleManifest({ version: '0.2.0' }))) },
+      { name: 'README.md', data: Buffer.from('# remote first\n') },
+      { name: './README.md', data: Buffer.from('# remote second\n') },
+    ]);
+
+    await assert.rejects(
+      () => updatePack([target], dir, {
+        deps: {
+          getAppBaseUrl: () => 'https://app.test',
+          loadCredentials: () => null,
+          httpRequest: async () => ({ status: 200, body: fs.readFileSync(remoteZip) }),
+        },
+      }),
+      /refusing duplicate zip entry/,
+    );
+
+    assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# pack\n');
+    assert.equal(fs.existsSync(path.join(target, '.atris', 'state', 'pack.json')), false);
   } finally {
     cleanupTempDir(dir);
   }
