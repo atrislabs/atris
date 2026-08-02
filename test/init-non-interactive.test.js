@@ -7,7 +7,11 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-const INIT_TIMEOUT_MS = 15000;
+// 15s was too tight under full-suite CPU contention: a scaffolding init that
+// legitimately runs long got SIGTERM'd and the file flaked as a false "hung".
+// 60s keeps the real-hang guard (interactive prompt waiting on stdin blocks
+// forever) while clearing the load-induced slowdown.
+const INIT_TIMEOUT_MS = 60000;
 const FIRST_USE_NEXT = 'Next: atris "help me choose the first useful step for this project"';
 const FIRST_MISSION = 'atris mission start "Verify this Atris workspace is ready" --owner validator --runner manual --lane workspace --verify "node -e \\"require(\'fs\').accessSync(\'atris/atris.md\')\\"" --stop "workspace readiness is verified"';
 

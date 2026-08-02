@@ -200,7 +200,10 @@ test('real local improve fallback runs one drill tick, verifies it, and writes o
     cwd: dir,
     env,
     encoding: 'utf8',
-    timeout: 15000,
+    // Outer harness timeout must exceed the tick's own --timeout=60 budget, or
+    // full-suite CPU contention kills the subprocess before its 60s elapses and
+    // the file flakes. 90s catches a genuine hang while clearing the inner budget.
+    timeout: 90000,
   });
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -260,7 +263,10 @@ test('real local improve fallback proves success in human output mode', () => {
     cwd: dir,
     env,
     encoding: 'utf8',
-    timeout: 15000,
+    // Outer harness timeout must exceed the tick's own --timeout=60 budget, or
+    // full-suite CPU contention kills the subprocess before its 60s elapses and
+    // the file flakes. 90s catches a genuine hang while clearing the inner budget.
+    timeout: 90000,
   });
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
