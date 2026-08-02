@@ -1669,6 +1669,7 @@ function printCapabilityTrustCard(policy, trust, receiptPath) {
   console.log(`  granted Claude tools: ${policy.tools.length ? policy.tools.join(', ') : 'none'}`);
   console.log('  file boundary: built-in file tools are confined to this pack root');
   console.log('  pre-launch context: declared pack symlinks are rejected before Atris reads context');
+  console.log('  memory isolation: Claude memory files and auto-memory are disabled for this pack run');
   console.log(`  approvals: ${trust ? 'pre-approved inside the declared ceiling (--trust); user/managed deny rules still win' : 'prompted inside the declared ceiling'}`);
   console.log(`  host shell: ${policy.grantedCapabilities.includes('host.shell') ? 'GRANTED — Bash can reach host files and network' : 'denied'}`);
   console.log('  receipt coverage: Atris hook use/denial events; later Claude or policy denials may not appear');
@@ -1704,6 +1705,8 @@ function startPackLocal(packDir, deps = {}, options = {}) {
       ATRIS_PACK_RECEIPT: receipt.receiptPath,
       ATRIS_PACK_RECEIPT_EVENTS: receipt.eventsPath,
       ATRIS_PACK_GRANTED_CAPABILITIES: JSON.stringify(capabilityPolicy.grantedCapabilities),
+      CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
     };
     runnerOptions.cleanupPaths = pluginDir ? [pluginDir] : [];
     runnerOptions.onRunnerExit = ({ status, signal }) => {
