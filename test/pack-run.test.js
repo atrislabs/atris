@@ -78,6 +78,59 @@ test('pack run starts a local computer inside the packet folder', async () => {
   }
 });
 
+test('pack run orients a zero-context packet and gives the agent a useful opening prompt', async () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir);
+    const { calls, deps } = stubDeps();
+    const { code, output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
+
+    assert.equal(code, 0);
+    assert.match(output, /pack: G Brain/);
+    assert.match(output, /files \(2\): README\.md, pack\.json/);
+    assert.match(output, /source\/origin: local packet folder/);
+    assert.match(output, /declares no entrypoint.*pack files as context only/);
+    assert.deepEqual(calls.local[0].args, [
+      "Read README.md first, then inspect the rest of this pack's files. Propose the pack's first useful action before making changes.",
+    ]);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack run uses the manifest entrypoint as the opening prompt', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedInstalledPack(dir);
+    const manifestPath = path.join(packDir, 'pack.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.entrypoint = 'Summarize the research and ask which finding to apply first.';
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    const { calls, deps } = stubDeps();
+    const { output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
+
+    assert.deepEqual(calls.local[0].args, [manifest.entrypoint]);
+    assert.doesNotMatch(output, /declares no entrypoint/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack run uses RUN.md as the opening prompt', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedInstalledPack(dir);
+    fs.writeFileSync(path.join(packDir, 'RUN.md'), 'Read the brief, then draft the launch checklist.\n');
+    const { calls, deps } = stubDeps();
+    const { output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
+
+    assert.deepEqual(calls.local[0].args, ['Read the brief, then draft the launch checklist.']);
+    assert.doesNotMatch(output, /declares no entrypoint/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack run accepts a packet directory as well as a slug', async () => {
   const dir = makeTempDir();
   try {
@@ -257,6 +310,10 @@ test('pack run does not hand --dangerously-skip-permissions to the agent by defa
     const argv = fs.readFileSync(argsFile, 'utf8').split('\n');
     assert.equal(argv.includes('--dangerously-skip-permissions'), false);
     assert.equal(argv.includes('--append-system-prompt'), true);
+    assert.equal(
+      argv.includes("Read README.md first, then inspect the rest of this pack's files. Propose the pack's first useful action before making changes."),
+      true,
+    );
   } finally {
     cleanupTempDir(dir);
   }

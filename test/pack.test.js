@@ -69,6 +69,18 @@ function runCli(args, { cwd, env = {} }) {
   return result;
 }
 
+async function captureConsole(fn) {
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (...args) => lines.push(args.join(' '));
+  try {
+    const result = await fn();
+    return { result, output: lines.join('\n') };
+  } finally {
+    console.log = originalLog;
+  }
+}
+
 function listen(server) {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -120,6 +132,65 @@ test('pack publish --out then install round trips atris and manifest', () => {
     assert.equal(manifest.version, '0.1.0');
     assert.equal(manifest.slug, 'demo-pack');
     assert.match(install.stdout, /cd .* && claude/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install prints its absolute destination and registry url before writing', async () => {
+  const dir = makeTempDir();
+  try {
+    const zipPath = path.join(dir, 'demo.zip');
+    writeZipFile(zipPath, [
+      { name: 'pack.json', data: Buffer.from(`${JSON.stringify(sampleManifest(), null, 2)}\n`) },
+      { name: 'README.md', data: Buffer.from('# pack\n') },
+    ]);
+    const target = path.join(dir, 'installed');
+    let destinationPrintedBeforeWrite = false;
+    const lines = [];
+    const originalLog = console.log;
+    console.log = (...args) => {
+      const line = args.join(' ');
+      if (line === `destination: ${target}`) {
+        destinationPrintedBeforeWrite = !fs.existsSync(path.join(target, 'pack.json'));
+      }
+      lines.push(line);
+    };
+    try {
+      assert.equal(await installPack([zipPath, '--dir', target], dir, {
+        deps: { getAppBaseUrl: () => 'https://app.test' },
+      }), 0);
+    } finally {
+      console.log = originalLog;
+    }
+
+    assert.equal(destinationPrintedBeforeWrite, true);
+    assert.equal(lines[0], `destination: ${target}`);
+    assert.equal(lines[1], 'registry url: https://app.test/api/pack/registry/demo-pack');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack install warns how many packet files will be untracked in an existing git repo', async () => {
+  const dir = makeTempDir();
+  try {
+    const init = spawnSync('git', ['init', '-q'], { cwd: dir, encoding: 'utf8' });
+    assert.equal(init.status, 0, init.stderr);
+    const zipPath = path.join(dir, 'demo.zip');
+    writeZipFile(zipPath, [
+      { name: 'pack.json', data: Buffer.from(`${JSON.stringify(sampleManifest(), null, 2)}\n`) },
+      { name: 'README.md', data: Buffer.from('# pack\n') },
+    ]);
+    const target = path.join(dir, 'packs', 'demo-pack');
+    const { result, output } = await captureConsole(() => installPack(
+      [zipPath, '--dir', target],
+      dir,
+      { deps: { getAppBaseUrl: () => 'https://app.test' } },
+    ));
+
+    assert.equal(result, 0);
+    assert.match(output, new RegExp(`warning: 2 files will be added untracked to git repository ${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   } finally {
     cleanupTempDir(dir);
   }
