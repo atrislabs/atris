@@ -2304,18 +2304,15 @@ function printContentHashStatus(result) {
   if (result.issues.length > 10) console.log(`    ... ${result.issues.length - 10} more failures`);
 }
 
-function printRegistryOrigin(manifest, deps = {}) {
-  const origin = manifest.origin && typeof manifest.origin === 'object' ? manifest.origin : null;
+function printRegistryOrigin(origin) {
   if (!origin || origin.type !== 'registry') {
     const detail = origin && origin.type ? ` (installed from ${origin.type})` : '';
     console.log(`registry origin: ABSENT${detail}`);
     return;
   }
-  const slug = origin.slug || manifest.slug;
-  const base = String((deps.getAppBaseUrl || getAppBaseUrl)() || '').replace(/\/+$/, '');
   console.log('registry origin:');
-  console.log(`  slug: ${slug || 'ABSENT'}`);
-  console.log(`  url: ${slug && base ? `${base}/packs/${encodeURIComponent(slug)}` : 'ABSENT'}`);
+  console.log(`  slug: ${origin.registrySlug || 'ABSENT'}`);
+  console.log(`  url: ${origin.registryUrl || 'ABSENT'}`);
 }
 
 function printInstalledTree(summary) {
@@ -2332,15 +2329,9 @@ function printInstalledTree(summary) {
   });
 }
 
-function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
-  const args = [...rawArgs];
-  const source = args.shift();
-  if (!source || source === 'help' || source === '--help' || source === '-h') {
-    showHelp();
-    return source ? 0 : 2;
-  }
-  if (args.length) throw new Error(`unknown pack inspect argument: ${args.join(' ')}`);
+const PACK_INSPECT_SCHEMA = 'atris.pack-inspect.v1';
 
+function evaluatePackInspection(source, cwd = process.cwd(), options = {}) {
   const resolved = resolveInstalledPack(source, cwd);
   const packDir = path.resolve(resolved.dir);
   const manifest = resolved.manifest;
@@ -2357,10 +2348,134 @@ function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
     'source-urls', 'sourceUrls', 'sourceURLs', 'source_urls', 'source-url', 'sourceUrl', 'source_url', 'sources',
   ]);
   const contentHashStatus = inspectInstalledContentHashes(packDir, manifest);
+  const declaredOrigin = manifest.origin && typeof manifest.origin === 'object' ? manifest.origin : null;
+  const originType = declaredOrigin && typeof declaredOrigin.type === 'string'
+    ? declaredOrigin.type
+    : null;
+  const registrySlug = originType === 'registry' ? (declaredOrigin.slug || manifest.slug) : null;
+  const registryBase = registrySlug
+    ? String((options.deps && options.deps.getAppBaseUrl
+      ? options.deps.getAppBaseUrl
+      : getAppBaseUrl)() || '').replace(/\/+$/, '')
+    : '';
+  const installedVersion = manifestVersion(manifest);
+  const staged = Boolean(state && hasStagedUpstream(packDir));
+  const updateSupported = originType === 'registry' || originType === 'url';
+  const checkedAt = remoteState && remoteState.remoteVersion
+    ? (remoteState.lastRemoteCheckAt || null)
+    : state
+      ? (state.pulledAt || null)
+      : null;
+  const remoteVersion = remoteState && remoteState.remoteVersion
+    ? remoteState.remoteVersion
+    : state
+      ? (state.remoteVersion || null)
+      : null;
+  const versionComparison = remoteVersion
+    ? comparePackVersions(remoteVersion, installedVersion)
+    : null;
+  const updateStatus = staged
+    ? 'review-staged'
+    : !updateSupported
+      ? 'unsupported'
+      : !remoteVersion
+        ? 'not-checked'
+        : versionComparison === 0
+          ? 'up-to-date'
+          : versionComparison > 0
+            ? 'update-available'
+            : versionComparison < 0
+              ? 'remote-older'
+              : 'checked';
+  const update = {
+    supported: updateSupported,
+    status: updateStatus,
+    checkedAt,
+    remoteVersion,
+    staged,
+    stagedVersion: staged ? (state.remoteVersion || null) : null,
+    stagedAt: staged ? (state.pulledAt || null) : null,
+  };
+  const result = {
+    schema: PACK_INSPECT_SCHEMA,
+    ok: true,
+    status: 'inspected',
+    slug: manifest.slug,
+    title: manifest.title || manifest.name || manifest.slug,
+    location: packDir,
+    installedVersion,
+    origin: {
+      type: originType,
+      // Registry and URL installs were fetched by Atris. A file origin only
+      // proves that Atris consumed a caller-supplied archive, not who fetched it.
+      fetchedByAtris: originType === 'registry' || originType === 'url',
+      registrySlug,
+      registryUrl: registrySlug && registryBase
+        ? `${registryBase}/packs/${encodeURIComponent(registrySlug)}`
+        : null,
+    },
+    update,
+    files: summary,
+    contract: {
+      type: packType,
+      entrypoint,
+      capabilities: {
+        status: capabilityPolicy.status,
+        declared: permissions,
+        requested: capabilityPolicy.requested || [],
+        localTools: capabilityPolicy.tools || [],
+        canonical: canonicalCapabilityNames(),
+        localEnforced: capabilityPolicy.status === 'enforced',
+        cloudEnforced: false,
+        reason: capabilityPolicy.reason || null,
+      },
+    },
+    provenance: {
+      author: inspectManifestValue(manifest, ['author']),
+      createdIn: createdInValue(manifest),
+      sourceUrls,
+    },
+    contentHashes: {
+      status: contentHashStatus.status,
+      declared: contentHashStatus.declared,
+      files: contentHashStatus.files,
+      verified: contentHashStatus.verified,
+      issues: contentHashStatus.issues || [],
+      uncovered: contentHashStatus.uncovered || [],
+    },
+  };
+  return {
+    result,
+    manifest,
+    state,
+    remoteState,
+    summary,
+    packType,
+    entrypoint,
+    permissions,
+    capabilityPolicy,
+    sourceUrls,
+    contentHashStatus,
+  };
+}
 
-  console.log(`location: ${packDir}`);
-  printRegistryOrigin(manifest, options.deps || {});
-  console.log(`installed version: ${manifestVersion(manifest)}`);
+function printPackInspection(inspection) {
+  const {
+    result,
+    manifest,
+    state,
+    remoteState,
+    summary,
+    packType,
+    entrypoint,
+    permissions,
+    capabilityPolicy,
+    sourceUrls,
+    contentHashStatus,
+  } = inspection;
+  console.log(`location: ${result.location}`);
+  printRegistryOrigin(result.origin);
+  console.log(`installed version: ${result.installedVersion}`);
   if (remoteState && remoteState.remoteVersion) {
     const checkedAt = remoteState.lastRemoteCheckAt ? ` at ${remoteState.lastRemoteCheckAt}` : ' time unknown';
     console.log(`update state: last remote check${checkedAt}, remote v${remoteState.remoteVersion}`);
@@ -2390,6 +2505,62 @@ function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
   printProvenanceField('created-in', createdInValue(manifest));
   printProvenanceField('source urls', sourceUrls);
   printContentHashStatus(contentHashStatus);
+}
+
+function printPackInspectJsonError(code, message) {
+  console.log(JSON.stringify({
+    schema: PACK_INSPECT_SCHEMA,
+    ok: false,
+    status: 'error',
+    error: { code, message },
+  }, null, 2));
+}
+
+function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  const json = takeFlag(args, '--json');
+  const help = args.includes('help') || args.includes('--help') || args.includes('-h');
+  if (help) {
+    if (json) {
+      console.log(JSON.stringify({
+        schema: PACK_INSPECT_SCHEMA,
+        ok: true,
+        status: 'help',
+        usage: 'atris pack inspect <slug|dir> [--json]',
+      }, null, 2));
+      return 0;
+    }
+    showHelp();
+    return 0;
+  }
+  const source = args.shift();
+  if (!source) {
+    if (json) {
+      printPackInspectJsonError('missing-source', 'pack inspect requires an installed pack slug or directory');
+      return 2;
+    }
+    showHelp();
+    return 2;
+  }
+  if (args.length) {
+    const message = `unknown pack inspect argument: ${args.join(' ')}`;
+    if (json) {
+      printPackInspectJsonError('invalid-argument', message);
+      return 2;
+    }
+    throw new Error(message);
+  }
+  let inspection;
+  try {
+    inspection = evaluatePackInspection(source, cwd, options);
+  } catch (error) {
+    if (!json) throw error;
+    const message = error && error.message ? error.message : String(error);
+    printPackInspectJsonError(packLocalErrorCode(error, 'inspect-failed'), message);
+    return 1;
+  }
+  if (json) console.log(JSON.stringify(inspection.result, null, 2));
+  else printPackInspection(inspection);
   return 0;
 }
 
@@ -2665,12 +2836,12 @@ function printPackDoctorJsonError(code, message) {
   }, null, 2));
 }
 
-function packDoctorErrorCode(error) {
+function packLocalErrorCode(error, fallback) {
   const message = error && error.message ? error.message : String(error);
   if (/^(?:installed pack|packet folder) not found:/.test(message)) return 'pack-not-found';
   if (/^multiple installed packs match /.test(message)) return 'ambiguous-pack';
   if (/^(?:not an atris packet|packet is invalid) /.test(message)) return 'invalid-pack';
-  return 'doctor-failed';
+  return fallback;
 }
 
 function doctorPack(rawArgs, cwd = process.cwd()) {
@@ -2713,7 +2884,7 @@ function doctorPack(rawArgs, cwd = process.cwd()) {
   } catch (error) {
     if (!json) throw error;
     const message = error && error.message ? error.message : String(error);
-    printPackDoctorJsonError(packDoctorErrorCode(error), message);
+    printPackDoctorJsonError(packLocalErrorCode(error, 'doctor-failed'), message);
     return 1;
   }
   if (json) console.log(JSON.stringify(result, null, 2));
@@ -2805,7 +2976,7 @@ async function run(argv = []) {
     }
     // `pack <sub> --help/-h` is a help request, not a subcommand argument: show
     // usage and exit 0 instead of letting the subcommand throw "unknown argument".
-    if (subcommand !== 'doctor' && (args.includes('--help') || args.includes('-h'))) {
+    if (!['doctor', 'inspect'].includes(subcommand) && (args.includes('--help') || args.includes('-h'))) {
       showHelp();
       return 0;
     }
