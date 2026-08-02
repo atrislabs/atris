@@ -729,6 +729,148 @@ test('pack inspect reports failed after a declared file is changed locally', () 
   }
 });
 
+test('pack doctor rejects a misleading payload after excluding the generated README echo', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'bilbaoinspiration');
+    const description = 'a nice bilbao inspiration list';
+    writePackDir(target, {
+      slug: 'bilbaoinspiration',
+      title: 'BilbaoInspiration',
+      description,
+      author: 'Ada Lovelace',
+      versions: [{ version: '0.1.0', date: '2026-08-02', notes: 'Created in the browser' }],
+    });
+    fs.writeFileSync(path.join(target, 'README.md'), `# BilbaoInspiration\n\n${description}\n\nFiles: 3\n`, 'utf8');
+    fs.writeFileSync(path.join(target, 'post.md'), 'Atris turns videos into tasks.\n', 'utf8');
+    fs.writeFileSync(path.join(target, 'landing.html'), '<h1>Atris agent workspace</h1>\n', 'utf8');
+
+    const diagnosed = runCli(['pack', 'doctor', target, '--json'], { cwd: dir });
+    assert.equal(diagnosed.status, 1, `stdout:\n${diagnosed.stdout}\nstderr:\n${diagnosed.stderr}`);
+    assert.equal(diagnosed.stderr, '');
+    const result = JSON.parse(diagnosed.stdout);
+    assert.equal(result.schema, 'atris.pack-doctor.v1');
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 'reject');
+    assert.deepEqual(result.summary, { pass: 3, warn: 4, fail: 1 });
+    assert.deepEqual(
+      result.checks.find((check) => check.id === 'alignment'),
+      {
+        id: 'alignment',
+        name: 'promise alignment',
+        status: 'fail',
+        message: 'no obvious lexical overlap with title words: bilbao, inspiration',
+      },
+    );
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack doctor reports ready for a complete aligned local contract', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'bilbao-inspiration');
+    const readme = '# Bilbao Inspiration\n\nA practical Bilbao inspiration guide.\n\nFiles: 2\n';
+    const guide = '# Bilbao inspiration\n\nChoose one Bilbao place and explain why it fits.\n';
+    writePackDir(target, {
+      slug: 'bilbao-inspiration',
+      title: 'Bilbao Inspiration',
+      description: 'A practical Bilbao inspiration guide.',
+      author: 'Ada Lovelace',
+      type: 'knowledge',
+      entrypoint: 'guide.md',
+      permissions: ['pack.read'],
+      'created-in': 'Atris browser',
+      'content-hashes': {
+        'guide.md': sha256(guide),
+        'README.md': sha256(readme),
+      },
+    });
+    fs.writeFileSync(path.join(target, 'README.md'), readme, 'utf8');
+    fs.writeFileSync(path.join(target, 'guide.md'), guide, 'utf8');
+
+    const diagnosed = runCli(['pack', 'doctor', '--json', target], { cwd: dir });
+    assert.equal(diagnosed.status, 0, `stdout:\n${diagnosed.stdout}\nstderr:\n${diagnosed.stderr}`);
+    const result = JSON.parse(diagnosed.stdout);
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'ready');
+    assert.deepEqual(result.summary, { pass: 8, warn: 0, fail: 0 });
+    assert.ok(result.checks.every((check) => check.status === 'pass'));
+    assert.match(result.nextAction, /review the trust surface with atris pack inspect/);
+
+    const human = runCli(['pack', 'doctor', target], { cwd: dir });
+    assert.equal(human.status, 0, `stdout:\n${human.stdout}\nstderr:\n${human.stderr}`);
+    assert.match(human.stdout, /pack doctor: bilbao-inspiration/);
+    assert.match(human.stdout, /verdict: ready/);
+    assert.match(human.stdout, /summary: 8 pass, 0 revise, 0 reject/);
+    assert.match(human.stdout, /pass promise alignment: payload overlaps the promise on: bilbao, inspiration/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack doctor revises an aligned legacy pack instead of rejecting it', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-research');
+    writePackDir(target, {
+      slug: 'demo-research',
+      title: 'Demo Research',
+      description: 'Original observations.',
+      author: '',
+    });
+    fs.writeFileSync(path.join(target, 'README.md'), '# Demo Research\n\nOriginal demo research observations.\n', 'utf8');
+
+    const diagnosed = runCli(['pack', 'doctor', target, '--json'], { cwd: dir });
+    assert.equal(diagnosed.status, 1, `stdout:\n${diagnosed.stdout}\nstderr:\n${diagnosed.stderr}`);
+    const result = JSON.parse(diagnosed.stdout);
+    assert.equal(result.status, 'revise');
+    assert.equal(result.summary.fail, 0);
+    assert.ok(result.summary.warn > 0);
+    assert.equal(result.checks.find((check) => check.id === 'alignment').status, 'pass');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack doctor rejects missing entrypoints, invalid permissions, and partial integrity', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'broken-pack');
+    const manifest = writePackDir(target, {
+      slug: 'broken-pack',
+      title: 'Broken Pack',
+      author: 'Ada Lovelace',
+      type: 'knowledge',
+      entrypoint: 'missing.md',
+      permissions: { network: 'read' },
+      'created-in': 'Atris browser',
+      'content-hashes': { 'README.md': sha256('# pack\n') },
+    });
+    fs.writeFileSync(path.join(target, 'notes.md'), 'Broken contract notes.\n', 'utf8');
+
+    const diagnosed = runCli(['pack', 'doctor', target, '--json'], { cwd: dir });
+    assert.equal(diagnosed.status, 1, `stdout:\n${diagnosed.stdout}\nstderr:\n${diagnosed.stderr}`);
+    const result = JSON.parse(diagnosed.stdout);
+    assert.equal(result.status, 'reject');
+    assert.equal(result.checks.find((check) => check.id === 'entrypoint').status, 'fail');
+    assert.equal(result.checks.find((check) => check.id === 'permissions').status, 'fail');
+    assert.equal(result.checks.find((check) => check.id === 'integrity').status, 'fail');
+
+    manifest.entrypoint = '../README.md';
+    fs.writeFileSync(path.join(target, 'pack.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    const escaping = runCli(['pack', 'doctor', target, '--json'], { cwd: dir });
+    assert.equal(escaping.status, 1);
+    assert.match(
+      JSON.parse(escaping.stdout).checks.find((check) => check.id === 'entrypoint').message,
+      /entrypoint must be a canonical relative file path/,
+    );
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack install accepts registry slugs and https zip urls', async () => {
   const dir = makeTempDir();
   try {
@@ -1478,7 +1620,7 @@ test('pack publish from a pack root ships the whole folder except junk', () => {
   }
 });
 
-for (const sub of ['list', 'status', 'pull', 'update', 'inspect', 'publish']) {
+for (const sub of ['list', 'status', 'pull', 'update', 'inspect', 'doctor', 'publish']) {
   for (const flag of ['--help', '-h']) {
     test(`pack ${sub} ${flag} shows usage and exits 0 (not "unknown argument")`, () => {
       const dir = makeTempDir();
