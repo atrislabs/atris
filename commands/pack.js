@@ -1635,6 +1635,61 @@ async function startPackCloud(packDir, displayTarget, deps = {}, options = {}) {
   return 0;
 }
 
+const PACK_SKILL_FRONTMATTER_ALLOWLIST = new Set([
+  'name',
+  'description',
+  'when_to_use',
+  'argument-hint',
+  'arguments',
+  'disable-model-invocation',
+  'user-invocable',
+  'paths',
+  'context',
+  'agent',
+]);
+
+// A pack skill is untrusted content. Claude skill frontmatter can pre-approve
+// tools, run lifecycle hooks, select a shell, and override model/effort. Those
+// controls bypass either the operator's prompt choice or the pack capability
+// receipt. Project only the prompt/discovery fields a bounded pack needs and
+// leave the installed artifact byte-for-byte unchanged.
+function sanitizePackSkillMarkdown(content) {
+  const match = content.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/);
+  if (!match) return content;
+
+  const newline = match[0].includes('\r\n') ? '\r\n' : '\n';
+  const kept = [];
+  let keepBlock = false;
+  for (const line of match[1].split(/\r?\n/)) {
+    const key = line.match(/^([A-Za-z][A-Za-z0-9_-]*):(?:\s|$)/);
+    if (key) {
+      keepBlock = PACK_SKILL_FRONTMATTER_ALLOWLIST.has(key[1]);
+    } else if (line.trim() && !/^\s/.test(line) && !line.trimStart().startsWith('#')) {
+      // Drop flow mappings, quoted keys, YAML directives, and other top-level
+      // constructs we cannot prove are inert. The skill body still survives.
+      keepBlock = false;
+    }
+    if (keepBlock) kept.push(line);
+  }
+
+  const bom = content.startsWith('\uFEFF') ? '\uFEFF' : '';
+  const safeFrontmatter = `${bom}---${newline}${kept.join(newline)}${newline}---`;
+  return safeFrontmatter + content.slice(match[0].length);
+}
+
+function sanitizePackSkillTree(skillsDir) {
+  for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+    const absolute = path.join(skillsDir, entry.name);
+    if (entry.isDirectory()) {
+      sanitizePackSkillTree(absolute);
+    } else if (entry.isFile() && entry.name === 'SKILL.md') {
+      const original = fs.readFileSync(absolute, 'utf8');
+      const sanitized = sanitizePackSkillMarkdown(original);
+      if (sanitized !== original) fs.writeFileSync(absolute, sanitized, 'utf8');
+    }
+  }
+}
+
 function createSkillsOnlyPlugin(packDir) {
   const skillsDir = path.join(packDir, 'skills');
   const hasShippedSkill = fs.existsSync(skillsDir)
@@ -1656,6 +1711,7 @@ function createSkillsOnlyPlugin(packDir) {
         return true;
       },
     });
+    sanitizePackSkillTree(path.join(pluginDir, 'skills'));
     return pluginDir;
   } catch (error) {
     fs.rmSync(pluginDir, { recursive: true, force: true });
@@ -1673,11 +1729,12 @@ function printCapabilityTrustCard(policy, trust, receiptPath, userDenyRuleCount 
   console.log('  memory isolation: Claude memory files and auto-memory are disabled for this pack run');
   console.log('  extensions: user/project skills, plugins, agents, hooks, and commands are not loaded');
   console.log('  skill sources: shipped pack skills plus Claude built-ins only');
+  console.log('  skill frontmatter: projected through a safe metadata allowlist; author approvals, hooks, shell, model, and effort controls are removed');
   console.log('  skill shell: dynamic shell preprocessing is disabled; use explicit Bash when granted');
   console.log(`  operator policy: ${userDenyRuleCount} user deny rule${userDenyRuleCount === 1 ? '' : 's'} imported; managed policy may still apply`);
   console.log(`  approvals: ${trust ? 'pre-approved inside the declared ceiling (--trust); imported/managed deny rules still win' : 'prompted inside the declared ceiling'}`);
   console.log(`  host shell: ${policy.grantedCapabilities.includes('host.shell') ? 'GRANTED — Bash can reach host files and network' : 'denied'}`);
-  console.log('  receipt coverage: Atris hook use/denial events; later Claude or policy denials may not appear');
+  console.log('  receipt coverage: Atris hook tool events; direct slash-skill invocations and later Claude or policy denials may not appear');
   console.log(`  receipt: ${receiptPath}`);
 }
 
