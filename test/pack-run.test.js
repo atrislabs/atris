@@ -318,6 +318,8 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.deepEqual(receipt.grantedTools, ['Read', 'Glob', 'Grep', 'Skill', 'WebFetch', 'WebSearch']);
     assert.deepEqual(receipt.usedTools, []);
     assert.equal(receipt.enforcement.packRootFileBoundary, true);
+    assert.equal(receipt.enforcement.preLaunchContextBoundary, true);
+    assert.equal(receipt.enforcement.declaredTreeSymlinksRejected, true);
     assert.equal(receipt.enforcement.userSettingsLoaded, true);
     assert.equal(receipt.enforcement.projectSettingsLoaded, false);
     assert.equal(receipt.enforcement.managedPoliciesMayApply, true);
@@ -327,6 +329,48 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
       runtimePermissionDenialsCaptured: false,
       toolInputsLogged: false,
     });
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('declared packs reject pre-launch symlink context escapes before Atris starts the runner', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedInstalledPack(dir, 'g-brain', { permissions: [] });
+    const outside = path.join(dir, 'outside-atris');
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'PERSONA.md'), 'OUTSIDE_CONTEXT_CANARY\n');
+    fs.symlinkSync(outside, path.join(packDir, 'atris'));
+    const receiptDir = path.join(dir, 'receipts');
+    const { calls, deps } = stubDeps({ packRunReceiptDir: receiptDir });
+
+    await assert.rejects(
+      () => runPack(['g-brain', '--trust'], dir, { deps }),
+      /declared pack execution tree cannot contain symlinks: atris/,
+    );
+    assert.equal(calls.local.length, 0);
+    assert.equal(calls.cloud.length, 0);
+    assert.equal(fs.existsSync(receiptDir), false, 'a rejected pre-launch tree must not claim a run receipt');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('--grant also rejects symlinked legacy context before turning it into an enforced run', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedInstalledPack(dir);
+    const outside = path.join(dir, 'outside-persona.md');
+    fs.writeFileSync(outside, 'OUTSIDE_ENTRYPOINT_CANARY\n');
+    fs.symlinkSync(outside, path.join(packDir, 'PERSONA.md'));
+    const { calls, deps } = stubDeps({ packRunReceiptDir: path.join(dir, 'receipts') });
+
+    await assert.rejects(
+      () => runPack(['g-brain', '--grant', 'pack.read'], dir, { deps }),
+      /declared pack execution tree cannot contain symlinks: PERSONA\.md/,
+    );
+    assert.equal(calls.local.length, 0);
   } finally {
     cleanupTempDir(dir);
   }
