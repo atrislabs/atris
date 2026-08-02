@@ -141,6 +141,7 @@ function showHelp() {
   console.log('       atris pack pull [<slug>] [--dir <path>]');
   console.log('       atris pack status [--dir <path>]');
   console.log('       atris pack update [<dir>]');
+  console.log('       atris pack inspect <slug|dir>');
   console.log('       atris pack list [--dir <path>]');
 }
 
@@ -1437,6 +1438,178 @@ function listPackCommand(rawArgs, cwd = process.cwd()) {
   return listInstalledPacks(dir ? path.resolve(cwd, dir) : cwd);
 }
 
+function resolveInstalledPack(source, cwd) {
+  const direct = path.resolve(cwd, source);
+  if (fs.existsSync(direct)) return { dir: direct, manifest: assertPacketDir(direct, cwd) };
+
+  if (path.isAbsolute(source) || source.includes('/') || source.includes('\\')) {
+    throw new Error(`packet folder not found: ${source}`);
+  }
+
+  const requestedSlug = slugify(source);
+  const found = [];
+  const seen = new Set();
+  collectPackDirs(cwd, found, seen);
+  collectPackDirs(path.join(cwd, 'packs'), found, seen);
+  const matches = found.filter((item) => slugify(item.manifest.slug) === requestedSlug);
+  if (!matches.length) throw new Error(`installed pack not found: ${source}`);
+  if (matches.length > 1) {
+    const locations = matches.map((item) => item.dir).sort().join(', ');
+    throw new Error(`multiple installed packs match ${source}: ${locations}. inspect a directory instead.`);
+  }
+  return matches[0];
+}
+
+function summarizeInstalledEntry(entryPath) {
+  const stat = fs.lstatSync(entryPath);
+  if (!stat.isDirectory()) {
+    return { files: 1, bytes: stat.size, kind: stat.isSymbolicLink() ? 'symlink' : 'file' };
+  }
+
+  const summary = { files: 0, bytes: 0, kind: 'directory' };
+  const children = fs.readdirSync(entryPath).sort((left, right) => left.localeCompare(right));
+  for (const child of children) {
+    const childSummary = summarizeInstalledEntry(path.join(entryPath, child));
+    summary.files += childSummary.files;
+    summary.bytes += childSummary.bytes;
+  }
+  return summary;
+}
+
+function summarizeInstalledFiles(packDir) {
+  const entries = fs.readdirSync(packDir).sort((left, right) => left.localeCompare(right));
+  const topLevel = entries.map((name) => ({
+    name,
+    ...summarizeInstalledEntry(path.join(packDir, name)),
+  }));
+  return {
+    files: topLevel.reduce((total, entry) => total + entry.files, 0),
+    bytes: topLevel.reduce((total, entry) => total + entry.bytes, 0),
+    topLevel,
+  };
+}
+
+function hasInspectValue(value) {
+  if (value === undefined || value === null || value === '') return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value).length > 0;
+  return true;
+}
+
+function inspectManifestValue(manifest, names) {
+  const provenance = manifest.provenance && typeof manifest.provenance === 'object'
+    ? manifest.provenance
+    : {};
+  for (const container of [manifest, provenance]) {
+    for (const name of names) {
+      if (hasInspectValue(container[name])) return container[name];
+    }
+  }
+  return null;
+}
+
+function declaredManifestValue(manifest, names) {
+  for (const name of names) {
+    if (hasInspectValue(manifest[name])) return manifest[name];
+  }
+  return null;
+}
+
+function formatInspectValue(value) {
+  const formatted = typeof value === 'string' ? value : JSON.stringify(value);
+  return String(formatted).replace(/\u2014/g, '-');
+}
+
+function createdInValue(manifest) {
+  const declared = inspectManifestValue(manifest, ['created-in', 'createdIn', 'created_in']);
+  if (declared !== null) return declared;
+  const versions = Array.isArray(manifest.versions) ? manifest.versions : [];
+  const createdNote = versions
+    .map((version) => version && version.notes)
+    .find((notes) => typeof notes === 'string' && /created in\b/i.test(notes));
+  return createdNote || null;
+}
+
+function printProvenanceField(label, value) {
+  console.log(`  ${label}: ${hasInspectValue(value) ? `${formatInspectValue(value)} [present]` : 'ABSENT'}`);
+}
+
+function printRegistryOrigin(manifest, deps = {}) {
+  const origin = manifest.origin && typeof manifest.origin === 'object' ? manifest.origin : null;
+  if (!origin || origin.type !== 'registry') {
+    const detail = origin && origin.type ? ` (installed from ${origin.type})` : '';
+    console.log(`registry origin: ABSENT${detail}`);
+    return;
+  }
+  const slug = origin.slug || manifest.slug;
+  const base = String((deps.getAppBaseUrl || getAppBaseUrl)() || '').replace(/\/+$/, '');
+  console.log('registry origin:');
+  console.log(`  slug: ${slug || 'ABSENT'}`);
+  console.log(`  url: ${slug && base ? `${base}/packs/${encodeURIComponent(slug)}` : 'ABSENT'}`);
+}
+
+function printInstalledTree(summary) {
+  console.log('top-level tree:');
+  summary.topLevel.forEach((entry, index) => {
+    const branch = index === summary.topLevel.length - 1 ? '`-' : '|-';
+    if (entry.kind === 'directory') {
+      const noun = entry.files === 1 ? 'file' : 'files';
+      console.log(`  ${branch} ${entry.name}/ (${entry.files} ${noun}, ${formatBytes(entry.bytes)})`);
+      return;
+    }
+    const kind = entry.kind === 'symlink' ? 'symlink, ' : '';
+    console.log(`  ${branch} ${entry.name} (${kind}${formatBytes(entry.bytes)})`);
+  });
+}
+
+function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  const source = args.shift();
+  if (!source || source === 'help' || source === '--help' || source === '-h') {
+    showHelp();
+    return source ? 0 : 2;
+  }
+  if (args.length) throw new Error(`unknown pack inspect argument: ${args.join(' ')}`);
+
+  const resolved = resolveInstalledPack(source, cwd);
+  const packDir = path.resolve(resolved.dir);
+  const manifest = resolved.manifest;
+  const state = readJson(upstreamStatePath(packDir));
+  const summary = summarizeInstalledFiles(packDir);
+  const packType = declaredManifestValue(manifest, ['type', 'packType', 'pack_type', 'pack-type']);
+  const entrypoint = hasInspectValue(manifest.entrypoint)
+    ? manifest.entrypoint
+    : (fs.existsSync(path.join(packDir, 'RUN.md')) ? 'RUN.md' : null);
+  const permissions = declaredManifestValue(manifest, ['permissions']);
+  const sourceUrls = inspectManifestValue(manifest, [
+    'source-urls', 'sourceUrls', 'sourceURLs', 'source_urls', 'source-url', 'sourceUrl', 'source_url', 'sources',
+  ]);
+  const contentHashes = inspectManifestValue(manifest, [
+    'content-hashes', 'contentHashes', 'content_hashes', 'content-hash', 'contentHash', 'content_hash', 'hashes',
+  ]);
+
+  console.log(`location: ${packDir}`);
+  printRegistryOrigin(manifest, options.deps || {});
+  console.log(`installed version: ${manifestVersion(manifest)}`);
+  if (!state) {
+    console.log('update state: remote never pulled');
+  } else {
+    const pulledAt = state.pulledAt ? ` at ${state.pulledAt}` : '';
+    console.log(`update state: last pulled remote v${state.remoteVersion || 'unknown'}${pulledAt}`);
+  }
+  console.log(`files: ${summary.files}, total size ${formatBytes(summary.bytes)}`);
+  printInstalledTree(summary);
+  console.log(`pack type: ${packType === null ? 'undeclared' : formatInspectValue(packType)}`);
+  console.log(`entrypoint: ${entrypoint === null ? 'none: this pack has no actionable entry contract' : formatInspectValue(entrypoint)}`);
+  console.log(`permissions: ${permissions === null ? 'none declared' : formatInspectValue(permissions)}`);
+  console.log('provenance:');
+  printProvenanceField('author', inspectManifestValue(manifest, ['author']));
+  printProvenanceField('created-in', createdInValue(manifest));
+  printProvenanceField('source urls', sourceUrls);
+  printProvenanceField('content hashes', contentHashes);
+  return 0;
+}
+
 async function run(argv = []) {
   const [subcommand, ...args] = argv;
   try {
@@ -1465,6 +1638,7 @@ async function run(argv = []) {
     if (subcommand === 'pull') return await pullPack(args);
     if (subcommand === 'status') return statusPack(args);
     if (subcommand === 'update') return await updatePack(args);
+    if (subcommand === 'inspect') return inspectPack(args);
     if (subcommand === 'list') return listPackCommand(args);
     console.error(`unknown pack command: ${subcommand}`);
     showHelp();
@@ -1483,6 +1657,7 @@ module.exports = {
   sanitizePersonalizationName,
   pullPack,
   updatePack,
+  inspectPack,
   listInstalledPacks,
   buildManifest,
   comparePackVersions,

@@ -276,6 +276,86 @@ test('pack list shows pack folders under cwd and packs', () => {
   }
 });
 
+test('pack inspect resolves an installed slug and prints its trust surface', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'packs', 'trust-pack-folder');
+    writePackDir(target, {
+      slug: 'trust-pack',
+      author: 'Ada Lovelace',
+      type: 'workflow',
+      entrypoint: { command: 'node run.js', verifier: 'node --test' },
+      permissions: { network: 'read', filesystem: 'pack only' },
+      provenance: {
+        'created-in': 'browser',
+        'source-urls': ['https://example.com/source'],
+        'content-hashes': { 'README.md': 'sha256:abc123' },
+      },
+      origin: { type: 'registry', slug: 'trust-pack' },
+    });
+    fs.mkdirSync(path.join(target, 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(target, 'docs', 'guide.md'), '# guide\n', 'utf8');
+    fs.mkdirSync(path.join(target, '.upstream'), { recursive: true });
+    fs.writeFileSync(path.join(target, '.upstream', 'STATE.json'), `${JSON.stringify({
+      slug: 'trust-pack',
+      localVersion: '0.1.0',
+      remoteVersion: '0.2.0',
+      pulledAt: '2026-08-02T01:00:00.000Z',
+    }, null, 2)}\n`);
+
+    const inspected = runCli(['pack', 'inspect', 'trust-pack'], {
+      cwd: dir,
+      env: { ATRIS_APP_URL: 'https://registry.test' },
+    });
+    assert.equal(inspected.status, 0, `stdout:\n${inspected.stdout}\nstderr:\n${inspected.stderr}`);
+    const realTarget = fs.realpathSync(target);
+    assert.match(inspected.stdout, new RegExp(`location: ${realTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(inspected.stdout, /registry origin:\n  slug: trust-pack\n  url: https:\/\/registry\.test\/packs\/trust-pack/);
+    assert.match(inspected.stdout, /installed version: 0\.1\.0/);
+    assert.match(inspected.stdout, /update state: last pulled remote v0\.2\.0 at 2026-08-02T01:00:00\.000Z/);
+    assert.match(inspected.stdout, /files: 4, total size \d+(?:\.\d+)? (?:B|KB)/);
+    assert.match(inspected.stdout, /top-level tree:/);
+    assert.match(inspected.stdout, /docs\/ \(1 file, 8 B\)/);
+    assert.match(inspected.stdout, /pack type: workflow/);
+    assert.match(inspected.stdout, /entrypoint: \{"command":"node run\.js","verifier":"node --test"\}/);
+    assert.match(inspected.stdout, /permissions: \{"network":"read","filesystem":"pack only"\}/);
+    assert.match(inspected.stdout, /author: Ada Lovelace \[present\]/);
+    assert.match(inspected.stdout, /created-in: browser \[present\]/);
+    assert.match(inspected.stdout, /source urls: \["https:\/\/example\.com\/source"\] \[present\]/);
+    assert.match(inspected.stdout, /content hashes: \{"README\.md":"sha256:abc123"\} \[present\]/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack inspect accepts a directory and makes missing contracts visible', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'local-pack');
+    writePackDir(target, { slug: 'local-pack', author: '' });
+
+    const missingEntrypoint = runCli(['pack', 'inspect', target], { cwd: dir });
+    assert.equal(missingEntrypoint.status, 0, `stdout:\n${missingEntrypoint.stdout}\nstderr:\n${missingEntrypoint.stderr}`);
+    assert.match(missingEntrypoint.stdout, /entrypoint: none: this pack has no actionable entry contract/);
+
+    fs.writeFileSync(path.join(target, 'RUN.md'), '# run this pack\n', 'utf8');
+
+    const inspected = runCli(['pack', 'inspect', target], { cwd: dir });
+    assert.equal(inspected.status, 0, `stdout:\n${inspected.stdout}\nstderr:\n${inspected.stderr}`);
+    assert.match(inspected.stdout, /registry origin: ABSENT/);
+    assert.match(inspected.stdout, /update state: remote never pulled/);
+    assert.match(inspected.stdout, /pack type: undeclared/);
+    assert.match(inspected.stdout, /entrypoint: RUN\.md/);
+    assert.match(inspected.stdout, /permissions: none declared/);
+    assert.match(inspected.stdout, /author: ABSENT/);
+    assert.match(inspected.stdout, /created-in: ABSENT/);
+    assert.match(inspected.stdout, /source urls: ABSENT/);
+    assert.match(inspected.stdout, /content hashes: ABSENT/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack install accepts registry slugs and https zip urls', async () => {
   const dir = makeTempDir();
   try {
@@ -671,7 +751,7 @@ test('pack publish from a pack root ships the whole folder except junk', () => {
   }
 });
 
-for (const sub of ['list', 'status', 'pull', 'update', 'publish']) {
+for (const sub of ['list', 'status', 'pull', 'update', 'inspect', 'publish']) {
   for (const flag of ['--help', '-h']) {
     test(`pack ${sub} ${flag} shows usage and exits 0 (not "unknown argument")`, () => {
       const dir = makeTempDir();
