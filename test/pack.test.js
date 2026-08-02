@@ -140,7 +140,10 @@ test('pack publish --out then install round trips atris and manifest', () => {
       'atris/atris.md': sha256('# Atris\n'),
     });
     assert.match(install.stdout, /content hashes: verified \(1\/1 files\)/);
-    assert.match(install.stdout, /cd .* && claude/);
+    assert.match(install.stdout, /check it: atris pack doctor ['"]?installed['"]?/);
+    assert.match(install.stdout, /then run: atris pack run ['"]?installed['"]?/);
+    assert.ok(install.stdout.indexOf('pack doctor') < install.stdout.indexOf('pack run'));
+    assert.doesNotMatch(install.stdout, /cd .* && claude/);
   } finally {
     cleanupTempDir(dir);
   }
