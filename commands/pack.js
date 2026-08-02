@@ -163,6 +163,7 @@ function showHelp() {
   console.log('       atris pack list [--dir <path>]');
   console.log('');
   console.log('pack.json permissions: pack.read, pack.write, web.read, host.shell');
+  console.log('pack run --input is local and headless; its opening/evidence envelope is piped over stdin, not runner argv.');
   console.log('legacy packs need an explicit --grant before --trust can pre-approve a run.');
   console.log('declared permissions are enforced locally; declared-capability cloud runs fail closed.');
 }
@@ -1740,6 +1741,9 @@ function printCapabilityTrustCard(policy, trust, receiptPath, userDenyRuleCount 
   console.log(`  session storage: ${options.nonInteractive
     ? 'disabled for this headless run'
     : 'suppression requested; interactive Claude may still persist plaintext local history'}`);
+  console.log(`  prompt transport: ${options.nonInteractive
+    ? 'stdin; the opening instruction and operator input are omitted from runner argv'
+    : 'interactive runner argument; do not put secrets in pack opening text'}`);
   console.log(`  workspace trust: ${options.nonInteractive
     ? 'Claude skips its first-run directory dialog in headless mode'
     : 'Claude may next show its generic directory dialog; accepting it is saved per directory and does not widen the tool ceiling above'}`);
@@ -1822,15 +1826,24 @@ function startPackLocal(packDir, deps = {}, options = {}) {
   const openingPrompt = options.openingPrompt || null;
   const operatorInput = options.operatorInput || null;
   const capabilityPolicy = options.capabilityPolicy || { status: 'legacy', requested: [], tools: [] };
-  const nonInteractive = deps.nonInteractive === undefined
-    ? process.stdin.isTTY !== true
-    : deps.nonInteractive === true;
+  // Structured operator evidence is a one-shot evaluation contract. Force that
+  // path headless so Claude can read the prompt from stdin; interactive Claude
+  // needs the terminal for its UI and would otherwise expose the input in argv.
+  const nonInteractive = operatorInput
+    ? true
+    : (deps.nonInteractive === undefined
+      ? process.stdin.isTTY !== true
+      : deps.nonInteractive === true);
   const start = deps.computerLocal || require('./computer').computerLocal;
   const wrappedOpeningPrompt = packOpeningInstruction(openingPrompt, operatorInput);
-  const runnerArgs = wrappedOpeningPrompt ? [wrappedOpeningPrompt] : [];
+  const runnerArgs = [];
   let pluginDir = null;
   let receipt = null;
   const runnerOptions = { skipPermissions: trust };
+  if (wrappedOpeningPrompt) {
+    if (nonInteractive) runnerOptions.promptStdin = wrappedOpeningPrompt;
+    else runnerArgs.push(wrappedOpeningPrompt);
+  }
 
   if (capabilityPolicy.status === 'enforced') {
     runnerOptions.skipPermissions = false;
