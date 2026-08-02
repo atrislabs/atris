@@ -123,6 +123,36 @@ test('pack inspect is read-only', () => {
   }
 });
 
+test('pack show is read-only and does not execute the pack or its verifier', () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = path.join(dir, 'readonly-show-pack');
+    write(path.join(packDir, 'pack.json'), `${JSON.stringify({
+      slug: 'readonly-show-pack',
+      title: 'Readonly Show Pack',
+      description: 'A readonly show pack.',
+      version: '1.0.0',
+      type: 'workflow',
+      entrypoint: 'RUN.md',
+      verifier: 'VERIFY.md',
+      permissions: ['pack.read'],
+      author: 'Atris',
+      provenance: { 'created-in': 'safety test' },
+    }, null, 2)}\n`);
+    write(path.join(packDir, 'RUN.md'), '# Readonly show pack\nNever execute this file.\n');
+    write(path.join(packDir, 'VERIFY.md'), '# Never execute this verifier.\n');
+    const before = snapshotPack(packDir);
+
+    const shown = runCli(['pack', 'show', packDir], { cwd: dir });
+    assert.equal(shown.status, 0, `stdout:\n${shown.stdout}\nstderr:\n${shown.stderr}`);
+    assert.deepEqual(snapshotPack(packDir), before);
+    assert.ok(!fs.existsSync(path.join(packDir, '.upstream')), 'show must not create update state');
+    assert.ok(!fs.existsSync(path.join(packDir, '.atris')), 'show must not create runtime state');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 // ── allowlist ───────────────────────────────────────────────────────────────
 
 test('packet allowlist ships the knowledge spine and nothing else', () => {

@@ -140,9 +140,9 @@ test('pack publish --out then install round trips atris and manifest', () => {
       'atris/atris.md': sha256('# Atris\n'),
     });
     assert.match(install.stdout, /content hashes: verified \(1\/1 files\)/);
-    assert.match(install.stdout, /check it: atris pack doctor ['"]?installed['"]?/);
-    assert.match(install.stdout, /if ready: atris pack run ['"]?installed['"]?/);
-    assert.ok(install.stdout.indexOf('pack doctor') < install.stdout.indexOf('pack run'));
+    assert.match(install.stdout, /next: atris pack show ['"]?installed['"]?/);
+    assert.doesNotMatch(install.stdout, /pack doctor/);
+    assert.doesNotMatch(install.stdout, /pack run/);
     assert.doesNotMatch(install.stdout, /then run:/);
     assert.doesNotMatch(install.stdout, /cd .* && claude/);
   } finally {
@@ -2066,7 +2066,7 @@ test('pack publish from a pack root ships the whole folder except junk', () => {
   }
 });
 
-for (const sub of ['list', 'status', 'pull', 'update', 'inspect', 'doctor', 'publish']) {
+for (const sub of ['list', 'status', 'pull', 'update', 'show', 'inspect', 'doctor', 'publish']) {
   for (const flag of ['--help', '-h']) {
     test(`pack ${sub} ${flag} shows usage and exits 0 (not "unknown argument")`, () => {
       const dir = makeTempDir();
