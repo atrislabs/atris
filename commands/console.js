@@ -315,15 +315,20 @@ function checkAuth(backend) {
 function launchClaude(systemPrompt, extraArgs, options = {}) {
   const skipPermissions = options.skipPermissions !== false;
   const runnerBin = resolveClaudeRunnerBin();
+  const promptStdin = typeof options.promptStdin === 'string'
+    ? options.promptStdin
+    : null;
   const args = [
     ...(skipPermissions ? ['--dangerously-skip-permissions'] : []),
+    ...(promptStdin !== null ? ['--print'] : []),
     '--append-system-prompt', systemPrompt,
     ...extraArgs,
   ];
 
   const child = spawnSync(runnerBin, args, {
     cwd: process.cwd(),
-    stdio: 'inherit',
+    stdio: promptStdin === null ? 'inherit' : ['pipe', 'inherit', 'inherit'],
+    ...(promptStdin === null ? {} : { input: promptStdin }),
     env: { ...process.env, ...(options.runnerEnv || {}), CLAUDECODE: undefined },
   });
 

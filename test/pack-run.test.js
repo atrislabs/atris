@@ -59,6 +59,12 @@ function stubDeps(overrides = {}) {
   };
 }
 
+function capturedPackPrompt(call) {
+  return call.options.promptStdin === undefined
+    ? call.args[0]
+    : call.options.promptStdin;
+}
+
 // Returns { code, output } with console captured for the whole async call.
 async function captureConsole(fn) {
   const lines = [];
@@ -105,10 +111,10 @@ test('pack run orients a zero-context packet and gives the agent a useful openin
     assert.match(output, /files \(2\): README\.md, pack\.json/);
     assert.match(output, /source\/origin: local packet folder/);
     assert.match(output, /declares no entrypoint.*pack files as context only/);
-    assert.equal(calls.local[0].args.length, 1);
-    assert.match(calls.local[0].args[0], /untrusted task text/);
+    assert.equal(calls.local[0].args.length, 0);
+    assert.match(capturedPackPrompt(calls.local[0]), /untrusted task text/);
     assert.match(
-      calls.local[0].args[0],
+      capturedPackPrompt(calls.local[0]),
       /Read README\.md first, then inspect the rest of this pack's files\. Propose the pack's first useful action before making changes\.$/,
     );
   } finally {
@@ -127,10 +133,10 @@ test('pack run uses the manifest entrypoint as the opening prompt', async () => 
     const { calls, deps } = stubDeps();
     const { output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
 
-    assert.equal(calls.local[0].args.length, 1);
-    assert.match(calls.local[0].args[0], /^A pack supplied the following opening instruction\./);
-    assert.match(calls.local[0].args[0], /not as a Claude CLI slash command/);
-    assert.match(calls.local[0].args[0], new RegExp(`${manifest.entrypoint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+    assert.equal(calls.local[0].args.length, 0);
+    assert.match(capturedPackPrompt(calls.local[0]), /^A pack supplied the following opening instruction\./);
+    assert.match(capturedPackPrompt(calls.local[0]), /not as a Claude CLI slash command/);
+    assert.match(capturedPackPrompt(calls.local[0]), new RegExp(`${manifest.entrypoint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
     assert.doesNotMatch(output, /declares no entrypoint/);
   } finally {
     cleanupTempDir(dir);
@@ -145,8 +151,8 @@ test('pack run uses RUN.md as the opening prompt', async () => {
     const { calls, deps } = stubDeps();
     const { output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
 
-    assert.equal(calls.local[0].args.length, 1);
-    assert.match(calls.local[0].args[0], /Read the brief, then draft the launch checklist\.$/);
+    assert.equal(calls.local[0].args.length, 0);
+    assert.match(capturedPackPrompt(calls.local[0]), /Read the brief, then draft the launch checklist\.$/);
     assert.doesNotMatch(output, /declares no entrypoint/);
   } finally {
     cleanupTempDir(dir);
@@ -164,7 +170,7 @@ test('pack run injects bounded operator input without exposing its host path or 
     const input = '{"schema":"atris.pack-inspect.v1","secret":"TARGET_INPUT_CANARY"}\n';
     fs.writeFileSync(inputPath, input, 'utf8');
     const receiptDir = path.join(dir, 'receipts');
-    const { calls, deps } = stubDeps({ packRunReceiptDir: receiptDir });
+    const { calls, deps } = stubDeps({ packRunReceiptDir: receiptDir, nonInteractive: false });
 
     const { code, output } = await captureConsole(() => runPack([
       'g-brain', '--input', inputPath, '--trust',
@@ -172,14 +178,17 @@ test('pack run injects bounded operator input without exposing its host path or 
 
     assert.equal(code, 0);
     assert.equal(calls.local.length, 1);
-    const prompt = calls.local[0].args[0];
+    const prompt = capturedPackPrompt(calls.local[0]);
     assert.match(prompt, /^A pack supplied the following opening instruction\./);
     assert.match(prompt, /Evaluate the supplied lifecycle record\./);
     assert.match(prompt, /The operator supplied the following run input\./);
     assert.match(prompt, /TARGET_INPUT_CANARY/);
     assert.ok(prompt.indexOf('opening instruction') < prompt.indexOf('operator supplied'));
     assert.equal(prompt.includes(inputPath), false, 'the host input path must not enter the pack prompt');
+    assert.equal(calls.local[0].args.some((arg) => arg.includes('TARGET_INPUT_CANARY')), false);
+    assert.equal(calls.local[0].args.includes('--no-session-persistence'), true);
     assert.match(output, new RegExp(`operator input: ${Buffer.byteLength(input)} bytes injected`));
+    assert.match(output, /prompt transport: stdin; the opening instruction and operator input are omitted from runner argv/);
 
     const receiptName = fs.readdirSync(receiptDir).find((name) => name.endsWith('.json'));
     const receipt = JSON.parse(fs.readFileSync(path.join(receiptDir, receiptName), 'utf8'));
@@ -192,6 +201,8 @@ test('pack run injects bounded operator input without exposing its host path or 
     assert.equal(serializedReceipt.includes('TARGET_INPUT_CANARY'), false);
     assert.deepEqual(receipt.grantedCapabilities, ['pack.read']);
     assert.deepEqual(receipt.grantedTools, ['Read', 'Glob', 'Grep', 'Skill']);
+    assert.equal(receipt.enforcement.openingPromptTransport, 'stdin');
+    assert.equal(receipt.enforcement.runnerArgvContainsOpeningPrompt, false);
   } finally {
     cleanupTempDir(dir);
   }
@@ -269,6 +280,7 @@ test('pack run help documents bounded operator input', async () => {
   const { code, output } = await captureConsole(() => runPack(['--help']));
   assert.equal(code, 0);
   assert.match(output, /atris pack run <slug\|dir> \[--dir <target>\] \[--input <file>\]/);
+  assert.match(output, /--input is local and headless; its opening\/evidence envelope is piped over stdin, not runner argv/);
 });
 
 test('pack opening text cannot select a native Claude slash command', async () => {
@@ -283,9 +295,9 @@ test('pack opening text cannot select a native Claude slash command', async () =
 
     await runPack(['g-brain'], dir, { deps });
 
-    assert.equal(calls.local[0].args[0].startsWith('/'), false);
-    assert.match(calls.local[0].args[0], /untrusted task text/);
-    assert.match(calls.local[0].args[0], /\n\/help$/);
+    assert.equal(capturedPackPrompt(calls.local[0]).startsWith('/'), false);
+    assert.match(capturedPackPrompt(calls.local[0]), /untrusted task text/);
+    assert.match(capturedPackPrompt(calls.local[0]), /\n\/help$/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -484,6 +496,8 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.equal(receipt.enforcement.sessionPersistenceSuppressionRequested, true);
     assert.equal(receipt.enforcement.sessionPersistenceDisabledByRunner, true);
     assert.equal(receipt.enforcement.sessionPersistenceMayApply, false);
+    assert.equal(receipt.enforcement.openingPromptTransport, 'stdin');
+    assert.equal(receipt.enforcement.runnerArgvContainsOpeningPrompt, false);
     assert.equal(receipt.enforcement.workspaceTrustPromptMayApply, false);
     assert.equal(receipt.enforcement.workspaceTrustDoesNotWidenToolCeiling, true);
     assert.equal(receipt.enforcement.webReadDestinationPreflight, 'literal-and-dns-private-address-deny');
@@ -569,8 +583,11 @@ test('interactive declared runs stay compatible and disclose that local session 
     const call = calls.local[0];
     assert.equal(call.args.includes('--no-chrome'), true);
     assert.equal(call.args.includes('--no-session-persistence'), false);
+    assert.equal(call.options.promptStdin, undefined);
+    assert.match(call.args[0], /untrusted task text/);
     assert.equal(call.options.runnerEnv.CLAUDE_CODE_SKIP_PROMPT_HISTORY, '1');
     assert.match(output, /session storage: suppression requested; interactive Claude may still persist plaintext local history/);
+    assert.match(output, /prompt transport: interactive runner argument/);
     assert.match(output, /workspace trust: Claude may next show its generic directory dialog/);
     assert.match(output, /does not widen the tool ceiling above/);
     const receiptName = fs.readdirSync(receiptDir).find((name) => name.endsWith('.json'));
@@ -578,6 +595,8 @@ test('interactive declared runs stay compatible and disclose that local session 
     assert.equal(receipt.enforcement.sessionPersistenceSuppressionRequested, true);
     assert.equal(receipt.enforcement.sessionPersistenceDisabledByRunner, false);
     assert.equal(receipt.enforcement.sessionPersistenceMayApply, true);
+    assert.equal(receipt.enforcement.openingPromptTransport, 'argv');
+    assert.equal(receipt.enforcement.runnerArgvContainsOpeningPrompt, true);
     assert.equal(receipt.enforcement.workspaceTrustPromptMayApply, true);
     assert.equal(receipt.enforcement.workspaceTrustDoesNotWidenToolCeiling, true);
   } finally {
@@ -1024,9 +1043,13 @@ test('pack runs reports launcher-lost read-only when an abrupt kill left no term
 // The end-to-end proof: what actually reaches the agent binary. A stubbed
 // runner records its argv, so this fails if any layer between pack run and the
 // spawn puts --dangerously-skip-permissions back.
-function seedFakeRunner(dir, argsFile) {
+function seedFakeRunner(dir, argsFile, stdinFile = null) {
   const runner = path.join(dir, 'fake-runner.sh');
-  fs.writeFileSync(runner, `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(argsFile)}\n`);
+  const stdinTarget = stdinFile ? JSON.stringify(stdinFile) : '/dev/null';
+  fs.writeFileSync(
+    runner,
+    `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(argsFile)}\ncat > ${stdinTarget}\n`,
+  );
   fs.chmodSync(runner, 0o755);
   return runner;
 }
@@ -1047,17 +1070,64 @@ test('pack run does not hand --dangerously-skip-permissions to the agent by defa
   try {
     seedInstalledPack(dir);
     const argsFile = path.join(dir, 'argv-default.txt');
-    const runner = seedFakeRunner(dir, argsFile);
+    const stdinFile = path.join(dir, 'stdin-default.txt');
+    const runner = seedFakeRunner(dir, argsFile, stdinFile);
     const result = runPackCli(dir, [], runner);
 
     assert.equal(fs.existsSync(argsFile), true, `runner never launched: ${result.stdout}${result.stderr}`);
     const argv = fs.readFileSync(argsFile, 'utf8').split('\n');
+    const stdin = fs.readFileSync(stdinFile, 'utf8');
     assert.equal(argv.includes('--dangerously-skip-permissions'), false);
     assert.equal(argv.includes('--append-system-prompt'), true);
-    assert.equal(
-      argv.includes("Read README.md first, then inspect the rest of this pack's files. Propose the pack's first useful action before making changes."),
-      true,
+    assert.equal(argv.includes('--print'), true);
+    assert.equal(argv.some((arg) => arg.includes("Read README.md first")), false);
+    assert.match(
+      stdin,
+      /Read README\.md first, then inspect the rest of this pack's files\. Propose the pack's first useful action before making changes\./,
     );
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('headless pack input reaches the runner over stdin and stays out of argv', () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir, 'g-brain', {
+      permissions: ['pack.read'],
+      entrypoint: 'Evaluate the supplied evidence.',
+    });
+    const inputPath = path.join(dir, 'private-evidence.txt');
+    fs.writeFileSync(inputPath, 'ARGV_CANARY_PACK_INPUT_7F4C9E\n', 'utf8');
+    const argsFile = path.join(dir, 'argv-input.txt');
+    const stdinFile = path.join(dir, 'stdin-input.txt');
+    const runner = seedFakeRunner(dir, argsFile, stdinFile);
+    const receiptDir = path.join(dir, 'receipts');
+
+    const result = runPackCli(
+      dir,
+      ['--input', inputPath, '--trust'],
+      runner,
+      { ATRIS_PACK_RUNS_DIR: receiptDir },
+    );
+
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+    const argv = fs.readFileSync(argsFile, 'utf8').split('\n');
+    const stdin = fs.readFileSync(stdinFile, 'utf8');
+    assert.equal(argv.includes('--print'), true);
+    assert.equal(argv.includes('--no-session-persistence'), true);
+    assert.equal(argv.some((arg) => arg.includes('ARGV_CANARY_PACK_INPUT_7F4C9E')), false);
+    assert.equal(argv.some((arg) => arg.includes('operator supplied the following run input')), false);
+    assert.match(stdin, /A pack supplied the following opening instruction/);
+    assert.match(stdin, /The operator supplied the following run input/);
+    assert.match(stdin, /ARGV_CANARY_PACK_INPUT_7F4C9E/);
+    assert.match(result.stdout, /prompt transport: stdin/);
+
+    const receiptName = fs.readdirSync(receiptDir).find((name) => name.endsWith('.json'));
+    const receipt = JSON.parse(fs.readFileSync(path.join(receiptDir, receiptName), 'utf8'));
+    assert.equal(receipt.enforcement.openingPromptTransport, 'stdin');
+    assert.equal(receipt.enforcement.runnerArgvContainsOpeningPrompt, false);
+    assert.equal(JSON.stringify(receipt).includes('ARGV_CANARY_PACK_INPUT_7F4C9E'), false);
   } finally {
     cleanupTempDir(dir);
   }
