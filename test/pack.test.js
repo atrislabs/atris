@@ -414,7 +414,7 @@ test('pack inspect accepts a directory and makes missing contracts visible', () 
     const inspected = runCli(['pack', 'inspect', target], { cwd: dir });
     assert.equal(inspected.status, 0, `stdout:\n${inspected.stdout}\nstderr:\n${inspected.stderr}`);
     assert.match(inspected.stdout, /registry origin: ABSENT/);
-    assert.match(inspected.stdout, /update state: remote never pulled/);
+    assert.match(inspected.stdout, /update state: remote not checked yet/);
     assert.match(inspected.stdout, /pack type: undeclared/);
     assert.match(inspected.stdout, /entrypoint: RUN\.md/);
     assert.match(inspected.stdout, /permissions: none declared/);

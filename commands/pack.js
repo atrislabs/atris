@@ -1704,6 +1704,7 @@ function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
   const packDir = path.resolve(resolved.dir);
   const manifest = resolved.manifest;
   const state = readJson(upstreamStatePath(packDir));
+  const remoteState = readJson(packStatePath(packDir));
   const summary = summarizeInstalledFiles(packDir);
   const packType = declaredManifestValue(manifest, ['type', 'packType', 'pack_type', 'pack-type']);
   const entrypoint = hasInspectValue(manifest.entrypoint)
@@ -1720,11 +1721,14 @@ function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
   console.log(`location: ${packDir}`);
   printRegistryOrigin(manifest, options.deps || {});
   console.log(`installed version: ${manifestVersion(manifest)}`);
-  if (!state) {
-    console.log('update state: remote never pulled');
-  } else {
+  if (remoteState && remoteState.remoteVersion) {
+    const checkedAt = remoteState.lastRemoteCheckAt ? ` at ${remoteState.lastRemoteCheckAt}` : ' time unknown';
+    console.log(`update state: last remote check${checkedAt}, remote v${remoteState.remoteVersion}`);
+  } else if (state) {
     const pulledAt = state.pulledAt ? ` at ${state.pulledAt}` : '';
     console.log(`update state: last pulled remote v${state.remoteVersion || 'unknown'}${pulledAt}`);
+  } else {
+    console.log('update state: remote not checked yet');
   }
   console.log(`files: ${summary.files}, total size ${formatBytes(summary.bytes)}`);
   printInstalledTree(summary);
