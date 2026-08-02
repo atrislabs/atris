@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { createHash } = require('crypto');
 const { spawnSync } = require('child_process');
 const { apiRequestJson, getAppBaseUrl, httpRequest } = require('../utils/api');
 const { loadCredentials, performTokenRefresh } = require('../utils/auth');
@@ -260,7 +261,6 @@ function buildManifest(existing, options) {
     'type', 'entrypoint', 'permissions', 'origin',
     'created-in', 'createdIn', 'learned-at', 'learnedAt',
     'source-urls', 'sourceUrls', 'sources',
-    'content-hashes', 'contentHashes',
   ]) {
     if (existingManifest[key] !== undefined) manifest[key] = existingManifest[key];
   }
@@ -394,6 +394,95 @@ function collectPacketEntries(sourceDir, { prefix = '', includeLogs = false } = 
 
   walk(sourceDir);
   return { entries, skipped };
+}
+
+function sha256(data) {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+function canonicalContentPath(value) {
+  const raw = String(value || '');
+  if (!raw || raw.includes('\\') || raw.startsWith('/') || raw.endsWith('/')) return null;
+  const normalized = path.posix.normalize(raw);
+  if (normalized !== raw || normalized === '.' || normalized === 'pack.json') return null;
+  if (normalized.split('/').includes('..')) return null;
+  return normalized;
+}
+
+function contentEntries(entries) {
+  return entries.filter((entry) => {
+    const raw = String(entry.name || '').replace(/\\/g, '/');
+    return raw && !raw.endsWith('/') && canonicalZipEntryName(raw) !== 'pack.json';
+  });
+}
+
+function buildContentHashes(entries) {
+  return Object.fromEntries(
+    contentEntries(entries)
+      .map((entry) => [canonicalZipEntryName(entry.name), sha256(entry.data)])
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function parseContentHashes(manifest) {
+  if (!Object.prototype.hasOwnProperty.call(manifest, 'content-hashes')) {
+    return { present: false, hashes: new Map() };
+  }
+  const declared = manifest['content-hashes'];
+  if (!declared || typeof declared !== 'object' || Array.isArray(declared)) {
+    throw new Error('pack.json content-hashes must be an object of path to lowercase SHA-256');
+  }
+
+  const hashes = new Map();
+  for (const [rawPath, digest] of Object.entries(declared)) {
+    const contentPath = canonicalContentPath(rawPath);
+    if (!contentPath) {
+      throw new Error(`pack.json content-hashes has invalid path: ${rawPath}`);
+    }
+    if (typeof digest !== 'string' || !/^[0-9a-f]{64}$/.test(digest)) {
+      throw new Error(`pack.json content-hashes has invalid SHA-256 for ${rawPath}`);
+    }
+    hashes.set(contentPath, digest);
+  }
+  return { present: true, hashes };
+}
+
+function verifyArchiveContentHashes(entries, manifest) {
+  const declared = parseContentHashes(manifest);
+  if (declared.present) {
+    for (const entry of entries) {
+      const raw = String(entry.name || '');
+      if (!raw.endsWith('/') && (raw.includes('\\') || canonicalZipEntryName(raw) !== raw)) {
+        throw new Error(`pack content-hashes requires canonical archive path: ${raw}`);
+      }
+    }
+  }
+  const files = new Map(
+    contentEntries(entries).map((entry) => [canonicalZipEntryName(entry.name), entry.data]),
+  );
+  if (!declared.present) {
+    return { status: 'absent', declared: 0, files: files.size, hashes: declared.hashes };
+  }
+
+  for (const [contentPath, digest] of declared.hashes) {
+    const data = files.get(contentPath);
+    if (!data) throw new Error(`pack content-hashes claims missing file: ${contentPath}`);
+    if (sha256(data) !== digest) {
+      throw new Error(`pack content hash mismatch: ${contentPath}`);
+    }
+  }
+  return {
+    status: declared.hashes.size === files.size ? 'verified' : 'partial',
+    declared: declared.hashes.size,
+    files: files.size,
+    hashes: declared.hashes,
+  };
+}
+
+function contentHashFingerprint(manifest) {
+  const parsed = parseContentHashes(manifest);
+  if (!parsed.present) return null;
+  return JSON.stringify([...parsed.hashes.entries()].sort(([left], [right]) => left.localeCompare(right)));
 }
 
 function redactSecret(value) {
@@ -819,7 +908,6 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   assertPublishableSlug(manifest.slug);
   const shipping = Boolean(out || push);
   if (shipping || dryRun) assertPublishableAuthor(manifest);
-  if (!dryRun) writeJson(manifestPath, manifest);
 
   const collected = collectPacketEntries(sourceDir, {
     prefix: packRootMode ? '' : 'atris',
@@ -828,9 +916,12 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   // The manifest is always synthesized at the zip root, never copied from the
   // source, so drop whatever pack.json the walker picked up.
   const sourceManifestName = packRootMode ? 'pack.json' : 'atris/pack.json';
+  const shippedEntries = collected.entries.filter((entry) => entry.name !== sourceManifestName);
+  manifest['content-hashes'] = buildContentHashes(shippedEntries);
+  if (!dryRun) writeJson(manifestPath, manifest);
   const entries = [
     { name: 'pack.json', data: Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8'), mtime: new Date() },
-    ...collected.entries.filter((entry) => entry.name !== sourceManifestName),
+    ...shippedEntries,
   ];
 
   // Scan before a zip exists anywhere: on disk, in the registry, or in a temp.
@@ -1053,6 +1144,16 @@ function stagePackUpdate({
   // Plan every write before recording the check or replacing an older staged
   // review. Invalid archives therefore leave both pack state surfaces intact.
   const upstreamWrites = planZipWrites(entries, path.join(packDir, '.upstream'));
+  const hashResult = verifyArchiveContentHashes(entries, remoteManifest);
+  const localFingerprint = contentHashFingerprint(existing);
+  const remoteFingerprint = contentHashFingerprint(remoteManifest);
+  if (comparison === 0 && localFingerprint !== remoteFingerprint
+      && (localFingerprint !== null || remoteFingerprint !== null)) {
+    throw new Error(
+      `refusing changed content at unchanged version v${localVersion}. `
+      + 'the publisher must bump the pack version.',
+    );
+  }
   recordRemoteCheck(packDir, {
     slug,
     origin,
@@ -1076,6 +1177,7 @@ function stagePackUpdate({
       remoteManifest,
       localVersion,
       remoteVersion,
+      hashStatus: hashResult.status,
       targetDir: packDir,
     };
   }
@@ -1093,6 +1195,7 @@ function stagePackUpdate({
     remoteManifest,
     localVersion,
     remoteVersion,
+    hashStatus: hashResult.status,
     targetDir: packDir,
   };
 }
@@ -1388,8 +1491,16 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
   const existing = force ? assertForceInstallAllowed(targetDir, slug) : null;
   const preserveOrigin = existing && existing.origin ? existing.origin : null;
   const writes = planZipWrites(entries, targetDir);
+  const hashResult = verifyArchiveContentHashes(entries, zipManifest);
 
   printInstallPreflight(targetDir, slug, writes, payload, options.deps || {});
+  if (hashResult.status === 'verified') {
+    console.log(`content hashes: verified (${hashResult.declared}/${hashResult.files} files)`);
+  } else if (hashResult.status === 'partial') {
+    console.log(`content hashes: partial (${hashResult.declared}/${hashResult.files} files verified)`);
+  } else {
+    console.log('content hashes: absent (legacy pack, bytes unverified)');
+  }
   writePlannedZipEntries(writes);
   const manifest = finalizeInstalledPack(targetDir, payload, preserveOrigin);
   if (payload.sourceType === 'registry') {
@@ -1875,6 +1986,99 @@ function printProvenanceField(label, value) {
   console.log(`  ${label}: ${hasInspectValue(value) ? `${formatInspectValue(value)} [present]` : 'ABSENT'}`);
 }
 
+function collectInstalledContentFiles(packDir) {
+  const files = new Map();
+  const ignoredRoots = new Set(['.atris', '.git', '.upstream']);
+
+  function walk(dir, relativeDir = '') {
+    for (const name of fs.readdirSync(dir).sort((left, right) => left.localeCompare(right))) {
+      if (!relativeDir && ignoredRoots.has(name)) continue;
+      const absolute = path.join(dir, name);
+      const relative = relativeDir ? `${relativeDir}/${name}` : name;
+      if (relative === 'pack.json') continue;
+      const stat = fs.lstatSync(absolute);
+      if (stat.isDirectory()) {
+        walk(absolute, relative);
+      } else if (stat.isFile()) {
+        files.set(relative, absolute);
+      }
+    }
+  }
+
+  walk(packDir);
+  return files;
+}
+
+function inspectInstalledContentHashes(packDir, manifest) {
+  const files = collectInstalledContentFiles(packDir);
+  let declared;
+  try {
+    declared = parseContentHashes(manifest);
+  } catch (error) {
+    return {
+      status: 'failed',
+      declared: 0,
+      files: files.size,
+      verified: 0,
+      issues: [error.message || String(error)],
+    };
+  }
+  if (!declared.present) {
+    return { status: 'absent', declared: 0, files: files.size, verified: 0, issues: [] };
+  }
+
+  const issues = [];
+  let verified = 0;
+  for (const [contentPath, digest] of declared.hashes) {
+    const absolute = files.get(contentPath);
+    if (!absolute) {
+      issues.push(`${contentPath}: missing`);
+      continue;
+    }
+    if (sha256(fs.readFileSync(absolute)) !== digest) {
+      issues.push(`${contentPath}: mismatch`);
+      continue;
+    }
+    verified += 1;
+  }
+  const uncovered = [...files.keys()].filter((contentPath) => !declared.hashes.has(contentPath));
+  const status = issues.length
+    ? 'failed'
+    : uncovered.length
+      ? 'partial'
+      : 'verified';
+  return {
+    status,
+    declared: declared.hashes.size,
+    files: files.size,
+    verified,
+    issues,
+    uncovered,
+  };
+}
+
+function printContentHashStatus(result) {
+  if (result.status === 'absent') {
+    console.log('  content hashes: absent (legacy pack, bytes unverified)');
+    return;
+  }
+  if (result.status === 'verified') {
+    console.log(`  content hashes: verified (${result.verified}/${result.files} files)`);
+    return;
+  }
+  if (result.status === 'partial') {
+    console.log(`  content hashes: partial (${result.verified}/${result.files} files verified)`);
+    for (const contentPath of result.uncovered.slice(0, 10)) {
+      console.log(`    unclaimed: ${contentPath}`);
+    }
+    if (result.uncovered.length > 10) console.log(`    ... ${result.uncovered.length - 10} more unclaimed files`);
+    return;
+  }
+  console.log(`  content hashes: failed (${result.verified}/${result.declared} claims verified)`);
+  for (const issue of result.issues.slice(0, 10)) console.log(`    ${issue}`);
+  if (result.issues.length > 10) console.log(`    ... ${result.issues.length - 10} more failures`);
+}
+
 function printRegistryOrigin(manifest, deps = {}) {
   const origin = manifest.origin && typeof manifest.origin === 'object' ? manifest.origin : null;
   if (!origin || origin.type !== 'registry') {
@@ -1926,9 +2130,7 @@ function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
   const sourceUrls = inspectManifestValue(manifest, [
     'source-urls', 'sourceUrls', 'sourceURLs', 'source_urls', 'source-url', 'sourceUrl', 'source_url', 'sources',
   ]);
-  const contentHashes = inspectManifestValue(manifest, [
-    'content-hashes', 'contentHashes', 'content_hashes', 'content-hash', 'contentHash', 'content_hash', 'hashes',
-  ]);
+  const contentHashStatus = inspectInstalledContentHashes(packDir, manifest);
 
   console.log(`location: ${packDir}`);
   printRegistryOrigin(manifest, options.deps || {});
@@ -1951,7 +2153,7 @@ function inspectPack(rawArgs, cwd = process.cwd(), options = {}) {
   printProvenanceField('author', inspectManifestValue(manifest, ['author']));
   printProvenanceField('created-in', createdInValue(manifest));
   printProvenanceField('source urls', sourceUrls);
-  printProvenanceField('content hashes', contentHashes);
+  printContentHashStatus(contentHashStatus);
   return 0;
 }
 
