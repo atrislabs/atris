@@ -8,7 +8,9 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const {
+  defaultGit,
   guardMissionLanding,
+  inspectMissionProtectedDiff,
   matchProtectedMissionDiff,
   prepareMissionGitGuard,
 } = require('../lib/mission-protected-lane');
@@ -88,12 +90,56 @@ test('an unreadable diff fails closed and pauses before landing', () => {
     },
   });
 
-  assert.equal(result.status, 'paused-for-review');
+  assert.equal(result.status, 'paused-for-retry');
   assert.equal(result.allowed, false);
   assert.equal(result.unreadable, true);
   assert.equal(landed, false);
   assert.deepEqual(result.surfaces, ['unreadable diff']);
+  assert.match(result.reason, /tooling failure and rerun/);
   assert.match(result.detail, /permission denied/);
+});
+
+test('default Git reads fake diff output larger than one megabyte', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-large-diff-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const fakeGit = path.join(root, 'fake-git');
+  fs.writeFileSync(
+    fakeGit,
+    "#!/usr/bin/env node\nprocess.stdout.write('x'.repeat(2 * 1024 * 1024));\n",
+    { mode: 0o755 },
+  );
+
+  const spawned = defaultGit(fakeGit)(['diff'], root);
+
+  assert.equal(spawned.status, 0, spawned.error?.message);
+  assert.equal(spawned.error, undefined);
+  assert.ok(Buffer.byteLength(spawned.stdout) > 1024 * 1024);
+});
+
+test('a spawn failure pauses for retry while a protected path pauses for review', () => {
+  const spawnError = new Error('spawn git EACCES');
+  spawnError.code = 'EACCES';
+  const unreadable = inspectMissionProtectedDiff({
+    includeUnstaged: false,
+    git: () => ({ status: null, error: spawnError }),
+  });
+  const protectedPath = inspectMissionProtectedDiff({
+    includeUnstaged: false,
+    git: () => ({
+      status: 0,
+      stdout: diffFor('config/permissions/policy.txt', 'plain value'),
+    }),
+  });
+
+  assert.equal(unreadable.allowed, false);
+  assert.equal(unreadable.unreadable, true);
+  assert.equal(unreadable.status, 'paused-for-retry');
+  assert.match(unreadable.reason, /tooling failure and rerun/);
+  assert.match(unreadable.detail, /spawn git EACCES/);
+  assert.equal(protectedPath.allowed, false);
+  assert.equal(protectedPath.unreadable, false);
+  assert.equal(protectedPath.status, 'paused-for-review');
+  assert.match(protectedPath.reason, /human review: permission/);
 });
 
 test('a denied task tag pauses even when the changed text looks neutral', () => {
@@ -202,6 +248,7 @@ test('a protected mission tick pauses and writes the matched surface to its rece
 
   assert.equal(payload.mission.status, 'paused');
   assert.equal(payload.tick.status, 'paused-for-review');
+  assert.equal(payload.tick.reason, 'protected-lane-review');
   assert.equal(payload.verifier_result, null);
   assert.deepEqual(receipt.result.tick.protected_lane_guard.surfaces, ['csp']);
   assert.match(receipt.result.tick.protected_lane_guard.reason, /human review: csp/);
