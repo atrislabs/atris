@@ -158,6 +158,7 @@ function showHelp() {
   console.log('       atris pack pull [<slug>] [--dir <path>] [--allow-downgrade]');
   console.log('       atris pack status [--dir <path>]');
   console.log('       atris pack update [<dir>] [--allow-downgrade]');
+  console.log('       atris pack show <slug|dir>');
   console.log('       atris pack inspect <slug|dir> [--json]');
   console.log('       atris pack doctor <slug|dir> [--json]');
   console.log('       atris pack list [--dir <path>]');
@@ -1552,8 +1553,7 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
 
   const displayTarget = path.relative(fs.realpathSync(cwd), fs.realpathSync(targetDir)) || '.';
   console.log(`installed ${slug} -> ${displayTarget}`);
-  console.log(`check it: atris pack doctor ${shellQuote(displayTarget)}`);
-  console.log(`if ready: atris pack run ${shellQuote(displayTarget)}`);
+  console.log(`next: atris pack show ${shellQuote(displayTarget)}`);
   return 0;
 }
 
@@ -3016,6 +3016,115 @@ function evaluatePackDoctor(source, cwd = process.cwd()) {
   };
 }
 
+const PACK_SHOW_REASONS = Object.freeze({
+  payload: 'it has no usable content',
+  type: 'it has not declared what kind of pack it is',
+  entrypoint: 'it has no usable starting file',
+  permissions: 'it has not clearly declared what access it needs',
+  'execution-tree': 'its file layout is not safe to run',
+  integrity: 'its files cannot be fully verified',
+  provenance: 'it does not clearly say who made it or where it came from',
+  alignment: 'its files do not obviously match its description',
+});
+
+function packShowText(value, fallback) {
+  const text = String(value === undefined || value === null ? '' : value).replace(/\s+/g, ' ').trim();
+  return text || fallback;
+}
+
+function packShowStatus(doctor, verifier) {
+  if (doctor.status === 'reject') return 'not ready';
+  if (doctor.status === 'revise' || verifier.status === 'missing' || verifier.status === 'invalid') {
+    return 'needs setup';
+  }
+  return 'ready to review';
+}
+
+function packShowReason(doctor, verifier) {
+  if (doctor.status === 'reject') {
+    const failed = doctor.checks.find((check) => check.status === 'fail');
+    return PACK_SHOW_REASONS[failed && failed.id] || 'one or more checks did not pass';
+  }
+  if (verifier.status === 'missing' || verifier.status === 'invalid') {
+    return 'its declared check cannot be used';
+  }
+  const warning = doctor.checks.find((check) => check.status === 'warn');
+  return PACK_SHOW_REASONS[warning && warning.id] || 'its setup is incomplete';
+}
+
+function packShowSource(origin, update) {
+  let source;
+  if (origin.type === 'registry') source = 'downloaded by Atris from the registry';
+  else if (origin.type === 'url') source = 'downloaded by Atris from a web link';
+  else if (origin.type === 'file') source = 'installed from a local file';
+  else source = 'local folder';
+
+  if (!update.supported) return `${source}; updates unavailable`;
+  const updateLabels = {
+    'review-staged': 'ready to review',
+    'up-to-date': 'current',
+    'update-available': 'available',
+    'not-checked': 'not checked',
+    'remote-older': 'remote copy is older',
+    checked: 'checked',
+  };
+  return `${source}; update: ${updateLabels[update.status] || 'not checked'}`;
+}
+
+function packShowAccess(capabilities) {
+  if (capabilities.status === 'legacy') return 'not declared';
+  if (capabilities.status === 'invalid') return 'invalid declaration';
+  const requested = capabilities.requested;
+  if (!requested.length) return 'uses no tools';
+  const access = [];
+  if (requested.includes('pack.write')) access.push('can read and change this pack');
+  else if (requested.includes('pack.read')) access.push('reads this pack only');
+  if (requested.includes('web.read')) access.push('uses the public web');
+  if (requested.includes('host.shell')) access.push('can run unrestricted shell commands');
+  return access.join('; ');
+}
+
+function packShowCheck(verifier) {
+  if (verifier.status === 'available') return `${verifier.resolved} is available; not run`;
+  if (verifier.status === 'absent') return 'none provided';
+  return 'declared check cannot be used';
+}
+
+function printPackShow(inspection, doctor) {
+  const pack = inspection.result;
+  const status = packShowStatus(doctor, inspection.verifier);
+  console.log(packShowText(pack.title, pack.slug));
+  console.log(`what: ${packShowText(pack.description, 'no description provided')}`);
+  console.log(`status: ${status}`);
+  if (status !== 'ready to review') console.log(`why: ${packShowReason(doctor, inspection.verifier)}`);
+  console.log(`where: ${pack.location}`);
+  console.log(`source: ${packShowSource(pack.origin, pack.update)}`);
+  console.log(`access: ${packShowAccess(pack.contract.capabilities)}`);
+  if (status === 'ready to review') console.log(`check: ${packShowCheck(inspection.verifier)}`);
+  if (status === 'ready to review') console.log(`next: atris pack run ${shellQuote(pack.location)}`);
+  else if (status === 'not ready') console.log('next: ask the author to fix this pack before you run it');
+  else console.log('next: ask the author to finish setting up this pack');
+}
+
+function showPack(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  const help = args.includes('help') || args.includes('--help') || args.includes('-h');
+  if (help) {
+    showHelp();
+    return 0;
+  }
+  const source = args.shift();
+  if (!source) {
+    showHelp();
+    return 2;
+  }
+  if (args.length) throw new Error(`unknown pack show argument: ${args.join(' ')}`);
+  const inspection = evaluatePackInspection(source, cwd, options);
+  const doctor = evaluatePackDoctor(source, cwd);
+  printPackShow(inspection, doctor);
+  return 0;
+}
+
 function printPackDoctor(result) {
   console.log(`pack doctor: ${result.slug}`);
   console.log(`verdict: ${result.status}`);
@@ -3190,7 +3299,7 @@ async function run(argv = []) {
     }
     // `pack <sub> --help/-h` is a help request, not a subcommand argument: show
     // usage and exit 0 instead of letting the subcommand throw "unknown argument".
-    if (!['doctor', 'inspect'].includes(subcommand) && (args.includes('--help') || args.includes('-h'))) {
+    if (!['doctor', 'inspect', 'show'].includes(subcommand) && (args.includes('--help') || args.includes('-h'))) {
       showHelp();
       return 0;
     }
@@ -3210,6 +3319,7 @@ async function run(argv = []) {
     if (subcommand === 'pull') return await pullPack(args);
     if (subcommand === 'status') return statusPack(args);
     if (subcommand === 'update') return await updatePack(args);
+    if (subcommand === 'show') return showPack(args);
     if (subcommand === 'inspect') return inspectPack(args);
     if (subcommand === 'doctor') return doctorPack(args);
     if (subcommand === 'list') return listPackCommand(args);
