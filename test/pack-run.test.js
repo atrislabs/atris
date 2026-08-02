@@ -320,10 +320,15 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.equal(receipt.enforcement.packRootFileBoundary, true);
     assert.equal(receipt.enforcement.preLaunchContextBoundary, true);
     assert.equal(receipt.enforcement.declaredTreeSymlinksRejected, true);
+    assert.equal(receipt.enforcement.claudeMemoryDisabledByRunner, true);
+    assert.equal(receipt.enforcement.autoMemoryDisabledByRunner, true);
     assert.equal(receipt.enforcement.userSettingsLoaded, true);
     assert.equal(receipt.enforcement.projectSettingsLoaded, false);
     assert.equal(receipt.enforcement.managedPoliciesMayApply, true);
     assert.equal(receipt.enforcement.mcpServersLoaded, false);
+    assert.equal(call.options.runnerEnv.CLAUDE_CODE_DISABLE_CLAUDE_MDS, '1');
+    assert.equal(call.options.runnerEnv.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
+    assert.match(output, /memory isolation: Claude memory files and auto-memory are disabled/);
     assert.deepEqual(receipt.observability, {
       denialCoverage: 'atris-hooks-only',
       runtimePermissionDenialsCaptured: false,
