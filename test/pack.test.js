@@ -302,8 +302,13 @@ test('pack install accepts registry slugs and https zip urls', async () => {
     assert.ok(fs.existsSync(path.join(urlTarget, 'pack.json')));
     const slugInstalled = JSON.parse(fs.readFileSync(path.join(slugTarget, 'pack.json'), 'utf8'));
     assert.deepEqual(slugInstalled.origin, { type: 'registry', slug: 'g-brain' });
+    const slugState = JSON.parse(fs.readFileSync(path.join(slugTarget, '.atris', 'state', 'pack.json'), 'utf8'));
+    assert.equal(slugState.remoteVersion, '0.1.0');
+    assert.equal(slugState.origin.slug, 'g-brain');
+    assert.ok(slugState.lastRemoteCheckAt);
     const urlInstalled = JSON.parse(fs.readFileSync(path.join(urlTarget, 'pack.json'), 'utf8'));
     assert.deepEqual(urlInstalled.origin, { type: 'url', url: 'https://packs.test/g-brain.zip' });
+    assert.ok(!fs.existsSync(path.join(urlTarget, '.atris', 'state', 'pack.json')));
   } finally {
     cleanupTempDir(dir);
   }
@@ -428,6 +433,17 @@ test('pack update is a no-op when version is unchanged', async () => {
     assert.equal(calls[0], 'https://app.test/api/pack/registry/demo-pack');
     assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# pack\n');
     assert.equal(fs.readFileSync(path.join(target, 'notes.txt'), 'utf8'), 'keep me');
+    const state = JSON.parse(fs.readFileSync(path.join(target, '.atris', 'state', 'pack.json'), 'utf8'));
+    assert.equal(state.remoteVersion, '0.1.0');
+    assert.equal(state.origin.slug, 'demo-pack');
+    assert.ok(state.lastRemoteCheckAt);
+
+    const status = runCli(['pack', 'status', '--dir', target], { cwd: dir });
+    assert.equal(status.status, 0, `stdout:\n${status.stdout}\nstderr:\n${status.stderr}`);
+    assert.match(status.stdout, /demo-pack installed v0\.1\.0/);
+    assert.match(status.stdout, /registry origin demo-pack/);
+    assert.match(status.stdout, new RegExp(`last remote check ${state.lastRemoteCheckAt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, remote v0\\.1\\.0`));
+    assert.doesNotMatch(status.stdout, /staged upstream review/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -460,6 +476,9 @@ test('pack update upgrades registry packs and preserves user files', async () =>
     assert.equal(installed.version, '0.2.0');
     assert.deepEqual(installed.origin, { type: 'registry', slug: 'demo-pack' });
     assert.equal(fs.readFileSync(path.join(target, 'README.md'), 'utf8'), '# pack\n');
+    const state = JSON.parse(fs.readFileSync(path.join(target, '.atris', 'state', 'pack.json'), 'utf8'));
+    assert.equal(state.remoteVersion, '0.2.0');
+    assert.ok(state.lastRemoteCheckAt);
   } finally {
     cleanupTempDir(dir);
   }
@@ -515,6 +534,10 @@ test('pack pull stages newer remote in upstream and preserves local edits', asyn
     assert.equal(state.localVersion, '0.1.0');
     assert.equal(state.remoteVersion, '0.2.0');
     assert.ok(state.pulledAt);
+    const localState = JSON.parse(fs.readFileSync(path.join(target, '.atris', 'state', 'pack.json'), 'utf8'));
+    assert.equal(localState.remoteVersion, '0.2.0');
+    assert.deepEqual(localState.origin, { type: 'registry', slug: 'demo-pack' });
+    assert.ok(localState.lastRemoteCheckAt);
   } finally {
     if (previousAppUrl === undefined) {
       delete process.env.ATRIS_APP_URL;
@@ -526,17 +549,76 @@ test('pack pull stages newer remote in upstream and preserves local edits', asyn
   }
 });
 
-test('pack status prints never pulled and last pulled remote version', () => {
+test('pack pull records an equal remote check without staging a review', async () => {
   const dir = makeTempDir();
   try {
     const target = path.join(dir, 'demo-pack');
     writePackDir(target, { slug: 'demo-pack', version: '0.1.0' });
+    const zipBuffer = packZipBuffer(dir, sampleManifest({ slug: 'demo-pack', version: '0.1.0' }));
 
-    const neverPulled = runCli(['pack', 'status', '--dir', target], { cwd: dir });
-    assert.equal(neverPulled.status, 0, `stdout:\n${neverPulled.stdout}\nstderr:\n${neverPulled.stderr}`);
-    assert.match(neverPulled.stdout, /demo-pack local v0\.1\.0, remote never pulled/);
+    const result = await pullPack(['--dir', target], dir, {
+      deps: {
+        now: () => new Date('2026-07-09T14:00:00.000Z'),
+        getAppBaseUrl: () => 'https://app.test',
+        loadCredentials: () => null,
+        httpRequest: async () => ({ status: 200, body: zipBuffer }),
+      },
+    });
+
+    assert.equal(result.upToDate, true);
+    assert.ok(!fs.existsSync(path.join(target, '.upstream')));
+    const state = JSON.parse(fs.readFileSync(path.join(target, '.atris', 'state', 'pack.json'), 'utf8'));
+    assert.equal(state.remoteVersion, '0.1.0');
+    assert.equal(state.lastRemoteCheckAt, '2026-07-09T14:00:00.000Z');
+
+    const status = runCli(['pack', 'status', '--dir', target], { cwd: dir });
+    assert.match(status.stdout, /last remote check 2026-07-09T14:00:00\.000Z, remote v0\.1\.0/);
+    assert.doesNotMatch(status.stdout, /staged upstream review/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack status separates remote checks from staged upstream review', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'demo-pack');
+    writePackDir(target, {
+      slug: 'demo-pack',
+      version: '0.1.0',
+      origin: { type: 'file' },
+    });
+
+    const neverChecked = runCli(['pack', 'status', '--dir', target], { cwd: dir });
+    assert.equal(neverChecked.status, 0, `stdout:\n${neverChecked.stdout}\nstderr:\n${neverChecked.stderr}`);
+    assert.match(neverChecked.stdout, /demo-pack installed v0\.1\.0/);
+    assert.match(neverChecked.stdout, /registry origin none/);
+    assert.match(neverChecked.stdout, /remote not checked yet/);
+    assert.doesNotMatch(neverChecked.stdout, /staged upstream review/);
+
+    writePackDir(target, {
+      slug: 'demo-pack',
+      version: '0.1.0',
+      origin: { type: 'registry', slug: 'demo-pack' },
+    });
+    const legacyRegistryInstall = runCli(['pack', 'status', '--dir', target], { cwd: dir });
+    assert.match(legacyRegistryInstall.stdout, /registry origin demo-pack/);
+    assert.match(legacyRegistryInstall.stdout, /last remote check time unknown, remote v0\.1\.0/);
+    assert.doesNotMatch(legacyRegistryInstall.stdout, /remote not checked yet/);
+
+    fs.mkdirSync(path.join(target, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(target, '.atris', 'state', 'pack.json'), `${JSON.stringify({
+      slug: 'demo-pack',
+      origin: { type: 'registry', slug: 'demo-pack' },
+      remoteVersion: '0.1.0',
+      lastRemoteCheckAt: '2026-07-09T13:00:00.000Z',
+    }, null, 2)}\n`);
 
     fs.mkdirSync(path.join(target, '.upstream'), { recursive: true });
+    fs.writeFileSync(path.join(target, '.upstream', 'pack.json'), `${JSON.stringify(sampleManifest({
+      slug: 'demo-pack',
+      version: '0.2.0',
+    }), null, 2)}\n`);
     fs.writeFileSync(path.join(target, '.upstream', 'STATE.json'), `${JSON.stringify({
       slug: 'demo-pack',
       localVersion: '0.1.0',
@@ -546,8 +628,8 @@ test('pack status prints never pulled and last pulled remote version', () => {
 
     const pulled = runCli(['pack', 'status', '--dir', target], { cwd: dir });
     assert.equal(pulled.status, 0, `stdout:\n${pulled.stdout}\nstderr:\n${pulled.stderr}`);
-    assert.match(pulled.stdout, /demo-pack local v0\.1\.0, last pulled remote v0\.2\.0/);
-    assert.match(pulled.stdout, /pulled at 2026-07-09T12:00:00\.000Z/);
+    assert.match(pulled.stdout, /last remote check 2026-07-09T13:00:00\.000Z, remote v0\.1\.0/);
+    assert.match(pulled.stdout, /staged upstream review remote v0\.2\.0 at 2026-07-09T12:00:00\.000Z/);
   } finally {
     cleanupTempDir(dir);
   }
