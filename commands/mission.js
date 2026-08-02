@@ -9345,10 +9345,13 @@ async function runMission(args) {
           : inspectMissionTickProtectedDiff(mission, tickWorktreeBefore, cwd);
         result.protected_lane_guard = protectedLaneGuard;
         if (!protectedLaneGuard.allowed) {
-          result.status = 'paused-for-review';
-          result.reason = 'protected-lane-review';
+          const guardPauseReason = protectedLaneGuard.unreadable
+            ? 'mission-diff-unreadable'
+            : 'protected-lane-review';
+          result.status = protectedLaneGuard.status;
+          result.reason = guardPauseReason;
           result.ran = false;
-          pauseReason = 'protected-lane-review';
+          pauseReason = guardPauseReason;
         }
       }
       let verifierResult = null;
@@ -9506,7 +9509,7 @@ async function runMission(args) {
         break;
       }
 
-      if (pauseReason === 'protected-lane-review') break;
+      if (['mission-diff-unreadable', 'protected-lane-review'].includes(pauseReason)) break;
       if (callerSessionRunner && result.status === 'ran') break;
       if (newStatus === 'complete' || (newStatus === 'ready' && !mission.always_on && !fullBudgetMode)) break;
       // BCK-1324: two consecutive ticks that each self-report "ran" but leave no
@@ -9794,9 +9797,12 @@ function tickMission(args) {
     // Same layer classification as the run-tick path; manual ticks carry their
     // receipt text in --summary.
     const layerInfo = extractLayerFromReceiptText(summary || '', tickWorktree?.new_since_baseline_sample);
+    const guardPauseReason = protectedLaneGuard.unreadable
+      ? 'mission-diff-unreadable'
+      : 'protected-lane-review';
     const tickRecord = {
-      status: protectedLaneGuard.allowed ? 'ran' : 'paused-for-review',
-      reason: protectedLaneGuard.allowed ? 'tick-recorded' : 'protected-lane-review',
+      status: protectedLaneGuard.allowed ? 'ran' : protectedLaneGuard.status,
+      reason: protectedLaneGuard.allowed ? 'tick-recorded' : guardPauseReason,
       tick_index: tickIdx,
       ran: protectedLaneGuard.allowed,
       started_at: tickStart,
@@ -9832,7 +9838,9 @@ function tickMission(args) {
 	    const nextGoalChain = advanceMissionGoalChain(mission.goal_chain, summary, verifierResult);
 	    if (!protectedLaneGuard.allowed) {
 	      status = 'paused';
-	      nextAction = `review the protected diff and receipt before resuming: atris mission run ${mission.id}`;
+	      nextAction = protectedLaneGuard.unreadable
+	        ? `repair the mission diff tooling failure, then rerun: atris mission run ${mission.id}`
+	        : `review the protected diff and receipt before resuming: atris mission run ${mission.id}`;
 	    } else if (verifierResult?.passed && nextGoalChain && !nextGoalChain.pause_ready) {
 	      status = 'running';
 	      nextAction = missionGoalChainNextAction(nextGoalChain);
