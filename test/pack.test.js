@@ -717,6 +717,78 @@ test('pack inspect shows canonical permissions as enforced tools, not manifest d
   }
 });
 
+test('pack inspect distinguishes available, missing, invalid, and absent verifier declarations without running them', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'verifier-pack');
+    writePackDir(target, { slug: 'verifier-pack', verifier: 'VERIFY.md' });
+    fs.mkdirSync(path.join(target, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(target, 'atris', 'VERIFY.md'), '# bounded verification instructions\n', 'utf8');
+
+    const available = runCli(['pack', 'inspect', target, '--json'], { cwd: dir });
+    assert.equal(available.status, 0, `stdout:\n${available.stdout}\nstderr:\n${available.stderr}`);
+    assert.deepEqual(JSON.parse(available.stdout).contract.verifier, {
+      status: 'available',
+      declared: 'VERIFY.md',
+      resolved: 'atris/VERIFY.md',
+      executed: false,
+      reason: null,
+    });
+    const human = runCli(['pack', 'inspect', target], { cwd: dir });
+    assert.equal(human.status, 0);
+    assert.match(human.stdout, /verifier: VERIFY.md \(resolved to atris\/VERIFY.md; not run\)/);
+
+    fs.rmSync(path.join(target, 'atris', 'VERIFY.md'));
+    const missing = JSON.parse(runCli(['pack', 'inspect', target, '--json'], { cwd: dir }).stdout);
+    assert.deepEqual(missing.contract.verifier, {
+      status: 'missing',
+      declared: 'VERIFY.md',
+      resolved: null,
+      executed: false,
+      reason: 'verifier file is missing: VERIFY.md',
+    });
+
+    const manifestPath = path.join(target, 'pack.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.verifier = '../outside.md';
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    const invalid = JSON.parse(runCli(['pack', 'inspect', target, '--json'], { cwd: dir }).stdout);
+    assert.deepEqual(invalid.contract.verifier, {
+      status: 'invalid',
+      declared: '../outside.md',
+      resolved: null,
+      executed: false,
+      reason: 'verifier must be one canonical relative file path',
+    });
+
+    fs.mkdirSync(path.join(target, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(target, '.atris', 'state', 'receipt.md'), '# runtime state is not pack content\n', 'utf8');
+    manifest.verifier = '.atris/state/receipt.md';
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    const runtimeState = JSON.parse(runCli(['pack', 'inspect', target, '--json'], { cwd: dir }).stdout);
+    assert.deepEqual(runtimeState.contract.verifier, {
+      status: 'invalid',
+      declared: '.atris/state/receipt.md',
+      resolved: null,
+      executed: false,
+      reason: 'verifier must resolve to a regular pack content file: .atris/state/receipt.md',
+    });
+
+    delete manifest.verifier;
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    const absent = JSON.parse(runCli(['pack', 'inspect', target, '--json'], { cwd: dir }).stdout);
+    assert.deepEqual(absent.contract.verifier, {
+      status: 'absent',
+      declared: null,
+      resolved: null,
+      executed: false,
+      reason: 'manifest verifier is absent',
+    });
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack inspect reports failed after a declared file is changed locally', () => {
   const dir = makeTempDir();
   try {
@@ -747,12 +819,17 @@ test('pack inspect --json returns one local lifecycle record without prose parsi
       author: 'Ada Lovelace',
       type: 'knowledge',
       entrypoint: 'README.md',
+      verifier: 'VERIFY.md',
       permissions: ['pack.read'],
       'created-in': 'Atris browser',
       'source-urls': ['https://example.com/source'],
-      'content-hashes': { 'README.md': sha256('# pack\n') },
+      'content-hashes': {
+        'README.md': sha256('# pack\n'),
+        'VERIFY.md': sha256('# verify\n'),
+      },
       origin: { type: 'registry', slug: 'inspect-pack' },
     });
+    fs.writeFileSync(path.join(target, 'VERIFY.md'), '# verify\n', 'utf8');
     fs.mkdirSync(path.join(target, '.atris', 'state'), { recursive: true });
     fs.writeFileSync(path.join(target, '.atris', 'state', 'pack.json'), `${JSON.stringify({
       slug: 'inspect-pack',
@@ -805,6 +882,13 @@ test('pack inspect --json returns one local lifecycle record without prose parsi
     assert.ok(result.files.topLevel.some((entry) => entry.name === '.upstream' && entry.kind === 'directory'));
     assert.equal(result.contract.type, 'knowledge');
     assert.equal(result.contract.entrypoint, 'README.md');
+    assert.deepEqual(result.contract.verifier, {
+      status: 'available',
+      declared: 'VERIFY.md',
+      resolved: 'VERIFY.md',
+      executed: false,
+      reason: null,
+    });
     assert.deepEqual(result.contract.capabilities, {
       status: 'enforced',
       declared: ['pack.read'],
@@ -822,9 +906,9 @@ test('pack inspect --json returns one local lifecycle record without prose parsi
     });
     assert.deepEqual(result.contentHashes, {
       status: 'verified',
-      declared: 1,
-      files: 1,
-      verified: 1,
+      declared: 2,
+      files: 2,
+      verified: 2,
       issues: [],
       uncovered: [],
     });
@@ -1908,11 +1992,13 @@ test('pack publish preserves entry contract and provenance fields', () => {
       versions: [{ version: '0.0.1', date: '2026-08-02', notes: 'seed' }],
       type: 'skill',
       entrypoint: 'RUN.md',
+      verifier: 'VERIFY.md',
       'created-in': 'test suite',
       'source-urls': ['https://example.com/source'],
       'content-hashes': { 'RUN.md': '0'.repeat(64) },
     }));
     fs.writeFileSync(path.join(dir, 'RUN.md'), '# first action\n');
+    fs.writeFileSync(path.join(dir, 'VERIFY.md'), '# verify the outcome\n');
 
     const zipPath = path.join(os.tmpdir(), `contract-pack-${process.pid}.zip`);
     const publish = runCli(['pack', 'publish', '--author', 'Ada', '--out', zipPath], { cwd: dir });
@@ -1924,15 +2010,20 @@ test('pack publish preserves entry contract and provenance fields', () => {
     const installed = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'));
     assert.equal(installed.type, 'skill');
     assert.equal(installed.entrypoint, 'RUN.md');
+    assert.equal(installed.verifier, 'VERIFY.md');
     assert.equal(installed['created-in'], 'test suite');
     assert.deepEqual(installed['source-urls'], ['https://example.com/source']);
-    assert.deepEqual(installed['content-hashes'], { 'RUN.md': sha256('# first action\n') });
+    assert.deepEqual(installed['content-hashes'], {
+      'RUN.md': sha256('# first action\n'),
+      'VERIFY.md': sha256('# verify the outcome\n'),
+    });
 
     const inspected = runCli(['pack', 'inspect', target], { cwd: dir });
     assert.equal(inspected.status, 0);
     assert.match(inspected.stdout, /entrypoint: RUN.md/);
+    assert.match(inspected.stdout, /verifier: VERIFY.md \(resolved to VERIFY.md; not run\)/);
     assert.doesNotMatch(inspected.stdout, /source urls: ABSENT/);
-    assert.match(inspected.stdout, /content hashes: verified \(1\/1 files\)/);
+    assert.match(inspected.stdout, /content hashes: verified \(2\/2 files\)/);
     fs.rmSync(zipPath, { force: true });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
