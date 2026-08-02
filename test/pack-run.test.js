@@ -296,22 +296,22 @@ test('pack run keeps permission prompts on for a packet someone else wrote', asy
     assert.equal(code, 0);
     assert.equal(calls.local[0].options.skipPermissions, false);
     assert.match(output, /permission prompts are on/);
-    assert.match(output, /--trust/);
+    assert.match(output, /--grant pack\.read/);
   } finally {
     cleanupTempDir(dir);
   }
 });
 
-test('pack run --trust is the explicit opt-out for a packet you have read', async () => {
+test('pack run refuses unbounded --trust for a legacy packet', async () => {
   const dir = makeTempDir();
   try {
     seedInstalledPack(dir);
     const { calls, deps } = stubDeps();
-    const { code, output } = await captureConsole(() => runPack(['g-brain', '--trust'], dir, { deps }));
-
-    assert.equal(code, 0);
-    assert.equal(calls.local[0].options.skipPermissions, true);
-    assert.doesNotMatch(output, /permission prompts are on/);
+    await assert.rejects(
+      () => runPack(['g-brain', '--trust'], dir, { deps }),
+      /legacy pack has no declared capability ceiling[\s\S]*--grant pack\.read --trust/
+    );
+    assert.equal(calls.local.length, 0);
   } finally {
     cleanupTempDir(dir);
   }
@@ -882,7 +882,7 @@ test('pack run does not hand --dangerously-skip-permissions to the agent by defa
   }
 });
 
-test('pack run --trust hands the skip flag through to the agent', () => {
+test('legacy pack --trust fails before the agent instead of handing through the dangerous bypass', () => {
   const dir = makeTempDir();
   try {
     seedInstalledPack(dir);
@@ -890,9 +890,38 @@ test('pack run --trust hands the skip flag through to the agent', () => {
     const runner = seedFakeRunner(dir, argsFile);
     const result = runPackCli(dir, ['--trust'], runner);
 
-    assert.equal(fs.existsSync(argsFile), true, `runner never launched: ${result.stdout}${result.stderr}`);
+    assert.equal(result.status, 1, `${result.stdout}${result.stderr}`);
+    assert.equal(fs.existsSync(argsFile), false);
+    assert.match(result.stderr, /legacy pack has no declared capability ceiling/);
+    assert.match(result.stderr, /--grant pack\.read --trust/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('legacy pack can opt into bounded read-only trust with an explicit grant', () => {
+  const dir = makeTempDir();
+  try {
+    seedInstalledPack(dir);
+    const argsFile = path.join(dir, 'argv-bounded-trust.txt');
+    const runner = seedFakeRunner(dir, argsFile);
+    const receiptDir = path.join(dir, 'receipts');
+    const result = runPackCli(
+      dir,
+      ['--grant', 'pack.read', '--trust'],
+      runner,
+      { ATRIS_PACK_RUNS_DIR: receiptDir },
+    );
+
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
     const argv = fs.readFileSync(argsFile, 'utf8').split('\n');
-    assert.equal(argv.includes('--dangerously-skip-permissions'), true);
+    assert.equal(argv.includes('--dangerously-skip-permissions'), false);
+    assert.equal(argv[argv.indexOf('--permission-mode') + 1], 'dontAsk');
+    assert.equal(argv[argv.indexOf('--tools') + 1], 'Read,Glob,Grep,Skill');
+    const receiptName = fs.readdirSync(receiptDir).find((name) => name.endsWith('.json'));
+    const receipt = JSON.parse(fs.readFileSync(path.join(receiptDir, receiptName), 'utf8'));
+    assert.deepEqual(receipt.requestedCapabilities, []);
+    assert.deepEqual(receipt.grantedCapabilities, ['pack.read']);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1052,4 +1081,5 @@ test('atris pack help lists run', () => {
   });
   assert.equal(result.status, 0);
   assert.match(result.stdout, /atris pack run <slug\|dir>/);
+  assert.match(result.stdout, /legacy packs need an explicit --grant before --trust/);
 });

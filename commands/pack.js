@@ -157,6 +157,7 @@ function showHelp() {
   console.log('       atris pack list [--dir <path>]');
   console.log('');
   console.log('pack.json permissions: pack.read, pack.write, web.read, host.shell');
+  console.log('legacy packs need an explicit --grant before --trust can pre-approve a run.');
   console.log('declared permissions are enforced locally; declared-capability cloud runs fail closed.');
 }
 
@@ -1954,6 +1955,12 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
   );
   if (capabilityPolicy.status === 'enforced') assertPackExecutionTree(packDir);
   if (cloud) return startPackCloud(packDir, displayTarget, deps, { capabilityPolicy });
+  if (trust && capabilityPolicy.status === 'legacy') {
+    throw new Error(
+      'cannot use --trust: this legacy pack has no declared capability ceiling.\n'
+      + 'for a bounded read-only run, add --grant pack.read --trust.'
+    );
+  }
   let openingPrompt = packOpeningPrompt(packDir, manifest);
   if (!openingPrompt && hasZeroAgentContext(packDir)) {
     printContextOnlyOrientation(packDir, manifest);
@@ -1964,9 +1971,8 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
     console.log('capabilities: LEGACY — this pack declares no enforceable capability ceiling.');
   }
   if (!trust && capabilityPolicy.status === 'legacy') {
-    console.log('permission prompts are on because this packet came from somewhere else; add --trust to turn them off.');
-  } else if (trust && capabilityPolicy.status === 'legacy') {
-    console.log('warning: --trust on a legacy pack bypasses prompts without a declared tool ceiling.');
+    console.log('permission prompts are on because this legacy pack has no capability ceiling.');
+    console.log('for a bounded read-only run, add --grant pack.read; add --trust only to pre-approve that ceiling.');
   }
   return startPackLocal(packDir, deps, {
     trust,
