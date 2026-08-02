@@ -306,6 +306,7 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     const settings = JSON.parse(call.args[call.args.indexOf('--settings') + 1]);
     assert.equal(settings.permissions.disableBypassPermissionsMode, 'disable');
     assert.equal(settings.permissions.disableAutoMode, 'disable');
+    assert.equal(settings.disableSkillShellExecution, true);
     assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write');
     assert.match(output, /capability trust card:/);
     assert.match(output, /requested by pack: pack\.read, web\.read/);
@@ -331,12 +332,14 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.equal(receipt.enforcement.managedPoliciesMayApply, true);
     assert.equal(receipt.enforcement.bundledClaudeSkillsMayApply, true);
     assert.equal(receipt.enforcement.packSkillsPluginLoaded, false);
+    assert.equal(receipt.enforcement.skillShellExecutionDisabled, true);
     assert.equal(receipt.enforcement.mcpServersLoaded, false);
     assert.equal(call.options.runnerEnv.CLAUDE_CODE_DISABLE_CLAUDE_MDS, '1');
     assert.equal(call.options.runnerEnv.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
     assert.match(output, /memory isolation: Claude memory files and auto-memory are disabled/);
     assert.match(output, /extensions: user\/project skills, plugins, agents, hooks, and commands are not loaded/);
     assert.match(output, /skill sources: shipped pack skills plus Claude built-ins only/);
+    assert.match(output, /skill shell: dynamic shell preprocessing is disabled/);
     assert.match(output, /operator policy: 0 user deny rules imported; managed policy may still apply/);
     assert.deepEqual(receipt.observability, {
       denialCoverage: 'atris-hooks-only',

@@ -1673,6 +1673,7 @@ function printCapabilityTrustCard(policy, trust, receiptPath, userDenyRuleCount 
   console.log('  memory isolation: Claude memory files and auto-memory are disabled for this pack run');
   console.log('  extensions: user/project skills, plugins, agents, hooks, and commands are not loaded');
   console.log('  skill sources: shipped pack skills plus Claude built-ins only');
+  console.log('  skill shell: dynamic shell preprocessing is disabled; use explicit Bash when granted');
   console.log(`  operator policy: ${userDenyRuleCount} user deny rule${userDenyRuleCount === 1 ? '' : 's'} imported; managed policy may still apply`);
   console.log(`  approvals: ${trust ? 'pre-approved inside the declared ceiling (--trust); imported/managed deny rules still win' : 'prompted inside the declared ceiling'}`);
   console.log(`  host shell: ${policy.grantedCapabilities.includes('host.shell') ? 'GRANTED — Bash can reach host files and network' : 'denied'}`);
