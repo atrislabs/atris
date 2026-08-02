@@ -652,6 +652,7 @@ test('pack inspect resolves an installed slug and prints its trust surface', () 
     assert.match(inspected.stdout, new RegExp(`location: ${realTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     assert.match(inspected.stdout, /registry origin:\n  slug: trust-pack\n  url: https:\/\/registry\.test\/packs\/trust-pack/);
     assert.match(inspected.stdout, /installed version: 0\.1\.0/);
+    assert.match(inspected.stdout, /description: A tiny pack for tests\./);
     assert.match(inspected.stdout, /update state: last pulled remote v0\.2\.0 at 2026-08-02T01:00:00\.000Z/);
     assert.match(inspected.stdout, /files: 4, total size \d+(?:\.\d+)? (?:B|KB)/);
     assert.match(inspected.stdout, /top-level tree:/);
@@ -693,6 +694,8 @@ test('pack inspect accepts a directory and makes missing contracts visible', () 
     assert.match(inspected.stdout, /created-in: ABSENT/);
     assert.match(inspected.stdout, /source urls: ABSENT/);
     assert.match(inspected.stdout, /content hashes: absent \(legacy pack, bytes unverified\)/);
+    assert.match(inspected.stdout, /unclaimed: README\.md/);
+    assert.match(inspected.stdout, /unclaimed: RUN\.md/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -780,6 +783,7 @@ test('pack inspect --json returns one local lifecycle record without prose parsi
     assert.equal(result.status, 'inspected');
     assert.equal(result.slug, 'inspect-pack');
     assert.equal(result.title, 'Inspect Pack');
+    assert.equal(result.description, 'A tiny pack for tests.');
     assert.equal(result.location, fs.realpathSync(target));
     assert.equal(result.installedVersion, '0.1.0');
     assert.deepEqual(result.origin, {
@@ -826,14 +830,23 @@ test('pack inspect --json returns one local lifecycle record without prose parsi
     });
 
     const fileTarget = path.join(dir, 'file-pack');
-    writePackDir(fileTarget, { slug: 'file-pack', origin: { type: 'file' } });
+    writePackDir(fileTarget, { slug: 'file-pack', description: '   ', origin: { type: 'file' } });
     const fileResult = runCli(['pack', 'inspect', fileTarget, '--json'], { cwd: dir });
     assert.equal(fileResult.status, 0);
     const fileInspection = JSON.parse(fileResult.stdout);
     assert.equal(fileInspection.origin.type, 'file');
+    assert.equal(fileInspection.description, null);
     assert.equal(fileInspection.origin.fetchedByAtris, false);
     assert.equal(fileInspection.update.supported, false);
     assert.equal(fileInspection.update.status, 'unsupported');
+    assert.deepEqual(fileInspection.contentHashes, {
+      status: 'absent',
+      declared: 0,
+      files: 1,
+      verified: 0,
+      issues: [],
+      uncovered: ['README.md'],
+    });
   } finally {
     cleanupTempDir(dir);
   }

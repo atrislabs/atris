@@ -2332,7 +2332,14 @@ function inspectInstalledContentHashes(packDir, manifest) {
     };
   }
   if (!declared.present) {
-    return { status: 'absent', declared: 0, files: files.size, verified: 0, issues: [] };
+    return {
+      status: 'absent',
+      declared: 0,
+      files: files.size,
+      verified: 0,
+      issues: [],
+      uncovered: [...files.keys()],
+    };
   }
 
   const issues = [];
@@ -2368,6 +2375,10 @@ function inspectInstalledContentHashes(packDir, manifest) {
 function printContentHashStatus(result) {
   if (result.status === 'absent') {
     console.log('  content hashes: absent (legacy pack, bytes unverified)');
+    for (const contentPath of result.uncovered.slice(0, 10)) {
+      console.log(`    unclaimed: ${contentPath}`);
+    }
+    if (result.uncovered.length > 10) console.log(`    ... ${result.uncovered.length - 10} more unclaimed files`);
     return;
   }
   if (result.status === 'verified') {
@@ -2422,6 +2433,9 @@ function evaluatePackInspection(source, cwd = process.cwd(), options = {}) {
   const remoteState = readJson(packStatePath(packDir));
   const summary = summarizeInstalledFiles(packDir);
   const packType = declaredManifestValue(manifest, ['type', 'packType', 'pack_type', 'pack-type']);
+  const description = typeof manifest.description === 'string' && manifest.description.trim()
+    ? manifest.description.trim()
+    : null;
   const entrypoint = hasInspectValue(manifest.entrypoint)
     ? manifest.entrypoint
     : (resolvePackEntryFile(packDir, 'RUN.md') ? 'RUN.md' : null);
@@ -2485,6 +2499,7 @@ function evaluatePackInspection(source, cwd = process.cwd(), options = {}) {
     status: 'inspected',
     slug: manifest.slug,
     title: manifest.title || manifest.name || manifest.slug,
+    description,
     location: packDir,
     installedVersion,
     origin: {
@@ -2559,6 +2574,7 @@ function printPackInspection(inspection) {
   console.log(`location: ${result.location}`);
   printRegistryOrigin(result.origin);
   console.log(`installed version: ${result.installedVersion}`);
+  console.log(`description: ${result.description === null ? 'ABSENT' : formatInspectValue(result.description)}`);
   if (remoteState && remoteState.remoteVersion) {
     const checkedAt = remoteState.lastRemoteCheckAt ? ` at ${remoteState.lastRemoteCheckAt}` : ' time unknown';
     console.log(`update state: last remote check${checkedAt}, remote v${remoteState.remoteVersion}`);
