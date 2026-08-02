@@ -77,6 +77,52 @@ function runCli(args, { cwd, env = {} }) {
   return result;
 }
 
+function snapshotPack(dir) {
+  const snapshot = [];
+  function walk(current) {
+    for (const name of fs.readdirSync(current).sort()) {
+      const filePath = path.join(current, name);
+      const relative = path.relative(dir, filePath);
+      const stat = fs.lstatSync(filePath);
+      if (stat.isDirectory()) {
+        snapshot.push({ relative, type: 'directory', mode: stat.mode, mtimeMs: stat.mtimeMs });
+        walk(filePath);
+      } else {
+        snapshot.push({
+          relative,
+          type: stat.isSymbolicLink() ? 'symlink' : 'file',
+          mode: stat.mode,
+          mtimeMs: stat.mtimeMs,
+          contents: stat.isSymbolicLink() ? fs.readlinkSync(filePath) : fs.readFileSync(filePath).toString('base64'),
+        });
+      }
+    }
+  }
+  walk(dir);
+  return snapshot;
+}
+
+test('pack inspect is read-only', () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = path.join(dir, 'readonly-pack');
+    write(path.join(packDir, 'pack.json'), `${JSON.stringify({
+      slug: 'readonly-pack',
+      version: '1.0.0',
+      origin: { type: 'registry', slug: 'readonly-pack' },
+    }, null, 2)}\n`);
+    write(path.join(packDir, 'docs', 'guide.md'), '# guide\n');
+    const before = snapshotPack(packDir);
+
+    const inspected = runCli(['pack', 'inspect', packDir], { cwd: dir });
+    assert.equal(inspected.status, 0, `stdout:\n${inspected.stdout}\nstderr:\n${inspected.stderr}`);
+    assert.deepEqual(snapshotPack(packDir), before);
+    assert.ok(!fs.existsSync(path.join(packDir, '.upstream')), 'inspect must not create update state');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 // ── allowlist ───────────────────────────────────────────────────────────────
 
 test('packet allowlist ships the knowledge spine and nothing else', () => {
