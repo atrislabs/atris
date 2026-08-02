@@ -1550,7 +1550,7 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
   const displayTarget = path.relative(fs.realpathSync(cwd), fs.realpathSync(targetDir)) || '.';
   console.log(`installed ${slug} -> ${displayTarget}`);
   console.log(`check it: atris pack doctor ${shellQuote(displayTarget)}`);
-  console.log(`then run: atris pack run ${shellQuote(displayTarget)}`);
+  console.log(`if ready: atris pack run ${shellQuote(displayTarget)}`);
   return 0;
 }
 
