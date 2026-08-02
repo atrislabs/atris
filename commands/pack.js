@@ -2,10 +2,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { getAppBaseUrl, httpRequest } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
 const { createZipBuffer, readZipBuffer } = require('../lib/zip');
 const { craftPack } = require('./pack-craft');
+const { gatherAtrisContext } = require('./console');
 
 const REGISTRY_TIMEOUT_MS = 60000;
 
@@ -1092,16 +1094,24 @@ function assertForceInstallAllowed(targetDir, slug) {
   return existing;
 }
 
-function writeZipEntries(entries, targetDir) {
+function planZipWrites(entries, targetDir) {
   const writes = [];
   for (const entry of entries) {
     if (!entry.name || entry.name.endsWith('/')) continue;
     writes.push({ destination: resolveEntryTarget(targetDir, entry.name), data: entry.data });
   }
+  return writes;
+}
+
+function writePlannedZipEntries(writes) {
   for (const write of writes) {
     fs.mkdirSync(path.dirname(write.destination), { recursive: true });
     fs.writeFileSync(write.destination, write.data);
   }
+}
+
+function writeZipEntries(entries, targetDir) {
+  writePlannedZipEntries(planZipWrites(entries, targetDir));
 }
 
 function resolveEntryTarget(targetDir, entryName) {
@@ -1117,6 +1127,48 @@ function resolveEntryTarget(targetDir, entryName) {
     throw new Error(`refusing zip entry outside target: ${entryName}`);
   }
   return destination;
+}
+
+function containingGitRepo(targetDir) {
+  let candidate = path.resolve(targetDir);
+  while (true) {
+    if (fs.existsSync(path.join(candidate, '.git'))) return candidate;
+    const parent = path.dirname(candidate);
+    if (parent === candidate) return null;
+    candidate = parent;
+  }
+}
+
+function trackedRepoFiles(repoDir) {
+  const result = spawnSync('git', ['-C', repoDir, 'ls-files', '-z'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (result.status !== 0) return new Set();
+  return new Set(
+    result.stdout
+      .split('\0')
+      .filter(Boolean)
+      .map((name) => name.split(path.sep).join('/')),
+  );
+}
+
+function untrackedInstallCount(writes, repoDir) {
+  const tracked = trackedRepoFiles(repoDir);
+  return writes.filter((write) => {
+    const relative = path.relative(repoDir, write.destination).split(path.sep).join('/');
+    return !tracked.has(relative);
+  }).length;
+}
+
+function printInstallPreflight(targetDir, slug, writes, deps = {}) {
+  console.log(`destination: ${targetDir}`);
+  console.log(`registry url: ${registryUrl(`/api/pack/registry/${encodeURIComponent(slug)}`, deps)}`);
+
+  const repoDir = containingGitRepo(targetDir);
+  if (!repoDir) return;
+  const count = untrackedInstallCount(writes, repoDir);
+  console.log(`warning: ${count} ${count === 1 ? 'file' : 'files'} will be added untracked to git repository ${repoDir}`);
 }
 
 async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
@@ -1141,8 +1193,10 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
 
   const existing = force ? assertForceInstallAllowed(targetDir, slug) : null;
   const preserveOrigin = existing && existing.origin ? existing.origin : null;
+  const writes = planZipWrites(entries, targetDir);
 
-  writeZipEntries(entries, targetDir);
+  printInstallPreflight(targetDir, slug, writes, options.deps || {});
+  writePlannedZipEntries(writes);
   const manifest = finalizeInstalledPack(targetDir, payload, preserveOrigin);
   if (payload.sourceType === 'registry') {
     recordRemoteCheck(targetDir, {
@@ -1251,15 +1305,84 @@ async function startPackCloud(packDir, displayTarget, deps = {}) {
 // reader vouched for it.
 function startPackLocal(packDir, deps = {}, options = {}) {
   const trust = options.trust === true;
+  const openingPrompt = options.openingPrompt || null;
   const start = deps.computerLocal || require('./computer').computerLocal;
   const previous = process.cwd();
   process.chdir(packDir);
   try {
-    start([], { skipPermissions: trust });
+    start(openingPrompt ? [openingPrompt] : [], { skipPermissions: trust });
   } finally {
     process.chdir(previous);
   }
   return 0;
+}
+
+function entrypointFilePrompt(packDir, entrypoint) {
+  if (!entrypoint || entrypoint.includes('\n')) return null;
+  const candidate = path.resolve(packDir, entrypoint);
+  const root = path.resolve(packDir);
+  const rootWithSep = `${root}${path.sep}`;
+  if (candidate !== root && !candidate.startsWith(rootWithSep)) return null;
+  try {
+    if (!fs.statSync(candidate).isFile()) return null;
+    return fs.readFileSync(candidate, 'utf8').trim()
+      || `Read ${entrypoint} and follow its instructions.`;
+  } catch {
+    return null;
+  }
+}
+
+function packOpeningPrompt(packDir, manifest) {
+  const declared = typeof manifest.entrypoint === 'string' ? manifest.entrypoint.trim() : '';
+  if (declared) return entrypointFilePrompt(packDir, declared) || declared;
+
+  const runPath = path.join(packDir, 'RUN.md');
+  if (!fs.existsSync(runPath)) return null;
+  return fs.readFileSync(runPath, 'utf8').trim()
+    || 'Read RUN.md and follow its instructions.';
+}
+
+function listPackFiles(packDir) {
+  const files = [];
+  function visit(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === '.git') continue;
+      const absolute = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit(absolute);
+      } else if (entry.isFile()) {
+        files.push(path.relative(packDir, absolute).split(path.sep).join('/'));
+      }
+    }
+  }
+  visit(packDir);
+  return files.sort();
+}
+
+function packSource(manifest) {
+  const origin = manifest.origin;
+  if (!origin || typeof origin !== 'object') return 'local packet folder';
+  if (origin.type === 'registry') return `registry ${origin.slug || manifest.slug}`;
+  if (origin.type === 'url') return origin.url || 'url';
+  if (origin.type === 'file') return 'local zip file';
+  return String(origin.type || 'local packet folder');
+}
+
+function hasZeroAgentContext(packDir) {
+  const context = gatherAtrisContext(packDir);
+  return context.skills.length === 0
+    && context.teamMembers.length === 0
+    && context.backlogCount === 0;
+}
+
+function printContextOnlyOrientation(packDir, manifest) {
+  const files = listPackFiles(packDir);
+  const shown = files.slice(0, 12);
+  const remainder = files.length - shown.length;
+  console.log(`pack: ${manifest.title || manifest.name || manifest.slug}`);
+  console.log(`files (${files.length}): ${shown.join(', ')}${remainder > 0 ? ` (+${remainder} more)` : ''}`);
+  console.log(`source/origin: ${packSource(manifest)}`);
+  console.log('this pack declares no entrypoint, so the agent is starting with the pack files as context only.');
 }
 
 async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
@@ -1278,33 +1401,39 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
   const deps = options.deps || {};
   const install = deps.installPack || installPack;
   let packDir;
+  let manifest;
 
   if (looksLikeExistingDir(source, cwd)) {
     if (targetArg) throw new Error('--dir applies when installing a packet, not when running a folder');
     packDir = path.resolve(cwd, source);
-    assertPacketDir(packDir, cwd);
+    manifest = assertPacketDir(packDir, cwd);
   } else {
     packDir = path.resolve(cwd, targetArg || slugify(source));
     const alreadyThere = !force && fs.existsSync(path.join(packDir, 'pack.json'));
     if (alreadyThere) {
-      assertPacketDir(packDir, cwd);
+      manifest = assertPacketDir(packDir, cwd);
       console.log(`using installed packet ${path.relative(cwd, packDir) || '.'}`);
     } else {
       const installArgs = [source, '--dir', packDir];
       if (force) installArgs.push('--force');
       const code = await install(installArgs, cwd, options);
       if (code !== 0) return code;
-      assertPacketDir(packDir, cwd);
+      manifest = assertPacketDir(packDir, cwd);
     }
   }
 
   const displayTarget = path.relative(cwd, packDir) || '.';
   if (cloud) return startPackCloud(packDir, displayTarget, deps);
+  let openingPrompt = packOpeningPrompt(packDir, manifest);
+  if (!openingPrompt && hasZeroAgentContext(packDir)) {
+    printContextOnlyOrientation(packDir, manifest);
+    openingPrompt = 'Read README.md first, then inspect the rest of this pack\'s files. Propose the pack\'s first useful action before making changes.';
+  }
   console.log(`starting local computer in ${displayTarget}`);
   if (!trust) {
     console.log('permission prompts are on because this packet came from somewhere else; add --trust to turn them off.');
   }
-  return startPackLocal(packDir, deps, { trust });
+  return startPackLocal(packDir, deps, { trust, openingPrompt });
 }
 
 async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
