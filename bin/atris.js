@@ -1962,7 +1962,7 @@ if (command === 'init') {
   if (logsArgs.includes('--help') || logsArgs.includes('-h') || logsArgs[0] === 'help') {
     console.log('Usage: atris logs [--date YYYY-MM-DD] [--json]');
     console.log('');
-    console.log('  atris logs               Show today\'s workspace + team journal digest');
+    console.log('  atris logs               Show today\'s journal entries, completed receipts, and inbox in one view');
     console.log('  atris logs --date <day>  Show the digest for a specific day');
     console.log('  atris logs --json        Emit the digest as JSON');
     process.exit(0);

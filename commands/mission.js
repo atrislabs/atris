@@ -1734,7 +1734,7 @@ function missionVerifierCheckedText(verifierResult, mission) {
     if (/(?:node\s+\S*atris\.js|\batris)\s+drill\b/i.test(command)) return 'I ran the no-model end-to-end workflow drill.';
     return `Verifier passed: ${command}.`;
   }
-  if (/^git\s+diff\s+--check\b/i.test(command)) return 'VERIFY FAILED: diff cleanliness check failed.';
+  if (/^git\s+diff\s+--check\b/i.test(command)) return 'VERIFY FAILED: diff cleanliness check failed. Trailing whitespace in markdown is auto-fixable: npm run audit:markdown-whitespace -- --fix';
   if (/\bnode\s+--test\b/i.test(command)) return 'VERIFY FAILED: behavior checks failed.';
   return `VERIFY FAILED: ${command}.`;
 }
@@ -1755,7 +1755,8 @@ function missionVerifierHighLevelTestText(verifierResult, mission) {
   }
   const outcome = verifierResult.passed ? 'passed' : 'failed';
   if (/^git\s+diff\s+--check\b/i.test(command)) {
-    return `Diff cleanliness check ${outcome}: no whitespace or patch-format issues in the changed files.`;
+    if (verifierResult.passed) return `Diff cleanliness check passed: no whitespace or patch-format issues in the changed files.`;
+    return `Diff cleanliness check ${outcome}: whitespace or patch-format issues in the changed files. Trailing whitespace in markdown is auto-fixable: npm run audit:markdown-whitespace -- --fix`;
   }
   if (/\bnode\s+--test\b/i.test(command) && /\btest\/mission-status\.test\.js\b/i.test(command)) {
     return `Mission behavior checks ${outcome}: mission start, tick, completion, timeline landing, goal-chain, next-mission, and human-accept boundaries were exercised.`;

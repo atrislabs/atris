@@ -177,6 +177,70 @@ test('vercel deploy forwards to vercel', () => {
   }
 });
 
+function writeNoisyFakeVercel(dir) {
+  const binDir = path.join(dir, 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  const scriptPath = path.join(binDir, 'vercel');
+  fs.writeFileSync(scriptPath, [
+    '#!/bin/sh',
+    'if [ "$1" = "--version" ]; then echo "vercel version 1.2.3"; exit 0; fi',
+    'printf "%s\\n" "$*" >> "$ATRIS_FAKE_CLI_LOG"',
+    'echo "Building project..."',
+    'echo "WARN: deprecated option in vercel.json"',
+    'echo "compiling chunk 1 of 40"',
+    'echo "compiling chunk 2 of 40"',
+    'echo "compiling chunk 3 of 40"',
+    'echo "Error: chunk hash mismatch in build output"',
+    'echo "Deployment complete: https://example-abc.vercel.app"',
+    'exit 0',
+    '',
+  ].join('\n'));
+  fs.chmodSync(scriptPath, 0o755);
+  return binDir;
+}
+
+test('vercel deploy prints a grouped summary instead of the raw wall', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'vercel.log');
+    const binDir = writeNoisyFakeVercel(dir);
+    const res = runCli(['vercel', 'deploy', '--prod'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /vercel deploy --prod: ok, 7 output lines/);
+    assert.match(res.stdout, /links \(1\)/);
+    assert.match(res.stdout, /https:\/\/example-abc\.vercel\.app/);
+    assert.match(res.stdout, /errors \(1\)/);
+    assert.match(res.stdout, /warnings \(1\)/);
+    assert.match(res.stdout, /last lines/);
+    assert.match(res.stdout, /full output: atris vercel deploy --prod --raw/);
+    assert.deepEqual(readLog(logPath), ['deploy --prod']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('vercel deploy --raw streams the cli output ungrouped', () => {
+  const dir = makeTempDir();
+  try {
+    const logPath = path.join(dir, 'vercel.log');
+    const binDir = writeNoisyFakeVercel(dir);
+    const res = runCli(['vercel', 'deploy', '--prod', '--raw'], {
+      cwd: dir,
+      env: { PATH: binDir, ATRIS_FAKE_CLI_LOG: logPath },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Building project\.\.\./);
+    assert.match(res.stdout, /compiling chunk 1 of 40/);
+    assert.doesNotMatch(res.stdout, /output lines/);
+    assert.deepEqual(readLog(logPath), ['deploy --prod']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('supabase help is workspace-free', () => {
   const dir = makeTempDir();
   try {

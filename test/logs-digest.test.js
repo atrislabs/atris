@@ -45,6 +45,40 @@ test('logs digest prints the workspace journal and existing team logs', () => {
   }
 });
 
+test('logs digest groups a templated journal into one scannable view', () => {
+  const dir = makeTempDir();
+  try {
+    const date = '2026-08-03';
+    const workspaceLog = path.join(dir, 'atris', 'logs', '2026', `${date}.md`);
+    fs.mkdirSync(path.dirname(workspaceLog), { recursive: true });
+    fs.writeFileSync(workspaceLog, [
+      `# Log — ${date}`,
+      '',
+      '## Completed ✅',
+      '',
+      '- **C1:** shipped the digest view',
+      '- **C2:** fixed the verifier hint',
+      '',
+      '---',
+      '',
+      '## Inbox',
+      '',
+      '- **I1:** look at deploy output',
+      '',
+    ].join('\n'), 'utf8');
+
+    const output = captureOutput(() => logsDigest(['--date', date], { cwd: dir }));
+    assert.match(output, /2026-08-03: 1 log, 2 completed, 1 inbox/);
+    assert.match(output, /completed ✅ \(2\)/);
+    assert.match(output, /\*\*C1:\*\* shipped the digest view/);
+    assert.match(output, /inbox \(1\)/);
+    assert.match(output, /\*\*I1:\*\* look at deploy output/);
+    assert.doesNotMatch(output, /^---$/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('logs digest prints the empty message for a missing day', () => {
   const dir = makeTempDir();
   try {
