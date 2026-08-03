@@ -35,6 +35,11 @@ const {
   inspectTextLines,
   buildInspectPayload,
 } = require('../lib/inspect-fields');
+const {
+  isDecisionTask,
+  decisionMarkerFor,
+  DECISION_REFUSE_REASON,
+} = require('../lib/task-decision');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -5815,7 +5820,8 @@ function formatTaskLine(task) {
   const owner = task.claimed_by ? ` @${task.claimed_by}` : '';
   const assigned = !task.claimed_by && taskAssignee(task) ? ` -> ${taskAssignee(task)}` : '';
   const tag = task.tag ? ` #${task.tag}` : '';
-  return `${taskRef(task)}${owner}${assigned}${tag} ${task.title}`;
+  const decision = decisionMarkerFor(task) ? ` ${decisionMarkerFor(task)}` : '';
+  return `${taskRef(task)}${owner}${assigned}${tag}${decision} ${task.title}`;
 }
 
 function cmdStatus(args) {
@@ -5910,7 +5916,8 @@ function renderTaskDesk(rows, refRows = rows) {
     const owner = r.claimed_by ? ` @${r.claimed_by}` : '';
     const assigned = !r.claimed_by && taskAssignee(r) ? ` -> ${taskAssignee(r)}` : '';
     const tag = r.tag ? ` #${r.tag}` : '';
-    console.log(`${r.status.padEnd(7)} ${taskRef(r)}${owner}${assigned}${tag}`);
+    const decision = decisionMarkerFor(r) ? ` ${decisionMarkerFor(r)}` : '';
+    console.log(`${r.status.padEnd(7)} ${taskRef(r)}${owner}${assigned}${tag}${decision}`);
     console.log(`        ${r.title}`);
   }
   if (active.length === 0) console.log('clear   no active tasks');
@@ -6196,7 +6203,8 @@ function cmdDay(args) {
     for (const task of group.tasks) {
       const tag = task.tag ? ` #${task.tag}` : '';
       const claim = task.claimed_by ? ` @${task.claimed_by}` : '';
-      console.log(`  ${task.status.padEnd(7)} ${taskRef(task)}${claim}${tag} ${taskDayTitle(task.title)}`);
+      const decision = decisionMarkerFor(task) ? ` ${decisionMarkerFor(task)}` : '';
+      console.log(`  ${task.status.padEnd(7)} ${taskRef(task)}${claim}${tag}${decision} ${taskDayTitle(task.title)}`);
     }
   }
   if (textView.hiddenTasks > 0) {
@@ -6265,7 +6273,8 @@ function cmdList(args) {
   for (const r of displayRows) {
     const claim = r.claimed_by ? ` [${r.claimed_by}]` : '';
     const tag = r.tag ? ` #${r.tag}` : '';
-    console.log(`${r.status.padEnd(8)} ${taskRef(r)}${claim}${tag}\t${r.title}`);
+    const decision = decisionMarkerFor(r) ? ` ${decisionMarkerFor(r)}` : '';
+    console.log(`${r.status.padEnd(8)} ${taskRef(r)}${claim}${tag}${decision}\t${r.title}`);
   }
 }
 
@@ -6295,7 +6304,11 @@ function guardExplicitActor(command, value) {
 // instead of just reporting the failure, straight from the live projection
 // (never the rendered file), preferring the same tag when one is open.
 function suggestNextClaimableTask(projection, { excludeId = null, tag = '' } = {}) {
-  const open = (projection && projection.tasks || []).filter((t) => t && t.status === 'open' && t.id !== excludeId);
+  // Decision rows (needs-human / decision) belong to a human. Autonomous
+  // recovery after already_done must not hand an agent a judgment call.
+  const open = (projection && projection.tasks || []).filter((t) => (
+    t && t.status === 'open' && t.id !== excludeId && !isDecisionTask(t)
+  ));
   if (!open.length) return null;
   const normalizedTag = String(tag || '').trim().toLowerCase();
   if (normalizedTag) {
@@ -6545,13 +6558,31 @@ function cmdNext(args) {
   const reviewTasks = filterTasksByScope(reviewProjection.projection.tasks || [], scope)
     .map(compactTaskForStatus)
     .filter(task => task && task.review && task.review.handoff);
-  const open = filterTasksByScope(taskDb.listTasks(db, {
+  const openAll = filterTasksByScope(taskDb.listTasks(db, {
     workspaceRoot: taskDb.workspaceRoot(),
     status: 'open',
-    limit: scoped ? null : 1,
+    limit: scoped ? null : 50,
   }), scope);
+  const open = openAll.filter((task) => !isDecisionTask(task));
+  const skippedDecisions = openAll.length - open.length;
   if (!open.length) {
     const { projection, outPath } = reviewProjection;
+    if (skippedDecisions > 0 && !reviewTasks.length) {
+      if (wantsJson(args)) {
+        printJson({
+          ok: false,
+          action: 'refused',
+          reason: DECISION_REFUSE_REASON,
+          skipped_decision_count: skippedDecisions,
+          owner: String(owner),
+          scope: normalizeTaskQueueScope(scope),
+          projection_path: outPath,
+        });
+        process.exit(1);
+      }
+      console.error(DECISION_REFUSE_REASON);
+      process.exit(1);
+    }
     const reviewTask = reviewTasks.find(task => task.review.handoff.next_action === 'agent_review_again')
       || reviewTasks.find(task => task.review.handoff.next_action === 'continue_work')
       || reviewTasks.find(task => task.review.handoff.next_action === 'human_accept_waiting');
@@ -10150,7 +10181,7 @@ function autoAcceptSweepDeniedReason(task) {
   for (const value of autoAcceptSweepLabelValues(task)) {
     const tokens = autoAcceptSweepNormalizedTokens(value);
     for (const token of tokens) {
-      if (token === 'needs-human' || token === 'needshuman') {
+      if (token === 'needs-human' || token === 'needshuman' || token === 'decision') {
         return 'needs_human';
       }
       const protectedLane = [...SWEEP_AUTO_ACCEPT_PROTECTED].find((denied) =>

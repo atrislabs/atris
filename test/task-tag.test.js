@@ -226,4 +226,79 @@ test('fleet staffing skips a task flagged needs-human via metadata.tags', () => 
   // The underscore spelling normalizes to the same hold.
   assert.equal(fleet.isSafeLane({ ...base, metadata: { tags: ['needs_human'] } }), false);
   assert.equal(fleet.isHumanHoldTag('NEEDS-HUMAN'), true);
+
+  // The clearer `decision` tag is the same human hold.
+  const decision = { ...base, tag: 'web-quality', metadata: { tags: ['decision'] } };
+  assert.equal(fleet.isSafeLane(decision), false);
+  assert.equal(fleet.isDecisionTask(decision), true);
+  assert.equal(fleet.staffFlight([decision], { slots: 3 }).length, 0);
+  assert.equal(fleet.DECISION_REFUSE_REASON, 'decision row: human judgment required');
+});
+
+test('task list marks decision rows and task next refuses them', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = makeEnv(dir);
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const work = JSON.parse(runCli([
+      'task', 'new', 'Ship a small rendering fix', '--tag', 'agent', '--json',
+    ], { cwd: dir, env }).stdout).task;
+    const decision = JSON.parse(runCli([
+      'task', 'new', 'Raise the bundle budget or replace the metric', '--tag', 'web-quality', '--json',
+    ], { cwd: dir, env }).stdout).task;
+    assert.equal(runCli([
+      'task', 'tag', decision.display_id, '--add', 'decision', '--as', 'keshav', '--json',
+    ], { cwd: dir, env }).status, 0);
+
+    const listed = runCli(['task', 'list'], { cwd: dir, env });
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.match(listed.stdout, new RegExp(`${decision.display_id}.*\\[decision\\]`));
+    assert.doesNotMatch(listed.stdout, new RegExp(`${work.display_id}.*\\[decision\\]`));
+
+    // With only the decision row open first in claim order is irrelevant:
+    // next must claim the work row, never the judgment call.
+    const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(next.status, 0, next.stderr || next.stdout);
+    const nextPayload = JSON.parse(next.stdout);
+    assert.equal(nextPayload.task.display_id, work.display_id);
+
+    // After the work row is claimed, only the decision remains: refuse.
+    const refused = runCli(['task', 'next', '--as', 'fleet-codex', '--json'], { cwd: dir, env });
+    assert.notEqual(refused.status, 0);
+    const body = `${refused.stdout || ''}${refused.stderr || ''}`;
+    assert.match(body, /decision row: human judgment required/);
+    assert.equal(
+      JSON.parse(runCli(['task', 'show', decision.display_id, '--json'], { cwd: dir, env }).stdout).status,
+      'open',
+      'a refused next must leave the decision row unclaimed',
+    );
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task next refuses when the only open row is needs-human', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = makeEnv(dir);
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const held = JSON.parse(runCli([
+      'task', 'new', 'Mount the notification bell or delete it', '--tag', 'web-quality', '--json',
+    ], { cwd: dir, env }).stdout).task;
+    assert.equal(runCli([
+      'task', 'tag', held.display_id, '--add', 'needs-human', '--as', 'keshav', '--json',
+    ], { cwd: dir, env }).status, 0);
+
+    const listed = runCli(['task', 'list'], { cwd: dir, env });
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.match(listed.stdout, /\[decision\]/);
+
+    const refused = runCli(['task', 'next', '--as', 'fleet-codex', '--json'], { cwd: dir, env });
+    assert.notEqual(refused.status, 0);
+    assert.match(`${refused.stdout || ''}${refused.stderr || ''}`, /decision row: human judgment required/);
+  } finally {
+    cleanupTempDir(dir);
+  }
 });
