@@ -24,6 +24,7 @@ Keep this file aligned with `atris/persona.md`.
 - No task codes, commit hashes, or internal system names in the message body. If the reader needs a code to act, put ONE copyable command at the end.
 - No insider terms without defining them in the same breath.
 - One idea per line. Outcome first. Detail lives in files, not the message.
+- Lists: spell the numbers as words (One. Two. Three.), each item its own paragraph with a blank line between. Never markdown numbered lists — they render cramped.
 - The test: a sharp, tired non-engineer follows it on first read. If not, rewrite.
 
 ## Anti-patterns
