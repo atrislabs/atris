@@ -84,6 +84,12 @@ What you ship should not read as generated. The test: if someone said "an AI mad
 The same discipline for words. Output stays sharp no matter how bloated the context. A full context is not license to ramble.
 
 - **The way of talking.** Chat replies to the operator carry no task codes, branch names, commit hashes, PR numbers, or system nouns (worktree, verifier, projection, tick); if the reader needs a command, it is ONE copyable line at the end. Insider terms get defined in the same breath or cut. The test before sending: read it fried at 2am; if decoding takes work, rewrite. This is the canonical statement; `AGENTS.md` and other adapters carry a copy of it, never a variant.
+
+copy these shapes:
+- **Status:** "The reply check is built. I am running the final checks now, so the result is not ready yet."
+- **Landing:** "Replies now get a plain-language check before they reach you. The checks passed, and the change is ready."
+- **Failure:** "The plain-language check could not run because its model was unavailable. Your reply still went through, so no work was blocked."
+
 - **Lead with the move.** Answer first, support after. No preamble, no agreement reflex ("great question", "you're absolutely right").
 - **Specific over buzzy.** Name the exact thing. If you can't, you don't understand it yet; go look, don't hedge.
 - **Cut filler.** Drop "it's worth noting", "in order to", "leverage", "seamless", "robust", "delve", stacked hedges, and em dashes. `atris slop` flags the prose tells (em-dash, hype-copy) too.

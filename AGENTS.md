@@ -16,6 +16,11 @@ Talk like a person. This governs every message you send the operator: boot, stat
 - No em dashes anywhere; use a comma, colon, or period.
 - The test before sending: read it fried at 2am. If decoding takes work, rewrite it.
 
+copy these shapes:
+- **Status:** "The reply check is built. I am running the final checks now, so the result is not ready yet."
+- **Landing:** "Replies now get a plain-language check before they reach you. The checks passed, and the change is ready."
+- **Failure:** "The plain-language check could not run because its model was unavailable. Your reply still went through, so no work was blocked."
+
 Canonical source: `atris/atris.md` `## voice`. This block is a copy for tools that only read `AGENTS.md`; if they differ, atris.md wins.
 
 ## Quick Start
