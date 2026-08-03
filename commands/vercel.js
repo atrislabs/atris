@@ -12,7 +12,8 @@ const vercelCommand = createOfficialCliCommand({
       usage: 'deploy',
       match: ['deploy'],
       forward: ['deploy'],
-      description: 'deploy the current project',
+      description: 'deploy the current project (grouped output)',
+      summarize: true,
     },
     {
       usage: 'ls',
@@ -24,7 +25,8 @@ const vercelCommand = createOfficialCliCommand({
       usage: 'logs',
       match: ['logs'],
       forward: ['logs'],
-      description: 'stream or inspect deployment logs',
+      description: 'stream or inspect deployment logs (grouped output)',
+      summarize: true,
     },
     {
       usage: 'inspect',
