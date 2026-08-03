@@ -3,11 +3,16 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { loadCredentials } = require('../utils/auth');
 const { httpRequest } = require('../utils/api');
 
 const DEFAULT_API_BASE = 'https://api.atris.ai';
+const RENDER_API_BASE = 'https://api.render.com/v1';
 const RENDER_SERVICE_ID = 'srv-culkutq3esus73cvqcg0';
+const RENDER_POLL_INTERVAL_MS = 15000;
+const RENDER_POLL_TIMEOUT_MS = 10 * 60 * 1000;
+const GITHUB_ORG = 'atrislabs';
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_FILES = 200;
 const BATCH_SIZE = 50;
@@ -47,10 +52,12 @@ function printHelp() {
   atris site deploy: publish a web folder at a free atris.ai subdomain
 
     atris site deploy <dir> --name <slug> [--spa] [--dry-run]
+    atris site deploy <dir> --fullstack --name <slug> [--dry-run]
     atris site deploy dist --name my-site --api-base https://api.atris.ai
 
   names use lowercase letters, digits, and hyphens. files are capped at 2 mb
-  each and 200 total. --spa enables single-page app routing.
+  each and 200 total. --spa enables single-page app routing. --fullstack
+  deploys a node server with a package.json start script.
 `);
 }
 
@@ -60,6 +67,7 @@ function parseArgs(argv) {
     name: null,
     apiBase: DEFAULT_API_BASE,
     spa: false,
+    fullstack: false,
     dryRun: false,
     help: false,
   };
@@ -70,6 +78,8 @@ function parseArgs(argv) {
       options.help = true;
     } else if (arg === '--spa') {
       options.spa = true;
+    } else if (arg === '--fullstack') {
+      options.fullstack = true;
     } else if (arg === '--dry-run') {
       options.dryRun = true;
     } else if (arg === '--name' || arg === '--api-base') {
@@ -340,6 +350,25 @@ function renderApiKey(yaml) {
   return null;
 }
 
+function loadRenderApiKey(deps = {}) {
+  if (deps.renderApiKey) return deps.renderApiKey;
+  const fileSystem = deps.fs || fs;
+  const home = deps.homedir ? deps.homedir() : os.homedir();
+  const configPath = path.join(home, '.render', 'cli.yaml');
+  if (!fileSystem.existsSync(configPath)) {
+    throw new Error('~/.render/cli.yaml was not found');
+  }
+  let yaml;
+  try {
+    yaml = fileSystem.readFileSync(configPath, 'utf8');
+  } catch (error) {
+    throw new Error(`the render config could not be read: ${error.message}`);
+  }
+  const apiKey = renderApiKey(yaml);
+  if (!apiKey) throw new Error('the render api key was not found in ~/.render/cli.yaml');
+  return apiKey;
+}
+
 function alreadyExists(result) {
   return result.status === 409 || /already[\s_-]*(?:exists|registered)|conflict/i.test(errorDetail(result));
 }
@@ -350,28 +379,16 @@ function withoutSecret(value, secret) {
 }
 
 async function registerSubdomain(slug, deps = {}) {
-  const fileSystem = deps.fs || fs;
-  const home = deps.homedir ? deps.homedir() : os.homedir();
   const log = deps.log || console.log;
-  const configPath = path.join(home, '.render', 'cli.yaml');
-  if (!fileSystem.existsSync(configPath)) {
-    log('  warning: subdomain registration skipped because ~/.render/cli.yaml was not found');
-    return;
-  }
-
   let apiKey;
   try {
-    apiKey = renderApiKey(fileSystem.readFileSync(configPath, 'utf8'));
+    apiKey = loadRenderApiKey(deps);
   } catch (error) {
-    log(`  warning: subdomain registration skipped because the render config could not be read: ${error.message}`);
-    return;
-  }
-  if (!apiKey) {
-    log('  warning: subdomain registration skipped because the render api key was not found');
+    log(`  warning: subdomain registration skipped because ${error.message}`);
     return;
   }
 
-  const base = `https://api.render.com/v1/services/${RENDER_SERVICE_ID}/custom-domains`;
+  const base = `${RENDER_API_BASE}/services/${RENDER_SERVICE_ID}/custom-domains`;
   let created;
   try {
     created = await requestJson('POST', base, apiKey, { name: `${slug}.atris.ai` }, deps);
@@ -404,6 +421,337 @@ async function registerSubdomain(slug, deps = {}) {
     }
   } catch (error) {
     log(`  warning: subdomain verification failed: ${withoutSecret(error.message, apiKey)}`);
+  }
+}
+
+function fullstackPackage(root, deps = {}) {
+  const fileSystem = deps.fs || fs;
+  const packagePath = path.join(root, 'package.json');
+  if (!fileSystem.existsSync(packagePath)) {
+    throw new Error('fullstack deploy needs package.json. add package.json with a "start" script.');
+  }
+
+  let packageJson;
+  try {
+    packageJson = JSON.parse(fileSystem.readFileSync(packagePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`package.json could not be read. fix its json and add a "start" script: ${error.message}`);
+  }
+  const scripts = packageJson && packageJson.scripts;
+  if (!scripts || typeof scripts.start !== 'string' || !scripts.start.trim()) {
+    throw new Error('fullstack deploy needs a start script. add "scripts": { "start": "node server.js" } to package.json.');
+  }
+  const hasBuild = typeof scripts.build === 'string' && scripts.build.trim();
+  return { buildCommand: hasBuild ? 'npm install && npm run build' : 'npm install' };
+}
+
+function printFullstackPlan(slug, packagePlan, log) {
+  const repoName = `atris-app-${slug}`;
+  const repoUrl = `https://github.com/${GITHUB_ORG}/${repoName}`;
+  const renderName = `atris-app-${slug}`;
+  log('\n  dry run: fullstack deploy');
+  log(`  repository ${GITHUB_ORG}/${repoName} (private)`);
+  log(`  render service ${renderName}`);
+  log(`  repo ${repoUrl}`);
+  log('  branch main');
+  log('  runtime node');
+  log('  plan starter');
+  log('  region oregon');
+  log(`  build ${packagePlan.buildCommand}`);
+  log('  start npm start');
+  log('  auto deploy yes');
+  log(`  render target https://${renderName}.onrender.com`);
+  log(`  target https://${slug}.atris.ai`);
+  log('  no network calls made');
+}
+
+function commandAttempt(command, args, cwd, deps = {}) {
+  const execute = deps.spawnSync || spawnSync;
+  return execute(command, args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: 'pipe',
+    timeout: 120000,
+  });
+}
+
+function commandError(command, args, attempt) {
+  const detail = String(attempt.stderr || attempt.stdout || '').trim();
+  const cause = attempt.error ? attempt.error.message : `exit ${attempt.status}`;
+  return new Error(`${command} ${args.join(' ')} failed (${cause})${detail ? `\n${detail}` : ''}`);
+}
+
+function requireCommand(command, args, cwd, deps = {}) {
+  const attempt = commandAttempt(command, args, cwd, deps);
+  if (attempt.error || attempt.status !== 0) throw commandError(command, args, attempt);
+  return attempt;
+}
+
+function replaceScratchContents(sourceRoot, scratchRepo, deps = {}) {
+  const fileSystem = deps.fs || fs;
+  for (const entry of fileSystem.readdirSync(scratchRepo)) {
+    if (entry !== '.git') fileSystem.rmSync(path.join(scratchRepo, entry), { recursive: true, force: true });
+  }
+  for (const entry of fileSystem.readdirSync(sourceRoot)) {
+    if (entry === '.git' || entry === 'node_modules') continue;
+    fileSystem.cpSync(path.join(sourceRoot, entry), path.join(scratchRepo, entry), {
+      recursive: true,
+      dereference: false,
+    });
+  }
+}
+
+function publishGithubRepo(sourceRoot, slug, deps = {}) {
+  const fileSystem = deps.fs || fs;
+  const log = deps.log || console.log;
+  const repoName = `atris-app-${slug}`;
+  const repoPath = `${GITHUB_ORG}/${repoName}`;
+  const repoUrl = `https://github.com/${repoPath}`;
+
+  requireCommand('gh', ['auth', 'status'], sourceRoot, deps);
+  const viewArgs = ['repo', 'view', repoPath, '--json', 'visibility'];
+  const view = commandAttempt('gh', viewArgs, sourceRoot, deps);
+  if (view.error) throw commandError('gh', viewArgs, view);
+  const repoExists = view.status === 0;
+  if (!repoExists) {
+    requireCommand('gh', ['repo', 'create', repoPath, '--private'], sourceRoot, deps);
+    log(`  created private repository ${repoPath}`);
+  } else {
+    let visibility = null;
+    try { visibility = JSON.parse(view.stdout).visibility; } catch {}
+    if (visibility && visibility !== 'PRIVATE') {
+      requireCommand('gh', [
+        'repo', 'edit', repoPath, '--visibility', 'private',
+        '--accept-visibility-change-consequences',
+      ], sourceRoot, deps);
+    }
+    log(`  reusing private repository ${repoPath}`);
+  }
+
+  const scratchRoot = fileSystem.mkdtempSync(path.join(os.tmpdir(), 'atris-fullstack-'));
+  const scratchRepo = path.join(scratchRoot, 'repo');
+  fileSystem.mkdirSync(scratchRepo);
+  try {
+    requireCommand('git', ['init'], scratchRepo, deps);
+    requireCommand('git', ['config', 'user.name', 'Atris'], scratchRepo, deps);
+    requireCommand('git', ['config', 'user.email', '299057014+atris-builder[bot]@users.noreply.github.com'], scratchRepo, deps);
+    requireCommand('git', ['config', 'commit.gpgsign', 'false'], scratchRepo, deps);
+    requireCommand('git', ['remote', 'add', 'origin', `${repoUrl}.git`], scratchRepo, deps);
+    if (repoExists) {
+      const fetched = commandAttempt('git', ['fetch', '--depth=1', 'origin', 'main'], scratchRepo, deps);
+      if (fetched.status === 0) {
+        requireCommand('git', ['checkout', '-B', 'main', 'FETCH_HEAD'], scratchRepo, deps);
+      } else if (!fetched.error && /remote ref main|couldn't find remote ref/i.test(String(fetched.stderr || ''))) {
+        requireCommand('git', ['checkout', '-b', 'main'], scratchRepo, deps);
+      } else {
+        throw commandError('git', ['fetch', '--depth=1', 'origin', 'main'], fetched);
+      }
+    } else {
+      requireCommand('git', ['checkout', '-b', 'main'], scratchRepo, deps);
+    }
+    replaceScratchContents(sourceRoot, scratchRepo, deps);
+    requireCommand('git', ['add', '--all'], scratchRepo, deps);
+    const changed = commandAttempt('git', ['diff', '--cached', '--quiet'], scratchRepo, deps);
+    if (changed.error || (changed.status !== 0 && changed.status !== 1)) {
+      throw commandError('git', ['diff', '--cached', '--quiet'], changed);
+    }
+    if (changed.status === 1) {
+      requireCommand('git', ['commit', '-m', `deploy ${slug}`], scratchRepo, deps);
+    }
+    requireCommand('git', ['push', '--set-upstream', 'origin', 'main'], scratchRepo, deps);
+  } finally {
+    fileSystem.rmSync(scratchRoot, { recursive: true, force: true });
+  }
+  log(`  pushed source to ${repoPath}`);
+  return repoUrl;
+}
+
+function serviceFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  return payload.service || payload;
+}
+
+function deployFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  return payload.deploy || payload;
+}
+
+async function renderRequest(method, url, apiKey, body, deps = {}) {
+  const response = await requestJson(method, url, apiKey, body, deps);
+  if (response.status < 200 || response.status >= 300) throw requestError(method, url, response);
+  return parseResponseData(response);
+}
+
+async function ensureRenderService(slug, repoUrl, buildCommand, apiKey, deps = {}) {
+  const log = deps.log || console.log;
+  const serviceName = `atris-app-${slug}`;
+  const listUrl = `${RENDER_API_BASE}/services?name=${encodeURIComponent(serviceName)}&limit=100`;
+  const listed = await renderRequest('GET', listUrl, apiKey, undefined, deps);
+  const entries = Array.isArray(listed) ? listed : [];
+  const existing = entries.map(serviceFromPayload).find((service) => service && service.name === serviceName);
+  if (existing) {
+    log(`  reusing render service ${serviceName}`);
+    const deployPayload = await renderRequest(
+      'POST',
+      `${RENDER_API_BASE}/services/${encodeURIComponent(existing.id)}/deploys`,
+      apiKey,
+      undefined,
+      deps,
+    );
+    return { service: existing, deploy: deployFromPayload(deployPayload) };
+  }
+
+  const backendPayload = await renderRequest(
+    'GET',
+    `${RENDER_API_BASE}/services/${RENDER_SERVICE_ID}`,
+    apiKey,
+    undefined,
+    deps,
+  );
+  const backendService = serviceFromPayload(backendPayload);
+  if (!backendService || !backendService.ownerId) {
+    throw new Error(`render service ${RENDER_SERVICE_ID} did not return a workspace id`);
+  }
+  const servicePayload = await renderRequest('POST', `${RENDER_API_BASE}/services`, apiKey, {
+    type: 'web_service',
+    name: serviceName,
+    ownerId: backendService.ownerId,
+    repo: repoUrl,
+    branch: 'main',
+    autoDeploy: 'yes',
+    serviceDetails: {
+      runtime: 'node',
+      plan: 'starter',
+      region: 'oregon',
+      envSpecificDetails: {
+        buildCommand,
+        startCommand: 'npm start',
+      },
+    },
+  }, deps);
+  const created = serviceFromPayload(servicePayload);
+  if (!created || !created.id) throw new Error(`render did not return the new service ${serviceName}`);
+  log(`  created render service ${serviceName}`);
+  return { service: created, deploy: null };
+}
+
+async function pollRenderDeploy(serviceId, initialDeploy, apiKey, deps = {}) {
+  const log = deps.log || console.log;
+  const sleep = deps.sleep || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const interval = deps.pollIntervalMs === undefined ? RENDER_POLL_INTERVAL_MS : deps.pollIntervalMs;
+  const timeout = deps.pollTimeoutMs === undefined ? RENDER_POLL_TIMEOUT_MS : deps.pollTimeoutMs;
+  const maxPolls = Math.max(1, Math.floor(timeout / Math.max(1, interval)) + 1);
+  const deployId = initialDeploy && initialDeploy.id;
+
+  for (let poll = 0; poll < maxPolls; poll += 1) {
+    let deploy;
+    if (deployId) {
+      const payload = await renderRequest(
+        'GET',
+        `${RENDER_API_BASE}/services/${encodeURIComponent(serviceId)}/deploys/${encodeURIComponent(deployId)}`,
+        apiKey,
+        undefined,
+        deps,
+      );
+      deploy = deployFromPayload(payload);
+    } else {
+      const payload = await renderRequest(
+        'GET',
+        `${RENDER_API_BASE}/services/${encodeURIComponent(serviceId)}/deploys?limit=1`,
+        apiKey,
+        undefined,
+        deps,
+      );
+      const first = Array.isArray(payload) ? payload[0] : null;
+      deploy = deployFromPayload(first);
+    }
+    const status = deploy && deploy.status ? deploy.status : 'waiting';
+    log(`  render deploy status: ${status}`);
+    if (status === 'live') return deploy;
+    if (/failed|canceled|deactivated/.test(status)) {
+      throw new Error(`render deploy ${status}`);
+    }
+    if (poll + 1 < maxPolls) await sleep(interval);
+  }
+  throw new Error('render deploy did not go live within 10 minutes');
+}
+
+function proxyTargetFromService(service) {
+  const rawUrl = service && ((service.serviceDetails && service.serviceDetails.url) || service.url);
+  if (!rawUrl) return null;
+  try {
+    return new URL(rawUrl).hostname;
+  } catch {
+    return String(rawUrl).replace(/^https?:\/\//, '').replace(/\/$/, '');
+  }
+}
+
+async function renderProxyTarget(service, apiKey, deps = {}) {
+  let proxyTarget = proxyTargetFromService(service);
+  if (!proxyTarget) {
+    const payload = await renderRequest(
+      'GET',
+      `${RENDER_API_BASE}/services/${encodeURIComponent(service.id)}`,
+      apiKey,
+      undefined,
+      deps,
+    );
+    proxyTarget = proxyTargetFromService(serviceFromPayload(payload));
+  }
+  if (!proxyTarget) throw new Error(`render service ${service.name || service.id} did not return its url`);
+  if (!/^[a-z0-9-]+\.onrender\.com$/i.test(proxyTarget)) {
+    throw new Error(`render service ${service.name || service.id} returned an invalid proxy target`);
+  }
+  return proxyTarget;
+}
+
+async function setProxyTarget(sitesUrl, slug, proxyTarget, token, deps = {}) {
+  const log = deps.log || console.log;
+  const url = `${sitesUrl}/${slug}`;
+  const body = { proxy_target: proxyTarget };
+  const response = await requestJson('PATCH', url, token, body, deps);
+  if (response.status >= 200 && response.status < 300) {
+    log(`  wired ${slug}.atris.ai to ${proxyTarget}`);
+    return true;
+  }
+  const detail = errorDetail(response);
+  if ((response.status === 400 || response.status === 422) && /proxy_target|unknown|extra|unexpected|not permitted/i.test(detail)) {
+    log(`  warning: the atris api does not accept proxy_target yet: ${detail}`);
+    log(`  retry later: PATCH ${url} with ${JSON.stringify(body)}`);
+    return false;
+  }
+  throw requestError('PATCH', url, response);
+}
+
+async function runFullstack(root, options, packagePlan, deps = {}) {
+  const log = deps.log || console.log;
+  const errorLog = deps.error || console.error;
+  let credentials;
+  let apiKey;
+  try {
+    const readCredentials = deps.loadCredentials || loadCredentials;
+    credentials = readCredentials();
+    if (!credentials || !credentials.token) {
+      errorLog('  not logged in. run atris login first.');
+      return 1;
+    }
+    apiKey = loadRenderApiKey(deps);
+    const repoUrl = publishGithubRepo(root, options.name, { ...deps, log });
+    const render = await ensureRenderService(options.name, repoUrl, packagePlan.buildCommand, apiKey, { ...deps, log });
+    await pollRenderDeploy(render.service.id, render.deploy, apiKey, { ...deps, log });
+    const proxyTarget = await renderProxyTarget(render.service, apiKey, deps);
+    const sitesUrl = `${options.apiBase}/api/sites`;
+    await createSite(sitesUrl, options.name, false, credentials.token, { ...deps, log });
+    const wired = await setProxyTarget(sitesUrl, options.name, proxyTarget, credentials.token, { ...deps, log });
+    await registerSubdomain(options.name, { ...deps, log, renderApiKey: apiKey });
+    if (wired) log(`\n  live at https://${options.name}.atris.ai`);
+    else log('\n  render infrastructure is ready. retry the proxy patch above to finish the address.');
+    return 0;
+  } catch (error) {
+    const withoutRenderKey = withoutSecret(error.message, apiKey);
+    const safeMessage = withoutSecret(withoutRenderKey, credentials && credentials.token);
+    errorLog(`  fullstack deploy failed: ${safeMessage}`);
+    return 1;
   }
 }
 
@@ -452,6 +800,21 @@ async function run(argv, deps = {}) {
   if (!stat.isDirectory()) {
     errorLog(`  site path is not a directory: ${root}`);
     return 2;
+  }
+
+  if (options.fullstack) {
+    let packagePlan;
+    try {
+      packagePlan = fullstackPackage(root, deps);
+    } catch (error) {
+      errorLog(`  ${error.message}`);
+      return 2;
+    }
+    if (options.dryRun) {
+      printFullstackPlan(options.name, packagePlan, log);
+      return 0;
+    }
+    return runFullstack(root, { ...options, apiBase }, packagePlan, deps);
   }
 
   let pages;

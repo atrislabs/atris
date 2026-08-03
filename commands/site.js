@@ -21,11 +21,13 @@ async function run(argv) {
     atris site <dir|doc.md> [--out dist] [--theme atris|terminal|paper] [--title T]
     atris site atris/wiki --title "Atris Wiki" --serve
     atris site deploy <dir> --name <slug> [--spa] [--dry-run]
+    atris site deploy <dir> --fullstack --name <slug> [--dry-run]
 
   Each .md becomes a page; an index links them all. Same anti-slop design system,
   semantic data-atris-block sections, ready for the web app. --serve previews it.
 
-  deploy publishes html, css, javascript, images, and fonts to <slug>.atris.ai.
+  deploy publishes web folders to <slug>.atris.ai. --fullstack deploys a node
+  server with its own render service.
 `);
     return input === 'help' || hasFlag(argv, '--help') ? 0 : 2;
   }
