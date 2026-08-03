@@ -97,6 +97,56 @@ function readDigestSection(root, title, relativePath, maxLines = null) {
   };
 }
 
+// Splits a journal body into its ## groups so the digest can show
+// completed / inbox / notes as short labeled blocks instead of a raw dump.
+function journalGroups(lines) {
+  const groups = [];
+  let current = null;
+  for (const line of lines) {
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      current = { heading: heading[1], lines: [] };
+      groups.push(current);
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  return groups;
+}
+
+function bulletCount(group) {
+  return group.lines.filter((line) => /^\s*-\s+/.test(line)).length;
+}
+
+function digestSummaryLine(date, sections) {
+  let completed = 0;
+  let inbox = 0;
+  for (const section of sections) {
+    for (const group of journalGroups(section.lines)) {
+      if (/^completed/i.test(group.heading)) completed += bulletCount(group);
+      else if (/^inbox/i.test(group.heading)) inbox += bulletCount(group);
+    }
+  }
+  const parts = [`${sections.length} log${sections.length === 1 ? '' : 's'}`];
+  if (completed) parts.push(`${completed} completed`);
+  if (inbox) parts.push(`${inbox} inbox`);
+  return `${date}: ${parts.join(', ')}`;
+}
+
+function renderDigestSection(section) {
+  const groups = journalGroups(section.lines);
+  if (!groups.length) {
+    return [`=== ${section.title} ===`, section.path, ...section.lines].join('\n');
+  }
+  const out = [`=== ${section.title} ===`, section.path];
+  for (const group of groups) {
+    const body = group.lines.filter((line) => line.trim() && line.trim() !== '---');
+    if (!body.length) continue;
+    out.push('', `${group.heading.toLowerCase()} (${bulletCount(group)})`, ...body);
+  }
+  return out.join('\n');
+}
+
 function logsDigest(args = [], options = {}) {
   const root = options.cwd || process.cwd();
   const date = digestDate(args);
@@ -125,11 +175,11 @@ function logsDigest(args = [], options = {}) {
   } else if (sections.length === 0) {
     console.log(`No logs for ${date} yet.`);
   } else {
-    console.log(sections.map((section) => [
-      `=== ${section.title} ===`,
-      section.path,
-      ...section.lines,
-    ].join('\n')).join('\n\n'));
+    console.log([
+      digestSummaryLine(date, sections),
+      '',
+      ...sections.map(renderDigestSection),
+    ].join('\n'));
   }
 
   return payload;
