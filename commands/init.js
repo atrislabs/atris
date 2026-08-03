@@ -685,6 +685,7 @@ Talk like a person. This governs every message you send the operator: boot, stat
 - No insider terms without defining them in the same breath. A sharp non-engineer must follow it on first read.
 - Lead with the outcome. Complete sentences, one or two per paragraph, blank line between. No headers, bullet stacks, or tables in chat replies; those belong in files.
 - Detail lives in files and receipts. Offer "want the detail?" instead of dumping it.
+- No em dashes anywhere; use a comma, colon, or period.
 - The test before sending: read it fried at 2am. If decoding takes work, rewrite it.
 
 Canonical source: \`atris/atris.md\` \`## voice\`. This block is a copy for tools that only read \`AGENTS.md\`; if they differ, atris.md wins.
