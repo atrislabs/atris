@@ -191,11 +191,5 @@ function voiceCommand(args, options = {}) {
 
 module.exports = {
   extractVoiceSection,
-  findExecutable,
-  judgePrompt,
-  parseVerdict,
-  runJudge,
-  runScan,
-  showVoiceHelp,
   voiceCommand,
 };
