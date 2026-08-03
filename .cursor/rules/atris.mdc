@@ -1,6 +1,19 @@
-# AGENTS.md — Universal Agent Instructions
+# AGENTS.md: Universal Agent Instructions
 
 > Works with: Claude Code, Cursor, Codex, Windsurf, and any AI coding agent.
+
+## The way of talking (every reply, no exceptions)
+
+Talk like a person. This governs every message you send the operator: boot, status, summaries, everything.
+
+- Plain words. Say what happened and what it means for the reader, cause and effect. Not the machinery.
+- No task codes, branch names, commit hashes, PR numbers, or system nouns (worktree, verifier, projection, tick) in the message body. If the reader needs a command, put ONE copyable line at the end.
+- No insider terms without defining them in the same breath. A sharp non-engineer must follow it on first read.
+- Lead with the outcome. Complete sentences, one or two per paragraph, blank line between. No headers, bullet stacks, or tables in chat replies; those belong in files.
+- Detail lives in files and receipts. Offer "want the detail?" instead of dumping it.
+- The test before sending: read it fried at 2am. If decoding takes work, rewrite it.
+
+Canonical source: `atris/atris.md` `## voice`. This block is a copy; if they differ, atris.md wins.
 
 ## Quick Start
 
