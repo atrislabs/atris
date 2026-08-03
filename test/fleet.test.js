@@ -334,6 +334,109 @@ test('runFleetFlight ranks its default primary engine only when executor history
   }
 });
 
+// Like writeExecutorDispatchHistory but each engine gets its own outcome
+// sequence, so pass rates can land inside the stretch zone band.
+function writeMixedExecutorHistory(root, outcomesByEngine) {
+  const runsDir = path.join(root, 'atris', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const entries = Object.entries(outcomesByEngine);
+  const count = entries[0][1].length;
+  for (let index = 0; index < count; index += 1) {
+    const at = `2026-07-${18 + index}T12:00:00.000Z`;
+    const results = entries.map(([engine, outcomes]) => ({
+      task: `CLI-${engine}-${index}`,
+      engine,
+      task_type: 'executor',
+      verified_passed: outcomes[index],
+      duration_ms: 1000,
+      at,
+      exitCode: outcomes[index] ? 0 : 1,
+    }));
+    fs.writeFileSync(path.join(runsDir, `dispatch-mixed-${index}.json`), `${JSON.stringify({
+      schema: 'atris.dispatch_receipt.v1',
+      results,
+    })}\n`, 'utf8');
+  }
+}
+
+test('rankFleetEnginesDetailed honors lowStakes: stretch zone pick beats the strongest engine', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-stretch-rank-'));
+  try {
+    // claude never fails (1.00, above the band); codex passes 2 of 3 (0.67, inside it).
+    writeMixedExecutorHistory(root, {
+      claude: [true, true, true],
+      codex: [true, true, false],
+    });
+    const normal = fleet.rankFleetEnginesDetailed(['claude', 'codex'], root);
+    assert.deepEqual(normal.candidates, ['claude', 'codex']);
+    assert.equal(normal.stretch_zone_pick, null);
+    const lowStakes = fleet.rankFleetEnginesDetailed(['claude', 'codex'], root, { lowStakes: true });
+    assert.deepEqual(lowStakes.candidates, ['codex', 'claude']);
+    assert.equal(lowStakes.stretch_zone_pick, 'codex');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runFleetFlight ranks safe-lane staffing low stakes and the receipt notes the stretch pick', { concurrency: false }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-stretch-flight-'));
+  const binDir = path.join(root, 'bin');
+  const previousPath = process.env.PATH;
+  try {
+    fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [{ display_id: 'F-1', status: 'open', title: 'edits lib/a.js Done: x. Check: node --test test/a.test.js.' }],
+    }));
+    for (const name of ['claude', 'codex']) {
+      fs.writeFileSync(path.join(binDir, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    }
+    process.env.PATH = `${binDir}${path.delimiter}/usr/bin${path.delimiter}/bin`;
+    writeMixedExecutorHistory(root, {
+      claude: [true, true, true],
+      codex: [true, true, false],
+    });
+
+    const flight = await fleet.runFleetFlight({ root, dryRun: true, log: () => {} });
+    assert.equal(flight.staffed[0].engine, 'codex', 'safe-lane task gets the stretch zone engine');
+    assert.equal(flight.stretch_zone_pick, 'codex');
+    assert.match(flight.stretch_zone_note, /low-stakes staffing picked codex from the stretch zone/);
+  } finally {
+    process.env.PATH = previousPath;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runFleetFlight never ranks protected or denied work low stakes', { concurrency: false }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-stretch-denied-'));
+  const binDir = path.join(root, 'bin');
+  const previousPath = process.env.PATH;
+  try {
+    fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [{ display_id: 'F-3', status: 'open', title: 'deploy the site #deploy Done: x. Check: y.' }],
+    }));
+    for (const name of ['claude', 'codex']) {
+      fs.writeFileSync(path.join(binDir, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    }
+    process.env.PATH = `${binDir}${path.delimiter}/usr/bin${path.delimiter}/bin`;
+    writeMixedExecutorHistory(root, {
+      claude: [true, true, true],
+      codex: [true, true, false],
+    });
+
+    const flight = await fleet.runFleetFlight({ root, dryRun: true, log: () => {} });
+    assert.equal(flight.staffed.length, 0, 'denied lane is never staffed');
+    assert.deepEqual(flight.roster, ['claude', 'codex'], 'no low-stakes rank without a staffed safe-lane task');
+    assert.equal(flight.stretch_zone_pick, null);
+    assert.equal(flight.stretch_zone_note, undefined);
+  } finally {
+    process.env.PATH = previousPath;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('runFleetFlight full loop: claims, dispatches in parallel, lands serially, writes receipt', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-root-'));
   try {
