@@ -29,7 +29,7 @@ const http = require('http');
 const path = require('path');
 const { getApiBaseUrl } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
-const { encodeToolResult } = require('../lib/tool-result-encode');
+const { buildToolResultBody } = require('../lib/tool-result-encode');
 
 // G2's honest blocked message (tool_policy_bench.MAX_TURNS_EXHAUSTED_MESSAGE)
 // starts with this — an answer that is only this marker is a dead-end.
@@ -357,7 +357,7 @@ async function runAtris2Turn(opts = {}) {
                 unsupported.push(`tool:${name || '?'}`);
               }
               await postJson(`${base}/atris2/turn/tool-result`, token,
-                { call_id: ev.call_id || ev.id, result_base64: encodeToolResult(out) }, 30000);
+                buildToolResultBody(ev.call_id || ev.id, out), 30000);
               resetIdle();
             }).catch((e) => reject(e));
           } else if (et === 'result') {
