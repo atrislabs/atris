@@ -2000,3 +2000,29 @@ test('ordinary untagged work is not held by the protected-lane guards', () => {
     assert.equal(sniffedProtectedLane(task), null, `false lane match: ${title}`);
   }
 });
+
+// Regression: the read-only status path (executeVerify:false) said five rows
+// would "pass the recheck, then land" all night while every hourly tick
+// skipped them as verify_command_not_allowed. Status must apply the same
+// command allowlist the landing gate applies.
+test('status path refuses a disallowed check instead of promising a landing', () => {
+  const task = {
+    id: 'task-status-truth',
+    display_id: 'CLI-TRUTH',
+    status: 'review',
+    tag: 'code',
+    metadata: { verify: 'bash scripts/never-allowlisted.sh', agent_certified: true },
+    review: { approval_status: 'pending', proof: 'Ran: bash = exit 0' },
+    events: [
+      { event_type: 'proof_ready', actor: 'codex' },
+      { event_type: 'reviewed', actor: 'claude' },
+    ],
+  };
+  const evaluation = evaluateAutoAccept(task, {
+    acceptAll: true,
+    strictVerify: false,
+    executeVerify: false,
+  });
+  assert.equal(evaluation.eligible, false);
+  assert.equal(evaluation.reason, 'verify_command_not_allowed');
+});

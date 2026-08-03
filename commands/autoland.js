@@ -452,6 +452,7 @@ function plainReason(reason) {
     insufficient_review_passes: 'not enough review passes yet',
     strict_verify_missing: 'no recorded check command to re-run',
     verify_failed: 'its check command failed on re-run',
+    verify_command_not_allowed: 'its recorded check is not on the list this machine may run alone',
     proof_unmerged_or_draft_pr_boundary: 'its proof points at an unmerged draft',
   };
   return map[reason] || reason.replace(/_/g, ' ');
