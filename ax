@@ -13,6 +13,7 @@ const { loadCredentials } = require('./utils/auth');
 const { apiRequestJson, getApiBaseUrl } = require('./utils/api');
 const missionRuntime = require('./lib/mission-runtime-loop');
 const { loadOverrides, pickLane } = require('./lib/ax-auto-lane');
+const { buildToolResultBody } = require('./lib/tool-result-encode');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
 const BACKEND = {
@@ -2871,7 +2872,7 @@ async function postTurn(message, options = {}) {
         if (options.business) {
           return options.business.postToolResult(callId, result, backendBaseUrl({ route: 'cloud' }));
         }
-        return postJson(BACKEND_API_TOOL_RESULT_PATH, { call_id: callId, result }, {
+        return postJson(BACKEND_API_TOOL_RESULT_PATH, buildToolResultBody(callId, result), {
           token,
           route: endpointRoute,
           timeoutMs: 30000,
