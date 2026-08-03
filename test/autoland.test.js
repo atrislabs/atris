@@ -503,14 +503,16 @@ test('autoland status speaks in plain sentences and puts your decisions first', 
     const status = runCli(['autoland', 'status'], repo);
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.match(status.stdout, new RegExp(`${protectedRef} waits for you; security: human decision required\\.`));
-    assert.match(status.stdout, new RegExp(`${landing} passes the recheck, then lands itself\\.`));
+    // No recent tick receipt in this fixture, so status tells the honest schedule.
+    assert.match(status.stdout, new RegExp(`${landing} passes the recheck, then lands once the hourly heartbeat runs \\(start one with atris autoland tick\\)\\.`));
     assert.match(status.stdout, new RegExp(`${heldBack} stays put; `));
     assert.doesNotMatch(status.stdout, /rechecks then lands/);
     assert.doesNotMatch(status.stdout, /held back {2,}/);
     assert.doesNotMatch(status.stdout, /not ready yet:/);
     assert.doesNotMatch(status.stdout, /ready for heartbeat recheck/);
+    assert.doesNotMatch(status.stdout, /landing on their own after the hourly recheck/);
     assert.ok(
-      status.stdout.indexOf('yours to decide first') < status.stdout.indexOf('landing on their own'),
+      status.stdout.indexOf('yours to decide first') < status.stdout.indexOf('ready to land once the hourly heartbeat runs'),
       `waiting-on-you section should print before self-landing section:\n${status.stdout}`,
     );
   } finally {

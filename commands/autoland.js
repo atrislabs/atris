@@ -476,7 +476,8 @@ function showStatus(root, args) {
   // running hourly for weeks, and would keep reporting "running" for one
   // someone deleted. A loop that cannot confirm its own liveness from
   // evidence cannot be trusted to say it is healthy.
-  const heartbeatInstalled = heartbeatLiveness(root, policy);
+  const heartbeatInstalled = autoland.heartbeatLiveness(root, policy);
+  const heartbeatLive = autoland.heartbeatIsLive(root);
 
   if (json) {
     console.log(JSON.stringify({
@@ -492,7 +493,7 @@ function showStatus(root, args) {
   }
 
   console.log('');
-  console.log('autoland: certified work lands itself; you keep the irreversible calls');
+  console.log(`autoland: ${autoland.certifiedWorkLandsPhrase(root)}; you keep the irreversible calls`);
   console.log('');
   const policyOwner = String(policy?.enabled_by || 'unknown').trim() || 'unknown';
   const policyText = enabled
@@ -502,7 +503,7 @@ function showStatus(root, args) {
     : 'off - everything waits for you';
   console.log(`  policy: ${policyText}`);
   if (enabled && acceptAll) console.log('  bar: everything lands except the protected lanes (money, deploys, security, customer, outward)');
-  console.log(`  heartbeat: ${heartbeatStatusText(root, policy)}`);
+  console.log(`  heartbeat: ${autoland.heartbeatStatusText(root, policy)}`);
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
   const reapTrouble = autoland.readState(root).last_reap_error;
   if (reapTrouble) console.log(`  cleanup trouble: landing sweep failed on ${reapTrouble.date} (${reapTrouble.error}) - run: atris land --reap`);
@@ -514,8 +515,15 @@ function showStatus(root, args) {
     for (const r of humanOnly.slice(0, 10)) console.log(`    ${r.ref} waits for you; ${plainReason(r.reason)}.`);
   }
   if (readyForRecheck.length > 0) {
-    console.log(`  landing on their own after the hourly recheck: ${readyForRecheck.length}.`);
-    for (const r of readyForRecheck.slice(0, 10)) console.log(`    ${r.ref} passes the recheck, then lands itself.`);
+    if (heartbeatLive) {
+      console.log(`  landing on their own after the hourly recheck: ${readyForRecheck.length}.`);
+      for (const r of readyForRecheck.slice(0, 10)) console.log(`    ${r.ref} passes the recheck, then lands itself.`);
+    } else {
+      console.log(`  ready to land ${autoland.STALE_HEARTBEAT_LANDING}: ${readyForRecheck.length}.`);
+      for (const r of readyForRecheck.slice(0, 10)) {
+        console.log(`    ${r.ref} passes the recheck, then lands ${autoland.STALE_HEARTBEAT_LANDING}.`);
+      }
+    }
   } else {
     console.log('  nothing is ready to land on its own right now.');
   }
@@ -700,48 +708,8 @@ function persistTickReceipt(root, receipt) {
 // loud, and call out the two states that mean the loop is wedged rather than
 // idle: work blocked behind a check the harness could not execute, and work
 // that passed every gate and still did not land.
-// Installed and alive are different claims, and only one of them is worth
-// printing. Deliberately does NOT shell out to crontab: `autoland status` is
-// read-only and must stay fast (a stalled crontab would block it for the full
-// 10s read timeout — see 'autoland status never probes a stalled crontab').
-// Tick receipts are local file reads and are stronger evidence anyway: a
-// crontab line proves configuration, a recent receipt proves the loop ran.
-function heartbeatLiveness(root, policy) {
-  return typeof policy?.heartbeat_installed === 'boolean' ? policy.heartbeat_installed : null;
-}
-
-function lastTickAgeHours(root) {
-  try {
-    const runsDir = path.join(root, 'atris', 'runs');
-    const newest = fs.readdirSync(runsDir)
-      .filter((f) => f.startsWith('autoland-tick-') && f.endsWith('.json'))
-      .sort()
-      .pop();
-    if (!newest) return null;
-    const stamp = fs.statSync(path.join(runsDir, newest)).mtimeMs;
-    return (Date.now() - stamp) / 3_600_000;
-  } catch {
-    return null;
-  }
-}
-
-function heartbeatStatusText(root, policy) {
-  const ageHours = lastTickAgeHours(root);
-  const ageText = ageHours === null
-    ? null
-    : ageHours < 1 ? 'under an hour' : `${Math.floor(ageHours)}h`;
-  // Evidence first: a receipt from the last couple of hours proves the loop is
-  // alive no matter what the policy file remembers. The hourly cron makes two
-  // missed hours an outage rather than jitter — and a heartbeat that has gone
-  // quiet is the single most useful thing this line can say, because that is
-  // the state nobody notices.
-  if (ageHours !== null && ageHours <= 2) return `running hourly (last tick ${ageText} ago)`;
-  if (ageHours !== null) return `SILENT - last tick ${ageText} ago; run atris autoland tick`;
-  const installed = heartbeatLiveness(root, policy);
-  if (installed === false) return 'not installed - run atris autoland on';
-  if (installed === true) return 'installed, but no tick has ever run - run atris autoland tick';
-  return 'unknown - run atris autoland on to check and repair';
-}
+// Heartbeat liveness helpers live in lib/autoland.js so task ready copy and
+// status share one gate (recent tick receipt within two hours).
 
 function stuckBacklogNote(receipt) {
   const parts = [];
@@ -1050,7 +1018,7 @@ function runTickBody(root, { json, policy, receipt }) {
 
 function showHelp() {
   console.log('');
-  console.log('atris autoland: you approve the policy once; certified work lands itself');
+  console.log(`atris autoland: you approve the policy once; ${autoland.certifiedWorkLandsPhrase(process.cwd())}`);
   console.log('');
   console.log('finished work that passed its checks and two independent reviews lands');
   console.log('automatically with a receipt. money, deploys, security, customer, and');

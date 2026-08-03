@@ -366,7 +366,7 @@ test('packed golden path follows printed init mission task and autoland handoffs
     readyArgs[landingIndex + 1] = 'New users can now finish their first proof loop faster, skipping the hidden setup steps.';
     const ready = runInstalled(readyArgs);
     assertGoldenPathStep(ready, 'printed task-ready command');
-    assert.match(ready.stdout, /proof is ready; autoland runs the second check and lands it on the next tick\./);
+    assert.match(ready.stdout, /proof is ready; autoland runs the second check and lands it once the hourly heartbeat runs \(start one with atris autoland tick\)\./);
 
     const landed = runInstalled(printedAtrisArgs(claimed.stdout, 'Then'));
     assertGoldenPathStep(landed, 'printed autoland tick');

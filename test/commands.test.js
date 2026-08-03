@@ -10998,7 +10998,9 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
   const dbPath = path.join(dir, 'tasks.db');
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
   try {
-    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    // Fresh tick receipt so ready copy may promise the next pass.
+    fs.writeFileSync(path.join(dir, 'atris', 'runs', 'autoland-tick-live.json'), '{}\n');
     writePolicy(dir, { enabled: true, enabled_by: 'keshavrao' });
 
     const add = runCli([
@@ -11054,6 +11056,63 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
     assert.match(externalReady.stdout, /proof is ready; this verifier needs a second agent review because autoland cannot rerun it\./);
     assert.match(externalReady.stdout, /outside the auto-certify allowlist/);
     assert.doesNotMatch(externalReady.stdout, /autoland runs the second check and lands it on the next tick\./);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task ready uses honest landing copy when autoland heartbeat is stale', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    writePolicy(dir, { enabled: true, enabled_by: 'keshavrao' });
+    // Tick older than two hours: ready must not promise "next tick".
+    const stalePath = path.join(dir, 'atris', 'runs', 'autoland-tick-stale.json');
+    fs.writeFileSync(stalePath, '{}\n');
+    const threeHoursAgo = Date.now() - (3 * 60 * 60 * 1000);
+    fs.utimesSync(stalePath, threeHoursAgo / 1000, threeHoursAgo / 1000);
+
+    const add = runCli([
+      'task', 'add', 'Stale heartbeat ready wording',
+      '--tag', 'agent',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const ready = runCli([
+      'task', 'ready', ref,
+      '--proof', 'typecheck passed and diff reviewed',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+    const readyPayload = JSON.parse(ready.stdout);
+    assert.equal(
+      readyPayload.handoff.rule,
+      'proof is ready; autoland runs the second check and lands it once the hourly heartbeat runs (start one with atris autoland tick).',
+    );
+    assert.doesNotMatch(ready.stdout, /on the next tick/);
+
+    const textAdd = runCli(['task', 'add', 'Stale heartbeat text copy', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(textAdd.status, 0, textAdd.stderr);
+    const textRef = JSON.parse(textAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', textRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const readyText = runCli([
+      'task', 'ready', textRef,
+      '--proof', 'second validation pass',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(readyText.status, 0, readyText.stderr);
+    assert.match(
+      readyText.stdout,
+      /proof is ready; autoland runs the second check and lands it once the hourly heartbeat runs \(start one with atris autoland tick\)\./,
+    );
+    assert.doesNotMatch(readyText.stdout, /on the next tick/);
   } finally {
     cleanupTempDir(dir);
   }

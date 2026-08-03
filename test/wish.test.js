@@ -1139,7 +1139,7 @@ test('wish review latest appends record', () => {
       env: { ATRIS_AGENT_ID: 'keshav' },
     });
     assert.equal(reviewed.status, 0, reviewed.stderr || reviewed.stdout);
-    assert.match(reviewed.stdout, /^Review saved for "make new thing clearer"\. It will shape the next run\.\n$/);
+    assert.match(reviewed.stdout, /^Review saved for "make new thing clearer"\. It shapes future runs once distilled into lessons\.\n$/);
 
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     assert.deepEqual(records.at(-1), {
@@ -1185,7 +1185,7 @@ test('wish review latest picks a newer decomposed wish over an older delegated o
       env: { ATRIS_AGENT_ID: 'keshav' },
     });
     assert.equal(reviewed.status, 0, reviewed.stderr || reviewed.stdout);
-    assert.match(reviewed.stdout, /^Review saved for "build the split thing"\. It will shape the next run\.\n$/);
+    assert.match(reviewed.stdout, /^Review saved for "build the split thing"\. It shapes future runs once distilled into lessons\.\n$/);
 
     const records = readJsonl(path.join(dir, '.atris', 'state', 'wishes.jsonl'));
     assert.equal(records.at(-1).wish_id, 'wish-split');

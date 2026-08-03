@@ -20,13 +20,13 @@ function runCli(args) {
 test('main help and task help surface the golden path workflow', () => {
   const mainHelp = runCli(['help']);
   assert.equal(mainHelp.status, 0, mainHelp.stderr);
-  assert.match(mainHelp.stdout, /golden path \(zero human turns\):/);
+  assert.match(mainHelp.stdout, /golden path \(one tick, by cron or by hand\):/);
   assert.match(mainHelp.stdout, /atris task delegate "fix the login bug" --to <member>/);
   assert.match(mainHelp.stdout, /atris autoland tick   # second check runs, task lands/);
 
   const taskHelp = runCli(['task', 'help']);
   assert.equal(taskHelp.status, 0, taskHelp.stderr);
-  assert.match(taskHelp.stdout, /golden path \(zero human turns\):/);
+  assert.match(taskHelp.stdout, /golden path \(one tick, by cron or by hand\):/);
   assert.match(taskHelp.stdout, /atris task ready <id> --verify/);
   assert.match(taskHelp.stdout, /atris autoland tick   # second check runs, task lands/);
 });

@@ -523,7 +523,7 @@ function showHelp() {
   console.log('  voice      - Scan binary voice tells or judge reply shape and plainness');
   console.log('  recover    - Explain stopped missions; --apply performs safe recovery only');
   console.log('  task       - Local agent task plane (atomic claims, TODO import)');
-  console.log('  golden path (zero human turns):');
+  console.log('  golden path (one tick, by cron or by hand):');
   console.log('    atris task delegate "fix the login bug" --to <member>');
   console.log('    atris task claim <id> --as <member>');
   console.log('    ... build ...');
@@ -552,7 +552,7 @@ function showHelp() {
   console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
   console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
   console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
-  console.log('  autoland   - Approve the policy once; certified work lands itself, you keep irreversible calls');
+  console.log(`  autoland   - Approve the policy once; ${require('../lib/autoland').certifiedWorkLandsPhrase(process.cwd())}, you keep irreversible calls`);
   console.log('  engine     - Engine registry: list/resolve roles, health flips, default engine, `engine test`, and dispatch flights');
   console.log('  router     - inspect ax lane outcomes and promote gated reflex overrides');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');

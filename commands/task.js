@@ -134,7 +134,7 @@ function taskUsageText() {
   return `
 atris task - durable local task state (SQLite, gitignored)
 
-  golden path (zero human turns):
+  golden path (one tick, by cron or by hand):
     atris task delegate "fix the login bug" --to <member>
     atris task claim <id> --as <member>
     ... build ...
@@ -9425,7 +9425,10 @@ function cmdReady(args) {
     nextTask: nextTaskInput.nextTask,
   });
   const reviewChat = taskReviewChatHandoff(verifierTask, { reviewer: 'codex-review' });
-  const autolandOn = require('../lib/autoland').liveAcceptAuthorization(taskDb.workspaceRoot()).ok;
+  const autolandLib = require('../lib/autoland');
+  const workspaceRoot = taskDb.workspaceRoot();
+  const autolandOn = autolandLib.liveAcceptAuthorization(workspaceRoot).ok;
+  const whenLands = autolandLib.whenAutolandLands(workspaceRoot);
   const needsExternalVerifier = Boolean(usedVerify && !verifyAutoCertifyAllowed);
   const handoff = {
     native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
@@ -9433,10 +9436,10 @@ function cmdReady(args) {
     next_action: agentCertified ? certifiedReviewNextAction(nextTaskInput.nextTask) : 'agent_review_again',
     rule: autolandOn
       ? (agentCertified
-        ? 'double-check complete; autoland will accept this on the next tick.'
+        ? `double-check complete; autoland will accept this ${whenLands}.`
         : needsExternalVerifier
         ? 'proof is ready; this verifier needs a second agent review because autoland cannot rerun it.'
-        : 'proof is ready; autoland runs the second check and lands it on the next tick.')
+        : `proof is ready; autoland runs the second check and lands it ${whenLands}.`)
       : (agentCertified
         ? 'double-check complete; ready to keep moving. XP is awarded only after the human approves the task.'
         : 'proof is ready; one more agent check before human approval. XP waits for the human.'),

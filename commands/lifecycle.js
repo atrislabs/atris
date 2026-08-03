@@ -168,7 +168,7 @@ async function sleepAtris() {
 }
 
 /**
- * Wake a sleeping workspace so agents resume automatically.
+ * Wake a sleeping workspace: remote wake request, or local wake flag.
  * @returns {Promise<void>}
  */
 async function wakeAtris() {
@@ -179,7 +179,7 @@ async function wakeAtris() {
   if (!slug || slug === '--help' || slug === '-h' || slug === 'help') {
     console.log('Usage: atris wake [business|member] [--loop <loop-id>]');
     console.log('');
-    console.log('  Wake a sleeping workspace. Agents resume automatically.');
+    console.log('  Wake a sleeping workspace. Wake signal sent; loops pick it up on their next pass.');
     console.log('  Or flip a local member / member-loop switch awake.');
     process.exit(0);
   }
@@ -207,13 +207,13 @@ async function wakeAtris() {
     console.log(`Waking business computer '${business.name || slug}'...`);
 
     if (result.data && result.data.status === 'running' && result.data.endpoint) {
-      console.log(`Business computer '${business.name || slug}' is alive. Agents resuming.`);
+      console.log(`Business computer '${business.name || slug}' is alive. Wake signal sent; loops pick it up on their next pass.`);
       return;
     }
 
     const running = await waitForBusinessComputer(creds.token, business);
     if (running) {
-      console.log(`Business computer '${business.name || slug}' is alive. Agents resuming.`);
+      console.log(`Business computer '${business.name || slug}' is alive. Wake signal sent; loops pick it up on their next pass.`);
       return;
     }
 
@@ -246,7 +246,7 @@ async function wakeAtris() {
     });
 
     if (status.ok && status.data && status.data.status === 'running') {
-      console.log(`Workspace '${slug}' is alive. Agents resuming.`);
+      console.log(`Workspace '${slug}' is alive. Wake signal sent; loops pick it up on their next pass.`);
       return;
     }
   }
