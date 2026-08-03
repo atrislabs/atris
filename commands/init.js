@@ -687,6 +687,8 @@ Talk like a person. This governs every message you send the operator: boot, stat
 - Detail lives in files and receipts. Offer "want the detail?" instead of dumping it.
 - The test before sending: read it fried at 2am. If decoding takes work, rewrite it.
 
+Canonical source: \`atris/atris.md\` \`## voice\`. This block is a copy for tools that only read \`AGENTS.md\`; if they differ, atris.md wins.
+
 ## Core Files
 
 Atris is the source of truth. This file is only an adapter for tools that read
