@@ -472,9 +472,47 @@ test('autoland status does not call one-pass protected work approval-ready', () 
 
     const status = runCli(['autoland', 'status'], repo);
     assert.equal(status.status, 0, status.stderr || status.stdout);
-    assert.match(status.stdout, /protected reviews waiting on you: 1/);
-    assert.match(status.stdout, /security: human decision required/);
+    assert.match(status.stdout, /yours to decide first: 1 protected review\./);
+    assert.match(status.stdout, new RegExp(`${ref} waits for you; security: human decision required\\.`));
     assert.doesNotMatch(status.stdout, /yours to approve/);
+    assert.doesNotMatch(status.stdout, /protected reviews waiting on you/);
+    assert.doesNotMatch(status.stdout, /waits for you {2}/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('autoland status speaks in plain sentences and puts your decisions first', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const landing = certifiedVerifiedTask(repo, 'Fix the landing page typo so visitors trust the page', {
+      verify: 'git diff --check',
+    });
+    const heldBack = certifiedTask(repo, 'Tidy the settings copy so the panel reads clearly');
+    replaceLatestProof(repo, heldBack, '');
+    const created = runCli(['task', 'new', 'Keep the protected wording clear so a human can judge it', '--tag', 'security', '--json'], repo);
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const task = JSON.parse(created.stdout).task || JSON.parse(created.stdout);
+    const protectedRef = task.display_id || task.id;
+    assert.equal(runCli(['task', 'claim', protectedRef, '--as', 'linguist'], repo).status, 0);
+    const ready = runCli([
+      'task', 'ready', protectedRef, '--proof', 'Command passed: git diff --check. Evidence inspected: protected wording is pinned.', '--as', 'linguist',
+    ], repo);
+    assert.equal(ready.status, 0, ready.stderr || ready.stdout);
+
+    const status = runCli(['autoland', 'status'], repo);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.match(status.stdout, new RegExp(`${protectedRef} waits for you; security: human decision required\\.`));
+    assert.match(status.stdout, new RegExp(`${landing} passes the recheck, then lands itself\\.`));
+    assert.match(status.stdout, new RegExp(`${heldBack} stays put; `));
+    assert.doesNotMatch(status.stdout, /rechecks then lands/);
+    assert.doesNotMatch(status.stdout, /held back {2,}/);
+    assert.doesNotMatch(status.stdout, /not ready yet:/);
+    assert.doesNotMatch(status.stdout, /ready for heartbeat recheck/);
+    assert.ok(
+      status.stdout.indexOf('yours to decide first') < status.stdout.indexOf('landing on their own'),
+      `waiting-on-you section should print before self-landing section:\n${status.stdout}`,
+    );
   } finally {
     cleanupTempDir(base);
   }

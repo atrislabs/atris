@@ -506,21 +506,21 @@ function showStatus(root, args) {
   const reapTrouble = autoland.readState(root).last_reap_error;
   if (reapTrouble) console.log(`  cleanup trouble: landing sweep failed on ${reapTrouble.date} (${reapTrouble.error}) - run: atris land --reap`);
   console.log('');
-  if (readyForRecheck.length > 0) {
-    console.log(`  ready for heartbeat recheck: ${readyForRecheck.length}`);
-    for (const r of readyForRecheck.slice(0, 10)) console.log(`    rechecks then lands  ${r.ref}`);
-  } else {
-    console.log('  nothing is ready to land on its own right now.');
-  }
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
   const needsWork = blocked.filter((r) => !String(r.reason || '').startsWith('denied_tag_'));
   if (humanOnly.length > 0) {
-    console.log(`  protected reviews waiting on you: ${humanOnly.length}`);
-    for (const r of humanOnly.slice(0, 10)) console.log(`    waits for you  ${r.ref} - ${plainReason(r.reason)}`);
+    console.log(`  yours to decide first: ${humanOnly.length} protected ${humanOnly.length === 1 ? 'review' : 'reviews'}.`);
+    for (const r of humanOnly.slice(0, 10)) console.log(`    ${r.ref} waits for you; ${plainReason(r.reason)}.`);
+  }
+  if (readyForRecheck.length > 0) {
+    console.log(`  landing on their own after the hourly recheck: ${readyForRecheck.length}.`);
+    for (const r of readyForRecheck.slice(0, 10)) console.log(`    ${r.ref} passes the recheck, then lands itself.`);
+  } else {
+    console.log('  nothing is ready to land on its own right now.');
   }
   if (needsWork.length > 0) {
-    console.log(`  not ready yet: ${needsWork.length}`);
-    for (const r of needsWork.slice(0, 10)) console.log(`    held back      ${r.ref} - ${plainReason(String(r.reason || ''))}`);
+    console.log(`  still needs work before it can land: ${needsWork.length}.`);
+    for (const r of needsWork.slice(0, 10)) console.log(`    ${r.ref} stays put; ${plainReason(String(r.reason || ''))}.`);
   }
   if (waiting.length > 0) {
     console.log('');
