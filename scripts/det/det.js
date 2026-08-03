@@ -18,6 +18,7 @@ const json = require('./json');
 const text = require('./text');
 const hash = require('./hash');
 const date = require('./date');
+const voice = require('./voice');
 
 // git-facing scripts: they read the repo, not stdin, so they aren't routable
 // through det.js. Listed here only so the front door surfaces all the tools —
@@ -69,6 +70,11 @@ const CATALOG = {
     ask: 'epoch <-> ISO, weekday (all UTC)',
     modes: date.MODES,
     run: date.run,
+  },
+  voice: {
+    ask: 'score a chat reply against the way of talking (PASS or findings)',
+    modes: voice.MODES,
+    run: voice.run,
   },
 };
 

@@ -244,7 +244,9 @@ check('pr.testplan.none', prDesc.testPlan([{ path: 'README.md', status: 'M' }]),
 check('pr.empty', prDesc.build({ commits: [], files: [] }).error !== undefined, true);
 
 // --- det.js dispatcher ---
-check('det.catalog', Object.keys(CATALOG).sort(), ['date', 'extract', 'hash', 'json', 'text']);
+check('det.catalog', Object.keys(CATALOG).sort(), ['date', 'extract', 'hash', 'json', 'text', 'voice']);
+check('det.voice.pass', CATALOG.voice.run('scan', 'The build is green.').text, 'PASS');
+check('det.voice.fail', CATALOG.voice.run('scan', 'fixed the worktree').text.startsWith('FAIL'), true);
 check('det.date.route', CATALOG.date.run('weekday', '2026-07-07'), { text: 'Tuesday' });
 check('det.date.modes', CATALOG.date.modes, date.MODES);
 check('det.hash.route', CATALOG.hash.run('b64', 'hi'), { text: 'aGk=' });
