@@ -9,16 +9,23 @@ function flag(argv, name) { const i = argv.indexOf(name); return i !== -1 ? argv
 function hasFlag(argv, name) { return argv.includes(name); }
 
 async function run(argv) {
+  if (argv[0] === 'deploy') {
+    return require('./site-deploy').run(argv.slice(1));
+  }
+
   const input = argv.find((a) => !a.startsWith('-'));
   if (!input || input === 'help' || hasFlag(argv, '--help')) {
     console.log(`
-  atris site — a beautiful static site from a folder of markdown
+  atris site: build markdown sites or deploy web folders
 
     atris site <dir|doc.md> [--out dist] [--theme atris|terminal|paper] [--title T]
     atris site atris/wiki --title "Atris Wiki" --serve
+    atris site deploy <dir> --name <slug> [--spa] [--dry-run]
 
   Each .md becomes a page; an index links them all. Same anti-slop design system,
   semantic data-atris-block sections, ready for the web app. --serve previews it.
+
+  deploy publishes html, css, javascript, images, and fonts to <slug>.atris.ai.
 `);
     return input === 'help' || hasFlag(argv, '--help') ? 0 : 2;
   }
