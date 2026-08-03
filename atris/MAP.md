@@ -951,6 +951,17 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Search:** `rg "recapAtris|buildRecapData|renderShare" commands/recap.js bin/atris.js test/recap.test.js`
 
+### Feature: Site Deploy (`atris site deploy`)
+
+**Purpose:** Publish a static web folder or a Node server at a named `atris.ai` address.
+
+- **Routing and help:** `commands/site.js` sends `deploy` to `commands/site-deploy.js`.
+- **Static lane:** Creates the site row, uploads supported files in batches, and registers the custom domain on the Atris backend service.
+- **Fullstack lane:** `--fullstack` validates the package start script, mirrors source into a private GitHub repository from a scratch checkout, creates or reuses a Render Node service, waits for its deploy, and wires its Render host through the Atris site row.
+- **Regression:** `test/site-deploy.test.js` covers validation, dry runs, static uploads, Render setup, proxy fallback, and domain registration.
+
+**Search:** `rg "fullstack|registerSubdomain|createSite|uploadPages" commands/site-deploy.js test/site-deploy.test.js`
+
 ### Feature: Visualize Artifacts (`atris visualize`)
 
 **Purpose:** Generate Slack/deck-ready business visuals from a prompt, using workspace context and backend `gpt-image-2`.

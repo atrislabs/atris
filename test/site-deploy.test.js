@@ -96,6 +96,139 @@ test('dry run prints the plan without loading credentials or making requests', a
   assert.ok(logs.some((line) => line.includes('no network calls made')));
 });
 
+test('fullstack preflight rejects a directory without package.json', async (t) => {
+  const dir = scratch(t);
+  const logs = [];
+
+  const code = await run([dir, '--fullstack', '--name', 'missing-package'], {
+    log: (line) => logs.push(line),
+    error: (line) => logs.push(line),
+  });
+
+  assert.equal(code, 2);
+  assert.ok(logs.some((line) => line.includes('add package.json with a "start" script')));
+});
+
+test('fullstack preflight rejects package.json without a start script', async (t) => {
+  const dir = scratch(t);
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { build: 'node build.js' } }));
+  const logs = [];
+
+  const code = await run([dir, '--fullstack', '--name', 'missing-start'], {
+    log: (line) => logs.push(line),
+    error: (line) => logs.push(line),
+  });
+
+  assert.equal(code, 2);
+  assert.ok(logs.some((line) => line.includes('add "scripts": { "start": "node server.js" }')));
+});
+
+test('fullstack dry run prints the repository and render plan with zero network calls', async (t) => {
+  const dir = scratch(t);
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
+    scripts: { start: 'node server.js', build: 'node build.js' },
+  }));
+  const logs = [];
+  let credentialsLoaded = false;
+  let commandRun = false;
+  let requested = false;
+
+  const code = await run([dir, '--fullstack', '--name', 'fullstack-smoke', '--dry-run'], {
+    log: (line) => logs.push(line),
+    error: (line) => logs.push(line),
+    loadCredentials: () => { credentialsLoaded = true; return { token: 'secret' }; },
+    spawnSync: () => { commandRun = true; return { status: 0, stdout: '', stderr: '' }; },
+    httpRequest: async () => { requested = true; return response(200); },
+  });
+
+  const output = logs.join('\n');
+  assert.equal(code, 0);
+  assert.equal(credentialsLoaded, false);
+  assert.equal(commandRun, false);
+  assert.equal(requested, false);
+  assert.match(output, /repository atrislabs\/atris-app-fullstack-smoke \(private\)/);
+  assert.match(output, /runtime node/);
+  assert.match(output, /plan starter/);
+  assert.match(output, /region oregon/);
+  assert.match(output, /build npm install && npm run build/);
+  assert.match(output, /render target https:\/\/atris-app-fullstack-smoke\.onrender\.com/);
+  assert.match(output, /target https:\/\/fullstack-smoke\.atris\.ai/);
+  assert.match(output, /no network calls made/);
+});
+
+test('fullstack deploy creates render config and tolerates an unknown proxy_target field', async (t) => {
+  const dir = scratch(t);
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
+    scripts: { start: 'node server.js', build: 'node build.js' },
+  }));
+  fs.writeFileSync(path.join(dir, 'server.js'), 'console.log("server")');
+  const logs = [];
+  const calls = [];
+
+  const code = await run([dir, '--fullstack', '--name', 'wired-app'], {
+    renderApiKey: 'render-secret',
+    loadCredentials: () => ({ token: 'user-token' }),
+    log: (line) => logs.push(line),
+    error: (line) => logs.push(line),
+    spawnSync: (command, args) => ({
+      status: command === 'git' && args[0] === 'diff' ? 1 : 0,
+      stdout: '',
+      stderr: '',
+    }),
+    sleep: async () => {},
+    httpRequest: async (url, options) => {
+      calls.push({ url, options });
+      if (url.includes('/services?name=')) return response(200, []);
+      if (url.endsWith('/services/srv-culkutq3esus73cvqcg0') && options.method === 'GET') {
+        return response(200, { id: 'srv-backend', ownerId: 'tea-atris' });
+      }
+      if (url === 'https://api.render.com/v1/services' && options.method === 'POST') {
+        return response(201, {
+          id: 'srv-app',
+          name: 'atris-app-wired-app',
+          serviceDetails: { url: 'https://atris-app-wired-app.onrender.com' },
+        });
+      }
+      if (url.endsWith('/services/srv-app/deploys?limit=1')) {
+        return response(200, [{ deploy: { id: 'dep-app', status: 'live' } }]);
+      }
+      if (url === 'https://api.atris.ai/api/sites' && options.method === 'POST') return response(201, {});
+      if (url.endsWith('/api/sites/wired-app') && options.method === 'PATCH') {
+        return response(422, { detail: [{ loc: ['body', 'proxy_target'], msg: 'Extra inputs are not permitted' }] });
+      }
+      if (url.endsWith('/custom-domains')) return response(201, {});
+      throw new Error(`unexpected request: ${options.method} ${url}`);
+    },
+  });
+
+  const renderCreate = calls.find((call) => call.url === 'https://api.render.com/v1/services' && call.options.method === 'POST');
+  const renderBody = JSON.parse(renderCreate.options.body);
+  assert.equal(code, 0);
+  assert.deepEqual(renderBody, {
+    type: 'web_service',
+    name: 'atris-app-wired-app',
+    ownerId: 'tea-atris',
+    repo: 'https://github.com/atrislabs/atris-app-wired-app',
+    branch: 'main',
+    autoDeploy: 'yes',
+    serviceDetails: {
+      runtime: 'node',
+      plan: 'starter',
+      region: 'oregon',
+      envSpecificDetails: {
+        buildCommand: 'npm install && npm run build',
+        startCommand: 'npm start',
+      },
+    },
+  });
+  assert.ok(logs.some((line) => line.includes('render deploy status: live')));
+  assert.ok(logs.some((line) => line.includes('PATCH https://api.atris.ai/api/sites/wired-app')));
+  assert.ok(logs.some((line) => line.includes('{"proxy_target":"atris-app-wired-app.onrender.com"}')));
+  assert.ok(logs.some((line) => line.includes('render infrastructure is ready')));
+  assert.ok(!logs.join('\n').includes('render-secret'));
+  assert.ok(!logs.join('\n').includes('user-token'));
+});
+
 test('deploy creates the site and bulk upserts pages with the exact body', async (t) => {
   const dir = scratch(t);
   fs.writeFileSync(path.join(dir, 'index.html'), 'hello');
