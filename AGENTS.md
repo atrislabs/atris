@@ -1,8 +1,19 @@
-# AGENTS.md — Universal Agent Instructions
+# AGENTS.md: Universal Agent Instructions
 
-> **New here?** Read [`FOR_AGENTS.md`](FOR_AGENTS.md) — open letter from an agent who tried it.
+> **New here?** Read [`FOR_AGENTS.md`](FOR_AGENTS.md): open letter from an agent who tried it.
 
 > Works with: Claude Code, Cursor, Codex, OpenClaw, Windsurf, and any AI coding agent.
+
+## The way of talking (every reply, no exceptions)
+
+Talk like a person. This governs every message you send the operator: boot, status, summaries, everything.
+
+- Plain words. Say what happened and what it means for the reader, cause and effect. Not the machinery.
+- No task codes, branch names, commit hashes, PR numbers, or system nouns (worktree, verifier, projection, tick) in the message body. If the reader needs a command, put ONE copyable line at the end.
+- No insider terms without defining them in the same breath. A sharp non-engineer must follow it on first read.
+- Lead with the outcome. Complete sentences, one or two per paragraph, blank line between. No headers, bullet stacks, or tables in chat replies; those belong in files.
+- Detail lives in files and receipts. Offer "want the detail?" instead of dumping it.
+- The test before sending: read it fried at 2am. If decoding takes work, rewrite it.
 
 ## Quick Start
 
@@ -31,7 +42,7 @@ task truth, proof, review, and backend/cloud sync all flow through Atris.
 |------|---------|
 | `atris/atris.md` | Protocol/backbone for this workspace |
 | `atris/PERSONA.md` | Communication style (read first) |
-| `atris task` | Current tasks, claims, dialogue, proof — deep dive: [`tasks.md`](tasks.md) |
+| `atris task` | Current tasks, claims, dialogue, proof; deep dive: [`tasks.md`](tasks.md) |
 | `.atris/state/tasks.projection.json` | Readable task projection for UIs/agents |
 | `atris/TODO.md` | Rendered/legacy task view only |
 | `atris/MAP.md` | Navigation (where is X?) |
@@ -125,13 +136,13 @@ member -> mission start --verify -> status --status active -> one bounded step -
 - Close: if the verifier passes, run `atris mission complete <id> --proof "<receipt_path>"`; if current-agent work should keep going, repeat status -> step -> tick.
 - Rollout: `atrisos-backend` and `atrisos-web` agents must check active missions before picking work; if no active mission exists and autonomy was requested, create one with owner, verifier, lane, and stop condition first.
 
-## Build Craft — what decides acceptance
+## Build Craft: what decides acceptance
 
 Mined from this repo's receipts (803 receipts, 1711 episodes): proofs naming a
 runnable verify command were accepted 670/674 at the gate; 24 of 28 bounces
 named none. These rules are the difference, in priority order:
 
-1. **Name a runnable verify command in every proof**, and run it bare — never
+1. **Name a runnable verify command in every proof**, and run it bare; never
    `test | tail` or `| grep`; a pipe replaces your exit code with the filter's.
 2. **A task naming a spec file (`atris/features/<name>/idea.md`) is a contract.**
    Read it before writing code; build the named slice only; use its verify
@@ -157,7 +168,7 @@ named none. These rules are the difference, in priority order:
    reproduces it against the real runtime, not a mock that can stay green
    through breakage.
 10. **When your engine dies mid-build (credits, limits), that is a staffing
-    event, not a failure** — leave the worktree intact with a note; the
+    event, not a failure**; leave the worktree intact with a note; the
     conductor restaffs it.
 
 ## Rules
