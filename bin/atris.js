@@ -538,6 +538,7 @@ function showHelp() {
   console.log('  avail      - Booking availability (/book/{username} weekly windows)');
   console.log('  brain      - Compile MAP/TODO/wiki/state into a loadable agent brain');
   console.log('  lesson     - Append a one-line lesson to atris/lessons.md (mine: distill receipts/episodes/scorecards into policy lessons)');
+  console.log('  taste      - Record the operator\'s keep, kill, and more creative verdicts');
   console.log('  teach      - Turn a bad turn into a failing benchmark, then a permanent guard (red gate: no promotion without a proven failure)');
   console.log('  ingest     - Local-first wiki ingest into atris/wiki/');
   console.log('  query      - Local-first wiki query against atris/wiki/');
@@ -2634,6 +2635,10 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/lesson')(subcommand, ...args);
+} else if (command === 'taste') {
+  Promise.resolve(require('../commands/taste').tasteCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`taste could not continue: ${err.message || err}.`); process.exit(1); });
 } else if (command === 'teach') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
