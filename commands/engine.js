@@ -94,14 +94,22 @@ function readSavedEngine(root = process.cwd()) {
 
 // The default engine for this workspace, in precedence order:
 // env (per-run flags land here) -> .atris/engine.json -> house default.
-// The house default is our own intelligence when it is installed.
+// When nothing is configured the pick comes from the registry's saved health
+// (seeded once on first sight, refreshed by `atris engine doctor`), never a
+// machine probe: policy over probes. A stale "ready" is the execution stage's
+// problem, where requireEngineBin fails in one plain sentence.
 function resolveDefaultEngine(root = process.cwd()) {
   const env = canonicalEngineName(process.env.ATRIS_RUNNER_PROFILE);
   if (env) return { name: env, source: 'env' };
   const saved = readSavedEngine(root);
   if (saved) return { name: saved, source: 'saved' };
-  if (binInstalled(RUNNER_PROFILE_DEFS[HOUSE_ENGINE].bin)) return { name: HOUSE_ENGINE, source: 'house' };
-  const fallback = RUNNER_PROFILE_NAMES.find((name) => binInstalled(RUNNER_PROFILE_DEFS[name].bin));
+  const ready = new Set(
+    engineRegistryView(root)
+      .filter((engine) => engine.health && engine.health.status === 'ready')
+      .map((engine) => engine.id)
+  );
+  if (ready.has(HOUSE_ENGINE)) return { name: HOUSE_ENGINE, source: 'house' };
+  const fallback = RUNNER_PROFILE_NAMES.find((name) => ready.has(name));
   return fallback ? { name: fallback, source: 'detected' } : { name: HOUSE_ENGINE, source: 'none' };
 }
 
