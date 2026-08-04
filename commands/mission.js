@@ -5272,14 +5272,11 @@ function timelineMission(args) {
   const sinceFilter = readFlag(args, '--since', '') || null;
   const ref = stripKnownFlags(args, ['--limit', '--output', '--out', '--kind', '--since'], ['--json', '--write', '--all', '--prune-preview'])[0] || '';
   const limit = all ? Number.MAX_SAFE_INTEGER : readPositiveIntegerFlag(args, '--limit', 12, { json: asJson });
-  const missions = listMissions();
-  const mission = ref
-    ? resolveMission(ref)
-    : (missions.find((row) => !TERMINAL_STATUSES.has(row.status)) || missions[0] || null);
-  if (ref && !mission) {
+  const data = loadTimelineData(ref, { limit, kindFilter, sinceFilter, write, prunePreviewRequested, outputPath });
+  if (ref && !data.mission) {
     exitMissingMission(ref, 1, asJson);
   }
-  if (!mission) {
+  if (!data.mission) {
     printJsonOrText(
       {
         ok: true,
@@ -5293,8 +5290,40 @@ function timelineMission(args) {
     );
     return;
   }
+  const { payload, lines } = groupTimeline(data, { all, kindFilter, sinceFilter });
+  renderTimeline(payload, lines, asJson);
+}
+
+function loadTimelineData(ref, { limit, kindFilter, sinceFilter, write, prunePreviewRequested, outputPath }) {
+  const missions = listMissions();
+  const mission = ref
+    ? resolveMission(ref)
+    : (missions.find((row) => !TERMINAL_STATUSES.has(row.status)) || missions[0] || null);
+  if (!mission) return { mission: null };
   const root = mission.worktree_root || process.cwd();
   const timelineResult = missionLandingTimeline(mission, root, limit, { kind: kindFilter, since: sinceFilter });
+  const generatedAt = stampIso();
+  let artifactPath = null;
+  let prunePreview = null;
+  if (write || prunePreviewRequested) {
+    try {
+      prunePreview = pruneRuns(root, { keepNewest: 200, keepDays: 14 });
+    } catch (error) {
+      prunePreview = { error: error.message || String(error) };
+    }
+  }
+  if (write) {
+    const outPath = outputPath
+      ? path.resolve(root, outputPath)
+      : defaultMissionTimelinePath(root, mission);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, missionTimelineMarkdown(mission, timelineResult.items, { prunePreview, generatedAt, timelineMeta: timelineResult.meta }), 'utf8');
+    artifactPath = path.relative(root, outPath);
+  }
+  return { mission, timelineResult, generatedAt, prunePreview, artifactPath };
+}
+
+function groupTimeline({ mission, timelineResult, generatedAt, prunePreview, artifactPath }, { all, kindFilter, sinceFilter }) {
   const timeline = timelineResult.items;
   const currentLanding = missionTimelineCurrentLanding(timeline);
   const timelineItemDisplay = (item) => ({
@@ -5323,24 +5352,6 @@ function timelineMission(args) {
     ...timelineItemDisplay(item),
   }));
   const nextMove = missionTimelineNextMove(mission, currentLanding);
-  const generatedAt = stampIso();
-  let artifactPath = null;
-  let prunePreview = null;
-  if (write || prunePreviewRequested) {
-    try {
-      prunePreview = pruneRuns(root, { keepNewest: 200, keepDays: 14 });
-    } catch (error) {
-      prunePreview = { error: error.message || String(error) };
-    }
-  }
-  if (write) {
-    const outPath = outputPath
-      ? path.resolve(root, outputPath)
-      : defaultMissionTimelinePath(root, mission);
-    fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(outPath, missionTimelineMarkdown(mission, timeline, { prunePreview, generatedAt, timelineMeta: timelineResult.meta }), 'utf8');
-    artifactPath = path.relative(root, outPath);
-  }
   const pruneSummary = missionTimelinePruneSummaryObject(prunePreview);
   const pruneDisplay = {
     label: 'Prune preview',
@@ -5605,6 +5616,10 @@ function timelineMission(args) {
   if (artifactPath) lines.push(`Saved: ${artifactPath}`);
   const pruneLine = missionTimelinePruneSummaryLine(prunePreview);
   if (pruneLine) lines.push(pruneLine);
+  return { payload, lines };
+}
+
+function renderTimeline(payload, lines, asJson) {
   printJsonOrText(payload, lines, asJson);
 }
 
