@@ -11313,7 +11313,45 @@ function taskHasReview(task) {
   return review.reward != null || Boolean(review.proof || review.lesson || review.next_task);
 }
 
-function taskBoardHtml() {
+const TASK_BOARD_COLUMNS = [
+  ['backlog', 'Backlog'],
+  ['open', 'Open'],
+  ['doing', 'Doing'],
+  ['review', 'Review'],
+  ['blocked', 'Blocked'],
+  ['done', 'Done'],
+];
+
+// Pure state shaping: projection in, board view model out. No markup here.
+function taskBoardViewModel(projection = {}) {
+  const tasks = Array.isArray(projection.tasks) ? projection.tasks : [];
+  const rows = tasks.map((task) => ({
+    id: task.id,
+    task,
+    column: taskColumn(task),
+    decision: taskHasReview(task),
+  }));
+  const columns = TASK_BOARD_COLUMNS.map(([key, label]) => ({
+    key,
+    label,
+    rows: rows.filter((row) => row.column === key),
+  }));
+  const counts = {};
+  for (const column of columns) counts[column.key] = column.rows.length;
+  return {
+    columns,
+    counts,
+    rows,
+    total: rows.length,
+    planTags: Array.from(STATUS_PLAN_TAGS),
+  };
+}
+
+// Markup only: view model in, board page out. The page hydrates itself from
+// /api/tasks in the browser, so the template bakes in just the shared
+// plan-tag list; the column keys and labels must stay in step with
+// TASK_BOARD_COLUMNS above.
+function taskBoardTemplate(model) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -11472,7 +11510,7 @@ function taskBoardHtml() {
       ['blocked', 'Blocked'],
       ['done', 'Done']
     ];
-    const planTags = new Set(${JSON.stringify(Array.from(STATUS_PLAN_TAGS))});
+    const planTags = new Set(${JSON.stringify(model.planTags)});
     let state = { tasks: [] };
     let selected = null;
     const $ = (id) => document.getElementById(id);
@@ -11743,6 +11781,10 @@ function taskBoardHtml() {
   </script>
 </body>
 </html>`;
+}
+
+function taskBoardHtml() {
+  return taskBoardTemplate(taskBoardViewModel());
 }
 
 function readJsonBody(req) {
@@ -12628,4 +12670,6 @@ module.exports = {
   autoRenderTodoFromDb,
   projectionMissions,
   projectionWishes,
+  taskBoardViewModel,
+  taskBoardTemplate,
 };
