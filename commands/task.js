@@ -22,7 +22,7 @@ const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
 const { extractReceiptEvidence, RECEIPT_PATH_PATTERN } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const reviewIntegrity = require('../lib/review-integrity');
-const { gateForHuman, isRetiredFillerReason, landingWhyClause, numberWord } = require('../lib/voice-gate');
+const { gateForHuman, isRetiredFillerReason, landingWhyClause, numberWord, plainLandingReason } = require('../lib/voice-gate');
 const {
   normalizeOwnerSlug,
   resolveFunctionalOwner: resolveFunctionalTaskOwner,
@@ -5648,7 +5648,7 @@ function cmdReviews(args) {
     if (item.accept_command) {
       console.log(`   say yes: atris task accept ${item.display_id || taskRef(item.id)}`);
     } else if (item.blocked_accept_reason) {
-      console.log(`   approve: blocked (${item.blocked_accept_reason})`);
+      console.log(`   approve: blocked; ${plainLandingReason(item.blocked_accept_reason)}`);
       console.log(`   rework: ${item.revise_command}`);
     }
   });

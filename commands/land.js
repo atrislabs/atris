@@ -605,7 +605,9 @@ function printReceipt(receipt) {
     // fresh-grace keeps are healthy active work, not a call to action —
     // "needs a human" on those trained readers to ignore the real ones.
     for (const k of receipt.keptWorktrees || []) {
+      // The receipt keeps the raw codes; the human line speaks in sentences.
       if (String(k).includes('(fresh_worktree_grace)')) console.log(`  in use, left alone: ${k.replace(' (fresh_worktree_grace)', '')}`);
+      else if (String(k).includes('(current_checkout)')) console.log(`  you are standing in it, left alone: ${k.replace(' (current_checkout)', '')}`);
       else console.log(`  ✋ kept, needs a human: ${k}`);
     }
     for (const m of receipt.keptMovedBranches || []) console.log(`  moved since scan, left alone: ${m}`);
