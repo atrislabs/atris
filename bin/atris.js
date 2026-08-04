@@ -530,6 +530,7 @@ function showHelp() {
   console.log('    atris task ready <id> --verify');
   console.log('    atris autoland tick   # second check runs, task lands');
   console.log('  mission    - Goal + loop + member owner + verifier + receipt; --budget quick|long|deep sets bounded tiers');
+  console.log('  decide     - Answer open mission asks and send the decision to the next tick');
   console.log('  release    - Tag release, bump version, create GitHub release, draft /launch');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('  study      - On-demand learning feed: ingest topic, start server, open browser');
@@ -1817,6 +1818,18 @@ if (command === 'init') {
 } else if (command === 'router') {
   const code = require('../commands/router').routerCommand(process.argv.slice(3));
   if (Number.isInteger(code) && code !== 0) process.exit(code);
+} else if (command === 'decide') {
+  // process.exit() can outrun a piped stdout: writes beyond the 64KB pipe
+  // buffer are async, so large --json payloads truncate at 64KB multiples.
+  // Queue an empty write and exit from its callback — it fires only after
+  // every earlier buffered write has drained (BCK-1306).
+  const exitAfterStdoutDrain = (code) => {
+    if (process.stdout.writableLength === 0) process.exit(code);
+    else process.stdout.write('', () => process.exit(code));
+  };
+  Promise.resolve(require('../commands/decide').decideCommand(process.argv.slice(3)))
+    .then(() => exitAfterStdoutDrain(process.exitCode || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitAfterStdoutDrain(1); });
 } else if (command === 'mission') {
   // process.exit() can outrun a piped stdout: writes beyond the 64KB pipe
   // buffer are async, so large --json payloads truncate at 64KB multiples.
