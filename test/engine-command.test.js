@@ -264,9 +264,42 @@ test('resolve is probe-free: no child_process call happens on a settled registry
     const picked = registryLib.resolveEngineForRoleRanked('executor', root);
     assert.ok(Array.isArray(picked.ranked));
     assert.deepEqual(calls, [], 'resolve must make zero child_process calls');
+    // The nothing-configured default path rides the same rule: no env, no
+    // saved engine.json, and the pick still comes from registry policy alone.
+    const fallback = withEnvProfile(undefined, () => resolveDefaultEngine(root));
+    assert.ok(fallback.name, 'default resolution must still pick a name');
+    assert.ok(['house', 'detected', 'none'].includes(fallback.source));
+    assert.deepEqual(calls, [], 'default resolution must make zero child_process calls');
   } finally {
     for (const name of spied) childProcess[name] = originals.get(name);
   }
+});
+
+test('nothing configured: the default comes from registry health, not the machine', () => {
+  // No env, no .atris/engine.json. The registry health file is the only
+  // input: flip it and the pick flips, without any probe in between.
+  const root = tmpRoot();
+  for (const name of RUNNER_PROFILE_NAMES) {
+    setEngineHealth(name, 'not_installed', root);
+  }
+  // No ready engine anywhere: fall back to the house default anyway. The
+  // missing binary is the execution stage's problem, not resolution's.
+  const none = withEnvProfile(undefined, () => resolveDefaultEngine(root));
+  assert.equal(none.name, HOUSE_ENGINE);
+  assert.equal(none.source, 'none');
+
+  // A ready non-house engine in policy becomes the detected default, even on
+  // a machine where that binary does not exist.
+  setEngineHealth('cursor', 'ready', root);
+  const detected = withEnvProfile(undefined, () => resolveDefaultEngine(root));
+  assert.equal(detected.name, 'cursor');
+  assert.equal(detected.source, 'detected');
+
+  // A ready house engine beats every other ready engine.
+  setEngineHealth(HOUSE_ENGINE, 'ready', root);
+  const house = withEnvProfile(undefined, () => resolveDefaultEngine(root));
+  assert.equal(house.name, HOUSE_ENGINE);
+  assert.equal(house.source, 'house');
 });
 
 test('routing believes a ready health flag even when the binary is missing', () => {
