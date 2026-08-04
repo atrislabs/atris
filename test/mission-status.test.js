@@ -6586,6 +6586,74 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
   }
 });
 
+test('mission goal skips caller-session missions that cannot use the native Codex ack', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'older-codex-goal',
+      slug: 'older-codex-goal',
+      objective: 'eligible native Codex goal',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'newer-caller-session',
+      slug: 'newer-caller-session',
+      objective: 'caller session work with no native goal contract',
+      status: 'running',
+      runner: 'caller_session',
+      verifier: 'true',
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const selected = selectCodexGoalMission(dir);
+    assert.equal(selected.mission.id, 'older-codex-goal');
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.action, 'codex_goal_candidate');
+    assert.equal(payload.goal.mission_id, 'older-codex-goal');
+    assert.equal(payload.goal.requires_native_goal_start, true);
+    assert.match(payload.goal.native_goal_ack_command, /mission goal ack older-codex-goal/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal emits no native goal when only caller-session work exists', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'caller-session-only',
+      slug: 'caller-session-only',
+      objective: 'caller session work with no native goal contract',
+      status: 'running',
+      runner: 'caller_session',
+      verifier: 'true',
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    assert.equal(selectCodexGoalMission(dir), null);
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.action, 'no_goal_candidate');
+    assert.equal(payload.goal, undefined);
+    assert.equal(payload.requires_native_goal_start, undefined);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission goal skips human-gated ready missions', () => {
   const dir = makeTempDir();
   try {

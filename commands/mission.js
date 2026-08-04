@@ -6428,7 +6428,10 @@ function missionSelectableForCodexGoal(mission, now = new Date()) {
 function selectCodexGoalMission(root = process.cwd(), options = {}, now = new Date()) {
   const requestedId = String(options.missionId || '').trim();
   const candidates = listMissions(root)
-    .filter((mission) => runnerUsesCallerSession(mission.runner))
+    // caller_session/current_agent missions run in this process, but they do
+    // not own the native Codex goal handshake. Keep selection aligned with
+    // ackMissionGoal(), which intentionally accepts only codex_goal runners.
+    .filter((mission) => isCodexGoalMission(mission))
     .filter((mission) => missionSelectableForCodexGoal(mission, now));
   if (requestedId) {
     const exact = candidates.find((mission) => missionMatchesRef(mission, requestedId));
@@ -6442,10 +6445,6 @@ function selectCodexGoalMission(root = process.cwd(), options = {}, now = new Da
     const aRank = missionGoalSelectionRank(a);
     const bRank = missionGoalSelectionRank(b);
     if (aRank !== bRank) return aRank - bRank;
-
-    const aCaller = runnerUsesCallerSession(a.runner) ? 1 : 0;
-    const bCaller = runnerUsesCallerSession(b.runner) ? 1 : 0;
-    if (aCaller !== bCaller) return bCaller - aCaller;
 
     const aVerifier = effectiveMissionVerifier(a) ? 1 : 0;
     const bVerifier = effectiveMissionVerifier(b) ? 1 : 0;

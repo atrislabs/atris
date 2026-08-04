@@ -39,10 +39,24 @@ const WORKSPACE_PROMPTS = [
   'what did Atris ship last night? give me the highlights in plain words',
   'summarize the journal from yesterday',
 ];
-// GitHub connector phrasing stays cloud even inside a workspace — only
-// local-checkout wording (commit/branch/change) claims the local lane.
+// GitHub connector-only phrasing stays cloud even inside a workspace. Local
+// checkout mutations (commit/branch/push/pull) need the workspace tool lane.
 assert.equal(ax.resolveRoute('what github repos do I have?', { cwd: repoRoot }), 'cloud');
-assert.equal(ax.resolveRoute('push something to github', { cwd: repoRoot }), 'cloud');
+assert.equal(ax.resolveRoute('create a github issue for this bug', { cwd: repoRoot }), 'cloud');
+for (const message of [
+  'push something to github',
+  'pull the latest from github',
+  'commit a tiny proof change and push to github',
+]) {
+  assert.equal(ax.resolveRoute(message, { cwd: repoRoot }), 'local', `local GitHub mutation gets workspace tools (${message})`);
+}
+const githubMutation = ax.buildPayload('push something to github', { mode: 'fast', cwd: repoRoot });
+assert.equal(githubMutation.workspace_path, repoRoot);
+assert.equal(githubMutation.max_turns, 16);
+const githubConnectorWrite = ax.buildPayload('create a github issue for this bug', { mode: 'fast', cwd: repoRoot });
+assert.equal(githubConnectorWrite.workspace_path, undefined);
+assert.equal(githubConnectorWrite.max_turns, 1);
+assert.equal(githubConnectorWrite.connector_turn?.policy, 'preview_then_explicit_approval');
 const CHAT_PROMPTS = [
   'write an essay about the product',
   'plan my morning',
@@ -107,6 +121,7 @@ assert.match(member, /scripts\/verify-ax-cloud-standard\.js/);
 console.log('AX Context Standard');
 console.log('- inside a workspace every prompt gets tools (v2, Claude Code shape); bare-cwd chat stays pure cloud');
 console.log('- workspace prompts from a bare cwd stay cloud (privacy line holds)');
-console.log('- workspace prompts inside a workspace route local with tools (fast=8, pro=14 turns)');
+console.log('- workspace prompts inside a workspace route local with tools (fast=16, pro=24 turns)');
+console.log('- GitHub connector-only work stays cloud; local checkout mutations get workspace tools');
 console.log('- explicit --cloud/--local always win; run profile from bare cwd is cloud');
 console.log('- codex-executor member contract names the standard and verifier');
