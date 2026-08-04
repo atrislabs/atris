@@ -504,7 +504,7 @@ function showHelp() {
   console.log('  activate   - Load Atris context');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  stream     - Watch the whole team work live in one terminal');
-  console.log('  team       - Show who is awake, what they are doing, and running loops');
+  console.log('  team       - One team view: members, roles, engine assignments (presence for live)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
