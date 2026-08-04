@@ -82,7 +82,7 @@ test('atris task receipt writes evidence without moving the task to ready', () =
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;
 
-    const receiptRun = runCli(['task', 'receipt', ref, '--verify', 'true', '--json'], { cwd: dir, env });
+    const receiptRun = runCli(['task', 'receipt', ref, '--verify', 'true', '--no-falsify-check', '--json'], { cwd: dir, env });
     assert.equal(receiptRun.status, 0, receiptRun.stderr);
     const parsed = JSON.parse(receiptRun.stdout);
     assert.equal(parsed.ok, true);
@@ -130,7 +130,7 @@ test('task ready --verify writes a receipt and the proof cites the receipt path'
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;
 
-    const ready = runCli(['task', 'ready', ref, '--verify', 'true', '--json'], { cwd: dir, env });
+    const ready = runCli(['task', 'ready', ref, '--verify', 'true', '--no-falsify-check', '--json'], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
     const task = JSON.parse(ready.stdout).task;
     assert.match(task.review.proof, /\[verified\] `true` passed \(exit 0\)/);

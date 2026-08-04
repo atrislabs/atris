@@ -405,13 +405,13 @@ test('pack run says plainly when the packet folder is missing or invalid', async
     fs.mkdirSync(path.join(dir, 'not-a-pack'));
     await assert.rejects(
       () => runPack([path.join(dir, 'not-a-pack')], dir, { deps }),
-      /not an atris packet \(no pack\.json\)/
+      /not an atris pack \(no pack\.json\)/
     );
 
     fs.writeFileSync(path.join(dir, 'not-a-pack', 'pack.json'), '{ broken');
     await assert.rejects(
       () => runPack([path.join(dir, 'not-a-pack')], dir, { deps }),
-      /packet is invalid/
+      /pack is invalid/
     );
   } finally {
     cleanupTempDir(dir);
