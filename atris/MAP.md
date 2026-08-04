@@ -128,7 +128,7 @@ rg "cloudAtris|cloudClean|collectCloudOrphans|parseCloudCleanArgs|showOrphans" c
 rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|claimed_task|canonical_mirror_hash" scripts/atris-labs-cloud-next-sync.js test/cloud-next-sync.test.js  # Atris Labs cloud next-work mirror sync: local task state -> /workspace/work/next -> cloud self-improve receipt; claimed codex work beats human-accept waits; stable digest sidecar detects unchanged mirror state
 rg "businessSync|parseBusinessSyncArgs|--watch|command === 'watch'|knownCommands" commands/business-sync.js bin/atris.js lib/known-commands.js test/watch-alias.test.js  # Business sync/watch surface, including top-level `atris watch` alias for `sync --watch`
 rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep business brain fresh by doctor/pull/watch/push
-rg "teamCommand|collectTeamPresence|buildTeamPresence|atris.team_presence.v1" commands/team.js lib/team-presence.js bin/atris.js test/team-presence.test.js  # Team presence contract: deterministic awake roster, doing sentence, loop badge, and stream totals for terminal and JSON consumers
+rg "teamCommand|collectTeamPresence|buildTeamPresence|atris.team_presence.v1|collectTeamRoster|renderTeamRoster" commands/team.js lib/team-presence.js bin/atris.js test/team-presence.test.js test/team-roster.test.js  # Team surface: bare `atris team` roster merges atris/team member folders with live-mission engine assignments (one lowercase sentence per member); `team presence` keeps the deterministic awake roster, doing sentence, loop badge, and stream totals
 rg "wikiCommand|printWikiHelp|wiki help paths" commands/wiki.js test/commands.test.js  # Wiki ingest/query/lint/local memory + non-mutating help
 
 # Utilities
