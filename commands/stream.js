@@ -2,8 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
-
+const { runGit: spawnGit } = require('../lib/git-spawn');
 const { collectBoard } = require('./land');
 const { listWorktrees } = require('./worktree');
 
@@ -20,7 +19,7 @@ function defaultDeps() {
     readdirSync: fs.readdirSync,
     statSync: fs.statSync,
     watch: fs.watch,
-    spawnSync,
+    runGit: (root, args) => spawnGit(args, { cwd: root, check: false }),
     now: () => Date.now(),
   };
 }
@@ -102,7 +101,7 @@ function isDirectory(file, deps) {
 
 function runGit(root, args, deps) {
   try {
-    const result = deps.spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+    const result = deps.runGit(root, args);
     return result && typeof result.status === 'number' ? result : { status: 1, stdout: '', stderr: '' };
   } catch {
     return { status: 1, stdout: '', stderr: '' };

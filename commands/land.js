@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
-
+const { runGit } = require('../lib/git-spawn');
 const { listWorktrees, statusCounts } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
@@ -12,14 +11,6 @@ const PROTECTED_BRANCHES = new Set(['main', 'master']);
 // Pluralize a count + noun ("1 change", "2 changes").
 function countLabel(n, word) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
-}
-
-function runGit(args, { cwd = process.cwd(), check = true, maxBuffer } = {}) {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8', ...(maxBuffer ? { maxBuffer } : {}) });
-  if (check && result.status !== 0) {
-    throw new Error(`git ${args.join(' ')} failed: ${(result.stderr || result.stdout || '').trim()}`);
-  }
-  return result;
 }
 
 function repoRoot(cwd = process.cwd()) {

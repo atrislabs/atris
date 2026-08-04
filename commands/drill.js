@@ -3,20 +3,13 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { runGit } = require('../lib/git-spawn');
 
 const VERIFY_COMMAND = 'node -e "process.exit(0)"';
 const COAUTHOR = 'Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>';
 
 function hasFlag(args, name) {
   return args.includes(name);
-}
-
-function runGit(args, cwd, options = {}) {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
-  if (options.check === false || result.status === 0) return result;
-  const output = (result.stderr || result.stdout || `git ${args.join(' ')} failed`).trim();
-  throw new Error(output);
 }
 
 function parseJsonOutput(text) {
@@ -97,9 +90,9 @@ async function createSandbox(ctx) {
   ctx.tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-drill-'));
   ctx.sandboxPath = path.join(ctx.tmpRoot, 'sandbox');
   fs.mkdirSync(ctx.sandboxPath, { recursive: true });
-  runGit(['init', '-b', 'master'], ctx.sandboxPath);
-  runGit(['config', 'user.email', 'drill@example.invalid'], ctx.sandboxPath);
-  runGit(['config', 'user.name', 'Atris Drill'], ctx.sandboxPath);
+  runGit(['init', '-b', 'master'], { cwd: ctx.sandboxPath });
+  runGit(['config', 'user.email', 'drill@example.invalid'], { cwd: ctx.sandboxPath });
+  runGit(['config', 'user.name', 'Atris Drill'], { cwd: ctx.sandboxPath });
   fs.writeFileSync(path.join(ctx.sandboxPath, 'README.md'), '# Atris drill sandbox\n', 'utf8');
   await withSandboxProcessState(ctx.sandboxPath, {
     ATRIS_SKIP_UPDATE_CHECK: '1',
@@ -108,8 +101,8 @@ async function createSandbox(ctx) {
   }, async () => {
     await callInitAtris(ctx.sandboxPath);
   });
-  runGit(['add', '-A'], ctx.sandboxPath);
-  runGit(['commit', '-m', 'initial sandbox'], ctx.sandboxPath);
+  runGit(['add', '-A'], { cwd: ctx.sandboxPath });
+  runGit(['commit', '-m', 'initial sandbox'], { cwd: ctx.sandboxPath });
 }
 
 async function wishCaptured(ctx) {
@@ -199,10 +192,10 @@ async function landingShippedLocal(ctx) {
   try {
     require('../lib/task-db').close();
   } catch {}
-  const dirty = runGit(['status', '--porcelain'], ctx.sandboxPath).stdout.trim();
+  const dirty = runGit(['status', '--porcelain'], { cwd: ctx.sandboxPath }).stdout.trim();
   if (dirty) {
-    runGit(['add', '-A'], ctx.sandboxPath);
-    runGit(['commit', '-m', 'record drill pipeline state'], ctx.sandboxPath);
+    runGit(['add', '-A'], { cwd: ctx.sandboxPath });
+    runGit(['commit', '-m', 'record drill pipeline state'], { cwd: ctx.sandboxPath });
   }
   ctx.landingWorktree = path.join(ctx.tmpRoot, 'landing-worktree');
   const created = worktree.createAgentWorktree({
@@ -229,9 +222,9 @@ async function landingShippedLocal(ctx) {
     assertOk(shipped.value === 0, `worktree ship exited ${shipped.value}`);
     assertOk(/local mode/.test(`${shipped.stdout}\n${shipped.stderr}`), 'worktree ship did not report local mode');
   });
-  runGit(['worktree', 'remove', ctx.landingWorktree, '--force'], ctx.sandboxPath);
-  runGit(['branch', '-d', ctx.landingBranch], ctx.sandboxPath);
-  const landed = runGit(['show', 'master:drill-landing.txt'], ctx.sandboxPath).stdout;
+  runGit(['worktree', 'remove', ctx.landingWorktree, '--force'], { cwd: ctx.sandboxPath });
+  runGit(['branch', '-d', ctx.landingBranch], { cwd: ctx.sandboxPath });
+  const landed = runGit(['show', 'master:drill-landing.txt'], { cwd: ctx.sandboxPath }).stdout;
   assertOk(landed.trim() === 'local landing ok', 'landing file was not merged into sandbox master');
 }
 
@@ -244,7 +237,7 @@ async function ledgerChecked(ctx) {
   assertOk(currentMission, `mission not found: ${ctx.missionId}`);
   assertOk(currentMission.verifier_result && currentMission.verifier_result.passed === true, 'mission verifier result is not passing');
   assertOk(currentMission.receipt_path && fs.existsSync(path.join(ctx.sandboxPath, currentMission.receipt_path)), `mission receipt missing: ${currentMission.receipt_path}`);
-  const unmerged = runGit(['branch', '--no-merged', 'master'], ctx.sandboxPath).stdout
+  const unmerged = runGit(['branch', '--no-merged', 'master'], { cwd: ctx.sandboxPath }).stdout
     .split(/\r?\n/)
     .map((line) => line.replace(/^\*/, '').trim())
     .filter(Boolean)
