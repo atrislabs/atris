@@ -7958,84 +7958,60 @@ function memberAliveAll(...args) {
   return memberLoopAll('alive', ...args);
 }
 
-async function memberLoop(name, ...args) {
-  if (name === '--all' || name === 'all') return memberLoopAll('loop', ...args);
-  requireMemberDir(name);
-  const asJson = hasFlag(args, '--json');
-  const aliveMode = hasFlag(args, '--alive');
-  const execute = hasFlag(args, '--execute');
-  const confirmed = hasFlag(args, '--confirm-autonomy-policy');
-  const force = hasFlag(args, '--force');
-  const stop = hasFlag(args, '--stop');
-  const status = hasFlag(args, '--status');
-  const agentFlag = String(readFlag(args, '--agent', '') || '').trim().toLowerCase();
-  const agent = agentFlag === 'claude' ? 'claude' : agentFlag === 'codex' ? 'codex' : undefined;
-  const model = String(readFlag(args, '--model', '') || '').trim() || undefined;
-  const operateMaxWall = Math.max(60, Math.min(1800, Number(readNumberFlag(args, '--operate-max-wall', readNumberFlag(args, '--max-wall', 900)))));
-  const autoAcceptLimit = Math.max(1, Math.floor(Number(readNumberFlag(args, '--auto-accept-limit', 8))));
-  const paths = memberLoopPaths(name);
-  fs.mkdirSync(paths.stateDir, { recursive: true });
+// Loop phase: report lease + latest-receipt state without touching anything.
+function memberLoopStatusReport(name, paths, asJson) {
+  const active = readJson(paths.lockPath);
+  const latest = readJson(paths.latestPath);
+  const payload = {
+    ok: true,
+    action: 'loop_status',
+    member: name,
+    active: Boolean(active && Number(active.expires_at_ms || 0) > Date.now() && isPidAlive(active.pid)),
+    lease: active || null,
+    latest: latest || null,
+    hourly_alive: memberAliveCronStatus(name, paths),
+    lock_path: paths.lockPath,
+    latest_path: paths.latestPath,
+  };
+  printJsonOrText(payload, [
+    `Loop status: ${name}`,
+    `Active: ${payload.active ? 'yes' : 'no'}`,
+    `Hourly: ${payload.hourly_alive.installed ? 'installed' : payload.hourly_alive.script_exists ? 'script ready' : 'not installed'}`,
+    `Latest: ${latest?.receipt_path ? path.relative(process.cwd(), latest.receipt_path) : 'none'}`,
+  ], asJson);
+}
 
-  if (hasFlag(args, '--install')) {
-    return installMemberAliveCron(name, args);
-  }
+// Loop phase: drop a stop file so the running loop breaks at its next tick boundary.
+function memberLoopRequestStop(name, paths, asJson) {
+  const requestedAt = stampIso();
+  const stopPayload = {
+    schema: 'atris.member_loop_stop.v1',
+    member: name,
+    requested_at: requestedAt,
+    pid: process.pid,
+  };
+  writeJson(paths.stopPath, stopPayload);
+  const receiptPath = writeMemberLoopReceipt(name, {
+    ok: true,
+    action: 'loop_stop',
+    member: name,
+    requested_at: requestedAt,
+    stop_path: paths.stopPath,
+  });
+  printJsonOrText({
+    ok: true,
+    action: 'loop_stop',
+    member: name,
+    stop_path: paths.stopPath,
+    receipt_path: receiptPath,
+  }, [
+    `Stop requested for ${name}.`,
+    `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
+  ], asJson);
+}
 
-  if (hasFlag(args, '--uninstall')) {
-    return uninstallMemberAliveCron(name, args);
-  }
-
-  if (status) {
-    const active = readJson(paths.lockPath);
-    const latest = readJson(paths.latestPath);
-    const payload = {
-      ok: true,
-      action: 'loop_status',
-      member: name,
-      active: Boolean(active && Number(active.expires_at_ms || 0) > Date.now() && isPidAlive(active.pid)),
-      lease: active || null,
-      latest: latest || null,
-      hourly_alive: memberAliveCronStatus(name, paths),
-      lock_path: paths.lockPath,
-      latest_path: paths.latestPath,
-    };
-    printJsonOrText(payload, [
-      `Loop status: ${name}`,
-      `Active: ${payload.active ? 'yes' : 'no'}`,
-      `Hourly: ${payload.hourly_alive.installed ? 'installed' : payload.hourly_alive.script_exists ? 'script ready' : 'not installed'}`,
-      `Latest: ${latest?.receipt_path ? path.relative(process.cwd(), latest.receipt_path) : 'none'}`,
-    ], asJson);
-    return;
-  }
-
-  if (stop) {
-    const requestedAt = stampIso();
-    const stopPayload = {
-      schema: 'atris.member_loop_stop.v1',
-      member: name,
-      requested_at: requestedAt,
-      pid: process.pid,
-    };
-    writeJson(paths.stopPath, stopPayload);
-    const receiptPath = writeMemberLoopReceipt(name, {
-      ok: true,
-      action: 'loop_stop',
-      member: name,
-      requested_at: requestedAt,
-      stop_path: paths.stopPath,
-    });
-    printJsonOrText({
-      ok: true,
-      action: 'loop_stop',
-      member: name,
-      stop_path: paths.stopPath,
-      receipt_path: receiptPath,
-    }, [
-      `Stop requested for ${name}.`,
-      `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
-    ], asJson);
-    return;
-  }
-
+// Loop phase: derive the timing plan (tick count, interval, duration, lease ttl) from flags.
+function memberLoopTimingPlan(name, args, { execute, confirmed }) {
   const ticksFlag = readNumberFlag(args, '--ticks', null);
   const minutes = readNumberFlag(args, '--minutes', null);
   const durationSeconds = readNumberFlag(args, '--duration-seconds', readNumberFlag(args, '--seconds', null));
@@ -8066,183 +8042,190 @@ async function memberLoop(name, ...args) {
     forever ? intervalMs + (2 * 60 * 60 * 1000) : durationMs + 60000,
     intervalMs + 60000,
   );
+  return { ticksFlag, hourly, forever, intervalMs, durationMs, ticks, runId, startedAt, ttlMs };
+}
 
-  if (execute && !confirmed) {
-    const receiptPath = writeMemberLoopReceipt(name, {
-      ok: false,
-      action: 'loop',
-      member: name,
-      status: 'blocked',
-      reason: 'execute_requires_confirm_autonomy_policy',
-      mode: 'execute',
-      started_at: startedAt,
-      finished_at: stampIso(),
-    });
-    const payload = {
-      ok: false,
-      action: 'loop',
-      member: name,
-      status: 'blocked',
-      reason: 'execute_requires_confirm_autonomy_policy',
-      receipt_path: receiptPath,
-    };
-    writeJson(paths.latestPath, payload);
-    printJsonOrText(payload, [
-      `Loop blocked for ${name}: execute requires --confirm-autonomy-policy.`,
-      `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
-    ], asJson);
-    process.exitCode = 1;
-    return;
-  }
+// Loop phase: refuse to execute without the autonomy confirmation, with a receipt saying why.
+function memberLoopRefuseUnconfirmed(name, paths, { asJson, startedAt }) {
+  const receiptPath = writeMemberLoopReceipt(name, {
+    ok: false,
+    action: 'loop',
+    member: name,
+    status: 'blocked',
+    reason: 'execute_requires_confirm_autonomy_policy',
+    mode: 'execute',
+    started_at: startedAt,
+    finished_at: stampIso(),
+  });
+  const payload = {
+    ok: false,
+    action: 'loop',
+    member: name,
+    status: 'blocked',
+    reason: 'execute_requires_confirm_autonomy_policy',
+    receipt_path: receiptPath,
+  };
+  writeJson(paths.latestPath, payload);
+  printJsonOrText(payload, [
+    `Loop blocked for ${name}: execute requires --confirm-autonomy-policy.`,
+    `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
+  ], asJson);
+  process.exitCode = 1;
+}
 
-  const lease = acquireMemberLoopLease(name, { runId, ttlMs });
-  if (!lease.acquired) {
-    const receiptPath = writeMemberLoopReceipt(name, {
-      ok: true,
-      action: 'loop',
-      member: name,
-      status: 'skipped',
-      reason: 'loop_already_active',
-      mode: execute ? 'execute' : 'dry_run',
-      active_lease: lease.lease || null,
-      started_at: startedAt,
-      finished_at: stampIso(),
-    });
-    const payload = {
-      ok: true,
-      action: 'loop',
-      member: name,
-      status: 'skipped',
-      reason: 'loop_already_active',
-      ticks: 0,
-      receipt_path: receiptPath,
-      active_lease: lease.lease || null,
-    };
-    writeJson(paths.latestPath, payload);
-    printJsonOrText(payload, [
-      `Loop skipped for ${name}: another loop is active.`,
-      `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
-    ], asJson);
-    return;
-  }
+// Loop phase: another loop holds the lease, so skip this run and leave a receipt behind.
+function memberLoopSkipAlreadyActive(name, paths, lease, { asJson, execute, startedAt }) {
+  const receiptPath = writeMemberLoopReceipt(name, {
+    ok: true,
+    action: 'loop',
+    member: name,
+    status: 'skipped',
+    reason: 'loop_already_active',
+    mode: execute ? 'execute' : 'dry_run',
+    active_lease: lease.lease || null,
+    started_at: startedAt,
+    finished_at: stampIso(),
+  });
+  const payload = {
+    ok: true,
+    action: 'loop',
+    member: name,
+    status: 'skipped',
+    reason: 'loop_already_active',
+    ticks: 0,
+    receipt_path: receiptPath,
+    active_lease: lease.lease || null,
+  };
+  writeJson(paths.latestPath, payload);
+  printJsonOrText(payload, [
+    `Loop skipped for ${name}: another loop is active.`,
+    `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
+  ], asJson);
+}
 
-  fs.rmSync(paths.stopPath, { force: true });
-  const tickLogPath = path.join(process.cwd(), 'atris', 'runs', `${runId}.jsonl`);
-  fs.mkdirSync(path.dirname(tickLogPath), { recursive: true });
-  const tickResults = [];
-  const decisions = {};
-  let stopped = false;
-  let failed = false;
-  // Stop spinning: if the member can do no real work for this many ticks in a row (waiting on a
-  // human review, blocked, or no goal), break early and surface a clear handoff instead of
-  // burning every remaining tick on the same no-op decision.
-  let earlyExit = null;
-  let consecutiveIdle = 0;
-  const idleBreakThreshold = 2;
+// Tick phase (alive mode): run the full operate pipeline once and record what it did.
+function memberLoopAliveTick(name, run, index, tickStartedAt) {
+  const { options, state } = run;
+  const alive = runAliveTick(name, {
+    execute: options.execute,
+    confirmed: options.confirmed,
+    force: options.force,
+    agent: options.agent,
+    model: options.model,
+    maxWallSeconds: options.operateMaxWall,
+    autoAcceptLimit: options.autoAcceptLimit,
+    noPrime: index > 0,
+  });
+  const key = `${alive.status || 'alive'}:${alive.reason || 'tick'}`;
+  state.decisions[key] = (state.decisions[key] || 0) + 1;
+  const tick = {
+    tick: index + 1,
+    started_at: tickStartedAt,
+    finished_at: alive.finished_at || stampIso(),
+    ok: alive.ok !== false,
+    decision: alive.status || 'alive_tick',
+    reason: alive.reason || null,
+    executed: options.execute,
+    needs_user: alive.needs_user === true,
+    next_command: alive.next_command || null,
+    has_mission: alive.has_mission === true,
+    has_goal: alive.has_goal === true,
+    has_steering: false,
+    productive: alive.status === 'completed',
+    blocked_on_human: alive.blocked_on_human === true,
+    operate_ok: alive.operate?.ok,
+    auto_accept_accepted: alive.auto_accept?.json?.summary?.accepted ?? alive.auto_accept?.json?.summary?.would_accept,
+    receipt_path: alive.receipt_path || alive.operate?.receipt_path || null,
+    alive,
+  };
+  state.tickResults.push(tick);
+  fs.appendFileSync(state.tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
+}
+
+// Tick phase (wake mode): take one wake decision, record it, and notice a member stuck
+// re-asking the same question so the loop can hand off instead of burning remaining ticks.
+async function memberLoopWakeTick(name, run, index, tickStartedAt) {
+  const { options, state } = run;
+  const wake = await runMemberWake(name, { execute: options.execute, confirmed: options.confirmed, force: options.force });
+  const key = `${wake.decision}:${wake.reason}`;
+  state.decisions[key] = (state.decisions[key] || 0) + 1;
+  const tick = {
+    tick: index + 1,
+    started_at: tickStartedAt,
+    finished_at: stampIso(),
+    ok: true,
+    decision: wake.decision,
+    reason: wake.reason,
+    executed: wake.executed,
+    needs_user: wake.needs_user,
+    next_command: wake.next_command,
+    has_mission: wake.checks?.has_mission === true,
+    has_goal: wake.checks?.has_goal === true,
+    has_steering: wake.checks?.has_steering === true,
+    productive: wake.executed === true
+      || /executed/.test(wake.reason || '')
+      || ['tick', 'close_loop', 'report_proof', 'create_missing_task', 'create_task', 'set_objective'].includes(wake.decision),
+    blocked_on_human: wake.needs_user === true || /^open_experiment_/.test(wake.reason || ''),
+    current_experiment: wake.current_experiment?.id || null,
+    receipt_path: wake.receipt_path,
+  };
+  state.tickResults.push(tick);
+  fs.appendFileSync(state.tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
+
   // Repeated identical `ask:*` wake decisions (e.g. ask:mission_missing_or_placeholder) mean the
   // member is stuck asking the same question every tick regardless of --execute; the idle
-  // early-exit above only fires in execute mode, so without this a dry-run loop burns every
+  // early-exit only fires in execute mode, so without this a dry-run loop burns every
   // remaining tick re-asking. Reuse the same blocked_on_human handoff once we see the ask repeat.
-  let lastAskKey = null;
-  let consecutiveIdenticalAsk = 0;
-  const identicalAskBreakThreshold = 2;
+  if (wake.decision === 'ask') {
+    if (key === state.lastAskKey) {
+      state.consecutiveIdenticalAsk += 1;
+    } else {
+      state.lastAskKey = key;
+      state.consecutiveIdenticalAsk = 1;
+    }
+    if (state.consecutiveIdenticalAsk >= MEMBER_LOOP_IDENTICAL_ASK_BREAK_THRESHOLD) {
+      state.earlyExit = {
+        after_tick: tick.tick,
+        decision: tick.decision || null,
+        reason: tick.reason || 'idle',
+        needs_user: tick.needs_user === true,
+        blocked_on_human: true,
+        next_command: tick.next_command || null,
+        stop: 'repeated_identical_ask',
+      };
+    }
+  } else {
+    state.lastAskKey = null;
+    state.consecutiveIdenticalAsk = 0;
+  }
+}
 
+// Stop spinning: if the member can do no real work for this many ticks in a row (waiting on a
+// human review, blocked, or no goal), break early and surface a clear handoff instead of
+// burning every remaining tick on the same no-op decision.
+const MEMBER_LOOP_IDLE_BREAK_THRESHOLD = 2;
+const MEMBER_LOOP_IDENTICAL_ASK_BREAK_THRESHOLD = 2;
+
+// Loop phase: control. Hold the lease, honor the stop file, pace ticks by interval, and
+// break early when the member is idling instead of faking activity.
+async function memberLoopRunTicks(name, paths, lease, run) {
+  const { options, plan, state } = run;
   try {
-    for (let index = 0; index < ticks; index += 1) {
+    for (let index = 0; index < plan.ticks; index += 1) {
       if (fs.existsSync(paths.stopPath)) {
-        stopped = true;
+        state.stopped = true;
         break;
       }
-      refreshMemberLoopLease(paths, lease.lease, ttlMs);
+      refreshMemberLoopLease(paths, lease.lease, plan.ttlMs);
       const tickStartedAt = stampIso();
       try {
-        if (aliveMode) {
-          const alive = runAliveTick(name, {
-            execute,
-            confirmed,
-            force,
-            agent,
-            model,
-            maxWallSeconds: operateMaxWall,
-            autoAcceptLimit,
-            noPrime: index > 0,
-          });
-          const key = `${alive.status || 'alive'}:${alive.reason || 'tick'}`;
-          decisions[key] = (decisions[key] || 0) + 1;
-          const tick = {
-            tick: index + 1,
-            started_at: tickStartedAt,
-            finished_at: alive.finished_at || stampIso(),
-            ok: alive.ok !== false,
-            decision: alive.status || 'alive_tick',
-            reason: alive.reason || null,
-            executed: execute,
-            needs_user: alive.needs_user === true,
-            next_command: alive.next_command || null,
-            has_mission: alive.has_mission === true,
-            has_goal: alive.has_goal === true,
-            has_steering: false,
-            productive: alive.status === 'completed',
-            blocked_on_human: alive.blocked_on_human === true,
-            operate_ok: alive.operate?.ok,
-            auto_accept_accepted: alive.auto_accept?.json?.summary?.accepted ?? alive.auto_accept?.json?.summary?.would_accept,
-            receipt_path: alive.receipt_path || alive.operate?.receipt_path || null,
-            alive,
-          };
-          tickResults.push(tick);
-          fs.appendFileSync(tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
+        if (options.aliveMode) {
+          memberLoopAliveTick(name, run, index, tickStartedAt);
         } else {
-        const wake = await runMemberWake(name, { execute, confirmed, force });
-        const key = `${wake.decision}:${wake.reason}`;
-        decisions[key] = (decisions[key] || 0) + 1;
-        const tick = {
-          tick: index + 1,
-          started_at: tickStartedAt,
-          finished_at: stampIso(),
-          ok: true,
-          decision: wake.decision,
-          reason: wake.reason,
-          executed: wake.executed,
-          needs_user: wake.needs_user,
-          next_command: wake.next_command,
-          has_mission: wake.checks?.has_mission === true,
-          has_goal: wake.checks?.has_goal === true,
-          has_steering: wake.checks?.has_steering === true,
-          productive: wake.executed === true
-            || /executed/.test(wake.reason || '')
-            || ['tick', 'close_loop', 'report_proof', 'create_missing_task', 'create_task', 'set_objective'].includes(wake.decision),
-          blocked_on_human: wake.needs_user === true || /^open_experiment_/.test(wake.reason || ''),
-          current_experiment: wake.current_experiment?.id || null,
-          receipt_path: wake.receipt_path,
-        };
-        tickResults.push(tick);
-        fs.appendFileSync(tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
-
-        if (wake.decision === 'ask') {
-          if (key === lastAskKey) {
-            consecutiveIdenticalAsk += 1;
-          } else {
-            lastAskKey = key;
-            consecutiveIdenticalAsk = 1;
-          }
-          if (consecutiveIdenticalAsk >= identicalAskBreakThreshold) {
-            earlyExit = {
-              after_tick: tick.tick,
-              decision: tick.decision || null,
-              reason: tick.reason || 'idle',
-              needs_user: tick.needs_user === true,
-              blocked_on_human: true,
-              next_command: tick.next_command || null,
-              stop: 'repeated_identical_ask',
-            };
-          }
-        } else {
-          lastAskKey = null;
-          consecutiveIdenticalAsk = 0;
-        }
+          await memberLoopWakeTick(name, run, index, tickStartedAt);
         }
       } catch (error) {
-        failed = true;
+        state.failed = true;
         const tick = {
           tick: index + 1,
           started_at: tickStartedAt,
@@ -8250,19 +8233,19 @@ async function memberLoop(name, ...args) {
           ok: false,
           error: error instanceof Error ? error.message : String(error),
         };
-        tickResults.push(tick);
-        fs.appendFileSync(tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
+        state.tickResults.push(tick);
+        fs.appendFileSync(state.tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
         break;
       }
-      if (earlyExit) break;
-      if (execute) {
-        const last = tickResults[tickResults.length - 1];
+      if (state.earlyExit) break;
+      if (options.execute) {
+        const last = state.tickResults[state.tickResults.length - 1];
         if (last && last.productive) {
-          consecutiveIdle = 0;
+          state.consecutiveIdle = 0;
         } else if (last) {
-          consecutiveIdle += 1;
-          if (consecutiveIdle >= idleBreakThreshold) {
-            earlyExit = {
+          state.consecutiveIdle += 1;
+          if (state.consecutiveIdle >= MEMBER_LOOP_IDLE_BREAK_THRESHOLD) {
+            state.earlyExit = {
               after_tick: last.tick,
               decision: last.decision || null,
               reason: last.reason || 'idle',
@@ -8274,12 +8257,19 @@ async function memberLoop(name, ...args) {
           }
         }
       }
-      if (index < ticks - 1 && intervalMs > 0) sleepSync(intervalMs);
+      if (index < plan.ticks - 1 && plan.intervalMs > 0) sleepSync(plan.intervalMs);
     }
   } finally {
     releaseMemberLoopLease(paths, lease.lease);
   }
+}
 
+// Loop phase: result recording. One summary object, one receipt, one latest pointer, one report.
+function memberLoopRecordResult(name, paths, lease, run) {
+  const { options, plan, state } = run;
+  const { execute, aliveMode, asJson } = options;
+  const { hourly, forever, runId, ticks, intervalMs, durationMs, startedAt } = plan;
+  const { tickResults, decisions, stopped, failed, earlyExit, tickLogPath } = state;
   const finishedAt = stampIso();
   const summary = {
     ok: !failed,
@@ -8331,6 +8321,71 @@ async function memberLoop(name, ...args) {
     `Stop: ${payload.stop_command}`,
     `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
   ], asJson);
+}
+
+// Driver: the phases above do the work; this reads as setup -> gate -> run -> record.
+async function memberLoop(name, ...args) {
+  if (name === '--all' || name === 'all') return memberLoopAll('loop', ...args);
+  requireMemberDir(name);
+  const asJson = hasFlag(args, '--json');
+  const aliveMode = hasFlag(args, '--alive');
+  const execute = hasFlag(args, '--execute');
+  const confirmed = hasFlag(args, '--confirm-autonomy-policy');
+  const force = hasFlag(args, '--force');
+  const agentFlag = String(readFlag(args, '--agent', '') || '').trim().toLowerCase();
+  const agent = agentFlag === 'claude' ? 'claude' : agentFlag === 'codex' ? 'codex' : undefined;
+  const model = String(readFlag(args, '--model', '') || '').trim() || undefined;
+  const operateMaxWall = Math.max(60, Math.min(1800, Number(readNumberFlag(args, '--operate-max-wall', readNumberFlag(args, '--max-wall', 900)))));
+  const autoAcceptLimit = Math.max(1, Math.floor(Number(readNumberFlag(args, '--auto-accept-limit', 8))));
+  const options = { asJson, aliveMode, execute, confirmed, force, agent, model, operateMaxWall, autoAcceptLimit };
+  const paths = memberLoopPaths(name);
+  fs.mkdirSync(paths.stateDir, { recursive: true });
+
+  if (hasFlag(args, '--install')) {
+    return installMemberAliveCron(name, args);
+  }
+
+  if (hasFlag(args, '--uninstall')) {
+    return uninstallMemberAliveCron(name, args);
+  }
+
+  if (hasFlag(args, '--status')) {
+    return memberLoopStatusReport(name, paths, asJson);
+  }
+
+  if (hasFlag(args, '--stop')) {
+    return memberLoopRequestStop(name, paths, asJson);
+  }
+
+  const plan = memberLoopTimingPlan(name, args, { execute, confirmed });
+
+  if (execute && !confirmed) {
+    return memberLoopRefuseUnconfirmed(name, paths, { asJson, startedAt: plan.startedAt });
+  }
+
+  const lease = acquireMemberLoopLease(name, { runId: plan.runId, ttlMs: plan.ttlMs });
+  if (!lease.acquired) {
+    return memberLoopSkipAlreadyActive(name, paths, lease, { asJson, execute, startedAt: plan.startedAt });
+  }
+
+  fs.rmSync(paths.stopPath, { force: true });
+  const tickLogPath = path.join(process.cwd(), 'atris', 'runs', `${plan.runId}.jsonl`);
+  fs.mkdirSync(path.dirname(tickLogPath), { recursive: true });
+  const state = {
+    tickResults: [],
+    decisions: {},
+    stopped: false,
+    failed: false,
+    earlyExit: null,
+    consecutiveIdle: 0,
+    lastAskKey: null,
+    consecutiveIdenticalAsk: 0,
+    tickLogPath,
+  };
+
+  const run = { options, plan, state };
+  await memberLoopRunTicks(name, paths, lease, run);
+  memberLoopRecordResult(name, paths, lease, run);
 }
 
 async function memberTick(name, ...args) {
