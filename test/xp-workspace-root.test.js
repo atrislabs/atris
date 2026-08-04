@@ -17,10 +17,10 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'xp.js'), 'ut
 
 test('single-workspace default resolves the workspace root, not raw cwd', () => {
   // Both single-workspace sites use the resolving default...
-  const resolved = SRC.match(/readFlag\(args, '--workspace', defaultXpWorkspace\(\)\)/g) || [];
+  const resolved = SRC.match(/readInlineFirstFlag\(args, '--workspace', defaultXpWorkspace\(\)\)/g) || [];
   assert.equal(resolved.length, 2, 'both single-workspace sites use defaultXpWorkspace()');
   // ...and neither still binds the raw-cwd default.
-  assert.doesNotMatch(SRC, /readFlag\(args, '--workspace', process\.cwd\(\)\)/);
+  assert.doesNotMatch(SRC, /readInlineFirstFlag\(args, '--workspace', process\.cwd\(\)\)|readFlag\(args, '--workspace', process\.cwd\(\)\)/);
   // The multi-root search path still seeds from cwd (unchanged).
   assert.match(SRC, /roots\.push\(process\.cwd\(\)\)/);
 });
