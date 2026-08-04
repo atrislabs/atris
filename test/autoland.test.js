@@ -1246,7 +1246,9 @@ test('auto-accept-certified json includes unsafe verify blockers with a reason',
     assert.equal(created.status, 0, created.stderr || created.stdout);
     const ref = String(JSON.parse(created.stdout).task?.display_id);
     assert.equal(runCli(['task', 'claim', ref, '--as', 'builder'], repo).status, 0);
-    const ready = runCli(['task', 'ready', ref, '--verify', 'true', '--as', 'builder'], repo);
+    // --no-falsify-check: this fixture NEEDS the unsafe no-op verify to reach
+    // the autoland blocker it is testing; the falsifier probe would refuse it.
+    const ready = runCli(['task', 'ready', ref, '--verify', 'true', '--no-falsify-check', '--as', 'builder'], repo);
     assert.equal(ready.status, 0, ready.stderr || ready.stdout);
 
     autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });

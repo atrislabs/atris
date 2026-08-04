@@ -4,7 +4,7 @@
     "fields": {
       "scope": "which repo/surface this lesson applies to",
       "applies_to": "array of file paths the bug pattern lives in",
-      "detector": "shell command — exits 0 when the lesson is resolved (bug pattern gone), non-zero when still present",
+      "detector": "shell command \u2014 exits 0 when the lesson is resolved (bug pattern gone), non-zero when still present",
       "status": "one of: observed | open | attempted | resolved",
       "mechanism": "file/test pointer for resolved deterministic mechanisms"
     },
@@ -220,5 +220,16 @@
     "mechanism": "lib/wish-audit.js extracts standalone Check lines before decomposition and lib/wish-delegate.js passes the exact verifier through wish and mission storage; test/wish.test.js pins the full intake path.",
     "status": "resolved",
     "resolved_at": "2026-07-15"
+  },
+  "engine-dead-exports": {
+    "scope": "atris-cli",
+    "applies_to": [
+      "lib/auto-accept-certified.js",
+      "commands/slop.js"
+    ],
+    "detector": "node --test test/repo-hygiene.test.js",
+    "mechanism": "lib/auto-accept-certified.js repoHygieneGate",
+    "status": "resolved",
+    "last_detected": "2026-08-03"
   }
 }

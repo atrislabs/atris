@@ -195,7 +195,7 @@ test('task ready --verify runs the command and gates on its exit code', () => {
     assert.match(failReady.stderr, /verifier failed/);
 
     // Passing verifier marks ready with executed proof.
-    const okReady = runCli(['task', 'ready', failRef, '--verify', 'true', '--json'], { cwd: dir, env });
+    const okReady = runCli(['task', 'ready', failRef, '--verify', 'true', '--no-falsify-check', '--json'], { cwd: dir, env });
     assert.equal(okReady.status, 0, okReady.stderr);
     const okTask = JSON.parse(okReady.stdout).task;
     assert.match(okTask.review.proof, /\[verified\] `true` passed \(exit 0\)/);
@@ -214,7 +214,7 @@ test('task ready --verify warns when autoland cannot re-run the verifier', () =>
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;
 
-    const ready = runCli(['task', 'ready', ref, '--verify', 'true'], { cwd: dir, env });
+    const ready = runCli(['task', 'ready', ref, '--verify', 'true', '--no-falsify-check'], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
     assert.match(ready.stdout, /note: this verify command is outside the auto-certify allowlist/);
     assert.match(ready.stdout, new RegExp(`atris task review-chat ${ref} --as <reviewer>`));

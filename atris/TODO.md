@@ -4,12 +4,14 @@
 
 ## Backlog
 
+- **[CLI-1241]** drill and help smoke tests spawn the cli with no cwd and litter .atris/state into the repo root; give them temp cwds. found during the wake-flake investigation.
+- **[CLI-1240]** engine routing still shells out to command -v inside the resolve path (lib/engine-registry.js binInstalled + normalizeEngineEntry); policy must decide, probes belong at execution stage. found while seeding engine tests.
+- **[CLI-1239]** drill and help smoke tests spawn the cli with no cwd and litter .atris/state into the repo root; give them temp cwds. found during the wake-flake investigation.
+- **[CLI-1238]** engine routing still shells out to command -v inside the resolve path (lib/engine-registry.js:39 binInstalled, normalizeEngineEntry:91); policy must decide, probes belong at execution. found while seeding engine tests.
 - **[CLI-1237]** CLI users get consistent flag behavior because every command shares one parser [cli]
 - **[CLI-1236]** every command reads flags consistently from one maintained parser [cli]
 - **[CLI-1229]** the team stays lean like a real company: a pruning pass flags members who have not landed work in 30 days, using the same budget-and-keep-rules pattern as the wiki
 - **[CLI-1228]** one team, not two: the org chart reads atris/team members and shows which engine each member runs on, so setting up the team once covers both
-- **[CLI-1198]** the member wake test passes alone but fails when the full suite runs before it, so a red suite can point at the wrong culprit; find the state it inherits (likely env or homedir bleed) and isolate it [health]
-- **[CLI-1197]** A stranded commit would silently delete the entire test coverage for the mission-lane diff guard, leaving the guard implemented but unprotected against future breakage. Found 2026-07-26 in worktree .agent-worktrees/atris-cli/architect-mission-protected-lane-gate-20260726-083719, commit ea7084bd 'mission ticks hold before firing when the mission sits in a protected lane'. The ADDITION is good and worth keeping: a pre-tick hold that pauses a mission sitting in a protected lane before any tick fires, releasing only on explicit human ack — genuine defence in depth, since stopping before work starts beats stopping at commit time. The PROBLEM is what it removes. It deletes 262 lines from test/mission-protected-lane.test.js, taking out all eight diff-inspection tests: a clean diff reaches the landing callback, a CSP diff pauses and names the surface, an auth-header diff pauses from changed CONTENT on a neutral path, an unreadable diff fails closed, a denied tag pauses when text looks neutral, the git-wrapper leaves a protected change staged, a protected tick writes the matched surface to its receipt, and the Atris2 relay keeps the wrapper first on PATH. It replaces them with four tests that only check lane tags and objective text. matchProtectedMissionDiff appears zero times in the resulting test file, while remaining present three times in lib and wired four times in commands/mission.js — so the implementation survives with no coverage. That is precisely the hole CLI-1189 exists to close: a mission GENERATES its own work, so its objective can be innocuous while its tick writes a CSP change. That is not hypothetical — mission 6 tick 1 self-landed force-dynamic on a public page under the objective 'next bounded improvement'. Objective-text routing cannot catch that; only diff inspection can. Done: the pre-tick hold lands AND every deleted diff-inspection test is restored, so both gates are covered. Check: node --test test/mission-protected-lane.test.js [security]
 - **[CLI-979]** csrf gate should exempt cookie-less bearer-token api calls so every cli lane works without origin workarounds; protected lane, orb reviews pre-merge
 - **[CLI-958]** yo can you make me the best to do list ever [wish]
 - **[CLI-957]** make me the best landing page ever [wish]
@@ -32,12 +34,8 @@
 
 ## In Progress
 
-- **[CLI-1235]** extract shared CLI flag parser helpers [cli]
-  **Claimed by:** builder
 - **[CLI-1231]** Pablo sees one honest pack card before expert diagnostics: what it is, where it lives, whether it is ready, why, and one next action. Keep inspect and doctor as drill-down. Done: atris pack show covers ready, revise, and reject; performs no network, execution, or mutation; stays within eight content lines. Check: node --test test/pack-show.test.js test/pack-safety.test.js [pack]
   **Claimed by:** architect
-- **[CLI-1230]** a new workspace gets a starter team of 5 picked automatically, so the owner never faces 35 folders on day one
-  **Claimed by:** builder
 - **[CLI-1209]** Mission XP: turn our hardest standing lessons into automatic [agent-xp]
   **Claimed by:** builder
   **Verify:** npm test
@@ -119,6 +117,8 @@
 
 ## Review
 
+- **[CLI-1235]** extract shared CLI flag parser helpers [cli]
+- **[CLI-1230]** a new workspace gets a starter team of 5 picked automatically, so the owner never faces 35 folders on day one
 - **[CLI-1213]** pack users get enforced capability boundaries because declared permissions change runtime tools instead of only appearing in inspect [security]
   **Verify:** git merge-base --is-ancestor ad16aebb63125256f9a2382c39a6cc6b3b95fe75 HEAD && git merge-base --is-ancestor a4c8dab53a332ef2579e0c9e3758d5fab6c73464 HEAD && git merge-base --is-ancestor 031e80ff13c769c71f523492df0d61fd7a94c45d HEAD && node --test test/pack-run.test.js test/pack.test.js
 - **[CLI-1212]** pack users can trust declared content hashes because publish install update and inspect verify every claimed digest [security]
@@ -127,7 +127,8 @@
 
 ## Blocked
 
-(Empty)
+- **[CLI-1198]** the member wake test passes alone but fails when the full suite runs before it, so a red suite can point at the wrong culprit; find the state it inherits (likely env or homedir bleed) and isolate it [health]
+- **[CLI-1197]** A stranded commit would silently delete the entire test coverage for the mission-lane diff guard, leaving the guard implemented but unprotected against future breakage. Found 2026-07-26 in worktree .agent-worktrees/atris-cli/architect-mission-protected-lane-gate-20260726-083719, commit ea7084bd 'mission ticks hold before firing when the mission sits in a protected lane'. The ADDITION is good and worth keeping: a pre-tick hold that pauses a mission sitting in a protected lane before any tick fires, releasing only on explicit human ack — genuine defence in depth, since stopping before work starts beats stopping at commit time. The PROBLEM is what it removes. It deletes 262 lines from test/mission-protected-lane.test.js, taking out all eight diff-inspection tests: a clean diff reaches the landing callback, a CSP diff pauses and names the surface, an auth-header diff pauses from changed CONTENT on a neutral path, an unreadable diff fails closed, a denied tag pauses when text looks neutral, the git-wrapper leaves a protected change staged, a protected tick writes the matched surface to its receipt, and the Atris2 relay keeps the wrapper first on PATH. It replaces them with four tests that only check lane tags and objective text. matchProtectedMissionDiff appears zero times in the resulting test file, while remaining present three times in lib and wired four times in commands/mission.js — so the implementation survives with no coverage. That is precisely the hole CLI-1189 exists to close: a mission GENERATES its own work, so its objective can be innocuous while its tick writes a CSP change. That is not hypothetical — mission 6 tick 1 self-landed force-dynamic on a public page under the objective 'next bounded improvement'. Objective-text routing cannot catch that; only diff inspection can. Done: the pre-tick hold lands AND every deleted diff-inspection test is restored, so both gates are covered. Check: node --test test/mission-protected-lane.test.js [security]
 
 ## Completed
 

@@ -4,7 +4,7 @@
 
 ---
 
-- **[2026-08-03] engine-dead-exports** — fail — [resolved: lib/auto-accept-certified.js repoHygieneGate runs the dead-export detector inside evaluateAutoAccept, so the landing gate blocks with reason dead_exports before landing; test/auto-accept-certified.test.js "a dead export blocks the landing gate"] engines export every internal helper and the dead-export ratchet rejects the suite after landing looks green: trim module.exports to consumed names before landing. detector: node --test test/repo-hygiene.test.js. caught twice on 2026-08-03 (decision-row helper, voice command).
+- **[2026-08-03] engine-dead-exports** — fail — [resolved] fix shipped: lib/auto-accept-certified.js repoHygieneGate runs the dead-export detector inside evaluateAutoAccept, so the landing gate blocks with reason dead_exports before landing (test/auto-accept-certified.test.js "a dead export blocks the landing gate"). engines export every internal helper and the dead-export ratchet rejects the suite after landing looks green: trim module.exports to consumed names before landing. detector: node --test test/repo-hygiene.test.js. caught twice on 2026-08-03 (decision-row helper, voice command).
 
 - **[2026-07-09] close-the-loop-or-it-was-spray** — fail — [resolved] every outreach email ever sent got zero replies because sends were counted as done: no follow-up cadence, no reply verifier, no landing page, no lesson from silence. a send without a closed loop is spray. detector: any outward action whose receipt is the action itself rather than a response. fix shipped: INSPIRATION entry 7 (atris/INSPIRATION.md:148 "rainmaker closes loops, not sends") types outreach as a mission with a reply verifier, follow-up cadence, landing page, and silence-to-lesson feedback.
 
