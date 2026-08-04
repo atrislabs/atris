@@ -4323,6 +4323,16 @@ function memberUpgrade(name) {
 
 // --- PUSH subcommand ---
 
+function readMemberPushBusinessBinding(root = process.cwd()) {
+  const file = path.join(root, '.atris', 'business.json');
+  if (!fs.existsSync(file)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    throw new Error(`Failed to read .atris/business.json: ${e.message || e}`);
+  }
+}
+
 async function memberPush(name) {
   if (!name) {
     console.error('Usage: atris member push <name>');
@@ -4346,6 +4356,9 @@ async function memberPush(name) {
   const content = fs.readFileSync(memberFile, 'utf8');
   const fm = parseFrontmatter(content);
   const existingAgentId = fm && fm['agent-id'];
+  const taskDb = require('../lib/task-db');
+  const binding = readMemberPushBusinessBinding(taskDb.workspaceRoot());
+  const businessId = String(binding && (binding.business_id || binding.id) || '').trim();
 
   if (existingAgentId) {
     console.log(`Pushing member "${name}" to cloud (updating agent ${existingAgentId})...`);
@@ -4353,7 +4366,9 @@ async function memberPush(name) {
     console.log(`Pushing member "${name}" to cloud (creating new agent)...`);
   }
 
-  const businessId = findWorkspaceBusinessId();
+  if (!businessId) {
+    console.log('no business binding found; run `atris business init "<name>" --here` to bind this workspace.');
+  }
   const endpoint = businessId
     ? `/agent/import-member?business_id=${encodeURIComponent(businessId)}`
     : '/agent/import-member';
