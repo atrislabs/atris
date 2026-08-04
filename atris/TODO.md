@@ -4,7 +4,10 @@
 
 ## Backlog
 
-- **[CLI-1207]** pack readers enforce compressed size, file count, and declared unpacked limits before inflation so local, URL, registry, pull, and update inputs cannot become zip bombs [security]
+- **[CLI-1237]** CLI users get consistent flag behavior because every command shares one parser [cli]
+- **[CLI-1236]** every command reads flags consistently from one maintained parser [cli]
+- **[CLI-1229]** the team stays lean like a real company: a pruning pass flags members who have not landed work in 30 days, using the same budget-and-keep-rules pattern as the wiki
+- **[CLI-1228]** one team, not two: the org chart reads atris/team members and shows which engine each member runs on, so setting up the team once covers both
 - **[CLI-1198]** the member wake test passes alone but fails when the full suite runs before it, so a red suite can point at the wrong culprit; find the state it inherits (likely env or homedir bleed) and isolate it [health]
 - **[CLI-1197]** A stranded commit would silently delete the entire test coverage for the mission-lane diff guard, leaving the guard implemented but unprotected against future breakage. Found 2026-07-26 in worktree .agent-worktrees/atris-cli/architect-mission-protected-lane-gate-20260726-083719, commit ea7084bd 'mission ticks hold before firing when the mission sits in a protected lane'. The ADDITION is good and worth keeping: a pre-tick hold that pauses a mission sitting in a protected lane before any tick fires, releasing only on explicit human ack — genuine defence in depth, since stopping before work starts beats stopping at commit time. The PROBLEM is what it removes. It deletes 262 lines from test/mission-protected-lane.test.js, taking out all eight diff-inspection tests: a clean diff reaches the landing callback, a CSP diff pauses and names the surface, an auth-header diff pauses from changed CONTENT on a neutral path, an unreadable diff fails closed, a denied tag pauses when text looks neutral, the git-wrapper leaves a protected change staged, a protected tick writes the matched surface to its receipt, and the Atris2 relay keeps the wrapper first on PATH. It replaces them with four tests that only check lane tags and objective text. matchProtectedMissionDiff appears zero times in the resulting test file, while remaining present three times in lib and wired four times in commands/mission.js — so the implementation survives with no coverage. That is precisely the hole CLI-1189 exists to close: a mission GENERATES its own work, so its objective can be innocuous while its tick writes a CSP change. That is not hypothetical — mission 6 tick 1 self-landed force-dynamic on a public page under the objective 'next bounded improvement'. Objective-text routing cannot catch that; only diff inspection can. Done: the pre-tick hold lands AND every deleted diff-inspection test is restored, so both gates are covered. Check: node --test test/mission-protected-lane.test.js [security]
 - **[CLI-979]** csrf gate should exempt cookie-less bearer-token api calls so every cli lane works without origin workarounds; protected lane, orb reviews pre-merge
@@ -29,6 +32,15 @@
 
 ## In Progress
 
+- **[CLI-1235]** extract shared CLI flag parser helpers [cli]
+  **Claimed by:** builder
+- **[CLI-1231]** Pablo sees one honest pack card before expert diagnostics: what it is, where it lives, whether it is ready, why, and one next action. Keep inspect and doctor as drill-down. Done: atris pack show covers ready, revise, and reject; performs no network, execution, or mutation; stays within eight content lines. Check: node --test test/pack-show.test.js test/pack-safety.test.js [pack]
+  **Claimed by:** architect
+- **[CLI-1230]** a new workspace gets a starter team of 5 picked automatically, so the owner never faces 35 folders on day one
+  **Claimed by:** builder
+- **[CLI-1209]** Mission XP: turn our hardest standing lessons into automatic [agent-xp]
+  **Claimed by:** builder
+  **Verify:** npm test
 - **[CLI-1194]** Decision rows look identical to work rows, so an autonomous lane will happily answer a question that was addressed to a human. The task system has no way to say 'this needs a judgement call, not an implementation', lane tags describe DOMAIN (billing, security, deploy) not whether autonomy is appropriate, so a policy question tagged web-quality is fully claimable and the fleet will staff it and pick a branch. Twice in one night on atrisos-web: WEB-453 (mount the notification bell into the dashboard, or delete it and its live backend) and WEB-458 (raise the failing total-bundle budget, or replace the metric). Both were written FOR Keshav; both sat claimable; an engine taking either would have silently decided product or guard policy. The only defence available was manually claiming each row to a human, because the fleet skips claimed rows, a workaround that depends on someone noticing. Done: a row can be marked as needing human judgement independently of its lane tag, autonomous lanes skip such rows the way they skip denied lanes, and the marker is visible in atris task list so it is not invisible to whoever files next. Check: node --test test/task-*.test.js [web-quality]
   **Claimed by:** fleet-codex
 - **[CLI-1189]** The self-driving mission lane can land security-scoped changes with no human pre-land review, while every neighbouring lane blocks them, so the one loop that runs unattended overnight is the one lane with no guard. Verified 2026-07-25: DENIED_TAGS and the protected-lane text check exist in lib/fleet.js, lib/auto-accept-certified.js, commands/task.js and commands/brief.js, but commands/mission.js and lib/mission-{runtime-loop,room,root,artifact}.js reference none of them. Hit live: mission 6 tick 1 self-landed a CSP change to atrisos-web master (force-dynamic on a public page so it ships the nonce, commit 025099eb). That diff is correct and audit:static-routes passes, the problem is that nothing would have stopped a wrong one. This is the same hole that produced the WEB-448 incident, in a different lane. Done: a mission tick whose diff touches a protected lane (auth, session, CSP, billing, deploy) pauses for human review instead of landing, using the same text-plus-tag routing the task lane already has. Check: node --test test/mission*.test.js [security]
@@ -107,12 +119,11 @@
 
 ## Review
 
-- **[CLI-1206]** pack install validates the whole archive before writing: missing manifests, duplicate paths, and symlink escapes fail closed with zero partial files [security]
-  **Verify:** node --test test/pack-craft.test.js test/pack-run.test.js test/pack-safety.test.js test/pack-share.test.js test/pack.test.js test/console-packet-shape.test.js
-- **[CLI-1196]** a gift-card purchase command landed on master overnight with no task and no review; it can open checkout and settle payments, so it was reverted on sight per the money-lane rule. decide: bless it behind a human gate and re-land from the revert, or keep it out [money]
+- **[CLI-1213]** pack users get enforced capability boundaries because declared permissions change runtime tools instead of only appearing in inspect [security]
+  **Verify:** git merge-base --is-ancestor ad16aebb63125256f9a2382c39a6cc6b3b95fe75 HEAD && git merge-base --is-ancestor a4c8dab53a332ef2579e0c9e3758d5fab6c73464 HEAD && git merge-base --is-ancestor 031e80ff13c769c71f523492df0d61fd7a94c45d HEAD && node --test test/pack-run.test.js test/pack.test.js
+- **[CLI-1212]** pack users can trust declared content hashes because publish install update and inspect verify every claimed digest [security]
+  **Verify:** node --test test/pack.test.js test/pack-safety.test.js test/pack-inspect.test.js test/zip.test.js; npm run test:fast; npm test; live valid/falsified/partial/legacy/same-version probes
 - **[CLI-1180]** one day someone says: atris, make me a million dollars, and it actually works. it creates the computer, the folder, the context. it sets up the storyline and the missions. it figures things out with the best intelligence and unblocks itself. it never writes generic output, no jargon ever reaches the human. the owner is at peace, out dancing in ibiza, and the businesses are just running. [wish]
-- **[CLI-1148]** Mission XP: Proof Build Validate Mission Room with architect [agent-xp]
-- **[CLI-1146]** Mission XP: Build Numbers Pack Mission Room with mission-lead [agent-xp]
 
 ## Blocked
 
@@ -120,21 +131,21 @@
 
 ## Completed
 
-- **[CLI-1205]** local pack installs show the real source [pack]
-  **Verify:** node --test test/pack.test.js test/pack-run.test.js test/console-packet-shape.test.js
-- **[CLI-1204]** private packs stay private when repackaged [pack]
-  **Verify:** node --test test/pack.test.js
-- **[CLI-1203]** pack run loads shipped skills into Claude [pack]
-  **Verify:** node --test test/pack-run.test.js test/console-packet-shape.test.js
-- **[CLI-1202]** the team page survives weekly model upgrades: engines list their current models from one editable file, so swapping a model never touches code
-  **Verify:** node --test test/engine.test.js
-- **[CLI-1201]** wiki bloat warning shows up on its own in tidy and boot instead of waiting to be asked
-  **Verify:** node --test test/wiki-metabolism-warning.test.js
-- **[CLI-1200]** readers see 2-3 plain ideas max on every cli surface: teach the voice gate shape rules so tired readers understand at a glance
-  **Verify:** node --test test/voice-gate.test.js
-- **[CLI-1199]** wiki pruning metabolism: fact-count-triggered consolidation in upkeep (qm steal #2)
-  **Verify:** node --test test/wiki-metabolism.test.js
-- **[CLI-1195]** Engines finish work, commit it to a worktree, and it silently never lands, nine commits are stranded right now and the oldest is five days old, so the fleet looks productive while its output evaporates. Swept 2026-07-26 across atris-cli and atrisos-web worktrees, listing commits ahead of origin/master: dbf14daf cli status summaries, e6b83dd6 one-lap racing mission drivers, 5c87421b fleet receipt head (CLI-1186), ae661929 honest empty mission reports (2026-07-21), 7ddb00cf name the worker start command (2026-07-21), 89da102f GM overview honest and action-led, fe74de46 social connections across profiles, 1824d2f3 paywall lazy-load (WEB-455), 560254a1 mission tick summaries. Two were rescued by hand tonight (WEB-455 recovered from a SIGTERM-killed engine, CLI-1186 cherry-picked and landed as ec302673) and both were found only because someone went looking. Four of the nine cannot even rebase, their worktrees carry unstaged regenerated adapter files (AGENTS.md, CLAUDE.md, GEMINI.md, atris/TODO.md), which is CLI-1190. Nothing reports this: no receipt, no alarm, no digest line. Done: a worktree holding commits ahead of origin/master is surfaced, autoland reports stranded worktrees with their commit subjects and age, and reaping refuses to delete a worktree with unlanded commits unless explicitly forced. Check: node --test test/fleet*.test.js [web-quality]
-  **Verify:** node --test test/fleet.test.js test/fleet-stranded-worktrees.test.js
+- **[CLI-1234]** engine dispatch injects matching lessons before work starts [engine]
+  **Verify:** node --test test/lesson-preflight.test.js
+- **[CLI-1233]** Codex keeps moving instead of getting stuck on impossible mission acknowledgements [mission]
+  **Verify:** node --test test/mission-status.test.js
+- **[CLI-1232]** Repair Ax Fast context-standard verifier so GitHub mutation routing and turn caps match the current runtime [engine]
+  **Verify:** node scripts/verify-ax-cloud-standard.js
+- **[CLI-1227]** Pack experts can see a declared verifier without running it [pack]
+  **Verify:** node --test test/pack.test.js test/pack-run.test.js
+- **[CLI-1226]** Pack authors fix promise mismatches without guessing [pack]
+  **Verify:** node --test test/pack.test.js test/pack-run.test.js
+- **[CLI-1225]** Experts stop guessing pack promises and hash coverage [pack]
+  **Verify:** node --test test/pack.test.js test/pack-run.test.js
+- **[CLI-1224]** Private pack evidence stays out of local process listings [packs]
+  **Verify:** node --test test/pack-run.test.js test/pack.test.js
+- **[CLI-1223]** Pack experts receive structured target evidence at run time so one-shot evaluations do not depend on copy-paste chat [packs]
+  **Verify:** node --test test/pack-run.test.js test/pack.test.js
 
-(39 older completed tasks archived in `atris task list --status done` and `atris task events`.)
+(63 older completed tasks archived in `atris task list --status done` and `atris task events`.)
