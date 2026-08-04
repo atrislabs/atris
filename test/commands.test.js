@@ -17249,23 +17249,42 @@ test('agent doctor verifies local AI CLI wiring without auth', () => {
 });
 
 test('agent help hides internal dogfood diagnostic', () => {
-  const res = runCli(['agent', '--help']);
+  const dir = makeTempDir();
+  let res;
+  try {
+    res = runCli(['agent', '--help'], { cwd: dir });
+  } finally {
+    cleanupTempDir(dir);
+  }
   assert.equal(res.status, 0, res.stderr || res.stdout);
   assert.doesNotMatch(res.stdout, /dogfood/);
   assert.match(res.stdout, /Usage: atris agent \[doctor\|spawn\|spawns\|spawn-status\]/);
 });
 
 test('agent dogfood is gated from public CLI', () => {
-  const res = runCli(['agent', 'dogfood', '--help']);
+  const dir = makeTempDir();
+  let res;
+  try {
+    res = runCli(['agent', 'dogfood', '--help'], { cwd: dir });
+  } finally {
+    cleanupTempDir(dir);
+  }
   assert.equal(res.status, 1);
   assert.match(res.stderr, /internal diagnostic/);
   assert.match(res.stderr, /atris agent doctor/);
 });
 
 test('agent dogfood help is available only behind internal gate', () => {
-  const res = runCli(['agent', 'dogfood', '--help'], {
-    env: { ...process.env, ATRIS_INTERNAL_AGENT_DOGFOOD: '1' },
-  });
+  const dir = makeTempDir();
+  let res;
+  try {
+    res = runCli(['agent', 'dogfood', '--help'], {
+      cwd: dir,
+      env: { ...process.env, ATRIS_INTERNAL_AGENT_DOGFOOD: '1' },
+    });
+  } finally {
+    cleanupTempDir(dir);
+  }
   assert.equal(res.status, 0, res.stderr || res.stdout);
   assert.match(res.stdout, /Internal usage: atris agent dogfood/);
 });

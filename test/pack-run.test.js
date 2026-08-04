@@ -1020,6 +1020,7 @@ test('pack runs reports launcher-lost read-only when an abrupt kill left no term
     const before = fs.readFileSync(receipt.receiptPath, 'utf8');
 
     const result = spawnSync(process.execPath, [cliPath, 'pack', 'runs', '--json'], {
+      cwd: dir,
       encoding: 'utf8',
       timeout: 20000,
       env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_PACK_RUNS_DIR: receiptDir },
@@ -1325,11 +1326,18 @@ test('atris console keeps skipping permissions on your own workspace', () => {
 });
 
 test('atris pack help lists run', () => {
-  const result = spawnSync(process.execPath, [cliPath, 'pack', 'help'], {
-    encoding: 'utf8',
-    timeout: 20000,
-    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
-  });
+  const dir = makeTempDir();
+  let result;
+  try {
+    result = spawnSync(process.execPath, [cliPath, 'pack', 'help'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 20000,
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+    });
+  } finally {
+    cleanupTempDir(dir);
+  }
   assert.equal(result.status, 0);
   assert.match(result.stdout, /atris pack run <slug\|dir>/);
   assert.match(result.stdout, /atris pack runs/);

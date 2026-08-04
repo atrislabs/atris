@@ -13,9 +13,15 @@ function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'outbound-send-gate-'));
 }
 
+// Default the CLI cwd to a temp dir, never the repo root: a repo-root cwd
+// makes the CLI mutate the checkout's own .atris/state during the suite
+// (CLI-1241).
+const scratchCwd = makeTempDir();
+test.after(() => fs.rmSync(scratchCwd, { recursive: true, force: true }));
+
 function runCli(args, { cwd, env } = {}) {
   return spawnSync(process.execPath, [cliPath, ...args], {
-    cwd: cwd || repoRoot,
+    cwd: cwd || scratchCwd,
     encoding: 'utf8',
     timeout: 15000,
     env: {
