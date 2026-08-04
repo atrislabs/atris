@@ -473,7 +473,7 @@ test('autoland status does not call one-pass protected work approval-ready', () 
     const status = runCli(['autoland', 'status'], repo);
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.match(status.stdout, /yours to decide first: 1 protected review\./);
-    assert.match(status.stdout, new RegExp(`${ref} waits for you; security: human decision required\\.`));
+    assert.match(status.stdout, new RegExp(`${ref} waits for you; it touches security, so it is your decision\\.`));
     assert.doesNotMatch(status.stdout, /yours to approve/);
     assert.doesNotMatch(status.stdout, /protected reviews waiting on you/);
     assert.doesNotMatch(status.stdout, /waits for you {2}/);
@@ -502,7 +502,7 @@ test('autoland status speaks in plain sentences and puts your decisions first', 
 
     const status = runCli(['autoland', 'status'], repo);
     assert.equal(status.status, 0, status.stderr || status.stdout);
-    assert.match(status.stdout, new RegExp(`${protectedRef} waits for you; security: human decision required\\.`));
+    assert.match(status.stdout, new RegExp(`${protectedRef} waits for you; it touches security, so it is your decision\\.`));
     // No recent tick receipt in this fixture, so status tells the honest schedule.
     assert.match(status.stdout, new RegExp(`${landing} passes the recheck, then lands once the hourly heartbeat runs \\(start one with atris autoland tick\\)\\.`));
     assert.match(status.stdout, new RegExp(`${heldBack} stays put; `));

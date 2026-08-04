@@ -14765,7 +14765,8 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
 
     const reviewText = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(reviewText.status, 0, reviewText.stderr);
-    assert.match(reviewText.stdout, /approve: blocked \(proof_unmerged_or_draft_pr_boundary\)/);
+    assert.match(reviewText.stdout, /approve: blocked; its proof points at an unmerged draft, merge it or prove the work another way/);
+    assert.doesNotMatch(reviewText.stdout, /proof_unmerged_or_draft_pr_boundary/);
     assert.doesNotMatch(reviewText.stdout, new RegExp(`approve: atris task accept ${ref}`));
 
     const dryRun = runCli(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env });

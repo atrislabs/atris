@@ -6,7 +6,7 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 
 const autoland = require('../lib/autoland');
-const { gateForHuman } = require('../lib/voice-gate');
+const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -436,27 +436,9 @@ function protectedReviewWaiting(root, policy = {}, waiting = []) {
     .filter((row) => !alreadyWaiting.has(row.ref));
 }
 
-function plainReason(reason) {
-  const map = {
-    denied_tag_billing: 'money: human decision required',
-    denied_tag_deploy: 'a deploy: human decision required',
-    denied_tag_security: 'security: human decision required',
-    denied_tag_customer: 'customer-facing: human decision required',
-    denied_tag_external: 'outward-facing: human decision required',
-    denied_tag_feedback: 'customer feedback: human decision required',
-    needs_second_reviewer_or_third_pass: 'needs one more independent check first',
-    needs_independent_reviewer: 'built and judged by the same actor, needs an independent check',
-    verifier_is_builder: 'the re-check actor built this row, another actor must re-check',
-    judge_equals_worker: 'built and judged by the same actor, hand the review to someone else',
-    not_agent_certified: 'not certified yet',
-    insufficient_review_passes: 'not enough review passes yet',
-    strict_verify_missing: 'no recorded check command to re-run',
-    verify_failed: 'its check command failed on re-run',
-    verify_command_not_allowed: 'its recorded check is not on the list this machine may run alone',
-    proof_unmerged_or_draft_pr_boundary: 'its proof points at an unmerged draft',
-  };
-  return map[reason] || reason.replace(/_/g, ' ');
-}
+// One reason table for every human-facing landing refusal lives in
+// lib/voice-gate.js (plainLandingReason); this alias keeps call sites short.
+const plainReason = plainLandingReason;
 
 function showStatus(root, args) {
   const json = args.includes('--json');
