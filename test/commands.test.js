@@ -1522,6 +1522,13 @@ test('member wake returns one finite decision and refuses to pile onto open work
     const goal = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
     const goalPayload = JSON.parse(goal.stdout);
+    // Give the fallback proposal a verifier so it is reviewable: an unverifiable
+    // fallback proposal deliberately does not gate the member (deadlock fix,
+    // 2026-07-26), and these tests assert the gating path.
+    const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
+    const seededGoals = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    seededGoals.goals[0].team_score = { verifier: 'test -s package.json' };
+    fs.writeFileSync(goalsPath, JSON.stringify(seededGoals, null, 2));
 
     const dryRun = runCli(['member', 'wake', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(dryRun.status, 0, dryRun.stderr || dryRun.stdout);
@@ -3610,6 +3617,13 @@ test('member loop repeats wake quickly and skips an active lease', () => {
       '--json',
     ], { cwd: dir }).status, 0);
     assert.equal(runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir }).status, 0);
+    // Same carve-out as the wake test above: seed a verifier so the tick-1
+    // proposal is reviewable and gates tick 2 instead of being bypassed as an
+    // unreviewable fallback.
+    const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
+    const seededGoals = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    seededGoals.goals[0].team_score = { verifier: 'test -s package.json' };
+    fs.writeFileSync(goalsPath, JSON.stringify(seededGoals, null, 2));
 
     const loop = runCli([
       'member', 'loop', 'mission-lead',
