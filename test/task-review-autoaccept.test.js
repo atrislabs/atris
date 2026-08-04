@@ -79,6 +79,7 @@ function certifyTask(dir, env, dbPath, {
   tag = 'review',
   diffStats,
   metadata = {},
+  withVerifyCache = false,
 }) {
   const created = runCli(['task', 'new', title, '--tag', tag, '--json'], { cwd: dir, env });
   assert.equal(created.status, 0, created.stderr);
@@ -93,6 +94,19 @@ function certifyTask(dir, env, dbPath, {
   assert.equal(ready.status, 0, ready.stderr);
   patchMetadata(dbPath, task.id, {
     diff_stats: diffStats,
+    // The reviews read path no longer executes verifies: auto-accept needs
+    // the verdict a write lane (certify-verified / autoland) would have
+    // stamped. Fixtures that expect acceptance opt into the cache.
+    ...(withVerifyCache ? {
+      verify_cache: {
+        command: 'node --test test/pass.test.js',
+        ok: true,
+        reason: 'verify_passed',
+        ran_at: new Date().toISOString(),
+        ran_by: 'validator',
+        code_sha: null,
+      },
+    } : {}),
     ...metadata,
   });
   const review = runCli([
@@ -120,6 +134,7 @@ test('review is read-only for small and large certified work', () => {
         changed_lines: 24,
         files: ['src/review.js', 'test/review.test.js'],
       },
+      withVerifyCache: true,
     });
     const big = certifyTask(dir, env, dbPath, {
       title: 'Ship larger certified review flow',
