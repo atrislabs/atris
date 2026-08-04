@@ -9353,6 +9353,20 @@ function cmdReady(args) {
       if (receipt.receiptPath) console.error(`receipt: ${receipt.receiptPath}`);
       process.exit(1);
     }
+    // Exit 0 says the check passed. It does not say the check could have
+    // failed. Run it again with none of the work present: a check anchored to
+    // this codebase fails there, and one that passes anywhere passes there too.
+    if (!hasFlag(args, '--no-falsify-check')) {
+      const { probeVerifierCanFail } = require('../lib/falsifier-probe');
+      const probe = probeVerifierCanFail({ command: verifyFlag });
+      if (probe.probed && probe.canFail === false) {
+        console.error(`atris task ready: this check cannot fail — ${probe.reason}`);
+        console.error(`  command: ${verifyFlag}`);
+        console.error('  give a check that fails when the work is missing, or pass --no-falsify-check to accept anyway.');
+        process.exit(1);
+      }
+      if (!probe.probed && !wantsJson(args)) console.log(`  ${probe.reason}`);
+    }
     const base = proof.trim();
     proof = `[verified] \`${verifyFlag}\` passed (exit 0)${base ? ` — ${base}` : ''}${receipt.output ? `\n${receipt.output}` : ''}\nReceipt: ${receipt.receiptPath}`;
     if (!wantsJson(args)) console.log(`✓ verified: \`${verifyFlag}\` exited 0 (receipt ${receipt.receiptPath})`);
