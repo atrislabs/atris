@@ -231,5 +231,15 @@
     "mechanism": "lib/auto-accept-certified.js repoHygieneGate",
     "status": "resolved",
     "last_detected": "2026-08-03"
+  },
+  "concurrent-full-suites-phantom-reds": {
+    "scope": "atris-cli",
+    "applies_to": [
+      "test/repo-hygiene.test.js"
+    ],
+    "detector": "pgrep -fl 'node.*--test' | wc -l",
+    "mechanism": "fleet verify protocol + repo-root litter ratchet in test/repo-hygiene.test.js",
+    "status": "resolved",
+    "last_detected": "2026-08-04"
   }
 }
