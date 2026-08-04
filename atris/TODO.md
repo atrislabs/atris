@@ -4,11 +4,6 @@
 
 ## Backlog
 
-- **[CLI-1241]** drill and help smoke tests spawn the cli with no cwd and litter .atris/state into the repo root; give them temp cwds. found during the wake-flake investigation.
-- **[CLI-1240]** engine routing still shells out to command -v inside the resolve path (lib/engine-registry.js binInstalled + normalizeEngineEntry); policy must decide, probes belong at execution stage. found while seeding engine tests.
-- **[CLI-1239]** drill and help smoke tests spawn the cli with no cwd and litter .atris/state into the repo root; give them temp cwds. found during the wake-flake investigation.
-- **[CLI-1238]** engine routing still shells out to command -v inside the resolve path (lib/engine-registry.js:39 binInstalled, normalizeEngineEntry:91); policy must decide, probes belong at execution. found while seeding engine tests.
-- **[CLI-1237]** CLI users get consistent flag behavior because every command shares one parser [cli]
 - **[CLI-1236]** every command reads flags consistently from one maintained parser [cli]
 - **[CLI-1229]** the team stays lean like a real company: a pruning pass flags members who have not landed work in 30 days, using the same budget-and-keep-rules pattern as the wiki
 - **[CLI-1228]** one team, not two: the org chart reads atris/team members and shows which engine each member runs on, so setting up the team once covers both
@@ -117,6 +112,9 @@
 
 ## Review
 
+- **[CLI-1242]** split the task board api into named route handlers [cli]
+- **[CLI-1237]** CLI users get consistent flag behavior because every command shares one parser [cli]
+  **Verify:** git -C /Users/keshavrao/arena/atris-cli-worktrees/codex-arg-parser2 diff --cached --check
 - **[CLI-1235]** extract shared CLI flag parser helpers [cli]
 - **[CLI-1230]** a new workspace gets a starter team of 5 picked automatically, so the owner never faces 35 folders on day one
 - **[CLI-1213]** pack users get enforced capability boundaries because declared permissions change runtime tools instead of only appearing in inspect [security]
@@ -132,6 +130,14 @@
 
 ## Completed
 
+- **[CLI-1241]** drill and help smoke tests spawn the cli with no cwd and litter .atris/state into the repo root; give them temp cwds. found during the wake-flake investigation.
+  **Verify:** node --test test/repo-hygiene.test.js test/drill.test.js test/golden-path-help.test.js
+- **[CLI-1240]** engine routing still shells out to command -v inside the resolve path (lib/engine-registry.js binInstalled + normalizeEngineEntry); policy must decide, probes belong at execution stage. found while seeding engine tests.
+  **Verify:** node --test test/engine-command.test.js test/engine.test.js
+- **[CLI-1239]** drill and help smoke tests spawn the cli with no cwd and litter .atris/state into the repo root; give them temp cwds. found during the wake-flake investigation.
+  **Verify:** node --test test/repo-hygiene.test.js
+- **[CLI-1238]** engine routing still shells out to command -v inside the resolve path (lib/engine-registry.js:39 binInstalled, normalizeEngineEntry:91); policy must decide, probes belong at execution. found while seeding engine tests.
+  **Verify:** node --test test/engine-command.test.js
 - **[CLI-1234]** engine dispatch injects matching lessons before work starts [engine]
   **Verify:** node --test test/lesson-preflight.test.js
 - **[CLI-1233]** Codex keeps moving instead of getting stuck on impossible mission acknowledgements [mission]
@@ -140,13 +146,5 @@
   **Verify:** node scripts/verify-ax-cloud-standard.js
 - **[CLI-1227]** Pack experts can see a declared verifier without running it [pack]
   **Verify:** node --test test/pack.test.js test/pack-run.test.js
-- **[CLI-1226]** Pack authors fix promise mismatches without guessing [pack]
-  **Verify:** node --test test/pack.test.js test/pack-run.test.js
-- **[CLI-1225]** Experts stop guessing pack promises and hash coverage [pack]
-  **Verify:** node --test test/pack.test.js test/pack-run.test.js
-- **[CLI-1224]** Private pack evidence stays out of local process listings [packs]
-  **Verify:** node --test test/pack-run.test.js test/pack.test.js
-- **[CLI-1223]** Pack experts receive structured target evidence at run time so one-shot evaluations do not depend on copy-paste chat [packs]
-  **Verify:** node --test test/pack-run.test.js test/pack.test.js
 
-(63 older completed tasks archived in `atris task list --status done` and `atris task events`.)
+(67 older completed tasks archived in `atris task list --status done` and `atris task events`.)
