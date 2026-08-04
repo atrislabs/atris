@@ -35,6 +35,8 @@ const {
   readEngineRegistry,
   resolveEngineForRole,
   resolveEngineForRoleRanked,
+  requireEngineBin,
+  engineDoctorReport,
   setEngineOverrides,
   setEngineHealth,
 } = require('../lib/engine-registry');
@@ -1094,6 +1096,28 @@ function runResolveCommand(args, root) {
   return 0;
 }
 
+// Doctor is the one opt-in place that probes the machine: it checks every
+// engine binary, reports installed state, and folds ready/not_installed flips
+// back into the policy file. Routing itself never probes.
+function runDoctorCommand(args, root) {
+  const json = args.includes('--json');
+  const engines = engineDoctorReport(root);
+  if (json) {
+    console.log(JSON.stringify({ ok: true, engines }, null, 2));
+    return 0;
+  }
+  console.log('');
+  for (const engine of engines) {
+    const state = engine.installed ? 'installed' : 'missing';
+    const health = engine.health.status.replace(/_/g, ' ');
+    console.log(`  ${engine.id.padEnd(12)} ${String(engine.bin).padEnd(14)} ${state.padEnd(10)} health: ${health}`);
+  }
+  console.log('');
+  console.log('  probed just now and saved to the registry; routing reads that saved policy, never the machine.');
+  console.log('');
+  return 0;
+}
+
 function runHealthCommand(args, root) {
   const json = args.includes('--json');
   const positional = args.filter((a) => !String(a).startsWith('--'));
@@ -1341,9 +1365,12 @@ function runDispatchCommand(args, root) {
       return 2;
     }
   }
-  const def = RUNNER_PROFILE_DEFS[canonical];
-  if (!binInstalled(def.bin)) {
-    console.error(`engine dispatch: ${canonical} CLI (${def.bin}) is not installed here`);
+  // Execution stage: this is where the binary must exist. Routing above never
+  // probed the machine; a missing CLI fails loudly here instead.
+  try {
+    requireEngineBin(canonical);
+  } catch (err) {
+    console.error(`engine dispatch: ${err.message}`);
     return 2;
   }
   return runDispatchFlight({ root, taskIds, engine: canonical, prompt: promptOverride, yolo, ...(base ? { checkoutBase: base } : {}) }).then((flight) => {
@@ -1386,6 +1413,10 @@ function engineCommand(args = [], deps = {}) {
     return runHealthCommand(args.slice(args.indexOf('health') + 1), root);
   }
 
+  if (sub === 'doctor') {
+    return runDoctorCommand(args.slice(args.indexOf('doctor') + 1), root);
+  }
+
   if (sub === 'set') {
     return runSetEngineCommand(args.slice(args.indexOf('set') + 1), root);
   }
@@ -1413,7 +1444,7 @@ function engineCommand(args = [], deps = {}) {
   }
 
   if (sub === 'help') {
-    console.log('\n  atris engine            roster + current default\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+    console.log('\n  atris engine            roster + current default\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
     return 0;
   }
 

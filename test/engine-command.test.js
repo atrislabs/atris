@@ -242,6 +242,90 @@ test('routing honors saved health policy: credit_out engines are never picked', 
   assert.match(payload.error, /No ready installed engine can fill role "executor"/);
 });
 
+test('resolve is probe-free: no child_process call happens on a settled registry', () => {
+  // Routing must decide from the saved policy file alone. Seed the registry
+  // once (the only moment a probe is allowed), then spy on every child_process
+  // entry point and assert resolve never touches the machine.
+  const root = tmpRoot();
+  const registryLib = require('../lib/engine-registry');
+  registryLib.readEngineRegistry(root);
+
+  const childProcess = require('node:child_process');
+  const spied = ['spawnSync', 'spawn', 'exec', 'execSync', 'execFile', 'execFileSync'];
+  const originals = new Map(spied.map((name) => [name, childProcess[name]]));
+  const calls = [];
+  for (const name of spied) {
+    childProcess[name] = (...args) => {
+      calls.push(`${name} ${JSON.stringify(args[0])}`);
+      return originals.get(name)(...args);
+    };
+  }
+  try {
+    const picked = registryLib.resolveEngineForRoleRanked('executor', root);
+    assert.ok(Array.isArray(picked.ranked));
+    assert.deepEqual(calls, [], 'resolve must make zero child_process calls');
+  } finally {
+    for (const name of spied) childProcess[name] = originals.get(name);
+  }
+});
+
+test('routing believes a ready health flag even when the binary is missing', () => {
+  // Policy over probes, the other direction: an operator-set "ready" wins.
+  // The missing binary is a problem for the execution stage, where it must fail
+  // in one plain sentence naming the binary.
+  const root = tmpRoot();
+  for (const name of RUNNER_PROFILE_NAMES) {
+    setEngineHealth(name, 'not_installed', root);
+  }
+  setEngineHealth('devin', 'ready', root);
+  const res = runCli(['engine', 'resolve', 'executor', '--json'], root);
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  const payload = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+  assert.equal(payload.id, 'devin');
+
+  const { requireEngineBin } = require('../lib/engine-registry');
+  const prevPath = process.env.PATH;
+  try {
+    process.env.PATH = '/nonexistent-dir-for-this-test';
+    assert.throws(
+      () => requireEngineBin('devin'),
+      /devin CLI \(devin\) is not installed here/,
+      'execution must name the missing binary'
+    );
+  } finally {
+    process.env.PATH = prevPath;
+  }
+});
+
+test('cli: engine doctor is the explicit probe pass and respects credit_out policy', () => {
+  const root = tmpRoot();
+  const binDir = path.join(root, 'fake-bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(path.join(binDir, 'codex'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(binDir, 'cursor-agent'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+
+  setEngineHealth('cursor', 'credit_out', root);
+
+  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', PATH: `${binDir}${path.delimiter}/usr/bin:/bin` };
+  const res = spawnSync(process.execPath, [cliPath, 'engine', 'doctor', '--json'], {
+    cwd: root, encoding: 'utf8', timeout: 20000, env,
+  });
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  const payload = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+  const byId = new Map(payload.engines.map((engine) => [engine.id, engine]));
+  assert.equal(byId.get('codex').installed, true);
+  assert.equal(byId.get('codex').health.status, 'ready');
+  assert.equal(byId.get('devin').installed, false);
+  assert.equal(byId.get('devin').health.status, 'not_installed');
+  // credit_out is operator policy: doctor updates installed but keeps it.
+  assert.equal(byId.get('cursor').installed, true);
+  assert.equal(byId.get('cursor').health.status, 'credit_out');
+
+  // Doctor persists its findings so routing keeps reading policy, not PATH.
+  const saved = JSON.parse(fs.readFileSync(path.join(root, '.atris', 'state', 'engines.json'), 'utf8'));
+  assert.equal(saved.engines.find((engine) => engine.id === 'devin').health.status, 'not_installed');
+});
+
 test('cli: dispatch argument shape errors surface before any environment check', () => {
   const root = tmpRoot();
   const noEngine = runCli(['engine', 'dispatch', 'CLI-1'], root);
