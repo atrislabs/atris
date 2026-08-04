@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { hasFlag, readFlag } = require('../lib/arg-parser');
 const { startMission, listMissions } = require('./mission');
 
 const CLI_PATH = path.join(__dirname, '..', 'bin', 'atris.js');
@@ -20,28 +21,6 @@ function slugify(value) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 48) || 'watch';
-}
-
-function hasFlag(args, name) {
-  return args.includes(name);
-}
-
-function unquote(value) {
-  const text = String(value);
-  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
-    return text.slice(1, -1);
-  }
-  return text;
-}
-
-function readFlag(args, name, fallback = '') {
-  const prefix = `${name}=`;
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = String(args[i]);
-    if (arg === name && args[i + 1] && !String(args[i + 1]).startsWith('--')) return unquote(args[i + 1]);
-    if (arg.startsWith(prefix)) return unquote(arg.slice(prefix.length));
-  }
-  return fallback;
 }
 
 function parseSentenceArgs(args) {

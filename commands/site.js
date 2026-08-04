@@ -4,9 +4,9 @@
 //   atris site <dir|doc.md> [--out dist] [--theme atris|terminal|paper] [--title T] [--serve]
 
 const { buildSite, serveSite } = require('../lib/site');
+const { hasFlag } = require('../lib/arg-parser');
 
 function flag(argv, name) { const i = argv.indexOf(name); return i !== -1 ? argv[i + 1] : null; }
-function hasFlag(argv, name) { return argv.includes(name); }
 
 async function run(argv) {
   if (argv[0] === 'deploy') {

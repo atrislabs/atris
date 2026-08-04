@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { hasFlag, readFlag } = require('../lib/arg-parser');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { isConductorArtifact } = require('../lib/conductor-artifacts');
 
@@ -319,20 +320,6 @@ function restoreRegeneratedAdapterChurn(root, message, { dryRun = false } = {}) 
   console.log(`ship: skipped regenerated adapter churn: ${skipped.join(', ')}`);
   if (!dryRun) runGit(['checkout', '--', ...skipped], { cwd: root });
   return skipped;
-}
-
-function readFlag(args, name, fallback = '') {
-  const prefix = `${name}=`;
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = String(args[i]);
-    if (arg === name && args[i + 1] && !String(args[i + 1]).startsWith('--')) return String(args[i + 1]);
-    if (arg.startsWith(prefix)) return arg.slice(prefix.length);
-  }
-  return fallback;
-}
-
-function hasFlag(args, name) {
-  return args.includes(name);
 }
 
 function swarloClaim(root, { channel, taskKey, content }) {

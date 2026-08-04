@@ -1,13 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const { hasFlag } = require('../lib/arg-parser');
 const {
   isGenericInboxPlaceholder,
   seedInboxFromMove,
 } = require('../lib/next-moves');
-
-function hasFlag(args, name) {
-  return args.includes(name);
-}
 
 function safeRead(file) {
   try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }

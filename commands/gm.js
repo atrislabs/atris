@@ -3,6 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { hasFlag: hasExactFlag } = require('../lib/arg-parser');
 
 const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
 const AGENTXP_GLOBAL_SYNC_RULE = 'Run atris login, then sync. Owner-provided sync tokens are guided-demo fallback only.';
@@ -54,8 +55,9 @@ function flag(args, name) {
   return null;
 }
 
-function hasFlag(args, name) {
-  return args.includes(name) || args.some(arg => arg.startsWith(`${name}=`));
+// This command treats --name=value as flag presence as well as a standalone flag.
+function hasFlagOrValue(args, name) {
+  return hasExactFlag(args, name) || args.some(arg => arg.startsWith(`${name}=`));
 }
 
 function positional(args) {
@@ -185,7 +187,7 @@ function pickSeedPlayer(workspaceRoot, tasks, args = []) {
 }
 
 function ensureStarterMission(taskDb, db, workspaceRoot, tasks, args = []) {
-  if (hasFlag(args, '--no-seed')) return { tasks, seeded: null };
+  if (hasFlagOrValue(args, '--no-seed')) return { tasks, seeded: null };
   if (!fs.existsSync(path.join(workspaceRoot, 'atris'))) return { tasks, seeded: null };
   if (activeAgentXpTasks(tasks).length) return { tasks, seeded: null };
 
@@ -658,7 +660,7 @@ async function gmCommand(...args) {
     return memberCommand('wake', member, ...passthrough);
   }
 
-  if (!hasFlag(args, '--json') && !hasFlag(args, '--watch')) {
+  if (!hasFlagOrValue(args, '--json') && !hasFlagOrValue(args, '--watch')) {
     try {
       const { gameCommand } = require('./game');
       const dashboardShown = await gameCommand([], { silentMissing: true });
@@ -669,12 +671,12 @@ async function gmCommand(...args) {
   }
 
   const state = gmState(args);
-  if (hasFlag(args, '--json')) {
+  if (hasFlagOrValue(args, '--json')) {
     console.log(JSON.stringify(state, null, 2));
     return;
   }
   render(state);
-  if (hasFlag(args, '--watch')) {
+  if (hasFlagOrValue(args, '--watch')) {
     await gmWatch(args);
   }
 }

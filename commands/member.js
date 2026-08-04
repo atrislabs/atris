@@ -8,6 +8,7 @@ const { apiRequestJson } = require('../utils/api');
 const { runAliveTick } = require('../lib/member-alive');
 const { defaultObjectiveRunner } = require('../lib/default-runner');
 const { readJson, writeJson } = require('../lib/json-file');
+const { hasFlag, readFlag, readNumberFlag } = require('../lib/arg-parser');
 
 function findWorkspaceBusinessId(startDir = process.cwd()) {
   let dir = path.resolve(startDir);
@@ -92,27 +93,6 @@ function parseDaysFlag(flags, fallback = 60) {
 function parseConfirmFlag(flags) {
   const joined = flags.join(' ');
   return joined.match(/--confirm[=\s]+["']?([^"']+)["']?/)?.[1] || '';
-}
-
-function hasFlag(args, name) {
-  return args.includes(name);
-}
-
-function readFlag(args, name, fallback = '') {
-  const prefix = `${name}=`;
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i];
-    if (arg === name && args[i + 1] && !String(args[i + 1]).startsWith('--')) return args[i + 1];
-    if (String(arg).startsWith(prefix)) return String(arg).slice(prefix.length).replace(/^["']|["']$/g, '');
-  }
-  return fallback;
-}
-
-function readNumberFlag(args, name, fallback = null) {
-  const raw = readFlag(args, name, '');
-  if (!raw) return fallback;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
 }
 
 function readRepeatedFlag(args, name) {

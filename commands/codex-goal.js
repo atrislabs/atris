@@ -2,15 +2,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { hasFlag } = require('../lib/arg-parser');
 
 const SCHEMA = 'atris.codex_goal.v1';
 const CONFIRM_RESET_FLAG = '--confirm-complete-goal-reset';
 
-function hasFlag(args, name) {
-  return args.includes(name);
-}
-
-function readFlag(args, name, fallback = '') {
+// Preserve the existing rule that the next token is a value, even if it is a flag.
+function readFollowingFlag(args, name, fallback = '') {
   const index = args.indexOf(name);
   if (index === -1 || index + 1 >= args.length) return fallback;
   return args[index + 1];
@@ -32,7 +30,7 @@ function sqlString(value) {
 }
 
 function resolveStatePath(args = []) {
-  const explicit = readFlag(args, '--state', process.env.CODEX_STATE_DB || '');
+  const explicit = readFollowingFlag(args, '--state', process.env.CODEX_STATE_DB || '');
   if (explicit) return path.resolve(expandHome(explicit));
   // Codex moved native goals into ~/.codex/goals_1.sqlite; older builds kept them in state_5.sqlite.
   // Prefer the live goals DB so the bridge sees real goal activity, fall back to the legacy state DB.
@@ -43,7 +41,7 @@ function resolveStatePath(args = []) {
 
 // Thread metadata (cwd/title) stayed in state_5.sqlite even after goals moved to goals_1.sqlite.
 function resolveThreadsPath(args = []) {
-  const explicit = readFlag(args, '--threads-db', process.env.CODEX_THREADS_DB || '');
+  const explicit = readFollowingFlag(args, '--threads-db', process.env.CODEX_THREADS_DB || '');
   if (explicit) return path.resolve(expandHome(explicit));
   const legacyDb = path.join(os.homedir(), '.codex', 'state_5.sqlite');
   return fs.existsSync(legacyDb) ? path.resolve(legacyDb) : '';
@@ -79,7 +77,7 @@ function runGoalQuery(args, buildSql) {
 }
 
 function defaultRunsDir(args = []) {
-  return path.resolve(readFlag(args, '--out-dir', path.join(process.cwd(), '.atris', 'runs')));
+  return path.resolve(readFollowingFlag(args, '--out-dir', path.join(process.cwd(), '.atris', 'runs')));
 }
 
 function ensurePrivateDir(dir) {
@@ -196,7 +194,7 @@ function readRecentGoals(args, limit = 10) {
 }
 
 function resolveThreadGoal(args) {
-  const explicitThread = readFlag(args, '--thread', '');
+  const explicitThread = readFollowingFlag(args, '--thread', '');
   if (explicitThread) return readGoalByThread(args, explicitThread);
   if (hasFlag(args, '--latest')) return readLatestGoalForCwd(args, process.cwd());
   const envThread = process.env.CODEX_THREAD_ID || '';
@@ -248,7 +246,7 @@ function statusCommand(args) {
     return;
   }
 
-  const limit = Math.max(1, Math.min(50, Number(readFlag(args, '--limit', '10')) || 10));
+  const limit = Math.max(1, Math.min(50, Number(readFollowingFlag(args, '--limit', '10')) || 10));
   const goals = readRecentGoals(args, limit);
   const payload = { ok: true, schema: SCHEMA, action: 'status', state_path: dbPath, goals };
   printJsonOrText(payload, [

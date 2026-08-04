@@ -8,12 +8,10 @@ const {
   taskMetadata,
 } = require('../lib/bench/runner');
 const { buildBenchReport, renderBenchReportText } = require('../lib/bench/report');
+const { hasFlag } = require('../lib/arg-parser');
 
-function hasFlag(args, name) {
-  return args.includes(name);
-}
-
-function readFlag(args, name) {
+// Preserve the existing rule that any inline value wins over a split value.
+function readInlineFirstFlag(args, name) {
   const prefix = `${name}=`;
   const inline = args.find((arg) => String(arg).startsWith(prefix));
   if (inline) return String(inline).slice(prefix.length);
@@ -58,11 +56,11 @@ async function runCommand(args) {
   const asJson = hasFlag(args, '--json');
   try {
     const result = await runBench({
-      pack: readFlag(args, '--pack') || undefined,
-      engine: readFlag(args, '--engine') || undefined,
+      pack: readInlineFirstFlag(args, '--pack') || undefined,
+      engine: readInlineFirstFlag(args, '--engine') || undefined,
       taskIds: readRepeatedFlag(args, '--task'),
-      label: readFlag(args, '--label'),
-      experiment: readFlag(args, '--experiment'),
+      label: readInlineFirstFlag(args, '--label'),
+      experiment: readInlineFirstFlag(args, '--experiment'),
       updateBaseline: hasFlag(args, '--update-baseline'),
       stateRoot: process.cwd(),
     });
@@ -87,7 +85,7 @@ async function runCommand(args) {
 }
 
 function tasksCommand(args) {
-  const pack = readFlag(args, '--pack') || undefined;
+  const pack = readInlineFirstFlag(args, '--pack') || undefined;
   const tasks = taskMetadata({ pack });
   if (hasFlag(args, '--json')) {
     console.log(JSON.stringify({
@@ -121,7 +119,7 @@ function packsCommand(args) {
 }
 
 function resultsCommand(args) {
-  const last = Number(readFlag(args, '--last') || 0);
+  const last = Number(readInlineFirstFlag(args, '--last') || 0);
   const results = readResultRecords({ stateRoot: process.cwd(), last });
   if (hasFlag(args, '--json')) {
     console.log(JSON.stringify({
@@ -143,7 +141,7 @@ function resultsCommand(args) {
 }
 
 function reportCommand(args) {
-  const pack = readFlag(args, '--pack') || undefined;
+  const pack = readInlineFirstFlag(args, '--pack') || undefined;
   const asJson = hasFlag(args, '--json');
   try {
     const report = buildBenchReport({ pack, stateRoot: process.cwd() });

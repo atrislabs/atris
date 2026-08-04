@@ -5,6 +5,7 @@ const os = require('os');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { getSessionProfile, loadCredentials } = require('../utils/auth');
+const { hasFlag: hasExactFlag } = require('../lib/arg-parser');
 
 const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
 const AGENTXP_GLOBAL_SYNC_RULE = 'Run atris login, then sync. Owner-provided sync tokens are guided-demo fallback only.';
@@ -38,8 +39,9 @@ function flag(args, name) {
   return null;
 }
 
-function hasFlag(args, name) {
-  return args.includes(name) || args.some(arg => arg.startsWith(`${name}=`));
+// This command treats --name=value as flag presence as well as a standalone flag.
+function hasFlagOrValue(args, name) {
+  return hasExactFlag(args, name) || args.some(arg => arg.startsWith(`${name}=`));
 }
 
 function positional(args) {
@@ -284,7 +286,7 @@ function handleSourceLine(state) {
 }
 
 function ensureStarterMission(taskDb, db, workspaceRoot, player, tasks, args = []) {
-  if (hasFlag(args, '--no-seed')) return { tasks, seeded: null };
+  if (hasFlagOrValue(args, '--no-seed')) return { tasks, seeded: null };
   if (selectMission(tasks, player)) return { tasks, seeded: null };
   fs.mkdirSync(path.join(workspaceRoot, 'atris'), { recursive: true });
 
@@ -476,7 +478,7 @@ async function playCommand(...args) {
   }
 
   const state = modeState(args);
-  if (hasFlag(args, '--json')) {
+  if (hasFlagOrValue(args, '--json')) {
     console.log(JSON.stringify(state, null, 2));
     return;
   }
