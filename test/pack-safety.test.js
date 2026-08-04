@@ -179,8 +179,8 @@ test('packet allowlist ships the knowledge spine and nothing else', () => {
     assert.match(reasons.get('atris/status/'), /runtime exhaust/);
     assert.match(reasons.get('atris/.atris/'), /runtime exhaust/);
     assert.match(reasons.get('atris/node_modules/'), /runtime exhaust/);
-    assert.match(reasons.get('atris/pallet/'), /not in the packet allowlist/);
-    assert.match(reasons.get('atris/deals/'), /not in the packet allowlist/);
+    assert.match(reasons.get('atris/pallet/'), /not in the pack allowlist/);
+    assert.match(reasons.get('atris/deals/'), /not in the pack allowlist/);
     assert.match(reasons.get('atris/features/orb/package-lock.json'), /lockfile/);
     assert.match(reasons.get('atris/features/orb/proof/'), /proof artifacts are excluded/);
     assert.match(reasons.get('atris/features/orb/shot.png'), /not a text file type/);
@@ -210,7 +210,7 @@ test('packet allowlist excludes running state and keeps definitions', () => {
     for (const item of state) {
       const verdict = classifyPacketPath(item);
       assert.equal(verdict.ok, false, `${item} is running state`);
-      assert.match(verdict.reason, /a packet carries definitions, not state/);
+      assert.match(verdict.reason, /a pack carries definitions, not state/);
     }
 
     const definitions = [
@@ -237,7 +237,7 @@ test('packet allowlist excludes dated journal files at any depth', () => {
   ]) {
     const verdict = classifyPacketPath(item);
     assert.equal(verdict.ok, false, `${item} is a dated journal`);
-    assert.match(verdict.reason, /a packet carries definitions, not state/);
+    assert.match(verdict.reason, /a pack carries definitions, not state/);
   }
   // a date inside the name is not a dated journal, and a folder is never one
   assert.equal(classifyPacketPath('wiki/retro-2026-07-15.md').ok, true);
@@ -370,7 +370,7 @@ test('pack publish --allow-secrets overrides the scan and says so loudly', () =>
     const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'override-pack', '--author', 'Ada Lovelace', '--allow-secrets', '--out', zipPath], { cwd: dir });
 
     assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
-    assert.match(publish.stdout, /WARNING: --allow-secrets is on/);
+    assert.match(publish.stdout, /warning: --allow-secrets is on/);
     assert.ok(fs.existsSync(zipPath));
   } finally {
     cleanupTempDir(dir);
@@ -386,7 +386,7 @@ test('pack publish --dry-run prints the summary and writes nothing', () => {
     const dryRun = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'preflight-pack', '--author', 'Ada Lovelace', '--dry-run'], { cwd: dir });
 
     assert.equal(dryRun.status, 0, `stdout:\n${dryRun.stdout}\nstderr:\n${dryRun.stderr}`);
-    assert.match(dryRun.stdout, /packet preflight-pack 0\.1\.0/);
+    assert.match(dryRun.stdout, /pack preflight-pack 0\.1\.0/);
     assert.match(dryRun.stdout, /files\s+8 \(limit 500\)/);
     assert.match(dryRun.stdout, /unpacked\s+\d/);
     assert.match(dryRun.stdout, /zip\s+\d/);
@@ -418,8 +418,8 @@ test('pack publish hard-fails and names the registry limit it broke', () => {
     const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'huge-pack', '--author', 'Ada Lovelace', '--out', zipPath], { cwd: dir });
 
     assert.equal(publish.status, 1, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
-    assert.match(publish.stderr, /refusing to publish: packet exceeds the registry limits/);
-    assert.match(publish.stderr, /entry count: \d+ files exceeds the 500 file registry limit/);
+    assert.match(publish.stderr, /refusing to publish: this pack exceeds the size limits/);
+    assert.match(publish.stderr, /entry count: \d+ files exceeds the 500 file limit/);
     assert.ok(!fs.existsSync(zipPath));
   } finally {
     cleanupTempDir(dir);
@@ -455,7 +455,7 @@ test('pack publish --out refuses an empty author, same as --push', () => {
     const zipPath = path.join(dir, 'anon.zip');
     const publish = runCli(['pack', 'publish', '--dir', 'atris', '--slug', 'anon-pack', '--out', zipPath], { cwd: dir });
     assert.equal(publish.status, 1, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
-    assert.match(publish.stderr, /registry packs need an author/);
+    assert.match(publish.stderr, /publishing needs an author/);
     assert.ok(!fs.existsSync(zipPath));
   } finally {
     cleanupTempDir(dir);
