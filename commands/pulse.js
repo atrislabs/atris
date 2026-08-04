@@ -19,11 +19,10 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const pulse = require('../lib/pulse');
 const { DEFAULT_CLAUDE_RUNNER_MODEL } = require('../lib/runner-command');
+const { hasFlag } = require('../lib/arg-parser');
 
-function hasFlag(args, name) {
-  return args.includes(name);
-}
-function readFlag(args, name, fallback = null) {
+// Preserve the existing rule that the next token is a value, even if it is a flag.
+function readFollowingFlag(args, name, fallback = null) {
   const i = args.indexOf(name);
   if (i === -1 || i === args.length - 1) return fallback;
   return args[i + 1];
@@ -208,7 +207,7 @@ function tickCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
   const noClaude = hasFlag(args, '--no-claude');
   const noVerify = hasFlag(args, '--no-verify');
-  const verifyCmd = noVerify ? null : readFlag(args, '--verify', pulse.defaultVerifyCmd(root));
+  const verifyCmd = noVerify ? null : readFollowingFlag(args, '--verify', pulse.defaultVerifyCmd(root));
   const startedAt = Date.now();
 
   // Detect a previous tick that died mid-run before we take the lock.
@@ -577,7 +576,7 @@ function installCommand(args, root = process.cwd(), options = {}) {
   const commandSpawn = options.spawnSync || spawnSync;
   const writeOutput = options.writeOutput || ((text) => process.stdout.write(text));
   const slot = pulse.resolvePulseSlot(root, options.homeDir ? { homeDir: options.homeDir } : {});
-  const cadenceInput = readFlag(args, '--cadence', pulse.DEFAULT_CADENCE_CRON);
+  const cadenceInput = readFollowingFlag(args, '--cadence', pulse.DEFAULT_CADENCE_CRON);
   let cron;
   try {
     cron = pulse.normalizeCronCadence(cadenceInput);
@@ -595,8 +594,8 @@ function installCommand(args, root = process.cwd(), options = {}) {
   let expiry;
   try {
     expiry = pulse.normalizeExpiryDuration({
-      hours: readFlag(args, '--hours', null),
-      days: readFlag(args, '--days', '7'),
+      hours: readFollowingFlag(args, '--hours', null),
+      days: readFollowingFlag(args, '--days', '7'),
     });
   } catch (error) {
     const out = {
@@ -604,17 +603,17 @@ function installCommand(args, root = process.cwd(), options = {}) {
       action: 'pulse_install',
       reason: 'invalid_expiry',
       detail: error && error.message ? error.message : String(error),
-      hours: readFlag(args, '--hours', null),
-      days: readFlag(args, '--days', '7'),
+      hours: readFollowingFlag(args, '--hours', null),
+      days: readFollowingFlag(args, '--days', '7'),
     };
     if (!asJson) process.stdout.write(`pulse install failed: ${out.detail}\n`);
     return emit(out, asJson);
   }
-  const verifyCmd = readFlag(args, '--verify', pulse.defaultVerifyCmd(root));
-  const model = readFlag(args, '--model', process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || DEFAULT_CLAUDE_RUNNER_MODEL);
-  const runnerProfile = readFlag(args, '--runner-profile', process.env.ATRIS_RUNNER_PROFILE || '');
-  const runnerBin = readFlag(args, '--runner-bin', process.env.ATRIS_RUNNER_BIN || process.env.ATRIS_CLAUDE_BIN || '');
-  const runnerCommandTemplate = readFlag(args, '--runner-template', process.env.ATRIS_RUNNER_COMMAND_TEMPLATE || process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE || '');
+  const verifyCmd = readFollowingFlag(args, '--verify', pulse.defaultVerifyCmd(root));
+  const model = readFollowingFlag(args, '--model', process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || DEFAULT_CLAUDE_RUNNER_MODEL);
+  const runnerProfile = readFollowingFlag(args, '--runner-profile', process.env.ATRIS_RUNNER_PROFILE || '');
+  const runnerBin = readFollowingFlag(args, '--runner-bin', process.env.ATRIS_RUNNER_BIN || process.env.ATRIS_CLAUDE_BIN || '');
+  const runnerCommandTemplate = readFollowingFlag(args, '--runner-template', process.env.ATRIS_RUNNER_COMMAND_TEMPLATE || process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE || '');
   const deadlineEpoch = Math.floor(Date.now() / 1000) + expiry.seconds;
 
   fs.mkdirSync(slot.stateHome, { recursive: true });
@@ -735,7 +734,7 @@ function uninstallCommand(args, root = process.cwd(), options = {}) {
 
 function runCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
-  const maxTicks = Math.max(1, Number(readFlag(args, '--max-ticks', '1')) || 1);
+  const maxTicks = Math.max(1, Number(readFollowingFlag(args, '--max-ticks', '1')) || 1);
   const passthrough = args.filter((a) => a !== '--max-ticks' && a !== String(maxTicks));
   const results = [];
   for (let i = 0; i < maxTicks; i++) {

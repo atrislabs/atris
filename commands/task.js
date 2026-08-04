@@ -8,6 +8,7 @@ const http = require('http');
 const { execSync } = require('node:child_process');
 const path = require('path');
 const os = require('os');
+const { hasFlag } = require('../lib/arg-parser');
 const { taskProofState } = require('../lib/task-proof');
 const {
   evaluateAutoAccept,
@@ -275,10 +276,6 @@ function flag(args, name) {
   const i = args.indexOf(name);
   if (i === -1) return null;
   return args[i + 1] || true;
-}
-
-function hasFlag(args, name) {
-  return args.indexOf(name) !== -1;
 }
 
 function taskScopeEverywhere(args = [], options = {}) {

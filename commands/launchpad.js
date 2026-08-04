@@ -2,22 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const { hasFlag, readFlag } = require('../lib/arg-parser');
 
 const ACTIVE_MISSION_STATUSES = new Set(['planning', 'running', 'ready']);
-
-function hasFlag(args, name) {
-  return args.includes(name);
-}
-
-function readFlag(args, name, fallback = '') {
-  const prefix = `${name}=`;
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = String(args[i]);
-    if (arg === name && args[i + 1] && !String(args[i + 1]).startsWith('--')) return String(args[i + 1]);
-    if (arg.startsWith(prefix)) return arg.slice(prefix.length);
-  }
-  return fallback;
-}
 
 function readJson(file) {
   try {

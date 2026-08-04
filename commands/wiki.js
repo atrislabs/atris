@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { hasFlag } = require('../lib/arg-parser');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
@@ -221,10 +222,6 @@ function printWikiHelp(scope = null) {
   console.log('');
   console.log('Business is auto-detected from .atris/business.json for cloud mode if omitted.');
   console.log('');
-}
-
-function hasFlag(args, name) {
-  return args.includes(name);
 }
 
 function optionValue(args, name, fallback = null) {

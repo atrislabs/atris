@@ -615,7 +615,8 @@ function printReceipt(receipt) {
   console.log('');
 }
 
-function readFlag(args, name, fallback = '') {
+// Preserve split-only parsing and its fallback for missing or falsey values.
+function readFollowingFlag(args, name, fallback = '') {
   const idx = args.indexOf(name);
   if (idx === -1) return fallback;
   return args[idx + 1] || fallback;
@@ -656,10 +657,10 @@ function landCommand(args = []) {
     console.error('not a git repository');
     return 1;
   }
-  const ttlRaw = readFlag(args, '--ttl', '');
+  const ttlRaw = readFollowingFlag(args, '--ttl', '');
   const ttlParsed = Number(ttlRaw);
   const ttlDays = ttlRaw !== '' && Number.isFinite(ttlParsed) && ttlParsed >= 0 ? ttlParsed : DEFAULT_TTL_DAYS;
-  const base = readFlag(args, '--base', '');
+  const base = readFollowingFlag(args, '--base', '');
   const json = args.includes('--json');
 
   if (args.includes('--reap')) {
@@ -670,7 +671,7 @@ function landCommand(args = []) {
   }
 
   const lookupArgs = args[0] === 'status' ? args.slice(1) : args;
-  const name = lookupArgs.find((a) => !a.startsWith('-') && a !== readFlag(lookupArgs, '--ttl') && a !== readFlag(lookupArgs, '--base'));
+  const name = lookupArgs.find((a) => !a.startsWith('-') && a !== readFollowingFlag(lookupArgs, '--ttl') && a !== readFollowingFlag(lookupArgs, '--base'));
   if (name) {
     const story = collectStory(root, name, { base });
     if (!story) {

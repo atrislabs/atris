@@ -1,12 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const { hasFlag } = require('../lib/arg-parser');
 const { scanChatLogs, writeLatestScan } = require('../lib/chat-log-scan');
 
-function hasFlag(args, name) {
-  return args.includes(name);
-}
-
-function readFlag(args, name, fallback) {
+// Preserve the existing rule that the next token is a value, even if it is a flag.
+function readFollowingFlag(args, name, fallback) {
   const i = args.indexOf(name);
   if (i === -1 || i === args.length - 1) return fallback;
   return args[i + 1];
@@ -79,8 +77,8 @@ Options:
 
   const report = scanChatLogs({
     cwd: root,
-    hours: readFlag(args, '--hours', 720),
-    limit: readFlag(args, '--limit', 12),
+    hours: readFollowingFlag(args, '--hours', 720),
+    limit: readFollowingFlag(args, '--limit', 12),
   });
 
   let latestPath = null;

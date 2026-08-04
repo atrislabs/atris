@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
+const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const {
   appendBriefRecord,
   stampBriefOutcome,
@@ -323,28 +324,6 @@ function readMissionRouteProposal(args, asJson) {
   };
 }
 
-function hasFlag(args, name) {
-  return args.includes(name);
-}
-
-function unquote(value) {
-  const text = String(value);
-  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
-    return text.slice(1, -1);
-  }
-  return text;
-}
-
-function readFlag(args, name, fallback = '') {
-  const prefix = `${name}=`;
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = String(args[i]);
-    if (arg === name && args[i + 1] && !String(args[i + 1]).startsWith('--')) return unquote(args[i + 1]);
-    if (arg.startsWith(prefix)) return unquote(arg.slice(prefix.length));
-  }
-  return fallback;
-}
-
 const MISSION_NATIVE_RUNNER_NAMES = Object.freeze(['manual', 'claude', 'atris2', 'codex_goal', 'caller_session', 'current_agent', 'drill']);
 const MISSION_NATIVE_RUNNER_SET = new Set(MISSION_NATIVE_RUNNER_NAMES);
 const MISSION_AUTO_RUNNER = 'auto';
@@ -518,11 +497,11 @@ function readRepeatedFlag(args, name) {
   for (let i = 0; i < args.length; i += 1) {
     const arg = String(args[i]);
     if (arg === name && args[i + 1] && !String(args[i + 1]).startsWith('--')) {
-      values.push(unquote(args[i + 1]));
+      values.push(readFlag([name, args[i + 1]], name, ''));
       i += 1;
       continue;
     }
-    if (arg.startsWith(prefix)) values.push(unquote(arg.slice(prefix.length)));
+    if (arg.startsWith(prefix)) values.push(readFlag([arg], name, ''));
   }
   return values.filter(Boolean);
 }
@@ -5795,8 +5774,8 @@ function watchMission(args) {
     return;
   }
   const ref = stripKnownFlags(args, ['--interval', '--idle-every'], [])[0] || '';
-  const intervalSeconds = Math.max(1, parseInt(readFlag(args, '--interval', '2'), 10) || 2);
-  const idleEverySeconds = Math.max(1, parseInt(readFlag(args, '--idle-every', '30'), 10) || 30);
+  const intervalSeconds = Math.max(1, readIntFlag(args, '--interval', 2) || 2);
+  const idleEverySeconds = Math.max(1, readIntFlag(args, '--idle-every', 30) || 30);
   const loadTargets = () => {
     if (ref) {
       const mission = resolveMission(ref);

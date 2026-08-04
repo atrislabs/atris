@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const { hasFlag: hasSingleFlag } = require('../lib/arg-parser');
 
 const SPAWN_SCHEMA = 'atris.agent_spawn.v1';
 const DOGFOOD_SCHEMA = 'atris.agent_cli_dogfood.v1';
@@ -63,8 +64,9 @@ function flagValue(args, names) {
   return null;
 }
 
-function hasFlag(args, names) {
-  return names.some(name => args.includes(name));
+// This command accepts alias lists, while the shared helper checks one name.
+function hasAnyFlag(args, names) {
+  return names.some(name => hasSingleFlag(args, name));
 }
 
 function positionalArgs(args) {
@@ -148,11 +150,11 @@ function commandForEngine(request) {
 }
 
 function parseSpawnArgs(args = []) {
-  const help = args.length === 0 || hasFlag(args, ['--help', '-h']) || args[0] === 'help';
+  const help = args.length === 0 || hasAnyFlag(args, ['--help', '-h']) || args[0] === 'help';
   if (help) return { help: true };
 
-  const json = hasFlag(args, ['--json']);
-  const dryRun = hasFlag(args, ['--dry-run']);
+  const json = hasAnyFlag(args, ['--json']);
+  const dryRun = hasAnyFlag(args, ['--dry-run']);
   const roleFlag = flagValue(args, ['--role']);
   const engine = String(flagValue(args, ['--engine']) || 'manual').toLowerCase();
   if (!ALLOWED_ENGINES.has(engine)) throw new Error(`Unknown engine: ${engine}`);
@@ -209,10 +211,10 @@ function showSpawnHelp(output = console.log, commandName = 'atris agent spawn') 
 }
 
 function parseDogfoodArgs(args = []) {
-  const help = hasFlag(args, ['--help', '-h']) || args[0] === 'help';
-  const json = hasFlag(args, ['--json']);
-  const live = hasFlag(args, ['--live']);
-  const noWrite = hasFlag(args, ['--no-write']);
+  const help = hasAnyFlag(args, ['--help', '-h']) || args[0] === 'help';
+  const json = hasAnyFlag(args, ['--json']);
+  const live = hasAnyFlag(args, ['--live']);
+  const noWrite = hasAnyFlag(args, ['--no-write']);
   const model = flagValue(args, ['--model']) || 'glm-5.2';
   const timeoutRaw = Number(flagValue(args, ['--timeout']) || 45);
   const timeoutMs = Math.max(5, Math.min(300, timeoutRaw)) * 1000;
@@ -431,7 +433,7 @@ function agentSpawnCommand(args = [], deps = {}) {
 function agentSpawnListCommand(args = [], deps = {}) {
   const root = deps.root || process.cwd();
   const output = deps.output || ((line = '') => console.log(line));
-  const json = hasFlag(args, ['--json']);
+  const json = hasAnyFlag(args, ['--json']);
   const requests = loadSpawnRequests(root).reverse();
   const payload = { ok: true, action: 'spawn_list', requests, state_path: spawnStatePath(root) };
   if (json) {
@@ -451,7 +453,7 @@ function agentSpawnListCommand(args = [], deps = {}) {
 function agentSpawnStatusCommand(args = [], deps = {}) {
   const root = deps.root || process.cwd();
   const output = deps.output || ((line = '') => console.log(line));
-  const json = hasFlag(args, ['--json']);
+  const json = hasAnyFlag(args, ['--json']);
   const id = positionalArgs(args)[0];
   if (!id) throw new Error('Missing spawn id. Usage: atris agent spawn-status <id>');
   const request = loadSpawnRequests(root).find(req => req.id === id);

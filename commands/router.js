@@ -13,7 +13,8 @@ const LANE_ORDER = ['fast', 'pro', 'max', 'code-fast'];
 const DEPTH = { fast: 0, 'code-fast': 1, pro: 1, max: 2 };
 const QUALITY_MISS_WEIGHT = 3;
 
-function readFlag(args, names) {
+// Preserve alias priority and inline-value priority within each alias.
+function readFirstNamedFlag(args, names) {
   for (const name of names) {
     const prefix = `${name}=`;
     const inline = args.find((arg) => String(arg).startsWith(prefix));
@@ -29,14 +30,14 @@ function readFlag(args, names) {
 function resolveRouterPaths(args = [], env = process.env) {
   const home = env.HOME || os.homedir();
   return {
-    picks: path.resolve(readFlag(args, ['--picks', '--picks-path'])
+    picks: path.resolve(readFirstNamedFlag(args, ['--picks', '--picks-path'])
       || env.ATRIS_ROUTER_PICKS_PATH
       || env.ATRIS_AX_AUTO_PICKS_PATH
       || path.join(home, '.atris', 'ax-auto-picks.jsonl')),
-    overrides: path.resolve(readFlag(args, ['--overrides', '--overrides-path'])
+    overrides: path.resolve(readFirstNamedFlag(args, ['--overrides', '--overrides-path'])
       || env.ATRIS_ROUTER_OVERRIDES_PATH
       || path.join(home, '.atris', 'router-overrides.json')),
-    gold: path.resolve(readFlag(args, ['--gold', '--gold-path'])
+    gold: path.resolve(readFirstNamedFlag(args, ['--gold', '--gold-path'])
       || env.ATRIS_ROUTER_GOLD_PATH
       || DEFAULT_GOLD_PATH),
   };

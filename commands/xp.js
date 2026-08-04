@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const { hasFlag: hasExactFlag } = require('../lib/arg-parser');
 
 const DEFAULT_GRAPH_DAYS = 365;
 const MAX_SYNC_GRAPH_DAYS = 370;
@@ -277,7 +278,8 @@ function currentForm(payload) {
   };
 }
 
-function readFlag(args, name, fallback = null) {
+// Preserve the existing rule that any inline value wins over a split value.
+function readInlineFirstFlag(args, name, fallback = null) {
   const inline = args.find(arg => arg.startsWith(`${name}=`));
   if (inline) {
     return inline.slice(name.length + 1);
@@ -291,7 +293,7 @@ function readFlag(args, name, fallback = null) {
 
 function readFirstFlag(args, names, fallback = null) {
   for (const name of names) {
-    const value = readFlag(args, name, null);
+    const value = readInlineFirstFlag(args, name, null);
     if (value !== null && value !== undefined && value !== '') return value;
   }
   return fallback;
@@ -313,8 +315,9 @@ function readFlagValues(args, names) {
   return values.filter(Boolean);
 }
 
-function hasFlag(args, name) {
-  return args.includes(name) || args.some(arg => arg.startsWith(`${name}=`));
+// This command treats --name=value as flag presence as well as a standalone flag.
+function hasFlagOrValue(args, name) {
+  return hasExactFlag(args, name) || args.some(arg => arg.startsWith(`${name}=`));
 }
 
 function levelFromXp(careerXp) {
@@ -1040,7 +1043,7 @@ function buildCareerXpProjection(receipts, workspace, integrity = {}) {
 }
 
 function collectLocalXpProjectionState(args = [], { write = true } = {}) {
-  const workspace = path.resolve(readFlag(args, '--workspace', defaultXpWorkspace()));
+  const workspace = path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace()));
   const episodePath = path.join(workspace, TASK_EPISODES_FILE);
   const receiptsPath = path.join(workspace, CAREER_XP_RECEIPTS_FILE);
   const projectionPath = path.join(workspace, CAREER_XP_PROJECTION_FILE);
@@ -1170,7 +1173,7 @@ function defaultAllSearchRoots(args = []) {
   if (explicitRoots.length) return uniquePaths(explicitRoots);
 
   const roots = [];
-  const workspace = readFlag(args, '--workspace', null);
+  const workspace = readInlineFirstFlag(args, '--workspace', null);
   if (workspace) roots.push(workspace);
   roots.push(process.cwd());
   roots.push(path.join(os.homedir(), 'arena'));
@@ -1575,7 +1578,7 @@ function codexHasThreadsTable(dbPath) {
 }
 
 function readCodexGoalsForSession(args, workspace, sinceMs, untilMs) {
-  const explicitDb = readFlag(args, '--codex-state', readFlag(args, '--state', process.env.CODEX_STATE_DB || ''));
+  const explicitDb = readInlineFirstFlag(args, '--codex-state', readInlineFirstFlag(args, '--state', process.env.CODEX_STATE_DB || ''));
   const dbPath = explicitDb
     ? path.resolve(expandHome(explicitDb))
     : path.resolve(fs.existsSync(CODEX_GOALS_FILE) ? CODEX_GOALS_FILE : CODEX_STATE_FILE);
@@ -1592,7 +1595,7 @@ function readCodexGoalsForSession(args, workspace, sinceMs, untilMs) {
     }
   }
 
-  const threadId = readFlag(args, '--thread', process.env.CODEX_THREAD_ID || '');
+  const threadId = readInlineFirstFlag(args, '--thread', process.env.CODEX_THREAD_ID || '');
   const clauses = [];
   if (threadId) clauses.push(`tg.thread_id = ${sqlString(threadId)}`);
   const workspaceCandidates = workspacePathCandidates(workspace);
@@ -1632,9 +1635,9 @@ LIMIT 25
 }
 
 function buildCareerXpSessionCapsule(args = []) {
-  const workspace = path.resolve(readFlag(args, '--workspace', defaultXpWorkspace()));
-  const sinceInput = readFlag(args, '--since', 'today');
-  const untilInput = readFlag(args, '--until', null);
+  const workspace = path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace()));
+  const sinceInput = readInlineFirstFlag(args, '--since', 'today');
+  const untilInput = readInlineFirstFlag(args, '--until', null);
   const since = parseSessionBoundary(sinceInput, startOfToday());
   const until = parseSessionBoundary(untilInput, new Date());
   const sinceMs = since.getTime();
@@ -1643,7 +1646,7 @@ function buildCareerXpSessionCapsule(args = []) {
     throw new Error('--since must be before --until');
   }
 
-  const writeEnabled = !hasFlag(args, '--no-write') && !hasFlag(args, '--dry-run');
+  const writeEnabled = !hasFlagOrValue(args, '--no-write') && !hasFlagOrValue(args, '--dry-run');
   const projectionState = collectLocalXpProjectionState(['--workspace', workspace], { write: writeEnabled });
   const projection = projectionState.projection;
   const receiptsPath = path.join(workspace, CAREER_XP_RECEIPTS_FILE);
@@ -1675,7 +1678,7 @@ function buildCareerXpSessionCapsule(args = []) {
   });
   const windowXp = acceptedReceipts.reduce((sum, receipt) => sum + asNumber(receipt.xp), 0);
   const afterTotalXp = asNumber(projection.total_xp);
-  const missionFlag = readFlag(args, '--mission', null);
+  const missionFlag = readInlineFirstFlag(args, '--mission', null);
   const episodeGoals = readJsonl(path.join(workspace, TASK_EPISODES_FILE), { allowPartialTail: true })
     .filter(episode => inWindow(episode?.created_at, sinceMs, untilMs))
     .map(episode => episode.goal);
@@ -1890,8 +1893,8 @@ function syncScopeFields(attribution = {}) {
 }
 
 function publicAgentXpOverride(args = []) {
-  if (hasFlag(args, '--public')) return true;
-  if (hasFlag(args, '--private') || hasFlag(args, '--internal')) return false;
+  if (hasFlagOrValue(args, '--public')) return true;
+  if (hasFlagOrValue(args, '--private') || hasFlagOrValue(args, '--internal')) return false;
   return null;
 }
 
@@ -1946,9 +1949,9 @@ function syncPlayer(args, projection) {
 }
 
 function buildAgentXpSyncPacket(args = []) {
-  const localMode = hasFlag(args, '--local') || hasFlag(args, '--workspace') || hasFlag(args, '--operator');
+  const localMode = hasFlagOrValue(args, '--local') || hasFlagOrValue(args, '--workspace') || hasFlagOrValue(args, '--operator');
   const projectionArgs = args.filter(arg => !['--dry-run', '--no-post', '--packet', '--public', '--private', '--internal'].includes(arg));
-  const projection = hasFlag(args, '--all') || !localMode
+  const projection = hasFlagOrValue(args, '--all') || !localMode
     ? collectAllLocalXpProjection(projectionArgs)
     : collectLocalXpProjection(projectionArgs);
   const player = syncPlayer(args, projection);
@@ -2086,10 +2089,10 @@ function buildAgentXpSyncPacket(args = []) {
 
 async function syncAgentXp(args = []) {
   const preview = buildAgentXpSyncPacket(args);
-  const dryRun = hasFlag(args, '--dry-run') || hasFlag(args, '--no-post') || hasFlag(args, '--packet');
+  const dryRun = hasFlagOrValue(args, '--dry-run') || hasFlagOrValue(args, '--no-post') || hasFlagOrValue(args, '--packet');
   if (dryRun) return preview;
 
-  const token = readFlag(args, '--token', process.env.ATRIS_AGENTXP_SYNC_TOKEN || process.env.AGENTXP_SYNC_TOKEN || '');
+  const token = readInlineFirstFlag(args, '--token', process.env.ATRIS_AGENTXP_SYNC_TOKEN || process.env.AGENTXP_SYNC_TOKEN || '');
   const envToken = process.env.ATRIS_TOKEN && process.env.ATRIS_TOKEN.trim() ? process.env.ATRIS_TOKEN.trim() : '';
   const options = {
     method: 'POST',
@@ -2298,11 +2301,11 @@ async function xpCommand(...args) {
     const commandArgs = args.slice(1);
     let payload;
     try {
-      const explicitLocal = hasFlag(commandArgs, '--local')
-        || hasFlag(commandArgs, '--workspace')
-        || hasFlag(commandArgs, '--operator');
+      const explicitLocal = hasFlagOrValue(commandArgs, '--local')
+        || hasFlagOrValue(commandArgs, '--workspace')
+        || hasFlagOrValue(commandArgs, '--operator');
       const accountStatus = (subcommand === 'status' || subcommand === 'card') && !explicitLocal;
-      payload = hasFlag(commandArgs, '--all') || accountStatus
+      payload = hasFlagOrValue(commandArgs, '--all') || accountStatus
         ? collectAllLocalXpProjection(commandArgs)
         : collectLocalXpProjection(commandArgs);
     } catch (error) {
@@ -2324,7 +2327,7 @@ async function xpCommand(...args) {
   }
 
   const jsonMode = args.includes('--json');
-  const localMode = hasFlag(args, '--local') || hasFlag(args, '--workspace') || hasFlag(args, '--operator');
+  const localMode = hasFlagOrValue(args, '--local') || hasFlagOrValue(args, '--workspace') || hasFlagOrValue(args, '--operator');
   if (localMode) {
     let payload;
     try {

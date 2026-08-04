@@ -3,14 +3,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { hasFlag } = require('../lib/arg-parser');
 const { runGit } = require('../lib/git-spawn');
 
 const VERIFY_COMMAND = 'node -e "process.exit(0)"';
 const COAUTHOR = 'Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>';
-
-function hasFlag(args, name) {
-  return args.includes(name);
-}
 
 function parseJsonOutput(text) {
   const raw = String(text || '').trim();

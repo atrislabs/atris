@@ -17,6 +17,7 @@ const fs = require('fs');
 const https = require('https');
 const os = require('os');
 const path = require('path');
+const { hasFlag } = require('../lib/arg-parser');
 const { buildDeck, THEMES, notesRequests } = require('../lib/slides-deck');
 const {
   lintSpec,
@@ -116,10 +117,6 @@ const SAMPLE = {
 function flag(argv, name) {
   const i = argv.indexOf(name);
   return i !== -1 ? argv[i + 1] : null;
-}
-
-function hasFlag(argv, name) {
-  return argv.includes(name);
 }
 
 // Flags that take a value, so their following token is consumed (not a path).

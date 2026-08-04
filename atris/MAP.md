@@ -48,6 +48,7 @@ rg "xpCommand|collectLocalXpProjection|buildCareerXpProjection|buildCareerXpSess
 rg "gmState|AgentXP General Manager|renderGameDashboard|parseGameArgs|loadGameState|pickSeedPlayer|inferManager" commands/gm.js commands/game.js test/gm.test.js test/game-dashboard.test.js  # AgentXP GM mode plus the game-state terminal dashboard: selectable storyline, chapter rail, current mission, streak, live missions, next move, and local Python sync loading
 
 # Modular commands
+rg "hasFlag|readFlag|readIntFlag|readNumberFlag" lib/arg-parser.js commands test/arg-parser.test.js test/repo-hygiene.test.js  # Shared CLI flag parsing, explicit per-command quirk wrappers, focused behavior tests, and dead-export ratchet
 rg "initAtris|upsertAtrisClaudeBootBlock" commands/init.js lib/claude-boot-block.js test/claude-boot-block.test.js  # Init command and hook-aware, self-repairing root CLAUDE.md boot block
 rg "syncAtris|upsertAtrisClaudeBootBlock" commands/sync.js lib/claude-boot-block.js test/claude-boot-block.test.js  # Update/sync command and shared root CLAUDE.md block updater
 rg "syncCheckoutCommand|checkoutBehindMessage|trackedTreeIsClean" commands/sync-checkout.js lib/checkout-sync.js bin/atris.js commands/status.js test/sync-checkout.test.js  # Clean current-branch fetch + fast-forward command and boot/status upstream-behind warning

@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { hasFlag, readFlag } = require('../lib/arg-parser');
 const { runGit: spawnGit } = require('../lib/git-spawn');
 const { collectBoard } = require('./land');
 const { listWorktrees } = require('./worktree');
@@ -22,20 +23,6 @@ function defaultDeps() {
     runGit: (root, args) => spawnGit(args, { cwd: root, check: false }),
     now: () => Date.now(),
   };
-}
-
-function hasFlag(args, name) {
-  return args.includes(name);
-}
-
-function readFlag(args, name, fallback = '') {
-  const prefix = `${name}=`;
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = String(args[i] || '');
-    if (arg === name && args[i + 1] && !String(args[i + 1]).startsWith('--')) return String(args[i + 1]);
-    if (arg.startsWith(prefix)) return arg.slice(prefix.length);
-  }
-  return fallback;
 }
 
 function timestampMs(value) {
