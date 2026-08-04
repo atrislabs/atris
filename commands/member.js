@@ -7,6 +7,7 @@ const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { runAliveTick } = require('../lib/member-alive');
 const { defaultObjectiveRunner } = require('../lib/default-runner');
+const { readJson, writeJson } = require('../lib/json-file');
 
 function findWorkspaceBusinessId(startDir = process.cwd()) {
   let dir = path.resolve(startDir);
@@ -365,17 +366,12 @@ function emptyMemberGoals(name) {
 }
 
 function loadMemberGoals(name, paths = memberPaths(name)) {
-  if (!fs.existsSync(paths.goalsJson)) return emptyMemberGoals(name);
-  try {
-    const parsed = JSON.parse(fs.readFileSync(paths.goalsJson, 'utf8'));
-    return {
-      ...emptyMemberGoals(name),
-      ...parsed,
-      goals: Array.isArray(parsed.goals) ? parsed.goals : [],
-    };
-  } catch {
-    return emptyMemberGoals(name);
-  }
+  const parsed = readJson(paths.goalsJson, {}) || {};
+  return {
+    ...emptyMemberGoals(name),
+    ...parsed,
+    goals: Array.isArray(parsed.goals) ? parsed.goals : [],
+  };
 }
 
 function activeGoal(goalsState, goalId = '') {
@@ -1411,7 +1407,7 @@ function taskIsClosed(task) {
 
 function taskProjectionRows() {
   const projectionPath = path.join(process.cwd(), '.atris', 'state', 'tasks.projection.json');
-  const projection = readJsonIfExists(projectionPath);
+  const projection = readJson(projectionPath);
   return Array.isArray(projection?.tasks) ? projection.tasks : [];
 }
 
@@ -1511,7 +1507,7 @@ function sortEvidenceCandidates(candidates) {
 
 function readTaskProjectionEvidence(name) {
   const projectionPath = path.join(process.cwd(), '.atris', 'state', 'tasks.projection.json');
-  const projection = readJsonIfExists(projectionPath);
+  const projection = readJson(projectionPath);
   const tasks = taskProjectionRows();
   const candidates = sortEvidenceCandidates(
     tasks
@@ -1663,7 +1659,7 @@ function latestActionableUserLine(thread) {
 function readMemberRoomEvidence(name) {
   const roots = [path.join(process.cwd(), '.obelisk', 'threads')];
   const projectsPath = path.join(os.homedir(), '.obelisk', 'projects.json');
-  const projects = readJsonIfExists(projectsPath);
+  const projects = readJson(projectsPath);
   if (Array.isArray(projects)) {
     const cwd = path.resolve(process.cwd());
     const project = projects.find((item) => item?.path && path.resolve(item.path) === cwd && item.id);
@@ -1676,7 +1672,7 @@ function readMemberRoomEvidence(name) {
     for (const item of listThreadJsonFiles(root)) {
       if (seen.has(item.path)) continue;
       seen.add(item.path);
-      const thread = readJsonIfExists(item.path);
+      const thread = readJson(item.path);
       files_checked += 1;
       const context = thread?.atrisContext || {};
       const linkedTasks = Array.isArray(context.linkedTasks) ? context.linkedTasks : [];
@@ -1717,11 +1713,11 @@ function readMemberRoomEvidence(name) {
 }
 
 function readRecentWakeReceiptEvidence(name) {
-  const latestLoop = readJsonIfExists(memberLoopPaths(name).latestPath);
+  const latestLoop = readJson(memberLoopPaths(name).latestPath);
   const receiptPath = Array.isArray(latestLoop?.tick_receipts)
     ? latestLoop.tick_receipts.slice().reverse().find(Boolean)
     : null;
-  const latestWake = receiptPath ? readJsonIfExists(receiptPath) : null;
+  const latestWake = receiptPath ? readJson(receiptPath) : null;
   return {
     latest_loop_path: memberLoopPaths(name).latestPath,
     latest_loop_status: latestLoop?.status || null,
@@ -1863,7 +1859,7 @@ function problemSignalSources(root = process.cwd()) {
 
 function rowsFromProblemSignalSource(source) {
   if (source.kind === 'jsonl') return readJsonlRowsIfExists(source.path, 80);
-  const row = readJsonIfExists(source.path);
+  const row = readJson(source.path);
   return row ? [row] : [];
 }
 
@@ -1984,7 +1980,7 @@ function readMemberSignalSourceConfig(root = process.cwd()) {
     path.join(root, '.atris', 'member-signal-sources.json'),
   ];
   for (const configPath of candidates) {
-    const config = readJsonIfExists(configPath);
+    const config = readJson(configPath);
     if (config && typeof config === 'object') return { config, configPath };
   }
   return { config: null, configPath: null };
@@ -2839,7 +2835,7 @@ function installMemberAliveCron(name, args = []) {
     stop_command: `atris member alive ${name} --uninstall`,
     error,
   };
-  writeJsonFile(paths.latestPath, payload);
+  writeJson(paths.latestPath, payload);
   printJsonOrText(payload, [
     `${dryRun ? 'Would install' : installed ? 'Installed' : 'Install failed'} hourly alive loop: ${name}`,
     `Cron: ${crontabLine}`,
@@ -2907,14 +2903,6 @@ function writeMemberLoopReceipt(name, payload) {
   return receiptPath;
 }
 
-function readJsonIfExists(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
 function isPidAlive(pid) {
   const numeric = Number(pid);
   if (!Number.isFinite(numeric) || numeric <= 0) return false;
@@ -2926,11 +2914,6 @@ function isPidAlive(pid) {
   }
 }
 
-function writeJsonFile(filePath, payload) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
-}
-
 function safeReadText(filePath, maxBytes = 250000) {
   try {
     const stat = fs.statSync(filePath);
@@ -2938,14 +2921,6 @@ function safeReadText(filePath, maxBytes = 250000) {
     return fs.readFileSync(filePath, 'utf8');
   } catch {
     return '';
-  }
-}
-
-function safeReadJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return null;
   }
 }
 
@@ -3162,7 +3137,7 @@ function autoImproverTaskWaitingForHuman(task, status) {
 
 function collectAutoImproverTaskSignals(root) {
   const projectionPath = path.join(root, '.atris', 'state', 'tasks.projection.json');
-  const projection = safeReadJson(projectionPath);
+  const projection = readJson(projectionPath);
   const tasks = Array.isArray(projection?.tasks) ? projection.tasks : [];
   const openStatuses = new Set(['open', 'todo', 'claimed', 'doing', 'in_progress', 'review', 'blocked']);
   const staleTasks = [];
@@ -3476,7 +3451,7 @@ function autoImproverTaskIsActionable(task) {
 }
 
 function findExistingAutoImproverTask(title) {
-  const projection = safeReadJson(path.join(process.cwd(), '.atris', 'state', 'tasks.projection.json'));
+  const projection = readJson(path.join(process.cwd(), '.atris', 'state', 'tasks.projection.json'));
   const tasks = Array.isArray(projection?.tasks) ? projection.tasks : [];
   const key = lowerCompact(stripAutoImproverTitleNoise(title));
   if (!key) return null;
@@ -3554,9 +3529,9 @@ function createAutoImproverTask(candidate, receiptPath) {
 
 function writeAutoImproverReceipt(name, payload, receiptPath = null) {
   const finalReceiptPath = receiptPath || path.join(process.cwd(), 'atris', 'runs', `auto-improver-dogfood-${fileSafeStamp()}.json`);
-  writeJsonFile(finalReceiptPath, payload);
+  writeJson(finalReceiptPath, payload);
   const latestPath = path.join(process.cwd(), '.atris', 'state', 'auto-improver-dogfood-latest.json');
-  writeJsonFile(latestPath, { ...payload, receipt_path: finalReceiptPath });
+  writeJson(latestPath, { ...payload, receipt_path: finalReceiptPath });
   return { receiptPath: finalReceiptPath, latestPath };
 }
 
@@ -3646,7 +3621,7 @@ async function runAutoImproverWake(name, paths, { execute = false, confirmed = f
         : 'No bounded prevented-fire task was created yet.',
     },
   };
-  const previousLatest = safeReadJson(path.join(process.cwd(), '.atris', 'state', 'auto-improver-dogfood-latest.json'));
+  const previousLatest = readJson(path.join(process.cwd(), '.atris', 'state', 'auto-improver-dogfood-latest.json'));
   const finalWrite = writeAutoImproverReceipt(name, payload, plannedReceiptPath);
   // A no-op scan identical to the previous tick earns a receipt but not a journal entry —
   // the cadence loop was appending the same "found: N, prevented: 0" row every ~4 minutes
@@ -3731,7 +3706,7 @@ function acquireMemberLoopLease(name, { runId, ttlMs }) {
     return writeLease();
   } catch (error) {
     if (error.code !== 'EEXIST') throw error;
-    const active = readJsonIfExists(paths.lockPath);
+    const active = readJson(paths.lockPath);
     const expired = active && Number(active.expires_at_ms || 0) <= nowMs;
     const deadPid = active && !isPidAlive(active.pid);
     if (active && (expired || deadPid)) {
@@ -3749,7 +3724,7 @@ function acquireMemberLoopLease(name, { runId, ttlMs }) {
 }
 
 function refreshMemberLoopLease(paths, lease, ttlMs) {
-  writeJsonFile(paths.lockPath, {
+  writeJson(paths.lockPath, {
     ...lease,
     heartbeat_at: stampIso(),
     expires_at_ms: Date.now() + ttlMs,
@@ -3757,7 +3732,7 @@ function refreshMemberLoopLease(paths, lease, ttlMs) {
 }
 
 function releaseMemberLoopLease(paths, lease) {
-  const active = readJsonIfExists(paths.lockPath);
+  const active = readJson(paths.lockPath);
   if (!active || active.run_id !== lease.run_id || active.pid !== lease.pid) return;
   fs.rmSync(paths.lockPath, { force: true });
 }
@@ -3772,11 +3747,11 @@ function activeMemberLoopLease(lease) {
 function archiveMemberLoopState(name) {
   const paths = memberLoopPaths(name);
   const archivedAt = stampIso();
-  const previousLease = readJsonIfExists(paths.lockPath);
+  const previousLease = readJson(paths.lockPath);
   const activeLease = activeMemberLoopLease(previousLease);
   fs.mkdirSync(paths.stateDir, { recursive: true });
   if (activeLease) {
-    writeJsonFile(paths.stopPath, {
+    writeJson(paths.stopPath, {
       schema: 'atris.member_loop_stop.v1',
       member: name,
       requested_at: archivedAt,
@@ -3801,7 +3776,7 @@ function archiveMemberLoopState(name) {
     stop_path: paths.stopPath,
     latest_path: paths.latestPath,
   };
-  writeJsonFile(paths.latestPath, payload);
+  writeJson(paths.latestPath, payload);
   return payload;
 }
 
@@ -8056,8 +8031,8 @@ async function memberLoop(name, ...args) {
   }
 
   if (status) {
-    const active = readJsonIfExists(paths.lockPath);
-    const latest = readJsonIfExists(paths.latestPath);
+    const active = readJson(paths.lockPath);
+    const latest = readJson(paths.latestPath);
     const payload = {
       ok: true,
       action: 'loop_status',
@@ -8086,7 +8061,7 @@ async function memberLoop(name, ...args) {
       requested_at: requestedAt,
       pid: process.pid,
     };
-    writeJsonFile(paths.stopPath, stopPayload);
+    writeJson(paths.stopPath, stopPayload);
     const receiptPath = writeMemberLoopReceipt(name, {
       ok: true,
       action: 'loop_stop',
@@ -8157,7 +8132,7 @@ async function memberLoop(name, ...args) {
       reason: 'execute_requires_confirm_autonomy_policy',
       receipt_path: receiptPath,
     };
-    writeJsonFile(paths.latestPath, payload);
+    writeJson(paths.latestPath, payload);
     printJsonOrText(payload, [
       `Loop blocked for ${name}: execute requires --confirm-autonomy-policy.`,
       `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
@@ -8189,7 +8164,7 @@ async function memberLoop(name, ...args) {
       receipt_path: receiptPath,
       active_lease: lease.lease || null,
     };
-    writeJsonFile(paths.latestPath, payload);
+    writeJson(paths.latestPath, payload);
     printJsonOrText(payload, [
       `Loop skipped for ${name}: another loop is active.`,
       `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
@@ -8392,7 +8367,7 @@ async function memberLoop(name, ...args) {
   };
   const receiptPath = writeMemberLoopReceipt(name, summary);
   const payload = { ...summary, receipt_path: receiptPath };
-  writeJsonFile(paths.latestPath, payload);
+  writeJson(paths.latestPath, payload);
   printJsonOrText(payload, [
     `${aliveMode ? 'Alive' : 'Loop'}: ${name}`,
     `Status: ${payload.status}`,

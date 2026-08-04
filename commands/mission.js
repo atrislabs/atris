@@ -78,6 +78,7 @@ const {
   resolveDefaultVerifier,
 } = require('../lib/default-verifier');
 const { redirectToWorkspaceRoot } = require('../lib/mission-root');
+const { readJson, writeJson } = require('../lib/json-file');
 const {
   inspectMissionProtectedDiff,
   prepareMissionGitGuard,
@@ -739,8 +740,7 @@ function loadTaskDb(asJson = false) {
 function writeMissionTaskProjection(taskDb, db, workspaceRoot) {
   const projection = taskDb.taskProjection(db, { workspaceRoot, limit: 500 });
   const outPath = path.join(workspaceRoot, '.atris', 'state', 'tasks.projection.json');
-  fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, JSON.stringify(projection, null, 2) + '\n', 'utf8');
+  writeJson(outPath, projection);
   return { projection, outPath };
 }
 
@@ -839,16 +839,13 @@ function statePaths(root = process.cwd()) {
 
 function readBusinessBinding(root = process.cwd()) {
   const file = path.join(root, '.atris', 'business.json');
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return {
-      business_id: parsed.business_id || '',
-      workspace_id: parsed.workspace_id || '',
-      slug: parsed.slug || '',
-    };
-  } catch {
-    return null;
-  }
+  const parsed = readJson(file);
+  if (parsed == null) return null;
+  return {
+    business_id: parsed.business_id || '',
+    workspace_id: parsed.workspace_id || '',
+    slug: parsed.slug || '',
+  };
 }
 
 function businessIdForAtris2Mission(mission, cwd = process.cwd()) {
@@ -2981,12 +2978,8 @@ function handledContinuationTargetKeys(root, moves) {
 
 function readTaskProjectionForMission(root = process.cwd()) {
   const file = path.join(root, '.atris', 'state', 'tasks.projection.json');
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return Array.isArray(parsed?.tasks) ? parsed.tasks : [];
-  } catch {
-    return [];
-  }
+  const parsed = readJson(file);
+  return Array.isArray(parsed?.tasks) ? parsed.tasks : [];
 }
 
 function taskTags(task) {
@@ -3368,8 +3361,7 @@ function readRecentTasteLogs(root, owner, limit = 3) {
 
 function readTasteReviewHistory(root, limit = 4) {
   const file = path.join(root, '.atris', 'state', 'tasks.projection.json');
-  let projection = null;
-  try { projection = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { projection = null; }
+  const projection = readJson(file);
   const tasks = Array.isArray(projection?.tasks) ? projection.tasks : [];
   const accepted = [];
   const revised = [];
@@ -4739,11 +4731,7 @@ function statusMission(args) {
 function readMissionReceipt(receiptPath, root = process.cwd()) {
   if (!receiptPath) return null;
   const file = path.isAbsolute(receiptPath) ? receiptPath : path.join(root, receiptPath);
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
+  return readJson(file);
 }
 
 function firstUsefulLine(text, fallback = '') {
@@ -4868,12 +4856,7 @@ function missionVerificationDebt(mission, root = process.cwd()) {
   let unchecked = 0;
   const seen = new Set();
   for (const file of files) {
-    let receipt = null;
-    try {
-      receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-      continue;
-    }
+    const receipt = readJson(file);
     if (!receipt || receipt.mission_id !== mission.id) continue;
     for (const tick of missionReceiptTicks(receipt)) {
       if (!tick || tick.status !== 'ran') continue;
@@ -4910,12 +4893,7 @@ function missionReportTimeline(mission, root = process.cwd(), limit = 6) {
   const items = [];
   const seen = new Set();
   for (const file of files) {
-    let receipt = null;
-    try {
-      receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-      continue;
-    }
+    const receipt = readJson(file);
     if (!receipt || receipt.mission_id !== mission.id) continue;
     const receiptPath = path.relative(root, file);
     for (const tick of missionReceiptTicks(receipt)) {
@@ -4958,12 +4936,7 @@ function missionLandingTimeline(mission, root = process.cwd(), limit = 12, { kin
   const items = [];
   const seen = new Set();
   for (const file of files) {
-    let receipt = null;
-    try {
-      receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-      continue;
-    }
+    const receipt = readJson(file);
     if (!receipt || receipt.mission_id !== mission.id) continue;
     const receiptKind = receipt.result && receipt.result.kind ? String(receipt.result.kind) : (receipt.kind ? String(receipt.kind) : '');
     if (kindFilter && receiptKind !== kindFilter) continue;
@@ -6048,14 +6021,12 @@ function missionProtectedTags(mission, root = process.cwd()) {
     ...(Array.isArray(mission?.task_ids) ? mission.task_ids : []),
   ].filter(Boolean).map(String));
   if (!taskRefs.size) return tags;
-  try {
-    const projection = JSON.parse(fs.readFileSync(path.join(root, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
-    for (const task of Array.isArray(projection?.tasks) ? projection.tasks : []) {
-      if (!task || ![task.id, task.display_id, task.legacy_ref].some((ref) => taskRefs.has(String(ref || '')))) continue;
-      if (task.tag) tags.push(task.tag);
-      if (Array.isArray(task.tags)) tags.push(...task.tags);
-    }
-  } catch {}
+  const projection = readJson(path.join(root, '.atris', 'state', 'tasks.projection.json'));
+  for (const task of Array.isArray(projection?.tasks) ? projection.tasks : []) {
+    if (!task || ![task.id, task.display_id, task.legacy_ref].some((ref) => taskRefs.has(String(ref || '')))) continue;
+    if (task.tag) tags.push(task.tag);
+    if (Array.isArray(task.tags)) tags.push(...task.tags);
+  }
   return tags;
 }
 
@@ -6119,18 +6090,13 @@ function captureMissionWorktreeBaseline(mission, root = process.cwd()) {
     dirty_hash: snapshot.dirty_hash,
     paths: Array.from(paths).sort(),
   };
-  fs.mkdirSync(path.dirname(baselineFile), { recursive: true });
-  fs.writeFileSync(baselineFile, JSON.stringify(baseline, null, 2) + '\n', 'utf8');
+  writeJson(baselineFile, baseline);
   return baseline;
 }
 
 function loadMissionWorktreeBaseline(missionId, root = process.cwd()) {
-  try {
-    const baseline = JSON.parse(fs.readFileSync(missionBaselinePath(missionId, root), 'utf8'));
-    return Array.isArray(baseline?.paths) ? baseline : null;
-  } catch {
-    return null;
-  }
+  const baseline = readJson(missionBaselinePath(missionId, root));
+  return Array.isArray(baseline?.paths) ? baseline : null;
 }
 
 // Closed missions no longer tick, so the sidecar is dead weight; prune it and
@@ -6739,19 +6705,13 @@ function writeDirectRunCodexGoalRequest(mission, root = process.cwd()) {
     requested_at: stampIso(),
   };
   const paths = statePaths(root);
-  fs.mkdirSync(path.dirname(paths.codexGoalRequestJson), { recursive: true });
-  fs.writeFileSync(paths.codexGoalRequestJson, JSON.stringify(request, null, 2) + '\n', 'utf8');
+  writeJson(paths.codexGoalRequestJson, request);
   return request;
 }
 
 function readDirectRunCodexGoalRequest(root = process.cwd(), now = new Date()) {
   const file = statePaths(root).codexGoalRequestJson;
-  let request = null;
-  try {
-    request = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
+  const request = readJson(file);
   const missionId = String(request?.mission_id || '').trim();
   if (!missionId) return null;
   const mission = resolveMission(missionId, root);
@@ -6762,13 +6722,9 @@ function readDirectRunCodexGoalRequest(root = process.cwd(), now = new Date()) {
 
 function clearDirectRunCodexGoalRequestForMission(missionId, root = process.cwd()) {
   const file = statePaths(root).codexGoalRequestJson;
-  let request = null;
-  try {
-    request = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return false;
-  }
-  if (String(request?.mission_id || '') !== String(missionId || '')) return false;
+  const request = readJson(file);
+  if (!request) return false;
+  if (String(request.mission_id || '') !== String(missionId || '')) return false;
   try {
     fs.rmSync(file, { force: true });
     return true;
@@ -7086,8 +7042,7 @@ function writeCodexGoalState(payload, root = process.cwd()) {
     updated_at: stampIso(),
     ...payload,
   };
-  fs.mkdirSync(path.dirname(paths.codexGoalJson), { recursive: true });
-  fs.writeFileSync(paths.codexGoalJson, JSON.stringify(state, null, 2) + '\n', 'utf8');
+  writeJson(paths.codexGoalJson, state);
 
   const lines = [
     '# Codex Goal Controller',
@@ -7358,8 +7313,7 @@ function writeAtrisGoalState(payload, root = process.cwd()) {
     updated_at: stampIso(),
     ...payload,
   };
-  fs.mkdirSync(path.dirname(paths.atrisGoalJson), { recursive: true });
-  fs.writeFileSync(paths.atrisGoalJson, JSON.stringify(state, null, 2) + '\n', 'utf8');
+  writeJson(paths.atrisGoalJson, state);
 
   const lines = [
     '# Atris Goal Controller',
@@ -7796,12 +7750,11 @@ function missionDriverPaths(mission, root = process.cwd()) {
 }
 
 function readMissionDriverState(stateFile) {
-  try { return JSON.parse(fs.readFileSync(stateFile, 'utf8')) || {}; } catch { return {}; }
+  return readJson(stateFile, {}) || {};
 }
 
 function writeMissionDriverState(stateFile, state) {
-  fs.mkdirSync(path.dirname(stateFile), { recursive: true });
-  fs.writeFileSync(stateFile, JSON.stringify(state, null, 2) + '\n', 'utf8');
+  writeJson(stateFile, state);
 }
 
 function missionDriverError(error) {
@@ -7894,10 +7847,8 @@ function installDetachedMissionDriverLifecycle(mission, root = process.cwd()) {
 
 function missionDriverHealth(mission, root = process.cwd()) {
   const paths = missionDriverPaths(mission, root);
-  let driverState = null;
-  let lockState = null;
-  try { driverState = JSON.parse(fs.readFileSync(paths.stateFile, 'utf8')); } catch {}
-  try { lockState = JSON.parse(fs.readFileSync(paths.lockFile, 'utf8')); } catch {}
+  const driverState = readJson(paths.stateFile);
+  const lockState = readJson(paths.lockFile);
   const candidates = [
     driverState ? { ...driverState, source: 'driver_state' } : null,
     lockState ? { ...lockState, source: 'mission_lock' } : null,
@@ -7932,8 +7883,7 @@ function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
       return { ok: true, lockFile, fd, missionId, driverPid: process.pid, startedAt, recordLength: record.length };
     } catch (e) {
       if (e.code === 'EEXIST') {
-        let info = {};
-        try { info = JSON.parse(fs.readFileSync(lockFile, 'utf8') || '{}'); } catch {}
+        const info = readJson(lockFile, {}) || {};
         const holderPid = Number(info.pid);
         const holderKnown = Number.isInteger(holderPid) && holderPid > 0;
         // A lock is created empty (openSync 'wx') and its pid record is written a
@@ -9930,12 +9880,8 @@ function tickMission(args) {
 // (free text, command strings, missing paths) reads as null and falls back
 // to durable mission state.
 function readReceiptProof(proof, root = process.cwd()) {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(path.resolve(root, String(proof || '')), 'utf8'));
-    return parsed?.schema === 'atris.mission_receipt.v1' ? parsed : null;
-  } catch {
-    return null;
-  }
+  const parsed = readJson(path.resolve(root, String(proof || '')));
+  return parsed?.schema === 'atris.mission_receipt.v1' ? parsed : null;
 }
 
 function receiptShowsPass(receipt) {
@@ -10637,12 +10583,7 @@ function layersMission(args) {
   }
   for (const file of files) {
     if (missionFilter && !file.includes(missionFilter)) continue;
-    let receipt;
-    try {
-      receipt = JSON.parse(fs.readFileSync(path.join(paths.runsDir, file), 'utf8'));
-    } catch {
-      continue;
-    }
+    const receipt = readJson(path.join(paths.runsDir, file));
     if (sinceMs != null) {
       const atMs = Date.parse(receipt && receipt.at);
       if (Number.isNaN(atMs) || atMs < sinceMs) continue;
