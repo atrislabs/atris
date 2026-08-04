@@ -12523,7 +12523,10 @@ test('task ready and finish accept landing capability sentences', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
-    assert.equal(ready.stderr, '');
+    assert.doesNotMatch(ready.stderr, /Advisory: add --landing/);
+    // This proof names a command that nothing ran, so the verifier advisory is
+    // expected here; the landing is what this case is asserting stays clean.
+    assert.match(ready.stderr, /names a command but nothing ran it/);
     const readyPayload = JSON.parse(ready.stdout);
     assert.equal(readyPayload.landing_advisory, null);
     assert.equal(readyPayload.task.review.landing.happened, readySentence);

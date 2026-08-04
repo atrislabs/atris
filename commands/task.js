@@ -507,6 +507,51 @@ function warnIfLandingNeedsDayOnePm(landing, title) {
   return warning;
 }
 
+// A proof that names a command reads like evidence, but nothing ran it. The
+// 2026-07-26 reward-ledger audit found 131 of 802 accepted proofs carried no
+// falsifier at all, and the ones that named a command are the recoverable
+// case: --verify would have run the same string and gated on exit 0. Advisory
+// only, in the same voice as the landing advisory above.
+// A target must look like a path or a package, never a bare English word.
+// Replayed over the live ledger, the loose version turned the prose "node
+// --check plus focused task tests" into the suggestion "node --check plus".
+const TARGET = String.raw`[\w@.\/-]*[.\/][\w@.\/-]*`;
+const PROOF_COMMAND_PATTERN = new RegExp(
+  String.raw`(?:^|[\s\`"'(])((?:(?:cd\s+\S+\s*&&\s*)?(?:[A-Z_][A-Z0-9_]*=\S+\s+)*)` +
+  String.raw`(?:npm run [\w:-]+|npx [\w@.\/-]+ [\w:-]+|node --test ${TARGET}|node --check ${TARGET}` +
+  String.raw`|(?:\S*\/)?pytest ${TARGET}|python3? -m pytest ${TARGET}|cargo test|go test ${TARGET}|make [\w:-]+))`,
+  'i',
+);
+
+// When the writer quoted the command, take what they quoted: the head of the
+// match alone would suggest a half command like `npx vitest`, which is a worse
+// nudge than none.
+function proofNamesUnrunCommand(proof) {
+  const text = String(proof || '');
+  if (!text.trim()) return '';
+  const match = text.match(PROOF_COMMAND_PATTERN);
+  if (!match) return '';
+  const head = match[1].trim();
+  const opener = text[match.index];
+  if (opener === '`' || opener === '"' || opener === "'") {
+    const close = text.indexOf(opener, match.index + 1);
+    if (close > match.index + 1) {
+      const quoted = text.slice(match.index + 1, close).trim();
+      if (quoted.startsWith(head)) return quoted;
+    }
+  }
+  return head;
+}
+
+function warnIfProofNamesUnrunCommand(proof, usedVerify) {
+  if (usedVerify) return null;
+  const command = proofNamesUnrunCommand(proof);
+  if (!command) return null;
+  const warning = `Advisory: this proof names a command but nothing ran it. Pass it as --verify "${command}" so a failing check can actually stop the accept.`;
+  console.error(warning);
+  return warning;
+}
+
 function requireExplicitLandingDayOnePm(label, landing, title) {
   const sentence = landing && typeof landing === 'object' ? normalizedLandingSentence(landing.happened) : '';
   if (!sentence || !landingNeedsDayOnePm(sentence, title)) return;
@@ -9464,6 +9509,7 @@ function cmdReady(args) {
   // live against the current checkout later, instead of re-deriving it from
   // text or trusting a receipt file that may no longer exist.
   if (usedVerify) stampReadyVerifyMetadata(taskDb, db, taskId, usedVerify);
+  warnIfProofNamesUnrunCommand(proof, usedVerify);
   const landingAdvisory = warnIfLandingNeedsDayOnePm(landing, result.row && result.row.title);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const agentCertified = result.event.payload.agent_certified === true;
@@ -12517,6 +12563,7 @@ async function run(args) {
 
 module.exports = {
   run,
+  proofNamesUnrunCommand,
   taskDayGroups,
   taskDayTextGroups,
   taskDayTitle,
