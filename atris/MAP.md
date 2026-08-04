@@ -36,7 +36,7 @@ rg "drillCommand|runDrill|drill runner|local mode" commands/drill.js commands/mi
 rg "runCloudWish|cloudWishOptionError|--cloud|findActiveWishFlight|attached_to_existing_flight|resolveDefaultVerifier|deriveVerifyPlan|namedTestFiles|verifierBudgetWarning|wishBodyText|oneLap|lapOwnsDispatch|dispatchWishHeadlessly" commands/wish.js lib/cloud-mission.js lib/wish-audit.js lib/wish-delegate.js lib/default-verifier.js test/wish-cloud.test.js test/wish.test.js test/one-lap-router.test.js  # Wish dispatch: enqueue cloud wishes, preserve Check lines, derive scoped verifiers, warn on suite windows, attach duplicate local slices, and keep one-lap ownership so intake/answer/sweep never spawn a racing mission driver
 rg "Self-driving mission|Autonomy Ladder|Driving Contract|verified time-to-arrival" atris/features/self-driving-mission  # L4 destination-to-proof product contract: route graph, evidence-based engine broker, recovery, human gates, arrival receipt, build plan, and validation
 rg "missionDrive|destinationHash|mission_destination_change_proposed|pending_destination_proposal|routeMission|validateMissionRouteProposal|mission_route_(set|rejected)|pending_route_proposal" commands/mission.js test/mission-status.test.js test/self-driving-mission.test.js  # Self-driving mission Steps 1-2: optional destination trip contract, operator-gated destination changes, and route compilation with falsifiable legs, dependency validation, supported hard gates, scoped surfaces, version bumps, and preserved rejection reasons
-rg "firstMissionCommand|workspace files ready|skills installed|packed golden path|printedAtrisArgs|golden path e2e|what someone can do now" commands/init.js bin/atris.js commands/task.js test/init-non-interactive.test.js test/golden-path-e2e.test.js atris/GOLDEN_PATH_PAPERCUTS.md  # Quiet first-run output plus packed-install zero-knowledge contract: grouped setup counts, ready-on-init mission, clean HOME, printed mission/task handoffs, autoland, and durable papercut status
+rg "starterMembers|team members ready|firstMissionCommand|packed golden path|printedAtrisArgs|golden path e2e|what someone can do now" commands/init.js bin/atris.js commands/task.js test/init-non-interactive.test.js test/golden-path-e2e.test.js atris/GOLDEN_PATH_PAPERCUTS.md  # Quiet first-run output plus packed-install zero-knowledge contract: five-member starter team, grouped setup counts, ready-on-init mission, clean HOME, printed mission/task handoffs, autoland, and durable papercut status
 rg "function planAtris" commands/workflow.js   # Plan command (line 363)
 rg "function doAtris" commands/workflow.js     # Do command (line 709)
 rg "function reviewAtris" commands/workflow.js  # Review command (line 1062): default certified queue, --verbose legacy validator prompt
@@ -196,11 +196,11 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Entry point:** `commands/init.js` (initAtris function)
 - **Project Detection:** `commands/init.js:12-166` (detectProjectContext)
-- **Pattern Injection:** `commands/init.js:172-244` (injectProjectPatterns)
+- **Pattern Injection:** `commands/init.js:168-252` (injectProjectPatterns)
 - **Creates:**
 - `atris/` folder
 - `atris/wiki/` scaffold with `wiki.md`, `index.md`, `log.md`, `STATUS.md`
-- `atris/team/` subfolder with agent specs
+- `atris/team/` with navigator, executor, validator, mission-lead, and improver; later member creation uses `atris member create <name>`
 - `atris/features/` subfolder with README template
 - `GETTING_STARTED.md`, `MAP.md`, `TODO.md` placeholders
 - `.project-profile.json` (project detection metadata)
@@ -1783,15 +1783,15 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Search:** `cat package.json`
 
-### ⭐ `commands/init.js` (644 lines)
+### ⭐ `commands/init.js` (1101 lines)
 
 **Why critical:** First-run experience, project detection
 
 **Key functions:**
 
-- `detectProjectContext()` (lines 9-154): Auto-detect project type
-- `injectProjectPatterns()` (lines 156-228): Inject project-native instructions
-- `initAtris()` (lines 233-837): Create folder structure
+- `detectProjectContext()` (lines 11-165): Auto-detect project type
+- `injectProjectPatterns()` (lines 173-252): Inject project-native instructions
+- `initAtris()` (lines 254-1099): Create folder structure
 
 **Impact:** Onboarding UX, sets user expectations
 

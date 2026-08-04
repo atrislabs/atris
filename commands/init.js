@@ -282,6 +282,7 @@ function initAtris() {
   const printReadyCounts = () => {
     console.log(`workspace files ready (${ready.workspace.size})`);
     console.log(`team members ready (${ready.team.size})`);
+    console.log('more members are available with atris member create <name>');
     console.log(`agent adapters ready (${ready.adapters.size})`);
     console.log(`skills installed (${ready.skills.size})`);
   };
@@ -601,8 +602,8 @@ function initAtris() {
 
 
   // Copy team members (MEMBER.md format — directory per member with skills/tools/context)
-  const members = ['navigator', 'executor', 'validator', 'launcher', 'brainstormer', 'researcher'];
-  members.forEach(name => {
+  const starterMembers = ['navigator', 'executor', 'validator', 'mission-lead', 'improver'];
+  starterMembers.forEach(name => {
     const sourceFile = path.join(__dirname, '..', 'atris', 'team', name, 'MEMBER.md');
     const targetMemberDir = path.join(teamDir, name);
     const targetFile = path.join(targetMemberDir, 'MEMBER.md');
@@ -644,7 +645,7 @@ tools: []
 # Insert persona, workflow, and rules below
 `;
     fs.writeFileSync(path.join(templateTargetDir, 'MEMBER.md'), templateContent);
-    markReady('team', '_template', '✓ Created team/_template/MEMBER.md');
+    markReady('workspace', 'team/_template/MEMBER.md', '✓ Created team/_template/MEMBER.md');
   }
 
   // Detect project context and generate profile

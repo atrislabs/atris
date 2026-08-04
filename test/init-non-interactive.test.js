@@ -14,6 +14,7 @@ const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const INIT_TIMEOUT_MS = 60000;
 const FIRST_USE_NEXT = 'Next: atris "help me choose the first useful step for this project"';
 const FIRST_MISSION = 'atris mission start "Verify this Atris workspace is ready" --owner validator --runner manual --lane workspace --verify "node -e \\"require(\'fs\').accessSync(\'atris/atris.md\')\\"" --stop "workspace readiness is verified"';
+const STARTER_MEMBERS = ['executor', 'improver', 'mission-lead', 'navigator', 'validator'];
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-init-non-interactive-'));
@@ -21,6 +22,15 @@ function makeTempDir() {
 
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function listTeamMembers(dir) {
+  const teamDir = path.join(dir, 'atris', 'team');
+  return fs.readdirSync(teamDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
+    .filter((entry) => fs.existsSync(path.join(teamDir, entry.name, 'MEMBER.md')))
+    .map((entry) => entry.name)
+    .sort();
 }
 
 function runInit(args, { cwd, input, env } = {}) {
@@ -123,7 +133,8 @@ test('init keeps default output grouped and restores file details with --verbose
     assert.doesNotMatch(quiet.stdout, /CONTEXT LOADED/);
     assert.doesNotMatch(quiet.stdout, /✓ Copied skill:|\.claude\/skills\//);
     assert.match(quiet.stdout, /workspace files ready \(\d+\)/);
-    assert.match(quiet.stdout, /team members ready \(\d+\)/);
+    assert.match(quiet.stdout, /team members ready \(5\)/);
+    assert.match(quiet.stdout, /^more members are available with atris member create <name>$/m);
     assert.match(quiet.stdout, /agent adapters ready \(\d+\)/);
     assert.match(quiet.stdout, /skills installed \(\d+\)/);
 
@@ -135,6 +146,40 @@ test('init keeps default output grouped and restores file details with --verbose
   } finally {
     cleanupTempDir(quietDir);
     cleanupTempDir(verboseDir);
+  }
+});
+
+test('fresh init creates only the five-member starter team', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runInit(['--yes'], { cwd: dir });
+    assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+    assert.deepEqual(listTeamMembers(dir), STARTER_MEMBERS);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('force init and update preserve extra members in an existing workspace', () => {
+  const dir = makeTempDir();
+  try {
+    const init = runInit(['--yes'], { cwd: dir });
+    assert.equal(init.status, 0, `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`);
+
+    const extraMemberDir = path.join(dir, 'atris', 'team', 'customer-guide');
+    const extraMemberFile = path.join(extraMemberDir, 'MEMBER.md');
+    fs.mkdirSync(extraMemberDir, { recursive: true });
+    fs.writeFileSync(extraMemberFile, '# Customer Guide\n', 'utf8');
+
+    const forcedInit = runInit(['--yes', '--force'], { cwd: dir });
+    assert.equal(forcedInit.status, 0, `stdout:\n${forcedInit.stdout}\nstderr:\n${forcedInit.stderr}`);
+    assert.equal(fs.readFileSync(extraMemberFile, 'utf8'), '# Customer Guide\n');
+
+    const update = runCli(['update'], { cwd: dir });
+    assert.equal(update.status, 0, `stdout:\n${update.stdout}\nstderr:\n${update.stderr}`);
+    assert.equal(fs.readFileSync(extraMemberFile, 'utf8'), '# Customer Guide\n');
+  } finally {
+    cleanupTempDir(dir);
   }
 });
 
