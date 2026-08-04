@@ -7285,52 +7285,218 @@ function workspaceSnapshot(name = null, paths = null) {
   }
 }
 
+// Shared mission summary every wake decision carries. The mission-gate and generalist
+// rules coerce a falsy North Star to null (pre-gate we cannot trust the mission file yet).
+function wakeMissionSummary(purpose, { coerceNorthStarNull = false } = {}) {
+  return {
+    north_star: coerceNorthStarNull ? (purpose.northStar || null) : purpose.northStar,
+    runtime_id: purpose.runtimeMission.id || null,
+    runtime_status: purpose.runtimeMission.status || null,
+    runtime_next: purpose.runtimeMission.next || null,
+  };
+}
+
+// Merge a rule's verdict (decision/reason/ask/next_command + who owns it) with the
+// context every decision reports. Key order matters: callers serialize this to JSON.
+function composeWakeDecision(ctx, verdict) {
+  const result = {
+    decision: verdict.decision,
+    reason: verdict.reason,
+    needs_user: Boolean(verdict.needs_user),
+    ask: verdict.ask || null,
+    next_command: verdict.next_command,
+    state: ctx.state,
+    goal: verdict.goal,
+    current_experiment: verdict.current_experiment,
+  };
+  if ('autonomous_problem' in verdict) result.autonomous_problem = verdict.autonomous_problem;
+  result.checks = ctx.checks;
+  result.mission = verdict.mission || wakeMissionSummary(ctx.purpose);
+  result.steering = ctx.steering;
+  result.evidence = ctx.evidence;
+  result.workspace = ctx.workspace;
+  return result;
+}
+
+// Rule: a generalist with a meaningful mission processes dropped domain files before
+// anything else. Fires before evidence collection, so it returns a complete decision
+// with its own checks and no workspace snapshot.
+function wakeRuleGeneralistDomainFile(name, { purpose, steering, state, goal, current }) {
+  if (lowerCompact(name) !== 'generalist' || !purpose.meaningful) return null;
+  const domainFile = findUnprocessedGeneralistDomainFile(process.cwd());
+  if (!domainFile) return null;
+  return {
+    decision: 'process_domain_file',
+    reason: `generalist_domain_scan:${domainFile.status}`,
+    needs_user: false,
+    ask: null,
+    next_command: `atris member wake ${name} --execute --domain-file ${domainFile.path} --json`,
+    state,
+    goal: goal || null,
+    current_experiment: current || null,
+    checks: {
+      has_member: true,
+      has_mission: true,
+      mission_meaningful: true,
+      has_goal: Boolean(goal),
+      has_open_experiment: Boolean(current),
+      has_unprocessed_domain_file: true,
+      domain_scan_window_minutes: 60,
+      checked_existing_tasks: false,
+    },
+    mission: wakeMissionSummary(purpose, { coerceNorthStarNull: true }),
+    steering,
+    evidence: {
+      generalist_domain_scan: domainFile,
+      task_projection: null,
+      nearest_open_loop: null,
+    },
+    workspace: null,
+    domain_file: domainFile,
+  };
+}
+
+// Rule: a member without a meaningful mission asks the operator before waking itself.
+function wakeRuleMissionGate(ctx) {
+  if (ctx.purpose.meaningful) return null;
+  return {
+    decision: 'ask',
+    reason: 'mission_missing_or_placeholder',
+    needs_user: true,
+    ask: `Define atris/team/${ctx.name}/MISSION.md with a concrete North Star before this member wakes itself.`,
+    next_command: `edit atris/team/${ctx.name}/MISSION.md`,
+    goal: ctx.goal || null,
+    current_experiment: ctx.current || null,
+    mission: wakeMissionSummary(ctx.purpose, { coerceNorthStarNull: true }),
+  };
+}
+
+// Rule: log-error discovery that asks for a task gets one opened autonomously.
+function wakeRuleAutonomousErrorTask(ctx) {
+  const discoveredTask = ctx.evidence.problem_discovery?.selected || null;
+  if (!discoveredTask) return null;
+  if (discoveredTask.source !== 'log_error_scan' || discoveredTask.autonomous_action !== 'create_task') return null;
+  return {
+    decision: 'create_task',
+    reason: 'autonomous_error_discovery:log_error_scan',
+    next_command: discoveredTask.next_command,
+    goal: ctx.goal || null,
+    current_experiment: ctx.current || null,
+    autonomous_problem: discoveredTask,
+  };
+}
+
+// Rule: no active goal — adopt a discovered problem as the objective, else stop.
+function wakeRuleNeedsGoal(ctx) {
+  if (ctx.goal) return null;
+  const discoveredProblem = ctx.evidence.problem_discovery?.selected || null;
+  if (discoveredProblem) {
+    return {
+      decision: 'set_objective',
+      reason: `autonomous_problem_discovery:${discoveredProblem.source}`,
+      next_command: discoveredProblem.next_command || `atris member wake ${ctx.name} --execute --confirm-autonomy-policy`,
+      goal: null,
+      current_experiment: null,
+      autonomous_problem: discoveredProblem,
+    };
+  }
+  return {
+    decision: 'stop',
+    reason: 'no_active_goal',
+    next_command: `atris member goal-from-mission ${ctx.name}`,
+    goal: null,
+    current_experiment: null,
+    autonomous_problem: null,
+  };
+}
+
+// Rule: a blocked experiment needs operator input before another wake.
+function wakeRuleBlockedExperiment(ctx) {
+  if (!ctx.blocked) return null;
+  return {
+    decision: 'ask',
+    reason: 'blocked_experiment',
+    needs_user: true,
+    ask: ctx.blocked.block?.ask || 'Needs operator input before another wake.',
+    next_command: `atris member review ${ctx.name} ${ctx.blocked.id} --discard --proof "..."`,
+    goal: ctx.goal,
+    current_experiment: ctx.blocked,
+  };
+}
+
+// Rule: an open reviewable proposal parks the member until review. Skip the wait when
+// the only thing "open" is an unreviewable fallback proposal; otherwise the member is
+// parked forever on a gate no reviewer can clear.
+function wakeRuleOpenReviewableProposal(ctx) {
+  if (!ctx.current || experimentIsUnreviewable(ctx.current)) return null;
+  return {
+    decision: 'wait',
+    reason: `open_experiment_${ctx.current.status}`,
+    next_command: `atris member review ${ctx.name} ${ctx.current.id} --accept --proof "..." --value 4`,
+    goal: ctx.goal,
+    current_experiment: ctx.current,
+  };
+}
+
+// Rule: the scored candidate list can steer the wake somewhere other than a tick.
+function wakeRuleScoredNonTickCandidate(ctx) {
+  const selected = ctx.wakeScores.selected;
+  if (!selected || selected.decision === 'tick') return null;
+  const needsUser = selected.decision === 'ask';
+  return {
+    decision: selected.decision,
+    reason: selected.reason,
+    needs_user: needsUser,
+    ask: needsUser ? (selected.ask || `Need operator input for ${selected.title}.`) : null,
+    next_command: selected.next_command,
+    goal: ctx.goal,
+    current_experiment: null,
+  };
+}
+
+// Rule: dirty files inside the member's own scope gate the wake unless forced.
+function wakeRuleDirtyMemberScope(ctx) {
+  if (ctx.workspace.clean_for_member || ctx.force) return null;
+  return {
+    decision: 'wait',
+    reason: 'workspace_dirty_in_member_scope',
+    next_command: `commit/stash files in atris/team/${ctx.name}/ (or member scope) — or rerun: atris member wake ${ctx.name} --force`,
+    goal: ctx.goal,
+    current_experiment: null,
+  };
+}
+
+// Rule: nothing blocks the member, so take the safe next bounded step.
+function wakeRuleSafeBoundedTick(ctx) {
+  return {
+    decision: 'tick',
+    reason: 'safe_next_bounded_step',
+    next_command: `atris member tick ${ctx.name} --goal ${ctx.goal.id}`,
+    goal: ctx.goal,
+    current_experiment: null,
+  };
+}
+
+// Ordered decision list: the first rule that speaks wins. Order is the contract.
+const WAKE_DECISION_RULES = [
+  wakeRuleMissionGate,
+  wakeRuleAutonomousErrorTask,
+  wakeRuleNeedsGoal,
+  wakeRuleBlockedExperiment,
+  wakeRuleOpenReviewableProposal,
+  wakeRuleScoredNonTickCandidate,
+  wakeRuleDirtyMemberScope,
+  wakeRuleSafeBoundedTick,
+];
+
 function wakeDecision(name, paths, { force = false, runtimeKind = memberRuntimeKind(name) } = {}) {
   const purpose = missionPurpose(paths);
   const steering = readSteeringMemory(paths, name);
   const state = loadMemberGoals(name, paths);
   const goal = activeGoal(state);
   const current = memberOpenExperiment(state);
-  const isGeneralist = lowerCompact(name) === 'generalist';
-  if (isGeneralist && purpose.meaningful) {
-    const domainFile = findUnprocessedGeneralistDomainFile(process.cwd());
-    if (domainFile) {
-      return {
-        decision: 'process_domain_file',
-        reason: `generalist_domain_scan:${domainFile.status}`,
-        needs_user: false,
-        ask: null,
-        next_command: `atris member wake ${name} --execute --domain-file ${domainFile.path} --json`,
-        state,
-        goal: goal || null,
-        current_experiment: current || null,
-        checks: {
-          has_member: true,
-          has_mission: true,
-          mission_meaningful: true,
-          has_goal: Boolean(goal),
-          has_open_experiment: Boolean(current),
-          has_unprocessed_domain_file: true,
-          domain_scan_window_minutes: 60,
-          checked_existing_tasks: false,
-        },
-        mission: {
-          north_star: purpose.northStar || null,
-          runtime_id: purpose.runtimeMission.id || null,
-          runtime_status: purpose.runtimeMission.status || null,
-          runtime_next: purpose.runtimeMission.next || null,
-        },
-        steering,
-        evidence: {
-          generalist_domain_scan: domainFile,
-          task_projection: null,
-          nearest_open_loop: null,
-        },
-        workspace: null,
-        domain_file: domainFile,
-      };
-    }
-  }
+  const generalistDecision = wakeRuleGeneralistDomainFile(name, { purpose, steering, state, goal, current });
+  if (generalistDecision) return generalistDecision;
   const rawDirective = steeringWakeDirective(steering, name, goal);
   const directiveClosure = rawDirective ? steeringDirectiveClosure(rawDirective) : null;
   const directive = directiveClosure?.all_closed ? null : rawDirective;
@@ -7373,219 +7539,12 @@ function wakeDecision(name, paths, { force = false, runtimeKind = memberRuntimeK
     next_command: wakeScores.selected.next_command,
   } : null;
 
-  if (!purpose.meaningful) {
-    const ask = `Define atris/team/${name}/MISSION.md with a concrete North Star before this member wakes itself.`;
-    return {
-      decision: 'ask',
-      reason: 'mission_missing_or_placeholder',
-      needs_user: true,
-      ask,
-      next_command: `edit atris/team/${name}/MISSION.md`,
-      state,
-      goal: goal || null,
-      current_experiment: current || null,
-      checks,
-      mission: {
-        north_star: purpose.northStar || null,
-        runtime_id: purpose.runtimeMission.id || null,
-        runtime_status: purpose.runtimeMission.status || null,
-        runtime_next: purpose.runtimeMission.next || null,
-      },
-      steering,
-      evidence,
-      workspace,
-    };
+  const ctx = { name, force, purpose, steering, state, goal, current, blocked, evidence, workspace, checks, wakeScores };
+  for (const rule of WAKE_DECISION_RULES) {
+    const verdict = rule(ctx);
+    if (verdict) return composeWakeDecision(ctx, verdict);
   }
-
-  const discoveredTask = evidence.problem_discovery?.selected || null;
-  if (discoveredTask?.source === 'log_error_scan' && discoveredTask.autonomous_action === 'create_task') {
-    return {
-      decision: 'create_task',
-      reason: 'autonomous_error_discovery:log_error_scan',
-      needs_user: false,
-      ask: null,
-      next_command: discoveredTask.next_command,
-      state,
-      goal: goal || null,
-      current_experiment: current || null,
-      autonomous_problem: discoveredTask,
-      checks,
-      mission: {
-        north_star: purpose.northStar,
-        runtime_id: purpose.runtimeMission.id || null,
-        runtime_status: purpose.runtimeMission.status || null,
-        runtime_next: purpose.runtimeMission.next || null,
-      },
-      steering,
-      evidence,
-      workspace,
-    };
-  }
-
-  if (!goal) {
-    const discoveredProblem = evidence.problem_discovery?.selected || null;
-    if (discoveredProblem) {
-      return {
-        decision: 'set_objective',
-        reason: `autonomous_problem_discovery:${discoveredProblem.source}`,
-        needs_user: false,
-        ask: null,
-        next_command: discoveredProblem.next_command || `atris member wake ${name} --execute --confirm-autonomy-policy`,
-        state,
-        goal: null,
-        current_experiment: null,
-        autonomous_problem: discoveredProblem,
-        checks,
-        mission: {
-          north_star: purpose.northStar,
-          runtime_id: purpose.runtimeMission.id || null,
-          runtime_status: purpose.runtimeMission.status || null,
-          runtime_next: purpose.runtimeMission.next || null,
-        },
-        steering,
-        evidence,
-        workspace,
-      };
-    }
-    return {
-      decision: 'stop',
-      reason: 'no_active_goal',
-      needs_user: false,
-      ask: null,
-      next_command: `atris member goal-from-mission ${name}`,
-      state,
-      goal: null,
-      current_experiment: null,
-      autonomous_problem: null,
-      checks,
-      mission: {
-        north_star: purpose.northStar,
-        runtime_id: purpose.runtimeMission.id || null,
-        runtime_status: purpose.runtimeMission.status || null,
-        runtime_next: purpose.runtimeMission.next || null,
-      },
-      steering,
-      evidence,
-      workspace,
-    };
-  }
-
-  if (blocked) {
-    return {
-      decision: 'ask',
-      reason: 'blocked_experiment',
-      needs_user: true,
-      ask: blocked.block?.ask || 'Needs operator input before another wake.',
-      next_command: `atris member review ${name} ${blocked.id} --discard --proof "..."`,
-      state,
-      goal,
-      current_experiment: blocked,
-      checks,
-      mission: {
-        north_star: purpose.northStar,
-        runtime_id: purpose.runtimeMission.id || null,
-        runtime_status: purpose.runtimeMission.status || null,
-        runtime_next: purpose.runtimeMission.next || null,
-      },
-      steering,
-      evidence,
-      workspace,
-    };
-  }
-
-  // Skip the wait when the only thing "open" is an unreviewable fallback proposal;
-  // otherwise the member is parked forever on a gate no reviewer can clear.
-  if (current && !experimentIsUnreviewable(current)) {
-    return {
-      decision: 'wait',
-      reason: `open_experiment_${current.status}`,
-      needs_user: false,
-      ask: null,
-      next_command: `atris member review ${name} ${current.id} --accept --proof "..." --value 4`,
-      state,
-      goal,
-      current_experiment: current,
-      checks,
-      mission: {
-        north_star: purpose.northStar,
-        runtime_id: purpose.runtimeMission.id || null,
-        runtime_status: purpose.runtimeMission.status || null,
-        runtime_next: purpose.runtimeMission.next || null,
-      },
-      steering,
-      evidence,
-      workspace,
-    };
-  }
-
-  if (wakeScores.selected && wakeScores.selected.decision !== 'tick') {
-    const selected = wakeScores.selected;
-    const needsUser = selected.decision === 'ask';
-    return {
-      decision: selected.decision,
-      reason: selected.reason,
-      needs_user: needsUser,
-      ask: needsUser ? (selected.ask || `Need operator input for ${selected.title}.`) : null,
-      next_command: selected.next_command,
-      state,
-      goal,
-      current_experiment: null,
-      checks,
-      mission: {
-        north_star: purpose.northStar,
-        runtime_id: purpose.runtimeMission.id || null,
-        runtime_status: purpose.runtimeMission.status || null,
-        runtime_next: purpose.runtimeMission.next || null,
-      },
-      steering,
-      evidence,
-      workspace,
-    };
-  }
-
-  if (!workspace.clean_for_member && !force) {
-    return {
-      decision: 'wait',
-      reason: 'workspace_dirty_in_member_scope',
-      needs_user: false,
-      ask: null,
-      next_command: `commit/stash files in atris/team/${name}/ (or member scope) — or rerun: atris member wake ${name} --force`,
-      state,
-      goal,
-      current_experiment: null,
-      checks,
-      mission: {
-        north_star: purpose.northStar,
-        runtime_id: purpose.runtimeMission.id || null,
-        runtime_status: purpose.runtimeMission.status || null,
-        runtime_next: purpose.runtimeMission.next || null,
-      },
-      steering,
-      evidence,
-      workspace,
-    };
-  }
-
-  return {
-    decision: 'tick',
-    reason: 'safe_next_bounded_step',
-    needs_user: false,
-    ask: null,
-    next_command: `atris member tick ${name} --goal ${goal.id}`,
-    state,
-    goal,
-    current_experiment: null,
-    checks,
-    mission: {
-      north_star: purpose.northStar,
-      runtime_id: purpose.runtimeMission.id || null,
-      runtime_status: purpose.runtimeMission.status || null,
-      runtime_next: purpose.runtimeMission.next || null,
-    },
-    steering,
-    evidence,
-    workspace,
-  };
+  return null;
 }
 
 async function runMemberWake(name, { execute = false, confirmed = false, force = false, domainInput = {} } = {}) {
