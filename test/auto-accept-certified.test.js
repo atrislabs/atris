@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { evaluateAutoAccept, parseVerifyCommand, runVerifyCommand } = require('../lib/auto-accept-certified');
+const { evaluateAutoAccept, parseVerifyCommand, repoHygieneGate, runVerifyCommand } = require('../lib/auto-accept-certified');
 
 function trustRoot(actor, passed = 10, failed = 0) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auto-accept-trust-'));
@@ -484,4 +484,51 @@ test('acceptAll: a check pointing at a vanished worktree blocks; an un-runnable 
   trusted.workspace_root = trustRoot('trusted-member');
   const notAllowed = evaluateAutoAccept(trusted, { acceptAll: true });
   assert.equal(notAllowed.eligible, true);
+});
+
+// Pre-land hygiene gate (lesson: engine-dead-exports): a dead export used to
+// surface only after landing, when the full suite's repo-hygiene ratchet went
+// red on master. The gate now runs the same detector before landing.
+function hygieneWorkspace({ orphan }) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-hygiene-gate-'));
+  fs.mkdirSync(path.join(root, 'test'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'test', 'repo-hygiene.test.js'), '// ratchet marker\n');
+  fs.mkdirSync(path.join(root, 'commands'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'fixture', bin: { fx: 'bin/cli.js' } }));
+  const helper = orphan
+    ? 'function usedHelper() { return 1; }\nfunction strandedHelper() { return 2; }\nmodule.exports = {\n  usedHelper,\n  strandedHelper,\n};\n'
+    : 'function usedHelper() { return 1; }\nmodule.exports = {\n  usedHelper,\n};\n';
+  fs.writeFileSync(path.join(root, 'commands', 'util.js'), helper);
+  fs.writeFileSync(path.join(root, 'bin', 'cli.js'), '#!/usr/bin/env node\nconst { usedHelper } = require("../commands/util.js");\nconsole.log(usedHelper());\n');
+  return root;
+}
+
+test('a dead export blocks the landing gate before landing, in both lanes', () => {
+  const root = hygieneWorkspace({ orphan: true });
+  const task = reviewTask({ metadata: { verify: 'node --check commands/util.js' } });
+  task.workspace_root = root;
+
+  const certified = evaluateAutoAccept(task);
+  assert.equal(certified.eligible, false);
+  assert.equal(certified.reason, 'dead_exports');
+  assert.match(certified.message, /fails right after landing/);
+  assert.deepEqual(certified.offenders, ['commands/util.js → strandedHelper']);
+
+  const acceptAll = evaluateAutoAccept(task, { acceptAll: true });
+  assert.equal(acceptAll.eligible, false);
+  assert.equal(acceptAll.reason, 'dead_exports');
+});
+
+test('a clean ratchet repo lands; repos without the ratchet are untouched', () => {
+  const clean = hygieneWorkspace({ orphan: false });
+  const task = reviewTask({ metadata: { verify: 'node --check commands/util.js' } });
+  task.workspace_root = clean;
+  const landed = evaluateAutoAccept(task);
+  assert.equal(landed.eligible, true, JSON.stringify(landed));
+
+  const noRatchet = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-hygiene-plain-'));
+  const gate = repoHygieneGate(noRatchet);
+  assert.equal(gate.ok, true);
+  assert.equal(gate.skipped, true);
 });

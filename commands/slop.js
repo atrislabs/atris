@@ -463,12 +463,24 @@ function findOrphanedExports(root, files, allRepoJs) {
     if (!texts.has(f)) { try { texts.set(f, fs.readFileSync(f, 'utf8')); } catch { texts.set(f, ''); } }
     return texts.get(f);
   };
+  // Token index instead of a per-name regex pass over every file: one read +
+  // tokenize per file, then O(1) name lookups. The regex version took nearly a
+  // minute on this repo, which kept this detector out of the landing gate.
+  // Identifiers split on `$` so `foo` still matches inside `foo$bar`, matching
+  // the old \b semantics; the rare `$`-carrying name falls back to the regex.
+  const tokens = new Map();
+  const tokensOf = (f) => {
+    if (!tokens.has(f)) tokens.set(f, new Set(readText(f).match(/[A-Za-z0-9_]+/g) || []));
+    return tokens.get(f);
+  };
   const orphans = [];
   for (const file of files) {
     for (const name of exportedNames(file)) {
       if (name.length < 4) continue; // generic short names drown in noise either way
-      const re = new RegExp(`\\b${name}\\b`);
-      const used = allRepoJs.some((f) => f !== file && re.test(readText(f)));
+      const usesRegex = name.includes('$');
+      const re = usesRegex ? new RegExp(`\\b${name.replace(/\$/g, '\\$')}\\b`) : null;
+      const used = allRepoJs.some((f) => f !== file
+        && (usesRegex ? re.test(readText(f)) : tokensOf(f).has(name)));
       if (!used) orphans.push({ file, name });
     }
   }
