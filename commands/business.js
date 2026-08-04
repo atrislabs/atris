@@ -2028,6 +2028,328 @@ function activityBar(daysSinceActive, width = 10) {
   return '\u2501'.repeat(filled) + '\u2591'.repeat(width - filled);
 }
 
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function firstString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    const parsed = typeof value === 'number'
+      ? value
+      : (typeof value === 'string' && value.trim() ? Number(value) : Number.NaN);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function firstBoolean(...values) {
+  for (const value of values) {
+    if (typeof value === 'boolean') return value;
+    if (value === 1 || value === '1' || value === 'true') return true;
+    if (value === 0 || value === '0' || value === 'false') return false;
+  }
+  return false;
+}
+
+function normalizeOrdersPayload(value) {
+  const root = asRecord(value);
+  const body = asRecord(root.data);
+  const source = Object.keys(body).length > 0 ? body : root;
+  const summary = asRecord(source.summary);
+  const rawOrders = Array.isArray(value)
+    ? value
+    : (Array.isArray(source.orders) ? source.orders : (Array.isArray(root.orders) ? root.orders : []));
+  const orders = rawOrders.map((rawOrder, index) => {
+    const order = asRecord(rawOrder);
+    const product = asRecord(order.product);
+    const item = asRecord(order.item);
+    const buyer = asRecord(order.buyer);
+    const customer = asRecord(order.customer);
+    const metadata = asRecord(order.metadata);
+    const firstItem = Array.isArray(order.items) ? asRecord(order.items[0]) : {};
+    const status = firstString(order.status, order.payment_status, order.order_type).toLowerCase();
+    const createdAt = firstString(
+      order.created_at,
+      order.createdAt,
+      order.order_date,
+      order.date,
+      order.paid_at,
+    ) || null;
+
+    return {
+      id: firstString(order.id, order.order_id, order.reference) || `order-${index + 1}`,
+      reference: firstString(order.order_ref, order.reference, order.order_number, order.id) || `order ${index + 1}`,
+      product: firstString(
+        order.product_name,
+        order.product_title,
+        typeof order.product === 'string' ? order.product : null,
+        product.name,
+        product.title,
+        item.name,
+        firstItem.name,
+        firstItem.product_name,
+        metadata.product_name,
+      ) || 'product',
+      quantity: Math.max(1, Math.round(firstNumber(order.quantity, order.qty, firstItem.quantity, 1))),
+      buyer: firstString(
+        order.buyer_name,
+        order.customer_name,
+        buyer.name,
+        customer.name,
+        order.buyer_email,
+        order.customer_email,
+        buyer.email,
+        customer.email,
+      ) || 'guest',
+      status: status || 'unknown',
+      isPreorder: firstBoolean(order.is_preorder, order.preorder)
+        || status.replace(/[_-]/g, '').includes('preorder')
+        || status === 'pending',
+      amountCents: firstNumber(order.amount_cents, order.price_cents, order.total_cents, firstItem.amount_cents),
+      createdAt,
+    };
+  });
+
+  orders.sort((a, b) => {
+    const aTime = a.createdAt ? Date.parse(a.createdAt) : 0;
+    const bTime = b.createdAt ? Date.parse(b.createdAt) : 0;
+    return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+  });
+
+  return {
+    orders,
+    revenueCents: firstNumber(summary.revenue_cents, source.revenue_cents, root.revenue_cents),
+    paidOrders: Math.max(0, Math.round(firstNumber(summary.paid_orders, source.paid_orders, root.paid_orders))),
+    pendingRevenueCents: firstNumber(
+      summary.pending_revenue_cents,
+      source.pending_revenue_cents,
+      root.pending_revenue_cents,
+    ),
+  };
+}
+
+function readStorefront(business) {
+  const config = asRecord(asRecord(business).config);
+  const storefront = asRecord(config.storefront);
+  return {
+    enabled: storefront.enabled === true,
+    products: Array.isArray(storefront.products) ? storefront.products.filter(product => product && typeof product === 'object') : [],
+  };
+}
+
+function readWalletNet(business) {
+  const config = asRecord(asRecord(business).config);
+  for (const key of ['wallet_balance', 'credits_balance', 'credits', 'wallet_credits']) {
+    const value = config[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function formatWalletNet(value) {
+  if (value === null) return 'not available';
+  return `$${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+}
+
+function formatCents(value, currency = 'usd') {
+  const amount = firstNumber(value) / 100;
+  const code = firstString(currency).toUpperCase() || 'USD';
+  const formatted = amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return code === 'USD' ? `$${formatted}` : `${code} ${formatted}`;
+}
+
+function businessOperationError(message) {
+  console.error(message);
+  process.exitCode = 1;
+  return null;
+}
+
+async function resolveBusinessOperation(slug, usage) {
+  const requestedSlug = detectBusinessSlug(slug);
+  if (!requestedSlug) return businessOperationError(`No business specified. Usage: ${usage}`);
+
+  const creds = loadCredentials();
+  if (!creds || !creds.token) return businessOperationError('Not logged in. Run: atris login');
+
+  const resolved = await resolveSlug(requestedSlug, creds);
+  if (!resolved) return businessOperationError(`Business "${requestedSlug}" not found.`);
+  return { requestedSlug, resolved, token: creds.token };
+}
+
+async function fetchBusinessDashboard(context) {
+  const result = await apiRequestJson(`/business/${context.resolved.business_id}/dashboard`, {
+    method: 'GET',
+    token: context.token,
+    timeoutMs: 120000,
+  });
+  if (!result.ok) {
+    const detail = result.errorMessage || result.error || `HTTP ${result.status}`;
+    return businessOperationError(`Could not load business room: ${detail}`);
+  }
+  return result.data || {};
+}
+
+async function fetchBusinessOrders(context, limit = 50) {
+  return apiRequestJson(`/storefront/${context.resolved.business_id}/orders?limit=${limit}`, {
+    method: 'GET',
+    token: context.token,
+    timeoutMs: 120000,
+  });
+}
+
+function renderOrderLine(order) {
+  const kind = order.isPreorder ? ', preorder' : '';
+  const when = order.createdAt ? relativeTime(order.createdAt) : 'date unavailable';
+  return `  ${order.reference}: ${order.product} x${order.quantity}, ${order.buyer}, ${when}${kind}`;
+}
+
+async function businessRoom(slug) {
+  const context = await resolveBusinessOperation(slug, 'atris business room <slug>');
+  if (!context) return;
+
+  const [dashboard, ordersResult] = await Promise.all([
+    fetchBusinessDashboard(context),
+    fetchBusinessOrders(context, 5),
+  ]);
+  if (!dashboard) return;
+
+  const business = asRecord(dashboard.business);
+  const roster = asRecord(dashboard.roster);
+  const members = Array.isArray(roster.members)
+    ? roster.members
+    : (Array.isArray(business.members) ? business.members : []);
+  const storefront = readStorefront(business);
+  const orders = ordersResult.ok ? normalizeOrdersPayload(ordersResult.data).orders.slice(0, 5) : [];
+  const name = business.name || context.resolved.name || context.requestedSlug;
+  const appCount = Number.isFinite(business.app_count)
+    ? business.app_count
+    : (Array.isArray(business.apps) ? business.apps.length : 0);
+
+  console.log('');
+  console.log(`business room: ${name}`);
+  console.log(`wallet/net: ${formatWalletNet(readWalletNet(business))}`);
+  console.log(`members: ${members.length}`);
+  for (const member of members) {
+    const agent = asRecord(member.atris);
+    const memberName = firstString(member.display_name, agent.agent_name, member.name, member.email) || 'unknown';
+    console.log(`  ${memberName} (${member.role || 'member'})`);
+  }
+  console.log(`apps: ${appCount}`);
+  console.log(`store: ${storefront.enabled ? 'enabled' : 'disabled'}, ${storefront.products.length} products`);
+  console.log('recent orders:');
+  if (!ordersResult.ok) {
+    const detail = ordersResult.errorMessage || ordersResult.error || `HTTP ${ordersResult.status}`;
+    console.log(`  unavailable: ${detail}`);
+    process.exitCode = 1;
+  } else if (orders.length === 0) {
+    console.log('  none');
+  } else {
+    orders.forEach(order => console.log(renderOrderLine(order)));
+  }
+  console.log('');
+}
+
+async function businessProducts(slug) {
+  const context = await resolveBusinessOperation(slug, 'atris business products <slug>');
+  if (!context) return;
+  const dashboard = await fetchBusinessDashboard(context);
+  if (!dashboard) return;
+
+  const business = asRecord(dashboard.business);
+  const storefront = readStorefront(business);
+  const name = business.name || context.resolved.name || context.requestedSlug;
+  console.log('');
+  console.log(`products: ${name} (${storefront.products.length})`);
+  if (storefront.products.length === 0) {
+    console.log('  none');
+  } else {
+    for (const product of storefront.products) {
+      const productName = firstString(product.name) || 'unnamed product';
+      const productId = firstString(product.id) || 'no id';
+      console.log(`  ${productName} (${productId}): ${formatCents(product.price_cents, product.currency)}`);
+    }
+  }
+  console.log('');
+}
+
+async function businessOrders(slug) {
+  const context = await resolveBusinessOperation(slug, 'atris business orders <slug>');
+  if (!context) return;
+  const result = await fetchBusinessOrders(context, 50);
+  if (!result.ok) {
+    const detail = result.errorMessage || result.error || `HTTP ${result.status}`;
+    businessOperationError(`Could not load orders: ${detail}`);
+    return;
+  }
+
+  const data = normalizeOrdersPayload(result.data);
+  const name = context.resolved.name || context.requestedSlug;
+  console.log('');
+  console.log(`orders: ${name} (${data.orders.length})`);
+  console.log(`revenue: ${formatCents(data.revenueCents)}`);
+  console.log(`paid orders: ${data.paidOrders}`);
+  console.log(`pending revenue: ${formatCents(data.pendingRevenueCents)}`);
+  if (data.orders.length === 0) {
+    console.log('  none');
+  } else {
+    data.orders.forEach(order => console.log(renderOrderLine(order)));
+  }
+  console.log('');
+}
+
+function parseBusinessStoreArgs(args = []) {
+  const actions = new Set(['status', 'on', 'enable', 'toggle', 'off', 'disable']);
+  if (actions.has(args[0])) return { action: args[0], slug: args[1] };
+  if (actions.has(args[1])) return { action: args[1], slug: args[0] };
+  return { action: 'status', slug: args[0] };
+}
+
+async function businessStore(args = []) {
+  const { action, slug } = parseBusinessStoreArgs(args);
+  if (action === 'off' || action === 'disable') {
+    businessOperationError('The production store API does not support disabling stores yet.');
+    return;
+  }
+
+  const context = await resolveBusinessOperation(slug, 'atris business store <on|status> [slug]');
+  if (!context) return;
+  const dashboard = await fetchBusinessDashboard(context);
+  if (!dashboard) return;
+
+  const business = asRecord(dashboard.business);
+  const storefront = readStorefront(business);
+  const name = business.name || context.resolved.name || context.requestedSlug;
+  if (action === 'status') {
+    console.log(`store: ${storefront.enabled ? 'enabled' : 'disabled'} for ${name}, ${storefront.products.length} products`);
+    return;
+  }
+  if (storefront.enabled) {
+    console.log(`store: already enabled for ${name}, ${storefront.products.length} products`);
+    return;
+  }
+
+  const result = await apiRequestJson(`/storefront/${context.resolved.business_id}/products`, {
+    method: 'PUT',
+    token: context.token,
+    body: { products: storefront.products },
+    timeoutMs: 120000,
+  });
+  if (!result.ok) {
+    const detail = result.errorMessage || result.error || `HTTP ${result.status}`;
+    businessOperationError(`Could not enable store: ${detail}`);
+    return;
+  }
+  const enabledProducts = Array.isArray(result.data?.products) ? result.data.products.length : storefront.products.length;
+  console.log(`store: enabled for ${name}, ${enabledProducts} products`);
+}
+
 // ---------------------------------------------------------------------------
 // atris business health <slug>
 // ---------------------------------------------------------------------------
@@ -3045,6 +3367,10 @@ function printBusinessHelp() {
   console.log('  simulate <idea>      Create a business, four-role team, missions, and endgame loop');
   console.log('  add <slug>           Register an existing cloud business');
   console.log('  list                 Show registered businesses');
+  console.log('  room [slug]          Show wallet, members, apps, store, and recent orders');
+  console.log('  products [slug]      List store products');
+  console.log('  orders [slug]        List store orders');
+  console.log('  store on [slug]      Enable the store with its current catalog');
   console.log('  team [slug]          Show members, roles, and admin access');
   console.log('  status <slug>        Quick status check');
   console.log('  health [slug]        Full health dashboard');
@@ -3122,6 +3448,21 @@ async function businessCommand(subcommand, ...args) {
     case 'health':
       await businessHealth(args[0]);
       break;
+    case 'room':
+      await businessRoom(args[0]);
+      break;
+    case 'products':
+    case 'product':
+      await businessProducts(args[0]);
+      break;
+    case 'orders':
+    case 'order':
+      await businessOrders(args[0]);
+      break;
+    case 'store':
+    case 'storefront':
+      await businessStore(args);
+      break;
     case 'team':
     case 'members':
     case 'roster':
@@ -3189,4 +3530,8 @@ module.exports = {
   collectBusinessShareState,
   renderBusinessCreatedNextSteps,
   recordBusinessRun,
+  normalizeOrdersPayload,
+  parseBusinessStoreArgs,
+  readStorefront,
+  readWalletNet,
 };

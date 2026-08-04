@@ -6,7 +6,7 @@ const path = require('path');
 const { isUtf8 } = require('buffer');
 const { createHash } = require('crypto');
 const { spawnSync } = require('child_process');
-const { apiRequestJson, getAppBaseUrl, httpRequest } = require('../utils/api');
+const { apiRequestJson, getApiBaseUrl, getAppBaseUrl, httpRequest } = require('../utils/api');
 const { loadCredentials, performTokenRefresh } = require('../utils/auth');
 const { createZipBuffer, readZipBuffer, ZIP_LIMITS } = require('../lib/zip');
 const { craftPack } = require('./pack-craft');
@@ -28,6 +28,12 @@ const {
 
 const REGISTRY_TIMEOUT_MS = 60000;
 const PACK_RUN_INPUT_MAX_BYTES = 256 * 1024;
+const PACK_VISIBILITIES = new Set(['public', 'unlisted', 'private']);
+const DEFAULT_SHARE_DAYS = 30;
+const MAX_SHARE_DAYS = 365;
+const MAX_SHARE_RECIPIENT_LENGTH = 120;
+const SHARE_NONCE_RULE = /^[A-Za-z0-9_-]{22}$/;
+const PACK_BROWSE_LIMIT = 50;
 
 // The web registry caps every upload (atrisos-web app/api/pack/registry/route.ts).
 // The ZIP reader uses the same limits so inbound packs cannot expand past them.
@@ -114,7 +120,7 @@ const PACKET = {
   ],
   // Dated journal entries, at any depth: 2026-07-06.md, 2026-07-06-retro.md.
   runningStatePatterns: [/^\d{4}-\d{2}-\d{2}(?:[-_][^.]*)?\.[a-z0-9]+$/i],
-  runningStateReason: 'running state is excluded (a packet carries definitions, not state)',
+  runningStateReason: 'running state is excluded (a pack carries definitions, not state)',
   // Exact filenames that never ship.
   deniedNames: [
     'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock',
@@ -150,11 +156,17 @@ const ENV_ASSIGNMENT = /=(?!=*$)/;
 
 function showHelp() {
   console.log('usage: atris pack craft "<topic>" [--dir <target>] [--force]');
-  console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--minor|--major] [--out <file.zip>] [--push] [--dry-run] [--allow-secrets]');
+  console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--visibility public|unlisted|private] [--minor|--major] [--out <file.zip>] [--push] [--dry-run] [--allow-secrets]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
   console.log('       atris pack run <slug|dir> [--dir <target>] [--input <file>] [--cloud] [--force] [--trust] [--grant <capability>]');
   console.log('       atris pack runs [--dir <receipt-dir>] [--limit <n>] [--json]');
-  console.log('       atris pack share <slug> [--for "<Name>"]');
+  console.log('       atris pack share <slug> --for "<Name>" [--days 30]');
+  console.log('       atris pack share <slug> --list');
+  console.log('       atris pack share <slug> --revoke <nonce>');
+  console.log('       atris pack share <slug> --revoke');
+  console.log('       atris pack browse [--mine]');
+  console.log('       atris pack sales');
+  console.log('       atris pack purchases');
   console.log('       atris pack pull [<slug>] [--dir <path>] [--allow-downgrade]');
   console.log('       atris pack status [--dir <path>]');
   console.log('       atris pack update [<dir>] [--allow-downgrade]');
@@ -212,9 +224,14 @@ function takeValues(args, name) {
   return values;
 }
 
-function takeFlag(args, name) {
+function takeFlag(args, name, options = {}) {
   const index = args.indexOf(name);
   if (index === -1) return false;
+  const next = args[index + 1];
+  if (options.optionalValue && next !== undefined && !String(next).startsWith('--')) {
+    args.splice(index, 2);
+    return next;
+  }
   args.splice(index, 1);
   return true;
 }
@@ -263,10 +280,7 @@ function writeJson(filePath, value) {
 
 function buildManifest(existing, options) {
   const existingManifest = existing && typeof existing === 'object' ? existing : {};
-  const visibility = existingManifest.visibility;
-  if (visibility !== undefined && !['public', 'unlisted', 'private'].includes(visibility)) {
-    throw new Error('pack.json visibility must be public, unlisted, or private');
-  }
+  const hasExistingManifest = existing && typeof existing === 'object';
   const priceCents = existingManifest.priceCents;
   if (priceCents !== undefined && (!Number.isSafeInteger(priceCents) || priceCents < 0)) {
     throw new Error('pack.json priceCents must be a non-negative integer');
@@ -276,6 +290,17 @@ function buildManifest(existing, options) {
     ? bumpVersion(existingManifest.version, options.bump)
     : '0.1.0';
   const title = existingManifest.title || titleFromSlug(slug);
+  let visibility;
+  if (options.visibility !== null && options.visibility !== undefined) {
+    visibility = String(options.visibility);
+  } else if (Object.prototype.hasOwnProperty.call(existingManifest, 'visibility')) {
+    visibility = existingManifest.visibility;
+  } else if (!hasExistingManifest) {
+    visibility = 'unlisted';
+  }
+  if (visibility !== undefined && !PACK_VISIBILITIES.has(visibility)) {
+    throw new Error('pack visibility must be public, unlisted, or private');
+  }
   const manifest = {
     name: existingManifest.name || slug,
     slug,
@@ -353,7 +378,7 @@ function classifyPacketPath(relativePath, { includeLogs = false, isDirectory = f
     if (inner.length > 1) return { ok: true };
     return packetDirectories(includeLogs).includes(inner[0])
       ? { ok: true }
-      : { ok: false, reason: `not in the packet allowlist (${inner[0]}/)` };
+      : { ok: false, reason: `not in the pack allowlist (${inner[0]}/)` };
   }
 
   const extension = path.extname(lowerBase);
@@ -364,7 +389,7 @@ function classifyPacketPath(relativePath, { includeLogs = false, isDirectory = f
       : { ok: false, reason: 'not a root document (.md/.txt)' };
   }
   if (!packetDirectories(includeLogs).includes(inner[0])) {
-    return { ok: false, reason: `not in the packet allowlist (${inner[0]}/)` };
+    return { ok: false, reason: `not in the pack allowlist (${inner[0]}/)` };
   }
   return PACKET.extensions.includes(extension)
     ? { ok: true }
@@ -677,10 +702,10 @@ function registryNotFoundError(slug, authenticated) {
   return new Error(`pack not found: ${slug}`);
 }
 
-function requiredAuthHeaders(deps = {}) {
+function requiredAuthHeaders(deps = {}, purpose = 'publish packs') {
   const headers = optionalAuthHeaders(deps);
   if (!headers.Authorization) {
-    throw new Error('not logged in. run atris login first to publish packs.');
+    throw new Error(`not logged in. run atris login first to ${purpose}.`);
   }
   return headers;
 }
@@ -731,12 +756,25 @@ async function fetchRegistryZip(slug, deps = {}) {
   const { response, authenticated } = result;
   if (response.status < 200 || response.status >= 300) {
     if (response.status === 404) throw registryNotFoundError(slug, authenticated);
-    throw new Error(responseErrorText(response, `registry lookup failed for ${slug} with status ${response.status}`));
+    const error = new Error(responseErrorText(response, `registry lookup failed for ${slug} with status ${response.status}`));
+    error.status = response.status;
+    throw error;
   }
   if (!response.body || response.body.length === 0) {
     throw new Error(`registry returned an empty zip for ${slug}`);
   }
   return response.body;
+}
+
+async function fetchRegistryZipForUser(slug, deps = {}) {
+  try {
+    return await fetchRegistryZip(slug, deps);
+  } catch (error) {
+    if (error.status !== 402) throw error;
+    console.error('this pack is paid. buy it on its page, then run this again.');
+    console.error(registryUrl(`/packs/${encodeURIComponent(slug)}`, deps));
+    return null;
+  }
 }
 
 function assertPublishableSlug(slug) {
@@ -749,15 +787,14 @@ function assertPublishableSlug(slug) {
 
 function assertPublishableAuthor(manifest) {
   if (!manifest.author || !String(manifest.author).trim()) {
-    throw new Error('registry packs need an author. re-run with --author "<your name>" (or set "author" in pack.json).');
+    throw new Error('publishing needs an author. re-run with --author "<your name>" (or set "author" in pack.json).');
   }
 }
 
 // ── pack share ──────────────────────────────────────────────────────────────
-// The web renders /packs/<slug>?for=<name> and silently drops a `for` value it
-// cannot display (atrisos-web app/lib/pack/personalize.ts). Mirroring that
-// sanitizer here means the CLI never hands you a link that looks personalized
-// and isn't — it says no instead.
+// Signed links are the primary handoff. The old /packs/<slug>?for=<name> link
+// is retained only when minting fails for a pack the public registry confirms
+// is public.
 const PERSONALIZATION_MAX_LENGTH = 40;
 const PERSONALIZATION_MARKUP = /[<>&"`\\/]/;
 const PERSONALIZATION_DISALLOWED = /[^\p{L}\p{M} '’.\-]/gu;
@@ -778,35 +815,619 @@ function sanitizePersonalizationName(raw) {
   return capped;
 }
 
-function sharePack(rawArgs, cwd = process.cwd(), options = {}) {
+function parsePackShareArgs(rawArgs) {
   const args = [...rawArgs];
   const forName = takeValue(args, '--for');
+  const daysValue = takeValue(args, '--days');
+  const list = takeFlag(args, '--list');
+  const revoke = takeFlag(args, '--revoke', { optionalValue: true });
   const slug = args.shift();
-  if (!slug) throw new Error('pack share needs a slug: atris pack share <slug> [--for "<Name>"]');
+  if (!slug) throw new Error('pack share needs a slug: atris pack share <slug> --for "<Name>"');
   if (args.length) throw new Error(`unknown pack share argument: ${args.join(' ')}`);
   assertPublishableSlug(slug);
 
-  const deps = options.deps || {};
-  const base = registryUrl(`/packs/${encodeURIComponent(slug)}`, deps);
+  if (list) {
+    if (forName !== null || daysValue !== null || revoke !== false) {
+      throw new Error('pack share --list cannot be combined with --for, --days, or --revoke');
+    }
+    return { mode: 'list', slug };
+  }
+
+  if (revoke !== false) {
+    if (forName !== null || daysValue !== null) {
+      throw new Error('pack share --revoke cannot be combined with --for or --days');
+    }
+    if (typeof revoke === 'string' && !SHARE_NONCE_RULE.test(revoke)) {
+      throw new Error('--revoke link id must be a 22-character base64url value');
+    }
+    return {
+      mode: 'revoke',
+      slug,
+      ...(typeof revoke === 'string' ? { nonce: revoke } : {}),
+    };
+  }
+
   if (forName === null) {
-    console.log(base);
-    console.log(`share this packet, or personalize it: atris pack share ${slug} --for "<Name>"`);
+    if (daysValue !== null) throw new Error('pack share --days requires --for "<Name>"');
+    return { mode: 'plain', slug };
+  }
+
+  const recipientLabel = String(forName).trim();
+  if (!recipientLabel || recipientLabel.length > MAX_SHARE_RECIPIENT_LENGTH) {
+    throw new Error(
+      `--for needs a recipient label between 1 and ${MAX_SHARE_RECIPIENT_LENGTH} characters`,
+    );
+  }
+
+  const expiresInDays = daysValue === null ? DEFAULT_SHARE_DAYS : Number(daysValue);
+  if (!Number.isSafeInteger(expiresInDays) || expiresInDays < 1 || expiresInDays > MAX_SHARE_DAYS) {
+    throw new Error(`--days must be a whole number from 1 to ${MAX_SHARE_DAYS}`);
+  }
+  return { mode: 'mint', slug, recipientLabel, expiresInDays };
+}
+
+async function requestRegistryJson(pathname, requestOptions = {}, deps = {}) {
+  const request = deps.httpRequest || httpRequest;
+  const method = requestOptions.method || 'GET';
+  const headers = {
+    Accept: 'application/json',
+    ...(requestOptions.authPurpose
+      ? requiredAuthHeaders(deps, requestOptions.authPurpose)
+      : {}),
+  };
+  if (requestOptions.sendOrigin) {
+    const origin = registryOrigin(deps);
+    if (origin) headers.Origin = origin;
+  }
+
+  let body;
+  if (requestOptions.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(requestOptions.body);
+  }
+
+  let response;
+  try {
+    response = await request(registryUrl(pathname, deps), {
+      method,
+      timeoutMs: REGISTRY_TIMEOUT_MS,
+      headers,
+      ...(body !== undefined ? { body } : {}),
+    });
+  } catch {
+    throw new Error(requestOptions.unreachableMessage || 'could not reach pack registry. check your connection and try again.');
+  }
+
+  if (response.status < 200 || response.status >= 300) {
+    const error = new Error(responseErrorText(response, `registry request failed with status ${response.status}`));
+    error.status = response.status;
+    throw error;
+  }
+  const parsed = parseJsonBody(response.body);
+  if (!parsed.data || typeof parsed.data !== 'object') {
+    throw new Error(requestOptions.invalidMessage || 'pack registry returned an invalid response');
+  }
+  return parsed.data;
+}
+
+async function mintPackShare(slug, recipientLabel, expiresInDays, deps = {}) {
+  const data = await requestRegistryJson(
+    `/api/pack/registry/${encodeURIComponent(slug)}/share`,
+    {
+      method: 'POST',
+      authPurpose: 'share packs',
+      sendOrigin: true,
+      body: { recipientLabel, expiresInDays },
+      unreachableMessage: 'could not mint a pack share link. check your connection and try again.',
+      invalidMessage: 'pack registry did not return a share link',
+    },
+    deps,
+  );
+  if (typeof data.shareUrl !== 'string' || !data.shareUrl.trim()) {
+    throw new Error('pack registry did not return a share link');
+  }
+  if (!Number.isFinite(Number(data.expiresAt))) {
+    throw new Error('pack registry did not return the share link expiry');
+  }
+  return {
+    shareUrl: data.shareUrl,
+    expiresAt: Number(data.expiresAt),
+    ...(typeof data.nonce === 'string' && SHARE_NONCE_RULE.test(data.nonce)
+      ? { nonce: data.nonce }
+      : {}),
+  };
+}
+
+async function listPackShares(slug, deps = {}) {
+  const data = await requestRegistryJson(
+    `/api/pack/registry/${encodeURIComponent(slug)}/share`,
+    {
+      authPurpose: 'list personal links for packs',
+      unreachableMessage: 'could not list pack share links. check your connection and try again.',
+      invalidMessage: 'pack share links returned an invalid response',
+    },
+    deps,
+  );
+  if (!Array.isArray(data.links)) {
+    throw new Error('pack share links returned an invalid response');
+  }
+  return data.links;
+}
+
+async function revokePackShares(slug, deps = {}) {
+  return requestRegistryJson(
+    `/api/pack/registry/${encodeURIComponent(slug)}/share`,
+    {
+      method: 'DELETE',
+      authPurpose: 'revoke personal links for packs',
+      sendOrigin: true,
+      unreachableMessage: 'could not revoke pack share links. check your connection and try again.',
+    },
+    deps,
+  );
+}
+
+async function revokePackShare(slug, nonce, deps = {}) {
+  return requestRegistryJson(
+    `/api/pack/registry/${encodeURIComponent(slug)}/share`,
+    {
+      method: 'DELETE',
+      authPurpose: 'revoke a personal link for a pack',
+      sendOrigin: true,
+      body: { nonce },
+      unreachableMessage: 'could not revoke that pack share link. check your connection and try again.',
+    },
+    deps,
+  );
+}
+
+function registryPackItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.packs)) return payload.packs;
+  return [];
+}
+
+function packManifestFromItem(item) {
+  if (item && item.manifest && typeof item.manifest === 'object') return item.manifest;
+  return item && typeof item === 'object' ? item : {};
+}
+
+function isPublicPackPayload(payload, slug) {
+  return registryPackItems(payload).some((item) => {
+    const manifest = packManifestFromItem(item);
+    return manifest.slug === slug
+      && (manifest.visibility === undefined || manifest.visibility === 'public');
+  });
+}
+
+async function registryConfirmsPublicPack(slug, deps = {}) {
+  try {
+    const payload = await requestRegistryJson(
+      '/api/pack/registry',
+      {
+        unreachableMessage: 'could not check public pack visibility',
+        invalidMessage: 'pack registry returned an invalid public listing',
+      },
+      deps,
+    );
+    return isPublicPackPayload(payload, slug);
+  } catch {
+    return false;
+  }
+}
+
+function legacyPersonalizedShareUrl(slug, recipientLabel, deps = {}) {
+  const name = sanitizePersonalizationName(recipientLabel);
+  if (!name) return null;
+  const base = registryUrl(`/packs/${encodeURIComponent(slug)}`, deps);
+  return `${base}?for=${encodeURIComponent(name)}`;
+}
+
+function formatShareExpiry(expiresAt) {
+  if (expiresAt === undefined || expiresAt === null || expiresAt === '') return 'unknown';
+  const numeric = Number(expiresAt);
+  const date = Number.isFinite(numeric)
+    ? new Date(numeric < 1000000000000 ? numeric * 1000 : numeric)
+    : new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  return date.toISOString().replace('T', ' ').replace('.000Z', ' utc');
+}
+
+function formatPackShareLinksTable(links) {
+  if (!Array.isArray(links) || !links.length) return '';
+  const rows = links.map((link) => ({
+    label: cleanTableCell(link && link.label, 'unlabeled', 40),
+    expires: formatShareExpiry(link && link.expiresAt),
+    state: link && link.revoked ? 'revoked' : 'active',
+    nonce: cleanTableCell(link && link.nonce, 'unknown', 64),
+  }));
+  const columns = [
+    { key: 'label', label: 'label' },
+    { key: 'expires', label: 'expires' },
+    { key: 'state', label: 'state' },
+    { key: 'nonce', label: 'nonce' },
+  ];
+  const widths = columns.map((column) => Math.max(
+    column.label.length,
+    ...rows.map((row) => row[column.key].length),
+  ));
+  const render = (row) => columns
+    .map((column, index) => (
+      index === columns.length - 1
+        ? row[column.key]
+        : row[column.key].padEnd(widths[index])
+    ))
+    .join('  ');
+  return [
+    render(Object.fromEntries(columns.map((column) => [column.key, column.label]))),
+    ...rows.map(render),
+  ].join('\n');
+}
+
+async function sharePack(rawArgs, cwd = process.cwd(), options = {}) {
+  const parsed = parsePackShareArgs(rawArgs);
+  const deps = options.deps || {};
+  const print = options.print || console.log;
+
+  if (parsed.mode === 'plain') {
+    print(registryUrl(`/packs/${encodeURIComponent(parsed.slug)}`, deps));
+    print(`mint a personal link with: atris pack share ${parsed.slug} --for "<Name>"`);
     return 0;
   }
 
-  const name = sanitizePersonalizationName(forName);
-  if (!name) {
-    throw new Error(
-      `--for "${forName}" is not a name the share page will display, so the link would render as if it were plain. `
-      + `use letters, spaces and ' . - (no < > & " \` \\ /), at least one letter, up to ${PERSONALIZATION_MAX_LENGTH} characters.`,
-    );
+  if (parsed.mode === 'list') {
+    const links = await listPackShares(parsed.slug, deps);
+    const table = formatPackShareLinksTable(links);
+    print(table || 'no personal links minted for this pack.');
+    return 0;
   }
-  console.log(`${base}?for=${encodeURIComponent(name)}`);
-  console.log(
-    name === forName
-      ? `personalized for ${name}`
-      : `personalized for ${name} (trimmed from "${forName}" to match what the page will show)`,
+
+  if (parsed.mode === 'revoke') {
+    if (parsed.nonce) {
+      try {
+        await revokePackShare(parsed.slug, parsed.nonce, deps);
+      } catch (error) {
+        if (error && error.status === 404) {
+          throw new Error(`no personal link found with that id. run: atris pack share ${parsed.slug} --list`);
+        }
+        throw error;
+      }
+      print('that personal link is now dead. other personal links keep working.');
+      return 0;
+    }
+    await revokePackShares(parsed.slug, deps);
+    print('every outstanding personal link is now dead. sharing again mints fresh personal links.');
+    return 0;
+  }
+
+  try {
+    const result = await mintPackShare(
+      parsed.slug,
+      parsed.recipientLabel,
+      parsed.expiresInDays,
+      deps,
+    );
+    print(result.shareUrl);
+    if (result.nonce) {
+      print(`take this one back later with: atris pack share ${parsed.slug} --revoke ${result.nonce}`);
+    }
+    print(`expires at ${formatShareExpiry(result.expiresAt)}`);
+    return 0;
+  } catch (error) {
+    const publicPack = await registryConfirmsPublicPack(parsed.slug, deps);
+    const fallbackUrl = publicPack
+      ? legacyPersonalizedShareUrl(parsed.slug, parsed.recipientLabel, deps)
+      : null;
+    if (!fallbackUrl) throw error;
+    print(fallbackUrl);
+    print('personal link minting failed, so this public pack is using a personal link with no expiry.');
+    return 0;
+  }
+}
+
+function browseStarValue(item, payload, slug) {
+  const manifest = packManifestFromItem(item);
+  const summary = payload && payload.summaries && payload.summaries[slug];
+  const mapped = payload && payload.stars && payload.stars[slug];
+  const candidates = [
+    item && item.stars,
+    item && item.starCount,
+    manifest.stars,
+    manifest.starCount,
+    summary && summary.stars,
+    summary && summary.starCount,
+    mapped,
+  ];
+  for (const candidate of candidates) {
+    if (Number.isFinite(candidate)) return Number(candidate);
+    if (candidate && typeof candidate === 'object' && Number.isFinite(candidate.count)) {
+      return Number(candidate.count);
+    }
+  }
+  return null;
+}
+
+function cleanTableCell(value, fallback, maxLength) {
+  const clean = String(value === undefined || value === null || value === '' ? fallback : value)
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (clean.length <= maxLength) return clean;
+  return `${clean.slice(0, Math.max(1, maxLength - 3))}...`;
+}
+
+function browsePriceCents(item) {
+  const manifestPriceCents = item
+    && item.manifest
+    && typeof item.manifest === 'object'
+    ? item.manifest.priceCents
+    : undefined;
+  if (manifestPriceCents !== undefined && manifestPriceCents !== null) {
+    return manifestPriceCents;
+  }
+  return item && typeof item === 'object' ? item.priceCents : undefined;
+}
+
+function packBrowseRows(payload, { mine = false, limit = PACK_BROWSE_LIMIT } = {}) {
+  return registryPackItems(payload).slice(0, limit).map((item) => {
+    const manifest = packManifestFromItem(item);
+    const priceCents = browsePriceCents(item);
+    return {
+      slug: cleanTableCell(manifest.slug, 'unknown', 40),
+      title: cleanTableCell(manifest.title || manifest.name, manifest.slug || 'untitled', 42),
+      version: cleanTableCell(manifest.version, 'unknown', 20),
+      ...(mine
+        ? { visibility: cleanTableCell(manifest.visibility, 'public', 10) }
+        : {}),
+      price: Number(priceCents) > 0 ? formatSalesDollars(priceCents) : 'free',
+      stars: browseStarValue(item, payload, manifest.slug),
+    };
+  });
+}
+
+function formatPackBrowseTable(payload, options = {}) {
+  const mine = Boolean(options.mine);
+  const rows = packBrowseRows(payload, {
+    mine,
+    limit: options.limit || PACK_BROWSE_LIMIT,
+  });
+  if (!rows.length) return '';
+
+  const showPrice = rows.some((row) => row.price !== 'free');
+  const showStars = rows.some((row) => row.stars !== null);
+  const columns = [
+    { key: 'slug', label: 'slug' },
+    { key: 'title', label: 'title' },
+    { key: 'version', label: 'version' },
+    ...(mine ? [{ key: 'visibility', label: 'visibility' }] : []),
+    ...(showPrice ? [{ key: 'price', label: 'price' }] : []),
+    ...(showStars ? [{ key: 'stars', label: 'stars' }] : []),
+  ];
+  const widths = columns.map((column) => Math.max(
+    column.label.length,
+    ...rows.map((row) => String(row[column.key] === null ? '-' : row[column.key]).length),
+  ));
+  const render = (row) => columns
+    .map((column, index) => {
+      const value = row[column.key] === null ? '-' : String(row[column.key]);
+      return index === columns.length - 1 ? value : value.padEnd(widths[index]);
+    })
+    .join('  ');
+  return [
+    render(Object.fromEntries(columns.map((column) => [column.key, column.label]))),
+    ...rows.map(render),
+  ].join('\n');
+}
+
+async function browsePacks(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  const mine = takeFlag(args, '--mine');
+  if (args.length) throw new Error(`unknown pack browse argument: ${args.join(' ')}`);
+
+  const deps = options.deps || {};
+  const print = options.print || console.log;
+  const payload = await requestRegistryJson(
+    `/api/pack/registry${mine ? '?scope=mine' : ''}`,
+    {
+      ...(mine ? { authPurpose: 'browse your packs' } : {}),
+      unreachableMessage: 'could not browse pack registry. check your connection and try again.',
+      invalidMessage: 'pack registry returned an invalid pack listing',
+    },
+    deps,
   );
+  if (!Array.isArray(payload) && !Array.isArray(payload.packs)) {
+    throw new Error('pack registry returned an invalid pack listing');
+  }
+
+  const items = registryPackItems(payload);
+  const table = formatPackBrowseTable(payload, { mine });
+  if (!table) {
+    print(mine ? 'no packs found for your account.' : 'no public packs found.');
+    print('publish one with: atris pack publish --push');
+    return 0;
+  }
+  print(table);
+  if (items.length > PACK_BROWSE_LIMIT) print(`showing the first ${PACK_BROWSE_LIMIT} packs.`);
+  const firstManifest = packManifestFromItem(items[0]);
+  if (firstManifest.slug) print(`install with: atris pack install ${firstManifest.slug}`);
+  return 0;
+}
+
+// ── pack sales ──────────────────────────────────────────────────────────────
+const PACK_SALES_LOGIN_NUDGE = 'not logged in. run atris login first to view pack sales.';
+
+function packSalesUrl(apiBaseUrl = getApiBaseUrl()) {
+  return `${String(apiBaseUrl || '').replace(/\/+$/, '')}/pack/purchases/sales`;
+}
+
+function formatSalesDollars(priceCents) {
+  const cents = Math.round(Number(priceCents));
+  if (!Number.isFinite(cents)) return '$0';
+  const sign = cents < 0 ? '-' : '';
+  const absoluteCents = Math.abs(cents);
+  const dollars = Math.floor(absoluteCents / 100).toLocaleString('en-US');
+  const remainder = absoluteCents % 100;
+  return `${sign}$${dollars}${remainder ? `.${String(remainder).padStart(2, '0')}` : ''}`;
+}
+
+function formatPackSaleDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
+function isPackTransactionRefunded(item) {
+  return Boolean(item && item.refunded === true);
+}
+
+function formatPackTransactionsTable(items, personKey, personLabel) {
+  const rows = items.map((item) => ({
+    pack: cleanTableCell(item && item.slug, 'unknown', 40),
+    person: cleanTableCell(item && item[personKey], 'unknown', 40),
+    price: formatSalesDollars(item && item.price_cents),
+    date: formatPackSaleDate(item && item.granted_at),
+    status: isPackTransactionRefunded(item) ? 'refunded' : '',
+  }));
+  if (!rows.length) return '';
+
+  const showStatus = rows.some((row) => row.status === 'refunded');
+  const columns = [
+    { key: 'pack', label: 'pack' },
+    { key: 'person', label: personLabel },
+    { key: 'price', label: 'price' },
+    { key: 'date', label: 'date' },
+    ...(showStatus ? [{ key: 'status', label: 'status' }] : []),
+  ];
+  const widths = columns.map((column) => Math.max(
+    column.label.length,
+    ...rows.map((row) => row[column.key].length),
+  ));
+  const render = (row) => columns
+    .map((column, index) => (
+      index === columns.length - 1
+        ? row[column.key]
+        : row[column.key].padEnd(widths[index])
+    ))
+    .join('  ');
+  return [
+    render(Object.fromEntries(columns.map((column) => [column.key, column.label]))),
+    ...rows.map(render),
+  ].join('\n');
+}
+
+function formatPackSalesTable(sales) {
+  return formatPackTransactionsTable(sales, 'buyer', 'buyer');
+}
+
+function formatPackPurchasesTable(purchases) {
+  return formatPackTransactionsTable(purchases, 'seller', 'seller');
+}
+
+async function showPackSales(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  if (args.length) throw new Error(`unknown pack sales argument: ${args.join(' ')}`);
+
+  const deps = options.deps || {};
+  const print = options.print || console.log;
+  const request = deps.httpRequest || httpRequest;
+  const authHeaders = requiredAuthHeaders(deps, 'view pack sales');
+
+  let response;
+  try {
+    const apiBaseUrl = (deps.getApiBaseUrl || getApiBaseUrl)();
+    response = await request(packSalesUrl(apiBaseUrl), {
+      method: 'GET',
+      timeoutMs: REGISTRY_TIMEOUT_MS,
+      headers: {
+        Accept: 'application/json',
+        ...authHeaders,
+      },
+    });
+  } catch {
+    throw new Error('could not load pack sales. check your connection and try again.');
+  }
+
+  if (response.status === 401) throw new Error(PACK_SALES_LOGIN_NUDGE);
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`could not load pack sales (status ${response.status}).`);
+  }
+
+  const parsed = parseJsonBody(response.body);
+  if (!Array.isArray(parsed.data)) throw new Error('pack sales returned an invalid response.');
+  const sales = parsed.data;
+  if (!sales.length) {
+    print('No sales yet.');
+    print('set priceCents in pack.json, then run: atris pack publish --visibility public --push');
+    return 0;
+  }
+
+  const completedSales = sales.filter((sale) => !isPackTransactionRefunded(sale));
+  const totalCents = completedSales.reduce((total, sale) => {
+    const cents = Number(sale && sale.price_cents);
+    return total + (Number.isFinite(cents) ? cents : 0);
+  }, 0);
+  print(`${formatSalesDollars(totalCents)} earned across ${completedSales.length} ${completedSales.length === 1 ? 'sale' : 'sales'}.`);
+  print(formatPackSalesTable(sales));
+  return 0;
+}
+
+// ── pack purchases ──────────────────────────────────────────────────────────
+const PACK_PURCHASES_LOGIN_NUDGE = 'not logged in. run atris login first to view pack purchases.';
+
+function packPurchaseItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.purchases)) return payload.purchases;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  if (payload && payload.data && Array.isArray(payload.data.purchases)) {
+    return payload.data.purchases;
+  }
+  return null;
+}
+
+async function showPackPurchases(rawArgs, cwd = process.cwd(), options = {}) {
+  const args = [...rawArgs];
+  if (args.length) throw new Error(`unknown pack purchases argument: ${args.join(' ')}`);
+
+  const deps = options.deps || {};
+  const print = options.print || console.log;
+
+  let payload;
+  try {
+    payload = await requestRegistryJson(
+      '/api/pack/purchases',
+      {
+        authPurpose: 'view pack purchases',
+        unreachableMessage: 'could not load pack purchases. check your connection and try again.',
+        invalidMessage: 'pack purchases returned an invalid response.',
+      },
+      deps,
+    );
+  } catch (error) {
+    if (error && error.status === 401) throw new Error(PACK_PURCHASES_LOGIN_NUDGE);
+    if (error && Number.isFinite(error.status)) {
+      throw new Error(`could not load pack purchases (status ${error.status}).`);
+    }
+    throw error;
+  }
+
+  const purchases = packPurchaseItems(payload);
+  if (!purchases) throw new Error('pack purchases returned an invalid response.');
+  if (!purchases.length) {
+    print('no purchased packs yet. browse with: atris pack browse');
+    return 0;
+  }
+
+  const completedPurchases = purchases.filter((purchase) => !isPackTransactionRefunded(purchase));
+  const totalCents = completedPurchases.reduce((total, purchase) => {
+    const cents = Number(purchase && purchase.price_cents);
+    return total + (Number.isFinite(cents) ? cents : 0);
+  }, 0);
+  print(`${completedPurchases.length} ${completedPurchases.length === 1 ? 'pack' : 'packs'} bought for ${formatSalesDollars(totalCents)} total.`);
+  print(formatPackPurchasesTable(purchases));
+  print('install one with: atris pack install <slug>');
   return 0;
 }
 
@@ -872,7 +1493,7 @@ function printSkipped(skipped) {
 
 function printPacketSummary(manifest, entries, skipped, zipBytes) {
   const unpacked = entries.reduce((total, entry) => total + entry.data.length, 0);
-  console.log(`packet ${manifest.slug} ${manifest.version}`);
+  console.log(`pack ${manifest.slug} ${manifest.version}`);
   console.log(`  files     ${entries.length} (limit ${REGISTRY_LIMITS.maxEntries})`);
   console.log(`  unpacked  ${formatBytes(unpacked)} (limit ${formatBytes(REGISTRY_LIMITS.maxUnpackedBytes)})`);
   console.log(`  zip       ${formatBytes(zipBytes)} (limit ${formatBytes(REGISTRY_LIMITS.maxZipBytes)})`);
@@ -886,13 +1507,13 @@ function registryLimitFailures(entries, zipBytes) {
   const unpacked = entries.reduce((total, entry) => total + entry.data.length, 0);
   const failures = [];
   if (entries.length > REGISTRY_LIMITS.maxEntries) {
-    failures.push(`entry count: ${entries.length} files exceeds the ${REGISTRY_LIMITS.maxEntries} file registry limit`);
+    failures.push(`entry count: ${entries.length} files exceeds the ${REGISTRY_LIMITS.maxEntries} file limit`);
   }
   if (unpacked > REGISTRY_LIMITS.maxUnpackedBytes) {
-    failures.push(`unpacked size: ${formatBytes(unpacked)} exceeds the ${formatBytes(REGISTRY_LIMITS.maxUnpackedBytes)} registry limit`);
+    failures.push(`unpacked size: ${formatBytes(unpacked)} exceeds the ${formatBytes(REGISTRY_LIMITS.maxUnpackedBytes)} unpacked limit`);
   }
   if (zipBytes > REGISTRY_LIMITS.maxZipBytes) {
-    failures.push(`zip size: ${formatBytes(zipBytes)} exceeds the ${formatBytes(REGISTRY_LIMITS.maxZipBytes)} registry limit`);
+    failures.push(`zip size: ${formatBytes(zipBytes)} exceeds the ${formatBytes(REGISTRY_LIMITS.maxZipBytes)} zip limit`);
   }
   return failures;
 }
@@ -914,6 +1535,7 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   const slug = takeValue(args, '--slug');
   const author = takeValue(args, '--author');
   const notes = takeValue(args, '--notes') || '';
+  const visibility = takeValue(args, '--visibility');
   const out = takeValue(args, '--out');
   const includeLogs = takeFlag(args, '--include-logs');
   const dryRun = takeFlag(args, '--dry-run');
@@ -936,6 +1558,7 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
     slug,
     author,
     notes,
+    visibility,
     bump: major ? 'major' : minor ? 'minor' : 'patch',
     fallbackSlug: path.basename(sourceDir),
   });
@@ -966,8 +1589,8 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
       return 1;
     }
   } else {
-    console.log('WARNING: --allow-secrets is on. Credential scanning is disabled for this publish.');
-    console.log('WARNING: anything you ship is readable by every person who installs this packet.');
+    console.log('warning: --allow-secrets is on. Credential scanning is disabled for this publish.');
+    console.log('warning: anything you ship is readable by every person who installs this pack.');
   }
 
   const zipBuffer = createZipBuffer(entries);
@@ -976,7 +1599,7 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
 
   if (dryRun) {
     if (failures.length) {
-      console.error('dry run: this packet would be rejected by the registry.');
+      console.error('dry run: this pack would be rejected.');
       for (const failure of failures) console.error(`  ${failure}`);
       return 1;
     }
@@ -985,9 +1608,9 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   }
 
   if (shipping && failures.length) {
-    console.error('refusing to publish: packet exceeds the registry limits.');
+    console.error('refusing to publish: this pack exceeds the size limits.');
     for (const failure of failures) console.error(`  ${failure}`);
-    console.error('trim the workspace or split the packet, then re-run.');
+    console.error('trim the workspace or split the pack, then re-run.');
     return 1;
   }
 
@@ -1008,11 +1631,11 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
     console.log(`wrote pack.json for ${manifest.slug} ${manifest.version}`);
     console.log('share with: atris pack publish --out <file.zip> or atris pack publish --push');
     if (failures.length) {
-      console.log('note: this packet is too big for the registry today:');
+      console.log('note: this pack is too big to publish today:');
       for (const failure of failures) console.log(`  ${failure}`);
     }
     if (!manifest.author || !String(manifest.author).trim()) {
-      console.log('note: publishing to the registry needs an author. add --author "<your name>".');
+      console.log('note: publishing needs an author. add --author "<your name>".');
     }
   }
   return 0;
@@ -1056,7 +1679,8 @@ async function loadZipPayload(source, cwd, deps = {}) {
   }
 
   const slug = slugify(source);
-  const buffer = await fetchRegistryZip(slug, deps);
+  const buffer = await fetchRegistryZipForUser(slug, deps);
+  if (!buffer) return null;
   return { buffer, fallbackSlug: slug, sourceType: 'registry', sourceSlug: slug };
 }
 
@@ -1244,7 +1868,8 @@ async function pullPack(rawArgs, cwd = process.cwd(), options = {}) {
   const existing = readPackManifestFromDir(packDir);
   const slug = slugify(slugArg || existing.slug);
   const deps = options.deps || {};
-  const zipBuffer = await fetchRegistryZip(slug, deps);
+  const zipBuffer = await fetchRegistryZipForUser(slug, deps);
+  if (!zipBuffer) return 1;
   const entries = readZipBuffer(zipBuffer);
   return stagePackUpdate({
     entries,
@@ -1511,6 +2136,7 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
   if (args.length) throw new Error(`unknown pack install argument: ${args.join(' ')}`);
 
   const payload = await loadZipPayload(source, cwd, options.deps || {});
+  if (!payload) return 1;
   const entries = readZipBuffer(payload.buffer);
   const zipManifest = parseManifest(entries);
   const slug = slugify(zipManifest.slug);
@@ -1577,15 +2203,15 @@ function packRunLocalHint(displayTarget) {
 function assertPacketDir(dir, cwd) {
   const display = path.relative(cwd, dir) || '.';
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
-    throw new Error(`packet folder not found: ${display}`);
+    throw new Error(`pack folder not found: ${display}`);
   }
   if (!fs.existsSync(path.join(dir, 'pack.json'))) {
-    throw new Error(`not an atris packet (no pack.json): ${display}`);
+    throw new Error(`not an atris pack (no pack.json): ${display}`);
   }
   try {
     return readPackManifestFromDir(dir);
   } catch {
-    throw new Error(`packet is invalid (unreadable pack.json): ${display}`);
+    throw new Error(`pack is invalid (unreadable pack.json): ${display}`);
   }
 }
 
@@ -1608,7 +2234,7 @@ function cloudGateFailure(packDir, displayTarget, deps = {}) {
   const binding = readBinding(packDir);
   if (!binding) {
     return [
-      'no business is bound to this packet folder, so there is no cloud workspace to run in.',
+      'no business is bound to this pack folder, so there is no cloud workspace to run in.',
       'run: atris business init "<name>"',
     ];
   }
@@ -2011,7 +2637,7 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
   let manifest;
 
   if (looksLikeExistingDir(source, cwd)) {
-    if (targetArg) throw new Error('--dir applies when installing a packet, not when running a folder');
+    if (targetArg) throw new Error('--dir applies when installing a pack, not when running a folder');
     packDir = path.resolve(cwd, source);
     manifest = assertPacketDir(packDir, cwd);
   } else {
@@ -2019,7 +2645,7 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
     const alreadyThere = !force && fs.existsSync(path.join(packDir, 'pack.json'));
     if (alreadyThere) {
       manifest = assertPacketDir(packDir, cwd);
-      console.log(`using installed packet ${path.relative(cwd, packDir) || '.'}`);
+      console.log(`using installed pack ${path.relative(cwd, packDir) || '.'}`);
     } else {
       const installArgs = [source, '--dir', packDir];
       if (force) installArgs.push('--force');
@@ -2111,6 +2737,11 @@ async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
   if (response.status < 200 || response.status >= 300) {
     if (origin.type === 'registry' && response.status === 404) {
       throw registryNotFoundError(origin.slug, authenticated);
+    }
+    if (origin.type === 'registry' && response.status === 402) {
+      console.error('this pack is paid. buy it on its page, then run this again.');
+      console.error(registryUrl(`/packs/${encodeURIComponent(origin.slug)}`, deps));
+      return 1;
     }
     throw new Error(`download failed with status ${response.status}`);
   }
@@ -3161,9 +3792,9 @@ function printPackDoctorJsonError(code, message) {
 
 function packLocalErrorCode(error, fallback) {
   const message = error && error.message ? error.message : String(error);
-  if (/^(?:installed pack|packet folder) not found:/.test(message)) return 'pack-not-found';
+  if (/^(?:installed pack|(?:pack|packet) folder) not found:/.test(message)) return 'pack-not-found';
   if (/^multiple installed packs match /.test(message)) return 'ambiguous-pack';
-  if (/^(?:not an atris packet|packet is invalid) /.test(message)) return 'invalid-pack';
+  if (/^(?:not an atris (?:pack|packet)|(?:pack|packet) is invalid) /.test(message)) return 'invalid-pack';
   return fallback;
 }
 
@@ -3315,7 +3946,10 @@ async function run(argv = []) {
     if (subcommand === 'install') return await installPack(args);
     if (subcommand === 'run') return await runPack(args);
     if (subcommand === 'runs') return runsPack(args);
-    if (subcommand === 'share') return sharePack(args);
+    if (subcommand === 'share') return await sharePack(args);
+    if (subcommand === 'browse') return await browsePacks(args);
+    if (subcommand === 'sales') return await showPackSales(args);
+    if (subcommand === 'purchases') return await showPackPurchases(args);
     if (subcommand === 'pull') return await pullPack(args);
     if (subcommand === 'status') return statusPack(args);
     if (subcommand === 'update') return await updatePack(args);
@@ -3337,7 +3971,19 @@ module.exports = {
   craftPack,
   installPack,
   runPack,
+  sharePack,
+  browsePacks,
+  showPackSales,
+  showPackPurchases,
   sanitizePersonalizationName,
+  parsePackShareArgs,
+  formatShareExpiry,
+  formatPackShareLinksTable,
+  formatPackBrowseTable,
+  packSalesUrl,
+  formatSalesDollars,
+  formatPackSalesTable,
+  formatPackPurchasesTable,
   pullPack,
   updatePack,
   listInstalledPacks,

@@ -7,7 +7,18 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { readZipFile, writeZipFile, ZIP_LIMITS } = require('../lib/zip');
-const { comparePackVersions, installPack, listInstalledPacks, pullPack, updatePack } = require('../commands/pack');
+const {
+  buildManifest,
+  comparePackVersions,
+  formatPackBrowseTable,
+  formatPackPurchasesTable,
+  showPackSales,
+  showPackPurchases,
+  installPack,
+  listInstalledPacks,
+  pullPack,
+  updatePack,
+} = require('../commands/pack');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -102,6 +113,13 @@ function closeServer(server) {
   });
 }
 
+function jsonResponse(status, value) {
+  return {
+    status,
+    body: Buffer.from(JSON.stringify(value)),
+  };
+}
+
 test('pack publish --author writes the author into the manifest', () => {
   const dir = makeTempDir();
   try {
@@ -115,6 +133,97 @@ test('pack publish --author writes the author into the manifest', () => {
     assert.equal(install.status, 0, `stdout:\n${install.stdout}\nstderr:\n${install.stderr}`);
     const manifest = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'));
     assert.equal(manifest.author, 'Ada Lovelace');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('new pack manifests default to unlisted visibility', () => {
+  const manifest = buildManifest(null, {
+    slug: 'new-pack',
+    author: 'Ada Lovelace',
+    notes: '',
+    visibility: null,
+    bump: 'patch',
+    fallbackSlug: 'new-pack',
+  });
+  assert.equal(manifest.visibility, 'unlisted');
+});
+
+test('pack publish preserves omitted and existing visibility unless explicitly changed', () => {
+  const dir = makeTempDir();
+  try {
+    const atrisDir = seedAtris(dir);
+    const manifestPath = path.join(atrisDir, 'pack.json');
+    fs.writeFileSync(manifestPath, `${JSON.stringify(sampleManifest({
+      slug: 'visibility-pack',
+      author: 'Ada Lovelace',
+    }), null, 2)}\n`);
+
+    const legacyPublish = runCli(['pack', 'publish', '--dir', 'atris'], { cwd: dir });
+    assert.equal(legacyPublish.status, 0, `stdout:\n${legacyPublish.stdout}\nstderr:\n${legacyPublish.stderr}`);
+    const legacyManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.equal(Object.prototype.hasOwnProperty.call(legacyManifest, 'visibility'), false);
+
+    legacyManifest.visibility = 'private';
+    fs.writeFileSync(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
+    const privatePublish = runCli(['pack', 'publish', '--dir', 'atris'], { cwd: dir });
+    assert.equal(privatePublish.status, 0, `stdout:\n${privatePublish.stdout}\nstderr:\n${privatePublish.stderr}`);
+    assert.equal(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).visibility, 'private');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack publish --visibility writes the disk and registry manifests', () => {
+  const dir = makeTempDir();
+  try {
+    const atrisDir = seedAtris(dir);
+    const zipPath = path.join(dir, 'public-pack.zip');
+    const publish = runCli([
+      'pack',
+      'publish',
+      '--dir',
+      'atris',
+      '--slug',
+      'public-pack',
+      '--author',
+      'Ada Lovelace',
+      '--visibility',
+      'public',
+      '--out',
+      zipPath,
+    ], { cwd: dir });
+    assert.equal(publish.status, 0, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
+
+    const diskManifest = JSON.parse(fs.readFileSync(path.join(atrisDir, 'pack.json'), 'utf8'));
+    const zipManifest = JSON.parse(
+      readZipFile(zipPath).find((entry) => entry.name === 'pack.json').data.toString('utf8'),
+    );
+    assert.equal(diskManifest.visibility, 'public');
+    assert.equal(zipManifest.visibility, 'public');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack publish rejects unknown visibility without writing pack.json', () => {
+  const dir = makeTempDir();
+  try {
+    const atrisDir = seedAtris(dir);
+    const publish = runCli([
+      'pack',
+      'publish',
+      '--dir',
+      'atris',
+      '--slug',
+      'invalid-visibility',
+      '--visibility',
+      'friends',
+    ], { cwd: dir });
+    assert.equal(publish.status, 1, `stdout:\n${publish.stdout}\nstderr:\n${publish.stderr}`);
+    assert.match(publish.stderr, /visibility must be public, unlisted, or private/);
+    assert.equal(fs.existsSync(path.join(atrisDir, 'pack.json')), false);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1353,6 +1462,36 @@ test('pack install accepts registry slugs and https zip urls', async () => {
   }
 });
 
+test('pack install points unpaid priced slugs to their page and keeps other errors raw', async () => {
+  const dir = makeTempDir();
+  const errors = [];
+  const originalError = console.error;
+  try {
+    console.error = (line) => errors.push(line);
+    const deps = {
+      getAppBaseUrl: () => 'https://app.test/',
+      loadCredentials: () => ({ token: 'test-token' }),
+      httpRequest: async () => jsonResponse(402, { error: 'Purchase required.' }),
+    };
+
+    assert.equal(await installPack(['paid-pack'], dir, { deps }), 1);
+    assert.deepEqual(errors, [
+      'this pack is paid. buy it on its page, then run this again.',
+      'https://app.test/packs/paid-pack',
+    ]);
+
+    deps.httpRequest = async () => jsonResponse(500, { error: 'service unavailable' });
+    await assert.rejects(
+      () => installPack(['broken-pack'], dir, { deps }),
+      /service unavailable/,
+    );
+    assert.equal(errors.length, 2);
+  } finally {
+    console.error = originalError;
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack install stamps file origin for local zip installs', async () => {
   const dir = makeTempDir();
   try {
@@ -1823,6 +1962,34 @@ test('pack pull stages newer remote in upstream and preserves local edits', asyn
   }
 });
 
+test('pack pull points unpaid priced slugs to their page', async () => {
+  const dir = makeTempDir();
+  const target = path.join(dir, 'demo-pack');
+  const errors = [];
+  const originalError = console.error;
+  try {
+    writePackDir(target, { slug: 'paid-pack', version: '0.1.0' });
+    console.error = (line) => errors.push(line);
+
+    const result = await pullPack(['--dir', target], dir, {
+      deps: {
+        getAppBaseUrl: () => 'https://app.test/',
+        loadCredentials: () => ({ token: 'test-token' }),
+        httpRequest: async () => jsonResponse(402, { error: 'Purchase required.' }),
+      },
+    });
+
+    assert.equal(result, 1);
+    assert.deepEqual(errors, [
+      'this pack is paid. buy it on its page, then run this again.',
+      'https://app.test/packs/paid-pack',
+    ]);
+  } finally {
+    console.error = originalError;
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack pull records an equal remote check without staging a review', async () => {
   const dir = makeTempDir();
   try {
@@ -2082,3 +2249,157 @@ for (const sub of ['list', 'status', 'pull', 'update', 'show', 'inspect', 'docto
     });
   }
 }
+
+test('pack help lists visibility, signed sharing, revocation, and browse', () => {
+  const result = runCli(['pack', 'help'], { cwd: repoRoot });
+  assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.match(result.stdout, /--visibility public\|unlisted\|private/);
+  assert.match(result.stdout, /pack share <slug> --for "<Name>" \[--days 30\]/);
+  assert.match(result.stdout, /pack share <slug> --revoke/);
+  assert.match(result.stdout, /pack browse \[--mine\]/);
+  assert.match(result.stdout, /atris pack sales\n\s+atris pack purchases/);
+});
+
+test('pack sales excludes refunded rows from its summary and shows their status', async () => {
+  const output = [];
+  const result = await showPackSales([], repoRoot, {
+    deps: {
+      getApiBaseUrl: () => 'https://api.example.com/api',
+      loadCredentials: () => ({ token: 'seller-token' }),
+      httpRequest: async () => jsonResponse(200, [
+        { slug: 'alpha-pack', buyer: 'a***@mail.com', price_cents: 500, granted_at: '2026-07-30T10:00:00Z' },
+        { slug: 'beta-pack', buyer: 'b***@mail.com', price_cents: 700, granted_at: '2026-07-29T10:00:00Z', refunded: true },
+      ]),
+    },
+    print: (line) => output.push(line),
+  });
+
+  assert.equal(result, 0);
+  assert.equal(output[0], '$5 earned across 1 sale.');
+  assert.match(output[1], /^pack\s+buyer\s+price\s+date\s+status/m);
+  assert.match(output[1], /alpha-pack\s+a\*\*\*@mail\.com\s+\$5\s+Jul 30/);
+  assert.match(output[1], /beta-pack\s+b\*\*\*@mail\.com\s+\$7\s+Jul 29\s+refunded/);
+});
+
+test('pack purchases excludes refunded rows from its summary and shows their status', async () => {
+  const calls = [];
+  const output = [];
+  const result = await showPackPurchases([], repoRoot, {
+    deps: {
+      getAppBaseUrl: () => 'https://packs.example.com/',
+      loadCredentials: () => ({ token: 'buyer-token' }),
+      httpRequest: async (url, options) => {
+        calls.push({ url, options });
+        return jsonResponse(200, [
+          { slug: 'alpha-pack', seller: 'Ada', price_cents: 500, granted_at: '2026-07-30T10:00:00Z' },
+          { slug: 'beta-pack', seller: 'Grace', price_cents: 700, granted_at: '2026-07-29T10:00:00Z', refunded: true },
+        ]);
+      },
+    },
+    print: (line) => output.push(line),
+  });
+
+  assert.equal(result, 0);
+  assert.equal(calls[0].url, 'https://packs.example.com/api/pack/purchases');
+  assert.equal(calls[0].options.method, 'GET');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer buyer-token');
+  assert.equal(output[0], '1 pack bought for $5 total.');
+  assert.match(output[1], /^pack\s+seller\s+price\s+date\s+status/m);
+  assert.match(output[1], /alpha-pack\s+Ada\s+\$5\s+Jul 30/);
+  assert.match(output[1], /beta-pack\s+Grace\s+\$7\s+Jul 29\s+refunded/);
+  assert.equal(output[2], 'install one with: atris pack install <slug>');
+});
+
+test('pack purchases hides status when refunded is false or missing', () => {
+  const table = formatPackPurchasesTable([
+    { slug: 'alpha-pack', seller: 'Ada', price_cents: 500, granted_at: '2026-07-30T10:00:00Z' },
+    { slug: 'beta-pack', seller: 'Grace', price_cents: 700, granted_at: '2026-07-29T10:00:00Z', refunded: false },
+  ]);
+
+  assert.doesNotMatch(table.split('\n')[0], /\bstatus\b/);
+  assert.doesNotMatch(table, /\brefunded\b/);
+});
+
+test('pack purchases prints the exact empty state for a wrapped response', async () => {
+  const output = [];
+  const result = await showPackPurchases([], repoRoot, {
+    deps: {
+      getAppBaseUrl: () => 'https://packs.example.com',
+      loadCredentials: () => ({ token: 'buyer-token' }),
+      httpRequest: async () => jsonResponse(200, { purchases: [] }),
+    },
+    print: (line) => output.push(line),
+  });
+
+  assert.equal(result, 0);
+  assert.deepEqual(output, [
+    'no purchased packs yet. browse with: atris pack browse',
+  ]);
+});
+
+test('pack purchases gives the same login nudge for missing auth and a 401', async () => {
+  const expected = 'not logged in. run atris login first to view pack purchases.';
+  await assert.rejects(
+    () => showPackPurchases([], repoRoot, {
+      deps: { loadCredentials: () => null },
+      print: () => {},
+    }),
+    (error) => error.message === expected,
+  );
+  await assert.rejects(
+    () => showPackPurchases([], repoRoot, {
+      deps: {
+        getAppBaseUrl: () => 'https://packs.example.com',
+        loadCredentials: () => ({ token: 'expired-token' }),
+        httpRequest: async () => jsonResponse(401, { error: 'expired' }),
+      },
+      print: () => {},
+    }),
+    (error) => error.message === expected,
+  );
+});
+
+test('pack browse shows priced and free packs when any listed pack is priced', () => {
+  const table = formatPackBrowseTable({
+    packs: [
+      {
+        manifest: {
+          slug: 'pro-pack',
+          title: 'Pro Pack',
+          version: '1.0.0',
+          priceCents: 1250,
+        },
+      },
+      {
+        slug: 'tiny-pack',
+        title: 'Tiny Pack',
+        version: '1.0.0',
+        priceCents: 99,
+      },
+      {
+        slug: 'free-pack',
+        title: 'Free Pack',
+        version: '1.0.0',
+      },
+    ],
+  });
+
+  assert.match(table, /^slug\s+title\s+version\s+price/m);
+  assert.match(table, /pro-pack\s+Pro Pack\s+1\.0\.0\s+\$12\.50/);
+  assert.match(table, /tiny-pack\s+Tiny Pack\s+1\.0\.0\s+\$0\.99/);
+  assert.match(table, /free-pack\s+Free Pack\s+1\.0\.0\s+free/);
+});
+
+test('pack browse hides price when no listed pack is priced', () => {
+  const table = formatPackBrowseTable({
+    packs: [
+      { slug: 'free-pack', title: 'Free Pack', version: '1.0.0' },
+      { slug: 'zero-pack', title: 'Zero Pack', version: '1.0.0', priceCents: 0 },
+    ],
+  });
+
+  assert.match(table, /^slug\s+title\s+version$/m);
+  assert.doesNotMatch(table.split('\n')[0], /\bprice\b/);
+  assert.match(table, /free-pack\s+Free Pack\s+1\.0\.0$/m);
+  assert.match(table, /zero-pack\s+Zero Pack\s+1\.0\.0$/m);
+});
