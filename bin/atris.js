@@ -599,6 +599,8 @@ function showHelp() {
   console.log('  business onboard       - Onboard from sparse input (--name, --website, --contact)');
   console.log('  business add <slug>    - Connect a business');
   console.log('  business list          - Show connected businesses');
+  console.log('  business room [slug]   - Show the live room from the production API');
+  console.log('  business store on      - Enable the room store with its current catalog');
   console.log('  business remove <slug> - Disconnect a business');
   console.log('  business team [slug]   - Show members, roles, and admin access');
   console.log('  business health <slug> - Health report (members, workspace, issues)');
