@@ -8751,16 +8751,28 @@ function cappedClaudeReceiptText(text, limit = 4000) {
   return clean.slice(0, limit - 16).trimEnd() + '\n...[truncated]';
 }
 
-async function runMission(args) {
+async function parseAndValidateMissionRunPhase(args) {
   const asJson = wantsJson(args);
+  const context = {
+    args,
+    asJson,
+    cwd: process.cwd(),
+    handled: false,
+    returnValue: undefined,
+    lock: null,
+    error: null,
+  };
   if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
     help();
-    return;
+    context.handled = true;
+    return context;
   }
   if (hasFlag(args, '--cloud')) {
     const result = await runCloudMissionCommand(args);
     process.exitCode = result.exitCode;
-    return result;
+    context.handled = true;
+    context.returnValue = result;
+    return context;
   }
   // --fleet: staff every idle capable engine on the board's claimable
   // safe-lane tasks, build in parallel worktrees, land serially. Humble flag,
@@ -8779,7 +8791,8 @@ async function runMission(args) {
     });
     if (asJson) console.log(JSON.stringify(flight, null, 2));
     process.exitCode = flight.paused && flight.paused.length > 0 ? 1 : 0;
-    return;
+    context.handled = true;
+    return context;
   }
   const dueMode = hasFlag(args, '--due');
   const headlessOnly = hasFlag(args, '--headless');
@@ -8815,22 +8828,70 @@ async function runMission(args) {
   const ref = input.ref;
   const runArgs = input.args;
 
+  Object.assign(context, {
+    dueMode,
+    headlessOnly,
+    selfDrive,
+    skipClaude,
+    verifyEach,
+    completeOnPass,
+    skipDrain,
+    createNext,
+    budgetTier,
+    maxTicksFlag,
+    maxTicks,
+    maxWallFlag,
+    explicitMaxWallSeconds,
+    runBudgetContract,
+    maxWallSeconds,
+    cadenceOverride,
+    runnerOverride,
+    modelOverride,
+    runtimeView,
+    input,
+    ref,
+    runArgs,
+  });
+  return context;
+}
+
+async function resolveMissionRunPhase(context) {
+  const {
+    args,
+    asJson,
+    cwd,
+    dueMode,
+    headlessOnly,
+    budgetTier,
+    maxTicksFlag,
+    maxWallFlag,
+    explicitMaxWallSeconds,
+    runBudgetContract,
+    runtimeView,
+    input,
+    ref,
+    runArgs,
+  } = context;
+  let { maxTicks, maxWallSeconds } = context;
+
   if (!dueMode && !ref) {
     if (asJson || !process.stdin.isTTY || !process.stderr.isTTY) {
       missionRunInputRequired(asJson, input.owner);
     }
     const prompted = await promptMissionRunInput(runArgs);
     await startMissionFromRunObjective(prompted.objective, prompted.args);
+    context.handled = true;
     return;
   }
 
-  let mission = dueMode && !ref ? selectDueMission(process.cwd(), new Date(), { headlessOnly }) : resolveMission(ref);
+  let mission = dueMode && !ref ? selectDueMission(cwd, new Date(), { headlessOnly }) : resolveMission(ref, cwd);
   if (!mission && dueMode && !ref) {
     printJsonOrText(
       { ok: true, action: 'run_skipped', reason: 'no_due_mission', mission: null },
       ['No due mission found.'],
       asJson,
     );
+    context.handled = true;
     return;
   }
   // BCK-1319: a bare single token that looks like an id/suffix/number (no
@@ -8844,6 +8905,7 @@ async function runMission(args) {
   }
   if (!mission && ref) {
     await startMissionFromRunObjective(ref, runArgs);
+    context.handled = true;
     return;
   }
   if (!mission) {
@@ -8857,7 +8919,8 @@ async function runMission(args) {
   } else if (!maxWallFlag && Number(mission.budget_contract?.requested_seconds) > 0) {
     maxWallSeconds = Math.max(60, Number(mission.budget_contract.requested_seconds));
   }
-  const detachedDriverLifecycle = installDetachedMissionDriverLifecycle(mission, process.cwd());
+  const detachedDriverLifecycle = installDetachedMissionDriverLifecycle(mission, cwd);
+  context.detachedDriverLifecycle = detachedDriverLifecycle;
   if (['complete', 'stopped'].includes(mission.status)) {
     detachedDriverLifecycle?.setExitReason(mission.status);
     if (asJson) {
@@ -8866,18 +8929,20 @@ async function runMission(args) {
         [],
         true,
       );
+      context.handled = true;
       return;
     }
     console.error(`Mission ${mission.id} is ${mission.status}; nothing to run.`);
     process.exit(0);
   }
   if (hasFlag(args, '--detach')) {
-    detachMissionRun(args, mission, process.cwd(), asJson);
+    detachMissionRun(args, mission, cwd, asJson);
+    context.handled = true;
     return;
   }
 
   const nativeGoalRunOptions = codexNativeGoalOptionsFromArgs(args);
-  const autoAck = maybeAutoAckCodexNativeGoal(mission, process.cwd(), nativeGoalRunOptions);
+  const autoAck = maybeAutoAckCodexNativeGoal(mission, cwd, nativeGoalRunOptions);
   if (autoAck) mission = autoAck.saved;
   maybeBlockUntilCodexNativeGoalStarted(runtimeView(mission), asJson, nativeGoalRunOptions);
 
@@ -8886,37 +8951,63 @@ async function runMission(args) {
   // (e.g. --engine cursor) never invokes claude. The in-lock probe below runs
   // after applyMissionRunnerProfile and checks the right binary.
 
-  const lock = acquireMissionLock(mission.id);
+  const lock = acquireMissionLock(mission.id, cwd);
   if (!lock.ok) {
     exitMissionError(`another driver is already running mission ${mission.id} (pid ${lock.holder?.pid || '?'})`, 3, asJson);
   }
 
-  // Everything past lock acquisition runs inside try/finally so the lock + signal handlers
-  // always get cleaned up — including saveMission failures during pending-session setup.
-  let pauseReason = null;
-  let sessionId = null;
-  let pendingSessionId = null;
-  let ranTicks = 0;
-  const ticks = [];
-  let onSig = null;
-  let restoreRunnerProfile = null;
-  let blocker = null;
+  Object.assign(context, {
+    mission,
+    maxTicks,
+    maxWallSeconds,
+    nativeGoalRunOptions,
+    lock,
+    pauseReason: null,
+    sessionId: null,
+    pendingSessionId: null,
+    ranTicks: 0,
+    ticks: [],
+    onSig: null,
+    restoreRunnerProfile: null,
+    blocker: null,
+  });
+}
 
-  try {
-    const cwd = process.cwd();
+async function executeMissionRunTicksPhase(context) {
+    const {
+      asJson,
+      cwd,
+      explicitMaxWallSeconds,
+      runBudgetContract,
+      runtimeView,
+      runnerOverride,
+      skipClaude,
+      verifyEach,
+      completeOnPass,
+      skipDrain,
+      maxTicksFlag,
+      budgetTier,
+      cadenceOverride,
+      detachedDriverLifecycle,
+      lock,
+      nativeGoalRunOptions,
+    } = context;
+    let { mission, maxTicks, maxWallSeconds, pauseReason, sessionId, pendingSessionId, ranTicks } = context;
+    const ticks = context.ticks;
     const controller = new AbortController();
-    onSig = (signal) => {
+    context.controller = controller;
+    context.onSig = (signal) => {
       detachedDriverLifecycle?.setExitReason(`signal-${String(signal || 'abort').toLowerCase()}`);
       controller.abort();
     };
-    process.on('SIGINT', onSig);
-    process.on('SIGTERM', onSig);
+    process.on('SIGINT', context.onSig);
+    process.on('SIGTERM', context.onSig);
 
     // Re-read inside the lock. The initial resolveMission ran pre-lock, so a concurrent
     // `mission tick` could have written between resolveMission and acquireMissionLock.
     // Derive sessionId, pendingSessionId, and the frozen contract from the fresh record
     // so a fast tick's writes can't be silently overwritten by this run loop.
-    mission = resolveMission(mission.id) || mission;
+    mission = resolveMission(mission.id, cwd) || mission;
     if (explicitMaxWallSeconds && runBudgetContract) {
       mission = saveMission({
         ...mission,
@@ -8931,10 +9022,12 @@ async function runMission(args) {
     if (['complete', 'stopped'].includes(mission.status)) {
       detachedDriverLifecycle?.setExitReason(mission.status);
       console.error(`Mission ${mission.id} is ${mission.status}; nothing to run.`);
+      context.handled = true;
       return;
     }
     if (returnIfCodexNativeGoalNotStarted(runtimeMission, asJson, nativeGoalRunOptions)) {
       detachedDriverLifecycle?.setExitReason('native-goal-not-started');
+      context.handled = true;
       return;
     }
     if (mission.status === 'paused') {
@@ -8951,7 +9044,7 @@ async function runMission(args) {
     sessionId = mission.claude_session_id || null;
     pendingSessionId = mission.pending_session_id || null;
     const autoRunner = String(runtimeMission.runner || '').trim().toLowerCase() === MISSION_AUTO_RUNNER;
-    restoreRunnerProfile = autoRunner ? () => {} : applyMissionRunnerProfile(runtimeMission.runner);
+    context.restoreRunnerProfile = autoRunner ? () => {} : applyMissionRunnerProfile(runtimeMission.runner);
     const callerSessionRunner = runnerUsesCallerSession(runtimeMission.runner);
     const runnerName = String(runtimeMission.runner || '').trim().toLowerCase();
     const atris2Runner = runnerName === 'atris2';
@@ -9018,7 +9111,7 @@ async function runMission(args) {
         // Re-read before measuring the wall. Detached full-budget drivers use
         // the mission contract as their wall so process startup drift cannot
         // shorten the promised work window.
-        mission = resolveMission(mission.id) || mission;
+        mission = resolveMission(mission.id, cwd) || mission;
         runtimeMission = runtimeView(mission);
         const contractualRemaining = detachedDriverLifecycle && mission.always_on && missionSpendsFullBudget(mission)
           ? missionFullBudgetRemainingSeconds(mission)
@@ -9296,42 +9389,22 @@ async function runMission(args) {
         if (engineHealth) result.engine_health = engineHealth.health;
       }
 
-      // An explicit verifier is safe and useful in no-worker mode. The
-      // fallback engine verifier is itself worker activity, so --no-claude
-      // and caller-session ticks must not launch it behind the operator's
-      // back. Leaving verifier_passed unset also lets the idle-stop breaker
-      // judge these ticks from the worktree signal instead of hanging here.
-      const runnerGuard = result.claude?.protected_lane_guard || result.atris2?.protected_lane_guard || null;
-      if (result.status === 'ran' || runnerGuard) {
-        const protectedLaneGuard = runnerGuard?.allowed === false
-          ? runnerGuard
-          : inspectMissionTickProtectedDiff(mission, tickWorktreeBefore, cwd);
-        result.protected_lane_guard = protectedLaneGuard;
-        if (!protectedLaneGuard.allowed) {
-          const guardPauseReason = protectedLaneGuard.unreadable
-            ? 'mission-diff-unreadable'
-            : 'protected-lane-review';
-          result.status = protectedLaneGuard.status;
-          result.reason = guardPauseReason;
-          result.ran = false;
-          pauseReason = guardPauseReason;
-        }
-      }
-      let verifierResult = null;
+      context.pauseReason = pauseReason;
+      context.currentTick = {
+        mission,
+        result,
+        tickWorktreeBefore,
+        tickRuntimeMission,
+        tickSkipWorker,
+        tickIdx,
+        frozen,
+      };
+      await verifyMissionRunTickPhase(context);
+      result = context.currentTick.result;
+      const verifierResult = context.currentTick.verifierResult;
+      pauseReason = context.pauseReason;
+      context.currentTick = null;
       let receiptPath = null;
-      if (result.status === 'ran' && verifyEach) {
-        if (frozen.verifier) {
-          verifierResult = runVerifier(frozen.verifier);
-        } else if (!tickSkipWorker) {
-          verifierResult = await runEngineVerifier(tickRuntimeMission, {
-            cwd,
-            signal: controller.signal,
-            tickIndex: tickIdx,
-          });
-        }
-        if (verifierResult) result.verifier_passed = verifierResult.passed;
-      }
-      stampMissionRunnerBrief(cwd, result.claude?.brief_id, result, verifierResult);
 
       // Review-lane drain: always-on loops sweep the agent-safe review actions
       // each tick so proof-backed work reaches certified on cadence with zero
@@ -9520,7 +9593,7 @@ async function runMission(args) {
         if (lastTick && lastTick.status !== 'ran' && !missionRunKeepsRetryingError(lastTick.reason)) pauseReason = 'max-ticks-reached';
       }
 
-      mission = resolveMission(mission.id) || mission;
+      mission = resolveMission(mission.id, cwd) || mission;
       const remainingBudgetSeconds = missionFullBudgetRemainingSeconds(mission);
       const explicitExit = ['complete', 'stopped', 'paused'].includes(String(mission.status || ''));
       const healthyCycleBoundary = !pauseReason || pauseReason === 'max-ticks-reached';
@@ -9551,6 +9624,97 @@ async function runMission(args) {
       }
       cycleTickLimit = ticks.length + effectiveMaxTicks;
     }
+
+    Object.assign(context, {
+      mission,
+      pauseReason,
+      sessionId,
+      pendingSessionId,
+      ranTicks,
+      frozen,
+      runWorktreeBefore,
+      runWorktreeBaseline,
+      effectiveMaxTicks,
+      startedAt,
+      continuationGoal,
+      runtimeMission,
+    });
+}
+
+async function verifyMissionRunTickPhase(context) {
+  const { cwd, verifyEach, controller, currentTick } = context;
+  let { result } = currentTick;
+
+  // An explicit verifier is safe and useful in no-worker mode. The fallback
+  // engine verifier is worker activity, so no-worker ticks must not launch it.
+  const runnerGuard = result.claude?.protected_lane_guard || result.atris2?.protected_lane_guard || null;
+  if (result.status === 'ran' || runnerGuard) {
+    const protectedLaneGuard = runnerGuard?.allowed === false
+      ? runnerGuard
+      : inspectMissionTickProtectedDiff(currentTick.mission, currentTick.tickWorktreeBefore, cwd);
+    result.protected_lane_guard = protectedLaneGuard;
+    if (!protectedLaneGuard.allowed) {
+      const guardPauseReason = protectedLaneGuard.unreadable
+        ? 'mission-diff-unreadable'
+        : 'protected-lane-review';
+      result.status = protectedLaneGuard.status;
+      result.reason = guardPauseReason;
+      result.ran = false;
+      context.pauseReason = guardPauseReason;
+    }
+  }
+
+  let verifierResult = null;
+  if (result.status === 'ran' && verifyEach) {
+    if (currentTick.frozen.verifier) {
+      verifierResult = runVerifier(currentTick.frozen.verifier);
+    } else if (!currentTick.tickSkipWorker) {
+      verifierResult = await runEngineVerifier(currentTick.tickRuntimeMission, {
+        cwd,
+        signal: controller.signal,
+        tickIndex: currentTick.tickIdx,
+      });
+    }
+    if (verifierResult) result.verifier_passed = verifierResult.passed;
+  }
+  stampMissionRunnerBrief(cwd, result.claude?.brief_id, result, verifierResult);
+  currentTick.result = result;
+  currentTick.verifierResult = verifierResult;
+}
+
+function completeMissionRunPhase(context) {
+  const {
+    asJson,
+    cwd,
+    selfDrive,
+    createNext,
+    runtimeView,
+    runnerOverride,
+    runBudgetContract,
+    detachedDriverLifecycle,
+    lock,
+    frozen,
+    runWorktreeBefore,
+    runWorktreeBaseline,
+    effectiveMaxTicks,
+    startedAt,
+  } = context;
+  const ticks = context.ticks || [];
+  let {
+    mission,
+    pauseReason,
+    ranTicks,
+    sessionId,
+    blocker,
+    continuationGoal,
+  } = context;
+
+  try {
+    if (context.error) {
+      detachedDriverLifecycle?.finish('run-error', context.error);
+      return;
+    }
+    if (context.handled) return;
 
     // BCK-1324: no-progress is a clean, honest stop — the run did what it
     // could and correctly recognized there was nothing left to do. It is NOT
@@ -9665,16 +9829,33 @@ async function runMission(args) {
     detachedDriverLifecycle?.finish('run-error', error);
     throw error;
   } finally {
-    if (onSig) {
-      try { process.removeListener('SIGINT', onSig); } catch {}
-      try { process.removeListener('SIGTERM', onSig); } catch {}
+    if (context.onSig) {
+      try { process.removeListener('SIGINT', context.onSig); } catch {}
+      try { process.removeListener('SIGTERM', context.onSig); } catch {}
     }
-    if (restoreRunnerProfile) {
-      try { restoreRunnerProfile(); } catch {}
+    if (context.restoreRunnerProfile) {
+      try { context.restoreRunnerProfile(); } catch {}
     }
     releaseMissionLock(lock);
     detachedDriverLifecycle?.finish();
   }
+}
+
+async function runMission(args) {
+  const context = await parseAndValidateMissionRunPhase(args);
+  if (context.handled) return context.returnValue;
+
+  try {
+    await resolveMissionRunPhase(context);
+    if (!context.handled) await executeMissionRunTicksPhase(context);
+  } catch (error) {
+    context.error = error;
+    throw error;
+  } finally {
+    if (context.lock) completeMissionRunPhase(context);
+  }
+
+  return context.returnValue;
 }
 
 function tickMission(args) {
