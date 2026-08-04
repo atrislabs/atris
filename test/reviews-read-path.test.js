@@ -138,17 +138,24 @@ test('reviews never executes verifies; it reads metadata.verify_cache', () => {
     db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify(metaB), rowB.id);
     db.close();
 
-    // The read path: zero new executions, A accepted from cache, B pending.
+    // The read path: zero new executions and zero status changes. Reviews is
+    // a view; acceptance belongs to the write lanes (sweep, autoland tick).
     const reviews = runCli(['task', 'reviews', '--json'], { cwd: workspace, env });
     assert.equal(reviews.status, 0, reviews.stderr);
     assert.equal(markerCount(workspace), 4, 'reviews must not execute any verify');
 
+    const viewedA = JSON.parse(runCli(['task', 'show', refA, '--json'], { cwd: workspace, env }).stdout);
+    assert.equal(viewedA.status, 'review', 'the reviews view never flips status');
+
+    // The write lane accepts A from the stamped cache; stale-cache B stays.
+    const sweep = runCli(['task', 'sweep', '--auto-accept', '--json'], { cwd: workspace, env });
+    assert.equal(sweep.status, 0, sweep.stderr);
+
     const doneA = JSON.parse(runCli(['task', 'show', refA, '--json'], { cwd: workspace, env }).stdout);
-    assert.equal(doneA.status, 'done', 'A auto-accepts from the stamped cache');
+    assert.equal(doneA.status, 'done', 'the sweep lane accepts A from the stamped cache');
 
     const stillB = JSON.parse(runCli(['task', 'show', refB, '--json'], { cwd: workspace, env }).stdout);
     assert.equal(stillB.status, 'review', 'B waits for a write lane to verify');
-    assert.match(reviews.stdout, /verification_pending/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
