@@ -617,10 +617,11 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris task reap-mission-blockers` closes open blocker rows for complete or stopped missions; repeated blocker failures reopen the latest closed row, and new tasks with missing or diff-only verifiers carry degraded verification metadata. Regression: `test/self-drive.test.js`, `test/task-hygiene.test.js`
 - `atris/TODO.md` remains the readable rendered board; SQLite is the compact local/sync layer and wins if the markdown view is clobbered
 - In cloud business workspaces, backend Supabase `tasks` is the source of truth and Swarlo is the live claim/report layer
+- The task board HTTP API dispatches exact and task-specific paths through `TASK_API_ROUTES`, then task mutations through `TASK_API_POST_OPERATIONS`; `createTaskApiServer()` is the real-server test seam (`commands/task.js:11793-12430`, `test/task-api.test.js`).
 - **Runtime note:** `node:sqlite` requires Node.js 22+; older Node versions keep using the markdown TODO flow
 - **Value:** Gives multi-agent work atomic local claims without hiding task state in chat or competing with the cloud task record.
 
-**Search:** `rg "cmdAdd|cmdReapMissionBlockers|reapMissionBlockerTasks|reopenTask|handleTaskApi|claimTask|dbToShimRow" commands/task.js lib/task-db.js lib/todo.js`
+**Search:** `rg "cmdAdd|cmdReapMissionBlockers|reapMissionBlockerTasks|reopenTask|TASK_API_ROUTES|TASK_API_POST_OPERATIONS|createTaskApiServer|claimTask|dbToShimRow" commands/task.js lib/task-db.js lib/todo.js test/task-api.test.js`
 
 ### Feature: Local AI Computer Bridge (`atris serve`)
 
