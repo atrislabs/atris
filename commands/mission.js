@@ -6209,6 +6209,12 @@ const MISSION_RUN_DEFAULTS = {
   backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
 };
 
+// Clamp a remaining-wall timeout to [1, capMs]. Used by spawn plumbing so a
+// nearly-expired wall cannot schedule a zero or multi-hour child wait.
+function clampTimeoutMs(remainingMs, capMs = MISSION_RUN_DEFAULTS.claudeTimeoutMs) {
+  return Math.min(capMs, Math.max(1, Math.floor(remainingMs)));
+}
+
 // Claude sessions accumulate context across resumed ticks; an always-on
 // mission would grow without bound. Continuity lives on disk (receipts, logs,
 // now.md), so a healthy session is disposable: rotate to a fresh one every N
@@ -9225,9 +9231,9 @@ async function runMission(args) {
         const runClaudeSession = () => spawnClaudeTick(tickRuntimeMission, {
           sessionMode, sessionId: useId, cwd, signal: controller.signal,
           missionLock: lock,
-          timeoutMs: Math.min(
+          timeoutMs: clampTimeoutMs(
+            (maxWallSeconds - ((Date.now() - startedAt) / 1000)) * 1000,
             MISSION_RUN_DEFAULTS.claudeTimeoutMs,
-            Math.max(1, Math.floor((maxWallSeconds - ((Date.now() - startedAt) / 1000)) * 1000)),
           ),
           prompt,
           model: resolveClaudeRunnerModel(tickRuntimeMission),
