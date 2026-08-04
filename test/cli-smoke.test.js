@@ -1079,13 +1079,25 @@ test('soul fork copies persona and policies to target', () => {
 // ── Fleet tests ─────────────────────────────────────────
 
 test('fleet command loads without error (hub may be down)', () => {
-  const res = runCli(['fleet', 'status']);
+  const dir = makeTempDir();
+  let res;
+  try {
+    res = runCli(['fleet', 'status'], { cwd: dir });
+  } finally {
+    cleanupTempDir(dir);
+  }
   // May fail with "hub not running" but should not crash
   assert.ok(res.status === 0 || res.status === 1, 'fleet should exit cleanly');
 });
 
 test('help shows 6 essential commands', () => {
-  const res = runCli(['help']);
+  const dir = makeTempDir();
+  let res;
+  try {
+    res = runCli(['help'], { cwd: dir });
+  } finally {
+    cleanupTempDir(dir);
+  }
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /atris init/);
   assert.match(res.stdout, /atris run/);

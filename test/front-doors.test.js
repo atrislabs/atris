@@ -21,9 +21,15 @@ const {
 
 const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
 
+// Default the CLI cwd to a temp dir, never process.cwd(): the suite runs from
+// the repo root, so an inherited cwd makes the CLI mutate the checkout's own
+// .atris/state (CLI-1241).
+const scratchCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-front-doors-test-'));
+test.after(() => fs.rmSync(scratchCwd, { recursive: true, force: true }));
+
 function runCli(args, options = {}) {
   return spawnSync(process.execPath, [cliPath, ...args], {
-    cwd: options.cwd || process.cwd(),
+    cwd: options.cwd || scratchCwd,
     encoding: 'utf8',
     timeout: 30000,
     env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ...(options.env || {}) },
