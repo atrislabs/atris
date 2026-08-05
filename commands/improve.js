@@ -887,6 +887,186 @@ function formatImproveReport(result = {}) {
   return lines.join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// atris improve revisions — the gauge for the north-star metric:
+// operator revisions after landing = 0. an agent landing is a commit carrying
+// the atris co-author trailer (atris-builder[bot]); if a human commit touches
+// any of the same files within 72 hours, that landing failed the guarantee.
+//
+// renames are NOT followed: `git log --follow` is per-file and would cost one
+// subprocess per file per landing, so a post-landing rename reads as "no
+// overlap". that undercounts revisions slightly; accepted on purpose.
+
+const REVISIONS_SCHEMA = 'atris.improve_revisions.v1';
+const REVISION_WINDOW_HOURS = 72;
+const REVISION_WINDOW_MS = REVISION_WINDOW_HOURS * 60 * 60 * 1000;
+const AGENT_TRAILER_MARKER = 'atris-builder[bot]';
+const DEFAULT_REVISIONS_DAYS = 14;
+
+function parseRevisionsArgs(argv = []) {
+  const args = Array.isArray(argv) ? argv : [];
+  const opts = { days: DEFAULT_REVISIONS_DAYS, json: false, help: false };
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--help' || a === '-h') { opts.help = true; continue; }
+    if (a === '--json') { opts.json = true; continue; }
+    if (a === '--days') { const v = Number(args[++i]); if (Number.isFinite(v) && v > 0) opts.days = Math.round(v); continue; }
+    if (a.startsWith('--days=')) { const v = Number(a.split('=')[1]); if (Number.isFinite(v) && v > 0) opts.days = Math.round(v); continue; }
+  }
+  return opts;
+}
+
+function gitLines(cwdRoot, gitArgs) {
+  const r = spawnSync('git', gitArgs, { cwd: cwdRoot, encoding: 'utf8' });
+  if (r.status !== 0) {
+    const err = new Error(String(r.stderr || `git ${gitArgs[0]} exited ${r.status}`).trim());
+    err.gitFailed = true;
+    throw err;
+  }
+  return String(r.stdout || '');
+}
+
+/**
+ * Files changed by one commit. Merge commits are attributed by their
+ * first-parent diff (what the merge actually brought onto the mainline);
+ * plain commits use diff-tree. Root commits list their initial files.
+ */
+function commitFiles(cwdRoot, commit) {
+  const parents = commit.parents;
+  const out = parents.length >= 2
+    ? gitLines(cwdRoot, ['diff', '--name-only', `${commit.hash}^1`, commit.hash])
+    : gitLines(cwdRoot, ['diff-tree', '--no-commit-id', '--name-only', '-r', '--root', commit.hash]);
+  return out.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+/**
+ * Read the last N days of history and pair every agent landing with the
+ * human commits that touched the same files within the 72-hour window.
+ */
+function collectRevisionSignals(root, options = {}) {
+  const days = Number.isFinite(options.days) && options.days > 0 ? Math.round(options.days) : DEFAULT_REVISIONS_DAYS;
+  const nowMs = options.now != null ? new Date(options.now).getTime() : Date.now();
+  const sinceIso = new Date(nowMs - days * DAY_MS).toISOString();
+
+  let raw = '';
+  try {
+    raw = gitLines(root, ['log', `--since=${sinceIso}`, '--date=iso-strict', '--pretty=format:%H%x1f%P%x1f%aI%x1f%s%x1f%B%x1e']);
+  } catch (e) {
+    // a repo with no commits yet exits non-zero on `git log`; that is the
+    // empty-history case, not an error. anything else (not a repo) rethrows.
+    if (!/does not have any commits|bad default revision|unknown revision/i.test(e.message)) throw e;
+    raw = '';
+  }
+
+  const commits = raw.split('\x1e')
+    .map((chunk) => chunk.replace(/^\n/, ''))
+    .filter((chunk) => chunk.trim())
+    .map((chunk) => {
+      const [hash, parents, at, subject, body] = chunk.split('\x1f');
+      return {
+        hash: String(hash || '').trim(),
+        parents: String(parents || '').trim().split(/\s+/).filter(Boolean),
+        at: String(at || '').trim(),
+        ms: timestampMs(at),
+        subject: String(subject || '').trim(),
+        isAgent: String(body || '').includes(AGENT_TRAILER_MARKER),
+      };
+    })
+    .filter((c) => c.hash && c.ms != null);
+
+  const landings = commits.filter((c) => c.isAgent);
+  const humans = commits.filter((c) => !c.isAgent);
+
+  const filesCache = new Map();
+  const filesOf = (commit) => {
+    if (!filesCache.has(commit.hash)) filesCache.set(commit.hash, commitFiles(root, commit));
+    return filesCache.get(commit.hash);
+  };
+
+  const revisions = [];
+  for (const landing of landings) {
+    const landedFiles = new Set(filesOf(landing));
+    if (!landedFiles.size) continue;
+    const revisedBy = [];
+    const touched = new Set();
+    for (const human of humans) {
+      if (human.ms <= landing.ms || human.ms > landing.ms + REVISION_WINDOW_MS) continue;
+      const overlap = filesOf(human).filter((f) => landedFiles.has(f));
+      if (!overlap.length) continue;
+      revisedBy.push({ hash: human.hash, subject: human.subject, at: human.at });
+      overlap.forEach((f) => touched.add(f));
+    }
+    if (revisedBy.length) {
+      revisions.push({
+        landing: { hash: landing.hash, subject: landing.subject, at: landing.at },
+        revised_by: revisedBy,
+        files: [...touched].sort(),
+      });
+    }
+  }
+
+  return {
+    schema: REVISIONS_SCHEMA,
+    generated_at: new Date(nowMs).toISOString(),
+    days,
+    window_hours: REVISION_WINDOW_HOURS,
+    landings: landings.length,
+    revised: revisions.length,
+    rate: landings.length ? revisions.length / landings.length : 0,
+    revisions,
+  };
+}
+
+function listFilesPhrase(files = []) {
+  const shown = files.slice(0, 3);
+  const rest = files.length - shown.length;
+  return rest > 0 ? `${shown.join(', ')} and ${plural(rest, 'more file')}` : shown.join(', ');
+}
+
+function formatRevisionsReport(summary = {}) {
+  const days = summary.days || DEFAULT_REVISIONS_DAYS;
+  if (!summary.landings) {
+    return `no agent landings found in the last ${plural(days, 'day')}. nothing to measure yet.`;
+  }
+  const lines = [];
+  lines.push(`agent landings in the last ${plural(days, 'day')}: ${summary.landings}.`);
+  lines.push(`landings a human then revised: ${summary.revised}.`);
+  lines.push(`revision rate: ${Math.round((summary.rate || 0) * 100)} percent. the target is zero.`);
+  for (const item of Array.isArray(summary.revisions) ? summary.revisions : []) {
+    lines.push('');
+    lines.push(`an agent landed "${plainSentence(item.landing.subject)}". a human then changed ${listFilesPhrase(item.files)} within ${REVISION_WINDOW_HOURS} hours.`);
+  }
+  return lines.join('\n');
+}
+
+function showRevisionsHelp() {
+  console.log(`atris improve revisions - measure operator revisions after landing
+
+Usage:
+  atris improve revisions [--days N] [--json]
+
+Reads git history for the last N days (default ${DEFAULT_REVISIONS_DAYS}). A commit with the
+atris co-author trailer is an agent landing; a later human commit touching
+the same files within ${REVISION_WINDOW_HOURS} hours is a revision signal. The north-star
+metric is a revision rate of zero.`);
+}
+
+function runRevisions(argv = []) {
+  const opts = parseRevisionsArgs(argv);
+  if (opts.help) { showRevisionsHelp(); return 0; }
+  let summary;
+  try {
+    summary = collectRevisionSignals(process.cwd(), { days: opts.days });
+  } catch (e) {
+    console.log('this folder has no readable git history, so there are no landings to measure.');
+    if (!e.gitFailed) console.error(`  ${e.message}`);
+    return 1;
+  }
+  if (opts.json) console.log(JSON.stringify(summary));
+  else console.log(formatRevisionsReport(summary));
+  return 0;
+}
+
 function showHelp() {
   console.log(`atris improve - show the self-improvement metabolism vitals
 
@@ -894,6 +1074,7 @@ Usage:
   atris improve
   atris improve --json
   atris improve doctor [--json] [--fix] [--check <kind>]
+  atris improve revisions [--days N] [--json]
   atris improve tick [mode] [options]
   atris improve [mode|history] [options]
 
@@ -903,6 +1084,7 @@ Modes (positional or --mode):
   delegate    queue the tick for a local Claude Code session
   history     show the tick history (reward trend, credits, pass rate)
   doctor      scan loop receipts and optionally file one repair mission
+  revisions   measure operator revisions after agent landings (target: zero)
 
 Options:
   --member <name>  attribute the tick to a member (the loop's owner)
@@ -1074,6 +1256,9 @@ async function run(argv = [], deps = {}) {
     const result = runLoopDoctor(args.slice(1), deps);
     return result.check && !result.check.ok ? 1 : 0;
   }
+  if (args[0] === 'revisions') {
+    return runRevisions(args.slice(1));
+  }
   if (isBareVitalsArgs(args)) {
     const vitals = (deps.collectImproveVitals || collectImproveVitals)({ workspace: process.cwd() }, deps);
     if (args.includes('--json')) console.log(JSON.stringify(vitals));
@@ -1129,6 +1314,8 @@ module.exports = {
   formatTickHistory,
   improveApiPath,
   runLoopDoctor,
+  collectRevisionSignals,
+  formatRevisionsReport,
   runLocalFallback,
   summarizeLocalMissionRun,
   LOCAL_FALLBACK_ARGS,
