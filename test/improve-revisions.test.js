@@ -12,7 +12,13 @@ const os = require('node:os');
 const path = require('node:path');
 const { execSync } = require('node:child_process');
 
-const { run, collectRevisionSignals, formatRevisionsReport } = require('../commands/improve');
+const {
+  run,
+  collectRevisionSignals,
+  formatRevisionsReport,
+  collectImproveVitals,
+  formatImproveVitals,
+} = require('../commands/improve');
 
 const BOT_TRAILER = 'Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>';
 
@@ -151,6 +157,47 @@ test('merge commits are attributed by their first-parent diff', () => {
     assert.ok(summary.revised >= 1, 'the merged landing counts as revised');
     const files = summary.revisions.flatMap((r) => r.files);
     assert.ok(files.includes('m.js'));
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('improve vitals show the guarantee gauge from git history, counts as words', () => {
+  const { cwd, now } = buildFixture();
+  try {
+    const vitals = collectImproveVitals({ workspace: cwd, now }, { cronInstalled: () => true });
+    assert.strictEqual(vitals.guarantee.landings, 3);
+    assert.strictEqual(vitals.guarantee.revised, 1);
+    assert.strictEqual(vitals.guarantee.sentence, 'three landings this fortnight, one needed a human fix.');
+    const output = formatImproveVitals(vitals);
+    assert.match(output, /three landings this fortnight, one needed a human fix\./);
+    assert.strictEqual(output, output.toLowerCase());
+    assert.ok(!output.includes('—'), 'no em dashes in the vitals');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('improve vitals say zero needed a human fix when landings went clean', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 2 * 24 * HOUR;
+  try {
+    commitFile(cwd, 'a.js', 'v1\n', 'bot lands feature a', { bot: true, atMs: base });
+    commitFile(cwd, 'b.js', 'v1\n', 'bot lands feature b', { bot: true, atMs: base + HOUR });
+    const vitals = collectImproveVitals({ workspace: cwd, now }, { cronInstalled: () => true });
+    assert.strictEqual(vitals.guarantee.sentence, 'two landings this fortnight, zero needed a human fix.');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('improve vitals omit the guarantee gauge when there is no git history', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-revisions-test-'));
+  try {
+    const vitals = collectImproveVitals({ workspace: cwd }, { cronInstalled: () => true });
+    assert.strictEqual(vitals.guarantee, null);
+    assert.ok(!formatImproveVitals(vitals).includes('fortnight'));
   } finally {
     cleanup(cwd);
   }

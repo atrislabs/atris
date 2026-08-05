@@ -348,6 +348,13 @@ function plural(n, word) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
+// Spell small counts as words so the vitals read as prose; digits above nine.
+const SMALL_NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+
+function countWord(n) {
+  return n >= 0 && n < SMALL_NUMBER_WORDS.length ? SMALL_NUMBER_WORDS[n] : String(n);
+}
+
 function formatReward(value) {
   const n = Number(value) || 0;
   if (Number.isInteger(n)) return String(n);
@@ -505,6 +512,26 @@ function collectImproveVitals(options = {}, deps = {}) {
     sentence: plainSentence(usageSentence),
   };
 
+  // The guarantee gauge: agent landings vs human fixes over the last 14 days.
+  // Collection is bounded by --since so a huge repo only walks a fortnight.
+  // No git history (not a repo, git missing) means the line is omitted silently.
+  let guarantee = null;
+  try {
+    const collect = deps.collectRevisionSignals || collectRevisionSignals;
+    const rev = collect(root, { days: 14, now: nowMs });
+    const landingsPhrase = `${countWord(rev.landings)} landing${rev.landings === 1 ? '' : 's'} this fortnight`;
+    const fixPhrase = `${countWord(rev.revised)} needed a human fix`;
+    guarantee = {
+      days: rev.days,
+      landings: rev.landings,
+      revised: rev.revised,
+      rate: rev.rate,
+      sentence: plainSentence(`${landingsPhrase}, ${fixPhrase}.`),
+    };
+  } catch {
+    guarantee = null;
+  }
+
   const sentences = [
     heartbeat.sentence,
     exploit.sentence,
@@ -512,6 +539,7 @@ function collectImproveVitals(options = {}, deps = {}) {
     excrete.sentence,
     ...(topOverdueSentence ? [`the top overdue loop says ${topOverdueSentence}`] : []),
     usage.sentence,
+    ...(guarantee ? [guarantee.sentence] : []),
   ];
   const groups = [
     [heartbeat.sentence, installNudge].filter(Boolean),
@@ -519,6 +547,7 @@ function collectImproveVitals(options = {}, deps = {}) {
     [explore.sentence],
     [excrete.sentence, ...(topOverdueSentence ? [`the top overdue loop says ${topOverdueSentence}`] : [])],
     [usage.sentence],
+    ...(guarantee ? [[guarantee.sentence]] : []),
   ];
 
   return {
@@ -529,6 +558,7 @@ function collectImproveVitals(options = {}, deps = {}) {
     explore,
     excrete,
     usage,
+    guarantee,
     install_nudge: installNudge,
     sentences,
     groups,

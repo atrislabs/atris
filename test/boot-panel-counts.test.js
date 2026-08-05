@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execSync } = require('node:child_process');
 const { withTaskReadyResult } = require('./helpers/task-result');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -190,6 +190,60 @@ test('boot panel hides tidy line when worktrees and lessons are clean', () => {
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
     assert.doesNotMatch(boot.stdout, /^\s*tidy\s/m);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// The guarantee gauge on boot: a landing a human then fixed is bad news worth
+// a line; zero revisions is the healthy state and must add no noise.
+
+const BOT_TRAILER = 'Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>';
+const HOUR_MS = 60 * 60 * 1000;
+
+function gitCommitFixture(dir, file, content, subject, { bot = false, atMs } = {}) {
+  fs.writeFileSync(path.join(dir, file), content, 'utf8');
+  fs.writeFileSync(path.join(dir, '.git', 'COMMIT_MSG_FIXTURE'), bot ? `${subject}\n\n${BOT_TRAILER}\n` : `${subject}\n`, 'utf8');
+  const date = new Date(atMs).toISOString();
+  execSync('git add -A && git commit -q -F .git/COMMIT_MSG_FIXTURE', {
+    cwd: dir,
+    stdio: 'pipe',
+    env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+  });
+}
+
+function makeGitWorkspace() {
+  const dir = makeTempDir();
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+  execSync('git init -q && git config user.email t@t && git config user.name t', { cwd: dir, stdio: 'pipe' });
+  return dir;
+}
+
+test('boot panel flags landings a human had to fix this week', () => {
+  const dir = makeGitWorkspace();
+  const base = Date.now() - 2 * 24 * HOUR_MS;
+  try {
+    gitCommitFixture(dir, 'a.js', 'v1\n', 'bot lands feature a', { bot: true, atMs: base });
+    gitCommitFixture(dir, 'a.js', 'v2\n', 'human fixes feature a', { atMs: base + HOUR_MS });
+
+    const boot = runCli(['atris.md'], { cwd: dir });
+    assert.equal(boot.status, 0, boot.stderr);
+    assert.match(boot.stdout, /1 landing this week needed a human fix; run atris improve revisions/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('boot panel stays silent when no landing needed a human fix', () => {
+  const dir = makeGitWorkspace();
+  const base = Date.now() - 2 * 24 * HOUR_MS;
+  try {
+    gitCommitFixture(dir, 'a.js', 'v1\n', 'bot lands feature a', { bot: true, atMs: base });
+    gitCommitFixture(dir, 'b.js', 'v1\n', 'human writes unrelated b', { atMs: base + HOUR_MS });
+
+    const boot = runCli(['atris.md'], { cwd: dir });
+    assert.equal(boot.status, 0, boot.stderr);
+    assert.doesNotMatch(boot.stdout, /needed a human fix/);
   } finally {
     cleanupTempDir(dir);
   }
