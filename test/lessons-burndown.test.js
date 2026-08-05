@@ -95,6 +95,21 @@ test('mechanized lessons have resolved sidecar pointers', () => {
   }
 });
 
+test('every lesson carries a runnable detector', () => {
+  const metadata = readJson(path.join(repoRoot, 'atris', 'lessons.json'));
+  const allowedRunners = /^(node|npm|grep|test|pgrep)\b|^!/;
+  for (const [id, entry] of Object.entries(metadata)) {
+    if (id === '_schema') continue;
+    const detector = String((entry || {}).detector || '').trim();
+    assert.ok(detector.length > 0, `${id} has no detector; typed lessons need a live tripwire`);
+    assert.match(
+      detector,
+      allowedRunners,
+      `${id} detector must start with an allowlisted runner (node, npm, grep, test, !, pgrep): ${detector}`,
+    );
+  }
+});
+
 test('lessons markdown is shorter after burn-down', () => {
   const lines = fs.readFileSync(path.join(repoRoot, 'atris', 'lessons.md'), 'utf8').split(/\r?\n/);
   assert.ok(lines.length < 299, `expected fewer than 299 lines, got ${lines.length}`);

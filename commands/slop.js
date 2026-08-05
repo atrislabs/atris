@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const escapeRegExp = require('../lib/escape-regexp');
 
 const SCAN_EXTS = new Set(['.css', '.scss', '.sass', '.less', '.tsx', '.jsx', '.ts', '.js', '.mjs', '.html', '.vue', '.svelte', '.astro',
   '.md', '.mdx', '.txt']); // prose too: the voice doctrine (em-dash, hype-copy) is enforceable, not just advice
@@ -418,7 +419,7 @@ function findDeadCode(root = process.cwd(), opts = {}) {
   const allRepoJs = [...new Set([...listJsFiles(root)])];
   const mentionedBy = (file, predicate) => {
     const stem = path.basename(file).replace(/\.(js|mjs|cjs)$/, '');
-    const re = new RegExp(`['"\`/]${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\.js)?['"\`]`);
+    const re = new RegExp(`['"\`/]${escapeRegExp(stem)}(?:\\.js)?['"\`]`);
     return allRepoJs.some((f) => {
       if (f === file || !predicate(f)) return false;
       try { return re.test(fs.readFileSync(f, 'utf8')); } catch { return false; }

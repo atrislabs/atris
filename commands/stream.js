@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
+const escapeRegExp = require('../lib/escape-regexp');
 const { runGit: spawnGit } = require('../lib/git-spawn');
 const { collectBoard } = require('./land');
 const { listWorktrees } = require('./worktree');
@@ -236,7 +237,7 @@ function sanitizeAgent(value) {
 }
 
 function stripLeadingAgent(summary, agent) {
-  const cleanAgent = String(agent || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const cleanAgent = escapeRegExp(agent || '');
   if (!cleanAgent) return summary;
   return String(summary || '').replace(new RegExp(`^${cleanAgent}\\s+`, 'i'), '');
 }
