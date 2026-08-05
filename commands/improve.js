@@ -975,7 +975,11 @@ function collectRevisionSignals(root, options = {}) {
     .filter((c) => c.hash && c.ms != null);
 
   const landings = commits.filter((c) => c.isAgent);
-  const humans = commits.filter((c) => !c.isAgent);
+  // A merge that carries agent work onto the mainline is a landing action,
+  // not a human correction; counting merges as revisions made the first live
+  // reading say 85 percent on a healthy repo. Only single-parent human
+  // commits count as revision signals.
+  const humans = commits.filter((c) => !c.isAgent && c.parents.length < 2);
 
   const filesCache = new Map();
   const filesOf = (commit) => {
