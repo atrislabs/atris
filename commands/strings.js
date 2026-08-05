@@ -22,6 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const { gitChangedLines } = require('./slop'); // reuse the diff parser — DRY
+const escapeRegExp = require('../lib/escape-regexp');
 
 const CODE_EXTS = new Set(['.tsx', '.jsx', '.ts', '.js', '.mjs', '.vue', '.svelte', '.astro', '.html']);
 const TEXT_EXTS = new Set([...CODE_EXTS, '.md', '.mdx', '.txt']);
@@ -232,7 +233,7 @@ function check(argv) {
   }
   const regAbs = path.resolve(process.cwd(), REGISTRY_FILE);
 
-  const matchers = reg.terms.map((t) => ({ ...t, re: new RegExp(`\\b${t.ban.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i') }));
+  const matchers = reg.terms.map((t) => ({ ...t, re: new RegExp(`\\b${escapeRegExp(t.ban)}\\b`, 'i') }));
   const findings = [];
   for (const file of files) {
     if (path.resolve(file) === regAbs) continue; // never flag the registry itself

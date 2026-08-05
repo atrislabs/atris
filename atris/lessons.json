@@ -26,7 +26,8 @@
       "commands/autopilot.js",
       "commands/workflow.js"
     ],
-    "detector": "grep -q \"startsWith('- ') && t.length > 2\" commands/run.js && grep -q \"startsWith('- ') && t.length > 2\" commands/autopilot.js && grep -q \"startsWith('- ') && t.length > 2\" commands/workflow.js",
+    "detector": "grep -q \"next-moves').todayInboxItems\" commands/run.js && grep -q \"startsWith('- ') && t.length > 2\" commands/autopilot.js && grep -q \"startsWith('- ') && t.length > 2\" commands/workflow.js",
+    "detector_note": "commands/run.js now reads the inbox through the shared parser in lib/next-moves.js (todayInboxItems), which owns the hr guard; autopilot.js and workflow.js still carry the inline guard, so the detector checks the shared-parser call in run.js and the literal guard in the other two.",
     "status": "resolved",
     "last_detected": "2026-06-13"
   },
@@ -87,24 +88,28 @@
   "outbound-artifacts-must-render-before-send": {
     "scope": "atris-cli",
     "status": "resolved",
+    "detector": "node --test test/outbound-artifact-gate.test.js",
     "resolved_at": "2026-07-06",
     "mechanism": "scripts/outbound-artifact-gate.js blocks raw HTML plain sends and missing HTML render proof; test/outbound-artifact-gate.test.js pins bad and good sends."
   },
   "verify-not-runnable": {
     "scope": "atris-cli",
     "status": "resolved",
+    "detector": "node --test test/autopilot-plan-review.test.js test/autopilot-verify-vocabulary.test.js",
     "resolved_at": "2026-07-06",
     "mechanism": "commands/autopilot.js validateVerifyCommandShape rejects markdown backticks and prose expectations before a tick runs; test/autopilot-plan-review.test.js and test/autopilot-verify-vocabulary.test.js pin it."
   },
   "verify-not-falsifiable": {
     "scope": "atris-cli",
     "status": "resolved",
+    "detector": "node --test test/autopilot-verify-falsifiability.test.js",
     "resolved_at": "2026-07-06",
     "mechanism": "commands/autopilot.js pre-runs Verify and records verify-not-falsifiable when it passes before work; test/autopilot-verify-falsifiability.test.js pins trivial, pre-passing, and valid missing-file cases."
   },
   "play-test-env-leak": {
     "scope": "atris-cli",
     "status": "resolved",
+    "detector": "node -e \"const{scrubAgentEnv}=require('./test/helpers/agent-env');const e=scrubAgentEnv({ATRIS_PROFILE:'x',ATRIS_PLAYER:'y',ATRIS_USERNAME:'z',ATRIS_AGENT_ID:'a',PATH:'p'});const leaked=['ATRIS_PROFILE','ATRIS_PLAYER','ATRIS_USERNAME','ATRIS_AGENT_ID'].filter(k=>k in e);if(leaked.length){console.error('leaked: '+leaked.join(', '));process.exit(1)}\" && grep -q scrubAgentEnv test/commands.test.js",
     "resolved_at": "2026-07-06",
     "mechanism": "test/helpers/agent-env.js scrubAgentEnv removes ATRIS_PROFILE, ATRIS_PLAYER, and ATRIS_USERNAME from spawned CLI tests; test/commands.test.js play-mode coverage uses it."
   },
@@ -122,12 +127,16 @@
   "judge-never-patches": {
     "scope": "atris-cli",
     "status": "resolved",
+    "detector": "node --test test/review-integrity.test.js",
+    "detector_note": "Catches the mechanical half: reviewer-identity normalization and builder exclusion (lib/task-db.js rejects positive self-review pre-acceptance, reason judge_equals_worker). Cannot catch a judge editing code out-of-band instead of opening a self-heal task; that stays a process rule enforced in review briefs.",
     "resolved_at": "2026-07-06",
     "mechanism": "lib/task-db.js rejects positive pre-acceptance review when judge equals worker; lib/auto-accept-certified.js requires independent review before autoland."
   },
   "work-must-land-or-it-never-happened": {
     "scope": "atris-cli",
     "status": "resolved",
+    "detector": "node --test test/land.test.js",
+    "detector_note": "Pins the land board, limbo accounting, and reap flow in test/land.test.js. Cannot catch an agent claiming success in chat without ever creating a shippable branch; the boot banner limbo count is the runtime surface for that.",
     "resolved_at": "2026-07-06",
     "mechanism": "commands/land.js landSummary feeds the boot banner in bin/atris.js and test/land.test.js pins the land board plus reap flow."
   },
@@ -146,6 +155,7 @@
   "ship-add-all-sweeps-regenerated-files": {
     "scope": "atris-cli",
     "status": "resolved",
+    "detector": "node --test test/worktree-ship-detached.test.js",
     "resolved_at": "2026-07-06",
     "mechanism": "commands/worktree.js restoreRegeneratedAdapterChurn skips unstaged AGENTS.md, CLAUDE.md, and GEMINI.md churn; test/worktree-ship-detached.test.js pins it."
   },

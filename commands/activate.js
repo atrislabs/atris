@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const escapeRegExp = require('../lib/escape-regexp');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
 const { readWikiStatus } = require('../lib/wiki');
@@ -12,10 +13,6 @@ const CLARITY_FIELDS = [
   { key: 'done', label: 'Done means' },
   { key: 'leash', label: 'Leash' },
 ];
-
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 function readClarityMarkdownProfile(mdPath) {
   try {

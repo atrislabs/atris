@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
+const escapeRegExp = require('../lib/escape-regexp');
 const {
   appendBriefRecord,
   stampBriefOutcome,
@@ -1901,7 +1902,7 @@ function missionLastLanding(mission, root = process.cwd()) {
 
 function missionLandingChangedIsGenericTick(mission, changed) {
   const text = String(changed || '').trim();
-  const objective = String(mission?.objective || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const objective = escapeRegExp(mission?.objective || '');
   if (!objective) return false;
   return new RegExp(`^${objective} recorded tick \\d+\\.$`).test(text);
 }
