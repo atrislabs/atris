@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 
 const { canonicalEngineName } = require('../lib/engine-registry');
@@ -115,18 +116,110 @@ function renderTeamRoster(roster) {
     .join('\n');
 }
 
+// The pruning pass keeps the team lean like a real company: it flags members
+// with no recent signal, and it never deletes anything. A signal is the newest
+// of MEMBER.md, any logs/*.md, or a mission the member owns that is still
+// active or running.
+const PRUNE_ACTIVE_MISSION_STATUSES = new Set(['active', 'running']);
+const DEFAULT_PRUNE_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function newestSignalMs(member) {
+  const times = [];
+  const stamp = (file) => {
+    try { times.push(fs.statSync(file).mtimeMs); } catch { /* missing file is just no signal */ }
+  };
+  if (member?.path) stamp(member.path);
+  if (member?.dir) {
+    const logsDir = path.join(member.dir, 'logs');
+    let entries = [];
+    try { entries = fs.readdirSync(logsDir); } catch { entries = []; }
+    for (const entry of entries) {
+      if (entry.endsWith('.md')) stamp(path.join(logsDir, entry));
+    }
+  }
+  return times.length ? Math.max(...times) : 0;
+}
+
+function collectTeamPrune(deps = {}) {
+  const root = deps.root || repoRoot(deps.cwd || process.cwd());
+  const days = Number.isFinite(deps.days) && deps.days > 0 ? deps.days : DEFAULT_PRUNE_DAYS;
+  const nowMs = typeof deps.now === 'function' ? deps.now() : Date.now();
+  const activeOwners = new Set();
+  for (const mission of collectMissions(root, deps)) {
+    if (!PRUNE_ACTIVE_MISSION_STATUSES.has(String(mission?.status || '').toLowerCase())) continue;
+    const owner = String(mission?.owner || mission?.member || '').trim().toLowerCase();
+    if (owner) activeOwners.add(owner);
+  }
+  const quiet = [];
+  let activeCount = 0;
+  for (const member of collectMembers(root, deps)) {
+    const name = String(member?.name || '').trim().toLowerCase();
+    if (!name) continue;
+    const signalMs = newestSignalMs(member);
+    if (activeOwners.has(name) || (signalMs && nowMs - signalMs < days * DAY_MS)) {
+      activeCount += 1;
+      continue;
+    }
+    quiet.push({
+      name,
+      days_quiet: signalMs ? Math.floor((nowMs - signalMs) / DAY_MS) : null,
+      last_signal: signalMs ? new Date(signalMs).toISOString() : null,
+    });
+  }
+  quiet.sort((a, b) => a.name.localeCompare(b.name));
+  return { quiet, active_count: activeCount };
+}
+
+function renderTeamPrune(report, days = DEFAULT_PRUNE_DAYS) {
+  if (!report.quiet.length && !report.active_count) {
+    return 'no team members yet. create one with: atris member create <name> --role="..."';
+  }
+  if (!report.quiet.length) {
+    return `everyone on the team has a signal newer than ${days} days. nothing to prune.`;
+  }
+  const lines = report.quiet.map((entry) => (entry.days_quiet === null
+    ? `${entry.name} has no recorded activity; keep, hand off, or retire.`
+    : `${entry.name} has been quiet for ${entry.days_quiet} days; keep, hand off, or retire.`));
+  lines.push(`${report.active_count} member${report.active_count === 1 ? ' is' : 's are'} still active. nothing was deleted; this is a report.`);
+  return lines.join('\n');
+}
+
 function helpText() {
   return [
     'atris team - one team view: every member, their role, and any engine running their work',
     'atris team presence - show who is awake and what they are doing',
+    'atris team prune - flag members with no recent activity; deletes nothing',
     '',
     'usage: atris team [roster|presence] [--json]',
+    'usage: atris team prune [--days N] [--json]',
   ].join('\n');
 }
 
 function teamCommand(args = [], deps = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     (deps.write || process.stdout.write.bind(process.stdout))(`${helpText()}\n`);
+    return 0;
+  }
+  if (args[0] === 'prune') {
+    const rest = args.slice(1);
+    let days = DEFAULT_PRUNE_DAYS;
+    let json = false;
+    let bad = false;
+    for (let i = 0; i < rest.length; i += 1) {
+      const arg = rest[i];
+      if (arg === '--json') { json = true; continue; }
+      if (arg === '--days') { i += 1; days = Number(rest[i]); continue; }
+      if (arg.startsWith('--days=')) { days = Number(arg.slice('--days='.length)); continue; }
+      bad = true;
+    }
+    if (bad || !Number.isFinite(days) || days <= 0) {
+      (deps.error || process.stderr.write.bind(process.stderr))('usage: atris team prune [--days N] [--json]\n');
+      return 2;
+    }
+    const report = deps.prune || collectTeamPrune({ ...deps, days });
+    const output = json ? JSON.stringify(report, null, 2) : renderTeamPrune(report, days);
+    (deps.write || process.stdout.write.bind(process.stdout))(`${output}\n`);
     return 0;
   }
   const rosterArgs = args.filter((arg) => arg !== 'roster');
@@ -139,7 +232,7 @@ function teamCommand(args = [], deps = {}) {
     return 0;
   }
   if (args[0] !== 'presence' || args.some((arg, index) => index > 0 && arg !== '--json')) {
-    (deps.error || process.stderr.write.bind(process.stderr))('usage: atris team [roster|presence] [--json]\n');
+    (deps.error || process.stderr.write.bind(process.stderr))('usage: atris team [roster|presence|prune] [--json]\n');
     return 2;
   }
   const presence = deps.presence || collectTeamPresence(deps);
@@ -150,4 +243,4 @@ function teamCommand(args = [], deps = {}) {
   return 0;
 }
 
-module.exports = { collectMissions, collectTasks, collectTeamPresence, collectTeamRoster, renderTeamRoster, teamCommand };
+module.exports = { collectMissions, collectTasks, collectTeamPresence, collectTeamPrune, collectTeamRoster, renderTeamPrune, renderTeamRoster, teamCommand };
