@@ -415,11 +415,7 @@ test('an unknown business subcommand fails with help, not silence', () => {
     const result = runCli(['business', 'frobnicate'], { cwd, env: { HOME: home } });
     assert.match(result.stderr, /Unknown subcommand: frobnicate/);
     assert.match(result.stdout, /business/i); // help text follows on stdout
-    // Current behavior: the bin dispatch calls process.exit(0) on resolve, which
-    // overrides the exitCode=1 set inside businessCommand. The message is the
-    // contract here; the exit code is asserted loosely so a future fix to exit 1
-    // does not break this test.
-    assert.ok(result.status === 0 || result.status === 1);
+    assert.equal(result.status, 1, 'an unknown subcommand is a failure, not a success');
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(cwd, { recursive: true, force: true });

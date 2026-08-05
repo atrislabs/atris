@@ -2732,7 +2732,7 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/business').businessCommand(subcommand, ...args)
-    .then(() => process.exit(0))
+    .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'soul') {
   const args = process.argv.slice(3);
