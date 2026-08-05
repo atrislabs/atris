@@ -221,10 +221,21 @@ function parseResponseData(result) {
   try { return JSON.parse(text); } catch { return null; }
 }
 
+function validationDetail(items) {
+  const messages = items.map((item) => {
+    if (!item || typeof item !== 'object') return String(item);
+    const message = item.msg || item.message || item.type || 'validation failed';
+    const location = Array.isArray(item.loc) ? item.loc.join('.') : '';
+    return location ? `${location}: ${message}` : message;
+  });
+  return messages.join('; ');
+}
+
 function errorDetail(result) {
   const data = parseResponseData(result);
   if (data && typeof data === 'object') {
     const detail = data.detail || data.error || data.message;
+    if (Array.isArray(detail)) return validationDetail(detail);
     if (detail) return typeof detail === 'string' ? detail : JSON.stringify(detail);
   }
   return responseText(result).trim() || 'request failed';
@@ -314,9 +325,13 @@ async function uploadPages(sitesUrl, slug, pages, token, deps = {}) {
   const url = `${sitesUrl}/${slug}/pages`;
   for (let start = 0; start < pages.length; start += BATCH_SIZE) {
     const batch = pages.slice(start, start + BATCH_SIZE);
-    const result = await requestJson('PUT', url, token, {
-      pages: batch.map((page) => pagePayload(page, fileSystem)),
-    }, deps);
+    const result = await requestJson(
+      'PUT',
+      url,
+      token,
+      batch.map((page) => pagePayload(page, fileSystem)),
+      deps,
+    );
     if (result.status < 200 || result.status >= 300) throw requestError('PUT', url, result);
     for (const page of batch) log(`  published ${page.path} (${formatBytes(page.size)})`);
   }
@@ -846,13 +861,13 @@ async function run(argv, deps = {}) {
   log(`\n  deploying ${pages.length} file${pages.length === 1 ? '' : 's'} to ${liveUrl}`);
   try {
     await createSite(sitesUrl, options.name, options.spa, credentials.token, { ...deps, log });
+    await registerSubdomain(options.name, { ...deps, log });
     await uploadPages(sitesUrl, options.name, pages, credentials.token, { ...deps, log });
   } catch (error) {
     errorLog(`  deploy failed: ${error.message}`);
     return 1;
   }
 
-  await registerSubdomain(options.name, { ...deps, log });
   log(`\n  live at ${liveUrl}`);
   return 0;
 }

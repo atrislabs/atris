@@ -252,14 +252,12 @@ test('deploy creates the site and bulk upserts pages with the exact body', async
   assert.equal(calls[0].url, 'http://localhost:9876/api/sites');
   assert.deepEqual(JSON.parse(calls[0].options.body), { slug: 'exact-body' });
   assert.equal(calls[1].url, 'http://localhost:9876/api/sites/exact-body/pages');
-  assert.deepEqual(JSON.parse(calls[1].options.body), {
-    pages: [{
-      path: 'index.html',
-      content: 'hello',
-      content_type: 'text/html',
-      is_base64: false,
-    }],
-  });
+  assert.deepEqual(JSON.parse(calls[1].options.body), [{
+    path: 'index.html',
+    content: 'hello',
+    content_type: 'text/html',
+    is_base64: false,
+  }]);
   assert.equal(calls[0].options.headers.Authorization, 'Bearer user-token');
   assert.ok(logs.some((line) => line.includes('live at https://exact-body.atris.ai')));
 });
@@ -288,8 +286,45 @@ test('spa deploy patches an existing site and uploads in batches of fifty', asyn
   assert.deepEqual(calls.map((call) => call.options.method), ['POST', 'PATCH', 'PUT', 'PUT']);
   assert.deepEqual(JSON.parse(calls[0].options.body), { slug: 'spa-site', spa: true });
   assert.deepEqual(JSON.parse(calls[1].options.body), { spa: true });
-  assert.equal(JSON.parse(calls[2].options.body).pages.length, 50);
-  assert.equal(JSON.parse(calls[3].options.body).pages.length, 1);
+  assert.equal(JSON.parse(calls[2].options.body).length, 50);
+  assert.equal(JSON.parse(calls[3].options.body).length, 1);
+});
+
+test('deploy registers the subdomain before a failed page upload and prints a concise error', async (t) => {
+  const dir = scratch(t);
+  fs.writeFileSync(path.join(dir, 'index.html'), 'page payload sentinel');
+  const calls = [];
+  const logs = [];
+  const errors = [];
+
+  const code = await run([dir, '--name', 'upload-failure'], {
+    renderApiKey: 'render-secret',
+    loadCredentials: () => ({ token: 'user-token' }),
+    log: (line) => logs.push(line),
+    error: (line) => errors.push(line),
+    httpRequest: async (url, options) => {
+      calls.push({ url, options });
+      if (url === 'https://api.atris.ai/api/sites') return response(201, {});
+      if (url.endsWith('/custom-domains')) return response(201, { id: 'cd-upload-failure' });
+      if (url.endsWith('/custom-domains/cd-upload-failure/verify')) return response(200, {});
+      if (url.endsWith('/api/sites/upload-failure/pages')) {
+        return response(422, {
+          detail: [{
+            loc: ['body'],
+            msg: 'Input should be a valid list',
+            input: { pages: ['page payload sentinel'] },
+          }],
+        });
+      }
+      throw new Error(`unexpected request: ${options.method} ${url}`);
+    },
+  });
+
+  assert.equal(code, 1);
+  assert.deepEqual(calls.map((call) => call.options.method), ['POST', 'POST', 'POST', 'PUT']);
+  assert.ok(logs.some((line) => line.includes('registered subdomain upload-failure.atris.ai')));
+  assert.match(errors.join('\n'), /failed \(422\): body: Input should be a valid list/);
+  assert.ok(!errors.join('\n').includes('page payload sentinel'));
 });
 
 test('spa deploy warns and retries creation when the server rejects the spa field', async (t) => {

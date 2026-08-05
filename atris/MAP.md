@@ -963,7 +963,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 **Purpose:** Publish a static web folder or a Node server at a named `atris.ai` address.
 
 - **Routing and help:** `commands/site.js` sends `deploy` to `commands/site-deploy.js`.
-- **Static lane:** Creates the site row, uploads supported files in batches, and registers the custom domain on the Atris backend service.
+- **Static lane:** Creates the site row, registers its custom domain, then uploads supported files as bare-list batches accepted by the Atris backend.
 - **Fullstack lane:** `--fullstack` validates the package start script, mirrors source into a private GitHub repository from a scratch checkout, creates or reuses a Render Node service, waits for its deploy, and wires its Render host through the Atris site row.
 - **Regression:** `test/site-deploy.test.js` covers validation, dry runs, static uploads, Render setup, proxy fallback, and domain registration.
 
