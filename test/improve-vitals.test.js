@@ -105,6 +105,7 @@ test('collectImproveVitals reads metabolism fixtures and renders plain lowercase
       'explore',
       'excrete',
       'usage',
+      'guarantee',
       'install_nudge',
       'sentences',
       'groups',
@@ -121,6 +122,9 @@ test('collectImproveVitals reads metabolism fixtures and renders plain lowercase
     assert.equal(vitals.usage.used_this_week, 2);
     assert.equal(vitals.usage.known_commands, knownCommands.length);
     assert.equal(vitals.install_nudge, 'the scheduled improve loop is off. turn it on: atris pulse install --model claude-sonnet-5');
+    // The fixture dir has no git history, so the guarantee gauge stays silent.
+    assert.equal(vitals.guarantee, null);
+    assert.ok(!vitals.sentences.some((s) => /fortnight/.test(s)));
 
     const output = formatImproveVitals(vitals);
     assert.match(output, /the scheduled improve heartbeat last beat 12 minutes ago and earned 2 reward today\./);
