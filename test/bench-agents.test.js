@@ -49,6 +49,9 @@ test('agents-v1 tasks fail under null and pass under solution', async () => {
     'broken-imports',
     'revert-bad-change',
     'flaky-quarantine',
+    'stale-era-assert',
+    'honest-exit',
+    'phantom-red',
   ]);
 
   for (const id of taskIds) {

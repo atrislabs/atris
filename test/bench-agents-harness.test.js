@@ -49,7 +49,7 @@ test('bench pack discovery lists core-v1 and agents-v1', () => {
   const packs = packMetadata({ repoRoot });
   const byId = new Map(packs.map((pack) => [pack.id, pack]));
   assert.equal(byId.get('core-v1').default, true);
-  assert.equal(byId.get('agents-v1').taskCount, 25);
+  assert.equal(byId.get('agents-v1').taskCount, 28);
 });
 
 test('agents-v1 result records include pack and engine fields', async () => {
@@ -80,7 +80,7 @@ test('agents-v1 result records include pack and engine fields', async () => {
 // real engines.
 test('every agents-v1 prompt is well-formed on the live prompt path', () => {
   const specs = loadTaskSpecs({ repoRoot, pack: 'agents-v1' }).filter((spec) => spec.kind === 'agent');
-  assert.ok(specs.length >= 25, `expected the full agents-v1 pack, saw ${specs.length}`);
+  assert.ok(specs.length >= 28, `expected the full agents-v1 pack, saw ${specs.length}`);
   for (const spec of specs) {
     const prompt = readTaskPrompt(spec);
     assert.ok(prompt.trim().length >= 20, `${spec.id}: prompt too short`);
