@@ -4384,6 +4384,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     default:
       console.error(`Unknown subcommand: ${sub}`);
       console.log('Run: atris computer --help');
+      process.exitCode = 1;
   }
 }
 
