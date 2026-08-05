@@ -128,7 +128,7 @@ test('groups by engine, keeps the latest full run, and computes category counts'
     const codex = report.engines.find((e) => e.engine === 'codex');
     // latest-run-wins: codexLatest, not codexEarly, drives the numbers
     assert.equal(codex.passed, 3);
-    assert.equal(codex.total, 25);
+    assert.equal(codex.total, 28);
     assert.deepEqual(codex.failed.sort(), [CONTRACT_TASK, RECOVER_TASK].sort());
     assert.equal(codex.skipped, 0);
     assert.equal(codex.meanDurationMs, Math.round((2000 + 4000 + 3000 + 1000 + 6000) / 5));
@@ -143,7 +143,7 @@ test('groups by engine, keeps the latest full run, and computes category counts'
 
     const atrisFast = report.engines.find((e) => e.engine === 'atris-fast');
     // merged partial runs: navigate (from A), edit (B overrides A -> passed), contract (from B)
-    assert.equal(atrisFast.total, 25);
+    assert.equal(atrisFast.total, 28);
     assert.equal(atrisFast.passed, 3);
     assert.deepEqual(atrisFast.failed, []);
     const atrisFastByCategory = Object.fromEntries(atrisFast.categories.map((c) => [c.name, c]));
