@@ -174,8 +174,8 @@ test('vague wish asks one plain question at a time', () => {
       env: { PATH: `${fakeBin}:${systemPath}` },
     });
     assert.equal(res.status, 1, res.stderr || res.stdout);
-    assert.match(res.stdout, /^Got it, wish #1: fix auth\./);
-    assert.match(res.stdout, /Auth could mean fewer steps, smarter defaults, or more reliable completion\. I would bet on smarter defaults, so which should I optimize for\?/);
+    assert.match(res.stdout, /^Got it: "fix auth"\./);
+    assert.match(res.stdout, /What should be different about auth when this is done\?/);
     assert.doesNotMatch(res.stdout, /Who is this for\?/);
     assert.doesNotMatch(res.stdout, /^\d+\./m);
     assert.match(res.stdout.trim(), /Answer with: atris wish answer "your words"$/);
@@ -196,12 +196,46 @@ test('vague wish question names the wish and asks the first gap only', () => {
       env: { PATH: `${fakeBin}:${systemPath}` },
     });
     assert.equal(res.status, 1, res.stderr || res.stdout);
-    assert.match(res.stdout, /^Got it, wish #1: make onboarding better\./);
-    assert.match(res.stdout, /Better onboarding could mean fewer steps, smarter defaults, or more reliable completion\. I would bet on smarter defaults, so which should I optimize for\?/);
+    assert.match(res.stdout, /^Got it: "make onboarding better"\./);
+    assert.match(res.stdout, /What should be different about onboarding when this is done\?/);
     assert.doesNotMatch(res.stdout, /Onboarding first slice could mean/);
     const questionLines = res.stdout.split(/\r?\n/).filter((line) => /\?$/.test(line));
     assert.equal(questionLines.length, 1);
     assert.match(res.stdout.trim(), /Answer with: atris wish answer "your words"$/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('long vague wishes stay whole and ask distinct questions from their own words', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const fakeBin = makeFakeEngines(dir);
+    const loginWish = 'make the best customer login screen ever with calm copy and one clear button';
+    const invoiceWish = 'make the best invoice page ever with clear totals and calm warnings';
+
+    const login = runCli(['wish', loginWish], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+    const invoice = runCli(['wish', invoiceWish], {
+      cwd: dir,
+      env: { PATH: `${fakeBin}:${systemPath}` },
+    });
+
+    assert.equal(login.status, 1, login.stderr || login.stdout);
+    assert.equal(invoice.status, 1, invoice.stderr || invoice.stdout);
+    assert.ok(login.stdout.startsWith(`Got it: ${JSON.stringify(loginWish)}.`));
+    assert.ok(invoice.stdout.startsWith(`Got it: ${JSON.stringify(invoiceWish)}.`));
+    assert.match(login.stdout, /What should be different about customer login when this is done\?/);
+    assert.match(invoice.stdout, /What should be different about invoice page when this is done\?/);
+    assert.notEqual(
+      login.stdout.split(/\r?\n/).find((line) => /\?$/.test(line)),
+      invoice.stdout.split(/\r?\n/).find((line) => /\?$/.test(line)),
+    );
+    assert.equal(login.stdout.split(/\r?\n/).filter((line) => /\?$/.test(line)).length, 1);
+    assert.doesNotMatch(`${login.stdout}\n${invoice.stdout}`, /could mean|I would bet|optimize for/i);
   } finally {
     cleanupTempDir(dir);
   }
@@ -795,7 +829,7 @@ test('multi-part wish decomposes and records out-of-scope parts', () => {
       env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_TASKS_DB: dbPath },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /^Got it, wish #1: make wish list\. It has 2 parts\./);
+    assert.match(res.stdout, /^Got it: "make wish list clearer and gm mode in project obelisk"\. It has 2 parts\./);
     assert.match(res.stdout, /Starting now: make wish list clearer\./);
     assert.match(res.stdout, /This part lives somewhere else, so I cannot do it from here: gm mode in project obelisk\./);
     assert.doesNotMatch(res.stdout, /Part \d:/);
@@ -832,7 +866,7 @@ test('multi-part wish asks one question about an unclear part', () => {
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Starting now: make wish list clearer\./);
-    assert.match(res.stdout, /One question about "fix auth": Auth could mean fewer steps, smarter defaults, or more reliable completion\. I would bet on smarter defaults, so which should I optimize for\?/);
+    assert.match(res.stdout, /One question about "fix auth": What should be different about auth when this is done\?/);
     assert.doesNotMatch(res.stdout, /clearer answer before I start/);
   } finally {
     cleanupTempDir(dir);
@@ -897,7 +931,7 @@ test('vague wish questions do not splice raw fragments', () => {
     assert.equal(res.status, 1, res.stderr || res.stdout);
     const questions = res.stdout.split(/\r?\n/).filter((line) => /\?$/.test(line)).join('\n');
     assert.doesNotMatch(questions, /we can take this/);
-    assert.match(res.stdout, /This could mean faster to use, smarter by default, or more complete\. I would bet on more complete, so which should I optimize for\?/);
+    assert.match(res.stdout, /What should be different when this is done\?/);
   } finally {
     cleanupTempDir(dir);
   }
