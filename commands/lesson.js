@@ -8,6 +8,7 @@ const {
 } = require('./autopilot');
 const { detectLessonContradictions } = require('../lib/lesson-contradiction');
 const taskDb = require('../lib/task-db');
+const { validateDetector, appendLedgerEntry, readLedger } = require('../lib/lesson-ledger');
 
 /**
  * Tag a lesson's line in atris/lessons.md with `[resolved]` (idempotent).
@@ -78,6 +79,14 @@ function autoResolveLessons(cwd, options = {}) {
   if (!dryRun && resolved.length) {
     const metaPath = path.join(cwd, 'atris', 'lessons.json');
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2) + '\n');
+    for (const slug of resolved) {
+      appendLedgerEntry(cwd, {
+        action: 'resolve',
+        slug,
+        evidence: `detector passed: ${metadata[slug].detector}`,
+        outcome: `status resolved, resolved_at ${today}`,
+      });
+    }
   }
 
   return { checked, resolved, dryRun };
@@ -213,12 +222,138 @@ function mineLessons(args) {
   }
 }
 
+/**
+ * Strip the `[resolved]` tag from a lesson's line in atris/lessons.md.
+ * Inverse of tagLessonResolvedInMd; used by revert.
+ * @returns {boolean} true if the file was changed.
+ */
+function untagLessonResolvedInMd(cwd, slug) {
+  const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
+  if (!fs.existsSync(lessonsPath)) return false;
+  const lines = fs.readFileSync(lessonsPath, 'utf8').split('\n');
+  let changed = false;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+([\w-]+)\*\*/);
+    if (!m || m[1] !== slug) continue;
+    if (!/\[resolved\]/i.test(lines[i])) continue;
+    lines[i] = lines[i].replace(/\[resolved\]\s*/i, '');
+    changed = true;
+  }
+  if (changed) fs.writeFileSync(lessonsPath, lines.join('\n'));
+  return changed;
+}
+
+/**
+ * Add a lesson as a validated contract in one step: prose line in lessons.md,
+ * typed entry in the lessons.json sidecar, and a ledger record with evidence.
+ *
+ * When a detector is given it must actually run (see validateDetector):
+ * a lesson whose falsifier is a typo would sit unresolvable forever and rot
+ * trust in the whole file. Detector-less adds are still allowed (process
+ * notes), they just never self-retire.
+ *
+ * @param {string} cwd
+ * @param {string} slug kebab-case
+ * @param {'pass'|'fail'} status
+ * @param {string} explanation
+ * @param {{ detector?: string, scope?: string }} [opts]
+ * @returns {{ ok: boolean, error?: string, ledger?: object }}
+ */
+function addLesson(cwd, slug, status, explanation, opts = {}) {
+  let evidence = 'prose-only (no detector)';
+  if (opts.detector !== undefined) {
+    const check = validateDetector(opts.detector, cwd);
+    if (!check.ok) {
+      return { ok: false, error: `detector rejected: ${check.reason}` };
+    }
+    evidence = `detector validated (exit ${check.exitCode}): ${opts.detector}`;
+  }
+
+  writeLesson(cwd, slug, status, explanation);
+
+  if (opts.detector !== undefined || opts.scope !== undefined) {
+    const metadata = loadLessonMetadata(cwd);
+    metadata[slug] = {
+      ...(metadata[slug] || {}),
+      ...(opts.detector !== undefined ? { detector: opts.detector } : {}),
+      ...(opts.scope !== undefined ? { scope: opts.scope } : {}),
+      status: (metadata[slug] && metadata[slug].status) || 'open',
+    };
+    fs.writeFileSync(
+      path.join(cwd, 'atris', 'lessons.json'),
+      JSON.stringify(metadata, null, 2) + '\n'
+    );
+  }
+
+  const ledger = appendLedgerEntry(cwd, {
+    action: 'add',
+    slug,
+    evidence,
+    outcome: `${status} lesson written`,
+  });
+  return { ok: true, ledger };
+}
+
+/**
+ * Reopen a resolved lesson: sidecar back to open, [resolved] tag stripped,
+ * revert recorded in the ledger. The rollback half of auto-resolve: a
+ * detector that passed for the wrong reason (deleted call site, gamed check)
+ * must be reversible without hand-editing two files.
+ * @returns {{ ok: boolean, error?: string, ledger?: object }}
+ */
+function revertLessonResolution(cwd, slug, reason) {
+  const metadata = loadLessonMetadata(cwd);
+  const meta = metadata[slug];
+  if (!meta) return { ok: false, error: `no sidecar entry for "${slug}"` };
+  if (meta.status !== 'resolved') {
+    return { ok: false, error: `"${slug}" is not resolved (status: ${meta.status || 'open'})` };
+  }
+  const prevResolvedAt = meta.resolved_at;
+  delete meta.resolved_at;
+  meta.status = 'open';
+  metadata[slug] = meta;
+  fs.writeFileSync(
+    path.join(cwd, 'atris', 'lessons.json'),
+    JSON.stringify(metadata, null, 2) + '\n'
+  );
+  untagLessonResolvedInMd(cwd, slug);
+  const ledger = appendLedgerEntry(cwd, {
+    action: 'revert',
+    slug,
+    evidence: reason || 'manual revert',
+    outcome: `reopened (was resolved ${prevResolvedAt || 'unknown'})`,
+  });
+  return { ok: true, ledger };
+}
+
+function showLedger(args) {
+  const cwd = process.cwd();
+  const json = args.includes('--json');
+  const limitIdx = args.indexOf('--limit');
+  const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) || 20 : 20;
+  const records = readLedger(cwd, { limit });
+
+  if (json) {
+    console.log(JSON.stringify({ ok: true, action: 'lesson_ledger', count: records.length, records }, null, 2));
+    return;
+  }
+  if (!records.length) {
+    console.log('ledger is empty (no lesson mutations recorded yet)');
+    return;
+  }
+  for (const r of records) {
+    console.log(`${(r.ts || '').slice(0, 16)} ${r.action.padEnd(7)} ${r.slug}: ${r.evidence || ''}`);
+  }
+}
+
 function printLessonUsage() {
   console.log('');
-  console.log('  Usage: atris lesson add <slug> <pass|fail> "<text>"');
+  console.log('  Usage: atris lesson add <slug> <pass|fail> "<text>" [--detector "<cmd>"] [--scope <scope>]');
   console.log('         atris lesson mine [--json] [--dry-run]');
   console.log('         atris lesson sweep [--json] [--dry-run]');
   console.log('         atris lesson resolve [--json] [--dry-run]');
+  console.log('         atris lesson revert <slug> ["<reason>"]');
+  console.log('         atris lesson ledger [--json] [--limit N]');
   console.log('');
 }
 
@@ -251,12 +386,44 @@ function lessonAtris(subcommand, ...args) {
     return;
   }
 
+  if (subcommand === 'ledger') {
+    showLedger(args);
+    return;
+  }
+
+  if (subcommand === 'revert') {
+    const [slug, ...reasonParts] = args;
+    if (!slug) {
+      console.error('  ✗ usage: atris lesson revert <slug> ["<reason>"]');
+      process.exit(1);
+    }
+    const res = revertLessonResolution(process.cwd(), slug, reasonParts.join(' ').trim() || undefined);
+    if (!res.ok) {
+      console.error(`  ✗ ${res.error}`);
+      process.exit(1);
+    }
+    console.log(`✓ lesson reopened: ${slug} (ledger ${res.ledger.id})`);
+    return;
+  }
+
   if (subcommand !== 'add') {
     printLessonUsage();
     process.exit(subcommand ? 1 : 0);
   }
 
-  const [slug, status, ...messageParts] = args;
+  // Pull --detector/--scope flag pairs out before positional parsing.
+  const opts = {};
+  const positional = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--detector') {
+      opts.detector = args[++i];
+    } else if (args[i] === '--scope') {
+      opts.scope = args[++i];
+    } else {
+      positional.push(args[i]);
+    }
+  }
+  const [slug, status, ...messageParts] = positional;
   const explanation = messageParts.join(' ').trim();
 
   if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
@@ -274,9 +441,16 @@ function lessonAtris(subcommand, ...args) {
     process.exit(1);
   }
 
-  writeLesson(process.cwd(), slug, status, explanation);
-  console.log(`✓ lesson added: ${slug} (${status})`);
+  const res = addLesson(process.cwd(), slug, status, explanation, opts);
+  if (!res.ok) {
+    console.error(`  ✗ ${res.error}`);
+    process.exit(1);
+  }
+  const typed = opts.detector ? ' [detector validated]' : '';
+  console.log(`✓ lesson added: ${slug} (${status})${typed}`);
 }
 
 module.exports = lessonAtris;
 module.exports.autoResolveLessons = autoResolveLessons;
+module.exports.addLesson = addLesson;
+module.exports.revertLessonResolution = revertLessonResolution;
