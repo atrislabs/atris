@@ -552,9 +552,9 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Print or write an inspectable local card for the current workspace computer, no login or backend call required.
 
-- **Entry point:** `commands/computer.js:4113` (`runComputer` dispatch handles `card` before auth)
-- **Builder:** `commands/computer.js:1546` (`buildComputerCard`)
-- **Writer:** `commands/computer.js:1641` (`computerCard`)
+- **Entry point:** `commands/computer.js:4314` (`runComputer` dispatch handles `card` before auth)
+- **Builder:** `commands/computer.js:1747` (`buildComputerCard`)
+- **Writer:** `commands/computer.js:1842` (`computerCard`)
 - **How it works:**
 - Reads `.atris/business.json` when present for owner/workspace metadata
 - Falls back to `package.json` and folder name for project workspaces
@@ -563,6 +563,19 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Value:** Turns the owner/computer model into a concrete artifact a teammate can inspect.
 
 **Search:** `rg "buildComputerCard|computerCard" commands/computer.js`
+
+### Feature: CodeOps Backlog (`atris computer codeops backlog`)
+
+**Purpose:** Queue and list ideas for the CodeOps nightly run without opening a computer session.
+
+- **Entry point:** `commands/computer.js:4506` (`runComputer` routes `codeops backlog` before business context resolution)
+- **Handler:** `commands/computer.js:616` (`runCodeOpsBacklog`)
+- **Args:** `commands/computer.js:487` (`parseCodeOpsBacklogArgs`, flags `--repo --priority --engine --status`)
+- **Table:** `commands/computer.js:569` (`formatCodeOpsBacklogTable`)
+- **Endpoints:** `POST /command-center/codeops/backlog` with `{idea, repo?, priority?, engine?}`; `GET /command-center/codeops/backlog?status=queued` (both through `apiRequestJson`, bearer token)
+- **Tests:** `test/computer.test.js` covers arg parsing, table padding, both verbs against an injected api, and the 401/403/500 error lines
+
+**Search:** `rg "runCodeOpsBacklog|parseCodeOpsBacklogArgs|formatCodeOpsBacklogTable" commands/computer.js test/computer.test.js`
 
 ### Feature: Computer Account Setup (`atris computer setup`)
 

@@ -28,6 +28,9 @@ const {
   shellQuote,
   withoutRecruitingWrapperFlags,
   formatCloudSelection,
+  parseCodeOpsBacklogArgs,
+  formatCodeOpsBacklogTable,
+  runCodeOpsBacklog,
 } = require('../commands/computer');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -270,6 +273,158 @@ test('recruiting wrapper flag strip only touches pull --apply', () => {
 test('cloud selection label always names worker and model', () => {
   assert.equal(formatCloudSelection({ worker: 'openai', model: 'gpt-5.4' }), 'worker=openai model=gpt-5.4');
   assert.equal(formatCloudSelection({}), 'worker=claude model=default');
+});
+
+// --- codeops backlog ------------------------------------------------------
+
+function captureBacklog() {
+  const out = [];
+  const err = [];
+  return {
+    out,
+    err,
+    print: (line) => out.push(String(line)),
+    printError: (line) => err.push(String(line)),
+  };
+}
+
+async function withExitCode(fn) {
+  const saved = process.exitCode;
+  try {
+    return await fn();
+  } finally {
+    process.exitCode = saved;
+  }
+}
+
+test('codeops backlog args keep the idea text and read both flag spellings', () => {
+  const parsed = parseCodeOpsBacklogArgs([
+    'retry', 'the', 'flaky', 'publish', 'read-back',
+    '--repo', 'atris-cli',
+    '--priority=high',
+    '--engine', 'codex',
+  ]);
+  assert.equal(parsed.idea, 'retry the flaky publish read-back');
+  assert.equal(parsed.repo, 'atris-cli');
+  assert.equal(parsed.priority, 'high');
+  assert.equal(parsed.engine, 'codex');
+  assert.equal(parsed.status, null);
+  assert.equal(parsed.help, false);
+});
+
+test('codeops backlog args read status and help without inventing an idea', () => {
+  const parsed = parseCodeOpsBacklogArgs(['--status', 'running', '--help']);
+  assert.equal(parsed.idea, '');
+  assert.equal(parsed.status, 'running');
+  assert.equal(parsed.help, true);
+});
+
+test('codeops backlog table pads columns and dashes missing fields', () => {
+  const table = formatCodeOpsBacklogTable({
+    items: [
+      { id: 'bk_1', status: 'queued', priority: 'high', repo: 'atris-cli', engine: 'codex', idea: 'retry publish read-back', created_at: '2026-08-06T10:11:12.345+00:00' },
+      { id: 'bk_2', idea: 'tighten slop gate' },
+    ],
+  });
+  const lines = table.split('\n');
+  assert.equal(lines[0], 'id    status  priority  repo       engine  idea                     created');
+  assert.ok(lines[1].startsWith('bk_1  queued  high      atris-cli  codex   retry publish read-back'));
+  assert.ok(lines[1].endsWith('2026-08-06 10:11:12Z'));
+  assert.ok(lines[2].includes('queued  -         -          -       tighten slop gate'));
+  assert.equal(formatCodeOpsBacklogTable({ items: [] }), '');
+});
+
+test('codeops backlog add posts the idea with only the flags that were given', async () => {
+  const calls = [];
+  const io = captureBacklog();
+  const code = await withExitCode(() => runCodeOpsBacklog('tok', ['add', 'retry publish read-back', '--repo', 'atris-cli'], {
+    ...io,
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return { ok: true, status: 201, data: { id: 'bk_9' } };
+    },
+  }));
+  assert.equal(await code, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].pathname, '/command-center/codeops/backlog');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.equal(calls[0].options.token, 'tok');
+  assert.deepEqual(calls[0].options.body, { idea: 'retry publish read-back', repo: 'atris-cli' });
+  assert.deepEqual(io.out, ['Queued bk_9: retry publish read-back']);
+});
+
+test('codeops backlog add refuses an empty idea before any network call', async () => {
+  const io = captureBacklog();
+  let called = false;
+  const code = await withExitCode(() => runCodeOpsBacklog('tok', ['add', '--repo', 'atris-cli'], {
+    ...io,
+    apiRequestJson: async () => { called = true; return { ok: true, status: 200, data: {} }; },
+  }));
+  assert.equal(await code, 1);
+  assert.equal(called, false);
+  assert.ok(io.err[0].includes('Say what the idea is'));
+});
+
+test('codeops backlog ls defaults to queued and prints the table', async () => {
+  const calls = [];
+  const io = captureBacklog();
+  const code = await withExitCode(() => runCodeOpsBacklog('tok', ['ls'], {
+    ...io,
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return { ok: true, status: 200, data: { items: [{ id: 'bk_1', status: 'queued', idea: 'ship it' }] } };
+    },
+  }));
+  assert.equal(await code, 0);
+  assert.equal(calls[0].pathname, '/command-center/codeops/backlog?status=queued');
+  assert.equal(calls[0].options.method, 'GET');
+  assert.ok(io.out[0].includes('bk_1'));
+  assert.ok(io.out[0].includes('ship it'));
+});
+
+test('codeops backlog ls passes a custom status and says so when empty', async () => {
+  const calls = [];
+  const io = captureBacklog();
+  const code = await withExitCode(() => runCodeOpsBacklog('tok', ['ls', '--status', 'running'], {
+    ...io,
+    apiRequestJson: async (pathname) => {
+      calls.push(pathname);
+      return { ok: true, status: 200, data: { items: [] } };
+    },
+  }));
+  assert.equal(await code, 0);
+  assert.equal(calls[0], '/command-center/codeops/backlog?status=running');
+  assert.ok(io.out[0].includes('No running backlog ideas.'));
+});
+
+test('codeops backlog reports api failures in the cli error voice', async () => {
+  const io = captureBacklog();
+  const code = await withExitCode(() => runCodeOpsBacklog('tok', ['ls'], {
+    ...io,
+    apiRequestJson: async () => ({ ok: false, status: 403, data: null, error: 'forbidden' }),
+  }));
+  assert.equal(await code, 1);
+  assert.deepEqual(io.err, ['Ask an Atris CodeOps admin for backlog access.']);
+
+  const io2 = captureBacklog();
+  const code2 = await withExitCode(() => runCodeOpsBacklog('tok', ['add', 'idea'], {
+    ...io2,
+    apiRequestJson: async () => ({ ok: false, status: 500, data: null, error: 'boom' }),
+  }));
+  assert.equal(await code2, 1);
+  assert.deepEqual(io2.err, ['Failed: boom']);
+});
+
+test('codeops backlog with no action prints help and touches nothing', async () => {
+  const io = captureBacklog();
+  let called = false;
+  const code = await withExitCode(() => runCodeOpsBacklog('tok', [], {
+    ...io,
+    apiRequestJson: async () => { called = true; return { ok: true, status: 200, data: {} }; },
+  }));
+  assert.equal(await code, 0);
+  assert.equal(called, false);
+  assert.ok(io.out[0].includes('Usage: atris computer codeops backlog [add|ls]'));
 });
 
 // --- CLI smokes (no auth, no spawn of real automation) --------------------

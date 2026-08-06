@@ -481,6 +481,207 @@ function printCodeOpsWorkflowContract() {
   console.log('  Full permissions stay on; the workflow contract controls how the computer uses them.');
 }
 
+const CODEOPS_BACKLOG_PATH = '/command-center/codeops/backlog';
+const CODEOPS_BACKLOG_FLAGS = ['repo', 'priority', 'engine', 'status'];
+
+function parseCodeOpsBacklogArgs(argv = []) {
+  const ideaParts = [];
+  const flags = { repo: null, priority: null, engine: null, status: null };
+  let help = false;
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--help' || arg === '-h' || arg === 'help') {
+      help = true;
+      continue;
+    }
+    let matched = false;
+    for (const name of CODEOPS_BACKLOG_FLAGS) {
+      if (arg === `--${name}` && argv[i + 1] && !argv[i + 1].startsWith('-')) {
+        flags[name] = argv[i + 1];
+        i++;
+        matched = true;
+        break;
+      }
+      if (arg.startsWith(`--${name}=`)) {
+        flags[name] = arg.slice(`--${name}=`.length);
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
+    ideaParts.push(arg);
+  }
+
+  const clean = (value) => (value === null ? null : String(value).trim() || null);
+  return {
+    idea: ideaParts.join(' ').trim(),
+    repo: clean(flags.repo),
+    priority: clean(flags.priority),
+    engine: clean(flags.engine),
+    status: clean(flags.status),
+    help,
+  };
+}
+
+function codeOpsBacklogItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  for (const key of ['items', 'backlog', 'rows', 'results']) {
+    if (Array.isArray(payload[key])) return payload[key];
+  }
+  return [];
+}
+
+function codeOpsBacklogId(item) {
+  if (!item || typeof item !== 'object') return null;
+  const id = item.id ?? item.backlog_id ?? item.item_id ?? item.uuid;
+  return id === undefined || id === null || id === '' ? null : String(id);
+}
+
+function codeOpsBacklogRows(payload) {
+  return codeOpsBacklogItems(payload)
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      id: cleanCodeOpsCell(codeOpsBacklogId(item), '-', 26),
+      status: cleanCodeOpsCell(item.status, 'queued', 14),
+      priority: cleanCodeOpsCell(item.priority, '-', 10),
+      repo: cleanCodeOpsCell(item.repo ?? item.repository, '-', 28),
+      engine: cleanCodeOpsCell(item.engine, '-', 14),
+      idea: cleanCodeOpsCell(item.idea ?? item.title ?? item.text ?? item.summary, '-', 60),
+      created: cleanCodeOpsCell(formatCodeOpsBacklogTime(item.created_at ?? item.createdAt ?? item.queued_at), '-', 20),
+    }));
+}
+
+function cleanCodeOpsCell(value, fallback, maxLength) {
+  const clean = String(value === undefined || value === null || value === '' ? fallback : value)
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (clean.length <= maxLength) return clean;
+  return `${clean.slice(0, Math.max(1, maxLength - 3))}...`;
+}
+
+function formatCodeOpsBacklogTime(value) {
+  if (!value) return null;
+  return String(value).replace('T', ' ').replace(/\.\d+/, '').replace('+00:00', 'Z').trim();
+}
+
+function formatCodeOpsBacklogTable(payload) {
+  const rows = codeOpsBacklogRows(payload);
+  if (!rows.length) return '';
+
+  const columns = [
+    { key: 'id', label: 'id' },
+    { key: 'status', label: 'status' },
+    { key: 'priority', label: 'priority' },
+    { key: 'repo', label: 'repo' },
+    { key: 'engine', label: 'engine' },
+    { key: 'idea', label: 'idea' },
+    { key: 'created', label: 'created' },
+  ];
+  const widths = columns.map((column) => Math.max(
+    column.label.length,
+    ...rows.map((row) => String(row[column.key]).length),
+  ));
+  const render = (row) => columns
+    .map((column, index) => (index === columns.length - 1
+      ? String(row[column.key])
+      : String(row[column.key]).padEnd(widths[index])))
+    .join('  ');
+  return [
+    render(Object.fromEntries(columns.map((column) => [column.key, column.label]))),
+    ...rows.map(render),
+  ].join('\n');
+}
+
+function codeOpsBacklogErrorLine(result) {
+  if (result.status === 401) return 'Not logged in. Run: atris login';
+  if (result.status === 403) return 'Ask an Atris CodeOps admin for backlog access.';
+  return `Failed: ${result.error || result.status}`;
+}
+
+function printCodeOpsBacklogHelp(print = console.log) {
+  print('Usage: atris computer codeops backlog [add|ls]');
+  print('');
+  print('  add <idea>   Queue an idea for the CodeOps nightly run');
+  print('               --repo <name>  --priority <level>  --engine <name>');
+  print('  ls           List queued backlog ideas; --status <state> to filter');
+  print('');
+  print('Examples:');
+  print('  atris computer codeops backlog add "retry flaky publish read-back" --repo atris-cli --priority high');
+  print('  atris computer codeops backlog ls');
+  print('  atris computer codeops backlog ls --status running');
+}
+
+async function runCodeOpsBacklog(token, argv = [], deps = {}) {
+  const api = deps.apiRequestJson || apiRequestJson;
+  const print = deps.print || console.log;
+  const printError = deps.printError || console.error;
+  const action = String(argv[0] || '').toLowerCase();
+  const parsed = parseCodeOpsBacklogArgs(argv.slice(1));
+
+  if (!action || parsed.help || action === 'help' || action === '--help' || action === '-h') {
+    printCodeOpsBacklogHelp(print);
+    return 0;
+  }
+
+  if (action === 'add') {
+    if (!parsed.idea) {
+      printError('Say what the idea is: atris computer codeops backlog add "<idea>"');
+      process.exitCode = 1;
+      return 1;
+    }
+    const body = { idea: parsed.idea };
+    if (parsed.repo) body.repo = parsed.repo;
+    if (parsed.priority) body.priority = parsed.priority;
+    if (parsed.engine) body.engine = parsed.engine;
+
+    const result = await api(CODEOPS_BACKLOG_PATH, {
+      method: 'POST',
+      token,
+      body,
+      timeoutMs: 20000,
+      retries: 0,
+    });
+    if (!result.ok) {
+      printError(codeOpsBacklogErrorLine(result));
+      process.exitCode = 1;
+      return 1;
+    }
+    const id = codeOpsBacklogId(result.data) || codeOpsBacklogId(result.data?.item);
+    print(id ? `Queued ${id}: ${parsed.idea}` : `Queued: ${parsed.idea}`);
+    return 0;
+  }
+
+  if (action === 'ls' || action === 'list') {
+    const status = parsed.status || 'queued';
+    const result = await api(`${CODEOPS_BACKLOG_PATH}?status=${encodeURIComponent(status)}`, {
+      method: 'GET',
+      token,
+      timeoutMs: 20000,
+      retries: 0,
+    });
+    if (!result.ok) {
+      printError(codeOpsBacklogErrorLine(result));
+      process.exitCode = 1;
+      return 1;
+    }
+    const table = formatCodeOpsBacklogTable(result.data);
+    if (!table) {
+      print(`No ${status} backlog ideas.`);
+      print('Add one with: atris computer codeops backlog add "<idea>"');
+      return 0;
+    }
+    print(table);
+    return 0;
+  }
+
+  printError(`Unknown backlog subcommand: ${action}`);
+  print('Run: atris computer codeops backlog help');
+  process.exitCode = 1;
+  return 1;
+}
+
 function printRecruitingWorkflowContract() {
   console.log('');
   console.log(ui.bold('Recruiting workflow'));
@@ -4284,6 +4485,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     console.log('  atris computer codeops status');
     console.log('  atris computer codeops run "pwd"');
     console.log('  atris computer codeops exec "Plan a safe repo fix"');
+    console.log('  atris computer codeops backlog ls');
     console.log('  atris computer status');
     console.log('  atris computer wake');
     console.log('  atris computer run "ls -la /workspace"');
@@ -4299,6 +4501,10 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
   }
   if (sub === 'recruiting') {
     return runRecruitingComputerShortcut(token, args, cloudOptions);
+  }
+
+  if (sub === 'codeops' && args[1] === 'backlog') {
+    return runCodeOpsBacklog(token, args.slice(2));
   }
 
   const ctx = await resolveComputerCommandContext(token, cloudOptions);
@@ -4320,13 +4526,15 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     switch (codeopsSub) {
       case '--help':
       case 'help':
-        console.log('Usage: atris computer codeops [chat|status|wake|sleep|run|grep|ls|cat|exec|audit|workflow]');
+        console.log('Usage: atris computer codeops [chat|status|wake|sleep|run|grep|ls|cat|exec|audit|workflow|backlog]');
         console.log('');
         console.log('Examples:');
         console.log('  atris computer codeops');
         console.log('  atris computer codeops status');
         console.log('  atris computer codeops run "pwd && git status --short"');
         console.log('  atris computer codeops exec "Plan the smallest safe fix, then wait"');
+        console.log('  atris computer codeops backlog add "retry flaky publish read-back" --repo atris-cli');
+        console.log('  atris computer codeops backlog ls');
         return;
       case 'status': return computerStatus(token, codeopsCtx);
       case 'wake': return computerWake(token, codeopsCtx);
@@ -4419,4 +4627,7 @@ module.exports = {
   shellQuote,
   withoutRecruitingWrapperFlags,
   formatCloudSelection,
+  parseCodeOpsBacklogArgs,
+  formatCodeOpsBacklogTable,
+  runCodeOpsBacklog,
 };
