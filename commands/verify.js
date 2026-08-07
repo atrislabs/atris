@@ -84,6 +84,7 @@ function verifyWorkspace(cwd, atrisDir) {
     console.log('✗ MAP.md — Issues found');
     mapResult.issues.forEach(issue => console.log(`   • ${issue}`));
   }
+  (mapResult.notes || []).forEach(note => console.log(`   ○ ${note}`));
   console.log('');
 
   // Test status
@@ -215,7 +216,7 @@ function verifyTask(cwd, atrisDir, taskId) {
  */
 function verifyMap(cwd, atrisDir) {
   const mapFile = path.join(atrisDir, 'MAP.md');
-  const result = { valid: false, issues: [], stats: null };
+  const result = { valid: false, issues: [], notes: [], stats: null };
 
   if (!fs.existsSync(mapFile)) {
     result.issues.push('MAP.md does not exist');
@@ -236,6 +237,22 @@ function verifyMap(cwd, atrisDir) {
     return result;
   }
 
+  // Let the repo's own map validator have the final say, when it ships one.
+  // A missing python3 is a skip, not a failure — the CLI has no python dependency.
+  const validator = path.join(cwd, 'scripts', 'validate_map.py');
+  if (fs.existsSync(validator)) {
+    const proc = spawnSync('python3', [validator], { cwd, encoding: 'utf8', env: process.env });
+    if (proc.error) {
+      const reason = proc.error.code === 'ENOENT' ? 'python3 not available' : proc.error.message;
+      result.notes.push(`Skipped scripts/validate_map.py — ${reason}`);
+    } else if ((proc.status ?? 0) !== 0) {
+      const detail = firstOutputLine(proc.stderr) || firstOutputLine(proc.stdout) || `exit ${proc.status}`;
+      result.issues.push(`scripts/validate_map.py failed: ${detail}`);
+    } else {
+      result.notes.push('scripts/validate_map.py passed');
+    }
+  }
+
   // Count refs
   const fileRefs = (content.match(/`[^`]+\.(js|ts|py|go|rs|rb|java|md|json)`/g) || []).length;
   const lineRefs = (content.match(/:\d+`?/g) || []).length;
@@ -248,6 +265,11 @@ function verifyMap(cwd, atrisDir) {
   result.valid = result.issues.length === 0;
 
   return result;
+}
+
+function firstOutputLine(text) {
+  if (!text) return '';
+  return String(text).split('\n').map(line => line.trim()).find(line => line.length > 0) || '';
 }
 
 /**
