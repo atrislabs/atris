@@ -11026,6 +11026,13 @@ function answerMissionHumanAsk(ref, askIndex, answer, note = '') {
 }
 
 function missionCommand(args) {
+  const simpleCardArgs = args.filter((value) => value !== '--json');
+  if (simpleCardArgs.length === 0) {
+    return require('./human-missions').currentMissionCommand(args);
+  }
+  if (args[0] === 'answer') {
+    return require('./human-missions').answerCommand(args.slice(1));
+  }
   const subcommand = args[0] || 'status';
   const rest = args.slice(1);
   // Every mission verb resolves its state store from process.cwd(). Running one

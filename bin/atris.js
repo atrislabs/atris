@@ -465,6 +465,12 @@ function showHelp() {
   console.log('  atris init [--yes]        Global install: initialize this project');
   console.log('  npx atris init [--yes]    Local install: initialize this project');
   console.log('  atris computer');
+  console.log('  atris ask "what you want" [--budget <usd>]');
+  console.log('  atris mission              Show the current mission');
+  console.log('  atris approve              Approve the step waiting for you');
+  console.log('  atris stop                 Stop the current mission');
+  console.log('  atris check <run-id>       Show the checks for a mission');
+  console.log('  atris ready --json         Show which mission features are ready');
   console.log('  atris business init "My Company"');
   console.log('  atris run');
   console.log('  atris drill');
@@ -1845,6 +1851,18 @@ if (command === 'init') {
   Promise.resolve(require('../commands/decide').decideCommand(process.argv.slice(3)))
     .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitAfterStdoutDrain(1); });
+} else if (['ask', 'approve', 'stop', 'ready', 'check'].includes(command)) {
+  const humanCommands = require('../commands/human-missions');
+  const handlers = {
+    ask: humanCommands.askCommand,
+    approve: humanCommands.approveCommand,
+    stop: humanCommands.stopCommand,
+    ready: humanCommands.readyCommand,
+    check: humanCommands.checkCommand,
+  };
+  Promise.resolve(handlers[command](process.argv.slice(3)))
+    .then((code) => exitWhenFlushed(Number.isInteger(code) ? code : (process.exitCode || 0)))
+    .catch((err) => { console.error(`\nAtris could not finish that request: ${err.message || err}`); exitWhenFlushed(1); });
 } else if (command === 'mission') {
   // process.exit() can outrun a piped stdout: writes beyond the 64KB pipe
   // buffer are async, so large --json payloads truncate at 64KB multiples.
