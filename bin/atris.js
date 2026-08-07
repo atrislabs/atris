@@ -500,6 +500,7 @@ function showHelp() {
   console.log('  wish       - Say one plain sentence, then Atris asks only for gaps or delegates it');
   console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
+  console.log('  founder    - show weekly commit and completed-task improvement from receipts');
   console.log('  orb        - Pick next moves while engine jobs work in the background');
   console.log('  activate   - Load Atris context');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
@@ -1892,6 +1893,10 @@ if (command === 'init') {
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'goal' || command === 'wtf') {
   Promise.resolve(require('../commands/goal').run(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
+} else if (command === 'founder') {
+  Promise.resolve(require('../commands/founder').founderCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'drive') {
