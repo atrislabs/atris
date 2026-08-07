@@ -1,6 +1,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const escapeRegExp = require('../lib/escape-regexp');
 const { wikiMetabolismNudge } = require('../lib/wiki');
 
@@ -48,6 +49,10 @@ function cleanAtris(options = {}) {
   results.healedRefs = healed;
   results.healedRefDetails = replacements;
   results.unhealableRefs = unhealable;
+
+  // 2b. Let the repo refresh and validate its own MAP.md, if it ships scripts for it
+  const mapScripts = runMapScripts(cwd, options.dryRun);
+  results.mapScripts = mapScripts;
 
   // 3. Archive old journals (>30 days)
   const archived = archiveOldJournals(atrisDir, options.dryRun);
@@ -127,6 +132,9 @@ function cleanAtris(options = {}) {
     console.log('✓ All MAP.md refs valid');
   }
 
+  // Repo-local map scripts
+  mapScripts.forEach(step => console.log(mapScriptLine(step)));
+
   // Archived journals
   if (archived > 0) {
     const verb = options.dryRun ? 'Would archive' : 'Archived';
@@ -185,6 +193,70 @@ function cleanAtris(options = {}) {
   return results;
 }
 
+// Repo-local MAP.md maintenance scripts, run in order when the workspace ships them.
+const MAP_SCRIPTS = [
+  {
+    file: 'refresh_map_active.py',
+    ranLabel: 'Refreshed MAP.md active files',
+    dryLabel: 'Would refresh MAP.md active files',
+    failLabel: 'MAP.md active files refresh failed',
+  },
+  {
+    file: 'validate_map.py',
+    ranLabel: 'MAP.md validation passed',
+    dryLabel: 'Would validate MAP.md',
+    failLabel: 'MAP.md validation failed',
+  },
+];
+
+/**
+ * Run the workspace's own MAP.md scripts (scripts/refresh_map_active.py, then
+ * scripts/validate_map.py) when they exist. Report-only: a failing script does
+ * not stop clean.
+ */
+function runMapScripts(cwd, dryRun = false) {
+  const steps = [];
+
+  for (const script of MAP_SCRIPTS) {
+    const scriptPath = path.join(cwd, 'scripts', script.file);
+    if (!fs.existsSync(scriptPath)) continue;
+
+    const step = { script: `scripts/${script.file}`, status: 'ok', detail: '' };
+
+    if (dryRun) {
+      step.status = 'would_run';
+      steps.push(step);
+      continue;
+    }
+
+    const proc = spawnSync('python3', [scriptPath], { cwd, encoding: 'utf8', env: process.env });
+    if (proc.error) {
+      step.status = 'skipped';
+      step.detail = proc.error.code === 'ENOENT' ? 'python3 not available' : proc.error.message;
+    } else if ((proc.status ?? 0) !== 0) {
+      step.status = 'failed';
+      step.detail = firstLine(proc.stderr) || firstLine(proc.stdout) || `exit ${proc.status}`;
+    }
+
+    steps.push(step);
+  }
+
+  return steps;
+}
+
+function firstLine(text) {
+  if (!text) return '';
+  return String(text).split('\n').map(l => l.trim()).find(l => l.length > 0) || '';
+}
+
+function mapScriptLine(step) {
+  const script = MAP_SCRIPTS.find(s => step.script.endsWith(s.file));
+  if (step.status === 'would_run') return `✓ ${script.dryLabel} (${step.script})`;
+  if (step.status === 'skipped') return `○ Skipped ${step.script} — ${step.detail}`;
+  if (step.status === 'failed') return `✗ ${script.failLabel} — ${step.detail}`;
+  return `✓ ${script.ranLabel}`;
+}
+
 function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
   const manualAction = [];
   if (results.staleTasks.length > 0) manualAction.push('Delete stale tasks or finish them');
@@ -226,6 +298,10 @@ function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
         count: (results.deadFiles || []).length,
         items: results.deadFiles || [],
         test_only: results.testOnlyFiles || [],
+      },
+      map_scripts: {
+        count: (results.mapScripts || []).length,
+        items: results.mapScripts || [],
       },
     },
     manual_action: manualAction,
