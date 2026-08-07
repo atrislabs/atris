@@ -79,7 +79,7 @@ const {
   missionVerifierTimeoutMs,
   resolveDefaultVerifier,
 } = require('../lib/default-verifier');
-const { redirectToWorkspaceRoot } = require('../lib/mission-root');
+const { resolveWorkspaceRoot, redirectToWorkspaceRoot } = require('../lib/mission-root');
 const { readJson, writeJson } = require('../lib/json-file');
 const {
   normalizeHumanAsks,
@@ -906,6 +906,11 @@ function loadMissionMap(root = process.cwd()) {
     map.set(mission.id, normalized);
   }
   return map;
+}
+
+function hasLocalMissionState(root = process.cwd()) {
+  return readJsonLines(statePaths(root).missionsJsonl)
+    .some((mission) => mission && mission.id && mission.cloud !== true);
 }
 
 function terminalNextAction(status) {
@@ -11027,14 +11032,15 @@ function answerMissionHumanAsk(ref, askIndex, answer, note = '') {
 
 function missionCommand(args) {
   const simpleCardArgs = args.filter((value) => value !== '--json');
-  if (simpleCardArgs.length === 0) {
-    return require('./human-missions').currentMissionCommand(args);
-  }
+  const isBareMission = simpleCardArgs.length === 0;
   if (args[0] === 'answer') {
     return require('./human-missions').answerCommand(args.slice(1));
   }
-  const subcommand = args[0] || 'status';
-  const rest = args.slice(1);
+  if (isBareMission && !hasLocalMissionState(resolveWorkspaceRoot())) {
+    return require('./human-missions').currentMissionCommand(args);
+  }
+  const subcommand = isBareMission ? 'status' : (args[0] || 'status');
+  const rest = isBareMission ? args : args.slice(1);
   // Every mission verb resolves its state store from process.cwd(). Running one
   // from a subdirectory used to create a nested .atris store the fleet never
   // reads (proven footgun: a nested .atris appeared under

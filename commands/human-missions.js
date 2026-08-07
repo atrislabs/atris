@@ -314,6 +314,84 @@ function renderMissionCard(card) {
   return lines;
 }
 
+function missionProofPayload(payload) {
+  const outer = payload && typeof payload === 'object' ? payload : {};
+  const mission = outer.mission && typeof outer.mission === 'object' ? outer.mission : outer;
+  const card = outer.card && typeof outer.card === 'object' ? outer.card : {};
+  const candidates = [
+    outer.proof,
+    outer.result && outer.result.proof,
+    mission.proof,
+    mission.result && mission.result.proof,
+    card.proof,
+    card.result && card.result.proof,
+  ];
+  let proof = candidates.find((candidate) => candidate && typeof candidate === 'object');
+  if (!proof && outer.goal && (outer.changed || outer.kept_same || outer.checks)) proof = outer;
+  if (!proof) return null;
+
+  const fallbackCard = missionCard(payload);
+  return {
+    goal: String(proof.goal || mission.goal || fallbackCard.title || ''),
+    changed: Array.isArray(proof.changed) ? proof.changed : [],
+    kept_same: Array.isArray(proof.kept_same) ? proof.kept_same : [],
+    checks: Array.isArray(proof.checks) ? proof.checks : [],
+    elapsed_s: numberOrNull(proof.elapsed_s) ?? fallbackCard.elapsed_s,
+    cost_usd: numberOrNull(proof.cost_usd) ?? fallbackCard.cost_usd,
+  };
+}
+
+function proofItemText(value) {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return String(value || '');
+  return String(value.label || value.name || value.title || value.summary || value.text || '');
+}
+
+function humanLabel(value) {
+  const words = String(value || '')
+    .trim()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => ({ id: 'ID', ids: 'IDs', api: 'API', url: 'URL', usd: 'USD' }[word.toLowerCase()] || word));
+  if (words.length === 0) return 'Unnamed check';
+  words[0] = words[0].charAt(0).toUpperCase() + words[0].slice(1);
+  return words.join(' ');
+}
+
+function proofCheckPassed(check) {
+  if (typeof check === 'string') return true;
+  if (!check || typeof check !== 'object') return false;
+  if (typeof check.passed === 'boolean') return check.passed;
+  return ['passed', 'pass', 'ok', 'done'].includes(String(check.status || check.state || '').toLowerCase());
+}
+
+function renderProofCard(proof) {
+  const changed = proof.changed.map(proofItemText).filter(Boolean);
+  const keptSame = proof.kept_same.map(proofItemText).filter(Boolean);
+  const passedChecks = proof.checks.filter(proofCheckPassed);
+  const failedChecks = proof.checks.filter((check) => !proofCheckPassed(check));
+  const lines = [
+    `Goal: ${proof.goal || 'Not reported'}`,
+    'Changed:',
+    ...(changed.length ? changed.map((item) => `- ${item}`) : ['- Nothing reported']),
+    'Kept the same:',
+    ...(keptSame.length ? keptSame.map((item) => `- ${item}`) : ['- Nothing reported']),
+    'Checks passed:',
+    ...(passedChecks.length
+      ? passedChecks.map((check) => `- ${humanLabel(proofItemText(check))}`)
+      : ['- None reported']),
+  ];
+  if (failedChecks.length) {
+    lines.push('Checks not passed:');
+    lines.push(...failedChecks.map((check) => `- ${humanLabel(proofItemText(check))}`));
+  }
+  lines.push(`Time: ${formatSeconds(proof.elapsed_s)}`);
+  lines.push(`Cost: $${proof.cost_usd.toFixed(2)}`);
+  return lines;
+}
+
 function outputCard(card, asJson, log = console.log) {
   if (asJson) {
     log(JSON.stringify(card, null, 2));
@@ -352,8 +430,15 @@ function errorCopy(caught, action) {
   }
   if (status === 404 && action === 'show the current mission') {
     return {
-      message: 'There is no current mission.',
+      message: 'Atris could not find a running mission.',
       next: 'Start one with: atris ask "what you want"',
+      exitCode: 1,
+    };
+  }
+  if (status === 404 && action === 'show proof for the last mission') {
+    return {
+      message: 'Atris could not find a mission with proof yet.',
+      next: 'Finish a mission, then run: atris proof',
       exitCode: 1,
     };
   }
@@ -486,6 +571,50 @@ async function currentMissionCommand(args = [], options = {}) {
     return 0;
   } catch (caught) {
     return reportError(caught, 'show the current mission', asJson, options);
+  }
+}
+
+async function proofCommand(args = [], options = {}) {
+  const asJson = args.includes('--json');
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    (options.log || console.log)('Usage: atris proof [--json]');
+    return 0;
+  }
+  const unsupported = args.find((value) => value !== '--json');
+  if (unsupported) {
+    return reportError(
+      new HumanCommandError(
+        `Atris does not know the option ${unsupported}.`,
+        'Run: atris proof --help',
+        2,
+      ),
+      'show proof for the last mission',
+      asJson,
+      options,
+    );
+  }
+  try {
+    credentialsOrThrow(options);
+    const mission = await loadCurrentMission(options);
+    let proof = missionProofPayload(mission);
+    if (!proof) {
+      const card = missionCard(mission);
+      if (card.mission_id) {
+        proof = missionProofPayload(await fetchCloudMissionChecks(card.mission_id, options));
+      }
+    }
+    if (!proof) {
+      throw new HumanCommandError(
+        'Atris could not find proof for the last mission.',
+        'Wait for the mission to finish, then run: atris proof',
+      );
+    }
+    const log = options.log || console.log;
+    if (asJson) log(JSON.stringify(proof, null, 2));
+    else renderProofCard(proof).forEach((line) => log(line));
+    return 0;
+  } catch (caught) {
+    return reportError(caught, 'show proof for the last mission', asJson, options);
   }
 }
 
@@ -651,8 +780,10 @@ async function readyCommand(args, options = {}) {
   const load = options.loadCredentials || loadCredentials;
   const credentials = load() || {};
   const token = String(credentials.token || '').trim();
-  const [health, atrisHealth, missionProbe, checkProbe] = await Promise.all([
-    safeProbe(request, '/health', { method: 'GET' }),
+  const [computerStatus, atrisHealth, missionProbe, checkProbe] = await Promise.all([
+    token
+      ? safeProbe(request, '/ai-computer/user/status', { method: 'GET', token })
+      : Promise.resolve(null),
     safeProbe(request, '/atris2/health', { method: 'GET' }),
     token
       ? safeProbe(request, '/atris2/missions/atris-ready-probe', { method: 'GET', token })
@@ -662,15 +793,22 @@ async function readyCommand(args, options = {}) {
       : Promise.resolve(null),
   ]);
   const version = cliVersion();
-  const computerVersion = health && health.ok && health.data && health.data.version
-    ? String(health.data.version)
-    : null;
+  const computer = computerStatus && computerStatus.ok && computerStatus.data && typeof computerStatus.data === 'object'
+    ? computerStatus.data
+    : {};
+  const rawComputerVersion = computer.computer_version
+    || computer.runtime_version
+    || computer.atris_version
+    || computer.version
+    || computer.runtime && computer.runtime.version
+    || null;
+  const computerVersion = rawComputerVersion ? String(rawComputerVersion) : null;
   const atrisReady = Boolean(atrisHealth && atrisHealth.ok && atrisHealth.data && atrisHealth.data.ready !== false);
   const canRunMissions = Boolean(token && atrisReady && routeWasReached(missionProbe, 'mission not found'));
   const canCheckWork = Boolean(token && atrisReady && routeWasReached(checkProbe, 'mission not found'));
-  const canMakeProof = fs.existsSync(path.join(__dirname, 'proof.js')) && knownCommands.includes('proof');
+  const canMakeProof = knownCommands.includes('proof');
   const payload = {
-    ready: Boolean(version && computerVersion && canRunMissions && canCheckWork && canMakeProof),
+    ready: Boolean(version && canRunMissions && canCheckWork && canMakeProof),
     cli_version: version,
     computer_version: computerVersion,
     can_run_missions: canRunMissions,
@@ -693,8 +831,11 @@ module.exports = {
   stableMissionKey,
   missionCard,
   renderMissionCard,
+  missionProofPayload,
+  renderProofCard,
   askCommand,
   currentMissionCommand,
+  proofCommand,
   approveCommand,
   stopCommand,
   answerCommand,

@@ -2,6 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const {
@@ -9,8 +11,11 @@ const {
   stableMissionKey,
   missionCard,
   renderMissionCard,
+  missionProofPayload,
+  renderProofCard,
   askCommand,
   currentMissionCommand,
+  proofCommand,
   approveCommand,
   stopCommand,
   answerCommand,
@@ -147,6 +152,128 @@ test('mission without a subcommand prints the current mission card as JSON', asy
   assert.equal(JSON.parse(output.stdout.join('\n')).state, 'working');
 });
 
+test('proof prints the last mission proof payload and human check labels', async () => {
+  const proof = {
+    goal: 'Update the service page',
+    changed: ['service descriptions'],
+    kept_same: ['prices', 'product IDs'],
+    checks: [
+      { name: 'prices_unchanged', passed: true },
+      { name: 'product_ids_unchanged', passed: true },
+    ],
+    elapsed_s: 75,
+    cost_usd: 0.45,
+  };
+  const request = async (pathname) => {
+    assert.equal(pathname, '/atris2/missions/current');
+    return {
+      ok: true,
+      status: 200,
+      data: {
+        mission_id: 'mission-proof',
+        title: proof.goal,
+        state: 'done',
+        result: { proof },
+      },
+    };
+  };
+
+  const jsonOutput = outputCapture();
+  const jsonCode = await proofCommand(['--json'], {
+    ...jsonOutput,
+    loadCredentials: credentials,
+    apiRequestJson: request,
+  });
+  assert.equal(jsonCode, 0);
+  assert.deepEqual(JSON.parse(jsonOutput.stdout.join('\n')), proof);
+
+  const textOutput = outputCapture();
+  const textCode = await proofCommand([], {
+    ...textOutput,
+    loadCredentials: credentials,
+    apiRequestJson: request,
+  });
+  assert.equal(textCode, 0);
+  assert.deepEqual(textOutput.stdout, renderProofCard(missionProofPayload({ result: { proof } })));
+  assert.match(textOutput.stdout.join('\n'), /Checks passed:\n- Prices unchanged\n- Product IDs unchanged/);
+  assert.match(textOutput.stdout.join('\n'), /Time: 1m 15s\nCost: \$0\.45/);
+});
+
+test('a missing current route uses plain words and says what to do next', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-human-mission-empty-'));
+  try {
+    const output = outputCapture();
+    const code = await currentMissionCommand(['--json'], {
+      ...output,
+      root,
+      loadCredentials: credentials,
+      apiRequestJson: async () => ({
+        ok: false,
+        status: 404,
+        data: { detail: 'Not Found' },
+        error: 'Not Found',
+      }),
+    });
+
+    assert.equal(code, 1);
+    assert.deepEqual(JSON.parse(output.stdout.join('\n')), {
+      ok: false,
+      error: 'Atris could not find a running mission.',
+      did: 'Nothing changed.',
+      next: 'Start one with: atris ask "what you want"',
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('bare mission keeps local status but uses the cloud card without local state', () => {
+  const localRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-human-mission-local-'));
+  const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-human-mission-cloud-'));
+  try {
+    const stateDir = path.join(localRoot, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), `${JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: 'mission-local',
+      objective: 'Keep the local mission status',
+      owner: 'test-owner',
+      status: 'running',
+      created_at: '2026-08-07T12:00:00Z',
+      updated_at: '2026-08-07T12:01:00Z',
+    })}\n`);
+
+    const env = (home) => ({
+      ...process.env,
+      HOME: home,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_NO_INTERACTIVE: '1',
+    });
+    const local = spawnSync(process.execPath, [cliPath, 'mission', '--json'], {
+      cwd: localRoot,
+      encoding: 'utf8',
+      env: env(localRoot),
+    });
+    assert.equal(local.status, 0, local.stderr || local.stdout);
+    const localPayload = JSON.parse(local.stdout);
+    assert.equal(localPayload.action, 'mission_status');
+    assert.equal(localPayload.missions[0].id, 'mission-local');
+
+    const cloud = spawnSync(process.execPath, [cliPath, 'mission', '--json'], {
+      cwd: emptyRoot,
+      encoding: 'utf8',
+      env: env(emptyRoot),
+    });
+    assert.equal(cloud.status, 1, cloud.stderr || cloud.stdout);
+    const cloudPayload = JSON.parse(cloud.stdout);
+    assert.match(cloudPayload.error, /not signed in/i);
+    assert.equal(cloudPayload.action, undefined);
+  } finally {
+    fs.rmSync(localRoot, { recursive: true, force: true });
+    fs.rmSync(emptyRoot, { recursive: true, force: true });
+  }
+});
+
 test('approve approves the current item waiting for the user', async () => {
   const calls = [];
   const output = outputCapture();
@@ -275,7 +402,9 @@ test('ready reports only capabilities that its probes found', async () => {
     ...output,
     loadCredentials: credentials,
     apiRequestJson: async (pathname) => {
-      if (pathname === '/health') return { ok: true, status: 200, data: { version: '1.0' } };
+      if (pathname === '/ai-computer/user/status') {
+        return { ok: true, status: 200, data: { status: 'running', version: '1.0' } };
+      }
       if (pathname === '/atris2/health') return { ok: true, status: 200, data: { ready: true } };
       return { ok: false, status: 404, data: { detail: 'Mission not found' }, error: 'Mission not found' };
     },
@@ -302,10 +431,14 @@ test('ready does not claim remote features without sign-in or route proof', asyn
 
   assert.equal(code, 1);
   const payload = JSON.parse(output.stdout.join('\n'));
-  assert.equal(payload.ready, false);
-  assert.equal(payload.can_run_missions, false);
-  assert.equal(payload.can_check_work, false);
-  assert.equal(payload.can_make_proof, true);
+  assert.deepEqual(payload, {
+    ready: false,
+    cli_version: '3.43.0',
+    computer_version: null,
+    can_run_missions: false,
+    can_check_work: false,
+    can_make_proof: true,
+  });
 });
 
 test('all six wire states render with the required human names', () => {
@@ -323,6 +456,7 @@ test('public command help is wired through the CLI', () => {
     ['stop', '--help'],
     ['ready', '--help'],
     ['check', '--help'],
+    ['proof', '--help'],
     ['mission', 'answer', '--help'],
   ];
   for (const args of commands) {
@@ -333,5 +467,6 @@ test('public command help is wired through the CLI', () => {
     });
     assert.equal(result.status, 0, `${args.join(' ')}\n${result.stderr}\n${result.stdout}`);
     assert.match(result.stdout, /Usage: atris/);
+    if (args[0] === 'proof') assert.match(result.stdout, /Usage: atris proof \[--json\]/);
   }
 });

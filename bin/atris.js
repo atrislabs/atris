@@ -1851,7 +1851,10 @@ if (command === 'init') {
   Promise.resolve(require('../commands/decide').decideCommand(process.argv.slice(3)))
     .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitAfterStdoutDrain(1); });
-} else if (['ask', 'approve', 'stop', 'ready', 'check'].includes(command)) {
+} else if (
+  ['ask', 'approve', 'stop', 'ready', 'check'].includes(command)
+  || (command === 'proof' && process.argv.slice(3).every((value) => String(value).startsWith('-')))
+) {
   const humanCommands = require('../commands/human-missions');
   const handlers = {
     ask: humanCommands.askCommand,
@@ -1859,6 +1862,7 @@ if (command === 'init') {
     stop: humanCommands.stopCommand,
     ready: humanCommands.readyCommand,
     check: humanCommands.checkCommand,
+    proof: humanCommands.proofCommand,
   };
   Promise.resolve(handlers[command](process.argv.slice(3)))
     .then((code) => exitWhenFlushed(Number.isInteger(code) ? code : (process.exitCode || 0)))
