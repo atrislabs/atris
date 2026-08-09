@@ -12,8 +12,8 @@ const COMMAND_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 const GIT_OID_PATTERN = /^[0-9a-f]{40,64}$/;
 const ONE_LAP_PROOF_REF_PATTERN = /^refs\/atris\/one-lap\/([0-9a-f]{40,64})$/;
 
-function runGit(args, { cwd = process.cwd(), check = true } = {}) {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout });
   if (check && result.status !== 0) {
     const msg = (result.stderr || result.stdout || `git ${args.join(' ')} failed`).trim();
     throw new Error(msg);
@@ -155,6 +155,95 @@ function parseWorktrees(text) {
 
 function listWorktrees(root = repoRoot()) {
   return parseWorktrees(runGit(['worktree', 'list', '--porcelain'], { cwd: root }).stdout);
+}
+
+// Duplicate flight guard. On 2026-08-07 two agents were dispatched onto the
+// same map rewrite 44 seconds apart: fleet dispatch claims a task first, but a
+// direct `worktree start` had no pre-check beyond the target path existing.
+const AGENT_FLIGHT_NAME_PATTERN = /^codex\/(.+)-(\d{8}-\d{6})$/;
+const FLIGHT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const FLIGHT_STOPWORDS = new Set([
+  'fix', 'add', 'update', 'make', 'change', 'new', 'task', 'work', 'repo',
+  'cli', 'atris', 'backend', 'the', 'a', 'an', 'and', 'for', 'to', 'of', 'in', 'on',
+]);
+
+function flightStampMs(stampText) {
+  const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/.exec(String(stampText || ''));
+  if (!m) return null;
+  const [, year, month, day, hour, minute, second] = m.map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) return null;
+  return Date.UTC(year, month - 1, day, hour, minute, second);
+}
+
+function taskTokens(value) {
+  return String(value || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .filter((token) => !FLIGHT_STOPWORDS.has(token));
+}
+
+// codex/<owner>-<task-slug>-<YYYYMMDD-HHMMSS>: drop the owner segment and the
+// stamp, and what is left is the task the flight is working on.
+function parseAgentFlightName(name) {
+  const text = String(name || '').trim().replace(/^refs\/heads\//, '');
+  const match = AGENT_FLIGHT_NAME_PATTERN.exec(text);
+  if (!match) return null;
+  const stampMs = flightStampMs(match[2]);
+  if (stampMs === null) return null;
+  const segments = match[1].split('-').filter(Boolean);
+  if (segments.length < 2) return null;
+  return {
+    name: text,
+    owner: segments[0],
+    taskSlug: segments.slice(1).join('-'),
+    stamp: match[2],
+    stampMs,
+    tokens: taskTokens(segments.slice(1).join('-')),
+  };
+}
+
+function remoteAgentBranchNames(root) {
+  // One ls-remote, best effort: offline dispatchers still get the local view.
+  const result = runGit(['ls-remote', '--heads', 'origin'], { cwd: root, check: false, timeout: 10000 });
+  if (result.status !== 0) return [];
+  return String(result.stdout || '')
+    .split(/\r?\n/)
+    .map((line) => (line.split(/\s+/)[1] || '').replace(/^refs\/heads\//, '').trim())
+    .filter(Boolean);
+}
+
+function inFlightAgentFlights({ root = repoRoot(), now = new Date(), windowMs = FLIGHT_WINDOW_MS } = {}) {
+  const nowMs = now.getTime();
+  const flights = new Map();
+  const add = (name, kind) => {
+    const flight = parseAgentFlightName(name);
+    if (!flight) return;
+    // Branch age comes from the stamp in the name, never a git log per branch.
+    if (kind !== 'worktree' && nowMs - flight.stampMs > windowMs) return;
+    const existing = flights.get(flight.name);
+    if (existing && existing.kind === 'worktree') return;
+    flights.set(flight.name, { ...flight, kind });
+  };
+  for (const wt of listWorktrees(root)) add(wt.branch, 'worktree');
+  const local = runGit(['branch', '--format=%(refname:short)'], { cwd: root, check: false });
+  if (local.status === 0) {
+    for (const name of String(local.stdout || '').split(/\r?\n/)) add(name, 'branch');
+  }
+  for (const name of remoteAgentBranchNames(root)) add(name, 'branch');
+  return [...flights.values()].sort((a, b) => b.stampMs - a.stampMs);
+}
+
+function collidingFlights(flights, tokens) {
+  const wanted = new Set(tokens);
+  if (!wanted.size) return [];
+  return flights.filter((flight) => flight.tokens.some((token) => wanted.has(token)));
+}
+
+function describeFlightAge(flight, nowMs = Date.now()) {
+  const minutes = Math.max(0, Math.round((nowMs - flight.stampMs) / 60000));
+  if (minutes < 60) return `${minutes}m old`;
+  return `${Math.floor(minutes / 60)}h${minutes % 60}m old`;
 }
 
 function refExists(root, ref) {
@@ -408,13 +497,33 @@ function startWorktree(args) {
   const owner = member || agent;
   const task = readFlag(args, '--task');
   if (!owner || !task) {
-    console.error('Usage: atris worktree start --member <member>|--agent <name> --task "<short task>" [--claim]');
+    console.error('Usage: atris worktree start --member <member>|--agent <name> --task "<short task>" [--claim] [--force]');
     return 2;
   }
   const memberFile = member ? path.join(root, 'atris', 'team', member, 'MEMBER.md') : '';
   if (memberFile && !fs.existsSync(memberFile)) {
     console.error(`warning: no member persona at ${path.relative(root, memberFile)}`);
   }
+
+  const force = hasFlag(args, '--force');
+  const now = new Date();
+  const flights = inFlightAgentFlights({ root, now });
+  const active = flights.filter((flight) => flight.kind === 'worktree');
+  const repoName = path.basename(findPrimaryRoot(root));
+  console.log(`flights: ${active.length} active agent ${active.length === 1 ? 'worktree' : 'worktrees'} for ${repoName}`);
+  const collisions = collidingFlights(flights, taskTokens(slugify(task, 'task', 36)));
+  if (collisions.length) {
+    const label = force ? 'warning' : 'refusing';
+    for (const flight of collisions) {
+      console.error(`${label}: overlapping flight ${flight.name} (${describeFlightAge(flight, now.getTime())})`);
+    }
+    console.error(`${label}: another flight may already be doing this work`);
+    if (!force) {
+      console.error('refusing: pass --force to start anyway');
+      return 2;
+    }
+  }
+
   let created;
   try {
     created = createAgentWorktree({
@@ -912,7 +1021,8 @@ function help() {
   console.log('Usage: atris worktree <guide|start|ship|status|guard|prune|cleanup>');
   console.log('');
   console.log('  atris worktree guide');
-  console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim]');
+  console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim] [--force]');
+  console.log('    --force         start even when another recent flight shares a task word');
   console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>] [--local]');
   console.log('    --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('    --local         merge into the local primary checkout instead of pushing and opening a PR');
@@ -946,15 +1056,21 @@ function worktreeCommand(args = []) {
 
 module.exports = {
   branchName,
+  collidingFlights,
   createAgentWorktree,
   deniedLaneForShip,
   createOrFindPr,
   cleanupWorktrees,
   defaultStartBase,
+  describeFlightAge,
+  flightStampMs,
+  inFlightAgentFlights,
   listWorktrees,
+  parseAgentFlightName,
   parseWorktrees,
   normalizeTargetRef,
   slugify,
+  taskTokens,
   statusCounts,
   swarloClaim,
   worktreeCommand,
