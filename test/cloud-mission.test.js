@@ -113,6 +113,86 @@ test('cloud mission enqueue passes an explicit agent id to the backend', async (
   }
 });
 
+test('cloud mission fanout sends one entry per role and names them back', async () => {
+  const root = tempDir();
+  const calls = [];
+  const output = capture();
+  try {
+    const result = await runCloudMissionCommand([
+      'ship the launch',
+      '--cloud',
+      '--fanout',
+      'researcher:read the competitor pricing pages',
+      '--fanout=builder:draft the pricing table',
+    ], {
+      root,
+      ...output,
+      loadCredentials: () => ({ token: 'test-token' }),
+      apiRequestJson: async (pathname, options) => {
+        calls.push({ pathname, options });
+        return {
+          ok: true,
+          status: 200,
+          data: { task_id: 'task-fanout-1', status: 'pending', lane: 'fast' },
+        };
+      },
+    });
+
+    assert.equal(result.exitCode, 0, output.stderr.join('\n'));
+    assert.deepEqual(calls[0].options.body.fanout, [
+      { role: 'researcher', task: 'read the competitor pricing pages' },
+      { role: 'builder', task: 'draft the pricing table' },
+    ]);
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(path.join(root, '.atris', 'state', 'missions.jsonl'), 'utf8').trim()).fanout,
+      [
+        { role: 'researcher', task: 'read the competitor pricing pages' },
+        { role: 'builder', task: 'draft the pricing table' },
+      ],
+    );
+    assert.match(output.stdout.join('\n'), /working in parallel: researcher, builder/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a mission with no fanout flag still sends the plain body', async () => {
+  const root = tempDir();
+  const calls = [];
+  try {
+    await runCloudMissionCommand(['ship the launch', '--cloud'], {
+      root,
+      log: () => {},
+      error: () => {},
+      loadCredentials: () => ({ token: 'test-token' }),
+      apiRequestJson: async (pathname, options) => {
+        calls.push({ pathname, options });
+        return { ok: true, status: 200, data: { task_id: 'task-plain', status: 'pending', lane: 'fast' } };
+      },
+    });
+    assert.equal('fanout' in calls[0].options.body, false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cloud mission fanout refuses a role with no task and more than eight roles', () => {
+  assert.throws(
+    () => parseCloudRunArgs(['do work', '--cloud', '--fanout', 'researcher']),
+    /needs a role and a task/,
+  );
+  assert.throws(
+    () => parseCloudRunArgs(['do work', '--cloud', '--fanout', ':read the docs']),
+    /needs a role and a task/,
+  );
+  const nine = [];
+  for (let i = 0; i < 9; i += 1) nine.push('--fanout', `role${i}:task ${i}`);
+  assert.throws(
+    () => parseCloudRunArgs(['do work', '--cloud', ...nine]),
+    /at most 8 roles, got 9/,
+  );
+});
+
 test('cloud mission status parses the cloud task id and prints backend status', async () => {
   const calls = [];
   const output = capture();
