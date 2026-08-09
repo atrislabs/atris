@@ -784,7 +784,7 @@ async function readyCommand(args, options = {}) {
     token
       ? safeProbe(request, '/ai-computer/user/status', { method: 'GET', token })
       : Promise.resolve(null),
-    safeProbe(request, '/atris2/health', { method: 'GET' }),
+    safeProbe(request, '/atris2/health', token ? { method: 'GET', token } : { method: 'GET' }),
     token
       ? safeProbe(request, '/atris2/missions/atris-ready-probe', { method: 'GET', token })
       : Promise.resolve(null),
