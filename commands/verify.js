@@ -318,6 +318,61 @@ function runTests(cwd) {
   return result;
 }
 
+// Backtick-quoted spans, plus bare tokens that carry at least one slash.
+const MAP_PATH_PATTERN = /`([^`\n]+)`|((?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]*)/g;
+
+/**
+ * Normalize a path-looking token from MAP.md into a repo-relative path.
+ * Returns null for anything that is not usable as a path.
+ */
+function normalizeMapPath(raw) {
+  if (!raw) return null;
+  let value = String(raw).trim();
+  if (!value || /\s/.test(value) || value.includes('://')) return null;
+  value = value.replace(/^\.\//, '').replace(/^\/+/, '');
+  // Sentence punctuation trailing a path in prose, never a trailing slash.
+  value = value.replace(/[),.;:]+$/, '');
+  if (!value || value === '/' || value.split('/').includes('..')) return null;
+  return value;
+}
+
+/**
+ * Split MAP.md into the exact file paths it names and the directory prefixes it covers.
+ * A compact map documents areas, so `backend/routers/` stands in for every file beneath it.
+ */
+function mapCoverage(mapContent, isDirectory = () => false) {
+  const files = new Set();
+  const dirSet = new Set();
+  const seen = new Set();
+  const pattern = new RegExp(MAP_PATH_PATTERN.source, 'g');
+  let match;
+
+  while ((match = pattern.exec(mapContent)) !== null) {
+    const value = normalizeMapPath(match[1] || match[2]);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+
+    if (value.endsWith('/')) {
+      dirSet.add(value);
+    } else {
+      files.add(value);
+      if (isDirectory(value)) dirSet.add(`${value}/`);
+    }
+  }
+
+  return { files, dirs: [...dirSet] };
+}
+
+/**
+ * A file is documented when the map names it outright or covers the area it lives in.
+ */
+function isPathCovered(file, coverage) {
+  const target = normalizeMapPath(file);
+  if (!target || !coverage) return false;
+  if (coverage.files.has(target)) return true;
+  return coverage.dirs.some((dir) => target.startsWith(dir) && target.length > dir.length);
+}
+
 /**
  * Check if recent git changes are documented in MAP.md
  */
@@ -354,12 +409,25 @@ function checkDocsVsChanges(cwd, atrisDir) {
     significantExtensions.some(ext => f.endsWith(ext))
   );
 
+  if (significantChanges.length === 0) {
+    return result;
+  }
+
+  const isDirectory = (candidate) => {
+    try {
+      return fs.statSync(path.join(cwd, candidate)).isDirectory();
+    } catch {
+      return false;
+    }
+  };
+  const coverage = mapCoverage(mapContent, isDirectory);
+
   for (const file of significantChanges) {
     const basename = path.basename(file);
-    if (!mapContent.includes(basename) && !mapContent.includes(file)) {
-      result.upToDate = false;
-      result.issues.push(`${file} changed but not in MAP.md`);
-    }
+    if (mapContent.includes(basename) || mapContent.includes(file)) continue;
+    if (isPathCovered(file, coverage)) continue;
+    result.upToDate = false;
+    result.issues.push(`${file} changed and its area is not in MAP.md`);
   }
 
   // Limit reported issues
@@ -653,5 +721,8 @@ module.exports = {
   verifyRubric,
   verifyArtifact,
   findTaskInContent,
-  escapeRegExp
+  escapeRegExp,
+  mapCoverage,
+  isPathCovered,
+  normalizeMapPath
 };
