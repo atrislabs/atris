@@ -126,6 +126,27 @@ function readMemberNow(member, root) {
   return '-';
 }
 
+function memberFrontmatterEngine(member) {
+  return String(member?.frontmatter?.engine || '').trim();
+}
+
+function memberAlwaysOn(member) {
+  const raw = member?.frontmatter?.alwayson;
+  if (raw === true) return true;
+  return String(raw || '').trim().toLowerCase() === 'true';
+}
+
+function memberFocus(rawNow, { awake, alwaysOn }) {
+  let focus = rawNow;
+  if (alwaysOn && rawNow === '-') focus = 'always on';
+  if (awake) focus = focus === '-' ? 'always on (live)' : `${focus} (live)`;
+  return focus;
+}
+
+function memberIsActive({ frontmatterEngine, awake, rawNow }) {
+  return Boolean(frontmatterEngine) || awake || rawNow !== '-';
+}
+
 function clipCell(text, max) {
   const value = String(text || '').trim();
   if (!max || value.length <= max) return value;
@@ -150,45 +171,68 @@ function collectTeamRoster(deps = {}) {
     .filter((member) => !isTemplateMember(member))
     .map((member) => {
       const name = String(member?.name || '').trim().toLowerCase();
-      const engine = engineByOwner.get(name) || '';
+      const missionEngine = engineByOwner.get(name) || '';
+      const frontmatterEngine = memberFrontmatterEngine(member);
+      const alwaysOn = memberAlwaysOn(member);
+      const isAwake = awake.has(name);
+      const rawNow = readMemberNow(member, root);
+      const active = memberIsActive({ frontmatterEngine, awake: isAwake, rawNow });
+      const focus = memberFocus(rawNow, { awake: isAwake, alwaysOn });
       return {
         name,
         role: plainRole(member),
-        engine,
-        engine_model: formatEngineModel(engine, engineRoster),
-        status: awake.has(name) ? 'awake' : 'idle',
-        now: readMemberNow(member, root),
+        engine: frontmatterEngine,
+        mission_engine: missionEngine,
+        engine_model: formatEngineModel(missionEngine, engineRoster),
+        status: isAwake ? 'awake' : 'idle',
+        now: rawNow,
+        focus,
+        active,
       };
     })
     .filter((entry) => entry.name)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function wrapCommaNames(names, width = 80) {
+  const lines = [];
+  let line = '';
+  for (const name of names) {
+    const candidate = line ? `${line}, ${name}` : name;
+    if (candidate.length > width && line) {
+      lines.push(line);
+      line = name;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.join('\n');
+}
+
 function renderTeamRoster(rosterRows) {
   if (!rosterRows.length) {
     return 'no team members yet. create one with: atris member create <name> --role="..."';
   }
-  const rows = rosterRows.map((entry) => ({
-    member: entry.name,
-    role: entry.role,
-    engine: entry.engine_model || '-',
-    status: entry.status || 'idle',
-    now: entry.now || '-',
-  }));
-  const headers = ['MEMBER', 'ROLE', 'ENGINE(MODEL)', 'STATUS', 'NOW'];
-  const keys = ['member', 'role', 'engine', 'status', 'now'];
-  const maxWidths = [14, 24, 22, 6, 40];
-  const widths = keys.map((key, index) => {
-    const longest = Math.max(
-      headers[index].length,
-      ...rows.map((row) => String(row[key] || '').length),
-    );
-    return Math.min(longest, maxWidths[index]);
-  });
-  const pad = (text, width) => clipCell(text, width).padEnd(width);
-  const headerLine = headers.map((label, index) => label.padEnd(widths[index])).join('  ');
-  const body = rows.map((row) => keys.map((key, index) => pad(row[key], widths[index])).join('  ')).join('\n');
-  return `${headerLine}\n${body}`;
+  const activeRows = rosterRows.filter((entry) => entry.active);
+  const restRows = rosterRows.filter((entry) => !entry.active);
+  const lines = ['active team:'];
+  if (activeRows.length) {
+    for (const entry of activeRows) {
+      const engine = entry.engine || '-';
+      lines.push(`${entry.name} | ${engine} | ${entry.focus || '-'}`);
+    }
+  } else {
+    lines.push('(none)');
+  }
+  lines.push('');
+  lines.push('rest of the team:');
+  if (restRows.length) {
+    lines.push(wrapCommaNames(restRows.map((entry) => entry.name)));
+  } else {
+    lines.push('(none)');
+  }
+  return lines.join('\n');
 }
 
 // The pruning pass keeps the team lean like a real company: it flags members
@@ -262,7 +306,7 @@ function renderTeamPrune(report, days = DEFAULT_PRUNE_DAYS) {
 
 function helpText() {
   return [
-    'atris team - roster table: member, role, engine(model), status, now',
+    'atris team - active members and the rest of the roster',
     'atris team presence - show who is awake and what they are doing',
     'atris team prune - flag members with no recent activity; deletes nothing',
     '',

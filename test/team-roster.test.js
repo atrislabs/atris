@@ -1,8 +1,7 @@
 'use strict';
 
 // One team view: atris team merges member folders (atris/team/*/MEMBER.md)
-// with engine assignments read from live missions. Contract: roster table with
-// member, role, engine(model), status, now columns.
+// with active/rest sections. Active = engine frontmatter, awake presence, or now.md focus.
 
 const fs = require('fs');
 const os = require('os');
@@ -19,20 +18,21 @@ const MEMBERS = [
 ];
 
 function rosterDeps(overrides = {}) {
-  return { root: '/fake/root', members: MEMBERS, missions: [], ...overrides };
+  return {
+    root: '/fake/root',
+    members: MEMBERS,
+    missions: [],
+    presence: { members: [] },
+    ...overrides,
+  };
 }
 
-test('roster table has expected headers and known member rows', () => {
+test('roster renders active team and rest of the team sections', () => {
   const roster = collectTeamRoster(rosterDeps());
   const rendered = renderTeamRoster(roster);
 
-  assert.match(rendered, /MEMBER/);
-  assert.match(rendered, /ROLE/);
-  assert.match(rendered, /ENGINE\(MODEL\)/);
-  assert.match(rendered, /STATUS/);
-  assert.match(rendered, /NOW/);
-  assert.match(rendered, /linguist/);
-  assert.match(rendered, /operator language/);
+  assert.match(rendered, /active team:/);
+  assert.match(rendered, /rest of the team:/);
   assert.ok(!rendered.includes('\u2014'), 'no em dashes in output');
 });
 
@@ -47,7 +47,7 @@ test('template placeholder members are filtered out', () => {
   assert.ok(!rendered.includes('<name>'));
 });
 
-test('heading-only now.md renders dash in NOW column', () => {
+test('heading-only now.md renders dash in now field', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'team-now-'));
   const memberDir = path.join(tmpDir, 'testmember');
   fs.mkdirSync(memberDir);
@@ -56,23 +56,84 @@ test('heading-only now.md renders dash in NOW column', () => {
   const members = [{ name: 'testmember', role: 'test role', dir: memberDir }];
   const roster = collectTeamRoster(rosterDeps({ members, root: tmpDir }));
   assert.equal(roster[0].now, '-');
+  assert.equal(roster[0].active, false);
 });
 
-test('engine assignments merge from live missions onto their owners', () => {
+test('member with engine frontmatter appears in active section with engine string', () => {
+  const members = [
+    {
+      name: 'coder',
+      role: 'builder',
+      frontmatter: { engine: 'codex gpt-5.6-sol' },
+    },
+    { name: 'scout', role: '' },
+  ];
+  const roster = collectTeamRoster(rosterDeps({ members }));
+  const coder = roster.find((entry) => entry.name === 'coder');
+  assert.equal(coder.engine, 'codex gpt-5.6-sol');
+  assert.equal(coder.active, true);
+
+  const rendered = renderTeamRoster(roster);
+  assert.match(rendered, /active team:/);
+  assert.match(rendered, /coder \| codex gpt-5\.6-sol \|/);
+  assert.match(rendered, /rest of the team:/);
+  assert.match(rendered, /scout/);
+  assert.ok(!rendered.match(/active team:[\s\S]*scout \|/));
+});
+
+test('bare member without engine, presence, or now lands in rest section', () => {
+  const members = [{ name: 'quiet', role: 'idle member' }];
+  const roster = collectTeamRoster(rosterDeps({ members }));
+  assert.equal(roster[0].active, false);
+
+  const rendered = renderTeamRoster(roster);
+  assert.match(rendered, /rest of the team:\nquiet/);
+  assert.match(rendered, /active team:\n\(none\)/);
+});
+
+test('awake member is active with dash engine and live focus suffix', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'team-awake-'));
+  const memberDir = path.join(tmpDir, 'scout');
+  fs.mkdirSync(memberDir, { recursive: true });
+  fs.writeFileSync(path.join(memberDir, 'now.md'), 'watch the perimeter');
+
+  const members = [{ name: 'scout', role: 'scout role', dir: memberDir }];
+  const roster = collectTeamRoster(rosterDeps({
+    members,
+    root: tmpDir,
+    presence: { members: [{ name: 'scout' }] },
+  }));
+  const scout = roster.find((entry) => entry.name === 'scout');
+  assert.equal(scout.active, true);
+  assert.equal(scout.engine, '');
+  assert.equal(scout.focus, 'watch the perimeter (live)');
+
+  const rendered = renderTeamRoster(roster);
+  assert.match(rendered, /scout \| - \| watch the perimeter \(live\)/);
+});
+
+test('alwayson member with no now task shows always on focus when active', () => {
+  const members = [{
+    name: 'daemon',
+    role: 'always running',
+    frontmatter: { alwayson: true, engine: 'codex' },
+  }];
+  const roster = collectTeamRoster(rosterDeps({ members }));
+  assert.equal(roster[0].active, true);
+  assert.equal(roster[0].focus, 'always on');
+
+  const rendered = renderTeamRoster(roster);
+  assert.match(rendered, /daemon \| codex \| always on/);
+});
+
+test('mission engines are kept on roster json as mission_engine', () => {
   const missions = [
     { id: 'm1', owner: 'linguist', runner: 'codex', status: 'running' },
-    { id: 'm2', owner: 'linguist', runner: 'cursor', status: 'running' },
-    { id: 'm3', owner: 'orb', runner: 'grok', status: 'complete' },
-    { id: 'm4', owner: 'scout', runner: 'manual', status: 'running' },
+    { id: 'm2', owner: 'orb', runner: 'grok', status: 'complete' },
   ];
   const roster = collectTeamRoster(rosterDeps({ missions }));
-  assert.deepEqual(roster.map((m) => [m.name, m.engine]), [
-    ['linguist', 'codex'],
-    ['orb', ''],
-    ['scout', ''],
-  ]);
-  const rendered = renderTeamRoster(roster);
-  assert.match(rendered, /linguist.*codex/s);
+  const linguist = roster.find((entry) => entry.name === 'linguist');
+  assert.equal(linguist.mission_engine, 'codex');
 });
 
 test('empty team renders the create hint and exits 0 through the command', () => {
@@ -87,8 +148,8 @@ test('team command renders the roster on bare invocation and roster --json', () 
   let out = '';
   const code = teamCommand(['roster'], rosterDeps({ write: (s) => { out += s; } }));
   assert.equal(code, 0);
-  assert.match(out, /MEMBER/);
-  assert.match(out, /linguist/);
+  assert.match(out, /active team:/);
+  assert.match(out, /rest of the team:/);
 
   let jsonOut = '';
   const jsonCode = teamCommand(['roster', '--json'], rosterDeps({ write: (s) => { jsonOut += s; } }));
@@ -96,6 +157,8 @@ test('team command renders the roster on bare invocation and roster --json', () 
   const parsed = JSON.parse(jsonOut);
   assert.equal(parsed.length, 3);
   assert.equal(parsed[0].name, 'linguist');
+  assert.equal(typeof parsed[0].active, 'boolean');
+  assert.ok('engine' in parsed[0]);
 });
 
 test('unknown subcommands still fail with usage', () => {
