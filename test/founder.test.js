@@ -63,7 +63,7 @@ function readRows(cwd) {
   return fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
 }
 
-test('counts default-branch commits and closed tasks by iso week, then writes a receipt', () => {
+test('counts default-branch commits and closed tasks in rolling 7-day windows, then writes a receipt', () => {
   const { fixtureRoot, scanRoot } = makeFixture();
   try {
     const alpha = initRepo(scanRoot, 'alpha');
@@ -86,19 +86,19 @@ test('counts default-branch commits and closed tasks by iso week, then writes a 
       { id: 'open', status: 'open', updated_at: '2026-08-06T08:00:00Z' },
     ]);
 
-    const run = runFounder(alpha, ['--root', scanRoot, '--days', '21'], '2026-08-07T20:00:00Z');
+    const run = runFounder(alpha, ['--root', scanRoot, '--days', '21'], '2026-08-10T08:00:00Z');
     assert.equal(run.status, 0, run.stderr);
     assert.equal(run.stdout.trimEnd(), [
-      'this week: 3 commits landed across 2 projects. last week: 2. slope: +50%.',
-      'alpha: 2 this week, 1 last week.',
-      'beta: 1 this week, 1 last week.',
-      'tasks closed: 2 this week, 1 last week.',
+      'last 7 days: 3 commits landed across 2 projects. prior 7 days: 2. slope: +50%.',
+      'alpha: 2 last 7 days, 1 prior 7 days.',
+      'beta: 1 last 7 days, 1 prior 7 days.',
+      'tasks closed: 2 last 7 days, 1 prior 7 days.',
     ].join('\n'));
 
     const rows = readRows(alpha);
     assert.equal(rows.length, 1);
     assert.deepEqual(rows[0], {
-      ts: '2026-08-07T20:00:00.000Z',
+      ts: '2026-08-10T08:00:00.000Z',
       days: 21,
       commitsThisWeek: 3,
       commitsLastWeek: 2,
@@ -141,7 +141,7 @@ test('score alias uses 28 days and reports missing task data without failing', (
 
     const run = runFounder(alpha, ['score'], '2026-08-07');
     assert.equal(run.status, 0, run.stderr);
-    assert.match(run.stdout, /^this week: 1 commit landed across 1 project\./);
+    assert.match(run.stdout, /^last 7 days: 1 commit landed across 1 project\./);
     assert.match(run.stdout, /\nno task data\.\n$/);
 
     const [row] = readRows(alpha);

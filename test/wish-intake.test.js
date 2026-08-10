@@ -201,7 +201,7 @@ test('wish grant does not mine location candidates from a consumed answer', () =
       };
       const created = runCli(['wish', 'fix cloud sync'], { cwd: dir, env });
       assert.equal(created.status, 1, `${scenario.token}: ${created.stderr || created.stdout}`);
-      assert.match(created.stdout, /Cloud sync could mean/);
+      assert.match(created.stdout, /What should be different about cloud sync when this is done\?/);
 
       const granted = runCli(['wish', 'grant', '1', scenario.answer], { cwd: dir, env });
       assert.equal(granted.status, 0, `${scenario.token}: ${granted.stderr || granted.stdout}`);
@@ -299,8 +299,7 @@ test('wish bench round 3 held-out cases are pinned', () => {
   for (const text of clearCases) assert.deepEqual(auditQuestions(text), [], text);
   const pageQuestions = auditQuestions('the 404 page deserves better');
   assert.equal(pageQuestions.length, 1);
-  assert.match(pageQuestions[0], /404 page/);
-  assert.match(pageQuestions[0], /I would bet/);
+  assert.equal(pageQuestions[0], 'What should be different about 404 page when this is done?');
 
   assert.equal(deriveVerifyPlan('smoke test the publish flow before the tag').command, 'node --test');
 });

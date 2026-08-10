@@ -1064,7 +1064,6 @@ module.exports = {
   defaultStartBase,
   describeFlightAge,
   flightStampMs,
-  inFlightAgentFlights,
   listWorktrees,
   parseAgentFlightName,
   parseWorktrees,
