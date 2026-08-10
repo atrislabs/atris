@@ -36,7 +36,7 @@ where `<option>` is one of the following:
     -h          print this command line option summary
     -c CORE     prints the unsatisfiable core to the file CORE
     -l LEMMAS   prints the core lemmas to the file LEMMAS
-    -r TRACE    resolution graph in TRACECHECK format 
+    -r TRACE    resolution graph in TRACECHECK format
 
     -t <lim>    time limit in seconds (default 20000)
     -u          default unit propatation (i.e., no core-first)
@@ -49,7 +49,7 @@ where `<option>` is one of the following:
 and input and proof are specified as follows:
 
     INPUT       input file in DIMACS format
-    PROOF       proof file in DRAT format (stdin if no argument) 
+    PROOF       proof file in DRAT format (stdin if no argument)
 
 The syntax of the input and proof files is described below.
 
@@ -79,7 +79,7 @@ as high as the largest `<pos>` used in the formula, while `<num-cls>`
 should equal the number of clauses in the formula. In case there
 exists a literal `<pos>` or `"-" <pos>`, such that `<pos>` is larger than
 `<var-max>`, then the formula is invalid. The formula is also invalid
-if the number of clauses is not equal to `<num-cls>`. 
+if the number of clauses is not equal to `<num-cls>`.
 
 The DIMCAS format is the default format used in SAT solvers and
 has been used as the input format by all SAT Competitions.
@@ -218,7 +218,7 @@ F_{1} = F_{0} + (-1).
 The second step is the removal of the clause `d -1 2 4 0`. Deletion steps
 are not checked. This results in F_{2} = F_{1} - (-1 2 4).
 
-## Remarks on Efficient Proof Validation 
+## Remarks on Efficient Proof Validation
 
 In order to efficiently validate a DRAT proof, several optimizations to the
 checking algorithm are required. Examples of such optimizations are backward

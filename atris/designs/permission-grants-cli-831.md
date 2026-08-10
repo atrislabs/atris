@@ -66,23 +66,23 @@ Never grant dangerous local commands: `sudo`, `rm -rf`, `git push --force`, `git
 Never grant Atris authority changes: `atris task accept`, autoland changes, permission-grant management commands, or commands requiring exact `--approved` payload confirmation.
 
 **5. Bounded Build Plan**
-1. Grant store and matcher  
-   Files: [lib/permission-grants.js](/Users/keshavrao/arena/atris-cli/lib/permission-grants.js), `test/permission-grants.test.js`  
+1. Grant store and matcher
+   Files: [lib/permission-grants.js](/Users/keshavrao/arena/atris-cli/lib/permission-grants.js), `test/permission-grants.test.js`
    Verify: `node --test test/permission-grants.test.js`
 
-2. Wire `ax` approval interception  
-   Files: [ax](/Users/keshavrao/arena/atris-cli/ax), [test/ax.test.js](/Users/keshavrao/arena/atris-cli/test/ax.test.js)  
+2. Wire `ax` approval interception
+   Files: [ax](/Users/keshavrao/arena/atris-cli/ax), [test/ax.test.js](/Users/keshavrao/arena/atris-cli/test/ax.test.js)
    Verify: `node --test test/ax.test.js`
 
-3. Backend grant CRUD and revocation  
-   Files: `atrisos-backend/backend/routers/permission_grants.py`, migration, backend tests  
+3. Backend grant CRUD and revocation
+   Files: `atrisos-backend/backend/routers/permission_grants.py`, migration, backend tests
    Verify: `cd /Users/keshavrao/arena/atrisos-backend && python -m pytest backend/tests/test_permission_grants.py -q`
 
-4. Web management panel  
-   Files: `atrisos-web/app/api/permission-grants/*`, `app/dashboard/code/PermissionGrantsPanel.tsx`, settings integration  
+4. Web management panel
+   Files: `atrisos-web/app/api/permission-grants/*`, `app/dashboard/code/PermissionGrantsPanel.tsx`, settings integration
    Verify: `cd /Users/keshavrao/arena/atrisos-web && npm test -- permission-grants`
 
-5. End-to-end revocation regression  
-   Files: [ax](/Users/keshavrao/arena/atris-cli/ax), [test/cli-smoke.test.js](/Users/keshavrao/arena/atris-cli/test/cli-smoke.test.js)  
+5. End-to-end revocation regression
+   Files: [ax](/Users/keshavrao/arena/atris-cli/ax), [test/cli-smoke.test.js](/Users/keshavrao/arena/atris-cli/test/cli-smoke.test.js)
    Verify: `node --test test/ax.test.js test/cli-smoke.test.js`
 

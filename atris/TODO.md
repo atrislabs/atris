@@ -4,9 +4,6 @@
 
 ## Backlog
 
-- **[CLI-1236]** every command reads flags consistently from one maintained parser [cli]
-- **[CLI-1229]** the team stays lean like a real company: a pruning pass flags members who have not landed work in 30 days, using the same budget-and-keep-rules pattern as the wiki
-- **[CLI-1228]** one team, not two: the org chart reads atris/team members and shows which engine each member runs on, so setting up the team once covers both
 - **[CLI-979]** csrf gate should exempt cookie-less bearer-token api calls so every cli lane works without origin workarounds; protected lane, orb reviews pre-merge
 - **[CLI-958]** yo can you make me the best to do list ever [wish]
 - **[CLI-957]** make me the best landing page ever [wish]
@@ -41,8 +38,6 @@
 - **[CLI-1186]** Fleet receipt truncates the head of a ship failure, hiding the cause. lib/fleet.js:2039 and :2365 slice(-300)/slice(-500) keep only the stack TAIL, so 'MODULE_NOT_FOUND: cannot find X' is cut and the operator sees five frames of node internals. Keep the first ~400 chars too (head+tail), since the error line leads. Done: a ship failure receipt names the failing module/command. Check: node --test test/fleet*.test.js [web-quality]
   **Claimed by:** fleet-cursor
 - **[CLI-1182]** atris wish stream got swallowed as a new wish named stream, so any status check pollutes the wish list; reserved subcommands must never be treated as wish text [wish]
-  **Claimed by:** fleet-codex
-- **[CLI-1181]** the wish intake echoes a truncated title and asks the same three generic options for every wish, so the first thing an owner hears is mush; drill questions must come from the wish's own words [wish]
   **Claimed by:** fleet-codex
 - **[CLI-1168]** it should say no worker has produced a receipt yet and name the command that starts one [wish]
   **Claimed by:** mission-lead
@@ -112,11 +107,15 @@
 
 ## Review
 
+- **[CLI-1243]** clone one Ryo page with a visual keep-or-revert loop [mimic]
+  **Verify:** npm --prefix /Users/keshavrao/arena/mimic-ryo run verify
 - **[CLI-1242]** split the task board api into named route handlers [cli]
 - **[CLI-1237]** CLI users get consistent flag behavior because every command shares one parser [cli]
   **Verify:** git -C /Users/keshavrao/arena/atris-cli-worktrees/codex-arg-parser2 diff --cached --check
+- **[CLI-1236]** every command reads flags consistently from one maintained parser [cli]
 - **[CLI-1235]** extract shared CLI flag parser helpers [cli]
 - **[CLI-1230]** a new workspace gets a starter team of 5 picked automatically, so the owner never faces 35 folders on day one
+- **[CLI-1228]** one team, not two: the org chart reads atris/team members and shows which engine each member runs on, so setting up the team once covers both
 - **[CLI-1213]** pack users get enforced capability boundaries because declared permissions change runtime tools instead of only appearing in inspect [security]
   **Verify:** git merge-base --is-ancestor ad16aebb63125256f9a2382c39a6cc6b3b95fe75 HEAD && git merge-base --is-ancestor a4c8dab53a332ef2579e0c9e3758d5fab6c73464 HEAD && git merge-base --is-ancestor 031e80ff13c769c71f523492df0d61fd7a94c45d HEAD && node --test test/pack-run.test.js test/pack.test.js
 - **[CLI-1212]** pack users can trust declared content hashes because publish install update and inspect verify every claimed digest [security]
@@ -144,7 +143,7 @@
   **Verify:** node --test test/mission-status.test.js
 - **[CLI-1232]** Repair Ax Fast context-standard verifier so GitHub mutation routing and turn caps match the current runtime [engine]
   **Verify:** node scripts/verify-ax-cloud-standard.js
-- **[CLI-1227]** Pack experts can see a declared verifier without running it [pack]
-  **Verify:** node --test test/pack.test.js test/pack-run.test.js
+- **[CLI-1229]** the team stays lean like a real company: a pruning pass flags members who have not landed work in 30 days, using the same budget-and-keep-rules pattern as the wiki
+  **Verify:** node --test test/team-prune.test.js test/team-roster.test.js
 
-(67 older completed tasks archived in `atris task list --status done` and `atris task events`.)
+(69 older completed tasks archived in `atris task list --status done` and `atris task events`.)
