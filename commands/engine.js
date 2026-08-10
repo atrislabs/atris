@@ -895,6 +895,7 @@ async function runEngineSeedCommand(args, root, deps = {}) {
 }
 
 function printRoster(root) {
+  reconcileStaleEngineProbeErrors(root);
   const list = roster(root);
   const found = list.filter((e) => e.installed).length;
   const current = resolveDefaultEngine(root);
@@ -1104,12 +1105,34 @@ function runResolveCommand(args, root) {
   return 0;
 }
 
+// Doctor and roster both read saved health; when a probe once failed but the
+// binary is present again, clear stale error so routing is not stuck forever.
+function reconcileStaleEngineProbeErrors(root = process.cwd()) {
+  for (const engine of engineRegistryView(root)) {
+    const status = engine.health && engine.health.status;
+    if (status !== 'error') continue;
+    if (!binInstalled(engine.bin)) continue;
+    try { setEngineHealth(engine.id, 'ready', root); } catch { /* best effort */ }
+  }
+}
+
 // Doctor is the one opt-in place that probes the machine: it checks every
 // engine binary, reports installed state, and folds ready/not_installed flips
 // back into the policy file. Routing itself never probes.
 function runDoctorCommand(args, root) {
   const json = args.includes('--json');
-  const engines = engineDoctorReport(root);
+  reconcileStaleEngineProbeErrors(root);
+  const engines = engineDoctorReport(root).map((engine) => {
+    if (!engine.installed) return engine;
+    const status = engine.health && engine.health.status;
+    if (status !== 'error') return engine;
+    try {
+      const updated = setEngineHealth(engine.id, 'ready', root);
+      return { ...engine, health: updated.health };
+    } catch {
+      return engine;
+    }
+  });
   if (json) {
     console.log(JSON.stringify({ ok: true, engines }, null, 2));
     return 0;
