@@ -114,12 +114,13 @@ function readMemberNow(member, root) {
   try { text = fs.readFileSync(nowPath, 'utf8'); } catch { return '-'; }
   for (const line of text.split(/\r?\n/)) {
     const trimmed = String(line || '').trim();
-    if (!trimmed || /^#+\s/.test(trimmed)) continue;
+    if (!trimmed || /^#+\s/.test(trimmed) || /^<!--/.test(trimmed) || /-->$/.test(trimmed)) continue;
+    if (/^---+$/.test(trimmed)) continue;
     const content = trimmed
       .replace(/^[-*]\s+/, '')
       .replace(/^\[[ xX]\]\s+/, '')
       .trim();
-    if (!content) continue;
+    if (!content || /^[A-Za-z_-]+:\s/.test(content)) continue;
     return content.length <= 40 ? content : `${content.slice(0, 37).trim()}...`;
   }
   return '-';
