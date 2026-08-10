@@ -80,12 +80,6 @@ function utcDayStart(date) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
-function isoWeekStart(date) {
-  const start = utcDayStart(date);
-  const weekday = start.getUTCDay() || 7;
-  return new Date(start.getTime() - (weekday - 1) * DAY_MS);
-}
-
 function dateKey(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
@@ -94,12 +88,14 @@ function dateKey(value) {
 
 function historyBounds(now, days) {
   const today = utcDayStart(now);
-  const thisWeekStart = isoWeekStart(now);
+  const historyStart = new Date(today.getTime() - (days - 1) * DAY_MS);
+  const currentWindowStart = new Date(now.getTime() - 7 * DAY_MS);
+  const priorWindowStart = new Date(currentWindowStart.getTime() - 7 * DAY_MS);
   return {
-    since: new Date(today.getTime() - (days - 1) * DAY_MS),
+    since: historyStart < priorWindowStart ? historyStart : priorWindowStart,
     until: now,
-    thisWeekStart,
-    lastWeekStart: new Date(thisWeekStart.getTime() - 7 * DAY_MS),
+    currentWindowStart,
+    priorWindowStart,
   };
 }
 
@@ -116,8 +112,8 @@ function defaultBranch(repoRoot) {
   return runGit(repoRoot, ['rev-parse', '--verify', 'HEAD']).ok ? 'HEAD' : null;
 }
 
-function commitsByDay(repoRoot, branch, bounds) {
-  if (!branch) return {};
+function commitHistory(repoRoot, branch, bounds) {
+  if (!branch) return { perDay: {}, timestamps: [] };
   const history = runGit(repoRoot, [
     'log',
     branch,
@@ -125,22 +121,31 @@ function commitsByDay(repoRoot, branch, bounds) {
     `--until=${bounds.until.toISOString()}`,
     '--format=%cI',
   ]);
-  if (!history.ok) return {};
+  if (!history.ok) return { perDay: {}, timestamps: [] };
 
   const daily = {};
+  const timestamps = [];
   for (const line of history.stdout.split('\n')) {
-    const day = dateKey(line.trim());
+    const timestamp = new Date(line.trim());
+    if (!Number.isFinite(timestamp.getTime())) continue;
+    timestamps.push(timestamp);
+    const day = dateKey(timestamp);
     if (day) daily[day] = (daily[day] || 0) + 1;
   }
-  return Object.fromEntries(Object.entries(daily).sort(([left], [right]) => left.localeCompare(right)));
+  return {
+    perDay: Object.fromEntries(Object.entries(daily).sort(([left], [right]) => left.localeCompare(right))),
+    timestamps,
+  };
 }
 
-function totalInRange(daily, start, end) {
-  const startKey = dateKey(start);
-  const endKey = dateKey(end);
-  return Object.entries(daily).reduce((total, [day, count]) => (
-    day >= startKey && day < endKey ? total + count : total
-  ), 0);
+function totalInRange(timestamps, start, end, includeEnd = false) {
+  const startTime = start.getTime();
+  const endTime = end.getTime();
+  return timestamps.reduce((total, timestamp) => {
+    const time = timestamp.getTime();
+    const inside = time >= startTime && (includeEnd ? time <= endTime : time < endTime);
+    return inside ? total + 1 : total;
+  }, 0);
 }
 
 function discoverRepos(root) {
@@ -152,15 +157,14 @@ function discoverRepos(root) {
 }
 
 function collectRepoScorecards(root, bounds) {
-  const nextWeekStart = new Date(bounds.thisWeekStart.getTime() + 7 * DAY_MS);
   return discoverRepos(root).map((repoRoot) => {
     const branch = defaultBranch(repoRoot);
-    const perDay = commitsByDay(repoRoot, branch, bounds);
+    const history = commitHistory(repoRoot, branch, bounds);
     return {
       repo: path.basename(repoRoot),
-      commitsThisWeek: totalInRange(perDay, bounds.thisWeekStart, nextWeekStart),
-      commitsLastWeek: totalInRange(perDay, bounds.lastWeekStart, bounds.thisWeekStart),
-      perDay,
+      commitsThisWeek: totalInRange(history.timestamps, bounds.currentWindowStart, bounds.until, true),
+      commitsLastWeek: totalInRange(history.timestamps, bounds.priorWindowStart, bounds.currentWindowStart),
+      perDay: history.perDay,
     };
   }).sort((left, right) => (
     right.commitsThisWeek - left.commitsThisWeek
@@ -193,21 +197,18 @@ function readTaskScorecard(root, bounds) {
     const tasks = taskRows(JSON.parse(fs.readFileSync(file, 'utf8')));
     if (!tasks) return { available: false, thisWeek: null, lastWeek: null };
 
-    const daily = {};
+    const timestamps = [];
     for (const task of tasks) {
       const status = String(task?.status || '').trim().toLowerCase();
       if (!['done', 'closed'].includes(status)) continue;
-      const day = dateKey(taskClosedAt(task));
-      if (day && day >= dateKey(bounds.since) && day <= dateKey(bounds.until)) {
-        daily[day] = (daily[day] || 0) + 1;
-      }
+      const timestamp = new Date(taskClosedAt(task));
+      if (Number.isFinite(timestamp.getTime())) timestamps.push(timestamp);
     }
 
-    const nextWeekStart = new Date(bounds.thisWeekStart.getTime() + 7 * DAY_MS);
     return {
       available: true,
-      thisWeek: totalInRange(daily, bounds.thisWeekStart, nextWeekStart),
-      lastWeek: totalInRange(daily, bounds.lastWeekStart, bounds.thisWeekStart),
+      thisWeek: totalInRange(timestamps, bounds.currentWindowStart, bounds.until, true),
+      lastWeek: totalInRange(timestamps, bounds.priorWindowStart, bounds.currentWindowStart),
     };
   } catch {
     return { available: false, thisWeek: null, lastWeek: null };
@@ -256,23 +257,23 @@ function slopeText(value) {
 function renderFounderScorecard(scorecard) {
   const activeProjects = scorecard.perRepo.filter((repo) => repo.commitsThisWeek > 0).length;
   const lines = [
-    `this week: ${plural(scorecard.commitsThisWeek, 'commit')} landed across ${plural(activeProjects, 'project')}. last week: ${scorecard.commitsLastWeek}. slope: ${slopeText(scorecard.slopePct)}.`,
+    `last 7 days: ${plural(scorecard.commitsThisWeek, 'commit')} landed across ${plural(activeProjects, 'project')}. prior 7 days: ${scorecard.commitsLastWeek}. slope: ${slopeText(scorecard.slopePct)}.`,
   ];
 
   for (const repo of scorecard.perRepo.filter((entry) => (
     entry.commitsThisWeek > 0 || entry.commitsLastWeek > 0
   )).slice(0, 5)) {
-    lines.push(`${repo.repo}: ${repo.commitsThisWeek} this week, ${repo.commitsLastWeek} last week.`);
+    lines.push(`${repo.repo}: ${repo.commitsThisWeek} last 7 days, ${repo.commitsLastWeek} prior 7 days.`);
   }
 
   if (scorecard.tasksThisWeek === null) lines.push('no task data.');
-  else lines.push(`tasks closed: ${scorecard.tasksThisWeek} this week, ${scorecard.tasksLastWeek} last week.`);
+  else lines.push(`tasks closed: ${scorecard.tasksThisWeek} last 7 days, ${scorecard.tasksLastWeek} prior 7 days.`);
   return lines.join('\n');
 }
 
 function showFounderHelp() {
   console.log('usage: atris founder [score] [--days n] [--root dir]');
-  console.log('shows this week against last week from git and task receipts.');
+  console.log('shows the last 7 days against the prior 7 days from git and task receipts.');
 }
 
 function founderCommand(args = [], options = {}) {
