@@ -75,7 +75,7 @@ test('member with engine frontmatter appears in active section with engine strin
 
   const rendered = renderTeamRoster(roster);
   assert.match(rendered, /active team:/);
-  assert.match(rendered, /coder \| codex gpt-5\.6-sol \|/);
+  assert.match(rendered, /coder\s+\|\s+codex gpt-5\.6-sol\s+\|\s+assigned\s+\|\s+-/);
   assert.match(rendered, /rest of the team:/);
   assert.match(rendered, /scout/);
   assert.ok(!rendered.match(/active team:[\s\S]*scout \|/));
@@ -109,7 +109,7 @@ test('awake member is active with dash engine and live focus suffix', () => {
   assert.equal(scout.focus, 'watch the perimeter (live)');
 
   const rendered = renderTeamRoster(roster);
-  assert.match(rendered, /scout \| - \| watch the perimeter \(live\)/);
+  assert.match(rendered, /scout\s+\|\s+-\s+\|\s+live\s+\|\s+watch the perimeter \(live\)/);
 });
 
 test('alwayson member with no now task shows always on focus when active', () => {
@@ -123,7 +123,7 @@ test('alwayson member with no now task shows always on focus when active', () =>
   assert.equal(roster[0].focus, 'always on');
 
   const rendered = renderTeamRoster(roster);
-  assert.match(rendered, /daemon \| codex \| always on/);
+  assert.match(rendered, /daemon\s+\|\s+codex\s+\|\s+assigned\s+\|\s+always on/);
 });
 
 test('mission engines are kept on roster json as mission_engine', () => {
@@ -166,4 +166,38 @@ test('unknown subcommands still fail with usage', () => {
   const code = teamCommand(['bogus'], { error: (s) => { err += s; } });
   assert.equal(code, 2);
   assert.match(err, /usage: atris team/);
+});
+
+test('team --html writes board file with active section and member name', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'team-html-'));
+  let out = '';
+  const code = teamCommand(['--html'], rosterDeps({
+    cwd: tmpDir,
+    root: tmpDir,
+    write: (s) => { out += s; },
+  }));
+  assert.equal(code, 0);
+  const outPath = path.join(tmpDir, 'atris', 'team', 'team-board.html');
+  assert.equal(out.trim(), outPath);
+  const html = fs.readFileSync(outPath, 'utf8');
+  assert.match(html, /Active team/);
+  assert.match(html, /linguist/);
+});
+
+test('long now.md focus is not truncated in roster data', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'team-long-now-'));
+  const memberDir = path.join(tmpDir, 'longfocus');
+  fs.mkdirSync(memberDir, { recursive: true });
+  const longFocus = 'a'.repeat(80);
+  fs.writeFileSync(path.join(memberDir, 'now.md'), longFocus);
+
+  const members = [{
+    name: 'longfocus',
+    role: 'test',
+    dir: memberDir,
+    frontmatter: { engine: 'codex' },
+  }];
+  const roster = collectTeamRoster(rosterDeps({ members, root: tmpDir }));
+  assert.equal(roster[0].now, longFocus);
+  assert.equal(roster[0].focus, longFocus);
 });
