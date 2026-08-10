@@ -143,8 +143,10 @@ function memberFocus(rawNow, { awake, alwaysOn }) {
   return focus;
 }
 
-function memberIsActive({ frontmatterEngine, awake, rawNow }) {
-  return Boolean(frontmatterEngine) || awake || rawNow !== '-';
+function memberIsActive({ frontmatterEngine, awake }) {
+  // A stale focus line in now.md does not make a member active — only an
+  // assigned engine or live presence does.
+  return Boolean(frontmatterEngine) || awake;
 }
 
 function clipCell(text, max) {
