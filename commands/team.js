@@ -6,6 +6,7 @@ const path = require('path');
 const { canonicalEngineName } = require('../lib/engine-registry');
 const taskDb = require('../lib/task-db');
 const { buildTeamPresence, DEFAULT_FRESHNESS_WINDOW_MS, renderTeamPresence } = require('../lib/team-presence');
+const { readEngineRegistry } = require('./engine');
 const { listMissions, listWorktreeRollupMissions } = require('./mission');
 const { collectSnapshot, collectStreamEvents, repoRoot } = require('./stream');
 
@@ -88,8 +89,45 @@ function missionEngine(mission) {
   return canonicalEngineName(mission?.runner) || canonicalEngineName(mission?.engine);
 }
 
+function formatEngineModel(engineId, engineRoster) {
+  const id = String(engineId || '').trim();
+  if (!id) return '-';
+  const entry = (Array.isArray(engineRoster) ? engineRoster : []).find((row) => row.id === id);
+  if (!entry) return id;
+  const models = Array.isArray(entry.models) ? entry.models.filter(Boolean) : [];
+  if (!models.length) return id;
+  return `${id} (${models.join(', ')})`;
+}
+
+function readMemberNow(member, root) {
+  const nowPath = member?.dir
+    ? path.join(member.dir, 'now.md')
+    : path.join(root, 'atris', 'team', String(member?.name || '').trim(), 'now.md');
+  let text = '';
+  try { text = fs.readFileSync(nowPath, 'utf8'); } catch { return '-'; }
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = String(line || '').trim();
+    if (!trimmed) continue;
+    const heading = trimmed.match(/^#+\s*(.+)$/);
+    const content = (heading ? heading[1] : trimmed.replace(/^[-*]\s+/, '')).trim();
+    if (!content) continue;
+    return content.length <= 40 ? content : `${content.slice(0, 37).trim()}...`;
+  }
+  return '-';
+}
+
+function clipCell(text, max) {
+  const value = String(text || '').trim();
+  if (!max || value.length <= max) return value;
+  if (max <= 1) return value.slice(0, max);
+  return `${value.slice(0, max - 3)}...`;
+}
+
 function collectTeamRoster(deps = {}) {
   const root = deps.root || repoRoot(deps.cwd || process.cwd());
+  const presence = deps.presence || collectTeamPresence(deps);
+  const awake = new Set(presence.members.map((member) => String(member.name || '').trim().toLowerCase()));
+  const engineRoster = deps.engineRoster || readEngineRegistry(root, { persist: false }).engines;
   const engineByOwner = new Map();
   for (const mission of collectMissions(root, deps)) {
     if (!ROSTER_LIVE_MISSION_STATUSES.has(String(mission?.status || '').toLowerCase())) continue;
@@ -101,19 +139,45 @@ function collectTeamRoster(deps = {}) {
   return collectMembers(root, deps)
     .map((member) => {
       const name = String(member?.name || '').trim().toLowerCase();
-      return { name, role: plainRole(member), engine: engineByOwner.get(name) || '' };
+      const engine = engineByOwner.get(name) || '';
+      return {
+        name,
+        role: plainRole(member),
+        engine,
+        engine_model: formatEngineModel(engine, engineRoster),
+        status: awake.has(name) ? 'awake' : 'idle',
+        now: readMemberNow(member, root),
+      };
     })
     .filter((entry) => entry.name)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function renderTeamRoster(roster) {
-  if (!roster.length) {
+function renderTeamRoster(rosterRows) {
+  if (!rosterRows.length) {
     return 'no team members yet. create one with: atris member create <name> --role="..."';
   }
-  return roster
-    .map((entry) => `${entry.name} - ${entry.role}${entry.engine ? `, on ${entry.engine}` : ''}.`)
-    .join('\n');
+  const rows = rosterRows.map((entry) => ({
+    member: entry.name,
+    role: entry.role,
+    engine: entry.engine_model || '-',
+    status: entry.status || 'idle',
+    now: entry.now || '-',
+  }));
+  const headers = ['MEMBER', 'ROLE', 'ENGINE(MODEL)', 'STATUS', 'NOW'];
+  const keys = ['member', 'role', 'engine', 'status', 'now'];
+  const maxWidths = [14, 24, 22, 6, 40];
+  const widths = keys.map((key, index) => {
+    const longest = Math.max(
+      headers[index].length,
+      ...rows.map((row) => String(row[key] || '').length),
+    );
+    return Math.min(longest, maxWidths[index]);
+  });
+  const pad = (text, width) => clipCell(text, width).padEnd(width);
+  const headerLine = headers.map((label, index) => label.padEnd(widths[index])).join('  ');
+  const body = rows.map((row) => keys.map((key, index) => pad(row[key], widths[index])).join('  ')).join('\n');
+  return `${headerLine}\n${body}`;
 }
 
 // The pruning pass keeps the team lean like a real company: it flags members
@@ -187,7 +251,7 @@ function renderTeamPrune(report, days = DEFAULT_PRUNE_DAYS) {
 
 function helpText() {
   return [
-    'atris team - one team view: every member, their role, and any engine running their work',
+    'atris team - roster table: member, role, engine(model), status, now',
     'atris team presence - show who is awake and what they are doing',
     'atris team prune - flag members with no recent activity; deletes nothing',
     '',
