@@ -121,7 +121,7 @@ function readMemberNow(member, root) {
       .replace(/^\[[ xX]\]\s+/, '')
       .trim();
     if (!content || /^[A-Za-z_-]+:\s/.test(content)) continue;
-    return content.length <= 40 ? content : `${content.slice(0, 37).trim()}...`;
+    return content;
   }
   return '-';
 }
@@ -152,8 +152,22 @@ function memberIsActive({ frontmatterEngine, awake }) {
 function clipCell(text, max) {
   const value = String(text || '').trim();
   if (!max || value.length <= max) return value;
-  if (max <= 1) return value.slice(0, max);
-  return `${value.slice(0, max - 3)}...`;
+  if (max <= 0) return '';
+  return value.slice(0, max);
+}
+
+function rosterStatus(entry) {
+  if (entry.status === 'awake') return 'live';
+  if (String(entry.engine || '').trim()) return 'assigned';
+  return 'idle';
+}
+
+function escapeHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function collectTeamRoster(deps = {}) {
@@ -212,17 +226,27 @@ function wrapCommaNames(names, width = 80) {
   return lines.join('\n');
 }
 
-function renderTeamRoster(rosterRows) {
+function renderTeamRoster(rosterRows, deps = {}) {
   if (!rosterRows.length) {
     return 'no team members yet. create one with: atris member create <name> --role="..."';
   }
   const activeRows = rosterRows.filter((entry) => entry.active);
   const restRows = rosterRows.filter((entry) => !entry.active);
+  const termWidth = deps.termWidth || process.stdout.columns || 80;
+  const memberW = Math.max(6, ...activeRows.map((entry) => entry.name.length));
+  const engineW = Math.max(6, ...activeRows.map((entry) => (entry.engine || '-').length));
+  const statusW = 8;
+  const sep = 3;
+  const focusW = Math.max(8, termWidth - memberW - engineW - statusW - sep * 3);
   const lines = ['active team:'];
   if (activeRows.length) {
     for (const entry of activeRows) {
       const engine = entry.engine || '-';
-      lines.push(`${entry.name} | ${engine} | ${entry.focus || '-'}`);
+      const status = rosterStatus(entry);
+      const focus = clipCell(entry.focus || '-', focusW);
+      lines.push(
+        `${clipCell(entry.name, memberW).padEnd(memberW)} | ${clipCell(engine, engineW).padEnd(engineW)} | ${status.padEnd(statusW)} | ${focus}`,
+      );
     }
   } else {
     lines.push('(none)');
@@ -230,11 +254,163 @@ function renderTeamRoster(rosterRows) {
   lines.push('');
   lines.push('rest of the team:');
   if (restRows.length) {
-    lines.push(wrapCommaNames(restRows.map((entry) => entry.name)));
+    lines.push(wrapCommaNames(restRows.map((entry) => entry.name), termWidth));
   } else {
     lines.push('(none)');
   }
   return lines.join('\n');
+}
+
+function renderTeamRosterHtml(rosterRows, meta = {}) {
+  const activeRows = rosterRows.filter((entry) => entry.active);
+  const restRows = rosterRows.filter((entry) => !entry.active);
+  const generatedAt = meta.generatedAt || new Date().toISOString();
+  const workspace = meta.workspace || process.cwd();
+
+  const statusDot = (entry) => {
+    const status = rosterStatus(entry);
+    if (status === 'live') return '<span class="dot dot-live" title="live"></span><span class="status-label">live</span>';
+    if (status === 'assigned') return '<span class="dot dot-assigned" title="assigned"></span><span class="status-label">assigned</span>';
+    return '<span class="dot dot-idle" title="idle"></span><span class="status-label">idle</span>';
+  };
+
+  const activeRowsHtml = activeRows.length
+    ? activeRows.map((entry) => `
+        <tr>
+          <td class="col-member">${escapeHtml(entry.name)}</td>
+          <td class="col-engine">${escapeHtml(entry.engine || '-')}</td>
+          <td class="col-status">${statusDot(entry)}</td>
+          <td class="col-focus">${escapeHtml(entry.focus || '-')}</td>
+        </tr>`).join('')
+    : '<tr><td colspan="4" class="empty">(none)</td></tr>';
+
+  const restChipsHtml = restRows.length
+    ? restRows.map((entry) => `<span class="chip">${escapeHtml(entry.name)}</span>`).join('')
+    : '<span class="empty">(none)</span>';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team board</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #1c1917;
+    background: #fafaf9;
+    padding: 16px;
+  }
+  .board { max-width: 1200px; margin: 0 auto; }
+  h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 2px solid #f59e0b;
+  }
+  section { margin-bottom: 16px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  th, td {
+    text-align: left;
+    vertical-align: middle;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f5f5f4;
+  }
+  th {
+    font-size: 12px;
+    font-weight: 600;
+    color: #78716c;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  tr { min-height: 44px; }
+  tr:last-child td { border-bottom: none; }
+  .col-member { white-space: nowrap; }
+  .col-engine { white-space: nowrap; }
+  .col-status { white-space: nowrap; }
+  .col-focus { word-wrap: break-word; overflow-wrap: break-word; }
+  .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .dot-live { background: #22c55e; }
+  .dot-assigned { background: #f59e0b; }
+  .dot-idle { background: #a8a29e; }
+  .status-label { font-size: 14px; vertical-align: middle; }
+  .chip-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .chip {
+    display: inline-block;
+    background: #fff;
+    border: 1px solid #e7e5e4;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  .empty { color: #78716c; font-style: italic; }
+  footer {
+    margin-top: 16px;
+    font-size: 12px;
+    color: #78716c;
+  }
+</style>
+</head>
+<body>
+<div class="board">
+  <section>
+    <h2>Active team</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Member</th>
+          <th>Engine</th>
+          <th>Status</th>
+          <th>Focus</th>
+        </tr>
+      </thead>
+      <tbody>${activeRowsHtml}
+      </tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Rest of the team</h2>
+    <div class="chip-grid">${restChipsHtml}</div>
+  </section>
+  <footer>generated ${escapeHtml(generatedAt)} · ${escapeHtml(workspace)}</footer>
+</div>
+</body>
+</html>`;
+}
+
+function writeTeamBoardHtml(rosterRows, deps = {}) {
+  const workspace = deps.cwd || process.cwd();
+  const outPath = path.join(workspace, 'atris', 'team', 'team-board.html');
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  const html = renderTeamRosterHtml(rosterRows, {
+    workspace,
+    generatedAt: deps.generatedAt || new Date().toISOString(),
+  });
+  fs.writeFileSync(outPath, html, 'utf8');
+  return outPath;
 }
 
 // The pruning pass keeps the team lean like a real company: it flags members
@@ -312,7 +488,7 @@ function helpText() {
     'atris team presence - show who is awake and what they are doing',
     'atris team prune - flag members with no recent activity; deletes nothing',
     '',
-    'usage: atris team [roster|presence] [--json]',
+    'usage: atris team [roster|presence] [--json] [--html]',
     'usage: atris team prune [--days N] [--json]',
   ].join('\n');
 }
@@ -344,16 +520,28 @@ function teamCommand(args = [], deps = {}) {
     return 0;
   }
   const rosterArgs = args.filter((arg) => arg !== 'roster');
-  if (args[0] !== 'presence' && rosterArgs.every((arg) => arg === '--json')) {
+  const rosterFlags = new Set(['--json', '--html']);
+  if (args[0] !== 'presence' && rosterArgs.every((arg) => rosterFlags.has(arg))) {
+    const html = rosterArgs.includes('--html');
+    const json = rosterArgs.includes('--json');
+    if (html && json) {
+      (deps.error || process.stderr.write.bind(process.stderr))('usage: atris team [--json] [--html] (not both)\n');
+      return 2;
+    }
     const roster = deps.roster || collectTeamRoster(deps);
-    const output = rosterArgs.includes('--json')
+    if (html) {
+      const outPath = writeTeamBoardHtml(roster, deps);
+      (deps.write || process.stdout.write.bind(process.stdout))(`${outPath}\n`);
+      return 0;
+    }
+    const output = json
       ? JSON.stringify(roster, null, 2)
-      : renderTeamRoster(roster);
+      : renderTeamRoster(roster, deps);
     (deps.write || process.stdout.write.bind(process.stdout))(`${output}\n`);
     return 0;
   }
   if (args[0] !== 'presence' || args.some((arg, index) => index > 0 && arg !== '--json')) {
-    (deps.error || process.stderr.write.bind(process.stderr))('usage: atris team [roster|presence|prune] [--json]\n');
+    (deps.error || process.stderr.write.bind(process.stderr))('usage: atris team [roster|presence|prune] [--json] [--html]\n');
     return 2;
   }
   const presence = deps.presence || collectTeamPresence(deps);
@@ -364,4 +552,15 @@ function teamCommand(args = [], deps = {}) {
   return 0;
 }
 
-module.exports = { collectMissions, collectTasks, collectTeamPresence, collectTeamPrune, collectTeamRoster, renderTeamPrune, renderTeamRoster, teamCommand };
+module.exports = {
+  collectMissions,
+  collectTasks,
+  collectTeamPresence,
+  collectTeamPrune,
+  collectTeamRoster,
+  renderTeamPrune,
+  renderTeamRoster,
+  renderTeamRosterHtml,
+  writeTeamBoardHtml,
+  teamCommand,
+};
