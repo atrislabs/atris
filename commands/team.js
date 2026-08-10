@@ -99,6 +99,13 @@ function formatEngineModel(engineId, engineRoster) {
   return `${id} (${models.join(', ')})`;
 }
 
+function isTemplateMember(member) {
+  const name = String(member?.name || '').trim();
+  if (name === '<name>') return true;
+  const dir = String(member?.dir || '').trim();
+  return dir.includes('<') || dir.includes('>');
+}
+
 function readMemberNow(member, root) {
   const nowPath = member?.dir
     ? path.join(member.dir, 'now.md')
@@ -107,9 +114,11 @@ function readMemberNow(member, root) {
   try { text = fs.readFileSync(nowPath, 'utf8'); } catch { return '-'; }
   for (const line of text.split(/\r?\n/)) {
     const trimmed = String(line || '').trim();
-    if (!trimmed) continue;
-    const heading = trimmed.match(/^#+\s*(.+)$/);
-    const content = (heading ? heading[1] : trimmed.replace(/^[-*]\s+/, '')).trim();
+    if (!trimmed || /^#+\s/.test(trimmed)) continue;
+    const content = trimmed
+      .replace(/^[-*]\s+/, '')
+      .replace(/^\[[ xX]\]\s+/, '')
+      .trim();
     if (!content) continue;
     return content.length <= 40 ? content : `${content.slice(0, 37).trim()}...`;
   }
@@ -137,6 +146,7 @@ function collectTeamRoster(deps = {}) {
     if (owner && engine && !engineByOwner.has(owner)) engineByOwner.set(owner, engine);
   }
   return collectMembers(root, deps)
+    .filter((member) => !isTemplateMember(member))
     .map((member) => {
       const name = String(member?.name || '').trim().toLowerCase();
       const engine = engineByOwner.get(name) || '';
