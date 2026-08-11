@@ -1,7 +1,7 @@
 ---
 name: engines
 description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, and Droid. Triggers on: use codex, use cursor, use devin, use grok, use fable, use claude, use atris, engine, dispatch to, worker agent, second opinion build."
-version: 1.3.0
+version: 1.3.1
 tags:
   - engines
   - claude
@@ -27,7 +27,7 @@ One contract, ten live profiles. The orchestrator writes a bounded task prompt, 
 |--------|---------|-------|
 | Atris Fast | `atris chat --print "<prompt>"` (equivalently `ax --fast --print`) | Local tool runtime over the api.atris.ai fast lane. Best for bounded lookups and small verified edits. |
 | Claude | `claude -p "<prompt>"` | Uses the local Claude configuration. Add `--model opus` for maximum-depth review or `--model sonnet` for speed. |
-| Codex | `codex exec --dangerously-bypass-approvals-and-sandbox -o <result-file> "<prompt>"` (run from the target repo/worktree; read-only research: `--sandbox read-only`) | Headless, exits when done — run it as a tracked background Bash task like the other engines and completion auto-wakes the session. Final answer lands in the `-o` file. Verified live 2026-08-11. The old plugin path (`codex-companion.mjs task --background`) is deprecated for dispatch: its job store never notifies the session (a finished result sat unread overnight, 2026-08-10) |
+| Codex | `codex exec --dangerously-bypass-approvals-and-sandbox -o <result-file> "<prompt>"` (run from the target repo/worktree; read-only research: `--sandbox read-only`) | Headless, exits when done — run it as a tracked background Bash task like the other engines and completion auto-wakes the session. Final answer lands in the `-o` file. Verified live 2026-08-11. ONE-SHOT SESSIONS (`claude -p` workers): run codex in the FOREGROUND and wait — a one-shot session never wakes again, so backgrounding strands the result (observed 2026-08-11). The old plugin path (`codex-companion.mjs task --background`) is deprecated for dispatch: its job store never notifies the session (a finished result sat unread overnight, 2026-08-10) |
 | Cursor | `cursor-agent --trust -p "<prompt>"` (run from the target repo) | Headless print mode; `--trust` required for non-interactive |
 | Fable | `claude -p "<prompt>" --model opus` | Maximum-depth Claude review. The `fable` Atris profile is the leader lane and uses the installed Claude CLI. |
 | Composer | `atris run "<objective>" --engine composer` | Fast navigator/executor profile routed through the installed `ax` binary. |
@@ -35,6 +35,8 @@ One contract, ten live profiles. The orchestrator writes a bounded task prompt, 
 | Devin | `devin -p --permission-mode dangerous -- "<prompt>"` (run from the target repo) | Default permission mode is read-only for writes — build work NEEDS `--permission-mode dangerous`, so only run it in an isolated worktree. Also `devin cloud` for sessions that outlive this machine. Supports `--model swe-1.7` |
 | Grok | `grok --always-approve -p "<prompt>"` (run from the target repo) | Headless single-turn via `-p`; default model grok-4.5. Very fast on lookups (~10s, reads MAP first). Great for quick second opinions; use `--best-of-n <N>` for tricky bounded builds. Uses grok.com login |
 | Droid | `droid exec "<prompt>"` | Executor profile using Droid's built-in router. Use only when the binary is ready in `atris engine --help`. |
+
+Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `cursor-agent` are allowlisted in `~/.claude/settings.json` so fresh and one-shot sessions can dispatch without a human approval click. A cold session that gets "requires approval" on an engine command means that allowlist regressed.
 
 ## Picking an engine
 
