@@ -1,53 +1,74 @@
 ---
 name: engines
-description: "Dispatch coding work to an installed terminal agent — Codex, Cursor, Devin, Grok, or Atris Fast — as an interchangeable worker engine. Claude orchestrates: writes the bounded prompt, the engine builds, Claude verifies and lands. Triggers on: use codex, use cursor, use devin, use grok, use atris, engine, dispatch to, worker agent, second opinion build."
-version: 1.2.0
+description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, and Droid. Triggers on: use codex, use cursor, use devin, use grok, use fable, use claude, use atris, engine, dispatch to, worker agent, second opinion build."
+version: 1.3.0
 tags:
   - engines
+  - claude
   - codex
   - cursor
+  - fable
+  - composer
+  - haiku
   - devin
   - grok
+  - droid
   - atris
   - orchestration
 ---
 
 # Engines — interchangeable terminal workers
 
-One contract, five engines. The orchestrator (you, Claude) writes a bounded task prompt, dispatches it to an engine, then **independently verifies, lands, and pushes** the result. Engines never self-certify.
+One contract, ten live profiles. The orchestrator writes a bounded task prompt, dispatches it to an engine, then **independently verifies, lands, and pushes** the result. Engines never self-certify.
 
 ## Invocation
 
 | Engine | Command | Notes |
 |--------|---------|-------|
+| Atris Fast | `atris chat --print "<prompt>"` (equivalently `ax --fast --print`) | Local tool runtime over the api.atris.ai fast lane. Best for bounded lookups and small verified edits. |
+| Claude | `claude -p "<prompt>"` | Uses the local Claude configuration. Add `--model opus` for maximum-depth review or `--model sonnet` for speed. |
 | Codex | `codex exec --dangerously-bypass-approvals-and-sandbox -o <result-file> "<prompt>"` (run from the target repo/worktree; read-only research: `--sandbox read-only`) | Headless, exits when done — run it as a tracked background Bash task like the other engines and completion auto-wakes the session. Final answer lands in the `-o` file. Verified live 2026-08-11. The old plugin path (`codex-companion.mjs task --background`) is deprecated for dispatch: its job store never notifies the session (a finished result sat unread overnight, 2026-08-10) |
 | Cursor | `cursor-agent --trust -p "<prompt>"` (run from the target repo) | Headless print mode; `--trust` required for non-interactive |
+| Fable | `claude -p "<prompt>" --model opus` | Maximum-depth Claude review. The `fable` Atris profile is the leader lane and uses the installed Claude CLI. |
+| Composer | `atris run "<objective>" --engine composer` | Fast navigator/executor profile routed through the installed `ax` binary. |
+| Haiku | `claude -p "<prompt>" --model claude-haiku-4-5` | Fast validation and bounded read-only checks. |
 | Devin | `devin -p --permission-mode dangerous -- "<prompt>"` (run from the target repo) | Default permission mode is read-only for writes — build work NEEDS `--permission-mode dangerous`, so only run it in an isolated worktree. Also `devin cloud` for sessions that outlive this machine. Supports `--model swe-1.7` |
 | Grok | `grok --always-approve -p "<prompt>"` (run from the target repo) | Headless single-turn via `-p`; default model grok-4.5. Very fast on lookups (~10s, reads MAP first). Great for quick second opinions; use `--best-of-n <N>` for tricky bounded builds. Uses grok.com login |
-| Atris Fast | `atris chat --print "<prompt>"` (run from the target repo; equivalently `ax --fast --print`) | Headless JSON result `{ok, model, output, durationMs}`; exit 0 = ok. Serves via the api.atris.ai fast lane (glm-5.2) with a local tool runtime scoped to the cwd — reads, greps, small verified edits. ~1% of frontier cost, typical turns 5–40s |
+| Droid | `droid exec "<prompt>"` | Executor profile using Droid's built-in router. Use only when the binary is ready in `atris engine --help`. |
 
 ## Picking an engine
 
+- **Atris Fast** — cheap bounded lookups, single-file facts, small verified edits, and high-volume fan-out.
+- **Claude / Fable** — deep review, synthesis, validation, and complex builds. Use Fable when judgment quality matters most.
 - **Codex** — deep root-cause work, long autonomous builds, second-opinion diagnosis. Slowest; runs sandboxed.
 - **Cursor** — fast bounded edits and refactors in a single repo.
+- **Composer / Haiku** — fast, bounded navigation, edits, and validation where a max-tier model would be wasteful.
 - **Devin** — multi-step feature work; use `cloud` when the run should survive laptop sleep.
 - **Grok** - fastest frontier lookups and quick second opinions (grok-4.5, ~10s; reads MAP first); use `--best-of-n` for tricky bounded builds. Uses grok.com login.
-- **Atris Fast** — cheap bounded lookups, single-file facts, small verified edits, high-volume fan-out (ten questions = ten `--print` calls at pennies). Not for multi-file features or long builds. Use it before burning a frontier engine on grunt work.
+- **Droid** — executor work through its built-in router when installed.
 - Parallel builds across repos: one engine job per repo, never two engines writing the same checkout.
 
-## Models worth pinning (verified live 2026-07-09)
+## Models worth pinning (verified live 2026-08-11)
 
 Each engine CLI can pin a specific model. Current best picks:
 
 | Engine | Flag | Best models today |
 |--------|------|-------------------|
+| Claude / Fable | `--model opus` | `opus` currently resolves to Opus 5; use the explicit Opus 4.8 identifier only for reproducibility |
 | Devin | `--model swe-1.7` | `swe-1.7` (free right now: use it as the volume executor for parallel bounded slices), `swe-1.7-lightning` for speed |
 | Cursor | `--model grok-4.5-xhigh` | `grok-4.5-xhigh` / `grok-4.5-fast-xhigh` for second-opinion builds, `composer-2.5` for fast edits; parameterized Claude via `'claude-opus-4-8[effort=high]'`; `--list-models` shows the full menu |
+| Composer | `--engine composer` | `composer 2.5` through the Atris profile |
+| Haiku | `--model claude-haiku-4-5` | `haiku` for fast validation |
 | Grok | (default) | `grok-4.5` default, `grok-composer-2.5-fast` for speed |
 | Codex | `-m <model>` | CLI default rides `~/.codex/config.toml`; pin with `-m` only when the task needs it |
+| Droid | (built-in router) | Let the installed Droid CLI select its model |
 | Atris Fast | (fixed) | api.atris.ai fast lane |
 
 Re-verify this table when a lab ships a new model: run each CLI's model-list command, smoke one lookup, and update the row. Free-tier windows (like swe-1.7 now) are the moment to fan out volume work.
+
+## Keep the local roster current
+
+Run `atris engine doctor`, then `atris engine --help`. The canonical profiles live in `lib/runner-command.js`; tiers, roles, models, duties, and health live in `lib/engine-registry.js`. When this guide and the live roster disagree, the registry is the source of truth and this guide must be updated.
 
 ## Atris Fast runtime requirements (verified live 2026-07-03)
 
