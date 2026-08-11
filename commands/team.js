@@ -553,14 +553,9 @@ function teamCommand(args = [], deps = {}) {
 }
 
 module.exports = {
-  collectMissions,
-  collectTasks,
-  collectTeamPresence,
   collectTeamPrune,
   collectTeamRoster,
   renderTeamPrune,
   renderTeamRoster,
-  renderTeamRosterHtml,
-  writeTeamBoardHtml,
   teamCommand,
 };
