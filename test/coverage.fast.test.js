@@ -41,7 +41,7 @@ const slowOnlyCoveredModules = [
   ['../lib/experiments/daily', libExperimentsDaily, ['parseDailyArgs', 'evaluateKeepRule']],
   ['../lib/inspect-fields', libInspectFields, ['validateFields', 'buildInspectPayload']],
   ['../lib/manifest', libManifest, ['buildManifest', 'threeWayCompare']],
-  ['../lib/receipt-evidence', libReceiptEvidence, ['extractReceiptEvidence', 'receiptVerifierPassed']],
+  ['../lib/receipt-evidence', libReceiptEvidence, ['extractReceiptEvidence', 'receiptVerifierPassed', 'findCachedMissionStepReceipt']],
   ['../lib/reward-config', libRewardConfig, ['REWARD_CONFIG', 'REWARD_CHECKSUM']],
   ['../lib/scorecard', libScorecard, ['buildScorecardData', 'detectEndgameCompletion']],
   ['../lib/security-scan', libSecurityScan, ['scanText', 'runScan']],
