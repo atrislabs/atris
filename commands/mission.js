@@ -46,6 +46,7 @@ const {
   renderEmailLine,
   renderMorningCardRow,
 } = require('../lib/receipt-block');
+const { findCachedMissionStepReceipt } = require('../lib/receipt-evidence');
 const {
   pruneRuns,
   runsPruneLines,
@@ -9156,6 +9157,8 @@ async function executeMissionRunTicksPhase(context) {
       const tickStart = stampIso();
       const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
       let result = { status: 'skipped', reason: 'unknown', tick_index: tickIdx, ran: false, started_at: tickStart };
+      let cachedStep = findCachedMissionStepReceipt(cwd, { missionId: mission.id, tickIndex: tickIdx });
+      let cachedVerifierResult = cachedStep ? cachedStep.verifier_result : null;
       const tickSelection = resolveMissionTickRunner(runtimeMission, cwd);
       const tickRuntimeMission = tickSelection.mission;
       const tickRunnerName = String(tickRuntimeMission.runner || '').trim().toLowerCase();
@@ -9187,7 +9190,17 @@ async function executeMissionRunTicksPhase(context) {
       }
 
       // Active-hours gate
-      if (engineBackedTick && !tickEngineId) {
+      if (cachedStep) {
+        result = {
+          ...result,
+          ...cachedStep.tick,
+          tick_index: tickIdx,
+          cached: true,
+          reason: 'receipt-cache-hit',
+          ran: cachedStep.tick.ran !== false,
+          status: cachedStep.tick.status || 'ran',
+        };
+      } else if (engineBackedTick && !tickEngineId) {
         result = { ...result, status: 'errored', reason: 'no-ready-engine' };
       } else if (!isWithinActiveHours(mission.active_hours)) {
         result = { ...result, status: 'skipped', reason: 'quiet-hours' };
@@ -9404,7 +9417,7 @@ async function executeMissionRunTicksPhase(context) {
         }
       }
 
-      if (tickEngineId) {
+      if (tickEngineId && !cachedStep) {
         result.rate_limit_info = lastRateLimit;
         const engineHealth = recordMissionEngineTickOutcome(tickEngineId, result, cwd);
         if (engineHealth) result.engine_health = engineHealth.health;
@@ -9420,12 +9433,18 @@ async function executeMissionRunTicksPhase(context) {
         tickIdx,
         frozen,
       };
-      await verifyMissionRunTickPhase(context);
-      result = context.currentTick.result;
-      const verifierResult = context.currentTick.verifierResult;
+      let verifierResult = null;
+      if (cachedStep) {
+        verifierResult = cachedVerifierResult;
+        if (verifierResult) result.verifier_passed = verifierResult.passed;
+      } else {
+        await verifyMissionRunTickPhase(context);
+        result = context.currentTick.result;
+        verifierResult = context.currentTick.verifierResult;
+      }
       pauseReason = context.pauseReason;
       context.currentTick = null;
-      let receiptPath = null;
+      let receiptPath = cachedStep ? cachedStep.receipt_path : null;
 
       // Review-lane drain: always-on loops sweep the agent-safe review actions
       // each tick so proof-backed work reaches certified on cadence with zero
@@ -9435,27 +9454,32 @@ async function executeMissionRunTicksPhase(context) {
           ? { skipped: true, reason: 'no-drain-flag' }
           : runReviewLaneDrain(cwd);
       }
-      const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier, baseline: runWorktreeBaseline });
+      const tickWorktree = cachedStep?.tick?.worktree
+        || worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier, baseline: runWorktreeBaseline });
 
       // Layer classification needs the receipt text AND the worktree receipt, so it
       // runs here — after both exist — covering the claude and atris2 branches alike.
-      const tickReceiptText = result.atris2?.receipt_text || result.claude?.receipt_text || result.drill?.receipt_text || '';
-      const layerInfo = extractLayerFromReceiptText(tickReceiptText, tickWorktree?.new_since_baseline_sample);
-      result.layer = layerInfo.layer;
-      result.layer_source = layerInfo.source;
+      if (!(cachedStep && cachedStep.tick && cachedStep.tick.layer)) {
+        const tickReceiptText = result.atris2?.receipt_text || result.claude?.receipt_text || result.drill?.receipt_text || '';
+        const layerInfo = extractLayerFromReceiptText(tickReceiptText, tickWorktree?.new_since_baseline_sample);
+        result.layer = layerInfo.layer;
+        result.layer_source = layerInfo.source;
+      }
 
       // Persist tick to mission state + write structured receipt
       const finishedAt = stampIso();
-      const tickRecord = { ...result, started_at: tickStart, finished_at: finishedAt, worktree: tickWorktree };
+      const tickRecord = { ...result, started_at: result.started_at || tickStart, finished_at: result.finished_at || finishedAt, worktree: tickWorktree };
       ticks.push(tickRecord);
-      receiptPath = writeReceipt(runtimeMission, {
-        kind: 'mission_run_tick',
-        tick: tickRecord,
-        frozen,
-        verifier_result: verifierResult,
-        rate_limit_info: lastRateLimit,
-        worktree: tickWorktree,
-      });
+      if (!receiptPath) {
+        receiptPath = writeReceipt(runtimeMission, {
+          kind: 'mission_run_tick',
+          tick: tickRecord,
+          frozen,
+          verifier_result: verifierResult,
+          rate_limit_info: lastRateLimit,
+          worktree: tickWorktree,
+        });
+      }
 
       const xpReadyAction = missionXpReadyAction(mission, receiptPath);
       const budgetRemainingSeconds = missionFullBudgetRemainingSeconds(mission);
@@ -9943,56 +9967,72 @@ function tickMission(args) {
     const tickStart = stampIso();
     const lastTickIndex = Number(mission.last_tick_index || 0);
     const tickIdx = lastTickIndex + 1;
-    const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
-    const worktreeBaseline = loadMissionWorktreeBaseline(mission.id, cwd);
-    const protectedLaneGuard = inspectMissionTickProtectedDiff(mission, tickWorktreeBefore, cwd);
-
+    // Interrupt between writeReceipt and saveMission leaves a completed receipt
+    // for this tick_index while last_tick_index stays behind. Reuse it on resume
+    // instead of re-deriving the step from scratch.
+    const cachedStep = findCachedMissionStepReceipt(cwd, { missionId: mission.id, tickIndex: tickIdx });
     const effectiveVerifier = effectiveMissionVerifier(mission);
     const verifierCommand = verify
       ? String(verifyOverride || effectiveVerifier || '').trim()
       : '';
-    if (verifierCommand) assertMissionVerifier(verifierCommand, asJson);
+    if (!cachedStep && verifierCommand) assertMissionVerifier(verifierCommand, asJson);
 
     let verifierResult = null;
-    if (protectedLaneGuard.allowed && verify && verifierCommand) {
-      verifierResult = runVerifier(verifierCommand);
-    }
-    const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: verifierCommand || effectiveVerifier, baseline: worktreeBaseline });
+    let tickRecord = null;
+    let receiptPath = null;
+    if (cachedStep) {
+      tickRecord = {
+        ...cachedStep.tick,
+        cached: true,
+        reason: 'receipt-cache-hit',
+      };
+      verifierResult = cachedStep.verifier_result;
+      receiptPath = cachedStep.receipt_path;
+    } else {
+      const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
+      const worktreeBaseline = loadMissionWorktreeBaseline(mission.id, cwd);
+      const protectedLaneGuard = inspectMissionTickProtectedDiff(mission, tickWorktreeBefore, cwd);
 
-    // Same layer classification as the run-tick path; manual ticks carry their
-    // receipt text in --summary.
-    const layerInfo = extractLayerFromReceiptText(summary || '', tickWorktree?.new_since_baseline_sample);
-    const guardPauseReason = protectedLaneGuard.unreadable
-      ? 'mission-diff-unreadable'
-      : 'protected-lane-review';
-    const tickRecord = {
-      status: protectedLaneGuard.allowed ? 'ran' : protectedLaneGuard.status,
-      reason: protectedLaneGuard.allowed ? 'tick-recorded' : guardPauseReason,
-      tick_index: tickIdx,
-      ran: protectedLaneGuard.allowed,
-      started_at: tickStart,
-      claude: { skipped: true, reason: 'orchestrator-is-caller-session' },
-      summary: summary || null,
-      layer: layerInfo.layer,
-      layer_source: layerInfo.source,
-      verifier_passed: verifierResult ? !!verifierResult.passed : null,
-      protected_lane_guard: protectedLaneGuard,
-      finished_at: stampIso(),
-      worktree: tickWorktree,
-    };
-    const receiptPath = writeReceipt(mission, {
-      kind: 'mission_tick',
-      tick: tickRecord,
-      frozen: {
-        verifier: verifierCommand || effectiveVerifier || '',
-        lane: mission.lane || 'workspace',
+      if (protectedLaneGuard.allowed && verify && verifierCommand) {
+        verifierResult = runVerifier(verifierCommand);
+      }
+      const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: verifierCommand || effectiveVerifier, baseline: worktreeBaseline });
+
+      // Same layer classification as the run-tick path; manual ticks carry their
+      // receipt text in --summary.
+      const layerInfo = extractLayerFromReceiptText(summary || '', tickWorktree?.new_since_baseline_sample);
+      const guardPauseReason = protectedLaneGuard.unreadable
+        ? 'mission-diff-unreadable'
+        : 'protected-lane-review';
+      tickRecord = {
+        status: protectedLaneGuard.allowed ? 'ran' : protectedLaneGuard.status,
+        reason: protectedLaneGuard.allowed ? 'tick-recorded' : guardPauseReason,
+        tick_index: tickIdx,
+        ran: protectedLaneGuard.allowed,
         started_at: tickStart,
-      },
-      verifier_result: verifierResult,
-      protected_lane_guard: protectedLaneGuard,
-      rate_limit_info: null,
-      worktree: tickWorktree,
-    });
+        claude: { skipped: true, reason: 'orchestrator-is-caller-session' },
+        summary: summary || null,
+        layer: layerInfo.layer,
+        layer_source: layerInfo.source,
+        verifier_passed: verifierResult ? !!verifierResult.passed : null,
+        protected_lane_guard: protectedLaneGuard,
+        finished_at: stampIso(),
+        worktree: tickWorktree,
+      };
+      receiptPath = writeReceipt(mission, {
+        kind: 'mission_tick',
+        tick: tickRecord,
+        frozen: {
+          verifier: verifierCommand || effectiveVerifier || '',
+          lane: mission.lane || 'workspace',
+          started_at: tickStart,
+        },
+        verifier_result: verifierResult,
+        protected_lane_guard: protectedLaneGuard,
+        rate_limit_info: null,
+        worktree: tickWorktree,
+      });
+    }
 
 	    let status = 'running';
 	    let nextAction = (verifierCommand || effectiveVerifier)
@@ -10000,7 +10040,8 @@ function tickMission(args) {
 	      : (mission.always_on && missionTaskSpine(mission)?.has_task
 	        ? nextCandidateTickAction(mission)
 	        : 'attach task, verifier, or proof');
-	    const nextGoalChain = advanceMissionGoalChain(mission.goal_chain, summary, verifierResult);
+	    const nextGoalChain = advanceMissionGoalChain(mission.goal_chain, summary || tickRecord.summary, verifierResult);
+	    const protectedLaneGuard = tickRecord.protected_lane_guard || { allowed: true };
 	    if (!protectedLaneGuard.allowed) {
 	      status = 'paused';
 	      nextAction = protectedLaneGuard.unreadable
@@ -10077,9 +10118,10 @@ function tickMission(args) {
     const atrisGoalState = refreshAtrisGoalController(process.cwd(), { missionId: outputMission.id });
     const codexGoalState = refreshCodexGoalController(process.cwd());
     printJsonOrText(
-      { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, blocker, receipt_path: receiptPath, log_path: logPath, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, operator_summary_warning: operatorSummaryWarning },
+      { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, blocker, receipt_path: receiptPath, log_path: logPath, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, operator_summary_warning: operatorSummaryWarning, cached: Boolean(tickRecord.cached) },
       [
-        ...missionTickResultLines(outputMission, tickIdx, receiptPath, verifierResult, summary),
+        ...(tickRecord.cached ? [`Reused receipt for tick ${tickIdx}: ${receiptPath}`] : []),
+        ...missionTickResultLines(outputMission, tickIdx, receiptPath, verifierResult, summary || tickRecord.summary),
         ...(missionBlockerReceiptLine(blocker) ? [missionBlockerReceiptLine(blocker)] : []),
         ...(continuationGoal?.mission ? [`Next goal: ${continuationGoal.mission.objective}`] : []),
       ],
