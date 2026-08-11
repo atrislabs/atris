@@ -38,7 +38,7 @@ rg "Self-driving mission|Autonomy Ladder|Driving Contract|verified time-to-arriv
 rg "missionDrive|destinationHash|mission_destination_change_proposed|pending_destination_proposal|routeMission|validateMissionRouteProposal|mission_route_(set|rejected)|pending_route_proposal" commands/mission.js test/mission-status.test.js test/self-driving-mission.test.js  # Self-driving mission Steps 1-2: optional destination trip contract, operator-gated destination changes, and route compilation with falsifiable legs, dependency validation, supported hard gates, scoped surfaces, version bumps, and preserved rejection reasons
 rg "askCommand|currentMissionCommand|approveCommand|stopCommand|answerCommand|readyCommand|checkCommand|missionCard" commands/human-missions.js commands/mission.js lib/cloud-mission.js bin/atris.js test/human-missions.test.js  # Public human mission commands: ask, current card, answer, approve, stop, readiness, and check results over the cloud mission client
 rg "decideCommand|collectOpenDecisions|normalizeHumanAsk|answerMissionHumanAsk" commands/decide.js commands/mission.js lib/mission-human-asks.js lib/self-drive.js test/decide.test.js  # Mission human-decision bridge: list open asks deterministically, route yes/no through mission pings, persist answered metadata, and ignore answered asks in mission/self-drive reads
-rg "starterMembers|team members ready|firstMissionCommand|packed golden path|printedAtrisArgs|golden path e2e|what someone can do now" commands/init.js bin/atris.js commands/task.js test/init-non-interactive.test.js test/golden-path-e2e.test.js atris/GOLDEN_PATH_PAPERCUTS.md  # Quiet first-run output plus packed-install zero-knowledge contract: five-member starter team, grouped setup counts, ready-on-init mission, clean HOME, printed mission/task handoffs, autoland, and durable papercut status
+rg "starterMembers|team members ready|firstMissionCommand|packed golden path|printedAtrisArgs|golden path e2e|what someone can do now" commands/init.js bin/atris.js commands/task.js test/init-non-interactive.test.js test/golden-path-e2e.test.js test/repo-shape.test.js atris/team/customer-lead atris/GOLDEN_PATH_PAPERCUTS.md  # Quiet first-run output plus packed-install zero-knowledge contract: six-member starter team with customer retention ownership, package-file coverage, grouped setup counts, ready-on-init mission, clean HOME, printed mission/task handoffs, autoland, and durable papercut status
 rg "function planAtris" commands/workflow.js   # Plan command (line 363)
 rg "function doAtris" commands/workflow.js     # Do command (line 709)
 rg "function reviewAtris" commands/workflow.js  # Review command (line 1062): default certified queue, --verbose legacy validator prompt
@@ -206,7 +206,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Creates:**
 - `atris/` folder
 - `atris/wiki/` scaffold with `wiki.md`, `index.md`, `log.md`, `STATUS.md`
-- `atris/team/` with navigator, executor, validator, mission-lead, and improver; later member creation uses `atris member create <name>`
+- `atris/team/` with navigator, executor, validator, mission-lead, improver, and customer-lead; later member creation uses `atris member create <name>`
 - `atris/features/` subfolder with README template
 - `GETTING_STARTED.md`, `MAP.md`, `TODO.md` placeholders
 - `.project-profile.json` (project detection metadata)

@@ -14,7 +14,7 @@ const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const INIT_TIMEOUT_MS = 60000;
 const FIRST_USE_NEXT = 'Next: atris "help me choose the first useful step for this project"';
 const FIRST_MISSION = 'atris mission start "Verify this Atris workspace is ready" --owner validator --runner manual --lane workspace --verify "node -e \\"require(\'fs\').accessSync(\'atris/atris.md\')\\"" --stop "workspace readiness is verified"';
-const STARTER_MEMBERS = ['executor', 'improver', 'mission-lead', 'navigator', 'validator'];
+const STARTER_MEMBERS = ['customer-lead', 'executor', 'improver', 'mission-lead', 'navigator', 'validator'];
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-init-non-interactive-'));
@@ -133,7 +133,7 @@ test('init keeps default output grouped and restores file details with --verbose
     assert.doesNotMatch(quiet.stdout, /CONTEXT LOADED/);
     assert.doesNotMatch(quiet.stdout, /✓ Copied skill:|\.claude\/skills\//);
     assert.match(quiet.stdout, /workspace files ready \(\d+\)/);
-    assert.match(quiet.stdout, /team members ready \(5\)/);
+    assert.match(quiet.stdout, /team members ready \(6\)/);
     assert.match(quiet.stdout, /^more members are available with atris member create <name>$/m);
     assert.match(quiet.stdout, /agent adapters ready \(\d+\)/);
     assert.match(quiet.stdout, /skills installed \(\d+\)/);
@@ -149,12 +149,19 @@ test('init keeps default output grouped and restores file details with --verbose
   }
 });
 
-test('fresh init creates only the five-member starter team', () => {
+test('fresh init creates the six-member starter team with a safe customer lead', () => {
   const dir = makeTempDir();
   try {
     const res = runInit(['--yes'], { cwd: dir });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.deepEqual(listTeamMembers(dir), STARTER_MEMBERS);
+    const customerLeadDir = path.join(dir, 'atris', 'team', 'customer-lead');
+    assert.ok(fs.existsSync(path.join(customerLeadDir, 'SOUL.md')));
+    assert.ok(fs.existsSync(path.join(customerLeadDir, 'START_HERE.md')));
+    assert.ok(fs.existsSync(path.join(customerLeadDir, 'skills', 'customer-commitments', 'SKILL.md')));
+    assert.ok(fs.statSync(path.join(customerLeadDir, 'tools')).isDirectory());
+    assert.ok(fs.statSync(path.join(customerLeadDir, 'context')).isDirectory());
+    assert.match(fs.readFileSync(path.join(customerLeadDir, 'MEMBER.md'), 'utf8'), /can-send: false/);
   } finally {
     cleanupTempDir(dir);
   }

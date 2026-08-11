@@ -29,6 +29,21 @@ test('npm package includes runtime workspace templates', () => {
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'templates', 'research-canonical', 'MAP.md')));
 });
 
+test('npm package includes every starter member source', () => {
+  const files = packageJson.files || [];
+  const requiredMemberFiles = [
+    'atris/team/improver/MEMBER.md',
+    'atris/team/customer-lead/MEMBER.md',
+    'atris/team/customer-lead/SOUL.md',
+    'atris/team/customer-lead/START_HERE.md',
+    'atris/team/customer-lead/skills/customer-commitments/SKILL.md',
+  ];
+  requiredMemberFiles.forEach((file) => {
+    assert.ok(files.includes(file), `package.json files must include ${file}`);
+    assert.ok(fs.existsSync(path.join(__dirname, '..', file)), `${file} must exist`);
+  });
+});
+
 test('npm package metadata keeps version and lockfile aligned', () => {
   assert.match(packageJson.version, /^\d+\.\d+\.\d+$/);
   assert.equal(packageLock.version, packageJson.version);

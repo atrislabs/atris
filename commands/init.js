@@ -602,9 +602,12 @@ function initAtris() {
 
 
   // Copy team members (MEMBER.md format — directory per member with skills/tools/context)
-  const starterMembers = ['navigator', 'executor', 'validator', 'mission-lead', 'improver'];
+  const starterMembers = ['navigator', 'executor', 'validator', 'mission-lead', 'improver', 'customer-lead'];
+  const starterMemberFiles = ['MEMBER.md', 'SOUL.md', 'START_HERE.md'];
+  const starterMemberDirs = ['skills', 'tools', 'context'];
   starterMembers.forEach(name => {
-    const sourceFile = path.join(__dirname, '..', 'atris', 'team', name, 'MEMBER.md');
+    const sourceMemberDir = path.join(__dirname, '..', 'atris', 'team', name);
+    const sourceFile = path.join(sourceMemberDir, 'MEMBER.md');
     const targetMemberDir = path.join(teamDir, name);
     const targetFile = path.join(targetMemberDir, 'MEMBER.md');
     const legacyFile = path.join(teamDir, `${name}.md`);
@@ -614,11 +617,17 @@ function initAtris() {
 
     if (fs.existsSync(sourceFile)) {
       fs.mkdirSync(targetMemberDir, { recursive: true });
-      fs.mkdirSync(path.join(targetMemberDir, 'skills'), { recursive: true });
-      fs.mkdirSync(path.join(targetMemberDir, 'tools'), { recursive: true });
-      fs.mkdirSync(path.join(targetMemberDir, 'context'), { recursive: true });
-      fs.copyFileSync(sourceFile, targetFile);
-      markReady('team', name, `✓ Created team/${name}/ (MEMBER.md + skills/ + tools/ + context/)`);
+      starterMemberDirs.forEach(dirName => {
+        const sourceDir = path.join(sourceMemberDir, dirName);
+        const targetDir = path.join(targetMemberDir, dirName);
+        fs.mkdirSync(targetDir, { recursive: true });
+        if (fs.existsSync(sourceDir)) fs.cpSync(sourceDir, targetDir, { recursive: true });
+      });
+      starterMemberFiles.forEach(fileName => {
+        const source = path.join(sourceMemberDir, fileName);
+        if (fs.existsSync(source)) fs.copyFileSync(source, path.join(targetMemberDir, fileName));
+      });
+      markReady('team', name, `✓ Created team/${name}/ (identity + skills/ + tools/ + context/)`);
     }
   });
 
