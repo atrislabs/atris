@@ -5,7 +5,9 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const RECEIPT_REL = path.join('.atris', 'state', 'caretaker.scan.latest.json');
-const PR_JSON_FIELDS = [
+const LIST_LIMIT = '100';
+const LIST_JSON_FIELDS = ['number', 'title', 'headRefOid'].join(',');
+const DETAIL_JSON_FIELDS = [
   'number',
   'title',
   'headRefOid',
@@ -45,6 +47,11 @@ function ensureGh(options = {}) {
     return false;
   }
   return true;
+}
+
+function ghFailedDetail(result, fallback) {
+  const detail = String(result.stderr || result.stdout || result.error?.message || fallback).trim();
+  return detail.split(/\r?\n/).find(Boolean) || fallback;
 }
 
 function checkName(check) {
@@ -189,20 +196,19 @@ function writeReceipt(root, receipt) {
   return file;
 }
 
-function listOpenPullRequests(options = {}) {
+function listOpenPullRequestRefs(options = {}) {
   const result = runGh([
     'pr',
     'list',
     '--state',
     'open',
     '--limit',
-    '100',
+    LIST_LIMIT,
     '--json',
-    PR_JSON_FIELDS,
+    LIST_JSON_FIELDS,
   ], options);
   if (result.error || result.status !== 0) {
-    const detail = String(result.stderr || result.stdout || result.error?.message || 'gh pr list failed').trim();
-    throw new Error(detail.split(/\r?\n/).find(Boolean) || 'gh pr list failed');
+    throw new Error(ghFailedDetail(result, 'gh pr list failed'));
   }
   const raw = String(result.stdout || '').trim();
   if (!raw) return [];
@@ -210,13 +216,40 @@ function listOpenPullRequests(options = {}) {
   return Array.isArray(parsed) ? parsed : [];
 }
 
+function fetchPullRequestDetail(number, options = {}) {
+  const result = runGh([
+    'pr',
+    'view',
+    String(number),
+    '--json',
+    DETAIL_JSON_FIELDS,
+  ], options);
+  if (result.error || result.status !== 0) {
+    throw new Error(ghFailedDetail(result, `gh pr view ${number} failed`));
+  }
+  const raw = String(result.stdout || '').trim();
+  if (!raw) {
+    throw new Error(`gh pr view ${number} returned empty output`);
+  }
+  return JSON.parse(raw);
+}
+
 function scanPullRequests({ cwd, env, now } = {}) {
   const root = path.resolve(cwd || process.cwd());
   const scannedAt = (now instanceof Date ? now : new Date()).toISOString();
-  const prs = listOpenPullRequests({ cwd: root, env }).map((pr) => {
+  const refs = listOpenPullRequestRefs({ cwd: root, env });
+  const prs = refs.map((ref) => {
+    const number = Number(ref.number);
+    const detail = fetchPullRequestDetail(number, { cwd: root, env });
+    const pr = {
+      ...detail,
+      number: Number(detail.number || number),
+      title: detail.title != null ? detail.title : ref.title,
+      headRefOid: detail.headRefOid || ref.headRefOid || '',
+    };
     const classified = classifyPullRequest(pr);
     return {
-      number: Number(pr.number),
+      number: pr.number,
       title: String(pr.title || ''),
       state: classified.state,
       reason: classified.reason,

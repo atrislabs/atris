@@ -19,7 +19,7 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function writeGhShim(dir, prs, { authOk = true } = {}) {
+function writeGhShim(dir, prs, { authOk = true, listFail = false } = {}) {
   const binDir = path.join(dir, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
   const dataPath = path.join(dir, 'prs.json');
@@ -27,12 +27,13 @@ function writeGhShim(dir, prs, { authOk = true } = {}) {
   const scriptPath = path.join(binDir, 'gh');
   fs.writeFileSync(scriptPath, `#!/usr/bin/env node
 const fs = require('fs');
-const args = process.argv.slice(2).join(' ');
-if (args === '--version') {
+const args = process.argv.slice(2);
+const joined = args.join(' ');
+if (joined === '--version') {
   process.stdout.write('gh version 2.74.0\\n');
   process.exit(0);
 }
-if (args === 'auth status') {
+if (joined === 'auth status') {
   if (${authOk ? 'true' : 'false'}) {
     process.stdout.write('github.com\\n  ✓ Logged in\\n');
     process.exit(0);
@@ -40,11 +41,32 @@ if (args === 'auth status') {
   process.stderr.write('not logged in\\n');
   process.exit(1);
 }
-if (args.startsWith('pr list')) {
-  process.stdout.write(fs.readFileSync(${JSON.stringify(dataPath)}, 'utf8'));
+if (args[0] === 'pr' && args[1] === 'list') {
+  if (${listFail ? 'true' : 'false'}) {
+    process.stderr.write('GraphQL: By the time this query traverses to the authors connection, it is requesting up to 1,000,000 possible nodes which exceeds the maximum limit of 500,000.\\n');
+    process.exit(1);
+  }
+  const all = JSON.parse(fs.readFileSync(${JSON.stringify(dataPath)}, 'utf8'));
+  const list = all.map((pr) => ({
+    number: pr.number,
+    title: pr.title,
+    headRefOid: pr.headRefOid,
+  }));
+  process.stdout.write(JSON.stringify(list) + '\\n');
   process.exit(0);
 }
-process.stderr.write('unexpected gh invocation: ' + args + '\\n');
+if (args[0] === 'pr' && args[1] === 'view') {
+  const number = Number(args[2]);
+  const all = JSON.parse(fs.readFileSync(${JSON.stringify(dataPath)}, 'utf8'));
+  const pr = all.find((item) => Number(item.number) === number);
+  if (!pr) {
+    process.stderr.write('pull request not found\\n');
+    process.exit(1);
+  }
+  process.stdout.write(JSON.stringify(pr) + '\\n');
+  process.exit(0);
+}
+process.stderr.write('unexpected gh invocation: ' + joined + '\\n');
 process.exit(2);
 `, 'utf8');
   fs.chmodSync(scriptPath, 0o755);
@@ -210,6 +232,20 @@ test('caretaker scan classifies four pr states and writes the receipt shape', ()
         ['head_sha', 'number', 'reason', 'scanned_at', 'state', 'title'],
       );
     }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('caretaker scan exits 1 when gh pr list fails', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const binDir = writeGhShim(dir, samplePrs(), { listFail: true });
+    const run = runCaretaker(dir, binDir);
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /caretaker scan failed:.*500,000/i);
+    assert.equal(fs.existsSync(path.join(dir, RECEIPT)), false);
   } finally {
     cleanupTempDir(dir);
   }
