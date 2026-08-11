@@ -20,7 +20,7 @@ One contract, five engines. The orchestrator (you, Claude) writes a bounded task
 
 | Engine | Command | Notes |
 |--------|---------|-------|
-| Codex | `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task --background [--write] "<prompt>"` (via codex plugin / codex:codex-rescue agent) | Poll with `status`, fetch with `result <job-id>` |
+| Codex | `codex exec --dangerously-bypass-approvals-and-sandbox -o <result-file> "<prompt>"` (run from the target repo/worktree; read-only research: `--sandbox read-only`) | Headless, exits when done — run it as a tracked background Bash task like the other engines and completion auto-wakes the session. Final answer lands in the `-o` file. Verified live 2026-08-11. The old plugin path (`codex-companion.mjs task --background`) is deprecated for dispatch: its job store never notifies the session (a finished result sat unread overnight, 2026-08-10) |
 | Cursor | `cursor-agent --trust -p "<prompt>"` (run from the target repo) | Headless print mode; `--trust` required for non-interactive |
 | Devin | `devin -p --permission-mode dangerous -- "<prompt>"` (run from the target repo) | Default permission mode is read-only for writes — build work NEEDS `--permission-mode dangerous`, so only run it in an isolated worktree. Also `devin cloud` for sessions that outlive this machine. Supports `--model swe-1.7` |
 | Grok | `grok --always-approve -p "<prompt>"` (run from the target repo) | Headless single-turn via `-p`; default model grok-4.5. Very fast on lookups (~10s, reads MAP first). Great for quick second opinions; use `--best-of-n <N>` for tricky bounded builds. Uses grok.com login |
@@ -44,7 +44,7 @@ Each engine CLI can pin a specific model. Current best picks:
 | Devin | `--model swe-1.7` | `swe-1.7` (free right now: use it as the volume executor for parallel bounded slices), `swe-1.7-lightning` for speed |
 | Cursor | `--model grok-4.5-xhigh` | `grok-4.5-xhigh` / `grok-4.5-fast-xhigh` for second-opinion builds, `composer-2.5` for fast edits; parameterized Claude via `'claude-opus-4-8[effort=high]'`; `--list-models` shows the full menu |
 | Grok | (default) | `grok-4.5` default, `grok-composer-2.5-fast` for speed |
-| Codex | (plugin default) | rides the codex plugin's pinned model |
+| Codex | `-m <model>` | CLI default rides `~/.codex/config.toml`; pin with `-m` only when the task needs it |
 | Atris Fast | (fixed) | api.atris.ai fast lane |
 
 Re-verify this table when a lab ships a new model: run each CLI's model-list command, smoke one lookup, and update the row. Free-tier windows (like swe-1.7 now) are the moment to fan out volume work.
