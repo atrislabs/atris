@@ -560,6 +560,7 @@ function showHelp() {
   console.log('  improve    - Run one paid RL tick (POST /api/improve, deducts credits)');
   console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
   console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
+  console.log('  caretaker  - Classify open pull requests on origin (scan only; no fix, comment, or merge)');
   console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
   console.log(`  autoland   - Approve the policy once; ${require('../lib/autoland').certifiedWorkLandsPhrase(process.cwd())}, you keep irreversible calls`);
   console.log('  engine     - Engine registry: list/resolve roles, health flips, default engine, `engine test`, and dispatch flights');
@@ -1909,6 +1910,10 @@ if (command === 'init') {
   Promise.resolve(require('../commands/land').landCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'caretaker') {
+  Promise.resolve(require('../commands/caretaker').caretakerCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'close') {
   Promise.resolve(require('../commands/close').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
