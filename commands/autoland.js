@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
 const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
+const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
 const CLOSED_TASK_STATUSES = new Set(['done', 'archived']);
@@ -713,7 +714,19 @@ function digestTickStatus(receipt) {
   return 'not due';
 }
 
+function engineReceiptSweepNote(receipt) {
+  const finalized = Number(receipt.engine_receipt_sweep?.finalized) || 0;
+  if (!finalized) return '';
+  return `, finalized ${finalized} stale engine receipt${finalized === 1 ? '' : 's'} as presumed dead`;
+}
+
 function runTickBody(root, { json, policy, receipt }) {
+
+  try {
+    receipt.engine_receipt_sweep = sweepEngineAskReceipts(root);
+  } catch (err) {
+    receipt.engine_receipt_sweep_error = String((err && err.message) || err).slice(0, 200);
+  }
 
   // 1. certify and land in one task process. Keeping both phases together lets
   // the landing gate reuse the live certification verifier result without
@@ -983,13 +996,14 @@ function runTickBody(root, { json, policy, receipt }) {
     const janitorNote = `, janitor stopped ${receipt.missions_stopped} mission${receipt.missions_stopped === 1 ? '' : 's'} + reaped ${receipt.worktrees_reaped} worktree${receipt.worktrees_reaped === 1 ? '' : 's'}`;
     const heldNote = receipt.missions_held ? `, held ${receipt.missions_held} human-blocked mission${receipt.missions_held === 1 ? '' : 's'}` : '';
     const wishNote = `, ${wishSweepSummaryLine(receipt.wish_dispatch, receipt.wish_dispatch_error)}`;
+    const engineSweepNote = engineReceiptSweepNote(receipt);
     const receiptNote = receipt.receipt_path ? `, receipt ${receipt.receipt_path}` : '';
     // Deltas alone ("0 certified, 0 landed") are true and useless: they read
     // as "nothing to do" whether the queue is empty or 19-deep and wedged.
     // Always print the standing backlog, and name work that cleared every
     // gate and still did not land — that is the shape of a stuck loop.
     const stuckNote = stuckBacklogNote(receipt);
-    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${receiptNote}`;
+    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${receiptNote}`;
     console.log(gateForHuman(summary).text);
     for (const fulfilled of receipt.wish_dispatch?.fulfilled_results || []) {
       if (fulfilled.review_ask) console.log(fulfilled.review_ask);
