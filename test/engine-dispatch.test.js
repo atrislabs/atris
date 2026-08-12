@@ -88,7 +88,7 @@ test('buildEngineCommand pins yolo flags for codex and claude engines', () => {
   assert.equal(fleet.YOLO_ENGINE_FLAGS.claude, '--dangerously-skip-permissions');
 
   const codex = fleet.buildEngineCommand('codex', '/tmp/p.md', { yolo: true });
-  assert.match(codex, /^codex exec --dangerously-bypass-approvals-and-sandbox /);
+  assert.match(codex, /codex-watchdog\.js.*sh -c 'codex exec --dangerously-bypass-approvals-and-sandbox /);
   assert.doesNotMatch(fleet.buildEngineCommand('codex', '/tmp/p.md'), /dangerously-bypass-approvals-and-sandbox/);
 
   const claude = fleet.buildEngineCommand('claude', '/tmp/p.md', { yolo: true });
