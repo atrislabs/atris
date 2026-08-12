@@ -61,6 +61,19 @@ test('fleet prompt injects the repo default when the task has no Check line', ()
   }
 });
 
+test('fleet prompt includes the exported atris process preamble exactly once', () => {
+  const root = makeTempRoot();
+  try {
+    const prompt = fleet.buildFleetPrompt(TASK, { worktreePath: root });
+    const stablePhrase = 'you are set up to do this well';
+    assert.equal(fleet.ATRIS_BUILD_PROCESS_PREAMBLE, fleet.ATRIS_BUILD_PROCESS_PREAMBLE.toLowerCase());
+    assert.ok(fleet.ATRIS_BUILD_PROCESS_PREAMBLE.split('\n').length < 12);
+    assert.equal(prompt.split(stablePhrase).length - 1, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('isSafeLane reads the canonical singular task tag', () => {
   assert.equal(fleet.isSafeLane({ title: 'ship it', tag: 'deploy' }), false);
   assert.equal(fleet.isSafeLane({ title: 'fix it', tag: 'code' }), true);
@@ -81,6 +94,55 @@ test('parseDispatchArgs supports --flag=value form', () => {
   assert.equal(parsed.engine, 'codex');
   assert.equal(parsed.promptFile, '/tmp/p.md');
   assert.equal(parsed.yolo, false);
+});
+
+test('engine name plus task id routes through the existing dispatch command shape', async () => {
+  const root = makeTempRoot();
+  const calls = [];
+  try {
+    const code = await engine.engineCommand(['codex', 'CLI-123'], {
+      root,
+      engineDispatch: (args, dispatchRoot) => {
+        calls.push({ args, root: dispatchRoot });
+        return 0;
+      },
+    });
+    assert.equal(code, 0);
+    assert.deepEqual(calls, [{ args: ['CLI-123', '--engine', 'codex'], root }]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('engine task shorthand rejects trailing prose and asks the user to pick one lane', async () => {
+  const root = makeTempRoot();
+  const errors = [];
+  let dispatchCalled = false;
+  let askCalled = false;
+  const originalError = console.error;
+  console.error = (line = '') => errors.push(String(line));
+  try {
+    const code = await engine.engineCommand(['cursor', 'CLI-123', 'please', 'review', 'it'], {
+      root,
+      engineDispatch: () => {
+        dispatchCalled = true;
+        return 0;
+      },
+      engineAsk: {
+        executeAskJob: async () => {
+          askCalled = true;
+          return { ok: true };
+        },
+      },
+    });
+    assert.equal(code, 2);
+    assert.equal(dispatchCalled, false);
+    assert.equal(askCalled, false);
+    assert.match(errors.join('\n'), /pick one: ask a question or build the task/);
+  } finally {
+    console.error = originalError;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('buildEngineCommand pins yolo flags for codex and claude engines', () => {

@@ -23,11 +23,13 @@ One contract, ten live profiles. The orchestrator writes a bounded task prompt, 
 
 ## three verbs
 
-- switch default: `atris engine <name>`
-- quick ask: `atris engine ask "<prompt>" --engine <name>`; short form: `atris engine <name> "<prompt...>"`
-- build dispatch: `atris engine dispatch <task> --engine <name>`
+- ask: `atris engine <name> "<question>"`; pin a model with `atris engine <name> --model <model> "<question>"`
+- build: `atris engine <name> <task-id>`
+- switch: `atris engine <name>`
 
-## Invocation
+## Raw binary fallback and debugging
+
+Raw spawns are not the default because they skip Atris receipts, watch, and coaching.
 
 | Engine | Command | Notes |
 |--------|---------|-------|
