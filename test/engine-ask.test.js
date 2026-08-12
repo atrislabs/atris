@@ -127,6 +127,9 @@ test('every engine invocation uses its read-only mode and never requests a workt
   const droid = buildReadOnlyEngineInvocation('droid', 'inspect the router');
   assert.doesNotMatch(droid.args.join(' '), /(?:--auto|skip-permissions-unsafe)/);
 
+  const grok = buildReadOnlyEngineInvocation('grok', 'inspect the router');
+  assert.deepEqual(grok.args.slice(4, 6), ['--sandbox', 'read-only']);
+
   for (const engine of ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'droid']) {
     const invocation = buildReadOnlyEngineInvocation(engine, 'read only');
     assert.doesNotMatch(invocation.args.join(' '), /(?:^|\s)--worktree(?:\s|$)/);
