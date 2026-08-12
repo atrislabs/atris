@@ -21,6 +21,12 @@ tags:
 
 One contract, ten live profiles. The orchestrator writes a bounded task prompt, dispatches it to an engine, then **independently verifies, lands, and pushes** the result. Engines never self-certify.
 
+## three verbs
+
+- switch default: `atris engine <name>`
+- quick ask: `atris engine ask "<prompt>" --engine <name>`; short form: `atris engine <name> "<prompt...>"`
+- build dispatch: `atris engine dispatch <task> --engine <name>`
+
 ## Invocation
 
 | Engine | Command | Notes |
