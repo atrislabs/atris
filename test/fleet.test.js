@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 
 const fleet = require('../lib/fleet');
 const { listWorktrees } = require('../commands/worktree');
@@ -12,6 +13,18 @@ const TASK = {
   status: 'open',
   title: 'Fix the widget so operators stop retyping. Done: widget renders once, test included. Check: focused node --test test/widget.test.js.',
 };
+
+function waitUntil(predicate, timeoutMs = 2000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const poll = () => {
+      if (predicate()) return resolve();
+      if (Date.now() - started >= timeoutMs) return reject(new Error('timed out waiting for condition'));
+      setTimeout(poll, 10);
+    };
+    poll();
+  });
+}
 
 function writeExecutorDispatchHistory(root, outcomes) {
   const runsDir = path.join(root, 'atris', 'runs');
@@ -141,6 +154,61 @@ test('dispatchToEngine writes the prompt file and captures the report', () => {
     assert.ok(fs.existsSync(promptFile));
     assert.match(fs.readFileSync(promptFile, 'utf8'), /Done criteria/);
   } finally {
+    fs.rmSync(wt, { recursive: true, force: true });
+  }
+});
+
+test('dispatchToEngine appends engine chunks to its live log before the engine exits', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-live-root-'));
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-live-wt-'));
+  const binDir = path.join(root, 'bin');
+  const liveLogPath = path.join(root, 'atris', 'runs', 'dispatch-live.live.log');
+  const resultPath = path.join(root, 'result.json');
+  const runnerPath = path.join(root, 'runner.js');
+  fs.mkdirSync(binDir, { recursive: true });
+  const fakeCursor = path.join(binDir, 'cursor-agent');
+  fs.writeFileSync(fakeCursor, [
+    '#!/usr/bin/env node',
+    "process.stdout.write('first dispatch chunk\\n');",
+    "setTimeout(() => process.stderr.write('second dispatch chunk\\n'), 350);",
+    'setTimeout(() => process.exit(0), 700);',
+    '',
+  ].join('\n'));
+  fs.chmodSync(fakeCursor, 0o755);
+  fs.writeFileSync(runnerPath, [
+    `'use strict';`,
+    `const fs = require('node:fs');`,
+    `const path = require('node:path');`,
+    `const fleet = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'fleet.js'))});`,
+    `process.env.PATH = ${JSON.stringify(binDir)} + path.delimiter + process.env.PATH;`,
+    `Promise.resolve(fleet.dispatchToEngine({`,
+    `  task: ${JSON.stringify(TASK)},`,
+    `  engine: 'cursor',`,
+    `  worktreePath: ${JSON.stringify(wt)},`,
+    `  root: ${JSON.stringify(process.cwd())},`,
+    `  briefId: 'test-live-brief',`,
+    `  skipBriefCapture: true,`,
+    `  liveLogPath: ${JSON.stringify(liveLogPath)},`,
+    `})).then((result) => {`,
+    `  fs.writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify(result));`,
+    `});`,
+    '',
+  ].join('\n'));
+  const child = spawn(process.execPath, [runnerPath], { cwd: root, stdio: 'ignore' });
+  let closed = false;
+  const childClosed = new Promise((resolve) => child.once('close', (code) => { closed = true; resolve(code); }));
+  try {
+    await waitUntil(() => fs.existsSync(liveLogPath) && fs.readFileSync(liveLogPath, 'utf8').includes('first dispatch chunk'));
+    assert.equal(closed, false, 'the engine must still be running when the first chunk is readable');
+    assert.equal(await childClosed, 0);
+    assert.match(fs.readFileSync(liveLogPath, 'utf8'), /first dispatch chunk[\s\S]*second dispatch chunk/);
+    const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+    assert.equal(result.exitCode, 0);
+    assert.match(result.report, /first dispatch chunk/);
+    assert.match(result.stderr, /second dispatch chunk/);
+  } finally {
+    try { child.kill('SIGKILL'); } catch {}
+    fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(wt, { recursive: true, force: true });
   }
 });

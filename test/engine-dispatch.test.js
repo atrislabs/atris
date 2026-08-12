@@ -273,6 +273,11 @@ test('runDispatchFlight happy path: claims, builds, re-verifies for real, ships,
     assert.ok(Number.isInteger(flight.results[0].duration_ms));
     assert.ok(flight.results[0].duration_ms >= 0);
     assert.ok(Number.isFinite(Date.parse(flight.results[0].at)));
+    assert.equal(flight.status, 'completed');
+    assert.match(flight.live_log, /^atris\/runs\/dispatch-.+[.]live[.]log$/);
+    assert.equal(fs.existsSync(path.join(tmpRoot, flight.live_log)), true);
+    const durableReceipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.equal(durableReceipt.live_log, flight.live_log);
     assert.equal(verifyCalls.length, 1);
     assert.equal(verifyCalls[0].command, 'node --test test/widget.test.js');
     assert.equal(verifyCalls[0].cwd, '/wt/dispatch-cli-900');
