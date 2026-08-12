@@ -493,6 +493,62 @@ test('runFleetFlight full loop: claims, dispatches in parallel, lands serially, 
   }
 });
 
+test('runFleetFlight fails closed when a claim loses a race', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-claim-race-'));
+  try {
+    const stateDir = path.join(root, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({
+      tasks: [
+        { display_id: 'F-claim-lost', status: 'open', title: 'edits lib/a.js Done: x. Check: node --test test/a.test.js.' },
+        { display_id: 'F-continues', status: 'open', title: 'edits lib/b.js Done: x. Check: node --test test/b.test.js.' },
+      ],
+    }));
+    const cliCalls = [];
+    const ownCli = (args) => {
+      cliCalls.push(args.join(' '));
+      if (args[0] === 'task' && args[1] === 'claim' && args[2] === 'F-claim-lost') {
+        return { status: 1, stdout: '', stderr: 'already claimed by another agent' };
+      }
+      if (args[0] === 'worktree' && args[1] === 'start') {
+        return { status: 0, stdout: `next: cd ${root}/wt-${cliCalls.length}\n`, stderr: '' };
+      }
+      return { status: 0, stdout: 'done: worktree shipped\n', stderr: '' };
+    };
+    const dispatched = [];
+    const landed = [];
+    const lines = [];
+    const flight = await fleet.runFleetFlight({
+      root,
+      engines: ['codex', 'cursor'],
+      log: (line) => lines.push(String(line)),
+      ownCli,
+      dispatcher: (entry) => {
+        dispatched.push(entry.task.display_id);
+        return Promise.resolve({ exitCode: 0, report: 'ok', stderr: '' });
+      },
+      lander: ({ entry }) => { landed.push(entry.task.display_id); return { ok: true, stage: 'shipped' }; },
+    });
+    assert.deepEqual(flight.paused, [{ task: 'F-claim-lost', engine: 'codex', stage: 'claim', detail: 'already claimed by another agent' }]);
+    assert.deepEqual(dispatched, ['F-continues']);
+    assert.deepEqual(landed, ['F-continues']);
+    assert.ok(!cliCalls.some((c) => c.startsWith('worktree start --agent codex')));
+    assert.ok(!cliCalls.some((c) => c.startsWith('task ready F-claim-lost')));
+    assert.ok(cliCalls.some((c) => c.startsWith('task ready F-continues')));
+    assert.ok(lines.some((line) => /paused F-claim-lost at claim/.test(line)));
+    assert.ok(fs.existsSync(flight.receipt));
+    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.deepEqual(receipt.paused.find((entry) => entry.task === 'F-claim-lost'), {
+      task: 'F-claim-lost',
+      engine: 'codex',
+      stage: 'claim',
+      detail: 'already claimed by another agent',
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 // CLI-881: a flight launched from a long-lived feature-branch checkout must
 // not cut its build worktrees from that branch — rebase-before-ship would then
 // replay every feature commit onto master and pause at rebase_conflict. Fleet
