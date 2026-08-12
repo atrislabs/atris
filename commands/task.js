@@ -11,6 +11,7 @@ const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
 const { taskProofState } = require('../lib/task-proof');
 const {
+  candidatePolicyGate,
   evaluateAutoAccept,
   isAgentCertified,
   isAutoCertifyVerifyCommandAllowed,
@@ -441,6 +442,21 @@ function failTask(label, reason, detail, exitCode = 2) {
     console.error(detail || `${label}: ${reason}`);
   }
   process.exit(exitCode);
+}
+
+function refuseCandidatePolicyGate(label, gate) {
+  if (jsonModeActive()) {
+    printJson({ ok: false, command: label, ...gate });
+  } else {
+    console.error(`${label}: ${gate.reason}: ${gate.message}`);
+    if (Array.isArray(gate.offenders)) {
+      gate.offenders.forEach((offender) => console.error(`  ${offender}`));
+    }
+    if (Array.isArray(gate.lesson_ids) && gate.lesson_ids.length) {
+      console.error(`  lessons: ${gate.lesson_ids.join(', ')}`);
+    }
+  }
+  process.exit(1);
 }
 
 function proofFlagValue(args) {
@@ -5254,6 +5270,12 @@ function autoAcceptCertifiedSmallReviews(taskDb, db, projection) {
       results.push({ ...evaluation, action: 'queued', task_id: task?.id || item.id || null });
       continue;
     }
+    const policyGate = candidatePolicyGate(task, { executeDetectors: true });
+    if (!policyGate.ok) {
+      results.push({ ...policyGate, action: 'queued', task_id: task?.id || item.id || null });
+      continue;
+    }
+    evaluation.candidate_gate = policyGate.gate;
     const accepted = acceptReviewTask(taskDb, db, task.id, {
       actor: REVIEW_AUTO_ACCEPT_ACTOR,
       proof: evaluation.proof,
@@ -9436,6 +9458,16 @@ function cmdReady(args) {
   if (missionXpIssue) {
     failTask('atris task ready', MISSION_XP_END_TO_END_REASON, missionXpIssue);
   }
+  const readyPolicyTask = {
+    ...beforeTask,
+    workspace_root: process.cwd(),
+    metadata: {
+      ...(beforeTask && beforeTask.metadata || {}),
+      ...(resultFields.files ? { changed_files: resultFields.files } : {}),
+    },
+  };
+  const readyPolicyGate = candidatePolicyGate(readyPolicyTask, { executeDetectors: true });
+  if (!readyPolicyGate.ok) refuseCandidatePolicyGate('atris task ready', readyPolicyGate);
   const resultTrace = buildAutomaticResultTrace(taskDb, db, taskId, {
     actor,
     proof: String(proof),
@@ -9497,12 +9529,12 @@ function cmdReady(args) {
     handoff.codex_prompt = reviewChat.codex_prompt;
     handoff.verification_focus = reviewChat.verification_focus;
   }
-  // Mined policy lessons (atris lesson mine) coach the proof at submission
-  // time: evidence patterns that historically certify get suggested before
-  // the task stalls in the review lane. Advisory only — never blocks ready.
+  // Mined proof lessons without runnable detectors remain coaching. Promoted,
+  // path-scoped detector lessons already passed the hard gate above.
   const { readPolicyLessons, policyHintsForProof } = require('../lib/policy-lessons');
   const policyHints = policyHintsForProof(String(proof), readPolicyLessons(taskDb.workspaceRoot()), taskDb.workspaceRoot());
   if (policyHints.length) handoff.policy_hints = policyHints;
+  if (readyPolicyGate.gate.advisories.length) handoff.policy_gate = readyPolicyGate.gate;
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -9998,6 +10030,11 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
       continue;
     }
+    const policyGate = candidatePolicyGate(task, { verifyCache, executeDetectors: true });
+    if (!policyGate.ok) {
+      results.push({ ...policyGate, ref, action: 'skipped' });
+      continue;
+    }
     const builderProof = String(review.proof || metadata.latest_agent_proof || '').slice(0, 200);
     const readied = taskDb.readyTask(db, {
       id: task.id,
@@ -10036,7 +10073,12 @@ function cmdCertifyVerified(args, options = {}) {
     console.log('certify-verified: no review rows to consider.');
   } else {
     for (const r of results) {
-      console.log(`${r.action.padEnd(14)} ${r.ref}${r.verify ? `  \`${r.verify}\`` : ''}${r.reason ? `  (${r.reason})` : ''}`);
+      const gateDetail = r.reason === 'slop_gate' && Array.isArray(r.offenders)
+        ? `  [${r.offenders.join('; ')}]`
+        : (r.reason === 'lesson_gate' && Array.isArray(r.lesson_ids)
+          ? `  [lessons: ${r.lesson_ids.join(', ')}]`
+          : '');
+      console.log(`${r.action.padEnd(14)} ${r.ref}${r.verify ? `  \`${r.verify}\`` : ''}${r.reason ? `  (${r.reason})` : ''}${gateDetail}`);
     }
     console.log(`certified ${certified}; humans keep denied lanes and rows without a runnable check.`);
   }
@@ -10348,6 +10390,8 @@ function evaluateSweepAutoAccept(task, root) {
   if (denied) return { eligible: false, ref, reason: denied };
   const proof = autoAcceptSweepLatestProof(task);
   if (!proof) return { eligible: false, ref, reason: 'no_proof' };
+  const policyGate = candidatePolicyGate(task, { executeDetectors: true });
+  if (!policyGate.ok) return { ...policyGate, ref };
 
   // 1. An explicit, stored verifier (`atris task ready --verify`, or a prior
   // certify-verified stamp) is the strongest signal: re-run it live, right
@@ -10367,6 +10411,7 @@ function evaluateSweepAutoAccept(task, root) {
       policy: 'sweep_auto_accept_verified_command',
       proof,
       verify: storedVerify,
+      candidate_gate: policyGate.gate,
       proved_by: [`${storedVerify} exited 0`],
       happened: autoAcceptSweepHappened(task),
     };
@@ -10382,6 +10427,7 @@ function evaluateSweepAutoAccept(task, root) {
       policy: 'sweep_auto_accept_verified',
       proof,
       evidence: verifier.evidence,
+      candidate_gate: policyGate.gate,
       proved_by: verifier.proved_by,
       happened: autoAcceptSweepHappened(task),
     };
@@ -10405,6 +10451,7 @@ function evaluateSweepAutoAccept(task, root) {
           policy: 'sweep_auto_accept_verified_derived',
           proof,
           verify: derived,
+          candidate_gate: policyGate.gate,
           proved_by: [`${derived} exited 0`],
           happened: autoAcceptSweepHappened(task),
         };

@@ -252,3 +252,45 @@ test('task ready surfaces policy hints on evidence-less proof and stays quiet on
     cleanupTempDir(dir);
   }
 });
+
+test('task ready refuses a failing detector lesson with a structured decision', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'docs', 'landing.md'), '# clean candidate\n');
+    fs.writeFileSync(path.join(dir, 'scripts', 'lesson-detector.js'), 'process.exit(1);\n');
+    fs.writeFileSync(path.join(dir, 'atris', 'lessons.json'), JSON.stringify({
+      'plain-landing-copy': {
+        applies_to: ['docs/landing.md'],
+        detector: 'node scripts/lesson-detector.js',
+        status: 'resolved',
+      },
+    }));
+
+    const created = runCli(['task', 'new', 'lesson gate ready probe', '--tag', 'probe'], { cwd: dir });
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const ref = created.stdout.trim().split('\t')[0];
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'probe-agent'], { cwd: dir }).status, 0);
+
+    const ready = runCli([
+      'task', 'ready', ref,
+      '--proof', 'node --check scripts/lesson-detector.js passed; git diff --check passed',
+      '--files', 'docs/landing.md',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(ready.status, 1, ready.stderr || ready.stdout);
+    const decision = JSON.parse(ready.stdout);
+    assert.equal(decision.reason, 'lesson_gate');
+    assert.equal(decision.lesson_id, 'plain-landing-copy');
+    assert.deepEqual(decision.lesson_ids, ['plain-landing-copy']);
+    assert.equal(decision.lessons[0].exit_code, 1);
+
+    const shown = runCli(['task', 'show', ref, '--json'], { cwd: dir });
+    assert.equal(shown.status, 0, shown.stderr || shown.stdout);
+    assert.equal(JSON.parse(shown.stdout).status, 'claimed');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

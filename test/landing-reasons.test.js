@@ -76,6 +76,11 @@ test('the exact status line shapes stay snake_case free for every code', () => {
   }
 });
 
+test('taste and detector lesson refusals render as actionable decision text', () => {
+  assert.match(plainLandingReason('slop_gate'), /taste rule/);
+  assert.match(plainLandingReason('lesson_gate'), /detector-backed lesson/);
+});
+
 // ── live surfaces: autoland status / land status / task reviews ─────────────
 
 function runGit(args, cwd) {
