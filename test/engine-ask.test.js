@@ -119,6 +119,8 @@ test('model-capable engines receive exact model flags without weakening read-onl
   assert.ok(cursor.args.includes('ask'));
   assert.ok(cursor.args.includes('enabled'));
   assert.deepEqual(cursor.args.slice(1, 3), ['--model', 'kimi-k2.5']);
+  assert.equal(cursor.cwd, os.homedir(), 'cursor asks launch from home to skip its per-directory startup tax');
+  assert.equal(buildReadOnlyEngineInvocation('grok', 'inspect the router').cwd, undefined, 'other engines keep the workspace cwd');
 
   const claude = buildReadOnlyEngineInvocation('claude', 'inspect the router', 'opus');
   assert.ok(claude.args.includes('plan'));
