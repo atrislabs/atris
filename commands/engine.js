@@ -41,7 +41,10 @@ const {
   setEngineHealth,
 } = require('../lib/engine-registry');
 const { FLEET_CAPABLE, runDispatchFlight } = require('../lib/fleet');
-const { runEngineAskCommand } = require('../lib/engine-ask');
+const {
+  buildReadOnlyEngineInvocation,
+  runEngineAskCommand,
+} = require('../lib/engine-ask');
 const { runEngineValidateCommand } = require('../lib/engine-validate');
 const { runEngineWatchCommand } = require('./engine-watch');
 const { ensureValidCredentials } = require('../utils/auth');
@@ -1413,8 +1416,41 @@ function runDispatchCommand(args, root) {
   });
 }
 
+const TASK_ID_TOKEN = /^[a-z][a-z0-9]*-\d+$/i;
+const SHORTHAND_VALUE_FLAGS = new Set(['--model', '--concurrency', '--timeout', '--jobs', '--engine', '--engines']);
+
+function shorthandPromptParts(args) {
+  const parts = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const value = String(args[index] || '');
+    if (SHORTHAND_VALUE_FLAGS.has(value)) {
+      index += 1;
+      continue;
+    }
+    if (value.startsWith('--')) continue;
+    parts.push(value);
+  }
+  return parts;
+}
+
+function shorthandModelError(engine, args, root) {
+  const requested = flagValue(args, '--model');
+  const model = String(requested.value || '').trim();
+  if (!requested.present || !model) return '';
+  try {
+    buildReadOnlyEngineInvocation(engine, 'check model support', model);
+    return '';
+  } catch (error) {
+    if (!error || error.reason !== 'model_not_supported') return '';
+    const examples = engineRegistryView(root).find((entry) => entry.id === engine)?.models || [];
+    const known = examples.length ? examples.join(', ') : 'use the engine default';
+    return `${error.message}. known-good ${engine} examples: ${known}`;
+  }
+}
+
 function engineCommand(args = [], deps = {}) {
   const root = deps.root || process.cwd();
+  const dispatch = deps.engineDispatch || runDispatchCommand;
   if ((args[0] || '').trim() === 'ask') {
     return runEngineAskCommand(args.slice(1), root, deps.engineAsk || {});
   }
@@ -1425,13 +1461,27 @@ function engineCommand(args = [], deps = {}) {
     return runEngineValidateCommand(args.slice(1), root, deps.engineValidate || {});
   }
   if ((args[0] || '').trim() === 'dispatch') {
-    return runDispatchCommand(args.slice(1), root);
+    return dispatch(args.slice(1), root);
   }
 
   const requestedEngine = (args[0] || '').trim();
   if (canonicalEngineName(requestedEngine) && args.length > 1) {
-    const prompt = args.slice(1).join(' ');
-    return runEngineAskCommand([prompt, '--engine', requestedEngine], root, deps.engineAsk || {});
+    const canonical = canonicalEngineName(requestedEngine);
+    const shorthandArgs = args.slice(1);
+    const promptParts = shorthandPromptParts(shorthandArgs);
+    if (TASK_ID_TOKEN.test(promptParts[0] || '')) {
+      if (shorthandArgs.length !== 1) {
+        console.error('engine shorthand: a task id cannot include prompt text or flags; pick one: ask a question or build the task');
+        return 2;
+      }
+      return dispatch([promptParts[0], '--engine', canonical], root);
+    }
+    const modelError = shorthandModelError(canonical, shorthandArgs, root);
+    if (modelError) {
+      console.error(`engine ask: ${modelError}`);
+      return 2;
+    }
+    return runEngineAskCommand([...shorthandArgs, '--engine', canonical], root, deps.engineAsk || {});
   }
 
   const json = args.includes('--json');

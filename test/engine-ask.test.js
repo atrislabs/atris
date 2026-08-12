@@ -447,14 +447,14 @@ test('engine command routes ask help without entering the build dispatcher', asy
   }
 });
 
-test('engine name with trailing text routes through ask without changing the default', async () => {
+test('engine name with model and trailing text routes through ask without changing the default', async () => {
   const root = tempRoot();
   const jobs = [];
   const output = [];
   const originalLog = console.log;
   console.log = (line = '') => output.push(String(line));
   try {
-    const code = await engineCommand(['fable', 'explain', 'the failure', 'today'], {
+    const code = await engineCommand(['fable', '--model', 'opus', 'explain', 'the failure', 'today'], {
       root,
       engineAsk: {
         executeAskJob: async (job) => {
@@ -475,13 +475,39 @@ test('engine name with trailing text routes through ask without changing the def
       },
     });
     assert.equal(code, 0);
-    assert.deepEqual(jobs.map(({ engine, prompt }) => ({ engine, prompt })), [
-      { engine: 'fable', prompt: 'explain the failure today' },
+    assert.deepEqual(jobs.map(({ engine, model, prompt }) => ({ engine, model, prompt })), [
+      { engine: 'fable', model: 'opus', prompt: 'explain the failure today' },
     ]);
     assert.equal(fs.existsSync(path.join(root, '.atris', 'engine.json')), false);
     assert.match(output.join('\n'), /fable \(fable\)\nanswer/);
   } finally {
     console.log = originalLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('unsupported shorthand model fails before ask and names known-good examples', async () => {
+  const root = tempRoot();
+  const errors = [];
+  let askCalled = false;
+  const originalError = console.error;
+  console.error = (line = '') => errors.push(String(line));
+  try {
+    const code = await engineCommand(['droid', '--model', 'opus', 'inspect', 'the router'], {
+      root,
+      engineAsk: {
+        executeAskJob: async () => {
+          askCalled = true;
+          throw new Error('ask should not start');
+        },
+      },
+    });
+    assert.equal(code, 2);
+    assert.equal(askCalled, false);
+    assert.match(errors.join('\n'), /droid does not support model selection/);
+    assert.match(errors.join('\n'), /known-good droid examples: built-in router/);
+  } finally {
+    console.error = originalError;
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
