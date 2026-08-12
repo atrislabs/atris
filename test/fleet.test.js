@@ -115,7 +115,7 @@ test('dispatchToEngine refuses to run from the primary checkout', () => {
 
 test('buildEngineCommand rides runner profiles per engine', () => {
   assert.match(fleet.buildEngineCommand('cursor', '/tmp/p.md'), /^cursor-agent --trust -p/);
-  assert.match(fleet.buildEngineCommand('codex', '/tmp/p.md'), /^codex exec/);
+  assert.match(fleet.buildEngineCommand('codex', '/tmp/p.md'), /codex-watchdog\.js.*sh -c 'codex exec/);
   assert.match(fleet.buildEngineCommand('atris-fast', '/tmp/p.md'), /^ax --fast/);
   assert.match(fleet.buildEngineCommand('devin', '/tmp/p.md'), /^devin -p --permission-mode dangerous /);
   // claude has no template: default claude-shaped spawn with a model flag
