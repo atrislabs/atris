@@ -1424,6 +1424,12 @@ function engineCommand(args = [], deps = {}) {
     return runDispatchCommand(args.slice(1), root);
   }
 
+  const requestedEngine = (args[0] || '').trim();
+  if (canonicalEngineName(requestedEngine) && args.length > 1) {
+    const prompt = args.slice(1).join(' ');
+    return runEngineAskCommand([prompt, '--engine', requestedEngine], root, deps.engineAsk || {});
+  }
+
   const json = args.includes('--json');
   const positional = args.filter((a) => !a.startsWith('--'));
   const sub = (positional[0] || '').trim();
@@ -1502,13 +1508,9 @@ function engineCommand(args = [], deps = {}) {
     return 2;
   }
   const canonical = setEngine(sub, root);
-  const def = RUNNER_PROFILE_DEFS[canonical];
-  const installed = binInstalled(def.bin);
-  console.log('');
-  console.log(`  default engine: ${canonical}`);
-  if (!installed) console.log(`  heads up: its CLI (${def.bin}) is not installed here yet — runs will fail until it is.`);
-  console.log(`  every mission run / autopilot / run tick now rides it. one-off: --engine <name>. undo: atris engine reset`);
-  console.log('');
+  console.log(`default engine changed to ${canonical}`);
+  console.log(`ask a question: atris engine ask "..." --engine ${canonical}`);
+  console.log(`dispatch a build: atris engine dispatch <task> --engine ${canonical}`);
   return 0;
 }
 

@@ -446,3 +446,42 @@ test('engine command routes ask help without entering the build dispatcher', asy
     console.log = originalLog;
   }
 });
+
+test('engine name with trailing text routes through ask without changing the default', async () => {
+  const root = tempRoot();
+  const jobs = [];
+  const output = [];
+  const originalLog = console.log;
+  console.log = (line = '') => output.push(String(line));
+  try {
+    const code = await engineCommand(['fable', 'explain', 'the failure', 'today'], {
+      root,
+      engineAsk: {
+        executeAskJob: async (job) => {
+          jobs.push(job);
+          return {
+            ok: true,
+            reason: 'answered',
+            exit_code: 0,
+            signal: null,
+            timed_out: false,
+            cancelled: false,
+            stdout: 'answer',
+            stderr: '',
+            output_truncated: false,
+            duration_ms: 1,
+          };
+        },
+      },
+    });
+    assert.equal(code, 0);
+    assert.deepEqual(jobs.map(({ engine, prompt }) => ({ engine, prompt })), [
+      { engine: 'fable', prompt: 'explain the failure today' },
+    ]);
+    assert.equal(fs.existsSync(path.join(root, '.atris', 'engine.json')), false);
+    assert.match(output.join('\n'), /fable \(fable\)\nanswer/);
+  } finally {
+    console.log = originalLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
