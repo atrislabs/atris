@@ -33,7 +33,7 @@ One contract, ten live profiles. The orchestrator writes a bounded task prompt, 
 | Composer | `atris run "<objective>" --engine composer` | Fast navigator/executor profile routed through the installed `ax` binary. |
 | Haiku | `claude -p "<prompt>" --model claude-haiku-4-5` | Fast validation and bounded read-only checks. |
 | Devin | `devin -p --permission-mode dangerous -- "<prompt>"` (run from the target repo) | Default permission mode is read-only for writes — build work NEEDS `--permission-mode dangerous`, so only run it in an isolated worktree. Also `devin cloud` for sessions that outlive this machine. Supports `--model swe-1.7` |
-| Grok | `grok --always-approve -p "<prompt>"` (run from the target repo) | Headless single-turn via `-p`; default model grok-4.5. Very fast on lookups (~10s, reads MAP first). Great for quick second opinions; use `--best-of-n <N>` for tricky bounded builds. Uses grok.com login |
+| Grok | `grok --always-approve -p "<prompt>"` (run from the target repo) | Headless single-turn via `-p`; default model grok-4.6. Very fast on lookups (~5-10s, reads MAP first). Great for quick second opinions; use `--best-of-n <N>` for tricky bounded builds. Uses grok.com login |
 | Droid | `droid exec "<prompt>"` | Executor profile using Droid's built-in router. Use only when the binary is ready in `atris engine --help`. |
 
 Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `cursor-agent` are allowlisted in `~/.claude/settings.json` so fresh and one-shot sessions can dispatch without a human approval click. A cold session that gets "requires approval" on an engine command means that allowlist regressed.
@@ -46,11 +46,11 @@ Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `
 - **Cursor** — fast bounded edits and refactors in a single repo.
 - **Composer / Haiku** — fast, bounded navigation, edits, and validation where a max-tier model would be wasteful.
 - **Devin** — multi-step feature work; use `cloud` when the run should survive laptop sleep.
-- **Grok** - fastest frontier lookups and quick second opinions (grok-4.5, ~10s; reads MAP first); use `--best-of-n` for tricky bounded builds. Uses grok.com login.
+- **Grok** - fastest frontier lookups and quick second opinions (grok-4.6, ~5-10s; reads MAP first); use `--best-of-n` for tricky bounded builds. Uses grok.com login.
 - **Droid** — executor work through its built-in router when installed.
 - Parallel builds across repos: one engine job per repo, never two engines writing the same checkout.
 
-## Models worth pinning (verified live 2026-08-11)
+## Models worth pinning (verified live 2026-08-12)
 
 Each engine CLI can pin a specific model. Current best picks:
 
@@ -58,10 +58,10 @@ Each engine CLI can pin a specific model. Current best picks:
 |--------|------|-------------------|
 | Claude / Fable | `--model opus` | `opus` currently resolves to Opus 5; use the explicit Opus 4.8 identifier only for reproducibility |
 | Devin | `--model swe-1.7` | `swe-1.7` (free right now: use it as the volume executor for parallel bounded slices), `swe-1.7-lightning` for speed |
-| Cursor | `--model grok-4.5-xhigh` | `grok-4.5-xhigh` / `grok-4.5-fast-xhigh` for second-opinion builds, `composer-2.5` for fast edits; parameterized Claude via `'claude-opus-4-8[effort=high]'`; `--list-models` shows the full menu |
+| Cursor | `--model cursor-grok-4.6-xhigh` | `cursor-grok-4.6-xhigh` for second-opinion builds, `cursor-grok-4.6-high-fast` for quick pinned asks (answered in ~12s live 2026-08-12), `composer-2.5` for fast edits; parameterized Claude via `'claude-opus-4-8[effort=high]'`; `--list-models` shows the full menu |
 | Composer | `--engine composer` | `composer 2.5` through the Atris profile |
 | Haiku | `--model claude-haiku-4-5` | `haiku` for fast validation |
-| Grok | (default) | `grok-4.5` default, `grok-composer-2.5-fast` for speed |
+| Grok | (default) | `grok-4.6` default (confirmed live 2026-08-12, ~5s lookup), `grok-4.5` still available via `-m` |
 | Codex | `-m <model>` | CLI default rides `~/.codex/config.toml`; pin with `-m` only when the task needs it |
 | Droid | (built-in router) | Let the installed Droid CLI select its model |
 | Atris Fast | (fixed) | api.atris.ai fast lane |
