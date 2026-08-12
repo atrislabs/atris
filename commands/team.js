@@ -43,6 +43,7 @@ function collectTeamPresence(deps = {}) {
   return buildTeamPresence({
     nowMs,
     freshnessWindowMs,
+    operator: deps.operator || process.env.USER || process.env.USERNAME || '',
     stream,
     streamEvents,
     missions: collectMissions(root, deps),
