@@ -1,7 +1,7 @@
 ---
 name: design
 description: Frontend aesthetics policy. Use when building UI, components, landing pages, dashboards, or any frontend work. Prevents generic ai-generated look.
-version: 3.0.0
+version: 3.1.0
 allowed-tools: Read, Write, Edit, Bash, Glob
 tags:
   - design
@@ -108,6 +108,12 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D7 | no em dashes in UI copy or prose | U+2014 scan | graduated (atris slop) |
 | D8 | no claude-beige backgrounds, no instrument serif as default | judgment | active |
 | D9 | fuzzy wish gets translated to craft vocabulary and echoed back before building | judgment | active |
+| D10 | measured tokens over vibes: new components start from a measured recipe (exact colors, spacing, radii, type from a proven source), never from scratch | judgment | active |
+| D11 | layout contracts, not dioramas: min-height over fixed height, fluid max-width over fixed px, every overflow reachable (scroll or +N more), stress-test with hostile content before shipping | judgment | active |
+| D12 | one accent moment per card: brand accent for the primary action only, gold for confidence/progress fills, green only for completed; everything else tonal | judgment | active |
+| D13 | motion is calm and eased: 120-300ms ease-out on opacity/transform only, loops match a measured source cadence, prefers-reduced-motion always freezes them | judgment | active |
+
+Measured recipes live in the mimic studies: `~/arena/mimic-beautiful-ui/LESSONS.md` (18 AI-interface components with exact tokens) and its `remix.css` :root block (the portable Atris token sheet, coffee + paper themes). Start there before designing an agent surface.
 
 ## Self-Improve (part of the job)
 
