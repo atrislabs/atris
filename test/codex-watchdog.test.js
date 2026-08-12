@@ -22,6 +22,7 @@ function runWatchdog(dir, child, childArgs = [], options = {}) {
     WATCHDOG,
     '--startup-deadline', options.startupDeadline || '1',
     '--max-runtime', options.maxRuntime || '6',
+    ...(options.receipt ? ['--receipt', options.receipt] : []),
     '--',
     process.execPath,
     child,
@@ -91,10 +92,19 @@ process.stdout.write('started\\n');
 setInterval(() => {}, 1000);
 `);
 
-  const result = runWatchdog(dir, child, [], { maxRuntime: '0.5' });
+  const receiptPath = path.join(dir, 'watchdog-timeout.json');
+  const result = runWatchdog(dir, child, [], { maxRuntime: '0.5', receipt: receiptPath });
 
   assert.equal(result.error, undefined);
   assert.equal(result.status, 125);
   assert.equal(result.stdout, 'started\n');
   assert.equal(result.stderr, 'watchdog: max runtime of 0.5s exceeded\n');
+  const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+  assert.equal(receipt.schema, 'atris.codex_watchdog_receipt.v1');
+  assert.equal(receipt.status, 'timed_out');
+  assert.equal(receipt.reason, 'max_runtime');
+  assert.equal(receipt.exit_code, 125);
+  assert.equal(Number.isInteger(receipt.pid), true);
+  assert.match(receipt.started_at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(receipt.finished_at, /^\d{4}-\d{2}-\d{2}T/);
 });

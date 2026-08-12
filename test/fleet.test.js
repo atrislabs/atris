@@ -243,9 +243,11 @@ test('landArrival reports dirty_worktree, not an empty rebase_conflict', () => {
 // CLI-1190: a claude engine killed mid-flight (exit 143 / SIGTERM) returns an
 // empty report. The restaff leg must name the signal instead of a silent no-op.
 test('failedDispatchLeg names the signal for a killed engine with an empty report', () => {
-  const exitLeg = fleet.failedDispatchLeg({ exitCode: 143, report: '', stderr: '' }, 'claude');
+  const watchdogReceipt = { schema: 'atris.codex_watchdog_receipt.v1', status: 'timed_out' };
+  const exitLeg = fleet.failedDispatchLeg({ exitCode: 143, report: '', stderr: '', watchdog_receipt: watchdogReceipt }, 'claude');
   assert.equal(exitLeg.signal, 'SIGTERM');
   assert.equal(exitLeg.report, '(no report: killed by SIGTERM)');
+  assert.deepEqual(exitLeg.watchdog_receipt, watchdogReceipt);
 
   const signalLeg = fleet.failedDispatchLeg({ status: null, signal: 'SIGKILL', report: '', stderr: '' }, 'claude');
   assert.equal(signalLeg.signal, 'SIGKILL');
@@ -259,21 +261,88 @@ test('failedDispatchLeg names the signal for a killed engine with an empty repor
 
 test('detectDeadEngineDispatch flags a signalled leg distinctly from a plain nonzero exit', () => {
   assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 143, report: '' }), { reason: 'signalled', signal: 'SIGTERM', exitCode: 143 });
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ signal: 'SIGKILL', report: '' }), { reason: 'signalled', signal: 'SIGKILL', exitCode: null });
   assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 2, report: 'boom' }), { reason: 'nonzero_exit', exitCode: 2 });
+});
+
+test('empty exit zero is no_output and missing exit metadata is unknown', () => {
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 0, report: ' \n', stderr: '' }), { reason: 'no_output', exitCode: 0 });
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ report: 'claimed success' }), { reason: 'unknown', exitCode: null });
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ report: 'usage limit reached' }), { reason: 'unknown', exitCode: null });
+
+  const empty = fleet.dispatchResultToTerminal({ engine: 'codex', taskId: 'CLI-1' }, { exitCode: 0, report: '', stderr: '' });
+  assert.equal(empty.ok, false);
+  assert.equal(empty.reason, 'no_output');
+  const unknown = fleet.dispatchResultToTerminal({ engine: 'codex', taskId: 'CLI-1' }, { report: 'answer' });
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.reason, 'unknown');
+  const stdout = fleet.dispatchResultToTerminal({ engine: 'codex', taskId: 'CLI-1' }, { exitCode: 0, stdout: 'answer' });
+  assert.equal(stdout.ok, true);
+  assert.equal(stdout.reason, 'ok');
+  const mixed = fleet.dispatchResultToTerminal({ engine: 'codex', taskId: 'CLI-1' }, { exitCode: 0, report: ' ', stdout: 'answer' });
+  assert.equal(mixed.ok, true);
+  assert.equal(mixed.reason, 'ok');
 });
 
 test('defaultSelfLandCheck fetches the target ref and checks HEAD ancestry', () => {
   const calls = [];
   const result = fleet.defaultSelfLandCheck({
     worktreePath: '/wt',
+    startCommit: 'base-commit',
     git: (args) => {
       calls.push(args);
+      if (args[0] === 'rev-parse') return { status: 0, stdout: 'new-commit\n', stderr: '' };
+      if (args[0] === 'diff') return { status: 1, stdout: '', stderr: '' };
       return { status: 0, stdout: '', stderr: '' };
     },
   });
-  assert.deepEqual(calls[0], ['fetch', 'origin', 'master:refs/remotes/origin/master']);
-  assert.deepEqual(calls[1], ['merge-base', '--is-ancestor', 'HEAD', 'origin/master']);
-  assert.deepEqual(result, { ok: true, stage: 'self_landed', target: 'origin/master' });
+  assert.deepEqual(calls[0], ['rev-parse', '--verify', 'HEAD^{commit}']);
+  assert.deepEqual(calls[1], ['diff', '--quiet', 'base-commit', 'new-commit', '--']);
+  assert.deepEqual(calls[2], ['fetch', 'origin', 'master:refs/remotes/origin/master']);
+  assert.deepEqual(calls[3], ['merge-base', '--is-ancestor', 'HEAD', 'origin/master']);
+  assert.deepEqual(result, {
+    ok: true,
+    stage: 'self_landed',
+    target: 'origin/master',
+    start_commit: 'base-commit',
+    head: 'new-commit',
+  });
+});
+
+test('defaultSelfLandCheck refuses an unchanged head before ancestry can read as success', () => {
+  const calls = [];
+  const result = fleet.defaultSelfLandCheck({
+    worktreePath: '/wt',
+    startCommit: 'base-commit',
+    git: (args) => {
+      calls.push(args);
+      return { status: 0, stdout: 'base-commit\n', stderr: '' };
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'no_work_landed');
+  assert.equal(result.reason, 'no_work_landed');
+  assert.equal(result.start_commit, result.head);
+  assert.deepEqual(calls, [['rev-parse', '--verify', 'HEAD^{commit}']]);
+});
+
+test('defaultSelfLandCheck reports an empty commit as no work landed', () => {
+  const calls = [];
+  const result = fleet.defaultSelfLandCheck({
+    worktreePath: '/wt',
+    startCommit: 'base-commit',
+    git: (args) => {
+      calls.push(args);
+      if (args[0] === 'rev-parse') return { status: 0, stdout: 'empty-commit\n', stderr: '' };
+      if (args[0] === 'diff') return { status: 0, stdout: '', stderr: '' };
+      throw new Error('ancestry must not run for an empty diff');
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'no_work_landed');
+  assert.equal(result.start_commit, 'base-commit');
+  assert.equal(result.head, 'empty-commit');
+  assert.deepEqual(calls[1], ['diff', '--quiet', 'base-commit', 'empty-commit', '--']);
 });
 
 test('runFleetFlight dry-run staffs from the projection without dispatching', async () => {

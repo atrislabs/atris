@@ -723,11 +723,12 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
       ownCli: cli,
       log: () => {},
       dispatcher: () => Promise.resolve({ exitCode: 0, report: 'self landed in PR https://example.test/pr/1' }),
+      startCommitReader: () => 'base-commit',
       lander: () => { landerCalled = true; return { ok: true, stage: 'shipped' }; },
       verifier: () => { verifierCalled = true; return { status: 0, stdout: '', stderr: '' }; },
       selfLandCheck: (input) => {
         checks.push(input);
-        return { ok: true, target: input.targetRef };
+        return { ok: true, target: input.targetRef, start_commit: input.startCommit, head: 'new-commit' };
       },
     });
 
@@ -738,6 +739,7 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
     assert.equal(flight.paused.length, 0);
     assert.equal(checks.length, 1);
     assert.equal(checks[0].worktreePath, '/wt/dispatch-cli-900');
+    assert.equal(checks[0].startCommit, 'base-commit');
     assert.equal(landerCalled, false);
     assert.equal(verifierCalled, false);
     assert.ok(!calls.some((c) => c.startsWith('worktree ship')), 'outer dispatch must not ship in yolo mode');
@@ -747,8 +749,9 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
     assert.equal(receipt.yolo, true);
     assert.equal(receipt.landed[0].landing, 'self');
     assert.equal(receipt.result.passed, true);
-    assert.equal(receipt.result.verifier_result.command, 'git merge-base --is-ancestor HEAD origin/master');
+    assert.equal(receipt.result.verifier_result.command, 'HEAD and its tree differ from dispatch start commit; git merge-base --is-ancestor HEAD origin/master');
     assert.equal(receipt.result.verifier_result.passed, true);
+    assert.equal(receipt.results[0].start_commit, 'base-commit');
     assert.equal(receipt.results[0].verified_passed, null);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -873,6 +876,30 @@ test('runDispatchFlight pauses when the build itself fails, keeping the worktree
     assert.equal(flight.paused[0].stage, 'build');
     assert.equal(flight.results[0].verified_passed, null);
     assert.ok(!calls.some((c) => c.startsWith('task ready')));
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight treats empty exit zero as no_output and never lands it', async () => {
+  const tmpRoot = makeTempRoot();
+  try {
+    const { cli, calls } = ownCliFake({ tasks: { 'CLI-900': TASK }, worktreeFor: (task) => `/wt/${task}` });
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      installedEngines: ['cursor'],
+      ownCli: cli,
+      log: () => {},
+      dispatcher: () => Promise.resolve({ exitCode: 0, stdout: ' \n', stderr: '' }),
+      lander: () => { throw new Error('empty output must not reach the landing gate'); },
+    });
+    assert.equal(flight.landed.length, 0);
+    assert.equal(flight.paused[0].stage, 'build');
+    assert.equal(flight.paused[0].reason, 'no_output');
+    assert.equal(flight.results[0].deadEngine.reason, 'no_output');
+    assert.ok(!calls.some((call) => call.startsWith('worktree ship')));
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -1013,7 +1040,7 @@ test('runDispatchFlight ship args always target origin/master, never the launche
       taskIds: ['CLI-900'],
       engine: 'cursor',
       ownCli: cli,
-      dispatcher: () => Promise.resolve({ exitCode: 0 }),
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'build completed' }),
       rebase: () => ({ ok: true, stage: 'rebased' }),
       verifier: () => ({ status: 0, stdout: 'pass', stderr: '' }),
     });
