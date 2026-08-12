@@ -54,17 +54,18 @@ function fakeReplyInvocation({ stdout = '', stderr = '', delayMs = 0, exitCode =
   return { bin: process.execPath, args: ['-e', script] };
 }
 
-test('shared questions fan out and jobs files may assign different prompts', () => {
+test('shared questions fan out with one model and jobs files may pin models independently', () => {
   const shared = parseEngineAskArgs([
     'compare these tradeoffs',
     '--engine', 'codex',
     '--engine=cursor',
+    '--model', 'grok-4.5-xhigh',
     '--concurrency', '2',
     '--timeout=9',
   ]);
-  assert.deepEqual(shared.jobs.map(({ engine, prompt, label }) => ({ engine, prompt, label })), [
-    { engine: 'codex', prompt: 'compare these tradeoffs', label: 'codex' },
-    { engine: 'cursor', prompt: 'compare these tradeoffs', label: 'cursor' },
+  assert.deepEqual(shared.jobs.map(({ engine, model, prompt, label }) => ({ engine, model, prompt, label })), [
+    { engine: 'codex', model: 'grok-4.5-xhigh', prompt: 'compare these tradeoffs', label: 'codex' },
+    { engine: 'cursor', model: 'grok-4.5-xhigh', prompt: 'compare these tradeoffs', label: 'cursor' },
   ]);
   assert.equal(shared.concurrency, 2);
   assert.equal(shared.timeoutMs, 9000);
@@ -72,13 +73,15 @@ test('shared questions fan out and jobs files may assign different prompts', () 
   const root = tempRoot();
   try {
     fs.writeFileSync(path.join(root, 'jobs.json'), JSON.stringify([
-      { engine: 'claude', prompt: 'review the interface', label: 'interface review' },
-      { engine: 'droid', prompt: 'find timeout risks' },
+      { engine: 'cursor', model: 'grok-4.5-xhigh', prompt: 'compare the interface' },
+      { engine: 'cursor', model: 'kimi-k2.5', prompt: 'compare the interface' },
+      { engine: 'claude', model: 'opus', prompt: 'review the interface', label: 'interface review' },
     ]));
     const separate = parseEngineAskArgs(['--jobs', 'jobs.json'], { root });
-    assert.deepEqual(separate.jobs.map(({ engine, prompt, label }) => ({ engine, prompt, label })), [
-      { engine: 'claude', prompt: 'review the interface', label: 'interface review' },
-      { engine: 'droid', prompt: 'find timeout risks', label: 'droid' },
+    assert.deepEqual(separate.jobs.map(({ engine, model, prompt, label }) => ({ engine, model, prompt, label })), [
+      { engine: 'cursor', model: 'grok-4.5-xhigh', prompt: 'compare the interface', label: 'cursor-1' },
+      { engine: 'cursor', model: 'kimi-k2.5', prompt: 'compare the interface', label: 'cursor-2' },
+      { engine: 'claude', model: 'opus', prompt: 'review the interface', label: 'interface review' },
     ]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -107,34 +110,51 @@ test('ask limits cap total cost, concurrency, and timeout before any engine star
   );
 });
 
-test('every engine invocation uses its read-only mode and never requests a worktree', () => {
-  const codex = buildReadOnlyEngineInvocation('codex', 'inspect the router');
-  assert.deepEqual(codex.args.slice(0, 4), ['exec', '--sandbox', 'read-only', '--ephemeral']);
+test('model-capable engines receive exact model flags without weakening read-only mode', () => {
+  const codex = buildReadOnlyEngineInvocation('codex', 'inspect the router', 'gpt-5.6');
+  assert.deepEqual(codex.args.slice(1, 3), ['-m', 'gpt-5.6']);
+  assert.deepEqual(codex.args.slice(3, 6), ['--sandbox', 'read-only', '--ephemeral']);
 
-  const cursor = buildReadOnlyEngineInvocation('cursor', 'inspect the router');
+  const cursor = buildReadOnlyEngineInvocation('cursor', 'inspect the router', 'kimi-k2.5');
   assert.ok(cursor.args.includes('ask'));
   assert.ok(cursor.args.includes('enabled'));
+  assert.deepEqual(cursor.args.slice(1, 3), ['--model', 'kimi-k2.5']);
 
-  const claude = buildReadOnlyEngineInvocation('claude', 'inspect the router');
+  const claude = buildReadOnlyEngineInvocation('claude', 'inspect the router', 'opus');
   assert.ok(claude.args.includes('plan'));
+  assert.deepEqual(claude.args.slice(2, 4), ['--model', 'opus']);
   assert.match(claude.args.join(' '), /Read,Glob,Grep,WebSearch,WebFetch/);
   assert.doesNotMatch(claude.args.join(' '), /(?:Bash|Edit)/);
 
-  const devin = buildReadOnlyEngineInvocation('devin', 'inspect the router');
+  const haiku = buildReadOnlyEngineInvocation('haiku', 'inspect the router', 'opus');
+  assert.deepEqual(haiku.args.slice(2, 4), ['--model', 'opus']);
+
+  const devin = buildReadOnlyEngineInvocation('devin', 'inspect the router', 'swe-1.7');
   assert.ok(devin.args.includes('auto'));
+  assert.deepEqual(devin.args.slice(2, 4), ['--model', 'swe-1.7']);
   assert.doesNotMatch(devin.args.join(' '), /(?:dangerous|accept-edits)/);
 
   const droid = buildReadOnlyEngineInvocation('droid', 'inspect the router');
   assert.doesNotMatch(droid.args.join(' '), /(?:--auto|skip-permissions-unsafe)/);
 
-  const grok = buildReadOnlyEngineInvocation('grok', 'inspect the router');
+  const grok = buildReadOnlyEngineInvocation('grok', 'inspect the router', 'grok-composer-2.5-fast');
   assert.deepEqual(grok.args.slice(4, 6), ['--sandbox', 'read-only']);
+  assert.deepEqual(grok.args.slice(6, 8), ['--model', 'grok-composer-2.5-fast']);
 
   for (const engine of ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'droid']) {
     const invocation = buildReadOnlyEngineInvocation(engine, 'read only');
     assert.doesNotMatch(invocation.args.join(' '), /(?:^|\s)--worktree(?:\s|$)/);
     assert.match(invocation.args.join(' '), /Do not modify files/);
   }
+});
+
+test('an unsupported requested model fails its job honestly without spawning an engine', async () => {
+  const [answer] = await runEngineAskJobs([
+    { engine: 'droid', model: 'opus', prompt: 'inspect the router', label: 'droid' },
+  ]);
+  assert.equal(answer.ok, false);
+  assert.equal(answer.reason, 'model_not_supported');
+  assert.match(answer.stderr, /droid does not support model selection/);
 });
 
 test('fake engine commands run in parallel up to the cap and preserve every answer', async () => {
@@ -244,6 +264,7 @@ test('command prints labeled statuses and writes only its receipt', async () => 
       '--engine', 'codex',
       '--engine', 'cursor',
       '--engine', 'claude',
+      '--model', 'gpt-5.6',
       '--concurrency', '2',
     ], root, {
       now: () => new Date('2026-08-12T05:30:00.000Z'),
@@ -271,6 +292,7 @@ test('command prints labeled statuses and writes only its receipt', async () => 
     const receipt = JSON.parse(fs.readFileSync(path.join(runsDir, receiptFiles[0]), 'utf8'));
     assert.equal(receipt.read_only, true);
     assert.deepEqual(receipt.summary, { answered: 1, failed: 1, timed_out: 1 });
+    assert.deepEqual(receipt.answers.map((answer) => answer.model), ['gpt-5.6', 'gpt-5.6', 'gpt-5.6']);
     assert.deepEqual(receipt.answers.map((answer) => answer.status), ['answered', 'failed', 'timed out']);
     assert.deepEqual(fs.readdirSync(root), ['atris']);
     assert.equal(fs.existsSync(path.join(root, '.git')), false);
