@@ -36,6 +36,7 @@ test('empty fixture returns the exact empty team presence envelope', () => {
       waiting_operator: 0,
       landing_wait: 0,
     },
+    operator: null,
     members: [],
   });
   assert.equal(JSON.stringify(buildTeamPresence(input)), JSON.stringify(presence));
@@ -113,6 +114,7 @@ test('populated fixtures join doing, loop badge, totals, and the awake window', 
       waiting_operator: 2,
       landing_wait: 1,
     },
+    operator: null,
     members: [
       {
         name: 'designer',
@@ -140,4 +142,46 @@ test('populated fixtures join doing, loop badge, totals, and the awake window', 
   const text = renderTeamPresence(presence);
   assert.match(text, /task-planner: building the team presence contract\./);
   assert.match(text, /loop: web i can \[manual \| claude \| last tick 2026-07-19T11:57:00\.000Z\]/);
+});
+
+test('operator activity is shown separately and excluded from the awake member count', () => {
+  const presence = buildTeamPresence({
+    now: NOW,
+    freshnessWindowMs: FIFTEEN_MINUTES,
+    operator: 'keshavrao',
+    stream: {},
+    streamEvents: [],
+    missions: [],
+    tasks: [
+      {
+        id: 'CLI-984',
+        title: 'review the customer handoff',
+        status: 'claimed',
+        claimed_by: 'keshavrao',
+        updated_at: '2026-07-19T11:59:00.000Z',
+      },
+      {
+        id: 'CLI-1260',
+        title: 'repair the team dashboard',
+        status: 'claimed',
+        claimed_by: 'builder',
+        updated_at: '2026-07-19T11:58:00.000Z',
+      },
+    ],
+  });
+
+  assert.equal(presence.totals.awake, 1);
+  assert.deepEqual(presence.members.map((member) => member.name), ['builder']);
+  assert.deepEqual(presence.operator, {
+    name: 'keshavrao',
+    awake: true,
+    doing: 'review the customer handoff.',
+    loop: null,
+    last_seen: '2026-07-19T11:59:00.000Z',
+  });
+
+  const text = renderTeamPresence(presence);
+  assert.match(text, /team presence: 1 awake/);
+  assert.match(text, /operator:\n  keshavrao: review the customer handoff\./);
+  assert.doesNotMatch(text, /awake roster:\n  keshavrao:/);
 });
