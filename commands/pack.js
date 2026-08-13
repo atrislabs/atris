@@ -1379,14 +1379,8 @@ async function showPackSales(rawArgs, cwd = process.cwd(), options = {}) {
 // ── pack purchases ──────────────────────────────────────────────────────────
 const PACK_PURCHASES_LOGIN_NUDGE = 'not logged in. run atris login first to view pack purchases.';
 
-function packPurchaseItems(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (payload && Array.isArray(payload.purchases)) return payload.purchases;
-  if (payload && Array.isArray(payload.data)) return payload.data;
-  if (payload && payload.data && Array.isArray(payload.data.purchases)) {
-    return payload.data.purchases;
-  }
-  return null;
+function packPurchasesUrl(apiBaseUrl = getApiBaseUrl()) {
+  return `${String(apiBaseUrl || '').replace(/\/+$/, '')}/pack/purchases/mine`;
 }
 
 async function showPackPurchases(rawArgs, cwd = process.cwd(), options = {}) {
@@ -1395,28 +1389,32 @@ async function showPackPurchases(rawArgs, cwd = process.cwd(), options = {}) {
 
   const deps = options.deps || {};
   const print = options.print || console.log;
+  const request = deps.httpRequest || httpRequest;
+  const authHeaders = requiredAuthHeaders(deps, 'view pack purchases');
 
-  let payload;
+  let response;
   try {
-    payload = await requestRegistryJson(
-      '/api/pack/purchases',
-      {
-        authPurpose: 'view pack purchases',
-        unreachableMessage: 'could not load pack purchases. check your connection and try again.',
-        invalidMessage: 'pack purchases returned an invalid response.',
+    const apiBaseUrl = (deps.getApiBaseUrl || getApiBaseUrl)();
+    response = await request(packPurchasesUrl(apiBaseUrl), {
+      method: 'GET',
+      timeoutMs: REGISTRY_TIMEOUT_MS,
+      headers: {
+        Accept: 'application/json',
+        ...authHeaders,
       },
-      deps,
-    );
-  } catch (error) {
-    if (error && error.status === 401) throw new Error(PACK_PURCHASES_LOGIN_NUDGE);
-    if (error && Number.isFinite(error.status)) {
-      throw new Error(`could not load pack purchases (status ${error.status}).`);
-    }
-    throw error;
+    });
+  } catch {
+    throw new Error('could not load pack purchases. check your connection and try again.');
   }
 
-  const purchases = packPurchaseItems(payload);
-  if (!purchases) throw new Error('pack purchases returned an invalid response.');
+  if (response.status === 401) throw new Error(PACK_PURCHASES_LOGIN_NUDGE);
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`could not load pack purchases (status ${response.status}).`);
+  }
+
+  const parsed = parseJsonBody(response.body);
+  if (!Array.isArray(parsed.data)) throw new Error('pack purchases returned an invalid response.');
+  const purchases = parsed.data;
   if (!purchases.length) {
     print('no purchased packs yet. browse with: atris pack browse');
     return 0;

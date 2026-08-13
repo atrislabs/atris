@@ -2400,12 +2400,12 @@ test('pack sales excludes refunded rows from its summary and shows their status'
   assert.match(output[1], /beta-pack\s+b\*\*\*@mail\.com\s+\$7\s+Jul 29\s+refunded/);
 });
 
-test('pack purchases excludes refunded rows from its summary and shows their status', async () => {
+test('pack purchases calls the buyer endpoint and renders purchase rows', async () => {
   const calls = [];
   const output = [];
   const result = await showPackPurchases([], repoRoot, {
     deps: {
-      getAppBaseUrl: () => 'https://packs.example.com/',
+      getApiBaseUrl: () => 'https://api.example.com/api/',
       loadCredentials: () => ({ token: 'buyer-token' }),
       httpRequest: async (url, options) => {
         calls.push({ url, options });
@@ -2419,7 +2419,7 @@ test('pack purchases excludes refunded rows from its summary and shows their sta
   });
 
   assert.equal(result, 0);
-  assert.equal(calls[0].url, 'https://packs.example.com/api/pack/purchases');
+  assert.equal(calls[0].url, 'https://api.example.com/api/pack/purchases/mine');
   assert.equal(calls[0].options.method, 'GET');
   assert.equal(calls[0].options.headers.Authorization, 'Bearer buyer-token');
   assert.equal(output[0], '1 pack bought for $5 total.');
@@ -2439,13 +2439,13 @@ test('pack purchases hides status when refunded is false or missing', () => {
   assert.doesNotMatch(table, /\brefunded\b/);
 });
 
-test('pack purchases prints the exact empty state for a wrapped response', async () => {
+test('pack purchases prints a one-line browse hint when purchases are empty', async () => {
   const output = [];
   const result = await showPackPurchases([], repoRoot, {
     deps: {
-      getAppBaseUrl: () => 'https://packs.example.com',
+      getApiBaseUrl: () => 'https://api.example.com/api',
       loadCredentials: () => ({ token: 'buyer-token' }),
-      httpRequest: async () => jsonResponse(200, { purchases: [] }),
+      httpRequest: async () => jsonResponse(200, []),
     },
     print: (line) => output.push(line),
   });
@@ -2468,7 +2468,7 @@ test('pack purchases gives the same login nudge for missing auth and a 401', asy
   await assert.rejects(
     () => showPackPurchases([], repoRoot, {
       deps: {
-        getAppBaseUrl: () => 'https://packs.example.com',
+        getApiBaseUrl: () => 'https://api.example.com/api',
         loadCredentials: () => ({ token: 'expired-token' }),
         httpRequest: async () => jsonResponse(401, { error: 'expired' }),
       },
