@@ -305,13 +305,20 @@ async function runAtris2Local(userInput, atris2Mode) {
   };
 
   if (businessSlug) {
-    const { loadCredentials } = require('../utils/auth');
+    const { ensureValidCredentials } = require('../utils/auth');
+    const { apiRequestJson } = require('../utils/api');
     const { resolveBusiness, ensureAwake } = require('./terminal');
-    const creds = loadCredentials();
-    if (!creds || !creds.token) {
+    const ensured = await ensureValidCredentials(apiRequestJson);
+    if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
       console.error('Not logged in. Run: atris login');
       process.exit(1);
     }
+    if (ensured.error) {
+      console.error(`Authentication failed: ${ensured.detail || ensured.error}. Run: atris login`);
+      console.error('Check with: atris whoami');
+      process.exit(1);
+    }
+    const creds = ensured.credentials;
     const biz = await resolveBusiness(creds.token, businessSlug);
     if (!biz || !biz.workspaceId) {
       console.error(`Business "${businessSlug}" not found or has no workspace.`);

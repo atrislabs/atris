@@ -407,18 +407,50 @@ async function validateAccessToken(token, apiRequestJson) {
   });
 }
 
+function refreshProviderHint(provider, refreshToken) {
+  const hint = typeof provider === 'string' ? provider.trim().toLowerCase() : '';
+  if (!hint) return null;
+  // provider=google makes /auth/refresh skip app-JWT refresh and POST the
+  // minted refresh JWT to Google OAuth, which returns google_refresh_failed.
+  // Only send that hint when the stored token is actually a Google OAuth
+  // refresh token (they start with 1//). Pack refresh already strips this.
+  if (hint === 'google' && !String(refreshToken || '').startsWith('1//')) {
+    return null;
+  }
+  return hint;
+}
+
 async function refreshAccessToken(refreshToken, provider, apiRequestJson) {
   if (!refreshToken) {
     return { ok: false, status: 0, error: 'Missing refresh token' };
   }
   const body = { refresh_token: refreshToken };
-  if (provider) {
-    body.provider = provider;
+  const hint = refreshProviderHint(provider, refreshToken);
+  if (hint) {
+    body.provider = hint;
   }
   return apiRequestJson('/auth/refresh', {
     method: 'POST',
     body,
   });
+}
+
+function isAuthFailure(result) {
+  const status = result && result.status;
+  return status === 401 || status === 403;
+}
+
+function printAuthRequired() {
+  console.error('Auth problem. Run: atris login');
+  console.error('Check with: atris whoami');
+}
+
+function abortOnAuthFailure(result, printedWake = false, exitFn = (code) => process.exit(code)) {
+  if (!isAuthFailure(result)) return false;
+  if (printedWake) console.log('auth failed');
+  printAuthRequired();
+  exitFn(1);
+  return true;
 }
 
 async function performTokenRefresh(credentials, apiRequestJson) {
@@ -535,13 +567,24 @@ async function ensureValidCredentials(apiRequestJson, options = {}) {
         updatedProvider !== credentials.provider ||
         updatedUserId !== credentials.user_id)
     ) {
-      saveCredentials(
-        credentials.token,
-        credentials.refresh_token,
-        updatedEmail,
-        updatedUserId,
-        updatedProvider
-      );
+      if (credentials.source_profile) {
+        const { source_profile, source, ...rest } = { ...credentials };
+        saveProfile(credentials.source_profile, {
+          ...rest,
+          email: updatedEmail,
+          user_id: updatedUserId,
+          provider: updatedProvider,
+          saved_at: new Date().toISOString(),
+        });
+      } else {
+        saveCredentials(
+          credentials.token,
+          credentials.refresh_token,
+          updatedEmail,
+          updatedUserId,
+          updatedProvider
+        );
+      }
     }
 
     return {
@@ -639,8 +682,12 @@ module.exports = {
   promptUser,
   validateAccessToken,
   refreshAccessToken,
+  refreshProviderHint,
   performTokenRefresh,
   ensureValidCredentials,
+  isAuthFailure,
+  printAuthRequired,
+  abortOnAuthFailure,
   fetchMyAgents,
   displayAccountSummary,
   // Profile switching

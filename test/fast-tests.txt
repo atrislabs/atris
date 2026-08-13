@@ -3,6 +3,7 @@ test/agent-spawn.test.js
 test/analytics-productivity.test.js
 test/api-stream.test.js
 test/apps.test.js
+test/auth-profile-refresh.test.js
 test/attempted-ledger.test.js
 test/auto-accept-certified.test.js
 test/autopilot-glass-logging.test.js
