@@ -7,6 +7,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { readZipFile, writeZipFile, ZIP_LIMITS } = require('../lib/zip');
+const { version: cliVersion } = require('../package.json');
 const {
   buildManifest,
   comparePackVersions,
@@ -1217,6 +1218,124 @@ test('pack doctor reports ready for a complete aligned local contract', () => {
   }
 });
 
+test('pack seal fills a fixture contract until doctor reports ready', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'sealed-playbook');
+    writePackDir(target, {
+      slug: 'sealed-playbook',
+      title: 'Sealed Playbook',
+      description: 'A sealed playbook for pack publishers.',
+      author: 'Ada Lovelace',
+    });
+    const readme = '# Pack publishers\n\nA sealed playbook for pack publishers.\n';
+    fs.writeFileSync(path.join(target, 'README.md'), readme, 'utf8');
+
+    const sealed = runCli(['pack', 'seal', target], { cwd: dir });
+    assert.equal(sealed.status, 0, `stdout:\n${sealed.stdout}\nstderr:\n${sealed.stderr}`);
+    assert.match(sealed.stdout, /^set type: playbook$/m);
+    assert.match(sealed.stdout, /^set entrypoint: README\.md$/m);
+    assert.match(sealed.stdout, /^set permissions: \[\]$/m);
+    assert.match(sealed.stdout, new RegExp(`^set created-in: ${cliVersion.replace(/\./g, '\\.')}\\s*$`, 'm'));
+    assert.match(sealed.stdout, /^set content-hashes: 1 file$/m);
+    assert.match(sealed.stdout, /^verdict: ready$/m);
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'));
+    assert.equal(manifest.type, 'playbook');
+    assert.equal(manifest.entrypoint, 'README.md');
+    assert.deepEqual(manifest.permissions, []);
+    assert.equal(manifest['created-in'], cliVersion);
+    assert.deepEqual(manifest['content-hashes'], { 'README.md': sha256(readme) });
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack seal preserves explicit contract fields even when flags disagree', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'explicit-pack');
+    const readme = '# Context notes\n\nResearch context for pack publishers.\n';
+    const guide = '# Publisher guide\n\nResearch context for pack publishers.\n';
+    writePackDir(target, {
+      slug: 'explicit-pack',
+      title: 'Explicit Pack',
+      description: 'Research context for pack publishers.',
+      author: 'Ada Lovelace',
+      type: 'knowledge',
+      entrypoint: 'guide.md',
+      permissions: ['pack.read'],
+      'created-in': 'manual setup',
+      'content-hashes': { 'README.md': '0'.repeat(64) },
+    });
+    fs.writeFileSync(path.join(target, 'README.md'), readme, 'utf8');
+    fs.writeFileSync(path.join(target, 'guide.md'), guide, 'utf8');
+
+    const sealed = runCli([
+      'pack', 'seal', target, '--type', 'context', '--entrypoint', 'README.md',
+    ], { cwd: dir });
+    assert.equal(sealed.status, 0, `stdout:\n${sealed.stdout}\nstderr:\n${sealed.stderr}`);
+    assert.doesNotMatch(sealed.stdout, /^set (?:type|entrypoint|permissions|created-in):/m);
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'));
+    assert.equal(manifest.type, 'knowledge');
+    assert.equal(manifest.entrypoint, 'guide.md');
+    assert.deepEqual(manifest.permissions, ['pack.read']);
+    assert.equal(manifest['created-in'], 'manual setup');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack seal recomputes content hashes after a file changes', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'resealed-pack');
+    writePackDir(target, {
+      slug: 'resealed-pack',
+      title: 'Resealed Pack',
+      description: 'Resealed context for publishers.',
+      author: 'Ada Lovelace',
+    });
+    const firstReadme = '# Publishers\n\nResealed context for publishers.\n';
+    fs.writeFileSync(path.join(target, 'README.md'), firstReadme, 'utf8');
+    assert.equal(runCli(['pack', 'seal', target], { cwd: dir }).status, 0);
+    const firstHash = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'))['content-hashes']['README.md'];
+
+    const secondReadme = '# Publishers\n\nResealed context for publishers after editing.\n';
+    fs.writeFileSync(path.join(target, 'README.md'), secondReadme, 'utf8');
+    const resealed = runCli(['pack', 'seal', target], { cwd: dir });
+    assert.equal(resealed.status, 0, `stdout:\n${resealed.stdout}\nstderr:\n${resealed.stderr}`);
+    const secondHash = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'))['content-hashes']['README.md'];
+    assert.notEqual(secondHash, firstHash);
+    assert.equal(secondHash, sha256(secondReadme));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack seal excludes pack.json from its content hash map', () => {
+  const dir = makeTempDir();
+  try {
+    const target = path.join(dir, 'hash-map-pack');
+    writePackDir(target, {
+      slug: 'hash-map-pack',
+      title: 'Hash Map Pack',
+      description: 'Hash map context for publishers.',
+      author: 'Ada Lovelace',
+    });
+    fs.writeFileSync(path.join(target, 'README.md'), '# Publishers\n\nHash map context for publishers.\n', 'utf8');
+
+    const sealed = runCli(['pack', 'seal', target], { cwd: dir });
+    assert.equal(sealed.status, 0, `stdout:\n${sealed.stdout}\nstderr:\n${sealed.stderr}`);
+    const hashes = JSON.parse(fs.readFileSync(path.join(target, 'pack.json'), 'utf8'))['content-hashes'];
+    assert.equal(Object.prototype.hasOwnProperty.call(hashes, 'pack.json'), false);
+    assert.deepEqual(Object.keys(hashes), ['README.md']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('pack doctor revises a legacy pack with no description instead of inferring one from title', () => {
   const dir = makeTempDir();
   try {
@@ -2233,7 +2352,7 @@ test('pack publish from a pack root ships the whole folder except junk', () => {
   }
 });
 
-for (const sub of ['list', 'status', 'pull', 'update', 'show', 'inspect', 'doctor', 'publish']) {
+for (const sub of ['list', 'status', 'pull', 'update', 'show', 'inspect', 'doctor', 'seal', 'publish']) {
   for (const flag of ['--help', '-h']) {
     test(`pack ${sub} ${flag} shows usage and exits 0 (not "unknown argument")`, () => {
       const dir = makeTempDir();
