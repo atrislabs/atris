@@ -5,6 +5,11 @@ const { spawnSync } = require('child_process');
 const { refreshNowFile } = require('./now');
 const escapeRegExp = require('../lib/escape-regexp');
 const { hasRenderedSections, isOpenSection, isDoneSection } = require('../lib/todo-sections');
+const {
+  renderVoiceCardBlock,
+  upsertCursorVoiceCard,
+  voiceCardForRoot,
+} = require('../lib/voice-card');
 
 const GENERATED_START = '<!-- ATRIS_BRAIN_COMPILE:START -->';
 const GENERATED_END = '<!-- ATRIS_BRAIN_COMPILE:END -->';
@@ -1424,7 +1429,7 @@ ${nextMove(state)}
 `;
 }
 
-function generatedBootBlock(state) {
+function generatedBootBlock(state, voiceCard = voiceCardForRoot(state.root)) {
   return `${GENERATED_START}
 ## Atris Brain Compile
 
@@ -1440,6 +1445,9 @@ First-message rule: lead with the move before writing to the operator.
 Purpose: optimize for decision-speed; lead with the move, then use descriptions only when they help the operator act.
 Shape: \`<operator>, today is about <move>\` -> \`I picked this because <why now>\` -> \`Ready: <draft/proof/context>\` -> \`Go deeper: <paths>\`.
 Definitions: operator = current person or agent; move = one concrete high-leverage workflow; why now = business reason; ready = prepared action or proof; paths = 2-4 optional deeper views.
+
+Keep this voice beside every reply:
+${renderVoiceCardBlock(voiceCard)}
 
 Re-run after meaningful work:
 \`atris brain compile --root .\`
@@ -1475,10 +1483,13 @@ function writeBrain(state) {
   fs.writeFileSync(ledgerPath, renderLedger(state), 'utf8');
   fs.writeFileSync(jsonPath, JSON.stringify(state, null, 2) + '\n', 'utf8');
 
-  const bootBlock = generatedBootBlock(state);
+  const voiceCard = voiceCardForRoot(state.root);
+  const bootBlock = generatedBootBlock(state, voiceCard);
   for (const fileName of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md']) {
     upsertGeneratedBlock(path.join(state.root, fileName), fileName.replace(/\.md$/, ''), bootBlock);
   }
+  const cursorVoicePath = path.join(state.root, '.cursor', 'rules', 'atris-voice.mdc');
+  upsertCursorVoiceCard(cursorVoicePath, voiceCard);
 
   const wikiStatusPath = path.join(state.root, 'atris', 'wiki', 'STATUS.md');
   if (fs.existsSync(wikiStatusPath)) {
@@ -1495,7 +1506,7 @@ function writeBrain(state) {
 `);
   }
 
-  return { statusPath, ledgerPath, jsonPath };
+  return { statusPath, ledgerPath, jsonPath, cursorVoicePath };
 }
 
 function verifyBrain(root) {

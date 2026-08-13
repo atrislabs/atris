@@ -3,6 +3,12 @@ const path = require('path');
 const { ensureExperimentsFramework } = require('./experiments');
 const { ensureWikiScaffold } = require('../lib/wiki');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
+const {
+  upsertAgentVoiceCard,
+  upsertClaudeVoiceHook,
+  upsertCursorVoiceCard,
+  voiceCardForRoot,
+} = require('../lib/voice-card');
 
 /**
  * Detect project context by scanning project structure
@@ -838,6 +844,8 @@ member -> mission start --verify -> status --status active -> one bounded step -
 
 **Protocol:** See \`atris/atris.md\` for full spec.`;
 
+  const voiceCard = voiceCardForRoot(process.cwd());
+
   // .cursorrules for Cursor (legacy)
   const cursorRulesFile = path.join(process.cwd(), '.cursorrules');
   if (!fs.existsSync(cursorRulesFile)) {
@@ -854,11 +862,21 @@ member -> mission start --verify -> status --status active -> one bounded step -
     markReady('adapters', '.cursor/rules/atris.mdc', '✓ Created .cursor/rules/atris.mdc (for Cursor)');
   }
 
+  const cursorVoiceFile = path.join(cursorRulesDir, 'atris-voice.mdc');
+  const cursorVoiceResult = upsertCursorVoiceCard(cursorVoiceFile, voiceCard);
+  if (cursorVoiceResult.action !== 'unchanged') {
+    markReady('adapters', '.cursor/rules/atris-voice.mdc', '✓ Pinned the Atris voice card for Cursor');
+  }
+
   // AGENTS.md for Codex
   const agentsMdFile = path.join(process.cwd(), 'AGENTS.md');
   if (!fs.existsSync(agentsMdFile)) {
     fs.writeFileSync(agentsMdFile, agentInstructions);
     markReady('adapters', 'AGENTS.md', '✓ Created AGENTS.md (for Codex)');
+  }
+  const agentsVoiceResult = upsertAgentVoiceCard(agentsMdFile, voiceCard);
+  if (agentsVoiceResult.action !== 'unchanged') {
+    markReady('adapters', 'AGENTS.md voice card', '✓ Pinned the Atris voice card in AGENTS.md');
   }
 
   // .devin/config.local.json for Devin for Terminal
@@ -1042,14 +1060,11 @@ Read atris/MAP.md. Begin iteration 1.`;
     markReady('adapters', 'atris/CLAUDE.md', '✓ Created atris/CLAUDE.md (for Claude Code)');
   }
 
-  // .claude/settings.json with SessionStart hook for auto-loading Atris
+  // .claude/settings.json with startup and per-prompt Atris hooks
   const claudeSettingsDir = path.join(process.cwd(), '.claude');
   const claudeSettingsFile = path.join(claudeSettingsDir, 'settings.json');
-  if (!fs.existsSync(claudeSettingsFile)) {
-    if (!fs.existsSync(claudeSettingsDir)) {
-      fs.mkdirSync(claudeSettingsDir, { recursive: true });
-    }
-    const claudeSettings = {
+  const claudeSettingsResult = upsertClaudeVoiceHook(claudeSettingsFile, {
+    initialSettings: {
       hooks: {
         SessionStart: [
           {
@@ -1072,9 +1087,10 @@ Read atris/MAP.md. Begin iteration 1.`;
           }
         ]
       }
-    };
-    fs.writeFileSync(claudeSettingsFile, JSON.stringify(claudeSettings, null, 2));
-    markReady('adapters', '.claude/settings.json', '✓ Created .claude/settings.json (auto-loads Atris on startup)');
+    },
+  });
+  if (claudeSettingsResult.action !== 'unchanged' && claudeSettingsResult.action !== 'skipped') {
+    markReady('adapters', '.claude/settings.json', '✓ Wired Atris into Claude startup and replies');
   }
 
   // Co-author trailer: commits in this workspace credit Atris, same as Claude/Cursor do

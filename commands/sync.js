@@ -3,6 +3,12 @@ const path = require('path');
 const os = require('os');
 const { ensureWikiScaffold } = require('../lib/wiki');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
+const {
+  upsertAgentVoiceCard,
+  upsertClaudeVoiceHook,
+  upsertCursorVoiceCard,
+  voiceCardForRoot,
+} = require('../lib/voice-card');
 
 const TEMPLATE_ROOT_DIR = path.join(__dirname, '..', 'templates');
 const WORKSPACE_TEMPLATES = {
@@ -555,6 +561,21 @@ function syncAtris(options = {}) {
   // Sync all skills from package to user's project via shared helper.
   updated += syncPackageSkills(targetDir, { verbose: true, dryRun });
 
+  const voiceCard = voiceCardForRoot(process.cwd());
+  const cursorVoiceFile = path.join(process.cwd(), '.cursor', 'rules', 'atris-voice.mdc');
+  const cursorVoiceResult = upsertCursorVoiceCard(cursorVoiceFile, voiceCard, { dryRun });
+  if (cursorVoiceResult.action !== 'unchanged') {
+    console.log(`${dryRun ? 'Would update' : '✓ Updated'} .cursor/rules/atris-voice.mdc`);
+    updated++;
+  }
+
+  const agentsMdFile = path.join(process.cwd(), 'AGENTS.md');
+  const agentsVoiceResult = upsertAgentVoiceCard(agentsMdFile, voiceCard, { dryRun });
+  if (agentsVoiceResult.action !== 'unchanged') {
+    console.log(`${dryRun ? 'Would update' : '✓ Updated'} AGENTS.md voice card`);
+    updated++;
+  }
+
   // Update .claude/skills/atris/SKILL.md (legacy - now handled above, keeping for compatibility)
   const claudeSkillsDir = path.join(process.cwd(), '.claude', 'skills', 'atris');
   const claudeSkillFile = path.join(claudeSkillsDir, 'SKILL.md');
@@ -601,10 +622,11 @@ Key behaviors:
     updated++;
   }
 
-  // Update .claude/settings.json with SessionStart hook
+  // Update .claude/settings.json with startup and per-prompt hooks.
   const claudeSettingsFile = path.join(process.cwd(), '.claude', 'settings.json');
-  if (!fs.existsSync(claudeSettingsFile)) {
-    const claudeSettings = {
+  const claudeSettingsResult = upsertClaudeVoiceHook(claudeSettingsFile, {
+    dryRun,
+    initialSettings: {
       hooks: {
         SessionStart: [
           {
@@ -617,9 +639,10 @@ Key behaviors:
           }
         ]
       }
-    };
-    if (!dryRun) fs.writeFileSync(claudeSettingsFile, JSON.stringify(claudeSettings, null, 2));
-    console.log(`${dryRun ? 'Would create' : '✓ Created'} .claude/settings.json (SessionStart hook)`);
+    },
+  });
+  if (claudeSettingsResult.action !== 'unchanged' && claudeSettingsResult.action !== 'skipped') {
+    console.log(`${dryRun ? 'Would update' : '✓ Updated'} .claude/settings.json (voice hook)`);
     updated++;
   }
 
