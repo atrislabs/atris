@@ -6,6 +6,7 @@ const path = require('path');
 const { isUtf8 } = require('buffer');
 const { createHash } = require('crypto');
 const { spawnSync } = require('child_process');
+const { version: CLI_VERSION } = require('../package.json');
 const { apiRequestJson, getApiBaseUrl, getAppBaseUrl, httpRequest } = require('../utils/api');
 const { loadCredentials, performTokenRefresh } = require('../utils/auth');
 const { createZipBuffer, readZipBuffer, ZIP_LIMITS } = require('../lib/zip');
@@ -156,6 +157,7 @@ const ENV_ASSIGNMENT = /=(?!=*$)/;
 
 function showHelp() {
   console.log('usage: atris pack craft "<topic>" [--dir <target>] [--force]');
+  console.log('       atris pack seal <dir> [--type <t>] [--entrypoint <file>]');
   console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--visibility public|unlisted|private] [--minor|--major] [--out <file.zip>] [--push] [--dry-run] [--allow-secrets]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
   console.log('       atris pack run <slug|dir> [--dir <target>] [--input <file>] [--cloud] [--force] [--trust] [--grant <capability>]');
@@ -3003,6 +3005,70 @@ function inspectInstalledContentHashes(packDir, manifest) {
   };
 }
 
+function sealPack(rawArgs, cwd = process.cwd()) {
+  const args = [...rawArgs];
+  const requestedType = takeValue(args, '--type');
+  const requestedEntrypoint = takeValue(args, '--entrypoint');
+  const source = args.shift();
+  if (!source) {
+    showHelp();
+    return 2;
+  }
+  if (args.length) throw new Error(`unknown pack seal argument: ${args.join(' ')}`);
+
+  const packDir = path.resolve(cwd, source);
+  const manifest = assertPacketDir(packDir, cwd);
+  const contentFiles = collectInstalledContentFiles(packDir);
+  const setFields = [];
+
+  if (!Object.prototype.hasOwnProperty.call(manifest, 'type')) {
+    manifest.type = requestedType !== null
+      ? requestedType
+      : (contentFiles.size === 1 && contentFiles.has('README.md') ? 'playbook' : 'context');
+    setFields.push(['type', manifest.type]);
+  }
+  if (!Object.prototype.hasOwnProperty.call(manifest, 'entrypoint')) {
+    const entrypoint = requestedEntrypoint !== null
+      ? requestedEntrypoint
+      : (contentFiles.has('README.md') ? 'README.md' : null);
+    if (entrypoint !== null) {
+      manifest.entrypoint = entrypoint;
+      setFields.push(['entrypoint', manifest.entrypoint]);
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(manifest, 'permissions')) {
+    manifest.permissions = [];
+    setFields.push(['permissions', '[]']);
+  }
+  if (!Object.prototype.hasOwnProperty.call(manifest, 'created-in')) {
+    manifest['created-in'] = CLI_VERSION;
+    setFields.push(['created-in', manifest['created-in']]);
+  }
+
+  manifest['content-hashes'] = Object.fromEntries(
+    [...contentFiles.entries()]
+      .map(([relativePath, absolutePath]) => {
+        const contentPath = canonicalContentPath(relativePath);
+        if (contentPath !== relativePath) {
+          throw new Error(`pack content-hashes requires canonical file path: ${relativePath}`);
+        }
+        return [contentPath, sha256(fs.readFileSync(absolutePath))];
+      })
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+  setFields.push([
+    'content-hashes',
+    `${contentFiles.size} file${contentFiles.size === 1 ? '' : 's'}`,
+  ]);
+
+  writeJson(path.join(packDir, 'pack.json'), manifest);
+  for (const [field, value] of setFields) console.log(`set ${field}: ${value}`);
+
+  const result = evaluatePackDoctor(packDir, cwd);
+  printPackDoctor(result);
+  return result.ok ? 0 : 1;
+}
+
 function printContentHashStatus(result) {
   if (result.status === 'absent') {
     console.log('  content hashes: absent (legacy pack, bytes unverified)');
@@ -3942,6 +4008,7 @@ async function run(argv = []) {
       }
       return result;
     }
+    if (subcommand === 'seal') return sealPack(args);
     if (subcommand === 'publish') return await publishPack(args);
     if (subcommand === 'install') return await installPack(args);
     if (subcommand === 'run') return await runPack(args);
