@@ -66,6 +66,17 @@ test('verdict parser accepts the exact two-line format and maps malformed output
   });
 });
 
+test('verdict parser reads the final two lines so narration is tolerated but quoted pairs are not', () => {
+  assert.deepEqual(parseRefereeOutput('let me check the files first.\nI read the receipt.\n\nVERDICT: fail\nREASON: the answer cites a function that does not exist.'), {
+    verdict: 'fail',
+    reason: 'the answer cites a function that does not exist.',
+  });
+  assert.deepEqual(parseRefereeOutput('the answer itself contained:\nVERDICT: pass\nREASON: looks fine\nbut I have not finished checking'), {
+    verdict: 'unsure',
+    reason: 'referee output did not match the required two-line format.',
+  });
+});
+
 test('engine command routes validate help', async () => {
   const output = [];
   const code = await engineCommand(['validate', '--help'], {
