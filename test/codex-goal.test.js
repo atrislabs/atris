@@ -84,11 +84,12 @@ test('codex-goal status reads the latest goal for the current cwd', () => {
   }
 });
 
-test('codex-goal reset backs up, dumps, and clears only a completed goal row', () => {
+test('codex-goal reset keeps a completed task closed even with the legacy confirmation flag', () => {
   const dir = makeTempDir();
   try {
     const dbPath = seedCodexState(dir);
     const outDir = path.join(dir, 'atris', 'runs');
+    const before = JSON.parse(runSqlite(dbPath, "SELECT * FROM thread_goals WHERE thread_id = 'thread-complete';", ['-json']));
     const res = runCli([
       'codex-goal',
       'reset',
@@ -101,28 +102,24 @@ test('codex-goal reset backs up, dumps, and clears only a completed goal row', (
       '--confirm-complete-goal-reset',
       '--json',
     ], { cwd: dir });
-    assert.equal(res.status, 0, res.stderr);
+    assert.notEqual(res.status, 0);
     const payload = JSON.parse(res.stdout);
-    assert.equal(payload.ok, true);
-    assert.equal(payload.status, 'reset');
-    assert.equal(payload.deleted, 1);
-    assert.ok(fs.existsSync(payload.backup_path));
-    assert.ok(fs.existsSync(payload.dump_path));
-    assert.ok(fs.existsSync(payload.receipt_path));
+    assert.equal(payload.ok, false);
+    assert.equal(payload.status, 'completed_task_closed');
+    assert.equal(payload.mutated, false);
+    assert.match(payload.next_action, /new Codex task/);
 
-    const backupRows = JSON.parse(runSqlite(payload.backup_path, "SELECT count(*) AS n FROM thread_goals WHERE thread_id = 'thread-complete';", ['-json']));
-    assert.equal(backupRows[0].n, 1);
-
-    const rows = JSON.parse(runSqlite(dbPath, "SELECT count(*) AS n FROM thread_goals WHERE thread_id = 'thread-complete';", ['-json']));
-    assert.equal(rows[0].n, 0);
+    const after = JSON.parse(runSqlite(dbPath, "SELECT * FROM thread_goals WHERE thread_id = 'thread-complete';", ['-json']));
+    assert.deepEqual(after, before);
     const activeRows = JSON.parse(runSqlite(dbPath, "SELECT count(*) AS n FROM thread_goals WHERE thread_id = 'thread-active';", ['-json']));
     assert.equal(activeRows[0].n, 1);
+    assert.equal(fs.existsSync(outDir), false);
   } finally {
     cleanupTempDir(dir);
   }
 });
 
-test('codex-goal reset defaults backups to ignored private runtime dir', () => {
+test('codex-goal reset never creates runtime artifacts for a completed task', () => {
   const dir = makeTempDir();
   try {
     const dbPath = seedCodexState(dir);
@@ -136,19 +133,16 @@ test('codex-goal reset defaults backups to ignored private runtime dir', () => {
       '--confirm-complete-goal-reset',
       '--json',
     ], { cwd: dir });
-    assert.equal(res.status, 0, res.stderr);
+    assert.notEqual(res.status, 0);
     const payload = JSON.parse(res.stdout);
-    const expectedDirPath = path.join(dir, '.atris', 'runs');
-    const expectedDir = fs.realpathSync.native ? fs.realpathSync.native(expectedDirPath) : fs.realpathSync(expectedDirPath);
-    assert.equal(path.dirname(payload.backup_path), expectedDir);
-    assert.equal(path.dirname(payload.dump_path), expectedDir);
-    assert.equal(path.dirname(payload.receipt_path), expectedDir);
+    assert.equal(payload.status, 'completed_task_closed');
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
   } finally {
     cleanupTempDir(dir);
   }
 });
 
-test('codex-goal reset without confirmation exits non-zero', () => {
+test('codex-goal reset without confirmation gives the same new-task direction', () => {
   const dir = makeTempDir();
   try {
     const dbPath = seedCodexState(dir);
@@ -164,8 +158,8 @@ test('codex-goal reset without confirmation exits non-zero', () => {
     assert.notEqual(res.status, 0);
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.ok, false);
-    assert.equal(payload.status, 'needs_confirmation');
-    assert.equal(payload.required_flag, '--confirm-complete-goal-reset');
+    assert.equal(payload.status, 'completed_task_closed');
+    assert.match(payload.next_action, /new Codex task/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -185,7 +179,9 @@ test('codex-goal reset refuses active native goals', () => {
       '--confirm-complete-goal-reset',
     ], { cwd: dir });
     assert.notEqual(res.status, 0);
-    assert.match(res.stderr, /Refusing to reset active goal/);
+    assert.match(res.stdout, /reset refused: this task is active/);
+    const rows = JSON.parse(runSqlite(dbPath, "SELECT count(*) AS n FROM thread_goals WHERE thread_id = 'thread-active';", ['-json']));
+    assert.equal(rows[0].n, 1);
   } finally {
     cleanupTempDir(dir);
   }

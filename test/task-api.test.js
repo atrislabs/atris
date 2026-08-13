@@ -61,6 +61,19 @@ test('task board page responds with HTML', async () => {
   assert.match(await response.text(), /<html lang="en">/);
 });
 
+test('task board page leads with the plain explanation and keeps approval gated', async () => {
+  const response = await fetch(`${baseUrl}/`);
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(html, /What changes/);
+  assert.match(html, /Why it matters/);
+  assert.match(html, /Done looks like/);
+  assert.match(html, /Technical details/);
+  assert.match(html, /approval\.approve\.enabled/);
+  assert.match(html, /Approval not ready/);
+});
+
 test('task list API returns projection tasks', async () => {
   const response = await fetch(`${baseUrl}/api/tasks`);
   const payload = await response.json();
@@ -119,6 +132,44 @@ test('POST task mutation persists and appears in the next projection', async () 
   const listResponse = await fetch(`${baseUrl}/api/tasks`);
   const listed = await listResponse.json();
   assert.ok(listed.projection.tasks.some(task => task.id === created.task_id && task.title === title));
+});
+
+test('POST task creation accepts explicit plain fields and preserves technical metadata', async () => {
+  const title = 'canonical_schema keeps --raw-mode available in src/task-api.js';
+  const verify = 'node --test test/task-api.test.js';
+  const explanation = {
+    what_changes: 'People see the task in plain words before the technical details',
+    why_it_matters: 'This makes review faster because the decision is clear',
+    done_looks_like: 'The plain summary leads and the exact task record remains available',
+  };
+  const createdResponse = await fetch(`${baseUrl}/api/tasks`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title, verify, explanation, tag: 'task-api-test' }),
+  });
+  const created = await createdResponse.json();
+
+  assert.equal(createdResponse.status, 200);
+  assert.equal(created.task.title, title);
+  assert.equal(created.task.metadata.verify, verify);
+  assert.equal(created.task.metadata.what_changes, explanation.what_changes);
+  assert.equal(created.task.metadata.why_it_matters, explanation.why_it_matters);
+  assert.equal(created.task.metadata.done_looks_like, explanation.done_looks_like);
+  assert.equal(created.task.explanation.what_changes, `${explanation.what_changes}.`);
+  assert.equal(created.task.explanation.why_it_matters, `${explanation.why_it_matters}.`);
+  assert.equal(created.task.explanation.done_looks_like, `${explanation.done_looks_like}.`);
+  assert.equal(created.task.approval.approve.enabled, false);
+  assert.equal(created.task.approval.request_change.enabled, true);
+
+  const detailResponse = await fetch(`${baseUrl}/api/tasks/${created.task_id}`);
+  const detail = await detailResponse.json();
+  assert.equal(detailResponse.status, 200);
+  assert.equal(detail.task.title, title);
+  assert.equal(detail.task.metadata.verify, verify);
+  assert.equal(detail.page.explanation.what_changes, `${explanation.what_changes}.`);
+  assert.equal(detail.page.review.human_accept.enabled, false);
+  assert.equal(detail.page.approval.approve.command, null);
+  assert.match(detail.page.approval.request_change.command, /^atris task backlog /);
 });
 
 test('unknown task API route responds with JSON 404', async () => {

@@ -48,7 +48,7 @@ Agent proof ready -> native goal can complete
 Human accept      -> task Done + AgentXP awarded
 ```
 
-Always-on agents should complete their native goal after proof is in Review, then continue the mission loop with the next goal. They must not run `atris task accept` or claim AgentXP unless a human approved the proof.
+Always-on agents should complete their native goal after proof is in Review, then stop that task. The next goal or recurring monitor starts in a new dedicated task. They must not run `atris task accept` or claim AgentXP unless a human approved the proof.
 
 Do not write new operating doctrine here first. Add it to Atris policy, skills, wiki, or `atris/atris.md`, then regenerate this adapter if needed.
 

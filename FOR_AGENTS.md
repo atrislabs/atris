@@ -50,6 +50,11 @@ atris task ready <id> --proof "command that passed"
 
 **Never** `atris task accept` unless a human approved. That's their gate, not yours.
 
+Every task starts with three plain sentences: what changes, why it matters, and
+what done looks like. Keep the exact title, files, commands, requirements,
+events, proof, and approval rules available underneath. Offer the existing
+approve-or-change actions without weakening any proof or human approval gate.
+
 ---
 
 ## Rules that make you trustworthy

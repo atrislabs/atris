@@ -32,6 +32,9 @@ Key behaviors:
 - Read PERSONA.md (3-4 sentences, ASCII visuals)
 - Check MAP.md for file:line refs
 - Use `atris task` for claims, proof, ready, and accept
+- Give every task a plain first layer: what changes, why it matters, and what
+  done looks like. Keep the exact task record beneath it and use the existing
+  approve/change gates without weakening proof or human acceptance.
 - Use functional/feature members as task owners; record engines only as `executed_by`
 - Treat TODO.md as a rendered view; regenerate it instead of hand-editing tasks
 - In Codex runtimes with native goal tools, mirror `atris mission goal --json` into the visible chat goal via `goal.visible_goal`
@@ -67,9 +70,10 @@ If it returns `action: codex_goal_candidate` or `codex_goal_heartbeat` with
 
 1. Call `get_goal` when the runtime exposes it.
 2. If the active goal already equals `goal.objective`, keep working.
-3. If there is no active goal or the prior goal is complete, call `create_goal` with `goal.objective`.
-4. If a different active goal is still in progress, do not complete it just to make room; report that `goal.visible_goal.status` is waiting for the visible goal slot.
-5. After proof is ready, call `update_goal({ status: "complete" })`, rerun `atris mission goal --json`, then create the next visible goal candidate when a slot is available.
+3. If this active task has no goal yet, call `create_goal` with `goal.objective`.
+4. If this task's prior goal is complete, stop. Create a new dedicated Codex task for the next objective or recurring monitor; never reset or reuse the completed task.
+5. If a different active goal is still in progress, do not complete it just to make room; report that `goal.visible_goal.status` is waiting for the visible goal slot.
+6. After proof is ready, call `update_goal({ status: "complete" })` and stop this task. Read the next candidate only from its own new Codex task.
 
 Native goal completion is not task acceptance. Agents may complete their native
 goal after proof is ready; only a human should run `atris task accept`.
