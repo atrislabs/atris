@@ -565,6 +565,7 @@ function showHelp() {
   console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
   console.log(`  autoland   - Approve the policy once; ${require('../lib/autoland').certifiedWorkLandsPhrase(process.cwd())}, you keep irreversible calls`);
   console.log('  engine     - engine registry, answer validation, dispatch flights, and live progress');
+  console.log('  ci         - run github actions jobs locally with runs-on: atris');
   console.log('  router     - inspect ax lane outcomes and promote gated reflex overrides');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
@@ -2619,6 +2620,10 @@ if (command === 'init') {
   require('../commands/game').gameCommand(process.argv.slice(3))
     .then((status) => process.exit(status === 1 ? 1 : 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'ci') {
+  Promise.resolve(require('../commands/ci').ciCommand(process.argv.slice(3)))
+    .then((status) => process.exit(status || 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ').toLowerCase()); process.exit(1); });
 } else if (command === 'github') {
   const status = require('../commands/github').githubCommand(process.argv.slice(3));
   process.exit(status);
