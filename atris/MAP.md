@@ -1168,12 +1168,13 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
   1. Browser OAuth: opens `{APP_BASE}/auth/cli`, user pastes code, CLI exchanges via `POST /auth/cli/exchange`
   2. Manual token: user pastes raw token, saved + validated
   3. Non-interactive: `--token <t>` flag for CI/scripts
-- **Token refresh:** `utils/auth.js:424-509` (`performTokenRefresh`) — saves new access token, optionally rotates refresh token, re-validates, updates user metadata
-- **Credential guard:** `utils/auth.js:511-564` (`ensureValidCredentials`) — proactive refresh if within 5-min buffer, validate, fallback refresh
+- **Token refresh:** `utils/auth.js:456-541` (`performTokenRefresh`) — saves new access token, optionally rotates refresh token, re-validates, updates user metadata. Profile-sourced creds write back to the profile file. `refreshAccessToken` (`:423`) sends `refresh_token` and omits `provider=google` unless the token is a Google OAuth refresh (`1//...`); that hint makes `/auth/refresh` skip app-JWT refresh and return `google_refresh_failed`.
+- **Credential guard:** `utils/auth.js:543-608` (`ensureValidCredentials`) — proactive refresh if within 5-min buffer, validate, fallback refresh
+- **Wake auth abort:** `utils/auth.js:438-454` (`isAuthFailure` / `abortOnAuthFailure`) — status/wake 401/403 stop polling and print login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `commands/computer.js:2259`, `commands/aeo.js:98`, `commands/pull.js:361`, `commands/push.js:530`, `commands/align.js:180`.
 - **Dependencies:** `utils/auth.js` for token management, `utils/api.js` for HTTP
 - **Consumers:**
   - `commands/auth.js` (login/logout/whoami) — uses modular `utils/auth.js`
-  - `commands/workflow.js` (plan/do/review --execute) — `ensureValidCredentials()` (full refresh flow, `:580/:950/:1338`)
+  - `commands/workflow.js` (plan/do/review --execute, plus `2 pro --business`) — `ensureValidCredentials()` (full refresh flow, `:311/:588/:963/:1351`)
   - `commands/brainstorm.js` (brainstorm/autopilot --execute) — `ensureValidCredentials()` (full refresh flow, `:70`)
   - `commands/log-sync.js` — `ensureValidCredentials()` (full refresh flow)
   - `commands/integrations.js` (gmail/calendar/twitter/slack) — `ensureValidCredentials()` (full refresh flow, `:28`)
@@ -1603,8 +1604,10 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - Lines 73-109: JWT decode + expiry check (`decodeJwtClaims`, `getTokenExpiryEpochSeconds`, `shouldRefreshToken`)
 - Lines 112-170: Credential CRUD (`getCredentialsPath`, `saveCredentials`, `loadCredentials`, `deleteCredentials`)
 - Lines 173-196: `validateAccessToken()` + `refreshAccessToken()` — API calls to `/auth/validate` and `/auth/refresh`
-- Lines 198-250: `performTokenRefresh()` — Full refresh: call API, save new token, re-validate, update user metadata
-- Lines 252-304: `ensureValidCredentials()` — Entry point for auth guard: proactive refresh (5-min buffer) -> validate -> fallback refresh
+- Lines 410-436: `refreshProviderHint()` + `refreshAccessToken()` — omit `provider=google` for app JWTs
+- Lines 438-454: `isAuthFailure()` / `abortOnAuthFailure()` — stop wake polls on 401/403
+- Lines 456-541: `performTokenRefresh()` — Full refresh: call API, save new token to profile or credentials.json, re-validate
+- Lines 543-608: `ensureValidCredentials()` — Entry point for auth guard: proactive refresh (5-min buffer) -> validate -> fallback refresh
 - Lines 306-324: `fetchMyAgents()` — GET `/agent/my-agents`
 - Lines 326-369: `displayAccountSummary()` — Print auth status + agent list
 
@@ -1826,9 +1829,9 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Key functions:**
 
-- `ensureValidCredentials()` (lines 125-256): Auto-refresh flow
-- `refreshAccessToken()` (lines 68-99): Token refresh logic
-- `validateAccessToken()` (lines 35-66): Token validation
+- `ensureValidCredentials()` (lines 543-608): Auto-refresh flow
+- `refreshAccessToken()` (lines 423-436): Token refresh logic; omits google provider hint for app JWTs
+- `abortOnAuthFailure()` (lines 448-454): Wake loops stop on 401/403
 
 **Impact:** Cloud features depend on this working correctly
 

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { loadCredentials } = require('../utils/auth');
+const { loadCredentials, abortOnAuthFailure } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { findAllMembers } = require('./member');
 const { loadConfig } = require('../utils/config');
@@ -358,15 +358,18 @@ async function pullBusiness(slug) {
   const autoWake = process.argv.includes('--auto-wake');
   if (autoWake) {
     const statusResult = await apiRequestJson(`/business/${businessId}/ai-computer/status`, { method: 'GET', token: creds.token });
+    abortOnAuthFailure(statusResult);
     const computerStatus = statusResult.ok && statusResult.data ? statusResult.data.status : 'unknown';
     if (computerStatus !== 'running' || !(statusResult.data && statusResult.data.endpoint)) {
       process.stdout.write('  Waking EC2 computer... ');
       _coldWake = true;
-      await apiRequestJson(`/business/${businessId}/ai-computer/wake`, { method: 'POST', token: creds.token });
+      const wake = await apiRequestJson(`/business/${businessId}/ai-computer/wake`, { method: 'POST', token: creds.token });
+      abortOnAuthFailure(wake, true);
       const wakeStart = Date.now();
       while (Date.now() - wakeStart < 90000) {
         await new Promise((r) => setTimeout(r, 3000));
         const s = await apiRequestJson(`/business/${businessId}/ai-computer/status`, { method: 'GET', token: creds.token });
+        abortOnAuthFailure(s, true);
         if (s.ok && s.data && s.data.status === 'running' && s.data.endpoint) {
           const elapsed = Math.floor((Date.now() - wakeStart) / 1000);
           console.log(`awake (${elapsed}s)`);

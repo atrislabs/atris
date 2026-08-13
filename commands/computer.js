@@ -22,7 +22,7 @@ const os = require('os');
 const path = require('path');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
-const { loadCredentials, decodeJwtClaims, promptUser } = require('../utils/auth');
+const { loadCredentials, decodeJwtClaims, promptUser, abortOnAuthFailure } = require('../utils/auth');
 const { apiRequestJson, getApiBaseUrl, getAppBaseUrl } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
 const {
@@ -2258,15 +2258,18 @@ async function runBusinessPromptViaRunnerProxy(token, ctx, prompt, options = {})
 
 async function ensureBusinessAwake(token, ctx, maxWaitSec = 90, options = {}) {
   const status = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/status`, { method: 'GET', token });
+  abortOnAuthFailure(status);
   if (status.ok && status.data && status.data.status === 'running' && status.data.endpoint) {
     return true;
   }
   if (!options.quiet) process.stdout.write('  Waking business computer... ');
-  await apiRequestJson(`/business/${ctx.businessId}/ai-computer/wake`, { method: 'POST', token, body: {} });
+  const wake = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/wake`, { method: 'POST', token, body: {} });
+  abortOnAuthFailure(wake, !options.quiet);
   const start = Date.now();
   while (Date.now() - start < maxWaitSec * 1000) {
     await sleep(3000);
     const next = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/status`, { method: 'GET', token });
+    abortOnAuthFailure(next, !options.quiet);
     if (next.ok && next.data && next.data.status === 'running' && next.data.endpoint) {
       const elapsed = Math.floor((Date.now() - start) / 1000);
       if (!options.quiet) console.log(`awake (${elapsed}s)`);
