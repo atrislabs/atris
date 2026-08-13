@@ -25,6 +25,12 @@ Use `atris task` when available. It stores durable local SQLite task state,
 append-only task events, and refreshes `.atris/state/tasks.projection.json` for
 desktop/web/agent views.
 
+Every task view leads with what changes, why it matters, and what done looks
+like in plain words. Exact titles, requirements, sources, commands, events,
+proof, and approval rules remain underneath unchanged. Planned work uses the
+existing approve-or-change path; completed work still needs the existing proof
+and human acceptance gates.
+
 `atris/TODO.md` is the readable fallback/projection. It can be rebuilt with
 `atris task render --out atris/TODO.md`; do not rely on manual TODO.md edits for
 ownership. In cloud business workspaces, Supabase `tasks` is the source of truth

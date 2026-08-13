@@ -732,6 +732,12 @@ Every agent should leave four artifacts another agent can trust:
 | Proof ready | \`atris task ready <id> --proof "<commands or receipt>" --result "<day-one PM sentence>"\` |
 | Human accept | \`atris task accept <id>\` |
 
+Every created task leads with three plain fields: what changes, why it matters,
+and what done looks like. Keep the exact title, files, commands, constraints,
+events, and proof underneath unchanged. Planned work offers approve or ask for
+a change through the existing Plan/Do gates; finished work uses the existing
+accept/revise gates and never skips proof.
+
 Do not rely on chat context. Put the task, file pointers, and proof on disk.
 Do not write new operating doctrine here first; add it to Atris policy, skills,
 wiki, or \`atris/atris.md\`, then regenerate this adapter if needed.
@@ -758,7 +764,8 @@ Human accept      -> task Done + AgentXP awarded
 \`\`\`
 
 Always-on agents should move proof-backed work to Review, complete their native
-goal, then continue the mission loop with the next goal. They must not run
+goal, then stop that task. The next goal or recurring monitor starts in a new
+dedicated task. They must not run
 \`atris task accept\` or claim AgentXP unless a human approved the proof.
 
 Mission-shaped user intent wins before normal task selection. If the user

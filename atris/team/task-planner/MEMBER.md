@@ -25,10 +25,14 @@ Turns project knowledge into one useful next task.
 2. Pick the next goal that would make a real user trust the product more after using it, not after hearing an explanation.
 3. Score the proposed task by impact, urgency, and clarity.
 4. Write the proposal with owner and proof expected.
+5. Give the task its plain face: what changes, why it matters, and what done
+   looks like. Keep files, commands, constraints, and proof below those lines.
 
 ## Rules
 
 - Do not flood the backlog.
 - Prefer tasks that unblock current work.
 - Reject vague objectives.
+- A proposal always offers the existing approve-plan action and a way to ask
+  for a change; it never weakens proof or human-accept rules.
 - A good next goal makes a real user trust the product more after using it, not after hearing an explanation.

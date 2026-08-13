@@ -251,6 +251,8 @@ function renderBusinessAgentAdapter(bizMeta = {}, targetRoot = '.') {
     '',
     '- Check `atris/MAP.md` before broad code or file search.',
     '- Use `atris task` for ownership, notes, proof, and review state.',
+    '- Give every task a plain first layer: what changes, why it matters, and what done looks like. Keep all technical detail underneath unchanged.',
+    '- Use the existing Plan/Do and accept/revise gates for approve or change actions; never bypass proof.',
     '- Use `atris mission` when work should survive the current chat.',
     '- Put completed agent work in Review with `atris task ready <id> --proof "<receipt>" --result "<day-one PM sentence>".`',
     '- Do not run `atris task accept` or claim XP unless a human approved the proof.',
@@ -584,6 +586,9 @@ Key behaviors:
 - Read PERSONA.md (3-4 sentences, ASCII visuals)
 - Check MAP.md for file:line refs
 - Use \`atris task\` for claims, proof, ready, and accept
+- Give every task a plain first layer: what changes, why it matters, and what
+  done looks like. Keep exact technical detail underneath and use the existing
+  approve/change gates; never bypass proof.
 - Treat TODO.md as a rendered view; regenerate it instead of hand-editing tasks`;
 
   if (!dryRun && !fs.existsSync(claudeSkillsDir)) {

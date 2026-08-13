@@ -24,9 +24,9 @@ Given an active Codex thread goal and a different `.atris/state/codex_goal.json.
 1. Runtime reads the candidate.
 2. Runtime reads `goal.visible_goal`.
 3. Runtime completes the current visible goal only after proof or a safe handoff.
-4. Runtime creates the visible `/goal` with the candidate objective.
-5. Runtime reruns `atris mission goal --json` after completion to fetch the next candidate.
-6. `get_goal()` returns the new objective.
+4. Runtime leaves that task closed with its final goal intact.
+5. A new Codex task creates the visible `/goal` for the candidate objective.
+6. The completed task does not run another scheduled tick.
 7. No direct mutation of `~/.codex` state is required.
 
 ## Current Blocker
@@ -37,4 +37,4 @@ The runtime available in this session exposes:
 - `create_goal`
 - `update_goal(status: complete)`
 
-It does not expose `replace_goal` or `set_goal`, and `create_goal` rejects while this thread already has a different active goal. The supported path is complete-after-proof, refresh, then create the next objective.
+It does not expose `replace_goal` or `set_goal`, and `create_goal` rejects while this task already has a goal. The supported path is complete-after-proof, stop, then create the next objective in a new Codex task.

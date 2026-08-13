@@ -139,7 +139,10 @@ Core loop:
 
 ```bash
 atris task list
-atris task delegate "<title>" --to <functional-member> --tag <tag>
+atris task delegate "<title>" --to <functional-member> --tag <tag> \
+  --what-changes "<plain change>" \
+  --why-it-matters "<plain reason>" \
+  --done-looks-like "<observable finish>"
 atris task delegate "<title>" --to <functional-member> --executed-by <engine> --via swarlo --tag <tag>
 atris task day
 atris task next
@@ -163,6 +166,9 @@ task row/event stream remains the durable source of truth.
 Every task record should carry:
 
 ```
+What changes: <plain sentence a new teammate understands>
+Why it matters: <plain human or business reason>
+Done looks like: <observable finish, without command syntax>
 Title: <small work packet>
 Owner: <functional or feature member, not an engine>
 Objective: <why this matters>
@@ -171,6 +177,17 @@ Exit: <observable done condition>
 Verify: <shell command or concrete proof>
 Next: <suggested follow-up task>
 ```
+
+The three plain fields are the default face on every task view. The exact
+title, context, requirements, files, events, proof, and verifier stay beneath
+them unchanged and inspectable. If a creator omits a plain field, the shared
+task model derives an honest fallback from the existing task and says when no
+reason was recorded; it never invents a benefit.
+
+A planned task shows two clear actions: approve the complete plan through the
+existing Plan -> Do gate, or ask for a change. Completed work shows approve
+only when the existing proof and human-accept gates allow it, plus revise for
+requested changes. The plain layer never bypasses a verifier or approval rule.
 
 Task planning preview and landing:
 
