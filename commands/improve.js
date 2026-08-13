@@ -918,10 +918,15 @@ function formatImproveReport(result = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// atris improve revisions — the gauge for the north-star metric:
-// operator revisions after landing = 0. an agent landing is a commit carrying
-// the atris co-author trailer (atris-builder[bot]); if a human commit touches
-// any of the same files within 72 hours, that landing failed the guarantee.
+// atris improve revisions: the gauge for the north-star metric:
+// operator revisions after landing = 0. an agent landing is a commit whose
+// Co-authored-by trailer matches a known agent signature (atris-builder[bot],
+// claude, cursor, codex, chatgpt, openai), case-insensitive, and only on
+// those trailer lines. commits with no trailer still count as human, so the
+// metric overcounts revisions; accepted on purpose.
+//
+// if a human commit touches any of the same files within 72 hours, that
+// landing failed the guarantee.
 //
 // renames are NOT followed: `git log --follow` is per-file and would cost one
 // subprocess per file per landing, so a post-landing rename reads as "no
@@ -930,8 +935,25 @@ function formatImproveReport(result = {}) {
 const REVISIONS_SCHEMA = 'atris.improve_revisions.v1';
 const REVISION_WINDOW_HOURS = 72;
 const REVISION_WINDOW_MS = REVISION_WINDOW_HOURS * 60 * 60 * 1000;
-const AGENT_TRAILER_MARKER = 'atris-builder[bot]';
+const AGENT_TRAILER_MARKERS = [
+  'atris-builder[bot]',
+  'claude',
+  'cursor',
+  'codex',
+  'chatgpt',
+  'openai',
+];
 const DEFAULT_REVISIONS_DAYS = 14;
+
+function isAgentCommitBody(body) {
+  const markers = AGENT_TRAILER_MARKERS.map((m) => m.toLowerCase());
+  for (const line of String(body || '').split(/\r?\n/)) {
+    if (!/^\s*co-authored-by\s*:/i.test(line)) continue;
+    const lower = line.toLowerCase();
+    if (markers.some((m) => lower.includes(m))) return true;
+  }
+  return false;
+}
 
 function parseRevisionsArgs(argv = []) {
   const args = Array.isArray(argv) ? argv : [];
@@ -999,7 +1021,7 @@ function collectRevisionSignals(root, options = {}) {
         at: String(at || '').trim(),
         ms: timestampMs(at),
         subject: String(subject || '').trim(),
-        isAgent: String(body || '').includes(AGENT_TRAILER_MARKER),
+        isAgent: isAgentCommitBody(body),
       };
     })
     .filter((c) => c.hash && c.ms != null);
@@ -1350,6 +1372,7 @@ module.exports = {
   runLoopDoctor,
   collectRevisionSignals,
   formatRevisionsReport,
+  isAgentCommitBody,
   runLocalFallback,
   summarizeLocalMissionRun,
   LOCAL_FALLBACK_ARGS,
