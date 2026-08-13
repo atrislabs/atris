@@ -10,7 +10,12 @@ const { spawnSync } = require('node:child_process');
 const taskDb = require('../lib/task-db');
 const { parseTodoFile } = require('../lib/todo-fallback');
 const {
+  EXPLANATION_FIELDS,
+  EXPLANATION_LABELS,
+  NO_REASON_RECORDED,
+  plainText,
   taskExplanation,
+  explanationMarkdownLines,
 } = require('../lib/task-explanation');
 const {
   enrichTaskProjection,
@@ -48,6 +53,26 @@ function runTaskCli(root, dbPath, args) {
     encoding: 'utf8',
   });
 }
+
+test('task explanation exports one stable public contract', () => {
+  assert.deepEqual(EXPLANATION_FIELDS, ['what_changes', 'why_it_matters', 'done_looks_like']);
+  assert.deepEqual(EXPLANATION_LABELS, {
+    what_changes: 'What changes',
+    why_it_matters: 'Why it matters',
+    done_looks_like: 'Done looks like',
+  });
+  assert.equal(NO_REASON_RECORDED, 'No reason recorded yet.');
+  assert.equal(plainText('canonical_schema CLI-88 uses --raw-mode'), 'main data format uses raw mode');
+  assert.deepEqual(explanationMarkdownLines({
+    what_changes: 'The plain summary leads.',
+    why_it_matters: NO_REASON_RECORDED,
+    done_looks_like: 'The exact record stays available.',
+  }), [
+    '  **What changes:** The plain summary leads.',
+    '  **Why it matters:** No reason recorded yet.',
+    '  **Done looks like:** The exact record stays available.',
+  ]);
+});
 
 test('central task creation stores a plain face without changing full-fidelity task data', () => {
   const root = tempWorkspace();

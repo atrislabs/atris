@@ -7106,8 +7106,10 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
 
     const open = runCli(['task', 'list'], { cwd: dir, env });
     assert.equal(open.status, 0, open.stderr);
+    assert.match(open.stdout, /^What changes: Ship task plane\./);
     assert.match(open.stdout, new RegExp(`open\\s+${ref}`));
-    assert.match(open.stdout, /#launch\s+Ship task plane/);
+    assert.match(open.stdout, new RegExp(`open\\s+${ref}\\s+#launch`));
+    assert.match(open.stdout, new RegExp(`Technical details: atris task show ${ref}`));
 
     const claim = runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env });
     assert.equal(claim.status, 0, claim.stderr);
@@ -7348,8 +7350,9 @@ test('task render preserves Endgame metadata and drops markdown-only rows', () =
     assert.match(regenerated, /## Endgame/);
     assert.match(regenerated, /\*\*Slug:\*\* renderer-horizon/);
     assert.doesNotMatch(regenerated, /Keep markdown horizon|Pending human approval|horizon\.txt|approval\.txt/);
-    assert.match(regenerated, /DB state task \[agent\]/);
-    assert.match(regenerated, new RegExp(`\\*\\*\\[${createdTask.display_id}\\]\\*\\* DB state task`));
+    assert.match(regenerated, /DB state task\. \[agent\]/);
+    assert.match(regenerated, new RegExp(`\\*\\*\\[${createdTask.display_id}\\]\\*\\* DB state task\\. \\[agent\\]`));
+    assert.match(regenerated, /\*\*Technical details:\*\* DB state task/);
     const showByRenderedRef = runCli(['task', 'show', createdTask.display_id, '--json'], { cwd: dir, env });
     assert.equal(showByRenderedRef.status, 0, showByRenderedRef.stderr);
     assert.equal(JSON.parse(showByRenderedRef.stdout).id, createdTask.id);
@@ -7360,7 +7363,9 @@ test('task render preserves Endgame metadata and drops markdown-only rows', () =
     assert.equal((second.match(/## Endgame/g) || []).length, 1);
     assert.equal((second.match(/Keep markdown horizon/g) || []).length, 0);
     assert.equal((second.match(/Pending human approval/g) || []).length, 0);
-    assert.equal((second.match(/DB state task/g) || []).length, 1);
+    assert.equal((second.match(/DB state task/g) || []).length, 2);
+    assert.match(second, new RegExp(`\\*\\*\\[${createdTask.display_id}\\]\\*\\* DB state task\\. \\[agent\\]`));
+    assert.match(second, /\*\*Technical details:\*\* DB state task/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -7403,7 +7408,8 @@ test('task render drops stale generated markdown rows for DB-backed tasks', () =
     const legacyRender = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
     assert.equal(legacyRender.status, 0, legacyRender.stderr);
     const legacy = fs.readFileSync(todoPath, 'utf8');
-    assert.match(legacy, /Legacy migration row \[agent-xp\]/);
+    assert.match(legacy, /Legacy migration row\. \[agent-xp\]/);
+    assert.match(legacy, /\*\*Technical details:\*\* Legacy migration row/);
     assert.equal((legacy.match(new RegExp(`\\*\\*\\[${ref}\\]\\*\\* Move review work forward`, 'g')) || []).length, 1);
     assert.doesNotMatch(legacy, new RegExp(`## In Progress\\n\\n- \\*\\*\\[${ref}\\]\\*\\* Move review work forward`));
 
@@ -7415,7 +7421,8 @@ test('task render drops stale generated markdown rows for DB-backed tasks', () =
     assert.match(generated, /## Backlog\n\n\(Empty\)/);
     assert.doesNotMatch(generated, /Legacy migration row/);
     assert.equal((generated.match(new RegExp(`\\*\\*\\[${ref}\\]\\*\\* Move review work forward`, 'g')) || []).length, 1);
-    assert.match(generated, new RegExp(`## Review\\n\\n- \\*\\*\\[${ref}\\]\\*\\* Move review work forward \\[task-plane\\]`));
+    assert.match(generated, new RegExp(`## Review\\n\\n- \\*\\*\\[${ref}\\]\\*\\* Move review work forward\\. \\[task-plane\\]`));
+    assert.match(generated, /\*\*Technical details:\*\* Move review work forward/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -7483,12 +7490,16 @@ test('task display refs stay stable in filtered list views', () => {
 
     const open = runCli(['task', 'list', '--status', 'open'], { cwd: dir, env });
     assert.equal(open.status, 0, open.stderr);
-    assert.match(open.stdout, new RegExp(`open\\s+${current.task.display_id}\\s+Current open task`));
-    assert.doesNotMatch(open.stdout, new RegExp(`open\\s+${older.task.display_id}\\s+Current open task`));
+    assert.match(open.stdout, /^What changes: Current open task\./);
+    assert.match(open.stdout, new RegExp(`open\\s+${current.task.display_id}`));
+    assert.match(open.stdout, new RegExp(`Technical details: atris task show ${current.task.display_id}`));
+    assert.doesNotMatch(open.stdout, new RegExp(older.task.display_id));
 
     const done = runCli(['task', 'list', '--status', 'done'], { cwd: dir, env });
     assert.equal(done.status, 0, done.stderr);
-    assert.match(done.stdout, new RegExp(`done\\s+${older.task.display_id}\\s+Older closed task`));
+    assert.match(done.stdout, /^What changes: Older closed task\./);
+    assert.match(done.stdout, new RegExp(`done\\s+${older.task.display_id}`));
+    assert.match(done.stdout, new RegExp(`Technical details: atris task show ${older.task.display_id}`));
 
     const openJson = runCli(['task', 'list', '--status', 'open', '--json'], { cwd: dir, env });
     assert.equal(openJson.status, 0, openJson.stderr);
