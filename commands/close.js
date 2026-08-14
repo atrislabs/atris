@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { knownCommands } = require('../lib/known-commands');
 const { readUsage, usagePath } = require('../lib/usage');
 const pulse = require('../lib/pulse');
@@ -16,6 +17,12 @@ const EXPERIMENTS_RELATIVE_PATH = path.join('.atris', 'state', 'experiments.json
 const EXPERIMENTS_DIR_RELATIVE_PATH = path.join('atris', 'experiments');
 const RESOLVED_IN_SOURCE_PROOF = 'resolved in source store';
 const FAILED_TASK_BATCH_PREFIX = 'tasks:failed:';
+// Live-probe incidents: a diagnosis may only be recorded alongside a command
+// that fails right now, and may only close after that command passes twice
+// with a real gap between runs (catches the bug that comes back hours later).
+const PROBE_TIMEOUT_MS = 60 * 1000;
+const PROBE_HOLD_GAP_MS = 60 * 60 * 1000;
+const PROBE_STOP_AFTER_FAILED_CHECKS = 2;
 
 function ledgerPath(cwd = process.cwd()) {
   return path.join(cwd, LEDGER_RELATIVE_PATH);
@@ -111,6 +118,8 @@ function foldEvents(events, options = {}) {
         ttl_days: Number(event.ttl_days) || 7,
         close_condition: normalizeSpaces(event.close_condition || 'the loop is resolved'),
         source: normalizeSpaces(event.source || 'manual'),
+        probe: normalizeSpaces(event.probe || '') || null,
+        probe_runs: [],
         status: 'open',
         closed_at: null,
         dissolved_at: null,
@@ -138,6 +147,12 @@ function foldEvents(events, options = {}) {
     } else if (event.kind === 'escalated') {
       const day = event.day || (event.at ? String(event.at).slice(0, 10) : null);
       if (day && !flag.escalated_days.includes(day)) flag.escalated_days.push(day);
+    } else if (event.kind === 'probed') {
+      flag.probe_runs.push({
+        at: eventTime(event),
+        pass: !!event.pass,
+        exit_code: Number.isFinite(event.exit_code) ? event.exit_code : null,
+      });
     }
   }
 
@@ -161,7 +176,47 @@ function withComputedState(flag, now = new Date()) {
     days_old: daysOld,
     days_past_ttl: daysPastTtl,
     overdue,
+    ...probeState(flag),
   };
+}
+
+// Probe state from recorded runs. 'failing' until a check passes, 'passed
+// once' until a second pass lands PROBE_HOLD_GAP_MS later, then 'holding'
+// (eligible to close). failed_checks counts re-checks that still failed:
+// each one is a fix attempt that did not move reality.
+function probeState(flag) {
+  if (!flag.probe) {
+    return { probe_status: null, failed_checks: 0, probe_holding: false };
+  }
+  const runs = flag.probe_runs || [];
+  const failedChecks = runs.filter((run) => !run.pass).length;
+
+  const trailing = [];
+  for (let index = runs.length - 1; index >= 0 && runs[index].pass; index -= 1) {
+    trailing.unshift(runs[index]);
+  }
+
+  let status = 'failing';
+  let holding = false;
+  if (trailing.length >= 1) {
+    const firstMs = parseDate(trailing[0].at) || 0;
+    const lastMs = parseDate(trailing[trailing.length - 1].at) || 0;
+    holding = trailing.length >= 2 && lastMs - firstMs >= PROBE_HOLD_GAP_MS;
+    status = holding ? 'holding' : 'passed once';
+  }
+  return { probe_status: status, failed_checks: failedChecks, probe_holding: holding };
+}
+
+function runProbe(command, context = {}) {
+  const result = spawnSync(command, {
+    shell: true,
+    cwd: context.cwd || process.cwd(),
+    timeout: PROBE_TIMEOUT_MS,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    encoding: 'utf8',
+  });
+  const exitCode = typeof result.status === 'number' ? result.status : 1;
+  return { pass: exitCode === 0, exit_code: exitCode };
 }
 
 function openFlags(cwd = process.cwd(), options = {}) {
@@ -202,6 +257,7 @@ function listLine(flag) {
     flag.what.toLowerCase(),
     `${formatDays(flag.days_old)} old`,
   ];
+  if (flag.probe) parts.push(`probe ${flag.probe_status}`);
   if (flag.overdue) {
     parts.push(`${formatDays(flag.days_past_ttl)} past ttl`);
   }
@@ -269,10 +325,11 @@ function publicFlag(flag) {
 }
 
 function printHelp() {
-  console.log('usage: atris close <add|list|done|dissolve|snooze|sweep|scan>');
-  console.log('add "<what>" [--owner x] [--lane life|business|code] [--ttl 7] [--when "<condition>"] [--source y]');
+  console.log('usage: atris close <add|list|done|dissolve|snooze|sweep|scan|check>');
+  console.log('add "<what>" [--owner x] [--lane life|business|code] [--ttl 7] [--when "<condition>"] [--source y] [--probe "<cmd that fails now>"]');
   console.log('list [--json] [--lane x]');
-  console.log('done <id> [--proof "..."]');
+  console.log('done <id> [--proof "..."]  (a probed incident closes only after its probe holds)');
+  console.log('check [id] [--json]  (run live probes; failing probe = old theory still live)');
   console.log('dissolve <id> --why "..."');
   console.log('snooze <id> --days n');
   console.log('sweep [--json]');
@@ -295,6 +352,20 @@ function commandAdd(args, context = {}) {
     return 0;
   }
 
+  // A probe turns the flag into a live incident: the claim in `what` is only
+  // recordable while the probe command fails. A passing probe means there is
+  // nothing to diagnose, so refuse instead of storing a story.
+  if (options.probe === true) throw new Error('--probe needs a command');
+  const probe = normalizeSpaces(options.probe || '');
+  let probeExit = null;
+  if (probe) {
+    const result = (context.runProbe || runProbe)(probe, context);
+    if (result.pass) {
+      throw new Error('probe passes right now; an incident needs a command that currently fails. fix the probe or drop --probe');
+    }
+    probeExit = result.exit_code;
+  }
+
   const openedAt = now.toISOString();
   const event = {
     kind: 'opened',
@@ -308,9 +379,86 @@ function commandAdd(args, context = {}) {
     close_condition: normalizeSpaces(options.when || 'the loop is resolved'),
     source: normalizeSpaces(options.source || 'manual'),
   };
+  if (probe) event.probe = probe;
   appendEvent(event, context.cwd);
-  console.log(`opened ${event.id}`);
+  if (probe) {
+    console.log(`opened ${event.id}, probe failing as required (exit ${probeExit})`);
+  } else {
+    console.log(`opened ${event.id}`);
+  }
   return 0;
+}
+
+// atris close check [id] — run the live probes on open incidents. This is the
+// first move for any session entering an area: if a probe still fails, the
+// recorded theory is still live; do not diagnose fresh. After
+// PROBE_STOP_AFTER_FAILED_CHECKS failing re-checks the verdict is automatic:
+// stop and tell the human.
+function commandCheck(args, context = {}) {
+  const { positional, options } = parseArgs(args);
+  const id = positional[0] || null;
+  const now = context.now ? new Date(context.now) : new Date();
+
+  let flags = openFlags(context.cwd, { now }).filter((flag) => flag.probe);
+  if (id) {
+    flags = flags.filter((flag) => flag.id === id);
+    if (flags.length === 0) throw new Error(`${id} is not an open incident with a probe`);
+  }
+  if (flags.length === 0) {
+    console.log('no open incidents with probes.');
+    return 0;
+  }
+
+  const results = [];
+  for (const flag of flags) {
+    const run = (context.runProbe || runProbe)(flag.probe, context);
+    appendEvent({
+      kind: 'probed',
+      at: now.toISOString(),
+      id: flag.id,
+      pass: run.pass,
+      exit_code: run.exit_code,
+    }, context.cwd);
+    results.push({ id: flag.id, what: flag.what, ...run });
+  }
+
+  const after = new Map(
+    openFlags(context.cwd, { now }).map((flag) => [flag.id, flag])
+  );
+
+  if (options.json) {
+    printJson({
+      checked: results.map((result) => {
+        const flag = after.get(result.id);
+        return {
+          ...result,
+          probe_status: flag ? flag.probe_status : null,
+          failed_checks: flag ? flag.failed_checks : null,
+        };
+      }),
+    });
+    return 0;
+  }
+
+  let anyFailing = false;
+  for (const result of results) {
+    const flag = after.get(result.id);
+    if (result.pass) {
+      if (flag && flag.probe_holding) {
+        console.log(`${result.id}: probe held. close it: atris close done ${result.id}`);
+      } else {
+        console.log(`${result.id}: probe passed once. re-check in an hour to confirm it holds.`);
+      }
+      continue;
+    }
+    anyFailing = true;
+    const failedChecks = flag ? flag.failed_checks : 0;
+    console.log(`${result.id}: probe still failing (exit ${result.exit_code}). the recorded theory is still live.`);
+    if (failedChecks >= PROBE_STOP_AFTER_FAILED_CHECKS) {
+      console.log(`${result.id}: ${failedChecks} fix attempts have not moved the probe. stop and tell the human.`);
+    }
+  }
+  return anyFailing ? 1 : 0;
 }
 
 function commandList(args, context = {}) {
@@ -346,13 +494,25 @@ function commandDone(args, context = {}) {
   const { positional, options } = parseArgs(args);
   const id = positional[0];
   if (!id) throw new Error('id is required');
-  requireOpenFlag(id, context);
+  const flag = requireOpenFlag(id, context);
+
+  // An incident with a live probe closes on held evidence, not on a claim:
+  // the probe must pass twice, an hour apart, so the storm that returns
+  // hours later cannot be marked solved in the same breath as the fix.
+  if (flag.probe && !flag.probe_holding) {
+    if (flag.probe_status === 'failing') {
+      throw new Error(`probe still fails; run the fix, then: atris close check ${id}`);
+    }
+    throw new Error(`probe passed once; confirm it holds with atris close check ${id} at least an hour after the first pass`);
+  }
+
   const at = (context.now ? new Date(context.now) : new Date()).toISOString();
+  const defaultProof = flag.probe ? `probe held: ${flag.probe}` : '';
   appendEvent({
     kind: 'closed',
     at,
     id,
-    proof: normalizeSpaces(options.proof || ''),
+    proof: normalizeSpaces(options.proof || defaultProof),
   }, context.cwd);
   console.log(`closed ${id}`);
   return 0;
@@ -1097,6 +1257,7 @@ function run(args = [], context = {}) {
     if (subcommand === 'snooze') return commandSnooze(rest, context);
     if (subcommand === 'sweep') return commandSweep(rest, context);
     if (subcommand === 'scan') return commandScan(rest, context);
+    if (subcommand === 'check') return commandCheck(rest, context);
     console.error(`unknown close command: ${subcommand}`);
     return 2;
   } catch (error) {
