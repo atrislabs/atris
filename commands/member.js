@@ -7288,6 +7288,7 @@ function composeWakeDecision(ctx, verdict) {
     state: ctx.state,
     goal: verdict.goal,
     current_experiment: verdict.current_experiment,
+    now_file: ctx.nowFile,
   };
   if ('autonomous_problem' in verdict) result.autonomous_problem = verdict.autonomous_problem;
   result.checks = ctx.checks;
@@ -7471,6 +7472,11 @@ const WAKE_DECISION_RULES = [
 
 function wakeDecision(name, paths, { force = false, runtimeKind = memberRuntimeKind(name) } = {}) {
   const purpose = missionPurpose(paths);
+  const nowPath = path.join(paths.memberDir, 'now.md');
+  const nowFile = fs.existsSync(nowPath) ? {
+    path: path.relative(process.cwd(), nowPath),
+    excerpt: String(purpose.nowText || '').slice(0, 500),
+  } : null;
   const steering = readSteeringMemory(paths, name);
   const state = loadMemberGoals(name, paths);
   const goal = activeGoal(state);
@@ -7519,7 +7525,7 @@ function wakeDecision(name, paths, { force = false, runtimeKind = memberRuntimeK
     next_command: wakeScores.selected.next_command,
   } : null;
 
-  const ctx = { name, force, purpose, steering, state, goal, current, blocked, evidence, workspace, checks, wakeScores };
+  const ctx = { name, force, purpose, nowFile, steering, state, goal, current, blocked, evidence, workspace, checks, wakeScores };
   for (const rule of WAKE_DECISION_RULES) {
     const verdict = rule(ctx);
     if (verdict) return composeWakeDecision(ctx, verdict);
@@ -7624,6 +7630,11 @@ async function runMemberWake(name, { execute = false, confirmed = false, force =
     nextCommand = `atris member review ${name} ${experiment.id} --accept --proof "..." --value 4`;
   }
 
+  const goals = (state.goals || []).map((item) => ({
+    id: item.id || null,
+    title: item.title || null,
+    status: item.status || null,
+  }));
   const receiptPayload = {
     schema: 'atris.member_wake.v1',
     created_at: now,
@@ -7636,6 +7647,8 @@ async function runMemberWake(name, { execute = false, confirmed = false, force =
     ask: planned.ask || null,
     next_command: nextCommand,
     mission: planned.mission,
+    now_file: planned.now_file,
+    goals,
     steering: planned.steering,
     evidence: planned.evidence,
     checks: planned.checks,
@@ -7692,6 +7705,8 @@ async function runMemberWake(name, { execute = false, confirmed = false, force =
     ask: planned.ask || null,
     next_command: nextCommand,
     mission: planned.mission,
+    now_file: planned.now_file,
+    goals,
     steering: planned.steering,
     evidence: planned.evidence,
     checks: planned.checks,

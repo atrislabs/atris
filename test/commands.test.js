@@ -1530,10 +1530,19 @@ test('member wake returns one finite decision and refuses to pile onto open work
     assert.equal(dryRunPayload.decision, 'tick');
     assert.equal(dryRunPayload.executed, false);
     assert.match(dryRunPayload.next_command, new RegExp(`member tick mission-lead --goal ${goalPayload.goal.id}`));
+    assert.equal(dryRunPayload.now_file.path, 'atris/team/mission-lead/now.md');
+    assert.match(dryRunPayload.now_file.excerpt, /Make Missions wake up safely/);
+    assert.deepEqual(dryRunPayload.goals, [{
+      id: goalPayload.goal.id,
+      title: goalPayload.goal.title,
+      status: goalPayload.goal.status,
+    }]);
     assert.ok(fs.existsSync(dryRunPayload.receipt_path));
     const dryReceipt = JSON.parse(fs.readFileSync(dryRunPayload.receipt_path, 'utf8'));
     assert.equal(dryReceipt.schema, 'atris.member_wake.v1');
     assert.equal(dryReceipt.decision, 'tick');
+    assert.deepEqual(dryReceipt.now_file, dryRunPayload.now_file);
+    assert.deepEqual(dryReceipt.goals, dryRunPayload.goals);
 
     const refused = runCli(['member', 'wake', 'mission-lead', '--execute', '--json'], { cwd: dir });
     assert.equal(refused.status, 0, refused.stderr || refused.stdout);
