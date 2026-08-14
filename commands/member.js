@@ -8987,6 +8987,25 @@ async function memberImprovements(businessId, ...args) {
 
 // --- Command Dispatcher ---
 
+async function memberChat(name, ...rest) {
+  const paths = requireMemberDir(name);
+  const flags = rest.filter((a) => String(a).startsWith('--'));
+  const words = rest.filter((a) => !String(a).startsWith('--'));
+  const fromFlag = flags.find((f) => f.startsWith('--from='));
+  const from = fromFlag ? fromFlag.slice('--from='.length) : (process.env.USER || 'terminal');
+  const text = words.join(' ').trim();
+  if (!text) {
+    console.error('Usage: atris member chat <name> "your message" [--from=<sender>]');
+    process.exit(1);
+  }
+  // Append-only inbox the Atris desktop polls into the member's desk chat.
+  // Contract shared with obelisk src/lib/memberChatInbox.cjs: one JSON object per line.
+  const line = JSON.stringify({ at: new Date().toISOString(), from, text });
+  fs.appendFileSync(path.join(paths.memberDir, 'chat-inbox.jsonl'), `${line}\n`, 'utf8');
+  console.log(`Sent to ${paths.storageName || name}'s desk. It appears in Atris Desktop within about 15 seconds when the app is open.`);
+  return { ok: true };
+}
+
 async function memberCommand(subcommand, ...args) {
   // Subcommands that take a member name as args[0] otherwise treat `--help` as
   // a name and error with "Member '--help' not found". `create`/`new` handle
@@ -9018,6 +9037,8 @@ async function memberCommand(subcommand, ...args) {
     case 'goal-from-score':
     case 'score-goal':
       return memberGoalFromScore(args[0], ...args.slice(1));
+    case 'chat':
+      return memberChat(args[0], ...args.slice(1));
     case 'tick':
       return memberTick(args[0], ...args.slice(1));
     case 'wake':
@@ -9061,6 +9082,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('');
       console.log('Subcommands:');
       console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
+      console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
       console.log('  list                Show all team members');
       console.log('  activate <name>     Symlink member skills, show context and permissions');
       console.log('  upgrade <name>      Convert flat file (name.md) to directory format');
