@@ -67,4 +67,5 @@ One lesson format. Boot reads it in one place, writes it in one place — no amb
 - 2026-07-07T10:17:10.674Z - Create Deterministic Code Mission Room: create deterministic code scripts for tasks llms are often asked to do, so a cheaper llm can just run the script
 - 2026-07-07T10:17:11.252Z - Good Results Instead Mission Room: get good results instead of generating from scratch
 - 2026-07-07T10:19:50.260Z - Each Test 07 Mission Room: say mission-2026-07-07-create-deterministic-code-sc-bae71e09 concrete targets: build scripts under scripts/ or lib/ that replace common llm generation with deterministic code,...
+- 2026-08-10T22:17:23.968Z - Proof Keep Improving Mission Room: Keep improving the Atris mimic and remix one verified design slice at a time, preserving fidelity proof and reopening each upgrade
 <!-- ATRIS_MISSION_ROOM_SIGNALS:END -->

@@ -17,6 +17,7 @@ const {
   runEngineAskJobs,
   runEngineAskCommand,
 } = require('../lib/engine-ask');
+const { engineTerminalStatus } = require('../lib/engine-job-lifecycle');
 const { engineCommand } = require('../commands/engine');
 
 function tempRoot() {
@@ -25,6 +26,20 @@ function tempRoot() {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function waitUntil(predicate, timeoutMs = 1000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      if (predicate()) return resolve();
+      if (Date.now() - started >= timeoutMs) {
+        return reject(new Error('timed out waiting for condition'));
+      }
+      setTimeout(tick, 10);
+    };
+    tick();
+  });
 }
 
 function processIsAlive(pid) {
@@ -293,7 +308,7 @@ test('command prints labeled statuses and writes only its receipt', async () => 
     assert.equal(receiptFiles.length, 1);
     const receipt = JSON.parse(fs.readFileSync(path.join(runsDir, receiptFiles[0]), 'utf8'));
     assert.equal(receipt.read_only, true);
-    assert.deepEqual(receipt.summary, { answered: 1, failed: 1, timed_out: 1 });
+    assert.deepEqual(receipt.summary, { answered: 1, failed: 1, timed_out: 1, cancelled: 0 });
     assert.deepEqual(receipt.answers.map((answer) => answer.model), ['gpt-5.6', 'gpt-5.6', 'gpt-5.6']);
     assert.deepEqual(receipt.answers.map((answer) => answer.status), ['answered', 'failed', 'timed out']);
     assert.deepEqual(fs.readdirSync(root), ['atris']);
@@ -303,6 +318,184 @@ test('command prints labeled statuses and writes only its receipt', async () => 
     console.log = originalLog;
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('killing an ask mid-run leaves a running receipt with its pid and pgid', async () => {
+  if (process.platform === 'win32') return;
+  const root = tempRoot();
+  const runner = path.join(root, 'kill-mid-ask.js');
+  const engineAskModule = path.join(__dirname, '..', 'lib', 'engine-ask.js');
+  fs.writeFileSync(runner, [
+    `'use strict';`,
+    `const { runEngineAskCommand } = require(${JSON.stringify(engineAskModule)});`,
+    `runEngineAskCommand(['wait', '--engine', 'codex'], ${JSON.stringify(root)}, {`,
+    `  executeAskJob: () => new Promise(() => setInterval(() => {}, 1000)),`,
+    `}).catch(() => {});`,
+    '',
+  ].join('\n'));
+  const child = spawn(process.execPath, [runner], {
+    cwd: root,
+    detached: true,
+    stdio: 'ignore',
+  });
+  try {
+    const runsDir = path.join(root, 'atris', 'runs');
+    await waitUntil(() => fs.existsSync(runsDir) && fs.readdirSync(runsDir).some((file) => file.startsWith('engine-ask-')), 2000);
+    const receiptFile = fs.readdirSync(runsDir).find((file) => file.startsWith('engine-ask-'));
+    const receiptPath = path.join(runsDir, receiptFile);
+    const running = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+    assert.equal(running.status, 'running');
+    assert.equal(running.pid, child.pid);
+    assert.equal(running.pgid, child.pid);
+    assert.equal(running.engine, 'codex');
+    assert.match(running.started_at, /^\d{4}-\d{2}-\d{2}T/);
+
+    const closed = new Promise((resolve) => child.once('close', resolve));
+    process.kill(-child.pid, 'SIGKILL');
+    await closed;
+    const stranded = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+    assert.equal(stranded.status, 'running');
+    assert.equal(processIsAlive(stranded.pid), false);
+  } finally {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('mixed grok cursor fable and codex jobs emit the early final without a later poll', async () => {
+  const events = [];
+  let slowStarted = false;
+  let releaseSlow;
+  const slowHold = new Promise((resolve) => { releaseSlow = resolve; });
+  const jobs = [
+    { engine: 'grok', prompt: 'fast', label: 'grok' },
+    { engine: 'cursor', prompt: 'slow', label: 'cursor' },
+    { engine: 'fable', prompt: 'fail', label: 'fable' },
+    { engine: 'codex', prompt: 'hang', label: 'codex' },
+  ];
+  const running = runEngineAskJobs(jobs, {
+    concurrency: 4,
+    onTerminal: (answer) => events.push({
+      label: answer.label,
+      status: answer.status,
+      stdout: String(answer.stdout || '').trim(),
+    }),
+    executeAskJob: async (job) => {
+      if (job.engine === 'cursor') {
+        slowStarted = true;
+        await slowHold;
+        return {
+          ok: true,
+          stdout: 'cursor later',
+          stderr: '',
+          reason: 'ok',
+          timed_out: false,
+          cancelled: false,
+          exit_code: 0,
+          duration_ms: 40,
+        };
+      }
+      if (job.engine === 'codex') {
+        return runAskProcess(fakeReplyInvocation({ hang: true }), { timeoutMs: 50 });
+      }
+      if (job.engine === 'fable') {
+        return runAskProcess(fakeReplyInvocation({
+          stderr: 'fable failed',
+          exitCode: 1,
+        }), { timeoutMs: 1000 });
+      }
+      return runAskProcess(fakeReplyInvocation({
+        stdout: 'grok now',
+        delayMs: 15,
+      }), { timeoutMs: 1000 });
+    },
+  });
+
+  await waitUntil(() => (
+    slowStarted
+    && events.some((event) => event.label === 'grok')
+    && events.some((event) => event.label === 'fable')
+    && events.some((event) => event.label === 'codex')
+  ), 2000);
+  assert.equal(events.filter((event) => event.label === 'grok').length, 1);
+  assert.equal(events.find((event) => event.label === 'grok').status, 'answered');
+  assert.equal(events.find((event) => event.label === 'grok').stdout, 'grok now');
+  assert.equal(events.find((event) => event.label === 'fable').status, 'failed');
+  assert.equal(events.find((event) => event.label === 'codex').status, 'timed out');
+  assert.equal(events.some((event) => event.label === 'cursor'), false, 'slow job must still be running');
+
+  releaseSlow();
+  const answers = await running;
+  assert.equal(events.filter((event) => event.label === 'grok').length, 1, 'later completion must not re-emit the early final');
+  assert.equal(events.filter((event) => event.label === 'cursor').length, 1);
+  assert.equal(engineTerminalStatus(answers.find((answer) => answer.label === 'cursor')), 'answered');
+  assert.equal(engineTerminalStatus(answers.find((answer) => answer.label === 'codex')), 'timed out');
+});
+
+test('command prints an early engine final before slower jobs and the summary', async () => {
+  const root = tempRoot();
+  const output = [];
+  const originalLog = console.log;
+  console.log = (line = '') => output.push(String(line));
+  let releaseSlow;
+  const slowHold = new Promise((resolve) => { releaseSlow = resolve; });
+  try {
+    const running = runEngineAskCommand([
+      'one question',
+      '--engine', 'grok',
+      '--engine', 'cursor',
+      '--concurrency', '2',
+    ], root, {
+      now: () => new Date('2026-08-12T19:30:00.000Z'),
+      executeAskJob: async (job) => {
+        if (job.engine === 'cursor') {
+          await slowHold;
+          return {
+            ok: true,
+            stdout: 'cursor later',
+            stderr: '',
+            reason: 'ok',
+            timed_out: false,
+            cancelled: false,
+            exit_code: 0,
+            duration_ms: 40,
+          };
+        }
+        return runAskProcess(fakeReplyInvocation({ stdout: 'grok now', delayMs: 10 }), { timeoutMs: 1000 });
+      },
+    });
+    await waitUntil(() => output.join('\n').includes('grok now'), 2000);
+    const early = output.join('\n');
+    assert.match(early, /grok \(grok\)\ngrok now/);
+    assert.doesNotMatch(early, /cursor later/);
+    assert.doesNotMatch(early, /summary:/);
+    releaseSlow();
+    const code = await running;
+    assert.equal(code, 0);
+    const printed = output.join('\n');
+    assert.equal((printed.match(/grok now/g) || []).length, 1);
+    assert.match(printed, /cursor later/);
+    assert.match(printed, /summary:/);
+  } finally {
+    console.log = originalLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cancelling a hung ask reports cancelled once and kills the process', async () => {
+  if (process.platform === 'win32') return;
+  const abort = new AbortController();
+  const resultPromise = runAskProcess(fakeReplyInvocation({ hang: true }), {
+    timeoutMs: 5000,
+    signal: abort.signal,
+  });
+  await wait(30);
+  abort.abort();
+  const result = await resultPromise;
+  assert.equal(result.reason, 'cancelled');
+  assert.equal(result.cancelled, true);
+  assert.equal(result.timed_out, false);
+  assert.equal(result.ok, false);
 });
 
 test('engine command routes ask help without entering the build dispatcher', async () => {

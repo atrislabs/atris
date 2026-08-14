@@ -60,6 +60,8 @@ test('dispatchToEngine copies the codex watchdog beside the prompt and gives it 
     assert.ok(fs.existsSync(watchdogCopy));
     assert.equal(fs.readFileSync(watchdogCopy, 'utf8'), fs.readFileSync(WATCHDOG, 'utf8'));
     assert.ok(invocation.command.startsWith(`${shellQuoted(process.execPath)} ${shellQuoted(watchdogCopy)} `));
+    assert.match(invocation.command, /--receipt '[^']+\/\.atris\/codex-watchdog-CLI-WATCHDOG-[a-f0-9]+\.json'/);
+    assert.match(result.watchdog_artifact, /codex-watchdog-CLI-WATCHDOG-[a-f0-9]+\.json$/);
     assert.equal(invocation.options.timeoutMs, 3660000);
   } finally {
     fs.rmSync(worktree, { recursive: true, force: true });
@@ -87,6 +89,8 @@ test('sealed codex dispatch copies the watchdog beside the runtime prompt', () =
     assert.ok(fs.existsSync(watchdogCopy));
     assert.ok(command.startsWith(`${shellQuoted(process.execPath)} ${shellQuoted(watchdogCopy)} `));
     assert.ok(!command.includes(shellQuoted(WATCHDOG)));
+    assert.ok(command.includes(`--receipt '${path.join(worktree, '.atris', 'codex-watchdog-CLI-WATCHDOG-')}`));
+    assert.ok(!command.includes(`${runtimeDir}/codex-watchdog-CLI-WATCHDOG`));
   } finally {
     fs.rmSync(worktree, { recursive: true, force: true });
     fs.rmSync(runtimeDir, { recursive: true, force: true });

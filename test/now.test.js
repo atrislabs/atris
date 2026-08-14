@@ -372,6 +372,56 @@ test('renderDefaultNow counts today task receipts from task state', () => {
   }
 });
 
+test('renderDefaultNow earns one pulse from fresh task state without changing receipt output', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [{
+        title: 'Make local team encouragement earned',
+        status: 'claimed',
+        claimed_by: 'culture-lead',
+        updated_at: Date.now() - 60_000,
+      }],
+    }), 'utf8');
+
+    const content = renderDefaultNow(dir);
+    const whatMatters = content.split('## What Matters Now\n\n')[1].split('\n\n## While You Were Away')[0];
+    const receiptSection = content.split('## While You Were Away\n\n')[1].split('\n\n## Current Priority')[0];
+
+    assert.match(whatMatters, /team pulse: culture-lead is moving make local team encouragement earned\. keep going\./);
+    assert.equal((content.match(/team pulse:/g) || []).length, 1);
+    assert.doesNotMatch(receiptSection, /team pulse:/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('renderDefaultNow stays quiet when task state is stale', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [{
+        result: 'This result is too old to encourage today',
+        status: 'done',
+        claimed_by: 'culture-lead',
+        done_at: Date.now() - 25 * 60 * 60 * 1000,
+      }],
+    }), 'utf8');
+
+    assert.doesNotMatch(renderDefaultNow(dir), /team pulse:/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('While You Were Away shows every receipt behind the count, including accepted career-XP receipts', () => {
   const dir = makeTempDir();
   try {
@@ -472,7 +522,11 @@ test('While You Were Away names receipts omitted by its short recap limit', () =
 test('renderDefaultNow refuses non-Atris workspaces', () => {
   const dir = makeTempDir();
   try {
-    assert.throws(() => renderDefaultNow(dir), /atris\/ folder not found/);
+    assert.throws(() => renderDefaultNow(dir), (error) => {
+      assert.match(error.message, /atris\/ folder not found/);
+      assert.doesNotMatch(error.message, /team pulse:/);
+      return true;
+    });
   } finally {
     cleanup(dir);
   }
@@ -555,6 +609,7 @@ test('renderPortfolioNow ignores completed rows in child TODO views', () => {
     const content = renderPortfolioNow(dir);
 
     assert.match(content, /child: Child Map; 0 open TODO items/);
+    assert.doesNotMatch(content, /team pulse:/);
   } finally {
     cleanup(dir);
   }

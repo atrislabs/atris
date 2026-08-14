@@ -110,6 +110,17 @@ copy these shapes:
 
 `expected`: this is how an Atris agent writes and builds. Shipping slop or rambling is a failure smell, same as drift or a stale task.
 
+## engine dispatch
+
+When a task needs another model, use the built-in engine dispatch path. It
+chooses the saved command shape, records the task, and leaves proof for review.
+Do not hand-write a model command when this path applies.
+
+Before dispatching, check that the named engine is ready and that the person
+running it has the needed login or subscription. If either is missing, say so
+plainly, do not claim the work ran, and choose an available engine or wait for
+the operator.
+
 ## the ladder
 
 Six primitives, one sentence each:

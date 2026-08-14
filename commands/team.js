@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { canonicalEngineName } = require('../lib/engine-registry');
+const { collectEarnedTeamPulse } = require('../lib/team-pulse');
 const taskDb = require('../lib/task-db');
 const { buildTeamPresence, DEFAULT_FRESHNESS_WINDOW_MS, renderTeamPresence } = require('../lib/team-presence');
 const { readEngineRegistry } = require('./engine');
@@ -259,6 +260,8 @@ function renderTeamRoster(rosterRows, deps = {}) {
   } else {
     lines.push('(none)');
   }
+  const pulse = String(deps.pulse || '').trim();
+  if (pulse) lines.push('', pulse);
   return lines.join('\n');
 }
 
@@ -537,7 +540,12 @@ function teamCommand(args = [], deps = {}) {
     }
     const output = json
       ? JSON.stringify(roster, null, 2)
-      : renderTeamRoster(roster, deps);
+      : renderTeamRoster(roster, {
+        ...deps,
+        pulse: Object.prototype.hasOwnProperty.call(deps, 'pulse')
+          ? deps.pulse
+          : collectEarnedTeamPulse(deps.root || repoRoot(deps.cwd || process.cwd()), deps),
+      });
     (deps.write || process.stdout.write.bind(process.stdout))(`${output}\n`);
     return 0;
   }

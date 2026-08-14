@@ -262,18 +262,56 @@ test('detectDeadEngineDispatch flags a signalled leg distinctly from a plain non
   assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 2, report: 'boom' }), { reason: 'nonzero_exit', exitCode: 2 });
 });
 
+test('empty exit zero is no_output and missing exit metadata is unknown', () => {
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 0, report: ' \n', stderr: '' }), { reason: 'no_output', exitCode: 0 });
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ report: 'claimed success' }), { reason: 'unknown', exitCode: null });
+
+  const empty = fleet.dispatchResultToTerminal({ engine: 'codex', taskId: 'CLI-1' }, { exitCode: 0, report: '', stderr: '' });
+  assert.equal(empty.ok, false);
+  assert.equal(empty.reason, 'no_output');
+  const unknown = fleet.dispatchResultToTerminal({ engine: 'codex', taskId: 'CLI-1' }, { report: 'answer' });
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.reason, 'unknown');
+});
+
 test('defaultSelfLandCheck fetches the target ref and checks HEAD ancestry', () => {
   const calls = [];
   const result = fleet.defaultSelfLandCheck({
     worktreePath: '/wt',
+    startCommit: 'base-commit',
     git: (args) => {
       calls.push(args);
+      if (args[0] === 'rev-parse') return { status: 0, stdout: 'new-commit\n', stderr: '' };
       return { status: 0, stdout: '', stderr: '' };
     },
   });
-  assert.deepEqual(calls[0], ['fetch', 'origin', 'master:refs/remotes/origin/master']);
-  assert.deepEqual(calls[1], ['merge-base', '--is-ancestor', 'HEAD', 'origin/master']);
-  assert.deepEqual(result, { ok: true, stage: 'self_landed', target: 'origin/master' });
+  assert.deepEqual(calls[0], ['rev-parse', '--verify', 'HEAD^{commit}']);
+  assert.deepEqual(calls[1], ['fetch', 'origin', 'master:refs/remotes/origin/master']);
+  assert.deepEqual(calls[2], ['merge-base', '--is-ancestor', 'HEAD', 'origin/master']);
+  assert.deepEqual(result, {
+    ok: true,
+    stage: 'self_landed',
+    target: 'origin/master',
+    start_commit: 'base-commit',
+    head: 'new-commit',
+  });
+});
+
+test('defaultSelfLandCheck refuses an unchanged head before ancestry can read as success', () => {
+  const calls = [];
+  const result = fleet.defaultSelfLandCheck({
+    worktreePath: '/wt',
+    startCommit: 'base-commit',
+    git: (args) => {
+      calls.push(args);
+      return { status: 0, stdout: 'base-commit\n', stderr: '' };
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'no_work_landed');
+  assert.equal(result.reason, 'no_work_landed');
+  assert.equal(result.start_commit, result.head);
+  assert.deepEqual(calls, [['rev-parse', '--verify', 'HEAD^{commit}']]);
 });
 
 test('runFleetFlight dry-run staffs from the projection without dispatching', async () => {

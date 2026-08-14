@@ -20,6 +20,20 @@ function makeTempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-root-'));
 }
 
+function waitUntil(predicate, timeoutMs = 1000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      if (predicate()) return resolve();
+      if (Date.now() - started >= timeoutMs) {
+        return reject(new Error('timed out waiting for condition'));
+      }
+      setTimeout(tick, 10);
+    };
+    tick();
+  });
+}
+
 const TASK = {
   display_id: 'CLI-900',
   status: 'open',
@@ -723,11 +737,12 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
       ownCli: cli,
       log: () => {},
       dispatcher: () => Promise.resolve({ exitCode: 0, report: 'self landed in PR https://example.test/pr/1' }),
+      startCommitReader: () => 'base-commit',
       lander: () => { landerCalled = true; return { ok: true, stage: 'shipped' }; },
       verifier: () => { verifierCalled = true; return { status: 0, stdout: '', stderr: '' }; },
       selfLandCheck: (input) => {
         checks.push(input);
-        return { ok: true, target: input.targetRef };
+        return { ok: true, target: input.targetRef, start_commit: input.startCommit, head: 'new-commit' };
       },
     });
 
@@ -738,6 +753,7 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
     assert.equal(flight.paused.length, 0);
     assert.equal(checks.length, 1);
     assert.equal(checks[0].worktreePath, '/wt/dispatch-cli-900');
+    assert.equal(checks[0].startCommit, 'base-commit');
     assert.equal(landerCalled, false);
     assert.equal(verifierCalled, false);
     assert.ok(!calls.some((c) => c.startsWith('worktree ship')), 'outer dispatch must not ship in yolo mode');
@@ -747,8 +763,9 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
     assert.equal(receipt.yolo, true);
     assert.equal(receipt.landed[0].landing, 'self');
     assert.equal(receipt.result.passed, true);
-    assert.equal(receipt.result.verifier_result.command, 'git merge-base --is-ancestor HEAD origin/master');
+    assert.equal(receipt.result.verifier_result.command, 'HEAD differs from dispatch start commit; git merge-base --is-ancestor HEAD origin/master');
     assert.equal(receipt.result.verifier_result.passed, true);
+    assert.equal(receipt.results[0].start_commit, 'base-commit');
     assert.equal(receipt.results[0].verified_passed, null);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -1005,6 +1022,51 @@ test('runDispatchFlight builds multiple task ids in parallel worktrees and lands
   }
 });
 
+test('runDispatchFlight surfaces an early engine final before a slower sibling and does not repeat it', async () => {
+  const tmpRoot = makeTempRoot();
+  try {
+    const tasks = {
+      'CLI-901': { display_id: 'CLI-901', title: 'fast grok. Done: x. Check: node --test test/a.test.js.' },
+      'CLI-902': { display_id: 'CLI-902', title: 'slow cursor. Done: x. Check: node --test test/b.test.js.' },
+    };
+    const { cli } = ownCliFake({ tasks, worktreeFor: (t) => `/wt/${t}` });
+    const logs = [];
+    let releaseSlow;
+    const slowHold = new Promise((resolve) => { releaseSlow = resolve; });
+    let slowStarted = false;
+    const flightPromise = fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-901', 'CLI-902'],
+      engine: 'codex',
+      ownCli: cli,
+      log: (line = '') => logs.push(String(line)),
+      dispatcher: async (entry) => {
+        if (entry.taskId === 'CLI-902') {
+          slowStarted = true;
+          await slowHold;
+          return { exitCode: 1, stderr: 'cursor timed out', timed_out: true };
+        }
+        return { exitCode: 0, report: 'grok now' };
+      },
+      lander: () => ({ ok: true, stage: 'shipped', check: 'node --test x', verifyOutput: 'ok' }),
+    });
+    await waitUntil(() => slowStarted && logs.some((line) => /answered CLI-901/.test(line)), 2000);
+    const early = logs.join('\n');
+    assert.match(early, /codex\s+answered CLI-901/);
+    assert.match(early, /grok now/);
+    assert.doesNotMatch(early, /timed out CLI-902/);
+    assert.equal(logs.filter((line) => /answered CLI-901/.test(line)).length, 1);
+    releaseSlow();
+    const flight = await flightPromise;
+    assert.equal(logs.filter((line) => /answered CLI-901/.test(line)).length, 1);
+    assert.match(logs.join('\n'), /timed out CLI-902/);
+    assert.deepEqual(flight.landed.map((row) => row.task), ['CLI-901']);
+    assert.equal(flight.paused[0].task, 'CLI-902');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 test('runDispatchFlight ship args always target origin/master, never the launcher branch', async () => {
   const tmpRoot = makeTempRoot();
   try {    const { cli, calls } = ownCliFake({ tasks: { 'CLI-900': TASK }, worktreeFor: (t) => `/wt/${t}` });
@@ -1013,7 +1075,7 @@ test('runDispatchFlight ship args always target origin/master, never the launche
       taskIds: ['CLI-900'],
       engine: 'cursor',
       ownCli: cli,
-      dispatcher: () => Promise.resolve({ exitCode: 0 }),
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'build completed' }),
       rebase: () => ({ ok: true, stage: 'rebased' }),
       verifier: () => ({ status: 0, stdout: 'pass', stderr: '' }),
     });

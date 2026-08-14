@@ -10,6 +10,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { collectTeamRoster, renderTeamRoster, teamCommand } = require('../commands/team');
+const { collectEarnedTeamPulse } = require('../lib/team-pulse');
 
 const MEMBERS = [
   { name: 'linguist', role: 'Linguist - operator language and understanding' },
@@ -159,6 +160,73 @@ test('team command renders the roster on bare invocation and roster --json', () 
   assert.equal(parsed[0].name, 'linguist');
   assert.equal(typeof parsed[0].active, 'boolean');
   assert.ok('engine' in parsed[0]);
+});
+
+test('plain team earns one pulse from fresh claimed work while exported and error surfaces stay quiet', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'team-pulse-'));
+  const nowMs = Date.parse('2026-08-12T18:00:00.000Z');
+  fs.mkdirSync(path.join(tmpDir, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(tmpDir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+    tasks: [{
+      title: 'Repair the local team handoff',
+      status: 'claimed',
+      claimed_by: 'culture-lead',
+      updated_at: nowMs - 60_000,
+    }],
+  }), 'utf8');
+
+  try {
+    let out = '';
+    const deps = rosterDeps({
+      root: tmpDir,
+      cwd: tmpDir,
+      now: () => nowMs,
+      write: (s) => { out += s; },
+    });
+    assert.equal(teamCommand([], deps), 0);
+    assert.match(out, /team pulse: culture-lead is moving repair the local team handoff\. keep going\./);
+    assert.equal((out.match(/team pulse:/g) || []).length, 1);
+
+    let jsonOut = '';
+    assert.equal(teamCommand(['--json'], { ...deps, write: (s) => { jsonOut += s; } }), 0);
+    assert.doesNotMatch(jsonOut, /team pulse:/);
+
+    let htmlOut = '';
+    assert.equal(teamCommand(['--html'], { ...deps, write: (s) => { htmlOut += s; } }), 0);
+    assert.doesNotMatch(fs.readFileSync(htmlOut.trim(), 'utf8'), /team pulse:/);
+
+    let err = '';
+    assert.equal(teamCommand(['bogus'], { ...deps, error: (s) => { err += s; } }), 2);
+    assert.doesNotMatch(err, /team pulse:/);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('team pulse falls back to a recent completed result and ignores stale or unproven work', () => {
+  const nowMs = Date.parse('2026-08-12T18:00:00.000Z');
+  const pulse = collectEarnedTeamPulse('/unused', {
+    now: () => nowMs,
+    tasks: [
+      {
+        title: 'Old claimed work',
+        status: 'claimed',
+        claimed_by: 'builder',
+        updated_at: nowMs - 25 * 60 * 60 * 1000,
+      },
+      {
+        result: 'Local handoffs now name the next useful move',
+        status: 'done',
+        claimed_by: 'validator',
+        done_at: nowMs - 60_000,
+      },
+    ],
+  });
+  assert.equal(pulse, 'team pulse: validator finished local handoffs now name the next useful move. nice work.');
+  assert.equal(collectEarnedTeamPulse('/unused', {
+    now: () => nowMs,
+    tasks: [{ status: 'done', done_at: nowMs - 60_000 }],
+  }), null);
 });
 
 test('unknown subcommands still fail with usage', () => {

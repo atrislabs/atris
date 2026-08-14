@@ -3,6 +3,7 @@ const path = require('path');
 const { hasRenderedSections, isOpenSection } = require('../lib/todo-sections');
 const { renderMorningCardRow } = require('../lib/receipt-block');
 const { historicalLandingText } = require('../lib/autoland');
+const { collectEarnedTeamPulse } = require('../lib/team-pulse');
 
 const NOW_PATH = path.join('atris', 'now.md');
 const TASK_EPISODES_PATH = path.join('.atris', 'state', 'task_episodes.jsonl');
@@ -416,9 +417,11 @@ function renderDefaultNow(root = process.cwd()) {
   const completedCount = taskReceiptCount + missionReceiptCount || countJournalCompletedReceipts(journalPath);
   const generated = formatLocalTimestamp();
   const moveLine = currentMissionMoveLine(root);
+  const teamPulse = collectEarnedTeamPulse(root);
   const whatMattersNow = moveLine
     ? `${moveLine}\n\n- Run the named next action and leave proof before choosing another.`
     : '- Decide the next useful move before opening more context.';
+  const pulseLine = teamPulse ? `\n\n${teamPulse}` : '';
   const receiptLines = todayTaskReceiptLines(root);
   const missionReceiptLines = todayMissionReceiptLines(root);
   const commitLines = landedCommitLines(root);
@@ -442,7 +445,7 @@ Last updated: ${generated}
 
 ## What Matters Now
 
-${whatMattersNow}
+${whatMattersNow}${pulseLine}
 
 ## While You Were Away
 

@@ -4,9 +4,12 @@
 
 ## Backlog
 
+- **[CLI-1280]** an unpaid buyer hitting install gets told the price and how to buy instead of a confusing empty download
+- **[CLI-1279]** the release gate stops relying on memory: tag publishes run the full suite again or the tagger gets a hard checklist it enforces
+- **[CLI-1259]** Make a Fable handoff either start work or clearly say it failed [engines]
+- **[CLI-1251]** Turn the daily log into a simple product-work handoff so the right team member can act and validation closes the loop [product-operations]
+- **[CLI-1250]** Make Atris.md the single voice rule so every agent gives clear next decisions
 - **[CLI-1236]** every command reads flags consistently from one maintained parser [cli]
-- **[CLI-1229]** the team stays lean like a real company: a pruning pass flags members who have not landed work in 30 days, using the same budget-and-keep-rules pattern as the wiki
-- **[CLI-1228]** one team, not two: the org chart reads atris/team members and shows which engine each member runs on, so setting up the team once covers both
 - **[CLI-979]** csrf gate should exempt cookie-less bearer-token api calls so every cli lane works without origin workarounds; protected lane, orb reviews pre-merge
 - **[CLI-958]** yo can you make me the best to do list ever [wish]
 - **[CLI-957]** make me the best landing page ever [wish]
@@ -29,6 +32,15 @@
 
 ## In Progress
 
+- **[CLI-1285]** the build meter bills only real job time and one worker serves every repo, so customer bills stay honest and setup stays one command
+  **Claimed by:** codex-ci-slice3
+  **Verify:** node --test test/ci.test.js
+- **[CLI-1267]** Quiet task board: make the cross-project task list show only work that needs attention now, so it can replace a noisy Linear board [task-board]
+  **Claimed by:** task-planner
+  **Verify:** node --test test/task*.test.js
+- **[CLI-1265]** Local workforce presence command: show which local engines and team members are working, waiting, done, or stale from real process and final-result state, then clear finished runs [cli]
+  **Claimed by:** runtime-engineer
+  **Verify:** npm test -- --runInBand
 - **[CLI-1231]** Pablo sees one honest pack card before expert diagnostics: what it is, where it lives, whether it is ready, why, and one next action. Keep inspect and doctor as drill-down. Done: atris pack show covers ready, revise, and reject; performs no network, execution, or mutation; stays within eight content lines. Check: node --test test/pack-show.test.js test/pack-safety.test.js [pack]
   **Claimed by:** architect
 - **[CLI-1209]** Mission XP: turn our hardest standing lessons into automatic [agent-xp]
@@ -41,8 +53,6 @@
 - **[CLI-1186]** Fleet receipt truncates the head of a ship failure, hiding the cause. lib/fleet.js:2039 and :2365 slice(-300)/slice(-500) keep only the stack TAIL, so 'MODULE_NOT_FOUND: cannot find X' is cut and the operator sees five frames of node internals. Keep the first ~400 chars too (head+tail), since the error line leads. Done: a ship failure receipt names the failing module/command. Check: node --test test/fleet*.test.js [web-quality]
   **Claimed by:** fleet-cursor
 - **[CLI-1182]** atris wish stream got swallowed as a new wish named stream, so any status check pollutes the wish list; reserved subcommands must never be treated as wish text [wish]
-  **Claimed by:** fleet-codex
-- **[CLI-1181]** the wish intake echoes a truncated title and asks the same three generic options for every wish, so the first thing an owner hears is mush; drill questions must come from the wish's own words [wish]
   **Claimed by:** fleet-codex
 - **[CLI-1168]** it should say no worker has produced a receipt yet and name the command that starts one [wish]
   **Claimed by:** mission-lead
@@ -112,11 +122,36 @@
 
 ## Review
 
+- **[CLI-1284]** build minutes get counted and shown per repo, so the fifty-a-month credit deal has real usage numbers to bill against
+  **Verify:** node --test test/ci.test.js
+- **[CLI-1283]** atris ci slice 1: local ephemeral github actions runner (jit config, one word runs-on swap)
+  **Verify:** node --test test/ci.test.js
+- **[CLI-1281]** atris pack purchases shows the buyer their purchases instead of calling an address that does not exist
+- **[CLI-1278]** the engine scoreboard feeds itself: recent unchecked answers get graded automatically on the hourly tick, capped and cheap
+- **[CLI-1277]** publishers stop hand-computing pack contract fields: one command seals type, entrypoint, permissions, provenance, and content hashes
+  **Verify:** node --test /Users/keshavrao/arena/atris-cli-worktrees/cli-1277-pack-seal/test/pack.test.js
+- **[CLI-1276]** an hvac shop owner can install a ready pack and run invoice chasing, renewals, reviews, and call triage with honest ai workers
+- **[CLI-1275]** scout gets enough time to finish: measure real pack build times and set the timeout from data
+- **[CLI-1274]** jobs that die and leave a stale running claim get found on the hourly sweep and marked dead honestly
+- **[CLI-1273]** expensive builders start with a verified map of exactly where to work instead of burning their first minutes searching
+- **[CLI-1272]** the taste gate finally guards the door: work that breaks a written correction is refused at landing with the reason named
+- **[CLI-1271]** one front door per engine: name plus model plus task or question runs the whole blessed pattern with atris coaching baked in
+- **[CLI-1270]** finished work gets checked by a cheap referee whose verdicts pile up into an engine scoreboard
+- **[CLI-1269]** a worker that dies silently or lies about landing now leaves an honest failure receipt instead of a blank
+- **[CLI-1268]** Earned team pulse: give local team views one brief, specific encouragement based on real work, without adding noise to customer output [cli]
+  **Verify:** node --test test/team-roster.test.js test/team-presence.test.js test/now.test.js
+- **[CLI-1266]** Engine completion updates: immediately surface each local engine's final answer, timeout, or failure so finished work never waits unseen [cli]
+  **Verify:** Focused lifecycle regression tests and a live multi-engine run with timestamped terminal updates.
+- **[CLI-1264]** pin grok 4.6 across engine registry, runner profile, and engine guide
+- **[CLI-1258]** Show live engine progress so an operator can see what a background job is doing before it finishes [engines]
+- **[CLI-1256]** Verify that Grok can return one clear answer through the tracked dispatch path
+- **[CLI-1245]** Mission XP: Proof Keep Improving Mission Room with validator [agent-xp]
 - **[CLI-1242]** split the task board api into named route handlers [cli]
 - **[CLI-1237]** CLI users get consistent flag behavior because every command shares one parser [cli]
   **Verify:** git -C /Users/keshavrao/arena/atris-cli-worktrees/codex-arg-parser2 diff --cached --check
 - **[CLI-1235]** extract shared CLI flag parser helpers [cli]
 - **[CLI-1230]** a new workspace gets a starter team of 5 picked automatically, so the owner never faces 35 folders on day one
+- **[CLI-1228]** one team, not two: the org chart reads atris/team members and shows which engine each member runs on, so setting up the team once covers both
 - **[CLI-1213]** pack users get enforced capability boundaries because declared permissions change runtime tools instead of only appearing in inspect [security]
   **Verify:** git merge-base --is-ancestor ad16aebb63125256f9a2382c39a6cc6b3b95fe75 HEAD && git merge-base --is-ancestor a4c8dab53a332ef2579e0c9e3758d5fab6c73464 HEAD && git merge-base --is-ancestor 031e80ff13c769c71f523492df0d61fd7a94c45d HEAD && node --test test/pack-run.test.js test/pack.test.js
 - **[CLI-1212]** pack users can trust declared content hashes because publish install update and inspect verify every claimed digest [security]
@@ -130,21 +165,20 @@
 
 ## Completed
 
-- **[CLI-1241]** drill and help smoke tests spawn the cli with no cwd and litter .atris/state into the repo root; give them temp cwds. found during the wake-flake investigation.
-  **Verify:** node --test test/repo-hygiene.test.js test/drill.test.js test/golden-path-help.test.js
-- **[CLI-1240]** engine routing still shells out to command -v inside the resolve path (lib/engine-registry.js binInstalled + normalizeEngineEntry); policy must decide, probes belong at execution stage. found while seeding engine tests.
-  **Verify:** node --test test/engine-command.test.js test/engine.test.js
-- **[CLI-1239]** drill and help smoke tests spawn the cli with no cwd and litter .atris/state into the repo root; give them temp cwds. found during the wake-flake investigation.
-  **Verify:** node --test test/repo-hygiene.test.js
-- **[CLI-1238]** engine routing still shells out to command -v inside the resolve path (lib/engine-registry.js:39 binInstalled, normalizeEngineEntry:91); policy must decide, probes belong at execution. found while seeding engine tests.
-  **Verify:** node --test test/engine-command.test.js
-- **[CLI-1234]** engine dispatch injects matching lessons before work starts [engine]
-  **Verify:** node --test test/lesson-preflight.test.js
-- **[CLI-1233]** Codex keeps moving instead of getting stuck on impossible mission acknowledgements [mission]
-  **Verify:** node --test test/mission-status.test.js
-- **[CLI-1232]** Repair Ax Fast context-standard verifier so GitHub mutation routing and turn caps match the current runtime [engine]
-  **Verify:** node scripts/verify-ax-cloud-standard.js
-- **[CLI-1227]** Pack experts can see a declared verifier without running it [pack]
-  **Verify:** node --test test/pack.test.js test/pack-run.test.js
+- **[CLI-1282]** every atris install teaches its agent the house voice at the moment of writing: a natural card beside each message, in every coding tool
+- **[CLI-1263]** cursor answers in six seconds instead of sixty-seven when asked from the home folder, so quick cursor questions become actually quick
+  **Verify:** node --test test/engine-ask.test.js
+- **[CLI-1262]** an ask can name the exact model per engine, so one question can race grok against kimi through cursor or haiku against opus without config changes
+  **Verify:** node --test test/engine-ask.test.js
+- **[CLI-1261]** two one-lap tests fail on clean master, so the suite blames innocent branches; the fake codex leg dies and restaffs to cursor since the watchdog wrap landed
+  **Verify:** node --test test/fleet-codex-watchdog.test.js
+- **[CLI-1260]** the team dashboard counts the operator as an awake agent; show the operator separately and count only real team members
+  **Verify:** node --test test/team-presence.test.js
+- **[CLI-1257]** Build a parallel read-only engine ask lane so one question can reach many models without blocking product work [engines]
+  **Verify:** node --test test/engine-ask.test.js
+- **[CLI-1254]** Document the safe engine dispatch rule so future voice chats use available subscriptions correctly
+  **Verify:** test -s atris.md
+- **[CLI-1252]** Fix the Grok startup connection failure so short research checks return a final answer
+  **Verify:** node --test test/engine-ask.test.js
 
-(67 older completed tasks archived in `atris task list --status done` and `atris task events`.)
+(82 older completed tasks archived in `atris task list --status done` and `atris task events`.)
