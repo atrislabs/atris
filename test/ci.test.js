@@ -9,8 +9,10 @@ const path = require('node:path');
 const {
   buildJitConfigRequest,
   formatUsageSummary,
+  parseRunnerMarker,
   parseRunnerArgs,
   parseUsageArgs,
+  runCiRunner,
   runJobLoop,
   runnerAssetName,
   summarizeUsage,
@@ -60,15 +62,43 @@ test('builds the repository jitconfig request path and body', () => {
 
 test('parses owner and repo runner arguments', () => {
   assert.deepEqual(parseRunnerArgs(['--repo', 'atrislabs/atris', '--label', 'apple-silicon', '--once']), {
-    repo: { owner: 'atrislabs', repo: 'atris', slug: 'atrislabs/atris' },
+    repos: [{ owner: 'atrislabs', repo: 'atris', slug: 'atrislabs/atris' }],
     label: 'apple-silicon',
     once: true,
   });
   assert.deepEqual(parseRunnerArgs(['--once', '--repo', 'owner/repo_name']), {
-    repo: { owner: 'owner', repo: 'repo_name', slug: 'owner/repo_name' },
+    repos: [{ owner: 'owner', repo: 'repo_name', slug: 'owner/repo_name' }],
     label: null,
     once: true,
   });
+});
+
+test('parses repeated repositories and rejects duplicates', () => {
+  assert.deepEqual(parseRunnerArgs(['--repo', 'a/x', '--repo', 'b/y', '--once']), {
+    repos: [
+      { owner: 'a', repo: 'x', slug: 'a/x' },
+      { owner: 'b', repo: 'y', slug: 'b/y' },
+    ],
+    label: null,
+    once: true,
+  });
+  assert.throws(
+    () => parseRunnerArgs(['--repo', 'a/x', '--repo', 'A/X']),
+    /duplicate --repo: A\/X/,
+  );
+});
+
+test('parses runner job markers without clock or process state', () => {
+  assert.deepEqual(parseRunnerMarker('2026-08-13T12:00:00Z: Running job: tests'), { type: 'start' });
+  assert.deepEqual(
+    parseRunnerMarker('Job tests completed with result: Succeeded'),
+    { type: 'complete', result: 'succeeded' },
+  );
+  assert.deepEqual(
+    parseRunnerMarker('Job tests completed with result: FAILED after 2s'),
+    { type: 'complete', result: 'failed' },
+  );
+  assert.equal(parseRunnerMarker('Listening for Jobs'), null);
 });
 
 test('rejects malformed repository and runner arguments', () => {
@@ -81,7 +111,6 @@ test('rejects malformed repository and runner arguments', () => {
     ['--repo', 'owner/repo', '--label'],
     ['--repo', 'owner/repo', '--label', 'two words'],
     ['--repo', 'owner/repo', '--wat'],
-    ['--repo', 'owner/repo', '--repo', 'other/repo'],
   ];
   for (const args of invalid) assert.throws(() => parseRunnerArgs(args));
 });
@@ -132,6 +161,81 @@ test('once runs one job and continuous mode asks for another jitconfig', async (
   ]);
 });
 
+test('runs each repository from its own runner directory', async (t) => {
+  const runnerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ci-runner-'));
+  t.after(() => fs.rmSync(runnerDir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(runnerDir, 'bin'));
+  fs.writeFileSync(path.join(runnerDir, 'run.sh'), '#!/bin/sh\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(runnerDir, 'bin', 'Runner.Listener'), 'runner');
+  const loops = [];
+
+  const completed = await runCiRunner({
+    repos: [
+      { owner: 'a', repo: 'x', slug: 'a/x' },
+      { owner: 'b', repo: 'y', slug: 'b/y' },
+    ],
+    label: null,
+    once: true,
+  }, {
+    resolveGithubToken: () => 'token',
+    ensureRunner: async () => runnerDir,
+    hostname: () => 'test-host',
+    runJobLoop: async (options) => {
+      loops.push(options);
+      return 1;
+    },
+    log: () => {},
+  });
+
+  assert.equal(completed, 2);
+  assert.equal(loops.length, 2);
+  const directories = new Map(loops.map((loop) => [loop.repo.slug, loop.runnerDir]));
+  assert.equal(directories.get('a/x'), path.join(runnerDir, 'repos', 'a', 'x'));
+  assert.equal(directories.get('b/y'), path.join(runnerDir, 'repos', 'b', 'y'));
+  assert.notEqual(directories.get('a/x'), directories.get('b/y'));
+  assert.notEqual(
+    path.join(directories.get('a/x'), '_work'),
+    path.join(directories.get('b/y'), '_work'),
+  );
+  assert.equal(fs.existsSync(path.join(directories.get('a/x'), 'run.sh')), true);
+  assert.equal(fs.existsSync(path.join(directories.get('b/y'), 'bin', 'Runner.Listener')), true);
+  assert.deepEqual(loops.map((loop) => loop.logPrefix), ['a/x: ', 'b/y: ']);
+});
+
+test('waits for every repository loop before reporting loop failures', async () => {
+  const events = [];
+  const logs = [];
+
+  await assert.rejects(runCiRunner({
+    repos: [
+      { owner: 'a', repo: 'x', slug: 'a/x' },
+      { owner: 'b', repo: 'y', slug: 'b/y' },
+    ],
+    label: null,
+    once: true,
+  }, {
+    resolveGithubToken: () => 'token',
+    ensureRunner: async () => '/runner',
+    ensureRepoRunnerDirectory: (_runnerDir, repo) => `/runner/${repo.owner}/${repo.repo}`,
+    hostname: () => 'test-host',
+    runJobLoop: async (options, dependencies) => {
+      dependencies.log('loop started');
+      if (options.repo.slug === 'a/x') throw new Error('worker broke');
+      await new Promise((resolve) => setImmediate(resolve));
+      events.push('b/y finished');
+      return 1;
+    },
+    log: (line) => logs.push(line),
+  }), /1 ci runner loop failed/);
+
+  assert.deepEqual(events, ['b/y finished']);
+  assert.deepEqual(logs, [
+    'a/x: loop started',
+    'b/y: loop started',
+    'a/x: worker broke',
+  ]);
+});
+
 test('records one json usage line with the injected clock, path, and appender', async () => {
   const times = [
     new Date('2026-08-13T12:00:00.000Z'),
@@ -149,8 +253,14 @@ test('records one json usage line with the injected clock, path, and appender', 
     once: true,
   }, {
     generateJitConfig: async () => 'blob',
-    runWorker: async () => {},
-    clock: () => times.shift(),
+    runWorker: async () => ({
+      startedAt: times.shift(),
+      finishedAt: times.shift(),
+      result: 'Succeeded',
+    }),
+    clock: () => {
+      throw new Error('fallback clock should not be used when markers exist');
+    },
     usagePath: target,
     appendUsage: async (file, line) => writes.push({ file, line }),
     log: () => {},
@@ -163,14 +273,12 @@ test('records one json usage line with the injected clock, path, and appender', 
     repo: 'owner/repo',
     started_at: '2026-08-13T12:00:00.000Z',
     duration_seconds: 3,
+    result: 'succeeded',
   });
 });
 
-test('records usage before a worker error propagates', async () => {
-  const times = [
-    new Date('2026-08-13T12:00:00.000Z'),
-    new Date('2026-08-13T12:00:05.000Z'),
-  ];
+test('records zero job time before an unmarked worker error propagates', async () => {
+  const time = new Date('2026-08-13T12:00:05.000Z');
   const events = [];
 
   await assert.rejects(runJobLoop({
@@ -186,7 +294,7 @@ test('records usage before a worker error propagates', async () => {
       events.push('worker error');
       throw new Error('worker failed');
     },
-    clock: () => times.shift(),
+    clock: () => time,
     usagePath: path.join(os.tmpdir(), 'atris-ci-error-usage.jsonl'),
     appendUsage: async (_file, line) => events.push(JSON.parse(line)),
     log: () => {},
@@ -196,8 +304,8 @@ test('records usage before a worker error propagates', async () => {
     'worker error',
     {
       repo: 'owner/repo',
-      started_at: '2026-08-13T12:00:00.000Z',
-      duration_seconds: 5,
+      started_at: '2026-08-13T12:00:05.000Z',
+      duration_seconds: 0,
     },
   ]);
 });
@@ -228,6 +336,37 @@ test('aggregates rounded job minutes across the calendar month boundary', () => 
     monthMinutes: 1,
     repos: [{ repo: 'owner/alpha', jobs: 2, minutes: 2 }],
   });
+});
+
+test('renders per-repository result counts while preserving old usage lines', () => {
+  const now = new Date('2026-08-13T12:00:00.000Z');
+  const withResults = summarizeUsage([
+    { repo: 'owner/app', started_at: '2026-08-01T00:00:00.000Z', duration_seconds: 1, result: 'succeeded' },
+    { repo: 'owner/app', started_at: '2026-08-02T00:00:00.000Z', duration_seconds: 2, result: 'SUCCEEDED' },
+    { repo: 'owner/app', started_at: '2026-08-03T00:00:00.000Z', duration_seconds: 3, result: 'failed' },
+  ], { now });
+  assert.deepEqual(withResults.repos, [{
+    repo: 'owner/app',
+    jobs: 3,
+    minutes: 3,
+    results: { succeeded: 2, failed: 1 },
+  }]);
+  assert.equal(formatUsageSummary(withResults), [
+    'total jobs: 3',
+    'total minutes: 3',
+    'minutes this month: 3',
+    'per repo:',
+    'owner/app: 3 jobs, 2 succeeded, 1 failed, 3 minutes',
+  ].join('\n'));
+
+  const legacy = summarizeUsage([
+    { repo: 'owner/legacy', started_at: '2026-08-04T00:00:00.000Z', duration_seconds: 61 },
+  ], { now });
+  assert.deepEqual(legacy.repos, [{ repo: 'owner/legacy', jobs: 1, minutes: 2 }]);
+  assert.equal(
+    formatUsageSummary(legacy).split('\n').at(-1),
+    'owner/legacy: 1 job, 2 minutes',
+  );
 });
 
 test('parses usage repository arguments and rejects unsupported options', () => {

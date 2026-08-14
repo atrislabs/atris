@@ -14,7 +14,7 @@ function showCiHelp() {
   console.log('atris ci runs github actions jobs on this machine with a warm local work folder.');
   console.log('change runs-on: ubuntu-latest to runs-on: atris.');
   console.log('a GITHUB_TOKEN or an authenticated gh cli is required.');
-  console.log('usage: atris ci runner --repo <owner/name> [--label <name>] [--once]');
+  console.log('usage: atris ci runner --repo <owner/name> [--repo <owner/name> ...] [--label <name>] [--once]');
   console.log('       atris ci usage [--repo <owner/name>]');
 }
 
