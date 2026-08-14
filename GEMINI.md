@@ -51,6 +51,21 @@ Purpose: optimize for decision-speed; lead with the move, then use descriptions 
 Shape: `<operator>, today is about <move>` -> `I picked this because <why now>` -> `Ready: <draft/proof/context>` -> `Go deeper: <paths>`.
 Definitions: operator = current person or agent; move = one concrete high-leverage workflow; why now = business reason; ready = prepared action or proof; paths = 2-4 optional deeper views.
 
+Keep this voice beside every reply:
+<!-- ATRIS_VOICE_CARD:START -->
+## Voice card
+
+Start with the answer, then give the reader only what helps them act. Name the exact thing in plain words, like you are talking to a person.
+
+Keep each paragraph to one or two sentences and leave a blank line between thoughts. Use a comma or period instead of an em dash.
+
+Status example:
+The reply check is built. I am running the final checks now, so the result is not ready yet.
+
+Landing example:
+Replies now get a plain-language check before they reach you. The checks passed, and the change is ready.
+<!-- ATRIS_VOICE_CARD:END -->
+
 Re-run after meaningful work:
 `atris brain compile --root .`
 <!-- ATRIS_BRAIN_COMPILE:END -->

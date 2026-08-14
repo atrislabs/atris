@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 
 const fleet = require('../lib/fleet');
 const { listWorktrees } = require('../commands/worktree');
@@ -12,6 +13,18 @@ const TASK = {
   status: 'open',
   title: 'Fix the widget so operators stop retyping. Done: widget renders once, test included. Check: focused node --test test/widget.test.js.',
 };
+
+function waitUntil(predicate, timeoutMs = 2000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const poll = () => {
+      if (predicate()) return resolve();
+      if (Date.now() - started >= timeoutMs) return reject(new Error('timed out waiting for condition'));
+      setTimeout(poll, 10);
+    };
+    poll();
+  });
+}
 
 function writeExecutorDispatchHistory(root, outcomes) {
   const runsDir = path.join(root, 'atris', 'runs');
@@ -145,6 +158,61 @@ test('dispatchToEngine writes the prompt file and captures the report', () => {
   }
 });
 
+test('dispatchToEngine appends engine chunks to its live log before the engine exits', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-live-root-'));
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-live-wt-'));
+  const binDir = path.join(root, 'bin');
+  const liveLogPath = path.join(root, 'atris', 'runs', 'dispatch-live.live.log');
+  const resultPath = path.join(root, 'result.json');
+  const runnerPath = path.join(root, 'runner.js');
+  fs.mkdirSync(binDir, { recursive: true });
+  const fakeCursor = path.join(binDir, 'cursor-agent');
+  fs.writeFileSync(fakeCursor, [
+    '#!/usr/bin/env node',
+    "process.stdout.write('first dispatch chunk\\n');",
+    "setTimeout(() => process.stderr.write('second dispatch chunk\\n'), 350);",
+    'setTimeout(() => process.exit(0), 700);',
+    '',
+  ].join('\n'));
+  fs.chmodSync(fakeCursor, 0o755);
+  fs.writeFileSync(runnerPath, [
+    `'use strict';`,
+    `const fs = require('node:fs');`,
+    `const path = require('node:path');`,
+    `const fleet = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'fleet.js'))});`,
+    `process.env.PATH = ${JSON.stringify(binDir)} + path.delimiter + process.env.PATH;`,
+    `Promise.resolve(fleet.dispatchToEngine({`,
+    `  task: ${JSON.stringify(TASK)},`,
+    `  engine: 'cursor',`,
+    `  worktreePath: ${JSON.stringify(wt)},`,
+    `  root: ${JSON.stringify(process.cwd())},`,
+    `  briefId: 'test-live-brief',`,
+    `  skipBriefCapture: true,`,
+    `  liveLogPath: ${JSON.stringify(liveLogPath)},`,
+    `})).then((result) => {`,
+    `  fs.writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify(result));`,
+    `});`,
+    '',
+  ].join('\n'));
+  const child = spawn(process.execPath, [runnerPath], { cwd: root, stdio: 'ignore' });
+  let closed = false;
+  const childClosed = new Promise((resolve) => child.once('close', (code) => { closed = true; resolve(code); }));
+  try {
+    await waitUntil(() => fs.existsSync(liveLogPath) && fs.readFileSync(liveLogPath, 'utf8').includes('first dispatch chunk'));
+    assert.equal(closed, false, 'the engine must still be running when the first chunk is readable');
+    assert.equal(await childClosed, 0);
+    assert.match(fs.readFileSync(liveLogPath, 'utf8'), /first dispatch chunk[\s\S]*second dispatch chunk/);
+    const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+    assert.equal(result.exitCode, 0);
+    assert.match(result.report, /first dispatch chunk/);
+    assert.match(result.stderr, /second dispatch chunk/);
+  } finally {
+    try { child.kill('SIGKILL'); } catch {}
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(wt, { recursive: true, force: true });
+  }
+});
+
 test('staffing skips denied lanes and keeps concurrent picks file-disjoint', () => {
   const tasks = [
     { display_id: 'A', status: 'open', title: 'touch commands/mission.js Done: x. Check: y.' },
@@ -243,9 +311,11 @@ test('landArrival reports dirty_worktree, not an empty rebase_conflict', () => {
 // CLI-1190: a claude engine killed mid-flight (exit 143 / SIGTERM) returns an
 // empty report. The restaff leg must name the signal instead of a silent no-op.
 test('failedDispatchLeg names the signal for a killed engine with an empty report', () => {
-  const exitLeg = fleet.failedDispatchLeg({ exitCode: 143, report: '', stderr: '' }, 'claude');
+  const watchdogReceipt = { schema: 'atris.codex_watchdog_receipt.v1', status: 'timed_out' };
+  const exitLeg = fleet.failedDispatchLeg({ exitCode: 143, report: '', stderr: '', watchdog_receipt: watchdogReceipt }, 'claude');
   assert.equal(exitLeg.signal, 'SIGTERM');
   assert.equal(exitLeg.report, '(no report: killed by SIGTERM)');
+  assert.deepEqual(exitLeg.watchdog_receipt, watchdogReceipt);
 
   const signalLeg = fleet.failedDispatchLeg({ status: null, signal: 'SIGKILL', report: '', stderr: '' }, 'claude');
   assert.equal(signalLeg.signal, 'SIGKILL');
@@ -259,21 +329,88 @@ test('failedDispatchLeg names the signal for a killed engine with an empty repor
 
 test('detectDeadEngineDispatch flags a signalled leg distinctly from a plain nonzero exit', () => {
   assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 143, report: '' }), { reason: 'signalled', signal: 'SIGTERM', exitCode: 143 });
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ signal: 'SIGKILL', report: '' }), { reason: 'signalled', signal: 'SIGKILL', exitCode: null });
   assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 2, report: 'boom' }), { reason: 'nonzero_exit', exitCode: 2 });
+});
+
+test('empty exit zero is no_output and missing exit metadata is unknown', () => {
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 0, report: ' \n', stderr: '' }), { reason: 'no_output', exitCode: 0 });
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ report: 'claimed success' }), { reason: 'unknown', exitCode: null });
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ report: 'usage limit reached' }), { reason: 'unknown', exitCode: null });
+
+  const empty = fleet.dispatchResultToTerminal({ engine: 'codex', taskId: 'CLI-1' }, { exitCode: 0, report: '', stderr: '' });
+  assert.equal(empty.ok, false);
+  assert.equal(empty.reason, 'no_output');
+  const unknown = fleet.dispatchResultToTerminal({ engine: 'codex', taskId: 'CLI-1' }, { report: 'answer' });
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.reason, 'unknown');
+  const stdout = fleet.dispatchResultToTerminal({ engine: 'codex', taskId: 'CLI-1' }, { exitCode: 0, stdout: 'answer' });
+  assert.equal(stdout.ok, true);
+  assert.equal(stdout.reason, 'ok');
+  const mixed = fleet.dispatchResultToTerminal({ engine: 'codex', taskId: 'CLI-1' }, { exitCode: 0, report: ' ', stdout: 'answer' });
+  assert.equal(mixed.ok, true);
+  assert.equal(mixed.reason, 'ok');
 });
 
 test('defaultSelfLandCheck fetches the target ref and checks HEAD ancestry', () => {
   const calls = [];
   const result = fleet.defaultSelfLandCheck({
     worktreePath: '/wt',
+    startCommit: 'base-commit',
     git: (args) => {
       calls.push(args);
+      if (args[0] === 'rev-parse') return { status: 0, stdout: 'new-commit\n', stderr: '' };
+      if (args[0] === 'diff') return { status: 1, stdout: '', stderr: '' };
       return { status: 0, stdout: '', stderr: '' };
     },
   });
-  assert.deepEqual(calls[0], ['fetch', 'origin', 'master:refs/remotes/origin/master']);
-  assert.deepEqual(calls[1], ['merge-base', '--is-ancestor', 'HEAD', 'origin/master']);
-  assert.deepEqual(result, { ok: true, stage: 'self_landed', target: 'origin/master' });
+  assert.deepEqual(calls[0], ['rev-parse', '--verify', 'HEAD^{commit}']);
+  assert.deepEqual(calls[1], ['diff', '--quiet', 'base-commit', 'new-commit', '--']);
+  assert.deepEqual(calls[2], ['fetch', 'origin', 'master:refs/remotes/origin/master']);
+  assert.deepEqual(calls[3], ['merge-base', '--is-ancestor', 'HEAD', 'origin/master']);
+  assert.deepEqual(result, {
+    ok: true,
+    stage: 'self_landed',
+    target: 'origin/master',
+    start_commit: 'base-commit',
+    head: 'new-commit',
+  });
+});
+
+test('defaultSelfLandCheck refuses an unchanged head before ancestry can read as success', () => {
+  const calls = [];
+  const result = fleet.defaultSelfLandCheck({
+    worktreePath: '/wt',
+    startCommit: 'base-commit',
+    git: (args) => {
+      calls.push(args);
+      return { status: 0, stdout: 'base-commit\n', stderr: '' };
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'no_work_landed');
+  assert.equal(result.reason, 'no_work_landed');
+  assert.equal(result.start_commit, result.head);
+  assert.deepEqual(calls, [['rev-parse', '--verify', 'HEAD^{commit}']]);
+});
+
+test('defaultSelfLandCheck reports an empty commit as no work landed', () => {
+  const calls = [];
+  const result = fleet.defaultSelfLandCheck({
+    worktreePath: '/wt',
+    startCommit: 'base-commit',
+    git: (args) => {
+      calls.push(args);
+      if (args[0] === 'rev-parse') return { status: 0, stdout: 'empty-commit\n', stderr: '' };
+      if (args[0] === 'diff') return { status: 0, stdout: '', stderr: '' };
+      throw new Error('ancestry must not run for an empty diff');
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'no_work_landed');
+  assert.equal(result.start_commit, 'base-commit');
+  assert.equal(result.head, 'empty-commit');
+  assert.deepEqual(calls[1], ['diff', '--quiet', 'base-commit', 'empty-commit', '--']);
 });
 
 test('runFleetFlight dry-run staffs from the projection without dispatching', async () => {

@@ -60,6 +60,8 @@ test('dispatchToEngine copies the codex watchdog beside the prompt and gives it 
     assert.ok(fs.existsSync(watchdogCopy));
     assert.equal(fs.readFileSync(watchdogCopy, 'utf8'), fs.readFileSync(WATCHDOG, 'utf8'));
     assert.ok(invocation.command.startsWith(`${shellQuoted(process.execPath)} ${shellQuoted(watchdogCopy)} `));
+    assert.match(invocation.command, /--receipt '[^']+\/\.atris\/codex-watchdog-CLI-WATCHDOG-[a-f0-9]+\.json'/);
+    assert.match(result.watchdog_artifact, /codex-watchdog-CLI-WATCHDOG-[a-f0-9]+\.json$/);
     assert.equal(invocation.options.timeoutMs, 3660000);
   } finally {
     fs.rmSync(worktree, { recursive: true, force: true });
@@ -87,9 +89,38 @@ test('sealed codex dispatch copies the watchdog beside the runtime prompt', () =
     assert.ok(fs.existsSync(watchdogCopy));
     assert.ok(command.startsWith(`${shellQuoted(process.execPath)} ${shellQuoted(watchdogCopy)} `));
     assert.ok(!command.includes(shellQuoted(WATCHDOG)));
+    assert.ok(command.includes(`--receipt '${path.join(worktree, '.atris', 'codex-watchdog-CLI-WATCHDOG-')}`));
+    assert.ok(!command.includes(`${runtimeDir}/codex-watchdog-CLI-WATCHDOG`));
   } finally {
     fs.rmSync(worktree, { recursive: true, force: true });
     fs.rmSync(runtimeDir, { recursive: true, force: true });
+  }
+});
+
+test('dispatch result preserves the watchdog timeout artifact before cleanup', () => {
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-watchdog-artifact-'));
+  try {
+    const artifact = {
+      schema: 'atris.codex_watchdog_receipt.v1',
+      status: 'timed_out',
+      reason: 'max_runtime',
+      exit_code: 125,
+    };
+    const result = fleet.dispatchToEngine({
+      task: TASK,
+      engine: 'codex',
+      worktreePath: worktree,
+      runner: (command) => {
+        const receiptPath = (command.match(/--receipt '([^']+)'/) || [])[1];
+        fs.writeFileSync(receiptPath, `${JSON.stringify(artifact)}\n`);
+        return { status: 125, stdout: '', stderr: 'watchdog timed out' };
+      },
+    });
+    assert.equal(result.exitCode, 125);
+    assert.deepEqual(result.watchdog_receipt, artifact);
+    assert.equal(fs.existsSync(result.watchdog_artifact), true);
+  } finally {
+    fs.rmSync(worktree, { recursive: true, force: true });
   }
 });
 

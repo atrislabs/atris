@@ -58,13 +58,17 @@ test('engine roster lists every profile with detection state', () => {
   }
 });
 
-test('engine <name> persists the workspace default and reset clears it', () => {
+test('bare engine name persists the workspace default and prints both alternate commands', () => {
   const dir = makeTempDir();
   try {
     const set = runCli(['engine', 'cursor'], dir);
     assert.equal(set.status, 0, set.stderr);
     const saved = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'engine.json'), 'utf8'));
     assert.equal(saved.default, 'cursor');
+    assert.match(set.stdout, /default engine changed to cursor/);
+    assert.match(set.stdout, /atris engine ask "\.\.\." --engine cursor/);
+    assert.match(set.stdout, /atris engine dispatch <task> --engine cursor/);
+    assert.equal(set.stdout.trim().split(/\r?\n/).length, 3);
 
     const status = runCli(['engine', '--json'], dir);
     assert.equal(JSON.parse(status.stdout).default, 'cursor');
@@ -78,7 +82,7 @@ test('engine <name> persists the workspace default and reset clears it', () => {
   }
 });
 
-test('engine aliases canonicalize and unknown engines fail fast', () => {
+test('engine aliases canonicalize and unknown engines with trailing text fail fast', () => {
   const dir = makeTempDir();
   try {
     const alias = runCli(['engine', 'atris2-fast'], dir);
@@ -86,9 +90,10 @@ test('engine aliases canonicalize and unknown engines fail fast', () => {
     const saved = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'engine.json'), 'utf8'));
     assert.equal(saved.default, 'atris-fast');
 
-    const bad = runCli(['engine', 'gpt-11'], dir);
+    const bad = runCli(['engine', 'gpt-11', 'answer this'], dir);
     assert.notEqual(bad.status, 0);
     assert.match(bad.stderr, /Unknown engine "gpt-11"/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'engine.json'), 'utf8')).default, 'atris-fast');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

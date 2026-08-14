@@ -21,7 +21,15 @@ tags:
 
 One contract, ten live profiles. The orchestrator writes a bounded task prompt, dispatches it to an engine, then **independently verifies, lands, and pushes** the result. Engines never self-certify.
 
-## Invocation
+## three verbs
+
+- ask: `atris engine <name> "<question>"`; pin a model with `atris engine <name> --model <model> "<question>"`
+- build: `atris engine <name> <task-id>`
+- switch: `atris engine <name>`
+
+## Raw binary fallback and debugging
+
+Raw spawns are not the default because they skip Atris receipts, watch, and coaching.
 
 | Engine | Command | Notes |
 |--------|---------|-------|

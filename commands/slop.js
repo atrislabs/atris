@@ -134,10 +134,12 @@ function addProjectRule(rule, root = process.cwd()) {
 }
 
 // Map<absFile, Set<changedLineNumber>> from the working-tree (or --cached) git diff.
-function gitChangedLines(staged, cwd = process.cwd()) {
+function gitChangedLines(staged, cwd = process.cwd(), range = null) {
   const map = new Map();
   let out;
-  try { out = execFileSync('git', ['diff', '--unified=0', ...(staged ? ['--cached'] : [])], { encoding: 'utf8', cwd }); }
+  try {
+    out = execFileSync('git', ['diff', '--unified=0', ...(staged ? ['--cached'] : []), ...(range ? [range] : [])], { encoding: 'utf8', cwd });
+  }
   catch { return map; }
   let cur = null;
   for (const line of out.split('\n')) {
@@ -237,6 +239,35 @@ function scanFile(file, rules = RULES, pairRules = PAIR_RULES) {
     }
   }
   return findings;
+}
+
+// Programmatic scanner for landing gates. Callers provide the exact candidate
+// paths, so this never widens into a repo scan. An optional changed-lines map
+// keeps branch-diff gates on the lines the candidate actually added or edited.
+function scanPaths(targets, options = {}) {
+  const root = path.resolve(options.root || process.cwd());
+  const rules = options.rules || RULES.concat(loadProjectRules(root));
+  const pairRules = options.pairRules || PAIR_RULES;
+  const changedLines = options.changedLines instanceof Map ? options.changedLines : null;
+  const seen = new Set();
+  const files = [];
+  for (const target of Array.isArray(targets) ? targets : [targets]) {
+    if (!target) continue;
+    for (const file of walk(path.resolve(root, target), [])) {
+      const absolute = path.resolve(file);
+      if (seen.has(absolute)) continue;
+      seen.add(absolute);
+      files.push(absolute);
+    }
+  }
+  let findings = files.flatMap((file) => scanFile(file, rules, pairRules));
+  if (changedLines) {
+    findings = findings.filter((finding) => {
+      const lines = changedLines.get(path.resolve(finding.file));
+      return lines && lines.has(finding.line);
+    });
+  }
+  return { root, files, findings };
 }
 
 function detect(argv) {
@@ -583,4 +614,4 @@ function slopCommand(argv) {
   return 0;
 }
 
-module.exports = { slopCommand, detect, scanFile, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, installHook, findDeadCode, findOrphanedExports, listJsFiles };
+module.exports = { slopCommand, detect, scanFile, scanPaths, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, installHook, findDeadCode, findOrphanedExports, listJsFiles };

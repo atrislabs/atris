@@ -11,6 +11,7 @@ const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
 const { taskProofState } = require('../lib/task-proof');
 const {
+  candidatePolicyGate,
   evaluateAutoAccept,
   isAgentCertified,
   isAutoCertifyVerifyCommandAllowed,
@@ -20,6 +21,13 @@ const {
   DENIED_TAGS,
 } = require('../lib/auto-accept-certified');
 const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
+const {
+  taskExplanation,
+  explanationFieldsFromInput,
+  explanationLines,
+  taskApprovalControls,
+  approvalLines,
+} = require('../lib/task-explanation');
 const { extractReceiptEvidence, RECEIPT_PATH_PATTERN } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const reviewIntegrity = require('../lib/review-integrity');
@@ -144,7 +152,8 @@ atris task - durable local task state (SQLite, gitignored)
     atris autoland tick   # second check runs, task lands
 
   atris task                              Show the task desk
-  atris task new "<title>" [--verify <cmd>]  Create a task; weak or missing checks are marked degraded
+  atris task new "<title>" [--what-changes "..."] [--why-it-matters "..."] [--done-looks-like "..."] [--verify <cmd>]
+                                           Create a task with a plain explanation; omitted fields get honest defaults
   atris task next [--tag <tag>] [--create-next]
                                            Claim/show next open task; optionally create the generated Endgame fallback
   atris task continue-work <id>           Create/reuse a certified Review follow-up task
@@ -176,8 +185,8 @@ atris task - durable local task state (SQLite, gitignored)
   atris task audit [--limit <n>] [--revise] re-run stored verifies for newest accepted tasks; report-only unless --revise
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
-  atris task add "<title>" [--tag <tag>] [--goal-id <id>] [--verify <cmd>]  Create a task
-  atris task delegate "<title>" [--to <member>] [--executed-by <engine>] [--goal-id <id>] [--tag <tag>] [--verify <cmd>]  Create assigned work
+  atris task add "<title>" [--tag <tag>] [--goal-id <id>] [--what-changes "..."] [--why-it-matters "..."] [--done-looks-like "..."] [--verify <cmd>]  Create a task
+  atris task delegate "<title>" [--to <member>] [--executed-by <engine>] [--goal-id <id>] [--tag <tag>] [--what-changes "..."] [--why-it-matters "..."] [--done-looks-like "..."] [--verify <cmd>]  Create assigned work
   atris task plan <id> --goal "..." --exit "..." --proof-needed "..."
                                            Record a task-owned Plan stage
   atris task do <id> --as <owner> --first-move "..."
@@ -443,6 +452,21 @@ function failTask(label, reason, detail, exitCode = 2) {
   process.exit(exitCode);
 }
 
+function refuseCandidatePolicyGate(label, gate) {
+  if (jsonModeActive()) {
+    printJson({ ok: false, command: label, ...gate });
+  } else {
+    console.error(`${label}: ${gate.reason}: ${gate.message}`);
+    if (Array.isArray(gate.offenders)) {
+      gate.offenders.forEach((offender) => console.error(`  ${offender}`));
+    }
+    if (Array.isArray(gate.lesson_ids) && gate.lesson_ids.length) {
+      console.error(`  lessons: ${gate.lesson_ids.join(', ')}`);
+    }
+  }
+  process.exit(1);
+}
+
 function proofFlagValue(args) {
   const proof = flag(args, '--proof');
   return typeof proof === 'string' ? proof.trim() : '';
@@ -470,6 +494,16 @@ function textFlag(args, names) {
     if (typeof value === 'string') return value.trim();
   }
   return '';
+}
+
+// Callers may write the plain explanation themselves. Anything they leave out
+// gets an honest derived default at creation time.
+function explanationFlags(args) {
+  return explanationFieldsFromInput({
+    what_changes: textFlag(args, ['--what-changes']),
+    why_it_matters: textFlag(args, ['--why-it-matters']),
+    done_looks_like: textFlag(args, ['--done-looks-like']),
+  });
 }
 
 function landingFlags(args) {
@@ -1516,6 +1550,7 @@ function buildTaskStreams(tasks, goals) {
     stream.tasks.push({
       id: task.id,
       title: task.title,
+      explanation: task.explanation || taskExplanation(task),
       status: task.status,
       tag: task.tag,
       claimed_by: task.claimed_by,
@@ -1541,6 +1576,68 @@ function buildTaskStreams(tasks, goals) {
   }
   return Array.from(buckets.values())
     .sort((a, b) => (b.active_count - a.active_count) || (b.done_count - a.done_count) || a.objective.localeCompare(b.objective));
+}
+
+// The approval half of the plain layer: one clear way to approve proposed
+// work, one clear way to ask for a change. Every enabled/blocked answer comes
+// from the existing review handoff, so this relabels what the certification
+// rules already allow and can never widen it.
+function taskApprovalFor(task, { reviewer = 'codex-review', hasExistingReviewFollowUp = null } = {}) {
+  const current = taskPageCurrentStage(task);
+  const metadata = task && task.metadata || {};
+  const actions = taskPageActions(task, { reviewer, hasExistingReviewFollowUp });
+  const inReview = current === 'review';
+  const handoff = inReview
+    ? reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp })
+    : null;
+  const planned = current === 'plan';
+  const planReady = planned && Boolean(
+    (metadata.task_goal || metadata.goal_objective || task.objective)
+    && metadata.exit_condition
+    && (metadata.verify || metadata.proof_needed)
+    && metadata.first_move
+  );
+  const acceptEnabled = inReview ? handoffAllowsHumanAccept(handoff) : planReady;
+  const planOwner = task && (task.claimed_by || taskAssignee(task)) || DEFAULT_OWNER;
+  const acceptCommand = inReview
+    ? actions.human_accept_command
+    : planReady
+      ? `atris task do ${taskRef(task)} --as ${planOwner} --first-move ${taskCommandQuote(metadata.first_move)}`
+      : null;
+  const requestChangeEnabled = !['done', 'blocked', 'missing'].includes(current);
+  const requestChangeCommand = inReview
+    ? actions.revise_command
+    : planned
+      ? `atris task backlog ${taskRef(task)} --reason "<what needs to change>"`
+      : actions.note_command;
+  const blockedReason = inReview
+    ? handoffIsProofBoundaryBlocked(handoff)
+      ? 'The proof points at unfinished or unsafe work. Ask for a change before approval.'
+      : 'The proof still needs its required checks before a person can approve it.'
+    : planned
+      ? 'The plan still needs a goal, finish line, check, and first move before approval.'
+      : current === 'backlog'
+        ? 'This task still needs a complete plan before approval.'
+        : current === 'do'
+          ? 'Work is underway. Approval opens after the proof clears review.'
+          : 'This task is already closed.';
+  const question = inReview
+    ? 'Approve the completed work, or ask for a change?'
+    : planned
+      ? 'Approve this plan, or ask for a change?'
+      : requestChangeEnabled
+        ? 'Ask for a change before work moves forward.'
+        : 'No action is available on this closed task.';
+  return taskApprovalControls({
+    question,
+    approveLabel: inReview ? 'Approve the completed work' : 'Approve this plan',
+    acceptEnabled,
+    acceptCommand,
+    requestChangeEnabled,
+    requestChangeCommand,
+    blockedReason,
+    waitingOn: acceptEnabled ? 'a person' : inReview ? 'the proof check' : planned ? 'a complete plan' : null,
+  });
 }
 
 function enrichTaskProjection(projection) {
@@ -1572,7 +1669,7 @@ function enrichTaskProjection(projection) {
       const parentId = parent ? parent.id : metadata.parent_task_id || null;
       const childTasks = children.get(task.id) || [];
       const review = withReviewReceiptPath(taskReviewSummary(task), root);
-      return {
+      const enriched = {
         ...task,
         objective: taskObjective(task, parent, goalSource.goals, { parentLinkType, baseObjectives }),
         review,
@@ -1583,6 +1680,14 @@ function enrichTaskProjection(projection) {
           child_titles: childTasks.map(child => child.title),
           next_task_suggestion: review ? review.next_task : null,
         },
+      };
+      // Recomputed here so the derived reason can use the enriched objective
+      // and lineage that only exist after this pass. Explicit fields written
+      // by the caller still win; nothing below this layer is dropped.
+      return {
+        ...enriched,
+        explanation: taskExplanation(enriched),
+        approval: taskApprovalFor(enriched),
       };
     });
   return {
@@ -1693,7 +1798,13 @@ function ownerMemberIdForCloud(task) {
 }
 
 function taskDescriptionForCloud(task) {
+  const explanation = task.explanation || taskExplanation(task);
+  const approval = task.approval || taskApprovalFor(task);
   const lines = [
+    ...explanationLines(explanation),
+    ...approvalLines(approval),
+    '',
+    `Technical details: ${task.title}`,
     `Local task: ${task.id}`,
     `Status: ${task.status}`,
     `Latest event: ${task.latest_event_type || 'none'}`,
@@ -2321,14 +2432,17 @@ function taskReviewChatNote(contract) {
 function compactTaskForStatus(task) {
   if (!task) return null;
   const metadata = task.metadata || {};
+  const title = clipStatusTitle(task.title, 140);
   const out = {
     id: task.id,
     display_id: task.display_id || null,
     legacy_ref: task.legacy_ref || taskRef(task.id),
-    title: clipStatusTitle(task.title, 140),
+    title,
     result: clipStatusText(task.result || metadata.result, 180) || null,
     status: task.status,
     updated_at: task.updated_at,
+    explanation: taskExplanation({ ...task, title }),
+    approval: task.approval || taskApprovalFor(task),
   };
   if (task.tag) out.tag = task.tag;
   if (task.claimed_by) out.claimed_by = task.claimed_by;
@@ -5254,6 +5368,12 @@ function autoAcceptCertifiedSmallReviews(taskDb, db, projection) {
       results.push({ ...evaluation, action: 'queued', task_id: task?.id || item.id || null });
       continue;
     }
+    const policyGate = candidatePolicyGate(task, { executeDetectors: true });
+    if (!policyGate.ok) {
+      results.push({ ...policyGate, action: 'queued', task_id: task?.id || item.id || null });
+      continue;
+    }
+    evaluation.candidate_gate = policyGate.gate;
     const accepted = acceptReviewTask(taskDb, db, task.id, {
       actor: REVIEW_AUTO_ACCEPT_ACTOR,
       proof: evaluation.proof,
@@ -5374,6 +5494,8 @@ function reviewQueueItem(task, root = process.cwd(), evidence = undefined) {
     id: task.id,
     display_id: task.display_id || null,
     title: task.title,
+    explanation: task.explanation || taskExplanation(task),
+    approval: task.approval || taskApprovalFor(task),
     tag: task.tag || null,
     updated_at: task.updated_at || null,
     review_pass_count: task.review?.agent_review_pass_count || null,
@@ -5627,7 +5749,9 @@ function cmdReviews(args) {
     const badge = item.evidence?.any_forced
       ? ' [evidence:forced]'
       : item.evidence?.all_passing ? ' [evidence:passing]' : '';
-    console.log(`${index + 1}. ${gateForHuman(item.title, { title: item.title }).text} (${ref})${badge}`);
+    console.log(`${index + 1}. ${item.explanation.what_changes} (${ref})${badge}`);
+    console.log(`   why it matters: ${item.explanation.why_it_matters}`);
+    console.log(`   done looks like: ${item.explanation.done_looks_like}`);
     if (item.landing) {
       taskReviewLandingLines(item).forEach(line => console.log(line));
       if (verbose && item.result?.saved) console.log(`   saved: ${item.result.saved}`);
@@ -5644,6 +5768,7 @@ function cmdReviews(args) {
     if (verbose && item.review_chat_command) console.log(`   /codex: ${item.review_chat_command}`);
     if (item.accept_command) {
       console.log(`   say yes: atris task accept ${item.display_id || taskRef(item.id)}`);
+      console.log(`   ask for a change: ${item.revise_command}`);
     } else if (item.blocked_accept_reason) {
       console.log(`   approve: blocked; ${plainLandingReason(item.blocked_accept_reason)}`);
       console.log(`   rework: ${item.revise_command}`);
@@ -5851,11 +5976,17 @@ function taskIsPlannedOpen(task) {
 
 function formatTaskLine(task) {
   if (!task) return 'none';
-  const owner = task.claimed_by ? ` @${task.claimed_by}` : '';
-  const assigned = !task.claimed_by && taskAssignee(task) ? ` -> ${taskAssignee(task)}` : '';
-  const tag = task.tag ? ` #${task.tag}` : '';
-  const decision = decisionMarkerFor(task) ? ` ${decisionMarkerFor(task)}` : '';
-  return `${taskRef(task)}${owner}${assigned}${tag}${decision} ${task.title}`;
+  const explanation = task.explanation || taskExplanation(task);
+  return explanation.what_changes.replace(/\.$/, '');
+}
+
+function printStatusTask(label, task) {
+  console.log(`${label.padEnd(7)} ${formatTaskLine(task)}`);
+  if (!task) return;
+  for (const line of approvalLines(task.approval || taskApprovalFor(task), { indent: '        ' })) console.log(line);
+  const owner = task.claimed_by || taskAssignee(task);
+  const ownerText = owner ? `; owner: ${owner}` : '';
+  console.log(`        Technical details: atris task show ${taskRef(task)}${ownerText}`);
 }
 
 function cmdStatus(args) {
@@ -5888,11 +6019,11 @@ function cmdStatus(args) {
   console.log('TASK STATUS');
   console.log(`workspace ${status.workspace_root || '(all)'}`);
   console.log(`plan ${status.counts.plan} / do ${status.counts.do} / review ${status.counts.review} / backlog ${status.counts.backlog} / done ${status.counts.done}`);
-  console.log(`current ${formatTaskLine(status.current)}`);
-  console.log(`next    ${formatTaskLine(status.next)}`);
+  printStatusTask('current', status.current);
+  printStatusTask('next', status.next);
   if (status.needs_review.length) {
     console.log('review');
-    for (const task of status.needs_review.slice(0, 3)) console.log(`  ${formatTaskLine(task)}`);
+    for (const task of status.needs_review.slice(0, 3)) printStatusTask('review', task);
   }
   if (history) console.log(`history feed ${status.swarlo.feed.length} event${status.swarlo.feed.length === 1 ? '' : 's'}`);
 }
@@ -5947,12 +6078,17 @@ function renderTaskDesk(rows, refRows = rows) {
   console.log('TASK DESK');
   console.log('');
   for (const r of active.slice(0, 12)) {
+    const explanation = taskExplanation(r);
     const owner = r.claimed_by ? ` @${r.claimed_by}` : '';
     const assigned = !r.claimed_by && taskAssignee(r) ? ` -> ${taskAssignee(r)}` : '';
     const tag = r.tag ? ` #${r.tag}` : '';
     const decision = decisionMarkerFor(r) ? ` ${decisionMarkerFor(r)}` : '';
-    console.log(`${r.status.padEnd(7)} ${taskRef(r)}${owner}${assigned}${tag}${decision}`);
-    console.log(`        ${r.title}`);
+    console.log(`What changes: ${explanation.what_changes}`);
+    console.log(`        ${r.status.padEnd(7)} ${taskRef(r)}${owner}${assigned}${tag}${decision}`);
+    console.log(`        Why it matters: ${explanation.why_it_matters}`);
+    console.log(`        Done looks like: ${explanation.done_looks_like}`);
+    for (const line of approvalLines(taskApprovalFor(r), { indent: '        ' })) console.log(line);
+    console.log(`        Technical details: ${compactTechnicalDetails(r)}`);
   }
   if (active.length === 0) console.log('clear   no active tasks');
   console.log('');
@@ -5977,6 +6113,7 @@ function cmdAdd(args) {
     metadata.goal_objective = String(goalObjective);
   }
   if (typeof verify === 'string' && verify.trim()) metadata.verify = verify.trim();
+  Object.assign(metadata, explanationFlags(args));
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
@@ -6082,6 +6219,7 @@ function delegateTask(args, options = {}) {
     metadata.goal_objective = String(goalObjective);
   }
   if (typeof verify === 'string' && verify.trim()) metadata.verify = verify.trim();
+  Object.assign(metadata, explanationFlags(args));
   const result = taskDb.addTask(db, {
     title,
     tag: typeof tag === 'string' ? tag : null,
@@ -6160,6 +6298,13 @@ function taskDayTitle(title, maxLength = 120) {
   return `${clipped || text.slice(0, maxLength).trim()}...`;
 }
 
+function compactTechnicalDetails(task, formatTitle = value => value) {
+  const explanation = task.explanation || taskExplanation(task);
+  return explanation.sources && explanation.sources.what_changes === 'derived'
+    ? `atris task show ${taskRef(task)}`
+    : formatTitle(task.title);
+}
+
 function taskDayGroups(tasks, { now = Date.now() } = {}) {
   const active = tasks.filter(task => task.status !== 'done');
   const staleFailed = [];
@@ -6235,10 +6380,16 @@ function cmdDay(args) {
   for (const group of textView.groups) {
     console.log(`${group.owner}`);
     for (const task of group.tasks) {
+      const explanation = task.explanation || taskExplanation(task);
       const tag = task.tag ? ` #${task.tag}` : '';
       const claim = task.claimed_by ? ` @${task.claimed_by}` : '';
       const decision = decisionMarkerFor(task) ? ` ${decisionMarkerFor(task)}` : '';
-      console.log(`  ${task.status.padEnd(7)} ${taskRef(task)}${claim}${tag}${decision} ${taskDayTitle(task.title)}`);
+      console.log(`  What changes: ${explanation.what_changes}`);
+      console.log(`          ${task.status.padEnd(7)} ${taskRef(task)}${claim}${tag}${decision}`);
+      console.log(`          Why it matters: ${explanation.why_it_matters}`);
+      console.log(`          Done looks like: ${explanation.done_looks_like}`);
+      for (const line of approvalLines(task.approval || taskApprovalFor(task), { indent: '          ' })) console.log(line);
+      console.log(`          Technical details: ${compactTechnicalDetails(task, taskDayTitle)}`);
     }
   }
   if (textView.hiddenTasks > 0) {
@@ -6296,7 +6447,12 @@ function cmdList(args) {
   const rows = filterTasksByScope(rawRows, scope);
   const displayRows = taskDb.withTaskDisplayRefs(rows, workspaceRefRows(taskDb, db, { everywhere }));
   if (wantsJson(args)) {
-    printJson({ ok: true, action: 'list', scope: normalizeTaskQueueScope(scope), tasks: displayRows });
+    const tasks = displayRows.map(task => ({
+      ...task,
+      explanation: taskExplanation(task),
+      approval: taskApprovalFor(task),
+    }));
+    printJson({ ok: true, action: 'list', scope: normalizeTaskQueueScope(scope), tasks });
     return;
   }
   if (rows.length === 0) {
@@ -6305,10 +6461,16 @@ function cmdList(args) {
     return;
   }
   for (const r of displayRows) {
+    const explanation = taskExplanation(r);
     const claim = r.claimed_by ? ` [${r.claimed_by}]` : '';
     const tag = r.tag ? ` #${r.tag}` : '';
     const decision = decisionMarkerFor(r) ? ` ${decisionMarkerFor(r)}` : '';
-    console.log(`${r.status.padEnd(8)} ${taskRef(r)}${claim}${tag}${decision}\t${r.title}`);
+    console.log(`What changes: ${explanation.what_changes}`);
+    console.log(`         ${r.status.padEnd(8)} ${taskRef(r)}${claim}${tag}${decision}`);
+    console.log(`         Why it matters: ${explanation.why_it_matters}`);
+    console.log(`         Done looks like: ${explanation.done_looks_like}`);
+    for (const line of approvalLines(taskApprovalFor(r), { indent: '         ' })) console.log(line);
+    console.log(`         Technical details: ${compactTechnicalDetails(r)}`);
   }
 }
 
@@ -7265,6 +7427,11 @@ function cmdShow(args) {
     : task.status === 'done'
       ? 'DONE'
       : task.status.toUpperCase();
+  // Plain layer first. Everything below stays exactly as it was.
+  for (const line of explanationLines(task.explanation || taskExplanation(task))) console.log(line);
+  for (const line of approvalLines(task.approval || taskApprovalFor(task))) console.log(line);
+  console.log('');
+  console.log('Technical details:');
   console.log(`${statusLabel} ${taskRef(task)} v${task.current_version}${owner}${tag}`);
   console.log(task.title);
   if (task.metadata?.verification_status === 'degraded') {
@@ -7328,7 +7495,10 @@ function cmdPage(args) {
     });
     return;
   }
-  console.log(`TASK PAGE ${taskRef(task)}`);
+  for (const line of explanationLines(page.explanation)) console.log(line);
+  for (const line of approvalLines(page.approval)) console.log(line);
+  console.log('');
+  console.log(`Technical details: TASK PAGE ${taskRef(task)} - ${task.title}`);
   console.log(`Goal: ${page.goal.text || '(none)'}`);
   console.log(`Stage: ${page.stage.current}`);
   printReviewLanding(page.review);
@@ -8262,6 +8432,10 @@ function taskPageContract(task, { reviewer = 'codex-review', hasExistingReviewFo
   const humanAcceptEnabled = task.status === 'review' && handoffAllowsHumanAccept(reviewHandoff);
   return {
     schema: 'atris.task_page.v1',
+    // First layer: what changes, why it matters, what done looks like, and the
+    // two things a person can do about it. The full contract follows unchanged.
+    explanation: task.explanation || taskExplanation(task),
+    approval: taskApprovalFor(task, { reviewer, hasExistingReviewFollowUp }),
     task: {
       id: task.id,
       ref: taskRef(task),
@@ -9436,6 +9610,16 @@ function cmdReady(args) {
   if (missionXpIssue) {
     failTask('atris task ready', MISSION_XP_END_TO_END_REASON, missionXpIssue);
   }
+  const readyPolicyTask = {
+    ...beforeTask,
+    workspace_root: process.cwd(),
+    metadata: {
+      ...(beforeTask && beforeTask.metadata || {}),
+      ...(resultFields.files ? { changed_files: resultFields.files } : {}),
+    },
+  };
+  const readyPolicyGate = candidatePolicyGate(readyPolicyTask, { executeDetectors: true });
+  if (!readyPolicyGate.ok) refuseCandidatePolicyGate('atris task ready', readyPolicyGate);
   const resultTrace = buildAutomaticResultTrace(taskDb, db, taskId, {
     actor,
     proof: String(proof),
@@ -9497,12 +9681,12 @@ function cmdReady(args) {
     handoff.codex_prompt = reviewChat.codex_prompt;
     handoff.verification_focus = reviewChat.verification_focus;
   }
-  // Mined policy lessons (atris lesson mine) coach the proof at submission
-  // time: evidence patterns that historically certify get suggested before
-  // the task stalls in the review lane. Advisory only — never blocks ready.
+  // Mined proof lessons without runnable detectors remain coaching. Promoted,
+  // path-scoped detector lessons already passed the hard gate above.
   const { readPolicyLessons, policyHintsForProof } = require('../lib/policy-lessons');
   const policyHints = policyHintsForProof(String(proof), readPolicyLessons(taskDb.workspaceRoot()), taskDb.workspaceRoot());
   if (policyHints.length) handoff.policy_hints = policyHints;
+  if (readyPolicyGate.gate.advisories.length) handoff.policy_gate = readyPolicyGate.gate;
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -9998,6 +10182,11 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
       continue;
     }
+    const policyGate = candidatePolicyGate(task, { verifyCache, executeDetectors: true });
+    if (!policyGate.ok) {
+      results.push({ ...policyGate, ref, action: 'skipped' });
+      continue;
+    }
     const builderProof = String(review.proof || metadata.latest_agent_proof || '').slice(0, 200);
     const readied = taskDb.readyTask(db, {
       id: task.id,
@@ -10036,7 +10225,12 @@ function cmdCertifyVerified(args, options = {}) {
     console.log('certify-verified: no review rows to consider.');
   } else {
     for (const r of results) {
-      console.log(`${r.action.padEnd(14)} ${r.ref}${r.verify ? `  \`${r.verify}\`` : ''}${r.reason ? `  (${r.reason})` : ''}`);
+      const gateDetail = r.reason === 'slop_gate' && Array.isArray(r.offenders)
+        ? `  [${r.offenders.join('; ')}]`
+        : (r.reason === 'lesson_gate' && Array.isArray(r.lesson_ids)
+          ? `  [lessons: ${r.lesson_ids.join(', ')}]`
+          : '');
+      console.log(`${r.action.padEnd(14)} ${r.ref}${r.verify ? `  \`${r.verify}\`` : ''}${r.reason ? `  (${r.reason})` : ''}${gateDetail}`);
     }
     console.log(`certified ${certified}; humans keep denied lanes and rows without a runnable check.`);
   }
@@ -10348,6 +10542,8 @@ function evaluateSweepAutoAccept(task, root) {
   if (denied) return { eligible: false, ref, reason: denied };
   const proof = autoAcceptSweepLatestProof(task);
   if (!proof) return { eligible: false, ref, reason: 'no_proof' };
+  const policyGate = candidatePolicyGate(task, { executeDetectors: true });
+  if (!policyGate.ok) return { ...policyGate, ref };
 
   // 1. An explicit, stored verifier (`atris task ready --verify`, or a prior
   // certify-verified stamp) is the strongest signal: re-run it live, right
@@ -10367,6 +10563,7 @@ function evaluateSweepAutoAccept(task, root) {
       policy: 'sweep_auto_accept_verified_command',
       proof,
       verify: storedVerify,
+      candidate_gate: policyGate.gate,
       proved_by: [`${storedVerify} exited 0`],
       happened: autoAcceptSweepHappened(task),
     };
@@ -10382,6 +10579,7 @@ function evaluateSweepAutoAccept(task, root) {
       policy: 'sweep_auto_accept_verified',
       proof,
       evidence: verifier.evidence,
+      candidate_gate: policyGate.gate,
       proved_by: verifier.proved_by,
       happened: autoAcceptSweepHappened(task),
     };
@@ -10405,6 +10603,7 @@ function evaluateSweepAutoAccept(task, root) {
           policy: 'sweep_auto_accept_verified_derived',
           proof,
           verify: derived,
+          candidate_gate: policyGate.gate,
           proved_by: [`${derived} exited 0`],
           happened: autoAcceptSweepHappened(task),
         };
@@ -11431,6 +11630,8 @@ function taskBoardTemplate(model) {
     .meta { margin-top:6px; color:var(--muted); font-size:11px; display:flex; gap:6px; flex-wrap:wrap; font-family:var(--mono); }
     .pill { border:1px solid var(--line); border-radius:999px; padding:1px 6px; }
     .why { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.25; }
+    .plain { margin-top:6px; font-size:11px; line-height:1.35; color:var(--text); }
+    .plain div + div { color:var(--muted); }
     .fact { margin:10px 0; background:oklch(15% 0.012 160); border:1px solid var(--line); border-radius:7px; padding:8px; font-size:12px; line-height:1.35; }
     .fact b { color:var(--muted); font-size:11px; display:block; margin-bottom:3px; }
     .room { margin-top:14px; border-top:1px solid var(--line); padding-top:12px; }
@@ -11638,7 +11839,8 @@ function taskBoardTemplate(model) {
       $('overview').querySelectorAll('.chainbox .chainitem strong').forEach((el, i) => {
         if (i === 0) return;
         const task = latest[i - 1];
-        el.textContent = (task.review && task.review.next_task) ? task.title + ' -> ' + task.review.next_task : task.title;
+        const what = task.explanation && task.explanation.what_changes || task.title;
+        el.textContent = (task.review && task.review.next_task) ? what + ' -> ' + task.review.next_task : what;
       });
     }
 
@@ -11673,7 +11875,9 @@ function taskBoardTemplate(model) {
       root.querySelectorAll('.stream h2').forEach((el, i) => { el.textContent = streams[i].objective; });
       root.querySelectorAll('.stream').forEach((streamEl, i) => {
         const tasks = streams[i].tasks.filter((task) => task.status !== 'done').slice(0, 3);
-        streamEl.querySelectorAll('.streamtask strong').forEach((el, idx) => { el.textContent = tasks[idx].title; });
+        streamEl.querySelectorAll('.streamtask strong').forEach((el, idx) => {
+          el.textContent = tasks[idx].explanation && tasks[idx].explanation.what_changes || tasks[idx].title;
+        });
       });
     }
 
@@ -11682,14 +11886,26 @@ function taskBoardTemplate(model) {
       btn.className = 'card' + (selected === task.id ? ' active' : '');
       btn.onclick = () => { selected = task.id; render(); };
       const owner = task.claimed_by ? '@' + task.claimed_by : 'unowned';
-      btn.innerHTML = '<div class="title"></div><div class="meta"><span class="pill"></span><span class="pill"></span><span class="pill"></span></div><div class="why"></div>';
-      btn.querySelector('.title').textContent = task.title;
+      // Plain layer first: what changes, why it matters, what done looks like.
+      // Ids, owner, and version stay below it as detail.
+      btn.innerHTML = '<div class="title"></div><div class="plain"></div>'
+        + '<div class="meta"><span class="pill"></span><span class="pill"></span><span class="pill"></span></div><div class="why"></div>';
+      const plain = task.explanation || {};
+      btn.querySelector('.title').textContent = plain.what_changes || task.title;
+      const plainRows = [];
+      plainRows.push('Why it matters: ' + (plain.why_it_matters || 'No reason recorded yet.'));
+      plainRows.push('Done looks like: ' + (plain.done_looks_like || 'Proof of the work, then review.'));
+      const plainBox = btn.querySelector('.plain');
+      for (const row of plainRows) {
+        const line = document.createElement('div');
+        line.textContent = row;
+        plainBox.appendChild(line);
+      }
       const pills = btn.querySelectorAll('.pill');
       pills[0].textContent = task.display_id || task.id.slice(0, 8);
       pills[1].textContent = owner;
       pills[2].textContent = 'v' + task.current_version;
-      const why = task.objective || (task.lineage && task.lineage.parent_title) || (task.review && task.review.proof) || '';
-      btn.querySelector('.why').textContent = why;
+      btn.querySelector('.why').textContent = 'Technical details: ' + task.title;
       return btn;
     }
 
@@ -11706,6 +11922,11 @@ function taskBoardTemplate(model) {
       room.innerHTML = [
         '<h3></h3>',
         '<div class="meta"><span class="pill">' + task.status + '</span><span class="pill">' + (task.claimed_by || 'unowned') + '</span><span class="pill">v' + task.current_version + '</span></div>',
+        '<div class="fact"><b>What changes</b><div id="taskWhatChanges"></div></div>',
+        '<div class="fact"><b>Why it matters</b><div id="taskWhyItMatters"></div></div>',
+        '<div class="fact"><b>Done looks like</b><div id="taskDoneLooksLike"></div></div>',
+        '<div class="fact"><b>Approval</b><div id="taskApproval"></div></div>',
+        '<div class="fact"><b>Technical details</b><div id="taskTechnicalDetails"></div></div>',
         '<div class="fact"><b>Goal</b><div id="taskGoal"></div></div>',
         '<div class="fact"><b>Lineage</b><div id="taskLineage"></div></div>',
         '<div class="fact"><b>Result</b><div id="taskHappened"></div></div>',
@@ -11718,9 +11939,18 @@ function taskBoardTemplate(model) {
         '<label>Proof</label><input id="proof" placeholder="npm test, PR link, screenshot, blocked reason...">',
         '<label>Lesson</label><textarea id="lesson" placeholder="What did this task teach us?"></textarea>',
         '<label>Next task</label><input id="nextTask" placeholder="Optional next sharper task">',
-        '<div class="actions"><button id="claim">Claim</button><button id="saveNote">Say</button><button id="finish" class="primary full"></button></div>'
+        '<div class="actions"><button id="claim">Claim</button><button id="saveNote">Say</button><button id="requestChange">Ask for a change</button><button id="finish" class="primary full"></button></div>'
       ].join('');
-      room.querySelector('h3').textContent = task.title;
+      const plain = task.explanation || {};
+      const approval = task.approval || {};
+      room.querySelector('h3').textContent = plain.what_changes || task.title;
+      $('taskWhatChanges').textContent = plain.what_changes || task.title;
+      $('taskWhyItMatters').textContent = plain.why_it_matters || 'No reason recorded yet.';
+      $('taskDoneLooksLike').textContent = plain.done_looks_like || 'Proof of the work, then review.';
+      $('taskApproval').textContent = approval.approve && approval.approve.enabled
+        ? approval.question
+        : (approval.approve && approval.approve.blocked_reason) || 'Nothing to approve yet.';
+      $('taskTechnicalDetails').textContent = task.title;
       $('taskGoal').textContent = task.objective || 'No matching goal yet.';
       $('taskLineage').textContent = 'parent: ' + parent + ' / next: ' + children;
       const result = task.review && task.review.result || {};
@@ -11738,8 +11968,23 @@ function taskBoardTemplate(model) {
         ? ((task.review.proof || 'no proof') + ' / ' + (task.review.lesson || 'no lesson'))
         : 'No proof yet.';
       room.querySelectorAll('.msg div:last-child').forEach((el, i) => { el.textContent = task.messages[i].content; });
-      $('finish').textContent = task.status === 'review' ? 'Accept proof' : 'Move to Review';
+      const canApprove = Boolean(approval.approve && approval.approve.enabled);
+      const planned = task.metadata && task.metadata.stage === 'plan';
+      $('finish').textContent = canApprove
+        ? approval.approve.label
+        : task.status === 'claimed' ? 'Move to Review' : 'Approval not ready';
+      $('finish').disabled = !canApprove && task.status !== 'claimed';
       $('claim').onclick = () => mutate('/api/tasks/' + task.id + '/claim', { owner: 'operator' });
+      // Ask for a change runs the existing revise gate; it never lands work.
+      $('requestChange').disabled = !(approval.request_change && approval.request_change.enabled);
+      $('requestChange').textContent = approval.request_change && approval.request_change.label || 'Ask for a change';
+      $('requestChange').onclick = () => {
+        const note = $('note').value.trim();
+        if (!note) { $('note').focus(); return; }
+        const action = task.status === 'review' ? 'revise' : planned ? 'backlog' : 'message';
+        const body = action === 'message' ? { actor: 'operator', content: note } : { actor: 'operator', note: note, reason: note };
+        mutate('/api/tasks/' + task.id + '/' + action, body);
+      };
       $('saveNote').onclick = () => mutate('/api/tasks/' + task.id + '/message', { actor: 'operator', content: $('note').value });
       $('finish').onclick = () => {
         const proof = $('proof').value.trim();
@@ -11749,9 +11994,11 @@ function taskBoardTemplate(model) {
         if (proof) payload.proof = proof;
         if (lesson) payload.lesson = lesson;
         if (nextTask) payload.next = nextTask;
-        if (task.status === 'review') {
+        if (task.status === 'review' && canApprove) {
           payload.createNext = Boolean(nextTask || (task.review && task.review.next_task));
           mutate('/api/tasks/' + task.id + '/accept', payload);
+        } else if (planned && canApprove) {
+          mutate('/api/tasks/' + task.id + '/do', { actor: task.metadata.assigned_to || task.claimed_by || 'operator', first_move: task.metadata.first_move });
         } else {
           mutate('/api/tasks/' + task.id + '/ready', payload);
         }
@@ -11952,11 +12199,15 @@ async function postTaskCreate({ req, res, taskDb, db }) {
   const title = String(body.title || '').trim();
   if (!title) return sendJson(res, 400, { ok: false, reason: 'missing_title', detail: 'title required' });
   const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title);
+  const metadata = {
+    ...(body.verify ? { verify: String(body.verify).trim() } : {}),
+    ...explanationFieldsFromInput(body),
+  };
   const result = taskDb.addTask(db, {
     title,
     tag: body.tag ? String(body.tag) : 'tasks',
     workspaceRoot: taskDb.workspaceRoot(),
-    metadata: body.verify ? { verify: String(body.verify).trim() } : null,
+    metadata: Object.keys(metadata).length ? metadata : null,
   });
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   return sendJson(res, 200, {
@@ -12669,4 +12920,8 @@ module.exports = {
   projectionWishes,
   taskBoardViewModel,
   taskBoardTemplate,
+  enrichTaskProjection,
+  taskApprovalFor,
+  taskPageContract,
+  taskDescriptionForCloud,
 };

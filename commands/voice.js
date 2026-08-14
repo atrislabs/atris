@@ -6,6 +6,10 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const deterministicVoice = require('../scripts/det/voice');
+const {
+  buildVoiceCardHookJson,
+  voiceCardForRoot,
+} = require('../lib/voice-card');
 
 const JUDGE_TIMEOUT_MS = 30_000;
 
@@ -161,8 +165,9 @@ function showVoiceHelp(stdout = process.stdout) {
   stdout.write([
     'usage: atris voice scan [--json]',
     '       atris voice judge',
+    '       atris voice card [--hook]',
     '',
-    'scan checks binary voice tells. judge checks reply shape and plainness.',
+    'scan checks binary voice tells. judge checks reply shape and plainness. card prints the house voice.',
     '',
   ].join('\n'));
 }
@@ -175,8 +180,13 @@ function voiceCommand(args, options = {}) {
     showVoiceHelp(stdout);
     return 0;
   }
+  if (subcommand === 'card') {
+    const card = voiceCardForRoot(options.repoRoot || process.cwd());
+    stdout.write(`${args.includes('--hook') ? JSON.stringify(buildVoiceCardHookJson(card)) : card}\n`);
+    return 0;
+  }
   if (!['scan', 'judge'].includes(subcommand)) {
-    stderr.write('usage: atris voice scan [--json] | atris voice judge\n');
+    stderr.write('usage: atris voice scan [--json] | atris voice judge | atris voice card [--hook]\n');
     return 2;
   }
 

@@ -19,6 +19,7 @@ Schedules the recurring autopilot heartbeat. One tick fires roughly every 13–1
 2. The cron prompt first invokes `atris mission run --due --max-ticks 1 --complete-on-pass`; if no mission is due, it invokes `/autopilot`
 3. Returns the cron job id so the user can stop it later with `CronDelete`
 4. Lists the active cron jobs via `CronList` so the user can see the heartbeat is alive
+5. Runs from a dedicated active task for this loop; a completed task is never reused as the scheduler host
 
 ## How to invoke
 
@@ -26,13 +27,14 @@ User says "run /loop", "start the loop", "kick off autonomous mode", or "make au
 
 The agent then:
 
-1. Calls `CronCreate` with these args (use whatever off-clock minute you land on, do not pin to :00 or :30):
+1. Checks that the current task is active and dedicated to this loop. If it is complete or belongs to other work, stop and create a new dedicated task before scheduling.
+2. Calls `CronCreate` with these args (use whatever off-clock minute you land on, do not pin to :00 or :30):
    - `cron`: `"*/13 * * * *"` (every 13 min) for tight loops, or `"7 * * * *"` (hourly at :07) for slow loops
    - `prompt`: `"First run: atris mission run --due --max-ticks 1 --complete-on-pass. If it reports no_due_mission, run /autopilot for one tick. One bounded goal only, then stop. Do not start a conversation."`
    - `recurring`: `true`
    - `durable`: `false` (in-memory only, gone when this Claude session ends)
-2. After creating, calls `CronList` and shows the user the active cron jobs.
-3. Tells the user: "loop is alive. job id <X>. fires roughly every <N> minutes. say 'stop the loop' to kill it. auto-expires after 7 days."
+3. After creating, calls `CronList` and shows the user the active cron jobs.
+4. Tells the user: "loop is alive. job id <X>. fires roughly every <N> minutes. say 'stop the loop' to kill it. auto-expires after 7 days."
 
 ## Stopping the loop
 
@@ -43,6 +45,7 @@ If the user says "kill all loops", call `CronList`, then `CronDelete` for every 
 ## Rules
 
 - One tick at a time. Never schedule a cron that fires more than once per 10 min.
+- One recurring monitor per dedicated active task. Never attach a new monitor to a completed task.
 - Always pick an off-clock minute (avoid :00 and :30) to prevent the global fleet from hammering the API at the same instant.
 - Use `durable: false` by default. Only use `durable: true` if the user explicitly says "make this survive restarts" or "persist this".
 - Auto-expires after 7 days. Tell the user.

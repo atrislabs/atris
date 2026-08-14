@@ -41,11 +41,20 @@ test('init writes FOR_AGENTS and the AGENTS adapter breadcrumb', () => {
 
     const forAgentsPath = path.join(tempDir, 'atris', 'FOR_AGENTS.md');
     assert.equal(fs.existsSync(forAgentsPath), true);
-    assert.ok(fs.readFileSync(forAgentsPath, 'utf8').trim().length > 0);
+    const forAgentsContent = fs.readFileSync(forAgentsPath, 'utf8');
+    assert.ok(forAgentsContent.trim().length > 0);
+    assert.match(forAgentsContent, /what changes, why it matters, and\nwhat done looks like/i);
+    assert.match(forAgentsContent, /exact title, files, commands, requirements,\nevents, proof, and approval rules/i);
 
     const agentsPath = path.join(tempDir, 'AGENTS.md');
     const agentsContent = fs.readFileSync(agentsPath, 'utf8');
     assert.ok(agentsContent.includes('FOR_AGENTS.md'));
+    assert.match(agentsContent, /Every created task leads with three plain fields/);
+    assert.match(agentsContent, /accept\/revise gates and never skips proof/);
+
+    const policyContent = fs.readFileSync(path.join(tempDir, 'atris', 'atris.md'), 'utf8');
+    assert.match(policyContent, /The three plain fields are the default face on every task view/);
+    assert.match(policyContent, /exact\ntitle, context, requirements, files, events, proof, and verifier stay beneath\nthem unchanged/);
   } finally {
     cleanup(tempDir);
   }

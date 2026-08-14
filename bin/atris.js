@@ -471,6 +471,7 @@ function showHelp() {
   console.log('  atris stop                 Stop the current mission');
   console.log('  atris check <run-id>       Show the checks for a mission');
   console.log('  atris ready --json         Show which mission features are ready');
+  console.log('  atris engine validate latest  check the newest ask receipt with a cheap referee');
   console.log('  atris business init "My Company"');
   console.log('  atris run');
   console.log('  atris drill');
@@ -563,7 +564,8 @@ function showHelp() {
   console.log('  caretaker  - Classify open pull requests on origin (scan only; no fix, comment, or merge)');
   console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
   console.log(`  autoland   - Approve the policy once; ${require('../lib/autoland').certifiedWorkLandsPhrase(process.cwd())}, you keep irreversible calls`);
-  console.log('  engine     - Engine registry: list/resolve roles, health flips, default engine, `engine test`, and dispatch flights');
+  console.log('  engine     - engine registry, answer validation, dispatch flights, and live progress');
+  console.log('  ci         - run github actions jobs locally with runs-on: atris');
   console.log('  router     - inspect ax lane outcomes and promote gated reflex overrides');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
@@ -2618,6 +2620,10 @@ if (command === 'init') {
   require('../commands/game').gameCommand(process.argv.slice(3))
     .then((status) => process.exit(status === 1 ? 1 : 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'ci') {
+  Promise.resolve(require('../commands/ci').ciCommand(process.argv.slice(3)))
+    .then((status) => process.exit(status || 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ').toLowerCase()); process.exit(1); });
 } else if (command === 'github') {
   const status = require('../commands/github').githubCommand(process.argv.slice(3));
   process.exit(status);
@@ -2853,9 +2859,9 @@ if (command === 'init') {
     .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'engine' || command === 'engines') {
-  // Engine: bring any intelligence — roster of installed coding CLIs, default
+  // Engine: bring any intelligence. Roster of installed coding CLIs, default
   // engine per workspace, --engine <name> rides any loop for one run.
-  // `engine dispatch` runs an async claim -> build -> ship flight, so the
+  // `engine dispatch`, `engine ask`, `engine validate`, and `engine watch` can be async, so the
   // return value may be a promise or a plain number; Promise.resolve handles
   // both (mirrors the `compile` command dispatch just above).
   const engineArgs = command === 'engines' && process.argv.length <= 3 ? [] : process.argv.slice(3);

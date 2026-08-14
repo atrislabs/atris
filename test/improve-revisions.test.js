@@ -1,7 +1,7 @@
 'use strict';
 
 // The guarantee gauge: `atris improve revisions` reads git history, calls a
-// commit with the atris-builder[bot] co-author trailer an agent landing, and
+// commit with a known agent Co-authored-by trailer an agent landing, and
 // counts a later human commit touching the same files within 72 hours as a
 // revision signal. Target metric: revision rate = 0.
 
@@ -18,9 +18,22 @@ const {
   formatRevisionsReport,
   collectImproveVitals,
   formatImproveVitals,
+  isAgentCommitBody,
 } = require('../commands/improve');
 
 const BOT_TRAILER = 'Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>';
+
+test('agent landings are co-author trailers only, case-insensitive across known agents', () => {
+  assert.strictEqual(isAgentCommitBody('fix\n\nCo-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>\n'), true);
+  assert.strictEqual(isAgentCommitBody('fix\n\nCo-Authored-By: Claude\n'), true);
+  assert.strictEqual(isAgentCommitBody('fix\n\nco-authored-by: Cursor Agent <cursoragent@cursor.com>\n'), true);
+  assert.strictEqual(isAgentCommitBody('fix\n\nCo-authored-by: Codex <codex@openai.com>\n'), true);
+  assert.strictEqual(isAgentCommitBody('fix\n\nCO-AUTHORED-BY: ChatGPT <noreply@openai.com>\n'), true);
+  assert.strictEqual(isAgentCommitBody('fix\n\nCo-authored-by: OpenAI <openai@users.noreply.github.com>\n'), true);
+  assert.strictEqual(isAgentCommitBody('used claude and cursor in the body\natris-builder[bot] mentioned\n'), false);
+  assert.strictEqual(isAgentCommitBody('human fix with no trailer\n'), false);
+  assert.strictEqual(isAgentCommitBody('fix\n\nCo-authored-by: Jane Doe <jane@example.com>\n'), false);
+});
 
 function initRepo() {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-revisions-test-'));
@@ -187,6 +200,28 @@ test('improve vitals say zero needed a human fix when landings went clean', () =
     commitFile(cwd, 'b.js', 'v1\n', 'bot lands feature b', { bot: true, atMs: base + HOUR });
     const vitals = collectImproveVitals({ workspace: cwd, now }, { cronInstalled: () => true });
     assert.strictEqual(vitals.guarantee.sentence, 'two landings this fortnight, zero needed a human fix.');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('a later agent commit with a claude trailer is not a human revision', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 2 * 24 * HOUR;
+  try {
+    commitFile(cwd, 'a.js', 'v1\n', 'bot lands feature a', { bot: true, atMs: base });
+    fs.writeFileSync(path.join(cwd, 'a.js'), 'v2\n', 'utf8');
+    fs.writeFileSync(path.join(cwd, '.git', 'COMMIT_MSG_FIXTURE'), 'agent follow-up\n\nCo-Authored-By: Claude\n', 'utf8');
+    const date = new Date(base + HOUR).toISOString();
+    execSync('git add -A && git commit -q -F .git/COMMIT_MSG_FIXTURE', {
+      cwd,
+      stdio: 'pipe',
+      env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+    });
+    const summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.landings, 2);
+    assert.strictEqual(summary.revised, 0);
   } finally {
     cleanup(cwd);
   }

@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 'use strict';
 
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
 
 const DEFAULT_STARTUP_DEADLINE_SECONDS = 90;
 const DEFAULT_MAX_RUNTIME_SECONDS = 3600;
 const USAGE = 'usage: node scripts/det/codex-watchdog.js ' +
-  '[--startup-deadline <sec, default 90>] [--max-runtime <sec, default 3600>] -- <command...>';
+  '[--startup-deadline <sec, default 90>] [--max-runtime <sec, default 3600>] ' +
+  '[--receipt <path>] -- <command...>';
 
 function positiveSeconds(value, flag) {
   const seconds = Number(value);
@@ -20,11 +23,12 @@ function positiveSeconds(value, flag) {
 function parseArgs(argv) {
   let startupDeadlineSeconds = DEFAULT_STARTUP_DEADLINE_SECONDS;
   let maxRuntimeSeconds = DEFAULT_MAX_RUNTIME_SECONDS;
+  let receiptPath = '';
   let index = 0;
 
   while (index < argv.length && argv[index] !== '--') {
     const flag = argv[index];
-    if (flag !== '--startup-deadline' && flag !== '--max-runtime') {
+    if (flag !== '--startup-deadline' && flag !== '--max-runtime' && flag !== '--receipt') {
       throw new Error(`unknown option: ${flag}`);
     }
     if (index + 1 >= argv.length || argv[index + 1] === '--') {
@@ -32,8 +36,10 @@ function parseArgs(argv) {
     }
     if (flag === '--startup-deadline') {
       startupDeadlineSeconds = positiveSeconds(argv[index + 1], flag);
-    } else {
+    } else if (flag === '--max-runtime') {
       maxRuntimeSeconds = positiveSeconds(argv[index + 1], flag);
+    } else {
+      receiptPath = argv[index + 1];
     }
     index += 2;
   }
@@ -45,9 +51,36 @@ function parseArgs(argv) {
   return {
     startupDeadlineSeconds,
     maxRuntimeSeconds,
+    receiptPath,
     command: argv[index + 1],
     commandArgs: argv.slice(index + 2),
   };
+}
+
+function writeTimeoutReceipt(config, exitCode, startedAt) {
+  if (!config.receiptPath || (exitCode !== 124 && exitCode !== 125)) return;
+  const receiptPath = path.resolve(config.receiptPath);
+  const dir = path.dirname(receiptPath);
+  fs.mkdirSync(dir, { recursive: true });
+  const groupResult = spawnSync('ps', ['-o', 'pgid=', '-p', String(process.pid)], { encoding: 'utf8' });
+  const parsedGroup = groupResult.status === 0 ? Number(String(groupResult.stdout || '').trim()) : null;
+  const receipt = {
+    schema: 'atris.codex_watchdog_receipt.v1',
+    status: 'timed_out',
+    reason: exitCode === 124 ? 'silent_start' : 'max_runtime',
+    exit_code: exitCode,
+    pid: process.pid,
+    pgid: Number.isInteger(parsedGroup) && parsedGroup > 0 ? parsedGroup : null,
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+  };
+  const tmpPath = path.join(dir, `.${path.basename(receiptPath)}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
+  try {
+    fs.writeFileSync(tmpPath, `${JSON.stringify(receipt, null, 2)}\n`);
+    fs.renameSync(tmpPath, receiptPath);
+  } finally {
+    try { fs.unlinkSync(tmpPath); } catch {}
+  }
 }
 
 function killProcessGroup(child) {
@@ -164,6 +197,7 @@ async function run(config) {
 }
 
 async function main() {
+  const startedAt = new Date().toISOString();
   let config;
   try {
     config = parseArgs(process.argv.slice(2));
@@ -173,6 +207,11 @@ async function main() {
     return;
   }
   process.exitCode = await run(config);
+  try {
+    writeTimeoutReceipt(config, process.exitCode, startedAt);
+  } catch (error) {
+    process.stderr.write(`watchdog: could not write timeout receipt: ${error.message}\n`);
+  }
 }
 
 main();

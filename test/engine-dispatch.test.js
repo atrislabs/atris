@@ -61,6 +61,19 @@ test('fleet prompt injects the repo default when the task has no Check line', ()
   }
 });
 
+test('fleet prompt includes the exported atris process preamble exactly once', () => {
+  const root = makeTempRoot();
+  try {
+    const prompt = fleet.buildFleetPrompt(TASK, { worktreePath: root });
+    const stablePhrase = 'you are set up to do this well';
+    assert.equal(fleet.ATRIS_BUILD_PROCESS_PREAMBLE, fleet.ATRIS_BUILD_PROCESS_PREAMBLE.toLowerCase());
+    assert.ok(fleet.ATRIS_BUILD_PROCESS_PREAMBLE.split('\n').length < 12);
+    assert.equal(prompt.split(stablePhrase).length - 1, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('isSafeLane reads the canonical singular task tag', () => {
   assert.equal(fleet.isSafeLane({ title: 'ship it', tag: 'deploy' }), false);
   assert.equal(fleet.isSafeLane({ title: 'fix it', tag: 'code' }), true);
@@ -81,6 +94,55 @@ test('parseDispatchArgs supports --flag=value form', () => {
   assert.equal(parsed.engine, 'codex');
   assert.equal(parsed.promptFile, '/tmp/p.md');
   assert.equal(parsed.yolo, false);
+});
+
+test('engine name plus task id routes through the existing dispatch command shape', async () => {
+  const root = makeTempRoot();
+  const calls = [];
+  try {
+    const code = await engine.engineCommand(['codex', 'CLI-123'], {
+      root,
+      engineDispatch: (args, dispatchRoot) => {
+        calls.push({ args, root: dispatchRoot });
+        return 0;
+      },
+    });
+    assert.equal(code, 0);
+    assert.deepEqual(calls, [{ args: ['CLI-123', '--engine', 'codex'], root }]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('engine task shorthand rejects trailing prose and asks the user to pick one lane', async () => {
+  const root = makeTempRoot();
+  const errors = [];
+  let dispatchCalled = false;
+  let askCalled = false;
+  const originalError = console.error;
+  console.error = (line = '') => errors.push(String(line));
+  try {
+    const code = await engine.engineCommand(['cursor', 'CLI-123', 'please', 'review', 'it'], {
+      root,
+      engineDispatch: () => {
+        dispatchCalled = true;
+        return 0;
+      },
+      engineAsk: {
+        executeAskJob: async () => {
+          askCalled = true;
+          return { ok: true };
+        },
+      },
+    });
+    assert.equal(code, 2);
+    assert.equal(dispatchCalled, false);
+    assert.equal(askCalled, false);
+    assert.match(errors.join('\n'), /pick one: ask a question or build the task/);
+  } finally {
+    console.error = originalError;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('buildEngineCommand pins yolo flags for codex and claude engines', () => {
@@ -273,6 +335,11 @@ test('runDispatchFlight happy path: claims, builds, re-verifies for real, ships,
     assert.ok(Number.isInteger(flight.results[0].duration_ms));
     assert.ok(flight.results[0].duration_ms >= 0);
     assert.ok(Number.isFinite(Date.parse(flight.results[0].at)));
+    assert.equal(flight.status, 'completed');
+    assert.match(flight.live_log, /^atris\/runs\/dispatch-.+[.]live[.]log$/);
+    assert.equal(fs.existsSync(path.join(tmpRoot, flight.live_log)), true);
+    const durableReceipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.equal(durableReceipt.live_log, flight.live_log);
     assert.equal(verifyCalls.length, 1);
     assert.equal(verifyCalls[0].command, 'node --test test/widget.test.js');
     assert.equal(verifyCalls[0].cwd, '/wt/dispatch-cli-900');
@@ -723,11 +790,12 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
       ownCli: cli,
       log: () => {},
       dispatcher: () => Promise.resolve({ exitCode: 0, report: 'self landed in PR https://example.test/pr/1' }),
+      startCommitReader: () => 'base-commit',
       lander: () => { landerCalled = true; return { ok: true, stage: 'shipped' }; },
       verifier: () => { verifierCalled = true; return { status: 0, stdout: '', stderr: '' }; },
       selfLandCheck: (input) => {
         checks.push(input);
-        return { ok: true, target: input.targetRef };
+        return { ok: true, target: input.targetRef, start_commit: input.startCommit, head: 'new-commit' };
       },
     });
 
@@ -738,6 +806,7 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
     assert.equal(flight.paused.length, 0);
     assert.equal(checks.length, 1);
     assert.equal(checks[0].worktreePath, '/wt/dispatch-cli-900');
+    assert.equal(checks[0].startCommit, 'base-commit');
     assert.equal(landerCalled, false);
     assert.equal(verifierCalled, false);
     assert.ok(!calls.some((c) => c.startsWith('worktree ship')), 'outer dispatch must not ship in yolo mode');
@@ -747,8 +816,9 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
     assert.equal(receipt.yolo, true);
     assert.equal(receipt.landed[0].landing, 'self');
     assert.equal(receipt.result.passed, true);
-    assert.equal(receipt.result.verifier_result.command, 'git merge-base --is-ancestor HEAD origin/master');
+    assert.equal(receipt.result.verifier_result.command, 'HEAD and its tree differ from dispatch start commit; git merge-base --is-ancestor HEAD origin/master');
     assert.equal(receipt.result.verifier_result.passed, true);
+    assert.equal(receipt.results[0].start_commit, 'base-commit');
     assert.equal(receipt.results[0].verified_passed, null);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -873,6 +943,30 @@ test('runDispatchFlight pauses when the build itself fails, keeping the worktree
     assert.equal(flight.paused[0].stage, 'build');
     assert.equal(flight.results[0].verified_passed, null);
     assert.ok(!calls.some((c) => c.startsWith('task ready')));
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight treats empty exit zero as no_output and never lands it', async () => {
+  const tmpRoot = makeTempRoot();
+  try {
+    const { cli, calls } = ownCliFake({ tasks: { 'CLI-900': TASK }, worktreeFor: (task) => `/wt/${task}` });
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      installedEngines: ['cursor'],
+      ownCli: cli,
+      log: () => {},
+      dispatcher: () => Promise.resolve({ exitCode: 0, stdout: ' \n', stderr: '' }),
+      lander: () => { throw new Error('empty output must not reach the landing gate'); },
+    });
+    assert.equal(flight.landed.length, 0);
+    assert.equal(flight.paused[0].stage, 'build');
+    assert.equal(flight.paused[0].reason, 'no_output');
+    assert.equal(flight.results[0].deadEngine.reason, 'no_output');
+    assert.ok(!calls.some((call) => call.startsWith('worktree ship')));
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -1013,7 +1107,7 @@ test('runDispatchFlight ship args always target origin/master, never the launche
       taskIds: ['CLI-900'],
       engine: 'cursor',
       ownCli: cli,
-      dispatcher: () => Promise.resolve({ exitCode: 0 }),
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'build completed' }),
       rebase: () => ({ ok: true, stage: 'rebased' }),
       verifier: () => ({ status: 0, stdout: 'pass', stderr: '' }),
     });

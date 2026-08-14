@@ -413,7 +413,7 @@ test('ready reports only capabilities that its probes found', async () => {
   assert.equal(code, 0);
   assert.deepEqual(JSON.parse(output.stdout.join('\n')), {
     ready: true,
-    cli_version: '3.43.0',
+    cli_version: require('../package.json').version,
     computer_version: '1.0',
     can_run_missions: true,
     can_check_work: true,
@@ -433,7 +433,7 @@ test('ready does not claim remote features without sign-in or route proof', asyn
   const payload = JSON.parse(output.stdout.join('\n'));
   assert.deepEqual(payload, {
     ready: false,
-    cli_version: '3.43.0',
+    cli_version: require('../package.json').version,
     computer_version: null,
     can_run_missions: false,
     can_check_work: false,

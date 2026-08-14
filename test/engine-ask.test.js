@@ -27,6 +27,18 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function waitUntil(predicate, timeoutMs = 1000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      if (predicate()) return resolve();
+      if (Date.now() - started >= timeoutMs) return reject(new Error('timed out waiting for condition'));
+      setTimeout(tick, 10);
+    };
+    tick();
+  });
+}
+
 function processIsAlive(pid) {
   try {
     process.kill(pid, 0);
@@ -289,11 +301,16 @@ test('command prints labeled statuses and writes only its receipt', async () => 
     assert.match(printed, /cursor \(cursor\): failed/);
     assert.match(printed, /claude \(claude\): timed out/);
     const runsDir = path.join(root, 'atris', 'runs');
-    const receiptFiles = fs.readdirSync(runsDir).filter((file) => file.startsWith('engine-ask-'));
+    const receiptFiles = fs.readdirSync(runsDir).filter((file) => file.startsWith('engine-ask-') && file.endsWith('.json'));
     assert.equal(receiptFiles.length, 1);
     const receipt = JSON.parse(fs.readFileSync(path.join(runsDir, receiptFiles[0]), 'utf8'));
     assert.equal(receipt.read_only, true);
-    assert.deepEqual(receipt.summary, { answered: 1, failed: 1, timed_out: 1 });
+    assert.deepEqual(receipt.summary, { answered: 1, failed: 1, timed_out: 1, cancelled: 0 });
+    assert.equal(receipt.status, 'timed_out');
+    assert.match(receipt.live_log, /^atris\/runs\/engine-ask-.+[.]live[.]log$/);
+    assert.equal(fs.existsSync(path.join(root, receipt.live_log)), true);
+    assert.equal(Number.isInteger(receipt.pid), true);
+    assert.equal(Number.isInteger(receipt.pgid), true);
     assert.deepEqual(receipt.answers.map((answer) => answer.model), ['gpt-5.6', 'gpt-5.6', 'gpt-5.6']);
     assert.deepEqual(receipt.answers.map((answer) => answer.status), ['answered', 'failed', 'timed out']);
     assert.deepEqual(fs.readdirSync(root), ['atris']);
@@ -301,6 +318,118 @@ test('command prints labeled statuses and writes only its receipt', async () => 
     assert.equal(fs.existsSync(path.join(root, '.atris')), false);
   } finally {
     console.log = originalLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('chunked engine output reaches the receipt live log before process exit', async () => {
+  const root = tempRoot();
+  const engineScript = [
+    "process.stdout.write('first live chunk\\n');",
+    "setTimeout(() => process.stderr.write('second live chunk\\n'), 350);",
+    'setTimeout(() => process.exit(0), 700);',
+  ].join('\n');
+  const originalLog = console.log;
+  console.log = () => {};
+  let settled = false;
+  const runningCommand = runEngineAskCommand(['watch me', '--engine', 'codex'], root, {
+    executeAskJob: (_job, context) => runAskProcess({
+      bin: process.execPath,
+      args: ['-e', engineScript],
+    }, {
+      cwd: root,
+      timeoutMs: 3000,
+      signal: context.signal,
+      onOutputChunk: context.onOutputChunk,
+    }),
+  }).finally(() => { settled = true; });
+  try {
+    const runsDir = path.join(root, 'atris', 'runs');
+    await waitUntil(() => {
+      if (!fs.existsSync(runsDir)) return false;
+      const file = fs.readdirSync(runsDir).find((name) => name.endsWith('.json'));
+      if (!file) return false;
+      const receipt = JSON.parse(fs.readFileSync(path.join(runsDir, file), 'utf8'));
+      return Boolean(receipt.live_log && fs.existsSync(path.join(root, receipt.live_log)));
+    }, 2000);
+    const receiptFile = fs.readdirSync(runsDir).find((name) => name.endsWith('.json'));
+    const receiptPath = path.join(runsDir, receiptFile);
+    const running = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+    assert.match(running.live_log, /^atris\/runs\/engine-ask-.+[.]live[.]log$/);
+    const liveLogPath = path.join(root, running.live_log);
+    await waitUntil(() => fs.readFileSync(liveLogPath, 'utf8').includes('first live chunk'), 2000);
+    assert.equal(settled, false, 'the dispatch must still be running when its first chunk is readable');
+    assert.equal(await runningCommand, 0);
+    assert.match(fs.readFileSync(liveLogPath, 'utf8'), /first live chunk[\s\S]*second live chunk/);
+    const completed = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+    assert.equal(completed.status, 'completed');
+    assert.equal(completed.live_log, running.live_log);
+  } finally {
+    console.log = originalLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('killing an ask mid-run leaves a running receipt with its pid and pgid', async () => {
+  if (process.platform === 'win32') return;
+  const root = tempRoot();
+  const runner = path.join(root, 'kill-mid-ask.js');
+  const engineAskModule = path.join(__dirname, '..', 'lib', 'engine-ask.js');
+  fs.writeFileSync(runner, [
+    `'use strict';`,
+    `const { runEngineAskCommand } = require(${JSON.stringify(engineAskModule)});`,
+    `runEngineAskCommand(['wait', '--engine', 'codex'], ${JSON.stringify(root)}, {`,
+    `  executeAskJob: () => new Promise(() => setInterval(() => {}, 1000)),`,
+    `}).catch(() => {});`,
+    '',
+  ].join('\n'));
+  const child = spawn(process.execPath, [runner], { cwd: root, detached: true, stdio: 'ignore' });
+  try {
+    const runsDir = path.join(root, 'atris', 'runs');
+    await waitUntil(() => fs.existsSync(runsDir) && fs.readdirSync(runsDir).some((file) => file.startsWith('engine-ask-') && file.endsWith('.json')), 2000);
+    const receiptFile = fs.readdirSync(runsDir).find((file) => file.startsWith('engine-ask-') && file.endsWith('.json'));
+    const receiptPath = path.join(runsDir, receiptFile);
+    const running = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+    assert.equal(running.status, 'running');
+    assert.equal(running.pid, child.pid);
+    assert.equal(running.pgid, child.pid);
+    assert.equal(running.engine, 'codex');
+    assert.match(running.started_at, /^\d{4}-\d{2}-\d{2}T/);
+
+    const closed = new Promise((resolve) => child.once('close', resolve));
+    process.kill(-child.pid, 'SIGKILL');
+    await closed;
+    const stranded = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+    assert.equal(stranded.status, 'running');
+    assert.equal(processIsAlive(stranded.pid), false);
+  } finally {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('aborting an ask finalizes its receipt as cancelled', async () => {
+  const root = tempRoot();
+  const abort = new AbortController();
+  try {
+    const running = runEngineAskCommand(['wait', '--engine', 'codex'], root, {
+      abortController: abort,
+      executeAskJob: (_job, context) => runAskProcess(fakeReplyInvocation({ hang: true }), {
+        cwd: root,
+        timeoutMs: 5000,
+        signal: context.signal,
+      }),
+    });
+    await wait(30);
+    abort.abort();
+    assert.equal(await running, 1);
+    const runsDir = path.join(root, 'atris', 'runs');
+    const receiptFile = fs.readdirSync(runsDir).find((file) => file.startsWith('engine-ask-') && file.endsWith('.json'));
+    const receipt = JSON.parse(fs.readFileSync(path.join(runsDir, receiptFile), 'utf8'));
+    assert.equal(receipt.status, 'cancelled');
+    assert.equal(receipt.summary.cancelled, 1);
+    assert.match(receipt.finished_at, /^\d{4}-\d{2}-\d{2}T/);
+  } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
@@ -315,5 +444,70 @@ test('engine command routes ask help without entering the build dispatcher', asy
     assert.match(output.join('\n'), /atris engine ask "<question>"/);
   } finally {
     console.log = originalLog;
+  }
+});
+
+test('engine name with model and trailing text routes through ask without changing the default', async () => {
+  const root = tempRoot();
+  const jobs = [];
+  const output = [];
+  const originalLog = console.log;
+  console.log = (line = '') => output.push(String(line));
+  try {
+    const code = await engineCommand(['fable', '--model', 'opus', 'explain', 'the failure', 'today'], {
+      root,
+      engineAsk: {
+        executeAskJob: async (job) => {
+          jobs.push(job);
+          return {
+            ok: true,
+            reason: 'answered',
+            exit_code: 0,
+            signal: null,
+            timed_out: false,
+            cancelled: false,
+            stdout: 'answer',
+            stderr: '',
+            output_truncated: false,
+            duration_ms: 1,
+          };
+        },
+      },
+    });
+    assert.equal(code, 0);
+    assert.deepEqual(jobs.map(({ engine, model, prompt }) => ({ engine, model, prompt })), [
+      { engine: 'fable', model: 'opus', prompt: 'explain the failure today' },
+    ]);
+    assert.equal(fs.existsSync(path.join(root, '.atris', 'engine.json')), false);
+    assert.match(output.join('\n'), /fable \(fable\)\nanswer/);
+  } finally {
+    console.log = originalLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('unsupported shorthand model fails before ask and names known-good examples', async () => {
+  const root = tempRoot();
+  const errors = [];
+  let askCalled = false;
+  const originalError = console.error;
+  console.error = (line = '') => errors.push(String(line));
+  try {
+    const code = await engineCommand(['droid', '--model', 'opus', 'inspect', 'the router'], {
+      root,
+      engineAsk: {
+        executeAskJob: async () => {
+          askCalled = true;
+          throw new Error('ask should not start');
+        },
+      },
+    });
+    assert.equal(code, 2);
+    assert.equal(askCalled, false);
+    assert.match(errors.join('\n'), /droid does not support model selection/);
+    assert.match(errors.join('\n'), /known-good droid examples: built-in router/);
+  } finally {
+    console.error = originalError;
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

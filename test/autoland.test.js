@@ -642,7 +642,7 @@ test('digest and live update render plain trust labels without scores', () => {
   assert.match(live, /\(rookie, needs review\)/);
 });
 
-test('live update receipt keeps the exact sent text when the daily digest is sent too', () => {
+test('live update receipt keeps the exact sent text when the daily digest is sent too', async () => {
   const { base, repo } = makeTempRepo();
   const commandsAutoland = require('../commands/autoland');
   const originalSend = autoland.sendImessage;
@@ -670,7 +670,7 @@ test('live update receipt keeps the exact sent text when the daily digest is sen
     };
     const receipt = { at: new Date().toISOString(), landed: [], alarms: 0, digest_sent: false, enabled: true };
 
-    commandsAutoland.runTickBody(repo, { json: false, policy, receipt });
+    await commandsAutoland.runTickBody(repo, { json: false, policy, receipt });
 
     assert.deepEqual(receipt.landed, [taskRef]);
     assert.equal(receipt.live_update_sent, true);
@@ -1564,7 +1564,7 @@ test('tick is a no-op when the policy is off', () => {
   }
 });
 
-test('autoland tick survives a throwing wish sweep', () => {
+test('autoland tick survives a throwing wish sweep', async () => {
   const { base, repo } = makeTempRepo();
   const commandsAutoland = require('../commands/autoland');
   const wish = require('../commands/wish');
@@ -1581,7 +1581,7 @@ test('autoland tick survives a throwing wish sweep', () => {
       digest_sent: false,
       enabled: true,
     };
-    const code = commandsAutoland.runTickBody(repo, {
+    const code = await commandsAutoland.runTickBody(repo, {
       json: false,
       policy: autoland.readPolicy(repo),
       receipt,

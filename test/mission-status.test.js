@@ -1187,10 +1187,105 @@ test('goal controller card distinguishes active goal from required write', () =>
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
     const payload = JSON.parse(goal.stdout);
     assert.equal(payload.goal.visible_goal.status, 'active');
-    assert.equal(payload.goal.visible_goal.operations.create_when_empty_or_completed, null);
+    assert.equal(payload.goal.visible_goal.operations.create_when_no_goal, null);
     const card = fs.readFileSync(path.join(dir, 'atris', 'status', 'codex-goal.md'), 'utf8');
     assert.match(card, /- platform goal write required: false/);
     assert.doesNotMatch(card, /visible goal create:|platform write blocked:/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal keeps a completed Codex task closed and routes the mission to a new task', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-after-completed-task',
+      slug: 'mission-after-completed-task',
+      objective: 'run the next bounded mission',
+      owner: 'mission-lead',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'node -e "process.exit(0)"',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const goal = runCli([
+      'mission',
+      'goal',
+      '--native-goal-status',
+      'complete',
+      '--native-goal-objective',
+      'finished original task',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(goal.status, 2, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.action, 'completed_task_closed');
+    assert.equal(payload.requires_new_task, true);
+    assert.equal(payload.requires_native_goal_start, false);
+    assert.equal(payload.native_goal_action, null);
+    assert.equal(payload.goal.visible_goal.status, 'completed_task_closed');
+    assert.equal(payload.goal.visible_goal.operations.create_when_no_goal, null);
+    assert.match(payload.goal.visible_goal.operations.completed_task_action, /new dedicated Codex task/);
+    assert.match(payload.goal.next_command, /new Codex task/);
+
+    const card = fs.readFileSync(path.join(dir, 'atris', 'status', 'codex-goal.md'), 'utf8');
+    assert.match(card, /completed task: stop this task and create a new dedicated Codex task/);
+    assert.doesNotMatch(card, /visible goal create:/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run and tick preserve a completed Codex task without doing work', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'active-mission-closed-task',
+      slug: 'active-mission-closed-task',
+      objective: 'continue only in a fresh Codex task',
+      owner: 'mission-lead',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'node -e "process.exit(0)"',
+      last_tick_index: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    for (const args of [
+      ['mission', 'run', 'active-mission-closed-task', '--no-claude'],
+      ['mission', 'tick', 'active-mission-closed-task'],
+    ]) {
+      const command = runCli([
+        ...args,
+        '--native-goal-status',
+        'complete',
+        '--native-goal-objective',
+        'finished original task',
+        '--json',
+      ], { cwd: dir });
+      assert.equal(command.status, 2, command.stderr || command.stdout);
+      const payload = JSON.parse(command.stdout);
+      assert.equal(payload.code, 'completed_task_closed');
+      assert.equal(payload.requires_new_task, true);
+      assert.equal(payload.requires_native_goal_start, false);
+      assert.match(payload.next_action, /new Codex task/);
+    }
+
+    const stored = fs.readFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map(line => JSON.parse(line))
+      .filter(row => row.id === 'active-mission-closed-task');
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].last_tick_index, 0);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'runs')), false);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3590,17 +3685,12 @@ test('mission run reports replace action when a paused native-only goal blocks c
       `atris mission goal ack ${mission.id} --runtime codex --status active --objective 'edited paused goal test' --json`,
     );
     assert.equal(payload.native_goal_action.fallback.automatic, false);
-    assert.equal(payload.native_goal_action.fallback.blocked_by, 'native_goal_cancel_or_supersede_tool_missing');
-    assert.equal(payload.native_goal_action.fallback.sequence_name, 'complete_paused_goal_then_create_new_goal');
-    assert.deepEqual(payload.native_goal_action.fallback.sequence, [
-      'update_goal({ status: "complete" })',
-      'create_goal({ objective: "edited paused goal test" })',
-      `atris mission goal ack ${mission.id} --runtime codex --status active --objective 'edited paused goal test' --json`,
-    ]);
-    assert.match(payload.native_goal_action.fallback.safe_when, /intentionally superseded/);
-    assert.match(payload.next_command, /replace_goal is required/);
-    assert.match(payload.next_command, /this runtime currently lacks replace_goal/);
-    assert.match(payload.next_command, /only after handoff proof/);
+    assert.equal(payload.native_goal_action.fallback.blocked_by, 'new_codex_task_required');
+    assert.equal(payload.native_goal_action.fallback.sequence_name, 'new_codex_task_required');
+    assert.deepEqual(payload.native_goal_action.fallback.sequence, []);
+    assert.match(payload.native_goal_action.fallback.safe_when, /active objective still matches/);
+    assert.match(payload.next_command, /new dedicated Codex task/);
+    assert.doesNotMatch(payload.next_command, /update_goal|create_goal/);
 
     const goal = runCli([
       'mission',
@@ -3617,7 +3707,8 @@ test('mission run reports replace action when a paused native-only goal blocks c
     assert.equal(goalPayload.goal.mission_id, mission.id);
     assert.equal(goalPayload.native_goal_action.tool, 'replace_goal');
     assert.equal(goalPayload.native_goal_action.args.from_objective, 'heyyy');
-    assert.equal(goalPayload.native_goal_action.fallback.commands.create_new_goal, 'create_goal({ objective: "edited paused goal test" })');
+    assert.match(goalPayload.native_goal_action.fallback.commands.create_new_task, /new Codex task/);
+    assert.match(goalPayload.native_goal_action.fallback.commands.ack_new_mission_after_task_create, /mission goal ack/);
     assert.equal(goalPayload.requires_native_goal_replace, true);
 
     const approvedRun = runCli([
@@ -3634,20 +3725,15 @@ test('mission run reports replace action when a paused native-only goal blocks c
     ], { cwd: dir });
     assert.equal(approvedRun.status, 0, approvedRun.stderr || approvedRun.stdout);
     const approvedPayload = JSON.parse(approvedRun.stdout);
-    const approvedMission = approvedPayload.mission;
     assert.equal(approvedPayload.codex_goal_state.goal.objective, 'approved paused goal test');
     assert.equal(approvedPayload.native_goal_action.tool, 'replace_goal');
-    assert.equal(approvedPayload.native_goal_action.fallback.approved, true);
-    assert.equal(approvedPayload.native_goal_action.fallback.automatic, true);
-    assert.equal(approvedPayload.native_goal_action.fallback.executable_now, true);
-    assert.equal(approvedPayload.native_goal_action.fallback.blocked_by, null);
-    assert.deepEqual(approvedPayload.native_goal_action.fallback.sequence, [
-      'update_goal({ status: "complete" })',
-      'create_goal({ objective: "approved paused goal test" })',
-      `atris mission goal ack ${approvedMission.id} --runtime codex --status active --objective 'approved paused goal test' --json`,
-    ]);
-    assert.match(approvedPayload.next_command, /Supersede approved/);
-    assert.match(approvedPayload.next_command, /Atris records the old paused goal as superseded/);
+    assert.equal(approvedPayload.native_goal_action.fallback.approved, false);
+    assert.equal(approvedPayload.native_goal_action.fallback.automatic, false);
+    assert.equal(approvedPayload.native_goal_action.fallback.executable_now, false);
+    assert.equal(approvedPayload.native_goal_action.fallback.blocked_by, 'new_codex_task_required');
+    assert.deepEqual(approvedPayload.native_goal_action.fallback.sequence, []);
+    assert.match(approvedPayload.next_command, /Same-task supersede refused/);
+    assert.match(approvedPayload.next_command, /new Codex task/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -4842,7 +4928,7 @@ test('mission objective shorthand starts a visible-goal mission', () => {
       payload.codex_goal_state.goal.visible_goal.operations.refresh_on_phase_change,
       'atris mission goal --json before continuing changed work',
     );
-    assert.match(payload.codex_goal_state.goal.codex_tool_contract.phase_change_refresh, /before changed follow-up work/);
+    assert.match(payload.codex_goal_state.goal.codex_tool_contract.phase_change_refresh, /active objective still matches/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -6539,7 +6625,7 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
     assert.equal(payload.goal.native_goal_action.args.objective, 'codex visible goal mission');
     assert.equal(payload.goal.task_spine.has_task, false);
     assert.equal(payload.goal.task_spine.ensure_task_command, `atris mission attach-task ${mission.id} --json`);
-    assert.match(payload.goal.replace_after, /replace the Codex \/goal/);
+    assert.match(payload.goal.replace_after, /complete this Codex task and stop/);
     assert.equal(payload.goal.visible_goal.schema, 'atris.visible_chat_goal_bridge.v1');
     assert.equal(payload.goal.visible_goal.runtime, 'codex');
     assert.equal(payload.goal.visible_goal.source, 'atris_mission');
@@ -6548,7 +6634,7 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
     assert.equal(payload.goal.visible_goal.status, 'needs_runtime_write');
     assert.equal(payload.goal.visible_goal.operations.read_current_goal, 'get_goal');
     assert.equal(
-      payload.goal.visible_goal.operations.create_when_empty_or_completed,
+      payload.goal.visible_goal.operations.create_when_no_goal,
       'create_goal({ objective: goal.objective })',
     );
     assert.equal(
@@ -6565,11 +6651,11 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
       read_current_goal: 'get_goal',
       complete_current_goal: 'update_goal({ status: "complete" })',
       select_next_goal: 'atris mission goal --json',
-      set_next_goal: 'use goal.visible_goal: create_goal({ objective: goal.objective }) when no active goal blocks the slot',
+      set_next_goal: 'use goal.visible_goal only when get_goal reports no goal for this task',
       visible_goal_bridge: 'goal.visible_goal',
-      platform_requirement: 'Codex runtime must expose replace_goal/set_goal, or allow update_goal({ status: "complete" }) followed by create_goal({ objective }).',
-      phase_change_refresh: 'before changed follow-up work, run atris mission goal --json and mirror the returned visible goal',
-      runtime_tool_sequence: 'get_goal -> create_goal({ objective }) -> atris mission goal ack <mission-id> --runtime codex --status active --objective "<objective>" --json -> do work -> update_goal({ status: "complete" }) after proof or phase change -> atris mission goal --json',
+      platform_requirement: 'Codex runtime must create a new task when a completed task needs a different objective.',
+      phase_change_refresh: 'continue in this task only while its active objective still matches',
+      runtime_tool_sequence: 'get_goal -> if no goal, create_goal({ objective }) -> acknowledge -> do matching work -> update_goal({ status: "complete" }) after proof -> stop this task',
       blocked_without_platform_goal_write: true,
       mission_id: mission.id,
     });
@@ -7329,6 +7415,49 @@ test('mission goal-loop runs due mission work once and refreshes final state', (
   }
 });
 
+test('mission goal-loop does not schedule work in a completed Codex task', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'scheduled-mission-needs-new-task',
+      slug: 'scheduled-mission-needs-new-task',
+      objective: 'monitor the next due signal',
+      owner: 'mission-lead',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'node -e "process.exit(0)"',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const loop = runCli([
+      'mission',
+      'goal-loop',
+      '--max-iterations',
+      '2',
+      '--no-claude',
+      '--native-goal-status',
+      'complete',
+      '--native-goal-objective',
+      'finished original task',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(loop.status, 2, loop.stderr || loop.stdout);
+    const payload = JSON.parse(loop.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.status, 'completed_task_closed');
+    assert.equal(payload.iterations, 1);
+    assert.equal(payload.heavy_runs, 0);
+    assert.equal(payload.setup_runs, 0);
+    assert.equal(payload.events[0].run, undefined);
+    assert.equal(payload.final_state.action, 'completed_task_closed');
+    assert.match(payload.next_action, /new Codex task/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission goal reports no candidate when no mission is active', () => {
   const dir = makeTempDir();
   try {
@@ -7516,9 +7645,9 @@ test('mission help documents status filters', () => {
     assert.match(help.stdout, /mission report \[id\] \[--limit <n>\] \[--local\] \[--json\]/);
     assert.match(help.stdout, /mission timeline \[id\] \[--limit <n>\] \[--all\] \[--prune-preview\] \[--write\] \[--json\]/);
     assert.match(help.stdout, /rolls up sibling git-worktree missions/);
-    assert.match(help.stdout, /mission goal \[--runtime codex\|atris\] \[--heartbeat\] \[--native-goal-status active\|paused\|usageLimited\] \[--native-goal-objective "\.\.\."\] \[--manual-ack\] \[--allow-native-goal-supersede\] \[--json\]/);
+    assert.match(help.stdout, /mission goal \[--runtime codex\|atris\] \[--heartbeat\] \[--native-goal-status active\|paused\|usageLimited\|complete\] \[--native-goal-objective "\.\.\."\] \[--manual-ack\] \[--allow-native-goal-supersede\] \[--json\]/);
     assert.match(help.stdout, /mission goal ack <id> --runtime codex --status active --objective "<objective>" --json/);
-    assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);
+    assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--native-goal-status active\|paused\|usageLimited\|complete\] \[--native-goal-objective "\.\.\."\] \[--dry-run\] \[--once\] \[--json\]/);
     assert.match(help.stdout, /mission tick <id> \[--verify \["cmd"\]\] \[--complete-on-pass\] \[--self-drive\] \[--summary "\.\.\."\]\n\s+\[--native-goal-status active\|paused\|usageLimited\] \[--native-goal-objective "\.\.\."\] \[--json\]/);
     assert.match(help.stdout, /--spend-full-budget\|--use-whole-budget\|--stop-when-done/);
     assert.match(help.stdout, /--preflight\|--no-preflight\|--room-preflight\|--no-room-preflight/);

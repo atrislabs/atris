@@ -180,6 +180,12 @@ printf 'committed lap-marker.txt\n'
 function fakeValidatorScript() {
   return `#!/bin/sh
 set -eu
+case "$*" in
+  *"--model claude-haiku-4-5"*)
+    printf '{}\n'
+    exit 0
+    ;;
+esac
 count=0
 if [ -f "$ATRIS_VALIDATOR_COUNT" ]; then count=$(cat "$ATRIS_VALIDATOR_COUNT"); fi
 count=$((count + 1))

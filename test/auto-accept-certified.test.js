@@ -535,6 +535,119 @@ test('a clean ratchet repo lands; repos without the ratchet are untouched', () =
   assert.equal(gate.skipped, true);
 });
 
+function candidateGateWorkspace() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-candidate-gate-'));
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'verify.js'), 'process.exit(0);\n');
+  return root;
+}
+
+function candidateGateTask(root, files) {
+  const task = reviewTask({
+    metadata: {
+      verify: 'node --check verify.js',
+      changed_files: files,
+    },
+  });
+  task.workspace_root = root;
+  return task;
+}
+
+test('touched markdown with an em dash is refused with its rule and location', (t) => {
+  const root = candidateGateWorkspace();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const emDash = String.fromCharCode(0x2014);
+  fs.writeFileSync(path.join(root, 'docs', 'landing.md'), `# fixture\nlanding${emDash}proof\n`);
+
+  const result = evaluateAutoAccept(candidateGateTask(root, ['docs/landing.md']));
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'slop_gate');
+  assert.deepEqual(result.rules, ['em-dash']);
+  assert.deepEqual(result.offenders, ['docs/landing.md:2 em-dash']);
+  assert.deepEqual(result.findings[0], {
+    file: 'docs/landing.md',
+    line: 2,
+    rule: 'em-dash',
+    severity: 'warn',
+  });
+});
+
+test('slop in an untouched file does not block a scoped landing', (t) => {
+  const root = candidateGateWorkspace();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const emDash = String.fromCharCode(0x2014);
+  fs.writeFileSync(path.join(root, 'docs', 'old-debt.md'), `old${emDash}debt\n`);
+  fs.writeFileSync(path.join(root, 'docs', 'landing.md'), '# clean candidate\n');
+
+  const result = evaluateAutoAccept(candidateGateTask(root, ['docs/landing.md']));
+
+  assert.equal(result.eligible, true, JSON.stringify(result));
+  assert.deepEqual(result.candidate_gate.paths, ['docs/landing.md']);
+  assert.equal(result.candidate_gate.advisory_only, false);
+});
+
+test('ambiguous candidate scope stays advisory instead of scanning repo debt', (t) => {
+  const root = candidateGateWorkspace();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const emDash = String.fromCharCode(0x2014);
+  fs.writeFileSync(path.join(root, 'docs', 'old-debt.md'), `old${emDash}debt\n`);
+  const task = candidateGateTask(root, []);
+  delete task.metadata.changed_files;
+
+  const result = evaluateAutoAccept(task);
+
+  assert.equal(result.eligible, true, JSON.stringify(result));
+  assert.equal(result.candidate_gate.advisory_only, true);
+  assert.equal(result.candidate_gate.advisories[0].reason, 'candidate_scope_unknown');
+});
+
+test('a failing detector-backed lesson refuses the touched work by lesson id', (t) => {
+  const root = candidateGateWorkspace();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs', 'landing.md'), '# candidate\n');
+  fs.writeFileSync(path.join(root, 'scripts', 'lesson-detector.js'), 'process.exit(1);\n');
+  fs.writeFileSync(path.join(root, 'atris', 'lessons.json'), JSON.stringify({
+    'plain-landing-copy': {
+      applies_to: ['docs/landing.md'],
+      detector: 'node scripts/lesson-detector.js',
+      status: 'resolved',
+    },
+  }));
+
+  const result = evaluateAutoAccept(candidateGateTask(root, ['docs/landing.md']));
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'lesson_gate');
+  assert.equal(result.lesson_id, 'plain-landing-copy');
+  assert.deepEqual(result.lesson_ids, ['plain-landing-copy']);
+  assert.equal(result.lessons[0].exit_code, 1);
+});
+
+test('a matching detectorless lesson remains advisory', (t) => {
+  const root = candidateGateWorkspace();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs', 'landing.md'), '# candidate\n');
+  fs.writeFileSync(path.join(root, 'atris', 'lessons.json'), JSON.stringify({
+    'human-copy-review': {
+      applies_to: ['docs/landing.md'],
+      status: 'observed',
+    },
+  }));
+
+  const result = evaluateAutoAccept(candidateGateTask(root, ['docs/landing.md']));
+
+  assert.equal(result.eligible, true, JSON.stringify(result));
+  assert.deepEqual(result.candidate_gate.advisories, [{
+    reason: 'lesson_has_no_detector',
+    lesson_id: 'human-copy-review',
+    matched_path: 'docs/landing.md',
+  }]);
+});
+
 test('re-entrancy: a verify refuses to run when ATRIS_VERIFY_IN_PROGRESS is set', () => {
   const key = 'ATRIS_VERIFY_IN_PROGRESS';
   const prior = process.env[key];

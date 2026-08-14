@@ -41,7 +41,12 @@ const {
   setEngineHealth,
 } = require('../lib/engine-registry');
 const { FLEET_CAPABLE, runDispatchFlight } = require('../lib/fleet');
-const { runEngineAskCommand } = require('../lib/engine-ask');
+const {
+  buildReadOnlyEngineInvocation,
+  runEngineAskCommand,
+} = require('../lib/engine-ask');
+const { runEngineValidateCommand } = require('../lib/engine-validate');
+const { runEngineWatchCommand } = require('./engine-watch');
 const { ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 
@@ -1411,13 +1416,72 @@ function runDispatchCommand(args, root) {
   });
 }
 
+const TASK_ID_TOKEN = /^[a-z][a-z0-9]*-\d+$/i;
+const SHORTHAND_VALUE_FLAGS = new Set(['--model', '--concurrency', '--timeout', '--jobs', '--engine', '--engines']);
+
+function shorthandPromptParts(args) {
+  const parts = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const value = String(args[index] || '');
+    if (SHORTHAND_VALUE_FLAGS.has(value)) {
+      index += 1;
+      continue;
+    }
+    if (value.startsWith('--')) continue;
+    parts.push(value);
+  }
+  return parts;
+}
+
+function shorthandModelError(engine, args, root) {
+  const requested = flagValue(args, '--model');
+  const model = String(requested.value || '').trim();
+  if (!requested.present || !model) return '';
+  try {
+    buildReadOnlyEngineInvocation(engine, 'check model support', model);
+    return '';
+  } catch (error) {
+    if (!error || error.reason !== 'model_not_supported') return '';
+    const examples = engineRegistryView(root).find((entry) => entry.id === engine)?.models || [];
+    const known = examples.length ? examples.join(', ') : 'use the engine default';
+    return `${error.message}. known-good ${engine} examples: ${known}`;
+  }
+}
+
 function engineCommand(args = [], deps = {}) {
-  const root = process.cwd();
+  const root = deps.root || process.cwd();
+  const dispatch = deps.engineDispatch || runDispatchCommand;
   if ((args[0] || '').trim() === 'ask') {
     return runEngineAskCommand(args.slice(1), root, deps.engineAsk || {});
   }
+  if ((args[0] || '').trim() === 'watch') {
+    return runEngineWatchCommand(args.slice(1), root, deps.engineWatch || {});
+  }
+  if ((args[0] || '').trim() === 'validate') {
+    return runEngineValidateCommand(args.slice(1), root, deps.engineValidate || {});
+  }
   if ((args[0] || '').trim() === 'dispatch') {
-    return runDispatchCommand(args.slice(1), root);
+    return dispatch(args.slice(1), root);
+  }
+
+  const requestedEngine = (args[0] || '').trim();
+  if (canonicalEngineName(requestedEngine) && args.length > 1) {
+    const canonical = canonicalEngineName(requestedEngine);
+    const shorthandArgs = args.slice(1);
+    const promptParts = shorthandPromptParts(shorthandArgs);
+    if (TASK_ID_TOKEN.test(promptParts[0] || '')) {
+      if (shorthandArgs.length !== 1) {
+        console.error('engine shorthand: a task id cannot include prompt text or flags; pick one: ask a question or build the task');
+        return 2;
+      }
+      return dispatch([promptParts[0], '--engine', canonical], root);
+    }
+    const modelError = shorthandModelError(canonical, shorthandArgs, root);
+    if (modelError) {
+      console.error(`engine ask: ${modelError}`);
+      return 2;
+    }
+    return runEngineAskCommand([...shorthandArgs, '--engine', canonical], root, deps.engineAsk || {});
   }
 
   const json = args.includes('--json');
@@ -1479,7 +1543,8 @@ function engineCommand(args = [], deps = {}) {
   }
 
   if (sub === 'help') {
-    console.log('\n  atris engine            roster + current default\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+    console.log('\n  atris engine watch [<id>|latest] [--no-follow]\n                           follow one live transcript or list running engine work');
+    console.log('\n  atris engine            roster + current default\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine validate <receipt-path|latest> [--engine <name>]\n                           check ask answers with a different read-only referee\n  atris engine validate scoreboard\n                           show pass rates by worker engine\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
     return 0;
   }
 
@@ -1497,13 +1562,9 @@ function engineCommand(args = [], deps = {}) {
     return 2;
   }
   const canonical = setEngine(sub, root);
-  const def = RUNNER_PROFILE_DEFS[canonical];
-  const installed = binInstalled(def.bin);
-  console.log('');
-  console.log(`  default engine: ${canonical}`);
-  if (!installed) console.log(`  heads up: its CLI (${def.bin}) is not installed here yet — runs will fail until it is.`);
-  console.log(`  every mission run / autopilot / run tick now rides it. one-off: --engine <name>. undo: atris engine reset`);
-  console.log('');
+  console.log(`default engine changed to ${canonical}`);
+  console.log(`ask a question: atris engine ask "..." --engine ${canonical}`);
+  console.log(`dispatch a build: atris engine dispatch <task> --engine ${canonical}`);
   return 0;
 }
 
