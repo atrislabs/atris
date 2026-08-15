@@ -38,6 +38,7 @@ try {
 const {
   checkForUpdates,
   showUpdateNotification,
+  autoUpdate,
   inspectInstallGitState,
   formatInstallGitWarning,
 } = require('../utils/update-check');
@@ -106,6 +107,7 @@ if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'updat
         showUpdateNotification(updateInfo, {
           packageRoot: path.join(__dirname, '..'),
         });
+        autoUpdate(updateInfo, { packageRoot: path.join(__dirname, '..') });
       }
       return updateInfo;
     })
