@@ -1,6 +1,6 @@
 ---
 name: youtube
-description: "Process YouTube videos — extract insights, answer questions, store as knowledge. 5 credits per video. Triggers on: youtube, video, process video, watch this, learn from video."
+description: "Process YouTube videos: extract insights, answer questions, store as knowledge. 5 credits per video. Triggers on: youtube, video, process video, watch this, learn from video."
 version: 2.3.0
 tags:
   - youtube
@@ -15,7 +15,7 @@ Process any YouTube video through Atris transcript-first analysis. The CLI extra
 
 ## Route first: learning vs product
 
-Two rails process YouTube videos — pick before running anything:
+Two rails process YouTube videos: pick before running anything:
 
 - **Learning / work rail** → use the `alpha-learn` skill (ytnotes). Local yt-dlp + grok, zero credits, podcastnotes-style notes, tweet-feed output, `[claimable]` entries in today's journal for other agents. Use this when the goal is to LEARN from a video or mine it for Atris work.
   Canonical ytnotes source is `scripts/det/ytnotes` (install: `ln -sf "$PWD/scripts/det/ytnotes" ~/.local/bin/ytnotes`).
@@ -191,7 +191,7 @@ Every important insight should carry a timestamp when the transcript provides on
 | `401` | Token expired/invalid | `atris login --force` |
 | `402` | Not enough credits | Check balance, purchase at atris.ai |
 | `400` | Invalid YouTube URL | Check URL format |
-| `502` | Transcript or cloud processing failed | Retry — credits auto-refunded when backend fails |
+| `502` | Transcript or cloud processing failed | Retry; credits auto-refunded when backend fails |
 
 ---
 

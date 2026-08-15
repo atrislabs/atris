@@ -80,7 +80,8 @@ PRODUCT FEEL: like a short Twitter thread you can finish without scrolling. Eyes
 HARD LIMITS:
 - Whole note (title through Takeaway) must fit ~one screen: about 8-12 beats max, ~28 lines max including blanks.
 - Curate ruthlessly: only the critical / sticky points. Drop filler, travel banter, and anything that doesn't teach.
-- Keep the best concrete details (names, numbers, tools, mechanisms, 2-4 quotes). Cut everything else.
+- Keep the best concrete details (names, numbers, tools, mechanisms). Cut everything else.
+- Include 4-6 direct quotes in double quotes, copied VERBATIM from the transcript, never paraphrased or cleaned up. A quote that is not word-for-word in the transcript is a failure.
 
 FORMAT (strict):
 - Markdown only. No preamble.
@@ -192,12 +193,12 @@ process.stdin.on("end", () => {
 }
 
 run_grok() {
-  run_with_timeout 45 grok --verbatim --no-memory --no-plan --no-subagents \
+  run_with_timeout 240 grok --verbatim --no-memory --no-plan --no-subagents \
     --disable-web-search --max-turns 1 -p "$PROMPT"
 }
 
 run_haiku() {
-  run_with_timeout 90 claude -p "$PROMPT" --model claude-haiku-4-5
+  run_with_timeout 240 claude -p "$PROMPT" --model claude-haiku-4-5
 }
 
 {
@@ -209,16 +210,16 @@ run_haiku() {
       run_atris_fast
       ;;
     gemini|gemini-3.7-flash)
-      run_with_timeout 30 gemini -m gemini-3.7-flash --skip-trust \
+      run_with_timeout 120 gemini -m gemini-3.7-flash --skip-trust \
         --approval-mode plan -o text -p "$PROMPT"
       ;;
     gemini-3.6-flash)
-      run_with_timeout 30 gemini -m gemini-3.6-flash --skip-trust \
+      run_with_timeout 120 gemini -m gemini-3.6-flash --skip-trust \
         --approval-mode plan -o text -p "$PROMPT"
       ;;
     grok)   run_grok ;;
-    codex)  run_with_timeout 60 codex exec --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
-    cursor) run_with_timeout 60 cursor-agent --trust -p "$PROMPT" ;;
+    codex)  run_with_timeout 240 codex exec --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
+    cursor) run_with_timeout 240 cursor-agent --trust -p "$PROMPT" ;;
     *) echo "unknown engine: $ENGINE (haiku|atris-fast|gemini|grok|codex|cursor)" >&2; exit 1 ;;
   esac
 } | perl -0pe 's/\A.*?(?=# )//s' | tee "yt_${ID}.md"
