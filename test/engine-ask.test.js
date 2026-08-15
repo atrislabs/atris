@@ -17,6 +17,11 @@ const {
   runEngineAskJobs,
   runEngineAskCommand,
 } = require('../lib/engine-ask');
+const {
+  readEngineRegistry,
+  resolveEngineForRoleRanked,
+  setEngineHealth,
+} = require('../lib/engine-registry');
 const { engineCommand } = require('../commands/engine');
 
 function tempRoot() {
@@ -267,7 +272,7 @@ test('silent fake engines fail or time out honestly and leave no process behind'
   }
 });
 
-test('command prints labeled statuses and writes only its receipt', async () => {
+test('command prints labeled statuses and writes its receipt plus engine health', async () => {
   const root = tempRoot();
   const output = [];
   const originalLog = console.log;
@@ -313,9 +318,60 @@ test('command prints labeled statuses and writes only its receipt', async () => 
     assert.equal(Number.isInteger(receipt.pgid), true);
     assert.deepEqual(receipt.answers.map((answer) => answer.model), ['gpt-5.6', 'gpt-5.6', 'gpt-5.6']);
     assert.deepEqual(receipt.answers.map((answer) => answer.status), ['answered', 'failed', 'timed out']);
-    assert.deepEqual(fs.readdirSync(root), ['atris']);
+    assert.deepEqual(fs.readdirSync(root).sort(), ['.atris', 'atris']);
     assert.equal(fs.existsSync(path.join(root, '.git')), false);
-    assert.equal(fs.existsSync(path.join(root, '.atris')), false);
+    const registry = readEngineRegistry(root, { persist: false });
+    assert.equal(registry.engines.find((engine) => engine.id === 'codex').health.status, 'ready');
+    assert.equal(registry.engines.find((engine) => engine.id === 'cursor').health.status, 'error');
+    assert.equal(registry.engines.find((engine) => engine.id === 'claude').health.status, 'not_installed');
+  } finally {
+    console.log = originalLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('engine ask benches an expired subscription and a later answer restores ready', async () => {
+  const root = tempRoot();
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const failed = await runEngineAskCommand(['check access', '--engine', 'codex'], root, {
+      executeAskJob: async () => ({
+        ok: false,
+        reason: 'exit_1',
+        exit_code: 1,
+        signal: null,
+        timed_out: false,
+        cancelled: false,
+        stdout: '',
+        stderr: 'Not authenticated. Your subscription has expired. Please log in.',
+        output_truncated: false,
+        duration_ms: 1,
+      }),
+    });
+    assert.equal(failed, 1);
+    setEngineHealth('cursor', 'ready', root);
+    let registry = readEngineRegistry(root, { persist: false });
+    assert.equal(registry.engines.find((engine) => engine.id === 'codex').health.status, 'credit_out');
+    assert.ok(!resolveEngineForRoleRanked('executor', root).ranked.some((engine) => engine.id === 'codex'));
+
+    const recovered = await runEngineAskCommand(['check access', '--engine', 'codex'], root, {
+      executeAskJob: async () => ({
+        ok: true,
+        reason: 'ok',
+        exit_code: 0,
+        signal: null,
+        timed_out: false,
+        cancelled: false,
+        stdout: 'access restored',
+        stderr: '',
+        output_truncated: false,
+        duration_ms: 1,
+      }),
+    });
+    assert.equal(recovered, 0);
+    registry = readEngineRegistry(root, { persist: false });
+    assert.equal(registry.engines.find((engine) => engine.id === 'codex').health.status, 'ready');
   } finally {
     console.log = originalLog;
     fs.rmSync(root, { recursive: true, force: true });

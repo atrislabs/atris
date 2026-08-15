@@ -23,6 +23,7 @@ const {
 } = require('../lib/runner-command');
 const {
   resolveEngineForRoleWithPreference,
+  engineFailureHealthStatus,
   setEngineHealth,
 } = require('../lib/engine-registry');
 const {
@@ -376,28 +377,6 @@ function resolveMissionTickRunner(mission, root = process.cwd()) {
     requested_engine: resolved.requested_engine,
     engine_fallback_reason: resolved.engine_fallback_reason,
   };
-}
-
-function engineFailureHealthStatus(result) {
-  if (!result || result.status !== 'errored') return null;
-  const signalText = [
-    result.reason,
-    result.model_unavailable,
-    result.claude && result.claude.summary,
-    result.claude && result.claude.receipt_text,
-    result.claude && result.claude.stderr,
-    result.rate_limit_info && JSON.stringify(result.rate_limit_info),
-  ].filter(Boolean).join('\n').toLowerCase();
-  if (/usage[ _-]?limit|purchase more credits|insufficient credits|credit(?:s)?[ _-]?(?:out|limit)|rate[ _-]?limit/.test(signalText)) {
-    return 'credit_out';
-  }
-  if (/timeout|model-unavailable/.test(signalText)) return 'not_installed';
-  // Any other errored tick (claude-error, no-ready-engine's sibling failures,
-  // etc.) is still a real failure signal for the engine that ran it. Falling
-  // through to null here left the registry showing "ready" for an engine
-  // that had just hard-failed (e.g. a 401), so auto routing kept sending
-  // ticks back to it. Mark it "error" instead of silently doing nothing.
-  return 'error';
 }
 
 function recordMissionEngineTickOutcome(engineId, result, root = process.cwd()) {

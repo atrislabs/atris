@@ -13,6 +13,7 @@ const path = require('node:path');
 const fleet = require('../lib/fleet');
 const engine = require('../commands/engine');
 const { resolveDefaultVerifier } = require('../lib/default-verifier');
+const { readEngineRegistry } = require('../lib/engine-registry');
 
 // runDispatchFlight writes a receipt under <root>/atris/runs, so flight tests
 // need a real writable directory (a fake path like '/root' cannot mkdir).
@@ -693,6 +694,49 @@ test('runDispatchFlight restaffs once when usage-limit output kills the first en
     assert.match(readyCall, /Built by cursor engine/);
     assert.match(readyCall, /Restaffed from codex to cursor \(usage_limit\)/);
     assert.ok(!calls.some((c) => c.startsWith('task ready CLI-900') && /fleet-codex/.test(c)), 'ready attribution must move to the fallback engine');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('engine dispatch benches an expired subscription and a later build restores ready', async () => {
+  const tmpRoot = makeTempRoot();
+  try {
+    const { cli } = ownCliFake({
+      tasks: { 'CLI-900': TASK },
+      worktreeFor: (task) => `/wt/${task}`,
+    });
+    const failed = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'codex',
+      installedEngines: ['codex'],
+      ownCli: cli,
+      dispatcher: () => Promise.resolve({
+        exitCode: 1,
+        report: '',
+        stderr: 'Payment required. Your subscription expired; login required.',
+      }),
+      log: () => {},
+    });
+    assert.equal(failed.paused[0].stage, 'build');
+    let registry = readEngineRegistry(tmpRoot, { persist: false });
+    assert.equal(registry.engines.find((entry) => entry.id === 'codex').health.status, 'credit_out');
+
+    const recovered = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'codex',
+      installedEngines: ['codex'],
+      ownCli: cli,
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'build completed' }),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+      log: () => {},
+    });
+    assert.equal(recovered.status, 'completed');
+    registry = readEngineRegistry(tmpRoot, { persist: false });
+    assert.equal(registry.engines.find((entry) => entry.id === 'codex').health.status, 'ready');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
