@@ -5,8 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
-const YTNOTES_USAGE = 'usage: ytnotes <youtube-url> [haiku|atris-fast|gemini|grok|codex|cursor]';
+const YTNOTES_USAGE = 'usage: ytnotes <youtube-url> [youtube-url-or-playlist...] [haiku|atris-fast|gemini|grok|codex|cursor]';
 const YTNOTES_HINT = 'zero credits, local captions + a fast engine';
+const NOTES_PLAYLIST_CAP = 10;
 
 const DEFAULT_QUERY = [
   'Create a timestamped YouTube brief for Atris.',
@@ -24,7 +25,7 @@ const ALLOWED_CAPTION_HOST_SUFFIXES = [
 
 function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('');
-  output(`Usage: ${commandName} notes <youtube-url> [engine]`);
+  output(`Usage: ${commandName} notes <youtube-url> [youtube-url-or-playlist...] [engine]`);
   output(`       ${commandName} process <youtube-url> [options]`);
   output(`       ${commandName} digest [--days N]`);
   output(`       ${commandName} watch add <channel-url-or-@handle>`);
@@ -33,7 +34,8 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`       ${commandName} watch tick`);
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
-  output('notes = free local notes, process = 5 credits cloud knowledge');
+  output('notes = free local notes for one url, several urls, or a playlist');
+  output('process = 5 credits cloud knowledge');
   output('digest = one decision page from this week\'s video briefs');
   output('watch = subscribed channels turn into briefs without a human');
   output('Process a YouTube video through Atris using timestamped transcript-first analysis.');
@@ -52,6 +54,8 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('');
   output('Examples:');
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID`);
+  output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID https://youtu.be/OTHER_ID`);
+  output(`  ${commandName} notes https://www.youtube.com/playlist?list=PLAYLIST_ID`);
   output(`  ${commandName} https://www.youtube.com/watch?v=VIDEO_ID`);
   output(`  ${commandName} process https://youtu.be/VIDEO_ID --query "Key takeaways"`);
   output(`  ${commandName} digest`);
@@ -464,6 +468,34 @@ function videoIdFromUrl(url) {
   return short ? short[1] : null;
 }
 
+function looksLikeYoutubeUrl(arg) {
+  const text = String(arg || '').trim();
+  if (!text || text.startsWith('-')) return false;
+  return /youtube\.com|youtu\.be/i.test(text);
+}
+
+function isPlaylistUrl(url) {
+  const text = String(url || '');
+  return /[?&]list=/.test(text) || /\/playlist(?:\?|$|\/)/i.test(text);
+}
+
+function parseNotesArgs(argv = []) {
+  const urls = [];
+  let engine = null;
+  let help = false;
+  for (const raw of argv) {
+    const arg = String(raw);
+    if (arg === '--help' || arg === '-h' || arg === 'help') {
+      help = true;
+      continue;
+    }
+    if (arg.startsWith('-')) continue;
+    if (looksLikeYoutubeUrl(arg)) urls.push(arg);
+    else engine = arg;
+  }
+  return { urls, engine, help };
+}
+
 function dateStamp(now) {
   if (typeof now === 'string' && /^\d{4}-\d{2}-\d{2}/.test(now)) {
     return now.slice(0, 10);
@@ -512,6 +544,7 @@ function fileBriefFromNotes({ cwd, url, workDir, now } = {}) {
     fs.writeFileSync(journalPath, `${existing}${prefix}${line}\n`);
 
     console.log(`brief filed: ${relBrief}`);
+    return relBrief;
   } catch {
     // notes filing must never break the youtube command
   }
@@ -1015,37 +1048,189 @@ async function watchCommand(args = [], deps = {}) {
   return 2;
 }
 
-function runYoutubeNotes(args = [], deps = {}) {
-  const output = deps.output || ((line = '') => console.error(line));
-  const url = args[0];
-  const engine = args[1];
-  if (!url) {
-    output(YTNOTES_USAGE);
-    output(YTNOTES_HINT);
-    return 2;
+function defaultPlaylistExpander(playlistUrl, deps = {}) {
+  const spawn = deps.spawnSync || spawnSync;
+  const result = spawn('yt-dlp', [
+    '--no-update',
+    '--flat-playlist',
+    '--print',
+    '%(id)s|%(title)s',
+    playlistUrl,
+  ], {
+    encoding: 'utf8',
+    timeout: 60000,
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  if (result.error || (result.status != null && result.status !== 0)) {
+    const detail = String(result.stderr || result.error?.message || 'playlist expand failed').trim();
+    throw new Error(detail || 'playlist expand failed');
   }
+  return parseFlatPlaylist(result.stdout);
+}
 
+function defaultNotesItemRunner(url, engine, deps = {}) {
   const script = path.join(__dirname, '..', 'scripts', 'det', 'ytnotes');
   const spawn = deps.spawnSync || spawnSync;
   const childArgs = engine ? [url, engine] : [url];
-  const result = spawn(script, childArgs, { stdio: 'inherit' });
-  if (result.status == null) return 1;
-  if (result.status === 0) {
-    fileBriefFromNotes({
+  return spawn(script, childArgs, { stdio: 'inherit' });
+}
+
+function readNowMs(deps = {}) {
+  if (typeof deps.nowMs === 'function') return Number(deps.nowMs()) || 0;
+  if (Number.isFinite(deps.nowMs)) return Number(deps.nowMs);
+  return Date.now();
+}
+
+function notesItemLabel(item = {}) {
+  return item.id || item.url || '';
+}
+
+function expandNotesTargets(urls = [], deps = {}) {
+  const output = deps.output || ((line = '') => console.error(line));
+  const expander = deps.expander || ((playlistUrl) => defaultPlaylistExpander(playlistUrl, deps));
+  const items = [];
+  for (const url of urls) {
+    if (!isPlaylistUrl(url)) {
+      items.push({ url, id: videoIdFromUrl(url) });
+      continue;
+    }
+    let videos = [];
+    try {
+      videos = expander(url, deps);
+    } catch {
+      items.push({ url, id: videoIdFromUrl(url), failed: true });
+      continue;
+    }
+    if (!Array.isArray(videos) || videos.length === 0) {
+      items.push({ url, id: videoIdFromUrl(url), failed: true });
+      continue;
+    }
+    if (videos.length > NOTES_PLAYLIST_CAP) {
+      output(`playlist capped at ${NOTES_PLAYLIST_CAP} videos (${videos.length} found)`);
+      videos = videos.slice(0, NOTES_PLAYLIST_CAP);
+    }
+    for (const video of videos) {
+      if (!video?.id) continue;
+      items.push({
+        url: `https://www.youtube.com/watch?v=${video.id}`,
+        id: video.id,
+        title: video.title,
+      });
+    }
+  }
+  return items;
+}
+
+function invokeNotesRunner(url, engine, deps = {}) {
+  const runner = deps.runner;
+  if (runner) return runner(url, engine, deps);
+  return defaultNotesItemRunner(url, engine, deps);
+}
+
+function readRunnerStatus(result) {
+  if (typeof result === 'number') return result;
+  if (result && typeof result === 'object') {
+    return result.status == null ? 1 : result.status;
+  }
+  return 1;
+}
+
+function fileNotesBrief(url, deps = {}) {
+  const briefFiler = deps.briefFiler || fileBriefFromNotes;
+  try {
+    const filed = briefFiler({
       cwd: deps.cwd || process.cwd(),
       url,
       workDir: deps.workDir || path.join(process.env.TMPDIR || '/tmp', 'ytnotes'),
       now: deps.now || new Date(),
     });
+    return typeof filed === 'string' && filed ? filed : null;
+  } catch {
+    return null;
   }
-  return result.status;
+}
+
+function runOneNotesItem(item, engine, deps = {}) {
+  const output = deps.output || ((line = '') => console.error(line));
+  const label = notesItemLabel(item);
+  if (item.failed) {
+    output(`${label}  0s  FAILED`);
+    return { url: item.url, id: item.id, seconds: 0, ok: false, brief: null };
+  }
+
+  const started = readNowMs(deps);
+  let status = 1;
+  try {
+    status = readRunnerStatus(invokeNotesRunner(item.url, engine, deps));
+  } catch {
+    status = 1;
+  }
+  const brief = status === 0 ? fileNotesBrief(item.url, deps) : null;
+  const seconds = Math.max(0, Math.round((readNowMs(deps) - started) / 1000));
+  const ok = status === 0;
+  output(`${label}  ${seconds}s  ${ok ? (brief || 'ok') : 'FAILED'}`);
+  return { url: item.url, id: item.id, seconds, ok, brief };
+}
+
+function formatNotesSummary(rows = []) {
+  const lines = ['url or id  seconds  result'];
+  for (const row of rows) {
+    const result = row.ok ? (row.brief || 'ok') : 'FAILED';
+    lines.push(`${notesItemLabel(row)}  ${row.seconds}s  ${result}`);
+  }
+  return lines.join('\n');
+}
+
+function runYoutubeNotesBatch({ urls, engine } = {}, deps = {}) {
+  const output = deps.output || ((line = '') => console.error(line));
+  const items = expandNotesTargets(urls || [], deps);
+  const rows = [];
+  for (const item of items) {
+    rows.push(runOneNotesItem(item, engine, deps));
+  }
+  if (rows.length) {
+    output('');
+    output(formatNotesSummary(rows));
+  }
+  if (!rows.length) return 2;
+  return rows.some((row) => row.ok) ? 0 : 2;
+}
+
+function runSingleYoutubeNotes(url, engine, deps = {}) {
+  let result;
+  try {
+    result = invokeNotesRunner(url, engine, deps);
+  } catch {
+    return 1;
+  }
+  const status = readRunnerStatus(result);
+  if (status === 0) fileNotesBrief(url, deps);
+  return status;
+}
+
+function runYoutubeNotes(args = [], deps = {}) {
+  const output = deps.output || ((line = '') => console.error(line));
+  const parsed = parseNotesArgs(args);
+  if (parsed.help) {
+    showYoutubeHelp(output, deps.commandName || 'atris youtube');
+    return 0;
+  }
+  if (!parsed.urls.length) {
+    output(YTNOTES_USAGE);
+    output(YTNOTES_HINT);
+    return 2;
+  }
+  if (parsed.urls.length === 1 && !isPlaylistUrl(parsed.urls[0])) {
+    return runSingleYoutubeNotes(parsed.urls[0], parsed.engine, deps);
+  }
+  return runYoutubeNotesBatch(parsed, deps);
 }
 
 async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
   if (argv[0] === 'notes') {
     const code = runYoutubeNotes(argv.slice(1), deps);
-    if (!deps.output && !deps.spawnSync) process.exit(code);
+    if (!deps.output && !deps.spawnSync && !deps.runner && !deps.expander) process.exit(code);
     return code;
   }
   if (argv[0] === 'digest') {
@@ -1078,6 +1263,12 @@ module.exports = {
   shouldRetryWithLocalTranscript,
   formatYoutubeResult,
   fileBriefFromNotes,
+  looksLikeYoutubeUrl,
+  isPlaylistUrl,
+  parseNotesArgs,
+  expandNotesTargets,
+  runYoutubeNotesBatch,
+  runYoutubeNotes,
   parseDigestArgs,
   collectVideoBriefs,
   buildDigestPrompt,
