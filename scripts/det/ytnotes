@@ -163,7 +163,7 @@ process.stdin.on("end", () => {
 
 run_grok() {
   run_with_timeout 240 grok --verbatim --no-memory --no-plan --no-subagents \
-    --disable-web-search --max-turns 1 -p "$PROMPT"
+    --disable-web-search --max-turns 3 -p "$PROMPT"
 }
 
 run_haiku() {
