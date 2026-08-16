@@ -10,7 +10,7 @@ const {
 
 const DREAMS_FILE = ['.atris', 'state', 'dreams.jsonl'];
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DREAM_TIMEOUT_MS = 60 * 1000;
+const DREAM_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_CONTEXT_CHARS = 7000;
 const MAX_SECTION_CHARS = 2400;
 
