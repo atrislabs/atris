@@ -513,6 +513,7 @@ function showHelp() {
   console.log('  orb        - Pick next moves while engine jobs work in the background');
   console.log('  activate   - Load Atris context');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
+  console.log('  who        - Show local engines and team members working, waiting, done, or stale');
   console.log('  stream     - Watch the whole team work live in one terminal');
   console.log('  team       - One team view: members, roles, engine assignments (presence for live)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
@@ -1827,6 +1828,10 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'team') {
   Promise.resolve(require('../commands/team').teamCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
+} else if (command === 'who') {
+  Promise.resolve(require('../commands/who').whoCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'wish') {
