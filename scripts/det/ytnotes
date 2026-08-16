@@ -15,6 +15,7 @@ esac
 URL="$1"
 ENGINE="${2:-haiku}"
 CALLER_CWD="$PWD"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WORK="${TMPDIR:-/tmp}/ytnotes"
 mkdir -p "$WORK"
 cd "$WORK"
@@ -192,4 +193,4 @@ run_haiku() {
   esac
 } | perl -0pe 's/\A.*?(?=# )//s' | tee "yt_${ID}.md"
 
-node "$(dirname "$0")/ytquote-repair.js" "yt_${ID}.md" "yt_${ID}.clean.txt"
+node "$SCRIPT_DIR/ytquote-repair.js" "yt_${ID}.md" "yt_${ID}.clean.txt"

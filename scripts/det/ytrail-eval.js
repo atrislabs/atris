@@ -48,7 +48,7 @@ function scoreQuotes(notes, transcript) {
   return {
     spans: spans.length,
     verified: ok,
-    pass: ok >= needed,
+    pass: spans.length >= 2 && ok >= needed,
   };
 }
 
