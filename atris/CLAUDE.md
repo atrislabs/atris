@@ -100,6 +100,8 @@ The human approves work by reading, so how you report IS the product.
 
 ## Rules (Non‑Negotiable)
 
+- YouTube link in a message: run `atris youtube notes <url>` before saying anything about the video. The transcript is the source; notes from model memory are fabrication.
+
 - Plan = ASCII visualization + approval gate. Do not execute during planning.
 - Execute step-by-step, verify as you go, update artifacts (`TODO.md`, `MAP.md`) when reality changes.
 - Delete completed tasks (validator cleans to target state = 0).

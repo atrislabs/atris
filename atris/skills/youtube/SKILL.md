@@ -1,7 +1,7 @@
 ---
 name: youtube
-description: "Process YouTube videos: extract insights, answer questions, store as knowledge. 5 credits per video. Triggers on: youtube, video, process video, watch this, learn from video."
-version: 2.3.0
+description: "A YouTube link in any message routes here. Run atris youtube notes <url> FIRST: free, about 30 seconds, quotes verified against the transcript. Never summarize a video from model memory, that is fabrication. Use atris youtube process only to store it as queryable knowledge (5 credits). Triggers on: any youtube.com or youtu.be link, youtube, video, watch this, notes on this."
+version: 2.4.0
 tags:
   - youtube
   - research
