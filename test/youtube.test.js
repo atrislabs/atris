@@ -239,6 +239,25 @@ test('extractLocalTranscript preserves VTT timestamps', async () => {
   assert.equal(result.durationSeconds, 61);
 });
 
+test('youtube notes with no url exits 2 and prints usage', async () => {
+  const output = [];
+  const status = await youtubeCommand(['notes'], {
+    output: (line) => output.push(line),
+  });
+
+  assert.equal(status, 2);
+  assert.match(output.join('\n'), /usage: ytnotes <youtube-url>/);
+  assert.match(output.join('\n'), /zero credits, local captions \+ a fast engine/);
+});
+
+test('youtube notes with a non-youtube arg exits 2', async () => {
+  const status = await youtubeCommand(['notes', 'not-a-url'], {
+    output: () => {},
+  });
+
+  assert.equal(status, 2);
+});
+
 test('formatYoutubeResult includes metadata, credits, and analysis', () => {
   const text = formatYoutubeResult({
     message: 'done',

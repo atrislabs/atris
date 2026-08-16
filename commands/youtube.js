@@ -1,7 +1,11 @@
 const { apiRequestJson } = require('../utils/api');
 const { ensureValidCredentials } = require('../utils/auth');
 const { spawnSync } = require('child_process');
+const path = require('path');
 const https = require('https');
+
+const YTNOTES_USAGE = 'usage: ytnotes <youtube-url> [haiku|atris-fast|gemini|grok|codex|cursor]';
+const YTNOTES_HINT = 'zero credits, local captions + a fast engine';
 
 const DEFAULT_QUERY = [
   'Create a timestamped YouTube brief for Atris.',
@@ -19,9 +23,11 @@ const ALLOWED_CAPTION_HOST_SUFFIXES = [
 
 function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('');
-  output(`Usage: ${commandName} process <youtube-url> [options]`);
+  output(`Usage: ${commandName} notes <youtube-url> [engine]`);
+  output(`       ${commandName} process <youtube-url> [options]`);
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
+  output('notes = free local notes, process = 5 credits cloud knowledge');
   output('Process a YouTube video through Atris using timestamped transcript-first analysis.');
   output('Falls back to cloud video processing when local captions are unavailable.');
   output('');
@@ -37,6 +43,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('  metadata -> timestamped outline -> claims -> examples -> takeaways -> Atris implications -> next actions');
   output('');
   output('Examples:');
+  output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID`);
   output(`  ${commandName} https://www.youtube.com/watch?v=VIDEO_ID`);
   output(`  ${commandName} process https://youtu.be/VIDEO_ID --query "Key takeaways"`);
   output('');
@@ -437,8 +444,31 @@ function formatYoutubeResult(data) {
   return lines.join('\n');
 }
 
+function runYoutubeNotes(args = [], deps = {}) {
+  const output = deps.output || ((line = '') => console.error(line));
+  const url = args[0];
+  const engine = args[1];
+  if (!url) {
+    output(YTNOTES_USAGE);
+    output(YTNOTES_HINT);
+    return 2;
+  }
+
+  const script = path.join(__dirname, '..', 'scripts', 'det', 'ytnotes');
+  const spawn = deps.spawnSync || spawnSync;
+  const childArgs = engine ? [url, engine] : [url];
+  const result = spawn(script, childArgs, { stdio: 'inherit' });
+  if (result.status == null) return 1;
+  return result.status;
+}
+
 async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
+  if (argv[0] === 'notes') {
+    const code = runYoutubeNotes(argv.slice(1), deps);
+    if (!deps.output && !deps.spawnSync) process.exit(code);
+    return code;
+  }
   const options = parseYoutubeArgs(argv);
   if (options.help) {
     showYoutubeHelp(output, deps.commandName || 'atris youtube');

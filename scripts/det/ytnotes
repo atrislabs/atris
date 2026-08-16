@@ -1,0 +1,196 @@
+#!/bin/bash
+# ytnotes <youtube-url> [engine]: local YouTube notes, tweet-feed one-screen.
+# Zero Atris credits. yt-dlp pulls captions, a fast engine writes the notes.
+# Engines: haiku (default), atris-fast, gemini, grok, codex, cursor.
+# Outputs: $WORK/yt_${ID}.clean.txt (transcript), $WORK/yt_${ID}.md (notes).
+set -euo pipefail
+
+USAGE="usage: ytnotes <youtube-url> [haiku|atris-fast|gemini|grok|codex|cursor]"
+
+case "${1:-}" in
+  *youtube.com*|*youtu.be*) ;;
+  *) echo "$USAGE" >&2; exit 2 ;;
+esac
+
+URL="$1"
+ENGINE="${2:-haiku}"
+CALLER_CWD="$PWD"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+WORK="${TMPDIR:-/tmp}/ytnotes"
+mkdir -p "$WORK"
+cd "$WORK"
+
+META=$(yt-dlp --no-update --quiet --no-warnings --skip-download \
+  --write-auto-subs --sub-format vtt --sub-langs en \
+  --no-simulate \
+  -o "yt_%(id)s" \
+  --print "%(id)s|%(title)s|%(channel)s|%(duration_string)s" \
+  "$URL" 2>/dev/null)
+ID="${META%%|*}"
+INFO="${META#*|}"
+
+VTT="yt_${ID}.en.vtt"
+if [ ! -s "$VTT" ]; then
+  echo "No English captions found for $URL. Falling back is manual (atris youtube process, 5 credits)." >&2
+  exit 2
+fi
+
+# Strip VTT cruft, drop only nearby rolling-caption duplicates, and keep one
+# time anchor every 30 seconds. Raw auto-captions are mostly timestamp spam:
+# the 21-minute canary is 210 KB raw, 95 KB with the old cleaner, and 22 KB here.
+sed -E 's/<[^>]*>//g; s/&gt;/>/g; s/&amp;/\&/g; s/&quot;/"/g' "$VTT" | awk '
+function seconds(ts, parts) {
+  split(ts, parts, ":")
+  return (parts[1] * 3600) + (parts[2] * 60) + int(parts[3])
+}
+/^(WEBVTT|Kind:|Language:)/ { next }
+/-->/ { cue_seconds = seconds($1); next }
+{
+  line = $0
+  gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+  if (line == "") next
+
+  duplicate = 0
+  for (i = 0; i < 6; i++) if (recent[i] == line) duplicate = 1
+  if (duplicate) next
+
+  bucket = int(cue_seconds / 30)
+  if (bucket != last_bucket) {
+    total = int(cue_seconds)
+    hours = int(total / 3600)
+    minutes = int((total % 3600) / 60)
+    secs = total % 60
+    if (hours > 0) printf "[%02d:%02d:%02d]\n", hours, minutes, secs
+    else printf "[%02d:%02d]\n", minutes, secs
+    last_bucket = bucket
+  }
+
+  print line
+  for (i = 5; i > 0; i--) recent[i] = recent[i - 1]
+  recent[0] = line
+}' > "yt_${ID}.clean.txt"
+
+TRANSCRIPT=$(<"yt_${ID}.clean.txt")
+
+STYLE_PROMPT="Write one-screen tweet-feed notes on this YouTube transcript ($INFO). Markdown only, start with # title then a 'Channel · Duration' line, 6-8 beats each opening with a **Bold hook.**, 4-6 verbatim quotes in double quotes with [mm:ss] timestamps on their own '> ' lines, end with a 2-item **Takeaway**. No preamble, no em dashes, fits one screen."
+
+PROMPT="$STYLE_PROMPT
+
+Transcript:
+$TRANSCRIPT"
+
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  perl -e '$seconds = shift @ARGV; alarm $seconds; exec @ARGV' "$seconds" "$@"
+}
+
+run_atris_fast() {
+  if [ ! -d "$CALLER_CWD/atris" ]; then
+    echo "atris-fast requires ytnotes to run from an initialized Atris workspace" >&2
+    return 2
+  fi
+
+  local jobs_file="$WORK/yt_${ID}.jobs.json"
+  local map_raw
+
+  node - "$INFO" "$WORK/yt_${ID}.clean.txt" "$jobs_file" <<'NODE'
+const fs = require('fs')
+const info = process.argv[2]
+const transcriptPath = process.argv[3]
+const jobsPath = process.argv[4]
+const lines = fs.readFileSync(transcriptPath, 'utf8').trim().split('\n')
+const targetBytes = 11000
+const chunks = []
+let current = []
+let bytes = 0
+
+for (const line of lines) {
+  const lineBytes = Buffer.byteLength(`${line}\n`)
+  if (current.length && bytes + lineBytes > targetBytes) {
+    chunks.push(current.join('\n'))
+    current = []
+    bytes = 0
+  }
+  current.push(line)
+  bytes += lineBytes
+}
+if (current.length) chunks.push(current.join('\n'))
+
+const jobs = chunks.map((chunk, index) => ({
+  engine: 'atris-fast',
+  label: `chunk-${String(index + 1).padStart(2, '0')}`,
+  prompt: `Read-only transcript analysis. Do not call tools. This is ordered chunk ${index + 1} of ${chunks.length} from ${info}. Return only valid JSON with this exact shape: {"beats":[{"time":"mm:ss","hook":"max 8 words","detail":"max 18 words"}],"action":"max 14 words"}. Pick exactly 3 critical beats. Prefer concrete names, numbers, mechanisms, and honest uncertainty; paraphrase instead of quoting. No markdown or preamble.\n\n${chunk}`,
+}))
+
+fs.writeFileSync(jobsPath, JSON.stringify(jobs))
+NODE
+
+  map_raw=$(cd "$CALLER_CWD" && atris engine ask --jobs "$jobs_file" \
+    --concurrency 3 --timeout 15 --json)
+  printf '%s' "$map_raw" | node -e '
+let raw = ""
+process.stdin.on("data", (chunk) => { raw += chunk })
+process.stdin.on("end", () => {
+  const receipt = JSON.parse(raw)
+  const answers = [...(receipt.answers || [])].sort((a, b) => a.label.localeCompare(b.label))
+  if (!answers.length || answers.some((answer) => !answer.ok)) process.exit(2)
+
+  const titleParts = process.argv[1].split("|")
+  const beats = []
+  const actions = []
+  for (const answer of answers) {
+    let output = answer.stdout
+    try { output = JSON.parse(answer.stdout).output || output } catch {}
+    const clean = String(output).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")
+    let parsed
+    try { parsed = JSON.parse(clean) } catch { process.exit(2) }
+    for (const beat of (parsed.beats || []).slice(0, 3)) beats.push(beat)
+    if (parsed.action) actions.push(String(parsed.action))
+  }
+  if (beats.length < 4) process.exit(2)
+
+  const lines = [`# ${titleParts[0]}`, `${titleParts[1] || "YouTube"} · ${titleParts[2] || ""}`]
+  for (const beat of beats.slice(0, 6)) {
+    const hook = String(beat.hook || "Key idea").replace(/[.]+$/, "")
+    const time = String(beat.time || "").replace(/^\[|\]$/g, "")
+    lines.push("", `**${hook}.**`, `${String(beat.detail || "").trim()}${time ? ` [${time}]` : ""}`)
+  }
+  lines.push("", "**Takeaway**", "", `1. ${actions[0] || "Apply the strongest mechanism to one current Atris mission."}`, `2. ${actions[1] || "Require one proof artifact before that mission advances."}`)
+  process.stdout.write(`${lines.join("\n").trim()}\n`)
+})' "$INFO"
+}
+
+run_grok() {
+  run_with_timeout 240 grok --verbatim --no-memory --no-plan --no-subagents \
+    --disable-web-search --max-turns 1 -p "$PROMPT"
+}
+
+run_haiku() {
+  run_with_timeout 240 claude -p "$PROMPT" --model claude-haiku-4-5
+}
+
+{
+  case "$ENGINE" in
+    haiku)
+      run_haiku
+      ;;
+    atris-fast|fast|atris)
+      run_atris_fast
+      ;;
+    gemini|gemini-3.7-flash)
+      run_with_timeout 120 gemini -m gemini-3.7-flash --skip-trust \
+        --approval-mode plan -o text -p "$PROMPT"
+      ;;
+    gemini-3.6-flash)
+      run_with_timeout 120 gemini -m gemini-3.6-flash --skip-trust \
+        --approval-mode plan -o text -p "$PROMPT"
+      ;;
+    grok)   run_grok ;;
+    codex)  run_with_timeout 240 codex exec --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
+    cursor) run_with_timeout 240 cursor-agent --trust -p "$PROMPT" ;;
+    *) echo "unknown engine: $ENGINE (haiku|atris-fast|gemini|grok|codex|cursor)" >&2; exit 1 ;;
+  esac
+} | perl -0pe 's/\A.*?(?=# )//s' | tee "yt_${ID}.md"
+
+node "$SCRIPT_DIR/ytquote-repair.js" "yt_${ID}.md" "yt_${ID}.clean.txt"
