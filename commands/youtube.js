@@ -26,6 +26,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('');
   output(`Usage: ${commandName} notes <youtube-url> [engine]`);
   output(`       ${commandName} process <youtube-url> [options]`);
+  output(`       ${commandName} digest [--days N]`);
   output(`       ${commandName} watch add <channel-url-or-@handle>`);
   output(`       ${commandName} watch list`);
   output(`       ${commandName} watch remove <number>`);
@@ -33,6 +34,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
   output('notes = free local notes, process = 5 credits cloud knowledge');
+  output('digest = one decision page from this week\'s video briefs');
   output('watch = subscribed channels turn into briefs without a human');
   output('Process a YouTube video through Atris using timestamped transcript-first analysis.');
   output('Falls back to cloud video processing when local captions are unavailable.');
@@ -52,6 +54,8 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID`);
   output(`  ${commandName} https://www.youtube.com/watch?v=VIDEO_ID`);
   output(`  ${commandName} process https://youtu.be/VIDEO_ID --query "Key takeaways"`);
+  output(`  ${commandName} digest`);
+  output(`  ${commandName} digest --days 14`);
   output(`  ${commandName} watch add @veritasium`);
   output(`  ${commandName} watch tick`);
   output('');
@@ -513,6 +517,201 @@ function fileBriefFromNotes({ cwd, url, workDir, now } = {}) {
   }
 }
 
+const DIGEST_ENGINE_TIMEOUT_MS = 240000;
+const DEFAULT_DIGEST_DAYS = 7;
+
+function addUtcDays(stamp, delta) {
+  const [year, month, day] = String(stamp || '').split('-').map(Number);
+  const value = new Date(Date.UTC(year, month - 1, day + Number(delta || 0)));
+  return value.toISOString().slice(0, 10);
+}
+
+function parseBriefDate(text) {
+  const match = String(text || '').match(/^date:\s*(\d{4}-\d{2}-\d{2})\s*$/m);
+  return match ? match[1] : null;
+}
+
+function isVideoBriefText(text) {
+  return /^source:\s*http/m.test(String(text || ''));
+}
+
+function briefTitleLine(text) {
+  const heading = firstHeading(text);
+  if (heading) return heading;
+  const first = String(text || '').split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+  return first || '';
+}
+
+function dateInDigestWindow(dateStr, now, days) {
+  if (!dateStr) return false;
+  const today = dateStamp(now);
+  const start = addUtcDays(today, -(Number(days) - 1));
+  return dateStr >= start && dateStr <= today;
+}
+
+function parseDigestArgs(argv = []) {
+  const args = [...argv];
+  const options = { help: false, days: DEFAULT_DIGEST_DAYS };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--help' || arg === '-h' || arg === 'help') {
+      options.help = true;
+    } else if (arg === '--days') {
+      const raw = args[i + 1];
+      const value = Number(raw);
+      if (raw == null || String(raw).startsWith('--') || !Number.isInteger(value) || value <= 0) {
+        throw new Error('--days must be a positive integer');
+      }
+      options.days = value;
+      i += 1;
+    } else if (arg.startsWith('--days=')) {
+      const value = Number(arg.slice('--days='.length));
+      if (!Number.isInteger(value) || value <= 0) {
+        throw new Error('--days must be a positive integer');
+      }
+      options.days = value;
+    } else if (arg.startsWith('-')) {
+      throw new Error(`Unknown option: ${arg}`);
+    } else {
+      throw new Error(`Unexpected argument: ${arg}`);
+    }
+  }
+  return options;
+}
+
+function collectVideoBriefs({ cwd, now, days } = {}) {
+  const root = cwd || process.cwd();
+  const briefsDir = path.join(root, 'atris', 'wiki', 'briefs');
+  if (!fs.existsSync(briefsDir)) return [];
+
+  const rows = [];
+  for (const name of fs.readdirSync(briefsDir).sort()) {
+    if (!name.endsWith('.md') || name.startsWith('digest-')) continue;
+    const abs = path.join(briefsDir, name);
+    let body = '';
+    try {
+      if (!fs.statSync(abs).isFile()) continue;
+      body = fs.readFileSync(abs, 'utf8');
+    } catch {
+      continue;
+    }
+    if (!isVideoBriefText(body)) continue;
+    const date = parseBriefDate(body);
+    if (!dateInDigestWindow(date, now, days)) continue;
+    rows.push({
+      name,
+      relPath: `atris/wiki/briefs/${name}`,
+      title: briefTitleLine(body),
+      date,
+      body,
+    });
+  }
+  rows.sort((a, b) => (a.date === b.date ? a.name.localeCompare(b.name) : a.date.localeCompare(b.date)));
+  return rows;
+}
+
+function buildDigestPrompt(briefs = []) {
+  const blocks = briefs.map((row) => [
+    `filename: ${row.name}`,
+    `title: ${row.title}`,
+    `path: ${row.relPath}`,
+    '',
+    row.body,
+  ].join('\n'));
+  return [
+    'Turn these video briefs into one decision-focused page.',
+    'Write a heading exactly: # what this week\'s videos changed',
+    'Then 3-6 decision-shaped findings. Each finding must name the brief it came from as a path.',
+    'Then one contradictions or tensions paragraph if any exist.',
+    'Then a 3-item do next list.',
+    'Use plain prose. Do not use em dashes.',
+    '',
+    'Briefs:',
+    '',
+    blocks.join('\n\n'),
+  ].join('\n');
+}
+
+function defaultDigestRunner(prompt, deps = {}) {
+  const spawn = deps.spawnSync || spawnSync;
+  return spawn('claude', ['-p', prompt, '--model', 'claude-haiku-4-5'], {
+    encoding: 'utf8',
+    timeout: DIGEST_ENGINE_TIMEOUT_MS,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+}
+
+function invokeDigestEngine(prompt, deps = {}) {
+  const runner = deps.runner || ((nextPrompt) => defaultDigestRunner(nextPrompt, deps));
+  const result = runner(prompt, deps);
+  if (typeof result === 'string') return result.trim();
+  if (!result || result.error || (result.status != null && result.status !== 0)) {
+    const detail = String(result?.stderr || result?.error?.message || 'digest engine failed').trim();
+    throw new Error(detail || 'digest engine failed');
+  }
+  return String(result.stdout || '').trim();
+}
+
+function appendDigestJournal({ cwd, date, relDigest }) {
+  const year = date.slice(0, 4);
+  const journalPath = path.join(cwd, 'atris', 'logs', year, `${date}.md`);
+  fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+  let existing = '';
+  if (fs.existsSync(journalPath)) existing = fs.readFileSync(journalPath, 'utf8');
+  const prefix = existing && !existing.endsWith('\n') ? '\n' : '';
+  const line = `- [claimable] digest: what this week's videos changed -> ${relDigest}`;
+  fs.writeFileSync(journalPath, `${existing}${prefix}${line}\n`);
+}
+
+function runYoutubeDigest(args = [], deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  let options;
+  try {
+    options = parseDigestArgs(args);
+  } catch (err) {
+    output(err.message);
+    return 2;
+  }
+  if (options.help) {
+    showYoutubeHelp(output, deps.commandName || 'atris youtube');
+    return 0;
+  }
+
+  const cwd = deps.cwd || process.cwd();
+  const now = deps.now || new Date();
+  const briefs = collectVideoBriefs({ cwd, now, days: options.days });
+  if (!briefs.length) {
+    output(`no video briefs in the last ${options.days} days`);
+    return 0;
+  }
+
+  const prompt = buildDigestPrompt(briefs);
+  let text;
+  try {
+    text = invokeDigestEngine(prompt, deps);
+  } catch (err) {
+    output(err.message || 'digest engine failed');
+    return 1;
+  }
+  if (!text) {
+    output('digest engine returned no text');
+    return 1;
+  }
+
+  const date = dateStamp(now);
+  const relDigest = `atris/wiki/briefs/digest-${date}.md`;
+  const header = [
+    `date: ${date}`,
+    `window: ${options.days} days`,
+    `sources: ${briefs.map((row) => row.relPath).join(', ')}`,
+  ].join('\n');
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki', 'briefs'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, relDigest), `${header}\n\n${text}\n`);
+  appendDigestJournal({ cwd, date, relDigest });
+  output(`digest filed: ${relDigest} (${briefs.length} briefs)`);
+  return 0;
+}
+
 function watchStatePath(cwd = process.cwd()) {
   return path.join(cwd, '.atris', 'state', 'youtube_watch.json');
 }
@@ -849,6 +1048,11 @@ async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
     if (!deps.output && !deps.spawnSync) process.exit(code);
     return code;
   }
+  if (argv[0] === 'digest') {
+    const code = runYoutubeDigest(argv.slice(1), { ...deps, output });
+    if (!deps.output && !deps.runner) process.exit(code);
+    return code;
+  }
   if (argv[0] === 'watch') {
     const code = await watchCommand(argv.slice(1), { ...deps, output });
     if (!deps.output && !deps.fetcher && !deps.runner && !deps.briefFiler) process.exit(code);
@@ -874,6 +1078,10 @@ module.exports = {
   shouldRetryWithLocalTranscript,
   formatYoutubeResult,
   fileBriefFromNotes,
+  parseDigestArgs,
+  collectVideoBriefs,
+  buildDigestPrompt,
+  runYoutubeDigest,
   normalizeWatchChannel,
   channelVideosUrl,
   parseFlatPlaylist,
