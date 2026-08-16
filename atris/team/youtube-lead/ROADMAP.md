@@ -16,7 +16,7 @@ One. Briefs file themselves: notes land in `atris/wiki/briefs/` with a claimable
 
 Two. Watch feeder: subscribe to channels, a scheduled tick pulls new uploads through the rail overnight, mornings open with fresh briefs.
 
-Three. Weekly engine re-race: replay the canary set through every engine, read the ledger, flip the default when someone faster and honest shows up.
+Three. Weekly engine re-race: replay the canary set through every engine, read the ledger, flip the default when someone faster and honest shows up. (in flight)
 
 Four. Weekly synthesis: one digest brief that reads the week's video briefs and answers what changed our plans, with links back.
 
