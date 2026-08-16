@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const {
   DEFAULT_QUERY,
   parseYoutubeArgs,
@@ -7,6 +10,7 @@ const {
   extractLocalTranscript,
   shouldRetryWithLocalTranscript,
   formatYoutubeResult,
+  fileBriefFromNotes,
   youtubeCommand,
 } = require('../commands/youtube');
 
@@ -256,6 +260,63 @@ test('youtube notes with a non-youtube arg exits 2', async () => {
   });
 
   assert.equal(status, 2);
+});
+
+test('fileBriefFromNotes writes a wiki brief and a claimable journal line', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-brief-'));
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const notes = '# Some Video Title\n\nBody paragraph.\n';
+  fs.writeFileSync(path.join(workDir, 'yt_abc123xyz.md'), notes);
+  const url = 'https://www.youtube.com/watch?v=abc123xyz';
+
+  fileBriefFromNotes({
+    cwd,
+    url,
+    workDir,
+    now: new Date('2026-08-15T15:00:00.000Z'),
+  });
+
+  const brief = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-abc123xyz.md'), 'utf8');
+  assert.equal(brief, [
+    'some video title',
+    '',
+    'date: 2026-08-15',
+    `source: ${url}`,
+    'rail: atris youtube notes, quotes repaired against the transcript',
+    notes,
+  ].join('\n'));
+
+  const journal = fs.readFileSync(path.join(cwd, 'atris', 'logs', '2026', '2026-08-15.md'), 'utf8');
+  assert.equal(journal, '- [claimable] watched: Some Video Title -> atris/wiki/briefs/youtube-abc123xyz.md\n');
+});
+
+test('fileBriefFromNotes files youtu.be notes and stays silent without a wiki', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-be-'));
+  fs.writeFileSync(path.join(workDir, 'yt_shortid99.md'), '# Short Form\n\nClip notes.\n');
+
+  const withWiki = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-be-'));
+  fs.mkdirSync(path.join(withWiki, 'atris', 'wiki'), { recursive: true });
+  fileBriefFromNotes({
+    cwd: withWiki,
+    url: 'https://youtu.be/shortid99?si=abc',
+    workDir,
+    now: '2026-08-15',
+  });
+  assert.match(
+    fs.readFileSync(path.join(withWiki, 'atris', 'wiki', 'briefs', 'youtube-shortid99.md'), 'utf8'),
+    /source: https:\/\/youtu\.be\/shortid99\?si=abc/,
+  );
+
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-nowiki-'));
+  fileBriefFromNotes({
+    cwd: bare,
+    url: 'https://youtu.be/shortid99',
+    workDir,
+    now: new Date('2026-08-15T15:00:00.000Z'),
+  });
+  assert.equal(fs.existsSync(path.join(bare, 'atris', 'wiki')), false);
+  assert.equal(fs.existsSync(path.join(bare, 'atris', 'logs')), false);
 });
 
 test('formatYoutubeResult includes metadata, credits, and analysis', () => {
