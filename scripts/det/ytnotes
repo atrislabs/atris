@@ -71,39 +71,7 @@ function seconds(ts, parts) {
 
 TRANSCRIPT=$(<"yt_${ID}.clean.txt")
 
-STYLE_PROMPT="Write tweet-feed notes on this YouTube transcript ($INFO).
-
-Use only the supplied transcript. Do not browse, inspect files, or call tools.
-
-PRODUCT FEEL: like a short Twitter thread you can finish without scrolling. Eyes stay fixed. One MacBook Pro 14\" chat viewport. Video dump → learn fast → done. No overwhelm. No wall of text. No crushed one-liner soup.
-
-HARD LIMITS:
-- Whole note (title through Takeaway) must fit ~one screen: about 8-12 beats max, ~28 lines max including blanks.
-- Curate ruthlessly: only the critical / sticky points. Drop filler, travel banter, and anything that doesn't teach.
-- Keep the best concrete details (names, numbers, tools, mechanisms). Cut everything else.
-- Include 4-6 direct quotes in double quotes, copied VERBATIM from the transcript, never paraphrased or cleaned up. A quote that is not word-for-word in the transcript is a failure.
-
-FORMAT (strict):
-- Markdown only. No preamble.
-- Line 1: # Title
-- Line 2: Channel · Duration
-- Then a blank line.
-- Then beats. Each beat =
-  1 short line starting with **Bold hook.**
-  optional second short line of detail
-  optional quote on its own line: > \"...\" [mm:ss]
-  then a blank line before the next beat
-- No ## section headers (they waste vertical space). The bold hook IS the section.
-- End with:
-
-**Takeaway**
-
-1. one specific action
-2. one specific action
-
-(blank line before Takeaway)
-
-VOICE: punchy, specific, tweet-like. Never 'he discusses…'. Never dense LABEL: a · b · c packs."
+STYLE_PROMPT="Write one-screen tweet-feed notes on this YouTube transcript ($INFO). Markdown only, start with # title then a 'Channel · Duration' line, 6-8 beats each opening with a **Bold hook.**, 4-6 verbatim quotes in double quotes with [mm:ss] timestamps on their own '> ' lines, end with a 2-item **Takeaway**. No preamble, no em dashes, fits one screen."
 
 PROMPT="$STYLE_PROMPT
 
