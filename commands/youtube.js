@@ -1,6 +1,7 @@
 const { apiRequestJson } = require('../utils/api');
 const { ensureValidCredentials } = require('../utils/auth');
 const { spawnSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
@@ -444,6 +445,67 @@ function formatYoutubeResult(data) {
   return lines.join('\n');
 }
 
+function videoIdFromUrl(url) {
+  const text = String(url || '');
+  const watch = text.match(/[?&]v=([^&]+)/);
+  if (watch) return watch[1];
+  const short = text.match(/youtu\.be\/([^?&/]+)/);
+  return short ? short[1] : null;
+}
+
+function dateStamp(now) {
+  if (typeof now === 'string' && /^\d{4}-\d{2}-\d{2}/.test(now)) {
+    return now.slice(0, 10);
+  }
+  const value = now instanceof Date ? now : new Date(now || Date.now());
+  if (Number.isNaN(value.getTime())) return new Date().toISOString().slice(0, 10);
+  return value.toISOString().slice(0, 10);
+}
+
+function firstHeading(notes) {
+  const match = String(notes || '').replace(/\r\n/g, '\n').match(/^#{1,6}\s+(.+)$/m);
+  return match ? match[1].trim() : '';
+}
+
+function fileBriefFromNotes({ cwd, url, workDir, now } = {}) {
+  try {
+    const id = videoIdFromUrl(url);
+    if (!id) return;
+    const notesPath = path.join(workDir, `yt_${id}.md`);
+    if (!fs.existsSync(notesPath)) return;
+    const notes = fs.readFileSync(notesPath, 'utf8');
+    const wikiDir = path.join(cwd, 'atris', 'wiki');
+    if (!fs.existsSync(wikiDir)) return;
+
+    const heading = firstHeading(notes);
+    const date = dateStamp(now);
+    const header = [
+      heading.toLowerCase(),
+      '',
+      `date: ${date}`,
+      `source: ${url}`,
+      'rail: atris youtube notes, quotes repaired against the transcript',
+    ].join('\n');
+    const briefsDir = path.join(wikiDir, 'briefs');
+    fs.mkdirSync(briefsDir, { recursive: true });
+    const relBrief = `atris/wiki/briefs/youtube-${id}.md`;
+    fs.writeFileSync(path.join(cwd, relBrief), `${header}\n${notes}`);
+
+    const year = date.slice(0, 4);
+    const journalPath = path.join(cwd, 'atris', 'logs', year, `${date}.md`);
+    fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+    let existing = '';
+    if (fs.existsSync(journalPath)) existing = fs.readFileSync(journalPath, 'utf8');
+    const prefix = existing && !existing.endsWith('\n') ? '\n' : '';
+    const line = `- [claimable] watched: ${heading} -> ${relBrief}`;
+    fs.writeFileSync(journalPath, `${existing}${prefix}${line}\n`);
+
+    console.log(`brief filed: ${relBrief}`);
+  } catch {
+    // notes filing must never break the youtube command
+  }
+}
+
 function runYoutubeNotes(args = [], deps = {}) {
   const output = deps.output || ((line = '') => console.error(line));
   const url = args[0];
@@ -459,6 +521,14 @@ function runYoutubeNotes(args = [], deps = {}) {
   const childArgs = engine ? [url, engine] : [url];
   const result = spawn(script, childArgs, { stdio: 'inherit' });
   if (result.status == null) return 1;
+  if (result.status === 0) {
+    fileBriefFromNotes({
+      cwd: deps.cwd || process.cwd(),
+      url,
+      workDir: deps.workDir || path.join(process.env.TMPDIR || '/tmp', 'ytnotes'),
+      now: deps.now || new Date(),
+    });
+  }
   return result.status;
 }
 
@@ -488,5 +558,6 @@ module.exports = {
   processYoutube,
   shouldRetryWithLocalTranscript,
   formatYoutubeResult,
+  fileBriefFromNotes,
   youtubeCommand,
 };
