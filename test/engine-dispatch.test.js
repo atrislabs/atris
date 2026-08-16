@@ -229,18 +229,22 @@ test('runDispatchCommand refuses --prompt-file with more than one task id', () =
 });
 
 test('runDispatchCommand refuses an engine whose CLI is not installed here', () => {
+  const root = makeTempRoot();
   const before = console.error;
   const lines = [];
   console.error = (l) => lines.push(String(l));
   const prevPath = process.env.PATH;
   try {
     process.env.PATH = '';
-    const code = engine.runDispatchCommand(['CLI-1', '--engine', 'cursor'], process.cwd());
+    const code = engine.runDispatchCommand(['CLI-1', '--engine', 'fable'], root);
     assert.equal(code, 2);
-    assert.ok(lines.some((l) => /is not installed here/.test(l)));
+    assert.ok(lines.some((l) => /fable handoff failed: fable CLI \(claude\) is not installed here/.test(l)));
+    const registry = readEngineRegistry(root, { persist: false });
+    assert.equal(registry.engines.find((entry) => entry.id === 'fable').health.status, 'not_installed');
   } finally {
     process.env.PATH = prevPath;
     console.error = before;
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -699,35 +703,39 @@ test('runDispatchFlight restaffs once when usage-limit output kills the first en
   }
 });
 
-test('engine dispatch benches an expired subscription and a later build restores ready', async () => {
+test('fable handoff names an expired login, benches it, and a later build restores ready', async () => {
   const tmpRoot = makeTempRoot();
   try {
     const { cli } = ownCliFake({
       tasks: { 'CLI-900': TASK },
       worktreeFor: (task) => `/wt/${task}`,
     });
+    const lines = [];
     const failed = await fleet.runDispatchFlight({
       root: tmpRoot,
       taskIds: ['CLI-900'],
-      engine: 'codex',
-      installedEngines: ['codex'],
+      engine: 'fable',
+      installedEngines: ['fable'],
       ownCli: cli,
       dispatcher: () => Promise.resolve({
         exitCode: 1,
         report: '',
         stderr: 'Payment required. Your subscription expired; login required.',
       }),
-      log: () => {},
+      log: (line = '') => lines.push(String(line)),
     });
     assert.equal(failed.paused[0].stage, 'build');
     let registry = readEngineRegistry(tmpRoot, { persist: false });
-    assert.equal(registry.engines.find((entry) => entry.id === 'codex').health.status, 'credit_out');
+    assert.equal(registry.engines.find((entry) => entry.id === 'fable').health.status, 'credit_out');
+    assert.match(lines.join('\n'), /fable handoff started: receipt atris\/runs\/dispatch-.+[.]json/);
+    const failureLine = lines.find((line) => line.includes('fable handoff failed:'));
+    assert.match(failureLine, /^  fable handoff failed: the engine login expired[.] receipt: atris\/runs\/dispatch-.+[.]json$/);
 
     const recovered = await fleet.runDispatchFlight({
       root: tmpRoot,
       taskIds: ['CLI-900'],
-      engine: 'codex',
-      installedEngines: ['codex'],
+      engine: 'fable',
+      installedEngines: ['fable'],
       ownCli: cli,
       dispatcher: () => Promise.resolve({ exitCode: 0, report: 'build completed' }),
       rebase: () => ({ ok: true, stage: 'rebased' }),
@@ -736,7 +744,7 @@ test('engine dispatch benches an expired subscription and a later build restores
     });
     assert.equal(recovered.status, 'completed');
     registry = readEngineRegistry(tmpRoot, { persist: false });
-    assert.equal(registry.engines.find((entry) => entry.id === 'codex').health.status, 'ready');
+    assert.equal(registry.engines.find((entry) => entry.id === 'fable').health.status, 'ready');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -992,17 +1000,18 @@ test('runDispatchFlight pauses when the build itself fails, keeping the worktree
   }
 });
 
-test('runDispatchFlight treats empty exit zero as no_output and never lands it', async () => {
+test('fable handoff names empty exit zero, benches it, and never lands it', async () => {
   const tmpRoot = makeTempRoot();
   try {
     const { cli, calls } = ownCliFake({ tasks: { 'CLI-900': TASK }, worktreeFor: (task) => `/wt/${task}` });
+    const lines = [];
     const flight = await fleet.runDispatchFlight({
       root: tmpRoot,
       taskIds: ['CLI-900'],
-      engine: 'cursor',
-      installedEngines: ['cursor'],
+      engine: 'fable',
+      installedEngines: ['fable'],
       ownCli: cli,
-      log: () => {},
+      log: (line = '') => lines.push(String(line)),
       dispatcher: () => Promise.resolve({ exitCode: 0, stdout: ' \n', stderr: '' }),
       lander: () => { throw new Error('empty output must not reach the landing gate'); },
     });
@@ -1011,6 +1020,10 @@ test('runDispatchFlight treats empty exit zero as no_output and never lands it',
     assert.equal(flight.paused[0].reason, 'no_output');
     assert.equal(flight.results[0].deadEngine.reason, 'no_output');
     assert.ok(!calls.some((call) => call.startsWith('worktree ship')));
+    const registry = readEngineRegistry(tmpRoot, { persist: false });
+    assert.equal(registry.engines.find((entry) => entry.id === 'fable').health.status, 'error');
+    const failureLine = lines.find((line) => line.includes('fable handoff failed:'));
+    assert.match(failureLine, /^  fable handoff failed: the engine returned no output[.] receipt: atris\/runs\/dispatch-.+[.]json$/);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

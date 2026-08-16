@@ -37,10 +37,11 @@ const {
   resolveEngineForRoleRanked,
   requireEngineBin,
   engineDoctorReport,
+  engineFailureHealthStatus,
   setEngineOverrides,
   setEngineHealth,
 } = require('../lib/engine-registry');
-const { FLEET_CAPABLE, runDispatchFlight } = require('../lib/fleet');
+const { DISPATCH_CAPABLE, runDispatchFlight } = require('../lib/fleet');
 const {
   buildReadOnlyEngineInvocation,
   runEngineAskCommand,
@@ -1379,12 +1380,12 @@ function parseDispatchArgs(args) {
 function runDispatchCommand(args, root) {
   const { taskIds, engine, promptFile, base, json, yolo } = parseDispatchArgs(args);
   if (!taskIds.length || !engine) {
-    console.error('usage: atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]');
+    console.error('usage: atris engine dispatch <task-id> [<task-id> ...] --engine <engine> [--prompt-file <f>] [--yolo]');
     return 2;
   }
   const canonical = canonicalEngineName(engine);
-  if (!canonical || !FLEET_CAPABLE.includes(canonical)) {
-    console.error(`engine dispatch: --engine must be one of ${FLEET_CAPABLE.join(', ')}`);
+  if (!canonical || !DISPATCH_CAPABLE.includes(canonical)) {
+    console.error(`engine dispatch: --engine must be one of ${DISPATCH_CAPABLE.join(', ')}`);
     return 2;
   }
   // Argument-shape errors surface before environment errors: --prompt-file
@@ -1407,7 +1408,13 @@ function runDispatchCommand(args, root) {
   try {
     requireEngineBin(canonical);
   } catch (err) {
-    console.error(`engine dispatch: ${err.message}`);
+    const status = engineFailureHealthStatus({ status: 'errored', reason: err.message });
+    if (status) {
+      try { setEngineHealth(canonical, status, root); } catch { /* best effort */ }
+    }
+    console.error(canonical === 'fable'
+      ? `fable handoff failed: ${err.message}`
+      : `engine dispatch: ${err.message}`);
     return 2;
   }
   return runDispatchFlight({ root, taskIds, engine: canonical, prompt: promptOverride, yolo, ...(base ? { checkoutBase: base } : {}) }).then((flight) => {
