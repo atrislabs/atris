@@ -191,3 +191,5 @@ run_haiku() {
     *) echo "unknown engine: $ENGINE (haiku|atris-fast|gemini|grok|codex|cursor)" >&2; exit 1 ;;
   esac
 } | perl -0pe 's/\A.*?(?=# )//s' | tee "yt_${ID}.md"
+
+node "$(dirname "$0")/ytquote-repair.js" "yt_${ID}.md" "yt_${ID}.clean.txt"
