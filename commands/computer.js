@@ -2141,7 +2141,7 @@ async function runBusinessPromptViaRunnerProxy(token, ctx, prompt, options = {})
   const payload = {
     prompt,
     permission_mode: 'bypassPermissions',
-    max_turns: Math.min(Math.max(Number(options.maxTurns || 12), 1), 25),
+    max_turns: Math.min(Math.max(Number(options.maxTurns || 40), 1), 100),
     reset_context: Boolean(options.resetContext),
   };
   if (options.worker) payload.worker = options.worker;
@@ -3399,7 +3399,7 @@ async function sendBusinessChat(token, ctx, message, sessionId, resetContext = f
     const fallback = await runBusinessPromptViaRunnerProxy(token, ctx, message, {
       ...options,
       resetContext,
-      maxTurns: 25,
+      maxTurns: 60,
     });
     if (!fallback.ok) {
       if (typeof options.onFailure === 'function') {
