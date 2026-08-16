@@ -160,6 +160,8 @@ function listWorktrees(root = repoRoot()) {
 // Duplicate flight guard. On 2026-08-07 two agents were dispatched onto the
 // same map rewrite 44 seconds apart: fleet dispatch claims a task first, but a
 // direct `worktree start` had no pre-check beyond the target path existing.
+// Refuse only the same task slug. A shared word on an unrelated flight is not
+// a collision (dispatch-cli-900 must not block dispatch-cli-901).
 const AGENT_FLIGHT_NAME_PATTERN = /^codex\/(.+)-(\d{8}-\d{6})$/;
 const FLIGHT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const FLIGHT_STOPWORDS = new Set([
@@ -234,10 +236,10 @@ function inFlightAgentFlights({ root = repoRoot(), now = new Date(), windowMs = 
   return [...flights.values()].sort((a, b) => b.stampMs - a.stampMs);
 }
 
-function collidingFlights(flights, tokens) {
-  const wanted = new Set(tokens);
-  if (!wanted.size) return [];
-  return flights.filter((flight) => flight.tokens.some((token) => wanted.has(token)));
+function collidingFlights(flights, taskSlug) {
+  const wanted = String(taskSlug || '').trim().toLowerCase();
+  if (!wanted) return [];
+  return flights.filter((flight) => String(flight.taskSlug || '').toLowerCase() === wanted);
 }
 
 function describeFlightAge(flight, nowMs = Date.now()) {
@@ -511,7 +513,7 @@ function startWorktree(args) {
   const active = flights.filter((flight) => flight.kind === 'worktree');
   const repoName = path.basename(findPrimaryRoot(root));
   console.log(`flights: ${active.length} active agent ${active.length === 1 ? 'worktree' : 'worktrees'} for ${repoName}`);
-  const collisions = collidingFlights(flights, taskTokens(slugify(task, 'task', 36)));
+  const collisions = collidingFlights(flights, slugify(task, 'task', 36));
   if (collisions.length) {
     const label = force ? 'warning' : 'refusing';
     for (const flight of collisions) {

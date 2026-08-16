@@ -995,6 +995,7 @@ test('runDispatchFlight pauses when the build itself fails, keeping the worktree
     assert.equal(flight.paused[0].stage, 'build');
     assert.equal(flight.results[0].verified_passed, null);
     assert.ok(!calls.some((c) => c.startsWith('task ready')));
+    assert.ok(!calls.some((c) => c.startsWith('task release')), 'must not release a claim after the engine has started');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -1126,6 +1127,64 @@ test('runDispatchFlight stops before worktree creation when the atomic claim fai
     assert.equal(receipt.paused[0].stage, 'claim');
     assert.ok(!receipt.ready.length);
     assert.ok(!receipt.landed.length);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight releases the claim when worktree start refuses before the engine starts', async () => {
+  const tmpRoot = makeTempRoot();
+  const calls = [];
+  let taskStatus = 'open';
+  let dispatchCalled = false;
+  try {
+    const cli = (args) => {
+      calls.push(args.join(' '));
+      if (args[0] === 'task' && args[1] === 'show') {
+        return { status: 0, stdout: JSON.stringify({ ...TASK, status: taskStatus }), stderr: '' };
+      }
+      if (args[0] === 'task' && args[1] === 'claim') {
+        taskStatus = 'claimed';
+        return { status: 0, stdout: 'claimed', stderr: '' };
+      }
+      if (args[0] === 'task' && args[1] === 'release') {
+        assert.equal(args[args.indexOf('--as') + 1], 'fleet-cursor');
+        taskStatus = 'open';
+        return { status: 0, stdout: 'released CLI-900 from fleet-cursor', stderr: '' };
+      }
+      if (args[0] === 'worktree' && args[1] === 'start') {
+        return { status: 2, stdout: '', stderr: 'refusing: overlapping flight other-flight (3m old)' };
+      }
+      throw new Error(`unexpected cli call: ${args.join(' ')}`);
+    };
+
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      ownCli: cli,
+      dispatcher: () => {
+        dispatchCalled = true;
+        return Promise.resolve({ exitCode: 0 });
+      },
+      rebase: () => { throw new Error('rebase must not run after a refused worktree'); },
+      verifier: () => { throw new Error('verifier must not run after a refused worktree'); },
+      log: () => {},
+    });
+
+    assert.equal(dispatchCalled, false);
+    assert.equal(taskStatus, 'open');
+    assert.ok(calls.includes('task claim CLI-900 --as fleet-cursor'));
+    assert.ok(calls.includes('task release CLI-900 --as fleet-cursor'));
+    assert.ok(calls.indexOf('task release CLI-900 --as fleet-cursor') > calls.indexOf('task claim CLI-900 --as fleet-cursor'));
+    assert.equal(flight.results.length, 0);
+    assert.equal(flight.paused.length, 1);
+    assert.equal(flight.paused[0].task, 'CLI-900');
+    assert.equal(flight.paused[0].stage, 'worktree_start');
+    assert.match(flight.paused[0].detail, /overlapping flight/);
+    assert.match(flight.paused[0].detail, /claim released, safe to retry$/);
+    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.match(receipt.paused[0].detail, /claim released, safe to retry$/);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

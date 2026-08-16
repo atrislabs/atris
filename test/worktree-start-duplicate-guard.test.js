@@ -39,18 +39,22 @@ test('stopwords drop out of task tokens', () => {
   assert.deepEqual(taskTokens('billing-refund-bug'), ['billing', 'refund', 'bug']);
 });
 
-test('one shared task word is a collision, none is clear to fly', () => {
+test('only the same task slug is a collision', () => {
   const flights = [
     parseAgentFlightName('codex/cursor-map-shrink-freshness-20260809-175253'),
     parseAgentFlightName('codex/claude-billing-refund-bug-20260809-180000'),
+    parseAgentFlightName('codex/cursor-dispatch-cli-900-20260809-181000'),
   ];
   assert.deepEqual(
-    collidingFlights(flights, taskTokens('map-rewrite')).map((f) => f.taskSlug),
+    collidingFlights(flights, 'dispatch-cli-900').map((f) => f.taskSlug),
+    ['dispatch-cli-900']
+  );
+  assert.deepEqual(collidingFlights(flights, 'dispatch-cli-901'), []);
+  assert.deepEqual(collidingFlights(flights, 'map-rewrite'), []);
+  assert.deepEqual(
+    collidingFlights(flights, 'map-shrink-freshness').map((f) => f.taskSlug),
     ['map-shrink-freshness']
   );
-  assert.deepEqual(collidingFlights(flights, taskTokens('invoice-export')), []);
-  // Every word was a stopword: nothing left to compare, so nothing collides.
-  assert.deepEqual(collidingFlights(flights, taskTokens('fix the cli')), []);
 });
 
 test('age reads from the embedded stamp', () => {
