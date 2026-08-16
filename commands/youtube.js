@@ -26,9 +26,14 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('');
   output(`Usage: ${commandName} notes <youtube-url> [engine]`);
   output(`       ${commandName} process <youtube-url> [options]`);
+  output(`       ${commandName} watch add <channel-url-or-@handle>`);
+  output(`       ${commandName} watch list`);
+  output(`       ${commandName} watch remove <number>`);
+  output(`       ${commandName} watch tick`);
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
   output('notes = free local notes, process = 5 credits cloud knowledge');
+  output('watch = subscribed channels turn into briefs without a human');
   output('Process a YouTube video through Atris using timestamped transcript-first analysis.');
   output('Falls back to cloud video processing when local captions are unavailable.');
   output('');
@@ -47,6 +52,8 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID`);
   output(`  ${commandName} https://www.youtube.com/watch?v=VIDEO_ID`);
   output(`  ${commandName} process https://youtu.be/VIDEO_ID --query "Key takeaways"`);
+  output(`  ${commandName} watch add @veritasium`);
+  output(`  ${commandName} watch tick`);
   output('');
 }
 
@@ -82,7 +89,7 @@ function parseYoutubeArgs(argv = []) {
     return options;
   }
 
-  if (['process', 'analyze', 'watch'].includes(args[0])) {
+  if (['process', 'analyze'].includes(args[0])) {
     args.shift();
   }
 
@@ -506,6 +513,309 @@ function fileBriefFromNotes({ cwd, url, workDir, now } = {}) {
   }
 }
 
+function watchStatePath(cwd = process.cwd()) {
+  return path.join(cwd, '.atris', 'state', 'youtube_watch.json');
+}
+
+function emptyWatchState() {
+  return { channels: [], seen: {}, seeded: {}, seenByChannel: {} };
+}
+
+function asObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function loadWatchState(statePath) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    const channels = Array.isArray(parsed?.channels) ? parsed.channels : [];
+    return {
+      channels,
+      seen: asObject(parsed?.seen),
+      seeded: asObject(parsed?.seeded),
+      seenByChannel: asObject(parsed?.seenByChannel),
+    };
+  } catch {
+    return emptyWatchState();
+  }
+}
+
+function saveWatchState(statePath, state) {
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  const payload = {
+    channels: (state.channels || []).map((row) => ({
+      channel: row.channel,
+      added: row.added,
+    })),
+    seen: asObject(state.seen),
+    seeded: asObject(state.seeded),
+    seenByChannel: asObject(state.seenByChannel),
+  };
+  fs.writeFileSync(statePath, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function stampNow(now) {
+  if (typeof now === 'function') now = now();
+  if (typeof now === 'string' && now) return now;
+  const value = now instanceof Date ? now : new Date(now || Date.now());
+  if (Number.isNaN(value.getTime())) return new Date().toISOString();
+  return value.toISOString();
+}
+
+function normalizeWatchChannel(input) {
+  const raw = String(input || '').trim();
+  if (!raw) throw new Error('Missing channel url or @handle. Run "atris youtube watch --help".');
+
+  let text = raw;
+  if (text.startsWith('@')) {
+    text = `https://www.youtube.com/${text}`;
+  } else if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(text)) {
+    if (/^(www\.)?youtube\.com\//i.test(text) || /^youtu\.be\//i.test(text)) {
+      text = `https://${text}`;
+    } else if (/^@?[\w.-]+$/.test(text)) {
+      text = `https://www.youtube.com/@${text.replace(/^@/, '')}`;
+    } else {
+      throw new Error(`Invalid channel: ${raw}`);
+    }
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(text);
+  } catch {
+    throw new Error(`Invalid channel: ${raw}`);
+  }
+
+  parsed.hash = '';
+  parsed.search = '';
+  let href = parsed.toString().replace(/\/+$/, '');
+  href = href.replace(/\/(videos|featured|streams|shorts)$/i, '');
+  return href;
+}
+
+function channelVideosUrl(channel) {
+  const base = String(channel || '').replace(/\/+$/, '');
+  if (/\/videos$/i.test(base)) return base;
+  return `${base}/videos`;
+}
+
+function parseFlatPlaylist(stdout) {
+  const videos = [];
+  for (const line of String(stdout || '').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || !trimmed.includes('|')) continue;
+    const idx = trimmed.indexOf('|');
+    const id = trimmed.slice(0, idx).trim();
+    const title = trimmed.slice(idx + 1).trim();
+    if (id && id !== 'NA') videos.push({ id, title });
+  }
+  return videos;
+}
+
+function defaultChannelFetcher(videosUrl, deps = {}) {
+  const spawn = deps.spawnSync || spawnSync;
+  const result = spawn('yt-dlp', [
+    '--no-update',
+    '--flat-playlist',
+    '--playlist-end',
+    '3',
+    '--print',
+    '%(id)s|%(title)s',
+    videosUrl,
+  ], {
+    encoding: 'utf8',
+    timeout: 60000,
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) {
+    const detail = String(result.stderr || result.error?.message || 'fetch failed').trim();
+    throw new Error(detail || 'fetch failed');
+  }
+  return parseFlatPlaylist(result.stdout);
+}
+
+function defaultNotesRunner(url, deps = {}) {
+  const script = path.join(__dirname, '..', 'scripts', 'det', 'ytnotes');
+  const spawn = deps.spawnSync || spawnSync;
+  return spawn(script, [url], { stdio: 'inherit' });
+}
+
+function resolveWatchStatePath(deps = {}) {
+  if (deps.statePath) return deps.statePath;
+  return watchStatePath(deps.cwd || process.cwd());
+}
+
+function channelSeenMap(state, channel) {
+  return asObject(asObject(state.seenByChannel)[channel]);
+}
+
+function markSeen(state, channel, id, timestamp) {
+  if (!state.seen || typeof state.seen !== 'object') state.seen = {};
+  if (!state.seenByChannel || typeof state.seenByChannel !== 'object') state.seenByChannel = {};
+  if (!state.seenByChannel[channel] || typeof state.seenByChannel[channel] !== 'object') {
+    state.seenByChannel[channel] = {};
+  }
+  state.seen[id] = timestamp;
+  state.seenByChannel[channel][id] = timestamp;
+}
+
+function addWatchChannel(channelInput, deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  if (!channelInput) {
+    output('usage: atris youtube watch add <channel-url-or-@handle>');
+    return 2;
+  }
+
+  let channel;
+  try {
+    channel = normalizeWatchChannel(channelInput);
+  } catch (err) {
+    output(err.message);
+    return 2;
+  }
+
+  const statePath = resolveWatchStatePath(deps);
+  const state = loadWatchState(statePath);
+  if (state.channels.some((row) => row.channel === channel)) {
+    output(`already watching ${channel}`);
+    return 0;
+  }
+
+  state.channels.push({
+    channel,
+    added: stampNow(deps.now),
+  });
+  saveWatchState(statePath, state);
+  output(`watching ${channel}`);
+  return 0;
+}
+
+function listWatchChannels(deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  const state = loadWatchState(resolveWatchStatePath(deps));
+  if (!state.channels.length) {
+    output('no channels watched');
+    return 0;
+  }
+
+  state.channels.forEach((row, index) => {
+    const count = Object.keys(channelSeenMap(state, row.channel)).length;
+    output(`${index + 1}. ${row.channel} (${count} seen)`);
+  });
+  return 0;
+}
+
+function removeWatchChannel(rawNumber, deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  const index = Number(rawNumber);
+  const statePath = resolveWatchStatePath(deps);
+  const state = loadWatchState(statePath);
+  if (!Number.isInteger(index) || index < 1 || index > state.channels.length) {
+    output('usage: atris youtube watch remove <number>');
+    return 2;
+  }
+
+  const [removed] = state.channels.splice(index - 1, 1);
+  saveWatchState(statePath, state);
+  output(`removed ${removed.channel}`);
+  return 0;
+}
+
+async function tickWatch(deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  const statePath = resolveWatchStatePath(deps);
+  const fetcher = deps.fetcher || ((videosUrl) => defaultChannelFetcher(videosUrl, deps));
+  const runner = deps.runner || ((url) => defaultNotesRunner(url, deps));
+  const briefFiler = deps.briefFiler || fileBriefFromNotes;
+  const cwd = deps.cwd || process.cwd();
+  const workDir = deps.workDir || path.join(process.env.TMPDIR || '/tmp', 'ytnotes');
+  const timestamp = stampNow(deps.now);
+  const now = deps.now || timestamp;
+
+  const state = loadWatchState(statePath);
+  let totalNew = 0;
+  let totalBriefed = 0;
+
+  for (const row of state.channels) {
+    const videosUrl = channelVideosUrl(row.channel);
+    let videos;
+    try {
+      videos = await Promise.resolve(fetcher(videosUrl, row));
+    } catch {
+      output(`warning: channel ${row.channel} fetch failed`);
+      continue;
+    }
+    if (!Array.isArray(videos)) {
+      output(`warning: channel ${row.channel} fetch failed`);
+      continue;
+    }
+
+    const localSeen = channelSeenMap(state, row.channel);
+    const isFresh = !state.seeded[row.channel];
+    const unseen = videos.filter((video) => video?.id && !localSeen[video.id] && !state.seen[video.id]);
+    const newest = videos[0];
+    const toBrief = isFresh
+      ? (newest?.id ? [newest] : [])
+      : unseen;
+
+    if (isFresh) {
+      state.seeded[row.channel] = true;
+      for (const video of videos) {
+        if (video?.id) markSeen(state, row.channel, video.id, timestamp);
+      }
+    }
+
+    let briefed = 0;
+    for (const video of toBrief) {
+      if (!video?.id) continue;
+      const url = `https://www.youtube.com/watch?v=${video.id}`;
+      try {
+        runner(url, deps);
+      } catch {
+        // notes failure must not stop the rest of the tick
+      }
+      try {
+        briefFiler({ cwd, url, workDir, now });
+      } catch {
+        // brief filing must never break the watch tick
+      }
+      markSeen(state, row.channel, video.id, timestamp);
+      briefed += 1;
+    }
+
+    if (!isFresh) {
+      for (const video of unseen) {
+        if (video?.id) markSeen(state, row.channel, video.id, timestamp);
+      }
+    }
+
+    const newCount = isFresh ? (newest?.id ? 1 : 0) : unseen.length;
+    output(`channel ${row.channel}: ${newCount} new, ${briefed} briefed`);
+    totalNew += newCount;
+    totalBriefed += briefed;
+    saveWatchState(statePath, state);
+  }
+
+  output(`total: ${totalNew} new, ${totalBriefed} briefed`);
+  saveWatchState(statePath, state);
+  return 0;
+}
+
+async function watchCommand(args = [], deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  const sub = args[0];
+  if (!sub || ['help', '--help', '-h'].includes(sub)) {
+    showYoutubeHelp(output, deps.commandName || 'atris youtube');
+    return sub ? 0 : 2;
+  }
+  if (sub === 'add') return addWatchChannel(args[1], deps);
+  if (sub === 'list') return listWatchChannels(deps);
+  if (sub === 'remove') return removeWatchChannel(args[1], deps);
+  if (sub === 'tick') return tickWatch(deps);
+  output(`unknown watch command: ${sub}`);
+  return 2;
+}
+
 function runYoutubeNotes(args = [], deps = {}) {
   const output = deps.output || ((line = '') => console.error(line));
   const url = args[0];
@@ -539,6 +849,11 @@ async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
     if (!deps.output && !deps.spawnSync) process.exit(code);
     return code;
   }
+  if (argv[0] === 'watch') {
+    const code = await watchCommand(argv.slice(1), { ...deps, output });
+    if (!deps.output && !deps.fetcher && !deps.runner && !deps.briefFiler) process.exit(code);
+    return code;
+  }
   const options = parseYoutubeArgs(argv);
   if (options.help) {
     showYoutubeHelp(output, deps.commandName || 'atris youtube');
@@ -559,5 +874,15 @@ module.exports = {
   shouldRetryWithLocalTranscript,
   formatYoutubeResult,
   fileBriefFromNotes,
+  normalizeWatchChannel,
+  channelVideosUrl,
+  parseFlatPlaylist,
+  loadWatchState,
+  saveWatchState,
+  addWatchChannel,
+  listWatchChannels,
+  removeWatchChannel,
+  tickWatch,
+  watchCommand,
   youtubeCommand,
 };
