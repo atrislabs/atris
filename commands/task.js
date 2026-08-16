@@ -6028,25 +6028,66 @@ function cmdStatus(args) {
   if (history) console.log(`history feed ${status.swarlo.feed.length} event${status.swarlo.feed.length === 1 ? '' : 's'}`);
 }
 
+function readProjectionFile(workspaceRoot) {
+  const candidatePaths = [
+    workspaceRoot ? path.join(workspaceRoot, '.atris', 'state', 'tasks.projection.json') : null,
+    path.resolve('.atris', 'state', 'tasks.projection.json'),
+  ].filter(Boolean);
+  for (const candidate of candidatePaths) {
+    try {
+      if (fs.existsSync(candidate)) {
+        const content = fs.readFileSync(candidate, 'utf8');
+        const parsed = JSON.parse(content);
+        if (parsed && Array.isArray(parsed.tasks)) return parsed;
+      }
+    } catch {}
+  }
+  return null;
+}
+
 function resolveTaskRef(taskDb, db, ref) {
   const token = String(ref || '').trim();
   if (!token) return { ok: false, reason: 'missing' };
-  const exact = taskDb.getTask(db, token);
+  const exact = db ? taskDb.getTask(db, token) : null;
   if (exact) return { ok: true, id: exact.id, row: exact };
   const normalized = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(token) : token.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  const rows = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot: taskDb.workspaceRoot() }));
-  const seen = new Set();
-  const matches = rows.filter(r => {
-    const id = String(r.id || '').toUpperCase();
-    const display = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(r.display_id) : String(r.display_id || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-    const legacy = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(r.legacy_ref) : String(r.legacy_ref || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-    const matched = id.startsWith(normalized) || display === normalized || legacy === normalized;
-    if (!matched || seen.has(r.id)) return false;
-    seen.add(r.id);
-    return true;
-  });
-  if (matches.length === 1) return { ok: true, id: matches[0].id, row: matches[0] };
-  if (matches.length > 1) return { ok: false, reason: 'ambiguous', matches };
+  const wsRoot = taskDb.workspaceRoot ? taskDb.workspaceRoot() : process.cwd();
+
+  const proj = readProjectionFile(wsRoot);
+  if (proj && Array.isArray(proj.tasks)) {
+    const seen = new Set();
+    const matches = proj.tasks.filter(r => {
+      const id = String(r.id || '').toUpperCase();
+      const display = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(r.display_id) : String(r.display_id || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      const legacy = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(r.legacy_ref) : String(r.legacy_ref || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      const matched = id.startsWith(normalized) || (display && display === normalized) || (legacy && legacy === normalized);
+      if (!matched || seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
+    });
+    if (matches.length === 1) {
+      const match = matches[0];
+      const row = db ? (taskDb.getTask(db, match.id) || match) : match;
+      return { ok: true, id: match.id, row };
+    }
+    if (matches.length > 1) return { ok: false, reason: 'ambiguous', matches };
+  }
+
+  if (db) {
+    const rows = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot: wsRoot }));
+    const seen = new Set();
+    const matches = rows.filter(r => {
+      const id = String(r.id || '').toUpperCase();
+      const display = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(r.display_id) : String(r.display_id || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      const legacy = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(r.legacy_ref) : String(r.legacy_ref || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      const matched = id.startsWith(normalized) || (display && display === normalized) || (legacy && legacy === normalized);
+      if (!matched || seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
+    });
+    if (matches.length === 1) return { ok: true, id: matches[0].id, row: matches[0] };
+    if (matches.length > 1) return { ok: false, reason: 'ambiguous', matches };
+  }
   return { ok: false, reason: 'not_found' };
 }
 
@@ -6067,7 +6108,7 @@ function workspaceRefRows(taskDb, db, options = {}) {
 }
 
 function renderTaskDesk(rows, refRows = rows) {
-  const displayRows = getTaskDb().withTaskDisplayRefs(rows, refRows);
+  const displayRows = (rows && rows.length && rows[0].display_id) ? rows : getTaskDb().withTaskDisplayRefs(rows, refRows);
   const active = displayRows.filter(r => r.status !== 'done' && r.status !== 'archived');
   const done = displayRows.filter(r => r.status === 'done');
   if (rows.length === 0) {
@@ -6078,7 +6119,7 @@ function renderTaskDesk(rows, refRows = rows) {
   console.log('TASK DESK');
   console.log('');
   for (const r of active.slice(0, 12)) {
-    const explanation = taskExplanation(r);
+    const explanation = r.explanation || taskExplanation(r);
     const owner = r.claimed_by ? ` @${r.claimed_by}` : '';
     const assigned = !r.claimed_by && taskAssignee(r) ? ` -> ${taskAssignee(r)}` : '';
     const tag = r.tag ? ` #${r.tag}` : '';
@@ -6415,7 +6456,17 @@ function cmdHome(args) {
     workspaceRoot,
     limit: all ? null : 200,
   });
-  const { projection, outPath } = writeDefaultProjection(taskDb, db, { all, everywhere });
+  let projection;
+  let outPath;
+  const existingProj = readProjectionFile(workspaceRoot);
+  if (rows.length === 0 && existingProj && Array.isArray(existingProj.tasks) && existingProj.tasks.length > 0) {
+    projection = existingProj;
+    outPath = path.resolve(path.join(workspaceRoot || '.', '.atris', 'state', 'tasks.projection.json'));
+  } else {
+    const written = writeDefaultProjection(taskDb, db, { all, everywhere });
+    projection = written.projection;
+    outPath = written.outPath;
+  }
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -6427,7 +6478,7 @@ function cmdHome(args) {
     });
     return;
   }
-  renderTaskDesk(rows, rows);
+  renderTaskDesk(projection.tasks);
 }
 
 function cmdList(args) {
@@ -7382,7 +7433,14 @@ function cmdInspect(args) {
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, ref, 'atris task inspect');
   const projection = enrichTaskProjection(taskDb.taskProjection(db, { taskId }));
-  const task = projection.tasks[0];
+  let task = projection.tasks[0];
+  if (!task) {
+    const wsRoot = scopedWorkspaceRoot(taskDb, args) || process.cwd();
+    const proj = readProjectionFile(wsRoot);
+    if (proj && Array.isArray(proj.tasks)) {
+      task = proj.tasks.find(t => t.id === taskId) || null;
+    }
+  }
   if (!task) {
     failTask('atris task inspect', 'not_found', `task not found: ${ref}`, 1);
   }
@@ -7411,7 +7469,14 @@ function cmdShow(args) {
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task show');
   const projection = enrichTaskProjection(taskDb.taskProjection(db, { taskId }));
-  const task = projection.tasks[0];
+  let task = projection.tasks[0];
+  if (!task) {
+    const wsRoot = scopedWorkspaceRoot(taskDb, args) || process.cwd();
+    const proj = readProjectionFile(wsRoot);
+    if (proj && Array.isArray(proj.tasks)) {
+      task = proj.tasks.find(t => t.id === taskId) || null;
+    }
+  }
   if (!task) {
     console.error(`task not found: ${id}`);
     process.exit(1);
@@ -7550,7 +7615,14 @@ function cmdReviewChat(args) {
 
 function taskDetail(taskDb, db, taskId) {
   const detailedProjection = taskDb.taskProjection(db, { taskId });
-  const detailedTask = detailedProjection.tasks[0] || null;
+  let detailedTask = detailedProjection.tasks[0] || null;
+  if (!detailedTask) {
+    const wsRoot = taskDb.workspaceRoot ? taskDb.workspaceRoot() : process.cwd();
+    const proj = readProjectionFile(wsRoot);
+    if (proj && Array.isArray(proj.tasks)) {
+      detailedTask = proj.tasks.find(t => t.id === taskId) || null;
+    }
+  }
   if (!detailedTask) return null;
   const workspaceRoot = detailedTask.workspace_root || taskDb.workspaceRoot();
   const contextProjection = enrichTaskProjection(taskDb.taskProjection(db, {
@@ -7558,7 +7630,7 @@ function taskDetail(taskDb, db, taskId) {
     limit: 5000,
   }));
   const enrichedTask = contextProjection.tasks.find(task => task.id === detailedTask.id) || null;
-  if (!enrichedTask) return enrichTaskProjection(detailedProjection).tasks[0] || null;
+  if (!enrichedTask) return enrichTaskProjection(detailedProjection).tasks[0] || detailedTask;
   return {
     ...enrichedTask,
     current_version: detailedTask.current_version,
