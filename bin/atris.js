@@ -572,7 +572,7 @@ function showHelp() {
   console.log('  router     - inspect ax lane outcomes and promote gated reflex overrides');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
-  console.log('  youtube    - Free local notes or 5-credit cloud process for YouTube videos');
+  console.log('  youtube    - Free local notes, weekly digest, or 5-credit cloud process for YouTube videos');
   console.log('');
   console.log('Experiments:');
   console.log('  experiments init [slug]     - Prepare atris/experiments/ or scaffold a pack');
