@@ -13,6 +13,7 @@
     "cli/*.py",
     "commands/",
     "decks/",
+    "scripts/outbound-artifact-gate.js",
     "scripts/agent_worktree.py",
     "scripts/det/",
     "utils/",
