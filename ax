@@ -78,7 +78,7 @@ const ANSI = {
   magenta: '\x1b[35m'
 };
 
-const TIER_COLORS = { fast: '\x1b[32m', pro: '\x1b[36m', max: '\x1b[35m' };
+const TIER_COLORS = { rapid: '\x1b[33m', fast: '\x1b[32m', pro: '\x1b[36m', max: '\x1b[35m' };
 
 // Extend backend_api by adding one row here. Keep mutating endpoints narrow;
 // any non-get method is approval-gated before the HTTP request is made.
@@ -99,6 +99,7 @@ function tierColor(mode) {
 function modelForMode(mode) {
   if (mode === 'code-fast') return CODE_FAST.model;
   if (mode === 'max') return 'atris:max';
+  if (mode === 'rapid') return 'atris:rapid';
   return mode === 'fast' ? 'atris:fast' : 'atris:pro';
 }
 
@@ -120,7 +121,7 @@ function postTurnTimeoutMs(payload = {}, options = {}) {
   // AX postTurn is the tool-capable Atris2 path. Fast tool turns need the same
   // headroom as pro because the backend can spend long stretches inside tools
   // without SSE traffic. Plain tool-free one-shot fast chat stays at 60s.
-  if (model === 'atris:fast' && payloadCanRunTools(payload, options)) {
+  if ((model === 'atris:fast' || model === 'atris:rapid') && payloadCanRunTools(payload, options)) {
     timeoutMs = Math.max(timeoutMs, PRO_TURN_TIMEOUT_MS);
   }
   if (options.business || options.local) {
@@ -146,6 +147,7 @@ function formatSeconds(totalSeconds) {
 function tierLabel(mode) {
   if (mode === 'code-fast') return 'Atris Code Fast';
   if (mode === 'max') return 'Atris 2 Max';
+  if (mode === 'rapid') return 'Atris Rapid';
   if (mode === 'fast') return 'Atris 2 Fast';
   return 'Atris 2 Pro';
 }
@@ -404,6 +406,7 @@ async function buildRuntimeHealth(options = {}) {
   const data = healthRes.ok && healthRes.data && typeof healthRes.data === 'object' ? healthRes.data : {};
   const models = Array.isArray(data.models) ? data.models : [];
   const fast = models.find(row => row && row.id === 'atris:fast') || null;
+  const rapid = models.find(row => row && row.id === 'atris:rapid') || null;
   const status = Number(healthRes.status || 0);
   const authRequired = status === 401 || status === 403;
   return {
@@ -420,6 +423,10 @@ async function buildRuntimeHealth(options = {}) {
       ready: Boolean(fast && fast.ready),
       route_ready: Boolean(fast && fast.ready),
     },
+    rapid: {
+      ready: Boolean(rapid && rapid.ready),
+      route_ready: Boolean(rapid && rapid.ready),
+    },
     permissions: {
       approval_execution_path: APPROVAL_EXECUTE_PATH,
       ready: Boolean(healthRes.ok),
@@ -432,10 +439,12 @@ function formatRuntimeHealth(health, options = {}) {
   const backendReachable = health && health.backend && health.backend.reachable;
   const authRequired = health && health.backend && health.backend.auth_required;
   const fastReady = health && health.fast && health.fast.ready;
+  const rapidReady = health && health.rapid && health.rapid.ready;
   const permissionReady = health && health.permissions && health.permissions.ready;
   const rows = [
     ['backend', authRequired ? 'auth required' : backendReady ? 'ready' : backendReachable ? 'not ready' : 'offline'],
     ['fast', fastReady ? 'ready' : 'not ready'],
+    ['rapid', rapidReady ? 'ready' : 'not ready (backend has no WAFER_API_KEY)'],
     ['approvals', authRequired ? 'auth required' : permissionReady ? 'ready' : 'offline'],
   ];
   if (authRequired) {
@@ -450,6 +459,7 @@ function runtimeReadyForChat(health, mode = 'fast') {
   if (!health || !health.backend || !health.permissions) return false;
   if (!health.backend.ready || !health.permissions.ready) return false;
   if (normalizeMode(mode) === 'fast' && (!health.fast || health.fast.ready === false)) return false;
+  if (normalizeMode(mode) === 'rapid' && health.rapid && health.rapid.ready === false) return false;
   return true;
 }
 
@@ -955,6 +965,7 @@ function resolveRoute(message, options = {}) {
 function normalizeMode(mode) {
   if (mode === 'code-fast' || mode === 'code') return 'code-fast';
   if (mode === 'max') return 'max';
+  if (mode === 'rapid') return 'rapid';
   return mode === 'fast' ? 'fast' : 'pro';
 }
 
@@ -1060,52 +1071,347 @@ function autoLaneForMessage(message, options = {}) {
   return picked;
 }
 
+function cycleApproveMode(mode) {
+  return String(mode) === 'auto' ? 'stage' : 'auto';
+}
+
+function approveModeTag(mode) {
+  return String(mode) === 'auto' ? 'bypass permissions' : '';
+}
+
+function nextApproveMode(arg, current) {
+  const want = String(arg || '').toLowerCase();
+  if (want === 'on' || want === 'bypass') return 'auto';
+  if (want === 'off' || want === 'ask') return 'stage';
+  return cycleApproveMode(current);
+}
+
 function formatPrompt(mode, options = {}) {
   if (!mode) return '› ';
   const tier = normalizeMode(mode);
   const label = paint(tier, [ANSI.bold, tierColor(tier)], options);
-  if (options.approveMode === 'auto') {
-    return `${label} ${paint('[auto-approve]', [ANSI.muted], options)} › `;
+  const tag = approveModeTag(options.approveMode);
+  if (tag) {
+    return `${label} ${paint(`[${tag}]`, [ANSI.muted], options)} › `;
   }
   return `${label} › `;
 }
 
-const TIER_COMMANDS = new Map([
-  ['/fast', 'fast'],
-  ['/pro', 'pro'],
-  ['/max', 'max'],
-]);
+function refreshReadlinePrompt(rl, prompt) {
+  if (!rl || typeof rl.setPrompt !== 'function') return;
+  rl.setPrompt(prompt);
+  if (typeof rl.prompt === 'function') rl.prompt(true);
+}
+
+function attachApproveModeHotkey(rl, session, getPrompt) {
+  if (!rl || typeof rl._ttyWrite !== 'function') return () => {};
+  const original = rl._ttyWrite.bind(rl);
+  rl._ttyWrite = (s, key) => {
+    if (key && key.name === 'tab' && key.shift && !key.ctrl && !key.meta) {
+      session.approveMode = cycleApproveMode(session.approveMode);
+      refreshReadlinePrompt(rl, getPrompt());
+      return;
+    }
+    return original(s, key);
+  };
+  return () => { rl._ttyWrite = original; };
+}
+
+const TIER_BLURBS = {
+  rapid: 'cheap chat and first-hop tools',
+  fast: 'quick answers, lowest latency',
+  pro: 'deeper tool loop for real work',
+  max: 'highest reasoning for the hardest jobs',
+};
+
+const CHAT_COMMANDS = Object.freeze([
+  { name: '/help', description: 'list all commands', type: 'help' },
+  { name: '/model', description: 'show the current lane and how to switch', type: 'model' },
+  { name: '/status', description: 'show runtime health', type: 'status' },
+  { name: '/fast', description: 'switch to quick answers with low latency', type: 'tier', mode: 'fast' },
+  { name: '/pro', description: 'switch to a deeper tool loop', type: 'tier', mode: 'pro' },
+  { name: '/max', description: 'switch to the highest reasoning lane', type: 'tier', mode: 'max' },
+  { name: '/rapid', description: 'switch to the cheapest chat lane', type: 'tier', mode: 'rapid' },
+  { name: '/new', description: 'start a new conversation', type: 'clear' },
+  { name: '/clear', description: 'reset the current conversation', type: 'clear' },
+  { name: '/context', description: 'show the conversation size', type: 'context' },
+  { name: '/log', description: 'append a note to today\'s journal', type: 'log' },
+  { name: '/today', description: 'show today\'s journal', type: 'today' },
+  { name: '/now', description: 'show the current priorities', type: 'now' },
+  { name: '/who', description: 'show the current lane', type: 'who' },
+  { name: '/auto', description: 'toggle safe git push approval', type: 'auto' },
+  { name: '/bypass', description: 'toggle the same safe approval mode', type: 'auto' },
+  { name: '/exit', description: 'leave the chat', type: 'exit' },
+  { name: '/quit', description: 'leave the chat', type: 'exit' },
+].map(command => Object.freeze(command)));
+
+const CHAT_COMMAND_BY_NAME = new Map(CHAT_COMMANDS.map(command => [command.name, command]));
+const TIER_COMMANDS = new Map(
+  CHAT_COMMANDS
+    .filter(command => command.type === 'tier')
+    .map(command => [command.name, command.mode])
+);
 
 function chatTierCommand(line) {
   return TIER_COMMANDS.get(String(line || '').trim().toLowerCase()) || null;
 }
 
-const CHAT_COMMANDS = [
-  ['/fast', 'quick answers, lowest latency'],
-  ['/pro', 'deeper tool loop for real work'],
-  ['/max', 'highest reasoning for the hardest jobs'],
-  ['/clear', 'wipe chat history and reset conversation id'],
-  ['/context', 'show turn count and rough token estimate'],
-  ['/help', 'show this menu'],
-  ['exit', 'leave chat'],
-];
-
-function chatMenu(options = {}) {
-  return CHAT_COMMANDS
-    .map(([name, desc]) => {
-      const tier = TIER_COMMANDS.get(name);
+function chatMenu(options = {}, commands = CHAT_COMMANDS) {
+  const width = commands.reduce((max, command) => Math.max(max, command.name.length), 0);
+  return commands
+    .map(command => {
+      const tier = TIER_COMMANDS.get(command.name);
       const color = tier ? tierColor(tier) : ANSI.accent;
-      return `  ${paint(name.padEnd(6), [color], options)}  ${paint(desc, [ANSI.muted], options)}`;
+      return `  ${paint(command.name.padEnd(width), [color], options)}  ${paint(command.description, [ANSI.muted], options)}`;
     })
     .join('\n');
 }
 
+function filterChatCommands(line) {
+  const text = String(line || '');
+  if (!text.startsWith('/') || /\s/.test(text)) return [];
+  const query = text.toLowerCase();
+  return CHAT_COMMANDS.filter(command => command.name.startsWith(query));
+}
+
+function parseChatSlash(line) {
+  const trimmed = String(line || '').trim();
+  if (!trimmed.startsWith('/')) return null;
+  const [raw, ...rest] = trimmed.split(/\s+/);
+  return {
+    name: raw.toLowerCase(),
+    arg: rest.join(' ').trim(),
+    raw: trimmed,
+  };
+}
+
+function todayJournalPath(cwd = process.cwd(), date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const stamp = `${year}-${month}-${day}`;
+  return {
+    file: path.join(cwd, 'atris', 'logs', String(year), `${stamp}.md`),
+    stamp,
+    time: `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`,
+  };
+}
+
+function readTextTail(file, maxLines = 24) {
+  if (!fs.existsSync(file)) return null;
+  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+  return lines.slice(Math.max(0, lines.length - maxLines)).join('\n').trimEnd();
+}
+
+function readTextHead(file, maxLines = 24) {
+  if (!fs.existsSync(file)) return null;
+  return fs.readFileSync(file, 'utf8').split(/\r?\n/).slice(0, maxLines).join('\n').trimEnd();
+}
+
+function appendChatJournal(cwd, note, date = new Date()) {
+  const { file, stamp, time } = todayJournalPath(cwd, date);
+  const text = String(note || '').replace(/\s+/g, ' ').trim();
+  if (!text) return { ok: false, error: 'Usage: /log <what happened>' };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const block = `\n## ${time} · Chat\n\n- ${text}\n`;
+  if (!fs.existsSync(file)) {
+    fs.writeFileSync(file, `# ${stamp}\n${block}`);
+  } else {
+    let existing = fs.readFileSync(file, 'utf8');
+    if (existing && !existing.endsWith('\n')) existing += '\n';
+    fs.writeFileSync(file, existing + block);
+  }
+  return { ok: true, file: path.relative(cwd, file) };
+}
+
+function runChatSlash(line, options = {}) {
+  const parsed = parseChatSlash(line);
+  if (!parsed) return null;
+  const cwd = options.cwd || process.cwd();
+  const mode = normalizeMode(options.mode || 'fast');
+  if (parsed.name === '/') {
+    return { type: 'help', output: chatMenu(options) };
+  }
+  const command = CHAT_COMMAND_BY_NAME.get(parsed.name);
+  if (!command) {
+    return { type: 'unknown', output: `unknown command ${parsed.name}\n${chatMenu(options)}` };
+  }
+  if (command.type === 'help') {
+    return { type: 'help', output: chatMenu(options) };
+  }
+  if (command.type === 'tier') {
+    return { type: 'tier', mode: command.mode, output: `· ${tierLabel(command.mode)}` };
+  }
+  if (command.type === 'exit') {
+    return { type: 'exit', output: '' };
+  }
+  if (command.type === 'clear') {
+    return { type: 'clear', output: 'context cleared' };
+  }
+  if (command.type === 'context') {
+    const ctx = estimateHistoryContext(options.history || []);
+    return {
+      type: 'context',
+      output: `· ${ctx.turns} turn${ctx.turns === 1 ? '' : 's'} · ~${ctx.chars} chars · ~${ctx.tokens} tokens`,
+    };
+  }
+  if (command.type === 'model') {
+    return {
+      type: 'model',
+      output: `· current lane: ${tierLabel(mode)} · switch with /fast /pro /max /rapid`,
+    };
+  }
+  if (command.type === 'status') {
+    return { type: 'status', output: '' };
+  }
+  if (command.type === 'who') {
+    return { type: 'who', output: `· ${tierLabel(mode)} · ${TIER_BLURBS[mode] || 'chat'}` };
+  }
+  if (command.type === 'auto') {
+    const next = nextApproveMode(parsed.arg, options.approveMode);
+    return {
+      type: 'auto',
+      approveMode: next,
+      output: next === 'auto'
+        ? '· bypass permissions on · safe git push this session, not force and not mail'
+        : '· bypass permissions off',
+    };
+  }
+  if (command.type === 'log') {
+    const result = appendChatJournal(cwd, parsed.arg, options.now);
+    if (!result.ok) return { type: 'log', output: result.error };
+    return { type: 'log', output: `· logged to ${result.file}` };
+  }
+  if (command.type === 'today') {
+    const { file } = todayJournalPath(cwd, options.now);
+    const text = readTextTail(file);
+    return {
+      type: 'today',
+      output: text || `· no journal yet at ${path.relative(cwd, file)}`,
+    };
+  }
+  if (command.type === 'now') {
+    const file = path.join(cwd, 'atris', 'now.md');
+    const text = readTextHead(file);
+    return { type: 'now', output: text || '· atris/now.md is missing' };
+  }
+  return { type: 'unknown', output: `unknown command ${parsed.name}\n${chatMenu(options)}` };
+}
+
 function chatCompleter(line) {
-  const trimmed = String(line || '').trimStart().toLowerCase();
-  if (!trimmed.startsWith('/')) return [[], line];
-  const names = CHAT_COMMANDS.map(([name]) => name).filter(name => name.startsWith('/'));
-  const hits = names.filter(name => name.startsWith(trimmed));
-  return [hits.length ? hits : names, trimmed];
+  const text = String(line || '');
+  const hits = filterChatCommands(text).map(command => command.name);
+  return [hits, text];
+}
+
+function attachSlashMenu(rl, output, options = {}) {
+  if (!rl || !output || !output.isTTY || typeof output.write !== 'function' || typeof rl._ttyWrite !== 'function') {
+    return { clear() {}, render() {}, detach() {} };
+  }
+  const original = rl._ttyWrite.bind(rl);
+  let visibleRows = 0;
+
+  const clear = () => {
+    if (!visibleRows) return;
+    output.write('\x1b7');
+    for (let index = 0; index < visibleRows; index += 1) {
+      output.write('\x1b[1B\r\x1b[2K');
+    }
+    output.write('\x1b8');
+    visibleRows = 0;
+  };
+
+  const render = () => {
+    clear();
+    if (typeof options.isActive === 'function' && !options.isActive()) return;
+    const matches = filterChatCommands(rl.line);
+    if (!matches.length) return;
+    const rows = chatMenu(output, matches).split('\n');
+    output.write('\x1b7');
+    for (const row of rows) output.write(`\r\n${row}`);
+    output.write('\x1b8');
+    visibleRows = rows.length;
+  };
+
+  const wrapped = (s, key) => {
+    const submitsLine = key && (key.name === 'return' || key.name === 'enter');
+    if (submitsLine) clear();
+    const result = original(s, key);
+    if (!submitsLine) render();
+    return result;
+  };
+  rl._ttyWrite = wrapped;
+
+  return {
+    clear,
+    render,
+    detach() {
+      clear();
+      if (rl._ttyWrite === wrapped) rl._ttyWrite = original;
+    },
+  };
+}
+
+function attachChatCtrlC(rl, options = {}) {
+  if (!rl || typeof rl.on !== 'function') return () => {};
+  const output = options.output || process.stdout;
+  const exitWindowMs = Number(options.exitWindowMs) || 2000;
+  let lastEmptyPressAt = 0;
+  let expiryTimer = null;
+
+  const resetExitWindow = () => {
+    lastEmptyPressAt = 0;
+    if (expiryTimer) clearTimeout(expiryTimer);
+    expiryTimer = null;
+  };
+
+  const clearDraft = () => {
+    if (typeof options.clearMenu === 'function') options.clearMenu();
+    if (typeof rl.write === 'function') {
+      rl.write(null, { ctrl: true, name: 'u' });
+      rl.write(null, { ctrl: true, name: 'k' });
+      return;
+    }
+    rl.line = '';
+    rl.cursor = 0;
+    if (typeof rl._refreshLine === 'function') rl._refreshLine();
+  };
+
+  const onSigint = () => {
+    if (typeof options.isTurnInFlight === 'function' && options.isTurnInFlight()) {
+      resetExitWindow();
+      if (typeof options.interruptTurn === 'function') options.interruptTurn();
+      return;
+    }
+    if (String(rl.line || '').length > 0) {
+      resetExitWindow();
+      clearDraft();
+      return;
+    }
+
+    const now = Date.now();
+    if (lastEmptyPressAt && now - lastEmptyPressAt <= exitWindowMs) {
+      resetExitWindow();
+      if (typeof options.exit === 'function') options.exit();
+      return;
+    }
+
+    lastEmptyPressAt = now;
+    if (typeof options.clearMenu === 'function') options.clearMenu();
+    output.write('\npress ctrl-c again to exit\n');
+    if (typeof rl._refreshLine === 'function') rl._refreshLine();
+    expiryTimer = setTimeout(() => {
+      lastEmptyPressAt = 0;
+      expiryTimer = null;
+    }, exitWindowMs);
+    if (typeof expiryTimer.unref === 'function') expiryTimer.unref();
+  };
+
+  rl.on('SIGINT', onSigint);
+  return () => {
+    resetExitWindow();
+    if (typeof rl.removeListener === 'function') rl.removeListener('SIGINT', onSigint);
+  };
 }
 
 function formatWorkingLine(ms, verb, frame) {
@@ -2811,6 +3117,16 @@ function handleEvent(event, state, output) {
   }
 }
 
+function turnInterruptedError() {
+  const error = new Error('turn interrupted');
+  error.name = 'AbortError';
+  return error;
+}
+
+function isTurnInterruptedError(error) {
+  return Boolean(error && (error.name === 'AbortError' || error.code === 'ABORT_ERR'));
+}
+
 async function postTurn(message, options = {}) {
   let route = options.business ? 'local' : resolveRoute(message, options);
   if (route === 'local' && !options.business && options.route !== 'local' && !options.forceLocal
@@ -2883,6 +3199,7 @@ async function postTurn(message, options = {}) {
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let abortListener = null;
     const startedAt = Date.now();
     state.progress = createProgressReporter(output, options);
     state.progress.start();
@@ -2890,6 +3207,7 @@ async function postTurn(message, options = {}) {
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
+      if (abortListener && options.signal) options.signal.removeEventListener('abort', abortListener);
       if (state.progress) state.progress.stop();
       state.progress = null;
       state.durationMs = Date.now() - startedAt;
@@ -2972,6 +3290,17 @@ async function postTurn(message, options = {}) {
       finish(new Error(`Request timeout after ${timeoutMs / 1000}s`));
       req.destroy();
     });
+    if (options.signal) {
+      abortListener = () => {
+        finish(turnInterruptedError());
+        req.destroy();
+      };
+      if (options.signal.aborted) {
+        abortListener();
+        return;
+      }
+      options.signal.addEventListener('abort', abortListener, { once: true });
+    }
     req.write(postData);
     req.end();
   });
@@ -3010,6 +3339,7 @@ async function postCodeFastTurn(message, options = {}) {
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let abortListener = null;
     const startedAt = Date.now();
     state.progress = createProgressReporter(output, options);
     state.progress.start();
@@ -3017,6 +3347,7 @@ async function postCodeFastTurn(message, options = {}) {
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
+      if (abortListener && options.signal) options.signal.removeEventListener('abort', abortListener);
       if (state.progress) state.progress.stop();
       state.progress = null;
       state.durationMs = Date.now() - startedAt;
@@ -3081,6 +3412,17 @@ async function postCodeFastTurn(message, options = {}) {
       finish(new Error(`Request timeout after ${timeoutMs / 1000}s`));
       req.destroy();
     });
+    if (options.signal) {
+      abortListener = () => {
+        finish(turnInterruptedError());
+        req.destroy();
+      };
+      if (options.signal.aborted) {
+        abortListener();
+        return;
+      }
+      options.signal.addEventListener('abort', abortListener, { once: true });
+    }
     req.write(postData);
     req.end();
   });
@@ -3147,6 +3489,8 @@ async function chat(options = {}) {
   let conversationId = options.conversationId || `ax-${process.pid}-${Date.now().toString(36)}`;
   const session = { approveMode: 'stage' };
   let turnInFlight = false;
+  let activeTurnController = null;
+  let slashMenu = null;
 
   output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
@@ -3180,34 +3524,30 @@ async function chat(options = {}) {
     if (!trimmed) return false;
     if (EXIT_WORDS.has(trimmed.toLowerCase())) return true;
 
-    if (trimmed === '/' || trimmed.toLowerCase() === '/help') {
-      output.write(`${chatMenu(output)}\n\n`);
-      return false;
-    }
-
-    const tier = chatTierCommand(trimmed);
-    if (tier) {
-      mode = tier;
+    const slash = runChatSlash(trimmed, { cwd, mode, history, approveMode: session.approveMode, isTTY: output.isTTY });
+    if (slash) {
+      if (slash.type === 'exit') return true;
+      if (slash.mode) mode = slash.mode;
+      if (slash.approveMode) session.approveMode = slash.approveMode;
+      if (slash.type === 'clear') {
+        history.length = 0;
+        conversationId = `ax-${process.pid}-${Date.now().toString(36)}`;
+      }
+      if (slash.type === 'status') {
+        const healthRoute = options.business
+          ? 'cloud'
+          : options.route === 'local' || options.forceLocal
+            ? 'local'
+            : 'cloud';
+        const health = options.runtimeHealth
+          ? await Promise.resolve(options.runtimeHealth({ mode, route: healthRoute }))
+          : await buildRuntimeHealth({ timeoutMs: options.preflightTimeoutMs || 1200, route: healthRoute });
+        slash.output = formatRuntimeHealth(health, output);
+      }
       if (logger) logger.write(`${trimmed}\n`);
-      output.write(`${paint(`· ${tierLabel(mode)}`, [tierColor(mode)], output)}\n\n`);
-      return false;
-    }
-
-    if (trimmed === '/clear') {
-      history.length = 0;
-      conversationId = `ax-${process.pid}-${Date.now().toString(36)}`;
-      output.write(`${paint('context cleared', [ANSI.muted], output)}\n\n`);
-      return false;
-    }
-
-    if (trimmed === '/context') {
-      const ctx = estimateHistoryContext(history);
-      output.write(`${paint(`· ${ctx.turns} turn${ctx.turns === 1 ? '' : 's'} · ~${ctx.chars} chars · ~${ctx.tokens} tokens`, [ANSI.muted], output)}\n\n`);
-      return false;
-    }
-
-    if (trimmed.startsWith('/')) {
-      output.write(`${chatMenu(output)}\n\n`);
+      const color = slash.mode ? [tierColor(slash.mode)] : [ANSI.muted];
+      const preservesOwnFormatting = slash.type === 'help' || slash.type === 'status';
+      output.write(`${preservesOwnFormatting ? slash.output : paint(slash.output, color, output)}\n\n`);
       return false;
     }
 
@@ -3322,6 +3662,9 @@ async function chat(options = {}) {
       output.write(`${paint(`· context: ${compactedTurns} earlier turn${compactedTurns === 1 ? '' : 's'} compacted into a digest`, [ANSI.muted], output)}\n`);
     }
     let result;
+    activeTurnController = new AbortController();
+    turnInFlight = true;
+    if (slashMenu) slashMenu.clear();
     try {
       result = await turnFunction(trimmed, {
         mode,
@@ -3338,6 +3681,7 @@ async function chat(options = {}) {
         apiRequestJson: options.apiRequestJson,
         loadCredentials: options.loadCredentials,
         getApiBaseUrl: options.getApiBaseUrl,
+        signal: activeTurnController.signal,
       });
       appendAutoOutcome(autoPick, {
         ok: true,
@@ -3345,6 +3689,10 @@ async function chat(options = {}) {
         durationMs: Number(result && result.durationMs) || (Date.now() - turnStartedAt),
       });
     } catch (error) {
+      if (isTurnInterruptedError(error)) {
+        output.write(`${paint('Interrupted.', [ANSI.muted], output)}\n\n`);
+        return false;
+      }
       appendAutoOutcome(autoPick, {
         ok: false,
         model: modelForMode(mode),
@@ -3352,6 +3700,9 @@ async function chat(options = {}) {
         error: String((error && error.message) || error),
       });
       throw error;
+    } finally {
+      turnInFlight = false;
+      activeTurnController = null;
     }
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
     const approvalExecution = normalizeMode(mode) === 'code-fast'
@@ -3401,15 +3752,54 @@ async function chat(options = {}) {
   }
 
   const rl = readline.createInterface({ input, output: baseOutput, completer: chatCompleter });
-  const ask = () => new Promise(resolve => rl.question(formatPrompt(mode, baseOutput), resolve));
-  while (true) {
-    const line = await ask();
-    if (await runLine(line)) {
-      rl.close();
-      break;
+  const promptOptions = () => ({ isTTY: baseOutput.isTTY, approveMode: session.approveMode });
+  const detachHotkey = attachApproveModeHotkey(rl, session, () => formatPrompt(mode, promptOptions()));
+  slashMenu = attachSlashMenu(rl, baseOutput, { isActive: () => !turnInFlight });
+  const exitSignal = Symbol('chat exit');
+  let pendingAsk = null;
+  const requestExit = () => {
+    if (pendingAsk) pendingAsk(exitSignal);
+  };
+  const detachCtrlC = attachChatCtrlC(rl, {
+    output: baseOutput,
+    clearMenu: () => slashMenu.clear(),
+    isTurnInFlight: () => turnInFlight,
+    interruptTurn: () => {
+      if (activeTurnController) activeTurnController.abort();
+    },
+    exit: requestExit,
+  });
+  const onClose = () => requestExit();
+  rl.on('close', onClose);
+  const ask = () => new Promise(resolve => {
+    let settled = false;
+    const settle = value => {
+      if (settled) return;
+      settled = true;
+      if (pendingAsk === settle) pendingAsk = null;
+      resolve(value);
+    };
+    pendingAsk = settle;
+    try {
+      rl.question(formatPrompt(mode, promptOptions()), settle);
+    } catch (_) {
+      settle(exitSignal);
     }
+  });
+
+  try {
+    while (true) {
+      const line = await ask();
+      if (line === exitSignal || await runLine(line)) break;
+    }
+  } finally {
+    detachCtrlC();
+    slashMenu.detach();
+    detachHotkey();
+    rl.removeListener('close', onClose);
+    if (!rl.closed) rl.close();
+    if (logger) logger.close(0);
   }
-  if (logger) logger.close(0);
 }
 
 function printBackendHint(options = {}) {
@@ -4487,9 +4877,17 @@ module.exports = {
   buildConnectionContext,
   buildRunProfile,
   chat,
+  appendChatJournal,
+  attachApproveModeHotkey,
+  attachChatCtrlC,
+  attachSlashMenu,
   chatCompleter,
   chatMenu,
   chatTierCommand,
+  cycleApproveMode,
+  filterChatCommands,
+  parseChatSlash,
+  runChatSlash,
   codeFastWorkspaceNotice,
   creditsFromState,
   codeFastBaseUrl,

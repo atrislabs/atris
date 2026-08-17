@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
+const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
 
 const ax = require('../ax');
@@ -461,7 +462,7 @@ test('ax self-test verifies harness invariants without backend calls', async () 
   assert.match(ax.formatUsage(), /--self-test/);
 });
 
-test('ax chat renders claude-style blocks and a slash menu', () => {
+test('ax chat renders claude-style blocks and filters one shared slash command table', () => {
   const writes = [];
   const out = { isTTY: false, write: (chunk) => writes.push(chunk) };
   const state = {
@@ -493,12 +494,159 @@ test('ax chat renders claude-style blocks and a slash menu', () => {
   assert.match(menu, /\/fast/);
   assert.match(menu, /\/pro/);
   assert.match(menu, /\/max/);
+  assert.match(menu, /\/rapid/);
+  assert.match(menu, /\/log/);
+  assert.match(menu, /\/today/);
+  assert.match(menu, /\/now/);
+  assert.match(menu, /\/who/);
+  assert.match(menu, /\/auto/);
+  assert.match(menu, /\/bypass/);
   assert.match(menu, /\/help/);
+  assert.match(menu, /\/model/);
+  assert.match(menu, /\/status/);
+  assert.match(menu, /\/new/);
+  assert.match(menu, /\/exit/);
+  assert.match(menu, /\/quit/);
   assert.doesNotMatch(menu, /atris:|gpt-|kimi|fable|composer/i);
 
   assert.deepEqual(ax.chatCompleter('/f'), [['/fast'], '/f']);
-  assert.deepEqual(ax.chatCompleter('/'), [['/fast', '/pro', '/max', '/clear', '/context', '/help'], '/']);
+  assert.deepEqual(ax.chatCompleter('/r'), [['/rapid'], '/r']);
+  assert.deepEqual(ax.chatCompleter('/l'), [['/log'], '/l']);
+  assert.deepEqual(ax.filterChatCommands('/fa').map(command => command.name), ['/fast']);
+  assert.deepEqual(ax.filterChatCommands('/new').map(command => command.name), ['/new']);
+  assert.deepEqual(ax.filterChatCommands(' /fa'), []);
+  assert.deepEqual(ax.filterChatCommands('/model extra'), []);
+  assert.deepEqual(
+    ax.chatCompleter('/'),
+    [ax.filterChatCommands('/').map(command => command.name), '/']
+  );
   assert.deepEqual(ax.chatCompleter('hello'), [[], 'hello']);
+});
+
+test('ax chat slash commands log and inspect without a model turn', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-slash-'));
+  const now = new Date(2026, 7, 16, 7, 46, 0);
+  try {
+    assert.equal(ax.parseChatSlash('hello'), null);
+    assert.equal(ax.runChatSlash('/who', { mode: 'rapid', color: false }).output, '· Atris Rapid · cheap chat and first-hop tools');
+    assert.equal(ax.runChatSlash('/model', { mode: 'pro', color: false }).output, '· current lane: Atris 2 Pro · switch with /fast /pro /max /rapid');
+    assert.equal(ax.runChatSlash('/status', { color: false }).type, 'status');
+    assert.equal(ax.runChatSlash('/new', { color: false }).type, 'clear');
+    assert.equal(ax.runChatSlash('/exit', { color: false }).type, 'exit');
+    assert.equal(ax.runChatSlash('/quit', { color: false }).type, 'exit');
+    assert.equal(ax.runChatSlash('/log', { cwd: dir, color: false }).output, 'Usage: /log <what happened>');
+    assert.match(ax.runChatSlash('/nope', { color: false }).output, /unknown command \/nope/);
+
+    const logged = ax.runChatSlash('/log Rapid slash commands work', { cwd: dir, now, color: false });
+    assert.equal(logged.output, '· logged to atris/logs/2026/2026-08-16.md');
+    const journal = fs.readFileSync(path.join(dir, 'atris/logs/2026/2026-08-16.md'), 'utf8');
+    assert.match(journal, /## 07:46 · Chat/);
+    assert.match(journal, /- Rapid slash commands work/);
+
+    const today = ax.runChatSlash('/today', { cwd: dir, now, color: false });
+    assert.match(today.output, /Rapid slash commands work/);
+
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris/now.md'), '# Now\n\nShip Rapid slash commands.\n');
+    assert.match(ax.runChatSlash('/now', { cwd: dir, color: false }).output, /Ship Rapid slash commands/);
+
+    const autoOn = ax.runChatSlash('/auto', { color: false });
+    assert.equal(autoOn.approveMode, 'auto');
+    assert.match(autoOn.output, /bypass permissions on/);
+    const autoOff = ax.runChatSlash('/auto', { approveMode: 'auto', color: false });
+    assert.equal(autoOff.approveMode, 'stage');
+    assert.match(autoOff.output, /bypass permissions off/);
+    assert.equal(ax.runChatSlash('/auto on', { color: false }).approveMode, 'auto');
+    assert.equal(ax.runChatSlash('/auto off', { approveMode: 'auto', color: false }).approveMode, 'stage');
+    assert.equal(ax.runChatSlash('/bypass', { color: false }).approveMode, 'auto');
+    assert.equal(ax.runChatSlash('/bypass off', { approveMode: 'auto', color: false }).approveMode, 'stage');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ax idle ctrl-c clears a draft, then requires a quick second press to exit', () => {
+  const rl = new EventEmitter();
+  rl.line = 'draft';
+  rl.cursor = rl.line.length;
+  rl.refreshes = 0;
+  rl.write = (_data, key) => {
+    if (key && (key.name === 'u' || key.name === 'k')) {
+      rl.line = '';
+      rl.cursor = 0;
+    }
+  };
+  rl._refreshLine = () => { rl.refreshes += 1; };
+  const writes = [];
+  let interrupted = 0;
+  let exited = 0;
+  let turnInFlight = false;
+  const detach = ax.attachChatCtrlC(rl, {
+    output: { write: chunk => writes.push(String(chunk)) },
+    isTurnInFlight: () => turnInFlight,
+    interruptTurn: () => { interrupted += 1; },
+    exit: () => { exited += 1; },
+  });
+
+  rl.emit('SIGINT');
+  assert.equal(rl.line, '');
+  assert.equal(writes.length, 0);
+  rl.emit('SIGINT');
+  assert.match(writes.join(''), /press ctrl-c again to exit/);
+  assert.equal(exited, 0);
+  rl.emit('SIGINT');
+  assert.equal(exited, 1);
+
+  turnInFlight = true;
+  rl.emit('SIGINT');
+  assert.equal(interrupted, 1);
+  assert.equal(exited, 1);
+  detach();
+});
+
+test('ax status slash prints doctor rows without calling the model', async () => {
+  const previousAuto = process.env.AX_AUTO_LOG;
+  process.env.AX_AUTO_LOG = '0';
+  const writes = [];
+  let turns = 0;
+  try {
+    await ax.chat({
+      mode: 'fast',
+      cwd: NON_WORKSPACE_CWD,
+      input: Readable.from(['/status\n', '/exit\n']),
+      output: { isTTY: false, write: chunk => writes.push(String(chunk)) },
+      runtimeHealth: async () => ({
+        route: 'cloud',
+        backend: { ready: true, reachable: true, auth_required: false },
+        fast: { ready: true },
+        rapid: { ready: true },
+        permissions: { ready: true },
+      }),
+      turnFunction: async () => { turns += 1; return { output: '', durationMs: 1 }; },
+    });
+  } finally {
+    if (previousAuto === undefined) delete process.env.AX_AUTO_LOG;
+    else process.env.AX_AUTO_LOG = previousAuto;
+  }
+
+  assert.equal(turns, 0);
+  assert.match(writes.join(''), /backend\s+ready/);
+  assert.match(writes.join(''), /approvals\s+ready/);
+});
+
+test('ax streaming requests honor an abort signal', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    ax.postTurn('hello', {
+      route: 'cloud',
+      connectionContext: {},
+      signal: controller.signal,
+      output: { isTTY: false, write() {} },
+      showProgress: false,
+    }),
+    error => error && error.name === 'AbortError'
+  );
 });
 
 test('AX_TIMING prints event timing to stderr without changing chat output', () => {
