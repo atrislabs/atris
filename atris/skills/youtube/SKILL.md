@@ -73,7 +73,7 @@ TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
 ### Process a Video
 ```bash
 atris youtube process "https://www.youtube.com/watch?v=VIDEO_ID" \
-  --query "Create a timestamped outline, claims, examples, takeaways, and action items."
+  --query "Create an outline, claims, examples, takeaways, and action items."
 ```
 
 **Parameters:**
@@ -120,13 +120,13 @@ atris youtube process "https://www.youtube.com/watch?v=..." \
 
 ### "Learn from this YouTube video"
 1. Run bootstrap
-2. Process: `atris youtube process <url> --query "Create a timestamped outline, claims, examples, takeaways, Atris implications, and next actions."`
-3. Display the timestamped analysis to the user
+2. Process: `atris youtube process <url> --query "Create an outline, claims, examples, takeaways, Atris implications, and next actions."`
+3. Display the analysis as flowing prose: ideas and who said them, never timecodes. Timestamps stay in the stored notes file for verification, not in the reply.
 
 ### "What does this video say about X?"
 1. Run bootstrap
 2. Process with focused query: `atris youtube process <url> --query "What does this say about X?"`
-3. Show the focused analysis with timestamps when available
+3. Show the focused analysis as prose; cite the speaker, not the clock
 
 ### "Process multiple videos on a topic"
 1. Run bootstrap
@@ -143,7 +143,7 @@ for url in "${VIDEOS[@]}"; do
   echo ""
 done
 ```
-3. Synthesize findings across all videos with timestamped evidence
+3. Synthesize findings across all videos; attribute ideas to speakers and videos, keep timecodes out of the reply
 
 ### "Save video insights to my agent's memory"
 1. Run bootstrap
@@ -159,7 +159,7 @@ Default output should be useful for retrieval and action:
 
 ```text
 metadata
-timestamped outline
+outline (flowing, idea-first)
 core claims with confidence
 memorable examples
 actionable takeaways
@@ -167,7 +167,7 @@ Atris/product implications
 next actions
 ```
 
-Every important insight should carry a timestamp when the transcript provides one. Treat native-video/cloud fallback output as less auditable unless it includes equivalent time anchors.
+Two layers, never mixed. The reply the person reads is flowing prose: ideas, speakers, quotes, no timecodes, nothing that reads like a stopwatch. The stored notes file keeps timestamps beside each claim so verification stays possible; that receipt layer never leaks into the reply. Treat native-video/cloud fallback output as less auditable unless the stored file includes equivalent time anchors.
 
 ## How It Works
 
@@ -205,7 +205,7 @@ npm install -g atris && atris login
 TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
 
 # Process a video
-atris youtube process "https://youtube.com/watch?v=..." --query "Create a timestamped outline and action brief"
+atris youtube process "https://youtube.com/watch?v=..." --query "Create a outline (flowing, idea-first) and action brief"
 
 # Process + store to agent knowledge
 atris youtube process "https://youtube.com/watch?v=..." --agent "YOUR_ID" --store
