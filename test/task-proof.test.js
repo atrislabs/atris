@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { spawnSync } = require('node:child_process');
-const { taskProofLooksMeaningful, taskProofLooksExecuted, taskProofState, taskProofExecutionState, buildVerifiedProof } = require('../lib/task-proof');
+const { tailText, taskProofLooksMeaningful, taskProofLooksExecuted, taskProofState, taskProofExecutionState, buildVerifiedProof } = require('../lib/task-proof');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 const { withTaskReadyResult } = require('./helpers/task-result');
@@ -275,4 +275,15 @@ test('task CLI blocks weak ready proof, positive reviews without proof, and bare
   } finally {
     cleanupTempDir(dir);
   }
+});
+
+test('tailText keeps the head of a long failure log, not just the tail', () => {
+  const cause = 'Error: Cannot find module left-pad';
+  const noise = 'at Object.<anonymous> (/x/y.js:1:1)\n'.repeat(40);
+  const long = `${cause}\n${noise}exit 1`;
+  const cut = tailText(long);
+  assert.ok(cut.length <= 400 + 5);
+  assert.ok(cut.includes(cause), 'the first-line cause must survive truncation');
+  assert.ok(cut.includes('exit 1'), 'the tail must survive too');
+  assert.equal(tailText('short output'), 'short output');
 });
