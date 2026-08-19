@@ -154,9 +154,13 @@ test('model-capable engines receive exact model flags without weakening read-onl
   assert.doesNotMatch(devin.args.join(' '), /(?:dangerous|accept-edits)/);
 
   const agy = buildReadOnlyEngineInvocation('agy', 'inspect the router', 'gemini-3.1-pro-high');
-  assert.deepEqual(agy.args.slice(0, 3), ['--mode', 'plan', '--sandbox']);
-  assert.deepEqual(agy.args.slice(3, 5), ['--model', 'gemini-3.1-pro-high']);
-  assert.doesNotMatch(agy.args.join(' '), /(?:accept-edits|dangerously-skip-permissions)/);
+  // Read-only safety comes from the sandbox; skip-permissions must ride WITH
+  // it because agy prompts even in plan mode and a headless ask has no one to
+  // answer (it denied its own `ls` and failed every ask, live 2026-08-19).
+  assert.deepEqual(agy.args.slice(0, 4), ['--mode', 'plan', '--sandbox', '--dangerously-skip-permissions']);
+  assert.deepEqual(agy.args.slice(4, 6), ['--model', 'gemini-3.1-pro-high']);
+  assert.doesNotMatch(agy.args.join(' '), /accept-edits/);
+  assert.ok(agy.args.includes('--sandbox'), 'skip-permissions is only acceptable inside the sandbox');
 
   const grok = buildReadOnlyEngineInvocation('grok', 'inspect the router', 'grok-composer-2.5-fast');
   assert.deepEqual(grok.args.slice(4, 6), ['--sandbox', 'read-only']);
