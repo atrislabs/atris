@@ -270,7 +270,13 @@ function taskReceiptTitle(row) {
 // one per receipt, landed result + human proof state. Shares the collector
 // with the count so the number and the visible list always match.
 function todayTaskReceiptLines(root = process.cwd(), date = new Date(), limit = 6) {
-  return collectTaskReceiptsToday(root, date)
+  return formatTaskReceiptLines(collectTaskReceiptsToday(root, date), limit);
+}
+
+// Format an already-collected receipt list, so a caller that needs both the
+// count and the lines (renderDefaultNow) parses the receipt files only once.
+function formatTaskReceiptLines(receipts, limit = 6) {
+  return receipts
     .slice(-limit)
     .reverse()
     .map((r) => {
@@ -411,7 +417,8 @@ function renderDefaultNow(root = process.cwd()) {
   const journalPath = currentJournalPath(root);
   const openTodoCount = countOpenWorkItems(root, todoPath);
   const inboxCount = countMatches(journalPath, /^-\s+\*\*I\d+:/gm);
-  const taskReceiptCount = countTaskReceiptsToday(root);
+  const taskReceipts = collectTaskReceiptsToday(root);
+  const taskReceiptCount = taskReceipts.length;
   const missionReceiptCount = countMissionReceiptsToday(root);
   const completedCount = taskReceiptCount + missionReceiptCount || countJournalCompletedReceipts(journalPath);
   const generated = formatLocalTimestamp();
@@ -419,7 +426,7 @@ function renderDefaultNow(root = process.cwd()) {
   const whatMattersNow = moveLine
     ? `${moveLine}\n\n- Run the named next action and leave proof before choosing another.`
     : '- Decide the next useful move before opening more context.';
-  const receiptLines = todayTaskReceiptLines(root);
+  const receiptLines = formatTaskReceiptLines(taskReceipts);
   const missionReceiptLines = todayMissionReceiptLines(root);
   const commitLines = landedCommitLines(root);
   const hiddenReceiptCount = Math.max(0, completedCount - missionReceiptLines.length - receiptLines.length);

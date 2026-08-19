@@ -150,8 +150,12 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   function execFileSync(cmd, args) {
     if (cmd === 'ps') return psOutput;
     if (cmd === 'lsof') {
-      const cwd = args[2] === '111' ? root : ['222', '223'].includes(args[2]) ? otherRoot : '/tmp/no-proj';
-      return `p${args[2]}\nn${cwd}\n`;
+      // Batched call: one lsof for every pid, `-p pid1,pid2,...` in args[5].
+      const rows = args[5].split(',').map(pid => {
+        const cwd = pid === '111' ? root : ['222', '223'].includes(pid) ? otherRoot : '/tmp/no-proj';
+        return `p${pid}\nn${cwd}`;
+      });
+      return `${rows.join('\n')}\n`;
     }
     if (cmd === 'git' && args[1] === root && args[2] === 'worktree') return worktreeOutput;
     if (cmd === 'git' && args[2] === 'branch') return args[1] === root ? 'master\n' : 'other\n';
@@ -307,7 +311,7 @@ test('collectRadar marks owner-gated tasks as owner action required', () => {
 
   function execFileSync(cmd, args) {
     if (cmd === 'ps') return psOutput;
-    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'lsof') return `${args[5].split(',').map(pid => `p${pid}\nn${root}`).join('\n')}\n`;
     if (cmd === 'git' && args[2] === 'branch') return 'master\n';
     if (cmd === 'git' && args[2] === 'worktree') {
       return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/master', ''].join('\n');
@@ -373,7 +377,7 @@ test('collectRadar binds each claude process to distinct member task claims', ()
 
   function execFileSync(cmd, args) {
     if (cmd === 'ps') return psOutput;
-    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'lsof') return `${args[5].split(',').map(pid => `p${pid}\nn${root}`).join('\n')}\n`;
     if (cmd === 'git' && args[2] === 'branch') return 'main\n';
     if (cmd === 'git' && args[2] === 'worktree') {
       return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/main', ''].join('\n');
@@ -418,7 +422,7 @@ test('collectRadar never mislabels interactive claude sessions with repo project
 
   function execFileSync(cmd, args) {
     if (cmd === 'ps') return psOutput;
-    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'lsof') return `${args[5].split(',').map(pid => `p${pid}\nn${root}`).join('\n')}\n`;
     if (cmd === 'git' && args[2] === 'branch') return 'main\n';
     if (cmd === 'git' && args[2] === 'worktree') {
       return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/main', ''].join('\n');
@@ -472,7 +476,7 @@ test('collectRadar prefers the task owned by the live process agent', () => {
 
   function execFileSync(cmd, args) {
     if (cmd === 'ps') return psOutput;
-    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'lsof') return `${args[5].split(',').map(pid => `p${pid}\nn${root}`).join('\n')}\n`;
     if (cmd === 'git' && args[2] === 'branch') return 'main\n';
     if (cmd === 'git' && args[2] === 'worktree') {
       return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/main', ''].join('\n');
@@ -522,7 +526,7 @@ test('collectRadar marks production-gated task messages as owner action required
 
   function execFileSync(cmd, args) {
     if (cmd === 'ps') return psOutput;
-    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'lsof') return `${args[5].split(',').map(pid => `p${pid}\nn${root}`).join('\n')}\n`;
     if (cmd === 'git' && args[2] === 'branch') return 'main\n';
     if (cmd === 'git' && args[2] === 'worktree') {
       return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/main', ''].join('\n');
@@ -574,7 +578,7 @@ test('collectRadar does not inherit production gates from radar task notes', () 
 
   function execFileSync(cmd, args) {
     if (cmd === 'ps') return psOutput;
-    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'lsof') return `${args[5].split(',').map(pid => `p${pid}\nn${root}`).join('\n')}\n`;
     if (cmd === 'git' && args[2] === 'branch') return 'master\n';
     if (cmd === 'git' && args[2] === 'worktree') {
       return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/master', ''].join('\n');

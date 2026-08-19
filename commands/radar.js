@@ -59,19 +59,34 @@ function agentTypeForCommand(command) {
   return null;
 }
 
-function processCwd(pid, deps) {
+// Resolve cwd for many pids at once: one lsof call on darwin instead of one
+// per process. Returns a Map of pid (string) -> cwd; missing pids stay absent.
+function processCwds(pids, deps) {
   const { platform, execFile } = deps;
-  try {
-    if (platform === 'linux') {
-      return deps.readlink(`/proc/${pid}/cwd`);
+  const byPid = new Map();
+  if (!pids.length) return byPid;
+  if (platform === 'linux') {
+    for (const pid of pids) {
+      try { byPid.set(String(pid), deps.readlink(`/proc/${pid}/cwd`)); } catch {}
     }
-    if (platform === 'darwin') {
-      const out = execFile('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
-      const line = String(out).split(/\r?\n/).find(value => value.startsWith('n'));
-      return line ? line.slice(1) : '';
+    return byPid;
+  }
+  if (platform === 'darwin') {
+    let out = '';
+    try {
+      out = execFile('lsof', ['-a', '-d', 'cwd', '-Fn', '-p', pids.map(String).join(',')], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+    } catch (error) {
+      // lsof exits non-zero when any pid in the batch is gone; keep the rows it
+      // did print instead of losing every cwd.
+      out = error && error.stdout ? error.stdout : '';
     }
-  } catch {}
-  return '';
+    let currentPid = '';
+    for (const line of String(out).split(/\r?\n/)) {
+      if (line.startsWith('p')) currentPid = line.slice(1).trim();
+      else if (line.startsWith('n') && currentPid) byPid.set(currentPid, line.slice(1));
+    }
+  }
+  return byPid;
 }
 
 function gitBranch(cwd, execFile) {
@@ -94,22 +109,28 @@ function collectAgents(deps) {
     .map(row => ({ ...row, agent: agentTypeForCommand(row.command) }))
     .filter(row => row.agent);
   const parentPids = new Set(agentRows.map(row => String(row.ppid || '')).filter(Boolean));
-  return agentRows
-    .filter(row => !parentPids.has(String(row.pid)))
-    .map(row => {
-      const cwd = processCwd(row.pid, deps);
-      return {
-        pid: row.pid,
-        agent: row.agent,
-        command: row.command,
-        status: row.stat.includes('Z') ? 'zombie' : row.stat.includes('T') ? 'stopped' : 'active',
-        cwd,
-        repo: repoLabel(cwd),
-        branch: gitBranch(cwd, deps.execFile),
-        cpu: row.cpu,
-        mem: row.mem,
-      };
-    });
+  const topRows = agentRows.filter(row => !parentPids.has(String(row.pid)));
+  const cwdByPid = processCwds(topRows.map(row => row.pid), deps);
+  const branchByCwd = new Map();
+  const branchFor = (cwd) => {
+    if (!cwd) return '';
+    if (!branchByCwd.has(cwd)) branchByCwd.set(cwd, gitBranch(cwd, deps.execFile));
+    return branchByCwd.get(cwd);
+  };
+  return topRows.map(row => {
+    const cwd = cwdByPid.get(String(row.pid)) || '';
+    return {
+      pid: row.pid,
+      agent: row.agent,
+      command: row.command,
+      status: row.stat.includes('Z') ? 'zombie' : row.stat.includes('T') ? 'stopped' : 'active',
+      cwd,
+      repo: repoLabel(cwd),
+      branch: branchFor(cwd),
+      cpu: row.cpu,
+      mem: row.mem,
+    };
+  });
 }
 
 function loadTasks(root, deps) {
@@ -288,8 +309,11 @@ function loadTeam(root, deps) {
   };
 }
 
-function loadBrain(root, deps) {
-  const scorecards = readJsonLines(path.join(root, '.atris', 'state', 'scorecards.jsonl'), deps.readFile, deps.exists);
+function loadScorecards(root, deps) {
+  return readJsonLines(path.join(root, '.atris', 'state', 'scorecards.jsonl'), deps.readFile, deps.exists);
+}
+
+function loadBrain(root, deps, scorecards = loadScorecards(root, deps)) {
   const operatorDir = path.join(root, '.atris', 'state', 'operator-scorecards');
   let operatorScorecards = 0;
   try {
@@ -317,7 +341,7 @@ function countDirectoryEntries(dir, deps, predicate = () => true) {
   return listNames(dir, deps).filter(predicate).length;
 }
 
-function loadBusinessCollaboration(root, deps, team = {}) {
+function loadBusinessCollaboration(root, deps, team = {}, scorecardCount = countJsonLines(path.join(root, '.atris', 'state', 'scorecards.jsonl'), deps)) {
   const business = readJsonFile(path.join(root, '.atris', 'business.json'), deps, null);
   const runtime = readJsonFile(path.join(root, '.atris', 'state', 'runtime.json'), deps, null);
   const sync = readJsonFile(path.join(root, '.atris', 'state', '_sync.json'), deps, null);
@@ -336,7 +360,7 @@ function loadBusinessCollaboration(root, deps, team = {}) {
   const localReceipts = countDirectoryEntries(path.join(root, '.atris', 'receipts'), deps, name => /\.(json|md|txt)$/i.test(name));
   const events = countJsonLines(path.join(root, '.atris', 'state', 'events.jsonl'), deps);
   const episodes = countJsonLines(path.join(root, '.atris', 'state', 'episodes.jsonl'), deps);
-  const scorecards = countJsonLines(path.join(root, '.atris', 'state', 'scorecards.jsonl'), deps);
+  const scorecards = scorecardCount;
   const computerDirs = countDirectoryEntries(path.join(root, 'atris', 'computers'), deps, name => !name.startsWith('.'));
   const hasOnboarding = ingestPacks > 0 || starterBriefs > 0 || onePagers > 0;
   const hasProofLoop = events > 0 || episodes > 0 || scorecards > 0 || localReceipts > 0;
@@ -787,12 +811,18 @@ function collectRadar(options = {}) {
   const missions = loadMissions(root, deps, nowMs);
   identityCache.set(root, { missions, missionLocks: loadMissionLocks(path.join(root, '.atris', 'state'), deps), memberLocks: loadMemberLoopLocks(path.join(root, '.atris', 'state'), deps) });
   const worktrees = loadWorktrees(root, deps);
+  const branchIdentityCache = new Map();
+  const branchIdentityFor = (cwd) => {
+    if (!cwd) return null;
+    if (!branchIdentityCache.has(cwd)) branchIdentityCache.set(cwd, branchIdentityAtCwd(cwd, deps.execFile));
+    return branchIdentityCache.get(cwd);
+  };
   const agents = collectAgents(deps).map(agent => {
     const taskWorkspaceRoot = findTaskWorkspaceRoot(agent.cwd, deps);
     const agentTasks = taskWorkspaceRoot ? loadTasksCached(taskWorkspaceRoot, deps, taskCache) : [];
     const identity = taskWorkspaceRoot ? loadWorkspaceIdentity(taskWorkspaceRoot, deps, identityCache, nowMs) : { missions: [], missionLocks: [], memberLocks: [] };
     const sidecar = loadAgentWorktreeSidecar(agent.cwd, deps);
-    const branchIdentity = branchIdentityAtCwd(agent.cwd, deps.execFile);
+    const branchIdentity = branchIdentityFor(agent.cwd);
     const sessionId = parseSessionIdFromCommand(agent.command);
     const interactive = agent.agent === 'claude' && isInteractiveClaudeCommand(agent.command);
     const resolved = resolveAgentTaskBinding({
@@ -824,14 +854,15 @@ function collectRadar(options = {}) {
       task_action: task ? taskSessionAction(agent, task, taskWorkspaceRoot) : untaskedAction(agent, taskWorkspaceRoot, agentTasks, resolved),
     };
   });
+  const scorecards = loadScorecards(root, deps);
   const osState = {
     xp: loadXp(root, deps),
     team: loadTeam(root, deps),
-    brain: loadBrain(root, deps),
+    brain: loadBrain(root, deps, scorecards),
     swarlo: loadSwarlo(tasks),
     loop: loadLoop(missions, root, deps),
   };
-  osState.business = loadBusinessCollaboration(root, deps, osState.team);
+  osState.business = loadBusinessCollaboration(root, deps, osState.team, scorecards.length);
   return { root, generated_at: new Date(nowMs).toISOString(), summary: summarize(tasks, missions, worktrees, agents), os: osState, next_action: nextAction(tasks, missions, worktrees, agents, osState), agents, tasks, missions, worktrees };
 }
 
