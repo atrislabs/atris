@@ -75,7 +75,7 @@ function plainPoints(text) {
       .replace(/--[\w-]+/g, '')
       .replace(/\[[^\]]*\]/g, '')
       .replace(/<[^>]*>/g, '');
-    if (STACK_FRAME.test(line) || /—/.test(bare) || SYSTEM_NOUNS.test(bare) || scanText(bare).length) {
+    if (STACK_FRAME.test(line) || /\u2014/.test(bare) || SYSTEM_NOUNS.test(bare) || scanText(bare).length) {
       dirty.push(line.slice(0, 80));
     }
   }
