@@ -17263,7 +17263,7 @@ test('agent doctor verifies local AI CLI wiring without auth', () => {
       ]
     );
     assert.ok(payload.binaries.some((binary) => binary.name === 'devin'));
-    assert.ok(payload.binaries.some((binary) => binary.name === 'droid'));
+    assert.ok(payload.binaries.some((binary) => binary.name === 'agy'));
   } finally {
     cleanupTempDir(dir);
   }

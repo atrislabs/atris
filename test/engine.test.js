@@ -27,7 +27,7 @@ test('engine roster lists every profile with detection state', () => {
     assert.equal(res.status, 0, res.stderr);
     const parsed = JSON.parse(res.stdout);
     const names = parsed.engines.map((e) => e.name);
-    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'droid']);
+    assert.deepEqual(names, ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'agy']);
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'engines.json')));
     const codex = parsed.engines.find((e) => e.id === 'codex');
     assert.equal(codex.tier, 'pro');
@@ -41,13 +41,19 @@ test('engine roster lists every profile with detection state', () => {
     assert.deepEqual(parsed.engines.find((e) => e.id === 'composer').models, ['composer 2.5']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'grok').models, ['grok 4.6', 'grok 4.5']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'devin').models, ['built-in router']);
-    assert.deepEqual(parsed.engines.find((e) => e.id === 'droid').models, ['built-in router']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'agy').models, [
+      'gemini-3.7-flash-high',
+      'gemini-3.1-pro-high',
+      'claude-sonnet-4-6',
+      'claude-opus-4-6-thinking',
+      'gpt-oss-120b-medium',
+    ]);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'haiku').models, ['haiku']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'atris-fast').models, ['atris fast']);
     assert.equal(parsed.engines.find((e) => e.id === 'atris-fast').duty, 'learning');
     assert.equal(parsed.engines.find((e) => e.id === 'fable').duty, 'leader');
     assert.equal(parsed.engines.find((e) => e.id === 'devin').duty, 'errands');
-    assert.equal(parsed.engines.find((e) => e.id === 'droid').duty, 'errands');
+    assert.equal(parsed.engines.find((e) => e.id === 'agy').duty, 'errands');
     for (const entry of parsed.engines) {
       assert.equal(typeof entry.installed, 'boolean');
       assert.ok(entry.bin);
@@ -110,7 +116,7 @@ test('--engine flag rides a loop for one run and validates at the boundary', () 
     const bad = runCli(['run', '--legacy', '--dry-run', '--engine', 'gpt-11'], dir);
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /Unknown --engine "gpt-11"/);
-    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, droid/);
+    assert.match(bad.stderr, /atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, agy/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -145,6 +151,7 @@ test('house default is atris-fast and profile templates stay engine-shaped', () 
   assert.match(RUNNER_PROFILES.cursor.commandTemplate, /--trust -p/);
   assert.match(RUNNER_PROFILES.devin.commandTemplate, /-p --/);
   assert.match(RUNNER_PROFILES.grok.commandTemplate, /--always-approve -p/);
+  assert.match(RUNNER_PROFILES.agy.commandTemplate, /--mode accept-edits .* -p/);
   // claude rides the default claude-shaped spawn, no template needed
   assert.equal(RUNNER_PROFILES.claude.commandTemplate, '');
 });
@@ -287,7 +294,7 @@ test('duty overrides leave existing executor role resolution unchanged', () => {
     assert.equal(registry.status, 0, registry.stderr || registry.stdout);
     const parsed = JSON.parse(registry.stdout);
     assert.deepEqual(parsed.engines.find((entry) => entry.id === 'devin').roles, ['executor']);
-    assert.deepEqual(parsed.engines.find((entry) => entry.id === 'droid').roles, ['executor']);
+    assert.deepEqual(parsed.engines.find((entry) => entry.id === 'agy').roles, ['executor']);
 
     const set = runCli(['engine', 'set', 'codex', '--duty', 'errands'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
     assert.equal(set.status, 0, set.stderr || set.stdout);

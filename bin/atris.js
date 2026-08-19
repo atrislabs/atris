@@ -3140,7 +3140,7 @@ function inspectAgentCliWiring() {
     },
   ];
 
-  const binaries = ['atris', 'ax', 'claude', 'codex', 'cursor-agent', 'devin', 'droid'].map((name) => ({
+  const binaries = ['atris', 'ax', 'claude', 'codex', 'cursor-agent', 'devin', 'agy'].map((name) => ({
     name,
     path: commandOnPath(name),
   }));
@@ -3319,7 +3319,7 @@ async function chatAtris() {
   for (const arg of rawArgs) {
     if (arg === '--agent') {
       agentLane = true;
-    } else if (arg === '--print' || arg === '--headless') {
+    } else if (arg === '--print' || arg === '--headless' || arg === '--rapid' || arg === '--auto-approve') {
       fastLaneFlags.push(arg);
     } else {
       messageArgs.push(arg);
@@ -3332,9 +3332,12 @@ async function chatAtris() {
     console.log('Usage: atris chat ["message"]');
     console.log('');
     console.log('  Chat with Atris 2 Fast in this workspace: tools attached, same turn as `ax --fast`.');
+    console.log('  Pass --rapid to use Atris Rapid instead.');
     console.log('  Requires `atris login`.');
     console.log('');
     console.log('  atris chat                  Interactive chat (ax --fast --chat)');
+    console.log('  atris chat --rapid          Interactive Rapid chat (ax --rapid --chat)');
+    console.log('  atris chat --rapid --auto-approve   Rapid chat that auto-approves safe git push');
     console.log('  atris chat "what now?"      One-shot message (ax --fast)');
     console.log('  atris chat --print "..."    Headless JSON result (ax --fast --print)');
     console.log('  atris chat --agent [...]    Legacy cloud-agent lane (needs `atris agent`)');
@@ -3361,7 +3364,11 @@ async function chatAtris() {
   if (!agentLane) {
     try {
       const axPath = path.join(__dirname, '..', 'ax');
-      const axArgs = message || fastLaneFlags.length ? ['--fast', ...fastLaneFlags, message].filter(Boolean) : ['--fast', '--chat'];
+      const lane = fastLaneFlags.includes('--rapid') ? '--rapid' : '--fast';
+      const extraFlags = fastLaneFlags.filter((flag) => flag !== '--rapid');
+      const axArgs = message
+        ? [lane, ...extraFlags, message].filter(Boolean)
+        : [lane, ...extraFlags, '--chat'];
       const run = spawnSync(process.execPath, [axPath, ...axArgs], { stdio: 'inherit' });
       process.exit(run.status || 0);
     } catch {

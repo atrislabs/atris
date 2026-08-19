@@ -210,6 +210,22 @@ test('grok runner profile uses grok --always-approve and pins grok-4.6', () => {
   });
 });
 
+test('agy runner profile uses Antigravity accept-edits print mode', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'agy' }, () => {
+    assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.agy);
+    assert.equal(resolveClaudeRunnerBin(), 'agy');
+    assert.equal(resolveClaudeRunnerModel({}), 'gemini-3.7-flash-high');
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --mode accept-edits {modelFlag} -p {prompt}');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'agy --mode accept-edits --model gemini-3.7-flash-high -p "$(cat /tmp/p.tmp)"');
+  });
+});
+
+test('antigravity is an alias for the canonical agy profile', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'antigravity' }, () => {
+    assert.strictEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.agy);
+  });
+});
+
 test('generic runner env overrides the Atris Fast profile', () => {
   withRunnerEnv({
     ATRIS_RUNNER_PROFILE: 'atris-fast',

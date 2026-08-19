@@ -17,6 +17,7 @@ test('agentTypeForCommand detects supported coding agents', () => {
   assert.equal(agentTypeForCommand('/usr/local/bin/opencode'), 'opencode');
   assert.equal(agentTypeForCommand('devin --workspace repo'), 'devin');
   assert.equal(agentTypeForCommand('/Users/me/.local/bin/droid exec --model glm-5.2'), 'droid');
+  assert.equal(agentTypeForCommand('/Users/me/.local/bin/agy --mode plan -p review'), 'agy');
   assert.equal(agentTypeForCommand('node ./bin/atris.js radar'), null);
 });
 

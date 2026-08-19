@@ -326,7 +326,7 @@ test('ax is a self-contained Atris2 local/cloud agent script', () => {
   assert.match(ax, /function modelForMode/);
   assert.match(ax, /function buildRunProfile/);
   assert.match(ax, /function formatSystemInit/);
-  assert.match(ax, /max_turns:\s*local \? \(mode === 'fast' \? 16 : 24\) : 1/);
+  assert.match(ax, /max_turns:\s*local \? \(mode === 'rapid' \? 6 : mode === 'fast' \? 16 : 24\) : 1/);
   assert.match(ax, /'atris:max'/);
   assert.match(ax, /Accept:\s*'text\/event-stream'/);
   assert.match(ax, /async function chat/);
@@ -349,7 +349,7 @@ test('ax help stays local and does not start an agent turn', () => {
 
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /ax - Atris local\/code agent/);
-  assert.match(res.stdout, /ax \[--auto\|--max\|--pro\|--fast\|--code-fast\] \[--local\|--cloud\] <message>/);
+  assert.match(res.stdout, /ax \[--auto\|--max\|--pro\|--fast\|--rapid\|--code-fast\] \[--local\|--cloud\] <message>/);
   assert.match(res.stdout, /--max {3}hosted Atris 2, highest reasoning/);
   assert.match(res.stdout, /--code-fast  Atris Code Fast public lane/);
   assert.doesNotMatch(res.stdout, /run\s+local workspace/);
@@ -867,12 +867,12 @@ test('runner-profile help lists canonical profile names only', () => {
   try {
     const run = runCli(['run', '--help'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr);
-    assert.match(run.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, droid\)/);
+    assert.match(run.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, agy\)/);
     assert.doesNotMatch(run.stdout, /atris2-fast|atris-2-fast/);
 
     const autopilot = runCli(['autopilot', '--legacy', '--help'], { cwd: dir });
     assert.equal(autopilot.status, 0, autopilot.stderr);
-    assert.match(autopilot.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, droid\)/);
+    assert.match(autopilot.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, agy\)/);
     assert.doesNotMatch(autopilot.stdout, /atris2-fast|atris-2-fast/);
   } finally {
     cleanupTempDir(dir);

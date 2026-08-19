@@ -153,14 +153,16 @@ test('model-capable engines receive exact model flags without weakening read-onl
   assert.deepEqual(devin.args.slice(2, 4), ['--model', 'swe-1.7']);
   assert.doesNotMatch(devin.args.join(' '), /(?:dangerous|accept-edits)/);
 
-  const droid = buildReadOnlyEngineInvocation('droid', 'inspect the router');
-  assert.doesNotMatch(droid.args.join(' '), /(?:--auto|skip-permissions-unsafe)/);
+  const agy = buildReadOnlyEngineInvocation('agy', 'inspect the router', 'gemini-3.1-pro-high');
+  assert.deepEqual(agy.args.slice(0, 3), ['--mode', 'plan', '--sandbox']);
+  assert.deepEqual(agy.args.slice(3, 5), ['--model', 'gemini-3.1-pro-high']);
+  assert.doesNotMatch(agy.args.join(' '), /(?:accept-edits|dangerously-skip-permissions)/);
 
   const grok = buildReadOnlyEngineInvocation('grok', 'inspect the router', 'grok-composer-2.5-fast');
   assert.deepEqual(grok.args.slice(4, 6), ['--sandbox', 'read-only']);
   assert.deepEqual(grok.args.slice(6, 8), ['--model', 'grok-composer-2.5-fast']);
 
-  for (const engine of ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'droid']) {
+  for (const engine of ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'agy']) {
     const invocation = buildReadOnlyEngineInvocation(engine, 'read only');
     assert.doesNotMatch(invocation.args.join(' '), /(?:^|\s)--worktree(?:\s|$)/);
     assert.match(invocation.args.join(' '), /Do not modify files/);
@@ -169,11 +171,11 @@ test('model-capable engines receive exact model flags without weakening read-onl
 
 test('an unsupported requested model fails its job honestly without spawning an engine', async () => {
   const [answer] = await runEngineAskJobs([
-    { engine: 'droid', model: 'opus', prompt: 'inspect the router', label: 'droid' },
+    { engine: 'atris-fast', model: 'opus', prompt: 'inspect the router', label: 'atris-fast' },
   ]);
   assert.equal(answer.ok, false);
   assert.equal(answer.reason, 'model_not_supported');
-  assert.match(answer.stderr, /droid does not support model selection/);
+  assert.match(answer.stderr, /atris-fast does not support model selection/);
 });
 
 test('fake engine commands run in parallel up to the cap and preserve every answer', async () => {
@@ -183,7 +185,7 @@ test('fake engine commands run in parallel up to the cap and preserve every answ
     { engine: 'codex', prompt: 'one', label: 'one' },
     { engine: 'cursor', prompt: 'two', label: 'two' },
     { engine: 'claude', prompt: 'three', label: 'three' },
-    { engine: 'droid', prompt: 'four', label: 'four' },
+    { engine: 'agy', prompt: 'four', label: 'four' },
   ];
   const answers = await runEngineAskJobs(jobs, {
     concurrency: 2,
@@ -549,7 +551,7 @@ test('unsupported shorthand model fails before ask and names known-good examples
   const originalError = console.error;
   console.error = (line = '') => errors.push(String(line));
   try {
-    const code = await engineCommand(['droid', '--model', 'opus', 'inspect', 'the router'], {
+    const code = await engineCommand(['atris-fast', '--model', 'opus', 'inspect', 'the router'], {
       root,
       engineAsk: {
         executeAskJob: async () => {
@@ -560,8 +562,8 @@ test('unsupported shorthand model fails before ask and names known-good examples
     });
     assert.equal(code, 2);
     assert.equal(askCalled, false);
-    assert.match(errors.join('\n'), /droid does not support model selection/);
-    assert.match(errors.join('\n'), /known-good droid examples: built-in router/);
+    assert.match(errors.join('\n'), /atris-fast does not support model selection/);
+    assert.match(errors.join('\n'), /known-good atris-fast examples: atris fast/);
   } finally {
     console.error = originalError;
     fs.rmSync(root, { recursive: true, force: true });

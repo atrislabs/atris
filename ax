@@ -156,7 +156,7 @@ function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false } = {}, 
   return [
     paint(`${tierLabel(mode)}${chat ? ' chat' : ''}`, [ANSI.bold, tierColor(normalizeMode(mode))], options),
     cwd,
-    chat ? paint('type / for the menu · /fast /pro /max swap tiers · exit to leave', [ANSI.muted], options) : '',
+    chat ? paint('shift-tab bypass · /auto /log /today /now /who · /fast /pro /max /rapid · exit to leave', [ANSI.muted], options) : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -165,15 +165,16 @@ function formatUsage() {
     'ax - Atris local/code agent',
     '',
     'Usage:',
-    '  ax [--auto|--max|--pro|--fast|--code-fast] [--local|--cloud] <message>',
-    '  ax [--auto|--max|--pro|--fast|--code-fast] [--local|--cloud] --print <message>',
-    '  ax [--auto|--max|--pro|--fast|--code-fast] [--local|--cloud] --chat',
-    '  ax [--max|--pro|--fast] --business <slug> [<message>|--chat]',
-    '  ax [--max|--pro|--fast|--code-fast] --doctor',
+    '  ax [--auto|--max|--pro|--fast|--rapid|--code-fast] [--local|--cloud] <message>',
+    '  ax [--auto|--max|--pro|--fast|--rapid|--code-fast] [--local|--cloud] --print <message>',
+    '  ax [--auto|--max|--pro|--fast|--rapid|--code-fast] [--local|--cloud] --chat',
+    '  ax [--max|--pro|--fast|--rapid] --business <slug> [<message>|--chat]',
+    '  ax [--max|--pro|--fast|--rapid|--code-fast] --doctor',
     '  ax --approvals',
     '  ax --approve <approval-id>',
     '  ax --deny <approval-id>',
     '  ax --grant <approval-id>      approve and remember this exact command (this workspace)',
+    '  ax --auto-approve             chat session auto-approves safe git push',
     '  ax --grants                   list active permission grants',
     '  ax --sync-grants              push/pull grants with atrisos-web',
     '  ax --revoke-grant <grant-id>',
@@ -185,6 +186,7 @@ function formatUsage() {
     '  --max   hosted Atris 2, highest reasoning, slowest turns',
     '  --pro   hosted Atris 2, deeper tool loop',
     '  --fast  hosted Atris 2, faster low-latency turns',
+    '  --rapid  hosted Atris Rapid, cheapest chat and first-hop tools',
     '  --code-fast  Atris Code Fast public lane',
     '  --local opt into local backend/workspace tools',
     '  --cloud force authenticated cloud connectors/chat',
@@ -195,6 +197,7 @@ function formatUsage() {
     'Examples:',
     '  ax --pro find the config file and explain it',
     '  ax --fast what files are here',
+    '  ax --rapid --chat',
     '  ax --max refactor this module and verify the tests',
     '  ax --max --verify "npm test" fix the failing suite',
     '  ax --code-fast explain this error',
@@ -354,7 +357,9 @@ function buildRunProfile(options = {}) {
     ? 'Max workspace tool loop uses high reasoning effort'
     : mode === 'pro'
       ? 'Pro workspace tool loop uses API default medium'
-      : 'Fast workspace tool loop uses provider default';
+      : mode === 'rapid'
+        ? 'Rapid workspace tool loop uses thinking off'
+        : 'Fast workspace tool loop uses provider default';
   return {
     endpoint: backendUrl({ route }),
     mode,
@@ -2458,19 +2463,44 @@ async function approveWorkspaceApproval(ref, options = {}) {
 // A persistent grant (ax --grant) lets an exact approved command pattern
 // redeem itself on later turns instead of re-asking; anything unmatched
 // falls through to the normal hint. Store: ~/.atris/permission-grants.json.
+function isSafeGitPushApproval(record) {
+  const action = String((record && record.action_type) || '');
+  const payload = (record && record.payload && typeof record.payload === 'object') ? record.payload : {};
+  if (action === 'git_push') {
+    if (payload.force || payload.force_with_lease || payload['force-with-lease']) return false;
+    const remote = String(payload.remote || 'origin');
+    const branch = String(payload.branch || 'HEAD');
+    if (!/^[A-Za-z0-9._\/-]+$/.test(remote) || !/^[A-Za-z0-9._\/-]+$/.test(branch)) return false;
+    return true;
+  }
+  if (action === 'local_command') {
+    const command = String(payload.command || '').trim();
+    if (!/^git\s+push\b/i.test(command)) return false;
+    if (/\s(-f|--force|--force-with-lease)\b/i.test(command)) return false;
+    return permissionGrants.commandIsGrantable(command).ok;
+  }
+  return false;
+}
+
 async function autoRedeemGrantedApprovals(cwd, sinceMs, options = {}) {
   const redeemed = [];
   for (const item of pendingWorkspaceApprovalsSince(cwd, sinceMs)) {
     const record = item.record;
-    if (String(record.action_type || '') !== 'local_command') continue;
     const command = record.payload && record.payload.command;
-    const grant = permissionGrants.matchGrant({ command, workspaceRoot: cwd });
-    if (!grant) continue;
+    const grant = String(record.action_type || '') === 'local_command'
+      ? permissionGrants.matchGrant({ command, workspaceRoot: cwd })
+      : null;
+    const sessionAuto = options.approveMode === 'auto' && isSafeGitPushApproval(record);
+    if (!grant && !sessionAuto) continue;
     const output = options.output || process.stdout;
-    output.write(`${formatAuxRow('grant', `auto-approved via ${grant.grant_id}: ${grant.pattern.display}`, output)}\n`);
+    const why = grant
+      ? `auto-approved via ${grant.grant_id}: ${grant.pattern.display}`
+      : `auto-approved ${record.action_type} this session`;
+    output.write(`${formatAuxRow('grant', why, output)}\n`);
     try {
-      await approveWorkspaceApproval(record.approval_id, { ...options, cwd, output });
-      permissionGrants.recordUse(grant.grant_id);
+      const approve = options.approveFn || approveWorkspaceApproval;
+      await approve(record.approval_id, { ...options, cwd, output });
+      if (grant) permissionGrants.recordUse(grant.grant_id);
       redeemed.push(record.approval_id);
     } catch {
       // Redemption failed: leave the artifact pending so the hint still shows.
@@ -2920,7 +2950,7 @@ function buildPayload(message, options = {}) {
   const payload = {
     message: buildMessage(message, options.history || []),
     model: modelForMode(mode),
-    max_turns: local ? (mode === 'fast' ? 16 : 24) : 1,
+    max_turns: local ? (mode === 'rapid' ? 6 : mode === 'fast' ? 16 : 24) : 1,
     verify_command: verifyCommand || 'true',
     local_tools: [backendApiToolDescriptor()]
   };
@@ -3243,7 +3273,13 @@ async function postTurn(message, options = {}) {
           const block = buffer.slice(0, boundary);
           buffer = buffer.slice(boundary + 2);
           try {
-            handleEvent(parseSseBlock(block), state, output);
+            const event = parseSseBlock(block);
+            handleEvent(event, state, output);
+            if (event && event.type === 'result') {
+              flushPendingText(state, output);
+              if (state.resultOutput) state.output = state.resultOutput;
+              finish(null, state);
+            }
           } catch (error) {
             state.errors.push(`bad_sse_event: ${error.message}`);
           }
@@ -3487,7 +3523,7 @@ async function chat(options = {}) {
   const history = [];
   let lastCompactionNotice = 0;
   let conversationId = options.conversationId || `ax-${process.pid}-${Date.now().toString(36)}`;
-  const session = { approveMode: 'stage' };
+  const session = { approveMode: options.autoApprove || options.approveMode === 'auto' ? 'auto' : 'stage' };
   let turnInFlight = false;
   let activeTurnController = null;
   let slashMenu = null;
@@ -3514,7 +3550,18 @@ async function chat(options = {}) {
       return true;
     }
     output.write(`${formatRuntimeHealth(health, output)}\n\n`);
-    output.write(`${formatBackendHint({ route: endpointRoute })}\n`);
+    // A reachable backend with one not-ready lane is a missing provider key,
+    // not a dead cloud; saying "cloud did not respond" here sent live debugging
+    // at the network when the fix was an env var (seen live 2026-08-16).
+    const laneKey = normalizeMode(mode) === 'rapid' ? 'rapid' : normalizeMode(mode) === 'fast' ? 'fast' : null;
+    const laneNotReady = laneKey && health && health[laneKey] && health[laneKey].ready === false;
+    if (health && health.backend && health.backend.ready && laneNotReady) {
+      const keyName = laneKey === 'rapid' ? 'WAFER_API_KEY' : 'FIREWORKS_API_KEY';
+      const where = endpointRoute === 'local' ? `${keyName} to backend/.env and restart it` : `${keyName} to the cloud backend env and redeploy`;
+      output.write(`The ${laneKey} model has no key on the ${endpointRoute} backend. Add ${where}, or switch lanes with /fast.\n`);
+    } else {
+      output.write(`${formatBackendHint({ route: endpointRoute })}\n`);
+    }
     output.write(`${formatDoneLine(Date.now() - startedAt)}\n\n`);
     return false;
   };
@@ -3712,7 +3759,14 @@ async function chat(options = {}) {
         output,
         ...(options.postApproval ? { postApproval: options.postApproval } : {}),
       });
-    if (!options.turnFunction) writeWorkspaceApprovalHints(cwd, turnStartedAt, output);
+    if (!options.turnFunction) {
+      await autoRedeemGrantedApprovals(cwd, turnStartedAt, {
+        mode,
+        output,
+        approveMode: session.approveMode,
+      });
+      writeWorkspaceApprovalHints(cwd, turnStartedAt, output);
+    }
     output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n`);
     const goalLine = options.turnFunction ? '' : formatGoalStatusLine(currentAtrisGoal(cwd), output);
     if (goalLine) output.write(`${goalLine}\n`);
@@ -4560,11 +4614,13 @@ async function main() {
     ? 'code-fast'
     : args.includes('--max')
       ? 'max'
-      : args.includes('--fast')
-        ? 'fast'
-        : args.includes('--pro')
-          ? 'pro'
-          : null;
+      : args.includes('--rapid')
+        ? 'rapid'
+        : args.includes('--fast')
+          ? 'fast'
+          : args.includes('--pro')
+            ? 'pro'
+            : null;
   const autoEnabled = args.includes('--auto') && !explicitLane;
   let mode = explicitLane || 'pro';
   const doctor = args.includes('--doctor');
@@ -4600,6 +4656,9 @@ async function main() {
   const listGrants = args.includes('--grants');
   if (listGrants) args.splice(args.indexOf('--grants'), 1);
 
+  const autoApprove = args.includes('--auto-approve');
+  if (autoApprove) args.splice(args.indexOf('--auto-approve'), 1);
+
   const syncGrantsFlag = args.includes('--sync-grants');
   if (syncGrantsFlag) args.splice(args.indexOf('--sync-grants'), 1);
 
@@ -4627,7 +4686,7 @@ async function main() {
 
   const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
   const prompt = args
-    .filter(arg => !['--auto', '--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h'].includes(arg))
+    .filter(arg => !['--auto', '--auto-approve', '--max', '--fast', '--rapid', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h'].includes(arg))
     .join(' ')
     .trim();
 
@@ -4793,7 +4852,7 @@ async function main() {
     }
 
     if (!prompt || args.includes('--chat')) {
-      await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify, auto: autoEnabled });
+      await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify, auto: autoEnabled, autoApprove });
       return;
     }
 
@@ -4827,7 +4886,11 @@ async function main() {
     // A one-shot has no next turn, so "reply yes to approve" is a dead end;
     // granted patterns redeem themselves, everything else gets the exact
     // redeem command for what the turn staged on disk.
-    await autoRedeemGrantedApprovals(process.cwd(), turnStartedAt, { mode, output: process.stdout });
+    await autoRedeemGrantedApprovals(process.cwd(), turnStartedAt, {
+      mode,
+      output: process.stdout,
+      approveMode: autoApprove ? 'auto' : undefined,
+    });
     writeWorkspaceApprovalHints(process.cwd(), turnStartedAt, process.stdout);
     console.log('');
     console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
@@ -4862,6 +4925,7 @@ module.exports = {
   approveStoredApproval,
   approveWorkspaceApproval,
   autoRedeemGrantedApprovals,
+  isSafeGitPushApproval,
   findWorkspaceApproval,
   listWorkspaceApprovals,
   pendingWorkspaceApprovalsSince,

@@ -1,7 +1,7 @@
 ---
 name: engines
-description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, and Droid. Triggers on: use codex, use cursor, use devin, use grok, use fable, use claude, use atris, engine, dispatch to, worker agent, second opinion build."
-version: 1.3.1
+description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, and Antigravity (agy). Triggers on: use codex, use cursor, use devin, use grok, use agy, use antigravity, use fable, use claude, use atris, engine, dispatch to, worker agent, second opinion build."
+version: 1.4.0
 tags:
   - engines
   - claude
@@ -12,7 +12,8 @@ tags:
   - haiku
   - devin
   - grok
-  - droid
+  - agy
+  - antigravity
   - atris
   - orchestration
 ---
@@ -42,7 +43,7 @@ Raw spawns are not the default because they skip Atris receipts, watch, and coac
 | Haiku | `claude -p "<prompt>" --model claude-haiku-4-5` | Fast validation and bounded read-only checks. |
 | Devin | `devin -p --permission-mode dangerous -- "<prompt>"` (run from the target repo) | Default permission mode is read-only for writes — build work NEEDS `--permission-mode dangerous`, so only run it in an isolated worktree. Also `devin cloud` for sessions that outlive this machine. Supports `--model swe-1.7` |
 | Grok | `grok --always-approve -p "<prompt>"` (run from the target repo) | Headless single-turn via `-p`; default model grok-4.6. Very fast on lookups (~5-10s, reads MAP first). Great for quick second opinions; use `--best-of-n <N>` for tricky bounded builds. Uses grok.com login |
-| Droid | `droid exec "<prompt>"` | Executor profile using Droid's built-in router. Use only when the binary is ready in `atris engine --help`. |
+| Antigravity | `agy --mode accept-edits -p "<prompt>"` | `agy` executor profile. Use `--mode plan --sandbox` for read-only review and `--model <id>` to pin a model. |
 
 Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `cursor-agent` are allowlisted in `~/.claude/settings.json` so fresh and one-shot sessions can dispatch without a human approval click. A cold session that gets "requires approval" on an engine command means that allowlist regressed.
 
@@ -55,10 +56,10 @@ Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `
 - **Composer / Haiku** — fast, bounded navigation, edits, and validation where a max-tier model would be wasteful.
 - **Devin** — multi-step feature work; use `cloud` when the run should survive laptop sleep.
 - **Grok** - fastest frontier lookups and quick second opinions (grok-4.6, ~5-10s; reads MAP first); use `--best-of-n` for tricky bounded builds. Uses grok.com login.
-- **Droid** — executor work through its built-in router when installed.
+- **Antigravity / agy** — flexible executor work across Gemini, Claude, and GPT-OSS models; use `agy` as the canonical short name.
 - Parallel builds across repos: one engine job per repo, never two engines writing the same checkout.
 
-## Models worth pinning (verified live 2026-08-12)
+## Models worth pinning (verified live 2026-08-15)
 
 Each engine CLI can pin a specific model. Current best picks:
 
@@ -71,7 +72,7 @@ Each engine CLI can pin a specific model. Current best picks:
 | Haiku | `--model claude-haiku-4-5` | `haiku` for fast validation |
 | Grok | (default) | `grok-4.6` default (confirmed live 2026-08-12, ~5s lookup), `grok-4.5` still available via `-m` |
 | Codex | `-m <model>` | CLI default rides `~/.codex/config.toml`; pin with `-m` only when the task needs it |
-| Droid | (built-in router) | Let the installed Droid CLI select its model |
+| Antigravity / agy | `--model <id>` | `gemini-3.7-flash-high` for speed, `gemini-3.1-pro-high` for depth, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, or `gpt-oss-120b-medium` |
 | Atris Fast | (fixed) | api.atris.ai fast lane |
 
 Re-verify this table when a lab ships a new model: run each CLI's model-list command, smoke one lookup, and update the row. Free-tier windows (like swe-1.7 now) are the moment to fan out volume work.

@@ -202,6 +202,55 @@ test('ax headless turn surfaces the backend result event as output, not leftover
   }
 });
 
+test('ax returns the prompt when the result event lands, without waiting for the stream to close', async () => {
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    res.write('data: ' + JSON.stringify({ type: 'text_delta', content: 'Hi.' }) + '\n\n');
+    res.write('data: ' + JSON.stringify({ type: 'result', result: 'Hi.' }) + '\n\n');
+    setTimeout(() => res.end(), 1500);
+  });
+  const port = await listenLocal(server);
+  const previousBackendUrl = process.env.AX_BACKEND_URL;
+  process.env.AX_BACKEND_URL = `http://127.0.0.1:${port}/api/atris2/turn`;
+  const started = Date.now();
+  try {
+    const payload = await ax.runHeadlessTurn('hi', {
+      mode: 'rapid',
+      cwd: path.join(__dirname, '..'),
+      route: 'local',
+    });
+    assert.equal(payload.ok, true);
+    assert.equal(payload.output, 'Hi.');
+    assert.ok(Date.now() - started < 800, `waited ${Date.now() - started}ms for a finished result`);
+  } finally {
+    if (previousBackendUrl === undefined) delete process.env.AX_BACKEND_URL;
+    else process.env.AX_BACKEND_URL = previousBackendUrl;
+    await closeServer(server);
+  }
+});
+
+test('ax exposes Atris Rapid as a cheap pickable tier', () => {
+  assert.equal(ax.modelForMode('rapid'), 'atris:rapid');
+  assert.equal(ax.tierLabel('rapid'), 'Atris Rapid');
+  assert.equal(ax.chatTierCommand('/rapid'), 'rapid');
+
+  const payload = ax.buildPayload('say hello in one line', {
+    mode: 'rapid',
+    cwd: NON_WORKSPACE_CWD,
+  });
+  assert.equal(payload.model, 'atris:rapid');
+  assert.equal(payload.max_turns, 1);
+
+  const localPayload = ax.buildPayload('say hello in one line', {
+    mode: 'rapid',
+    route: 'local',
+    cwd: '/tmp/project',
+  });
+  assert.equal(localPayload.model, 'atris:rapid');
+  assert.equal(localPayload.max_turns, 6);
+  assert.match(ax.formatHeader({ mode: 'rapid', cwd: '/tmp/project', chat: true }), /Atris Rapid chat/);
+});
+
 test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
   assert.equal(ax.modelForMode('max'), 'atris:max');
 
@@ -239,10 +288,12 @@ test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
 
 test('ax never shows model ids to the user and swaps tiers in chat', () => {
   const modelPattern = /atris:|composer-2-5|gpt-|kimi|fable|fireworks|openrouter/i;
-  for (const mode of ['fast', 'pro', 'max', 'code-fast']) {
+  for (const mode of ['fast', 'pro', 'max', 'rapid', 'code-fast']) {
     assert.doesNotMatch(ax.formatHeader({ mode, cwd: '/tmp/project', chat: true }), modelPattern);
   }
-  assert.match(ax.formatHeader({ mode: 'pro', cwd: '/tmp/project', chat: true }), /\/fast \/pro \/max swap tiers/);
+  assert.match(ax.formatHeader({ mode: 'pro', cwd: '/tmp/project', chat: true }), /shift-tab bypass/);
+  assert.match(ax.formatHeader({ mode: 'pro', cwd: '/tmp/project', chat: true }), /\/auto \/log \/today \/now \/who/);
+  assert.match(ax.formatHeader({ mode: 'pro', cwd: '/tmp/project', chat: true }), /\/fast \/pro \/max \/rapid/);
 
   const profileText = ax.formatRunProfile(ax.buildRunProfile({ mode: 'max', cwd: '/tmp/project' }), { color: false });
   assert.doesNotMatch(profileText, modelPattern);
@@ -1672,6 +1723,98 @@ test('ax finds and hints workspace approval artifacts from local turns', (t) => 
   );
   assert.equal(ax.pendingWorkspaceApprovalsSince(dir, Date.now() - 60000).length, 0);
   assert.equal(ax.findWorkspaceApproval('appr_nonexistent', dir), null);
+});
+
+test('ax auto-approves safe git push this session and refuses force', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-auto-push-'));
+  const approvalsDir = path.join(dir, 'atris', 'approvals');
+  fs.mkdirSync(approvalsDir, { recursive: true });
+  const writes = [];
+  const output = { isTTY: false, write: (chunk) => { writes.push(String(chunk)); return true; } };
+
+  const safe = {
+    schema: 'atris.local_approval.v1',
+    approval_id: 'appr_safe_push',
+    status: 'pending',
+    action_type: 'git_push',
+    summary: 'Push 1 commit to origin/master',
+    payload: { workspace: dir, remote: 'origin', branch: 'master' },
+    decision: { approved: false },
+  };
+  const force = {
+    ...safe,
+    approval_id: 'appr_force_push',
+    payload: { workspace: dir, remote: 'origin', branch: 'master', force: true },
+  };
+  const mail = {
+    ...safe,
+    approval_id: 'appr_mail',
+    action_type: 'gmail_send',
+    payload: { to: 'x@y.com' },
+  };
+  const shellPush = {
+    ...safe,
+    approval_id: 'appr_shell_push',
+    action_type: 'local_command',
+    payload: { command: 'git push origin master' },
+  };
+  const shellForce = {
+    ...safe,
+    approval_id: 'appr_shell_force',
+    action_type: 'local_command',
+    payload: { command: 'git push --force origin master' },
+  };
+
+  assert.equal(ax.isSafeGitPushApproval(safe), true);
+  assert.equal(ax.isSafeGitPushApproval(force), false);
+  assert.equal(ax.isSafeGitPushApproval(mail), false);
+  assert.equal(ax.isSafeGitPushApproval(shellPush), true);
+  assert.equal(ax.isSafeGitPushApproval(shellForce), false);
+  assert.equal(ax.formatPrompt('rapid', { color: false, approveMode: 'auto' }), 'rapid [bypass permissions] › ');
+  assert.equal(ax.cycleApproveMode('stage'), 'auto');
+  assert.equal(ax.cycleApproveMode('auto'), 'stage');
+
+  const session = { approveMode: 'stage' };
+  const rl = {
+    last: null,
+    promptText: '',
+    _ttyWrite(s, key) { this.last = { s, key }; },
+    setPrompt(text) { this.promptText = text; },
+    prompt() {},
+  };
+  const detach = ax.attachApproveModeHotkey(rl, session, () => (
+    ax.formatPrompt('rapid', { color: false, approveMode: session.approveMode })
+  ));
+  rl._ttyWrite('', { name: 'tab', shift: true });
+  assert.equal(session.approveMode, 'auto');
+  assert.equal(rl.promptText, 'rapid [bypass permissions] › ');
+  rl._ttyWrite('', { name: 'tab', shift: true });
+  assert.equal(session.approveMode, 'stage');
+  assert.equal(rl.promptText, 'rapid › ');
+  rl._ttyWrite('x', { name: 'x' });
+  assert.deepEqual(rl.last, { s: 'x', key: { name: 'x' } });
+  detach();
+
+  for (const record of [safe, force, mail, shellPush, shellForce]) {
+    fs.writeFileSync(path.join(approvalsDir, `${record.approval_id}.json`), JSON.stringify(record));
+  }
+
+  const seen = [];
+  const redeemed = await ax.autoRedeemGrantedApprovals(dir, Date.now() - 60000, {
+    approveMode: 'auto',
+    output,
+    approveFn: async (id) => { seen.push(id); },
+  });
+  assert.deepEqual(redeemed.sort(), ['appr_safe_push', 'appr_shell_push']);
+  assert.deepEqual(seen.sort(), ['appr_safe_push', 'appr_shell_push']);
+
+  const skipped = await ax.autoRedeemGrantedApprovals(dir, Date.now() - 60000, {
+    approveMode: 'stage',
+    output,
+    approveFn: async (id) => { seen.push(id); },
+  });
+  assert.deepEqual(skipped, []);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('ax compacts evicted history into a digest instead of forgetting it', () => {
