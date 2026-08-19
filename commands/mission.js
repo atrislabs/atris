@@ -53,6 +53,7 @@ const {
   runsPruneLines,
   formatBytes,
 } = require('../lib/runs-prune');
+const { compactMissionLedger } = require('../lib/mission-ledger-compact');
 const autolandLib = require('../lib/autoland');
 const { gateForHuman, landingWhyClause } = require('../lib/voice-gate');
 const { operatorReady, hasAgentJargon } = require('./autoland');
@@ -1347,6 +1348,11 @@ function saveMission(mission, root = process.cwd(), eventType = 'mission_updated
     updated_at: stampIso(),
   });
   appendJsonLine(paths.missionsJsonl, next);
+  // Self-maintenance: once history outweighs live missions 4:1 the ledger is
+  // rewritten to one row per mission (latest state, first display number —
+  // exactly what loadMissionMap reconstructs). Every status/tick path parses
+  // this file several times, so unbounded snapshot history taxes everything.
+  try { compactMissionLedger(paths.missionsJsonl); } catch {}
   const event = appendEvent(eventType, next, payload, root);
   renderMissionStatus(root);
   renderMemberMissionState(next.owner, root);
@@ -4810,27 +4816,60 @@ function missionTickVerification(tick) {
   return { verified: false, state: ran ? 'unchecked' : 'skipped', unchecked: ran };
 }
 
+// Per-process index of mission run receipts, keyed by runs dir. Reading and
+// parsing ~1400 receipt files per mission made `mission list` scale as
+// O(missions × runs-files); building the mission_id → receipts map once per
+// invocation keeps outputs identical while scanning the dir a single time.
+// The dir mtime guards the memo so a receipt written mid-process (new file in
+// the dir) invalidates it; malformed receipts stay silently skipped, matching
+// readJson's existing tolerance.
+const missionRunsIndexCache = new Map();
+
+function missionRunsReceiptIndex(root = process.cwd()) {
+  const runsDir = statePaths(root).runsDir;
+  let dirMtime = -1;
+  try {
+    dirMtime = fs.statSync(runsDir).mtimeMs;
+  } catch {
+    dirMtime = -1;
+  }
+  const cached = missionRunsIndexCache.get(runsDir);
+  if (cached && cached.dirMtime === dirMtime) return cached.byMission;
+
+  let files = [];
+  try {
+    files = fs.readdirSync(runsDir)
+      .filter((file) => file.startsWith('mission-') && file.endsWith('.json'))
+      .map((file) => path.join(runsDir, file));
+  } catch {
+    files = [];
+  }
+  const byMission = new Map();
+  for (const file of files) {
+    const receipt = readJson(file);
+    if (!receipt || !receipt.mission_id) continue;
+    let bucket = byMission.get(receipt.mission_id);
+    if (!bucket) {
+      bucket = [];
+      byMission.set(receipt.mission_id, bucket);
+    }
+    bucket.push({ file, receipt });
+  }
+  missionRunsIndexCache.set(runsDir, { dirMtime, byMission });
+  return byMission;
+}
+
 // Roll every ran tick for a mission into a verification-debt tally. `unchecked`
 // counts ran ticks that recorded no verifier result at all — the "tick recorded
 // but nothing was checked" red the report and now.md rollup surface and count
 // against the mission.
 function missionVerificationDebt(mission, root = process.cwd()) {
-  const paths = statePaths(root);
-  let files = [];
-  try {
-    files = fs.readdirSync(paths.runsDir)
-      .filter((file) => file.startsWith('mission-') && file.endsWith('.json'))
-      .map((file) => path.join(paths.runsDir, file));
-  } catch {
-    files = [];
-  }
+  const entries = missionRunsReceiptIndex(root).get(mission.id) || [];
   let ran = 0;
   let verified = 0;
   let unchecked = 0;
   const seen = new Set();
-  for (const file of files) {
-    const receipt = readJson(file);
-    if (!receipt || receipt.mission_id !== mission.id) continue;
+  for (const { receipt } of entries) {
     for (const tick of missionReceiptTicks(receipt)) {
       if (!tick || tick.status !== 'ran') continue;
       const key = `${tick.tick_index || ''}:${tick.finished_at || tick.started_at || ''}`;
@@ -4853,21 +4892,10 @@ function missionVerificationDebtLine(debt) {
 }
 
 function missionReportTimeline(mission, root = process.cwd(), limit = 6) {
-  const paths = statePaths(root);
-  let files = [];
-  try {
-    files = fs.readdirSync(paths.runsDir)
-      .filter((file) => file.startsWith('mission-') && file.endsWith('.json'))
-      .map((file) => path.join(paths.runsDir, file));
-  } catch {
-    files = [];
-  }
-
+  const entries = missionRunsReceiptIndex(root).get(mission.id) || [];
   const items = [];
   const seen = new Set();
-  for (const file of files) {
-    const receipt = readJson(file);
-    if (!receipt || receipt.mission_id !== mission.id) continue;
+  for (const { file, receipt } of entries) {
     const receiptPath = path.relative(root, file);
     for (const tick of missionReceiptTicks(receipt)) {
       const summary = missionTickReportSummary(tick);
