@@ -1770,6 +1770,18 @@ test('ax auto-approves safe git push this session and refuses force', async () =
   assert.equal(ax.isSafeGitPushApproval(mail), false);
   assert.equal(ax.isSafeGitPushApproval(shellPush), true);
   assert.equal(ax.isSafeGitPushApproval(shellForce), false);
+  // Force and delete pushes that carry no --force flag must still be unsafe.
+  for (const command of [
+    'git push origin +main:main',
+    'git push origin :feature-x',
+    'git push --delete origin main',
+    'git push -d origin main',
+    'git push --mirror origin',
+    'git push --prune origin',
+  ]) {
+    const record = { ...safe, approval_id: `appr_${command.replace(/\W+/g, '_')}`, action_type: 'local_command', payload: { command } };
+    assert.equal(ax.isSafeGitPushApproval(record), false, `${command} must not auto-approve`);
+  }
   assert.equal(ax.formatPrompt('rapid', { color: false, approveMode: 'auto' }), 'rapid [bypass permissions] › ');
   assert.equal(ax.cycleApproveMode('stage'), 'auto');
   assert.equal(ax.cycleApproveMode('auto'), 'stage');

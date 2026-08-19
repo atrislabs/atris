@@ -2477,6 +2477,11 @@ function isSafeGitPushApproval(record) {
     const command = String(payload.command || '').trim();
     if (!/^git\s+push\b/i.test(command)) return false;
     if (/\s(-f|--force|--force-with-lease)\b/i.test(command)) return false;
+    // Flags are not the only force path: a "+refspec" force-pushes, ":branch"
+    // and --delete delete remote refs, --mirror/--prune force-prune them.
+    if (/\s(--delete|-d|--mirror|--prune)\b/i.test(command)) return false;
+    if (/\s\+\S/.test(command)) return false;
+    if (/\s:\S/.test(command)) return false;
     return permissionGrants.commandIsGrantable(command).ok;
   }
   return false;
@@ -3527,6 +3532,7 @@ async function chat(options = {}) {
   let turnInFlight = false;
   let activeTurnController = null;
   let slashMenu = null;
+  let pendingApprovalAbort = null;
 
   output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
@@ -3750,6 +3756,13 @@ async function chat(options = {}) {
     } finally {
       turnInFlight = false;
       activeTurnController = null;
+      // A turn that ends (abort, timeout, stream error) with an approval
+      // question still open must cancel it: an orphaned rl.question makes
+      // readline silently drop every later question and the chat goes dead.
+      if (pendingApprovalAbort) {
+        try { pendingApprovalAbort.abort(); } catch {}
+        pendingApprovalAbort = null;
+      }
     }
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
     const approvalExecution = normalizeMode(mode) === 'code-fast'
@@ -3809,9 +3822,22 @@ async function chat(options = {}) {
   if (!options.approveBackendApi) {
     // Mid-turn approvals must reuse the chat's readline: a second interface on
     // the same stdin double-consumes keypresses and corrupts both prompts.
+    // The question is abortable so an interrupted or failed turn cancels it
+    // (deny by default) instead of leaving readline holding a dead callback.
     // The approval question text is already written by the caller.
     options.approveBackendApi = () => new Promise(resolve => {
-      rl.question('', answer => resolve(answer));
+      const controller = new AbortController();
+      pendingApprovalAbort = controller;
+      const settle = answer => {
+        if (pendingApprovalAbort === controller) pendingApprovalAbort = null;
+        resolve(answer);
+      };
+      controller.signal.addEventListener('abort', () => settle(false), { once: true });
+      try {
+        rl.question('', { signal: controller.signal }, settle);
+      } catch {
+        settle(false);
+      }
     });
   }
   const promptOptions = () => ({ isTTY: baseOutput.isTTY, approveMode: session.approveMode });

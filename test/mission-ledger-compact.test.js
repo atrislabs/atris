@@ -59,6 +59,22 @@ test('history-heavy ledger compacts to one row per mission and shrinks on disk',
   assert.ok(survived.every((row) => row.status === 'complete' && row.tick === 9));
 });
 
+test('rows without an id (cloud mission receipts) survive compaction in order', () => {
+  const rows = [];
+  for (let i = 0; i < 30; i += 1) {
+    rows.push({ cloud: true, task_id: `t${i}`, text: `receipt ${i}` });
+    for (let save = 0; save < 10; save += 1) rows.push({ id: `m${i}`, status: 'running', tick: save });
+  }
+  const file = tempLedger(rows);
+  const receipt = compactMissionLedger(file, { minBytes: 0 });
+  assert.equal(receipt.compacted, true);
+  const survived = fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  const cloudRows = survived.filter((row) => row.cloud === true);
+  assert.equal(cloudRows.length, 30, 'every cloud receipt survives');
+  assert.equal(cloudRows[29].task_id, 't29', 'cloud order preserved so latest-receipt readers still work');
+  assert.equal(survived.filter((row) => row.id).length, 30, 'missions still compact to one row each');
+});
+
 test('malformed lines are dropped by compaction, not crashed on', () => {
   const file = tempLedger([]);
   const junk = Array.from({ length: 80 }, () => JSON.stringify({ id: 'x', status: 'running' }));
