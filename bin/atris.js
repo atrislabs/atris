@@ -3370,7 +3370,10 @@ async function chatAtris() {
         ? [lane, ...extraFlags, message].filter(Boolean)
         : [lane, ...extraFlags, '--chat'];
       const run = spawnSync(process.execPath, [axPath, ...axArgs], { stdio: 'inherit' });
-      process.exit(run.status || 0);
+      // spawnSync reports spawn failure via run.error (status stays null), and
+      // a signal-killed ax also leaves status null; neither is a success.
+      if (!run.error) process.exit(run.status ?? 1);
+      // ax unavailable: fall through to the agent lane.
     } catch {
       // ax unavailable: fall through to the agent lane.
     }
@@ -3639,7 +3642,9 @@ async function atrisFastChat() {
     const axModule = require('../ax');
     if (axModule.resolveRoute(message) === 'local') {
       const run = spawnSync(process.execPath, [path.join(__dirname, '..', 'ax'), '--fast', message], { stdio: 'inherit' });
-      process.exit(run.status || 0);
+      // Same rule as the chat lane: spawn failure or a signal kill leaves
+      // status null and must not read as success.
+      if (!run.error) process.exit(run.status ?? 1);
     }
   } catch {
     // ax unavailable: fall through to the plain cloud one-shot.

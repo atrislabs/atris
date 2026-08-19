@@ -3806,6 +3806,14 @@ async function chat(options = {}) {
   }
 
   const rl = readline.createInterface({ input, output: baseOutput, completer: chatCompleter });
+  if (!options.approveBackendApi) {
+    // Mid-turn approvals must reuse the chat's readline: a second interface on
+    // the same stdin double-consumes keypresses and corrupts both prompts.
+    // The approval question text is already written by the caller.
+    options.approveBackendApi = () => new Promise(resolve => {
+      rl.question('', answer => resolve(answer));
+    });
+  }
   const promptOptions = () => ({ isTTY: baseOutput.isTTY, approveMode: session.approveMode });
   const detachHotkey = attachApproveModeHotkey(rl, session, () => formatPrompt(mode, promptOptions()));
   slashMenu = attachSlashMenu(rl, baseOutput, { isActive: () => !turnInFlight });
@@ -4847,8 +4855,13 @@ async function main() {
           autoPick,
         })
         : { ok: false, model: modelForMode(mode), output: '', durationMs: 0, error: 'missing prompt' };
-      console.log(JSON.stringify(payload));
-      process.exit(payload.ok ? 0 : 1);
+      // Drain stdout before exiting: process.exit right after a large write
+      // truncates piped output at the 64KB pipe buffer (same class as BCK-1306).
+      const code = payload.ok ? 0 : 1;
+      process.exitCode = code;
+      process.stdout.write(`${JSON.stringify(payload)}\n`, () => process.exit(code));
+      setTimeout(() => process.exit(code), 3000).unref();
+      return;
     }
 
     if (!prompt || args.includes('--chat')) {

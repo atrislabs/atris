@@ -488,6 +488,17 @@ test('acceptAll: a check pointing at a vanished worktree blocks; an un-runnable 
   assert.equal(notAllowed.eligible, true);
 });
 
+test('acceptAll: a check whose cd workdir was reaped blocks instead of landing unchecked', () => {
+  const trusted = reviewTask({
+    metadata: { verify: 'cd reaped-away-dir && npm test' },
+  });
+  trusted.claimed_by = 'trusted-member';
+  trusted.workspace_root = trustRoot('trusted-member');
+  const gone = evaluateAutoAccept(trusted, { acceptAll: true });
+  assert.equal(gone.eligible, false);
+  assert.equal(gone.reason, 'verify_workdir_missing');
+});
+
 // Pre-land hygiene gate (lesson: engine-dead-exports): a dead export used to
 // surface only after landing, when the full suite's repo-hygiene ratchet went
 // red on master. The gate now runs the same detector before landing.

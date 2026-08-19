@@ -62,6 +62,27 @@ test('shell metacharacters and dangerous commands are never grantable or matchab
   assert.equal(grants.matchGrant({ command: 'npm test && rm -rf /', workspaceRoot: dir, file }), null);
 });
 
+test('an ambiguous grant-id prefix refuses to revoke instead of picking one', () => {
+  const { dir, file } = tempStore();
+  const a = grants.addGrant({ command: 'npm test', workspaceRoot: dir, file });
+  const b = grants.addGrant({ command: 'npm run lint', workspaceRoot: dir, file });
+  const shared = commonPrefix(a.grant.grant_id, b.grant.grant_id);
+  if (shared) {
+    const refused = grants.revokeGrant(shared, file);
+    assert.equal(refused.ok, false);
+    assert.match(refused.reason, /matches 2 grants/);
+    assert.ok(grants.matchGrant({ command: 'npm test', workspaceRoot: dir, file }), 'nothing was revoked');
+  }
+  const unique = grants.revokeGrant(a.grant.grant_id.slice(0, a.grant.grant_id.length - 1), file);
+  if (unique.ok) assert.equal(unique.grant.grant_id, a.grant.grant_id);
+});
+
+function commonPrefix(x, y) {
+  let i = 0;
+  while (i < x.length && i < y.length && x[i] === y[i]) i += 1;
+  return x.slice(0, i);
+}
+
 test('recordUse increments and max_uses caps redemption', () => {
   const { dir, file } = tempStore();
   const added = grants.addGrant({ command: 'npm test', workspaceRoot: dir, file });

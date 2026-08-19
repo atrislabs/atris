@@ -242,6 +242,19 @@ test('routing honors saved health policy: credit_out engines are never picked', 
   assert.match(payload.error, /No ready installed engine can fill role "executor"/);
 });
 
+test('a settled registry is never rewritten by reads, so readers cannot stomp mutations', () => {
+  const root = tmpRoot();
+  const registryLib = require('../lib/engine-registry');
+  registryLib.readEngineRegistry(root);
+  const file = registryLib.engineRegistryFile(root);
+  const before = fs.statSync(file).mtimeMs;
+  const savedText = fs.readFileSync(file, 'utf8');
+  registryLib.readEngineRegistry(root);
+  registryLib.resolveEngineForRoleRanked('executor', root);
+  assert.equal(fs.readFileSync(file, 'utf8'), savedText, 'read paths must not rewrite the policy file');
+  assert.equal(fs.statSync(file).mtimeMs, before, 'read paths must not touch the policy file');
+});
+
 test('resolve is probe-free: no child_process call happens on a settled registry', () => {
   // Routing must decide from the saved policy file alone. Seed the registry
   // once (the only moment a probe is allowed), then spy on every child_process

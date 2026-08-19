@@ -325,7 +325,9 @@ test('command prints labeled statuses and writes its receipt plus engine health'
     const registry = readEngineRegistry(root, { persist: false });
     assert.equal(registry.engines.find((engine) => engine.id === 'codex').health.status, 'ready');
     assert.equal(registry.engines.find((engine) => engine.id === 'cursor').health.status, 'error');
-    assert.equal(registry.engines.find((engine) => engine.id === 'claude').health.status, 'not_installed');
+    // A timeout is transient: 'error' keeps the engine routable instead of
+    // dropping it from routing as if the binary were missing.
+    assert.equal(registry.engines.find((engine) => engine.id === 'claude').health.status, 'error');
   } finally {
     console.log = originalLog;
     fs.rmSync(root, { recursive: true, force: true });
