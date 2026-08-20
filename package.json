@@ -1,6 +1,6 @@
 {
   "name": "atris",
-  "version": "3.53.0",
+  "version": "3.54.0",
   "description": "you say what you want in plain words. atris builds it, checks it, and shows you proof.",
   "main": "bin/atris.js",
   "bin": {
@@ -55,6 +55,7 @@
     "atris/team/opus-overnight/START_HERE.md",
     "atris/team/opus-overnight/STEERING.md",
     "atris/team/_template/MEMBER.md",
+    "atris/team/_template/SOUL.md",
     "atris/features/_templates/",
     "atris/features/company-brain-sync/",
     "atris/policies/",
