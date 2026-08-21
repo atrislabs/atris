@@ -368,8 +368,8 @@ async function invite(argv) {
   console.log(`Terminal path for them: atris join ${data.invite_code}`);
 }
 
-async function join(code) {
-  if (!code) fail('Usage: atris join <invite-code or invite link>');
+async function join(code, rest = []) {
+  if (!code) fail('Usage: atris join <invite-code or invite link> [--handle <yourhandle>]');
   const cleaned = String(code).trim().split('/').filter(Boolean).pop().toUpperCase();
 
   // Public preview first, so this works before login.
@@ -390,13 +390,29 @@ async function join(code) {
   console.log('');
   if (!inv.can_claim) fail('This invite has no claims left.');
 
+  // No account yet? Create one right here — signup is browser-free
+  // (commands/signup.js), so a headless terminal can claim in one run.
   const creds = loadCredentials();
   if (!creds || !creds.token) {
-    const url = `${getAppBaseUrl()}/invite/${cleaned}`;
-    console.log('You need an Atris account to accept it.');
-    console.log(`Sign up here: ${url}`);
-    console.log(`Then come back and run: atris login && atris join ${cleaned}`);
-    return;
+    let handle = null;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--handle' && rest[i + 1]) handle = String(rest[i + 1]).trim().toLowerCase();
+    }
+    if (!handle && process.stdout.isTTY && process.stdin.isTTY) {
+      const { promptUser } = require('../utils/auth');
+      console.log('You need an Atris account to accept it. Let\'s make one now, no browser needed.');
+      handle = (await promptUser('Pick a handle (3-30 chars, a-z and 0-9): ')).trim().toLowerCase();
+    }
+    if (!handle) {
+      console.log('You need an Atris account to accept it. No browser needed:');
+      console.log(`  atris join ${cleaned} --handle <yourhandle>`);
+      console.log(`Or sign up in a browser: ${getAppBaseUrl()}/invite/${cleaned}`);
+      return;
+    }
+    const { signupCommand } = require('./signup');
+    const signupExit = await signupCommand([handle]);
+    if (signupExit !== 0) fail('Account creation failed, so the invite was not claimed. Fix the handle and rerun.');
+    console.log('');
   }
 
   const { randomUUID } = require('crypto');
@@ -504,7 +520,7 @@ async function socialCommand(argv) {
     case 'invite':
       return invite(args.slice(1));
     case 'join':
-      return join(args[1]);
+      return join(args[1], args.slice(2));
     default:
       printHelp();
       process.exit(1);
@@ -519,7 +535,7 @@ async function friendsCommand() { return friends(process.argv[3]); }
 async function msgCommand() { return message(process.argv[3], process.argv.slice(4).join(' ')); }
 async function inboxCommand() { return inbox(); }
 async function inviteCommand() { return invite(process.argv.slice(3)); }
-async function joinCommand() { return join(process.argv[3]); }
+async function joinCommand() { return join(process.argv[3], process.argv.slice(4)); }
 
 module.exports = {
   socialCommand,
