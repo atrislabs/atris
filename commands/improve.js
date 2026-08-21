@@ -433,10 +433,19 @@ function collectImproveVitals(options = {}, deps = {}) {
   const cronFn = deps.cronInstalled || cronInstalled;
   // Per-repo slots (pr 310): the crontab marker is derived from the root, so
   // the check must ask about THIS repo's markers, not the legacy default.
-  const slotMarkers = (() => {
-    try { return pulse.resolvePulseSlot(root).markers; } catch { return undefined; }
+  const slot = (() => {
+    try { return pulse.resolvePulseSlot(root); } catch { return null; }
   })();
-  const installed = Boolean(slotMarkers ? cronFn(slotMarkers) : cronFn());
+  const slotMarkers = slot ? slot.markers : undefined;
+  const legacyCronInstalled = Boolean(slotMarkers ? cronFn(slotMarkers) : cronFn());
+  const homeDir = deps.homeDir || os.homedir();
+  const launchdInstalled = (() => {
+    if (!slot) return false;
+    const label = `com.atris.pulse.${slot.marker.toLowerCase().replace(/^atris_pulse_/, '').replace(/[^a-z0-9]+/g, '-')}`;
+    const plistPath = path.join(homeDir, 'Library', 'LaunchAgents', `${label}.plist`);
+    return fs.existsSync(plistPath);
+  })();
+  const installed = launchdInstalled || legacyCronInstalled;
   const installNudge = installed ? null : 'the scheduled improve loop is off. turn it on: atris pulse install --model claude-sonnet-5';
 
   const experimentsPath = path.join(root, '.atris', 'state', 'experiments-daily.json');
