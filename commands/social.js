@@ -247,8 +247,8 @@ function parseInviteFlags(args) {
   const flags = {};
   const rest = [];
   const known = {
-    '--for': 'name', '--email': 'email', '--company': 'company', '--role': 'role',
-    '--why': 'why', '--use': 'use', '--agent': 'agent', '--pack': 'pack',
+    '--for': 'name', '--email': 'email', '--company': 'company', '--business': 'company',
+    '--role': 'role', '--why': 'why', '--use': 'use', '--agent': 'agent', '--pack': 'pack',
     '--days': 'days',
   };
   for (let i = 0; i < args.length; i++) {
@@ -286,8 +286,30 @@ async function pickSourceAgent(nameFilter) {
   return agents[0];
 }
 
+async function inviteWizard() {
+  const { promptUser } = require('../utils/auth');
+  console.log('Personalized invite. Enter to skip any question.\n');
+  const flags = {};
+  flags.name = (await promptUser('Who is it for? (name): ')).trim();
+  if (!flags.name) {
+    console.log('\nNo name given, making a plain shareable link instead.');
+    return {};
+  }
+  flags.email = (await promptUser('Their email (locks the invite to them): ')).trim();
+  flags.company = (await promptUser('Their business (name or kind, e.g. "Rivera HVAC"): ')).trim();
+  flags.use = (await promptUser('What should their agent help with?: ')).trim();
+  flags.why = (await promptUser('Why are you reaching out? (private context): ')).trim();
+  const pack = (await promptUser('Pack to include [atris]: ')).trim();
+  flags.pack = pack || 'atris';
+  console.log('');
+  return flags;
+}
+
 async function invite(argv) {
-  const { flags } = parseInviteFlags(argv || []);
+  let { flags } = parseInviteFlags(argv || []);
+  if (Object.keys(flags).length === 0 && process.stdout.isTTY && process.stdin.isTTY) {
+    flags = await inviteWizard();
+  }
   const personal = flags.name || flags.email || flags.company || flags.why || flags.use;
 
   // Plain link (optionally carrying a pack the claimer's CLI auto-installs).
@@ -391,11 +413,25 @@ async function join(code) {
     fail(`Invite could not be claimed (${claim.status}).`);
   }
 
+  // A business on the invite gets its own local folder; the pack lands inside
+  // it. That folder is the workspace, and one command later takes it cloud.
+  let workDir = null;
+  if (inv.business) {
+    const fs = require('fs');
+    const path = require('path');
+    const slug = String(inv.business).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'business';
+    workDir = path.resolve(process.cwd(), slug);
+    if (!fs.existsSync(workDir)) fs.mkdirSync(workDir, { recursive: true });
+    console.log(`\nBusiness workspace: ${slug}/`);
+  }
+
   if (inv.pack) {
     console.log(`\nThis invite comes with the "${inv.pack}" pack. Installing...`);
     const { spawnSync } = require('child_process');
-    const result = spawnSync(process.execPath, [require('path').join(__dirname, '..', 'bin', 'atris.js'), 'pack', 'install', inv.pack], {
+    const packArgs = [require('path').join(__dirname, '..', 'bin', 'atris.js'), 'pack', 'install', inv.pack];
+    const result = spawnSync(process.execPath, packArgs, {
       stdio: 'inherit',
+      cwd: workDir || process.cwd(),
     });
     if (result.status !== 0) {
       console.log(`Install did not finish. Retry with: atris pack install ${inv.pack}`);
@@ -403,6 +439,11 @@ async function join(code) {
   }
 
   console.log('\nNext:');
+  if (workDir) {
+    const rel = require('path').basename(workDir);
+    console.log(`  cd ${rel}                     your business workspace`);
+    console.log(`  atris business init "${inv.business}"   take this folder to the cloud when ready`);
+  }
   console.log('  atris social            your overview');
   console.log('  atris people <name>     find your inviter and follow back');
 }
@@ -420,12 +461,13 @@ function printHelp() {
   atris msg <who> <text>       Send a message
   atris msg <who>              Read the conversation
   atris inbox                  All conversations
-  atris invite                 Create a signup link to share
-  atris invite --pack <slug>   Link that also installs a pack on claim
-  atris invite --for "Name" --email a@b.com --why "..." --use "..." [--agent <name>] [--pack <slug>]
+  atris invite                 Guided personalized invite (just answer questions)
+  atris invite --pack <slug>   Plain link that also installs a pack on claim
+  atris invite --for "Name" --email a@b.com --business "Their Co" --use "..." [--why "..."] [--agent <name>] [--pack <slug>]
                                Personalized invite: clones your agent for them,
                                writes the letter + email draft, locks to their email
-  atris join <code|link>       Accept an invite from your terminal`);
+  atris join <code|link>       Accept an invite; installs the pack and, for
+                               business invites, scaffolds the business folder`);
 }
 
 async function socialCommand(argv) {
