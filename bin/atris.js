@@ -3039,6 +3039,10 @@ if (command === 'init') {
   require('../commands/social').inboxCommand()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'join') {
+  require('../commands/social').joinCommand()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'invite') {
   require('../commands/social').inviteCommand()
     .then(() => process.exit(0))

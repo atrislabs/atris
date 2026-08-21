@@ -243,17 +243,168 @@ async function inbox() {
   console.log('\nRead one: atris msg <who>');
 }
 
-async function invite() {
-  const res = await api('/invites', {
-    method: 'POST',
-    body: { resource_type: 'atris_plain' },
-  });
+function parseInviteFlags(args) {
+  const flags = {};
+  const rest = [];
+  const known = {
+    '--for': 'name', '--email': 'email', '--company': 'company', '--role': 'role',
+    '--why': 'why', '--use': 'use', '--agent': 'agent', '--pack': 'pack',
+    '--days': 'days',
+  };
+  for (let i = 0; i < args.length; i++) {
+    const key = known[args[i]];
+    if (key) {
+      flags[key] = args[i + 1] || '';
+      i++;
+    } else if (args[i] === '--any-email') {
+      flags.anyEmail = true;
+    } else {
+      rest.push(args[i]);
+    }
+  }
+  return { flags, rest };
+}
+
+async function pickSourceAgent(nameFilter) {
+  const res = await api('/agent/my-agents');
+  const agents = (res.data && res.data.my_agents) || [];
+  if (agents.length === 0) {
+    fail('You have no agents to clone for a personalized invite. Create one first, or drop the personal flags for a plain link.');
+  }
+  if (nameFilter) {
+    const q = nameFilter.toLowerCase();
+    const match = agents.find((a) => (a.name || '').toLowerCase() === q)
+      || agents.find((a) => (a.name || '').toLowerCase().includes(q))
+      || (UUID_RE.test(nameFilter) ? { id: nameFilter, name: nameFilter } : null);
+    if (!match) {
+      console.error(`No agent matching "${nameFilter}". Your agents:`);
+      for (const a of agents) console.error(`  ${a.name}`);
+      process.exit(1);
+    }
+    return match;
+  }
+  return agents[0];
+}
+
+async function invite(argv) {
+  const { flags } = parseInviteFlags(argv || []);
+  const personal = flags.name || flags.email || flags.company || flags.why || flags.use;
+
+  // Plain link (optionally carrying a pack the claimer's CLI auto-installs).
+  if (!personal) {
+    const body = { resource_type: 'atris_plain' };
+    if (flags.pack) {
+      body.pre_config = { metadata: { pack_slug: flags.pack } };
+    }
+    const res = await api('/invites', { method: 'POST', body });
+    if (res.status >= 400) fail(apiErrorMessage(res, `Could not create invite (${res.status})`));
+    const data = res.data || {};
+    const url = data.share_url || `${getAppBaseUrl()}/invite/${data.invite_code}`;
+    console.log('Invite link (share it with anyone):\n');
+    console.log(`  ${url}\n`);
+    if (flags.pack) {
+      console.log(`Comes with the "${flags.pack}" pack. In a terminal they run: atris join ${data.invite_code}`);
+    } else {
+      console.log('When they sign up through it, find them with: atris people <their name>');
+    }
+    return;
+  }
+
+  // Personalized invite: clones one of your agents for them, writes the letter
+  // and an email draft, optionally locks the claim to their email.
+  const agent = await pickSourceAgent(flags.agent);
+  const body = {
+    source_agent_id: agent.id,
+    target_name: flags.name || null,
+    target_email: flags.email || null,
+    target_company: flags.company || null,
+    target_role: flags.role || null,
+    target_context: flags.why || null,
+    use_case: flags.use || null,
+    restrict_to_email: !flags.anyEmail,
+    expires_days: flags.days ? Math.max(1, Math.min(90, parseInt(flags.days, 10) || 14)) : 14,
+  };
+  if (flags.pack) body.pack_slug = flags.pack;
+
+  console.log(`Building a personalized invite (cloning "${agent.name}")...`);
+  const res = await api('/invites/personalize', { method: 'POST', body, timeoutMs: 90000 });
+  if (res.status === 402) fail('Personalized invites need a paid plan.');
   if (res.status >= 400) fail(apiErrorMessage(res, `Could not create invite (${res.status})`));
   const data = res.data || {};
-  const url = data.share_url || `${getAppBaseUrl()}/invite/${data.invite_code}`;
-  console.log('Invite link (share it with anyone):\n');
-  console.log(`  ${url}\n`);
-  console.log('When they sign up through it, find them with: atris people <their name>');
+
+  console.log(`\nInvite for ${flags.name || flags.email}${flags.pack ? ` · pack: ${flags.pack}` : ''}`);
+  console.log(`\n  ${data.share_url}\n`);
+  if (data.email_subject || data.email_body) {
+    console.log('Email draft:\n');
+    if (data.email_subject) console.log(`  Subject: ${data.email_subject}\n`);
+    for (const line of String(data.email_body || '').split('\n')) console.log(`  ${line}`);
+    console.log('');
+  }
+  if (flags.email && !flags.anyEmail) {
+    console.log(`Locked to ${flags.email}. They must sign up with that address.`);
+  }
+  console.log(`Terminal path for them: atris join ${data.invite_code}`);
+}
+
+async function join(code) {
+  if (!code) fail('Usage: atris join <invite-code or invite link>');
+  const cleaned = String(code).trim().split('/').filter(Boolean).pop().toUpperCase();
+
+  // Public preview first, so this works before login.
+  const { apiRequestJson } = require('../utils/api');
+  const preview = await apiRequestJson(`/invites/${encodeURIComponent(cleaned)}`);
+  if (preview.status === 404) fail('That invite does not exist or has expired.');
+  if (preview.status >= 400) fail(apiErrorMessage(preview, `Could not load invite (${preview.status})`));
+  const inv = preview.data || {};
+
+  const from = inv.inviter_display_name || 'someone on Atris';
+  console.log(`Invite from ${from}${inv.resource_name ? ` · ${inv.resource_name}` : ''}`);
+  if (inv.preview && inv.preview.letter) {
+    console.log('');
+    const shareUrl = `${getAppBaseUrl()}/invite/${cleaned}`;
+    const letter = String(inv.preview.letter).replace(/\{invite_url\}/g, shareUrl);
+    for (const line of letter.split('\n')) console.log(`  ${line}`);
+  }
+  console.log('');
+  if (!inv.can_claim) fail('This invite has no claims left.');
+
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    const url = `${getAppBaseUrl()}/invite/${cleaned}`;
+    console.log('You need an Atris account to accept it.');
+    console.log(`Sign up here: ${url}`);
+    console.log(`Then come back and run: atris login && atris join ${cleaned}`);
+    return;
+  }
+
+  const { randomUUID } = require('crypto');
+  const res = await api(`/invites/${encodeURIComponent(cleaned)}/claim`, {
+    method: 'POST',
+    body: { metadata: { source: 'cli' } },
+    headers: { 'Idempotency-Key': randomUUID() },
+  });
+  if (res.status >= 400) fail(apiErrorMessage(res, `Could not claim invite (${res.status})`));
+  const claim = res.data || {};
+  if (claim.status === 'claimed' || claim.status === 'already_claimed' || claim.status === 'already_member') {
+    console.log(claim.status === 'claimed' ? `You're in. Connected through ${from}'s invite.` : 'Already claimed. You are in.');
+  } else {
+    fail(`Invite could not be claimed (${claim.status}).`);
+  }
+
+  if (inv.pack) {
+    console.log(`\nThis invite comes with the "${inv.pack}" pack. Installing...`);
+    const { spawnSync } = require('child_process');
+    const result = spawnSync(process.execPath, [require('path').join(__dirname, '..', 'bin', 'atris.js'), 'pack', 'install', inv.pack], {
+      stdio: 'inherit',
+    });
+    if (result.status !== 0) {
+      console.log(`Install did not finish. Retry with: atris pack install ${inv.pack}`);
+    }
+  }
+
+  console.log('\nNext:');
+  console.log('  atris social            your overview');
+  console.log('  atris people <name>     find your inviter and follow back');
 }
 
 function printHelp() {
@@ -269,7 +420,12 @@ function printHelp() {
   atris msg <who> <text>       Send a message
   atris msg <who>              Read the conversation
   atris inbox                  All conversations
-  atris invite                 Create a signup link to share`);
+  atris invite                 Create a signup link to share
+  atris invite --pack <slug>   Link that also installs a pack on claim
+  atris invite --for "Name" --email a@b.com --why "..." --use "..." [--agent <name>] [--pack <slug>]
+                               Personalized invite: clones your agent for them,
+                               writes the letter + email draft, locks to their email
+  atris join <code|link>       Accept an invite from your terminal`);
 }
 
 async function socialCommand(argv) {
@@ -304,7 +460,9 @@ async function socialCommand(argv) {
     case 'inbox':
       return inbox();
     case 'invite':
-      return invite();
+      return invite(args.slice(1));
+    case 'join':
+      return join(args[1]);
     default:
       printHelp();
       process.exit(1);
@@ -318,7 +476,8 @@ async function unfollowCommand() { return follow(process.argv.slice(3).join(' ')
 async function friendsCommand() { return friends(process.argv[3]); }
 async function msgCommand() { return message(process.argv[3], process.argv.slice(4).join(' ')); }
 async function inboxCommand() { return inbox(); }
-async function inviteCommand() { return invite(); }
+async function inviteCommand() { return invite(process.argv.slice(3)); }
+async function joinCommand() { return join(process.argv[3]); }
 
 module.exports = {
   socialCommand,
@@ -329,4 +488,5 @@ module.exports = {
   msgCommand,
   inboxCommand,
   inviteCommand,
+  joinCommand,
 };
