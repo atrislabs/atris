@@ -130,7 +130,8 @@ rg "vercelCommand|vercel cli wrapper|vercel help is workspace-free" bin/atris.js
 rg "supabaseCommand|supabase cli wrapper|supabase help is workspace-free" bin/atris.js commands/supabase.js test/official-cli-integrations.test.js # supabase official cli wrapper: supabase binary/auth detection plus status/db push/functions passthrough
 rg "linearCommand|linear cli wrapper|linear help is workspace-free" bin/atris.js commands/linear.js test/official-cli-integrations.test.js # linear official cli wrapper: linear binary/auth detection plus issue list/create/view/update passthrough
 rg "stripeCommand|stripe cli wrapper|stripe help is workspace-free" bin/atris.js commands/stripe.js test/official-cli-integrations.test.js # stripe official cli wrapper: stripe binary/auth detection plus listen/trigger/products passthrough
-rg "ensureMemberBundle|memberMarkdown|memberCommand|memberGoal|memberTick|collectWakeEvidence|collectProblemDiscoveryEvidence|configuredProblemSignalSources|seedAutonomousProblemGoal|scoredWakeCandidates|proposalForGoal|memberStatus|memberBlock|memberReview|memberPush|memberPull" lib/member-scaffold.js commands/member.js test/member-scaffold.test.js  # Complete member identity bundle including default MEMBER.md, autonomous problem discovery, configurable external signal roots/files, adaptive wake evidence/scoring, optional Atris2 proposal generation, status/block/review, and cloud sync
+rg "ensureMemberBundle|memberBundlePresent|memberInstall|memberMarkdown|memberCommand|memberGoal|memberTick|collectWakeEvidence|collectProblemDiscoveryEvidence|configuredProblemSignalSources|seedAutonomousProblemGoal|scoredWakeCandidates|proposalForGoal|memberStatus|memberBlock|memberReview|memberPush|memberPull" lib/member-scaffold.js commands/member.js test/member-scaffold.test.js  # Complete member identity bundle including default MEMBER.md, `atris member install <slug>`, autonomous problem discovery, configurable external signal roots/files, adaptive wake evidence/scoring, optional Atris2 proposal generation, status/block/review, and cloud sync
+rg "installCommand|ensureWorkspaceBrain|workspaceBrainPresent|command === 'install'|command === 'workspace'" commands/install.js lib/workspace-scaffold.js commands/init.js bin/atris.js lib/known-commands.js test/member-scaffold.test.js  # Install verbs: `atris member install <slug>` writes the nine-piece MEMBER bundle; `atris install` / `atris workspace install` writes missing atris/ brain files from the init scaffold and never overwrites
 rg "pullAtris|pullBusiness" commands/pull.js  # Cloud pull (journals + businesses)
 rg "pushAtris|buildPushChangePlan|buildPushUploadBatches|sync?timeout" commands/push.js test/watch-alias.test.js  # Cloud push: manifest-hash skip, small upload batching through /sync, delete guard, and S5 regression
 rg "cloudAtris|cloudClean|collectCloudOrphans|parseCloudCleanArgs|showOrphans" commands/cloud.js commands/business-sync.js bin/atris.js lib/known-commands.js test/cloud-clean.test.js  # Cloud clean: list/delete cloud files not present locally, and sync --status --show-orphans
@@ -209,6 +210,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 **Purpose:** Creates atris/ folder structure with placeholders, wiki scaffold, and auto-detects project type
 
 - **Entry point:** `commands/init.js` (initAtris function)
+- **Brain install:** `atris install` / `atris workspace install` (`commands/install.js`, `lib/workspace-scaffold.js`) writes missing MAP.md, TODO.md, now.md, atris.md, logs/ dated journal, wiki/index.md, and team/ without overwriting
 - **Project Detection:** `commands/init.js:12-166` (detectProjectContext)
 - **Pattern Injection:** `commands/init.js:168-252` (injectProjectPatterns)
 - **Creates:**
@@ -662,6 +664,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Goal state:** `atris/team/<member>/goals.json` (`atris.member_goals.v1`)
 - **Human readout:** `atris/team/<member>/goals.md`
 - **Learning log:** `atris/team/<member>/logs/YYYY-MM-DD.md`
+- **Install:** `atris member install <slug>` writes only missing MEMBER bundle files into `atris/team/<slug>/` and never overwrites; a complete folder prints `MEMBER already installed for <slug>`
 - **Loop:** `atris member goal` -> `atris member tick` -> `atris member status` -> `atris member review --accept|--discard --proof ... --value 1..5`
 - **Mission run:** `atris member run <member> "mission text" --minutes N` starts a budgeted mission in an isolated worktree by default; `--mission <id>` keeps the old active-mission run path.
 - **Blocked path:** `atris member block <member> <experiment> --reason ... --ask ... --orchestrator ...`; later ticks pause instead of creating more work until the ask is resolved.

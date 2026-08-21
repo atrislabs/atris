@@ -491,6 +491,7 @@ function showHelp() {
   console.log('Setup:');
   console.log('  setup      - Guided first-time setup (login, pick business, pull)');
   console.log('  init       - Initialize Atris in current project (--yes skips prompts)');
+  console.log('  install    - Install the atris/ brain if missing (alias: workspace install)');
   console.log('  update     - Update local files to latest version');
   console.log('  upgrade    - Install latest Atris from npm');
   console.log('');
@@ -1787,6 +1788,10 @@ if (command === 'init') {
       console.error(`✗ Error: ${error.message || error}`);
       process.exit(1);
     });
+} else if (command === 'install' || command === 'workspace') {
+  const { installCommand } = require('../commands/install');
+  const code = installCommand(process.argv.slice(3), { verb: command });
+  process.exit(typeof code === 'number' ? code : 0);
 } else if (command === '_start') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {

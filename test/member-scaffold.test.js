@@ -4,7 +4,20 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { ensureMemberBundle, memberMarkdown } = require('../lib/member-scaffold');
+const { spawnSync } = require('node:child_process');
+
+const { ensureMemberBundle, memberMarkdown, memberBundlePresent } = require('../lib/member-scaffold');
+
+const repoRoot = path.resolve(__dirname, '..');
+const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+
+function runCli(workspace, args) {
+  return spawnSync(process.execPath, [cliPath, ...args], {
+    cwd: workspace,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+}
 
 function withTempMember(run) {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-scaffold-'));
@@ -68,4 +81,70 @@ test('ensureMemberBundle leaves an existing MEMBER.md untouched', () => withTemp
   assertCompleteBundle(memberDir, 'orb');
   assert.equal(fs.readFileSync(path.join(memberDir, 'MEMBER.md'), 'utf8'), original);
   assert.equal(result.created.includes('MEMBER.md'), false);
+  assert.equal(memberBundlePresent(memberDir), true);
+}));
+
+function withTempWorkspace(run) {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-install-verbs-'));
+  try {
+    return run(workspace);
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+}
+
+test('member install writes the full bundle into a temp dir', () => withTempWorkspace(workspace => {
+  const result = runCli(workspace, ['member', 'install', 'orb']);
+
+  assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  const memberDir = path.join(workspace, 'atris', 'team', 'orb');
+  assertCompleteBundle(memberDir, 'orb');
+  assert.match(result.stdout, /^atris\/team\/orb\/MEMBER\.md$/m);
+  assert.match(result.stdout, /^atris\/team\/orb\/SOUL\.md$/m);
+  assert.match(result.stdout, /^atris\/team\/orb\/MISSION\.md$/m);
+  assert.match(result.stdout, /MEMBER installed for orb\.\n$/);
+}));
+
+test('member install second run is a no-op', () => withTempWorkspace(workspace => {
+  const first = runCli(workspace, ['member', 'install', 'guide']);
+  assert.equal(first.status, 0, `stdout:\n${first.stdout}\nstderr:\n${first.stderr}`);
+  const memberDir = path.join(workspace, 'atris', 'team', 'guide');
+  const before = fs.readFileSync(path.join(memberDir, 'MEMBER.md'), 'utf8');
+
+  const second = runCli(workspace, ['member', 'install', 'guide']);
+  assert.equal(second.status, 0, `stdout:\n${second.stdout}\nstderr:\n${second.stderr}`);
+  assert.equal(second.stdout, 'MEMBER already installed for guide\n');
+  assert.equal(fs.readFileSync(path.join(memberDir, 'MEMBER.md'), 'utf8'), before);
+}));
+
+test('atris install writes the brain files', () => withTempWorkspace(workspace => {
+  const result = runCli(workspace, ['install']);
+
+  assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  const atrisDir = path.join(workspace, 'atris');
+  for (const fileName of ['MAP.md', 'TODO.md', 'now.md', 'atris.md']) {
+    assert.ok(fs.statSync(path.join(atrisDir, fileName)).isFile(), `${fileName} should exist`);
+  }
+  assert.ok(fs.statSync(path.join(atrisDir, 'wiki', 'index.md')).isFile());
+  assert.ok(fs.statSync(path.join(atrisDir, 'team')).isDirectory());
+  const logsDir = path.join(atrisDir, 'logs');
+  const yearDir = path.join(logsDir, String(new Date().getFullYear()));
+  const today = new Date().toISOString().split('T')[0];
+  assert.ok(fs.statSync(path.join(yearDir, `${today}.md`)).isFile(), 'first dated log should exist');
+  assert.match(result.stdout, /^atris\/MAP\.md$/m);
+  assert.doesNotMatch(result.stdout, /Atris already installed/);
+}));
+
+test('atris install second run is a no-op', () => withTempWorkspace(workspace => {
+  const first = runCli(workspace, ['workspace', 'install']);
+  assert.equal(first.status, 0, `stdout:\n${first.stdout}\nstderr:\n${first.stderr}`);
+  const mapPath = path.join(workspace, 'atris', 'MAP.md');
+  const original = fs.readFileSync(mapPath, 'utf8');
+  fs.writeFileSync(mapPath, '# keep this map\n', 'utf8');
+
+  const second = runCli(workspace, ['install']);
+  assert.equal(second.status, 0, `stdout:\n${second.stdout}\nstderr:\n${second.stderr}`);
+  assert.equal(second.stdout, 'Atris already installed.\n');
+  assert.equal(fs.readFileSync(mapPath, 'utf8'), '# keep this map\n');
+  assert.notEqual(fs.readFileSync(mapPath, 'utf8'), original);
 }));

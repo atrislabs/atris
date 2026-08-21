@@ -9,6 +9,7 @@ const { runAliveTick } = require('../lib/member-alive');
 const { defaultObjectiveRunner } = require('../lib/default-runner');
 const { readJson, writeJson } = require('../lib/json-file');
 const { hasFlag, readFlag, readNumberFlag } = require('../lib/arg-parser');
+const { ensureMemberBundle, memberBundlePresent } = require('../lib/member-scaffold');
 
 function findWorkspaceBusinessId(startDir = process.cwd()) {
   let dir = path.resolve(startDir);
@@ -4117,6 +4118,42 @@ tools: []
     console.log(`      add context docs to team/${name}/context/`);
     console.log(`      run "atris member push ${name}" to create a cloud agent`);
   }
+}
+
+function printMemberInstallUsage(stream = console.log) {
+  stream('Usage: atris member install <slug>');
+}
+
+function memberInstall(slug) {
+  if (slug === '--help' || slug === '-h') {
+    printMemberInstallUsage();
+    return;
+  }
+  if (!slug || String(slug).startsWith('-')) {
+    printMemberInstallUsage(console.error);
+    process.exit(1);
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(slug)) {
+    console.error('Member name must be a local slug: letters, numbers, dots, underscores, or dashes.');
+    process.exit(1);
+  }
+
+  const memberDir = path.join(process.cwd(), 'atris', 'team', slug);
+  const already = memberBundlePresent(memberDir);
+  fs.mkdirSync(path.join(memberDir, 'logs'), { recursive: true });
+  if (already) {
+    console.log(`MEMBER already installed for ${slug}`);
+    return;
+  }
+
+  const { created } = ensureMemberBundle(memberDir, {
+    name: slug,
+    source: 'install',
+  });
+  for (const rel of created) {
+    console.log(`atris/team/${slug}/${rel.split(path.sep).join('/')}`);
+  }
+  console.log(`MEMBER installed for ${slug}.`);
 }
 
 // --- ACTIVATE subcommand ---
@@ -9010,7 +9047,7 @@ async function memberCommand(subcommand, ...args) {
   // Subcommands that take a member name as args[0] otherwise treat `--help` as
   // a name and error with "Member '--help' not found". `create`/`new` handle
   // help themselves (with subcommand-specific usage) — leave those alone.
-  const HELP_AWARE_SUBCOMMANDS = new Set(['create', 'new', 'run']);
+  const HELP_AWARE_SUBCOMMANDS = new Set(['create', 'new', 'run', 'install']);
   if (!HELP_AWARE_SUBCOMMANDS.has(subcommand) && (args[0] === '-h' || args[0] === '--help')) {
     subcommand = undefined;
   }
@@ -9021,6 +9058,8 @@ async function memberCommand(subcommand, ...args) {
     case 'create':
     case 'new':
       return memberCreate(args[0], ...args.slice(1));
+    case 'install':
+      return memberInstall(args[0]);
     case 'activate':
       return memberActivate(args[0]);
     case 'upgrade':
@@ -9082,6 +9121,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('');
       console.log('Subcommands:');
       console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
+      console.log('  install <slug>      Install the full MEMBER bundle if missing; never overwrite');
       console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
       console.log('  list                Show all team members');
       console.log('  activate <name>     Symlink member skills, show context and permissions');
@@ -9116,6 +9156,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('');
       console.log('Examples:');
       console.log('  atris member create sdr --role="Sales Development Rep"');
+      console.log('  atris member install orb');
       console.log('  atris member list');
       console.log('  atris member activate navigator');
       console.log('  atris member upgrade executor');
