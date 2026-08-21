@@ -407,6 +407,18 @@ function buildBenchmarkArtifact(name, packDir, options) {
   return { artifact, score };
 }
 
+function recordExperimentRun(experimentId) {
+  const root = process.cwd();
+  const state = daily.readDailyState(root);
+  const today = new Date().toISOString().slice(0, 10);
+  state.last_run_date = today;
+  if (!Array.isArray(state.history)) state.history = [];
+  if (!state.history.includes(experimentId)) {
+    state.history.push(experimentId);
+  }
+  daily.writeDailyState(root, state);
+}
+
 function experimentsRun(name, ...args) {
   const { experimentsDir } = ensureExperimentsFramework();
 
@@ -434,6 +446,7 @@ function experimentsRun(name, ...args) {
       return;
     }
     runPython(loopPath, [], packDir);
+    recordExperimentRun(name);
     return;
   }
 
@@ -447,6 +460,7 @@ function experimentsRun(name, ...args) {
   const { artifact, score } = buildBenchmarkArtifact(name, packDir, options);
   const artifactPath = writeArtifact(packDir, artifact);
   appendResultsRow(path.join(packDir, 'results.tsv'), artifactPath, artifact, score);
+  recordExperimentRun(name);
 
   console.log(`✓ Endstate ${artifact.track} run recorded`);
   console.log(`  artifact: ${path.relative(process.cwd(), artifactPath)}`);
