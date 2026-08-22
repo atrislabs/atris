@@ -1581,8 +1581,20 @@ test('pack install accepts registry slugs and https zip urls', async () => {
   }
 });
 
-test('pack install points unpaid priced slugs to their page and keeps other errors raw', async () => {
+function paidPackBuyerLines(slug, { name = slug, price } = {}) {
+  const label = String(name || slug).trim().toLowerCase();
+  const priceSuffix = price ? ` (${price})` : '';
+  return [
+    `this pack is paid: ${label}${priceSuffix}.`,
+    'buy it on its page, then run this again.',
+    `https://app.test/packs/${slug}`,
+    'already bought it? run atris login',
+  ];
+}
+
+test('pack install tells unpaid buyers the price and does not write an empty install', async () => {
   const dir = makeTempDir();
+  const target = path.join(dir, 'from-paid');
   const errors = [];
   const originalError = console.error;
   try {
@@ -1590,21 +1602,58 @@ test('pack install points unpaid priced slugs to their page and keeps other erro
     const deps = {
       getAppBaseUrl: () => 'https://app.test/',
       loadCredentials: () => ({ token: 'test-token' }),
-      httpRequest: async () => jsonResponse(402, { error: 'Purchase required.' }),
+      httpRequest: async () => jsonResponse(200, {
+        paid: true,
+        entitled: false,
+        name: 'G Brain',
+        slug: 'paid-pack',
+        price_cents: 2500,
+        checkout_hint: 'POST /api/pack/purchases/checkout',
+      }),
     };
 
-    assert.equal(await installPack(['paid-pack'], dir, { deps }), 1);
-    assert.deepEqual(errors, [
-      'this pack is paid. buy it on its page, then run this again.',
-      'https://app.test/packs/paid-pack',
-    ]);
+    assert.equal(await installPack(['paid-pack', '--dir', target], dir, { deps }), 1);
+    assert.deepEqual(errors, paidPackBuyerLines('paid-pack', { name: 'G Brain', price: '$25' }));
+    assert.equal(fs.existsSync(target), false);
+    assert.equal(fs.existsSync(path.join(dir, 'paid-pack')), false);
+    assert.equal(fs.readdirSync(dir).length, 0);
+
+    errors.length = 0;
+    deps.httpRequest = async () => ({ status: 200, body: Buffer.alloc(0) });
+    assert.equal(await installPack(['paid-pack', '--dir', target], dir, { deps }), 1);
+    assert.deepEqual(errors, paidPackBuyerLines('paid-pack'));
+    assert.equal(fs.existsSync(target), false);
+
+    errors.length = 0;
+    deps.httpRequest = async () => jsonResponse(403, { error: 'Purchase required.', priceCents: 500 });
+    assert.equal(await installPack(['paid-pack', '--dir', target], dir, { deps }), 1);
+    assert.deepEqual(errors, paidPackBuyerLines('paid-pack', { price: '$5' }));
+    assert.equal(fs.existsSync(target), false);
+
+    errors.length = 0;
+    deps.httpRequest = async () => jsonResponse(402, { error: 'Purchase required.' });
+    assert.equal(await installPack(['paid-pack', '--dir', target], dir, { deps }), 1);
+    assert.deepEqual(errors, paidPackBuyerLines('paid-pack'));
+    assert.equal(fs.existsSync(target), false);
+
+    errors.length = 0;
+    deps.httpRequest = async () => jsonResponse(402, {
+      slug: 'paid-pack',
+      price_cents: 500,
+      currency: 'usd',
+      checkout_hint: 'POST /api/pack/purchases/checkout',
+    });
+    assert.equal(await installPack(['paid-pack', '--dir', target], dir, { deps }), 1);
+    assert.deepEqual(errors, paidPackBuyerLines('paid-pack', { price: '$5' }));
+    assert.equal(fs.existsSync(target), false);
 
     deps.httpRequest = async () => jsonResponse(500, { error: 'service unavailable' });
     await assert.rejects(
-      () => installPack(['broken-pack'], dir, { deps }),
+      () => installPack(['broken-pack', '--dir', target], dir, { deps }),
       /service unavailable/,
     );
-    assert.equal(errors.length, 2);
+    assert.equal(errors.length, 4);
+    assert.equal(fs.existsSync(target), false);
   } finally {
     console.error = originalError;
     cleanupTempDir(dir);
@@ -2100,8 +2149,10 @@ test('pack pull points unpaid priced slugs to their page', async () => {
 
     assert.equal(result, 1);
     assert.deepEqual(errors, [
-      'this pack is paid. buy it on its page, then run this again.',
+      'this pack is paid: paid-pack.',
+      'buy it on its page, then run this again.',
       'https://app.test/packs/paid-pack',
+      'already bought it? run atris login',
     ]);
   } finally {
     console.error = originalError;
