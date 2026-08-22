@@ -745,6 +745,74 @@ async function postPackToRegistry(manifest, zipBuffer, deps = {}) {
   return parsed.data;
 }
 
+function paidPackBarrierFromResponse(response, slug) {
+  const status = Number(response && response.status) || 0;
+  if (status === 404) return null;
+
+  const rawBody = response && response.body;
+  const body = !rawBody
+    ? Buffer.alloc(0)
+    : (Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(String(rawBody)));
+  const empty = body.length === 0;
+  const parsed = parseJsonBody(body);
+  const data = parsed.data && typeof parsed.data === 'object' && !Array.isArray(parsed.data)
+    ? parsed.data
+    : {};
+  const priceRaw = data.price_cents ?? data.priceCents;
+  const priceCents = Number(priceRaw);
+  const hasPrice = Number.isFinite(priceCents) && priceCents > 0;
+  const nameSource = [data.name, data.title, data.slug, slug]
+    .find((value) => typeof value === 'string' && value.trim());
+  const details = {
+    name: String(nameSource || slug || 'this pack').trim().toLowerCase(),
+    priceCents: hasPrice ? Math.round(priceCents) : null,
+  };
+
+  const entitled = data.entitled === true
+    || data.has_access === true
+    || data.hasAccess === true
+    || data.is_owner === true
+    || data.isOwner === true;
+  const unentitled = data.entitled === false
+    || data.has_access === false
+    || data.hasAccess === false
+    || data.entitlement === false
+    || data.entitlement === null;
+  const message = String(data.error || data.message || data.detail || '');
+  const looksLikeZip = body.length >= 4 && body[0] === 0x50 && body[1] === 0x4b;
+  const paid = status === 402
+    || data.paid === true
+    || data.is_paid === true
+    || data.isPaid === true
+    || data.purchase_required === true
+    || typeof data.checkout_hint === 'string'
+    || /purchase required/i.test(message)
+    || (hasPrice && (unentitled || !looksLikeZip));
+
+  if (entitled && status >= 200 && status < 300 && looksLikeZip) return null;
+  if (status === 402 || status === 403) return details;
+  if (status >= 200 && status < 300 && empty) return details;
+  if (paid && !entitled && !looksLikeZip) return details;
+  return null;
+}
+
+function printPaidPackBarrier(slug, details = {}, deps = {}) {
+  const name = String(details.name || slug || 'this pack').trim().toLowerCase() || 'this pack';
+  const cents = Number(details.priceCents);
+  const price = Number.isFinite(cents) && cents > 0 ? ` (${formatSalesDollars(cents)})` : '';
+  console.error(`this pack is paid: ${name}${price}.`);
+  console.error('buy it on its page, then run this again.');
+  console.error(registryUrl(`/packs/${encodeURIComponent(slug)}`, deps));
+  console.error('already bought it? run atris login');
+}
+
+function throwPaidPackBarrier(barrier, status) {
+  const error = new Error('this pack is paid');
+  error.status = status;
+  error.paidPack = barrier;
+  throw error;
+}
+
 async function fetchRegistryZip(slug, deps = {}) {
   const url = registryUrl(`/api/pack/registry/${encodeURIComponent(slug)}`, deps);
   let result;
@@ -756,8 +824,10 @@ async function fetchRegistryZip(slug, deps = {}) {
     throw new Error('could not reach pack registry. check your connection and try again.');
   }
   const { response, authenticated } = result;
+  if (response.status === 404) throw registryNotFoundError(slug, authenticated);
+  const barrier = paidPackBarrierFromResponse(response, slug);
+  if (barrier) throwPaidPackBarrier(barrier, response.status);
   if (response.status < 200 || response.status >= 300) {
-    if (response.status === 404) throw registryNotFoundError(slug, authenticated);
     const error = new Error(responseErrorText(response, `registry lookup failed for ${slug} with status ${response.status}`));
     error.status = response.status;
     throw error;
@@ -772,9 +842,8 @@ async function fetchRegistryZipForUser(slug, deps = {}) {
   try {
     return await fetchRegistryZip(slug, deps);
   } catch (error) {
-    if (error.status !== 402) throw error;
-    console.error('this pack is paid. buy it on its page, then run this again.');
-    console.error(registryUrl(`/packs/${encodeURIComponent(slug)}`, deps));
+    if (!error || !error.paidPack) throw error;
+    printPaidPackBarrier(slug, error.paidPack, deps);
     return null;
   }
 }
@@ -2734,16 +2803,21 @@ async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
     const headers = credentials && credentials.token ? { Authorization: `Bearer ${credentials.token}` } : {};
     response = await request(url, { method: 'GET', headers });
   }
-  if (response.status < 200 || response.status >= 300) {
-    if (origin.type === 'registry' && response.status === 404) {
+  if (origin.type === 'registry') {
+    if (response.status === 404) {
       throw registryNotFoundError(origin.slug, authenticated);
     }
-    if (origin.type === 'registry' && response.status === 402) {
-      console.error('this pack is paid. buy it on its page, then run this again.');
-      console.error(registryUrl(`/packs/${encodeURIComponent(origin.slug)}`, deps));
+    const barrier = paidPackBarrierFromResponse(response, origin.slug);
+    if (barrier) {
+      printPaidPackBarrier(origin.slug, barrier, deps);
       return 1;
     }
+  }
+  if (response.status < 200 || response.status >= 300) {
     throw new Error(`download failed with status ${response.status}`);
+  }
+  if (!response.body || response.body.length === 0) {
+    throw new Error('download returned an empty zip');
   }
 
   const entries = readZipBuffer(response.body);
