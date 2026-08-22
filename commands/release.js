@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
+const { runGit } = require('../lib/checkout-sync');
 
 /**
  * atris release [--dry-run] - Tag a release, create GitHub release, draft /launch post
@@ -181,4 +182,103 @@ function printLaunchPost(version, commitLines) {
   console.log('--- end launch post ---');
 }
 
-module.exports = { releaseAtris };
+function readPackageVersion(cwd) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+    return typeof pkg.version === 'string' && pkg.version.trim() ? pkg.version.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function runFullTestSuite(cwd) {
+  return spawnSync('npm', ['test'], {
+    cwd,
+    env: { ...process.env, CI: 'true' },
+    stdio: 'inherit',
+  });
+}
+
+function gitStdout(result) {
+  return result && result.status === 0 ? String(result.stdout || '').trim() : '';
+}
+
+/**
+ * atris release preflight
+ *
+ * Enforced checks before pushing a v* tag from master. Prints pass/fail for
+ * each check and exits nonzero if any fail. Skips the test suite when earlier
+ * git checks already failed so a bad checkout does not burn a full run.
+ */
+function releasePreflight({ cwd = process.cwd(), runTests = runFullTestSuite } = {}) {
+  let failed = false;
+
+  const branchResult = runGit(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+  const branch = gitStdout(branchResult);
+  if (branch === 'master') {
+    console.log('pass: current branch is master');
+  } else {
+    failed = true;
+    console.log(`fail: current branch is ${branch || 'unknown'}, need master`);
+  }
+
+  const statusResult = runGit(['status', '--porcelain'], cwd);
+  if (statusResult.status === 0 && String(statusResult.stdout || '').trim() === '') {
+    console.log('pass: working tree is clean');
+  } else {
+    failed = true;
+    console.log('fail: working tree is not clean');
+  }
+
+  const localMaster = gitStdout(runGit(['rev-parse', 'master'], cwd));
+  const originMaster = gitStdout(runGit(['rev-parse', 'origin/master'], cwd));
+  if (!localMaster) {
+    failed = true;
+    console.log('fail: local master is missing');
+  } else if (!originMaster) {
+    failed = true;
+    console.log('fail: origin/master is missing');
+  } else if (localMaster !== originMaster) {
+    failed = true;
+    console.log('fail: local master does not match origin/master');
+  } else {
+    console.log('pass: local master matches origin/master');
+  }
+
+  const version = readPackageVersion(cwd);
+  if (!version) {
+    failed = true;
+    console.log('fail: package.json version is missing');
+  } else {
+    const tagName = `v${version}`;
+    const tagList = gitStdout(runGit(['tag', '--list', tagName], cwd));
+    if (tagList) {
+      failed = true;
+      console.log(`fail: tag ${tagName} already exists`);
+    } else {
+      console.log(`pass: no tag ${tagName}`);
+    }
+  }
+
+  if (failed) {
+    console.log('skip: test suite (earlier checks failed)');
+  } else {
+    const testResult = runTests(cwd);
+    if (testResult && testResult.error) {
+      failed = true;
+      console.log(`fail: test suite could not run (${testResult.error.message})`);
+    } else if (testResult && testResult.status === 0) {
+      console.log('pass: test suite');
+    } else {
+      const code = testResult && typeof testResult.status === 'number' ? testResult.status : 1;
+      failed = true;
+      console.log(`fail: test suite exited ${code}`);
+    }
+  }
+
+  console.log('');
+  console.log(failed ? 'release preflight failed' : 'release preflight passed');
+  return failed ? 1 : 0;
+}
+
+module.exports = { releaseAtris, releasePreflight, runFullTestSuite };
