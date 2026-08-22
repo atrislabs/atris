@@ -237,3 +237,30 @@ test('improve vitals omit the guarantee gauge when there is no git history', () 
     cleanup(cwd);
   }
 });
+
+test('shared journal files never count as revision overlap', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 2 * 24 * HOUR;
+  try {
+    fs.mkdirSync(path.join(cwd, 'atris', 'logs', '2026'), { recursive: true });
+    // agent lands a journal-only commit; a human writes the same journal later
+    commitFile(cwd, 'atris/logs/2026/2026-08-21.md', 'agent receipt\n', 'bot journals a receipt', { bot: true, atMs: base });
+    commitFile(cwd, 'atris/logs/2026/2026-08-21.md', 'agent receipt\nhuman note\n', 'human journals too', { atMs: base + HOUR });
+    const journalOnly = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(journalOnly.revised, 0);
+
+    // a landing that touches product code AND the journal is only revised
+    // when the human touches the product file
+    commitFile(cwd, 'b.js', 'v1\n', 'bot lands feature b', { bot: true, atMs: base + 2 * HOUR });
+    commitFile(cwd, 'atris/logs/2026/2026-08-21.md', 'agent receipt\nhuman note\nmore\n', 'human journals again', { atMs: base + 3 * HOUR });
+    const mixed = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(mixed.revised, 0);
+
+    commitFile(cwd, 'b.js', 'v2\n', 'human fixes feature b', { atMs: base + 4 * HOUR });
+    const productRevised = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(productRevised.revised, 1);
+  } finally {
+    cleanup(cwd);
+  }
+});

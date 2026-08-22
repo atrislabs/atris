@@ -943,6 +943,24 @@ function formatImproveReport(result = {}) {
 
 const REVISIONS_SCHEMA = 'atris.improve_revisions.v1';
 const REVISION_WINDOW_HOURS = 72;
+// Shared journal and state files are touched by agents and humans alike as a
+// matter of routine (daily logs, now.md, run receipts), so overlap there says
+// nothing about the quality of a landing. On 2026-08-21 half the "revisions"
+// in a live reading were journal commits following journal commits. Only
+// product-file overlap counts.
+const REVISION_IGNORED_FILES = [
+  /^atris\/logs\//,
+  /^atris\/runs\//,
+  /^atris\/team\/[^/]+\/(?:logs|now\.md)/,
+  /^atris\/(?:now|thinking|TODO)\.md$/,
+  /^atris\/brain\//,
+  /^atris\/status\//,
+  /^\.atris\//,
+];
+
+function isRevisionSignalFile(file) {
+  return !REVISION_IGNORED_FILES.some((re) => re.test(String(file || '')));
+}
 const REVISION_WINDOW_MS = REVISION_WINDOW_HOURS * 60 * 60 * 1000;
 const AGENT_TRAILER_MARKERS = [
   'atris-builder[bot]',
@@ -1050,7 +1068,7 @@ function collectRevisionSignals(root, options = {}) {
 
   const revisions = [];
   for (const landing of landings) {
-    const landedFiles = new Set(filesOf(landing));
+    const landedFiles = new Set(filesOf(landing).filter(isRevisionSignalFile));
     if (!landedFiles.size) continue;
     const revisedBy = [];
     const touched = new Set();
