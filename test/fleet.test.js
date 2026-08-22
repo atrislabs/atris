@@ -799,18 +799,19 @@ test('fleet landings ship with an explicit master target, never the launcher bra
   assert.ok(args.join(' ').includes('(F-9, built by cursor)'));
 });
 
-test('clipHeadTail keeps MODULE_NOT_FOUND head with a stack tail', () => {
+test('headTail keeps MODULE_NOT_FOUND head with a stack tail', () => {
   const head = "Error: Cannot find module 'missing-mod'\nMODULE_NOT_FOUND: cannot find missing-mod\n";
   const stack = Array.from({ length: 80 }, (_, i) =>
     `    at Object.<anonymous> (node:internal/modules/cjs/loader:${1000 + i}:10)`
   ).join('\n');
   const text = head + stack;
-  const clipped = fleet.clipHeadTail(text, { head: 400, tail: 300 });
+  const clipped = fleet.headTail(text, 400, 500);
   assert.match(clipped, /MODULE_NOT_FOUND: cannot find missing-mod/);
   assert.match(clipped, /node:internal\/modules\/cjs\/loader/);
-  assert.ok(clipped.includes('\n...\n'));
+  assert.ok(clipped.includes(' … '));
   assert.ok(clipped.length < text.length);
-  assert.equal(fleet.clipHeadTail('short'), 'short');
+  assert.equal(fleet.headTail('short'), 'short');
+  assert.equal(fleet.clipHeadTail(text, { head: 400, tail: 500 }), clipped);
 });
 
 test('runFleetFlight ship failure receipt keeps the failing module at the head', async () => {
@@ -846,6 +847,7 @@ test('runFleetFlight ship failure receipt keeps the failing module at the head',
     assert.equal(flight.landed.length, 0);
     assert.equal(flight.paused.length, 1);
     assert.equal(flight.paused[0].stage, 'ship');
+    assert.doesNotMatch(shipErr.slice(-500), /MODULE_NOT_FOUND/, 'a tail-only clip would have dropped the cause');
     assert.match(flight.paused[0].detail, /MODULE_NOT_FOUND: cannot find atris-ship-helper/);
     assert.match(flight.paused[0].detail, /node:internal\/modules\/cjs\/loader/);
     const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
