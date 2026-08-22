@@ -543,7 +543,7 @@ function showHelp() {
   console.log('    atris autoland tick   # second check runs, task lands');
   console.log('  mission    - Goal + loop + member owner + verifier + receipt; --budget quick|long|deep sets bounded tiers');
   console.log('  decide     - Answer open mission asks and send the decision to the next tick');
-  console.log('  release    - Tag release, bump version, create GitHub release, draft /launch');
+  console.log('  release    - Tag release, bump version, create GitHub release, draft /launch; atris release preflight before a v* tag');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('  study      - On-demand learning feed: ingest topic, start server, open browser');
   console.log('  rainmaker  - Relationship manager dashboard (atrisos-backend/scripts/rainmaker.py)');
@@ -853,9 +853,11 @@ function showUpgradeHelp() {
 function showReleaseHelp() {
   console.log('');
   console.log('Usage: atris release [--dry-run]');
+  console.log('       atris release preflight');
   console.log('');
   console.log('Description:');
   console.log('  Draft or publish a release from local git history.');
+  console.log('  preflight checks master, a clean tree, origin/master, the version tag, and the full test suite with CI=true.');
   console.log('');
   console.log('Options:');
   console.log('  --dry-run    Print the planned release without committing, tagging, or pushing.');
@@ -2596,6 +2598,10 @@ if (command === 'init') {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     showReleaseHelp();
     process.exit(0);
+  }
+  if (args[0] === 'preflight') {
+    const code = require('../commands/release').releasePreflight();
+    process.exit(typeof code === 'number' ? code : 1);
   }
   const dryRun = process.argv.includes('--dry-run');
   require('../commands/release').releaseAtris({ dryRun })

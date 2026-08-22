@@ -26,7 +26,7 @@ Guidance for working on the **Atris CLI itself** (this repo builds the `atris` p
 
 **Verify unpiped.** `npm test | tail` masks exit codes. Run gates bare and read the real exit status.
 
-**Publishing** is tag-driven: push a `v*` tag from master and CI (`publish.yml`) runs the strict test gate and publishes. Never publish from a feature branch. The post-publish read-back in CI can race npm propagation; confirm with `npm view atris version` before calling a release failed.
+**Publishing** is tag-driven: run `atris release preflight`, then push a `v*` tag from master and CI (`publish.yml`) runs the strict test gate and publishes. Never publish from a feature branch. The post-publish read-back in CI can race npm propagation; confirm with `npm view atris version` before calling a release failed.
 
 **Commits** credit Atris, not Claude: end with `Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>`. No `--no-verify`; a blocked commit means stop and report.
 

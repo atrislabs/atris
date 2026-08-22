@@ -83,7 +83,7 @@ rg "renderCard|renderPageSection|renderEmailLine|renderMorningCardRow|directProo
 rg "radarCommand|collectRadar|Operator radar|Agent process top|findTaskWorkspaceRoot|task_reason|task_action|task_load|whats going on|loadBusinessCollaboration|ctop" commands/radar.js bin/atris.js test/radar.test.js test/commands.test.js  # Live Atris OS radar: agent processes joined with nearest workspace task projection, ctop unmapped-session reasons/actions and task-load pileups, mission/loop, worktree, AgentXP, team/member, business collaboration readiness, brain scorecard, Swarlo/delegation, and Codex goal state
 rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggestedNextMoves|taskNeedsAgentReview|taskIsHumanGatedClaimed|atris.launchpad.v1" commands/launchpad.js bin/atris.js test/commands.test.js  # Launchpad command-center card: single next action + 3 suggested moves from local task projection, missions, brain STATUS, and TODO endgame; ranks own-claimed > mission tick > proof review > human-accept queue > open claim > endgame seed > brain move; skips human-gated claimed work; --json (atris.launchpad.v1) and plain card
 rg "unknownsCommand|gatherTerritoryContext|buildUnknownsPrompt|renderUnknownsMarkdown|unknowns --help" commands/unknowns.js bin/atris.js test/unknowns.test.js  # Unknowns command: blindspot pass from MAP/lessons/logs/git/task_events through shared runner into SQLite unknowns ledger plus .atris/state/unknowns.md projection
-rg "releaseAtris" commands/release.js      # Release command
+rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atris.js test/release-preflight.test.js  # Release command plus pre-tag preflight
 rg "showSearchHelp|searchJournal|search help flags" bin/atris.js test/commands.test.js # Search command + workspace-free help flags
 rg "showLearnHelp|learnAtris|learn help" commands/learn.js test/commands.test.js # Project learnings command + workspace-free help
 rg "showSoulHelp|async function soul|soul help" commands/soul.js test/commands.test.js # Soul/persona command + workspace-free help
@@ -918,17 +918,19 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Tag a release, bump version, create GitHub release, draft /launch post
 
-- **Entry point:** `commands/release.js:15` (releaseAtris function)
-- **Dispatch/help:** `bin/atris.js:1275-1284` handles `release --help` before git/package mutation paths
-- **Flags:** `--dry-run` — print draft without mutating
+- **Entry point:** `commands/release.js:16` (releaseAtris function)
+- **Preflight:** `commands/release.js:213` (`releasePreflight`) checks master, a clean tree, local master vs origin/master, no existing `v<version>` tag, then `npm test` with `CI=true`; git failures skip the suite
+- **Dispatch/help:** `bin/atris.js:2596` routes `release`, `bin/atris.js:2602` routes `release preflight`, `bin/atris.js:853` (`showReleaseHelp`) and `bin/atris.js:546` list the preflight command
+- **Flags:** `--dry-run` prints the draft without mutating
 - **Steps:** git log since last tag → determine bump (minor if scorecard reward≥5, else patch) → run `npm version --no-git-tag-version` so package.json and package-lock.json move together → commit both files → tag → push → `gh release create` → print launch post
 - **Helpers:**
-  - `determineBumpType()` → `commands/release.js:127`
-  - `bumpVersion()` → `commands/release.js:149`
-  - `printLaunchPost()` → `commands/release.js:163`
-- **Regression:** `test/commands.test.js:4249-4264` covers `release --help` without package version changes
+  - `determineBumpType()` → `commands/release.js:129`
+  - `bumpVersion()` → `commands/release.js:151`
+  - `printLaunchPost()` → `commands/release.js:165`
+  - `runFullTestSuite()` → `commands/release.js:194`
+- **Regression:** `test/commands.test.js:18159` covers `release --help` without package version changes; `test/release-preflight.test.js:1` covers help wiring, off-master refusal, dirty/tag/origin failures, CI=true suite pass, and the real suite exit code
 
-**Search:** `rg "showReleaseHelp|releaseAtris|release --help|bumpVersion" bin/atris.js commands/release.js test/commands.test.js`
+**Search:** `rg "showReleaseHelp|releaseAtris|releasePreflight|release --help|bumpVersion" bin/atris.js commands/release.js test/commands.test.js test/release-preflight.test.js`
 
 ### Feature: Analytics (`atris analytics`)
 
@@ -1779,7 +1781,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `activateAtris()` → `commands/activate.js:158-306`
 - `cleanAtris()` → `commands/clean.js:15-186`
 - `verifyAtris()` → `commands/verify.js:13-35`
-- `releaseAtris()` → `commands/release.js:15-122`
+- `releaseAtris()` → `commands/release.js:16-123`
+- `releasePreflight()` → `commands/release.js:213-282`
 - `gmailCommand()` etc. → `commands/integrations.js`
 
 **Risk:** Breaking changes affect all users
