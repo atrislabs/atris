@@ -17,6 +17,9 @@ const {
 test('conductor plumbing does not count as dirt', () => {
   assert.equal(isConductorArtifact('.atris/fleet-prompt-BCK-1326.md'), true);
   assert.equal(isConductorArtifact('.atris/codex-watchdog-CLI-1269-a1b2c3d4.json'), true);
+  // 2026-08-12 moved the watchdog script itself into the worktree; the guard
+  // blocked every codex dispatch for 9 days on exactly this file (untracked=1).
+  assert.equal(isConductorArtifact('.atris/codex-watchdog.js'), true);
   assert.equal(isConductorArtifact('.atris/agent-worktree.json'), true);
   assert.equal(isConductorArtifact('.atris/runtime-tmp/scratch/out.txt'), true);
   assert.equal(isConductorArtifact('.atris/state/briefs.jsonl'), true);
