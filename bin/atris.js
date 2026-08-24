@@ -590,7 +590,7 @@ function showHelpAll() {
   console.log('  meet       - onboard a stranger in one sitting and print their /book link');
   console.log('  avail      - Booking availability (/book/{username} weekly windows)');
   console.log('  brain      - Compile MAP/TODO/wiki/state into a loadable agent brain');
-  console.log('  lesson     - Append a one-line lesson to atris/lessons.md (add --detector validates the falsifier at write time; ledger/revert audit every mutation; mine: distill receipts/episodes/scorecards into policy lessons)');
+  console.log('  lesson     - atris lesson add <slug> <pass|fail> "<text>" (mine/sweep/resolve/revert/ledger; --detector validates the falsifier at write time)');
   console.log('  taste      - Record the operator\'s keep, kill, and more creative verdicts');
   console.log('  teach      - Turn a bad turn into a failing benchmark, then a permanent guard (red gate: no promotion without a proven failure)');
   console.log('  ingest     - Local-first wiki ingest into atris/wiki/');

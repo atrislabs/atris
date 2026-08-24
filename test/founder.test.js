@@ -169,3 +169,18 @@ test('malformed task data is treated as unavailable', () => {
     fs.rmSync(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+test('founder --json emits a parseable scorecard', () => {
+  const { fixtureRoot, scanRoot } = makeFixture();
+  try {
+    const alpha = initRepo(scanRoot, 'alpha');
+    commitAt(alpha, '2026-08-06T12:00:00Z', 'one current commit');
+    const run = runFounder(alpha, ['--json', '--root', scanRoot], '2026-08-07T12:00:00Z');
+    assert.equal(run.status, 0, run.stderr);
+    const body = JSON.parse(run.stdout);
+    assert.equal(body.commitsThisWeek, 1);
+    assert.ok(Array.isArray(body.perRepo));
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});

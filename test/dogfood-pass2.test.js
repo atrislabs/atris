@@ -204,8 +204,11 @@ test('18: close with no args exits 2; sign status when off exits 0', () => {
     assert.match(sign.stdout, /co-author is off/i);
 
     const founder = runCli(['founder', '--json'], { cwd: dir });
-    assert.equal(founder.status, 2, founder.stdout + founder.stderr);
-    assert.match(founder.stderr, /supported flags/i);
+    assert.equal(founder.status, 0, founder.stdout + founder.stderr);
+    const founderBody = JSON.parse(founder.stdout);
+    assert.equal(typeof founderBody.commitsThisWeek, 'number');
+    assert.equal(typeof founderBody.slopePct, 'number');
+    assert.ok(Array.isArray(founderBody.perRepo));
   } finally {
     cleanupTempDir(dir);
   }

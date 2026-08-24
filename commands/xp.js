@@ -112,6 +112,7 @@ function showHelp() {
   console.log('       atris xp [--json] [--local] [--workspace <path>] [--operator <name>]');
   console.log('');
   console.log('Show your AgentXP graph for the active Atris account.');
+  console.log('With no bound business (.atris/business.json), defaults to --local workspace receipts.');
   console.log('Use status to show account-level AgentXP across verified local ledgers.');
   console.log('Use collect or status --local to project accepted task proof in the current workspace.');
   console.log('Use session to encapsulate the current work window into a local XP capsule.');
@@ -2327,7 +2328,10 @@ async function xpCommand(...args) {
   }
 
   const jsonMode = args.includes('--json');
-  const localMode = hasFlagOrValue(args, '--local') || hasFlagOrValue(args, '--workspace') || hasFlagOrValue(args, '--operator');
+  const explicitLocal = hasFlagOrValue(args, '--local') || hasFlagOrValue(args, '--workspace') || hasFlagOrValue(args, '--operator');
+  // No bound business means cloud graph has nothing useful; default to local receipts.
+  const boundBusiness = publicWorkspaceBinding(defaultXpWorkspace());
+  const localMode = explicitLocal || !boundBusiness;
   if (localMode) {
     let payload;
     try {

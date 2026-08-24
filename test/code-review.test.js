@@ -23,14 +23,14 @@ test('code-review --json missing engine returns JSON error', () => {
   const dir = makeTempDir();
   try {
     const result = runCli(['code-review', '--json'], dir);
-    assert.equal(result.status, 1);
+    assert.equal(result.status, 2);
     assert.equal(result.stderr, '');
     assert.deepEqual(JSON.parse(result.stdout), {
       ok: false,
-      error: 'Review engine not found.',
+      error: 'not installed',
       expected: 'atris/business/claude-code-review/workspace/review_engine.py',
       specialists: ['Security', 'Testing', 'Performance', 'Maintainability', 'Database', 'Async'],
-      install: 'copy review_engine.py to your project',
+      install: 'atris skill install code-review',
     });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -41,10 +41,10 @@ test('code-review missing engine keeps human stderr', () => {
   const dir = makeTempDir();
   try {
     const result = runCli(['code-review', 'example.py'], dir);
-    assert.equal(result.status, 1);
+    assert.equal(result.status, 2);
     assert.equal(result.stdout, '');
-    assert.match(result.stderr, /Review engine not found/);
-    assert.match(result.stderr, /copy review_engine\.py to your project/);
+    assert.match(result.stderr, /not installed; atris skill install code-review/);
+    assert.doesNotMatch(result.stderr, /Traceback|Error:/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

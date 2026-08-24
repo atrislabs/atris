@@ -30,24 +30,19 @@ function findReviewEngine() {
 }
 
 function printMissingReviewEngine(jsonMode) {
+  const install = 'atris skill install code-review';
   if (jsonMode) {
     console.log(JSON.stringify({
       ok: false,
-      error: 'Review engine not found.',
+      error: 'not installed',
       expected: 'atris/business/claude-code-review/workspace/review_engine.py',
       specialists: ['Security', 'Testing', 'Performance', 'Maintainability', 'Database', 'Async'],
-      install: 'copy review_engine.py to your project',
+      install,
     }, null, 2));
   } else {
-    console.error('Review engine not found.');
-    console.error('Expected at: atris/business/claude-code-review/workspace/review_engine.py');
-    console.error('');
-    console.error('The review engine runs 6 specialists:');
-    console.error('  Security, Testing, Performance, Maintainability, Database, Async');
-    console.error('');
-    console.error('Install: copy review_engine.py to your project');
+    console.error(`not installed; ${install}`);
   }
-  process.exit(1);
+  process.exit(2);
 }
 
 function exitReviewError(message, jsonMode, extra = {}) {

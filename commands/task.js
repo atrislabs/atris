@@ -10,17 +10,14 @@ const path = require('path');
 const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
 const {
-<<<<<<< HEAD
-  taskProofState,
-  LOCAL_SUCCESS_PROOF_EXAMPLE,
-} = require('../lib/task-proof');
-=======
   compactErrorPayload,
   compactSuccessPayload,
   printCliJson,
 } = require('../lib/cli-json');
-const { taskProofState } = require('../lib/task-proof');
->>>>>>> e99f5d93 (fix(cli): dogfood pass-2 items 16-19 for headless agents)
+const {
+  taskProofState,
+  LOCAL_SUCCESS_PROOF_EXAMPLE,
+} = require('../lib/task-proof');
 const {
   candidatePolicyGate,
   evaluateAutoAccept,

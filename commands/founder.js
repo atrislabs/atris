@@ -41,11 +41,17 @@ function parseArgs(args = []) {
   let index = args[0] === 'score' ? 1 : 0;
   let root = null;
   let days = DEFAULT_DAYS;
+  let json = false;
 
   while (index < args.length) {
     const arg = String(args[index]);
     if (arg === '--help' || arg === '-h' || arg === 'help') {
-      return { help: true, root, days };
+      return { help: true, root, days, json };
+    }
+    if (arg === '--json') {
+      json = true;
+      index += 1;
+      continue;
     }
     if (arg === '--root' || arg.startsWith('--root=')) {
       const value = arg.startsWith('--root=') ? arg.slice('--root='.length) : args[++index];
@@ -65,7 +71,7 @@ function parseArgs(args = []) {
     throw new Error(`unknown founder option: ${arg}`);
   }
 
-  return { help: false, root, days };
+  return { help: false, root, days, json };
 }
 
 function founderNow(env = process.env) {
@@ -272,9 +278,9 @@ function renderFounderScorecard(scorecard) {
 }
 
 function showFounderHelp() {
-  console.log('usage: atris founder [score] [--days n] [--root dir]');
+  console.log('usage: atris founder [score] [--days n] [--root dir] [--json]');
   console.log('shows the last 7 days against the prior 7 days from git and task receipts.');
-  console.log('supported flags: --days, --root, --help, -h');
+  console.log('supported flags: --days, --root, --json, --help, -h');
 }
 
 function founderCommand(args = [], options = {}) {
@@ -283,7 +289,7 @@ function founderCommand(args = [], options = {}) {
     parsed = parseArgs(args);
   } catch (error) {
     console.error(`error: ${error.message}`);
-    console.error('supported flags: --days, --root, --help, -h');
+    console.error('supported flags: --days, --root, --json, --help, -h');
     return 2;
   }
   if (parsed.help) {
@@ -299,7 +305,11 @@ function founderCommand(args = [], options = {}) {
   const now = founderNow(options.env || process.env);
   const scorecard = buildFounderScorecard(root, { days: parsed.days, now });
   appendFounderScorecard(currentWorkspace, scorecard);
-  console.log(renderFounderScorecard(scorecard));
+  if (parsed.json) {
+    console.log(JSON.stringify(scorecard, null, 2));
+  } else {
+    console.log(renderFounderScorecard(scorecard));
+  }
   return 0;
 }
 

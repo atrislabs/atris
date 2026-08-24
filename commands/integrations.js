@@ -228,7 +228,8 @@ function formatCalendarTimeRange(event) {
 
 function formatCalendarEvents(label, events) {
   if (events.length === 0) {
-    console.log(`No events ${label}. 🎉`);
+    // label is already a phrase like "today's events" or "events on 2026-08-24"
+    console.log(`No ${label}.`);
     return;
   }
 
@@ -1665,6 +1666,7 @@ module.exports = {
   integrationsStatus,
   parseCalendarSearchArgs,
   filterCalendarEventsForSearch,
+  formatCalendarEvents,
   formatCalendarSearchResults,
   formatCalendarSearchError,
 };
