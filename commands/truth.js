@@ -3,13 +3,18 @@
 //   1. .atris/state/missions.jsonl        — mission states (dedupe by id, latest wins)
 //   2. ~/.atris/tasks.db                  — task counts by status, scoped to this workspace unless --all is passed
 //   3. atris/features/*/                  — validate.md frontmatter + newest proof/ receipt age
-//   4. ~/.atris/heartbeat/{registry,state}.json — declared loops vs last_run / fails
+//   4. atris/loops/*.md                   — workspace loops by default; pass --global for ~/.atris/heartbeat
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
 const taskDb = require('../lib/task-db');
+const { parseScopeFlag } = require('../lib/cli-scope');
+const {
+  requireAccountBound,
+  refuseAccountGlobal,
+} = require('../lib/account-bound');
 
 const STALE_DAYS = 7;
 
@@ -186,20 +191,61 @@ function loadHeartbeats() {
   });
 }
 
+// Workspace loops live in atris/loops/*.md (not ~/.atris/heartbeat).
+function loadWorkspaceLoops(cwd) {
+  const dir = path.join(cwd, 'atris', 'loops');
+  if (!fs.existsSync(dir)) return [];
+  const out = [];
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (!name.endsWith('.md') || name === 'LOOPS.md' || name === 'TICK.md') continue;
+    const filePath = path.join(dir, name);
+    let text = '';
+    try { text = fs.readFileSync(filePath, 'utf8'); } catch { continue; }
+    const logDates = [...text.matchAll(/^- (\d{4}-\d{2}-\d{2}):/gm)].map((m) => m[1]).sort();
+    let verdict;
+    let lastRunAgeDays = null;
+    if (logDates.length === 0) {
+      verdict = 'never-ran';
+    } else {
+      const newest = logDates[logDates.length - 1];
+      lastRunAgeDays = daysAgo(Date.parse(`${newest}T00:00:00Z`));
+      if (lastRunAgeDays != null && lastRunAgeDays > STALE_DAYS) verdict = 'stale';
+      else verdict = 'proven';
+    }
+    out.push({
+      id: name.replace(/\.md$/, ''),
+      verdict,
+      lastRunAgeDays,
+      fails: 0,
+    });
+  }
+  return out;
+}
+
 function truthCommand(args = []) {
   const cwd = process.cwd();
-  const json = args.includes('--json');
-  const summary = args.includes('--summary');
-  const all = args.includes('--all');
+  const scopeFlag = parseScopeFlag(args);
+  const rest = scopeFlag.args;
+  const json = rest.includes('--json') || args.includes('--json');
+  const summary = rest.includes('--summary') || args.includes('--summary');
+  const all = rest.includes('--all') || args.includes('--all');
+  const hasAtris = fs.existsSync(path.join(cwd, 'atris'));
+
+  // Unbound scratch folders must not dump machine-global heartbeats.
+  // A local atris/ tree (or --global / --account) is enough to continue.
+  if (!hasAtris && !scopeFlag.global) {
+    const gate = requireAccountBound(rest);
+    if (!gate.ok) return refuseAccountGlobal();
+  }
 
   const missions = loadMissions(cwd);
   const taskCounts = loadTaskCounts({ cwd, all });
-  const scope = all
+  const scope = all || scopeFlag.global
     ? { kind: 'global' }
     : { kind: 'workspace', workspace_root: taskCounts.workspaceRoot };
   const tasks = taskCounts.counts;
   const features = loadFeatures(cwd);
-  const heartbeats = loadHeartbeats();
+  const heartbeats = scopeFlag.global ? loadHeartbeats() : loadWorkspaceLoops(cwd);
 
   const featureTally = {};
   for (const f of features) featureTally[f.verdict] = (featureTally[f.verdict] || 0) + 1;
