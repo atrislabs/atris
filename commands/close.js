@@ -1239,7 +1239,11 @@ function run(args = [], context = {}) {
   const subcommand = args[0];
   const rest = args.slice(1);
   try {
-    if (!subcommand || subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
+    if (!subcommand) {
+      printHelp();
+      return 2;
+    }
+    if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
       printHelp();
       return 0;
     }

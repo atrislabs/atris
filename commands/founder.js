@@ -274,6 +274,7 @@ function renderFounderScorecard(scorecard) {
 function showFounderHelp() {
   console.log('usage: atris founder [score] [--days n] [--root dir]');
   console.log('shows the last 7 days against the prior 7 days from git and task receipts.');
+  console.log('supported flags: --days, --root, --help, -h');
 }
 
 function founderCommand(args = [], options = {}) {
@@ -282,7 +283,8 @@ function founderCommand(args = [], options = {}) {
     parsed = parseArgs(args);
   } catch (error) {
     console.error(`error: ${error.message}`);
-    return 1;
+    console.error('supported flags: --days, --root, --help, -h');
+    return 2;
   }
   if (parsed.help) {
     showFounderHelp();

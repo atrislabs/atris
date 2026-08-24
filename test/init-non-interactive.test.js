@@ -182,7 +182,7 @@ test('force init and update preserve extra members in an existing workspace', ()
     assert.equal(forcedInit.status, 0, `stdout:\n${forcedInit.stdout}\nstderr:\n${forcedInit.stderr}`);
     assert.equal(fs.readFileSync(extraMemberFile, 'utf8'), '# Customer Guide\n');
 
-    const update = runCli(['update'], { cwd: dir });
+    const update = runCli(['update', '--yes'], { cwd: dir });
     assert.equal(update.status, 0, `stdout:\n${update.stdout}\nstderr:\n${update.stderr}`);
     assert.equal(fs.readFileSync(extraMemberFile, 'utf8'), '# Customer Guide\n');
   } finally {

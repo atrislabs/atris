@@ -40,7 +40,7 @@ test('init emits a hook-aware and terminated CLAUDE.md boot block', () => {
     assert.equal(markerCount(content, startMarker), 1);
     assert.equal(markerCount(content, endMarker), 1);
 
-    const update = runCli(dir, ['update']);
+    const update = runCli(dir, ['update', '--yes']);
     assert.equal(update.status, 0, update.stderr || update.stdout);
     assert.equal(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), content);
   } finally {
@@ -60,7 +60,7 @@ test('update replaces an unterminated boot block with one clean terminated block
       'utf8',
     );
 
-    const result = runCli(dir, ['update']);
+    const result = runCli(dir, ['update', '--yes']);
     assert.equal(result.status, 0, result.stderr || result.stdout);
 
     const content = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8');

@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
+const { isNonInteractive } = require('../lib/noninteractive');
 const escapeRegExp = require('../lib/escape-regexp');
 const { runGit: spawnGit } = require('../lib/git-spawn');
 const { collectBoard } = require('./land');
@@ -716,12 +717,16 @@ function parseArgs(args = [], nowMs = Date.now()) {
   const sinceRaw = readFlag(args, '--since', '');
   const intervalRaw = readFlag(args, '--interval', '');
   const interval = Number(intervalRaw);
+  const onceFlag = hasFlag(args, '--once');
+  // Watch loops must exit in agent/non-TTY sessions. --once is explicit;
+  // ATRIS_NONINTERACTIVE / non-TTY stdin also force a one-shot snapshot.
+  const once = onceFlag || isNonInteractive(args) || !process.stdin.isTTY || !process.stdout.isTTY;
   return {
     agent: readFlag(args, '--agent', ''),
     sinceMs: parseSince(sinceRaw, nowMs),
     json: hasFlag(args, '--json'),
     raw: hasFlag(args, '--raw'),
-    once: hasFlag(args, '--once'),
+    once,
     intervalMs: Number.isFinite(interval) && interval > 0 ? Math.max(250, interval * 1000) : DEFAULT_INTERVAL_MS,
   };
 }
@@ -750,12 +755,14 @@ function showHelp() {
   console.log('atris stream - watch the whole team work live');
   console.log('');
   console.log('  atris stream');
+  console.log('  atris stream --once');
   console.log('  atris stream --agent codex');
   console.log('  atris stream --since 1h');
   console.log('  atris stream --json');
   console.log('  atris stream --raw');
   console.log('');
   console.log('Default lines hide ids, branch names, and paths. Use --raw or --json for source records.');
+  console.log('--once (or non-TTY / ATRIS_NONINTERACTIVE) prints one snapshot and exits.');
   console.log('');
   return 0;
 }

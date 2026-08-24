@@ -86,10 +86,68 @@ function renderHint() {
 }
 
 function showHelp() {
-  console.log('Usage: atris orb [--once] [--engine claude|codex|fast]');
+  console.log('Usage: atris orb [--once] [--json] [--engine claude|codex|fast]');
+  console.log('       atris orb <n> | atris orb --pick <n>');
   console.log('       atris orb scorecard [--days N]');
   console.log('');
   console.log('Choose a next move while background engine jobs keep working.');
+  console.log('--json emits {moves:[{n,label,command}]} and exits.');
+  console.log('Supported flags: --once, --json, --pick, --engine, --help, -h');
+}
+
+function suggestionCommand(suggestion, n) {
+  const kind = String(suggestion && suggestion.kind || '');
+  const label = String(suggestion && suggestion.label || '');
+  if (kind === 'digest') return 'atris stream --once';
+  if (kind === 'log') return 'atris log';
+  if (kind === 'review' && /^accept\b/i.test(label)) return 'atris task reviews';
+  return `atris orb --pick ${n}`;
+}
+
+function movesPayload(suggestions) {
+  return {
+    moves: suggestions.map((suggestion, index) => {
+      const n = index + 1;
+      return {
+        n,
+        label: suggestion.label || '',
+        command: suggestionCommand(suggestion, n),
+      };
+    }),
+  };
+}
+
+function parsePick(args = []) {
+  const equals = args.find((arg) => arg.startsWith('--pick='));
+  if (equals) {
+    const value = Number(equals.slice('--pick='.length));
+    return Number.isInteger(value) && value >= 1 ? value : null;
+  }
+  const idx = args.indexOf('--pick');
+  if (idx !== -1) {
+    const value = Number(args[idx + 1]);
+    return Number.isInteger(value) && value >= 1 ? value : null;
+  }
+  const positional = args.find((arg) => /^[1-9]$/.test(String(arg)));
+  if (positional) return Number(positional);
+  return null;
+}
+
+function unknownOrbFlags(args = []) {
+  const known = new Set(['--once', '--json', '--help', '-h', '--engine', '--pick']);
+  const unknown = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i] || '');
+    if (!arg.startsWith('-')) continue;
+    if (arg.startsWith('--engine=')) continue;
+    if (arg.startsWith('--pick=')) continue;
+    if (arg === '--engine' || arg === '--pick') {
+      i += 1;
+      continue;
+    }
+    if (!known.has(arg)) unknown.push(arg);
+  }
+  return unknown;
 }
 
 function tailLines(text, count = 60) {
@@ -115,20 +173,57 @@ async function runOrb(args = []) {
     return 0;
   }
 
+  const unknown = unknownOrbFlags(args);
+  if (unknown.length) {
+    console.error(`unknown orb option: ${unknown.join(', ')}`);
+    console.error('supported flags: --once, --json, --pick, --engine, --help, -h');
+    return 2;
+  }
+
   const engine = parseEngine(args);
   if (!VALID_ENGINES.has(engine)) {
     console.error(`Unknown orb engine: ${engine || '(empty)'}. Use claude, codex, or fast.`);
     return 2;
   }
 
+  const asJson = args.includes('--json');
+  const pick = parsePick(args);
   const engineCommand = engineInvocation(engine, '').command;
-  if (!findExecutableOnPath(engineCommand)) {
+  if (!asJson && !findExecutableOnPath(engineCommand)) {
     console.error(`orb warning: engine binary "${engineCommand}" is missing from PATH; picks will fail until it is installed.`);
   }
 
   const root = workspaceRoot();
   let context = await collectOrbContext(root, { threads: [] });
+
+  if (asJson) {
+    const suggestions = (context.suggestions || []).slice(0, MAX_VISIBLE_SUGGESTIONS);
+    console.log(JSON.stringify(movesPayload(suggestions), null, 2));
+    return 0;
+  }
+
   let visibleSuggestions = renderContext(context);
+
+  if (pick != null) {
+    const choice = visibleSuggestions[pick - 1];
+    if (!choice) {
+      console.error(`orb: no move ${pick}. Pick 1-${visibleSuggestions.length || 0}.`);
+      return 2;
+    }
+    // One-shot pick: record the choice and print the runnable command, then exit.
+    // Interactive mode still launches background engines; agents use --json + --pick.
+    const appended = await appendOrbChoice(root, cleanLabel(choice.label));
+    if (!appended.ok) {
+      console.error(`Could not update now.md: ${appended.error}`);
+      return 1;
+    }
+    const command = suggestionCommand(choice, pick);
+    console.log(`picked ${pick}: ${choice.label}`);
+    console.log(`next: ${command}`);
+    if (choice.prompt) console.log(`prompt: ${choice.prompt}`);
+    return 0;
+  }
+
   const once = args.includes('--once') || !process.stdin.isTTY || !process.stdout.isTTY;
   if (once) return 0;
 

@@ -6,6 +6,11 @@ const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
+const {
+  compactErrorPayload,
+  compactSuccessPayload,
+  printCliJson,
+} = require('../lib/cli-json');
 const escapeRegExp = require('../lib/escape-regexp');
 const {
   appendBriefRecord,
@@ -427,8 +432,22 @@ function applyMissionRunnerProfile(runner) {
 }
 
 function exitMissionError(message, code = 1, asJson = false) {
-  if (asJson) console.log(JSON.stringify({ ok: false, error: message }, null, 2));
-  else console.error(message);
+  if (asJson) {
+    printCliJson(
+      {
+        ok: false,
+        error: message,
+        reason: 'mission_error',
+        detail: message,
+        selected_ref: null,
+        next_command: null,
+      },
+      compactErrorPayload({ reason: 'mission_error', detail: message }),
+      process.argv.slice(2),
+    );
+  } else {
+    console.error(message);
+  }
   process.exit(code);
 }
 
@@ -1304,11 +1323,27 @@ function exitMissingMission(ref, code = 1, asJson = false, root = process.cwd())
     } catch { /* best-effort hint only */ }
   }
   if (asJson) {
-    const payload = { ok: false, error };
-    if (hints.length) payload.workspace_hint = hints[0];
-    if (hints.length > 1) payload.workspace_hints = hints;
-    if (candidates.length) payload.nearest_candidates = candidates;
-    console.log(JSON.stringify(payload, null, 2));
+    const nextCommand = hints[0] && hints[0].command ? hints[0].command : null;
+    printCliJson(
+      {
+        ok: false,
+        error,
+        reason: 'mission_not_found',
+        detail: error,
+        selected_ref: ref || null,
+        next_command: nextCommand,
+        ...(hints.length ? { workspace_hint: hints[0] } : {}),
+        ...(hints.length > 1 ? { workspace_hints: hints } : {}),
+        ...(candidates.length ? { nearest_candidates: candidates } : {}),
+      },
+      compactErrorPayload({
+        reason: 'mission_not_found',
+        detail: error,
+        selected_ref: ref || null,
+        next_command: nextCommand,
+      }),
+      process.argv.slice(2),
+    );
   } else {
     console.error(error);
     if (hints.length) {
@@ -10273,16 +10308,49 @@ function tickMission(args) {
     const outputMission = continuationGoal?.parent || saved;
     const atrisGoalState = refreshAtrisGoalController(process.cwd(), { missionId: outputMission.id });
     const codexGoalState = refreshCodexGoalController(process.cwd());
-    printJsonOrText(
-      { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, blocker, receipt_path: receiptPath, log_path: logPath, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, operator_summary_warning: operatorSummaryWarning, cached: Boolean(tickRecord.cached) },
-      [
-        ...(tickRecord.cached ? [`Reused receipt for tick ${tickIdx}: ${receiptPath}`] : []),
-        ...missionTickResultLines(outputMission, tickIdx, receiptPath, verifierResult, summary || tickRecord.summary),
-        ...(missionBlockerReceiptLine(blocker) ? [missionBlockerReceiptLine(blocker)] : []),
-        ...(continuationGoal?.mission ? [`Next goal: ${continuationGoal.mission.objective}`] : []),
-      ],
-      asJson,
-    );
+    const fullTick = {
+      ok: true,
+      action: 'mission_tick',
+      mission: outputMission,
+      tick: tickRecord,
+      verifier_result: verifierResult,
+      blocker,
+      receipt_path: receiptPath,
+      log_path: logPath,
+      atris_goal_state: atrisGoalState,
+      codex_goal_state: codexGoalState,
+      continuation_goal: continuationGoal,
+      operator_summary_warning: operatorSummaryWarning,
+      cached: Boolean(tickRecord.cached),
+      next_command: outputMission.next_action || null,
+    };
+    if (asJson) {
+      printCliJson(
+        fullTick,
+        compactSuccessPayload({
+          action: 'mission_tick',
+          ids: {
+            mission_id: outputMission.id,
+            tick_index: tickIdx,
+            status: outputMission.status,
+            receipt_path: receiptPath,
+          },
+          next_command: outputMission.next_action || null,
+        }),
+        args,
+      );
+    } else {
+      printJsonOrText(
+        fullTick,
+        [
+          ...(tickRecord.cached ? [`Reused receipt for tick ${tickIdx}: ${receiptPath}`] : []),
+          ...missionTickResultLines(outputMission, tickIdx, receiptPath, verifierResult, summary || tickRecord.summary),
+          ...(missionBlockerReceiptLine(blocker) ? [missionBlockerReceiptLine(blocker)] : []),
+          ...(continuationGoal?.mission ? [`Next goal: ${continuationGoal.mission.objective}`] : []),
+        ],
+        false,
+      );
+    }
   } finally {
     releaseMissionLock(lock);
   }
