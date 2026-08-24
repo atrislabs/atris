@@ -24,6 +24,7 @@ const {
   RUNNER_PROFILE_NAMES,
   buildRunnerCommand,
 } = require('../lib/runner-command');
+const { parseScopeFlag } = require('../lib/cli-scope');
 const {
   ENGINE_ROLES,
   ENGINE_DUTIES,
@@ -901,15 +902,18 @@ async function runEngineSeedCommand(args, root, deps = {}) {
   return 0;
 }
 
-function printRoster(root) {
+function printRoster(root, { scope = 'workspace' } = {}) {
   reconcileStaleEngineProbeErrors(root);
   const list = roster(root);
-  const found = list.filter((e) => e.installed).length;
+  const scoped = scope === 'global'
+    ? list
+    : list.filter((engine) => engine.installed || engine.default || engine.health.status === 'ready');
+  const found = scoped.filter((e) => e.installed).length;
   const current = resolveDefaultEngine(root);
   console.log('');
-  console.log(`  engines: ${found} intelligence${found === 1 ? '' : 's'} found`);
+  console.log(`  engines: ${found} intelligence${found === 1 ? '' : 's'} found (${scope})`);
   console.log('');
-  for (const engine of list) {
+  for (const engine of scoped) {
     const mark = engine.default ? '→' : ' ';
     const state = engine.health.status === 'not_installed' ? 'not installed' : engine.health.status.replace(/_/g, ' ');
     const roles = engine.roles.join(',');
@@ -918,10 +922,31 @@ function printRoster(root) {
     if (engine.duty) details.push(`duty: ${engine.duty}`);
     console.log(`      ${details.join('   ')}`);
   }
+  if (scope !== 'global' && list.length > scoped.length) {
+    console.log(`  … ${list.length - scoped.length} not installed hidden (pass --global to list)`);
+  }
   console.log('');
   console.log(`  default: ${current.name}${current.source === 'saved' ? ' (set here)' : current.source === 'env' ? ' (this session)' : ''}`);
   console.log(`  switch:  atris engine <name>   ·   one run: --engine <name> on mission run / autopilot / run`);
   console.log('');
+}
+
+function registryPayload(root, { scope = 'workspace' } = {}) {
+  const current = resolveDefaultEngine(root);
+  const registry = readEngineRegistry(root);
+  const engines = registry.engines.map((engine) => ({
+    ...engine,
+    default: engine.id === current.name,
+  }));
+  const scoped = scope === 'global'
+    ? engines
+    : engines.filter((engine) => engine.installed || engine.default || (engine.health && engine.health.status === 'ready'));
+  return {
+    scope,
+    default: current.name,
+    source: current.source,
+    engines: scoped,
+  };
 }
 
 function chartEngineLabel(engine) {
@@ -1055,19 +1080,6 @@ function runSetEngineCommand(args, root) {
     console.error(String(err.message || err).replace(/^Unknown/, 'unknown'));
     return 2;
   }
-}
-
-function registryPayload(root) {
-  const current = resolveDefaultEngine(root);
-  const registry = readEngineRegistry(root);
-  return {
-    default: current.name,
-    source: current.source,
-    engines: registry.engines.map((engine) => ({
-      ...engine,
-      default: engine.id === current.name,
-    })),
-  };
 }
 
 function parseSetFlag(args) {
@@ -1491,16 +1503,17 @@ function engineCommand(args = [], deps = {}) {
     return runEngineAskCommand([...shorthandArgs, '--engine', canonical], root, deps.engineAsk || {});
   }
 
-  const json = args.includes('--json');
-  const positional = args.filter((a) => !a.startsWith('--'));
+  const scope = parseScopeFlag(args);
+  const json = scope.args.includes('--json') || args.includes('--json');
+  const positional = scope.args.filter((a) => !a.startsWith('--'));
   const sub = (positional[0] || '').trim();
 
   if (sub === 'login') {
-    return runEngineLoginCommand(args.slice(args.indexOf('login') + 1), root);
+    return runEngineLoginCommand(scope.args.slice(scope.args.indexOf('login') + 1), root);
   }
 
   if (sub === 'seed') {
-    return runEngineSeedCommand(args.slice(args.indexOf('seed') + 1), root);
+    return runEngineSeedCommand(scope.args.slice(scope.args.indexOf('seed') + 1), root);
   }
 
   if (sub === 'seats') {
@@ -1512,32 +1525,32 @@ function engineCommand(args = [], deps = {}) {
   }
 
   if (sub === 'resolve') {
-    return runResolveCommand(args.slice(args.indexOf('resolve') + 1), root);
+    return runResolveCommand(scope.args.slice(scope.args.indexOf('resolve') + 1), root);
   }
 
   if (sub === 'health') {
-    return runHealthCommand(args.slice(args.indexOf('health') + 1), root);
+    return runHealthCommand(scope.args.slice(scope.args.indexOf('health') + 1), root);
   }
 
   if (sub === 'doctor') {
-    return runDoctorCommand(args.slice(args.indexOf('doctor') + 1), root);
+    return runDoctorCommand(scope.args.slice(scope.args.indexOf('doctor') + 1), root);
   }
 
   if (sub === 'set') {
-    return runSetEngineCommand(args.slice(args.indexOf('set') + 1), root);
+    return runSetEngineCommand(scope.args.slice(scope.args.indexOf('set') + 1), root);
   }
 
-  if (sub === 'chart' || args.includes('--chart')) {
+  if (sub === 'chart' || scope.args.includes('--chart') || args.includes('--chart')) {
     printEngineChart(root);
     return 0;
   }
 
   if (!sub || sub === 'list' || sub === 'status') {
     if (json) {
-      console.log(JSON.stringify(registryPayload(root), null, 2));
+      console.log(JSON.stringify(registryPayload(root, { scope: scope.kind }), null, 2));
       return 0;
     }
-    printRoster(root);
+    printRoster(root, { scope: scope.kind });
     return 0;
   }
 

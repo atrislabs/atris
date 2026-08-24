@@ -71,6 +71,7 @@ test('task ready refuses a verifier that cannot fail, and takes the same work wi
     const run = (args) => spawnSync(process.execPath, [cliPath, ...args], { cwd: dir, encoding: 'utf8', env });
     spawnSync('git', ['init', '-q'], { cwd: dir });
     fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"probe-fixture","version":"1.0.0"}\n');
+    fs.writeFileSync(path.join(dir, 'ok.js'), 'module.exports = 1;\n');
 
     const added = run(['task', 'add', 'prove the checker refuses a check that cannot fail', '--json']);
     assert.equal(added.status, 0, added.stderr || added.stdout);
@@ -84,8 +85,16 @@ test('task ready refuses a verifier that cannot fail, and takes the same work wi
     assert.equal(fake.status, 1, fake.stdout);
     assert.match(fake.stderr, /this check cannot fail/);
 
-    const real = run(['task', 'ready', ref, '--verify', 'test -f package.json', '--landing', landing, '--result', result, '--as', 'tester']);
+    const real = run(['task', 'ready', ref, '--verify', 'node --check ok.js', '--landing', landing, '--result', result, '--as', 'tester']);
     assert.equal(real.status, 0, real.stderr || real.stdout);
+
+    const weak = run(['task', 'add', 'refuse a bare file-exists verifier', '--json']);
+    assert.equal(weak.status, 0, weak.stderr || weak.stdout);
+    const weakRef = JSON.parse(weak.stdout).task.display_id;
+    assert.equal(run(['task', 'claim', weakRef, '--as', 'tester']).status, 0);
+    const fileOnly = run(['task', 'ready', weakRef, '--verify', 'test -f package.json', '--landing', landing, '--result', result, '--as', 'tester']);
+    assert.equal(fileOnly.status, 1, fileOnly.stdout);
+    assert.match(fileOnly.stderr, /weak verifier|file-exists/i);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

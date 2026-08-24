@@ -519,6 +519,7 @@ function showHelp() {
   console.log('  team       - One team view: members, roles, engine assignments (presence for live)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
+  console.log('  doctor     - Node/task/auth/workspace readiness (--json for agents)');
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
   console.log('  brief      - Show the one-glance operator brief');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
@@ -1928,9 +1929,20 @@ if (command === 'init') {
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'land') {
-  Promise.resolve(require('../commands/land').landCommand(process.argv.slice(3)))
+  // landCommand can throw synchronously on empty repos; wrap so callers get a
+  // one-line error instead of an uncaught stack from Promise.resolve(fn()).
+  Promise.resolve()
+    .then(() => require('../commands/land').landCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+    .catch((err) => {
+      const msg = String(err && err.message || err || '');
+      if (/no master\/main|no commits|not a git/i.test(msg)) {
+        console.error(msg);
+      } else {
+        console.error(`land: ${msg}`);
+      }
+      process.exit(1);
+    });
 } else if (command === 'caretaker') {
   Promise.resolve(require('../commands/caretaker').caretakerCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
@@ -2209,7 +2221,7 @@ if (command === 'init') {
     showAuthHelp('accounts');
     process.exit(0);
   }
-  require('../commands/auth').accountsCmd();
+  require('../commands/auth').accountsCmd(args);
 } else if (command === '_resolve') {
   // Hidden: resolve a profile name query → print exact profile name
   require('../commands/auth').resolveProfile();
@@ -2563,6 +2575,10 @@ if (command === 'init') {
       console.error(err.message || err);
       process.exit(1);
     });
+} else if (command === 'doctor') {
+  Promise.resolve(require('../commands/doctor').doctorCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'verify') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
@@ -2596,8 +2612,9 @@ if (command === 'init') {
     const code = require('../commands/verify').verifyRubric(slug, section);
     process.exit(code);
   }
-  const taskId = process.argv[3] || null;
-  require('../commands/verify').verifyAtris(taskId);
+  const taskId = process.argv[3] && !String(process.argv[3]).startsWith('--') ? process.argv[3] : null;
+  const code = require('../commands/verify').verifyAtris(taskId);
+  process.exit(typeof code === 'number' ? code : 0);
 } else if (command === 'release') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
@@ -2704,8 +2721,8 @@ if (command === 'init') {
     process.exit(0);
   }
   const { integrationsStatus } = require('../commands/integrations');
-  integrationsStatus()
-    .then(() => process.exit(0))
+  integrationsStatus(args)
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'apps') {
   // Keep APP.md app-pack operations independent from the heavier workspace boot

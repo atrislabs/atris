@@ -197,7 +197,7 @@ test('cli: set default persists to .atris/engine.json, reset removes it', () => 
   const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(saved.default, 'codex');
 
-  const list = runCli(['engine', 'list', '--json'], root);
+  const list = runCli(['engine', 'list', '--json', '--global'], root);
   assert.equal(list.status, 0);
   const payload = JSON.parse(list.stdout.slice(list.stdout.indexOf('{')));
   assert.equal(payload.default, 'codex');

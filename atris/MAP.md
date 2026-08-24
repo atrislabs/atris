@@ -57,7 +57,8 @@ rg "syncCheckoutCommand|checkoutBehindMessage|trackedTreeIsClean" commands/sync-
 rg "logAtris|logsDigest" commands/log.js bin/atris.js test/logs-digest.test.js  # Interactive log writer and read-only daily workspace/team digest
 rg "logSyncAtris" commands/log-sync.js      # Log sync command
 rg "experimentsCommand" commands/experiments.js  # Experiments CLI command
-rg "loginAtris|switchAccount|useAccount|accountsCmd|showAuthHelp" bin/atris.js commands/auth.js test/commands.test.js # Auth/account commands + non-mutating help
+rg "loginAtris|switchAccount|useAccount|accountsCmd|showAuthHelp|--global|scope" bin/atris.js commands/auth.js lib/cli-scope.js test/dogfood-p1.test.js # Auth/account commands + workspace vs --global account list
+rg "doctorCommand|collectDoctor|task_support|public bin shim" commands/doctor.js bin/atris.js package.json test/dogfood-p1.test.js # atris doctor --json: node, task-support 22+, auth, workspace, tiny POSIX bin shim
 rg "agentDoctor|inspectAgentCliWiring|agent dogfood|agentDogfoodCommand|agentSpawnCommand|agent_spawns" bin/atris.js commands/agent-spawn.js test/commands.test.js test/agent-spawn.test.js commands/init.js # Local AI CLI wiring doctor, Devin/Droid GLM 5.2 dogfood smoke, durable worker spawn requests, and Devin init scaffold
 rg "activateAtris|showActivateHelp|activate and next --help" bin/atris.js commands/activate.js test/commands.test.js # Activate command + wiki status + non-mutating help
 rg "autopilotAtris|buildAutopilotGlassLog|writeAutopilotGlassLog|glassLogPath" commands/autopilot.js test/autopilot-glass-logging.test.js  # Autopilot command + glass phase receipt (plan -> review -> action -> result -> proof)
@@ -72,7 +73,7 @@ rg "cleanAtris|cleanResultPayload|clean --dry-run --json" commands/clean.js test
 rg "loopAtris|buildReport|showLoopHelp|loop --help|nextMoves|readEndgameMove|todoKeepsEndgameActive" bin/atris.js commands/loop.js commands/loop-front.js lib/next-moves.js test/commands.test.js test/moves.test.js # Wiki upkeep loop, ranked next moves, stale compiled-endgame suppression, and non-mutating help
 rg "loopsCommand|initLoops|auditLoops|tickLoops|self-improve|templates/loops" bin/atris.js commands/loops.js templates/loops test/loops.test.js # Self-improving project loops: init scaffold, structural audit, tick protocol, self-improve alias, plus legacy board/start/stop
 rg "runAtris" commands/run.js               # Run command (autonomous loop)
-rg "verifyAtris|verifyRubric|verifyArtifact|showVerifyHelp|verify --help" bin/atris.js commands/verify.js test/commands.test.js test/verify-artifact.test.js # Verify command, rubric, artifact substance pre-filter (exists/substance/placeholder/objective-coverage/freshness), and non-mutating help
+rg "verifyAtris|verifyRubric|verifyArtifact|showVerifyHelp|issues.length" bin/atris.js commands/verify.js test/dogfood-p1.test.js # Verify exits 1 when any check fails; rubric + artifact substance pre-filter
 rg "serveAtris|showServeHelp|command === 'serve'" bin/atris.js commands/serve.js test/commands.test.js  # Local AI Computer bridge routing + help guard
 rg "ensureNowFile|renderDefaultNow|renderPortfolioNow|formatLocalTimestamp|currentMissionMoveLine|compactCommitSubject|missionFullBudgetRemainingSeconds|missionBudgetContinuationText|missionHumanStatusText|compactMissionCommand|countOpenWorkItems|countOpenTodoItems|countJournalCompletedReceipts|todayTaskReceiptLines|storeTaskReceipt|now --help" bin/atris.js commands/now.js commands/mission.js test/now.test.js test/mission-status.test.js test/commands.test.js  # now.md and mission status front doors: workspace and portfolio pages name their local refresh minute; a selected full-budget mission names remaining time inside the original commitment instead of sounding like a restart; the short away recap routes task results through the digest and mission proof through mission status, and closes long commit subjects without ellipsis; JSON preserves lifecycle state
 rg "buildGoalView|readScoreboard|renderGoalView|command === 'goal'|command === 'wtf'|goal, distance" commands/goal.js bin/atris.js lib/known-commands.js test/goal.test.js  # goal and wtf: atomic scoreboard goal and metrics, today's task and mission movement, next action, and json output
@@ -81,7 +82,7 @@ rg "caretakerCommand|classifyPullRequest|listOpenPullRequestRefs|fetchPullReques
 rg "runOrb|readOrbScorecard|ingestOrbScorecard|orb-job-failures|appendOrbChoice|command === 'orb'" commands/orb.js commands/pulse.js lib/orb-scorecard.js lib/pulse.js lib/policy-lessons.js lib/orb-context.js bin/atris.js lib/known-commands.js test/orb.test.js  # Orb CLI: deterministic suggestions, dispatch receipts, orphan-aware scorecard, detached results, loud failures, and pulse RSI ingestion
 - **Goal view:** `commands/goal.js:138` builds the view, `commands/goal.js:160` renders the text contract, `commands/goal.js:178` handles writes and json, `bin/atris.js:1784` routes goal and wtf, `lib/known-commands.js:3` registers both names, and `test/goal.test.js:45` starts the command contract coverage.
 rg "renderCard|renderPageSection|renderEmailLine|renderMorningCardRow|directProofText|todayMissionReceiptLines" lib/receipt-block.js commands/now.js commands/mission.js test/receipt-block.test.js # Receipt block: existing mission receipt schema gains optional render surfaces, now.md preserves complete mission results and their why clauses without ellipsis fragments, and first-person check process becomes a direct passed fact
-rg "radarCommand|collectRadar|Operator radar|Agent process top|findTaskWorkspaceRoot|task_reason|task_action|task_load|whats going on|loadBusinessCollaboration|ctop" commands/radar.js bin/atris.js test/radar.test.js test/commands.test.js  # Live Atris OS radar: agent processes joined with nearest workspace task projection, ctop unmapped-session reasons/actions and task-load pileups, mission/loop, worktree, AgentXP, team/member, business collaboration readiness, brain scorecard, Swarlo/delegation, and Codex goal state
+rg "radarCommand|collectRadar|parseScopeFlag|scope|Operator radar|--global" commands/radar.js lib/cli-scope.js bin/atris.js test/radar.test.js test/dogfood-p1.test.js  # Radar defaults to workspace scope; --global for machine PIDs/other-repo dirt; JSON includes scope
 rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggestedNextMoves|taskNeedsAgentReview|taskIsHumanGatedClaimed|atris.launchpad.v1" commands/launchpad.js bin/atris.js test/commands.test.js  # Launchpad command-center card: single next action + 3 suggested moves from local task projection, missions, brain STATUS, and TODO endgame; ranks own-claimed > mission tick > proof review > human-accept queue > open claim > endgame seed > brain move; skips human-gated claimed work; --json (atris.launchpad.v1) and plain card
 rg "unknownsCommand|gatherTerritoryContext|buildUnknownsPrompt|renderUnknownsMarkdown|unknowns --help" commands/unknowns.js bin/atris.js test/unknowns.test.js  # Unknowns command: blindspot pass from MAP/lessons/logs/git/task_events through shared runner into SQLite unknowns ledger plus .atris/state/unknowns.md projection
 rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atris.js test/release-preflight.test.js  # Release command plus pre-tag preflight
@@ -124,7 +125,7 @@ rg "Codex Goal Replacement|replace_goal|set_goal|codex_goal.json|codex_goal_requ
 rg "addTask|claimTask|doneTask|appendTaskCompletionLogs|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store + completion autolog to project/member logs
 rg "missionBlockerTitle|missionXpTaskTitle|Mission XP" lib/self-drive.js commands/mission.js commands/task.js test/self-drive.test.js test/mission-xp.test.js  # Mission-generated task titles stay short and plain while full context remains in task metadata and dialogue
 rg "codexGoalCommand|completed_task_closed|thread_goals" commands/codex-goal.js commands/mission.js test/codex-goal.test.js test/mission-status.test.js  # Native Codex goal boundary: read-only status, completed-task reset refusal, and scheduled-loop stop
-rg "gmailCommand|integrationsStatus|showIntegrationsHelp|integrations --help" bin/atris.js commands/integrations.js test/commands.test.js # Integration commands + non-mutating status help
+rg "integrationsStatus|--global|scope: 'workspace'" bin/atris.js commands/integrations.js test/dogfood-p1.test.js # Integrations default workspace; --global for account hosts
 rg "ciCommand|runnerAssetName|buildJitConfigRequest|parseRunnerMarker|runJobLoop|runCiRunner|summarizeUsage" bin/atris.js commands/ci.js lib/ci-runner.js lib/known-commands.js test/ci.test.js # Self-hosted GitHub Actions runner: offline argument and asset selection, per-version local cache, concurrent per-repo job loops with isolated warm work folders, marker-based job-time and result metering, and a per-repo build-minute view
 rg "githubCommand|createOfficialCliCommand|github cli wrapper|github help is workspace-free" bin/atris.js commands/github.js lib/official-cli-integration.js test/official-cli-integrations.test.js # github official cli wrapper: gh binary/auth detection plus pr list/create/checks/view passthrough
 rg "vercelCommand|vercel cli wrapper|vercel help is workspace-free" bin/atris.js commands/vercel.js test/official-cli-integrations.test.js # vercel official cli wrapper: vercel binary/auth detection plus deploy/ls/logs/inspect passthrough
@@ -505,7 +506,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Regression:** `test/land.test.js` (board classification, category-specific cleanup guidance, reap, dry-run, worktree patch salvage)
 - **Value:** hundreds of agents can fan out without work silently dying in branches nobody merges
 
-**Search:** `rg "collectBoard|landCommand|landSummary" commands/land.js bin/atris.js`
+**Search:** `rg "collectBoard|landCommand|hasCommits|no commits yet" commands/land.js bin/atris.js test/dogfood-p1.test.js`
 
 ### Feature: Member Worktrees (`atris worktree`)
 
@@ -978,7 +979,9 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Modes:** default report, `--share` (paste-ready for Slack/email/customer), `--json` (agents/dashboards), `--days N`
 - **Regression:** `test/recap.test.js` (buckets, jargon ban, share format, projection fallback, empty workspace)
 
-**Search:** `rg "recapAtris|buildRecapData|renderShare" commands/recap.js bin/atris.js test/recap.test.js`
+**Search:** `rg "recapAtris|plainCheck|isRealTestRunnerProof|classifyVerifier" commands/recap.js lib/verifier-quality.js commands/task.js test/recap.test.js test/dogfood-p1.test.js`
+rg "fleetWorkspaceStatus|fleet --global" commands/fleet.js test/dogfood-p1.test.js # Fleet defaults to workspace; --global hits Swarlo
+rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js test/dogfood-p1.test.js # Engine roster workspace vs --global
 
 ### Feature: Site Deploy (`atris site deploy`)
 

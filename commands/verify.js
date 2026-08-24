@@ -119,7 +119,7 @@ function verifyWorkspace(cwd, atrisDir) {
   }
   console.log('');
 
-  return results;
+  return results.issues.length === 0 ? 0 : 1;
 }
 
 /**
@@ -208,7 +208,8 @@ function verifyTask(cwd, atrisDir, taskId) {
   }
   console.log('');
 
-  return results;
+  const mapOk = mapCheck.documented !== false;
+  return (passed === total && testPass && mapOk) ? 0 : 1;
 }
 
 /**

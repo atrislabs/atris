@@ -9638,6 +9638,15 @@ function cmdReady(args) {
     // this codebase fails there, and one that passes anywhere passes there too.
     if (!hasFlag(args, '--no-falsify-check')) {
       const { probeVerifierCanFail } = require('../lib/falsifier-probe');
+      const { classifyVerifier } = require('../lib/verifier-quality');
+      const quality = classifyVerifier(verifyFlag);
+      if (!quality.ok) {
+        console.error(`atris task ready: weak verifier — ${quality.reason}`);
+        console.error(`  command: ${verifyFlag}`);
+        console.error('  allowlisted examples: node --test, npm test, git diff --check, node --check, rg <symbol>');
+        console.error('  or pass --no-falsify-check to accept anyway.');
+        process.exit(1);
+      }
       const probe = probeVerifierCanFail({ command: verifyFlag });
       if (probe.probed && probe.canFail === false) {
         console.error(`atris task ready: this check cannot fail — ${probe.reason}`);
