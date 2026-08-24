@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const { parseScopeFlag } = require('../lib/cli-scope');
 
 // ── Config ──────────────────────────────────────────────
 
@@ -327,25 +328,89 @@ async function fleetWatch(state, intervalSec = 10) {
   });
 }
 
+async function fleetWorkspaceStatus(root = process.cwd(), { json = false } = {}) {
+  const teamDir = path.join(root, 'atris', 'team');
+  const members = [];
+  if (fs.existsSync(teamDir)) {
+    for (const name of fs.readdirSync(teamDir).filter((n) => !n.startsWith('_') && !n.startsWith('.'))) {
+      const memberFile = path.join(teamDir, name, 'MEMBER.md');
+      if (!fs.existsSync(memberFile)) continue;
+      members.push({ member_id: name, member_name: name, member_type: 'agent', source: 'workspace' });
+    }
+  }
+  const missionsPath = path.join(root, '.atris', 'state', 'missions.jsonl');
+  let activeMissions = 0;
+  if (fs.existsSync(missionsPath)) {
+    const seen = new Map();
+    for (const line of fs.readFileSync(missionsPath, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const rec = JSON.parse(line);
+        const id = rec.id || rec.mission_id;
+        if (id) seen.set(id, rec);
+      } catch {}
+    }
+    activeMissions = [...seen.values()].filter((m) => ['ready', 'running', 'planning', 'paused'].includes(m.status)).length;
+  }
+  const payload = {
+    scope: 'workspace',
+    hub: null,
+    members: { count: members.length, members },
+    claims: { count: 0, claims: [] },
+    missions_active: activeMissions,
+    note: 'workspace scope only. pass --global to query the machine Swarlo hub.',
+  };
+  if (json) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+  console.log(`\n  Fleet (workspace)`);
+  console.log(`  ─────────────────────────────────`);
+  console.log(`  Scope:   workspace`);
+  console.log(`  Members: ${members.length} (from atris/team)`);
+  for (const mem of members.slice(0, 24)) {
+    console.log(`    ${mem.member_name}`);
+  }
+  console.log(`  Missions active: ${activeMissions}`);
+  console.log(`  Hub:     not queried (use --global for localhost Swarlo)`);
+  console.log();
+}
+
 // ── Main ────────────────────────────────────────────────
 
 async function fleet(args = []) {
-  const subcommand = (args[0] || 'status').toLowerCase();
-  const rest = args.slice(1).join(' ');
+  const scope = parseScopeFlag(args);
+  const argv = scope.args.filter((a) => !String(a).startsWith('-'));
+  const flags = scope.args.filter((a) => String(a).startsWith('-'));
+  const subcommand = (argv[0] || 'status').toLowerCase();
+  const rest = argv.slice(1).join(' ');
+  const json = flags.includes('--json') || args.includes('--json');
 
   if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
     console.log('');
     console.log('  atris fleet — coordinate agent swarm via Swarlo');
     console.log('');
-    console.log('  fleet              show board status');
-    console.log('  fleet post <msg>   post message to board');
-    console.log('  fleet task <prompt> create a task for agents');
-    console.log('  fleet claim <key>  claim a task');
-    console.log('  fleet done <key>   report task complete');
+    console.log('  fleet              show workspace fleet (default)');
+    console.log('  fleet --global     query the machine Swarlo hub');
+    console.log('  fleet post <msg>   post message to board (global)');
+    console.log('  fleet task <prompt> create a task for agents (global)');
+    console.log('  fleet claim <key>  claim a task (global)');
+    console.log('  fleet done <key>   report task complete (global)');
     console.log('  fleet members      who is online');
     console.log('  fleet prune [min]  remove stale members (default 60m)');
     console.log('  fleet watch [sec]  live-tail the board (default 10s)');
     console.log('');
+    return;
+  }
+
+  if (!scope.global && (subcommand === 'status' || subcommand === 'st' || subcommand === 'members' || subcommand === 'who')) {
+    await fleetWorkspaceStatus(process.cwd(), { json });
+    return;
+  }
+
+  if (!scope.global && ['post', 'say', 'task', 'claim', 'done', 'report', 'prune', 'watch', 'tail'].includes(subcommand)) {
+    console.error('fleet mutations need the machine hub. re-run with --global.');
+    process.exitCode = 1;
     return;
   }
 
@@ -354,7 +419,26 @@ async function fleet(args = []) {
   switch (subcommand) {
     case 'status':
     case 'st':
-      await fleetStatus(state);
+      if (json) {
+        const hubUrl = getHubUrl();
+        const hubId = getHubId();
+        const h = authHeaders(state);
+        const [members, posts, claims] = await Promise.all([
+          request('GET', `${hubUrl}/api/${hubId}/members`, null, h),
+          request('GET', `${hubUrl}/api/${hubId}/channels/general/posts?limit=5`, null, h),
+          request('GET', `${hubUrl}/api/${hubId}/claims`, null, h),
+        ]);
+        console.log(JSON.stringify({
+          scope: 'global',
+          hub: { id: hubId, url: hubUrl },
+          you: state.member_id,
+          members: members.data,
+          claims: claims.data,
+          recent: posts.data,
+        }, null, 2));
+      } else {
+        await fleetStatus(state);
+      }
       break;
     case 'post':
     case 'say':
@@ -387,9 +471,12 @@ async function fleet(args = []) {
       await fleetWatch(state, parseInt(rest) || 10);
       break;
     default:
-      // If no subcommand match, treat the whole thing as status
-      await fleetStatus(state);
+      if (!scope.global) {
+        await fleetWorkspaceStatus(process.cwd(), { json });
+      } else {
+        await fleetStatus(state);
+      }
   }
 }
 
-module.exports = { fleet };
+module.exports = { fleet, fleetWorkspaceStatus };

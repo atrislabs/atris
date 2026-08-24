@@ -318,16 +318,18 @@ function useAccount() {
   }
 }
 
-async function accountsCmd() {
-  const args = process.argv.slice(3);
-  const subCmd = args[0];
+async function accountsCmd(argv = null) {
+  const args = Array.isArray(argv) ? argv : process.argv.slice(3);
+  const { parseScopeFlag } = require('../lib/cli-scope');
+  const scope = parseScopeFlag(args);
+  const subCmd = scope.args[0];
 
   if (subCmd === 'add' || subCmd === 'login') {
     return loginAtris({ force: true });
   }
 
   if (subCmd === 'remove' || subCmd === 'rm') {
-    const target = args[1];
+    const target = scope.args[1];
     if (target === '--all') {
       const profiles = listProfiles();
       if (profiles.length === 0) {
@@ -386,34 +388,59 @@ async function accountsCmd() {
     process.exit(0);
   }
 
-  // Default: list accounts
-  return listAccountsCmd();
+  // Default: list accounts (workspace = active only; --global = all profiles)
+  return listAccountsCmd({ global: scope.global, json: scope.args.includes('--json') || args.includes('--json') });
 }
 
-function listAccountsCmd() {
+function listAccountsCmd(options = {}) {
   const profiles = listProfiles();
-  if (profiles.length === 0) {
-    console.log('No accounts saved. Run "atris login" to add one.');
+  const current = loadCredentials();
+  const currentUid = current?.user_id;
+  const envProfile = process.env.ATRIS_PROFILE;
+  const sessionProfile = getSessionProfile();
+  const scopeKind = options.global ? 'global' : 'workspace';
+
+  const rows = profiles.map((name) => {
+    const profile = loadProfile(name);
+    const email = profile?.email || 'unknown';
+    const isActive = profile?.user_id === currentUid
+      || name === envProfile
+      || name === sessionProfile;
+    return { name, email, active: Boolean(isActive) };
+  });
+
+  const visible = options.global ? rows : rows.filter((row) => row.active);
+
+  if (options.json) {
+    console.log(JSON.stringify({
+      scope: scopeKind,
+      accounts: visible,
+      total_profiles: profiles.length,
+    }, null, 2));
     process.exit(0);
   }
 
-  const current = loadCredentials();
-  const currentUid = current?.user_id;
-  // Also check which profile name is active (env var or session)
-  const envProfile = process.env.ATRIS_PROFILE;
-  const sessionProfile = getSessionProfile();
-
-  console.log('\n  Accounts\n');
-  profiles.forEach(name => {
-    const profile = loadProfile(name);
-    const email = profile?.email || 'unknown';
-    const isActive = profile?.user_id === currentUid;
-    if (isActive) {
-      console.log(`  ● ${name}  ${email}`);
+  if (visible.length === 0) {
+    if (profiles.length === 0) {
+      console.log('No accounts saved. Run "atris login" to add one.');
     } else {
-      console.log(`    ${name}  ${email}`);
+      console.log('No active account in this workspace.');
+      console.log('Pass --global to list all saved profiles, or atris switch <name>.');
+    }
+    process.exit(0);
+  }
+
+  console.log(`\n  Accounts (${scopeKind})\n`);
+  visible.forEach((row) => {
+    if (row.active) {
+      console.log(`  ● ${row.name}  ${row.email}`);
+    } else {
+      console.log(`    ${row.name}  ${row.email}`);
     }
   });
+  if (!options.global && profiles.length > visible.length) {
+    console.log(`\n  ${profiles.length - visible.length} more profile(s) hidden. Pass --global to list them.`);
+  }
   console.log(`\n  Switch:  atris switch <name>`);
   console.log(`  Add:     atris accounts add`);
   console.log(`  Remove:  atris accounts remove <name>\n`);

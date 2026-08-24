@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { parseScopeFlag, pathUnderRoot } = require('../lib/cli-scope');
 
 function safeJson(text, fallback = null) {
   try { return JSON.parse(text); } catch { return fallback; }
@@ -795,6 +796,7 @@ function nextAction(tasks, missions, worktrees, agents, os = {}) {
 
 function collectRadar(options = {}) {
   const root = options.root || process.cwd();
+  const scopeKind = options.scope === 'global' ? 'global' : 'workspace';
   const deps = {
     execFile: options.execFileSync || execFileSync,
     readFile: options.readFileSync || fs.readFileSync,
@@ -810,14 +812,18 @@ function collectRadar(options = {}) {
   const identityCache = new Map();
   const missions = loadMissions(root, deps, nowMs);
   identityCache.set(root, { missions, missionLocks: loadMissionLocks(path.join(root, '.atris', 'state'), deps), memberLocks: loadMemberLoopLocks(path.join(root, '.atris', 'state'), deps) });
-  const worktrees = loadWorktrees(root, deps);
+  let worktrees = loadWorktrees(root, deps);
+  if (scopeKind !== 'global') {
+    // Refuse other-repo dirty worktrees in the default workspace view.
+    worktrees = worktrees.filter((wt) => pathUnderRoot(wt.path, root));
+  }
   const branchIdentityCache = new Map();
   const branchIdentityFor = (cwd) => {
     if (!cwd) return null;
     if (!branchIdentityCache.has(cwd)) branchIdentityCache.set(cwd, branchIdentityAtCwd(cwd, deps.execFile));
     return branchIdentityCache.get(cwd);
   };
-  const agents = collectAgents(deps).map(agent => {
+  let agents = collectAgents(deps).map(agent => {
     const taskWorkspaceRoot = findTaskWorkspaceRoot(agent.cwd, deps);
     const agentTasks = taskWorkspaceRoot ? loadTasksCached(taskWorkspaceRoot, deps, taskCache) : [];
     const identity = taskWorkspaceRoot ? loadWorkspaceIdentity(taskWorkspaceRoot, deps, identityCache, nowMs) : { missions: [], missionLocks: [], memberLocks: [] };
@@ -854,6 +860,10 @@ function collectRadar(options = {}) {
       task_action: task ? taskSessionAction(agent, task, taskWorkspaceRoot) : untaskedAction(agent, taskWorkspaceRoot, agentTasks, resolved),
     };
   });
+  if (scopeKind !== 'global') {
+    agents = agents.filter((agent) => pathUnderRoot(agent.cwd, root)
+      || (agent.task_workspace && pathUnderRoot(findTaskWorkspaceRoot(agent.cwd, deps), root)));
+  }
   const scorecards = loadScorecards(root, deps);
   const osState = {
     xp: loadXp(root, deps),
@@ -863,13 +873,25 @@ function collectRadar(options = {}) {
     loop: loadLoop(missions, root, deps),
   };
   osState.business = loadBusinessCollaboration(root, deps, osState.team, scorecards.length);
-  return { root, generated_at: new Date(nowMs).toISOString(), summary: summarize(tasks, missions, worktrees, agents), os: osState, next_action: nextAction(tasks, missions, worktrees, agents, osState), agents, tasks, missions, worktrees };
+  return {
+    scope: scopeKind,
+    root,
+    generated_at: new Date(nowMs).toISOString(),
+    summary: summarize(tasks, missions, worktrees, agents),
+    os: osState,
+    next_action: nextAction(tasks, missions, worktrees, agents, osState),
+    agents,
+    tasks,
+    missions,
+    worktrees,
+  };
 }
 
 function renderRadar(data) {
   const lines = [];
   const s = data.summary;
   lines.push('Operator radar');
+  lines.push(`Scope: ${data.scope || 'workspace'}${data.scope === 'global' ? ' (machine)' : ' (this workspace)'}`);
   lines.push('');
   lines.push(`Agents: ${s.agents.active}/${s.agents.total} active`);
   lines.push(`Tasks: ${s.tasks.open} open, ${s.tasks.claimed} claimed, ${s.tasks.review} review (${s.tasks.certifiedReview} certified)`);
@@ -1210,17 +1232,19 @@ function renderAgentTop(data) {
 
 function radarCommand(args = [], options = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    console.log('Usage: atris radar [--json] [--agents]');
+    console.log('Usage: atris radar [--json] [--agents] [--global]');
     console.log('Usage: atris radar agents');
     console.log('Usage: atris ctop');
     console.log('');
     console.log('Shows live agent processes joined with Atris tasks, missions, and worktrees.');
+    console.log('Default scope is this workspace. Pass --global for the whole machine.');
     console.log('Use --agents or ctop for a process-first CPU/memory view.');
     return 0;
   }
-  const data = collectRadar(options);
-  const agentsOnly = args.includes('--agents') || args[0] === 'agents';
-  if (args.includes('--json')) console.log(JSON.stringify(agentsOnly ? agentTopPayload(data) : data, null, 2));
+  const scope = parseScopeFlag(args);
+  const data = collectRadar({ ...options, scope: scope.kind });
+  const agentsOnly = scope.args.includes('--agents') || scope.args[0] === 'agents';
+  if (scope.args.includes('--json') || args.includes('--json')) console.log(JSON.stringify(agentsOnly ? { ...agentTopPayload(data), scope: data.scope } : data, null, 2));
   else if (agentsOnly) console.log(renderAgentTop(data));
   else console.log(renderRadar(data));
   return 0;

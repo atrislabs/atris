@@ -4,7 +4,7 @@
   "description": "you say what you want in plain words. atris builds it, checks it, and shows you proof.",
   "main": "bin/atris.js",
   "bin": {
-    "atris": "bin/atris.js",
+    "atris": "bin/atris",
     "ax": "ax"
   },
   "files": [

@@ -1,0 +1,21 @@
+#!/bin/sh
+# Tiny POSIX shim so sandboxes that refuse a large Node bin still get a
+# runnable public entry. Real CLI lives next to this file as atris.js.
+# Resolve symlinks so npm/global PATH links still find atris.js.
+set -eu
+here=$0
+while [ -h "$here" ]; do
+  link=$(ls -ld "$here")
+  link=${link#*" -> "}
+  case $link in
+    /*) here=$link ;;
+    *) here=$(dirname "$here")/$link ;;
+  esac
+done
+DIR=$(CDPATH= cd -- "$(dirname "$here")" && pwd)
+if command -v node >/dev/null 2>&1; then
+  exec node "$DIR/atris.js" "$@"
+fi
+echo "atris: node not found on PATH. install Node 22+ then retry." >&2
+echo "hint: atris doctor --json" >&2
+exit 127

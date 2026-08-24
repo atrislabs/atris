@@ -165,6 +165,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
 
   const data = collectRadar({
     root,
+    scope: 'global',
     platform: 'darwin',
     nowMs: Date.parse('2026-05-18T12:00:00.000Z'),
     execFileSync,
@@ -183,6 +184,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     },
   });
 
+  assert.equal(data.scope, 'global');
   assert.equal(data.summary.agents.total, 4);
   assert.equal(data.summary.tasks.claimed, 0);
   assert.equal(data.summary.tasks.certifiedReview, 1);

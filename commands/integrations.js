@@ -1588,10 +1588,41 @@ async function imessageCommand(subcommand, ...args) {
 // STATUS
 // ============================================================================
 
-async function integrationsStatus() {
-  const token = await getAuthToken();
+async function integrationsStatus(args = []) {
+  const { parseScopeFlag } = require('../lib/cli-scope');
+  const scope = parseScopeFlag(args);
+  const json = scope.args.includes('--json') || args.includes('--json');
 
-  console.log('🔌 Integration Status:\n');
+  if (!scope.global) {
+    const localPath = path.join(process.cwd(), '.atris', 'integrations.json');
+    let local = null;
+    try {
+      if (fs.existsSync(localPath)) local = JSON.parse(fs.readFileSync(localPath, 'utf8'));
+    } catch {}
+    const payload = {
+      scope: 'workspace',
+      workspace_root: process.cwd(),
+      integrations: Array.isArray(local?.integrations) ? local.integrations : [],
+      note: 'workspace scope only. pass --global for account-level mail/chat/code hosts.',
+    };
+    if (json) {
+      console.log(JSON.stringify(payload, null, 2));
+      return 0;
+    }
+    console.log('Integration Status (workspace)\n');
+    if (!payload.integrations.length) {
+      console.log('  (none configured in this workspace)');
+    } else {
+      for (const name of payload.integrations) console.log(`  • ${name}`);
+    }
+    console.log('\nPass --global to check account-level gmail/slack/github status.');
+    return 0;
+  }
+
+  const token = await getAuthToken();
+  const rows = [];
+
+  console.log('🔌 Integration Status (global):\n');
 
   const integrations = ['gmail', 'google-calendar', 'slack', 'twitter', 'github'];
 
@@ -1606,15 +1637,22 @@ async function integrationsStatus() {
       const icon = connected ? '✅' : '❌';
       const displayName = name.replace('google-', '').replace('-', ' ');
       console.log(`  ${icon} ${displayName}`);
+      rows.push({ name, connected: Boolean(connected) });
     } catch {
       console.log(`  ❓ ${name}`);
+      rows.push({ name, connected: null });
     }
   }
 
   const imessage = imessageDoctor();
   console.log(`  ${imessage.connected ? '✅' : '❌'} iMessage (local Mac)`);
+  rows.push({ name: 'imessage', connected: Boolean(imessage.connected) });
 
   console.log('\nConnect integrations at: https://atris.ai/dashboard/settings');
+  if (json) {
+    console.log(JSON.stringify({ scope: 'global', integrations: rows }, null, 2));
+  }
+  return 0;
 }
 
 module.exports = {

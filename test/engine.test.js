@@ -23,7 +23,7 @@ function runCli(args, cwd, env = {}) {
 test('engine roster lists every profile with detection state', () => {
   const dir = makeTempDir();
   try {
-    const res = runCli(['engine', '--json'], dir);
+    const res = runCli(['engine', '--json', '--global'], dir);
     assert.equal(res.status, 0, res.stderr);
     const parsed = JSON.parse(res.stdout);
     const names = parsed.engines.map((e) => e.name);
@@ -195,14 +195,14 @@ test('engine list --json exposes the registry contract', () => {
 test('saved engine models override the seed without code edits', () => {
   const dir = makeTempDir();
   try {
-    const initial = runCli(['engine', 'list', '--json'], dir, { PATH: CLEAN_PATH });
+    const initial = runCli(['engine', 'list', '--json', '--global'], dir, { PATH: CLEAN_PATH });
     assert.equal(initial.status, 0, initial.stderr || initial.stdout);
     const registryFile = path.join(dir, '.atris', 'state', 'engines.json');
     const registry = JSON.parse(fs.readFileSync(registryFile, 'utf8'));
     registry.engines.find((entry) => entry.id === 'cursor').models = ['composer 3'];
     fs.writeFileSync(registryFile, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');
 
-    const swapped = runCli(['engine', 'list', '--json'], dir, { PATH: CLEAN_PATH });
+    const swapped = runCli(['engine', 'list', '--json', '--global'], dir, { PATH: CLEAN_PATH });
     assert.equal(swapped.status, 0, swapped.stderr || swapped.stdout);
     const cursor = JSON.parse(swapped.stdout).engines.find((entry) => entry.id === 'cursor');
     assert.deepEqual(cursor.models, ['composer 3']);
@@ -223,12 +223,13 @@ test('engine duty and model overrides round-trip through the saved registry', ()
     assert.equal(saved.engines.find((entry) => entry.id === 'codex').duty, 'leader');
     assert.equal(saved.engines.find((entry) => entry.id === 'fable').duty, '');
 
-    const list = runCli(['engine', 'list', '--json'], dir, { PATH: CLEAN_PATH });
+    const list = runCli(['engine', 'list', '--json', '--global'], dir, { PATH: CLEAN_PATH });
     assert.equal(list.status, 0, list.stderr || list.stdout);
     const parsed = JSON.parse(list.stdout);
     assert.deepEqual(parsed.engines.find((entry) => entry.id === 'codex').models, ['gpt 5', 'o3']);
     assert.equal(parsed.engines.find((entry) => entry.id === 'codex').duty, 'leader');
     assert.equal(parsed.engines.find((entry) => entry.id === 'fable').duty, '');
+    assert.equal(parsed.scope, 'global');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -273,7 +274,7 @@ test('engines chart aliases render the seeded leader and apprentice', () => {
 test('engines list renders models and errand duty', () => {
   const dir = makeTempDir();
   try {
-    const res = runCli(['engines'], dir, { PATH: CLEAN_PATH });
+    const res = runCli(['engines', '--global'], dir, { PATH: CLEAN_PATH });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /models: opus 5, opus 4\.8, fable, haiku/);
     assert.match(res.stdout, /models: composer 2\.5, grok 4\.6, kimi 3/);
@@ -290,7 +291,7 @@ test('duty overrides leave existing executor role resolution unchanged', () => {
   writeFakeBin(binDir, 'codex', '#!/bin/sh\necho codex\n');
   writeFakeBin(binDir, 'cursor-agent', '#!/bin/sh\necho cursor\n');
   try {
-    const registry = runCli(['engine', 'list', '--json'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    const registry = runCli(['engine', 'list', '--json', '--global'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
     assert.equal(registry.status, 0, registry.stderr || registry.stdout);
     const parsed = JSON.parse(registry.stdout);
     assert.deepEqual(parsed.engines.find((entry) => entry.id === 'devin').roles, ['executor']);
@@ -348,7 +349,7 @@ test('engine health flip removes a credited-out engine from resolve fallback', (
     assert.equal(flipped.health.status, 'credit_out');
     assert.ok(flipped.health.last_failure_ts);
 
-    const list = runCli(['engine', 'list', '--json'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    const list = runCli(['engine', 'list', '--json', '--global'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
     assert.equal(list.status, 0, list.stderr || list.stdout);
     const codex = JSON.parse(list.stdout).engines.find((entry) => entry.id === 'codex');
     assert.equal(codex.health.status, 'credit_out');

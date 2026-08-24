@@ -19,6 +19,10 @@ function repoRoot(cwd = process.cwd()) {
   return result.stdout.trim();
 }
 
+function hasCommits(root) {
+  return runGit(['rev-parse', '--verify', '--quiet', 'HEAD'], { cwd: root, check: false }).status === 0;
+}
+
 function refExists(root, ref) {
   return runGit(['rev-parse', '--verify', '--quiet', ref], { cwd: root, check: false }).status === 0;
 }
@@ -111,7 +115,11 @@ function cherryStats(root, base, ref) {
 //   due    — has unlanded commits, older than TTL; --reap collects it
 function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', now = Date.now(), light = false } = {}) {
   const base = baseBranch(root, baseOverride);
-  if (!base) throw new Error('no master/main branch found');
+  if (!base) {
+    const err = new Error('no master/main branch found. fix: git checkout -b main');
+    err.code = 'LAND_NO_BASE';
+    throw err;
+  }
 
   const branches = [];
   const lastCommitMsByBranch = new Map();
@@ -457,7 +465,11 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
 // into master some other way, and what would be lost if it were cleared.
 function collectStory(root, name, { base: baseOverride = '' } = {}) {
   const base = baseBranch(root, baseOverride);
-  if (!base) throw new Error('no master/main branch found');
+  if (!base) {
+    const err = new Error('no master/main branch found. fix: git checkout -b main');
+    err.code = 'LAND_NO_BASE';
+    throw err;
+  }
   if (!refExists(root, name)) return null;
 
   const logResult = runGit(
@@ -656,7 +668,11 @@ function landCommand(args = []) {
   }
   const root = repoRoot();
   if (!root) {
-    console.error('not a git repository');
+    console.error('not a git repository. fix: git init -b main');
+    return 1;
+  }
+  if (!hasCommits(root)) {
+    console.error('no commits yet. fix: git commit --allow-empty -m init');
     return 1;
   }
   const ttlRaw = readFollowingFlag(args, '--ttl', '');
@@ -666,29 +682,44 @@ function landCommand(args = []) {
   const json = args.includes('--json');
 
   if (args.includes('--reap')) {
-    const receipt = reap(root, { ttlDays, base, dryRun: args.includes('--dry-run'), remote: !args.includes('--no-remote'), force: args.includes('--force') });
-    if (json) console.log(JSON.stringify(receipt, null, 2));
-    else printReceipt(receipt);
-    return 0;
+    try {
+      const receipt = reap(root, { ttlDays, base, dryRun: args.includes('--dry-run'), remote: !args.includes('--no-remote'), force: args.includes('--force') });
+      if (json) console.log(JSON.stringify(receipt, null, 2));
+      else printReceipt(receipt);
+      return 0;
+    } catch (err) {
+      console.error(String(err && err.message || err));
+      return 1;
+    }
   }
 
   const lookupArgs = args[0] === 'status' ? args.slice(1) : args;
   const name = lookupArgs.find((a) => !a.startsWith('-') && a !== readFollowingFlag(lookupArgs, '--ttl') && a !== readFollowingFlag(lookupArgs, '--base'));
   if (name) {
-    const story = collectStory(root, name, { base });
-    if (!story) {
-      console.error(`nothing called '${name}' is in the air right now`);
+    try {
+      const story = collectStory(root, name, { base });
+      if (!story) {
+        console.error(`nothing called '${name}' is in the air right now`);
+        return 1;
+      }
+      if (json) console.log(JSON.stringify(story, null, 2));
+      else printStory(story);
+      return 0;
+    } catch (err) {
+      console.error(String(err && err.message || err));
       return 1;
     }
-    if (json) console.log(JSON.stringify(story, null, 2));
-    else printStory(story);
-    return 0;
   }
 
-  const board = collectBoard(root, { ttlDays, base });
-  if (json) console.log(JSON.stringify(board, null, 2));
-  else printBoard(board);
-  return 0;
+  try {
+    const board = collectBoard(root, { ttlDays, base });
+    if (json) console.log(JSON.stringify(board, null, 2));
+    else printBoard(board);
+    return 0;
+  } catch (err) {
+    console.error(String(err && err.message || err));
+    return 1;
+  }
 }
 
 module.exports = {

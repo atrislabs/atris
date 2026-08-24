@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { isRealTestRunnerProof, quoteVerifierCommand } = require('../lib/verifier-quality');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_DAYS = 7;
@@ -59,14 +60,22 @@ function plainCheck(proof, width = 70) {
   const checks = [];
   const add = label => { if (!checks.includes(label)) checks.push(label); };
 
+  const quoted = quoteVerifierCommand(flat);
+  if (quoted) add(`ran \`${quoted}\``);
+
   if (/\b(PR|pull request)\b.*\b(merged|MERGED)\b|\bmerged\b.*\b(PR|pull request)\b/i.test(flat)) add('merged');
-  if (/\b(node --test|npm test|npm run test|pytest|go test|cargo test|test\/|tests?)\b/i.test(flat)
-    && /\b(pass|passed|green|ok|0 failures?|9\/9|12\/12)\b/i.test(flat)) add('tests passed');
-  if (/\b(node --check|git diff --check|git diff --exit-code|git diff --quiet|rg\b|grep\b|diff --brief|cmp -s)\b/i.test(flat)) add('code check passed');
+  // Only say "tests passed" when a real test runner appears in the proof.
+  // A bare `test -f` / file-exists check must not claim tests ran.
+  if (isRealTestRunnerProof(flat)) add('tests passed');
+  if (/\b(node --check|git diff --check|git diff --exit-code|git diff --quiet)\b/i.test(flat)) add('code check passed');
+  if (/\b(?:\brg\b|\bgrep\b)\b/i.test(flat) && !/\btest\s+-[efsd]\b/i.test(flat)) add('content check passed');
   if (/\b(bench|benchmark|measured|latency|speed)\b/i.test(flat)) add('measured improvement');
   if (/\brepeated agent review\b|\bagent review\b/i.test(flat)) add('reviewed repeatedly');
   if (/\batris\/runs\/[^\s]+\.json\b|receipt\b/i.test(flat)) add('record saved');
   if (/\b(human approved|accepted by|accepted_at|reward)\b/i.test(flat)) add('human accepted');
+  if (/\btest\s+-[efsd]\b|\b\[\s+-[efsd]\b/i.test(flat) && !isRealTestRunnerProof(flat)) {
+    add(quoted ? 'file check' : 'file check only');
+  }
 
   if (checks.length) return checks.join(', ');
   return shortProof(proof, width);
