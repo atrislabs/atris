@@ -176,7 +176,11 @@ function voiceCommand(args, options = {}) {
   const subcommand = args[0];
   const stdout = options.stdout || process.stdout;
   const stderr = options.stderr || process.stderr;
-  if (!subcommand || subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
+  if (!subcommand) {
+    showVoiceHelp(stderr);
+    return 2;
+  }
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
     showVoiceHelp(stdout);
     return 0;
   }

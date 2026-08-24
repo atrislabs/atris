@@ -5530,7 +5530,7 @@ test('brain compile writes loadable status and ledger artifacts', () => {
   const dir = makeTempDir();
   try {
     seedBrainWorkspace(dir);
-    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris brain compiled/);
     assert.match(res.stdout, /State rows: 1 raw \/ 1 valid/);
@@ -5565,7 +5565,7 @@ test('brain compile includes chat scan load pointer when present', () => {
       generated_at: '2026-06-28T00:00:00.000Z',
       next_command: 'atris member wake auto-improver --execute --confirm-autonomy-policy',
     }) + '\n', 'utf8');
-    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     const claude = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8');
     assert.match(claude, /`\.atris\/state\/chat_scan\.latest\.json`/);
@@ -5594,7 +5594,7 @@ test('brain compile includes primary checkout chat scan pointer from worktrees',
     worktreePath = path.join(dir, '..', `${path.basename(dir)}-brain-load-order-worktree`);
     assert.equal(runGit(['worktree', 'add', '-q', '--detach', worktreePath, 'HEAD'], dir).status, 0);
 
-    const res = runCli(['brain', 'compile', '--root', worktreePath, '--verify'], { cwd: worktreePath });
+    const res = runCli(['brain', 'compile', '--yes', '--root', worktreePath, '--verify'], { cwd: worktreePath });
     assert.equal(res.status, 0, res.stderr);
     const agents = fs.readFileSync(path.join(worktreePath, 'AGENTS.md'), 'utf8');
     assert.match(agents, /`\.atris\/state\/chat_scan\.latest\.json`/);
@@ -5640,7 +5640,7 @@ test('brain compile refreshes stale now.md before collecting state', () => {
       '',
     ].join('\n'), 'utf8');
 
-    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     const now = fs.readFileSync(path.join(dir, 'atris', 'now.md'), 'utf8');
     assert.match(now, new RegExp(`Last updated: ${today}`));
@@ -5670,7 +5670,7 @@ test('brain compile preserves a custom now.md front door', () => {
     ].join('\n');
     fs.writeFileSync(path.join(dir, 'atris', 'now.md'), customNow, 'utf8');
 
-    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
 
     const now = fs.readFileSync(path.join(dir, 'atris', 'now.md'), 'utf8');
@@ -5686,7 +5686,7 @@ test('brain compile preserves a custom now.md front door', () => {
 test('brain compile --json returns machine-readable missing-workspace errors', () => {
   const dir = makeTempDir();
   try {
-    const res = runCli(['brain', 'compile', '--root', dir, '--verify', '--json'], { cwd: dir });
+    const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify', '--json'], { cwd: dir });
     assert.notEqual(res.status, 0);
     assert.equal(res.stderr, '');
     const body = JSON.parse(res.stdout);
@@ -5809,7 +5809,7 @@ test('brain compile counts task review episodes as learning state', () => {
     ], { cwd: dir, env });
     assert.equal(review.status, 0, review.stderr);
 
-    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /State rows: \d+ raw \/ \d+ valid/);
     assert.match(res.stdout, /Turn existing episode rows into the first scorecard/);
@@ -5866,7 +5866,7 @@ test('brain scorecard derives deduped scorecards from task review episodes', () 
     assert.equal(repeat.status, 0, repeat.stderr);
     assert.equal(JSON.parse(repeat.stdout).written, 0);
 
-    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const compile = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
     assert.match(compile.stdout, /State rows: \d+ raw \/ \d+ valid/);
     assert.doesNotMatch(compile.stdout, /Turn existing episode rows into the first scorecard/);
@@ -6001,7 +6001,7 @@ test('brain scorecard uses latest review episode per task', () => {
     assert.equal(payload.scorecards[0].next_task_suggestion, 'Draft the Acme Co operator one-pager from the latest recap');
 
     fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
-    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const compile = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
     assert.match(compile.stdout, /Draft the Acme Co operator one-pager from the latest recap/);
     assert.doesNotMatch(compile.stdout, /Run a business loop/);
@@ -6097,7 +6097,7 @@ test('brain scorecard uses primary checkout state from thin worktrees', () => {
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl')), true);
     assert.equal(fs.existsSync(path.join(worktreePath, '.atris', 'state', 'scorecards.jsonl')), false);
 
-    const compile = runCli(['brain', 'compile', '--root', worktreePath, '--verify'], { cwd: worktreePath });
+    const compile = runCli(['brain', 'compile', '--yes', '--root', worktreePath, '--verify'], { cwd: worktreePath });
     assert.equal(compile.status, 0, compile.stderr);
     assert.match(compile.stdout, /State rows: 8 raw \/ 8 valid/);
     assert.doesNotMatch(compile.stdout, /Turn existing episode rows into the first scorecard/);
@@ -6141,7 +6141,7 @@ test('brain compile rejects meta scorecard next suggestions', () => {
       next_task_suggestion: metaSuggestion,
     }) + '\n', 'utf8');
 
-    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const compile = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
     assert.doesNotMatch(compile.stdout, /Run the compiled business reward next task/);
     assert.match(compile.stdout, /atris brain activate --member <name>/);
@@ -6170,7 +6170,7 @@ test('brain compile rejects brain housekeeping next suggestions', () => {
       next_task_suggestion: suggestion,
     }) + '\n', 'utf8');
 
-    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const compile = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
     assert.doesNotMatch(compile.stdout, /Run brain scorecard and compile/);
     assert.match(compile.stdout, /atris brain activate --member <name>/);
@@ -6198,7 +6198,7 @@ test('brain compile rejects completion-audit next suggestions', () => {
       next_task_suggestion: suggestion,
     }) + '\n', 'utf8');
 
-    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const compile = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
     assert.doesNotMatch(compile.stdout, /Run one final completion audit/);
     assert.match(compile.stdout, /atris brain activate --member <name>/);
@@ -6226,7 +6226,7 @@ test('brain compile rejects process-work next suggestions', () => {
       next_task_suggestion: suggestion,
     }) + '\n', 'utf8');
 
-    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const compile = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
     assert.doesNotMatch(compile.stdout, /Activate the validator\/reviewer path/);
     assert.match(compile.stdout, /atris brain activate --member <name>/);
@@ -6254,7 +6254,7 @@ test('brain compile accepts concrete replace or retire next suggestions', () => 
       next_task_suggestion: suggestion,
     }) + '\n', 'utf8');
 
-    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const compile = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
     assert.match(compile.stdout, /Replace or retire placeholder member profiles before assigning them work/);
     assert.doesNotMatch(compile.stdout, /atris brain activate --member <name>/);
@@ -6294,7 +6294,7 @@ test('brain compile lets newer operator feedback supersede stale task next moves
       '',
     ].join('\n'), 'utf8');
 
-    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const compile = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
     assert.doesNotMatch(compile.stdout, /Run one final completion audit/);
     assert.match(compile.stdout, /atris brain activate --member <name>/);
@@ -6307,7 +6307,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
   const dir = makeTempDir();
   try {
     seedBrainWorkspace(dir);
-    const res = runCli(['brain', 'activate', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
     assert.match(res.stdout, /OPERATOR: unknown/);
@@ -6324,8 +6324,8 @@ test('brain activate can target a member and print their next work block', () =>
   const dir = makeTempDir();
   try {
     seedBrainWorkspace(dir);
-    runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
-    const res = runCli(['brain', 'activate', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
+    runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
     assert.match(res.stdout, /OPERATOR: Justin McDonald/);
@@ -6355,7 +6355,7 @@ test('brain activate --verify fails with a missing member setup card instead of 
       next_task_suggestion: 'Draft the customer one-pager from the latest recap',
     }) + '\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'missing-one', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'missing-one', '--root', dir, '--verify'], { cwd: dir });
     assert.notEqual(res.status, 0);
     assert.match(res.stdout, /OPERATOR: missing-one \(missing\)/);
     assert.match(res.stdout, /NEXT MOVE: Create atris\/team\/missing-one\/MEMBER\.md or rerun with an existing member/);
@@ -6373,7 +6373,7 @@ test('brain activate --json --verify returns machine-readable readiness failures
   try {
     seedBrainWorkspace(dir);
 
-    const missing = runCli(['brain', 'activate', '--member', 'missing-one', '--root', dir, '--verify', '--json'], { cwd: dir });
+    const missing = runCli(['brain', 'activate', '--yes', '--member', 'missing-one', '--root', dir, '--verify', '--json'], { cwd: dir });
     assert.notEqual(missing.status, 0);
     assert.equal(missing.stderr, '');
     const missingBody = JSON.parse(missing.stdout);
@@ -6393,7 +6393,7 @@ test('brain activate --json --verify returns machine-readable readiness failures
       '',
     ].join('\n'), 'utf8');
 
-    const notReady = runCli(['brain', 'activate', '--member', 'placeholder', '--root', dir, '--verify', '--json'], { cwd: dir });
+    const notReady = runCli(['brain', 'activate', '--yes', '--member', 'placeholder', '--root', dir, '--verify', '--json'], { cwd: dir });
     assert.notEqual(notReady.status, 0);
     assert.equal(notReady.stderr, '');
     const notReadyBody = JSON.parse(notReady.stdout);
@@ -6428,7 +6428,7 @@ test('brain activate --verify fails with a placeholder member readiness card', (
       '',
     ].join('\n'), 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'placeholder', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'placeholder', '--root', dir, '--verify'], { cwd: dir });
     assert.notEqual(res.status, 0);
     assert.match(res.stdout, /OPERATOR: Placeholder Member \(not ready\)/);
     assert.match(res.stdout, /NEXT MOVE: Replace placeholder sections in atris\/team\/placeholder\/MEMBER\.md/);
@@ -6449,7 +6449,7 @@ test('brain activate --verify fails with a member missing START_HERE readiness c
     fs.mkdirSync(memberDir, { recursive: true });
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor\n\nBuilder with real workflow text.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
     assert.notEqual(res.status, 0);
     assert.match(res.stdout, /OPERATOR: Executor \(not ready\)/);
     assert.match(res.stdout, /NEXT MOVE: Create atris\/team\/executor\/START_HERE\.md/);
@@ -6471,7 +6471,7 @@ test('brain activate routes validator members to concrete review work', () => {
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Validator — Reviewer\n\nValidates execution and blocks weak proof.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Review the highest-risk task and name residual risk.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'validator', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'validator', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Validator — Reviewer: review the highest-risk open or recently completed task/);
     assert.match(res.stdout, /name residual risk/);
@@ -6492,7 +6492,7 @@ test('brain activate routes validator away from fake review work when nothing is
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Validator — Reviewer\n\nValidates execution and blocks weak proof.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Review the highest-risk task and name residual risk.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'validator', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'validator', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Validator — Reviewer: wait for one concrete artifact or ask Navigator to create a reviewable task/);
     assert.doesNotMatch(res.stdout, /review the highest-risk open or recently completed task/);
@@ -6510,7 +6510,7 @@ test('brain activate routes executor members to concrete build work', () => {
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor — Builder\n\nBuilds scoped tasks from proof targets.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Execute one scoped patch and run the verifier.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Executor — Builder: execute the highest-leverage claimed task one scoped step at a time/);
     assert.match(res.stdout, /hand off proof for review/);
@@ -6531,7 +6531,7 @@ test('brain activate routes executor away from fake build work when no task is o
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor — Builder\n\nBuilds scoped tasks from proof targets.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Execute one scoped patch and run the verifier.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Executor — Builder: ask Navigator to create one bounded task with files, verifier, and stop rule before making a patch/);
     assert.doesNotMatch(res.stdout, /execute the highest-leverage claimed task/);
@@ -6563,7 +6563,7 @@ test('brain activate routes executor to certified review before creating work', 
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor — Builder\n\nBuilds scoped tasks from proof targets.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Execute one scoped patch and run the verifier.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Executor — Builder: hand off certified review CLI-9 to the operator/);
     assert.match(res.stdout, /atris task accept CLI-9/);
@@ -6610,7 +6610,7 @@ test('brain activate lets codex executor continue when review is human-only', ()
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Codex Executor — Builder\n\nBuilds scoped tasks from proof targets.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Execute one scoped patch and run the verifier.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'codex-executor', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'codex-executor', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Codex Executor — Builder: certified reviews CLI-9 are human-only/);
     assert.match(res.stdout, /Create the next bounded Codex task from Endgame runner-swap-safe/);
@@ -6656,7 +6656,7 @@ test('brain activate routes executor to agent-safe review before human accept ro
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor — Builder\n\nBuilds scoped tasks from proof targets.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Execute one scoped patch and run the verifier.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Executor — Builder: run the agent-safe review lane for CLI-8/);
     assert.match(res.stdout, /atris task review-chat CLI-8 --as codex-review/);
@@ -6676,7 +6676,7 @@ test('brain activate routes navigator members to concrete planning work', () => 
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Navigator — Planner\n\nPlans scoped work from MAP evidence.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Plan one scoped task with files, exit, verify, and rollback.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'navigator', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'navigator', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Navigator — Planner: turn one messy or unclaimed intent into a MAP-backed plan/);
     assert.match(res.stdout, /review-ready task/);
@@ -6704,7 +6704,7 @@ test('brain activate routes launcher members to concrete closeout work', () => {
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Launcher — The Closer\n\nCloses validated work into release notes and proof.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Close one validated task into release-ready proof.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Launcher — The Closer: close one validated task into release-ready proof/);
     assert.match(res.stdout, /name the publish step/);
@@ -6725,7 +6725,7 @@ test('brain activate routes launcher away from fake closeout work when no task r
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Launcher — The Closer\n\nCloses validated work into release notes and proof.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Close one validated task into release-ready proof.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Launcher — The Closer: wait for one validated task receipt before closeout/);
     assert.doesNotMatch(res.stdout, /close one validated task into release-ready proof/);
@@ -6757,7 +6757,7 @@ test('brain activate routes launcher to certified review before closeout fallbac
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Launcher — The Closer\n\nCloses validated work into release notes and proof.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Close one validated task into release-ready proof.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Launcher — The Closer: hand off certified review CLI-10 to the operator/);
     assert.match(res.stdout, /atris task accept CLI-10/);
@@ -6776,7 +6776,7 @@ test('brain activate routes brainstormer members to concrete idea-shaping work',
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Brainstormer — Idea & Reality Shaper\n\nShapes raw ideas before planning.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Shape one raw idea into a navigator-ready vision.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'brainstormer', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'brainstormer', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Brainstormer — Idea & Reality Shaper: shape one raw idea into a concise vision/);
     assert.match(res.stdout, /navigator-ready next step/);
@@ -6796,7 +6796,7 @@ test('brain activate routes researcher members to concrete research work', () =>
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Researcher — Deep Researcher\n\nFinds primary-source truth.\n', 'utf8');
     fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Answer one explicit research question with sources.\n', 'utf8');
 
-    const res = runCli(['brain', 'activate', '--member', 'researcher', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'researcher', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Researcher — Deep Researcher: answer one explicit research question with primary sources/);
     assert.match(res.stdout, /unverified gaps/);
@@ -6821,11 +6821,11 @@ test('brain activate routes mission and overnight members to concrete work block
     fs.writeFileSync(path.join(opusDir, 'MEMBER.md'), '# Opus Overnight Worker\n\nRuns the rl-exp2 loop without spending money.\n', 'utf8');
     fs.writeFileSync(path.join(opusDir, 'START_HERE.md'), 'Pick the next zero-spend rl-exp2 tick and name the 1% delta.\n', 'utf8');
 
-    const mission = runCli(['brain', 'activate', '--member', 'mission-lead', '--root', dir, '--verify'], { cwd: dir });
+    const mission = runCli(['brain', 'activate', '--yes', '--member', 'mission-lead', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(mission.status, 0, mission.stderr);
     assert.match(mission.stdout, /Mission Lead: choose or create one bounded mission step, run its verifier/);
 
-    const opus = runCli(['brain', 'activate', '--member', 'opus-overnight', '--root', dir, '--verify'], { cwd: dir });
+    const opus = runCli(['brain', 'activate', '--yes', '--member', 'opus-overnight', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(opus.status, 0, opus.stderr);
     assert.match(opus.stdout, /Opus Overnight Worker: run the next zero-spend `rl-exp2` tick/);
   } finally {
@@ -6837,8 +6837,8 @@ test('brain activate remembers the last operator after the first member run', ()
   const dir = makeTempDir();
   try {
     seedBrainWorkspace(dir);
-    runCli(['brain', 'activate', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
-    const res = runCli(['brain', 'activate', '--root', dir, '--verify'], { cwd: dir });
+    runCli(['brain', 'activate', '--yes', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /OPERATOR: Justin McDonald/);
     assert.match(res.stdout, /NEXT MOVE: Justin McDonald: run one customer-moving GTM rep/);
@@ -6851,7 +6851,7 @@ test('brain gallery previews activation cards for every team member', () => {
   const dir = makeTempDir();
   try {
     seedBrainWorkspace(dir);
-    const res = runCli(['brain', 'gallery', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'gallery', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /OPERATOR: Justin McDonald/);
     assert.match(res.stdout, /OPERATOR: Keshav Rao/);
@@ -6869,11 +6869,11 @@ test('brain gallery does not overwrite the remembered operator', () => {
   try {
     seedBrainWorkspace(dir);
     const operatorPath = path.join(dir, '.atris', 'state', 'operator.json');
-    const activate = runCli(['brain', 'activate', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
+    const activate = runCli(['brain', 'activate', '--yes', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(activate.status, 0, activate.stderr);
     assert.equal(JSON.parse(fs.readFileSync(operatorPath, 'utf8')).member, 'justin');
 
-    const res = runCli(['brain', 'gallery', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'gallery', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /OPERATOR: Keshav Rao/);
     assert.equal(JSON.parse(fs.readFileSync(operatorPath, 'utf8')).member, 'justin');
@@ -6890,7 +6890,7 @@ test('brain gallery --verify fails on not-ready member cards', () => {
     fs.mkdirSync(memberDir, { recursive: true });
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor\n\nBuilder with real workflow text.\n', 'utf8');
 
-    const res = runCli(['brain', 'gallery', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'gallery', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.notEqual(res.status, 0);
     assert.match(res.stderr, /brain gallery not-ready member activation cards: Executor/);
     assert.doesNotMatch(res.stderr, /at verifyActivationGallery|Node\.js/);
@@ -6907,7 +6907,7 @@ test('brain gallery --json --verify returns machine-readable readiness failures'
     fs.mkdirSync(memberDir, { recursive: true });
     fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor\n\nBuilder with real workflow text.\n', 'utf8');
 
-    const res = runCli(['brain', 'gallery', '--root', dir, '--verify', '--json'], { cwd: dir });
+    const res = runCli(['brain', 'gallery', '--yes', '--root', dir, '--verify', '--json'], { cwd: dir });
     assert.notEqual(res.status, 0);
     assert.equal(res.stderr, '');
     const body = JSON.parse(res.stdout);
@@ -6945,7 +6945,7 @@ next_rep: log one receipt with evidence and next owner
 proof_needed: leave a receipt in contribution-score
 \`\`\`
 `, 'utf8');
-    const res = runCli(['brain', 'activate', '--member', 'keshav', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'keshav', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /OPERATOR: Keshav Rao/);
     assert.match(res.stdout, /NEXT MOVE: Keshav Rao: act as Customer 0/);
@@ -6983,7 +6983,7 @@ test('brain feedback appends linked scorecard and episode rows', () => {
   const dir = makeTempDir();
   try {
     seedBrainWorkspace(dir);
-    runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     const res = runCli([
       'brain', 'feedback',
       '--root', dir,
@@ -7010,7 +7010,7 @@ test('brain yes records approval with a plain note', () => {
   const dir = makeTempDir();
   try {
     seedBrainWorkspace(dir);
-    runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     const res = runCli([
       'brain', 'yes',
       'ship the simple version',
@@ -7034,7 +7034,7 @@ test('brain go records an approval row without writing feedback rows', () => {
   const dir = makeTempDir();
   try {
     seedBrainWorkspace(dir);
-    runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     const res = runCli([
       'brain', 'go',
       'proceed with contract engineering unblock',
@@ -7062,7 +7062,7 @@ test('brain approval edit records approval edit without changing brain edit feed
   const dir = makeTempDir();
   try {
     seedBrainWorkspace(dir);
-    runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     const res = runCli([
       'brain', 'approval', 'edit',
       'change the owner before proceeding',
@@ -17897,7 +17897,7 @@ test('sync command works as alias for update', () => {
   const dir = makeTempDir();
   try {
     initWorkspace(dir);
-    const res = runCli(['update'], { cwd: dir });
+    const res = runCli(['update', '--yes'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /up to date|Updated/i);
   } finally {
@@ -17911,7 +17911,7 @@ test('update and sync --help print usage without touching workspace', () => {
     const home = path.join(dir, 'home');
     const skillFile = path.join(home, '.codex', 'skills', 'improve', 'SKILL.md');
     fs.mkdirSync(path.dirname(skillFile), { recursive: true });
-    for (const command of ['update', 'sync']) {
+    for (const command of ['update', '--yes', 'sync']) {
       fs.writeFileSync(skillFile, 'operator-owned skill\n', 'utf8');
       const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
       assert.equal(res.status, 0, res.stderr);
@@ -18332,7 +18332,7 @@ test('business sync repairs missing root agent adapters without overwriting cust
     fs.rmSync(path.join(dir, 'GEMINI.md'), { force: true });
 
     const beforeCustom = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
-    const res = runCli(['update'], { cwd: dir });
+    const res = runCli(['update', '--yes'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.equal(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), beforeCustom);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /Repair Co Atris Workspace/);

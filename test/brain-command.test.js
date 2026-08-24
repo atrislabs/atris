@@ -101,7 +101,7 @@ test('brain compile writes STATUS.md, ledger, and state.json from a seeded works
   const dir = makeTempDir();
   try {
     seedWorkspace(dir);
-    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris brain compiled/);
     assert.match(res.stdout, /Verify: passed/);
@@ -126,7 +126,7 @@ test('brain compile writes STATUS.md, ledger, and state.json from a seeded works
     for (const adapter of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md']) {
       const text = fs.readFileSync(path.join(dir, adapter), 'utf8');
       assert.match(text, /Atris Brain Compile/, `${adapter} should carry the boot block`);
-      assert.match(text, /atris brain activate --root \. --verify/, `${adapter} should name the activation command`);
+      assert.match(text, /atris brain activate --root \. --yes --verify/, `${adapter} should name the activation command`);
     }
   } finally {
     cleanupTempDir(dir);
@@ -137,7 +137,7 @@ test('brain compile --json returns ok true with state and written artifact paths
   const dir = makeTempDir();
   try {
     seedWorkspace(dir);
-    const res = runCli(['brain', 'compile', '--root', dir, '--json'], { cwd: dir });
+    const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.ok, true);
@@ -154,11 +154,11 @@ test('recompile with unchanged inputs is idempotent: same artifacts, one boot bl
   const dir = makeTempDir();
   try {
     seedWorkspace(dir);
-    assert.equal(runCli(['brain', 'compile', '--root', dir], { cwd: dir }).status, 0);
+    assert.equal(runCli(['brain', 'compile', '--yes', '--root', dir], { cwd: dir }).status, 0);
     const firstStatus = fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8');
     const firstAgents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
 
-    assert.equal(runCli(['brain', 'compile', '--root', dir], { cwd: dir }).status, 0);
+    assert.equal(runCli(['brain', 'compile', '--yes', '--root', dir], { cwd: dir }).status, 0);
     const secondStatus = fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8');
     const secondAgents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
 
@@ -197,7 +197,7 @@ test('recompile preserves operator prose around the generated block', () => {
       '',
     ].join('\n'), 'utf8');
 
-    assert.equal(runCli(['brain', 'compile', '--root', dir], { cwd: dir }).status, 0);
+    assert.equal(runCli(['brain', 'compile', '--yes', '--root', dir], { cwd: dir }).status, 0);
     const agents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
     assert.match(agents, /Hand-written onboarding the compile must not eat\./);
     assert.match(agents, /Hand-written footer that also survives\./);
@@ -212,7 +212,7 @@ test('brain activate --verify on a ready member exits 0 with an executable card'
   const dir = makeTempDir();
   try {
     seedWorkspace(dir);
-    const res = runCli(['brain', 'activate', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /CONTEXT: Brain Lab Brain/);
     assert.match(res.stdout, /OPERATOR: Justin McDonald/);
@@ -226,7 +226,7 @@ test('brain activate --verify on a missing member exits nonzero with a plain mes
   const dir = makeTempDir();
   try {
     seedWorkspace(dir);
-    const res = runCli(['brain', 'activate', '--member', 'ghost', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'ghost', '--root', dir, '--verify'], { cwd: dir });
     assert.notEqual(res.status, 0);
     assert.match(res.stdout, /OPERATOR: ghost \(missing\)/);
     assert.match(res.stderr, /brain activate non-executable member activation card: ghost \(missing\)/);
@@ -242,7 +242,7 @@ test('flag handling: --root= equals form and the status alias both compile from 
   const elsewhere = makeTempDir();
   try {
     seedWorkspace(dir);
-    const res = runCli(['brain', 'status', `--root=${dir}`, '--verify'], { cwd: elsewhere });
+    const res = runCli(['brain', 'status', '--yes', `--root=${dir}`, '--verify'], { cwd: elsewhere });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris brain compiled/);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain', 'STATUS.md')), true);

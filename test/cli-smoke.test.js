@@ -1018,7 +1018,7 @@ test('update migrates TASK_CONTEXTS.md to TODO.md', () => {
     fs.writeFileSync(legacyPath, '# TASK_CONTEXTS.md\n\n## Backlog\n\n- legacy task\n', 'utf8');
     fs.rmSync(todoPath);
 
-    const res = runCli(['update'], { cwd: dir });
+    const res = runCli(['update', '--yes'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.ok(fs.existsSync(todoPath), 'TODO.md should exist after migration');
     assert.ok(!fs.existsSync(legacyPath), 'TASK_CONTEXTS.md should be migrated away');

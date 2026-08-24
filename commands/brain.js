@@ -5,6 +5,7 @@ const { spawnSync } = require('child_process');
 const { refreshNowFile } = require('./now');
 const escapeRegExp = require('../lib/escape-regexp');
 const { hasRenderedSections, isOpenSection, isDoneSection } = require('../lib/todo-sections');
+const { isNonInteractive } = require('../lib/noninteractive');
 const {
   renderVoiceCardBlock,
   upsertCursorVoiceCard,
@@ -70,6 +71,7 @@ function parseArgs(args) {
     root: process.cwd(),
     verify: false,
     json: false,
+    yes: false,
     rating: null,
     recommendation: null,
     note: '',
@@ -88,6 +90,8 @@ function parseArgs(args) {
       options.verify = true;
     } else if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--yes' || arg === '-y') {
+      options.yes = true;
     } else if (arg === '--rating' && args[i + 1]) {
       options.rating = args[++i];
     } else if (arg.startsWith('--rating=')) {
@@ -1436,7 +1440,7 @@ function generatedBootBlock(state, voiceCard = voiceCardForRoot(state.root)) {
 This workspace has a compiled agent brain.
 
 On session start, activate it first:
-\`atris brain activate --root . --verify\`
+\`atris brain activate --root . --yes --verify\`
 
 Load these first:
 ${renderBulletedLoadOrder(state)}
@@ -1450,7 +1454,7 @@ Keep this voice beside every reply:
 ${renderVoiceCardBlock(voiceCard)}
 
 Re-run after meaningful work:
-\`atris brain compile --root .\`
+\`atris brain compile --root . --yes\`
 ${GENERATED_END}
 `;
 }
@@ -1469,6 +1473,40 @@ function upsertGeneratedBlock(filePath, title, block) {
   }
 
   fs.writeFileSync(filePath, `${current.trimEnd()}\n\n${block}`, 'utf8');
+}
+
+function plannedBrainWrites(state) {
+  const files = [
+    'atris/brain/STATUS.md',
+    'atris/brain/self_improvement_ledger.md',
+    'atris/brain/state.json',
+    'AGENTS.md',
+    'CLAUDE.md',
+    'GEMINI.md',
+    '.cursor/rules/atris-voice.mdc',
+  ];
+  if (fs.existsSync(path.join(state.root, 'atris', 'wiki', 'STATUS.md'))) {
+    files.push('atris/wiki/STATUS.md');
+  }
+  return files;
+}
+
+function refuseBrainWriteWithoutYes(state, options = {}) {
+  const files = plannedBrainWrites(state);
+  if (options.json) {
+    console.log(JSON.stringify({
+      ok: true,
+      action: 'brain_plan',
+      files,
+      next_command: 'atris brain compile --yes',
+    }, null, 2));
+  } else {
+    console.log('Plan only. Would write:');
+    for (const file of files) console.log(`  ${file}`);
+    console.log('Re-run with --yes to write these files.');
+  }
+  if (isNonInteractive()) process.exit(2);
+  return { planned: true, files };
 }
 
 function writeBrain(state) {
@@ -1529,9 +1567,9 @@ function verifyBrain(root) {
 
 function brainUsageLines() {
   return [
-    'Usage: atris brain compile [--root <workspace>] [--verify] [--json]',
-    '       atris brain activate [--member <slug>] [--root <workspace>] [--verify] [--json]',
-    '       atris brain gallery [--root <workspace>] [--verify] [--json]',
+    'Usage: atris brain compile [--root <workspace>] [--yes] [--verify] [--json]',
+    '       atris brain activate [--member <slug>] [--root <workspace>] [--yes] [--verify] [--json]',
+    '       atris brain gallery [--root <workspace>] [--yes] [--verify] [--json]',
     '       atris brain go|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]',
     '       atris brain approval go|edit|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]',
     '       atris brain scorecard [--root <workspace>] [--verify] [--json]',
@@ -1618,6 +1656,10 @@ function brainCommand(args = process.argv.slice(3)) {
 
   if (subcommand === 'activate') {
     const state = prepareBrainState(options.root);
+    if (!options.yes) {
+      refuseBrainWriteWithoutYes(state, options);
+      return 0;
+    }
     writeBrain(state);
     if (options.verify) verifyBrain(options.root);
     const card = renderActivationCard(state, options);
@@ -1636,7 +1678,7 @@ function brainCommand(args = process.argv.slice(3)) {
         }
       }
       console.log(JSON.stringify({ ok: true, state, card }, null, 2));
-      return;
+      return 0;
     }
     console.log('');
     console.log(card);
@@ -1645,7 +1687,7 @@ function brainCommand(args = process.argv.slice(3)) {
         verifyActivationCard(card);
       } catch (error) {
         printVerifyFailure(error);
-        return;
+        return 1;
       }
       const operator = (card.match(/^OPERATOR:\s*(.+)$/m) || [null, 'unknown'])[1];
       if (operator === 'unknown') {
@@ -1655,10 +1697,14 @@ function brainCommand(args = process.argv.slice(3)) {
       }
     }
     console.log('');
-    return;
+    return 0;
   }
   if (subcommand === 'gallery') {
     const state = prepareBrainState(options.root);
+    if (!options.yes) {
+      refuseBrainWriteWithoutYes(state, options);
+      return 0;
+    }
     writeBrain(state);
     if (options.verify) verifyBrain(options.root);
     const gallery = renderActivationGallery(state);
@@ -1676,18 +1722,18 @@ function brainCommand(args = process.argv.slice(3)) {
           process.exit(1);
         }
         printVerifyFailure(error);
-        return;
+        return 1;
       }
     }
     if (options.json) {
       console.log(JSON.stringify({ ok: true, members: listMemberSlugs(options.root), gallery }, null, 2));
-      return;
+      return 0;
     }
     console.log('');
     console.log(gallery);
     if (options.verify) console.log('\nVERIFY: brain artifacts and member readiness present');
     console.log('');
-    return;
+    return 0;
   }
   if (subcommand !== 'compile' && subcommand !== 'status') {
     if (options.json) {
@@ -1703,12 +1749,16 @@ function brainCommand(args = process.argv.slice(3)) {
   }
 
   const state = prepareBrainState(options.root);
+  if (!options.yes) {
+    refuseBrainWriteWithoutYes(state, options);
+    return 0;
+  }
   const written = writeBrain(state);
   if (options.verify) verifyBrain(options.root);
 
   if (options.json) {
     console.log(JSON.stringify({ ok: true, state, written }, null, 2));
-    return;
+    return 0;
   }
 
   console.log('');
@@ -1720,6 +1770,7 @@ function brainCommand(args = process.argv.slice(3)) {
   console.log(`  Next: ${nextMove(state)}`);
   if (options.verify) console.log('  Verify: passed');
   console.log('');
+  return 0;
 }
 
 module.exports = {

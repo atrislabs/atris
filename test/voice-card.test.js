@@ -215,7 +215,7 @@ test('update adds missing voice doors without replacing user settings or text', 
     const agentsFile = path.join(dir, 'AGENTS.md');
     fs.appendFileSync(agentsFile, '\nowner agent note\n', 'utf8');
 
-    const update = runCli(dir, ['update']);
+    const update = runCli(dir, ['update', '--yes']);
     assert.equal(update.status, 0, update.stderr || update.stdout);
     const merged = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
     assert.equal(merged.theme, 'owner-choice');
@@ -226,7 +226,7 @@ test('update adds missing voice doors without replacing user settings or text', 
     assert.match(fs.readFileSync(agentsFile, 'utf8'), /owner agent note/);
 
     const once = [settingsFile, cursorFile, agentsFile].map((file) => fs.readFileSync(file, 'utf8'));
-    const rerun = runCli(dir, ['update']);
+    const rerun = runCli(dir, ['update', '--yes']);
     assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
     assert.deepEqual(
       [settingsFile, cursorFile, agentsFile].map((file) => fs.readFileSync(file, 'utf8')),

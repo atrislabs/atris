@@ -262,7 +262,13 @@ const isBusinessSyncSafetyCommand = command === 'sync'
 
 // Auto-sync skills only for commands that modify workspace state. Help must
 // stay read-only, including global ~/.claude and ~/.codex skill directories.
-if (!helpRequested && !dryRunRequested && (['init', 'update', 'upgrade'].includes(command) || (command === 'sync' && !isBusinessSyncSafetyCommand))) {
+// update/sync stay plan-only until --yes, so do not write skills on a bare update.
+const updateWriteYes = updateArgs.includes('--yes') || updateArgs.includes('-y');
+if (!helpRequested && !dryRunRequested && (
+  ['init', 'upgrade'].includes(command)
+  || (command === 'update' && updateWriteYes)
+  || (command === 'sync' && !isBusinessSyncSafetyCommand && updateWriteYes)
+)) {
   try {
     const { syncSkills } = require('../commands/sync');
     const skillsUpdated = syncSkills({ silent: true });
@@ -870,15 +876,18 @@ function showVerifyHelp() {
 function showUpdateHelp(commandName = 'update') {
   console.log('');
   const selfFlag = commandName === 'update' ? ' [--self]' : '';
-  console.log(`Usage: atris ${commandName} [--all] [--dry-run] [--force]${selfFlag}`);
+  console.log(`Usage: atris ${commandName} [--all] [--dry-run] [--yes] [--force]${selfFlag}`);
   console.log('');
   console.log('Description:');
   console.log('  Sync Atris workspace files from the installed CLI templates.');
+  console.log('  Default is plan-only: print the file list and exit without writing.');
+  console.log('  Pass --yes to apply writes. Non-TTY sessions without --yes exit 2.');
   console.log('');
   console.log('Options:');
   console.log('  --all        Update Atris files across projects under the current tree.');
   console.log('  --dry-run    Preview update work without writing files.');
-  console.log('  --force      Overwrite existing template files where supported.');
+  console.log('  --yes, -y    Apply the planned writes.');
+  console.log('  --force      Overwrite existing template files where supported (with --yes).');
   if (commandName === 'update') {
     console.log('  --self       Update the installed atris cli from npm (packaged installs only).');
   }
@@ -2067,7 +2076,7 @@ if (command === 'init') {
 } else if (command === 'brain') {
   Promise.resolve()
     .then(() => require('../commands/brain').brainCommand(process.argv.slice(3)))
-    .then(() => process.exit(0))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => {
       const message = err.message || String(err);
       if (process.argv.slice(3).includes('--json')) {
@@ -2175,13 +2184,15 @@ if (command === 'init') {
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else if (process.argv.includes('--all')) {
     const dryRun = process.argv.includes('--dry-run');
-    const force = process.argv.includes('--force') || process.argv.includes('--yes') || process.argv.includes('-y');
-    Promise.resolve(syncAllCmd({ dryRun, force }))
+    const yes = process.argv.includes('--yes') || process.argv.includes('-y');
+    const force = process.argv.includes('--force') || yes;
+    Promise.resolve(syncAllCmd({ dryRun, force, yes }))
       .then(() => process.exit(0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else {
     syncCmd({
       dryRun: args.includes('--dry-run'),
+      yes: args.includes('--yes') || args.includes('-y'),
       force: args.includes('--force') || args.includes('--yes') || args.includes('-y'),
     });
   }

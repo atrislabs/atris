@@ -10,9 +10,17 @@ const path = require('path');
 const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
 const {
+<<<<<<< HEAD
   taskProofState,
   LOCAL_SUCCESS_PROOF_EXAMPLE,
 } = require('../lib/task-proof');
+=======
+  compactErrorPayload,
+  compactSuccessPayload,
+  printCliJson,
+} = require('../lib/cli-json');
+const { taskProofState } = require('../lib/task-proof');
+>>>>>>> e99f5d93 (fix(cli): dogfood pass-2 items 16-19 for headless agents)
 const {
   candidatePolicyGate,
   evaluateAutoAccept,
@@ -444,12 +452,18 @@ function jsonModeActive() {
 
 function failTask(label, reason, detail, exitCode = 2) {
   if (jsonModeActive()) {
-    console.log(JSON.stringify({
-      ok: false,
-      command: label,
-      reason,
-      detail: detail || null,
-    }));
+    printCliJson(
+      {
+        ok: false,
+        command: label,
+        reason,
+        detail: detail || null,
+        selected_ref: null,
+        next_command: null,
+      },
+      compactErrorPayload({ reason, detail: detail || null }),
+      process.argv.slice(2),
+    );
   } else {
     console.error(detail || `${label}: ${reason}`);
   }
@@ -9135,24 +9149,51 @@ function cmdCurrentStep(args) {
   } catch (error) {
     const errorCurrent = error.current || null;
     if (wantsJson(args)) {
-      printJson({
-        ok: false,
-        action: 'current_step',
-        reason: error.reason || 'step_failed',
-        detail: error.message,
-        selected_task_id: errorCurrent ? errorCurrent.selected_task_id : null,
-        selected_ref: errorCurrent ? errorCurrent.selected_ref : null,
-        selected_next_key: selectedNextKeyFromCurrent(errorCurrent),
-        current: errorCurrent,
-        page: error.page || null,
-      });
+      const selectedRef = errorCurrent ? errorCurrent.selected_ref : null;
+      const nextCommand = error.page?.stage?.next_action?.command
+        || (errorCurrent && errorCurrent.next && errorCurrent.next.command)
+        || null;
+      printCliJson(
+        {
+          ok: false,
+          action: 'current_step',
+          reason: error.reason || 'step_failed',
+          detail: error.message,
+          selected_task_id: errorCurrent ? errorCurrent.selected_task_id : null,
+          selected_ref: selectedRef,
+          selected_next_key: selectedNextKeyFromCurrent(errorCurrent),
+          next_command: nextCommand,
+          current: errorCurrent,
+          page: error.page || null,
+        },
+        compactErrorPayload({
+          reason: error.reason || 'step_failed',
+          detail: error.message,
+          selected_ref: selectedRef,
+          next_command: nextCommand,
+        }),
+        args,
+      );
     } else {
       console.error(error.message || 'atris task current-step failed');
     }
     process.exit(error.exitCode || 1);
   }
   if (wantsJson(args)) {
-    printJson(result);
+    const nextCommand = result.page?.stage?.next_action?.command || null;
+    printCliJson(
+      result,
+      compactSuccessPayload({
+        action: 'current_step',
+        ids: {
+          selected_task_id: result.selected_task_id || null,
+          selected_ref: result.selected_ref || null,
+          step_action: result.step && result.step.step_action ? result.step.step_action : null,
+        },
+        next_command: nextCommand,
+      }),
+      args,
+    );
     return;
   }
   console.log(`current-step ${taskRef(result.task)} -> ${result.step.step_action}`);
@@ -9800,7 +9841,12 @@ function cmdReady(args) {
   if (policyHints.length) handoff.policy_hints = policyHints;
   if (readyPolicyGate.gate.advisories.length) handoff.policy_gate = readyPolicyGate.gate;
   if (wantsJson(args)) {
-    printJson({
+    const taskCard = compactTaskFromProjection(projection, taskId);
+    const nextCommand = handoff.review_chat_command
+      || (agentCertified
+        ? `atris task accept ${taskRef(taskCard || result.row || taskId)}`
+        : `atris task reviews`);
+    const fullReady = {
       ok: true,
       action: 'ready',
       task_id: taskId,
@@ -9813,8 +9859,23 @@ function cmdReady(args) {
       landing_advisory: landingAdvisory,
       ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
       projection_path: outPath,
-      task: compactTaskFromProjection(projection, taskId),
-    });
+      task: taskCard,
+      next_command: nextCommand,
+    };
+    printCliJson(
+      fullReady,
+      compactSuccessPayload({
+        action: 'ready',
+        ids: {
+          task_id: taskId,
+          selected_ref: taskRef(taskCard || result.row || taskId),
+          version: result.event.version,
+          agent_certified: agentCertified,
+        },
+        next_command: nextCommand,
+      }),
+      args,
+    );
     return;
   }
   console.log(`ready for approval ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);

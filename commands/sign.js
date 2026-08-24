@@ -74,11 +74,11 @@ function signCommand(sub) {
     console.log(installed
       ? `\n  ✓ atris co-author is on: ${rel(hookPath)}\n    every commit gets: ${TRAILER}\n`
       : `\n  atris co-author is off — run 'atris sign' to turn it on\n`);
-    return installed ? 0 : 1;
+    return 0;
   }
   if (sub && sub !== 'on' && sub !== 'install') {
     console.log(`\n  atris sign — co-author trailer on every commit\n\n  atris sign          install the prepare-commit-msg hook\n  atris sign off      remove it\n  atris sign status   check whether it's installed\n\n  While installed, any commit in a repo with an atris/ folder gets:\n    ${TRAILER}\n`);
-    return 0;
+    return 2;
   }
   const { hookPath, already } = installSignHook();
   console.log(already

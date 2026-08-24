@@ -9,6 +9,7 @@ const {
   upsertCursorVoiceCard,
   voiceCardForRoot,
 } = require('../lib/voice-card');
+const { isNonInteractive } = require('../lib/noninteractive');
 
 const TEMPLATE_ROOT_DIR = path.join(__dirname, '..', 'templates');
 const WORKSPACE_TEMPLATES = {
@@ -437,18 +438,28 @@ function syncBusinessCanonical(targetRoot, bizMeta, options = {}) {
 }
 
 function syncAtris(options = {}) {
-  const dryRun = options.dryRun != null ? options.dryRun : process.argv.includes('--dry-run');
+  const explicitDryRun = options.dryRun != null ? options.dryRun : process.argv.includes('--dry-run');
+  const yes = options.yes != null
+    ? options.yes
+    : (process.argv.includes('--yes') || process.argv.includes('-y'));
+  // Default is plan-only. Writes require an explicit --yes.
+  const dryRun = explicitDryRun || !yes;
   const force = options.force != null ? options.force : process.argv.includes('--force');
   // Business mode detection: if .atris/business.json exists, use canonical templates
   const bizFile = path.join(process.cwd(), '.atris', 'business.json');
   if (fs.existsSync(bizFile)) {
     try {
       const bizMeta = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
-      return syncWorkspaceTemplate(process.cwd(), bizMeta, {
+      const result = syncWorkspaceTemplate(process.cwd(), bizMeta, {
         templateName: bizMeta.workspace_template || 'business',
         dryRun,
         force,
       });
+      if (!yes) {
+        console.log('\nPlan only. Re-run with --yes to write these files.');
+        if (!explicitDryRun && isNonInteractive()) process.exit(2);
+      }
+      return result;
     } catch (e) {
       console.error(`✗ Failed to read .atris/business.json: ${e.message}`);
       process.exit(1);
@@ -672,6 +683,10 @@ Key behaviors:
 
   if (dryRun) {
     console.log(`\nDry run: ${updated} file(s) would update, ${skipped} unchanged; no changes made.`);
+    if (!yes) {
+      console.log('Plan only. Re-run with --yes to write these files.');
+      if (!explicitDryRun && isNonInteractive()) process.exit(2);
+    }
   } else if (updated === 0) {
     ensureWikiScaffold(process.cwd());
     console.log('✓ Already up to date');
@@ -892,9 +907,13 @@ function buildSyncAllPlan({ root, pkgRoot, filesToSync = SYNC_ALL_FILES } = {}) 
   return { projects, plan };
 }
 
-function syncAtrisAll({ dryRun = false, force = false } = {}) {
+function syncAtrisAll({ dryRun = false, force = false, yes = false } = {}) {
   const root = process.cwd();
   const pkgRoot = path.join(__dirname, '..');
+  const writeYes = yes || process.argv.includes('--yes') || process.argv.includes('-y');
+  const explicitDryRun = dryRun || process.argv.includes('--dry-run');
+  // Default is plan-only. Writes require --yes.
+  const planOnly = explicitDryRun || !writeYes;
 
   console.log('');
   console.log(`Scanning ${root} for atris projects...`);
@@ -931,8 +950,12 @@ function syncAtrisAll({ dryRun = false, force = false } = {}) {
   }
   console.log('');
 
-  if (dryRun) {
+  if (planOnly) {
     console.log(`Dry run: ${wouldUpdate} project(s) would update, ${unchanged} unchanged, ${skipped} skipped.`);
+    if (!writeYes) {
+      console.log('Plan only. Re-run with --yes to write these files.');
+      if (!explicitDryRun && isNonInteractive()) process.exit(2);
+    }
     return;
   }
 
@@ -941,24 +964,7 @@ function syncAtrisAll({ dryRun = false, force = false } = {}) {
     return;
   }
 
-  // Confirm unless forced.
-  if (!force) {
-    const readline = require('readline');
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    return new Promise((resolve) => {
-      rl.question(`Sync ${wouldUpdate} project(s)? (y/N) `, (answer) => {
-        rl.close();
-        if (!/^y(es)?$/i.test(answer.trim())) {
-          console.log('Cancelled.');
-          resolve();
-          return;
-        }
-        _executeSyncAll(plan, pkgRoot, filesToSync, root);
-        resolve();
-      });
-    });
-  }
-
+  // --yes already consented; skip the interactive confirm.
   _executeSyncAll(plan, pkgRoot, filesToSync, root);
 }
 
