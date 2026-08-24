@@ -9,7 +9,10 @@ const { execSync } = require('node:child_process');
 const path = require('path');
 const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
-const { taskProofState } = require('../lib/task-proof');
+const {
+  taskProofState,
+  LOCAL_SUCCESS_PROOF_EXAMPLE,
+} = require('../lib/task-proof');
 const {
   candidatePolicyGate,
   evaluateAutoAccept,
@@ -163,7 +166,8 @@ atris task - durable local task state (SQLite, gitignored)
                                            Agent proof ready; native goal can complete
   atris task ready <id> --verify "<cmd>" --result "<sentence>"
                                            Run <cmd>; only ready if it exits 0 (executed proof)
-                                           Writes atris/runs/ receipt (pass or fail), folds path into proof
+                                           Writes atris/runs/ receipt (pass or fail); that local pass is enough proof
+                                           Optional CI URL only with --proof-url and --i-fetched
   atris task receipt <id> --verify "<cmd>" Run <cmd> and write an atris/runs/ receipt without going to ready
   atris task plan-preview "<purpose>" [--tag <tag>] [--owner <member>] [--task <id>]
                                            Show the plain Plan before work starts
@@ -472,8 +476,8 @@ function proofFlagValue(args) {
   return typeof proof === 'string' ? proof.trim() : '';
 }
 
-function resultSentenceIssue(value) {
-  const check = explainResult(value);
+function resultSentenceIssue(value, { allowCommandMention = false } = {}) {
+  const check = explainResult(value, { allowCommandMention });
   return check.ok ? null : check.reason;
 }
 
@@ -481,11 +485,28 @@ function readyResultDetail(reason) {
   return reason ? `${READY_RESULT_TEACHING}\n${reason}` : READY_RESULT_TEACHING;
 }
 
-function requireResultSentence(label, value, { ready = false } = {}) {
-  const issue = resultSentenceIssue(value);
+function requireResultSentence(label, value, { ready = false, allowCommandMention = false } = {}) {
+  const issue = resultSentenceIssue(value, { allowCommandMention });
   if (!issue) return String(value || '').replace(/\s+/g, ' ').trim();
   const detail = ready ? readyResultDetail(issue) : issue;
   failTask(label, 'weak_result', detail);
+}
+
+function weakProofDetail(issue) {
+  return `meaningful proof required: ${issue}\n${LOCAL_SUCCESS_PROOF_EXAMPLE}`;
+}
+
+function requireMeaningfulTaskProof(label, proof, { required = true } = {}) {
+  const issue = meaningfulTaskProofIssue(proof, { required });
+  if (issue) failTask(label, 'weak_proof', weakProofDetail(issue));
+}
+
+function sendProofIssue(res, proof, issue) {
+  return sendJson(res, 400, {
+    ok: false,
+    reason: String(proof || '').trim() ? 'weak_proof' : 'proof_required',
+    detail: weakProofDetail(issue),
+  });
 }
 
 function textFlag(args, names) {
@@ -656,19 +677,6 @@ function missionXpProofBoundaryEvaluation(task, proofOverride = null) {
     next_action: 'attach the zero-papercut end-to-end fresh-laptop receipt, then resubmit Mission XP proof',
     proof,
   };
-}
-
-function requireMeaningfulTaskProof(label, proof, { required = true } = {}) {
-  const issue = meaningfulTaskProofIssue(proof, { required });
-  if (issue) failTask(label, 'weak_proof', `meaningful proof required: ${issue}`);
-}
-
-function sendProofIssue(res, proof, issue) {
-  return sendJson(res, 400, {
-    ok: false,
-    reason: String(proof || '').trim() ? 'weak_proof' : 'proof_required',
-    detail: `meaningful proof required: ${issue}`,
-  });
 }
 
 function positional(args) {
@@ -8848,7 +8856,7 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
     const proof = String(options.proof || '').trim();
     const proofIssue = meaningfulTaskProofIssue(proof);
     if (proofIssue) {
-      throw taskStepError(proof ? 'weak_proof' : 'proof_required', `meaningful proof required: ${proofIssue}`, { status: 400, exitCode: 2, page: actionPage });
+      throw taskStepError(proof ? 'weak_proof' : 'proof_required', weakProofDetail(proofIssue), { status: 400, exitCode: 2, page: actionPage });
     }
     const missionXpIssue = missionXpEndToEndProofIssue(task, proof, task.workspace_root || process.cwd());
     if (missionXpIssue) {
@@ -8895,7 +8903,7 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
     const proof = String(options.proof || '').trim();
     const proofIssue = meaningfulTaskProofIssue(proof);
     if (proofIssue) {
-      throw taskStepError(proof ? 'weak_proof' : 'proof_required', `meaningful proof required: ${proofIssue}`, { status: 400, exitCode: 2, page: actionPage });
+      throw taskStepError(proof ? 'weak_proof' : 'proof_required', weakProofDetail(proofIssue), { status: 400, exitCode: 2, page: actionPage });
     }
     const parsedReward = parseStepReviewReward(options.reward);
     if (!parsedReward.ok) {
@@ -9615,9 +9623,32 @@ function cmdReady(args) {
   // turning a claim into executed evidence. --verify can carry an optional --proof note.
   const proofFlag = flag(args, '--proof');
   const verifyFlag = flag(args, '--verify');
-  const resultSentence = requireResultSentence('atris task ready', textFlag(args, ['--result']), { ready: true });
+  const proofUrl = textFlag(args, ['--proof-url']);
+  const iFetched = hasFlag(args, '--i-fetched');
+  if (proofUrl && !iFetched) {
+    failTask(
+      'atris task ready',
+      'unfetched_proof_url',
+      'CI run URLs only count after atris fetches them, or with --proof-url and --i-fetched',
+    );
+  }
+  if (iFetched && !proofUrl && !(typeof proofFlag === 'string' && /https?:\/\/github[.]com\//i.test(proofFlag))) {
+    failTask(
+      'atris task ready',
+      'proof_url_required',
+      '--i-fetched requires --proof-url <actions-run-url> (or a URL inside --proof)',
+    );
+  }
   const usedVerify = typeof verifyFlag === 'string' ? verifyFlag.trim() : '';
+  const resultSentence = requireResultSentence('atris task ready', textFlag(args, ['--result']), {
+    ready: true,
+    allowCommandMention: Boolean(usedVerify),
+  });
   let proof = typeof proofFlag === 'string' ? proofFlag : '';
+  if (proofUrl && iFetched) {
+    const attested = `[i-fetched] ${proofUrl}`;
+    proof = proof.trim() ? `${proof.trim()} ${attested}` : attested;
+  }
   const verifyAutoCertifyAllowed = !usedVerify || isAutoCertifyVerifyCommandAllowed(verifyFlag);
   if (usedVerify) {
     // Run the verifier once and write a receipt (pass or fail) so the review

@@ -75,7 +75,7 @@ const {
   DEFAULT_CLIENT_ID, DEFAULT_USER_AGENT,
 } = require('../utils/api');
 const missionRuntime = require('../lib/mission-runtime-loop');
-const { knownCommands, suggestCommand } = require('../lib/known-commands');
+const { knownCommands, suggestCommand, suggestCommands } = require('../lib/known-commands');
 const { recordUsage } = require('../lib/usage');
 
 // Bind DI wrappers (utils/auth uses dependency injection for apiRequestJson)
@@ -1166,14 +1166,18 @@ if (!command || !knownCommands.includes(command)) {
     process.exit(2);
   }
 
-  // Warn if this looks like a mistyped single-word command (no spaces)
+  // A single unmatched argv[1] that looks like a verb is a typo or missing
+  // command, not a request to create work. Free-sentence task creation needs
+  // atris "<request>", task new, or wish.
   if (command && !natural.multiword && !directSingleWordNatural) {
-    console.log(`⚠ Unknown command: "${command}". Run "atris help" for available commands.`);
-    const suggestion = suggestCommand(command);
-    if (suggestion) {
-      console.log(`  Did you mean "atris ${suggestion}"?`);
+    const suggestions = suggestCommands(command);
+    console.error(`Unknown command: "${command}". Run "atris help" for available commands.`);
+    if (suggestions.length) {
+      console.error(`Did you mean ${suggestions.map((name) => `"atris ${name}"`).join(' or ')}?`);
+    } else {
+      console.error('To create work from a sentence, run: atris "<request>" (quoted), or atris task new / atris wish.');
     }
-    console.log('  Treating as natural language input...\n');
+    process.exit(2);
   }
 
   // Launch interactive entry (the "Performance")

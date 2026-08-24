@@ -123,7 +123,7 @@ test('status never promises a landing the gate will statically refuse', (t) => {
         id: 'uncited-suite-green',
         review: { ...baseTask.review, proof: 'suite green' },
       },
-      expectedReason: 'cite the CI run URL, run id, or commit-pinned verify command with exit 0 before claiming the suite is green',
+      expectedReason: 'cite a fetched CI run URL (--proof-url with --i-fetched), a run id, or a commit-pinned verify command with exit 0 before claiming the suite is green',
     },
     {
       name: 'decision-tagged review',

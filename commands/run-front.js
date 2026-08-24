@@ -65,19 +65,27 @@ function runnerDrivableForFrontDoor(runner, options = {}) {
   return false;
 }
 
-// Most logical mission: a moving one beats a planned one, newer beats older.
-// ready is excluded — it waits for review, not for another worker pass.
+// Most logical mission: a moving one beats a planned one, ready waits for a
+// resume when nothing else is moving, and newer beats older.
 function pickRunnableMission(root = process.cwd(), missionMap = null, options = {}) {
   let map = missionMap;
   if (!map) {
     try { map = require('./mission').loadMissionMap(root); } catch { return null; }
   }
+  const rank = (status) => {
+    if (status === 'running') return 0;
+    if (status === 'planning') return 1;
+    if (status === 'ready') return 2;
+    return 9;
+  };
   const candidates = Array.from(map.values())
-    .filter((mission) => mission && (mission.status === 'running' || mission.status === 'planning'))
+    .filter((mission) => mission && (mission.status === 'running' || mission.status === 'planning' || mission.status === 'ready'))
     .filter((mission) => runnerDrivableForFrontDoor(mission?.runner, options))
     .filter((mission) => !/^decide and start the next useful mission after:/i.test(String(mission?.objective || '')))
     .sort((a, b) => {
-      if (a.status !== b.status) return a.status === 'running' ? -1 : 1;
+      const ra = rank(a.status);
+      const rb = rank(b.status);
+      if (ra !== rb) return ra - rb;
       return String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || ''));
     });
   return candidates[0] || null;

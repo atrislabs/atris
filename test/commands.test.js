@@ -19539,14 +19539,22 @@ test('casual launch words route to the durable mission loop', () => {
   }
 });
 
-test('unknown single-word command shows warning', () => {
+test('unknown single-word command exits 2 without creating work', () => {
   const dir = makeTempDir();
   try {
     initWorkspace(dir);
     fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
+    const beforeTodo = fs.existsSync(path.join(dir, 'atris', 'TODO.md'))
+      ? fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8')
+      : null;
     const res = runCli(['foobarxyz'], { cwd: dir });
-    assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Unknown command.*foobarxyz/i);
+    assert.equal(res.status, 2, res.stderr || res.stdout);
+    assert.match(res.stderr + res.stdout, /Unknown command.*foobarxyz/i);
+    assert.doesNotMatch(res.stderr + res.stdout, /Treating as natural language/i);
+    const afterTodo = fs.existsSync(path.join(dir, 'atris', 'TODO.md'))
+      ? fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8')
+      : null;
+    assert.equal(afterTodo, beforeTodo);
   } finally {
     cleanupTempDir(dir);
   }

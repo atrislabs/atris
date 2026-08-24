@@ -114,15 +114,23 @@ test('task proof helper requires citations for suite-green claims', () => {
   const missing = taskProofState('suite green');
   assert.equal(missing.ok, false);
   assert.equal(missing.code, 'suite_green_citation_required');
-  assert.match(missing.reason, /cite the CI run/i);
+  assert.match(missing.reason, /fetched CI run|commit-pinned/i);
 
   for (const proof of [
-    'suite passes; https://github.com/acme/repo/actions/runs/123456789',
+    'suite passes; [i-fetched] https://github.com/acme/repo/actions/runs/123456789',
+    'all green; [fetched] https://github.com/acme/repo/actions/runs/123456789',
     'all green; run_id=123456789',
     'npm test passed; run 123456789',
     'commit abc1234; npm test passed (exit 0)',
   ]) {
     assert.equal(taskProofLooksMeaningful(proof), true, String(proof) + ' should cite the suite result');
+  }
+
+  for (const proof of [
+    'suite passes; https://github.com/acme/repo/actions/runs/123456789',
+    'npm test passed; https://github.com/keshav/atris-dogfood-2/actions/runs/123456',
+  ]) {
+    assert.equal(taskProofLooksMeaningful(proof), false, String(proof) + ' should reject an unfetched CI URL');
   }
 });
 
@@ -160,9 +168,12 @@ test('buildVerifiedProof turns a passing command into executed proof', () => {
   assert.equal(result.exit, 0);
   assert.match(result.proof, /^\[verified\] `npm test` passed \(exit 0\)/);
   assert.match(result.proof, /fixed the parser/);
-  // A locally verified full-suite command still needs an explicit citation.
+  // Without a receipt path, a suite-green local verify still needs a citation.
   assert.equal(taskProofLooksMeaningful(result.proof), false);
   assert.equal(taskProofState(result.proof).code, 'suite_green_citation_required');
+  // With the receipt path ready writes, the same local verify is meaningful.
+  const withReceipt = `${result.proof}\nReceipt: atris/runs/demo.json`;
+  assert.equal(taskProofLooksMeaningful(withReceipt), true);
   // It actually ran the command via bash.
   assert.deepEqual(calls[0][0], 'bash');
   assert.deepEqual(calls[0][1], ['-lc', 'npm test']);
