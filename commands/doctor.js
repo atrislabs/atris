@@ -124,9 +124,5 @@ function doctorCommand(args = [], options = {}) {
 }
 
 module.exports = {
-  TASK_NODE_MAJOR,
-  collectDoctor,
   doctorCommand,
-  parseNodeVersion,
-  renderDoctor,
 };

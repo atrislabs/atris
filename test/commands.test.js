@@ -17856,9 +17856,9 @@ test('verify detects placeholder MAP.md', () => {
   const dir = makeTempDir();
   try {
     initWorkspace(dir);
-    // init creates a placeholder MAP.md
+    // init creates a placeholder MAP.md; verify correctly fails when MAP has issues
     const res = runCli(['verify'], { cwd: dir });
-    assert.equal(res.status, 0, res.stderr);
+    assert.equal(res.status, 1, res.stderr);
     // Should mention MAP issues since it's a placeholder
     assert.match(res.stdout, /MAP\.md/);
   } finally {
