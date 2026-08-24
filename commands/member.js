@@ -3987,11 +3987,11 @@ function memberList(...flags) {
     const context = m.format === 'directory' ? String(m.contextCount) : '-';
     console.log(
       '  ' +
-      m.name.padEnd(nameW) +
-      m.role.substring(0, roleW - 1).padEnd(roleW) +
-      (m.format === 'directory' ? 'dir' : 'flat').padEnd(fmtW) +
-      skills.padEnd(skillW) +
-      context.padEnd(ctxW) +
+      clipCell(m.name, nameW) +
+      clipCell(m.role, roleW) +
+      clipCell(m.format === 'directory' ? 'dir' : 'flat', fmtW) +
+      clipCell(skills, skillW) +
+      clipCell(context, ctxW) +
       (m.version || '-')
     );
   }

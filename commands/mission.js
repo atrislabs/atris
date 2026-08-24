@@ -2660,6 +2660,7 @@ function missionFromArgs(args) {
     ...(ownerResolution.requested_owner && ownerResolution.requested_owner !== owner ? { requested_owner: ownerResolution.requested_owner } : {}),
     ...(ownerResolution.executed_by ? { executed_by: normalizeOwnerSlug(ownerResolution.executed_by) } : {}),
     ...(ownerResolution.proposed_member ? { proposed_member: ownerResolution.proposed_member } : {}),
+    ...(ownerResolution.remap_reason ? { remap_reason: ownerResolution.remap_reason } : {}),
     status: 'planning',
     cadence,
     runner,
@@ -4008,6 +4009,7 @@ function startMission(args, options = {}) {
       dirty_count: worktreeBaseline.dirty_count,
       dirty_hash: worktreeBaseline.dirty_hash,
     } : null,
+    ...(saved.remap_reason ? { remap_reason: saved.remap_reason } : {}),
   };
   if (!options.silent) {
     printJsonOrText(
@@ -4016,6 +4018,7 @@ function startMission(args, options = {}) {
         `Started mission: ${saved.objective}`,
         `Owner: ${saved.owner}`,
         `State: ${saved.status}`,
+        ...(saved.remap_reason ? [`Remap: ${saved.remap_reason}`] : []),
         ...(saved.worktree ? [`Worktree: ${saved.worktree.path}`, `Branch: ${saved.worktree.branch}`] : []),
         ...warnings.map((warning) => `Warning: ${warning.message}`),
         ...(saved.xp_task ? [`AgentXP task: ${saved.xp_task.ref}`] : []),

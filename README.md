@@ -207,7 +207,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris run diff` | Compare two run logs side by side |
 | `atris autopilot` | Keep the workspace moving: mission/member legs until `atris autopilot stop` (`--legacy` for the old approval loop) |
 | `atris pulse` | Install or run the durable overnight heartbeat |
-| `atris log` | Add inbox items to today's journal |
+| `atris log "note"` | Add an inbox item to today's journal (`log --repl` for the editor; `wish` for headless intake) |
 | `atris now` | Show the current operating truth |
 | `atris radar` | Show live agents joined with tasks, missions, and worktrees |
 | `atris ctop` | Show process-first live agent CPU and memory |
