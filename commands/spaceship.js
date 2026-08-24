@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * atris spaceship — bounded, self-reporting overnight runner.
  *
@@ -18,15 +20,39 @@ const { spawn } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'spaceship.sh');
 
+function printUsage() {
+  const lines = [
+    'Usage: atris spaceship [--hours N] [--interval SEC] [--repo PATH]',
+    '                       [--tick-cmd CMD] [--tick-timeout SEC]',
+    '                       [--idle-alert N] [--halt-alert N] [--label NAME]',
+    '                       [--no-email]',
+    '',
+    'Bounded overnight runner. Survives bad ticks and emails on state changes.',
+    'Defaults: --hours 4, --interval 780, tick = atris autopilot --auto --iterations=1',
+  ];
+  console.log(lines.join('\n'));
+}
+
 function spaceship(args = []) {
+  if (args.includes('--help') || args.includes('-h')) {
+    printUsage();
+    return Promise.resolve({ success: true, help: true });
+  }
+
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(SCRIPT)) {
       reject(new Error(`spaceship.sh not found at ${SCRIPT}`));
       return;
     }
+    const env = { ...process.env };
+    if (!process.stdout.isTTY) {
+      env.NO_COLOR = '1';
+      env.CLICOLOR = '0';
+      env.FORCE_COLOR = '0';
+    }
     const child = spawn('bash', [SCRIPT, ...args], {
       stdio: 'inherit',
-      env: process.env,
+      env,
     });
     child.on('error', reject);
     child.on('close', (code) => {
@@ -36,4 +62,4 @@ function spaceship(args = []) {
   });
 }
 
-module.exports = { spaceship, SCRIPT };
+module.exports = { spaceship, SCRIPT, printUsage };
