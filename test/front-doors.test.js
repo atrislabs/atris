@@ -54,7 +54,7 @@ test('runTickBudget: timed runs are loop contracts, untimed default small', () =
   assert.equal(runTickBudget(['--max-ticks', '2'], 3600), 2);
 });
 
-test('pickRunnableMission prefers running over planning, newest first, skips ready', () => {
+test('pickRunnableMission prefers running over planning, then ready', () => {
   const map = new Map([
     ['m1', { id: 'm1', status: 'planning', runner: 'atris2', objective: 'older plan', updated_at: '2026-07-01T01:00:00Z' }],
     ['m2', { id: 'm2', status: 'running', runner: 'atris2', objective: 'old run', updated_at: '2026-07-01T02:00:00Z' }],
@@ -62,6 +62,11 @@ test('pickRunnableMission prefers running over planning, newest first, skips rea
     ['m4', { id: 'm4', status: 'ready', runner: 'atris2', objective: 'waiting on review', updated_at: '2026-07-01T04:00:00Z' }],
   ]);
   assert.equal(pickRunnableMission(process.cwd(), map).id, 'm3');
+  map.delete('m2');
+  map.delete('m3');
+  assert.equal(pickRunnableMission(process.cwd(), map).id, 'm1');
+  map.delete('m1');
+  assert.equal(pickRunnableMission(process.cwd(), map).id, 'm4');
 });
 
 test('pickRunnableMission skips session-bound runners a headless loop cannot drive', () => {

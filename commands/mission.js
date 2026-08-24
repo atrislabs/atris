@@ -727,7 +727,72 @@ function missionXpTaskTitle(objective) {
   return `${prefix}${shortClause || 'mission work'}`;
 }
 
+function normalizeMissionTaskMatchText(text) {
+  return String(text || '')
+    .replace(/^Mission XP:\s*/i, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function missionObjectiveTaskMatch(objective, title) {
+  const want = normalizeMissionTaskMatchText(objective);
+  const have = normalizeMissionTaskMatchText(title);
+  if (!want || !have) return false;
+  if (want === have) return true;
+  // First clause of a long objective often matches the claimed task title.
+  const wantClause = want.split(/:|[.!?](?=\s|$)/)[0].trim();
+  const haveClause = have.split(/:|[.!?](?=\s|$)/)[0].trim();
+  if (wantClause && haveClause && (wantClause === haveClause || want.startsWith(haveClause) || have.startsWith(wantClause))) {
+    return true;
+  }
+  return false;
+}
+
+function taskRowToMissionXpBinding(task, ownerResolution, outPath, { inserted = false, reused = true } = {}) {
+  return {
+    task_id: task.id,
+    ref: missionTaskRef(task) || task.id,
+    title: task.title,
+    operator_title_warning: warnIfTaskTitleNeedsOperatorWhy(task.title),
+    status: task.status || 'claimed',
+    assigned_to: task.claimed_by || ownerResolution.owner,
+    owner_resolution: ownerResolution.reason,
+    executed_by: ownerResolution.executed_by ? normalizeOwnerSlug(ownerResolution.executed_by) : null,
+    inserted,
+    reused,
+    projection_path: outPath,
+  };
+}
+
+function findOpenTaskMatchingMissionObjective(mission, root = process.cwd(), asJson = false) {
+  const taskDb = loadTaskDb(asJson);
+  const db = taskDb.open();
+  const workspaceRoot = taskDb.workspaceRoot(root);
+  const rows = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot }));
+  const open = rows.filter((row) => row && ['open', 'claimed', 'review'].includes(row.status));
+  const explicitIds = Array.isArray(mission.task_ids) ? mission.task_ids.filter(Boolean) : [];
+  for (const id of explicitIds) {
+    const hit = open.find((row) => row.id === id || row.display_id === id || missionTaskRef(row) === id);
+    if (hit) return hit;
+  }
+  return open.find((row) => missionObjectiveTaskMatch(mission.objective, row.title)) || null;
+}
+
+function bindExistingMissionTask(mission, task, root = process.cwd(), asJson = false) {
+  const taskDb = loadTaskDb(asJson);
+  const db = taskDb.open();
+  const workspaceRoot = taskDb.workspaceRoot(root);
+  const ownerResolution = resolveMissionOwner(mission, workspaceRoot);
+  const { outPath } = writeMissionTaskProjection(taskDb, db, workspaceRoot);
+  return taskRowToMissionXpBinding(task, ownerResolution, outPath, { inserted: false, reused: true });
+}
+
 function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
+  const existing = findOpenTaskMatchingMissionObjective(mission, root, asJson);
+  if (existing) {
+    return bindExistingMissionTask(mission, existing, root, asJson);
+  }
   const taskDb = loadTaskDb(asJson);
   const db = taskDb.open();
   const workspaceRoot = taskDb.workspaceRoot(root);
@@ -782,6 +847,7 @@ function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
     owner_resolution: ownerResolution.reason,
     executed_by: ownerResolution.executed_by ? normalizeOwnerSlug(ownerResolution.executed_by) : null,
     inserted: result.inserted !== false,
+    reused: false,
     projection_path: outPath,
   };
 }
@@ -3972,8 +4038,22 @@ function startMission(args, options = {}) {
     const xpTask = createMissionXpTask(mission, process.cwd(), asJson);
     mission.xp_task = xpTask;
     mission.task_ids = Array.from(new Set([...(mission.task_ids || []), xpTask.task_id]));
+    mission.current_task_id = xpTask.task_id;
+    mission.task_ref = xpTask.ref;
     if (!mission.verifier && !mission.always_on) {
       mission.next_action = `work task then run: atris task current-step --goal-id ${mission.id} --as ${mission.owner} --proof "<proof>" --json`;
+    }
+  } else if (!(mission.task_ids && mission.task_ids.length)) {
+    // Bind a live open/claimed task with the same objective instead of leaving
+    // task_ids empty and forcing attach-task to spawn a Mission XP twin later.
+    const existing = findOpenTaskMatchingMissionObjective(mission, process.cwd(), asJson);
+    if (existing) {
+      const bound = bindExistingMissionTask(mission, existing, process.cwd(), asJson);
+      mission.task_ids = [bound.task_id];
+      mission.current_task_id = bound.task_id;
+      mission.task_ref = bound.ref;
+      mission.xp_task = bound;
+      mission.xp_task_enabled = true;
     }
   }
   if (typeof options.beforeMissionSave === 'function') {
@@ -4139,6 +4219,8 @@ async function startMissionFromRunObjective(objective, args) {
     const xpTask = createMissionXpTask(mission, process.cwd(), asJson);
     mission.xp_task = xpTask;
     mission.task_ids = Array.from(new Set([...(mission.task_ids || []), xpTask.task_id]));
+    mission.current_task_id = xpTask.task_id;
+    mission.task_ref = xpTask.ref;
   }
   if (landRun) {
     const repoPath = path.resolve(readFlag(args, '--repo', process.cwd()));
@@ -4265,14 +4347,16 @@ async function startMissionFromRunObjective(objective, args) {
 function attachMissionTask(args) {
   const asJson = wantsJson(args);
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
-    console.log('Usage: atris mission attach-task <id> [--json]');
+    console.log('Usage: atris mission attach-task <id> [--task <task-id>] [--json]');
+    console.log('Binds an open task with the same objective when one exists; pass --task to choose explicitly.');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
-  const ref = stripKnownFlags(args, [], ['--json'])[0] || '';
+  const ref = stripKnownFlags(args, ['--task'], ['--json'])[0] || '';
   if (!ref) {
-    exitMissionError('Usage: atris mission attach-task <id> [--json]', 1, asJson);
+    exitMissionError('Usage: atris mission attach-task <id> [--task <task-id>] [--json]', 1, asJson);
   }
+  const explicitTaskIds = readRepeatedFlag(args, '--task');
   let mission = resolveMission(ref);
   if (!mission) {
     exitMissingMission(ref, 1, asJson);
@@ -4288,6 +4372,13 @@ function attachMissionTask(args) {
     if (TERMINAL_STATUSES.has(mission.status)) {
       releaseMissionLock(lock);
       exitMissionError(`Mission "${ref}" is ${mission.status}; task spines attach only to active missions.`, 2, asJson);
+    }
+
+    if (explicitTaskIds.length) {
+      mission = {
+        ...mission,
+        task_ids: Array.from(new Set([...(mission.task_ids || []), ...explicitTaskIds])),
+      };
     }
 
     const existingSpine = missionTaskSpine(mission);
@@ -4365,6 +4456,8 @@ function attachMissionTask(args) {
       xp_task_enabled: true,
       xp_task: xpTask,
       task_ids: Array.from(new Set([...(baseMission.task_ids || []), xpTask.task_id])),
+      current_task_id: xpTask.task_id,
+      task_ref: xpTask.ref,
     };
     if (nextMission.status === 'ready' && nextMission.receipt_path) {
       nextMission.next_action = missionXpReadyAction(nextMission, nextMission.receipt_path) || nextMission.next_action;
@@ -4376,17 +4469,17 @@ function attachMissionTask(args) {
       nextMission.next_action = `work task then run: atris task current-step --goal-id ${nextMission.id} --as ${nextMission.owner} --proof "<proof>" --json`;
     }
 
-    const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_task_spine_attached', { task_id: xpTask.task_id, task_ref: xpTask.ref });
+    const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_task_spine_attached', { task_id: xpTask.task_id, task_ref: xpTask.ref, reused: xpTask.reused === true });
     const memberState = renderMemberMissionState(saved.owner);
-    const logPath = appendMemberLog(saved.owner, 'Mission task spine attached', {
+    const logPath = appendMemberLog(saved.owner, xpTask.reused ? 'Mission task spine bound to existing task' : 'Mission task spine attached', {
       mission: saved.objective,
       task: xpTask.ref,
     });
     const view = missionStatusView(saved);
     printJsonOrText(
-      { ok: true, action: 'mission_task_spine_attached', mission: view, task: xpTask, task_spine: view.task_spine, member_state: memberState, log_path: logPath },
+      { ok: true, action: xpTask.reused ? 'mission_task_spine_bound' : 'mission_task_spine_attached', mission: view, task: xpTask, task_spine: view.task_spine, member_state: memberState, log_path: logPath },
       [
-        `Attached task spine: ${saved.objective}`,
+        xpTask.reused ? `Bound existing task spine: ${saved.objective}` : `Attached task spine: ${saved.objective}`,
         `Task: ${xpTask.ref}`,
         `Next: ${view.task_spine.current_step_command}`,
       ],
@@ -5191,6 +5284,14 @@ function missionReportFor(mission, root = process.cwd()) {
     ? 'The last verifier passed; full-budget work is continuing.'
     : mission.operator_outcome
     || (verifierPassed ? 'Verifier passed.' : mission.status === 'complete' ? 'Mission is complete.' : mission.status === 'blocked' ? 'Mission is blocked.' : 'Mission is still in progress.');
+  // Keep summary aligned with outcome: never claim a Codex handoff when the
+  // same report also says no receipt / no live worker.
+  let workerSummary = missionWorkerSummary(mission, receipt);
+  if (awaitingFirstWorker || noLiveWorker) {
+    workerSummary = awaitingFirstWorker
+      ? 'Waiting for the first worker check-in; no receipt yet.'
+      : 'No worker receipt yet.';
+  }
   return {
     id: mission.id,
     objective: mission.objective,
@@ -5204,7 +5305,7 @@ function missionReportFor(mission, root = process.cwd()) {
     operator_outcome: operatorOutcome,
     verification: verificationDebt,
     worker: mission.worker || missionWorkerLabel(mission),
-    worker_summary: missionWorkerSummary(mission, receipt),
+    worker_summary: workerSummary,
     timeline,
     worker_receipt_path: workerReceiptPath,
     verifier_receipt_path: verifierReceiptPath,

@@ -219,3 +219,154 @@ test('P0-4: plan/do/ingest start with PROMPT ONLY or ACTION TAKEN', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('P0-13: local verify receipt is enough proof; unfetched actions URL is rejected', function () {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    assert.equal(runCli(['init', '--yes'], { cwd: dir, env, timeout: 60000 }).status, 0);
+    const add = runCli(['task', 'add', 'Ship keyword search for operators', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+
+    const receipt = runCli(['task', 'receipt', ref, '--verify', 'true', '--no-falsify-check', '--json'], { cwd: dir, env });
+    assert.equal(receipt.status, 0, receipt.stderr);
+    const receiptPayload = JSON.parse(receipt.stdout);
+    assert.equal(receiptPayload.passed, true);
+    assert.equal(receiptPayload.exit, 0);
+    assert.ok(receiptPayload.receipt_path);
+
+    const readyOk = runCli([
+      'task', 'ready', ref,
+      '--verify', 'true',
+      '--no-falsify-check',
+      '--result', 'Operators can now find tasks by keyword instead of scrolling the full list.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(readyOk.status, 0, readyOk.stderr || readyOk.stdout);
+    const readyPayload = JSON.parse(readyOk.stdout);
+    assert.match(readyPayload.task.review.proof, /\[verified\].*passed \(exit 0\)/);
+    assert.match(readyPayload.task.review.proof, /Receipt: atris\/runs\//);
+
+    const add2 = runCli(['task', 'add', 'Reject fabricated CI URL', '--json'], { cwd: dir, env });
+    assert.equal(add2.status, 0, add2.stderr);
+    const ref2 = JSON.parse(add2.stdout).task.display_id;
+    const fakeUrl = 'https://github.com/keshav/atris-dogfood-2/actions/runs/123456';
+    const readyFake = runCli([
+      'task', 'ready', ref2,
+      '--proof', `npm test passed ${fakeUrl}`,
+      '--result', 'Operators can now find tasks by keyword instead of scrolling the full list.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(readyFake.status, 2, readyFake.stderr || readyFake.stdout);
+    const fakePayload = JSON.parse(readyFake.stdout);
+    assert.equal(fakePayload.reason, 'weak_proof');
+    assert.match(fakePayload.detail, /local success example/i);
+    assert.match(fakePayload.detail, /fetched|i-fetched|receipt/i);
+
+    const readyMention = runCli([
+      'task', 'ready', ref2,
+      '--verify', 'true',
+      '--no-falsify-check',
+      '--result', 'Operators can find tasks by keyword after the npm test so they stop scrolling.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(readyMention.status, 0, readyMention.stderr || readyMention.stdout);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('P0-14: unknown verb atris context exits 2 and does not create a task', function () {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    assert.equal(runCli(['init', '--yes'], { cwd: dir, env, timeout: 60000 }).status, 0);
+    const beforeList = runCli(['task', 'list', '--json'], { cwd: dir, env });
+    assert.equal(beforeList.status, 0, beforeList.stderr);
+    const beforeCount = (JSON.parse(beforeList.stdout).tasks || []).length;
+    const beforeTodo = fs.existsSync(path.join(dir, 'atris', 'TODO.md'))
+      ? fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8')
+      : '';
+
+    const res = runCli(['context'], { cwd: dir, env });
+    assert.equal(res.status, 2, res.stderr || res.stdout);
+    assert.match(res.stderr + res.stdout, /Unknown command.*context/i);
+    assert.match(res.stderr + res.stdout, /activate|status/i);
+    assert.doesNotMatch(res.stderr + res.stdout, /Treating as natural language/i);
+
+    const afterList = runCli(['task', 'list', '--json'], { cwd: dir, env });
+    assert.equal(afterList.status, 0, afterList.stderr);
+    const afterCount = (JSON.parse(afterList.stdout).tasks || []).length;
+    assert.equal(afterCount, beforeCount);
+    const afterTodo = fs.existsSync(path.join(dir, 'atris', 'TODO.md'))
+      ? fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8')
+      : '';
+    assert.equal(afterTodo, beforeTodo);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('P0-15: mission attach-task binds the live claimed task instead of spawning a Mission XP twin', function () {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'cursor-agent' };
+  const objective = 'Add keyword search so operators can find tasks without scrolling';
+  try {
+    assert.equal(runCli(['init', '--yes'], { cwd: dir, env, timeout: 60000 }).status, 0);
+    const add = runCli(['task', 'add', objective, '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const task = JSON.parse(add.stdout).task;
+    const claim = runCli(['task', 'claim', task.display_id, '--as', 'cursor-agent', '--json'], { cwd: dir, env });
+    assert.equal(claim.status, 0, claim.stderr || claim.stdout);
+
+    const start = runCli([
+      'mission', 'start', objective,
+      '--owner', 'mission-lead',
+      '--runner', 'manual',
+      '--lane', 'code',
+      '--verify', 'true',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const started = JSON.parse(start.stdout);
+    assert.ok(started.mission.task_ids.includes(task.id) || started.mission.current_task_id === task.id
+      || (started.mission.xp_task && started.mission.xp_task.task_id === task.id),
+      `expected start to bind ${task.id}: ${start.stdout.slice(0, 500)}`);
+
+    const beforeList = JSON.parse(runCli(['task', 'list', '--json'], { cwd: dir, env }).stdout);
+    const beforeCount = (beforeList.tasks || []).length;
+
+    const attach = runCli(['mission', 'attach-task', started.mission.id, '--json'], { cwd: dir, env });
+    assert.equal(attach.status, 0, attach.stderr || attach.stdout);
+    const attached = JSON.parse(attach.stdout);
+    assert.ok(
+      attached.action === 'mission_task_spine_exists'
+      || attached.action === 'mission_task_spine_bound'
+      || (attached.task && attached.task.task_id === task.id),
+      `unexpected attach action: ${attached.action}`,
+    );
+    const spineId = attached.task_spine?.task_id
+      || attached.mission?.task_spine?.task_id
+      || attached.task?.task_id
+      || attached.mission?.current_task_id;
+    assert.equal(spineId, task.id);
+
+    const afterList = JSON.parse(runCli(['task', 'list', '--json'], { cwd: dir, env }).stdout);
+    const afterTasks = afterList.tasks || [];
+    assert.equal(afterTasks.length, beforeCount);
+    assert.equal(afterTasks.filter((row) => /^Mission XP:/i.test(row.title)).length, 0);
+
+    const { pickRunnableMission } = require('../commands/run-front');
+    const map = new Map([[started.mission.id, { ...started.mission, status: 'ready', runner: 'claude' }]]);
+    assert.equal(pickRunnableMission(dir, map).id, started.mission.id);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

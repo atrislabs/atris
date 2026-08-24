@@ -905,7 +905,7 @@ test('tick blocks uncited suite-green proof and cites the needed run in its rece
     assert.deepEqual(receipt.landed, []);
     assert.deepEqual(receipt.citation_blocks, [{
       ref,
-      reason: 'cite the CI run URL, run id, or commit-pinned verify command with exit 0 before claiming the suite is green',
+      reason: 'cite a fetched CI run URL (--proof-url with --i-fetched), a run id, or a commit-pinned verify command with exit 0 before claiming the suite is green',
     }]);
     assert.equal(projectionByRef(repo)[ref].status, 'review');
   } finally {
@@ -913,12 +913,12 @@ test('tick blocks uncited suite-green proof and cites the needed run in its rece
   }
 });
 
-test('tick lands the same suite-green proof when it cites a CI run URL', () => {
+test('tick lands the same suite-green proof when it cites a fetched CI run URL', () => {
   const { base, repo } = makeTempRepo();
   try {
     const ref = certifiedVerifiedTask(repo, 'Land a cited green claim', {
       verify: 'git diff --check',
-      proof: 'suite green https://github.com/acme/repo/actions/runs/123456789',
+      proof: 'suite green [i-fetched] https://github.com/acme/repo/actions/runs/123456789',
     });
     autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
 

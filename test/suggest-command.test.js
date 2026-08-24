@@ -15,6 +15,7 @@ test('suggestCommand points a near-miss typo at the intended command', () => {
   assert.strictEqual(suggestCommand('missin'), 'mission');
   assert.strictEqual(suggestCommand('benc'), 'bench');
   assert.strictEqual(suggestCommand('stauts'), 'status');
+  assert.strictEqual(suggestCommand('context'), 'activate');
 });
 
 test('suggestCommand returns null for input that is not close to any command', () => {
@@ -45,7 +46,7 @@ test('every known command is its own closest match', () => {
 test('CLI prints a did-you-mean line for a typo', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-suggest-command-test-'));
   try {
-    let out;
+    let out = '';
     try {
       out = execFileSync('node', [CLI, 'taks'], {
         cwd: dir,
@@ -57,8 +58,8 @@ test('CLI prints a did-you-mean line for a typo', () => {
         },
       });
     } catch (err) {
-      // The natural-language fallthrough may exit nonzero; we only care about stdout.
-      out = err.stdout || '';
+      // Unknown single-word verbs exit 2; suggestion is on stderr.
+      out = `${err.stdout || ''}${err.stderr || ''}`;
     }
     assert.match(out, /Did you mean "atris task"\?/);
   } finally {
