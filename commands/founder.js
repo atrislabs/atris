@@ -42,14 +42,20 @@ function parseArgs(args = []) {
   let root = null;
   let days = DEFAULT_DAYS;
   let json = false;
+  let global = false;
 
   while (index < args.length) {
     const arg = String(args[index]);
     if (arg === '--help' || arg === '-h' || arg === 'help') {
-      return { help: true, root, days, json };
+      return { help: true, root, days, json, global };
     }
     if (arg === '--json') {
       json = true;
+      index += 1;
+      continue;
+    }
+    if (arg === '--global' || arg === '-g') {
+      global = true;
       index += 1;
       continue;
     }
@@ -71,7 +77,7 @@ function parseArgs(args = []) {
     throw new Error(`unknown founder option: ${arg}`);
   }
 
-  return { help: false, root, days, json };
+  return { help: false, root, days, json, global };
 }
 
 function founderNow(env = process.env) {
@@ -162,17 +168,26 @@ function discoverRepos(root) {
     .sort((left, right) => path.basename(left).localeCompare(path.basename(right)));
 }
 
-function collectRepoScorecards(root, bounds) {
-  return discoverRepos(root).map((repoRoot) => {
-    const branch = defaultBranch(repoRoot);
-    const history = commitHistory(repoRoot, branch, bounds);
-    return {
-      repo: path.basename(repoRoot),
-      commitsThisWeek: totalInRange(history.timestamps, bounds.currentWindowStart, bounds.until, true),
-      commitsLastWeek: totalInRange(history.timestamps, bounds.priorWindowStart, bounds.currentWindowStart),
-      perDay: history.perDay,
-    };
-  }).sort((left, right) => (
+function scoreOneRepo(repoRoot, bounds) {
+  const branch = defaultBranch(repoRoot);
+  const history = commitHistory(repoRoot, branch, bounds);
+  return {
+    repo: path.basename(repoRoot),
+    commitsThisWeek: totalInRange(history.timestamps, bounds.currentWindowStart, bounds.until, true),
+    commitsLastWeek: totalInRange(history.timestamps, bounds.priorWindowStart, bounds.currentWindowStart),
+    perDay: history.perDay,
+  };
+}
+
+function collectRepoScorecards(root, bounds, { singleRepo = false, workspace = null } = {}) {
+  if (singleRepo) {
+    const target = workspace || root;
+    if (fs.existsSync(path.join(target, '.git')) || runGit(target, ['rev-parse', '--is-inside-work-tree']).ok) {
+      return [scoreOneRepo(target, bounds)];
+    }
+    return [];
+  }
+  return discoverRepos(root).map((repoRoot) => scoreOneRepo(repoRoot, bounds)).sort((left, right) => (
     right.commitsThisWeek - left.commitsThisWeek
     || right.commitsLastWeek - left.commitsLastWeek
     || left.repo.localeCompare(right.repo)
@@ -226,12 +241,18 @@ function percentChange(current, previous) {
   return Math.round(((current - previous) / previous) * 100);
 }
 
-function buildFounderScorecard(root, { days = DEFAULT_DAYS, now = new Date() } = {}) {
+function buildFounderScorecard(root, {
+  days = DEFAULT_DAYS,
+  now = new Date(),
+  singleRepo = false,
+  workspace = null,
+} = {}) {
   const bounds = historyBounds(now, days);
-  const perRepo = collectRepoScorecards(root, bounds);
+  const perRepo = collectRepoScorecards(root, bounds, { singleRepo, workspace });
   const commitsThisWeek = perRepo.reduce((total, repo) => total + repo.commitsThisWeek, 0);
   const commitsLastWeek = perRepo.reduce((total, repo) => total + repo.commitsLastWeek, 0);
-  const tasks = readTaskScorecard(root, bounds);
+  const taskRoot = singleRepo ? (workspace || root) : root;
+  const tasks = readTaskScorecard(taskRoot, bounds);
 
   return {
     ts: now.toISOString(),
@@ -278,9 +299,10 @@ function renderFounderScorecard(scorecard) {
 }
 
 function showFounderHelp() {
-  console.log('usage: atris founder [score] [--days n] [--root dir] [--json]');
+  console.log('usage: atris founder [score] [--days n] [--root dir] [--json] [--global]');
   console.log('shows the last 7 days against the prior 7 days from git and task receipts.');
-  console.log('supported flags: --days, --root, --json, --help, -h');
+  console.log('default scope is this workspace. pass --global to scan sibling repos.');
+  console.log('supported flags: --days, --root, --json, --global, --help, -h');
 }
 
 function founderCommand(args = [], options = {}) {
@@ -289,7 +311,7 @@ function founderCommand(args = [], options = {}) {
     parsed = parseArgs(args);
   } catch (error) {
     console.error(`error: ${error.message}`);
-    console.error('supported flags: --days, --root, --json, --help, -h');
+    console.error('supported flags: --days, --root, --json, --global, --help, -h');
     return 2;
   }
   if (parsed.help) {
@@ -301,9 +323,14 @@ function founderCommand(args = [], options = {}) {
   const currentWorkspace = workspaceRoot(cwd);
   const root = parsed.root
     ? path.resolve(cwd, parsed.root)
-    : defaultScanRoot(cwd, currentWorkspace);
+    : (parsed.global ? defaultScanRoot(cwd, currentWorkspace) : currentWorkspace);
   const now = founderNow(options.env || process.env);
-  const scorecard = buildFounderScorecard(root, { days: parsed.days, now });
+  const scorecard = buildFounderScorecard(root, {
+    days: parsed.days,
+    now,
+    singleRepo: !parsed.global && !parsed.root,
+    workspace: currentWorkspace,
+  });
   appendFounderScorecard(currentWorkspace, scorecard);
   if (parsed.json) {
     console.log(JSON.stringify(scorecard, null, 2));

@@ -36,10 +36,28 @@ HALT_ALERT=2                 # email after this many consecutive halted ticks
 EMAIL=1
 LABEL="spaceship"
 
+# Disable color when stdout is not a TTY (piped/CI).
+if [ ! -t 1 ]; then
+  export NO_COLOR=1
+  export CLICOLOR=0
+  export FORCE_COLOR=0
+fi
+
 # Default email channel: the verified SES helper in atrisos-backend.
 BACKEND_DEFAULT="${SPACESHIP_BACKEND:-$HOME/arena/atrisos-backend}"
 DEFAULT_EMAIL_CMD="${BACKEND_DEFAULT}/venv/bin/python ${BACKEND_DEFAULT}/backend/scripts/spaceship_update.py"
 EMAIL_CMD="${SPACESHIP_EMAIL_CMD:-$DEFAULT_EMAIL_CMD}"
+
+usage() {
+  cat <<'EOF'
+Usage: spaceship.sh [--hours N] [--interval SEC] [--repo PATH]
+                    [--tick-cmd CMD] [--tick-timeout SEC]
+                    [--idle-alert N] [--halt-alert N] [--label NAME]
+                    [--no-email]
+
+Bounded overnight runner. Survives bad ticks and emails on state changes.
+EOF
+}
 
 # ---- args --------------------------------------------------------------------
 while [ $# -gt 0 ]; do
@@ -53,7 +71,7 @@ while [ $# -gt 0 ]; do
     --halt-alert) HALT_ALERT="$2"; shift 2;;
     --label) LABEL="$2"; shift 2;;
     --no-email) EMAIL=0; shift;;
-    -h|--help) sed -n '2,40p' "$0"; exit 0;;
+    -h|--help) usage; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done

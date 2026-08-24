@@ -293,6 +293,20 @@ function formatInstallGitWarning(state) {
     'npm install -g atris@latest may not change the code currently on PATH; resolve that checkout before trusting upgrade status.';
 }
 
+/**
+ * Human version line. Published/sealed installs stay plain.
+ * Git checkouts append `(git <sha> [dirty] <branch>)`.
+ */
+function formatCliVersionLine(version, packageRoot = path.join(__dirname, '..')) {
+  const base = String(version || 'unknown').replace(/^v/, '');
+  if (!isGitCheckout(packageRoot)) return `atris v${base}`;
+  const state = inspectInstallGitState(packageRoot);
+  const sha = state.head || 'unknown';
+  const branch = state.detached ? 'detached' : (state.branch || 'unknown');
+  if (state.dirty) return `atris v${base} (git ${sha} dirty ${branch})`;
+  return `atris v${base} (git ${sha} ${branch})`;
+}
+
 function normalizeAutoUpdateMode(env = process.env) {
   const raw = String(env.ATRIS_AUTO_UPDATE || '').trim().toLowerCase();
   if (['0', 'false', 'no', 'off', 'notify'].includes(raw)) return 'off';
@@ -349,6 +363,7 @@ module.exports = {
   shouldAutoUpdate,
   inspectInstallGitState,
   formatInstallGitWarning,
+  formatCliVersionLine,
   isGitCheckout,
   getNpmSelfUpdateCommand,
   getNpmSelfUpdateSpawnArgs,

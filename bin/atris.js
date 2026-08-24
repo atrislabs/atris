@@ -41,7 +41,12 @@ const {
   autoUpdate,
   inspectInstallGitState,
   formatInstallGitWarning,
+  formatCliVersionLine,
 } = require('../utils/update-check');
+const {
+  requireAccountBound,
+  refuseAccountGlobal,
+} = require('../lib/account-bound');
 
 // State detection for smart default
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
@@ -1104,7 +1109,7 @@ if (isSpecFile(command)) {
 
 // --version flag (works anywhere: atris --version, atris -v)
 if (command === '--version' || command === '-v' || process.argv.includes('--version')) {
-  console.log(`atris v${CLI_VERSION}`);
+  console.log(formatCliVersionLine(CLI_VERSION, path.join(__dirname, '..')));
   process.exit(0);
 }
 
@@ -2063,12 +2068,20 @@ if (command === 'init') {
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'rainmaker') {
-  const code = require('../commands/rainmaker').rainmakerCommand(process.argv.slice(3));
-  process.exit(typeof code === 'number' ? code : 0);
+  {
+    const gate = requireAccountBound(process.argv.slice(3));
+    if (!gate.ok) process.exit(refuseAccountGlobal());
+    const code = require('../commands/rainmaker').rainmakerCommand(gate.args);
+    process.exit(typeof code === 'number' ? code : 0);
+  }
 } else if (command === 'avail') {
-  Promise.resolve(require('../commands/avail').availCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  {
+    const gate = requireAccountBound(process.argv.slice(3));
+    if (!gate.ok) process.exit(refuseAccountGlobal());
+    Promise.resolve(require('../commands/avail').availCommand(gate.args))
+      .then((code) => process.exit(typeof code === 'number' ? code : 0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  }
 } else if (command === 'meet') {
   Promise.resolve(require('../commands/meet').meetCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
@@ -2087,7 +2100,13 @@ if (command === 'init') {
       process.exit(1);
     });
 } else if (command === 'agent') {
-  agentAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  {
+    const gate = requireAccountBound(process.argv.slice(3));
+    if (!gate.ok) process.exit(refuseAccountGlobal());
+    // Re-slice argv so agentAtris sees args without --account.
+    process.argv = [process.argv[0], process.argv[1], 'agent', ...gate.args];
+    agentAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  }
 } else if (command === 'log') {
   const logArgs = process.argv.slice(3);
   const subcommand = logArgs[0];
@@ -2819,7 +2838,8 @@ if (command === 'init') {
 } else if (command === 'teach') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
-  require('../commands/teach')(subcommand, ...args);
+  const teachCode = require('../commands/teach')(subcommand, ...args);
+  process.exit(typeof teachCode === 'number' ? teachCode : 0);
 } else if (command === 'skill') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
@@ -2891,11 +2911,15 @@ if (command === 'init') {
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'business') {
-  const subcommand = process.argv[3];
-  const args = process.argv.slice(4);
-  require('../commands/business').businessCommand(subcommand, ...args)
-    .then(() => process.exit(process.exitCode || 0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  {
+    const gate = requireAccountBound(process.argv.slice(3));
+    if (!gate.ok) process.exit(refuseAccountGlobal());
+    const subcommand = gate.args[0];
+    const args = gate.args.slice(1);
+    require('../commands/business').businessCommand(subcommand, ...args)
+      .then(() => process.exit(process.exitCode || 0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  }
 } else if (command === 'soul') {
   const args = process.argv.slice(3);
   require('../commands/soul').soul(args)
@@ -3109,9 +3133,14 @@ if (command === 'init') {
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'feedback') {
-  require('../commands/feedback').feedbackCommand()
-    .then(() => process.exit(0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  {
+    const gate = requireAccountBound(process.argv.slice(3));
+    if (!gate.ok) process.exit(refuseAccountGlobal());
+    process.argv = [process.argv[0], process.argv[1], 'feedback', ...gate.args];
+    require('../commands/feedback').feedbackCommand()
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  }
 } else if (command === 'errors') {
   require('../commands/errors').errorsCommand()
     .then(() => process.exit(0))

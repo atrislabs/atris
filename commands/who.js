@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const { repoRoot } = require('./stream');
+const { parseScopeFlag, pathUnderRoot } = require('../lib/cli-scope');
 const {
   buildWorkforcePresence,
   isFinishedReceipt,
@@ -73,6 +74,34 @@ function collectReceipts(root, fsModule = fs) {
   return receipts;
 }
 
+function processCwds(pids, deps = {}) {
+  const byPid = new Map();
+  const list = (Array.isArray(pids) ? pids : []).map(String).filter(Boolean);
+  if (!list.length) return byPid;
+  const readlink = deps.readlink || fs.readlinkSync;
+  const execFile = deps.execFile || execFileSync;
+  if (process.platform === 'linux') {
+    for (const pid of list) {
+      try { byPid.set(String(pid), readlink(`/proc/${pid}/cwd`)); } catch {}
+    }
+    return byPid;
+  }
+  try {
+    const out = execFile('lsof', ['-a', '-d', 'cwd', '-Fn', '-p', list.join(',')], {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    let current = null;
+    for (const line of String(out || '').split(/\r?\n/)) {
+      if (line.startsWith('p')) current = line.slice(1);
+      else if (line.startsWith('n') && current) byPid.set(current, line.slice(1));
+    }
+  } catch {
+    // keep empty map
+  }
+  return byPid;
+}
+
 function collectProcesses(deps = {}) {
   if (Array.isArray(deps.processes)) return deps.processes;
   const execFile = deps.execFile || execFileSync;
@@ -81,24 +110,50 @@ function collectProcesses(deps = {}) {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
-    return parsePsOutput(output);
+    const rows = parsePsOutput(output);
+    const cwdByPid = processCwds(rows.map((row) => row.pid), deps);
+    return rows.map((row) => ({
+      ...row,
+      cwd: cwdByPid.get(String(row.pid)) || null,
+    }));
   } catch {
     return [];
   }
 }
 
+function filterProcessesToWorkspace(processes, root) {
+  const resolved = path.resolve(root);
+  return (Array.isArray(processes) ? processes : []).filter((row) => {
+    if (row.cwd && pathUnderRoot(row.cwd, resolved)) return true;
+    const command = String(row.command || '');
+    return command.includes(resolved) || command.includes(root);
+  });
+}
+
 function collectWorkforcePresence(deps = {}) {
   const fsModule = deps.fs || fs;
   const root = deps.root || repoRoot(deps.cwd || process.cwd());
+  const scope = deps.scope === 'global' ? 'global' : 'workspace';
   const receipts = Array.isArray(deps.receipts) ? deps.receipts : collectReceipts(root, fsModule);
-  return buildWorkforcePresence({
+  let processes;
+  if (Array.isArray(deps.processes)) {
+    // Caller-owned fixture/list: do not re-scope.
+    processes = deps.processes;
+  } else {
+    processes = collectProcesses(deps);
+    if (scope !== 'global') {
+      processes = filterProcessesToWorkspace(processes, root);
+    }
+  }
+  const presence = buildWorkforcePresence({
     nowMs: typeof deps.now === 'function' ? deps.now() : Date.now(),
     staleAfterMs: deps.staleAfterMs,
-    processes: collectProcesses(deps),
+    processes,
     tasks: Array.isArray(deps.tasks) ? deps.tasks : collectTasks(root, fsModule),
     missions: Array.isArray(deps.missions) ? deps.missions : collectMissions(root, fsModule),
     receipts,
   });
+  return { ...presence, scope };
 }
 
 function archiveFinishedRuns(root, receipts, fsModule = fs) {
@@ -132,11 +187,12 @@ function helpText() {
   return [
     'atris who - show local engines and team members from live process and final run state',
     '',
-    'usage: atris who [--json]',
+    'usage: atris who [--json] [--global]',
     'usage: atris who --clear [--json]',
     '',
+    'default scope is this workspace. pass --global for the whole machine.',
     '--clear archives finished run receipts under atris/runs/archive/.',
-  ].join('\n');
+  ].join('\\n');
 }
 
 function whoCommand(args = [], deps = {}) {
@@ -146,25 +202,27 @@ function whoCommand(args = [], deps = {}) {
     write(`${helpText()}\n`);
     return 0;
   }
-  if (args.some((arg) => !['--json', '--clear'].includes(arg))) {
-    error('usage: atris who [--json] [--clear]\n');
+  const scope = parseScopeFlag(args);
+  const rest = scope.args;
+  if (rest.some((arg) => !['--json', '--clear'].includes(arg))) {
+    error('usage: atris who [--json] [--clear] [--global]\n');
     return 2;
   }
 
   const fsModule = deps.fs || fs;
   const root = deps.root || repoRoot(deps.cwd || process.cwd());
   const receipts = Array.isArray(deps.receipts) ? deps.receipts : collectReceipts(root, fsModule);
-  if (args.includes('--clear')) {
+  if (rest.includes('--clear')) {
     const summary = archiveFinishedRuns(root, receipts, fsModule);
-    if (args.includes('--json')) write(`${JSON.stringify(summary, null, 2)}\n`);
+    if (rest.includes('--json')) write(`${JSON.stringify(summary, null, 2)}\n`);
     else if (summary.failed.length) write(`archived ${summary.archived} finished runs; ${summary.failed.length} could not be archived.\n`);
     else if (summary.archived) write(`archived ${summary.archived} finished run${summary.archived === 1 ? '' : 's'} in ${summary.archive_dir}.\n`);
     else write('no finished runs to clear.\n');
     return summary.failed.length ? 1 : 0;
   }
 
-  const presence = collectWorkforcePresence({ ...deps, root, receipts });
-  const output = args.includes('--json')
+  const presence = collectWorkforcePresence({ ...deps, root, receipts, scope: scope.kind });
+  const output = rest.includes('--json')
     ? JSON.stringify(presence, null, 2)
     : renderWorkforcePresence(presence);
   write(`${output}\n`);
@@ -173,4 +231,5 @@ function whoCommand(args = [], deps = {}) {
 
 module.exports = {
   whoCommand,
+  collectWorkforcePresence,
 };

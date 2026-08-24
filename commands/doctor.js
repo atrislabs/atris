@@ -3,6 +3,11 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const {
+  inspectInstallGitState,
+  formatCliVersionLine,
+  isGitCheckout,
+} = require('../utils/update-check');
 
 const TASK_NODE_MAJOR = 22;
 
@@ -62,16 +67,44 @@ function publicBinInfo() {
   };
 }
 
+function readCliVersion(packageRoot) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+    return typeof pkg.version === 'string' ? pkg.version : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function installWarnings(packageRoot) {
+  const warnings = [];
+  if (!isGitCheckout(packageRoot)) return warnings;
+  const state = inspectInstallGitState(packageRoot);
+  if (state.dirty) {
+    warnings.push(`cli install is a dirty git checkout (${state.branch || 'detached'} @ ${state.head || 'unknown'})`);
+  } else if (state.detached) {
+    warnings.push(`cli install is a detached git checkout (@ ${state.head || 'unknown'})`);
+  }
+  return warnings;
+}
+
 function collectDoctor(options = {}) {
+  const packageRoot = options.packageRoot || path.join(__dirname, '..');
   const node = parseNodeVersion(options.nodeVersion || process.version);
   const workspace_root = detectWorkspaceRoot(options.cwd || process.cwd());
   const task_support = node.major >= TASK_NODE_MAJOR;
   const auth = authState();
   const bin = publicBinInfo();
-  const cli_runnable = Boolean(process.execPath) && fs.existsSync(path.join(__dirname, '..', 'bin', 'atris.js'));
+  const cli_runnable = Boolean(process.execPath) && fs.existsSync(path.join(packageRoot, 'bin', 'atris.js'));
+  const version = readCliVersion(packageRoot);
+  const version_line = formatCliVersionLine(version, packageRoot);
+  const install_git = inspectInstallGitState(packageRoot);
+  const warnings = installWarnings(packageRoot);
   return {
     ok: true,
     action: 'doctor',
+    version,
+    version_line,
     node: {
       version: node.raw.startsWith('v') ? node.raw : `v${node.raw}`,
       major: node.major,
@@ -86,6 +119,13 @@ function collectDoctor(options = {}) {
     home: os.homedir(),
     cli_runnable,
     bin,
+    install_git: {
+      is_git_repo: Boolean(install_git.isGitRepo),
+      dirty: Boolean(install_git.dirty),
+      branch: install_git.branch || null,
+      head: install_git.head || null,
+    },
+    warnings,
   };
 }
 
@@ -93,12 +133,17 @@ function renderDoctor(payload) {
   const lines = [];
   lines.push('atris doctor');
   lines.push('');
+  lines.push(`version: ${payload.version_line || payload.version}`);
   lines.push(`node: ${payload.node.version} (${payload.node.exec_path || 'unknown'})`);
   lines.push(`task support (22+): ${payload.task_support ? 'yes' : 'no'}`);
   lines.push(`auth: ${payload.auth.signed_in ? `signed in as ${payload.auth.email || 'unknown'}` : 'signed out'}`);
   lines.push(`workspace: ${payload.workspace_root}`);
   lines.push(`cli runnable: ${payload.cli_runnable ? 'yes' : 'no'}`);
   lines.push(`public bin: ${payload.bin.public_bin} (${payload.bin.shim ? `${payload.bin.shim_bytes} byte shim` : 'not a shim'})`);
+  if (payload.warnings && payload.warnings.length) {
+    lines.push('');
+    for (const warning of payload.warnings) lines.push(`warning: ${warning}`);
+  }
   if (!payload.task_support) {
     lines.push('');
     lines.push(`install Node ${TASK_NODE_MAJOR}+ before running atris task.`);
@@ -120,9 +165,11 @@ function doctorCommand(args = [], options = {}) {
   } else {
     console.log(renderDoctor(payload));
   }
-  return payload.cli_runnable && payload.task_support ? 0 : 1;
+  const healthy = payload.cli_runnable && payload.task_support;
+  return healthy ? 0 : 1;
 }
 
 module.exports = {
   doctorCommand,
+  collectDoctor,
 };

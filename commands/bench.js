@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 const {
   BenchInfraError,
   packMetadata,
@@ -9,6 +12,18 @@ const {
 } = require('../lib/bench/runner');
 const { buildBenchReport, renderBenchReportText } = require('../lib/bench/report');
 const { hasFlag } = require('../lib/arg-parser');
+
+function isAtrisCliRepo(cwd = process.cwd()) {
+  const root = path.resolve(cwd);
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    if (pkg.name !== 'atris') return false;
+  } catch {
+    return false;
+  }
+  return fs.existsSync(path.join(root, 'bin', 'atris.js'))
+    && fs.existsSync(path.join(root, 'atris', 'benchmarks'));
+}
 
 // Preserve the existing rule that any inline value wins over a split value.
 function readInlineFirstFlag(args, name) {
@@ -41,6 +56,9 @@ function printHelp() {
   console.log('Usage: atris bench tasks [--pack <id>] [--json]');
   console.log('Usage: atris bench packs [--json]');
   console.log('Usage: atris bench report [--pack agents-v1] [--json]');
+  console.log('');
+  console.log('Bench runs product gates and only belongs in the atris CLI repo.');
+  console.log('Pass --here to allow running outside that repo.');
 }
 
 function printRunText(record) {
@@ -167,10 +185,19 @@ function reportCommand(args) {
 
 async function benchCommand(args = []) {
   const subcommand = args[0] || 'run';
-  const rest = args.slice(1);
+  const rest = args.slice(1).filter((arg) => arg !== '--here');
   if (subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
     printHelp();
     return 0;
+  }
+  if (!hasFlag(args, '--here') && !isAtrisCliRepo(process.cwd())) {
+    const message = 'refuse outside the atris cli repo; pass --here to run here';
+    if (hasFlag(args, '--json') || hasFlag(rest, '--json')) {
+      console.log(JSON.stringify({ schema: 'atris.bench.error.v1', error: message }));
+    } else {
+      console.error(`atris bench: ${message}`);
+    }
+    return 2;
   }
   if (subcommand === 'run') return runCommand(rest);
   if (subcommand === 'tasks') return tasksCommand(rest);
@@ -183,4 +210,5 @@ async function benchCommand(args = []) {
 
 module.exports = {
   benchCommand,
+  isAtrisCliRepo,
 };
