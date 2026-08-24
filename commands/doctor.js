@@ -171,5 +171,4 @@ function doctorCommand(args = [], options = {}) {
 
 module.exports = {
   doctorCommand,
-  collectDoctor,
 };
