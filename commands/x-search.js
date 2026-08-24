@@ -314,12 +314,9 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
 
 module.exports = {
   DEFAULT_TIMEOUT_MS,
-  COST_HINT,
-  showXSearchHelp,
   parseXSearchArgs,
   buildSearchPayload,
   buildPersonPayload,
   formatXSearchResult,
-  runXSearch,
   xSearchCommand,
 };
