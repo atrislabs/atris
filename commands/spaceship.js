@@ -9,14 +9,17 @@
  * `atris spaceship ...` and integrates with the CLI's command dispatch.
  *
  * Examples:
- *   atris spaceship --hours 4
- *   atris spaceship --hours 4 --repo /path/to/repo --interval 780
- *   atris spaceship --hours 0.01 --tick-cmd /tmp/stub.sh --no-email   # test
+ *   atris spaceship --hours 4 --yes
+ *   atris spaceship --hours 4 --repo /path/to/repo --interval 780 --yes
+ *   atris spaceship --hours 0.01 --tick-cmd /tmp/stub.sh --no-email --yes
+ *
+ * Without --yes, spaceship only prints the plan (no email, no overnight run).
  */
 
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { hasYesFlag, argsWantHelp } = require('../lib/noninteractive');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'spaceship.sh');
 
@@ -25,20 +28,40 @@ function printUsage() {
     'Usage: atris spaceship [--hours N] [--interval SEC] [--repo PATH]',
     '                       [--tick-cmd CMD] [--tick-timeout SEC]',
     '                       [--idle-alert N] [--halt-alert N] [--label NAME]',
-    '                       [--no-email]',
+    '                       [--no-email] [--yes]',
     '',
     'Bounded overnight runner. Survives bad ticks and emails on state changes.',
+    'Without --yes, prints the plan only (no email, no overnight run).',
     'Defaults: --hours 4, --interval 780, tick = atris autopilot --auto --iterations=1',
   ];
   console.log(lines.join('\n'));
 }
 
+function planLines(args = []) {
+  const hoursIdx = args.indexOf('--hours');
+  const hours = hoursIdx !== -1 && args[hoursIdx + 1] ? args[hoursIdx + 1] : '4';
+  return [
+    'spaceship plan (no run):',
+    `  budget: ${hours}h`,
+    '  email: on meaningful state changes (unless --no-email)',
+    '  tick: atris autopilot --auto --iterations=1',
+    'Pass --yes to start the overnight run.',
+  ];
+}
+
 function spaceship(args = []) {
-  if (args.includes('--help') || args.includes('-h')) {
+  const list = Array.isArray(args) ? args : [];
+  if (argsWantHelp(list) || list.includes('--help') || list.includes('-h')) {
     printUsage();
     return Promise.resolve({ success: true, help: true });
   }
 
+  if (!hasYesFlag(list)) {
+    for (const line of planLines(list)) console.log(line);
+    process.exit(2);
+  }
+
+  const runArgs = list.filter((a) => a !== '--yes' && a !== '-y');
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(SCRIPT)) {
       reject(new Error(`spaceship.sh not found at ${SCRIPT}`));
@@ -50,7 +73,7 @@ function spaceship(args = []) {
       env.CLICOLOR = '0';
       env.FORCE_COLOR = '0';
     }
-    const child = spawn('bash', [SCRIPT, ...args], {
+    const child = spawn('bash', [SCRIPT, ...runArgs], {
       stdio: 'inherit',
       env,
     });
@@ -62,4 +85,4 @@ function spaceship(args = []) {
   });
 }
 
-module.exports = { spaceship, SCRIPT, printUsage };
+module.exports = { spaceship, SCRIPT, printUsage, planLines };

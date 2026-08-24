@@ -51,10 +51,6 @@ const {
 // State detection for smart default
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
 const {
-  requireAccountBound,
-  refuseAccountGlobal,
-} = require('../lib/account-bound');
-const {
   saveContextProfile,
   createStarterTask,
   shouldGatherContext,
@@ -1122,17 +1118,13 @@ if (command === '--version' || command === '-v' || process.argv.includes('--vers
 // Solves speech-to-text issues (inspired by gstack v0.14.6 voice-triggers)
 const START_MISSION_OBJECTIVE = 'self improve goal after goal: pick one useful bounded mission from current Atris state, run proof, and continue only with real next work';
 
+// One-word voice aliases like start/go/audit/deploy must not spawn runners.
+// Unmatched single verbs exit 2 with did-you-mean (see below). Keep phrases
+// that name a real command without overnight side effects.
 const voiceTriggers = {
-  'start': '_start',
-  'start now': '_start',
-  'go': '_start',
-  'keep going': '_start',
-  'keepgoing': '_start',
-  'keep-going': '_start',
   'review my code': 'code-review',
   'check my code': 'code-review',
   'run a review': 'code-review',
-  'audit': 'code-review',
   'create a business': 'business',
   'start a business': 'business',
   'new business': 'business',
@@ -1142,7 +1134,6 @@ const voiceTriggers = {
   'what is going on': 'radar',
   'run tests': 'verify',
   'check health': 'status',
-  'deploy': 'business',
   'show my businesses': 'business',
   'pull latest': 'pull',
   'push changes': 'push',
@@ -2259,6 +2250,14 @@ if (command === 'init') {
     showServeHelp();
     process.exit(0);
   }
+  const { refuseHeadlessUnless } = require('../lib/noninteractive');
+  if (refuseHeadlessUnless(serveArgs, {
+    allowYes: false,
+    allowOnce: true,
+    usage: 'Usage: atris serve [--agent <id>] [--allow-bash] [--once <op_id>]\nHeadless serve needs --once <op_id>.',
+  })) {
+    process.exit(2);
+  }
   const serveOptions = {};
   for (let i = 0; i < serveArgs.length; i++) {
     if (serveArgs[i] === '--agent' && serveArgs[i + 1]) {
@@ -2266,6 +2265,9 @@ if (command === 'init') {
       i++;
     } else if (serveArgs[i] === '--allow-bash') {
       serveOptions.allowBash = true;
+    } else if (serveArgs[i] === '--once' && serveArgs[i + 1]) {
+      serveOptions.once = serveArgs[i + 1];
+      i++;
     }
   }
   require('../commands/serve').serveAtris(serveOptions)

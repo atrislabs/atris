@@ -812,6 +812,29 @@ async function runImprove(opts = {}, deps = {}) {
     };
   };
 
+  // Dry-run is a local plan only. Never call the paid /api/improve endpoint.
+  if (opts.dryRun) {
+    const finishedAt = now();
+    return {
+      ok: true,
+      source: 'local',
+      reason: 'dry_run',
+      summary: {
+        shipped: '(dry-run) no paid improve call',
+        verify: null,
+        reward: null,
+        credits: null,
+        files: [],
+        dry_run: true,
+      },
+      scorecardPath: null,
+      journalPath: null,
+      receipt: 'skipped',
+      startedAt,
+      finishedAt,
+    };
+  }
+
   // No auth → local fallback (or report if fallback disabled).
   if (!creds || !creds.token) {
     if (!localFallbackEligible) {

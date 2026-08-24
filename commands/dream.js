@@ -341,6 +341,13 @@ function showHelp(log = console.log) {
 async function dreamCommand(args = [], root = process.cwd(), options = {}) {
   const log = options.log || console.log;
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') return showHelp(log);
+  const { refuseHeadlessUnless } = require('../lib/noninteractive');
+  if (refuseHeadlessUnless(args, {
+    allowYes: true,
+    usage: 'Usage: atris dream [--yes]\nHeadless dream needs --yes.',
+  })) {
+    return 2;
+  }
   const result = await runDream(root, options);
   if (result.cards && result.cards.length) {
     const noun = result.cards.length === 1 ? 'card' : 'cards';

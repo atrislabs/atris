@@ -334,6 +334,10 @@ function showPluginInfo() {
 // --- PUBLISH subcommand ---
 
 function publishPlugin(...args) {
+  if (args.some((arg) => arg === '--help' || arg === '-h' || arg === 'help')) {
+    console.error('Usage: atris plugin publish [--repo=path]');
+    process.exit(2);
+  }
   const projectDir = process.cwd();
   const skillsDir = path.join(projectDir, 'atris', 'skills');
 
@@ -446,6 +450,18 @@ function publishPlugin(...args) {
 // --- Main Dispatcher ---
 
 function pluginCommand(subcommand, ...args) {
+  if (!subcommand || subcommand === '--help' || subcommand === '-h' || subcommand === 'help'
+    || args.some((a) => a === '--help' || a === '-h' || a === 'help')) {
+    console.log('');
+    console.log('Usage: atris plugin <subcommand>');
+    console.log('');
+    console.log('Subcommands:');
+    console.log('  build [--output=path]  - Package skills into .plugin for Cowork');
+    console.log('  publish [--repo=path]  - Sync skills to marketplace repo and push');
+    console.log('  info                   - Preview what will be included');
+    console.log('');
+    process.exit(2);
+  }
   switch (subcommand) {
     case 'build':
       buildPlugin(...args);

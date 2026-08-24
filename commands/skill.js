@@ -816,6 +816,10 @@ function skillCreate(nameArg, ...flags) {
 // --- LINK subcommand (system-level symlink for existing skills) ---
 
 function skillLink(name, ...flags) {
+  if (name === '--help' || name === '-h' || name === 'help' || flags.some((f) => f === '--help' || f === '-h' || f === 'help')) {
+    console.error('Usage: atris skill link [name|--all]');
+    process.exit(2);
+  }
   const isAll = name === '--all';
 
   const skillsDir = path.join(process.cwd(), 'atris', 'skills');
@@ -961,6 +965,21 @@ function skillDelete(name) {
 // --- Main Dispatcher ---
 
 function skillCommand(subcommand, ...args) {
+  if (subcommand === '--help' || subcommand === '-h' || subcommand === 'help'
+    || args.some((a) => a === '--help' || a === '-h' || a === 'help')) {
+    console.log('');
+    console.log('Usage: atris skill <subcommand> [name]');
+    console.log('');
+    console.log('Subcommands:');
+    console.log('  create <name>       Scaffold a new skill with SKILL.md template');
+    console.log('  delete <name>       Remove a skill and all its symlinks');
+    console.log('  link [name|--all]   Symlink skills to ~/.claude/skills/ (system-level)');
+    console.log('  list [--json]       Show all skills with compliance status');
+    console.log('  audit [name|--all]  Validate skill against Anthropic guide');
+    console.log('  fix [name|--all]    Auto-fix common compliance issues');
+    console.log('');
+    process.exit(2);
+  }
   switch (subcommand) {
     case 'list':
     case 'ls':

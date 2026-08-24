@@ -13,6 +13,7 @@ const {
 } = require('../lib/cloud-mission');
 const { apiRequestJson } = require('../utils/api');
 const { decodeJwtClaims, loadCredentials } = require('../utils/auth');
+const { isHelpToken } = require('../lib/noninteractive');
 
 const PACKAGE_PATH = path.join(__dirname, '..', 'package.json');
 const HUMAN_STATES = Object.freeze({
@@ -136,6 +137,50 @@ function readBusinessBinding(root) {
   } catch {
     return null;
   }
+}
+
+function isBoundCloudComputer(root = process.cwd()) {
+  return Boolean(readBusinessBinding(root));
+}
+
+function parseMissionId(args = []) {
+  const list = Array.isArray(args) ? args : [];
+  for (let i = 0; i < list.length; i += 1) {
+    const value = String(list[i] || '');
+    if (value === '--mission' || value === '--mission-id' || value === '--id') {
+      const next = list[i + 1];
+      if (next && !String(next).startsWith('-') && !isHelpToken(next)) return String(next).trim();
+      return '';
+    }
+    if (value.startsWith('--mission=') || value.startsWith('--mission-id=') || value.startsWith('--id=')) {
+      return value.slice(value.indexOf('=') + 1).trim();
+    }
+  }
+  // Bare positional id for stop/ready/approve (never treat free-sentence ask text as an id).
+  const flags = new Set(['--json', '--help', '-h', 'help']);
+  const positional = list.find((value) => value && !String(value).startsWith('-') && !flags.has(value));
+  if (!positional) return '';
+  // Mission ids are compact tokens, not multi-word wants.
+  if (list.filter((value) => value && !String(value).startsWith('-') && !flags.has(value)).length > 1) return '';
+  return String(positional).trim();
+}
+
+/**
+ * Scratch / unbound folders must not drive account-current cloud work.
+ * Require an explicit mission/task id: atris stop --mission <id>
+ */
+function refuseUnboundCloudComputer(args = [], options = {}, commandName = 'stop') {
+  const root = options.root || process.cwd();
+  if (options.businessId || isBoundCloudComputer(root)) return null;
+  if (commandName !== 'ask') {
+    const missionId = parseMissionId(args);
+    if (missionId) return null;
+  }
+  return new HumanCommandError(
+    'This folder is not a bound cloud-computer (missing .atris/business.json).',
+    `Pass --mission <id>: atris ${commandName} --mission <id>`,
+    2,
+  );
 }
 
 function credentialUserId(credentials) {
@@ -494,6 +539,8 @@ async function askCommand(args, options = {}) {
     (options.log || console.log)('Usage: atris ask "what you want" [--budget <usd>] [--json]');
     return 0;
   }
+  const unbound = refuseUnboundCloudComputer(args, options, 'ask');
+  if (unbound) return reportError(unbound, 'start that mission', asJson, options);
   try {
     const parsed = parseAskArgs(args);
     const credentials = credentialsOrThrow(options);
@@ -620,17 +667,26 @@ async function proofCommand(args = [], options = {}) {
 
 async function changeCurrentMission(action, body, args, options = {}) {
   const asJson = args.includes('--json');
+  const commandName = action === 'approve' ? 'approve' : action === 'answer' ? 'mission answer' : 'stop';
+  const unbound = refuseUnboundCloudComputer(args, options, commandName === 'mission answer' ? 'stop' : commandName);
+  if (unbound) return reportError(unbound, action === 'approve' ? 'approve that step' : action === 'answer' ? 'send that answer' : 'stop that mission', asJson, options);
   try {
     credentialsOrThrow(options);
-    const current = await loadCurrentMission(options);
-    const currentCard = missionCard(current, {}, options.now ? options.now() : Date.now());
+    const explicitId = parseMissionId(args);
+    let currentCard;
+    if (explicitId) {
+      currentCard = missionCard({ mission_id: explicitId }, {}, options.now ? options.now() : Date.now());
+    } else {
+      const current = await loadCurrentMission(options);
+      currentCard = missionCard(current, {}, options.now ? options.now() : Date.now());
+    }
     if (!currentCard.mission_id) {
       throw new HumanCommandError(
         'Atris could not identify the current mission.',
         'Run: atris mission',
       );
     }
-    if (['approve', 'answer'].includes(action) && currentCard.state !== 'your_turn') {
+    if (['approve', 'answer'].includes(action) && currentCard.state !== 'your_turn' && !explicitId) {
       throw new HumanCommandError(
         action === 'approve'
           ? 'Nothing is waiting for your approval.'
@@ -658,7 +714,7 @@ async function approveCommand(args, options = {}) {
 
 async function stopCommand(args, options = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    (options.log || console.log)('Usage: atris stop [--json]');
+    (options.log || console.log)('Usage: atris stop [--mission <id>] [--json]');
     return 0;
   }
   return changeCurrentMission('stop', {}, args, options);
@@ -776,6 +832,8 @@ async function readyCommand(args, options = {}) {
     (options.log || console.log)('Usage: atris ready --json');
     return 0;
   }
+  const unbound = refuseUnboundCloudComputer(args, options, 'ready');
+  if (unbound) return reportError(unbound, 'check readiness', asJson, options);
   const request = options.apiRequestJson || apiRequestJson;
   const load = options.loadCredentials || loadCredentials;
   const credentials = load() || {};
