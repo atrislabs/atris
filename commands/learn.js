@@ -227,21 +227,42 @@ function interactiveAdd() {
   })();
 }
 
+function learnLogSchemaLines() {
+  return [
+    'Schema: {"type":"pattern|pitfall|preference|architecture|tool","key":"...","insight":"...","confidence":1-10,"source":"observed|user-stated|inferred|review"}',
+    'Required: type, key, insight. Aliases: title→key, detail→insight. Optional: confidence (default 5), source (default observed), files[].',
+    'Example: atris learn log \'{"type":"pattern","title":"map-first","detail":"check MAP.md before grep","confidence":8}\'',
+  ];
+}
+
+function printLearnLogSchema(stream = console.error) {
+  for (const line of learnLogSchemaLines()) stream(`  ${line}`);
+}
+
 /**
  * Non-interactive log: `atris learn log '{"type":"pattern","key":"...","insight":"...","confidence":8,"source":"observed"}'`
  * For agents and scripts — no prompts, no quality gate.
+ * Aliases: title→key, detail→insight.
  */
 function logDirect(jsonStr) {
   if (!jsonStr) {
-    console.error('  ✗ Usage: atris learn log \'{"type":"...","key":"...","insight":"...","confidence":N,"source":"..."}\'');
+    console.error('  ✗ Usage: atris learn log \'<json>\'');
+    printLearnLogSchema();
+    process.exit(1);
+  }
+  let data;
+  try {
+    data = JSON.parse(jsonStr);
+  } catch (err) {
+    console.error(`  ✗ Invalid JSON: ${err.message}`);
+    printLearnLogSchema();
     process.exit(1);
   }
   try {
-    const data = JSON.parse(jsonStr);
     const entry = addLearning({
       type: data.type,
-      key: data.key,
-      insight: data.insight,
+      key: data.key || data.title,
+      insight: data.insight || data.detail,
       confidence: data.confidence || 5,
       source: data.source || 'observed',
       files: data.files || [],
@@ -249,6 +270,7 @@ function logDirect(jsonStr) {
     console.log(`  ✓ [${entry.confidence}/10] ${entry.type}/${entry.key}`);
   } catch (err) {
     console.error(`  ✗ ${err.message}`);
+    printLearnLogSchema();
     process.exit(1);
   }
 }
@@ -361,6 +383,9 @@ function showLearnHelp() {
   console.log('    stats      Show learning statistics');
   console.log('    export     Export as markdown');
   console.log('    count      Print learning count (for integrations)');
+  console.log('');
+  console.log('  learn log schema:');
+  for (const line of learnLogSchemaLines()) console.log(`    ${line}`);
   console.log('');
 }
 

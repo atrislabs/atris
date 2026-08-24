@@ -30,20 +30,24 @@ function logAtris() {
   const args = process.argv.slice(3);
   const rel = path.relative(process.cwd(), logFile) || logFile;
   const forced = isForcedNonInteractive(args);
+  const wantsRepl = args.includes('--repl');
+  const positional = args.filter((arg) => !String(arg).startsWith('-'));
+  const note = positional.join(' ').trim();
+
+  // `atris log "sentence"` (or multi-word args) appends to today's Inbox.
+  if (note && !wantsRepl) {
+    const id = addInboxIdea(logFile, note);
+    console.log(`captured I${id}: ${note}`);
+    console.log(`journal: ${rel}`);
+    console.log('Next: atris logs');
+    return;
+  }
 
   // Forced headless: never open a REPL.
   if (forced) {
-    const note = args.filter((arg) => !arg.startsWith('-')).join(' ').trim();
-    if (note) {
-      const id = addInboxIdea(logFile, note);
-      console.log(`captured I${id}: ${note}`);
-      console.log(`journal: ${rel}`);
-      console.log('Next: atris logs');
-      return;
-    }
     console.log(`Daily log REPL needs a terminal (${dateFormatted}).`);
     console.log(`journal: ${rel}`);
-    console.log('Next: atris log   # in a terminal, or atris logs --json');
+    console.log('Next: atris log --repl   # in a terminal, or atris log "note" / atris wish --json --no-mission');
     return;
   }
 
@@ -55,11 +59,11 @@ function logAtris() {
     if (notes.length === 0) {
       console.log(`Daily log REPL needs a terminal (${dateFormatted}).`);
       console.log(`journal: ${rel}`);
-      console.log('Next: atris log   # in a terminal, or atris logs --json');
+      console.log('Next: atris log --repl   # in a terminal, or atris log "note" / atris logs --json');
       return;
     }
-    for (const note of notes) {
-      addInboxIdea(logFile, note);
+    for (const noteLine of notes) {
+      addInboxIdea(logFile, noteLine);
     }
     console.log(`captured ${notes.length} note${notes.length === 1 ? '' : 's'} in ${rel}`);
     return;

@@ -48,6 +48,13 @@ atris task claim <id> --as <your-name>
 atris task ready <id> --proof "command that passed"
 ```
 
+Capture a quick idea without opening the journal REPL:
+
+```bash
+atris log "an idea for later"
+# or headless: atris wish "an idea" --json --no-mission
+```
+
 **Never** `atris task accept` unless a human approved. That's their gate, not yours.
 
 Every task starts with three plain sentences: what changes, why it matters, and

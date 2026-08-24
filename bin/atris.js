@@ -446,7 +446,40 @@ function consoleCmd() {
   process.exit(result.status ?? 0);
 }
 
-function showHelp() {
+function showHelpShort() {
+  console.log('atris — you say what you want; atris builds it, checks it, and shows proof.');
+  console.log('');
+  console.log('Golden path:');
+  console.log('  atris init [--yes] [--minimal]   scaffold this project');
+  console.log('  atris                           load context (MAP, tasks, journal)');
+  console.log('  atris task new "..."            file work');
+  console.log('  atris task claim <id> --as <m>  take ownership');
+  console.log('  atris task ready <id> --proof "..."');
+  console.log('  atris review                    validate');
+  console.log('  atris recap                     plain-english what landed');
+  console.log('  atris mission status            active goals + next move');
+  console.log('');
+  console.log('More: atris help --all   ·   machine list: atris help --json');
+}
+
+function helpCatalog() {
+  return [
+    { name: 'init', summary: 'scaffold atris/ in this project', json: false, interactive_risk: 'medium' },
+    { name: 'task', summary: 'local task plane: new, claim, ready, accept', json: true, interactive_risk: 'low' },
+    { name: 'review', summary: 'validate work and capture learnings', json: false, interactive_risk: 'low' },
+    { name: 'recap', summary: 'plain-english what your team did', json: true, interactive_risk: 'low' },
+    { name: 'mission', summary: 'durable goal + owner + verifier + tick', json: true, interactive_risk: 'medium' },
+    { name: 'log', summary: 'append an idea to today inbox (or --repl)', json: false, interactive_risk: 'medium' },
+    { name: 'wish', summary: 'headless inbox / mission intake', json: true, interactive_risk: 'low' },
+    { name: 'learn', summary: 'structured project learnings', json: false, interactive_risk: 'low' },
+    { name: 'activate', summary: 'load atris context for this session', json: false, interactive_risk: 'low' },
+    { name: 'status', summary: 'local work and completions', json: true, interactive_risk: 'low' },
+    { name: 'engine', summary: 'engine roster, ask, validate, dispatch', json: true, interactive_risk: 'low' },
+    { name: 'help', summary: 'this help (default short; --all full)', json: true, interactive_risk: 'none' },
+  ];
+}
+
+function showHelpAll() {
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('atris');
@@ -490,7 +523,7 @@ function showHelp() {
   console.log('');
   console.log('Setup:');
   console.log('  setup      - Guided first-time setup (login, pick business, pull)');
-  console.log('  init       - Initialize Atris in current project (--yes skips prompts)');
+  console.log('  init       - Initialize Atris in current project (--yes skips prompts; --minimal for lean scaffold)');
   console.log('  install    - Install the atris/ brain if missing (alias: workspace install)');
   console.log('  update     - Update local files to latest version');
   console.log('  upgrade    - Install latest Atris from npm');
@@ -506,7 +539,7 @@ function showHelp() {
   console.log('  spaceship  - Bounded overnight runner that survives bad ticks and emails updates');
   console.log('');
   console.log('Context & tracking:');
-  console.log('  log        - Add ideas to inbox');
+  console.log('  log        - Add ideas to inbox (`atris log "note"`; `log --repl` for the editor; see also `wish`)');
   console.log('  wish       - Say one plain sentence, then Atris asks only for gaps or delegates it');
   console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
@@ -690,10 +723,25 @@ function showHelp() {
   console.log('');
   console.log('Other:');
   console.log('  version    - Show Atris version');
-  console.log('  help       - Show this help');
+  console.log('  help       - Short golden path (help --all for every command)');
   console.log('');
-  console.log('💡 Tip: Just run "atris" to get started');
+  console.log('Tip: Just run "atris" to get started');
   console.log('');
+}
+
+function showHelp(options = {}) {
+  const args = options.args || process.argv.slice(3);
+  const asJson = options.json === true || args.includes('--json');
+  const all = options.all === true || args.includes('--all');
+  if (asJson) {
+    console.log(JSON.stringify({ ok: true, commands: helpCatalog() }, null, 2));
+    return;
+  }
+  if (all) {
+    showHelpAll();
+    return;
+  }
+  showHelpShort();
 }
 
 function showPlanHelp() {
@@ -1006,7 +1054,7 @@ function showAutopilotHelp() {
 }
 
 if (command === 'help' || command === '--help' || command === '-h') {
-  showHelp();
+  showHelp({ args: process.argv.slice(3) });
   process.exit(0);
 }
 
@@ -2028,7 +2076,9 @@ if (command === 'init') {
 } else if (command === 'agent') {
   agentAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'log') {
-  const subcommand = process.argv[3];
+  const logArgs = process.argv.slice(3);
+  const subcommand = logArgs[0];
+  const positional = logArgs.filter((arg) => !String(arg).startsWith('-'));
   if (subcommand === 'sync') {
     require('../commands/log-sync').logSyncAtris()
       .then(() => process.exit(0))
@@ -2037,15 +2087,22 @@ if (command === 'init') {
         process.exit(1);
       });
   } else if (subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
-    console.log('Usage: atris log [business-slug | sync | help]');
+    console.log('Usage: atris log ["note"] | --repl | sync | <business-slug> | help');
     console.log('');
-    console.log('  atris log                Open today\'s journal REPL (write to ## Inbox)');
-    console.log('  atris log <slug>         Show business log history');
+    console.log('  atris log "an idea"      Append a note to today\'s ## Inbox');
+    console.log('  atris log --repl         Open today\'s journal REPL');
+    console.log('  atris log                Open the REPL (needs a terminal)');
     console.log('  atris log sync           Sync the local journal to cloud');
+    console.log('  atris log <slug>         Show business log history (single slug token)');
+    console.log('  atris wish "..."         Headless inbox write; add --json --no-mission for agents');
     process.exit(0);
-  } else if (subcommand && !subcommand.startsWith('-')) {
-    // Business log: atris log <business-slug>
-    require('../commands/context-sync').businessLog(subcommand)
+  } else if (
+    positional.length === 1
+    && !logArgs.includes('--repl')
+    && /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(positional[0])
+  ) {
+    // Business log: atris log <business-slug> (single slug token only)
+    require('../commands/context-sync').businessLog(positional[0])
       .then(() => process.exit(0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else {

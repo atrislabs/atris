@@ -440,6 +440,11 @@ function generateTags(folderName, description) {
 
 // --- Subcommand Handlers ---
 
+function skillColor(text, code) {
+  if (process.env.NO_COLOR || !process.stdout.isTTY) return String(text);
+  return `\x1b[${code}m${text}\x1b[0m`;
+}
+
 function skillList(...flags) {
   const asJson = flags.includes('--json') || process.argv.includes('--json');
   const skills = findReadableSkills();
@@ -481,9 +486,9 @@ function skillList(...flags) {
     const total = checks.length;
     const status = getStatus(checks);
     const version = (skill.frontmatter || {}).version || '-';
-    const statusIcon = status === 'PASS' ? '\x1b[32mPASS\x1b[0m'
-                     : status === 'WARN' ? '\x1b[33mWARN\x1b[0m'
-                     : '\x1b[31mFAIL\x1b[0m';
+    const statusIcon = status === 'PASS' ? skillColor('PASS', '32')
+                     : status === 'WARN' ? skillColor('WARN', '33')
+                     : skillColor('FAIL', '31');
 
     if (status !== 'PASS') needsAttention++;
 

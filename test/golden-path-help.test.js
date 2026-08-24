@@ -24,12 +24,21 @@ function runCli(args) {
   return result;
 }
 
-test('main help and task help surface the golden path workflow', () => {
+test('main help is short; help --all surfaces the golden path workflow', () => {
   const mainHelp = runCli(['help']);
   assert.equal(mainHelp.status, 0, mainHelp.stderr);
-  assert.match(mainHelp.stdout, /golden path \(one tick, by cron or by hand\):/);
-  assert.match(mainHelp.stdout, /atris task delegate "fix the login bug" --to <member>/);
-  assert.match(mainHelp.stdout, /atris autoland tick   # second check runs, task lands/);
+  const shortLines = mainHelp.stdout.split(/\r?\n/).filter((line) => line.trim()).length;
+  assert.ok(shortLines <= 16, `default help should fit one screen, got ${shortLines} non-empty lines`);
+  assert.match(mainHelp.stdout, /Golden path:/);
+  assert.match(mainHelp.stdout, /help --all/);
+  assert.doesNotMatch(mainHelp.stdout, /atris task delegate "fix the login bug"/);
+
+  const allHelp = runCli(['help', '--all']);
+  assert.equal(allHelp.status, 0, allHelp.stderr);
+  assert.match(allHelp.stdout, /golden path \(one tick, by cron or by hand\):/);
+  assert.match(allHelp.stdout, /atris task delegate "fix the login bug" --to <member>/);
+  assert.match(allHelp.stdout, /atris autoland tick   # second check runs, task lands/);
+  assert.ok(allHelp.stdout.split(/\r?\n/).length > mainHelp.stdout.split(/\r?\n/).length);
 
   const taskHelp = runCli(['task', 'help']);
   assert.equal(taskHelp.status, 0, taskHelp.stderr);
