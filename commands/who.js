@@ -231,5 +231,4 @@ function whoCommand(args = [], deps = {}) {
 
 module.exports = {
   whoCommand,
-  collectWorkforcePresence,
 };
