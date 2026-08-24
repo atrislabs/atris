@@ -16,7 +16,6 @@ const path = require('path');
 const http = require('http');
 const { spawn, spawnSync } = require('child_process');
 
-const BACKEND_ROOT = '/Users/keshavrao/arena/atrisos-backend';
 const FEED_URL = 'http://localhost:8777';
 const FEED_STATS_URL = `${FEED_URL}/api/stats`;
 const FEED_NEXT_URL = `${FEED_URL}/api/next`;
@@ -91,18 +90,31 @@ function parseArgs(argv = []) {
   return opts;
 }
 
+function resolveStudyRoot(cwd = process.cwd()) {
+  const candidates = [
+    process.env.ATRIS_STUDY_ROOT,
+    process.env.ATRIS_BACKEND_ROOT,
+    path.join(path.resolve(cwd), 'atris', 'study'),
+  ].filter(Boolean);
+  for (const root of candidates) {
+    const resolved = path.resolve(String(root));
+    if (fs.existsSync(resolved)) return resolved;
+  }
+  return null;
+}
+
 function requireBackend() {
-  if (!fs.existsSync(BACKEND_ROOT)) {
-    console.error(`✗ Backend repo not found: ${BACKEND_ROOT}`);
-    process.exit(1);
+  const backendRoot = resolveStudyRoot();
+  if (!backendRoot) {
+    console.error('not installed');
+    process.exit(2);
   }
-  const venvPython = path.join(BACKEND_ROOT, 'venv/bin/python');
+  const venvPython = path.join(backendRoot, 'venv/bin/python');
   if (!fs.existsSync(venvPython)) {
-    console.error(`✗ Backend venv not found: ${venvPython}`);
-    console.error('  Create the venv in atrisos-backend before running atris study.');
-    process.exit(1);
+    console.error('not installed');
+    process.exit(2);
   }
-  return venvPython;
+  return { venvPython, backendRoot };
 }
 
 function detectLanguage(topic) {
@@ -608,11 +620,11 @@ async function runWhileMode(opts) {
   const topic = opts.topic;
 
   if (topic) {
-    const venvPython = requireBackend();
+    const { venvPython, backendRoot } = requireBackend();
     const language = detectLanguage(topic);
-    if (language) printTutorLoopBlock(BACKEND_ROOT, language);
+    if (language) printTutorLoopBlock(backendRoot, language);
     try {
-      await runIngest(venvPython, BACKEND_ROOT, topic, opts.personal);
+      await runIngest(venvPython, backendRoot, topic, opts.personal);
     } catch (err) {
       console.error(`\n✗ ${err.message || err}`);
     }
@@ -625,9 +637,10 @@ async function runWhileMode(opts) {
   let statsAvailable = false;
   let useCards = false;
 
-  if (fs.existsSync(BACKEND_ROOT) && fs.existsSync(path.join(BACKEND_ROOT, 'venv/bin/python'))) {
-    const venvPython = path.join(BACKEND_ROOT, 'venv/bin/python');
-    statsAvailable = await tryEnsureFeedServerSilent(venvPython, BACKEND_ROOT);
+  const studyRoot = resolveStudyRoot();
+  if (studyRoot && fs.existsSync(path.join(studyRoot, 'venv/bin/python'))) {
+    const venvPython = path.join(studyRoot, 'venv/bin/python');
+    statsAvailable = await tryEnsureFeedServerSilent(venvPython, studyRoot);
     useCards = statsAvailable;
   }
 
@@ -663,21 +676,21 @@ async function run(argv = []) {
     return 0;
   }
 
-  const venvPython = requireBackend();
+  const { venvPython, backendRoot } = requireBackend();
   const language = detectLanguage(opts.topic);
 
   if (language) {
-    printTutorLoopBlock(BACKEND_ROOT, language);
+    printTutorLoopBlock(backendRoot, language);
   }
 
   try {
-    await runIngest(venvPython, BACKEND_ROOT, opts.topic, opts.personal);
+    await runIngest(venvPython, backendRoot, opts.topic, opts.personal);
   } catch (err) {
     console.error(`\n✗ ${err.message || err}`);
     return 1;
   }
 
-  await ensureFeedServer(venvPython, BACKEND_ROOT);
+  await ensureFeedServer(venvPython, backendRoot);
   openFeed();
   return 0;
 }
@@ -687,4 +700,5 @@ module.exports = {
   parseArgs,
   showHelp,
   wrapText,
+  resolveStudyRoot,
 };

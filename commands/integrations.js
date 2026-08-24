@@ -600,7 +600,15 @@ async function calendarCommand(subcommand, ...args) {
 // ============================================================================
 
 async function twitterPost(args = []) {
-  const outbound = prepareOutboundSendTextOrExit('twitter', args);
+  const approved = args.includes('--approved') || args.includes('--confirm-approved');
+  const cleaned = args.filter((a) => a !== '--approved' && a !== '--confirm-approved');
+  if (!approved) {
+    console.error('Refusing to post without --approved after the exact text is confirmed.');
+    console.error('Usage: atris twitter post "<text>" --approved');
+    process.exit(2);
+  }
+
+  const outbound = prepareOutboundSendTextOrExit('twitter', cleaned);
   let text = outbound.body;
   if (!text) {
     const readline = require('readline');
@@ -659,7 +667,7 @@ async function twitterCommand(subcommand, ...args) {
       break;
     default:
       console.log('Twitter commands:');
-      console.log('  atris twitter post [text]  - Post a tweet');
+      console.log('  atris twitter post "<text>" --approved  - Post a tweet');
   }
 }
 
@@ -835,9 +843,16 @@ async function slackSearch(query, args = []) {
 
 async function slackSend(channel, textParts) {
   const target = String(channel || '').trim();
-  const text = prepareOutboundSendTextOrExit('slack', textParts).body;
+  const approved = (textParts || []).includes('--approved') || (textParts || []).includes('--confirm-approved');
+  const cleaned = (textParts || []).filter((a) => a !== '--approved' && a !== '--confirm-approved');
+  if (!approved) {
+    console.error('Refusing to send without --approved after the exact channel and exact text are confirmed.');
+    console.error('Usage: atris slack send <channel> "<message>" --approved');
+    process.exit(2);
+  }
+  const text = prepareOutboundSendTextOrExit('slack', cleaned).body;
   if (!target || !text) {
-    console.error('Usage: atris slack send <channel> "<message>"');
+    console.error('Usage: atris slack send <channel> "<message>" --approved');
     process.exit(1);
   }
 
@@ -861,9 +876,16 @@ async function slackSend(channel, textParts) {
 
 async function slackDm(userId, textParts) {
   const target = String(userId || '').trim();
-  const text = prepareOutboundSendTextOrExit('slack', textParts).body;
+  const approved = (textParts || []).includes('--approved') || (textParts || []).includes('--confirm-approved');
+  const cleaned = (textParts || []).filter((a) => a !== '--approved' && a !== '--confirm-approved');
+  if (!approved) {
+    console.error('Refusing to send without --approved after the exact recipient and exact text are confirmed.');
+    console.error('Usage: atris slack dm <slack_user_id> "<message>" --approved');
+    process.exit(2);
+  }
+  const text = prepareOutboundSendTextOrExit('slack', cleaned).body;
   if (!target || !text) {
-    console.error('Usage: atris slack dm <slack_user_id> "<message>"');
+    console.error('Usage: atris slack dm <slack_user_id> "<message>" --approved');
     process.exit(1);
   }
 
@@ -913,8 +935,8 @@ async function slackCommand(subcommand, ...args) {
       console.log('  atris slack dms                  - List Slack DMs');
       console.log('  atris slack messages <channel>   - Read recent messages');
       console.log('  atris slack search <query>       - Search Slack messages');
-      console.log('  atris slack send <channel> "<message>" - Send a message as you');
-      console.log('  atris slack dm <user_id> "<message>"   - DM someone as you');
+      console.log('  atris slack send <channel> "<message>" --approved - Send a message as you');
+      console.log('  atris slack dm <user_id> "<message>" --approved   - DM someone as you');
   }
 }
 

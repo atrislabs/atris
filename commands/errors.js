@@ -2,14 +2,18 @@
  * Errors command for Atris CLI — admin dashboard over atris_error_events.
  *
  * Usage:
- *   atris errors                      List errors from last 24h, grouped by signature
+ *   atris errors                      Local-only by default (no cloud dump)
+ *   atris errors --account            List cloud errors from last 24h
  *   atris errors --hours 72           Widen the window (max 720h / 30d)
  *   atris errors --limit 1000         Raise the raw-event cap for grouping
  *   atris errors show <id>            Full detail (stack trace, message) for one event
  *
- * Requires admin role on the user row.
+ * Requires admin role on the user row for cloud reads.
+ * Account gate: unbound folders need --account (see lib/account-bound.js).
  */
 
+const fs = require('fs');
+const path = require('path');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 
@@ -38,12 +42,55 @@ function extractFlag(args, ...names) {
   return [value, remaining];
 }
 
+function wantsLocal(args) {
+  if (args.includes('--account') || args.includes('--cloud')) return false;
+  // --local is the default; keep the flag recognized for explicit callers.
+  return true;
+}
+
+function listLocalErrors(json) {
+  const localPath = path.join(process.cwd(), '.atris', 'state', 'errors.jsonl');
+  const rows = [];
+  if (fs.existsSync(localPath)) {
+    for (const line of fs.readFileSync(localPath, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      try { rows.push(JSON.parse(line)); } catch { /* skip */ }
+    }
+  }
+
+  if (json) {
+    console.log(JSON.stringify({
+      ok: true,
+      scope: 'local',
+      total_events: rows.length,
+      groups: [],
+      note: 'local scope. pass --account for cloud error events.',
+    }, null, 2));
+    return;
+  }
+
+  if (rows.length === 0) {
+    console.log('No local errors. Pass --account for cloud error events.');
+    return;
+  }
+
+  console.log(`Local errors (${rows.length}). Pass --account for cloud error events.\n`);
+  for (const row of rows.slice(0, 20)) {
+    console.log(`  ${row.message || row.error || JSON.stringify(row)}`);
+  }
+}
+
 async function listErrors(args) {
   const [hoursArg, r1] = extractFlag(args, '--hours', '-H');
   const [limitArg, r2] = extractFlag(r1, '--limit', '-L');
   const json = r2.includes('--json');
   const hours = hoursArg ? parseInt(hoursArg, 10) : 24;
   const limit = limitArg ? parseInt(limitArg, 10) : 500;
+
+  if (wantsLocal(r2)) {
+    listLocalErrors(json);
+    return;
+  }
 
   const token = getToken();
   const result = await apiRequestJson(`/errors?hours=${hours}&limit=${limit}`, {
@@ -64,7 +111,7 @@ async function listErrors(args) {
   const groups = data.groups || [];
 
   if (json) {
-    console.log(JSON.stringify({ ok: true, ...data }, null, 2));
+    console.log(JSON.stringify({ ok: true, scope: 'account', ...data }, null, 2));
     return;
   }
 
@@ -136,12 +183,13 @@ async function showError(errorId) {
 function printHelp() {
   console.log('');
   console.log('Usage:');
-  console.log('  atris errors                         List errors from last 24h, grouped');
-  console.log('  atris errors --hours 72              Widen the window (max 720h / 30d)');
-  console.log('  atris errors --limit 1000            Raise the raw-event cap');
-  console.log('  atris errors show <full-uuid>        Full detail for one event');
+  console.log('  atris errors                         Local errors (default; no cloud dump)');
+  console.log('  atris errors --account               List cloud errors from last 24h');
+  console.log('  atris errors --account --hours 72    Widen the cloud window (max 720h / 30d)');
+  console.log('  atris errors --account --limit 1000  Raise the raw-event cap');
+  console.log('  atris errors show <full-uuid>        Full detail for one cloud event');
   console.log('');
-  console.log('Admin role required.');
+  console.log('Admin role required for cloud reads. Unbound folders need --account.');
   console.log('');
 }
 
@@ -155,6 +203,8 @@ async function errorsCommand() {
   }
 
   if (sub === 'show') {
+    // show is account-scoped detail; require explicit --account in the remaining args
+    // or that the caller already passed the account gate from a bound workspace.
     await showError(args[1]);
     return;
   }

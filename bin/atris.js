@@ -46,6 +46,10 @@ const {
 // State detection for smart default
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
 const {
+  requireAccountBound,
+  refuseAccountGlobal,
+} = require('../lib/account-bound');
+const {
   saveContextProfile,
   createStarterTask,
   shouldGatherContext,
@@ -2041,7 +2045,7 @@ if (command === 'init') {
 } else if (command === 'truth') {
   // Truth: one table rolling up mission state, tasks, feature proof receipts, and loop heartbeats.
   Promise.resolve(require('../commands/truth').truthCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'codex-goal') {
   Promise.resolve(require('../commands/codex-goal').codexGoalCommand(process.argv.slice(3)))
@@ -2752,12 +2756,18 @@ if (command === 'init') {
   const status = require('../commands/stripe').stripeCommand(process.argv.slice(3));
   process.exit(status);
 } else if (command === 'gmail') {
-  const { gmailCommand } = require('../commands/integrations');
-  const subcommand = process.argv[3];
-  const args = process.argv.slice(4);
-  gmailCommand(subcommand, ...args)
-    .then(() => process.exit(0))
-    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+  {
+    const raw = process.argv.slice(3);
+    const helpOnly = raw.length === 0 || raw.includes('--help') || raw.includes('-h') || raw[0] === 'help';
+    const gate = helpOnly ? { ok: true, args: raw } : requireAccountBound(raw);
+    if (!gate.ok) process.exit(refuseAccountGlobal());
+    const { gmailCommand } = require('../commands/integrations');
+    const subcommand = gate.args[0];
+    const args = gate.args.slice(1);
+    gmailCommand(subcommand, ...args)
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+  }
 } else if (command === 'calendar') {
   const { calendarCommand } = require('../commands/integrations');
   const subcommand = process.argv[3];
@@ -2766,19 +2776,31 @@ if (command === 'init') {
     .then(() => process.exit(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'twitter') {
-  const { twitterCommand } = require('../commands/integrations');
-  const subcommand = process.argv[3];
-  const args = process.argv.slice(4);
-  twitterCommand(subcommand, ...args)
-    .then(() => process.exit(0))
-    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+  {
+    const raw = process.argv.slice(3);
+    const helpOnly = raw.length === 0 || raw.includes('--help') || raw.includes('-h') || raw[0] === 'help';
+    const gate = helpOnly ? { ok: true, args: raw } : requireAccountBound(raw);
+    if (!gate.ok) process.exit(refuseAccountGlobal());
+    const { twitterCommand } = require('../commands/integrations');
+    const subcommand = gate.args[0];
+    const args = gate.args.slice(1);
+    twitterCommand(subcommand, ...args)
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+  }
 } else if (command === 'slack') {
-  const { slackCommand } = require('../commands/integrations');
-  const subcommand = process.argv[3];
-  const args = process.argv.slice(4);
-  slackCommand(subcommand, ...args)
-    .then(() => process.exit(0))
-    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+  {
+    const raw = process.argv.slice(3);
+    const helpOnly = raw.length === 0 || raw.includes('--help') || raw.includes('-h') || raw[0] === 'help';
+    const gate = helpOnly ? { ok: true, args: raw } : requireAccountBound(raw);
+    if (!gate.ok) process.exit(refuseAccountGlobal());
+    const { slackCommand } = require('../commands/integrations');
+    const subcommand = gate.args[0];
+    const args = gate.args.slice(1);
+    slackCommand(subcommand, ...args)
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+  }
 } else if (command === 'imessage') {
   const { imessageCommand } = require('../commands/integrations');
   const subcommand = process.argv[3];
@@ -3113,9 +3135,16 @@ if (command === 'init') {
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'errors') {
-  require('../commands/errors').errorsCommand()
-    .then(() => process.exit(0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  {
+    const gate = requireAccountBound(process.argv.slice(3));
+    if (!gate.ok) process.exit(refuseAccountGlobal());
+    // Keep --account so errors can default to --local inside bound workspaces.
+    const errorArgs = gate.account ? ['--account', ...gate.args] : gate.args;
+    process.argv = [process.argv[0], process.argv[1], 'errors', ...errorArgs];
+    require('../commands/errors').errorsCommand()
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+  }
 } else if (command === 'social') {
   require('../commands/social').socialCommand()
     .then(() => process.exit(0))
@@ -3141,9 +3170,14 @@ if (command === 'init') {
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'inbox') {
-  require('../commands/social').inboxCommand()
-    .then(() => process.exit(0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  {
+    const gate = requireAccountBound(process.argv.slice(3));
+    if (!gate.ok) process.exit(refuseAccountGlobal());
+    process.argv = [process.argv[0], process.argv[1], 'inbox', ...gate.args];
+    require('../commands/social').inboxCommand()
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+  }
 } else if (command === 'join') {
   require('../commands/social').joinCommand()
     .then(() => process.exit(0))

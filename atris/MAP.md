@@ -132,6 +132,10 @@ rg "addTask|claimTask|doneTask|appendTaskCompletionLogs|listTasks|workspaceRoot"
 rg "missionBlockerTitle|missionXpTaskTitle|Mission XP" lib/self-drive.js commands/mission.js commands/task.js test/self-drive.test.js test/mission-xp.test.js  # Mission-generated task titles stay short and plain while full context remains in task metadata and dialogue
 rg "codexGoalCommand|completed_task_closed|thread_goals" commands/codex-goal.js commands/mission.js test/codex-goal.test.js test/mission-status.test.js  # Native Codex goal boundary: read-only status, completed-task reset refusal, and scheduled-loop stop
 rg "integrationsStatus|--global|scope: 'workspace'" bin/atris.js commands/integrations.js test/dogfood-p1.test.js # Integrations default workspace; --global for account hosts
+rg "requireAccountBound|refuseAccountGlobal|ACCOUNT_GLOBAL_MESSAGE|isBoundBusinessWorkspace" lib/account-bound.js bin/atris.js test/dogfood-pass3-27-28.test.js # Unbound folders refuse account-global inbox/gmail/slack/errors; pass --account
+rg "truthCommand|loadWorkspaceLoops|loadHeartbeats|--global" commands/truth.js lib/cli-scope.js test/dogfood-pass3-27-28.test.js test/truth.test.js # truth loops from atris/loops; --global for machine heartbeats
+rg "resolveStudyRoot|ATRIS_STUDY_ROOT|not installed" commands/study.js test/dogfood-pass3-27-28.test.js # study resolves via env / atris/study / not installed (no personal path)
+rg "wantsLocal|errors --account|--approved|twitter post|slack send" commands/errors.js commands/integrations.js test/dogfood-pass3-27-28.test.js # errors --local by default; twitter/slack send need --approved
 rg "ciCommand|runnerAssetName|buildJitConfigRequest|parseRunnerMarker|runJobLoop|runCiRunner|summarizeUsage" bin/atris.js commands/ci.js lib/ci-runner.js lib/known-commands.js test/ci.test.js # Self-hosted GitHub Actions runner: offline argument and asset selection, per-version local cache, concurrent per-repo job loops with isolated warm work folders, marker-based job-time and result metering, and a per-repo build-minute view
 rg "githubCommand|createOfficialCliCommand|github cli wrapper|github help is workspace-free" bin/atris.js commands/github.js lib/official-cli-integration.js test/official-cli-integrations.test.js # github official cli wrapper: gh binary/auth detection plus pr list/create/checks/view passthrough
 rg "vercelCommand|vercel cli wrapper|vercel help is workspace-free" bin/atris.js commands/vercel.js test/official-cli-integrations.test.js # vercel official cli wrapper: vercel binary/auth detection plus deploy/ls/logs/inspect passthrough
@@ -1460,7 +1464,7 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 - **Regression:** `test/commands.test.js:4279-4294` covers integrations help without login errors or `.atris` creation
 - **Value:** Manage external services without leaving the CLI
 
-**Search:** `rg "gmailCommand|calendarCommand|twitterCommand|slackCommand|integrationsStatus|showIntegrationsHelp|integrations --help" bin/atris.js commands/integrations.js test/commands.test.js`
+**Search:** `rg "gmailCommand|calendarCommand|twitterCommand|slackCommand|integrationsStatus|showIntegrationsHelp|integrations --help|--approved|requireAccountBound" bin/atris.js commands/integrations.js lib/account-bound.js test/commands.test.js test/dogfood-pass3-27-28.test.js`
 
 ### Feature: State Detection
 
