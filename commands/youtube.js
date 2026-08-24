@@ -25,7 +25,8 @@ const ALLOWED_CAPTION_HOST_SUFFIXES = [
 
 function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('');
-  output(`Usage: ${commandName} notes <youtube-url> [youtube-url-or-playlist...] [engine]`);
+  output(`Usage: ${commandName} search "<query>" [--limit N] [--json]`);
+  output(`       ${commandName} notes <youtube-url> [youtube-url-or-playlist...] [engine]`);
   output(`       ${commandName} process <youtube-url> [options]`);
   output(`       ${commandName} digest [--days N]`);
   output(`       ${commandName} watch add <channel-url-or-@handle>`);
@@ -34,6 +35,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`       ${commandName} watch tick`);
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
+  output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links');
   output('notes = free local notes for one url, several urls, or a playlist');
   output('process = 5 credits cloud knowledge');
   output('digest = one decision page from this week\'s video briefs');
@@ -42,6 +44,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('Falls back to cloud video processing when local captions are unavailable.');
   output('');
   output('Options:');
+  output('  --limit <n>         Max search results (default: 5)');
   output('  --query, -q <text>  Focus question for the analysis');
   output('  --agent <id>        Agent id to store knowledge against');
   output('  --store             Save as agent knowledge (requires --agent)');
@@ -53,6 +56,8 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('  metadata -> timestamped outline -> claims -> examples -> takeaways -> Atris implications -> next actions');
   output('');
   output('Examples:');
+  output(`  ${commandName} search "MCP agents 2026"`);
+  output(`  ${commandName} search "MCP agents" --limit 10`);
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID`);
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID https://youtu.be/OTHER_ID`);
   output(`  ${commandName} notes https://www.youtube.com/playlist?list=PLAYLIST_ID`);
@@ -1226,8 +1231,228 @@ function runYoutubeNotes(args = [], deps = {}) {
   return runYoutubeNotesBatch(parsed, deps);
 }
 
+const DEFAULT_SEARCH_LIMIT = 5;
+const YTSEARCH_USAGE = 'usage: atris youtube search "<query>" [--limit N] [--json]';
+const SEARCH_PRINT_FORMAT = '%(title)s | %(channel)s | %(duration_string)s | %(view_count)s | %(upload_date)s | https://youtu.be/%(id)s';
+
+function showYoutubeSearchHelp(output = console.log, commandName = 'atris youtube') {
+  output('');
+  output(`Usage: ${commandName} search "<query>" [--limit N] [--json]`);
+  output('');
+  output('Free local discovery. Uses ytsearch on PATH when present, else the');
+  output('bundled scripts/det/ytsearch, else yt-dlp ytsearchN with the same print contract.');
+  output('Does not bill credits. Process stays the 5-credit step after you pick a URL.');
+  output('');
+  output('Options:');
+  output(`  --limit <n>         Max results (default: ${DEFAULT_SEARCH_LIMIT})`);
+  output('  --json              Print JSON rows instead of pipe lines');
+  output('  -h, --help          This help');
+  output('');
+  output('Each line:');
+  output('  title | channel | duration | views | upload_date | https://youtu.be/ID');
+  output('');
+  output('Examples:');
+  output(`  ${commandName} search "MCP agents 2026"`);
+  output(`  ${commandName} search "MCP agents" --limit 10`);
+  output(`  ${commandName} search "MCP agents" --json`);
+  output('');
+}
+
+function parseSearchArgs(argv = []) {
+  const args = [...argv];
+  const options = {
+    help: false,
+    json: false,
+    query: null,
+    limit: DEFAULT_SEARCH_LIMIT,
+  };
+
+  if (args.length === 0 || ['help', '--help', '-h'].includes(args[0])) {
+    options.help = true;
+    return options;
+  }
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--help' || arg === '-h' || arg === 'help') {
+      options.help = true;
+    } else if (arg === '--json') {
+      options.json = true;
+    } else if (arg === '--limit') {
+      options.limit = parsePositiveSearchInt(readValue(args, i, arg), '--limit');
+      i++;
+    } else if (arg.startsWith('--limit=')) {
+      options.limit = parsePositiveSearchInt(arg.slice('--limit='.length), '--limit');
+    } else if (arg.startsWith('-')) {
+      throw new Error(`Unknown option: ${arg}`);
+    } else if (!options.query) {
+      options.query = arg;
+    } else {
+      throw new Error(`Unexpected argument: ${arg}`);
+    }
+  }
+
+  if (options.help) return options;
+  if (!options.query) throw new Error('Missing query. Run "atris youtube search --help".');
+  return options;
+}
+
+function parsePositiveSearchInt(raw, name) {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
+function parseSearchStdout(stdout = '') {
+  const rows = [];
+  for (const line of String(stdout || '').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || !trimmed.includes('|')) continue;
+    const parts = trimmed.split(/\s*\|\s*/).map((part) => part.trim());
+    if (parts.length < 5) continue;
+    const url = parts[parts.length - 1];
+    if (!/^https?:\/\/(?:www\.)?(?:youtube\.com\/|youtu\.be\/)/i.test(url)) continue;
+    const row = {
+      title: parts[0] || '',
+      channel: parts[1] || '',
+      duration: parts[2] || '',
+      views: parts[3] || '',
+      url,
+    };
+    if (parts.length >= 6) {
+      const maybeDate = parts[parts.length - 2];
+      if (/^\d{8}$/.test(maybeDate) || maybeDate === 'NA' || maybeDate === 'None') {
+        row.upload_date = maybeDate === 'None' ? 'NA' : maybeDate;
+      }
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function formatSearchResults(rows = []) {
+  return rows.map((row) => {
+    const parts = [row.title, row.channel, row.duration, row.views];
+    if (row.upload_date) parts.push(row.upload_date);
+    parts.push(row.url);
+    return parts.join(' | ');
+  }).join('\n');
+}
+
+function commandOnPath(name, deps = {}) {
+  const spawn = deps.spawnSync || spawnSync;
+  const result = spawn('sh', ['-c', `command -v ${shellSingleQuote(name)}`], {
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  if (result.error || result.status !== 0) return null;
+  const found = String(result.stdout || '').trim();
+  return found || null;
+}
+
+function shellSingleQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function bundledYtsearchPath() {
+  return path.join(__dirname, '..', 'scripts', 'det', 'ytsearch');
+}
+
+function defaultSearchRunner(query, limit, deps = {}) {
+  const spawn = deps.spawnSync || spawnSync;
+  const options = {
+    encoding: 'utf8',
+    timeout: 60000,
+    maxBuffer: 2 * 1024 * 1024,
+  };
+
+  const pathBin = deps.ytsearchBin || commandOnPath('ytsearch', deps);
+  if (pathBin) {
+    const result = spawn(pathBin, [query, String(limit)], options);
+    if (!(result.error && result.error.code === 'ENOENT')) return result;
+  }
+
+  const bundled = deps.bundledYtsearch || bundledYtsearchPath();
+  if (fs.existsSync(bundled)) {
+    const result = spawn(bundled, [query, String(limit)], options);
+    if (!(result.error && result.error.code === 'ENOENT')) return result;
+  }
+
+  return spawn('yt-dlp', [
+    '--no-update',
+    '--flat-playlist',
+    '--no-warnings',
+    '--print',
+    SEARCH_PRINT_FORMAT,
+    `ytsearch${limit}:${query}`,
+  ], options);
+}
+
+function runYoutubeSearch(args = [], deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  let options;
+  try {
+    options = parseSearchArgs(args);
+  } catch (err) {
+    output(err.message);
+    output(YTSEARCH_USAGE);
+    return 2;
+  }
+
+  if (options.help) {
+    showYoutubeSearchHelp(output, deps.commandName || 'atris youtube');
+    return 0;
+  }
+
+  const runner = deps.runner || ((query, limit) => defaultSearchRunner(query, limit, deps));
+  let result;
+  try {
+    result = runner(options.query, options.limit, deps);
+  } catch (err) {
+    output(String(err.message || err));
+    return 1;
+  }
+
+  if (result && typeof result === 'object' && result.error && result.error.code === 'ENOENT') {
+    output('ytsearch and yt-dlp not found. Install yt-dlp or put ytsearch on PATH.');
+    return 2;
+  }
+
+  const status = result && typeof result === 'object' && 'status' in result
+    ? result.status
+    : (typeof result === 'number' ? result : 0);
+  if (status != null && status !== 0) {
+    const detail = String(
+      (result && result.stderr) || (result && result.error && result.error.message) || 'search failed',
+    ).trim();
+    output(detail || 'search failed');
+    return status == null ? 1 : status;
+  }
+
+  const stdout = typeof result === 'string' ? result : String((result && result.stdout) || '');
+  const rows = parseSearchStdout(stdout);
+  if (!rows.length) {
+    output('no videos found');
+    return 2;
+  }
+
+  if (options.json) {
+    output(JSON.stringify(rows, null, 2));
+  } else {
+    output(formatSearchResults(rows));
+  }
+  return 0;
+}
+
 async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
+  if (argv[0] === 'search') {
+    const code = runYoutubeSearch(argv.slice(1), { ...deps, output });
+    if (!deps.output && !deps.spawnSync && !deps.runner) process.exit(code);
+    return code;
+  }
   if (argv[0] === 'notes') {
     const code = runYoutubeNotes(argv.slice(1), deps);
     if (!deps.output && !deps.spawnSync && !deps.runner && !deps.expander) process.exit(code);
@@ -1275,5 +1500,8 @@ module.exports = {
   parseFlatPlaylist,
   loadWatchState,
   watchCommand,
+  parseSearchArgs,
+  parseSearchStdout,
+  formatSearchResults,
   youtubeCommand,
 };

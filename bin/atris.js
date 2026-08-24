@@ -618,7 +618,7 @@ function showHelpAll() {
   console.log('  router     - inspect ax lane outcomes and promote gated reflex overrides');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
-  console.log('  youtube    - Free local notes, weekly digest, or 5-credit cloud process for YouTube videos');
+  console.log('  youtube    - Free search + notes, weekly digest, or 5-credit cloud process for YouTube videos');
   console.log('  x-search   - 5-credit X/Twitter search (tweet text + x.com links)');
   console.log('');
   console.log('Experiments:');

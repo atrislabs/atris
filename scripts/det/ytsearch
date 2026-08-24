@@ -1,0 +1,31 @@
+#!/bin/bash
+# ytsearch <query> [limit]: free YouTube discovery via yt-dlp ytsearchN.
+# Zero Atris credits. Prints one line per video:
+#   title | channel | duration | views | upload_date | https://youtu.be/ID
+# upload_date is YYYYMMDD (or NA) so callers can apply a freshness gate.
+set -euo pipefail
+
+USAGE='usage: ytsearch "<query>" [limit]'
+
+QUERY="${1:-}"
+LIMIT="${2:-5}"
+
+if [ -z "$QUERY" ] || [ "$QUERY" = '-h' ] || [ "$QUERY" = '--help' ] || [ "$QUERY" = 'help' ]; then
+  echo "$USAGE" >&2
+  exit 2
+fi
+
+if ! [[ "$LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+  echo "limit must be a positive integer" >&2
+  exit 2
+fi
+
+if ! command -v yt-dlp >/dev/null 2>&1; then
+  echo "yt-dlp not found on PATH" >&2
+  exit 2
+fi
+
+# flat-playlist keeps this a metadata-only discovery call (no download).
+yt-dlp --no-update --flat-playlist --no-warnings \
+  --print '%(title)s | %(channel)s | %(duration_string)s | %(view_count)s | %(upload_date)s | https://youtu.be/%(id)s' \
+  "ytsearch${LIMIT}:${QUERY}"
