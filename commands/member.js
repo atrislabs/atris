@@ -3934,9 +3934,26 @@ function findAllMembers(teamDir) {
 
 // --- LIST subcommand ---
 
-function memberList() {
+function memberList(...flags) {
+  const asJson = flags.includes('--json') || process.argv.includes('--json');
   const teamDir = path.join(process.cwd(), 'atris', 'team');
   const members = findAllMembers(teamDir);
+
+  if (asJson) {
+    console.log(JSON.stringify({
+      ok: true,
+      count: members.length,
+      members: members.map((m) => ({
+        name: m.name,
+        role: m.role,
+        format: m.format,
+        skills: m.format === 'directory' ? m.skillCount : null,
+        context: m.format === 'directory' ? m.contextCount : null,
+        version: m.version || null,
+      })),
+    }, null, 2));
+    return;
+  }
 
   if (members.length === 0) {
     console.log('No team members found in atris/team/.');
@@ -9054,7 +9071,7 @@ async function memberCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'list':
     case 'ls':
-      return memberList();
+      return memberList(...args);
     case 'create':
     case 'new':
       return memberCreate(args[0], ...args.slice(1));
@@ -9123,7 +9140,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
       console.log('  install <slug>      Install the full MEMBER bundle if missing; never overwrite');
       console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
-      console.log('  list                Show all team members');
+      console.log('  list [--json]       Show all team members');
       console.log('  activate <name>     Symlink member skills, show context and permissions');
       console.log('  upgrade <name>      Convert flat file (name.md) to directory format');
       console.log('  push <name>         Push a local team member to the cloud');

@@ -701,11 +701,11 @@ function showPlanHelp() {
   console.log('');
   console.log('Description:');
   console.log('  Activate the Navigator agent to plan work.');
-  console.log('  Reads your journal Inbox, TODO.md, MAP.md, and features/, then prints a');
-  console.log('  short, copy/pasteable prompt for your coding agent.');
+  console.log('  Default is PROMPT ONLY: prints a copy/pasteable prompt for your coding agent.');
+  console.log('  Reads your journal Inbox, TODO.md, MAP.md, and features/.');
   console.log('');
   console.log('Options:');
-  console.log('  --execute   Run in agent mode via Atris cloud (requires login + agent).');
+  console.log('  --execute   ACTION TAKEN: run in agent mode via Atris cloud (requires login + agent).');
   console.log('  --full      Print full spec/context dumps (verbose copy/paste).');
   console.log('  --verbose   Alias for --full.');
   console.log('');
@@ -717,11 +717,11 @@ function showDoHelp() {
   console.log('');
   console.log('Description:');
   console.log('  Activate the Executor agent to build tasks.');
-  console.log('  Reads TODO.md and features/*/build.md, then prints step-by-step');
-  console.log('  execution instructions (and, in agent mode, edits code + runs commands).');
+  console.log('  Default is PROMPT ONLY: prints step-by-step execution instructions.');
+  console.log('  Reads TODO.md and features/*/build.md.');
   console.log('');
   console.log('Options:');
-  console.log('  --execute   Run in agent mode via Atris cloud (requires login + agent).');
+  console.log('  --execute   ACTION TAKEN: edit code + run commands via Atris cloud.');
   console.log('  --full      Print full spec/context dumps (verbose copy/paste).');
   console.log('  --verbose   Alias for --full.');
   console.log('');
@@ -869,7 +869,7 @@ function showAuthHelp(commandName) {
   const usage = {
     login: 'Usage: atris login [--token <token>] [--force]',
     logout: 'Usage: atris logout',
-    whoami: 'Usage: atris whoami',
+    whoami: 'Usage: atris whoami [--json]',
     switch: 'Usage: atris switch [account] [--global]',
     use: 'Usage: atris use [account]',
     accounts: 'Usage: atris accounts [add|remove <account>|remove --all]',
@@ -1152,7 +1152,12 @@ function printAtrisOverview() {
 }
 
 function useInteractiveAtrisUi() {
-  return Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.ATRIS_NO_INTERACTIVE);
+  return Boolean(
+    process.stdin.isTTY
+    && process.stdout.isTTY
+    && !process.env.ATRIS_NO_INTERACTIVE
+    && process.env.ATRIS_NONINTERACTIVE !== '1'
+  );
 }
 
 function initNonInteractiveFlag() {
@@ -2162,7 +2167,7 @@ if (command === 'init') {
       process.exit(1);
     });
 } else if (command === 'version') {
-  require('../commands/version').showVersion();
+  require('../commands/version').showVersion(process.argv.slice(3));
 } else if (command === 'login') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {

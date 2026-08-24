@@ -11043,15 +11043,23 @@ function importTodoFile(taskDb, db, target) {
   const parsed = parseTodoFile(filePath);
   const ws = taskDb.workspaceRoot();
   const all = [
-    ...parsed.backlog.map(t => ({ ...t, importStatus: 'open' })),
-    ...parsed.inProgress.map(t => ({ ...t, importStatus: 'claimed' })),
-    ...(parsed.review || []).map(t => ({ ...t, importStatus: 'review' })),
+    ...parsed.backlog.map(t => ({ ...t, importStatus: 'open', sourceFile: filePath })),
+    ...parsed.inProgress.map(t => ({ ...t, importStatus: 'claimed', sourceFile: filePath })),
+    ...(parsed.review || []).map(t => ({ ...t, importStatus: 'review', sourceFile: filePath })),
   ];
+  const knownTitles = new Set(
+    taskDb.listTasks(db, { workspaceRoot: ws, limit: 500 }).map((row) => taskDb.normalizeTitle(row.title))
+  );
   let inserted = 0;
   let skipped = 0;
   for (const t of all) {
     if (!t.title) continue;
-    const sk = taskDb.sourceKey(filePath, t.title);
+    const normalized = taskDb.normalizeTitle(t.title);
+    if (knownTitles.has(normalized)) {
+      skipped++;
+      continue;
+    }
+    const sk = taskDb.sourceKey(t.sourceFile || filePath, t.title);
     const result = taskDb.addTask(db, {
       title: t.title,
       tag: t.tag || null,
@@ -11061,9 +11069,70 @@ function importTodoFile(taskDb, db, target) {
       claimedBy: t.claimed || null,
       metadata: { todo_id: t.id, todo_tags: t.tags || [], claimed: t.claimed, stage: t.stage, verify: t.verify },
     });
-    if (result.inserted) inserted++; else skipped++;
+    if (result.inserted) {
+      inserted++;
+      knownTitles.add(normalized);
+    } else {
+      skipped++;
+    }
+  }
+  return { ok: true, inserted, skipped, filePath, knownTitles };
+}
+
+function importJournalFile(taskDb, db, journalPath, knownTitles = null) {
+  const filePath = path.resolve(journalPath);
+  if (!fs.existsSync(filePath)) {
+    return { ok: false, reason: 'not_found', filePath, inserted: 0, skipped: 0 };
+  }
+  const { parseSection } = require('../lib/todo-fallback');
+  const { parseInboxItems } = require('../lib/file-ops');
+  const content = fs.readFileSync(filePath, 'utf8');
+  const ws = taskDb.workspaceRoot();
+  const titles = knownTitles || new Set(
+    taskDb.listTasks(db, { workspaceRoot: ws, limit: 500 }).map((row) => taskDb.normalizeTitle(row.title))
+  );
+  const all = [
+    ...parseSection(content, 'Backlog').map((t) => ({ ...t, importStatus: 'open' })),
+    ...parseSection(content, 'In Progress').map((t) => ({ ...t, importStatus: 'claimed' })),
+    ...parseInboxItems(content).map((item) => ({
+      id: `I${item.id}`,
+      title: item.text,
+      tag: 'inbox',
+      importStatus: 'open',
+    })),
+  ];
+  let inserted = 0;
+  let skipped = 0;
+  for (const t of all) {
+    if (!t.title) continue;
+    const normalized = taskDb.normalizeTitle(t.title);
+    if (titles.has(normalized)) {
+      skipped++;
+      continue;
+    }
+    const sk = taskDb.sourceKey(filePath, t.title);
+    const result = taskDb.addTask(db, {
+      title: t.title,
+      tag: t.tag || null,
+      workspaceRoot: ws,
+      sourceKey: sk,
+      status: t.importStatus,
+      claimedBy: t.claimed || null,
+      metadata: { todo_id: t.id, source: 'journal_import' },
+    });
+    if (result.inserted) {
+      inserted++;
+      titles.add(normalized);
+    } else {
+      skipped++;
+    }
   }
   return { ok: true, inserted, skipped, filePath };
+}
+
+function todayJournalPath() {
+  const { getLogPath } = require('../lib/file-ops');
+  return getLogPath().logFile;
 }
 
 function cmdImport(args) {
@@ -11076,7 +11145,9 @@ function cmdImport(args) {
     console.error(`atris task import: file not found: ${result.filePath}`);
     process.exit(2);
   }
-  const { inserted, skipped, filePath } = result;
+  const journalResult = importJournalFile(taskDb, db, todayJournalPath(), result.knownTitles);
+  const inserted = result.inserted + (journalResult.ok ? journalResult.inserted : 0);
+  const skipped = result.skipped + (journalResult.ok ? journalResult.skipped : 0);
   const { outPath } = writeDefaultProjection(taskDb, db);
   if (wantsJson(args)) {
     printJson({
@@ -11084,12 +11155,16 @@ function cmdImport(args) {
       action: 'imported',
       inserted,
       skipped,
-      source: filePath,
+      source: result.filePath,
+      journal: journalResult.ok ? journalResult.filePath : null,
       projection_path: outPath,
     });
     return;
   }
-  console.log(`imported ${inserted} new, skipped ${skipped} (already imported), source=${filePath}`);
+  console.log(`imported ${inserted} new, skipped ${skipped} (already imported), source=${result.filePath}`);
+  if (journalResult.ok && journalResult.inserted > 0) {
+    console.log(`journal imported ${journalResult.inserted} from ${journalResult.filePath}`);
+  }
 }
 
 function cmdWhere(args) {
@@ -11275,11 +11350,21 @@ function cmdSetup(args) {
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
   let importResult = null;
+  let journalResult = null;
   if (hasFlag(args, '--import-todo')) {
     importResult = importTodoFile(taskDb, db, flag(args, '--todo') || 'atris/TODO.md');
     if (!importResult.ok && flag(args, '--todo')) {
       console.error(`atris task setup: TODO file not found: ${importResult.filePath}`);
       process.exit(2);
+    }
+    if (importResult.ok) {
+      journalResult = importJournalFile(taskDb, db, todayJournalPath(), importResult.knownTitles);
+      importResult = {
+        ...importResult,
+        inserted: importResult.inserted + (journalResult.ok ? journalResult.inserted : 0),
+        skipped: importResult.skipped + (journalResult.ok ? journalResult.skipped : 0),
+        journal: journalResult.ok ? journalResult.filePath : null,
+      };
     }
   }
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
@@ -11293,6 +11378,7 @@ function cmdSetup(args) {
         inserted: importResult.inserted,
         skipped: importResult.skipped,
         source: importResult.filePath,
+        journal: importResult.journal || null,
       } : null,
       projection,
     });

@@ -579,7 +579,7 @@ function refreshNowFile(root = process.cwd(), options = {}) {
 function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
   const help = args.includes('--help') || args.includes('-h') || args[0] === 'help';
   if (help) {
-    console.log('Usage: atris now [--init|--refresh|--all|--path]');
+    console.log('Usage: atris now [--init|--refresh|--all|--path] [--json]');
     console.log('');
     console.log('Show the current operating truth for this workspace.');
     console.log('');
@@ -588,6 +588,7 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
     console.log('  atris now --refresh Regenerate a small local now.md');
     console.log('  atris now --all     Refresh this parent and every child Atris workspace');
     console.log('  atris now --path    Print the file path only');
+    console.log('  atris now --json    Emit path and content as JSON');
     return;
   }
 
@@ -595,6 +596,7 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
   const refresh = args.includes('--refresh');
   const all = args.includes('--all');
   const pathOnly = args.includes('--path');
+  const asJson = args.includes('--json');
 
   let result;
   if (all) {
@@ -603,7 +605,7 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
       refreshNowFile(workspace.root);
     }
     result = refreshNowFile(root);
-    if (!pathOnly) {
+    if (!pathOnly && !asJson) {
       console.log(`Refreshed ${workspaces.length} child workspace${workspaces.length === 1 ? '' : 's'}.`);
       console.log('');
     }
@@ -621,12 +623,22 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
     return;
   }
 
+  const content = fs.readFileSync(result.path, 'utf8').trimEnd();
+  if (asJson) {
+    console.log(JSON.stringify({
+      ok: true,
+      path: rel,
+      created: Boolean(result.created),
+      content,
+    }, null, 2));
+    return;
+  }
+
   if (result.created) {
     console.log(`Created ${rel}`);
     console.log('');
   }
 
-  const content = fs.readFileSync(result.path, 'utf8').trimEnd();
   console.log(content);
 }
 

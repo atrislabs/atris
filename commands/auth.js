@@ -1,7 +1,53 @@
-const { loadCredentials, saveCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
+const { loadCredentials, saveCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
 const { getAppBaseUrl, apiRequestJson } = require('../utils/api');
+const { isNonInteractive, wantsJson } = require('../lib/noninteractive');
 const fs = require('fs');
 const path = require('path');
+
+async function printWhoamiPayload(asJson) {
+  const ensured = await ensureValidCredentials(apiRequestJson);
+  if (ensured.error) {
+    if (asJson) {
+      console.log(JSON.stringify({
+        ok: false,
+        logged_in: false,
+        error: ensured.error,
+        detail: ensured.detail || null,
+      }, null, 2));
+    } else {
+      console.log('Status: Not logged in');
+      if (ensured.detail) console.log(`Reason: ${ensured.detail}`);
+      console.log('\nRun "atris login" to sign in.');
+    }
+    process.exit(1);
+  }
+
+  const { credentials, user } = ensured;
+  const email = user?.email || credentials?.email || 'unknown';
+  const userId = user?.id || credentials?.user_id || 'unknown';
+  const provider = user?.provider || credentials?.provider || 'unknown';
+  const savedAt = credentials?.saved_at || 'unknown';
+  const payload = {
+    ok: true,
+    logged_in: true,
+    email,
+    user_id: userId,
+    provider,
+    credentials_saved: savedAt,
+  };
+
+  if (asJson) {
+    console.log(JSON.stringify(payload, null, 2));
+    process.exit(0);
+  }
+
+  const summary = await displayAccountSummary(apiRequestJson);
+  if (summary.error) {
+    console.log('\nRun "atris login" to sign in.');
+    process.exit(1);
+  }
+  process.exit(0);
+}
 
 async function loginAtris(options = {}) {
   // Support: atris login --token <token> --force
@@ -9,6 +55,8 @@ async function loginAtris(options = {}) {
   const forceFlag = args.includes('--force') || args.includes('-f') || options.force;
   const tokenIndex = args.indexOf('--token');
   const directToken = tokenIndex !== -1 ? args[tokenIndex + 1] : options.token;
+  const asJson = wantsJson(args);
+  const nonInteractive = isNonInteractive(args);
 
   try {
     const existing = loadCredentials();
@@ -17,6 +65,9 @@ async function loginAtris(options = {}) {
     if (directToken) {
       const trimmed = directToken.trim();
       saveCredentials(trimmed, null, existing?.email || null, existing?.user_id || null, existing?.provider || 'manual');
+      if (asJson) {
+        return printWhoamiPayload(true);
+      }
       console.log('Token saved. Validating…\n');
       const summary = await displayAccountSummary(apiRequestJson);
       if (summary.error) {
@@ -27,24 +78,48 @@ async function loginAtris(options = {}) {
       process.exit(0);
     }
 
+    // Already signed in without --force: behave like whoami (no menu).
+    // Print local identity without waiting on the network so headless agents
+    // never hang on a stale token validation.
     if (existing && !forceFlag) {
-      const label = existing.email || existing.user_id || 'unknown';
-      const profiles = listProfiles();
-      console.log(`Currently signed in as: ${label}`);
-      if (profiles.length > 1) {
-        console.log(`${profiles.length} accounts saved. Use "atris switch" to change.\n`);
-      }
-      console.log('  1. Add another account');
-      console.log('  2. Re-login to current account');
-      console.log('  3. Cancel\n');
-
-      const choice = await promptUser('Choice (1-3): ');
-      if (choice === '3' || (!choice)) {
-        console.log('Cancelled.');
+      const email = existing.email || null;
+      const userId = existing.user_id || null;
+      const provider = existing.provider || null;
+      if (asJson) {
+        console.log(JSON.stringify({
+          ok: true,
+          logged_in: true,
+          email,
+          user_id: userId,
+          provider,
+          credentials_saved: existing.saved_at || null,
+          next: 'atris whoami --json',
+        }, null, 2));
         process.exit(0);
       }
-      // Both 1 and 2 proceed to OAuth — the difference is just the prompt
-    } else if (!existing) {
+      console.log(`Currently signed in as: ${email || userId || 'unknown'}`);
+      if (provider) console.log(`Provider: ${provider}`);
+      console.log('Next: atris whoami');
+      process.exit(0);
+    }
+
+    if (nonInteractive) {
+      if (asJson) {
+        console.log(JSON.stringify({
+          ok: false,
+          logged_in: false,
+          error: 'login requires --token in non-interactive mode',
+          next: 'atris login --token <token>',
+        }, null, 2));
+      } else {
+        console.log('Not signed in.');
+        console.log('login needs a terminal for browser OAuth, or pass a token.');
+        console.log('Next: atris login --token <token>');
+      }
+      process.exit(1);
+    }
+
+    if (!existing) {
       console.log('Welcome to Atris! Let\'s get you signed in.\n');
     }
 
@@ -154,17 +229,21 @@ function logoutAtris() {
 }
 
 async function whoamiAtris() {
-  const { apiRequestJson } = require('../utils/api');
+  const args = process.argv.slice(3);
+  const asJson = wantsJson(args);
 
   try {
-    const summary = await displayAccountSummary(apiRequestJson);
-    if (summary.error) {
-      console.log('\nRun "atris login" to sign in.');
-      process.exit(1);
-    }
-    process.exit(0);
+    return await printWhoamiPayload(asJson);
   } catch (error) {
-    console.error(`Failed to fetch account: ${error.message || error}`);
+    if (asJson) {
+      console.log(JSON.stringify({
+        ok: false,
+        logged_in: false,
+        error: error.message || String(error),
+      }, null, 2));
+    } else {
+      console.error(`Failed to fetch account: ${error.message || error}`);
+    }
     process.exit(1);
   }
 }

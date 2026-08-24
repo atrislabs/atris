@@ -2,6 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile, addInboxIdea } = require('../lib/file-ops');
+const { isForcedNonInteractive } = require('../lib/noninteractive');
+
+function readPipedStdin() {
+  try {
+    return fs.readFileSync(0, 'utf8');
+  } catch {
+    return '';
+  }
+}
 
 function logAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
@@ -16,6 +25,44 @@ function logAtris() {
 
   if (!fs.existsSync(logFile)) {
     createLogFile(logFile, dateFormatted);
+  }
+
+  const args = process.argv.slice(3);
+  const rel = path.relative(process.cwd(), logFile) || logFile;
+  const forced = isForcedNonInteractive(args);
+
+  // Forced headless: never open a REPL.
+  if (forced) {
+    const note = args.filter((arg) => !arg.startsWith('-')).join(' ').trim();
+    if (note) {
+      const id = addInboxIdea(logFile, note);
+      console.log(`captured I${id}: ${note}`);
+      console.log(`journal: ${rel}`);
+      console.log('Next: atris logs');
+      return;
+    }
+    console.log(`Daily log REPL needs a terminal (${dateFormatted}).`);
+    console.log(`journal: ${rel}`);
+    console.log('Next: atris log   # in a terminal, or atris logs --json');
+    return;
+  }
+
+  // Piped stdin (tests and scripts): consume lines once, never hang waiting.
+  if (!process.stdin.isTTY) {
+    const piped = readPipedStdin();
+    const lines = piped.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const notes = lines.filter((line) => line.toLowerCase() !== 'exit');
+    if (notes.length === 0) {
+      console.log(`Daily log REPL needs a terminal (${dateFormatted}).`);
+      console.log(`journal: ${rel}`);
+      console.log('Next: atris log   # in a terminal, or atris logs --json');
+      return;
+    }
+    for (const note of notes) {
+      addInboxIdea(logFile, note);
+    }
+    console.log(`captured ${notes.length} note${notes.length === 1 ? '' : 's'} in ${rel}`);
+    return;
   }
 
   console.log(`┌─────────────────────────────────────────────────────────┐`);
