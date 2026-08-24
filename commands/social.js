@@ -21,6 +21,7 @@
 
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson, getAppBaseUrl } = require('../utils/api');
+const { isHelpToken, argsWantHelp } = require('../lib/noninteractive');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -36,6 +37,11 @@ function getToken() {
 function fail(message) {
   console.error(message);
   process.exit(1);
+}
+
+function showUsageAndExit(usage) {
+  console.error(usage);
+  process.exit(2);
 }
 
 function apiErrorMessage(res, fallback) {
@@ -131,7 +137,9 @@ async function overview() {
 }
 
 async function people(query) {
-  if (!query) fail('Usage: atris people <name or email>');
+  if (!query || isHelpToken(query)) {
+    showUsageAndExit('Usage: atris people <name or email>');
+  }
   const results = await searchUsers(query);
   if (results.length === 0) {
     console.log(`No one found for "${query}". Invite them: atris invite`);
@@ -142,7 +150,9 @@ async function people(query) {
 }
 
 async function follow(who, remove = false) {
-  if (!who) fail(`Usage: atris ${remove ? 'unfollow' : 'follow'} <who>`);
+  if (!who || isHelpToken(who)) {
+    showUsageAndExit(`Usage: atris ${remove ? 'unfollow' : 'follow'} <who>`);
+  }
   const user = await resolveUser(who);
   const res = await api(`/social/follow/${user.id}`, { method: remove ? 'DELETE' : 'POST' });
   if (res.status >= 400) {
@@ -194,7 +204,9 @@ async function getConversationWith(who) {
 }
 
 async function message(who, text) {
-  if (!who) fail('Usage: atris msg <who> [message]');
+  if (!who || isHelpToken(who) || isHelpToken(text)) {
+    showUsageAndExit('Usage: atris msg <who> [message]');
+  }
   const { conversation } = await getConversationWith(who);
   const other = displayName(conversation.other_user || {});
 
@@ -306,7 +318,12 @@ async function inviteWizard() {
 }
 
 async function invite(argv) {
-  let { flags } = parseInviteFlags(argv || []);
+  const argvList = Array.isArray(argv) ? argv : [];
+  if (argsWantHelp(argvList)) {
+    printHelp();
+    process.exit(2);
+  }
+  let { flags } = parseInviteFlags(argvList);
   if (Object.keys(flags).length === 0 && process.stdout.isTTY && process.stdin.isTTY) {
     flags = await inviteWizard();
   }
@@ -528,11 +545,27 @@ async function socialCommand(argv) {
 }
 
 // Top-level aliases: `atris people x`, `atris follow x`, `atris msg x hi`, ...
-async function peopleCommand() { return people(process.argv.slice(3).join(' ')); }
-async function followCommand() { return follow(process.argv.slice(3).join(' ')); }
-async function unfollowCommand() { return follow(process.argv.slice(3).join(' '), true); }
+async function peopleCommand() {
+  const args = process.argv.slice(3);
+  if (argsWantHelp(args)) showUsageAndExit('Usage: atris people <name or email>');
+  return people(args.join(' '));
+}
+async function followCommand() {
+  const args = process.argv.slice(3);
+  if (argsWantHelp(args)) showUsageAndExit('Usage: atris follow <who>');
+  return follow(args.join(' '));
+}
+async function unfollowCommand() {
+  const args = process.argv.slice(3);
+  if (argsWantHelp(args)) showUsageAndExit('Usage: atris unfollow <who>');
+  return follow(args.join(' '), true);
+}
 async function friendsCommand() { return friends(process.argv[3]); }
-async function msgCommand() { return message(process.argv[3], process.argv.slice(4).join(' ')); }
+async function msgCommand() {
+  const args = process.argv.slice(3);
+  if (argsWantHelp(args)) showUsageAndExit('Usage: atris msg <who> [message]');
+  return message(args[0], args.slice(1).join(' '));
+}
 async function inboxCommand() { return inbox(); }
 async function inviteCommand() { return invite(process.argv.slice(3)); }
 async function joinCommand() { return join(process.argv[3], process.argv.slice(4)); }

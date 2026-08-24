@@ -279,6 +279,7 @@ test('approve approves the current item waiting for the user', async () => {
   const output = outputCapture();
   const code = await approveCommand(['--json'], {
     ...output,
+    businessId: 'business-1',
     loadCredentials: credentials,
     apiRequestJson: async (pathname, options) => {
       calls.push({ pathname, options });
@@ -313,6 +314,7 @@ test('stop stops the current mission', async () => {
   const output = outputCapture();
   const code = await stopCommand(['--json'], {
     ...output,
+    businessId: 'business-1',
     loadCredentials: credentials,
     apiRequestJson: async (pathname, options) => {
       calls.push({ pathname, options });
@@ -341,6 +343,7 @@ test('mission answer sends text to the current mission', async () => {
   const output = outputCapture();
   const code = await answerCommand(['Use', 'the', 'shorter', 'version', '--json'], {
     ...output,
+    businessId: 'business-1',
     loadCredentials: credentials,
     apiRequestJson: async (pathname, options) => {
       calls.push({ pathname, options });
@@ -400,6 +403,7 @@ test('ready reports only capabilities that its probes found', async () => {
   const output = outputCapture();
   const code = await readyCommand(['--json'], {
     ...output,
+    businessId: 'business-1',
     loadCredentials: credentials,
     apiRequestJson: async (pathname) => {
       if (pathname === '/ai-computer/user/status') {
@@ -425,6 +429,7 @@ test('ready does not claim remote features without sign-in or route proof', asyn
   const output = outputCapture();
   const code = await readyCommand(['--json'], {
     ...output,
+    businessId: 'business-1',
     loadCredentials: () => null,
     apiRequestJson: async () => ({ ok: true, status: 200, data: { version: '1.0' } }),
   });

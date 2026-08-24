@@ -475,8 +475,26 @@ test('runImprove: hosted API still receives a workspace not present locally', as
 const NONSHIPPING_CASES = [
   ['plan', { mode: 'plan' }],
   ['delegate', { mode: 'delegate' }],
-  ['dry-run', { mode: 'full', dryRun: true }],
 ];
+
+
+test('runImprove: dry-run stays local and never calls the paid API', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-dry-run-'));
+  try {
+    const { calls, deps } = fakeDeps({ getApiBaseUrl: () => 'https://api.atris.ai/api' });
+    const res = await runImprove({ workspace, fallback: true, dryRun: true }, deps);
+    assert.equal(res.ok, true);
+    assert.equal(res.source, 'local');
+    assert.equal(res.reason, 'dry_run');
+    assert.equal(res.receipt, 'skipped');
+    assert.equal(calls.api.length, 0);
+    assert.equal(calls.local.length, 0);
+    assert.equal(calls.rows.length, 0);
+    assert.equal(calls.journal.length, 0);
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
 
 test('runImprove: hosted nonshipping modes use the API for an existing local workspace', async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-nonshipping-workspace-'));

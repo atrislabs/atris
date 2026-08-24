@@ -90,6 +90,17 @@ function runScout(question, { dir, model, engine, timeoutMs }) {
 
 async function scoutCommand(argv) {
   const args = [...argv];
+  const { refuseHeadlessUnless } = require('../lib/noninteractive');
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showHelp();
+    return 0;
+  }
+  if (refuseHeadlessUnless(args, {
+    allowYes: true,
+    usage: 'Usage: atris scout [--yes] "<question>"\nHeadless scout needs --yes.',
+  })) {
+    return 2;
+  }
   const questions = [];
   let dir = process.cwd();
   let model = MODELS.haiku;
@@ -105,7 +116,7 @@ async function scoutCommand(argv) {
       if (!ENGINES[engine]) { console.error(`✗ unknown engine "${engine}" (claude|cursor|devin|fast)`); return 1; }
     }
     else if (a === '--timeout') timeoutMs = (parseInt(args.shift(), 10) || 180) * 1000;
-    else if (a === '--help' || a === '-h') { showHelp(); return 0; }
+    else if (a === '--help' || a === '-h' || a === '--yes' || a === '-y') { /* handled above / proceed flag */ }
     else questions.push(a);
   }
 

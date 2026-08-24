@@ -153,6 +153,14 @@ async function interviewCommand(args = [], root = process.cwd()) {
     return 0;
   }
 
+  const { refuseHeadlessUnless } = require('../lib/noninteractive');
+  if (refuseHeadlessUnless(args, {
+    allowYes: true,
+    usage: 'Usage: atris interview [subject] [--yes]\nHeadless interview needs --yes.',
+  })) {
+    return 2;
+  }
+
   const ws = findWorkspaceRoot(root);
   if (!ws) {
     console.error('✗ Not inside an Atris workspace (no atris/ directory found).');
