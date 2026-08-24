@@ -35,6 +35,7 @@ function isHelpToken(arg) {
 }
 
 const BUSINESS_CREATE_USAGE = 'Usage: atris business create <name> [--description "..."] [--workspace] [--here|--root <dir>]';
+const BUSINESS_SHIP_USAGE = 'Usage: atris business ship "<paragraph>" [--name <name>] [--email <email>]';
 
 function isAccidentalHelpBusiness(value) {
   const raw = String(value || '').trim();
@@ -68,6 +69,73 @@ function validateBusinessCreateName(name) {
     };
   }
   return { ok: true };
+}
+
+function compactShipText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function parseBusinessShipArgs(args = []) {
+  const positional = [];
+  let name = '';
+  let email = '';
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const next = args[i + 1];
+
+    if (arg === '--name') {
+      if (!next || String(next).startsWith('-')) {
+        return { ok: false, usage: BUSINESS_SHIP_USAGE, detail: 'Missing value for --name.' };
+      }
+      name = next;
+      i++;
+    } else if (typeof arg === 'string' && arg.startsWith('--name=')) {
+      name = arg.slice('--name='.length);
+    } else if (arg === '--email') {
+      if (!next || String(next).startsWith('-')) {
+        return { ok: false, usage: BUSINESS_SHIP_USAGE, detail: 'Missing value for --email.' };
+      }
+      email = next;
+      i++;
+    } else if (typeof arg === 'string' && arg.startsWith('--email=')) {
+      email = arg.slice('--email='.length);
+    } else if (typeof arg === 'string' && arg.startsWith('-')) {
+      return { ok: false, usage: BUSINESS_SHIP_USAGE, detail: `Unknown option: ${arg}` };
+    } else {
+      positional.push(arg);
+    }
+  }
+
+  const description = compactShipText(positional.join(' '));
+  if (!description) {
+    return { ok: false, usage: BUSINESS_SHIP_USAGE };
+  }
+
+  return {
+    ok: true,
+    description,
+    name: compactShipText(name),
+    email: compactShipText(email),
+  };
+}
+
+function shipTeamNames(team) {
+  const rows = Array.isArray(team)
+    ? team
+    : (Array.isArray(team?.members) ? team.members : []);
+  return rows.map((member) => {
+    if (typeof member === 'string') return compactShipText(member);
+    if (!member || typeof member !== 'object') return '';
+    return compactShipText(member.display_name || member.name || member.slug || '');
+  }).filter(Boolean);
+}
+
+function shipTaskTitle(task) {
+  if (!task) return '';
+  if (typeof task === 'string') return compactShipText(task);
+  if (typeof task !== 'object') return '';
+  return compactShipText(task.title || task.name || '');
 }
 
 function loadBusinesses() {
@@ -2789,6 +2857,66 @@ async function initBusinessWorkspace(name, ...flags) {
   return createBusinessInternal(name, flags, 'canonical');
 }
 
+function printBusinessShipHelp() {
+  console.log(BUSINESS_SHIP_USAGE);
+  console.log('');
+  console.log('Create a live business from one paragraph.');
+  console.log('  --name <name>     Optional business name');
+  console.log('  --email <email>   Optional customer email');
+}
+
+async function shipBusiness(...args) {
+  if (args.some(isHelpToken)) {
+    printBusinessShipHelp();
+    return;
+  }
+
+  const parsed = parseBusinessShipArgs(args);
+  if (!parsed.ok) {
+    console.error(parsed.usage);
+    if (parsed.detail) console.error(`\n  ${parsed.detail}`);
+    process.exit(1);
+  }
+
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+
+  const body = { description: parsed.description };
+  if (parsed.name) body.name = parsed.name;
+  if (parsed.email) body.customer_email = parsed.email;
+
+  console.log(`Shipping business: ${parsed.name || parsed.description}...`);
+
+  const result = await apiRequestJson('/business/ship', {
+    method: 'POST',
+    token: creds.token,
+    body,
+  });
+
+  if (!result.ok) {
+    console.error(`Failed: ${result.errorMessage || result.error || result.status}`);
+    process.exit(1);
+  }
+
+  const payload = result.data || {};
+  const slug = payload.slug || '';
+  const label = payload.name || parsed.name || slug || 'business';
+  const pageUrl = payload.public_page_url || '';
+  const names = shipTeamNames(payload.team);
+  const firstTask = shipTaskTitle(payload.seeded_task);
+
+  console.log('');
+  console.log(`  ${label}${slug ? ` (${slug})` : ''}`);
+  if (pageUrl) console.log(`  Public page: ${pageUrl}`);
+  if (names.length > 0) console.log(`  Team: ${names.join(', ')}`);
+  if (firstTask) console.log(`  First task: ${firstTask}`);
+  console.log('');
+  return payload;
+}
+
 
 async function businessStatus(slug) {
   const creds = loadCredentials();
@@ -3364,6 +3492,7 @@ function printBusinessHelp() {
   console.log('  init <name>          RECOMMENDED: create a business environment (cloud + local)');
   console.log('  workspace <name>     Alias for init');
   console.log('  create <name>        Cloud-only business record; add --workspace to also scaffold local');
+  console.log('  ship "<paragraph>"   One paragraph, live business (optional --name, --email)');
   console.log('  simulate <idea>      Create a business, four-role team, missions, and endgame loop');
   console.log('  add <slug>           Register an existing cloud business');
   console.log('  list                 Show registered businesses');
@@ -3401,7 +3530,11 @@ async function businessCommand(subcommand, ...args) {
     printBusinessSimulateHelp();
     return;
   }
-  const nameTakingSubcommands = new Set(['create', 'new', 'init', 'workspace']);
+  if (subcommand === 'ship' && args.some(isHelpToken)) {
+    printBusinessShipHelp();
+    return;
+  }
+  const nameTakingSubcommands = new Set(['create', 'new', 'init', 'workspace', 'ship']);
   if (nameTakingSubcommands.has(subcommand) && args.some(isHelpToken)) {
     printBusinessHelp();
     return;
@@ -3418,6 +3551,9 @@ async function businessCommand(subcommand, ...args) {
     case 'create':
     case 'new':
       await createBusiness(args[0], ...args.slice(1));
+      break;
+    case 'ship':
+      await shipBusiness(...args);
       break;
     case 'init':
     case 'workspace':
@@ -3523,6 +3659,9 @@ module.exports = {
   businessMatchesSlug,
   isAccidentalHelpBusiness,
   validateBusinessCreateName,
+  parseBusinessShipArgs,
+  shipTeamNames,
+  shipTaskTitle,
   analyzeBusinessDoctor,
   createCanonicalBusinessWorkspace,
   onboardBusiness,
