@@ -912,15 +912,15 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Routing:** `bin/atris.js:1327-1331` routes `code-review` and `cr` to `commands/review.js`
 - **Engine discovery:** `commands/review.js:14-30` searches for `review_engine.py`
-- **Missing-engine JSON:** `commands/review.js:32-50` returns `{ ok:false }` under `--json` while preserving human stderr instructions
-- **JSON error helper:** `commands/review.js:53-60` keeps wrapper-owned setup failures parseable
-- **Handler:** `commands/review.js:62-187` parses file/diff/all/json args and delegates to the Python engine when present
-- **All-mode setup:** `commands/review.js:98-106` returns `{ ok:false }` for missing `backend/services/` under `--all --json`, before auditing services
-- **All-mode JSON success:** `commands/review.js:132-145` returns one parseable `{ ok:true, action:"code_review_all" }` summary instead of human `AUDIT:` prose
-- **All-mode human success:** `commands/review.js:147-156` keeps the existing audit banner and table for non-JSON callers
-- **Regression:** `test/code-review.test.js:22-144` covers JSON missing-engine output, JSON missing-services output, JSON success summaries, and unchanged human paths
+- **Missing-engine JSON:** `commands/review.js:32-46` returns `{ ok:false, error:"not installed" }` under `--json` and prints `not installed; atris skill install code-review` on stderr for humans, both exit 2 (no stack trace)
+- **JSON error helper:** `commands/review.js:48-55` keeps wrapper-owned setup failures parseable
+- **Handler:** `commands/review.js:57-182` parses file/diff/all/json args and delegates to the Python engine when present
+- **All-mode setup:** `commands/review.js:93-101` returns `{ ok:false }` for missing `backend/services/` under `--all --json`, before auditing services
+- **All-mode JSON success:** `commands/review.js:127-140` returns one parseable `{ ok:true, action:"code_review_all" }` summary instead of human `AUDIT:` prose
+- **All-mode human success:** `commands/review.js:142-151` keeps the existing audit banner and table for non-JSON callers
+- **Regression:** `test/code-review.test.js` and `test/dogfood-t6-t10.test.js` cover not-installed exit 2, JSON missing-services, and JSON success summaries
 
-**Search:** `rg "reviewCommand|printMissingReviewEngine|exitReviewError|code_review_all|code-review --json|missing services" commands/review.js test/code-review.test.js bin/atris.js`
+**Search:** `rg "reviewCommand|printMissingReviewEngine|exitReviewError|code_review_all|code-review --json|not installed" commands/review.js test/code-review.test.js test/dogfood-t6-t10.test.js bin/atris.js`
 
 ### Feature: Release (`atris release`)
 
