@@ -58,7 +58,7 @@ rg "logAtris|logsDigest|addInboxIdea|--repl" commands/log.js bin/atris.js test/l
 rg "logSyncAtris" commands/log-sync.js      # Log sync command
 rg "experimentsCommand" commands/experiments.js  # Experiments CLI command
 rg "loginAtris|switchAccount|useAccount|accountsCmd|showAuthHelp|--global|scope" bin/atris.js commands/auth.js lib/cli-scope.js test/dogfood-p1.test.js # Auth/account commands + workspace vs --global account list
-rg "doctorCommand|collectDoctor|task_support|public bin shim" commands/doctor.js bin/atris.js package.json test/dogfood-p1.test.js # atris doctor --json: node, task-support 22+, auth, workspace, tiny POSIX bin shim
+rg "doctorCommand|task_support|public bin shim" commands/doctor.js bin/atris.js package.json test/dogfood-p1.test.js # atris doctor --json: node, task-support 22+, auth, workspace, tiny POSIX bin shim (helpers stay internal)
 rg "agentDoctor|inspectAgentCliWiring|agent dogfood|agentDogfoodCommand|agentSpawnCommand|agent_spawns" bin/atris.js commands/agent-spawn.js test/commands.test.js test/agent-spawn.test.js commands/init.js # Local AI CLI wiring doctor, Devin/Droid GLM 5.2 dogfood smoke, durable worker spawn requests, and Devin init scaffold
 rg "activateAtris|showActivateHelp|activate and next --help" bin/atris.js commands/activate.js test/commands.test.js # Activate command + wiki status + non-mutating help
 rg "autopilotAtris|buildAutopilotGlassLog|writeAutopilotGlassLog|glassLogPath" commands/autopilot.js test/autopilot-glass-logging.test.js  # Autopilot command + glass phase receipt (plan -> review -> action -> result -> proof)
