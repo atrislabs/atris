@@ -460,6 +460,7 @@ async function planAtris(userInput = null) {
         .length
     : 0;
 
+  console.log(executionMode === 'prompt' ? 'PROMPT ONLY' : 'ACTION TAKEN');
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
   console.log('│ Atris Plan — Navigator Agent Activated                      │');
@@ -836,6 +837,7 @@ async function doAtris() {
   }
 
   // Prompt-mode output (keep concise by default)
+  console.log(executionMode === 'prompt' ? 'PROMPT ONLY' : 'ACTION TAKEN');
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
   console.log('│ Atris Do — Executor Agent Activated                         │');

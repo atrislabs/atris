@@ -14,6 +14,7 @@ const {
 const { loadConfig } = require('../utils/config');
 const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
+const { isNonInteractive } = require('../lib/noninteractive');
 const { planAtris, doAtris, reviewAtris } = require('./workflow');
 
 const pkg = require('../package.json');
@@ -27,10 +28,12 @@ async function brainstormAtris() {
     console.log('Description:');
     console.log('  Guided prompt generator for exploration before planning.');
     console.log('  Default is local-first; pass --cloud to include AtrisOS journal context.');
+    console.log('  Headless agents: pass the idea on the command line (never prompts).');
     console.log('');
     console.log('Options:');
     console.log('  --cloud      Include AtrisOS journal context (optional).');
     console.log('  --no-cloud   Force local-only mode (skip AtrisOS).');
+    console.log('  --yes        Non-interactive: capture idea args and exit.');
     console.log('');
     return;
   }
@@ -48,6 +51,21 @@ async function brainstormAtris() {
 
   const useCloudJournal = args.includes('--cloud') && !args.includes('--no-cloud');
   const topicFromArgs = args.filter((arg) => !arg.startsWith('-')).join(' ').trim() || null;
+
+  // Headless agents must never hang on "Describe the desired outcome".
+  if (isNonInteractive(args)) {
+    if (topicFromArgs) {
+      const newId = addInboxIdea(logFile, topicFromArgs);
+      console.log(`captured I${newId}: ${topicFromArgs}`);
+      console.log(`journal: ${path.relative(process.cwd(), logFile) || logFile}`);
+      console.log('Next: atris plan');
+      return;
+    }
+    console.log('brainstorm is interactive without an idea on the command line.');
+    console.log(`journal: ${path.relative(process.cwd(), logFile) || logFile}`);
+    console.log('Next: atris brainstorm "<idea>"');
+    return;
+  }
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');

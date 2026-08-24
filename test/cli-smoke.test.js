@@ -17,6 +17,20 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+function clearOpenTaskPlane(dir) {
+  try {
+    const db = taskDb.open();
+    const workspaceRoot = taskDb.workspaceRoot(dir);
+    db.prepare('DELETE FROM tasks WHERE workspace_root = ?').run(workspaceRoot);
+    const projection = taskDb.taskProjection(db, { workspaceRoot, limit: 500 });
+    const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+    fs.mkdirSync(path.dirname(projectionPath), { recursive: true });
+    fs.writeFileSync(projectionPath, `${JSON.stringify(projection, null, 2)}\n`, 'utf8');
+  } catch {
+    // No sqlite / empty plane is fine for these routing fixtures.
+  }
+}
+
 function runCli(args, { cwd, input, env } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
@@ -556,13 +570,14 @@ test('default entry auto-advances to plan when inbox has items', () => {
         fs.writeFileSync(path.join(yearDir, logFiles[0]), content, 'utf8');
       }
     }
-    // Also clear TODO.md backlog
+    // Also clear TODO.md backlog and the seeded SQLite task plane
     const todoPath = path.join(dir, 'atris', 'TODO.md');
     if (fs.existsSync(todoPath)) {
       let todo = fs.readFileSync(todoPath, 'utf8');
       todo = todo.replace(/## Backlog\n[\s\S]*?(?=\n---|\n##)/, '## Backlog\n\n(Empty)\n\n');
       fs.writeFileSync(todoPath, todo, 'utf8');
     }
+    clearOpenTaskPlane(dir);
     runCli(['log'], { cwd: dir, input: 'Idea one\nexit\n' });
 
     const res = runCli([], { cwd: dir });
@@ -644,6 +659,7 @@ test('default entry treats completed-only TODO rows as history', () => {
       `# TODO.md\n\n## Backlog\n\n(Empty)\n\n## In Progress\n\n(Empty)\n\n## Completed\n\n- validate thing\n`,
       'utf8'
     );
+    clearOpenTaskPlane(dir);
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
@@ -667,6 +683,7 @@ test('default entry routes active work before completed history', () => {
       `# TODO.md\n\n## Backlog\n\n- build the useful thing\n\n## In Progress\n\n(Empty)\n\n## Completed\n\n- validate old thing\n`,
       'utf8'
     );
+    clearOpenTaskPlane(dir);
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);

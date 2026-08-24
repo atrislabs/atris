@@ -158,7 +158,8 @@ async function runChat(business, prompt, token) {
   }
 }
 
-function printLocalPrompt(title, prompt, wikiRoot, details = []) {
+function printLocalPrompt(title, prompt, wikiRoot, details = [], modeLabel = 'PROMPT ONLY') {
+  console.log(modeLabel);
   console.log('');
   console.log(title);
   console.log(`Target: ${wikiRoot}`);
@@ -185,16 +186,17 @@ function printWikiHelp(scope = null) {
     console.log('Usage: atris wiki ingest [--private|--cloud] [business] <path>');
     console.log('');
     console.log('Stage source files into the local wiki context pack.');
+    console.log('This command stages files then prints a coding-agent prompt (ACTION TAKEN + PROMPT).');
   } else if (normalized === 'query') {
     console.log('Usage: atris query "question"');
     console.log('Usage: atris wiki query [--private|--cloud] [business] "question"');
     console.log('');
-    console.log('Build a local or cloud wiki query prompt.');
+    console.log('Build a local or cloud wiki query prompt (PROMPT ONLY).');
   } else if (normalized === 'lint') {
     console.log('Usage: atris lint');
     console.log('Usage: atris wiki lint [--private|--cloud] [business]');
     console.log('');
-    console.log('Build a local or cloud wiki lint prompt.');
+    console.log('Build a local or cloud wiki lint prompt (PROMPT ONLY).');
   } else if (normalized === 'consolidate') {
     console.log('Usage: atris wiki consolidate [--private]');
     console.log('');
@@ -327,7 +329,7 @@ async function wikiIngest(mode, slug, sourceValue) {
       `Pack: ${staged.packPath}`,
       `Manifest: ${staged.manifestPath}`,
       `Sources: ${staged.promptSource}`,
-    ]);
+    ], 'ACTION TAKEN');
     return;
   }
 
@@ -586,6 +588,7 @@ async function wikiCommand(subcommand, ...args) {
         console.error('Cloud loop is not implemented yet. Run local `atris loop` first.');
         process.exit(1);
       }
+      console.log('ACTION TAKEN');
       const { loopAtris } = require('./loop');
       await loopAtris(cleanArgs);
       break;

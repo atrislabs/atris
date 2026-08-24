@@ -440,8 +440,30 @@ function generateTags(folderName, description) {
 
 // --- Subcommand Handlers ---
 
-function skillList() {
+function skillList(...flags) {
+  const asJson = flags.includes('--json') || process.argv.includes('--json');
   const skills = findReadableSkills();
+
+  if (asJson) {
+    const rows = skills.map((skill) => {
+      const checks = runAuditChecks(skill);
+      const passing = checks.filter(c => c.pass).length;
+      const total = checks.length;
+      return {
+        name: skill.folder,
+        version: (skill.frontmatter || {}).version || null,
+        checks_passing: passing,
+        checks_total: total,
+        status: getStatus(checks),
+      };
+    });
+    console.log(JSON.stringify({
+      ok: true,
+      count: rows.length,
+      skills: rows,
+    }, null, 2));
+    return;
+  }
 
   if (skills.length === 0) {
     console.log('No skills found in local or bundled Atris skill roots.');
@@ -937,7 +959,7 @@ function skillCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'list':
     case 'ls':
-      return skillList();
+      return skillList(...args);
     case 'audit':
       return skillAudit(args[0] || '--all');
     case 'fix':
@@ -959,7 +981,7 @@ function skillCommand(subcommand, ...args) {
       console.log('  create <name>       Scaffold a new skill with SKILL.md template');
       console.log('  delete <name>       Remove a skill and all its symlinks');
       console.log('  link [name|--all]   Symlink skills to ~/.claude/skills/ (system-level)');
-      console.log('  list                Show all skills with compliance status');
+      console.log('  list [--json]       Show all skills with compliance status');
       console.log('  audit [name|--all]  Validate skill against Anthropic guide');
       console.log('  fix [name|--all]    Auto-fix common compliance issues');
       console.log('');
