@@ -1252,6 +1252,10 @@ const PAID_SEARCH_TIMEOUT_MS = 120000;
 const PAID_SEARCH_COST_HINT = '5 credits per search';
 const YTSEARCH_USAGE = 'usage: atris youtube search "<query>" [--limit N] [--json]';
 const SEARCH_PRINT_FORMAT = '%(title)s | %(channel)s | %(duration_string)s | %(view_count)s | %(upload_date)s | https://youtu.be/%(id)s';
+const LOCAL_SEARCH_RATE_LIMIT_BACKOFF_MS = 1000;
+const LOCAL_SEARCH_RATE_LIMIT_MESSAGE =
+  'youtube rate-limited local search. do not use --paid as a fallback; retry later.';
+const LOCAL_SEARCH_RATE_LIMIT_RE = /429|too many requests|confirm you['\u2019]re not a bot/i;
 
 function showYoutubeSearchHelp(output = console.log, commandName = 'atris youtube') {
   output('');
@@ -1548,6 +1552,34 @@ function defaultSearchRunner(query, limit, deps = {}) {
   ], options);
 }
 
+function searchRunnerDetail(result) {
+  return String(
+    (result && result.stderr) || (result && result.error && result.error.message) || 'search failed',
+  ).trim();
+}
+
+function isLocalSearchRateLimited(result) {
+  return LOCAL_SEARCH_RATE_LIMIT_RE.test(searchRunnerDetail(result));
+}
+
+function searchRunnerStatus(result) {
+  if (result && typeof result === 'object' && 'status' in result) return result.status;
+  return typeof result === 'number' ? result : 0;
+}
+
+async function waitLocalSearchBackoff(deps = {}) {
+  const ms = Number.isFinite(Number(deps.rateLimitBackoffMs))
+    ? Number(deps.rateLimitBackoffMs)
+    : LOCAL_SEARCH_RATE_LIMIT_BACKOFF_MS;
+  if (!(ms > 0)) return;
+  if (typeof deps.sleep === 'function') return deps.sleep(ms);
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isMissingSearchBinary(result) {
+  return Boolean(result && typeof result === 'object' && result.error && result.error.code === 'ENOENT');
+}
+
 async function runYoutubeSearch(args = [], deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
   let options;
@@ -1576,24 +1608,39 @@ async function runYoutubeSearch(args = [], deps = {}) {
   const runner = deps.runner || ((query, limit) => defaultSearchRunner(query, limit, deps));
   let result;
   try {
-    result = runner(options.query, options.limit, deps);
+    result = await Promise.resolve(runner(options.query, options.limit, deps));
   } catch (err) {
     output(String(err.message || err));
     return 1;
   }
 
-  if (result && typeof result === 'object' && result.error && result.error.code === 'ENOENT') {
+  if (isMissingSearchBinary(result)) {
     output('ytsearch and yt-dlp not found. Install yt-dlp or put ytsearch on PATH.');
     return 2;
   }
 
-  const status = result && typeof result === 'object' && 'status' in result
-    ? result.status
-    : (typeof result === 'number' ? result : 0);
+  let status = searchRunnerStatus(result);
+  if (status != null && status !== 0 && isLocalSearchRateLimited(result)) {
+    await waitLocalSearchBackoff(deps);
+    try {
+      result = await Promise.resolve(runner(options.query, options.limit, deps));
+    } catch (err) {
+      output(String(err.message || err));
+      return 1;
+    }
+    if (isMissingSearchBinary(result)) {
+      output('ytsearch and yt-dlp not found. Install yt-dlp or put ytsearch on PATH.');
+      return 2;
+    }
+    status = searchRunnerStatus(result);
+    if (status != null && status !== 0 && isLocalSearchRateLimited(result)) {
+      output(LOCAL_SEARCH_RATE_LIMIT_MESSAGE);
+      return status == null ? 1 : status;
+    }
+  }
+
   if (status != null && status !== 0) {
-    const detail = String(
-      (result && result.stderr) || (result && result.error && result.error.message) || 'search failed',
-    ).trim();
+    const detail = searchRunnerDetail(result);
     output(detail || 'search failed');
     return status == null ? 1 : status;
   }
