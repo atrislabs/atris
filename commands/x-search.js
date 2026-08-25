@@ -1,7 +1,7 @@
 'use strict';
 
 const { apiRequestJson } = require('../utils/api');
-const { ensureValidCredentials } = require('../utils/auth');
+const { ensureBilledCommandAuth } = require('./auth');
 
 const DEFAULT_TIMEOUT_MS = 120000;
 const COST_HINT = '5 credits per search';
@@ -225,30 +225,39 @@ function xSearchFailureError(result) {
 }
 
 async function ensureToken(deps = {}) {
-  const apiFn = deps.apiRequestJson || apiRequestJson;
-  const ensureFn = deps.ensureValidCredentials || ensureValidCredentials;
-  const ensured = await ensureFn(apiFn);
-  const creds = ensured && ensured.credentials;
-  if (!creds?.token) {
-    const detail = ensured?.detail || ensured?.error;
-    throw new Error(detail ? `Authentication failed: ${detail}. Run "atris login".` : 'Not logged in. Run "atris login".');
+  const ensureBilled = deps.ensureBilledCommandAuth || ensureBilledCommandAuth;
+  const auth = await ensureBilled('x-search', deps);
+  if (!auth?.ok || !auth.token) {
+    throw new Error(auth?.error || 'not signed in. run atris login first.');
   }
-  return creds.token;
+  return auth;
 }
 
 async function runXSearch(options, deps = {}) {
   const apiFn = deps.apiRequestJson || apiRequestJson;
-  const token = await ensureToken(deps);
+  let auth = await ensureToken(deps);
   const pathname = options.mode === 'person' ? '/x-search/research-person' : '/x-search/search';
   const body = options.mode === 'person' ? buildPersonPayload(options) : buildSearchPayload(options);
 
-  const result = await apiFn(pathname, {
+  const call = (token) => apiFn(pathname, {
     method: 'POST',
     token,
     timeoutMs: options.timeoutMs,
     retries: 0,
     body,
   });
+
+  let result = await call(auth.token);
+  if (!result.ok && result.status === 401 && !auth.minted) {
+    const remint = await (deps.ensureBilledCommandAuth || ensureBilledCommandAuth)('x-search', {
+      ...deps,
+      forceMint: true,
+    });
+    if (remint?.ok && remint.token) {
+      auth = remint;
+      result = await call(auth.token);
+    }
+  }
 
   if (!result.ok) {
     throw xSearchFailureError(result);
@@ -307,9 +316,18 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
     return 0;
   }
 
-  const data = await runXSearch(options, deps);
-  output(options.json ? JSON.stringify(data, null, 2) : formatXSearchResult(data));
-  return 0;
+  let status = 0;
+  try {
+    const data = await runXSearch(options, deps);
+    output(options.json ? JSON.stringify(data, null, 2) : formatXSearchResult(data));
+  } catch (err) {
+    output(err.message);
+    status = 1;
+  }
+  if (!deps.output && !deps.apiRequestJson && !deps.ensureValidCredentials && !deps.ensureBilledCommandAuth) {
+    process.exit(status);
+  }
+  return status;
 }
 
 module.exports = {

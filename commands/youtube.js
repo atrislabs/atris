@@ -1,5 +1,5 @@
 const { apiRequestJson } = require('../utils/api');
-const { ensureValidCredentials } = require('../utils/auth');
+const { ensureBilledCommandAuth } = require('./auth');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -389,13 +389,35 @@ async function extractLocalTranscript(youtubeUrl, deps = {}) {
 
 async function processYoutube(options, deps = {}) {
   const apiFn = deps.apiRequestJson || apiRequestJson;
-  const ensureFn = deps.ensureValidCredentials || ensureValidCredentials;
-  const ensured = await ensureFn(apiFn);
-  const creds = ensured && ensured.credentials;
-  if (!creds?.token) {
-    const detail = ensured?.detail || ensured?.error;
-    throw new Error(detail ? `Authentication failed: ${detail}. Run "atris login".` : 'Not logged in. Run "atris login".');
+  const ensureBilled = deps.ensureBilledCommandAuth || ensureBilledCommandAuth;
+  let auth = await ensureBilled('youtube', deps);
+  if (!auth?.ok || !auth.token) {
+    throw new Error(auth?.error || 'not signed in. run atris login first.');
   }
+
+  const requestYoutube = async (body) => {
+    let result = await apiFn('/agent/process_youtube', {
+      method: 'POST',
+      token: auth.token,
+      timeoutMs: options.timeoutMs,
+      retries: 0,
+      body,
+    });
+    if (!result.ok && result.status === 401 && !auth.minted) {
+      const remint = await ensureBilled('youtube', { ...deps, forceMint: true });
+      if (remint?.ok && remint.token) {
+        auth = remint;
+        result = await apiFn('/agent/process_youtube', {
+          method: 'POST',
+          token: auth.token,
+          timeoutMs: options.timeoutMs,
+          retries: 0,
+          body,
+        });
+      }
+    }
+    return result;
+  };
 
   const localExtractor = deps.extractLocalTranscript || extractLocalTranscript;
   let localTranscript = null;
@@ -406,13 +428,9 @@ async function processYoutube(options, deps = {}) {
   }
 
   if (localTranscript?.transcriptText) {
-    const transcriptResult = await apiFn('/agent/process_youtube', {
-      method: 'POST',
-      token: creds.token,
-      timeoutMs: options.timeoutMs,
-      retries: 0,
-      body: buildYoutubePayload({ ...options, localTranscript, cacheTranscript: false }),
-    });
+    const transcriptResult = await requestYoutube(
+      buildYoutubePayload({ ...options, localTranscript, cacheTranscript: false }),
+    );
 
     if (transcriptResult.ok) {
       return transcriptResult.data;
@@ -423,13 +441,7 @@ async function processYoutube(options, deps = {}) {
     }
   }
 
-  const result = await apiFn('/agent/process_youtube', {
-    method: 'POST',
-    token: creds.token,
-    timeoutMs: options.timeoutMs,
-    retries: 0,
-    body: buildYoutubePayload(options),
-  });
+  const result = await requestYoutube(buildYoutubePayload(options));
 
   if (!result.ok) {
     throw youtubeFailureError(result);
@@ -1473,9 +1485,18 @@ async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
     showYoutubeHelp(output, deps.commandName || 'atris youtube');
     return 0;
   }
-  const data = await processYoutube(options, deps);
-  output(options.json ? JSON.stringify(data, null, 2) : formatYoutubeResult(data));
-  return 0;
+  let status = 0;
+  try {
+    const data = await processYoutube(options, deps);
+    output(options.json ? JSON.stringify(data, null, 2) : formatYoutubeResult(data));
+  } catch (err) {
+    output(err.message);
+    status = 1;
+  }
+  if (!deps.output && !deps.apiRequestJson && !deps.ensureValidCredentials && !deps.ensureBilledCommandAuth && !deps.extractLocalTranscript) {
+    process.exit(status);
+  }
+  return status;
 }
 
 module.exports = {
