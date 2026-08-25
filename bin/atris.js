@@ -1356,10 +1356,10 @@ async function interactiveEntry(userInput, options = {}) {
       }, null, 2));
       return 2;
     }
-    printFirstMinuteScreen({ root: workspaceDir, fresh: true });
     if (shouldAutoInitFresh(process.argv.slice(2))) {
       return runMinimalInit();
     }
+    printFirstMinuteScreen({ root: workspaceDir, fresh: true });
     return 0;
   }
 
