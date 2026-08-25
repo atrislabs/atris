@@ -125,12 +125,12 @@ async function apiKeyCommand(args = [], deps = {}) {
       if (parsed.cap != null) body.monthly_spend_cap_usd = parsed.cap;
       result = await request('/developer/create-key', { method: 'POST', token, body });
     } else if (parsed.action === 'rotate') {
-      result = await request(`/agent/${encodeURIComponent(parsed.id)}/rotate-api-key`, {
+      result = await request(`/developer/keys/${encodeURIComponent(parsed.id)}/rotate`, {
         method: 'POST',
         token,
       });
     } else {
-      result = await request(`/agent/${encodeURIComponent(parsed.id)}/api-key`, {
+      result = await request(`/developer/keys/${encodeURIComponent(parsed.id)}`, {
         method: 'DELETE',
         token,
       });

@@ -171,26 +171,26 @@ test('api-key create and list 404s are graceful', async () => {
   assert.equal(JSON.parse(listIo.stdout.join('')).error, ROLLOUT_MESSAGE);
 });
 
-test('api-key rotate and revoke call agent routes', async () => {
+test('api-key rotate and revoke call owner-scoped developer routes', async () => {
   const rotateIo = capture();
   const rotateCode = await apiKeyCommand(['rotate', 'agent-1', '--json'], {
     loadCredentials: () => ({ token: 'tok' }),
     apiRequestJson: async (pathname, options) => {
-      assert.equal(pathname, '/agent/agent-1/rotate-api-key');
+      assert.equal(pathname, '/developer/keys/agent-1/rotate');
       assert.equal(options.method, 'POST');
-      return { ok: true, status: 200, data: { agent_id: 'agent-1', new_api_key: 'sk_live_new' } };
+      return { ok: true, status: 200, data: { agent_id: 'agent-1', api_key: 'sk_live_new' } };
     },
     log: rotateIo.log,
     err: rotateIo.err,
   });
   assert.equal(rotateCode, 0);
-  assert.equal(JSON.parse(rotateIo.stdout.join('')).new_api_key, 'sk_live_new');
+  assert.equal(JSON.parse(rotateIo.stdout.join('')).api_key, 'sk_live_new');
 
   const revokeIo = capture();
   const revokeCode = await apiKeyCommand(['revoke', 'agent-1', '--json'], {
     loadCredentials: () => ({ token: 'tok' }),
     apiRequestJson: async (pathname, options) => {
-      assert.equal(pathname, '/agent/agent-1/api-key');
+      assert.equal(pathname, '/developer/keys/agent-1');
       assert.equal(options.method, 'DELETE');
       return { ok: true, status: 200, data: { agent_id: 'agent-1', message: 'API key revoked.' } };
     },
