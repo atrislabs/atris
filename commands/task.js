@@ -13270,6 +13270,12 @@ async function run(args) {
     console.log('Usage: atris task next [--tag <tag>] [--create-next]');
     return;
   }
+  // `task show --help` is a help request, not a run. Show can dump
+  // a task card or the encyclopedia, so never list or show just to show usage.
+  if (sub === 'show' && argsWantHelp(raw.slice(1))) {
+    console.log('Usage: atris task show <id> [--json]');
+    return;
+  }
   const result = await runTaskCommand(raw);
   const skipsRender = sub === 'clear-done' && hasFlag(raw, '--dry-run');
   if (MUTATING_TASK_COMMANDS.has(sub) && !skipsRender) autoRenderTodoFromDb();

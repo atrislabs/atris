@@ -128,6 +128,7 @@ test/task-next-help.test.js
 test/task-next-truth.test.js
 test/task-proof-projection.test.js
 test/task-ready-help.test.js
+test/task-show-help.test.js
 test/task-step-help.test.js
 test/task-workspace-scope.test.js
 test/theme.test.js
