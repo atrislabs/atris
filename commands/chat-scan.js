@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const { hasFlag } = require('../lib/arg-parser');
 const { scanChatLogs, writeLatestScan } = require('../lib/chat-log-scan');
+const { parseScopeFlag } = require('../lib/cli-scope');
+const { requireAccountBound, refuseAccountGlobal } = require('../lib/account-bound');
 
 // Preserve the existing rule that the next token is a value, even if it is a flag.
 function readFollowingFlag(args, name, fallback) {
@@ -57,7 +59,7 @@ function printReport(report) {
 function chatScanCommand(argv = []) {
   const args = argv.filter((a) => a !== '--');
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help') {
-    console.log(`Usage: atris chat scan [--json] [--hours <n>] [--limit <n>] [--no-write]
+    console.log(`Usage: atris chat scan [--json] [--hours <n>] [--limit <n>] [--no-write] [--global]
 
 Read recent ax chat logs and Cursor agent transcripts; surface friction/errors.
 
@@ -65,8 +67,18 @@ Options:
   --hours <n>   Lookback window (default 720 = 30 days)
   --limit <n>   Max sessions per source (default 12)
   --no-write    Skip writing .atris/state/chat_scan.latest.json
-  --json        Machine-readable output`);
+  --json        Machine-readable output
+  --global      Include ~/.atris/runs (unbound folders need --account)`);
     return { ok: true };
+  }
+
+  const scope = parseScopeFlag(args);
+  if (scope.global) {
+    const gate = requireAccountBound(scope.args);
+    if (!gate.ok) {
+      refuseAccountGlobal();
+      process.exit(2);
+    }
   }
 
   const root = process.cwd();
@@ -77,8 +89,9 @@ Options:
 
   const report = scanChatLogs({
     cwd: root,
-    hours: readFollowingFlag(args, '--hours', 720),
-    limit: readFollowingFlag(args, '--limit', 12),
+    hours: readFollowingFlag(scope.args, '--hours', 720),
+    limit: readFollowingFlag(scope.args, '--limit', 12),
+    global: scope.global,
   });
 
   let latestPath = null;

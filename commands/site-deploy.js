@@ -51,13 +51,14 @@ function printHelp() {
   console.log(`
   atris site deploy: publish a web folder at a free atris.ai subdomain
 
-    atris site deploy <dir> --name <slug> [--spa] [--dry-run]
-    atris site deploy <dir> --fullstack --name <slug> [--dry-run]
-    atris site deploy dist --name my-site --api-base https://api.atris.ai
+    atris site deploy <dir> --name <slug> [--spa] [--dry-run] --yes
+    atris site deploy <dir> --fullstack --name <slug> [--dry-run] --yes
+    atris site deploy dist --name my-site --api-base https://api.atris.ai --yes
 
   names use lowercase letters, digits, and hyphens. files are capped at 2 mb
   each and 200 total. --spa enables single-page app routing. --fullstack
-  deploys a node server with a package.json start script.
+  deploys a node server with a package.json start script. --yes is required
+  to publish.
 `);
 }
 
@@ -70,6 +71,7 @@ function parseArgs(argv) {
     fullstack: false,
     dryRun: false,
     help: false,
+    yes: false,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -82,6 +84,8 @@ function parseArgs(argv) {
       options.fullstack = true;
     } else if (arg === '--dry-run') {
       options.dryRun = true;
+    } else if (arg === '--yes' || arg === '-y') {
+      options.yes = true;
     } else if (arg === '--name' || arg === '--api-base') {
       const value = argv[i + 1];
       if (!value || value.startsWith('-')) throw new Error(`${arg} needs a value`);
@@ -829,6 +833,10 @@ async function run(argv, deps = {}) {
       printFullstackPlan(options.name, packagePlan, log);
       return 0;
     }
+    if (!options.yes) {
+      errorLog('  Pass --yes to publish.');
+      return 2;
+    }
     return runFullstack(root, { ...options, apiBase }, packagePlan, deps);
   }
 
@@ -848,6 +856,11 @@ async function run(argv, deps = {}) {
     log(`  target ${liveUrl}`);
     log('  no network calls made');
     return 0;
+  }
+
+  if (!options.yes) {
+    errorLog('  Pass --yes to publish.');
+    return 2;
   }
 
   const readCredentials = deps.loadCredentials || loadCredentials;

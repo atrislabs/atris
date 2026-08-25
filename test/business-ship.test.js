@@ -185,12 +185,12 @@ test('business ship posts the contract and prints the live summary', async () =>
   };
 
   try {
-    const missing = await runCli(['business', 'ship'], { cwd, env });
+    const missing = await runCli(['business', 'ship', '--account'], { cwd, env });
     assert.notEqual(missing.status, 0);
     assert.match(missing.stderr, /Usage: atris business ship/);
 
     const loggedOutHome = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-business-ship-out-'));
-    const loggedOut = await runCli(['business', 'ship', 'A neighborhood coffee cart'], {
+    const loggedOut = await runCli(['business', 'ship', 'A neighborhood coffee cart', '--account', '--yes'], {
       cwd,
       env: { ...env, HOME: loggedOutHome },
     });
@@ -206,6 +206,8 @@ test('business ship posts the contract and prints the live summary', async () =>
       'Harbor Coffee',
       '--email',
       'maya@example.com',
+      '--account',
+      '--yes',
     ], { cwd, env });
     assert.equal(shipped.status, 0, shipped.stderr || shipped.stdout);
     assert.match(shipped.stdout, /Harbor Coffee \(harbor-coffee\)/);
@@ -238,7 +240,7 @@ test('business ship prints backend errors the same way create does', async () =>
   const server = await startShipApi(requests, { fail: true });
   writeCreds(home);
   try {
-    const res = await runCli(['business', 'ship', 'A neighborhood coffee cart'], {
+    const res = await runCli(['business', 'ship', 'A neighborhood coffee cart', '--account', '--yes'], {
       cwd,
       env: {
         ...process.env,

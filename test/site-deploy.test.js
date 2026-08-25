@@ -96,6 +96,27 @@ test('dry run prints the plan without loading credentials or making requests', a
   assert.ok(logs.some((line) => line.includes('no network calls made')));
 });
 
+test('live deploy without --yes does not publish', async (t) => {
+  const dir = scratch(t);
+  fs.writeFileSync(path.join(dir, 'index.html'), 'hello');
+  const logs = [];
+  const calls = [];
+
+  const code = await run([dir, '--name', 'no-yes-site'], {
+    loadCredentials: () => ({ token: 'user-token' }),
+    log: (line) => logs.push(line),
+    error: (line) => logs.push(line),
+    httpRequest: async (url, options) => {
+      calls.push({ url, options });
+      return response(200, {});
+    },
+  });
+
+  assert.equal(code, 2);
+  assert.equal(calls.length, 0);
+  assert.ok(logs.some((line) => /Pass --yes/.test(line)));
+});
+
 test('fullstack preflight rejects a directory without package.json', async (t) => {
   const dir = scratch(t);
   const logs = [];
@@ -165,7 +186,7 @@ test('fullstack deploy creates render config and tolerates an unknown proxy_targ
   const logs = [];
   const calls = [];
 
-  const code = await run([dir, '--fullstack', '--name', 'wired-app'], {
+  const code = await run([dir, '--fullstack', '--name', 'wired-app', '--yes'], {
     renderApiKey: 'render-secret',
     loadCredentials: () => ({ token: 'user-token' }),
     log: (line) => logs.push(line),
@@ -236,7 +257,7 @@ test('deploy creates the site and bulk upserts pages with the exact body', async
   const calls = [];
   const logs = [];
 
-  const code = await run([dir, '--name', 'exact-body', '--api-base', 'http://localhost:9876'], {
+  const code = await run([dir, '--name', 'exact-body', '--api-base', 'http://localhost:9876', '--yes'], {
     homedir: () => home,
     loadCredentials: () => ({ token: 'user-token' }),
     log: (line) => logs.push(line),
@@ -270,7 +291,7 @@ test('spa deploy patches an existing site and uploads in batches of fifty', asyn
   const home = scratch(t, 'atris-site-home-');
   const calls = [];
 
-  const code = await run([dir, '--name', 'spa-site', '--spa'], {
+  const code = await run([dir, '--name', 'spa-site', '--spa', '--yes'], {
     homedir: () => home,
     loadCredentials: () => ({ token: 'user-token' }),
     log: () => {},
@@ -297,7 +318,7 @@ test('deploy registers the subdomain before a failed page upload and prints a co
   const logs = [];
   const errors = [];
 
-  const code = await run([dir, '--name', 'upload-failure'], {
+  const code = await run([dir, '--name', 'upload-failure', '--yes'], {
     renderApiKey: 'render-secret',
     loadCredentials: () => ({ token: 'user-token' }),
     log: (line) => logs.push(line),
@@ -334,7 +355,7 @@ test('spa deploy warns and retries creation when the server rejects the spa fiel
   const calls = [];
   const logs = [];
 
-  const code = await run([dir, '--name', 'spa-fallback', '--spa'], {
+  const code = await run([dir, '--name', 'spa-fallback', '--spa', '--yes'], {
     homedir: () => home,
     loadCredentials: () => ({ token: 'user-token' }),
     log: (line) => logs.push(line),

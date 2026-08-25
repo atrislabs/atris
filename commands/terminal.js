@@ -27,6 +27,8 @@ const path = require('path');
 const { loadCredentials, abortOnAuthFailure } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
+const { requireAccountBound, refuseAccountGlobal } = require('../lib/account-bound');
+const { argsWantHelp, wantsJson } = require('../lib/noninteractive');
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -103,16 +105,30 @@ async function terminalAtris() {
   //   atris terminal --help
   const args = process.argv.slice(3);
 
-  if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
-    console.log('Usage: atris terminal [business] <command> [--timeout N]');
-    console.log('');
-    console.log('  atris terminal example-co "ls /workspace/atris/"');
-    console.log('  atris terminal "find /workspace -name \\"*.md\\""    # auto-detect business');
-    console.log('  atris terminal example-co "rm -rf /workspace/cruft" --timeout 30');
-    console.log('');
-    console.log('  --timeout N    seconds to wait for the command (default 30, max 120)');
-    process.exit(0);
+  if (args.length === 0 || argsWantHelp(args) || wantsJson(args)) {
+    const usage = 'Usage: atris terminal [business] <command> [--timeout N]';
+    if (wantsJson(args)) {
+      console.log(JSON.stringify({
+        ok: false,
+        command: 'terminal',
+        error: 'usage',
+        usage,
+      }, null, 2));
+    } else {
+      console.log(usage);
+      console.log('');
+      console.log('  atris terminal example-co "ls /workspace/atris/"');
+      console.log('  atris terminal "find /workspace -name \\"*.md\\""    # auto-detect business');
+      console.log('  atris terminal example-co "rm -rf /workspace/cruft" --timeout 30');
+      console.log('');
+      console.log('  --timeout N    seconds to wait for the command (default 30, max 120)');
+    }
+    process.exit(2);
   }
+
+  const gate = requireAccountBound(args);
+  if (!gate.ok) process.exit(refuseAccountGlobal());
+  args.splice(0, args.length, ...gate.args);
 
   // Parse --timeout
   let timeoutSec = 30;

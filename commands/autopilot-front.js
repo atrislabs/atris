@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { pickRunnableMission, runBudgetSeconds } = require('./run-front');
-const { refuseHeadlessUnless } = require('../lib/noninteractive');
+const { refuseHeadlessUnless, wantsJson, hasYesFlag } = require('../lib/noninteractive');
 
 const CLI_PATH = path.join(__dirname, '..', 'bin', 'atris.js');
 const DEFAULT_LEG_WALL_SECONDS = 3600;
@@ -121,18 +121,25 @@ function legPlan(root, legWallSeconds) {
   };
 }
 
+function watchStopFile(root, child, { intervalMs = 2000 } = {}) {
+  const poll = setInterval(() => {
+    if (stopRequested(root)) {
+      try { child.kill('SIGTERM'); } catch {}
+    }
+  }, intervalMs);
+  if (poll.unref) poll.unref();
+  return () => clearInterval(poll);
+}
+
 function driveLeg(root, legArgs, current) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [CLI_PATH, ...legArgs], { cwd: root, stdio: 'inherit' });
     current.child = child;
     // Stop fast: a stop file written by `atris autopilot stop` in another
     // terminal terminates the running leg, not just the loop between legs.
-    const poll = setInterval(() => {
-      if (stopRequested(root)) { try { child.kill('SIGTERM'); } catch {} }
-    }, 2000);
-    if (poll.unref) poll.unref();
+    const stopWatch = watchStopFile(root, child);
     const finish = (code) => {
-      clearInterval(poll);
+      stopWatch();
       current.child = null;
       resolve(Number.isFinite(code) ? code : 1);
     };
@@ -195,6 +202,18 @@ async function autopilotFront(args = []) {
   if (args[0] === 'stop') return autopilotStop(root);
   if (args[0] === 'status') return autopilotStatus(root);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') { showFrontHelp(); return 0; }
+  if (wantsJson(args) && !hasYesFlag(args) && !args.includes('--auto') && !args.includes('--once')) {
+    const state = readState(root);
+    const alive = Boolean(state && pidAlive(state.pid));
+    console.log(JSON.stringify({
+      ok: false,
+      command: 'autopilot',
+      running: alive,
+      error: 'pass --yes to start',
+      usage: 'atris autopilot [--yes|--auto|--once]',
+    }, null, 2));
+    return 2;
+  }
   // Bare headless invoke used to start a mission loop and hang. --auto is
   // the existing proceed flag pulse and spaceship already pass.
   if (!args.includes('--auto') && refuseHeadlessUnless(args, {
@@ -292,4 +311,5 @@ module.exports = {
   clearStop,
   readState,
   writeState,
+  watchStopFile,
 };
