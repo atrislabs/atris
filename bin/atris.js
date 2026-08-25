@@ -530,6 +530,7 @@ function showHelpAll() {
   console.log('  atris task ready <id> --proof "..."');
   console.log('  atris computer');
   console.log('  atris engine validate latest');
+  console.log('  atris playbook                 workspace style rules');
   console.log('  atris business init "My Company"');
   console.log('  atris run');
   console.log('  atris drill');
@@ -3034,6 +3035,13 @@ if (command === 'init') {
   Promise.resolve(require('../commands/engine').engineCommand(engineArgs))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'playbook') {
+  try {
+    process.exit(require('../commands/playbook').playbookCommand(process.argv.slice(3)) || 0);
+  } catch (err) {
+    console.error(`playbook could not continue: ${err.message || err}`);
+    process.exit(1);
+  }
 } else if (command === 'sign') {
   // Sign: prepare-commit-msg hook that credits Atris as co-author on commits in atris workspaces.
   try { process.exit(require('../commands/sign').signCommand(process.argv[3]) || 0); }
