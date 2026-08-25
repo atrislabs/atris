@@ -31,13 +31,26 @@ test('main help is short; help --all surfaces the golden path workflow', () => {
   assert.ok(shortLines <= 16, `default help should fit one screen, got ${shortLines} non-empty lines`);
   assert.match(mainHelp.stdout, /Golden path:/);
   assert.match(mainHelp.stdout, /help --all/);
+  assert.match(mainHelp.stdout, /atris: you say what you want; atris builds it, checks it, and shows proof\./);
+  assert.doesNotMatch(mainHelp.stdout, /\u2014/);
   assert.doesNotMatch(mainHelp.stdout, /atris task delegate "fix the login bug"/);
+  assert.doesNotMatch(mainHelp.stdout, /atris ask |atris stop |atris ready /);
+
+  const dashHelp = runCli(['--help']);
+  assert.equal(dashHelp.status, 0, dashHelp.stderr);
+  assert.equal(dashHelp.stdout, mainHelp.stdout);
 
   const allHelp = runCli(['help', '--all']);
   assert.equal(allHelp.status, 0, allHelp.stderr);
   assert.match(allHelp.stdout, /golden path \(one tick, by cron or by hand\):/);
   assert.match(allHelp.stdout, /atris task delegate "fix the login bug" --to <member>/);
   assert.match(allHelp.stdout, /atris autoland tick   # second check runs, task lands/);
+  assert.match(allHelp.stdout, /atris task ready <id> --proof/);
+  assert.match(allHelp.stdout, /atris mission status/);
+  assert.match(allHelp.stdout, /ask\/stop\/ready\s+see atris mission and atris task ready/);
+  assert.doesNotMatch(allHelp.stdout, /atris ask "what you want"/);
+  assert.doesNotMatch(allHelp.stdout, /atris stop\s+Stop the current mission/);
+  assert.doesNotMatch(allHelp.stdout, /atris ready --json\s+Show which mission features are ready/);
   assert.ok(allHelp.stdout.split(/\r?\n/).length > mainHelp.stdout.split(/\r?\n/).length);
 
   const taskHelp = runCli(['task', 'help']);
