@@ -3,8 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const { buildRecapData, renderRecap, renderShare } = require('../commands/recap');
+
+const repoRoot = path.resolve(__dirname, '..');
+const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-recap-test-'));
@@ -22,9 +26,25 @@ function seedDb(dir, tasks) {
   const db = taskDb.open(dbPath);
   const ws = taskDb.workspaceRoot(dir);
   for (const t of tasks) {
-    const { id } = taskDb.addTask(db, { title: t.title, workspaceRoot: ws, status: t.status === 'done' ? 'open' : t.status, claimedBy: t.claimedBy });
+    const { id } = taskDb.addTask(db, {
+      title: t.title,
+      workspaceRoot: ws,
+      status: t.status === 'done' ? 'open' : t.status,
+      claimedBy: t.claimedBy,
+      metadata: t.metadata,
+    });
     if (t.proof) {
       taskDb.readyTask(db, { id, actor: 'tester', proof: t.proof });
+    }
+    if (t.certified) {
+      const row = taskDb.getTask(db, id);
+      const meta = {
+        ...(row.metadata || {}),
+        agent_certified: true,
+        agent_review_pass_count: 2,
+      };
+      db.prepare('UPDATE tasks SET status = ?, metadata = ?, updated_at = ? WHERE id = ?')
+        .run('review', JSON.stringify(meta), Date.now(), id);
     }
     if (t.status === 'done') {
       db.prepare('UPDATE tasks SET status = ?, done_at = ?, updated_at = ? WHERE id = ?')
@@ -32,6 +52,34 @@ function seedDb(dir, tasks) {
     }
   }
   return { db, ws };
+}
+
+function writeProjection(dir, tasks) {
+  fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, '.atris', 'state', 'tasks.projection.json'),
+    JSON.stringify({ schema: 'atris.task_projection.v1', tasks }, null, 2),
+    'utf8'
+  );
+}
+
+function runCli(args, { cwd, env, timeout = 15000 } = {}) {
+  const result = spawnSync(process.execPath, [cliPath, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout,
+    env: {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_NO_INTERACTIVE: '1',
+      ...(env || {}),
+    },
+  });
+  if (result.error && result.error.code === 'ETIMEDOUT') {
+    assert.fail(`cli hung past ${timeout}ms (args: ${args.join(' ') || '(none)'})`);
+  }
+  if (result.error) throw result.error;
+  return result;
 }
 
 function resetDbEnv() {
@@ -67,8 +115,10 @@ test('buildRecapData buckets shipped, waiting, and in-progress with proof counts
     assert.equal(data.empty, false);
     assert.equal(data.shipped.length, 1);
     assert.equal(data.shipped[0].title, 'Fix the login crash');
-    assert.equal(data.waiting.length, 1, 'readyTask moves claimed->review, lands in waiting');
+    assert.equal(data.waiting.length, 0, 'one-pass readyTask is not certified, so it is not needs-you');
+    assert.equal(data.checking.length, 1, 'readyTask moves claimed->review, lands in still being checked');
     assert.equal(data.inProgress.length, 1);
+    assert.equal(data.next, null);
     assert.equal(data.proof_attached, 2);
     assert.equal(data.proof_total, 2);
   } finally {
@@ -82,16 +132,18 @@ test('renderRecap speaks plain English with checks and no internal jargon', () =
   try {
     seedDb(dir, [
       { title: 'Fix the login crash', status: 'done', proof: 'node --test test/login.test.js -> pass', doneAt: Date.now() - 1000 },
-      { title: 'Speed up the dashboard', status: 'claimed', claimedBy: 'agent-a', proof: 'bench: 2.1s -> 0.4s' },
+      { title: 'Speed up the dashboard', status: 'claimed', claimedBy: 'agent-a', proof: 'bench: 2.1s -> 0.4s', certified: true },
     ]);
-    const out = renderRecap(buildRecapData(dir, { days: 7 }));
+    const data = buildRecapData(dir, { days: 7 });
+    const out = renderRecap(data);
     assert.match(out, /Plain English: what changed, how it was checked, and what still needs you/);
     assert.match(out, /DONE — 1/);
     assert.match(out, /Fix the login crash/);
     assert.match(out, /checked: tests passed/);
     assert.match(out, /NEEDS YOU — 1/);
     assert.match(out, /checked: measured improvement/);
-    assert.match(out, /next: run atris task reviews/);
+    assert.match(out, new RegExp(`next: atris task accept ${data.waiting[0].id}`));
+    assert.doesNotMatch(out, /task reviews/);
     for (const jargon of [/\bproof\b/i, /receipt/i, /sign-off/i, /\blane\b/i, /certified/i, /projection/i, /\brung\b/i, /AgentXP/i]) {
       assert.doesNotMatch(out, jargon);
     }
@@ -173,9 +225,158 @@ test('buildRecapData falls back to projection JSON when the db is unavailable', 
     assert.equal(data.empty, false);
     assert.equal(data.shipped.length, 1);
     assert.equal(data.shipped[0].id, 'T-1');
-    assert.equal(data.waiting.length, 1);
+    assert.equal(data.waiting.length, 0);
+    assert.equal(data.checking.length, 1);
+    assert.equal(data.checking[0].id, 'T-2');
+    assert.equal(data.next, null);
   } finally {
     resetDbEnv();
     cleanup(dir);
+  }
+});
+
+test('recap treats only certified review as needs you, same as first-minute', () => {
+  const dir = makeTempDir();
+  try {
+    process.env.ATRIS_TASKS_DB = path.join(dir, 'empty.db');
+    require('../lib/task-db').close();
+    writeProjection(dir, [
+      {
+        id: 'task-1',
+        display_id: 'UNW-1',
+        title: 'Open follow-up',
+        status: 'open',
+        updated_at: 10,
+      },
+      {
+        id: 'task-2',
+        display_id: 'UNW-2',
+        title: 'Print a human line like 4 words so the count is easy to read.',
+        status: 'review',
+        updated_at: 20,
+        review: { agent_certified: true, agent_review_pass_count: 2 },
+      },
+      {
+        id: 'task-3',
+        display_id: 'UNW-3',
+        title: 'Second check still open',
+        status: 'review',
+        updated_at: 30,
+        review: { agent_review_pass_count: 1 },
+      },
+      {
+        id: 'task-4',
+        display_id: 'UNW-4',
+        title: 'Newer review still waiting',
+        status: 'review',
+        updated_at: 40,
+        review: { agent_review_pass_count: 1 },
+      },
+    ]);
+    const data = buildRecapData(dir, { days: 7 });
+    const out = renderRecap(data);
+    assert.equal(data.waiting.map(t => t.id).join(','), 'UNW-2');
+    assert.deepEqual(data.checking.map(t => t.id), ['UNW-4', 'UNW-3']);
+    assert.equal(data.next, 'atris task accept UNW-2');
+    assert.match(out, /1 needs you/);
+    assert.match(out, /2 still being checked/);
+    assert.match(out, /1 still working/);
+    assert.match(out, /NEEDS YOU — 1/);
+    assert.match(out, /UNW-2/);
+    assert.match(out, /^ {2}next: atris task accept UNW-2$/m);
+    assert.match(out, /STILL BEING CHECKED — 2/);
+    assert.match(out, /UNW-3/);
+    assert.match(out, /UNW-4/);
+    assert.doesNotMatch(out, /3 needs you/);
+    assert.doesNotMatch(out, /task reviews/);
+    const share = renderShare(data);
+    assert.match(share, /1 ready for you to approve or send back/);
+    assert.match(share, /2 still being checked/);
+    assert.doesNotMatch(share, /3 ready for you to approve/);
+  } finally {
+    resetDbEnv();
+    cleanup(dir);
+  }
+});
+
+test('two-pass review without the certified flag still needs you', () => {
+  const dir = makeTempDir();
+  try {
+    process.env.ATRIS_TASKS_DB = path.join(dir, 'empty.db');
+    require('../lib/task-db').close();
+    writeProjection(dir, [{
+      id: 'task-8',
+      display_id: 'UNW-8',
+      title: 'Two pass no flag',
+      status: 'review',
+      updated_at: 10,
+      review: { agent_review_pass_count: 2 },
+    }]);
+    const data = buildRecapData(dir, { days: 7 });
+    assert.equal(data.waiting.map(t => t.id).join(','), 'UNW-8');
+    assert.equal(data.checking.length, 0);
+    assert.equal(data.next, 'atris task accept UNW-8');
+    assert.match(renderRecap(data), /^ {2}next: atris task accept UNW-8$/m);
+  } finally {
+    resetDbEnv();
+    cleanup(dir);
+  }
+});
+
+test('headless recap on mixed review board names one accept and does not prompt', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-recap-parent-'));
+  const dir = path.join(parent, 'atris-use-now');
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    writeProjection(dir, [
+      {
+        id: 'task-2',
+        display_id: 'UNW-2',
+        title: 'Print a human line like 4 words so the count is easy to read.',
+        status: 'review',
+        updated_at: 20,
+        review: { agent_certified: true, agent_review_pass_count: 2 },
+      },
+      {
+        id: 'task-3',
+        display_id: 'UNW-3',
+        title: 'Second check still open',
+        status: 'review',
+        updated_at: 30,
+        review: { agent_review_pass_count: 1 },
+      },
+      {
+        id: 'task-4',
+        display_id: 'UNW-4',
+        title: 'Newer review still waiting',
+        status: 'review',
+        updated_at: 40,
+        review: { agent_review_pass_count: 1 },
+      },
+    ]);
+    const env = {
+      HOME: path.join(parent, 'home'),
+      USER: 'keshavrao',
+      ATRIS_TASKS_DB: path.join(dir, 'empty.db'),
+      ATRIS_NO_INTERACTIVE: '1',
+    };
+    const recap = runCli(['recap'], { cwd: dir, env });
+    assert.equal(recap.status, 0, recap.stderr || recap.stdout);
+    assert.match(recap.stdout, /1 needs you/);
+    assert.match(recap.stdout, /2 still being checked/);
+    assert.match(recap.stdout, /^ {2}next: atris task accept UNW-2$/m);
+    assert.doesNotMatch(recap.stdout, /3 needs you/);
+    assert.doesNotMatch(recap.stdout, /task reviews/);
+    assert.doesNotMatch(recap.stdout, /\? $/m);
+    assert.doesNotMatch(recap.stdout, /What do you want/);
+    const json = runCli(['recap', '--json'], { cwd: dir, env });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.next, 'atris task accept UNW-2');
+    assert.equal(payload.waiting.length, 1);
+    assert.equal(payload.checking.length, 2);
+  } finally {
+    resetDbEnv();
+    cleanup(parent);
   }
 });

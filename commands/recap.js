@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { isCertifiedReview } = require('../lib/first-minute');
 const { isRealTestRunnerProof, quoteVerifierCommand } = require('../lib/verifier-quality');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -31,8 +32,10 @@ function loadTasks(root) {
       const db = taskDb.open();
       const ws = taskDb.workspaceRoot(root);
       const rows = taskDb.listTasks(db, { workspaceRoot: ws });
-      const refs = taskDb.taskDisplayRefMap(rows);
-      return rows.map(row => ({ ...row, display_id: refs.get(row.id) || row.id.slice(-6) }));
+      if (Array.isArray(rows) && rows.length) {
+        const refs = taskDb.taskDisplayRefMap(rows);
+        return rows.map(row => ({ ...row, display_id: refs.get(row.id) || row.id.slice(-6) }));
+      }
     } catch (e) {
       // fall through to projection
     }
@@ -108,28 +111,38 @@ function buildRecapData(root = process.cwd(), { days = DEFAULT_DAYS } = {}) {
     done_at: t.done_at || null,
   });
 
+  const newestFirst = (a, b) => (
+    Number(b.updated_at || b.created_at || 0) - Number(a.updated_at || a.created_at || 0)
+  );
   const shipped = tasks
     .filter(t => t.status === 'done' && Number(t.done_at || 0) >= cutoff)
     .sort((a, b) => Number(b.done_at || 0) - Number(a.done_at || 0))
     .map(pick);
-  const waiting = tasks
-    .filter(t => t.status === 'review')
-    .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
+  const reviewTasks = tasks.filter(t => t.status === 'review');
+  const waiting = reviewTasks
+    .filter(isCertifiedReview)
+    .sort(newestFirst)
+    .map(pick);
+  const checking = reviewTasks
+    .filter(t => !isCertifiedReview(t))
+    .sort(newestFirst)
     .map(pick);
   const inProgress = tasks
     .filter(t => t.status === 'open' || t.status === 'claimed')
     .map(pick);
 
-  const withProof = [...shipped, ...waiting].filter(t => t.proof).length;
+  const withProof = [...shipped, ...waiting, ...checking].filter(t => t.proof).length;
   return {
     empty: false,
     days: windowDays,
     workspace: path.basename(root),
     shipped,
     waiting,
+    checking,
     inProgress,
+    next: waiting.length ? `atris task accept ${waiting[0].id}` : null,
     proof_attached: withProof,
-    proof_total: shipped.length + waiting.length,
+    proof_total: shipped.length + waiting.length + checking.length,
   };
 }
 
@@ -149,8 +162,9 @@ function renderRecap(data) {
   const headline = [];
   if (data.shipped.length) headline.push(`${data.shipped.length} done`);
   if (data.waiting.length) headline.push(`${data.waiting.length} needs you`);
+  if (data.checking.length) headline.push(`${data.checking.length} still being checked`);
   if (data.inProgress.length) headline.push(`${data.inProgress.length} still working`);
-  lines.push(headline.length ? headline.join(' · ') : 'Quiet window — no movement in this period.');
+  lines.push(headline.length ? headline.join(' · ') : 'Quiet window. nothing moved in this period.');
 
   if (data.shipped.length) {
     lines.push('');
@@ -172,7 +186,16 @@ function renderRecap(data) {
       if (check) lines.push(`          checked: ${check}`);
     }
     if (data.waiting.length > 10) lines.push(`  … and ${data.waiting.length - 10} more`);
-    lines.push('  next: run atris task reviews');
+    if (data.next) lines.push(`  next: ${data.next}`);
+  }
+
+  if (data.checking.length) {
+    lines.push('');
+    lines.push(`STILL BEING CHECKED — ${data.checking.length}`);
+    for (const t of data.checking.slice(0, 10)) {
+      lines.push(`  ${t.id}  ${shortTitle(t.title)}`);
+    }
+    if (data.checking.length > 10) lines.push(`  … and ${data.checking.length - 10} more`);
   }
 
   if (data.inProgress.length) {
@@ -196,6 +219,7 @@ function renderShare(data) {
   lines.push('');
   if (data.shipped.length) lines.push(`- ${data.shipped.length} done and accepted`);
   if (data.waiting.length) lines.push(`- ${data.waiting.length} ready for you to approve or send back`);
+  if (data.checking.length) lines.push(`- ${data.checking.length} still being checked`);
   if (data.inProgress.length) lines.push(`- ${data.inProgress.length} still being worked on`);
   const highlights = [...data.shipped, ...data.waiting].filter(t => t.proof).slice(0, 5);
   if (highlights.length) {
@@ -214,7 +238,7 @@ function printRecapHelp() {
   console.log(`
 atris recap - what got done, in plain English
 
-  atris recap              Last 7 days: done, needs you, still working
+  atris recap              Last 7 days: done, needs you, still being checked, still working
   atris recap --days 30    Widen the window
   atris recap --share      Paste-ready summary for Slack, email, or a customer
   atris recap --json       Structured output for agents and dashboards

@@ -1009,13 +1009,14 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Entry point:** `commands/recap.js` (`recapAtris`, `buildRecapData`, `renderRecap`, `renderShare`)
 - **Routing:** `bin/atris.js` (`command === 'recap'` branch, `knownCommands` list, Context & tracking help line)
-- **Data sources:** task DB via `lib/task-db` (`listTasks` + `taskDisplayRefMap`), fallback `.atris/state/tasks.projection.json`, graceful empty state
-- **Buckets:** shipped = `done` within `--days` window (default 7); waiting = `review` (proven, needs human accept); in progress = `open`/`claimed`
+- **Data sources:** task DB via `lib/task-db` (`listTasks` + `taskDisplayRefMap`); empty or missing db falls through to `.atris/state/tasks.projection.json`, same as first-minute
+- **Buckets:** shipped = `done` within `--days` window (default 7); waiting = certified / two-pass `review` via `lib/first-minute.js` `isCertifiedReview` (needs human accept); checking = uncertified `review` (still being checked, not needs-you); in progress = `open`/`claimed`
+- **Next:** one certified accept names `atris task accept <id>`; recap does not send humans to `atris task reviews` when that accept is the next move
 - **Proof line:** `metadata.latest_agent_proof` (or certified marker), compressed to one line per item
 - **Modes:** default report, `--share` (paste-ready for Slack/email/customer), `--json` (agents/dashboards), `--days N`
-- **Regression:** `test/recap.test.js` (buckets, jargon ban, share format, projection fallback, empty workspace)
+- **Regression:** `test/recap.test.js` (buckets, jargon ban, share format, projection fallback, empty workspace, certified-only needs-you, headless mixed board)
 
-**Search:** `rg "recapAtris|plainCheck|isRealTestRunnerProof|classifyVerifier" commands/recap.js lib/verifier-quality.js commands/task.js test/recap.test.js test/dogfood-p1.test.js`
+**Search:** `rg "recapAtris|plainCheck|isCertifiedReview|isRealTestRunnerProof|classifyVerifier" commands/recap.js lib/first-minute.js lib/verifier-quality.js commands/task.js test/recap.test.js test/dogfood-p1.test.js`
 rg "fleetWorkspaceStatus|fleet --global" commands/fleet.js test/dogfood-p1.test.js # Fleet defaults to workspace; --global hits Swarlo
 rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js test/dogfood-p1.test.js # Engine roster workspace vs --global
 
