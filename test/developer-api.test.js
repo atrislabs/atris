@@ -24,6 +24,11 @@ const { knownCommands } = require('../lib/known-commands');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
+// Spawn the CLI from a temp dir, never the repo root: a repo-root cwd makes
+// the CLI mutate the checkout's own .atris/state during the suite (CLI-1241).
+const scratchCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-developer-api-'));
+test.after(() => fs.rmSync(scratchCwd, { recursive: true, force: true }));
+
 function capture() {
   const stdout = [];
   const stderr = [];
@@ -48,7 +53,7 @@ function cliEnv(extra = {}) {
 
 function runCli(args, extraEnv) {
   return spawnSync(process.execPath, [cliPath, ...args], {
-    cwd: repoRoot,
+    cwd: scratchCwd,
     encoding: 'utf8',
     env: cliEnv(extraEnv),
   });

@@ -10,7 +10,7 @@ const { missionHeartbeatLines } = require('../commands/mission');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-const { withMissionFullJson } = require('./helpers/mission-json');
+const { withMissionFullJson, jsonErrorDetail } = require('./helpers/mission-json');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-run-reliability-'));
@@ -200,7 +200,7 @@ test('a second mission driver exits before spawning a colliding tick', () => {
     const result = runCli(['mission', 'run', mission.id, '--no-claude', '--json'], dir);
     assert.equal(result.status, 3);
     assert.equal(
-      JSON.parse(result.stdout).error,
+      jsonErrorDetail(JSON.parse(result.stdout)),
       `another driver is already running mission ${mission.id} (pid ${process.pid})`,
     );
   } finally {
@@ -251,7 +251,7 @@ setTimeout(() => {
     const secondRun = runCli(['mission', 'run', mission.id, '--no-claude', '--json'], dir, env);
     assert.equal(secondRun.status, 3);
     assert.equal(
-      JSON.parse(secondRun.stdout).error,
+      jsonErrorDetail(JSON.parse(secondRun.stdout)),
       `another driver is already running mission ${mission.id} (pid ${lock.pid})`,
     );
 

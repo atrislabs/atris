@@ -19,15 +19,42 @@ function assertOk(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function textFromWriteSync(data, offset, length) {
+  if (Buffer.isBuffer(data)) {
+    const start = Number.isInteger(offset) ? offset : 0;
+    const end = Number.isInteger(length) ? start + length : data.length;
+    return data.toString('utf8', start, end);
+  }
+  return String(data);
+}
+
 async function captureCommand(fn) {
   const originalLog = console.log;
   const originalError = console.error;
   const originalExit = process.exit;
+  const originalWriteSync = fs.writeSync;
   const originalExitCode = process.exitCode;
   const stdout = [];
   const stderr = [];
+  let stdoutWrites = '';
+  let stderrWrites = '';
+  const stdoutFd = process.stdout.fd;
+  const stderrFd = process.stderr.fd;
   console.log = (...args) => stdout.push(args.map(String).join(' '));
   console.error = (...args) => stderr.push(args.map(String).join(' '));
+  fs.writeSync = function captureWriteSync(fd, data, offset, length) {
+    if (fd === stdoutFd || fd === process.stdout.fd) {
+      const text = textFromWriteSync(data, offset, length);
+      stdoutWrites += text;
+      return Buffer.byteLength(text);
+    }
+    if (fd === stderrFd || fd === process.stderr.fd) {
+      const text = textFromWriteSync(data, offset, length);
+      stderrWrites += text;
+      return Buffer.byteLength(text);
+    }
+    return originalWriteSync.apply(this, arguments);
+  };
   process.exitCode = undefined;
   process.exit = (code = 0) => {
     const error = new Error(`process.exit(${code})`);
@@ -37,16 +64,21 @@ async function captureCommand(fn) {
   };
   try {
     const value = await fn();
-    return { value, stdout: stdout.join('\n'), stderr: stderr.join('\n') };
+    return {
+      value,
+      stdout: `${stdout.join('\n')}${stdoutWrites}`,
+      stderr: `${stderr.join('\n')}${stderrWrites}`,
+    };
   } catch (error) {
     if (error && error.isProcessExit) {
-      const output = `${stderr.join('\n')}\n${stdout.join('\n')}`.trim();
+      const output = `${stderr.join('\n')}${stderrWrites}\n${stdout.join('\n')}${stdoutWrites}`.trim();
       error.message = output || `process.exit(${error.exitCode})`;
     }
     throw error;
   } finally {
     console.log = originalLog;
     console.error = originalError;
+    fs.writeSync = originalWriteSync;
     process.exit = originalExit;
     process.exitCode = originalExitCode;
   }
