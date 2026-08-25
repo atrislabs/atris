@@ -68,9 +68,9 @@ function writeReadyWorkspace(dir, tasks) {
 test('fresh first-minute copy names init and stays short', () => {
   const text = renderFresh({ person: 'keshav', folder: 'this folder' });
   assert.match(text, /hey keshav, this folder is a clean start\./);
-  assert.match(text, /I'll set this up when you want\./);
+  assert.doesNotMatch(text, /I'll set this up when you want/);
   assert.match(text, /^next: atris init --minimal$/m);
-  assert.ok(spokenLineCount(text) <= 4);
+  assert.equal(spokenLineCount(text), 2);
   assert.ok(text.length < 200);
 });
 
@@ -212,9 +212,9 @@ test('scratch folders stay this folder and real names stay', () => {
 test('named empty folder under tmp keeps the room name', () => {
   const text = renderFresh({ person: 'keshav', folder: folderName('/tmp/launch-day') });
   assert.match(text, /hey keshav, launch-day is a clean start\./);
-  assert.match(text, /I'll set this up when you want\./);
+  assert.doesNotMatch(text, /I'll set this up when you want/);
   assert.match(text, /^next: atris init --minimal$/m);
-  assert.ok(spokenLineCount(text) <= 4);
+  assert.equal(spokenLineCount(text), 2);
 });
 
 test('buildFirstMinute reads a claimed task from the local projection', () => {
@@ -303,6 +303,7 @@ test('empty dir bare atris names init, stays short, and does not hang', () => {
     assert.match(res.stdout, /this folder is a clean start/);
     assert.match(res.stdout, /atris init --minimal/);
     assert.match(res.stdout, /hey keshav,/);
+    assert.doesNotMatch(res.stdout, /I'll set this up when you want/);
     assert.ok(spokenLineCount(res.stdout) <= 6);
     assert.ok(res.stdout.length < 400);
     assert.doesNotMatch(res.stdout, /operating system|What do you want to build/i);
@@ -326,7 +327,7 @@ test('empty named folder under tmp greets with the room name', () => {
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /hey keshav, launch-day is a clean start\./);
-    assert.match(res.stdout, /I'll set this up when you want\./);
+    assert.doesNotMatch(res.stdout, /I'll set this up when you want/);
     assert.match(res.stdout, /^next: atris init --minimal$/m);
     assert.doesNotMatch(res.stdout, /this folder is a clean start/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
