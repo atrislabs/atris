@@ -18,6 +18,7 @@ const {
   missionVerifierCheckedText,
   missionVerifierHighLevelTestText,
 } = require('../commands/mission');
+const { withMissionFullJson, jsonErrorDetail } = require('./helpers/mission-json');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -114,7 +115,7 @@ function isolatedCliEnv(overrides = {}) {
 }
 
 function runCli(args, { cwd, env = {} } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
+  const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
     timeout: 15000,
@@ -126,7 +127,7 @@ function runCli(args, { cwd, env = {} } = {}) {
 
 function runCliAsync(args, { cwd, env = {} } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cliPath, ...args], {
+    const child = spawn(process.execPath, [cliPath, ...withMissionFullJson(args)], {
       cwd,
       env: isolatedCliEnv(env),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -670,26 +671,23 @@ test('mission status rejects invalid filters before listing history', () => {
     const badStatus = runCli(['mission', 'status', '--status', 'finished', '--json'], { cwd: dir });
     assert.equal(badStatus.status, 2);
     assert.equal(badStatus.stderr, '');
-    assert.deepEqual(JSON.parse(badStatus.stdout), {
-      ok: false,
-      error: 'Invalid --status: finished',
-    });
+    const badStatusPayload = JSON.parse(badStatus.stdout);
+    assert.equal(badStatusPayload.ok, false);
+    assert.equal(jsonErrorDetail(badStatusPayload), 'Invalid --status: finished');
 
     const badLimit = runCli(['mission', 'status', '--limit', '0', '--json'], { cwd: dir });
     assert.equal(badLimit.status, 2);
     assert.equal(badLimit.stderr, '');
-    assert.deepEqual(JSON.parse(badLimit.stdout), {
-      ok: false,
-      error: '--limit must be a positive integer',
-    });
+    const badLimitPayload = JSON.parse(badLimit.stdout);
+    assert.equal(badLimitPayload.ok, false);
+    assert.equal(jsonErrorDetail(badLimitPayload), '--limit must be a positive integer');
 
     const missing = runCli(['mission', 'status', 'missing-mission', '--json'], { cwd: dir });
     assert.equal(missing.status, 1);
     assert.equal(missing.stderr, '');
-    assert.deepEqual(JSON.parse(missing.stdout), {
-      ok: false,
-      error: 'Mission "missing-mission" not found.',
-    });
+    const missingPayload = JSON.parse(missing.stdout);
+    assert.equal(missingPayload.ok, false);
+    assert.equal(jsonErrorDetail(missingPayload), 'Mission "missing-mission" not found.');
 
     const humanBadStatus = runCli(['mission', 'status', '--status', 'finished'], { cwd: dir });
     assert.equal(humanBadStatus.status, 2);
@@ -721,11 +719,11 @@ test('mission status and tick hint when mission id lives in a sibling workspace'
     });
     const canonicalMissionWorkspace = fs.realpathSync(missionWorkspace);
 
-    const status = runCli(['mission', 'status', 'mission-golden-path', '--json'], { cwd: wrongWorkspace });
+    const status = runCli(['mission', 'status', 'mission-golden-path', '--json', '--full'], { cwd: wrongWorkspace });
     assert.equal(status.status, 1);
     assert.equal(status.stderr, '');
     const payload = JSON.parse(status.stdout);
-    assert.equal(payload.error, 'Mission "mission-golden-path" not found.');
+    assert.equal(jsonErrorDetail(payload), 'Mission "mission-golden-path" not found.');
     assert.equal(payload.workspace_hint.workspace_root, canonicalMissionWorkspace);
     assert.equal(payload.workspace_hint.command, `cd '${canonicalMissionWorkspace}' && atris mission status mission-golden-path`);
 
@@ -1591,8 +1589,8 @@ test('full-budget mission keeps running after early passing proof', () => {
 
     const complete = runCli(['mission', 'complete', started.mission.id, '--proof', tickPayload.receipt_path, '--json'], { cwd: dir });
     assert.equal(complete.status, 2);
-    assert.match(JSON.parse(complete.stdout).error, /full-budget mission still has/);
-    assert.match(JSON.parse(complete.stdout).error, /keep picking the next useful move/);
+    assert.match(jsonErrorDetail(JSON.parse(complete.stdout)), /full-budget mission still has/);
+    assert.match(jsonErrorDetail(JSON.parse(complete.stdout)), /keep picking the next useful move/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1667,7 +1665,7 @@ test('mission show/info/view error on an unknown id with exit 1 and create nothi
       assert.equal(res.status, 1, `${alias}: ${res.stdout}`);
       const payload = JSON.parse(res.stdout);
       assert.equal(payload.ok, false, alias);
-      assert.match(payload.error, /not found/, alias);
+      assert.match(jsonErrorDetail(payload), /not found/, alias);
     }
 
     // A read of an unknown id must never seed a mission store.
@@ -2253,7 +2251,7 @@ test('mission report waits for a worker check-in before claiming full-budget wor
     assert.equal(report.status, 0, report.stderr || report.stdout);
     assert.match(report.stdout, /state: waiting for the first worker check-in/);
     assert.match(report.stdout, /What happened: No worker has checked in yet\./);
-    assert.match(report.stdout, /Worker summary: No worker receipt yet\./);
+    assert.match(report.stdout, /Worker summary: Waiting for the first worker check-in; no receipt yet\./);
     assert.match(report.stdout, /Next: Wait for the first worker check-in\./);
     assert.doesNotMatch(report.stdout, /working for the full|work is continuing|keep shipping bounded improvements/);
 
@@ -3397,10 +3395,9 @@ test('mission action missing lookups are JSON-readable', () => {
       const result = runCli(args, { cwd: dir });
       assert.equal(result.status, 1, name);
       assert.equal(result.stderr, '', name);
-      assert.deepEqual(JSON.parse(result.stdout), {
-        ok: false,
-        error: 'Mission "mission-missing" not found.',
-      }, name);
+      const payload = JSON.parse(result.stdout);
+      assert.equal(payload.ok, false, name);
+      assert.equal(jsonErrorDetail(payload), 'Mission "mission-missing" not found.', name);
     }
 
     const humanTick = runCli(['mission', 'tick', 'mission-missing'], { cwd: dir });
@@ -3438,7 +3435,9 @@ test('mission required arguments are JSON-readable', () => {
       const result = runCli(args, { cwd: dir });
       assert.equal(result.status, 1, name);
       assert.equal(result.stderr, '', name);
-      assert.deepEqual(JSON.parse(result.stdout), { ok: false, error }, name);
+      const payload = JSON.parse(result.stdout);
+      assert.equal(payload.ok, false, name);
+      assert.equal(jsonErrorDetail(payload), error, name);
     }
 
     const humanStart = runCli(['mission', 'start'], { cwd: dir });
@@ -5089,7 +5088,7 @@ test('mission run accepts owner prefix before fuzzy intent', () => {
     assert.equal(payload.action, 'mission_run_started');
     assert.equal(payload.mission.objective, 'check proof');
     assert.equal(payload.mission.owner, 'validator');
-    assert.equal(payload.mission.owner_resolution, 'explicit_functional_owner');
+    assert.equal(payload.mission.owner_resolution, 'explicit_member_owner');
   } finally {
     cleanupTempDir(dir);
   }
@@ -7597,9 +7596,9 @@ test('mission lock busy errors are JSON-readable', () => {
       const payload = JSON.parse(result.stdout);
       assert.equal(payload.ok, false, name);
       if (name === 'run') {
-        assert.equal(payload.error, `another driver is already running mission ${mission.id} (pid ${process.pid})`);
+        assert.equal(jsonErrorDetail(payload), `another driver is already running mission ${mission.id} (pid ${process.pid})`);
       } else {
-        assert.match(payload.error, new RegExp(`\\[mission ${name}\\] lock busy`), name);
+        assert.match(jsonErrorDetail(payload), new RegExp(`\\[mission ${name}\\] lock busy`), name);
       }
     }
 

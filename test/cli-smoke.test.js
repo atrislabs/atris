@@ -699,10 +699,12 @@ test('default entry routes active work before completed history', () => {
 test('skill create rejects flag-shaped names instead of making a junk folder', () => {
   const dir = makeTempDir();
   try {
-    const res = runCli(['skill', 'create', '--help'], { cwd: dir });
-    assert.match(res.stdout + res.stderr, /Usage: atris skill create/);
-    // The bug: it used to create atris/skills/--help/SKILL.md.
+    const res = runCli(['skill', 'create', '--bogus-flag'], { cwd: dir });
+    assert.match(res.stdout + res.stderr, /Usage: atris skill <subcommand> \[name\]|Usage: atris skill create/);
+    assert.notEqual(res.status, 0, 'flag-shaped names must be rejected');
+    // The bug: it used to create atris/skills/--help/SKILL.md or --bogus-flag.
     assert.ok(!fs.existsSync(path.join(dir, 'atris', 'skills', '--help')), 'must not create a "--help" skill folder');
+    assert.ok(!fs.existsSync(path.join(dir, 'atris', 'skills', '--bogus-flag')), 'must not create a "--bogus-flag" skill folder');
   } finally {
     cleanupTempDir(dir);
   }
@@ -859,10 +861,13 @@ test('help lists essential commands', () => {
   try {
     const res = runCli(['help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Golden path:/);
     assert.match(res.stdout, /atris init/);
-    assert.match(res.stdout, /atris run/);
-    assert.match(res.stdout, /atris soul/);
-    assert.match(res.stdout, /atris fleet/);
+    assert.match(res.stdout, /atris task/);
+    assert.match(res.stdout, /atris review/);
+    assert.match(res.stdout, /atris recap/);
+    assert.match(res.stdout, /atris mission status/);
+    assert.match(res.stdout, /help --all/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1116,10 +1121,13 @@ test('help shows 6 essential commands', () => {
     cleanupTempDir(dir);
   }
   assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /Golden path:/);
   assert.match(res.stdout, /atris init/);
-  assert.match(res.stdout, /atris run/);
-  assert.match(res.stdout, /atris soul/);
-  assert.match(res.stdout, /atris fleet/);
-  assert.match(res.stdout, /atris status/);
+  assert.match(res.stdout, /atris task new/);
+  assert.match(res.stdout, /atris task claim/);
+  assert.match(res.stdout, /atris task ready/);
+  assert.match(res.stdout, /atris review/);
+  assert.match(res.stdout, /atris recap/);
+  assert.match(res.stdout, /atris mission status/);
   assert.match(res.stdout, /--all/);
 });

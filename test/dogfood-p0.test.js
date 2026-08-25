@@ -244,6 +244,7 @@ test('P0-13: local verify receipt is enough proof; unfetched actions URL is reje
       '--no-falsify-check',
       '--result', 'Operators can now find tasks by keyword instead of scrolling the full list.',
       '--json',
+      '--full',
     ], { cwd: dir, env });
     assert.equal(readyOk.status, 0, readyOk.stderr || readyOk.stdout);
     const readyPayload = JSON.parse(readyOk.stdout);

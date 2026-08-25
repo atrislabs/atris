@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson, jsonErrorDetail } = require('./helpers/mission-json');
 
 // BCK-1319: `mission list` and `mission run/tick/show` used to disagree on
 // which mission a given n/id/slug pointed at, and a mistyped or stale id
@@ -27,7 +28,7 @@ function makeRepo() {
 function runCli(args, cwd) {
   const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
   delete env.ATRIS_RUNNER_PROFILE;
-  return spawnSync(process.execPath, [cliPath, ...args], { cwd, encoding: 'utf8', env, timeout: 20000 });
+  return spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], { cwd, encoding: 'utf8', env, timeout: 20000 });
 }
 
 function startMission(repo, objective, owner) {
@@ -207,7 +208,7 @@ test('an unmatched hex-looking ref errors instead of silently starting a new mis
     assert.notEqual(run.status, 0, 'a bogus id-shaped ref must not exit 0');
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.ok, false);
-    assert.match(payload.error, /not found/i);
+    assert.match(jsonErrorDetail(payload), /not found/i);
 
     const after = listMissions(repo);
     assert.equal(after.length, 1, 'no junk mission must be created from the bogus ref');

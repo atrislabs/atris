@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { listMissions, missionObjectiveIsJunk, selectDueMission } = require('../commands/mission');
+const { withMissionFullJson } = require('./helpers/mission-json');
 
 const cliPath = path.resolve(__dirname, '..', 'bin', 'atris.js');
 
@@ -13,7 +14,7 @@ function makeTempDir() {
 }
 
 function runCli(args, cwd) {
-  return spawnSync(process.execPath, [cliPath, ...args], { cwd, encoding: 'utf8' });
+  return spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], { cwd, encoding: 'utf8' });
 }
 
 function appendMission(dir, mission) {

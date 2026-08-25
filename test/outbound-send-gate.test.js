@@ -77,7 +77,7 @@ test('slack send blocks html body files without render proof before auth', () =>
   try {
     const htmlFile = path.join(dir, 'raw-update.html');
     fs.writeFileSync(htmlFile, '<html><body><h1>customer update</h1></body></html>\n', 'utf8');
-    const res = runCli(['slack', 'send', 'C123', '--format', 'html', '--body-file', htmlFile]);
+    const res = runCli(['slack', 'send', 'C123', '--format', 'html', '--body-file', htmlFile, '--account', '--approved']);
     const stderr = res.stderr.trim();
     assert.equal(res.status, 1, res.stdout || res.stderr);
     assert.equal(stderr.split('\n').length, 1);
@@ -97,7 +97,7 @@ test('plain slack sends pass through unchanged to the mocked api call', async ()
   const originalLog = console.log;
   console.log = () => {};
   try {
-    await integrations.slackSend('C123', ['plain', 'customer', 'update']);
+    await integrations.slackSend('C123', ['plain', 'customer', 'update', '--approved']);
   } finally {
     console.log = originalLog;
     restore();

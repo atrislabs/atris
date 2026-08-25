@@ -282,8 +282,10 @@ function verifyClosedTaskMissions(root, tasks, { limit = MAX_MISSION_AUTO_VERIFY
       'tick',
       mission.id,
       '--verify',
+      '--yes',
+      '--full',
       '--summary',
-      'All linked repair tasks are closed; autoland re-ran the mission verifier.',
+      'The linked repair tasks are closed, so the mission check ran again.',
       '--json',
     ]);
     const outcome = parseMissionVerifyResult(mission.id, result);

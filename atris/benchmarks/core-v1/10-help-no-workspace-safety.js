@@ -22,10 +22,9 @@ module.exports = {
     }
 
     const tasks = ctx.runCli(['bench', 'tasks', '--json']);
-    assert.equal(tasks.status, 0, tasks.stderr || tasks.stdout);
-    const payload = JSON.parse(tasks.stdout);
-    assert.equal(payload.schema, 'atris.bench.tasks.v1');
-    assert.ok(payload.tasks.some((task) => task.id === 'help-no-workspace-safety'));
+    const out = `${tasks.stdout || ''}${tasks.stderr || ''}`;
+    assert.equal(tasks.status, 2, out);
+    assert.match(out, /refuse outside the atris cli repo|pass --here to run here/);
 
     assert.equal(fs.existsSync(path.join(ctx.workspace, 'atris')), false);
     assert.equal(fs.existsSync(path.join(ctx.workspace, '.atris')), false);

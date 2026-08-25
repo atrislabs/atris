@@ -978,7 +978,7 @@ function skillCommand(subcommand, ...args) {
     console.log('  audit [name|--all]  Validate skill against Anthropic guide');
     console.log('  fix [name|--all]    Auto-fix common compliance issues');
     console.log('');
-    process.exit(2);
+    process.exit(0);
   }
   switch (subcommand) {
     case 'list':

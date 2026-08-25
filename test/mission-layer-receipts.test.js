@@ -8,9 +8,10 @@ const { extractLayerFromReceiptText, classifyPathsByLayer } = require('../comman
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson } = require('./helpers/mission-json');
 
 function runCli(args, cwd) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
+  const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
     timeout: 15000,

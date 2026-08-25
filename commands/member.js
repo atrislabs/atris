@@ -114,7 +114,7 @@ function readRepeatedFlag(args, name) {
 function stripKnownFlags(args, valueNames, booleanNames = []) {
   const out = [];
   const valueSet = new Set(valueNames);
-  const booleanSet = new Set(booleanNames);
+  const booleanSet = new Set(['--full', '--verbose', ...booleanNames]);
   for (let i = 0; i < args.length; i += 1) {
     const arg = String(args[i]);
     const key = arg.includes('=') ? arg.slice(0, arg.indexOf('=')) : arg;

@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson, jsonErrorDetail } = require('./helpers/mission-json');
 
 const PASSING_VERIFIER = `${process.execPath} -e "process.exit(0)"`;
 const FAILING_VERIFIER = `${process.execPath} -e "process.exit(1)"`;
@@ -20,7 +21,7 @@ function cleanupTempDir(dir) {
 }
 
 function runCli(args, { cwd } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
+  const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
     timeout: 20000,
@@ -82,7 +83,7 @@ test('free-text proof on a verifier mission is rejected until the verifier passe
     assert.notEqual(res.status, 0, 'completion must fail without verifier evidence');
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.ok, false);
-    assert.match(payload.error, /verifier/i);
+    assert.match(jsonErrorDetail(payload), /verifier/i);
 
     const saved = missionById(dir, mission.id);
     assert.notEqual(saved.status, 'complete', 'mission must stay open after rejected completion');
@@ -125,7 +126,7 @@ test('a receipt belonging to another mission is rejected', () => {
     assert.notEqual(res.status, 0, 'cross-mission receipt must be rejected');
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.ok, false);
-    assert.match(payload.error, /mission/i);
+    assert.match(jsonErrorDetail(payload), /mission/i);
 
     const saved = missionById(dir, missionB.id);
     assert.notEqual(saved.status, 'complete');

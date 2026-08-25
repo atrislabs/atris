@@ -460,7 +460,7 @@ function pluginCommand(subcommand, ...args) {
     console.log('  publish [--repo=path]  - Sync skills to marketplace repo and push');
     console.log('  info                   - Preview what will be included');
     console.log('');
-    process.exit(2);
+    process.exit(0);
   }
   switch (subcommand) {
     case 'build':

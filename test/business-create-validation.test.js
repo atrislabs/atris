@@ -109,7 +109,7 @@ test('business create --help and flag-only create refuse before login', () => {
       assert.doesNotMatch(res.stdout + res.stderr, /Creating business/);
     }
 
-    const flagOnly = runCli(['business', 'create', '--workspace'], { cwd: dir, env: { HOME: home } });
+    const flagOnly = runCli(['business', 'create', '--workspace', '--account'], { cwd: dir, env: { HOME: home } });
     assert.notEqual(flagOnly.status, 0);
     assert.match(flagOnly.stderr, /looks like a flag/);
     assert.doesNotMatch(flagOnly.stdout + flagOnly.stderr, /Creating business/);

@@ -54,7 +54,7 @@ test('atris dream writes model cards', async () => {
       { title: 'Check open wishes', why: 'A wish needs a clear next step.', move: 'Open atris next and answer the waiting wish.' },
       { title: 'Review mission proof', why: 'A proof is ready to read.', move: 'Read the latest mission receipt.' },
     ]);
-    const result = await captureDreamCommand([], root, {
+    const result = await captureDreamCommand(['--yes'], root, {
       stamp: '2099-01-02T00:00:00.000Z',
       runner: async (call) => {
         calls.push(call);
@@ -123,7 +123,7 @@ test('malformed dream output exits cleanly and leaves a noop row', async () => {
   const root = tmp();
   try {
     writeJournal(root, '2099-01-01', '# Log 2099-01-01\n\n## Notes\n\n- today had work\n');
-    const result = await captureDreamCommand([], root, {
+    const result = await captureDreamCommand(['--yes'], root, {
       runner: async () => ({ ok: true, stdout: 'not json' }),
     });
 
@@ -143,7 +143,7 @@ test('spawn failure retries once and writes a noop row', async () => {
   try {
     writeJournal(root, '2099-01-01', '# Log 2099-01-01\n\n## Notes\n\n- today had work\n');
     const models = [];
-    const result = await captureDreamCommand([], root, {
+    const result = await captureDreamCommand(['--yes'], root, {
       runner: async (call) => {
         models.push(call.model);
         return { ok: false, error: 'boom' };

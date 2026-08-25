@@ -195,7 +195,7 @@ test('business record outside a workspace fails with a plain sentence, not a sta
   const cwd = makeTempDir('atris-biz-work-');
   try {
     fs.writeFileSync(path.join(cwd, 'recap.md'), '# Recap\n');
-    const result = runCli(['business', 'record', 'recap.md'], { cwd, env: { HOME: home } });
+    const result = runCli(['business', 'record', 'recap.md', '--account'], { cwd, env: { HOME: home } });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /Run this command inside a business environment with \.atris\/business\.json\./);
     assert.ok(!/\n\s+at /.test(result.stderr), `stack trace leaked to the operator:\n${result.stderr}`);
@@ -212,7 +212,7 @@ test('business record with a corrupt binding fails plainly and names the file', 
     fs.mkdirSync(path.join(cwd, '.atris'), { recursive: true });
     fs.writeFileSync(path.join(cwd, '.atris', 'business.json'), '{ broken');
     fs.writeFileSync(path.join(cwd, 'recap.md'), '# Recap\n');
-    const result = runCli(['business', 'record', 'recap.md'], { cwd, env: { HOME: home } });
+    const result = runCli(['business', 'record', 'recap.md', '--account'], { cwd, env: { HOME: home } });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /Failed to read \.atris\/business\.json/);
     assert.ok(!/\n\s+at /.test(result.stderr), `stack trace leaked to the operator:\n${result.stderr}`);
@@ -278,7 +278,7 @@ test('business start renders the collaborator card from a seeded binding', () =>
   const cwd = makeTempDir('atris-biz-work-');
   try {
     seedBinding(cwd);
-    const result = runCli(['business', 'start'], { cwd, env: { HOME: home } });
+    const result = runCli(['business', 'start', '--account'], { cwd, env: { HOME: home } });
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.match(result.stdout, /Acme Co collaborator start/);
     assert.match(result.stdout, /Business: Acme Co \(acme-co\)/);
@@ -295,7 +295,7 @@ test('business list reads the home cache and says so when it is empty', () => {
   const home = makeTempDir('atris-biz-home-');
   const cwd = makeTempDir('atris-biz-work-');
   try {
-    const empty = runCli(['business', 'list'], { cwd, env: { HOME: home } });
+    const empty = runCli(['business', 'list', '--account'], { cwd, env: { HOME: home } });
     assert.equal(empty.status, 0, empty.stderr || empty.stdout);
     assert.match(empty.stdout, /No businesses connected\. Run: atris business add <slug>/);
 
@@ -303,7 +303,7 @@ test('business list reads the home cache and says so when it is empty', () => {
     fs.writeFileSync(path.join(home, '.atris', 'businesses.json'), JSON.stringify({
       'acme-co': { business_id: 'biz-1', name: 'Acme Co', slug: 'acme-co', added_at: '2026-08-01' },
     }));
-    const listed = runCli(['business', 'list'], { cwd, env: { HOME: home } });
+    const listed = runCli(['business', 'list', '--account'], { cwd, env: { HOME: home } });
     assert.equal(listed.status, 0, listed.stderr || listed.stdout);
     assert.match(listed.stdout, /Acme Co \(acme-co\)/);
     assert.match(listed.stdout, /ID: biz-1/);
@@ -326,7 +326,7 @@ test('business fleet --json classifies workspaces by their bindings, offline', (
     const unbound = path.join(fleetRoot, 'unbound-co');
     fs.mkdirSync(path.join(unbound, 'atris'), { recursive: true });
 
-    const result = runCli(['business', 'fleet', '--json'], { cwd, env: { HOME: home } });
+    const result = runCli(['business', 'fleet', '--json', '--account'], { cwd, env: { HOME: home } });
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const parsed = JSON.parse(result.stdout);
     assert.equal(parsed.root, fleetRoot);
@@ -376,7 +376,7 @@ test('business init --here creates the business and binds the current directory'
       HOME: home,
       ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api`,
     };
-    const result = await runCliAsync(['business', 'init', 'Acme Co', '--here'], { cwd, env });
+    const result = await runCliAsync(['business', 'init', 'Acme Co', '--here', '--account'], { cwd, env });
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.match(result.stdout, /Business created!/);
     assert.match(result.stdout, /Slug:\s+acme-co/);
@@ -397,7 +397,7 @@ test('business init --here creates the business and binds the current directory'
     assert.equal(cache['acme-co'].business_id, 'biz-42');
 
     // A repeat init of the same slug is refused before hitting the create endpoint.
-    const dupe = await runCliAsync(['business', 'init', 'Acme Co', '--here'], { cwd, env });
+    const dupe = await runCliAsync(['business', 'init', 'Acme Co', '--here', '--account'], { cwd, env });
     assert.equal(dupe.status, 1);
     assert.match(dupe.stderr, /A business with slug "acme-co" already exists\./);
     assert.match(dupe.stderr, /atris pull acme-co/);
@@ -412,7 +412,7 @@ test('an unknown business subcommand fails with help, not silence', () => {
   const home = makeTempDir('atris-biz-home-');
   const cwd = makeTempDir('atris-biz-work-');
   try {
-    const result = runCli(['business', 'frobnicate'], { cwd, env: { HOME: home } });
+    const result = runCli(['business', 'frobnicate', '--account'], { cwd, env: { HOME: home } });
     assert.match(result.stderr, /Unknown subcommand: frobnicate/);
     assert.match(result.stdout, /business/i); // help text follows on stdout
     assert.equal(result.status, 1, 'an unknown subcommand is a failure, not a success');

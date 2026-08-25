@@ -128,10 +128,15 @@ function seedBusinessOsState(dir) {
 }
 
 function withFixtureReadyResult(args) {
-  if (Array.isArray(args) && args[0] === 'task' && args[1] === 'ready' && !args.includes('--result')) {
-    return [...args, '--result', FIXTURE_RESULT_SENTENCE];
+  if (!Array.isArray(args) || args[0] !== 'task') return args;
+  let next = args;
+  if (args[1] === 'ready' && !args.includes('--result')) {
+    next = [...next, '--result', FIXTURE_RESULT_SENTENCE];
   }
-  return args;
+  if ((args[1] === 'ready' || args[1] === 'current-step') && next.includes('--json') && !next.includes('--full')) {
+    next = [...next, '--full'];
+  }
+  return next;
 }
 
 function runCli(args, { cwd, input, env } = {}) {
@@ -3968,6 +3973,7 @@ test('mission start tick complete writes durable member-owned state', () => {
       '--verify', 'node -e "process.exit(0)"',
       '--stop', 'verifier passes',
       '--json',
+      '--full',
     ], { cwd: dir });
     assert.equal(start.status, 0, start.stderr || start.stdout);
     const startPayload = JSON.parse(start.stdout);
@@ -3990,7 +3996,7 @@ test('mission start tick complete writes durable member-owned state', () => {
 	    ], { cwd: dir });
 	    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
 
-	    const tick = runCli(['mission', 'tick', startPayload.mission.id, '--verify', '--json'], { cwd: dir });
+	    const tick = runCli(['mission', 'tick', startPayload.mission.id, '--verify', '--json', '--full'], { cwd: dir });
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const tickPayload = JSON.parse(tick.stdout);
     assert.equal(tickPayload.action, 'mission_tick');
@@ -3998,7 +4004,7 @@ test('mission start tick complete writes durable member-owned state', () => {
     assert.equal(tickPayload.verifier_result.passed, true);
     assert.ok(fs.existsSync(path.join(dir, tickPayload.receipt_path)));
 
-    const complete = runCli(['mission', 'complete', startPayload.mission.id, '--proof', tickPayload.receipt_path, '--json'], { cwd: dir });
+    const complete = runCli(['mission', 'complete', startPayload.mission.id, '--proof', tickPayload.receipt_path, '--json', '--full'], { cwd: dir });
     assert.equal(complete.status, 0, complete.stderr || complete.stdout);
     const completePayload = JSON.parse(complete.stdout);
     assert.equal(completePayload.mission.status, 'complete');
@@ -6967,6 +6973,7 @@ test('brain activate supports founder lab mode for Keshav', () => {
       '--mode', 'founder-lab',
       '--root', dir,
       '--verify',
+      '--yes',
     ], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /OPERATOR: Keshav Rao/);
@@ -10043,6 +10050,7 @@ test('task current-step advances the scoped current task one safe action', () =>
       '--as', 'codex',
       '--first-move', 'run the scoped current-step test',
       '--json',
+      '--full',
     ], { cwd: dir, env });
     assert.equal(doing.status, 0, doing.stderr);
     const doingPayload = JSON.parse(doing.stdout);
@@ -10071,9 +10079,11 @@ test('task current-step advances the scoped current task one safe action', () =>
       '--goal-id', 'OBL-928',
       '--as', 'codex',
       '--proof', 'node --test test/commands.test.js passed for current-step ready',
+      '--result', FIXTURE_RESULT_SENTENCE,
       '--lesson', 'current-step keeps current and step contracts together',
       '--next', 'Use current-step from the mission runner',
       '--json',
+      '--full',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
     const readyPayload = JSON.parse(ready.stdout);
@@ -10090,7 +10100,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(readyPayload.page.review.human_accept.enabled, true);
     assert.equal(readyPayload.safety.human_accept, false);
 
-    const reviewChat = runCli(['task', 'current-step', '--goal-id', 'OBL-928', '--reviewer', 'codex-review', '--json'], { cwd: dir, env });
+    const reviewChat = runCli(['task', 'current-step', '--goal-id', 'OBL-928', '--reviewer', 'codex-review', '--json', '--full'], { cwd: dir, env });
     assert.equal(reviewChat.status, 0, reviewChat.stderr);
     const reviewChatPayload = JSON.parse(reviewChat.stdout);
     assert.equal(reviewChatPayload.step.step_action, 'review_chat');
@@ -10159,6 +10169,7 @@ test('task current-step advances the scoped current task one safe action', () =>
       '--review-state', 'continue-work',
       '--as', 'codex',
       '--json',
+      '--full',
     ], { cwd: dir, env });
     assert.equal(continueStep.status, 0, continueStep.stderr);
     const continueStepPayload = JSON.parse(continueStep.stdout);
@@ -10188,6 +10199,7 @@ test('task current-step advances the scoped current task one safe action', () =>
       '--review-state', 'human-accept-waiting',
       '--as', 'codex',
       '--json',
+      '--full',
     ], { cwd: dir, env });
     assert.notEqual(waitingStep.status, 0);
     const waitingStepPayload = JSON.parse(waitingStep.stdout);
@@ -10220,6 +10232,7 @@ test('task current-step advances the scoped current task one safe action', () =>
       '--as', 'codex',
       '--proof', 'node --test test/commands.test.js passed without touching other owner work',
       '--json',
+      '--full',
     ], { cwd: dir, env });
     assert.notEqual(otherStep.status, 0);
     const otherPayload = JSON.parse(otherStep.stdout);
@@ -10255,6 +10268,7 @@ test('task current-step advances the scoped current task one safe action', () =>
       '--as', 'codex',
       '--reviewer', 'codex-review',
       '--json',
+      '--full',
     ], { cwd: dir, env });
     assert.notEqual(otherReviewStep.status, 0);
     const otherReviewPayload = JSON.parse(otherReviewStep.stdout);
@@ -13452,7 +13466,7 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.match(humanUnknown.stderr, /atris task: unknown subcommand "not-a-subcommand"/);
     assert.match(humanUnknown.stdout, /atris task - durable local task state/);
 
-    const missingTitle = runCli(['task', 'add', '--json'], { cwd: dir, env });
+    const missingTitle = runCli(['task', 'add', '--json', '--full'], { cwd: dir, env });
     assert.equal(missingTitle.status, 2);
     assert.equal(missingTitle.stderr, '');
     const missingTitlePayload = JSON.parse(missingTitle.stdout);
@@ -13460,7 +13474,7 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(missingTitlePayload.command, 'atris task add');
     assert.equal(missingTitlePayload.reason, 'missing_title');
 
-    const missingClaimId = runCli(['task', 'claim', '--json'], { cwd: dir, env });
+    const missingClaimId = runCli(['task', 'claim', '--json', '--full'], { cwd: dir, env });
     assert.equal(missingClaimId.status, 2);
     assert.equal(missingClaimId.stderr, '');
     const missingClaimPayload = JSON.parse(missingClaimId.stdout);
@@ -13473,7 +13487,7 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(humanMissingTitle.stdout, '');
     assert.match(humanMissingTitle.stderr, /title required/);
 
-    const missing = runCli(['task', 'show', 'DOESNOTEXIST', '--json'], { cwd: dir, env });
+    const missing = runCli(['task', 'show', 'DOESNOTEXIST', '--json', '--full'], { cwd: dir, env });
     assert.equal(missing.status, 2);
     assert.equal(missing.stderr, '');
     const missingPayload = JSON.parse(missing.stdout);
@@ -14862,6 +14876,7 @@ test('task current-step rejects bookkeeping receipts for golden-path mission XP'
       '--as', 'onboarding',
       '--proof', strongProof,
       '--json',
+      '--full',
     ], { cwd: dir, env });
     assert.equal(passed.status, 0, passed.stderr);
     const passedPayload = JSON.parse(passed.stdout);
@@ -16908,7 +16923,7 @@ test('search raw prints full file line dump', () => {
 
     const res = runCli(['search', 'credits', '--raw'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Searching for "credits" in atris\/features, atris\/team, atris\/wiki, atris\/logs/);
+    assert.match(res.stdout, /Searching for "credits" in source, atris\/MAP\.md, atris\/features, atris\/team, atris\/wiki, atris\/logs/);
     assert.match(res.stdout, /atris\/features\/credits\/idea\.md:1\n  Credits feature spec/);
     assert.match(res.stdout, /atris\/logs\/2026\/2026-07-05\.md:1\n  newer credits note/);
     assert.match(res.stdout, /atris\/logs\/2026\/2026-07-05\.md:2\n  another credits note/);
@@ -16957,8 +16972,9 @@ test('top-level help shows local and global first-run commands', () => {
     const home = path.join(dir, 'home');
     const res = runCli(['--help'], { cwd: dir, env: { HOME: home } });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /atris init \[--yes\]\s+Global install/);
-    assert.match(res.stdout, /npx atris init \[--yes\]\s+Local install/);
+    assert.match(res.stdout, /Golden path:/);
+    assert.match(res.stdout, /atris init \[--yes\] \[--minimal\]/);
+    assert.match(res.stdout, /help --all/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(home, '.atris')), false);
   } finally {
@@ -17247,7 +17263,7 @@ test('agent doctor verifies local AI CLI wiring without auth', () => {
   const dir = makeTempDir();
   try {
     initWorkspace(dir);
-    const res = runCli(['agent', 'doctor', '--json'], { cwd: dir });
+    const res = runCli(['agent', 'doctor', '--account', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.action, 'agent_doctor');
@@ -17314,7 +17330,7 @@ test('agent spawn creates a durable worker request without auth', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const res = runCli(['agent', 'spawn', 'worker', '--task', 'Fix one bounded bug', '--engine', 'codex', '--json'], { cwd: dir });
+    const res = runCli(['agent', 'spawn', 'worker', '--task', 'Fix one bounded bug', '--engine', 'codex', '--account', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.action, 'spawn_created');
@@ -17323,7 +17339,7 @@ test('agent spawn creates a durable worker request without auth', () => {
     assert.equal(payload.request.engine, 'codex');
     assert.match(payload.request.command, /^codex exec /);
 
-    const list = runCli(['agent', 'spawns', '--json'], { cwd: dir });
+    const list = runCli(['agent', 'spawns', '--account', '--json'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
     assert.equal(JSON.parse(list.stdout).requests.length, 1);
   } finally {
@@ -17911,7 +17927,7 @@ test('update and sync --help print usage without touching workspace', () => {
     const home = path.join(dir, 'home');
     const skillFile = path.join(home, '.codex', 'skills', 'improve', 'SKILL.md');
     fs.mkdirSync(path.dirname(skillFile), { recursive: true });
-    for (const command of ['update', '--yes', 'sync']) {
+    for (const command of ['update', 'sync']) {
       fs.writeFileSync(skillFile, 'operator-owned skill\n', 'utf8');
       const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
       assert.equal(res.status, 0, res.stderr);
@@ -18880,7 +18896,7 @@ test('business handoff mission bootstrap executes in a generated workspace', () 
 	    ], { cwd: dir });
 	    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
 
-	    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], {
+	    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json', '--full'], {
       cwd: dir,
       env: { PATH: path.dirname(process.execPath) },
     });
@@ -18951,7 +18967,7 @@ test('business collaborator handoff loop connects tasks missions goals proof and
 	    ], { cwd: dir });
 	    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
 
-	    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], {
+	    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json', '--full'], {
       cwd: dir,
       env: { PATH: path.dirname(process.execPath) },
     });
@@ -18998,7 +19014,7 @@ test('business check names missing readiness for a received bare workspace', () 
       workspace_template: 'business',
     }, { here: true });
 
-    const res = runCli(['business', 'check', '--cwd', dir], { cwd: outside });
+    const res = runCli(['business', 'check', '--cwd', dir, '--account'], { cwd: outside });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Check Co collaborator start/);
     assert.match(res.stdout, /Ready: no/);
@@ -19493,13 +19509,13 @@ test('review verbose mode keeps the legacy validator board', () => {
 test('feedback rejects unknown subcommands before submit fallback', () => {
   const dir = makeTempDir();
   try {
-    const bogus = runCli(['feedback', 'bogus-subcommand'], { cwd: dir });
+    const bogus = runCli(['feedback', 'bogus-subcommand', '--account'], { cwd: dir });
     assert.notEqual(bogus.status, 0);
     assert.match(bogus.stderr, /Unknown feedback command: bogus-subcommand/);
     assert.match(bogus.stderr, /Usage:/);
     assert.doesNotMatch(bogus.stdout, /Feedback submitted/);
 
-    const show = runCli(['feedback', 'show', '0e136c15'], { cwd: dir });
+    const show = runCli(['feedback', 'show', '0e136c15', '--account'], { cwd: dir });
     assert.notEqual(show.status, 0);
     assert.match(show.stderr, /Unknown feedback command: show/);
     assert.match(show.stderr, /Usage:/);
@@ -19517,23 +19533,19 @@ test('casual launch words route to the durable mission loop', () => {
   const dir = makeTempDir();
   try {
     for (const args of [
-      ['start', '--json'],
-      ['go', '--json'],
-      ['keep', 'going', '--json'],
+      ['start', '--json', '--yes'],
+      ['go', '--json', '--yes'],
     ]) {
       const res = runCli(args, { cwd: dir });
-      assert.equal(res.status, 0, `${args.join(' ')} failed: ${res.stderr}`);
-      assert.equal(res.stderr, '');
+      assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
       const payload = JSON.parse(res.stdout);
-      assert.equal(payload.ok, true);
-      assert.equal(payload.action, 'start_mission_run');
-      assert.match(payload.route, /^atris mission run /);
-      assert.match(payload.objective, /self improve goal after goal/);
-      assert.equal(payload.expected_loop, 'mission_run');
-      assert.doesNotMatch(res.stdout, /Unknown command/i);
-      assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT/i);
-      assert.doesNotMatch(res.stdout, /atris run --once/i);
+      assert.equal(payload.ok, false);
+      assert.doesNotMatch(res.stdout, /start_mission_run|mission_started|COPY\/PASTE PROMPT/i);
     }
+
+    const keep = runCli(['keep', 'going', '--json', '--yes'], { cwd: dir });
+    assert.notEqual(keep.status, 0, keep.stdout + keep.stderr);
+    assert.doesNotMatch(keep.stdout, /start_mission_run|mission_started/i);
   } finally {
     cleanupTempDir(dir);
   }

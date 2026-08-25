@@ -187,7 +187,7 @@ test('business CLI reads the live room and enables the store through the web end
   };
 
   try {
-    const room = await runCli(['business', 'room', 'acme'], { cwd, env });
+    const room = await runCli(['business', 'room', 'acme', '--account'], { cwd, env });
     assert.equal(room.status, 0, room.stderr || room.stdout);
     assert.match(room.stdout, /business room: Acme Co/);
     assert.match(room.stdout, /wallet\/net: \$4,200/);
@@ -196,16 +196,16 @@ test('business CLI reads the live room and enables the store through the web end
     assert.match(room.stdout, /store: disabled, 1 products/);
     assert.match(room.stdout, /A-100: Launch kit x1, buyer@example\.com/);
 
-    const productList = await runCli(['business', 'products', 'acme'], { cwd, env });
+    const productList = await runCli(['business', 'products', 'acme', '--account'], { cwd, env });
     assert.equal(productList.status, 0, productList.stderr || productList.stdout);
     assert.match(productList.stdout, /Launch kit \(prod-1\): \$49\.00/);
 
-    const orderList = await runCli(['business', 'orders', 'acme'], { cwd, env });
+    const orderList = await runCli(['business', 'orders', 'acme', '--account'], { cwd, env });
     assert.equal(orderList.status, 0, orderList.stderr || orderList.stdout);
     assert.match(orderList.stdout, /orders: Acme Co \(1\)/);
     assert.match(orderList.stdout, /revenue: \$49\.00/);
 
-    const store = await runCli(['business', 'store', 'on', 'acme'], { cwd, env });
+    const store = await runCli(['business', 'store', 'on', 'acme', '--account'], { cwd, env });
     assert.equal(store.status, 0, store.stderr || store.stdout);
     assert.match(store.stdout, /store: enabled for Acme Co, 1 products/);
 

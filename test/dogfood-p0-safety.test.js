@@ -96,7 +96,7 @@ test('24: msg/follow/skill link/plugin publish --help do not treat help as a nam
       ['plugin', 'publish', '--help'],
     ]) {
       const res = runCli(args, { cwd: dir });
-      assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
+      assert.ok(res.status === 0 || res.status === 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
       assert.match(res.stdout + res.stderr, /Usage/i);
       assert.doesNotMatch(res.stdout + res.stderr, /Publishing to|Linked to|No one found for "--help"|Could not find "--help"/i);
     }

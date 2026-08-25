@@ -15,6 +15,7 @@ const {
   prepareMissionGitGuard,
 } = require('../lib/mission-protected-lane');
 const { runLocalTerminal } = require('../commands/probe');
+const { withMissionFullJson } = require('./helpers/mission-json');
 
 const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
 
@@ -208,7 +209,7 @@ test('a protected mission tick pauses and writes the matched surface to its rece
     ATRIS_SKIP_UPDATE_CHECK: '1',
     ATRIS_TASKS_DB: path.join(root, '.atris', 'state', 'tasks.db'),
   };
-  const run = (args) => spawnSync(process.execPath, [cliPath, ...args], {
+  const run = (args) => spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd: root,
     encoding: 'utf8',
     env,

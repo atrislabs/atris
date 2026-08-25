@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson } = require('./helpers/mission-json');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-runner-swap-'));
@@ -17,7 +18,7 @@ function cleanupTempDir(dir) {
 }
 
 function runCli(args, { cwd, env = {}, timeout = 30000 } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
+  const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
     timeout,
