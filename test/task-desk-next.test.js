@@ -90,7 +90,7 @@ test('task desk next line names accept for a certified review', () => {
       updated_at: 20,
       review: { agent_certified: true, agent_review_pass_count: 2 },
     }]);
-    const desk = runCli(['task'], { cwd: dir, env: deskEnv(dir, 'certified.db') });
+    const desk = runCli(['task', 'desk'], { cwd: dir, env: deskEnv(dir, 'certified.db') });
     assert.equal(desk.status, 0, desk.stderr || desk.stdout);
     assert.match(desk.stdout, /TASK DESK/);
     assert.equal(nextLine(desk.stdout), 'atris task accept UNW-2');
@@ -113,7 +113,7 @@ test('task desk next line names accept for a two-pass review', () => {
       updated_at: 20,
       review: { agent_review_pass_count: 2 },
     }]);
-    const desk = runCli(['task'], { cwd: dir, env: deskEnv(dir, 'two-pass.db') });
+    const desk = runCli(['task', 'desk'], { cwd: dir, env: deskEnv(dir, 'two-pass.db') });
     assert.equal(desk.status, 0, desk.stderr || desk.stdout);
     assert.equal(nextLine(desk.stdout), 'atris task accept UNW-8');
   } finally {
@@ -138,7 +138,7 @@ test('task desk next line names ready for a claimed task without templates', () 
       env: deskEnv(dir),
     });
     assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
-    const desk = runCli(['task'], { cwd: dir, env: deskEnv(dir) });
+    const desk = runCli(['task', 'desk'], { cwd: dir, env: deskEnv(dir) });
     assert.equal(desk.status, 0, desk.stderr || desk.stdout);
     assert.match(desk.stdout, /TASK DESK/);
     assert.equal(nextLine(desk.stdout), `atris task ready ${ref}`);
@@ -160,7 +160,7 @@ test('task desk next line names claim for an open task', () => {
     });
     assert.equal(created.status, 0, created.stderr || created.stdout);
     const ref = JSON.parse(created.stdout).task.display_id;
-    const desk = runCli(['task'], { cwd: dir, env: deskEnv(dir) });
+    const desk = runCli(['task', 'desk'], { cwd: dir, env: deskEnv(dir) });
     assert.equal(desk.status, 0, desk.stderr || desk.stdout);
     assert.equal(nextLine(desk.stdout), `atris task claim ${ref} --as keshav`);
   } finally {
@@ -179,7 +179,7 @@ test('task desk next line stays on task next when only done work remains', () =>
       status: 'done',
       updated_at: 5,
     }]);
-    const desk = runCli(['task'], { cwd: dir, env: deskEnv(dir, 'done.db') });
+    const desk = runCli(['task', 'desk'], { cwd: dir, env: deskEnv(dir, 'done.db') });
     assert.equal(desk.status, 0, desk.stderr || desk.stdout);
     assert.match(desk.stdout, /clear\s+no active tasks/);
     assert.equal(nextLine(desk.stdout), 'atris task next');
@@ -192,7 +192,7 @@ test('empty task desk names task new and does not point at task next', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   try {
-    const desk = runCli(['task'], { cwd: dir, env: deskEnv(dir, 'empty.db') });
+    const desk = runCli(['task', 'desk'], { cwd: dir, env: deskEnv(dir, 'empty.db') });
     assert.equal(desk.status, 0, desk.stderr || desk.stdout);
     assert.match(desk.stdout, /No tasks yet/);
     assert.match(desk.stdout, /atris task new/);

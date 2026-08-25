@@ -13263,7 +13263,7 @@ test('task natural flow creates, picks, talks, finishes, and refreshes projectio
     const ref = createdPayload.task.display_id;
     const legacyRef = id.slice(0, 8);
 
-    const desk = runCli(['task'], { cwd: dir, env });
+    const desk = runCli(['task', 'desk'], { cwd: dir, env });
     assert.equal(desk.status, 0, desk.stderr);
     assert.match(desk.stdout, /TASK DESK/);
     assert.match(desk.stdout, new RegExp(`open\\s+${ref}`));
