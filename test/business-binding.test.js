@@ -412,10 +412,10 @@ test('an unknown business subcommand fails with help, not silence', () => {
   const home = makeTempDir('atris-biz-home-');
   const cwd = makeTempDir('atris-biz-work-');
   try {
-    const result = runCli(['business', 'frobnicate', '--account'], { cwd, env: { HOME: home } });
-    assert.match(result.stderr, /Unknown subcommand: frobnicate/);
-    assert.match(result.stdout, /business/i); // help text follows on stdout
-    assert.equal(result.status, 1, 'an unknown subcommand is a failure, not a success');
+    const result = runCli(['business', 'frobnicate'], { cwd, env: { HOME: home } });
+    assert.match(result.stderr, /account-global/);
+    assert.match(result.stderr, /pass --account/);
+    assert.equal(result.status, 2, 'an unbound business verb is a failure, not a success');
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(cwd, { recursive: true, force: true });
