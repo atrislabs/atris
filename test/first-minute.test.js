@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const {
   buildFirstMinute,
+  folderName,
   personName,
   renderFresh,
   renderWorkspace,
@@ -23,6 +24,11 @@ function makeTempDir() {
 
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function writeAccount(home, account) {
+  fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify(account, null, 2), 'utf8');
 }
 
 function runCli(args, { cwd, env, timeout = 15000 } = {}) {
@@ -58,6 +64,7 @@ function writeReadyWorkspace(dir, tasks) {
 test('fresh first-minute copy names init and stays short', () => {
   const text = renderFresh({ person: 'keshav', folder: 'this folder' });
   assert.match(text, /hey keshav, this folder is a clean start\./);
+  assert.match(text, /I'll set this up when you want\./);
   assert.match(text, /^next: atris init --minimal$/m);
   assert.ok(spokenLineCount(text) <= 4);
   assert.ok(text.length < 200);
@@ -70,24 +77,48 @@ test('claimed task first-minute names the person or title and one next command',
     task: { title: 'Ship the landing page', status: 'claimed', display_id: 'CLI-9' },
     nextCommand: 'atris task step CLI-9',
   });
-  assert.match(text, /hey keshav, Ship the landing page is already yours\./);
+  assert.match(text, /hey keshav, "ship the landing page" is already yours\./);
   assert.match(text, /^next: atris task step CLI-9$/m);
   assert.equal(text.match(/^next:/mg).length, 1);
   assert.ok(spokenLineCount(text) <= 4);
 });
 
-test('ready review task first-minute leads with a win', () => {
+test('ready review task first-minute waits for a human ok', () => {
   const text = renderWorkspace({
     person: 'keshav',
     folder: 'atris',
-    task: { title: 'Ship the landing page', status: 'review', display_id: 'CLI-9' },
+    task: {
+      title: 'Print a human line like 4 words so the count is easy to read.',
+      status: 'review',
+      display_id: 'UNW-2',
+      review: { agent_certified: true, agent_review_pass_count: 2 },
+    },
     recap: { title: 'week one loop' },
-    nextCommand: 'atris task reviews --limit 5',
+    nextCommand: 'atris task accept UNW-2',
   });
-  assert.match(text, /you already shipped Ship the landing page/);
+  assert.match(text, /"print a human line like" is waiting for your ok\./);
+  assert.doesNotMatch(text, /you already shipped/);
+  assert.doesNotMatch(text, /so the count is easy to read/);
   assert.match(text, /last recap: week one loop/);
-  assert.match(text, /^next: atris task reviews --limit 5$/m);
+  assert.match(text, /^next: atris task accept UNW-2$/m);
   assert.ok(spokenLineCount(text) <= 4);
+});
+
+test('uncertified review task first-minute is ready to look at', () => {
+  const text = renderWorkspace({
+    person: 'keshav',
+    folder: 'atris',
+    task: {
+      title: 'Print a human line like 4 words so the count is easy to read.',
+      status: 'review',
+      display_id: 'UNW-4',
+      review: { agent_review_pass_count: 1 },
+    },
+    nextCommand: 'atris task review-chat UNW-4 --as codex-review',
+  });
+  assert.match(text, /"print a human line like" is ready to look at\./);
+  assert.doesNotMatch(text, /you already shipped/);
+  assert.match(text, /^next: atris task review-chat UNW-4 --as codex-review$/m);
 });
 
 test('headless flags never auto-init without an explicit yes', () => {
@@ -97,8 +128,20 @@ test('headless flags never auto-init without an explicit yes', () => {
   assert.equal(shouldAutoInitFresh(['--yes'], {}), true);
 });
 
-test('personName prefers the local user', () => {
-  assert.equal(personName({ USER: 'keshav' }), 'keshav');
+test('personName prefers a given name from the saved account', () => {
+  assert.equal(personName({ USER: 'keshavrao' }, { email: 'keshav@atrislabs.com' }), 'keshav');
+  assert.equal(personName({ USER: 'keshavrao' }, { name: 'Keshav Rao' }), 'keshav');
+  assert.equal(personName({ USER: 'keshavrao' }, null), 'keshavrao');
+  assert.equal(personName({ ATRIS_OPERATOR: 'keshav', USER: 'keshavrao' }, null), 'keshav');
+  assert.equal(personName({ USER: 'keshav' }, null), 'keshav');
+});
+
+test('scratch folders stay this folder and real names stay', () => {
+  assert.equal(folderName('/tmp/atris-use-now'), 'this folder');
+  assert.equal(folderName('/tmp/atris-first-min-try'), 'this folder');
+  assert.equal(folderName('/var/folders/xx/yy/T/launch'), 'this folder');
+  assert.equal(folderName('/Users/keshav/launch-day'), 'launch-day');
+  assert.equal(folderName('/Users/keshav/atris'), 'atris');
 });
 
 test('buildFirstMinute reads a claimed task from the local projection', () => {
@@ -117,8 +160,58 @@ test('buildFirstMinute reads a claimed task from the local projection', () => {
       person: 'keshav',
       folder: 'atris',
     });
-    assert.match(screen.text, /Ship the landing page/);
+    assert.match(screen.text, /"ship the landing page"/);
     assert.equal(screen.nextCommand, 'atris task step CLI-9');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('buildFirstMinute prefers a certified review over a newer uncertified one', () => {
+  const dir = makeTempDir();
+  try {
+    writeReadyWorkspace(dir, [
+      {
+        id: 'task-1',
+        display_id: 'UNW-1',
+        title: 'Open follow-up',
+        status: 'open',
+        updated_at: 10,
+      },
+      {
+        id: 'task-2',
+        display_id: 'UNW-2',
+        title: 'Print a human line like 4 words so the count is easy to read.',
+        status: 'review',
+        updated_at: 20,
+        review: { agent_certified: true, agent_review_pass_count: 2 },
+      },
+      {
+        id: 'task-3',
+        display_id: 'UNW-3',
+        title: 'Second check still open',
+        status: 'review',
+        updated_at: 30,
+        review: { agent_review_pass_count: 1 },
+      },
+      {
+        id: 'task-4',
+        display_id: 'UNW-4',
+        title: 'Newer review still waiting',
+        status: 'review',
+        updated_at: 40,
+        review: { agent_review_pass_count: 1 },
+      },
+    ]);
+    const screen = buildFirstMinute({
+      root: dir,
+      person: 'keshav',
+      folder: 'this folder',
+    });
+    assert.equal(screen.nextCommand, 'atris task accept UNW-2');
+    assert.match(screen.text, /waiting for your ok/);
+    assert.doesNotMatch(screen.text, /you already shipped/);
+    assert.doesNotMatch(screen.text, /review-chat/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -140,6 +233,7 @@ test('empty dir bare atris names init, stays short, and does not hang', () => {
     assert.ok(spokenLineCount(res.stdout) <= 6);
     assert.ok(res.stdout.length < 400);
     assert.doesNotMatch(res.stdout, /operating system|What do you want to build/i);
+    assert.doesNotMatch(res.stdout, /mission run|help me choose the first useful step/i);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
   } finally {
     cleanupTempDir(dir);
@@ -199,7 +293,7 @@ test('workspace with a claimed task names the person or title and one next comma
       },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /keshav|Ship the landing page/);
+    assert.match(res.stdout, /keshav|ship the landing page/i);
     assert.match(res.stdout, /^next: atris task step CLI-9$/m);
     assert.equal(res.stdout.match(/^next:/mg).length, 1);
     assert.doesNotMatch(res.stdout, /What do you want to build|context   loaded|Atris Do/);
@@ -209,33 +303,70 @@ test('workspace with a claimed task names the person or title and one next comma
   }
 });
 
-test('workspace with a ready task names the win and one next command', () => {
+test('workspace with a ready task names the win and points at accept', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
   fs.mkdirSync(home, { recursive: true });
+  writeAccount(home, {
+    token: 'test-token',
+    email: 'keshav@atrislabs.com',
+    name: 'Keshav Rao',
+    user_id: 'u-1',
+  });
   try {
-    writeReadyWorkspace(dir, [{
-      id: 'task-2',
-      display_id: 'CLI-8',
-      title: 'Ship the landing page',
-      status: 'review',
-      claimed_by: 'keshav',
-      updated_at: 40,
-      review: { agent_certified: true, agent_review_pass_count: 2 },
-    }]);
+    writeReadyWorkspace(dir, [
+      {
+        id: 'task-1',
+        display_id: 'UNW-1',
+        title: 'Open follow-up',
+        status: 'open',
+        updated_at: 10,
+      },
+      {
+        id: 'task-2',
+        display_id: 'UNW-2',
+        title: 'Print a human line like 4 words so the count is easy to read.',
+        status: 'review',
+        claimed_by: 'keshav',
+        updated_at: 20,
+        review: { agent_certified: true, agent_review_pass_count: 2 },
+      },
+      {
+        id: 'task-3',
+        display_id: 'UNW-3',
+        title: 'Second check still open',
+        status: 'review',
+        updated_at: 30,
+        review: { agent_review_pass_count: 1 },
+      },
+      {
+        id: 'task-4',
+        display_id: 'UNW-4',
+        title: 'Newer review still waiting',
+        status: 'review',
+        updated_at: 40,
+        review: { agent_review_pass_count: 1 },
+      },
+    ]);
     const res = runCli([], {
       cwd: dir,
       env: {
         HOME: home,
-        USER: 'keshav',
+        USER: 'keshavrao',
         ATRIS_TASKS_DB: path.join(dir, 'ready.db'),
       },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /keshav|Ship the landing page/);
-    assert.match(res.stdout, /^next: atris /m);
+    assert.match(res.stdout, /hey keshav,/);
+    assert.doesNotMatch(res.stdout, /keshavrao/);
+    assert.match(res.stdout, /"print a human line like"/);
+    assert.match(res.stdout, /waiting for your ok/);
+    assert.match(res.stdout, /^next: atris task accept UNW-2$/m);
     assert.equal(res.stdout.match(/^next:/mg).length, 1);
+    assert.doesNotMatch(res.stdout, /you already shipped/);
+    assert.doesNotMatch(res.stdout, /review-chat/);
     assert.doesNotMatch(res.stdout, /What do you want to build/);
+    assert.ok(spokenLineCount(res.stdout) <= 6);
   } finally {
     cleanupTempDir(dir);
   }
