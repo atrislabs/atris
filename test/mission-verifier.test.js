@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-const { withMissionFullJson } = require('./helpers/mission-json');
+const { withMissionFullJson, jsonErrorDetail } = require('./helpers/mission-json');
 const {
   buildEngineVerifyPrompt,
   engineVerifierResultFromRun,
@@ -170,8 +170,8 @@ test('mission start rejects static numeric verifier from expanded shell substitu
     assert.equal(res.stderr, '');
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.ok, false);
-    assert.match(payload.error, /Invalid --verify/);
-    assert.match(payload.error, /shell substitution expanded/);
+    assert.match(jsonErrorDetail(payload), /Invalid --verify/);
+    assert.match(jsonErrorDetail(payload), /shell substitution expanded/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
 
     const human = runCli([
@@ -231,8 +231,8 @@ test('mission start refuses when no verifier is attached', () => {
     assert.equal(res.status, 2);
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.ok, false);
-    assert.match(payload.error, /no verifier/);
-    assert.match(payload.error, /--no-verify/);
+    assert.match(jsonErrorDetail(payload), /no verifier/);
+    assert.match(jsonErrorDetail(payload), /--no-verify/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
   } finally {
     cleanupTempDir(dir);
