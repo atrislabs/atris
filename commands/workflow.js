@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getLogPath } = require('../lib/journal');
+const { buildFirstMinute } = require('../lib/first-minute');
 const { buildToolResultBody } = require('../lib/tool-result-encode');
 
 function wrapWorkflowText(text, width = 76) {
@@ -840,39 +841,25 @@ async function doAtris() {
     workspaceSummary = null;
   }
 
-  // Prompt-mode output (keep concise by default)
+  let firstMinute = null;
+  try {
+    firstMinute = buildFirstMinute({
+      root: cwd,
+      context: workspaceSummary || {},
+    });
+  } catch {
+    firstMinute = null;
+  }
+  const liveStatus = firstMinute && firstMinute.task && firstMinute.task.status;
+  const hasLiveTask = liveStatus === 'claimed' || liveStatus === 'review' || liveStatus === 'open';
+
+  // Prompt-mode output: PERSONA head first, same truth as bare atris.
   console.log(executionMode === 'prompt' ? 'PROMPT ONLY' : 'ACTION TAKEN');
   console.log('');
-  console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ Atris Do — Executor Agent Activated                         │');
-  console.log(`│ Context: ${context}                                           │`);
-  console.log('└─────────────────────────────────────────────────────────────┘');
-  console.log('');
-
-  console.log('📁 CONTEXT FILES (agent should read):');
-  console.log(`- Executor spec: ${executorPath || 'atris/team/executor/MEMBER.md (missing)'}`);
-  console.log(`- Persona: ${personaFileRef || 'atris/PERSONA.md (missing)'}`);
-  const mapDisplay = mapPath
-    ? `${mapPath}${mapIsPlaceholder ? ' (placeholder — generate first)' : ''}`
-    : 'atris/MAP.md (missing)';
-  console.log(`- MAP: ${mapDisplay}`);
-  console.log(`- TODO: ${taskSourcePath || 'atris/TODO.md (missing)'}`);
-  console.log(`- Features index: ${featuresReadmeRef || 'atris/features/README.md (missing)'}`);
-
-  // Show top learnings during execution
-  try {
-    const { loadLearnings } = require('../lib/learnings');
-    const learnings = loadLearnings().filter(e => e._effectiveConfidence >= 7 && e.insight !== '[REMOVED]').slice(0, 3);
-    if (learnings.length > 0) {
-      console.log('');
-      console.log('🧠 Prior learnings (apply during build):');
-      for (const l of learnings) {
-        console.log(`  [${l._effectiveConfidence}/10] ${l.type}/${l.key}: ${l.insight}`);
-      }
-    }
-  } catch {}
-
-  console.log('');
+  if (firstMinute && firstMinute.text) {
+    console.log(firstMinute.text);
+    console.log('');
+  }
 
   const backlogCount = workspaceSummary && Array.isArray(workspaceSummary.backlogTasks)
     ? workspaceSummary.backlogTasks.length
@@ -881,18 +868,46 @@ async function doAtris() {
     ? workspaceSummary.inProgressFeatures.length
     : 0;
 
-  if (inProgressCount > 0) {
-    console.log(`🔨 In-progress features: ${workspaceSummary.inProgressFeatures.join(', ')}`);
-  }
-  console.log(`🧱 Feature build plans found: ${featureBuildPlanRefs.length}`);
-  if (featureBuildPlanRefs.length > 0) {
-    featureBuildPlanRefs.slice(0, 3).forEach((ref) => console.log(`- ${ref}`));
-    if (featureBuildPlanRefs.length > 3) {
-      console.log(`- ... (+${featureBuildPlanRefs.length - 3} more)`);
+  if (showFull) {
+    console.log('📁 CONTEXT FILES (agent should read):');
+    console.log(`- Executor spec: ${executorPath || 'atris/team/executor/MEMBER.md (missing)'}`);
+    console.log(`- Persona: ${personaFileRef || 'atris/PERSONA.md (missing)'}`);
+    const mapDisplay = mapPath
+      ? `${mapPath}${mapIsPlaceholder ? ' (placeholder — generate first)' : ''}`
+      : 'atris/MAP.md (missing)';
+    console.log(`- MAP: ${mapDisplay}`);
+    console.log(`- TODO: ${taskSourcePath || 'atris/TODO.md (missing)'}`);
+    console.log(`- Features index: ${featuresReadmeRef || 'atris/features/README.md (missing)'}`);
+
+    try {
+      const { loadLearnings } = require('../lib/learnings');
+      const learnings = loadLearnings().filter(e => e._effectiveConfidence >= 7 && e.insight !== '[REMOVED]').slice(0, 3);
+      if (learnings.length > 0) {
+        console.log('');
+        console.log('🧠 Prior learnings (apply during build):');
+        for (const l of learnings) {
+          console.log(`  [${l._effectiveConfidence}/10] ${l.type}/${l.key}: ${l.insight}`);
+        }
+      }
+    } catch {}
+
+    console.log('');
+
+    if (inProgressCount > 0) {
+      console.log(`🔨 In-progress features: ${workspaceSummary.inProgressFeatures.join(', ')}`);
     }
+    console.log(`🧱 Feature build plans found: ${featureBuildPlanRefs.length}`);
+    if (featureBuildPlanRefs.length > 0) {
+      featureBuildPlanRefs.slice(0, 3).forEach((ref) => console.log(`- ${ref}`));
+      if (featureBuildPlanRefs.length > 3) {
+        console.log(`- ... (+${featureBuildPlanRefs.length - 3} more)`);
+      }
+    }
+    if (!(hasLiveTask && backlogCount === 0)) {
+      console.log(`📋 Backlog tasks: ${backlogCount}`);
+    }
+    console.log('');
   }
-  console.log(`📋 Backlog tasks: ${backlogCount}`);
-  console.log('');
 
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('📋 COPY/PASTE PROMPT FOR YOUR CODING AGENT:');
@@ -954,13 +969,17 @@ async function doAtris() {
 
   }
 
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('💡 Next: Run "atris review" after execution');
   if (!showFull) {
-    console.log('   Tip: `atris do --full` prints full spec/context for copy/paste.');
+    console.log('atris do --verbose prints the executor file dump.');
+    console.log('');
+  } else {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    if (!hasLiveTask) {
+      console.log('💡 Next: Run "atris review" after execution');
+    }
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('');
   }
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('');
 
   // Check execution mode
   if (executionMode === 'agent') {
