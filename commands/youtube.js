@@ -2,6 +2,7 @@ const { apiRequestJson } = require('../utils/api');
 const { ensureBilledCommandAuth } = require('./auth');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const https = require('https');
 
@@ -1256,6 +1257,10 @@ const LOCAL_SEARCH_RATE_LIMIT_BACKOFF_MS = 1000;
 const LOCAL_SEARCH_RATE_LIMIT_MESSAGE =
   'youtube rate-limited local search. do not use --paid as a fallback; retry later.';
 const LOCAL_SEARCH_RATE_LIMIT_RE = /429|too many requests|confirm you['\u2019]re not a bot/i;
+const LOCAL_SEARCH_CACHE_TTL_MS = 60 * 60 * 1000;
+const LOCAL_SEARCH_CACHE_FILE = 'youtube-search-cache.json';
+const LOCAL_SEARCH_CACHE_NOTE =
+  'cached because youtube rate-limited local search.';
 
 function showYoutubeSearchHelp(output = console.log, commandName = 'atris youtube') {
   output('');
@@ -1376,6 +1381,70 @@ function formatSearchResults(rows = []) {
     parts.push(row.url);
     return parts.join(' | ');
   }).join('\n');
+}
+
+function normalizeSearchQuery(query) {
+  return String(query || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function searchCacheNow(deps = {}) {
+  if (typeof deps.now === 'function') return Number(deps.now());
+  return Date.now();
+}
+
+function searchCacheTtlMs(deps = {}) {
+  const ttl = Number(deps.searchCacheTtlMs);
+  return Number.isFinite(ttl) && ttl > 0 ? ttl : LOCAL_SEARCH_CACHE_TTL_MS;
+}
+
+function resolveSearchCachePath(deps = {}) {
+  if (deps.searchCachePath) return deps.searchCachePath;
+  const homeDir = deps.homeDir || os.homedir();
+  return path.join(homeDir, '.atris', LOCAL_SEARCH_CACHE_FILE);
+}
+
+function printSearchRows(rows, options, output) {
+  if (options.json) {
+    output(JSON.stringify(rows, null, 2));
+    return;
+  }
+  output(formatSearchResults(rows));
+}
+
+function writeLocalSearchCache(query, rows, deps = {}) {
+  if (!Array.isArray(rows) || !rows.length) return;
+  const fsMod = deps.fs || fs;
+  const filePath = resolveSearchCachePath(deps);
+  try {
+    if (typeof fsMod.mkdirSync === 'function') {
+      fsMod.mkdirSync(path.dirname(filePath), { recursive: true });
+    }
+    const payload = {
+      query: String(query || ''),
+      savedAt: searchCacheNow(deps),
+      rows,
+    };
+    fsMod.writeFileSync(filePath, `${JSON.stringify(payload)}\n`);
+  } catch {
+    // cache write is best-effort; a live search already succeeded
+  }
+}
+
+function readFreshLocalSearchCache(query, deps = {}) {
+  const fsMod = deps.fs || fs;
+  const filePath = resolveSearchCachePath(deps);
+  try {
+    const parsed = JSON.parse(fsMod.readFileSync(filePath, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    if (normalizeSearchQuery(parsed.query) !== normalizeSearchQuery(query)) return null;
+    const savedAt = Number(parsed.savedAt);
+    if (!Number.isFinite(savedAt)) return null;
+    if (searchCacheNow(deps) - savedAt >= searchCacheTtlMs(deps)) return null;
+    if (!Array.isArray(parsed.rows) || !parsed.rows.length) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 function paidSearchPayload(options) {
@@ -1634,6 +1703,13 @@ async function runYoutubeSearch(args = [], deps = {}) {
     }
     status = searchRunnerStatus(result);
     if (status != null && status !== 0 && isLocalSearchRateLimited(result)) {
+      const cached = readFreshLocalSearchCache(options.query, deps);
+      if (cached) {
+        const rows = cached.rows.slice(0, options.limit);
+        printSearchRows(rows, options, output);
+        output(LOCAL_SEARCH_CACHE_NOTE);
+        return 0;
+      }
       output(LOCAL_SEARCH_RATE_LIMIT_MESSAGE);
       return status == null ? 1 : status;
     }
@@ -1652,11 +1728,8 @@ async function runYoutubeSearch(args = [], deps = {}) {
     return 2;
   }
 
-  if (options.json) {
-    output(JSON.stringify(rows, null, 2));
-  } else {
-    output(formatSearchResults(rows));
-  }
+  writeLocalSearchCache(options.query, rows, deps);
+  printSearchRows(rows, options, output);
   return 0;
 }
 

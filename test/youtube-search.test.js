@@ -2,12 +2,59 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('path');
 const {
   parseSearchArgs,
   parseSearchStdout,
   formatSearchResults,
   youtubeCommand,
 } = require('../commands/youtube');
+
+const CACHE_HOME = '/tmp/atris-yt-search-cache-home';
+const CACHE_PATH = path.join(CACHE_HOME, '.atris', 'youtube-search-cache.json');
+const RATE_LIMIT_MESSAGE =
+  'youtube rate-limited local search. do not use --paid as a fallback; retry later.';
+const CACHE_NOTE = 'cached because youtube rate-limited local search.';
+const SAMPLE_ROW = {
+  title: 'MCP Agents in 2026',
+  channel: 'Dev Channel',
+  duration: '18:22',
+  views: '42000',
+  upload_date: '20260820',
+  url: 'https://youtu.be/mcp2026a',
+};
+const SAMPLE_LINE =
+  'MCP Agents in 2026 | Dev Channel | 18:22 | 42000 | 20260820 | https://youtu.be/mcp2026a';
+
+function mockSearchFs(files = {}) {
+  const store = { ...files };
+  return {
+    store,
+    existsSync(filePath) {
+      return Object.prototype.hasOwnProperty.call(store, filePath);
+    },
+    mkdirSync() {},
+    readFileSync(filePath) {
+      if (!Object.prototype.hasOwnProperty.call(store, filePath)) {
+        const err = new Error(`ENOENT: ${filePath}`);
+        err.code = 'ENOENT';
+        throw err;
+      }
+      return store[filePath];
+    },
+    writeFileSync(filePath, data) {
+      store[filePath] = String(data);
+    },
+  };
+}
+
+function cacheDeps(extra = {}) {
+  return {
+    fs: extra.fs || mockSearchFs(),
+    homeDir: CACHE_HOME,
+    ...extra,
+  };
+}
 
 test('parseSearchArgs accepts query with limit and json', () => {
   const options = parseSearchArgs([
@@ -99,6 +146,7 @@ test('youtube search prints youtu.be links from mocked runner', async () => {
   const output = [];
   const calls = [];
   const status = await youtubeCommand(['search', 'MCP agents 2026', '--limit', '5'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     runner: (query, limit) => {
       calls.push({ query, limit });
@@ -124,6 +172,7 @@ test('youtube search prints youtu.be links from mocked runner', async () => {
 test('youtube search --json prints parsed rows', async () => {
   const output = [];
   const status = await youtubeCommand(['search', 'agents', '--json'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     runner: () => ({
       status: 0,
@@ -150,17 +199,21 @@ test('youtube search missing query exits 2 with usage', async () => {
 
 test('youtube search empty results exits 2', async () => {
   const output = [];
+  const fsMock = mockSearchFs();
   const status = await youtubeCommand(['search', 'nothing here'], {
+    ...cacheDeps({ fs: fsMock }),
     output: (line) => output.push(line),
     runner: () => ({ status: 0, stdout: '\n' }),
   });
   assert.equal(status, 2);
   assert.match(output.join('\n'), /no videos found/);
+  assert.equal(fsMock.store[CACHE_PATH], undefined);
 });
 
 test('youtube search runner failure surfaces stderr', async () => {
   const output = [];
   const status = await youtubeCommand(['search', 'fail case'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     runner: () => ({ status: 1, stdout: '', stderr: 'yt-dlp exploded' }),
   });
@@ -174,6 +227,7 @@ test('youtube search retries once after a 429 then prints videos', async () => {
   let apiCalls = 0;
   const calls = [];
   const status = await youtubeCommand(['search', 'MCP agents 2026'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     sleep: async (ms) => { sleeps.push(ms); },
     apiRequestJson: async () => {
@@ -215,6 +269,7 @@ test('youtube search persistent 429 prints one sentence and stays off paid', asy
   let apiCalls = 0;
   let runnerCalls = 0;
   const status = await youtubeCommand(['search', 'agents'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     sleep: async (ms) => { sleeps.push(ms); },
     apiRequestJson: async (pathname) => {
@@ -236,10 +291,7 @@ test('youtube search persistent 429 prints one sentence and stays off paid', asy
   assert.deepEqual(sleeps, [1000]);
   assert.equal(apiCalls, 0);
   const text = output.join('\n');
-  assert.equal(
-    text.trim(),
-    'youtube rate-limited local search. do not use --paid as a fallback; retry later.',
-  );
+  assert.equal(text.trim(), RATE_LIMIT_MESSAGE);
   assert.doesNotMatch(text, /\/youtube\/search/);
   assert.doesNotMatch(text, /Sign in to confirm|not a bot/);
   assert.doesNotMatch(text, /try --paid|run --paid|search --paid/);
@@ -249,6 +301,7 @@ test('youtube search rate-limit retry still prints unrelated yt-dlp detail', asy
   const output = [];
   let runnerCalls = 0;
   const status = await youtubeCommand(['search', 'agents'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     sleep: async () => {},
     runner: () => {
@@ -263,6 +316,182 @@ test('youtube search rate-limit retry still prints unrelated yt-dlp detail', asy
   assert.equal(runnerCalls, 2);
   assert.match(output.join('\n'), /yt-dlp exploded/);
   assert.doesNotMatch(output.join('\n'), /rate-limited|--paid|\/youtube\/search/);
+});
+
+test('youtube search writes free local rows to cache', async () => {
+  const output = [];
+  const fsMock = mockSearchFs();
+  const now = 1_700_000_000_000;
+  const status = await youtubeCommand(['search', 'MCP agents 2026'], {
+    ...cacheDeps({ fs: fsMock, now: () => now }),
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0, stdout: `${SAMPLE_LINE}\n` }),
+  });
+
+  assert.equal(status, 0);
+  assert.match(output.join('\n'), /https:\/\/youtu\.be\/mcp2026a/);
+  const cached = JSON.parse(fsMock.store[CACHE_PATH]);
+  assert.equal(cached.query, 'MCP agents 2026');
+  assert.equal(cached.savedAt, now);
+  assert.deepEqual(cached.rows, [SAMPLE_ROW]);
+});
+
+test('youtube search persistent 429 serves fresh same-query cache and stays off paid', async () => {
+  const output = [];
+  const sleeps = [];
+  let apiCalls = 0;
+  let runnerCalls = 0;
+  const now = 1_700_000_000_000;
+  const fsMock = mockSearchFs({
+    [CACHE_PATH]: `${JSON.stringify({
+      query: 'MCP agents 2026',
+      savedAt: now - 10 * 60 * 1000,
+      rows: [SAMPLE_ROW],
+    })}\n`,
+  });
+
+  const status = await youtubeCommand(['search', 'mcp  agents 2026'], {
+    ...cacheDeps({ fs: fsMock, now: () => now }),
+    output: (line) => output.push(line),
+    sleep: async (ms) => { sleeps.push(ms); },
+    apiRequestJson: async (pathname) => {
+      apiCalls += 1;
+      return { ok: false, status: 500, error: `unexpected ${pathname}` };
+    },
+    runner: () => {
+      runnerCalls += 1;
+      return {
+        status: 1,
+        stdout: '',
+        stderr: 'ERROR: [youtube] HTTP Error 429: Too Many Requests',
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(runnerCalls, 2);
+  assert.deepEqual(sleeps, [1000]);
+  assert.equal(apiCalls, 0);
+  const text = output.join('\n');
+  assert.match(text, /MCP Agents in 2026 \| Dev Channel \| 18:22 \| 42000 \| 20260820 \| https:\/\/youtu\.be\/mcp2026a/);
+  assert.match(text, new RegExp(CACHE_NOTE));
+  assert.doesNotMatch(text, /\/youtube\/search|--paid|token/);
+});
+
+test('youtube search persistent 429 with expired cache keeps the rate-limit sentence', async () => {
+  const output = [];
+  let apiCalls = 0;
+  const now = 1_700_000_000_000;
+  const fsMock = mockSearchFs({
+    [CACHE_PATH]: JSON.stringify({
+      query: 'agents',
+      savedAt: now - (60 * 60 * 1000) - 1,
+      rows: [SAMPLE_ROW],
+    }),
+  });
+
+  const status = await youtubeCommand(['search', 'agents'], {
+    ...cacheDeps({ fs: fsMock, now: () => now }),
+    output: (line) => output.push(line),
+    sleep: async () => {},
+    apiRequestJson: async (pathname) => {
+      apiCalls += 1;
+      return { ok: false, status: 500, error: `unexpected ${pathname}` };
+    },
+    runner: () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'ERROR: Sign in to confirm you’re not a bot',
+    }),
+  });
+
+  assert.equal(status, 1);
+  assert.equal(apiCalls, 0);
+  assert.equal(output.join('\n').trim(), RATE_LIMIT_MESSAGE);
+});
+
+test('youtube search persistent 429 with a different cached query keeps the rate-limit sentence', async () => {
+  const output = [];
+  const fsMock = mockSearchFs({
+    [CACHE_PATH]: JSON.stringify({
+      query: 'other topic',
+      savedAt: Date.now(),
+      rows: [SAMPLE_ROW],
+    }),
+  });
+
+  const status = await youtubeCommand(['search', 'agents'], {
+    ...cacheDeps({ fs: fsMock }),
+    output: (line) => output.push(line),
+    sleep: async () => {},
+    runner: () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'HTTP Error 429: Too Many Requests',
+    }),
+  });
+
+  assert.equal(status, 1);
+  assert.equal(output.join('\n').trim(), RATE_LIMIT_MESSAGE);
+});
+
+test('youtube search persistent 429 with corrupt cache keeps the rate-limit sentence', async () => {
+  const output = [];
+  const fsMock = mockSearchFs({
+    [CACHE_PATH]: '{not-json',
+  });
+
+  const status = await youtubeCommand(['search', 'agents'], {
+    ...cacheDeps({ fs: fsMock }),
+    output: (line) => output.push(line),
+    sleep: async () => {},
+    runner: () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'HTTP Error 429: Too Many Requests',
+    }),
+  });
+
+  assert.equal(status, 1);
+  assert.equal(output.join('\n').trim(), RATE_LIMIT_MESSAGE);
+});
+
+test('youtube search --paid does not read or write the free search cache', async () => {
+  const fsMock = mockSearchFs({
+    [CACHE_PATH]: JSON.stringify({
+      query: 'MCP agents',
+      savedAt: Date.now(),
+      rows: [SAMPLE_ROW],
+    }),
+  });
+  const before = fsMock.store[CACHE_PATH];
+  const output = [];
+
+  const status = await youtubeCommand(['search', '--paid', 'MCP agents', '--limit', '5'], {
+    ...cacheDeps({ fs: fsMock }),
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0, stdout: '' }),
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        status: 'success',
+        credits_used: 5,
+        credits_remaining: 995,
+        data: {
+          results: [
+            { title: 'Paid Only', url: 'https://www.youtube.com/watch?v=paid111' },
+          ],
+        },
+      },
+    }),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(fsMock.store[CACHE_PATH], before);
+  assert.match(output.join('\n'), /Paid Only \| https:\/\/www\.youtube\.com\/watch\?v=paid111/);
+  assert.doesNotMatch(output.join('\n'), /cached because|youtu\.be\/mcp2026a/);
 });
 
 test('youtube search --paid posts /youtube/search and prints titles, permalinks, credits', async () => {
