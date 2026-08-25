@@ -194,6 +194,21 @@ test('ensureBilledCommandAuth forceMint requests only the youtube scope', async 
   assert.equal(calls[0].scopes.includes('x-search'), false);
 });
 
+test('atris youtube search --paid with no stored JWT prints one sentence and no login wall', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  try {
+    const res = runCli(['youtube', 'search', '--paid', 'MCP agents'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 1, res.stderr);
+    const text = `${res.stdout}\n${res.stderr}`;
+    assert.match(text, /not signed in\. run atris login first\./);
+    assert.doesNotMatch(text, /Choose login method|Opening browser|\/auth\/cli|Google/);
+    assert.doesNotMatch(text, new RegExp(SECRET));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('atris x-search with no stored JWT prints one sentence and no login wall', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
@@ -272,6 +287,87 @@ test('atris x-search mints an x-search token from the stored JWT and retries', a
     assert.equal(mint.body.scopes.includes('youtube'), false);
     assert.equal(search.authorization, `Bearer ${SECRET}`);
     assert.match(res.stdout, /minted search worked/);
+    assert.doesNotMatch(`${res.stdout}\n${res.stderr}`, new RegExp(SECRET));
+    assert.doesNotMatch(`${res.stdout}\n${res.stderr}`, /Choose login method|Opening browser|\/auth\/cli/);
+
+    const stored = readCredentials(home);
+    assert.equal(stored.token, SECRET);
+    assert.equal(stored.refresh_token, 'stored-refresh-jwt');
+    assert.equal(stored.email, 'owner@example.com');
+  } finally {
+    await closeServer(mock.server);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('atris youtube search --paid mints a youtube token from the stored JWT and retries', async () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  writeCredentials(home, {
+    token: 'stored-user-jwt',
+    refresh_token: 'stored-refresh-jwt',
+    email: 'owner@example.com',
+    user_id: 'u-9',
+    provider: 'atris',
+  });
+
+  const mock = await startHttpMock((request) => {
+    if (request.url === '/api/auth/validate') {
+      return { status: 200, body: { valid: false, error: 'Token expired' } };
+    }
+    if (request.url === '/api/auth/refresh') {
+      return { status: 401, body: { error: 'refresh expired' } };
+    }
+    if (request.url === '/api/auth/agent-token') {
+      return {
+        status: 200,
+        body: {
+          access_token: SECRET,
+          token_type: 'agent_access',
+          scopes: ['youtube'],
+          daily_credit_cap: 50,
+        },
+      };
+    }
+    if (request.url === '/api/youtube/search') {
+      return {
+        status: 200,
+        body: {
+          status: 'success',
+          credits_used: 5,
+          credits_remaining: 40,
+          data: {
+            results: [
+              { title: 'minted youtube search worked', url: 'https://www.youtube.com/watch?v=paid123' },
+            ],
+          },
+        },
+      };
+    }
+    return { status: 404, body: { error: `unexpected ${request.url}` } };
+  });
+
+  try {
+    const res = await runCliAsync(['youtube', 'search', '--paid', 'MCP agents'], {
+      cwd: dir,
+      env: {
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api`,
+      },
+    });
+    assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`);
+    const mint = mock.requests.find((req) => req.url === '/api/auth/agent-token');
+    const search = mock.requests.find((req) => req.url === '/api/youtube/search');
+    assert.ok(mint, 'expected agent-token mint');
+    assert.ok(search, 'expected youtube search retry');
+    assert.equal(mint.method, 'POST');
+    assert.deepEqual(mint.body.scopes, ['youtube']);
+    assert.equal(mint.body.scopes.includes('x-search'), false);
+    assert.equal(search.authorization, `Bearer ${SECRET}`);
+    assert.deepEqual(search.body, { query: 'MCP agents', limit: 5 });
+    assert.match(res.stdout, /minted youtube search worked/);
+    assert.match(res.stdout, /https:\/\/www\.youtube\.com\/watch\?v=paid123/);
+    assert.match(res.stdout, /Credits: 5 used, 40 remaining/);
     assert.doesNotMatch(`${res.stdout}\n${res.stderr}`, new RegExp(SECRET));
     assert.doesNotMatch(`${res.stdout}\n${res.stderr}`, /Choose login method|Opening browser|\/auth\/cli/);
 

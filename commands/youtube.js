@@ -26,6 +26,7 @@ const ALLOWED_CAPTION_HOST_SUFFIXES = [
 function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('');
   output(`Usage: ${commandName} search "<query>" [--limit N] [--json]`);
+  output(`       ${commandName} search --paid "<query>" [--limit N] [--json]`);
   output(`       ${commandName} notes <youtube-url> [youtube-url-or-playlist...] [engine]`);
   output(`       ${commandName} process <youtube-url> [options]`);
   output(`       ${commandName} digest [--days N]`);
@@ -36,6 +37,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
   output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links');
+  output('search --paid = 5 credits, watch permalinks + titles from Atris');
   output('notes = free local notes for one url, several urls, or a playlist');
   output('process = 5 credits cloud knowledge');
   output('digest = one decision page from this week\'s video briefs');
@@ -45,6 +47,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('');
   output('Options:');
   output('  --limit <n>         Max search results (default: 5)');
+  output('  --paid              Bill 5 credits for watch permalinks (search only)');
   output('  --query, -q <text>  Focus question for the analysis');
   output('  --agent <id>        Agent id to store knowledge against');
   output('  --store             Save as agent knowledge (requires --agent)');
@@ -58,6 +61,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('Examples:');
   output(`  ${commandName} search "MCP agents 2026"`);
   output(`  ${commandName} search "MCP agents" --limit 10`);
+  output(`  ${commandName} search --paid "MCP agents 2026"`);
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID`);
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID https://youtu.be/OTHER_ID`);
   output(`  ${commandName} notes https://www.youtube.com/playlist?list=PLAYLIST_ID`);
@@ -1244,29 +1248,42 @@ function runYoutubeNotes(args = [], deps = {}) {
 }
 
 const DEFAULT_SEARCH_LIMIT = 5;
+const PAID_SEARCH_TIMEOUT_MS = 120000;
+const PAID_SEARCH_COST_HINT = '5 credits per search';
 const YTSEARCH_USAGE = 'usage: atris youtube search "<query>" [--limit N] [--json]';
 const SEARCH_PRINT_FORMAT = '%(title)s | %(channel)s | %(duration_string)s | %(view_count)s | %(upload_date)s | https://youtu.be/%(id)s';
 
 function showYoutubeSearchHelp(output = console.log, commandName = 'atris youtube') {
   output('');
   output(`Usage: ${commandName} search "<query>" [--limit N] [--json]`);
+  output(`       ${commandName} search --paid "<query>" [--limit N] [--json]`);
   output('');
   output('Free local discovery. Uses ytsearch on PATH when present, else the');
   output('bundled scripts/det/ytsearch, else yt-dlp ytsearchN with the same print contract.');
   output('Does not bill credits. Process stays the 5-credit step after you pick a URL.');
   output('');
+  output(`--paid buys watch permalinks from Atris (${PAID_SEARCH_COST_HINT}).`);
+  output('Requires login. Same auth path as atris youtube process.');
+  output('Empty or failed paid search refunds the credits.');
+  output('');
   output('Options:');
   output(`  --limit <n>         Max results (default: ${DEFAULT_SEARCH_LIMIT})`);
+  output('  --paid              Bill credits for watch permalinks + titles');
   output('  --json              Print JSON rows instead of pipe lines');
   output('  -h, --help          This help');
   output('');
-  output('Each line:');
+  output('Each free line:');
   output('  title | channel | duration | views | upload_date | https://youtu.be/ID');
+  output('');
+  output('Each paid line:');
+  output('  title | https://www.youtube.com/watch?v=ID');
   output('');
   output('Examples:');
   output(`  ${commandName} search "MCP agents 2026"`);
   output(`  ${commandName} search "MCP agents" --limit 10`);
   output(`  ${commandName} search "MCP agents" --json`);
+  output(`  ${commandName} search --paid "MCP agents 2026"`);
+  output(`  ${commandName} search --paid "MCP agents" --limit 10`);
   output('');
 }
 
@@ -1275,8 +1292,10 @@ function parseSearchArgs(argv = []) {
   const options = {
     help: false,
     json: false,
+    paid: false,
     query: null,
     limit: DEFAULT_SEARCH_LIMIT,
+    timeoutMs: PAID_SEARCH_TIMEOUT_MS,
   };
 
   if (args.length === 0 || ['help', '--help', '-h'].includes(args[0])) {
@@ -1290,6 +1309,8 @@ function parseSearchArgs(argv = []) {
       options.help = true;
     } else if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--paid') {
+      options.paid = true;
     } else if (arg === '--limit') {
       options.limit = parsePositiveSearchInt(readValue(args, i, arg), '--limit');
       i++;
@@ -1353,6 +1374,131 @@ function formatSearchResults(rows = []) {
   }).join('\n');
 }
 
+function paidSearchPayload(options) {
+  const payload = { query: options.query };
+  if (options.limit != null) payload.limit = options.limit;
+  return payload;
+}
+
+function unwrapSearchPayload(data) {
+  if (data?.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
+    return data.data;
+  }
+  return data && typeof data === 'object' ? data : {};
+}
+
+function watchPermalink(item = {}) {
+  const raw = item.url || item.permalink || item.watch_url || item.link || '';
+  if (typeof raw === 'string' && /^https?:\/\//i.test(raw)) return raw;
+  const id = item.video_id || item.videoId || (typeof item.id === 'string' ? item.id : '');
+  if (id && /^[A-Za-z0-9_-]{6,}$/.test(id)) {
+    return `https://www.youtube.com/watch?v=${id}`;
+  }
+  return '';
+}
+
+function paidSearchVideos(data) {
+  const payload = unwrapSearchPayload(data);
+  const raw = payload.results || payload.videos || payload.items
+    || (Array.isArray(data?.data) ? data.data : null)
+    || (Array.isArray(data) ? data : []);
+  if (!Array.isArray(raw)) return [];
+  const rows = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const url = watchPermalink(item);
+    if (!url) continue;
+    rows.push({
+      title: String(item.title || item.name || '').trim(),
+      url,
+    });
+  }
+  return rows;
+}
+
+function creditsLine(data) {
+  const payload = unwrapSearchPayload(data);
+  const used = data?.credits_used !== undefined ? data.credits_used : payload.credits_used;
+  const remaining = data?.credits_remaining !== undefined
+    ? data.credits_remaining
+    : payload.credits_remaining;
+  if (used === undefined && remaining === undefined) return '';
+  return `Credits: ${used !== undefined ? used : '?'} used, ${remaining !== undefined ? remaining : '?'} remaining`;
+}
+
+function formatPaidSearchResults(data) {
+  const lines = paidSearchVideos(data).map((row) => (
+    row.title ? `${row.title} | ${row.url}` : row.url
+  ));
+  const credits = creditsLine(data);
+  if (credits) {
+    if (lines.length) lines.push('');
+    lines.push(credits);
+  }
+  return lines.join('\n');
+}
+
+function youtubeSearchFailureError(result) {
+  const hint = result.status === 401
+    ? ' Run "atris login --force".'
+    : result.status === 402
+      ? ' Check Atris credits.'
+      : result.status === 502
+        ? ' YouTube search is unavailable; retry in a few seconds.'
+        : '';
+  return new Error(`YouTube search failed (${result.status}): ${resultErrorText(result)}.${hint}`);
+}
+
+async function requestPaidYoutubeSearch(options, deps = {}) {
+  const apiFn = deps.apiRequestJson || apiRequestJson;
+  const ensureBilled = deps.ensureBilledCommandAuth || ensureBilledCommandAuth;
+  let auth = await ensureBilled('youtube', deps);
+  if (!auth?.ok || !auth.token) {
+    throw new Error(auth?.error || 'not signed in. run atris login first.');
+  }
+
+  const body = paidSearchPayload(options);
+  const call = (token) => apiFn('/youtube/search', {
+    method: 'POST',
+    token,
+    timeoutMs: options.timeoutMs || PAID_SEARCH_TIMEOUT_MS,
+    retries: 0,
+    body,
+  });
+
+  let result = await call(auth.token);
+  if (!result.ok && result.status === 401 && !auth.minted) {
+    const remint = await ensureBilled('youtube', { ...deps, forceMint: true });
+    if (remint?.ok && remint.token) {
+      auth = remint;
+      result = await call(auth.token);
+    }
+  }
+
+  if (!result.ok) {
+    throw youtubeSearchFailureError(result);
+  }
+  return result.data;
+}
+
+async function runPaidYoutubeSearch(options, deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  const data = await requestPaidYoutubeSearch(options, deps);
+  if (options.json) {
+    output(JSON.stringify(data, null, 2));
+    return 0;
+  }
+
+  const videos = paidSearchVideos(data);
+  const rendered = formatPaidSearchResults(data);
+  if (!videos.length) {
+    output(rendered ? `no videos found\n${rendered}` : 'no videos found');
+    return 2;
+  }
+  output(rendered);
+  return 0;
+}
+
 function commandOnPath(name, deps = {}) {
   const spawn = deps.spawnSync || spawnSync;
   const result = spawn('sh', ['-c', `command -v ${shellSingleQuote(name)}`], {
@@ -1402,7 +1548,7 @@ function defaultSearchRunner(query, limit, deps = {}) {
   ], options);
 }
 
-function runYoutubeSearch(args = [], deps = {}) {
+async function runYoutubeSearch(args = [], deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
   let options;
   try {
@@ -1416,6 +1562,15 @@ function runYoutubeSearch(args = [], deps = {}) {
   if (options.help) {
     showYoutubeSearchHelp(output, deps.commandName || 'atris youtube');
     return 0;
+  }
+
+  if (options.paid) {
+    try {
+      return await runPaidYoutubeSearch(options, deps);
+    } catch (err) {
+      output(err.message);
+      return 1;
+    }
   }
 
   const runner = deps.runner || ((query, limit) => defaultSearchRunner(query, limit, deps));
@@ -1461,8 +1616,10 @@ function runYoutubeSearch(args = [], deps = {}) {
 async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
   if (argv[0] === 'search') {
-    const code = runYoutubeSearch(argv.slice(1), { ...deps, output });
-    if (!deps.output && !deps.spawnSync && !deps.runner) process.exit(code);
+    const code = await runYoutubeSearch(argv.slice(1), { ...deps, output });
+    if (!deps.output && !deps.spawnSync && !deps.runner && !deps.apiRequestJson && !deps.ensureValidCredentials && !deps.ensureBilledCommandAuth) {
+      process.exit(code);
+    }
     return code;
   }
   if (argv[0] === 'notes') {

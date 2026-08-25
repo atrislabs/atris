@@ -1,7 +1,7 @@
 ---
 name: youtube
-description: "YouTube discovery and learning. Use atris youtube search QUERY to get free youtu.be links (local ytsearch/yt-dlp, zero credits). A YouTube link in any message routes here: run atris youtube notes URL FIRST (free, about 30s, quotes verified). Never summarize a video from model memory. Use atris youtube process only to store it as queryable knowledge (5 credits). Triggers on: youtube search, find videos, any youtube.com or youtu.be link, youtube, video, watch this, notes on this."
-version: 2.5.0
+description: "YouTube discovery and learning. Use atris youtube search QUERY to get free youtu.be links (local ytsearch/yt-dlp, zero credits). Use atris youtube search --paid QUERY to buy watch permalinks from Atris (5 credits, login required). A YouTube link in any message routes here: run atris youtube notes URL FIRST (free, about 30s, quotes verified). Never summarize a video from model memory. Use atris youtube process only to store it as queryable knowledge (5 credits). Triggers on: youtube search, find videos, paid youtube search, any youtube.com or youtu.be link, youtube, video, watch this, notes on this."
+version: 2.6.0
 tags:
   - youtube
   - research
@@ -14,6 +14,7 @@ tags:
 Three rails. Pick before running anything:
 
 - **Search / discovery (free)** → `atris youtube search "<query>"`. Local ytsearch or yt-dlp `ytsearchN:`. Returns title, channel, duration, views, upload_date, and a `youtu.be` link. Zero credits. Use this to *get* video links; do not call process until the user picks one.
+- **Paid search (5 credits)** → `atris youtube search --paid "<query>"`. Posts `/youtube/search` with the stored token or a youtube-scope agent mint. Prints watch permalinks, titles, and credits. Use this when the customer wants to buy permalinks the same way as `atris x-search`. Do not replace free search with this.
 - **Notes / learning (free)** → `atris youtube notes <url>`. Local captions + a fast engine, about 30 seconds, quotes verified against the transcript. Use when the goal is to learn from a video you already have.
 - **Process / product (5 credits)** → `atris youtube process <url>`. Credits-billed cloud knowledge store. Use when a customer/agent needs the video stored as Atris knowledge.
 
@@ -64,6 +65,15 @@ atris youtube search "MCP agents" --json
 ```
 
 Uses `ytsearch` on PATH when present, else bundled `scripts/det/ytsearch`, else `yt-dlp --flat-playlist --print` with `ytsearchN:`. No credits. No `/agent/process_youtube` call.
+
+## Paid search (5 credits)
+
+```bash
+atris youtube search --paid "MCP agents 2026"
+atris youtube search --paid "MCP agents" --limit 10
+```
+
+Requires login. Uses the stored token, or mints a youtube-scope agent token from disk the same way as `atris youtube process` and `atris x-search`. Never `/auth/cli`. Prints `title | watch permalink` plus credits. Empty or failed searches refund.
 
 Line contract:
 
@@ -193,6 +203,8 @@ Two layers, never mixed. The reply the person reads is flowing prose: ideas, spe
 
 `atris youtube search` shells to local ytsearch/yt-dlp and never hits the Atris API.
 
+`atris youtube search --paid` posts `{query, limit}` to `/youtube/search` with bearer auth. Agent tokens need the youtube scope.
+
 `atris youtube` process first tries local transcript extraction with `yt-dlp`. It sends timestamped `transcript_text` to `/agent/process_youtube` with `cache_transcript=false`. If local transcript processing fails with a retryable error, it falls back to cloud video processing. Use `--json` to inspect `metadata.processing_method` and `metadata.transcript_source`.
 
 ---
@@ -200,6 +212,7 @@ Two layers, never mixed. The reply the person reads is flowing prose: ideas, spe
 ## Billing
 
 - **Search: 0 credits** (local discovery)
+- **Paid search: 5 credits** (`--paid`; refund on empty or fail)
 - **Notes: 0 credits** (local captions + engine)
 - **Process: 5 credits per video** (flat rate, any length)
 - Credits deducted before processing
@@ -229,6 +242,9 @@ npm install -g atris && atris login
 # Free: discover videos
 atris youtube search "MCP agents 2026"
 atris youtube search "MCP agents" --limit 10
+
+# Paid: watch permalinks from Atris (5 credits)
+atris youtube search --paid "MCP agents 2026"
 
 # Free: notes on a URL you already have
 atris youtube notes "https://youtu.be/VIDEO_ID"
