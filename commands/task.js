@@ -13253,6 +13253,12 @@ async function run(args) {
     console.log('Usage: atris task step <id> [--json]');
     return;
   }
+  // `task next --help` is a help request, not a run. Next can open
+  // the task db or print the desk, so never list or claim just to show usage.
+  if (sub === 'next' && argsWantHelp(raw.slice(1))) {
+    console.log('Usage: atris task next [--tag <tag>] [--create-next]');
+    return;
+  }
   const result = await runTaskCommand(raw);
   const skipsRender = sub === 'clear-done' && hasFlag(raw, '--dry-run');
   if (MUTATING_TASK_COMMANDS.has(sub) && !skipsRender) autoRenderTodoFromDb();
