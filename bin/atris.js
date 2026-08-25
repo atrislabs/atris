@@ -58,6 +58,11 @@ const {
   isAtrisMetaQuestion,
   renderPrompt: renderContextGathererPrompt,
 } = require('../lib/context-gatherer');
+const {
+  buildFirstMinute,
+  isBareAtrisFlag,
+  shouldAutoInitFresh,
+} = require('../lib/first-minute');
 
 // Journal & config utilities (canonical modules)
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/file-ops');
@@ -157,6 +162,9 @@ function parseNaturalEntryArgs(args = []) {
     const value = String(args[i] || '');
     if (value === '--json') {
       asJson = true;
+      continue;
+    }
+    if (value === '--yes' || value === '-y' || value === '--verbose') {
       continue;
     }
     if (isHelpToken(value)) {
@@ -1188,6 +1196,9 @@ if (!command || !knownCommands.includes(command)) {
 if (!command || !knownCommands.includes(command)) {
   const rawNaturalArgs = process.argv.slice(2);
   const natural = parseNaturalEntryArgs(rawNaturalArgs);
+  if (command && isBareAtrisFlag(command)) {
+    command = '';
+  }
   const userInput = natural.input;
   const directSingleWordNatural = !natural.multiword
     && SINGLE_WORD_NATURAL_INTENTS.has(userInput.toLowerCase());
@@ -1307,9 +1318,47 @@ function printStarterTaskNext(starter) {
   console.log('Next: atris task next --as ' + localOwnerName());
 }
 
+function runMinimalInit() {
+  const script = process.argv[1] || path.join(__dirname, 'atris.js');
+  const result = spawnSync(process.execPath, [script, 'init', '--minimal', '--yes'], {
+    cwd: process.cwd(),
+    env: process.env,
+    encoding: 'utf8',
+    stdio: 'inherit',
+  });
+  return Number.isInteger(result.status) ? result.status : 1;
+}
+
+function printFirstMinuteScreen(options) {
+  const screen = buildFirstMinute(options);
+  console.log('');
+  console.log(screen.text);
+  return screen;
+}
+
 async function interactiveEntry(userInput, options = {}) {
   const workspaceDir = process.cwd();
   const state = detectWorkspaceState(workspaceDir);
+
+  // Fresh folder is the first-minute product: one next command, no menu.
+  if (state.state === 'fresh') {
+    if (options.asJson) {
+      console.log(JSON.stringify({
+        schema: 'atris.one_lap.v1',
+        ok: false,
+        status: 'stuck',
+        reason: 'this workspace is not initialized',
+        next_action: 'atris init --minimal --yes',
+      }, null, 2));
+      return 2;
+    }
+    printFirstMinuteScreen({ root: workspaceDir, fresh: true });
+    if (shouldAutoInitFresh(process.argv.slice(2))) {
+      return runMinimalInit();
+    }
+    return 0;
+  }
+
   const context = loadContext(workspaceDir);
 
   if (options.asJson && !String(userInput || '').trim()) {
@@ -1335,25 +1384,6 @@ async function interactiveEntry(userInput, options = {}) {
       return 0;
     }
     printAtrisOverview();
-    return;
-  }
-
-  // Fresh install - offer init
-  if (state.state === 'fresh') {
-    if (options.asJson) {
-      console.log(JSON.stringify({
-        schema: 'atris.one_lap.v1',
-        ok: false,
-        status: 'stuck',
-        reason: 'this workspace is not initialized',
-        next_action: 'atris init --yes',
-      }, null, 2));
-      return 2;
-    }
-    console.log('\nNo atris/ folder found.');
-    console.log('');
-    console.log('Next: atris init');
-    console.log('Local project install instead? Run: npx atris init');
     return;
   }
 
@@ -1430,70 +1460,12 @@ async function interactiveEntry(userInput, options = {}) {
     }, null, 2));
     return 2;
   }
-  // Mission needs a tick when: it has a verifier configured AND that verifier
-  // hasn't passed yet. Planning-state missions count too — first tick is what
-  // moves them to running.
-  const needsTickMission = activeMissions.find(
-    (m) => m.verifier && !m.verifier_passed
-  );
+  const hasRequest = Boolean(String(userInput || '').trim());
 
-  // Build status line
-  const parts = [];
-  if (wipCount > 0) {
-    parts.push(`work in progress: ${wipCount}`);
-  }
-  if (liveMissionsCount > 0) {
-    parts.push(`missions: ${liveMissionsCount}`);
-  }
-  if (inboxCount > 0) {
-    parts.push(`inbox: ${inboxCount}`);
-  }
-  if (backlogCount > 0) {
-    parts.push(`backlog: ${backlogCount}`);
-  }
-  if (completedTasksCount > 0) {
-    parts.push(`done: ${completedTasksCount}`);
-  }
-  const statusLine = parts.length > 0 ? parts.join('  |  ') : 'clean slate';
-
-  console.log('');
-  const contextRow = (label, value) => `  ${label.padEnd(9)}${value}`;
-  console.log(contextRow('context', 'loaded'));
-  console.log(contextRow('status', statusLine));
-
-  if (gatherContext) {
-    const hotAnswer = String(userInput || '').trim();
-    if (hotAnswer) {
-      const answer = hotAnswer;
-      if (isAtrisMetaQuestion(answer)) {
-        printAtrisOverview();
-        return;
-      }
-      const profile = saveContextProfile(workspaceDir, answer, { source: 'hot_start' });
-      const starter = createStarterTask(workspaceDir, answer);
-      console.log('');
-      console.log('Got it. I saved your first direction.');
-      console.log(`Focus: ${profile.first_answer}`);
-      if (starter && starter.display_id) {
-        console.log(`First task: ${starter.display_id} — ${starter.title}`);
-      } else if (starter && starter.title) {
-        console.log(`First task: ${starter.title}`);
-      }
-      if (mapStatus !== 'ready') {
-        printStarterTaskNext(starter);
-        return;
-      }
-      await planCmd(answer);
-      return;
-    }
-    if (shouldSkipContextGatherer()) {
-      console.log('');
-      if (process.argv.includes('--verbose')) {
-        console.log('context gatherer skipped (non-interactive).');
-      }
-      printFirstUseNext();
-      return;
-    } else {
+  // Bare `atris` is the first-minute screen: one win, one next command.
+  // Interactive first-contact still asks once when the folder has no work yet.
+  if (!hasRequest) {
+    if (gatherContext && !shouldSkipContextGatherer()) {
       const answer = await askContextGatherer(workspaceDir);
       if (isAtrisMetaQuestion(answer)) {
         printAtrisOverview();
@@ -1522,6 +1494,36 @@ async function interactiveEntry(userInput, options = {}) {
       await planCmd(answer);
       return;
     }
+    printFirstMinuteScreen({
+      root: workspaceDir,
+      context,
+      missions: activeMissions,
+    });
+    return 0;
+  }
+
+  if (gatherContext) {
+    const answer = String(userInput || '').trim();
+    if (isAtrisMetaQuestion(answer)) {
+      printAtrisOverview();
+      return;
+    }
+    const profile = saveContextProfile(workspaceDir, answer, { source: 'hot_start' });
+    const starter = createStarterTask(workspaceDir, answer);
+    console.log('');
+    console.log('Got it. I saved your first direction.');
+    console.log(`Focus: ${profile.first_answer}`);
+    if (starter && starter.display_id) {
+      console.log(`First task: ${starter.display_id} — ${starter.title}`);
+    } else if (starter && starter.title) {
+      console.log(`First task: ${starter.title}`);
+    }
+    if (mapStatus !== 'ready') {
+      printStarterTaskNext(starter);
+      return;
+    }
+    await planCmd(answer);
+    return;
   }
 
   if (mapStatus !== 'ready') {
@@ -1529,91 +1531,8 @@ async function interactiveEntry(userInput, options = {}) {
     return;
   }
 
-  // Hot start - user provided input directly
-  if (userInput) {
-    console.log(`\n> ${userInput}`);
-    await planCmd(userInput);
-    return;
-  }
-
-  // Surface live missions so the operator sees durable goals alongside dev WIP.
-  if (liveMissionsCount > 0) {
-    console.log('\nLive missions:');
-    for (const m of activeMissions.slice(0, 5)) {
-      const tickGate = m.verifier && !m.verifier_passed ? ' [needs tick]' : '';
-      const obj = m.objective.length > 70 ? `${m.objective.slice(0, 67)}...` : m.objective;
-      console.log(`- [${m.owner}] ${obj} (${m.status})${tickGate}`);
-    }
-  }
-
-  // Cold start auto-advance.
-  // ORDER MATTERS: missions outrank pipeline state because a mission's verifier
-  // is the contract that gates the Stop hook. Closing it unblocks everything else.
-  if (needsTickMission) {
-    console.log(`\nNext: atris mission tick (${needsTickMission.owner} mission has unverified verifier)`);
-    console.log(`Run: atris mission tick ${needsTickMission.id} --verify --complete-on-pass`);
-    return;
-  }
-
-  if (completedTasksCount > 0) {
-    const preview = context.completedTasks.slice(0, 3).map((t) => (t.length > 70 ? `${t.slice(0, 67)}...` : t));
-    if (preview.length > 0) {
-      console.log('\nCompleted (history):');
-      preview.forEach((t) => console.log(`- ${t}`));
-      console.log('Completed tasks are history, not pending review.');
-    }
-  }
-
-  if (wipCount > 0 || backlogCount > 0) {
-    const featurePreview = Array.isArray(context.inProgressFeatures) ? context.inProgressFeatures : [];
-    const inProgressPreview = context.inProgressTasks.slice(0, 2).map((t) => (t.length > 70 ? `${t.slice(0, 67)}...` : t));
-    const backlogPreview = context.backlogTasks.slice(0, 2).map((t) => (t.length > 70 ? `${t.slice(0, 67)}...` : t));
-    if (featurePreview.length > 0) {
-      console.log(`\nIn-progress features: ${featurePreview.join(', ')}`);
-    }
-    if (inProgressPreview.length > 0) {
-      console.log('\nIn Progress (preview):');
-      inProgressPreview.forEach((t) => console.log(`- ${t}`));
-    }
-    if (backlogPreview.length > 0) {
-      console.log('\nBacklog (preview):');
-      backlogPreview.forEach((t) => console.log(`- ${t}`));
-    }
-    console.log('\nNext: atris do (work ready to execute)');
-    await doCmd();
-    return;
-  }
-
-  if (inboxCount > 0) {
-    const preview = context.inboxItems.slice(0, 3).map((t) => (t.length > 70 ? `${t.slice(0, 67)}...` : t));
-    if (preview.length > 0) {
-      console.log('\nInbox (preview):');
-      preview.forEach((t) => console.log(`- ${t}`));
-    }
-    console.log('\nNext: atris plan (Inbox has ideas)');
-    await planCmd();
-    return;
-  }
-
-  if (completedTasksCount > 0) {
-    console.log('Next: atris plan (new work)');
-    return;
-  }
-
-  // No obvious next step - prompt for input
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  const request = await new Promise(r => rl.question('\nWhat do you want to build?\n> ', r));
-  rl.close();
-
-  if (!request.trim()) {
-    return;
-  }
-
-  await planCmd(request);
+  console.log(`\n> ${userInput}`);
+  await planCmd(userInput);
 }
 
 async function askContextGatherer(workspaceDir) {

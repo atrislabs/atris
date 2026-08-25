@@ -16988,9 +16988,9 @@ test('fresh workspace prompt gives one primary first command plus local fallback
     const home = path.join(dir, 'home');
     const res = runCli([], { cwd: dir, env: { HOME: home } });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /No atris\/ folder found/);
-    assert.match(res.stdout, /^Next: atris init$/m);
-    assert.match(res.stdout, /^Local project install instead\? Run: npx atris init$/m);
+    assert.match(res.stdout, /init/);
+    assert.match(res.stdout, /^next: atris init --minimal$/m);
+    assert.ok(res.stdout.trim().split('\n').filter(Boolean).length <= 6);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(home, '.atris')), false);
   } finally {

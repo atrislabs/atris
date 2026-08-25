@@ -28,7 +28,7 @@ For details, read `atris/wiki/concepts/owner-computer-model.md` before changing 
 
 ```bash
 # Core CLI logic
-rg "async function interactiveEntry|shouldGatherContext|renderContextGathererPrompt" bin/atris.js lib/context-gatherer.js    # Main entry points: cold-start dispatcher, first-contact context gatherer, legacy natural-language mode
+rg "async function interactiveEntry|shouldGatherContext|renderContextGathererPrompt|buildFirstMinute|shouldAutoInitFresh" bin/atris.js lib/context-gatherer.js lib/first-minute.js    # Main entry points: cold-start dispatcher, first-minute bare atris screen, first-contact context gatherer, legacy natural-language mode
 rg "pickLane|loadOverrides|routerCommand|promotionCandidates|autoLaneForMessage|appendAutoOutcome|modelForMode|buildPayload|connectorTurnPolicy|formatApprovalReceipt|formatTaskPreviewRows|resolveRoute|formatUsage|normalizeChatCommandArgs|CHAT_COMMANDS|filterChatCommands|attachSlashMenu|attachChatCtrlC|runChatSlash|async function chat|postTurn|runAxSpawnCommand|runAxYoutubeCommand|runChatDogfood|extractYoutubeUrl|AX Cloud-First Standard|verify-ax-cloud-standard" ax lib/ax-auto-lane.js commands/router.js test/ax-auto-lane.test.js test/router-promote.test.js test/cli-smoke.test.js test/ax.test.js scripts/verify-ax-cloud-standard.js atris/team/codex-executor/MEMBER.md  # ax Atris2 local coding-agent CLI: deterministic explainable auto lane selection, local outcome traces, reflex overrides, gated promotion, cloud-first by default, explicit --local workspace opt-in, Fast/Pro/Max/Code Fast modes, SSE streaming, workspace_path, readline slash menu and Ctrl-C conventions, chat history, connector turn isolation, Gmail approval previews, doctor/help, durable worker spawn aliases, local YouTube URL routing, and safe 25-loop --dogfood-chat checklist
 rg "atrisFastChat|atrisFastOnce|streamProChat|text_delta|Usage: atris fast" bin/atris.js utils/api.js test/commands.test.js test/api-stream.test.js  # Atris2 Fast one-shot chat CLI and SSE text_delta streaming
 rg "brainstormAtris|Usage: atris brainstorm|brainstorm help|isNonInteractive" commands/brainstorm.js lib/noninteractive.js test/commands.test.js test/dogfood-p0.test.js  # Brainstorm command + workspace-free help; headless captures idea args without prompting
@@ -1506,11 +1506,12 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 **Purpose:** First `atris` contact asks for human context before planning or agent bootstrap, then persists the answer and creates a starter onboarding task.
 
-- **Entry point:** `bin/atris.js:1182` (`interactiveEntry`)
+- **Entry point:** `bin/atris.js:1344` (`interactiveEntry`)
+- **First-minute screen:** `lib/first-minute.js` (`buildFirstMinute`) prints one win and one next command for bare `atris`; empty folders name `atris init --minimal`
 - **Helper:** `lib/context-gatherer.js`
 - **State:** `.atris/state/context_profile.json`
-- **Regression:** `test/context-gatherer.test.js`, `test/cli-smoke.test.js`
-- **Search:** `rg "shouldGatherContext|saveContextProfile|createStarterTask|Context gatherer" bin/atris.js lib/context-gatherer.js test`
+- **Regression:** `test/first-minute.test.js`, `test/context-gatherer.test.js`, `test/cli-smoke.test.js`
+- **Search:** `rg "shouldGatherContext|saveContextProfile|createStarterTask|buildFirstMinute|Context gatherer" bin/atris.js lib/context-gatherer.js lib/first-minute.js test`
 
 ---
 
