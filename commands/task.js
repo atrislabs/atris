@@ -13162,6 +13162,12 @@ async function run(args) {
     console.log('Usage: atris task accept <id> [--proof "..."] [--public]');
     return;
   }
+  // `task claim --help` is a help request, not a run. Claim mutates
+  // ownership, so never list or claim just to show usage.
+  if (sub === 'claim' && argsWantHelp(raw.slice(1))) {
+    console.log('Usage: atris task claim <id> --as <member>');
+    return;
+  }
   const result = await runTaskCommand(raw);
   const skipsRender = sub === 'clear-done' && hasFlag(raw, '--dry-run');
   if (MUTATING_TASK_COMMANDS.has(sub) && !skipsRender) autoRenderTodoFromDb();
