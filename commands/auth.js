@@ -8,6 +8,7 @@ const path = require('path');
 const AGENT_TOKEN_PATH = '/auth/agent-token';
 const DEFAULT_AGENT_SCOPES = ['x-search', 'youtube'];
 const DEFAULT_DAILY_CREDIT_CAP = 50;
+const NO_STORED_JWT_MESSAGE = 'not signed in. run atris login first.';
 
 function firstNonEmptyString(...values) {
   for (const value of values) {
@@ -122,13 +123,111 @@ async function postAgentToken(api, token, body) {
   });
 }
 
-async function mintAgentToken(args = [], deps = {}) {
-  const output = deps.output || console.log;
-  const outputError = deps.outputError || console.error;
+async function mintScopedAgentToken(requested = {}, deps = {}) {
   const api = deps.apiRequestJson || apiRequestJson;
   const load = deps.loadCredentials || loadCredentials;
   const persist = deps.persistMintedAgentToken || persistMintedAgentToken;
   const now = deps.now || (() => new Date().toISOString());
+
+  const scopes = Array.isArray(requested.scopes)
+    ? requested.scopes.map((part) => String(part).trim()).filter(Boolean)
+    : parseScopeList(requested.scopes);
+  if (scopes.length === 0) {
+    return { ok: false, code: 'invalid_scopes', error: 'scopes must list at least one value' };
+  }
+  const dailyCreditCap = Number.isInteger(requested.dailyCreditCap) && requested.dailyCreditCap > 0
+    ? requested.dailyCreditCap
+    : DEFAULT_DAILY_CREDIT_CAP;
+
+  const credentials = load() || {};
+  const accessToken = firstNonEmptyString(credentials.token);
+  const refreshToken = firstNonEmptyString(credentials.refresh_token);
+  if (!accessToken && !refreshToken) {
+    return { ok: false, code: 'not_logged_in', error: NO_STORED_JWT_MESSAGE };
+  }
+
+  const body = {
+    scopes,
+    daily_credit_cap: dailyCreditCap,
+  };
+  let authToken = accessToken || refreshToken;
+  let result = await postAgentToken(api, authToken, body);
+  if (!result.ok && result.status === 401 && refreshToken && authToken !== refreshToken) {
+    authToken = refreshToken;
+    result = await postAgentToken(api, authToken, body);
+  }
+
+  if (!result.ok) {
+    const detail = redactSecret(result.error || 'agent token request failed', accessToken);
+    return {
+      ok: false,
+      code: 'mint_failed',
+      status: result.status || 0,
+      error: redactSecret(detail, refreshToken),
+    };
+  }
+
+  const minted = extractAgentAccessToken(result.data);
+  if (!minted) {
+    return { ok: false, code: 'missing_token', error: 'backend did not return an agent token' };
+  }
+
+  persist(credentials, minted, {
+    refresh_token: firstNonEmptyString(result.data && result.data.refresh_token) || refreshToken,
+    saved_at: now(),
+  });
+
+  return {
+    ok: true,
+    token: minted,
+    meta: extractAgentTokenMeta(result.data, { scopes, dailyCreditCap }, minted),
+  };
+}
+
+async function ensureBilledCommandAuth(scope, deps = {}) {
+  const wanted = String(scope || '').trim();
+  if (!wanted) {
+    return { ok: false, error: NO_STORED_JWT_MESSAGE };
+  }
+
+  const api = deps.apiRequestJson || apiRequestJson;
+  const ensureFn = deps.ensureValidCredentials || ensureValidCredentials;
+  const load = deps.loadCredentials || loadCredentials;
+  const mint = deps.mintScopedAgentToken || mintScopedAgentToken;
+
+  if (!deps.forceMint) {
+    const ensured = await ensureFn(api);
+    if (ensured && ensured.credentials && ensured.credentials.token) {
+      return {
+        ok: true,
+        token: ensured.credentials.token,
+        minted: false,
+        credentials: ensured.credentials,
+      };
+    }
+  }
+
+  const credentials = load() || {};
+  if (!firstNonEmptyString(credentials.token, credentials.refresh_token)) {
+    return { ok: false, error: NO_STORED_JWT_MESSAGE };
+  }
+
+  const minted = await mint({ scopes: [wanted] }, deps);
+  if (!minted.ok) {
+    return { ok: false, error: minted.error || NO_STORED_JWT_MESSAGE };
+  }
+  return {
+    ok: true,
+    token: minted.token,
+    minted: true,
+    credentials: load() || credentials,
+    meta: minted.meta,
+  };
+}
+
+async function mintAgentToken(args = [], deps = {}) {
+  const output = deps.output || console.log;
+  const outputError = deps.outputError || console.error;
 
   let options;
   try {
@@ -143,76 +242,39 @@ async function mintAgentToken(args = [], deps = {}) {
     return 1;
   }
 
-  const credentials = load() || {};
-  const accessToken = firstNonEmptyString(credentials.token);
-  const refreshToken = firstNonEmptyString(credentials.refresh_token);
-  if (!accessToken && !refreshToken) {
-    if (options.json) {
-      output(JSON.stringify({
-        ok: false,
-        error: 'not_logged_in',
-        next: 'atris login',
-      }, null, 2));
-    } else {
-      output('not signed in. run atris login first, then atris login --agent.');
-    }
-    return 1;
-  }
-
-  const body = {
+  const minted = await mintScopedAgentToken({
     scopes: options.scopes,
-    daily_credit_cap: options.dailyCreditCap,
-  };
-  let authToken = accessToken || refreshToken;
-  let result = await postAgentToken(api, authToken, body);
-  if (!result.ok && result.status === 401 && refreshToken && authToken !== refreshToken) {
-    authToken = refreshToken;
-    result = await postAgentToken(api, authToken, body);
-  }
+    dailyCreditCap: options.dailyCreditCap,
+  }, deps);
 
-  if (!result.ok) {
-    const detail = redactSecret(result.error || 'agent token request failed', accessToken);
+  if (!minted.ok) {
     if (options.json) {
       output(JSON.stringify({
         ok: false,
-        error: redactSecret(detail, refreshToken),
-        status: result.status || 0,
+        error: minted.code === 'not_logged_in' ? 'not_logged_in' : minted.error,
+        next: minted.code === 'not_logged_in' ? 'atris login' : undefined,
+        status: minted.status || undefined,
       }, null, 2));
+    } else if (minted.code === 'not_logged_in') {
+      output('not signed in. run atris login first, then atris login --agent.');
     } else {
-      outputError(redactSecret(detail, refreshToken));
+      outputError(minted.error);
     }
     return 1;
   }
 
-  const minted = extractAgentAccessToken(result.data);
-  if (!minted) {
-    const message = 'backend did not return an agent token';
-    if (options.json) {
-      output(JSON.stringify({ ok: false, error: message }, null, 2));
-    } else {
-      outputError(message);
-    }
-    return 1;
-  }
-
-  persist(credentials, minted, {
-    refresh_token: firstNonEmptyString(result.data && result.data.refresh_token) || refreshToken,
-    saved_at: now(),
-  });
-
-  const meta = extractAgentTokenMeta(result.data, options, minted);
   if (options.json) {
     output(JSON.stringify({
       ok: true,
       minted: true,
-      scopes: meta.scopes,
-      daily_credit_cap: meta.dailyCreditCap,
-      expires_at: meta.expiresAt,
+      scopes: minted.meta.scopes,
+      daily_credit_cap: minted.meta.dailyCreditCap,
+      expires_at: minted.meta.expiresAt,
     }, null, 2));
     return 0;
   }
 
-  printAgentTokenMint(meta, output);
+  printAgentTokenMint(minted.meta, output);
   return 0;
 }
 
@@ -915,5 +977,6 @@ module.exports = {
   shellInit,
   parseAgentTokenArgs,
   mintAgentToken,
+  ensureBilledCommandAuth,
   wantsAgentToken,
 };

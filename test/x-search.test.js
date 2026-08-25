@@ -145,41 +145,130 @@ test('xSearchCommand --json prints raw payload', async () => {
 });
 
 test('xSearchCommand surfaces 401 login hint', async () => {
-  await assert.rejects(
-    () => xSearchCommand(['agents'], {
-      output: () => {},
-      ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
-      apiRequestJson: async () => ({
-        ok: false,
-        status: 401,
-        error: 'Not authenticated',
-      }),
+  const output = [];
+  const status = await xSearchCommand(['agents'], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    loadCredentials: () => ({ token: 't' }),
+    apiRequestJson: async () => ({
+      ok: false,
+      status: 401,
+      error: 'Not authenticated',
     }),
-    (err) => {
-      assert.match(String(err.message), /401/);
-      assert.match(String(err.message), /atris login --force/);
-      return true;
-    },
-  );
+  });
+  assert.equal(status, 1);
+  assert.match(output.join('\n'), /401/);
+  assert.match(output.join('\n'), /atris login --force/);
 });
 
 test('xSearchCommand surfaces 402 credits hint', async () => {
-  await assert.rejects(
-    () => xSearchCommand(['agents'], {
-      output: () => {},
-      ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
-      apiRequestJson: async () => ({
-        ok: false,
-        status: 402,
-        error: 'Insufficient credits',
-      }),
+  const output = [];
+  const status = await xSearchCommand(['agents'], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: false,
+      status: 402,
+      error: 'Insufficient credits',
     }),
-    (err) => {
-      assert.match(String(err.message), /402/);
-      assert.match(String(err.message), /Check Atris credits/);
-      return true;
+  });
+  assert.equal(status, 1);
+  assert.match(output.join('\n'), /402/);
+  assert.match(output.join('\n'), /Check Atris credits/);
+});
+
+test('xSearchCommand mints only the x-search scope after an expired user wall and retries', async () => {
+  const calls = [];
+  const persisted = [];
+  const output = [];
+  const secret = 'minted-x-search-secret';
+
+  const status = await xSearchCommand(['MCP agents'], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ error: 'token_invalid', detail: 'Token expired' }),
+    loadCredentials: () => ({
+      token: 'user-jwt',
+      refresh_token: 'refresh-jwt',
+      email: 'owner@example.com',
+    }),
+    persistMintedAgentToken: (_credentials, token) => {
+      persisted.push(token);
     },
-  );
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      if (pathname === '/auth/agent-token') {
+        return {
+          ok: true,
+          status: 200,
+          data: { access_token: secret, scopes: ['x-search'], daily_credit_cap: 50 },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        data: { data: { content: 'ok from mint', citations: [] }, credits_used: 5 },
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(calls[0].pathname, '/auth/agent-token');
+  assert.equal(calls[0].options.token, 'user-jwt');
+  assert.deepEqual(calls[0].options.body.scopes, ['x-search']);
+  assert.equal(calls[0].options.body.scopes.includes('youtube'), false);
+  assert.equal(calls[1].pathname, '/x-search/search');
+  assert.equal(calls[1].options.token, secret);
+  assert.deepEqual(persisted, [secret]);
+  assert.match(output.join('\n'), /ok from mint/);
+  assert.doesNotMatch(output.join('\n'), new RegExp(secret));
+  assert.doesNotMatch(output.join('\n'), /\/auth\/cli|Choose login method|Opening browser/);
+});
+
+test('xSearchCommand remints after a billed 401 and retries once', async () => {
+  const calls = [];
+  const secret = 'minted-after-401-secret';
+  const status = await xSearchCommand(['agents'], {
+    output: () => {},
+    ensureValidCredentials: async () => ({ credentials: { token: 'user-jwt' } }),
+    loadCredentials: () => ({ token: 'user-jwt', refresh_token: 'refresh-jwt' }),
+    persistMintedAgentToken: () => {},
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, token: options.token, body: options.body });
+      if (pathname === '/x-search/search' && options.token === 'user-jwt') {
+        return { ok: false, status: 401, error: 'agent token required' };
+      }
+      if (pathname === '/auth/agent-token') {
+        assert.deepEqual(options.body.scopes, ['x-search']);
+        return { ok: true, status: 200, data: { access_token: secret, scopes: ['x-search'] } };
+      }
+      return { ok: true, status: 200, data: { data: { content: 'retried', citations: [] } } };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(calls[0].pathname, '/x-search/search');
+  assert.equal(calls[0].token, 'user-jwt');
+  assert.equal(calls[1].pathname, '/auth/agent-token');
+  assert.equal(calls[2].pathname, '/x-search/search');
+  assert.equal(calls[2].token, secret);
+});
+
+test('xSearchCommand with no stored JWT fails in one sentence and stays off the login wall', async () => {
+  const output = [];
+  let apiCalls = 0;
+  const status = await xSearchCommand(['agents'], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ error: 'not_logged_in' }),
+    loadCredentials: () => null,
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      return { ok: true, status: 200, data: {} };
+    },
+  });
+  assert.equal(status, 1);
+  assert.equal(apiCalls, 0);
+  assert.equal(output.join('\n').trim(), 'not signed in. run atris login first.');
+  assert.doesNotMatch(output.join('\n'), /\/auth\/cli|Choose login method|Opening browser|https:\/\//);
 });
 
 test('xSearchCommand person posts to research-person', async () => {

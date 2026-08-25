@@ -319,6 +319,119 @@ test('fileBriefFromNotes files youtu.be notes and stays silent without a wiki', 
   assert.equal(fs.existsSync(path.join(bare, 'atris', 'logs')), false);
 });
 
+test('youtube process mints only the youtube scope after an expired user wall and retries', async () => {
+  const calls = [];
+  const persisted = [];
+  const output = [];
+  const secret = 'minted-youtube-secret';
+
+  const status = await youtubeCommand([
+    'https://youtube.com/watch?v=abc123',
+    '--query',
+    'Extract lessons',
+  ], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ error: 'token_invalid', detail: 'Token expired' }),
+    loadCredentials: () => ({
+      token: 'user-jwt',
+      refresh_token: 'refresh-jwt',
+      email: 'owner@example.com',
+    }),
+    persistMintedAgentToken: (_credentials, token) => {
+      persisted.push(token);
+    },
+    extractLocalTranscript: async () => null,
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      if (pathname === '/auth/agent-token') {
+        return {
+          ok: true,
+          status: 200,
+          data: { access_token: secret, scopes: ['youtube'], daily_credit_cap: 50 },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          status: 'success',
+          message: 'YouTube video processed successfully',
+          video_analysis: 'Main insight.',
+          credits_used: 5,
+          credits_remaining: 42,
+        },
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(calls[0].pathname, '/auth/agent-token');
+  assert.equal(calls[0].options.token, 'user-jwt');
+  assert.deepEqual(calls[0].options.body.scopes, ['youtube']);
+  assert.equal(calls[0].options.body.scopes.includes('x-search'), false);
+  assert.equal(calls[1].pathname, '/agent/process_youtube');
+  assert.equal(calls[1].options.token, secret);
+  assert.deepEqual(persisted, [secret]);
+  assert.match(output.join('\n'), /Main insight/);
+  assert.doesNotMatch(output.join('\n'), new RegExp(secret));
+  assert.doesNotMatch(output.join('\n'), /\/auth\/cli|Choose login method|Opening browser/);
+});
+
+test('youtube process remints after a billed 401 and retries once', async () => {
+  const calls = [];
+  const secret = 'minted-youtube-after-401';
+  const status = await youtubeCommand(['https://youtube.com/watch?v=abc123'], {
+    output: () => {},
+    ensureValidCredentials: async () => ({ credentials: { token: 'user-jwt' } }),
+    loadCredentials: () => ({ token: 'user-jwt', refresh_token: 'refresh-jwt' }),
+    persistMintedAgentToken: () => {},
+    extractLocalTranscript: async () => null,
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, token: options.token, body: options.body });
+      if (pathname === '/agent/process_youtube' && options.token === 'user-jwt') {
+        return { ok: false, status: 401, error: 'agent token required' };
+      }
+      if (pathname === '/auth/agent-token') {
+        assert.deepEqual(options.body.scopes, ['youtube']);
+        return { ok: true, status: 200, data: { access_token: secret, scopes: ['youtube'] } };
+      }
+      return {
+        ok: true,
+        status: 200,
+        data: { status: 'success', message: 'ok', video_analysis: 'retried' },
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(calls[0].pathname, '/agent/process_youtube');
+  assert.equal(calls[0].token, 'user-jwt');
+  assert.equal(calls[1].pathname, '/auth/agent-token');
+  assert.equal(calls[2].pathname, '/agent/process_youtube');
+  assert.equal(calls[2].token, secret);
+});
+
+test('youtube process with no stored JWT fails in one sentence and stays off the login wall', async () => {
+  const output = [];
+  let apiCalls = 0;
+  const status = await youtubeCommand(['https://youtube.com/watch?v=abc123'], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ error: 'not_logged_in' }),
+    loadCredentials: () => null,
+    extractLocalTranscript: async () => {
+      throw new Error('should not extract');
+    },
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      return { ok: true, status: 200, data: {} };
+    },
+  });
+  assert.equal(status, 1);
+  assert.equal(apiCalls, 0);
+  assert.equal(output.join('\n').trim(), 'not signed in. run atris login first.');
+  assert.doesNotMatch(output.join('\n'), /\/auth\/cli|Choose login method|Opening browser|https:\/\//);
+});
+
 test('formatYoutubeResult includes metadata, credits, and analysis', () => {
   const text = formatYoutubeResult({
     message: 'done',
