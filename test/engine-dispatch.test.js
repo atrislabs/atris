@@ -645,6 +645,44 @@ test('prepareReviewSandbox clears the git-top-level guard for a real repository'
   }
 });
 
+test('resolveDispatchLandTarget uses the workspace protected branch, honoring explicit and fallback (CLI-1298)', () => {
+  const { spawnSync } = require('node:child_process');
+  const git = (args, cwd) => {
+    const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    assert.equal(r.status, 0, `git ${args.join(' ')} failed: ${r.stderr || r.stdout}`);
+    return r.stdout.trim();
+  };
+
+  // Explicit base always wins, untouched.
+  assert.equal(fleet.resolveDispatchLandTarget('/does/not/matter', 'origin/release'), 'origin/release');
+
+  // A non-git root cannot resolve a protected branch; fall back to origin/master
+  // so single-branch repos and test fixtures keep the historical default.
+  const nonGit = fs.mkdtempSync(path.join(os.tmpdir(), 'land-target-nongit-'));
+  try {
+    assert.equal(fleet.resolveDispatchLandTarget(nonGit, null), fleet.DISPATCH_SELF_LAND_TARGET);
+    assert.equal(fleet.DISPATCH_SELF_LAND_TARGET, 'origin/master');
+  } finally {
+    fs.rmSync(nonGit, { recursive: true, force: true });
+  }
+
+  // A workspace whose protected branch is `main` (origin/main + origin/HEAD ->
+  // main, no origin/master) resolves to origin/main, not the old hard-coded ref.
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'land-target-main-'));
+  try {
+    git(['init', '-q'], repo);
+    git(['config', 'user.email', 'test@example.test'], repo);
+    git(['config', 'user.name', 'test'], repo);
+    git(['commit', '-q', '--allow-empty', '-m', 'base'], repo);
+    const head = git(['rev-parse', 'HEAD'], repo);
+    git(['update-ref', 'refs/remotes/origin/main', head], repo);
+    git(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], repo);
+    assert.equal(fleet.resolveDispatchLandTarget(repo, null), 'origin/main');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('runDispatchFlight restaffs once when usage-limit output kills the first engine', async () => {
   const tmpRoot = makeTempRoot();
   try {    const { cli, calls } = ownCliFake({
