@@ -1509,7 +1509,7 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 **Purpose:** First `atris` contact asks for human context before planning or agent bootstrap, then persists the answer and creates a starter onboarding task.
 
 - **Entry point:** `bin/atris.js:1344` (`interactiveEntry`)
-- **First-minute screen:** `lib/first-minute.js` (`buildFirstMinute`) prints one win and one next command for bare `atris`; empty folders name `atris init --minimal`; claimed work names `atris task ready <id> --verify "<cmd>" --result "<plain sentence>"`; certified review names `atris task accept <id>`; throwaway names (`tmp`, `temp`, `atris-*`, hashes) stay "this folder"; a real basename like `launch-day` stays even under `/tmp`; person name prefers the saved account first name
+- **First-minute screen:** `lib/first-minute.js` (`buildFirstMinute`) prints one win and one next command for bare `atris`; empty folders name `atris init --minimal`; claimed work names `atris task ready <id>`; certified review names `atris task accept <id>`; throwaway names (`tmp`, `temp`, `atris-*`, hashes) stay "this folder"; a real basename like `launch-day` stays even under `/tmp`; person name prefers the saved account first name
 - **Helper:** `lib/context-gatherer.js`
 - **State:** `.atris/state/context_profile.json`
 - **Regression:** `test/first-minute.test.js`, `test/context-gatherer.test.js`, `test/cli-smoke.test.js`
