@@ -59,6 +59,7 @@ const {
   decisionMarkerFor,
   DECISION_REFUSE_REASON,
 } = require('../lib/task-decision');
+const { deskNextCommand, personName } = require('../lib/first-minute');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -6154,7 +6155,7 @@ function renderTaskDesk(rows, refRows = rows) {
   if (active.length === 0) console.log('clear   no active tasks');
   console.log('');
   console.log(`active ${active.length} / done ${done.length}`);
-  console.log('next: atris task next');
+  console.log(`next: ${deskNextCommand(displayRows, personName())}`);
 }
 
 function cmdAdd(args) {

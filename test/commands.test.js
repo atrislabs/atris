@@ -13282,7 +13282,7 @@ test('task natural flow creates, picks, talks, finishes, and refreshes projectio
     assert.equal(desk.status, 0, desk.stderr);
     assert.match(desk.stdout, /TASK DESK/);
     assert.match(desk.stdout, new RegExp(`open\\s+${ref}`));
-    assert.match(desk.stdout, /next: atris task next/);
+    assert.match(desk.stdout, new RegExp(`^next: atris task claim ${ref} --as `, 'm'));
 
     const next = runCli(['task', 'next', '--as', 'codex'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
