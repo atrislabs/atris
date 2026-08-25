@@ -1063,6 +1063,7 @@ module.exports = {
   deniedLaneForShip,
   createOrFindPr,
   cleanupWorktrees,
+  defaultMainlineBase,
   defaultStartBase,
   describeFlightAge,
   flightStampMs,
