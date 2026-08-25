@@ -20,8 +20,8 @@ async function run(argv) {
 
     atris site <dir|doc.md> [--out dist] [--theme atris|terminal|paper] [--title T]
     atris site atris/wiki --title "Atris Wiki" --serve
-    atris site deploy <dir> --name <slug> [--spa] [--dry-run]
-    atris site deploy <dir> --fullstack --name <slug> [--dry-run]
+    atris site deploy <dir> --name <slug> [--spa] [--dry-run] --yes
+    atris site deploy <dir> --fullstack --name <slug> [--dry-run] --yes
 
   Each .md becomes a page; an index links them all. Same anti-slop design system,
   semantic data-atris-block sections, ready for the web app. --serve previews it.

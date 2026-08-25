@@ -35,7 +35,7 @@ function isHelpToken(arg) {
 }
 
 const BUSINESS_CREATE_USAGE = 'Usage: atris business create <name> [--description "..."] [--workspace] [--here|--root <dir>]';
-const BUSINESS_SHIP_USAGE = 'Usage: atris business ship "<paragraph>" [--name <name>] [--email <email>]';
+const BUSINESS_SHIP_USAGE = 'Usage: atris business ship "<paragraph>" [--name <name>] [--email <email>] --yes';
 
 function isAccidentalHelpBusiness(value) {
   const raw = String(value || '').trim();
@@ -100,6 +100,8 @@ function parseBusinessShipArgs(args = []) {
       i++;
     } else if (typeof arg === 'string' && arg.startsWith('--email=')) {
       email = arg.slice('--email='.length);
+    } else if (arg === '--yes' || arg === '-y') {
+      // proceed flag; checked by shipBusiness
     } else if (typeof arg === 'string' && arg.startsWith('-')) {
       return { ok: false, usage: BUSINESS_SHIP_USAGE, detail: `Unknown option: ${arg}` };
     } else {
@@ -2863,12 +2865,19 @@ function printBusinessShipHelp() {
   console.log('Create a live business from one paragraph.');
   console.log('  --name <name>     Optional business name');
   console.log('  --email <email>   Optional customer email');
+  console.log('  --yes             Required to POST /business/ship');
 }
 
 async function shipBusiness(...args) {
   if (args.some(isHelpToken)) {
     printBusinessShipHelp();
     return;
+  }
+
+  if (!args.includes('--yes') && !args.includes('-y')) {
+    console.error(BUSINESS_SHIP_USAGE);
+    console.error('Pass --yes to create a live business.');
+    process.exit(2);
   }
 
   const parsed = parseBusinessShipArgs(args);
@@ -3492,7 +3501,7 @@ function printBusinessHelp() {
   console.log('  init <name>          RECOMMENDED: create a business environment (cloud + local)');
   console.log('  workspace <name>     Alias for init');
   console.log('  create <name>        Cloud-only business record; add --workspace to also scaffold local');
-  console.log('  ship "<paragraph>"   One paragraph, live business (optional --name, --email)');
+  console.log('  ship "<paragraph>"   One paragraph, live business (optional --name, --email; --yes required)');
   console.log('  simulate <idea>      Create a business, four-role team, missions, and endgame loop');
   console.log('  add <slug>           Register an existing cloud business');
   console.log('  list                 Show registered businesses');

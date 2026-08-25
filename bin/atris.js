@@ -47,6 +47,7 @@ const {
   requireAccountBound,
   refuseAccountGlobal,
 } = require('../lib/account-bound');
+const { isHelpToken, argsWantHelp } = require('../lib/noninteractive');
 
 // State detection for smart default
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
@@ -156,6 +157,9 @@ function parseNaturalEntryArgs(args = []) {
     const value = String(args[i] || '');
     if (value === '--json') {
       asJson = true;
+      continue;
+    }
+    if (isHelpToken(value)) {
       continue;
     }
     const inlineFlag = NATURAL_VALUE_FLAGS.find((name) => value.startsWith(`${name}=`));
@@ -455,6 +459,19 @@ function consoleCmd() {
   }
 
   process.exit(result.status ?? 0);
+}
+
+function showStartHelp() {
+  console.log('');
+  console.log('Usage: atris start [options]');
+  console.log('');
+  console.log('Starts the durable mission loop for one useful self-improvement mission.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --json       Print the mission route without starting it.');
+  console.log('  --owner X    Override mission owner.');
+  console.log('  --cadence X  Override mission cadence.');
+  console.log('');
 }
 
 function showHelpShort() {
@@ -1141,6 +1158,17 @@ const voiceTriggers = {
   'show learnings': 'learn',
   'what did i learn': 'learn',
 };
+
+// -h/--help/help on argv[1] (including voice words like start) is usage
+// + exit 2 before NL and before _start. Never file a task titled a flag.
+if (command && !knownCommands.includes(command) && argsWantHelp(process.argv.slice(2))) {
+  if (String(command).toLowerCase() === 'start') showStartHelp();
+  else {
+    showHelpShort();
+    console.log('Usage: atris help');
+  }
+  process.exit(2);
+}
 
 if (!command || !knownCommands.includes(command)) {
   // Check voice triggers before falling through to natural language
@@ -1875,18 +1903,9 @@ if (command === 'init') {
   process.exit(typeof code === 'number' ? code : 0);
 } else if (command === '_start') {
   const args = process.argv.slice(3);
-  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    console.log('');
-    console.log('Usage: atris start [options]');
-    console.log('');
-    console.log('Starts the durable mission loop for one useful self-improvement mission.');
-    console.log('');
-    console.log('Options:');
-    console.log('  --json       Print the mission route without starting it.');
-    console.log('  --owner X    Override mission owner.');
-    console.log('  --cadence X  Override mission cadence.');
-    console.log('');
-    process.exit(0);
+  if (argsWantHelp(args)) {
+    showStartHelp();
+    process.exit(2);
   }
 
   if (args.includes('--json')) {
@@ -3114,9 +3133,17 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'site') {
   // Site: beautiful static site from a folder of markdown, in the anti-slop design system.
-  Promise.resolve(require('../commands/site').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  {
+    const raw = process.argv.slice(3);
+    const deployWrite = raw[0] === 'deploy'
+      && !argsWantHelp(raw)
+      && !raw.includes('--dry-run');
+    const gate = deployWrite ? requireAccountBound(raw) : { ok: true, args: raw };
+    if (!gate.ok) process.exit(refuseAccountGlobal());
+    Promise.resolve(require('../commands/site').run(gate.args))
+      .then((code) => process.exit(typeof code === 'number' ? code : 0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  }
 } else if (command === 'theme') {
   // Theme: brand themes (.atris/theme.json) for the whole design system (deck/html/site).
   Promise.resolve(require('../commands/theme').run(process.argv.slice(3)))

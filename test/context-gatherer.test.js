@@ -16,6 +16,7 @@ const {
   saveContextProfile,
   shouldGatherContext,
   starterTaskTitle,
+  isFlagLikeAnswer,
 } = require('../lib/context-gatherer');
 
 function hasNodeSqlite() {
@@ -127,4 +128,18 @@ test('context gatherer recognizes Atris overview questions', () => {
   assert.equal(isAtrisMetaQuestion('what is atris?'), true);
   assert.equal(isAtrisMetaQuestion('tell me about Atris'), true);
   assert.equal(isAtrisMetaQuestion('help me organize college apps'), false);
+});
+
+test('createStarterTask refuses flag titles', () => {
+  assert.equal(isFlagLikeAnswer('start --help'), true);
+  assert.equal(isFlagLikeAnswer('--help'), true);
+  assert.equal(isFlagLikeAnswer('help'), true);
+  assert.equal(isFlagLikeAnswer('help me organize college apps'), false);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-flag-title-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(createStarterTask(dir, 'start --help'), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

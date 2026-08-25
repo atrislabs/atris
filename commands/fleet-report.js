@@ -15,6 +15,8 @@
 
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
+const { requireAccountBound, refuseAccountGlobal } = require('../lib/account-bound');
+const { argsWantHelp, wantsJson } = require('../lib/noninteractive');
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -157,15 +159,33 @@ async function leaderboard(token, businesses) {
 
 async function fleetReport() {
   const args = process.argv.slice(3);
-  const allAlive = args.includes('--all-alive');
-  const wake = args.includes('--wake');
-  const dryRun = args.includes('--dry-run');
-  const board = args.includes('--leaderboard');
-  const slug = args.find((a) => !a.startsWith('--'));
+  const usage = 'Usage: atris fleet-report <business> [--wake] | --all-alive [--dry-run] | --leaderboard';
+  if (argsWantHelp(args) || wantsJson(args)) {
+    if (wantsJson(args)) {
+      console.log(JSON.stringify({
+        ok: false,
+        command: 'fleet-report',
+        error: 'usage',
+        usage,
+      }, null, 2));
+    } else {
+      console.log(usage);
+    }
+    process.exit(2);
+  }
+
+  const gate = requireAccountBound(args);
+  if (!gate.ok) process.exit(refuseAccountGlobal());
+
+  const allAlive = gate.args.includes('--all-alive');
+  const wake = gate.args.includes('--wake');
+  const dryRun = gate.args.includes('--dry-run');
+  const board = gate.args.includes('--leaderboard');
+  const slug = gate.args.find((a) => !a.startsWith('--'));
 
   if (!allAlive && !slug && !board) {
-    console.log('Usage: atris fleet-report <business> [--wake] | --all-alive [--dry-run] | --leaderboard');
-    process.exit(1);
+    console.log(usage);
+    process.exit(2);
   }
 
   const creds = loadCredentials();
