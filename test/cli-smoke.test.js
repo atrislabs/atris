@@ -582,7 +582,8 @@ test('default entry auto-advances to plan when inbox has items', () => {
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris Plan — Navigator Agent Activated/);
+    assert.match(res.stdout, /^next: atris plan$/m);
+    assert.doesNotMatch(res.stdout, /What do you want to build|Atris Plan/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -602,7 +603,8 @@ test('default entry gathers first-contact context before MAP bootstrap', () => {
     const bare = runCli([], { cwd: dir, input: '\n', env });
     assert.equal(bare.status, 0, bare.stderr);
     assert.doesNotMatch(bare.stdout, /context gatherer skipped \(non-interactive\)/);
-    assert.match(bare.stdout, /next\s+run `atris` and describe what you want in plain words\./);
+    assert.match(bare.stdout, /^next: atris /m);
+    assert.doesNotMatch(bare.stdout, /What do you want to build/);
 
     // the hot-start path (answer passed as argv) still gathers context
     const res = runCli(['help me organize college applications'], { cwd: dir, env });
@@ -634,7 +636,8 @@ test('default entry auto-advances to do when backlog tasks exist', () => {
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris Do — Executor Agent Activated/);
+    assert.match(res.stdout, /^next: atris /m);
+    assert.doesNotMatch(res.stdout, /What do you want to build|Atris Do/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -663,9 +666,9 @@ test('default entry treats completed-only TODO rows as history', () => {
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Completed \(history\):/);
-    assert.match(res.stdout, /Completed tasks are history, not pending review\./);
-    assert.doesNotMatch(res.stdout, /Next: atris review|I checked the review setup\./);
+    assert.match(res.stdout, /validate thing|already shipped|set up/);
+    assert.match(res.stdout, /^next: atris /m);
+    assert.doesNotMatch(res.stdout, /Next: atris review|I checked the review setup\.|What do you want to build/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -687,10 +690,9 @@ test('default entry routes active work before completed history', () => {
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Completed \(history\):/);
-    assert.match(res.stdout, /Backlog \(preview\):/);
-    assert.match(res.stdout, /Next: atris do \(work ready to execute\)/);
-    assert.doesNotMatch(res.stdout, /Next: atris review|I checked the review setup\./);
+    assert.match(res.stdout, /validate old thing|build the useful thing|already/);
+    assert.match(res.stdout, /^next: atris /m);
+    assert.doesNotMatch(res.stdout, /Next: atris review|I checked the review setup\.|What do you want to build/);
   } finally {
     cleanupTempDir(dir);
   }

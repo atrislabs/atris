@@ -12,8 +12,6 @@ const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 // 60s keeps the real-hang guard (interactive prompt waiting on stdin blocks
 // forever) while clearing the load-induced slowdown.
 const INIT_TIMEOUT_MS = 60000;
-const FIRST_USE_NEXT = 'Next: atris "help me choose the first useful step for this project"';
-const FIRST_MISSION = 'atris mission start "Verify this Atris workspace is ready" --owner validator --runner manual --lane workspace --verify "node -e \\"require(\'fs\').accessSync(\'atris/atris.md\')\\"" --stop "workspace readiness is verified"';
 const STARTER_MEMBERS = ['customer-lead', 'executor', 'improver', 'mission-lead', 'navigator', 'validator'];
 
 function makeTempDir() {
@@ -67,10 +65,8 @@ test('init --yes exits without hanging and skips context gatherer', () => {
     const res = runInit(['--yes'], { cwd: dir });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.doesNotMatch(res.stdout, /context gatherer skipped/);
-    assert.ok(res.stdout.includes('  next     run `atris` and describe what you want in plain words.'));
-    assert.ok(res.stdout.includes(`agents: ${FIRST_MISSION}`));
-    assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
-    assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
+    assert.match(res.stdout, /^next: atris /m);
+    assert.doesNotMatch(res.stdout, /What do you want to build|BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
   } finally {
     cleanupTempDir(dir);
@@ -83,10 +79,8 @@ test('init -y exits without hanging and skips context gatherer', () => {
     const res = runInit(['-y'], { cwd: dir });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.doesNotMatch(res.stdout, /context gatherer skipped/);
-    assert.ok(res.stdout.includes('  next     run `atris` and describe what you want in plain words.'));
-    assert.ok(res.stdout.includes(`agents: ${FIRST_MISSION}`));
-    assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
-    assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
+    assert.match(res.stdout, /^next: atris /m);
+    assert.doesNotMatch(res.stdout, /What do you want to build|BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
   } finally {
     cleanupTempDir(dir);
@@ -99,10 +93,8 @@ test('init with piped stdin exits without hanging', () => {
     const res = runInit([], { cwd: dir, input: '' });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.doesNotMatch(res.stdout, /context gatherer skipped/);
-    assert.ok(res.stdout.includes('  next     run `atris` and describe what you want in plain words.'));
-    assert.ok(res.stdout.includes(`agents: ${FIRST_MISSION}`));
-    assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
-    assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
+    assert.match(res.stdout, /^next: atris /m);
+    assert.doesNotMatch(res.stdout, /What do you want to build|BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
   } finally {
     cleanupTempDir(dir);
@@ -115,10 +107,8 @@ test('init with ATRIS_NO_INTERACTIVE skips context gatherer', () => {
     const res = runInit([], { cwd: dir, env: { ATRIS_NO_INTERACTIVE: '1' } });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.doesNotMatch(res.stdout, /context gatherer skipped/);
-    assert.ok(res.stdout.includes('  next     run `atris` and describe what you want in plain words.'));
-    assert.ok(res.stdout.includes(`agents: ${FIRST_MISSION}`));
-    assert.ok(res.stdout.includes(`Then: ${FIRST_USE_NEXT.slice('Next: '.length)}`));
-    assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
+    assert.match(res.stdout, /^next: atris /m);
+    assert.doesNotMatch(res.stdout, /What do you want to build|BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -142,7 +132,8 @@ test('init keeps default output grouped and restores file details with --verbose
     assert.equal(verbose.status, 0, `stdout:\n${verbose.stdout}\nstderr:\n${verbose.stderr}`);
     assert.match(verbose.stdout, /✓ Created GETTING_STARTED\.md/);
     assert.match(verbose.stdout, /✓ Copied skill:/);
-    assert.match(verbose.stdout, /context gatherer skipped \(non-interactive\)\./);
+    assert.match(verbose.stdout, /^next: atris /m);
+    assert.doesNotMatch(verbose.stdout, /What do you want to build/);
   } finally {
     cleanupTempDir(quietDir);
     cleanupTempDir(verboseDir);
