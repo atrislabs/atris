@@ -7194,6 +7194,7 @@ test('task next and list honor tag scope before mutating tasks', () => {
     assert.equal(noMatch.status, 0, noMatch.stderr);
     const noMatchPayload = JSON.parse(noMatch.stdout);
     assert.equal(noMatchPayload.action, 'none');
+    assert.equal(noMatchPayload.command, 'atris task new');
     assert.equal(noMatchPayload.task_id, null);
     assert.equal(noMatchPayload.scope.tag, 'golden-path');
 
@@ -7216,9 +7217,11 @@ test('task next and list honor tag scope before mutating tasks', () => {
     const scopedNext = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
     assert.equal(scopedNext.status, 0, scopedNext.stderr);
     const scopedNextPayload = JSON.parse(scopedNext.stdout);
-    assert.equal(scopedNextPayload.action, 'next');
+    assert.equal(scopedNextPayload.action, 'claim');
+    assert.equal(scopedNextPayload.command, `atris task claim ${goldenTask.display_id} --as onboarding`);
     assert.equal(scopedNextPayload.task_id, goldenTask.id);
     assert.equal(scopedNextPayload.task.tag, 'golden-path');
+    assert.equal(JSON.parse(runCli(['task', 'show', goldenTask.display_id, '--json'], { cwd: dir, env }).stdout).status, 'open');
 
     const filteredList = runCli(['task', 'list', '--tag', 'golden-path'], { cwd: dir, env });
     assert.equal(filteredList.status, 0, filteredList.stderr);
@@ -10858,10 +10861,9 @@ test('task ready holds work in review until human accept', () => {
     const nextAfterReviewCertification = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(nextAfterReviewCertification.status, 0, nextAfterReviewCertification.stderr);
     const firstNextPayload = JSON.parse(nextAfterReviewCertification.stdout);
-    assert.equal(firstNextPayload.action, 'human_accept_waiting');
+    assert.equal(firstNextPayload.action, 'accept');
+    assert.equal(firstNextPayload.command, `atris task accept ${ref}`);
     assert.equal(firstNextPayload.task_id, readyPayload.task.id);
-    assert.equal(firstNextPayload.handoff.next_action, 'human_accept_waiting');
-    assert.equal(firstNextPayload.continue_work_command, null);
 
     const certified = runCli([
       'task', 'ready', ref,
@@ -10939,11 +10941,9 @@ test('task ready holds work in review until human accept', () => {
     const nextAfterCertification = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(nextAfterCertification.status, 0, nextAfterCertification.stderr);
     const nextPayload = JSON.parse(nextAfterCertification.stdout);
-    assert.equal(nextPayload.action, 'continue_work');
-    assert.equal(nextPayload.task_id, null);
-    assert.equal(nextPayload.handoff.next_action, 'continue_work');
-    assert.equal(nextPayload.handoff.career_xp_status, 'pending_human_accept');
-    assert.equal(nextPayload.review_task.id, certifiedPayload.task.id);
+    assert.equal(nextPayload.action, 'accept');
+    assert.equal(nextPayload.command, `atris task accept ${ref}`);
+    assert.equal(nextPayload.task_id, certifiedPayload.task.id);
 
     const textAdd = runCli(['task', 'add', 'Render native goal handoff copy', '--tag', 'agent', '--json'], { cwd: dir, env });
     assert.equal(textAdd.status, 0, textAdd.stderr);
@@ -12165,7 +12165,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
   }
 });
 
-test('task next claims open work before surfacing review debt', () => {
+test('task next names review-chat for uncertified review and leaves open work unclaimed', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -12186,12 +12186,13 @@ test('task next claims open work before surfacing review debt', () => {
     const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
-    assert.equal(payload.action, 'next');
-    assert.equal(payload.task_id, openPayload.task.id);
+    assert.equal(payload.action, 'review-chat');
+    assert.equal(payload.command, `atris task review-chat ${reviewRef} --as codex-review`);
+    assert.equal(payload.task_id, JSON.parse(reviewAdd.stdout).task.id);
 
     const openShow = runCli(['task', 'show', openPayload.task.display_id, '--json'], { cwd: dir, env });
     assert.equal(openShow.status, 0, openShow.stderr);
-    assert.equal(JSON.parse(openShow.stdout).status, 'claimed');
+    assert.equal(JSON.parse(openShow.stdout).status, 'open');
 
     const reviewShow = runCli(['task', 'show', reviewRef, '--json'], { cwd: dir, env });
     assert.equal(reviewShow.status, 0, reviewShow.stderr);
@@ -12218,7 +12219,8 @@ test('task next surfaces review debt when no open work exists', () => {
     const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
-    assert.equal(payload.action, 'agent_review_again');
+    assert.equal(payload.action, 'review-chat');
+    assert.equal(payload.command, `atris task review-chat ${reviewRef} --as codex-review`);
     assert.equal(payload.task_id, JSON.parse(reviewAdd.stdout).task.id);
   } finally {
     cleanupTempDir(dir);
@@ -12261,33 +12263,16 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
     const next = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
-    assert.equal(payload.action, 'human_accept_waiting');
-    assert.equal(payload.next_agent_action.kind, 'create_bounded_endgame_task');
-    assert.equal(payload.next_agent_action.endgame_slug, 'runner-swap-safe');
-    assert.match(payload.next_agent_action.horizon, /runner swaps should be config-only/);
-    assert.match(payload.next_agent_action.command, /atris brain activate --member codex-executor/);
-    assert.match(payload.next_agent_action.message, /Do not accept XP/);
-    assert.equal(payload.next_agent_action.task_seed.tag, 'runner');
-    assert.match(payload.next_agent_action.task_seed.title, /runner-agnostic heartbeat gap/);
-    assert.deepEqual(payload.next_agent_action.task_seed.files, [
-      'commands/autopilot.js',
-      'commands/run.js',
-      'lib/runner-command.js',
-      'test/autopilot-runner-model.test.js',
-    ]);
-    assert.match(payload.next_agent_action.task_seed.verifier, /test\/autopilot-runner-model\.test\.js/);
-    assert.match(payload.next_agent_action.task_seed.create_command, /atris task new/);
-    assert.match(payload.next_agent_action.task_seed.note_command, /Files: commands\/autopilot\.js/);
+    assert.equal(payload.action, 'accept');
+    assert.equal(payload.command, `atris task accept ${ref}`);
+    assert.equal(payload.task.display_id, ref);
+    assert.doesNotMatch(JSON.stringify(payload), /create_bounded_endgame_task|task_seed/);
 
     const text = runCli(['task', 'next', '--as', 'codex-executor'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
-    assert.match(text.stdout, /Create the next bounded task from Endgame runner-swap-safe/);
-    assert.match(text.stdout, /runner swaps should be config-only/);
-    assert.match(text.stdout, /Do not accept XP/);
-    assert.match(text.stdout, /Create: atris task new/);
-    assert.match(text.stdout, /Claim: atris task claim <id> --as codex-executor/);
-    assert.match(text.stdout, /Verify: node --test test\/autopilot-runner-model\.test\.js/);
-    assert.doesNotMatch(text.stdout, /No concrete next agent task is attached/);
+    assert.match(text.stdout, new RegExp(`^next: atris task accept ${ref}$`, 'm'));
+    assert.doesNotMatch(text.stdout, /Create the next bounded task|Create: atris task new|Claim: atris task claim/);
+    assert.doesNotMatch(text.stdout, /atris task step /);
 
     const createNext = runCli(['task', 'next', '--as', 'codex-executor', '--create-next', '--json'], { cwd: dir, env });
     assert.equal(createNext.status, 0, createNext.stderr);
@@ -12302,8 +12287,9 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
     const after = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
     assert.equal(after.status, 0, after.stderr);
     const afterPayload = JSON.parse(after.stdout);
-    assert.equal(afterPayload.action, 'current');
-    assert.equal(afterPayload.task_id, createdPayload.task_id);
+    assert.equal(afterPayload.action, 'accept');
+    assert.equal(afterPayload.command, `atris task accept ${ref}`);
+    assert.equal(afterPayload.task.display_id, ref);
 
     const show = runCli(['task', 'show', createdPayload.task.display_id, '--json'], { cwd: dir, env });
     assert.equal(show.status, 0, show.stderr);
@@ -12351,17 +12337,16 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', () =
     const scopedNext = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
     assert.equal(scopedNext.status, 0, scopedNext.stderr);
     const payload = JSON.parse(scopedNext.stdout);
-    assert.equal(payload.action, 'human_accept_waiting');
+    assert.equal(payload.action, 'accept');
+    assert.equal(payload.command, `atris task accept ${ref}`);
     assert.equal(payload.scope.tag, 'golden-path');
-    assert.equal(payload.review_task.display_id, ref);
-    assert.equal(payload.review_task.tag, 'golden-path');
-    assert.equal(payload.next_agent_action, null);
+    assert.equal(payload.task.display_id, ref);
+    assert.equal(payload.task.tag, 'golden-path');
 
     const scopedText = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding'], { cwd: dir, env });
     assert.equal(scopedText.status, 0, scopedText.stderr);
-    assert.match(scopedText.stdout, /No open tasks for tag=golden-path/);
-    assert.match(scopedText.stdout, new RegExp(ref));
-    assert.match(scopedText.stdout, /No next agent task is attached/);
+    assert.match(scopedText.stdout, new RegExp(`^next: atris task accept ${ref}$`, 'm'));
+    assert.doesNotMatch(scopedText.stdout, /No open tasks for tag=golden-path/);
     assert.doesNotMatch(scopedText.stdout, /Create the next bounded task/);
     assert.doesNotMatch(scopedText.stdout, /runner swaps should be config-only/);
     assert.doesNotMatch(scopedText.stdout, /Create: atris task new/);
@@ -12420,15 +12405,15 @@ test('task next does not repeat an Endgame seed that already exists', () => {
     const next = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
-    assert.equal(payload.action, 'human_accept_waiting');
-    assert.equal(payload.next_agent_action, null);
-    assert.equal(payload.review_task.display_id, ref);
+    assert.equal(payload.action, 'accept');
+    assert.equal(payload.command, `atris task accept ${ref}`);
+    assert.equal(payload.task.display_id, ref);
 
     const text = runCli(['task', 'next', '--as', 'codex-executor'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, new RegExp(`^next: atris task accept ${ref}$`, 'm'));
     assert.doesNotMatch(text.stdout, /Create the next bounded task/);
     assert.doesNotMatch(text.stdout, /Create: atris task new/);
-    assert.match(text.stdout, /No next agent task is attached/);
 
     const duplicate = runCli(['task', 'next', '--as', 'codex-executor', '--create-next', '--json'], { cwd: dir, env });
     assert.notEqual(duplicate.status, 0);
@@ -13286,7 +13271,8 @@ test('task natural flow creates, picks, talks, finishes, and refreshes projectio
 
     const next = runCli(['task', 'next', '--as', 'codex'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
-    assert.match(next.stdout, new RegExp(`next ${ref} @codex`));
+    assert.match(next.stdout, new RegExp(`^next: atris task claim ${ref} --as codex$`, 'm'));
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const said = runCli(['task', 'say', legacyRef, 'This should feel like a tiny task chat', '--as', 'codex'], { cwd: dir, env });
     assert.equal(said.status, 0, said.stderr);
@@ -13348,9 +13334,11 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     const next = runCli(['task', 'next', '--as', 'bot', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const nextPayload = JSON.parse(next.stdout);
-    assert.equal(nextPayload.action, 'next');
+    assert.equal(nextPayload.action, 'claim');
+    assert.equal(nextPayload.command, `atris task claim ${createPayload.task.display_id} --as bot`);
     assert.equal(nextPayload.owner, 'bot');
-    assert.equal(nextPayload.task.claimed_by, 'bot');
+    assert.equal(nextPayload.task.status, 'open');
+    assert.equal(runCli(['task', 'claim', shortId, '--as', 'bot', '--json'], { cwd: dir, env }).status, 0);
 
     const claimConflict = runCli(['task', 'claim', shortId, '--as', 'other', '--json'], { cwd: dir, env });
     assert.equal(claimConflict.status, 1);
@@ -18944,7 +18932,9 @@ test('business collaborator handoff loop connects tasks missions goals proof and
     assert.equal(next.status, 0, next.stderr || next.stdout);
     const nextPayload = JSON.parse(next.stdout);
     assert.match(nextPayload.task.title, /Draft a founder-context note/);
-    assert.equal(nextPayload.task.status, 'claimed');
+    assert.equal(nextPayload.task.status, 'open');
+    assert.equal(nextPayload.action, 'claim');
+    assert.equal(runCli(['task', 'claim', nextPayload.task.display_id, '--as', 'operator'], { cwd: dir }).status, 0);
 
     const mission = runCli([
       'mission', 'start', '--no-verify', 'Run the first useful loop for Loop Co',

@@ -59,7 +59,7 @@ const {
   decisionMarkerFor,
   DECISION_REFUSE_REASON,
 } = require('../lib/task-decision');
-const { deskNextCommand, personName } = require('../lib/first-minute');
+const { deskNextCommand, personName, pickNext, taskCommand, taskNextCommand } = require('../lib/first-minute');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -165,7 +165,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task new "<title>" [--what-changes "..."] [--why-it-matters "..."] [--done-looks-like "..."] [--verify <cmd>]
                                            Create a task with a plain explanation; omitted fields get honest defaults
   atris task next [--tag <tag>] [--create-next]
-                                           Claim/show next open task; optionally create the generated Endgame fallback
+                                           Same next command as bare atris and the task desk; --create-next still seeds Endgame fallback
   atris task continue-work <id>           Create/reuse a certified Review follow-up task
   atris task say <id> "<message>"         Add context to a task
   atris task chat <id> "<message>" [--goal "..."]  Refine a task chat + working goal
@@ -6792,7 +6792,79 @@ function createEndgameSeedTask(taskDb, db, seed, owner) {
   };
 }
 
+function nextActionFromCommand(command) {
+  const match = String(command || '').trim().match(/^atris (?:task|mission) (\S+)/);
+  const verb = match ? match[1] : '';
+  if (!verb || verb === 'new') return 'none';
+  return verb;
+}
+
+function cmdNextTruth(args) {
+  const owner = flag(args, '--as') || personName() || DEFAULT_OWNER;
+  const scope = taskQueueScopeFromArgs(args);
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const workspaceRoot = taskDb.workspaceRoot();
+  const rows = taskDb.listTasks(db, { workspaceRoot, limit: 500 });
+  const existingProj = readProjectionFile(workspaceRoot);
+  let projection;
+  let outPath;
+  if (rows.length === 0 && existingProj && Array.isArray(existingProj.tasks) && existingProj.tasks.length > 0) {
+    projection = existingProj;
+    outPath = path.resolve(path.join(workspaceRoot || '.', '.atris', 'state', 'tasks.projection.json'));
+  } else {
+    const written = writeDefaultProjection(taskDb, db);
+    projection = written.projection;
+    outPath = written.outPath;
+  }
+  const scoped = filterTasksByScope(projection.tasks || [], scope);
+  const openDecisions = scoped.filter((task) => task && isDecisionTask(task) && task.status === 'open');
+  const actionable = scoped.filter((task) => task && !isDecisionTask(task));
+  const picked = pickNext({ tasks: actionable, person: owner });
+  const command = picked.task ? (picked.command || taskCommand(picked.task, owner)) : taskNextCommand(actionable, owner);
+  const task = picked.task || null;
+
+  if (!task && openDecisions.length) {
+    if (wantsJson(args)) {
+      printJson({
+        ok: false,
+        action: 'refused',
+        reason: DECISION_REFUSE_REASON,
+        skipped_decision_count: openDecisions.length,
+        owner: String(owner),
+        scope: normalizeTaskQueueScope(scope),
+        projection_path: outPath,
+      });
+      process.exit(1);
+    }
+    console.error(DECISION_REFUSE_REASON);
+    process.exit(1);
+  }
+
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: nextActionFromCommand(command),
+      command,
+      task_id: task ? task.id : null,
+      owner: String(owner),
+      scope: normalizeTaskQueueScope(scope),
+      projection_path: outPath,
+      task: task ? compactTaskFromProjection(projection, task.id) : null,
+    });
+    return;
+  }
+
+  if (!task) {
+    console.log(noOpenTasksMessage(scope));
+    console.log(`next: ${command}`);
+    return;
+  }
+  console.log(`next: ${command}`);
+}
+
 function cmdNext(args) {
+  if (!hasFlag(args, '--create-next')) return cmdNextTruth(args);
   const owner = flag(args, '--as') || DEFAULT_OWNER;
   const scope = taskQueueScopeFromArgs(args);
   const scoped = !taskQueueScopeIsEmpty(scope);
