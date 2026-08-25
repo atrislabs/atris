@@ -268,7 +268,7 @@ test('golden path e2e runs init delegate ready autoland status without human inp
   }
 });
 
-test('packed golden path follows printed init mission task and autoland handoffs', () => {
+test('packed golden path follows printed init claim ready and autoland handoffs', () => {
   assert.ok(hasNodeSqlite(), 'packed golden path requires a Node runtime with node:sqlite');
 
   const root = makeTempDir();
@@ -329,24 +329,13 @@ test('packed golden path follows printed init mission task and autoland handoffs
 
     const firstRun = runInstalled([]);
     assertGoldenPathStep(firstRun, 'first run');
-    const init = runInstalled(printedAtrisArgs(firstRun.stdout, 'Next'), { timeout: 30000 });
+    const init = runInstalled(printedAtrisArgs(firstRun.stdout, 'next'), { timeout: 30000 });
     assertGoldenPathStep(init, 'printed init');
+    assert.match(init.stdout, /atris initialized/);
 
-    const missionStart = runInstalled(printedAtrisArgs(init.stdout, 'agents'));
-    assertGoldenPathStep(missionStart, 'printed mission start');
-    assert.match(missionStart.stdout, /Started mission: Verify this Atris workspace is ready/);
-
-    const missionTick = runInstalled(printedAtrisArgs(missionStart.stdout, 'Next'));
-    assertGoldenPathStep(missionTick, 'printed mission tick');
-    assert.match(missionTick.stdout, /Verifier command passed: node -e "require\('fs'\)\.accessSync\('atris\/atris\.md'\)"\./);
-
-    const missionComplete = runInstalled(printedAtrisArgs(missionTick.stdout, 'Next'));
-    assertGoldenPathStep(missionComplete, 'printed mission complete');
-    assert.match(missionComplete.stdout, /is complete\./);
-
-    const firstTask = runInstalled(printedAtrisArgs(init.stdout, 'Then'));
-    assertGoldenPathStep(firstTask, 'printed first-task handoff');
-    const claimArgs = printedAtrisArgs(firstTask.stdout, 'Next');
+    const claimArgs = printedAtrisArgs(init.stdout, 'next');
+    assert.equal(claimArgs[0], 'task');
+    assert.equal(claimArgs[1], 'claim');
     const taskRef = claimArgs[2];
     assert.ok(taskRef, `printed task claim has no task ref: ${claimArgs.join(' ')}`);
 

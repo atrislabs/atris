@@ -44,9 +44,15 @@ rg "missionDrive|destinationHash|mission_destination_change_proposed|pending_des
 rg "askCommand|currentMissionCommand|approveCommand|stopCommand|answerCommand|readyCommand|checkCommand|missionCard" commands/human-missions.js commands/mission.js lib/cloud-mission.js bin/atris.js test/human-missions.test.js  # Public human mission commands: ask, current card, answer, approve, stop, readiness, and check results over the cloud mission client
 rg "decideCommand|collectOpenDecisions|normalizeHumanAsk|answerMissionHumanAsk" commands/decide.js commands/mission.js lib/mission-human-asks.js lib/self-drive.js test/decide.test.js  # Mission human-decision bridge: list open asks deterministically, route yes/no through mission pings, persist answered metadata, and ignore answered asks in mission/self-drive reads
 rg "starterMembers|team members ready|firstMissionCommand|packed golden path|printedAtrisArgs|golden path e2e|what someone can do now|--minimal|mapStubFromTree" commands/init.js bin/atris.js commands/task.js test/init-non-interactive.test.js test/golden-path-e2e.test.js test/repo-shape.test.js test/dogfood-papercuts.test.js atris/team/customer-lead atris/GOLDEN_PATH_PAPERCUTS.md  # Quiet first-run output plus packed-install zero-knowledge contract: six-member starter team, init --minimal lean scaffold, ready-on-init mission, autoland, durable papercut status; printedAtrisArgs (test/golden-path-e2e.test.js:112) matches Next/next labels; packed path follows init --minimal, then the printed claim/ready/autoland commands
+<<<<<<< HEAD
 rg "function planAtris" commands/workflow.js   # Plan command (line 370)
 rg "function doAtris" commands/workflow.js     # Do command (line 717): initialized workspace is enough; missing executor spec after init --minimal does not send you back to init
 rg "function reviewAtris" commands/workflow.js  # Review command (line 1077): default certified queue, --verbose legacy validator prompt
+=======
+rg "function planAtris" commands/workflow.js   # Plan command (line 363)
+rg "function doAtris" commands/workflow.js     # Do command (line 709)
+rg "function reviewAtris" commands/workflow.js  # Review command (line 1062): default certified queue, --verbose legacy validator prompt
+>>>>>>> 2c19958f (fix(test): packed golden path follows printed claim next)
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
 rg "analyticsAtris|showAnalyticsHelp|status and analytics --help" bin/atris.js commands/analytics.js test/commands.test.js  # Analytics command + workspace-free help
