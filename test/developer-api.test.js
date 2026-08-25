@@ -61,7 +61,7 @@ test('knownCommands includes the four developer api verbs', () => {
 });
 
 test('help lists balance, usage, api-key, and topup', () => {
-  const run = runCli(['--help']);
+  const run = runCli(['help', '--all']);
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stdout, /balance\s+- Show credit balance in dollars/);
   assert.match(run.stdout, /usage\s+- Show developer API usage/);
