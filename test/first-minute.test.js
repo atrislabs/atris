@@ -75,10 +75,10 @@ test('claimed task first-minute names the person or title and one next command',
     person: 'keshav',
     folder: 'atris',
     task: { title: 'Ship the landing page', status: 'claimed', display_id: 'CLI-9' },
-    nextCommand: 'atris task step CLI-9',
+    nextCommand: 'atris task ready CLI-9 --verify "<cmd>" --result "<plain sentence>"',
   });
   assert.match(text, /hey keshav, "ship the landing page" is already yours\./);
-  assert.match(text, /^next: atris task step CLI-9$/m);
+  assert.match(text, /^next: atris task ready CLI-9 --verify "<cmd>" --result "<plain sentence>"$/m);
   assert.equal(text.match(/^next:/mg).length, 1);
   assert.ok(spokenLineCount(text) <= 4);
 });
@@ -174,7 +174,7 @@ test('buildFirstMinute reads a claimed task from the local projection', () => {
       folder: 'atris',
     });
     assert.match(screen.text, /"ship the landing page"/);
-    assert.equal(screen.nextCommand, 'atris task step CLI-9');
+    assert.equal(screen.nextCommand, 'atris task ready CLI-9 --verify "<cmd>" --result "<plain sentence>"');
   } finally {
     cleanupTempDir(dir);
   }
@@ -329,7 +329,7 @@ test('workspace with a claimed task names the person or title and one next comma
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /keshav|ship the landing page/i);
-    assert.match(res.stdout, /^next: atris task step CLI-9$/m);
+    assert.match(res.stdout, /^next: atris task ready CLI-9 --verify "<cmd>" --result "<plain sentence>"$/m);
     assert.equal(res.stdout.match(/^next:/mg).length, 1);
     assert.doesNotMatch(res.stdout, /What do you want to build|context   loaded|Atris Do/);
     assert.ok(spokenLineCount(res.stdout) <= 6);
