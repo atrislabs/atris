@@ -40,7 +40,7 @@ test.after(() => {
   }
 });
 
-function runCli(args, { cwd, input } = {}) {
+function runCli(args, { cwd, input, env } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     input: input === undefined ? '' : input,
@@ -49,10 +49,49 @@ function runCli(args, { cwd, input } = {}) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...(env || {}),
     },
   });
   if (result.error) throw result.error;
   return result;
+}
+
+function nextLine(stdout) {
+  const match = String(stdout || '').match(/^next: (.+)$/m);
+  return match ? match[1] : '';
+}
+
+function writeClaimedWorkspace(dir, task = {
+  id: 'task-1',
+  display_id: 'CLI-9',
+  title: 'Ship the landing page',
+  status: 'claimed',
+  claimed_by: 'keshav',
+  updated_at: 20,
+}) {
+  fs.mkdirSync(path.join(dir, 'atris', 'reports'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO.md\n\n## Backlog\n\n(Empty)\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'PERSONA.md'), '# PERSONA\n\nTalk like a person.\n', 'utf8');
+  fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+    schema: 'atris.task_projection.v1',
+    tasks: [task],
+  }, null, 2), 'utf8');
+}
+
+function isolatedDoEnv(dir) {
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  return {
+    HOME: home,
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_NONINTERACTIVE: '1',
+    ATRIS_OPERATOR: 'keshav',
+    USER: 'keshav',
+    NODE_NO_WARNINGS: '1',
+  };
 }
 
 // One initialized workspace, built once; tests clone it so mutations stay isolated.
@@ -111,11 +150,16 @@ test('do after init --yes --minimal does not send you back to init', () => {
   const combined = res.stdout + res.stderr;
   assert.equal(res.status, 0, combined);
   assert.match(res.stdout, /PROMPT ONLY/);
-  assert.match(res.stdout, /Atris Do — Executor Agent Activated/);
+  assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
+  assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
   assert.match(res.stdout, /You are the Executor\./);
-  assert.match(res.stdout, /Executor spec: atris\/team\/executor\/MEMBER\.md \(missing\)/);
+  assert.doesNotMatch(res.stdout, /Executor spec: atris\/team\/executor\/MEMBER\.md \(missing\)/);
   assert.doesNotMatch(combined, /executor\.md not found|Run "atris init"/);
   assert.doesNotMatch(combined, /What do you want to build|Describe the desired outcome/);
+
+  const verbose = runCli(['do', '--verbose'], { cwd: dir });
+  assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
+  assert.match(verbose.stdout, /Executor spec: atris\/team\/executor\/MEMBER\.md \(missing\)/);
 });
 
 test('plan on an initialized workspace prints the navigator prompt shape', () => {
@@ -184,12 +228,47 @@ test('do prints the executor prompt shape and surfaces feature build plans', () 
 
   const res = runCli(['do'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /Atris Do — Executor Agent Activated/);
+  assert.match(res.stdout, /^PROMPT ONLY/m);
+  assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
+  assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
   assert.match(res.stdout, /You are the Executor\./);
   assert.match(res.stdout, /claim next unclaimed Backlog task/);
   assert.match(res.stdout, /Do NOT plan — just execute/);
-  assert.match(res.stdout, /Feature build plans found: 1/);
-  assert.match(res.stdout, /sample-feature[\/\\]build\.md/);
+  assert.doesNotMatch(res.stdout, /Feature build plans found/);
+
+  const full = runCli(['do', '--full'], { cwd: dir });
+  assert.equal(full.status, 0, full.stderr);
+  assert.match(full.stdout, /Feature build plans found: 1/);
+  assert.match(full.stdout, /sample-feature[\/\\]build\.md/);
+});
+
+test('do names a claimed task the same way first-minute does', () => {
+  const dir = makeTempDir();
+  writeClaimedWorkspace(dir);
+  const env = isolatedDoEnv(dir);
+
+  const minute = runCli([], { cwd: dir, env });
+  const doit = runCli(['do'], { cwd: dir, env });
+  assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+  assert.equal(doit.status, 0, doit.stderr || doit.stdout);
+  assert.match(doit.stdout, /^PROMPT ONLY/m);
+  assert.match(doit.stdout, /"ship the landing page" is already yours\./);
+  assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
+  assert.equal(nextLine(doit.stdout), 'atris task ready CLI-9');
+  assert.doesNotMatch(doit.stdout, /Atris Do — Executor Agent Activated/);
+  assert.doesNotMatch(doit.stdout, /Context: UNKNOWN/);
+  assert.doesNotMatch(doit.stdout, /Backlog tasks: 0/);
+  assert.doesNotMatch(doit.stdout, /CONTEXT FILES \(agent should read\)/);
+  assert.doesNotMatch(doit.stdout, /What do you want to build|Describe the desired outcome/);
+  assert.match(doit.stdout, /You are the Executor\./);
+
+  const verbose = runCli(['do', '--verbose'], { cwd: dir, env });
+  assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
+  assert.match(verbose.stdout, /"ship the landing page" is already yours\./);
+  assert.equal(nextLine(verbose.stdout), 'atris task ready CLI-9');
+  assert.doesNotMatch(verbose.stdout, /Context: UNKNOWN/);
+  assert.doesNotMatch(verbose.stdout, /Backlog tasks: 0/);
+  assert.match(verbose.stdout, /CONTEXT FILES \(agent should read\)/);
 });
 
 test('review --verbose prints the validator prompt and reacts to journal completions', () => {

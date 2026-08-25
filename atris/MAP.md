@@ -45,7 +45,7 @@ rg "askCommand|currentMissionCommand|approveCommand|stopCommand|answerCommand|re
 rg "decideCommand|collectOpenDecisions|normalizeHumanAsk|answerMissionHumanAsk" commands/decide.js commands/mission.js lib/mission-human-asks.js lib/self-drive.js test/decide.test.js  # Mission human-decision bridge: list open asks deterministically, route yes/no through mission pings, persist answered metadata, and ignore answered asks in mission/self-drive reads
 rg "starterMembers|team members ready|firstMissionCommand|packed golden path|printedAtrisArgs|golden path e2e|what someone can do now|--minimal|mapStubFromTree" commands/init.js bin/atris.js commands/task.js test/init-non-interactive.test.js test/golden-path-e2e.test.js test/repo-shape.test.js test/dogfood-papercuts.test.js atris/team/customer-lead atris/GOLDEN_PATH_PAPERCUTS.md  # Quiet first-run output plus packed-install zero-knowledge contract: six-member starter team, init --minimal lean scaffold, ready-on-init mission, autoland, durable papercut status; printedAtrisArgs (test/golden-path-e2e.test.js:112) matches Next/next labels; packed path follows init --minimal, then the printed claim/ready/autoland commands
 rg "function planAtris" commands/workflow.js   # Plan command (line 370)
-rg "function doAtris" commands/workflow.js     # Do command (line 717): initialized workspace is enough; missing executor spec after init --minimal does not send you back to init
+rg "function doAtris" commands/workflow.js     # Do command (line 718): PERSONA head reuses buildFirstMinute; factory banner and file dump stay on --verbose/--full; missing executor spec after init --minimal does not send you back to init
 rg "function reviewAtris" commands/workflow.js  # Review command (line 1077): default certified queue, --verbose legacy validator prompt
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
@@ -1187,10 +1187,10 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 2. **`atris do`** - Executor mode
 
-- Entry: `commands/workflow.js:717-1075` (doAtris function)
-- Outputs: executor.md spec + TODO.md + MAP.md
-- Purpose: Build tasks with step-by-step confirmation
-- Missing `team/executor` after `init --minimal` is optional context, not "run init". Regression: `test/workflow-command.test.js` (`do after init --yes --minimal does not send you back to init`).
+- Entry: `commands/workflow.js:718-1095` (doAtris function)
+- Human head: `lib/first-minute.js` `buildFirstMinute` (same win + next as bare `atris`); never prints `Context: UNKNOWN` or `Backlog tasks: 0` when a claimed/review/open task exists
+- Default stays PROMPT ONLY with the copy/paste executor prompt below the fold; `--verbose`/`--full` prints the file dump
+- Missing `team/executor` after `init --minimal` is optional context, not "run init". Regression: `test/workflow-command.test.js` (`do after init --yes --minimal does not send you back to init`, `do names a claimed task the same way first-minute does`)
 
 3. **`atris review`** - Validator mode
 
@@ -1515,13 +1515,13 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 **Purpose:** First `atris` contact asks for human context before planning or agent bootstrap, then persists the answer and creates a starter onboarding task.
 
 - **Entry point:** `bin/atris.js:1344` (`interactiveEntry`)
-- **First-minute screen:** `lib/first-minute.js` (`buildFirstMinute`) prints one win and one next command for bare `atris` and default `atris task` (`commands/task.js` `cmdFirstMinute`); empty folders name `atris init --minimal`; `shouldAutoInitFresh` runs `init --minimal` on `--yes`/`-y` even under `ATRIS_NO_INTERACTIVE`, then the post-init screen names the seeded claim; `--json` and headless without `--yes` stay print-only; claimed work names `atris task ready <id>`; certified review names `atris task accept <id>`; throwaway names (`tmp`, `temp`, `atris-*`, hashes) stay "this folder"; a real basename like `launch-day` stays even under `/tmp`; person name prefers the saved account first name
+- **First-minute screen:** `lib/first-minute.js` (`buildFirstMinute`) prints one win and one next command for bare `atris`, default `atris task` (`commands/task.js` `cmdFirstMinute`), and the human head of `atris do` (`commands/workflow.js` `doAtris`); empty folders name `atris init --minimal`; `shouldAutoInitFresh` runs `init --minimal` on `--yes`/`-y` even under `ATRIS_NO_INTERACTIVE`, then the post-init screen names the seeded claim; `--json` and headless without `--yes` stay print-only; claimed work names `atris task ready <id>`; certified review names `atris task accept <id>`; throwaway names (`tmp`, `temp`, `atris-*`, hashes) stay "this folder"; a real basename like `launch-day` stays even under `/tmp`; person name prefers the saved account first name
 - **Task desk next:** `lib/first-minute.js` (`deskNextCommand`) reuses `pickNext`/`taskCommand` for `commands/task.js` `renderTaskDesk` on `atris task desk` and `atris task --all`; claimed desk copy is `atris task ready <id>`
 - **Task next:** `commands/task.js` (`cmdNextTruth`) reuses `pickNext`/`taskCommand`/`taskNextCommand` so `atris task next` names the same accept/ready/claim/new command as bare atris and the desk; `--create-next` still seeds Endgame fallback
 - **Helper:** `lib/context-gatherer.js`
 - **State:** `.atris/state/context_profile.json`
-- **Regression:** `test/first-minute.test.js`, `test/task-first-minute.test.js`, `test/task-desk-next.test.js`, `test/task-next-truth.test.js`, `test/context-gatherer.test.js`, `test/cli-smoke.test.js`
-- **Search:** `rg "shouldGatherContext|saveContextProfile|createStarterTask|buildFirstMinute|cmdFirstMinute|deskNextCommand|taskNextCommand|cmdNextTruth|Context gatherer" bin/atris.js lib/context-gatherer.js lib/first-minute.js commands/task.js test`
+- **Regression:** `test/first-minute.test.js`, `test/task-first-minute.test.js`, `test/task-desk-next.test.js`, `test/task-next-truth.test.js`, `test/context-gatherer.test.js`, `test/cli-smoke.test.js`, `test/workflow-command.test.js`
+- **Search:** `rg "shouldGatherContext|saveContextProfile|createStarterTask|buildFirstMinute|cmdFirstMinute|deskNextCommand|taskNextCommand|cmdNextTruth|Context gatherer" bin/atris.js lib/context-gatherer.js lib/first-minute.js commands/task.js commands/workflow.js test
 
 ---
 
@@ -1808,7 +1808,7 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 **Modular commands (in commands/):**
 
 - `planAtris()` → `commands/workflow.js:370-714`
-- `doAtris()` → `commands/workflow.js:717-1075`
+- `doAtris()` → `commands/workflow.js:718-1095`
 - `reviewAtris()` → `commands/workflow.js:1077-1566`
 - `statusAtris()` → `commands/status.js:124-384`
 - `analyticsAtris()` → `commands/analytics.js:4-147`

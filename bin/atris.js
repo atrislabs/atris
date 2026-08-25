@@ -804,8 +804,8 @@ function showDoHelp() {
   console.log('');
   console.log('Description:');
   console.log('  Activate the Executor agent to build tasks.');
-  console.log('  Default is PROMPT ONLY: prints step-by-step execution instructions.');
-  console.log('  Reads TODO.md and features/*/build.md.');
+  console.log('  Default is PROMPT ONLY: same win and next command as bare atris, then the executor prompt.');
+  console.log('  --verbose prints the executor file dump. Reads TODO.md and features/*/build.md.');
   console.log('');
   console.log('Options:');
   console.log('  --execute   ACTION TAKEN: edit code + run commands via Atris cloud.');

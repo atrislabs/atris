@@ -962,6 +962,8 @@ test('do prints concise executor prompt by default', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /COPY\/PASTE PROMPT/);
     assert.match(res.stdout, /You are the Executor/);
+    assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
+    assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
     assert.doesNotMatch(res.stdout, /EXECUTOR SPEC — How to Build/);
   } finally {
     cleanupTempDir(dir);
