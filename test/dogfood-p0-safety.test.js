@@ -375,3 +375,48 @@ test('32: headless autopilot exits 2 without starting a mission', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('33: x --help prints usage and does not start agent-sdk execute', () => {
+  const dir = makeTempDir();
+  try {
+    for (const args of [
+      ['x', '--help'],
+      ['x', '-h'],
+      ['x', 'help'],
+    ]) {
+      const res = runCli(args, {
+        cwd: dir,
+        env: {
+          ATRIS_API_URL: 'http://127.0.0.1:9',
+          ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+        },
+        timeout: 4000,
+      });
+      assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
+      assert.match(res.stdout + res.stderr, /Usage: atris x/i);
+      assert.doesNotMatch(res.stdout + res.stderr, /Executing:|ECONNREFUSED 127\.0\.0\.1:8000|\/api\/agent-sdk\/execute/i);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('34: write start help prints usage and does not create a session', () => {
+  const dir = makeTempDir();
+  try {
+    for (const args of [
+      ['write', 'start', 'help'],
+      ['write', 'start', '--help'],
+      ['write', 'start', '-h'],
+    ]) {
+      const res = runCli(args, { cwd: dir, timeout: 4000 });
+      assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
+      assert.match(res.stdout + res.stderr, /usage: atris write start/i);
+      assert.doesNotMatch(res.stdout + res.stderr, /session started/i);
+    }
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'writing', 'help')), false);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'writing')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

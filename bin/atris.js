@@ -2916,12 +2916,14 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'x') {
   // Fast Agent SDK execution - like "atris x echo hello" or "atris x ls -la"
-  const userInput = process.argv.slice(3).join(' ').trim();
-  if (!userInput) {
+  const xArgs = process.argv.slice(3);
+  const userInput = xArgs.join(' ').trim();
+  const helpOnly = xArgs.length === 1 && (xArgs[0] === '--help' || xArgs[0] === '-h' || xArgs[0] === 'help' || xArgs[0] === '-?');
+  if (!userInput || helpOnly) {
     console.log('Usage: atris x <command>');
     console.log('Example: atris x echo "hello world"');
     console.log('Example: atris x ls -la');
-    process.exit(1);
+    process.exit(helpOnly ? 2 : 1);
   }
   require('../commands/workflow').executeAgentSDKFast(userInput);
 } else if (command === 'computer') {

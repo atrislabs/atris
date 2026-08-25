@@ -41,6 +41,14 @@ test('start refuses to clobber an existing session', () => {
   assert.equal(start(['Same Topic'], root), 2);
 });
 
+test('start help tokens print usage and do not create a session', () => {
+  const root = tmpRoot();
+  assert.equal(start(['help'], root), 2);
+  assert.equal(start(['--help'], root), 2);
+  assert.equal(start(['-h'], root), 2);
+  assert.equal(fs.existsSync(path.join(root, 'atris', 'writing', 'help')), false);
+});
+
 test('syncStates promotes a beat to drafted when the human writes words', () => {
   const root = tmpRoot();
   start(['Flow'], root);

@@ -23,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { scanFile, RULES, loadProjectRules } = require('./slop');
+const { isHelpToken } = require('../lib/noninteractive');
 
 const WRITING_DIR = path.join('atris', 'writing');
 // Beats are question-shaped (Pollan: "almost everything I write is a quest to
@@ -125,6 +126,10 @@ function syncStates(slug, root = process.cwd()) {
 }
 
 function start(argv, root = process.cwd()) {
+  if ((argv || []).some(isHelpToken)) {
+    console.error('  usage: atris write start "<topic>" [--dump "..."] [--beats "a | b | c"]');
+    return 2;
+  }
   const topic = argv.find((a) => !a.startsWith('-'));
   if (!topic) { console.error('  usage: atris write start "<topic>" [--dump "..."] [--beats "a | b | c"]'); return 2; }
   const flag = (name) => { const i = argv.indexOf(name); return i !== -1 ? argv[i + 1] : null; };
