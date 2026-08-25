@@ -171,6 +171,9 @@ async function follow(who, remove = false) {
 }
 
 async function friends(kind) {
+  if (isHelpToken(kind)) {
+    showUsageAndExit('Usage: atris friends [followers|following]');
+  }
   const path =
     kind === 'followers' ? '/social/followers'
       : kind === 'following' ? '/social/following'
@@ -386,6 +389,9 @@ async function invite(argv) {
 }
 
 async function join(code, rest = []) {
+  if (isHelpToken(code) || argsWantHelp(rest)) {
+    showUsageAndExit('Usage: atris join <invite-code or invite link> [--handle <yourhandle>]');
+  }
   if (!code) fail('Usage: atris join <invite-code or invite link> [--handle <yourhandle>]');
   const cleaned = String(code).trim().split('/').filter(Boolean).pop().toUpperCase();
 
@@ -524,6 +530,7 @@ async function socialCommand(argv) {
     case 'unfollow':
       return follow(args.slice(1).join(' '), true);
     case 'friends':
+      if (argsWantHelp(args.slice(1))) showUsageAndExit('Usage: atris friends [followers|following]');
       return friends(args[1]);
     case 'followers':
     case 'following':
@@ -533,6 +540,7 @@ async function socialCommand(argv) {
     case 'dm':
       return message(args[1], args.slice(2).join(' '));
     case 'inbox':
+      if (argsWantHelp(args.slice(1))) showUsageAndExit('Usage: atris inbox');
       return inbox();
     case 'invite':
       return invite(args.slice(1));
@@ -560,15 +568,27 @@ async function unfollowCommand() {
   if (argsWantHelp(args)) showUsageAndExit('Usage: atris unfollow <who>');
   return follow(args.join(' '), true);
 }
-async function friendsCommand() { return friends(process.argv[3]); }
+async function friendsCommand() {
+  const args = process.argv.slice(3);
+  if (argsWantHelp(args)) showUsageAndExit('Usage: atris friends [followers|following]');
+  return friends(args[0]);
+}
 async function msgCommand() {
   const args = process.argv.slice(3);
   if (argsWantHelp(args)) showUsageAndExit('Usage: atris msg <who> [message]');
   return message(args[0], args.slice(1).join(' '));
 }
-async function inboxCommand() { return inbox(); }
+async function inboxCommand() {
+  const args = process.argv.slice(3);
+  if (argsWantHelp(args)) showUsageAndExit('Usage: atris inbox');
+  return inbox();
+}
 async function inviteCommand() { return invite(process.argv.slice(3)); }
-async function joinCommand() { return join(process.argv[3], process.argv.slice(4)); }
+async function joinCommand() {
+  const args = process.argv.slice(3);
+  if (argsWantHelp(args)) showUsageAndExit('Usage: atris join <invite-code or invite link> [--handle <yourhandle>]');
+  return join(args[0], args.slice(1));
+}
 
 module.exports = {
   socialCommand,

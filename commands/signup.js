@@ -13,6 +13,7 @@
 const crypto = require('crypto');
 const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
 const { saveCredentials } = require('../utils/auth');
+const { argsWantHelp, isHelpToken } = require('../lib/noninteractive');
 
 // Mirror the server rule exactly (^[a-z0-9]{3,30}$) so we fail fast and friendly
 // before spending a network round trip / a rate-limit slot.
@@ -40,16 +41,24 @@ function solvePow(handle) {
 }
 
 function parseHandle(args = []) {
-  const positional = args.find((a) => a && !a.startsWith('-'));
+  const positional = args.find((a) => a && !a.startsWith('-') && !isHelpToken(a));
   return (positional || '').trim().toLowerCase();
 }
 
+function printSignupUsage() {
+  console.error('Usage: atris signup <handle>');
+  console.error('  handle: 3–30 characters, lowercase letters and digits only.');
+}
+
 async function signupCommand(args = []) {
+  if (argsWantHelp(args)) {
+    printSignupUsage();
+    return 2;
+  }
   const handle = parseHandle(args);
 
   if (!handle) {
-    console.error('Usage: atris signup <handle>');
-    console.error('  handle: 3–30 characters, lowercase letters and digits only.');
+    printSignupUsage();
     return 1;
   }
   if (!HANDLE_RE.test(handle)) {

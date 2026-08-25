@@ -195,3 +195,99 @@ test('26: atris stop from unbound folder exits 2 without stopping cloud work', (
     cleanupTempDir(home);
   }
 });
+
+test('29: join --help prints usage and does not look up an invite', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-join-home-');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    for (const args of [
+      ['join', '--help'],
+      ['join', '-h'],
+      ['join', 'help'],
+      ['social', 'join', '--help'],
+    ]) {
+      const res = runCli(args, {
+        cwd: dir,
+        env: {
+          HOME: home,
+          ATRIS_API_URL: 'http://127.0.0.1:9',
+        },
+        timeout: 8000,
+      });
+      assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
+      assert.match(res.stdout + res.stderr, /Usage: atris join/i);
+      assert.doesNotMatch(res.stdout + res.stderr, /invite does not exist|expired|Invite from|You're in/i);
+    }
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('29: friends/inbox --help print usage and do not hit social or inbox APIs', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-inbox-home-');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    for (const args of [
+      ['friends', '--help'],
+      ['friends', 'help'],
+      ['inbox', '--help'],
+      ['inbox', 'help'],
+      ['social', 'friends', '--help'],
+      ['social', 'inbox', '--help'],
+    ]) {
+      const res = runCli(args, {
+        cwd: dir,
+        env: {
+          HOME: home,
+          ATRIS_API_URL: 'http://127.0.0.1:9',
+        },
+        timeout: 8000,
+      });
+      assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
+      assert.match(res.stdout + res.stderr, /Usage: atris (friends|inbox)/i);
+      assert.doesNotMatch(res.stdout + res.stderr, /Session expired|Conversations|No friends yet|Followers/i);
+    }
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('29: signup help prints usage and does not mint or solve proof-of-work', () => {
+  const dir = makeTempDir();
+  try {
+    for (const args of [
+      ['signup', 'help'],
+      ['signup', '--help'],
+      ['signup', '-h'],
+    ]) {
+      const res = runCli(args, {
+        cwd: dir,
+        env: {
+          ATRIS_API_URL: 'http://127.0.0.1:9',
+        },
+        timeout: 4000,
+      });
+      assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
+      assert.match(res.stdout + res.stderr, /Usage: atris signup/i);
+      assert.doesNotMatch(res.stdout + res.stderr, /Claiming @|proof-of-work|already taken/i);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

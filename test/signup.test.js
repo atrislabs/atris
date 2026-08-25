@@ -21,11 +21,19 @@ test('parseHandle picks the first positional, lowercased', () => {
   assert.equal(parseHandle(['--json', 'ghost']), 'ghost');
   assert.equal(parseHandle(['  Spaced  ']), 'spaced');
   assert.equal(parseHandle([]), '');
+  assert.equal(parseHandle(['help']), '');
+  assert.equal(parseHandle(['--help', 'ghost']), 'ghost');
 });
 
 test('signupCommand returns 1 on missing handle without a network call', async () => {
   const code = await signupCommand([]);
   assert.equal(code, 1);
+});
+
+test('signupCommand treats help as usage without POW or network', async () => {
+  assert.equal(await signupCommand(['help']), 2);
+  assert.equal(await signupCommand(['--help']), 2);
+  assert.equal(await signupCommand(['-h']), 2);
 });
 
 test('signupCommand returns 1 on invalid handle without a network call', async () => {
