@@ -256,22 +256,28 @@ test('task list marks decision rows and task next refuses them', () => {
     assert.match(listed.stdout, new RegExp(`${decision.display_id}.*\\[decision\\]`));
     assert.doesNotMatch(listed.stdout, new RegExp(`${work.display_id}.*\\[decision\\]`));
 
-    // With only the decision row open first in claim order is irrelevant:
-    // next must claim the work row, never the judgment call.
+    // Next names the work row, never the judgment call, and does not claim it.
     const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr || next.stdout);
     const nextPayload = JSON.parse(next.stdout);
     assert.equal(nextPayload.task.display_id, work.display_id);
+    assert.equal(nextPayload.action, 'claim');
+    assert.match(nextPayload.command, new RegExp(`atris task claim ${work.display_id}`));
+    assert.equal(
+      JSON.parse(runCli(['task', 'show', work.display_id, '--json'], { cwd: dir, env }).stdout).status,
+      'open',
+    );
 
-    // After the work row is claimed, only the decision remains: refuse.
-    const refused = runCli(['task', 'next', '--as', 'fleet-codex', '--json'], { cwd: dir, env });
-    assert.notEqual(refused.status, 0);
-    const body = `${refused.stdout || ''}${refused.stderr || ''}`;
-    assert.match(body, /decision row: human judgment required/);
+    assert.equal(runCli(['task', 'claim', work.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const afterClaim = runCli(['task', 'next', '--as', 'fleet-codex', '--json'], { cwd: dir, env });
+    assert.equal(afterClaim.status, 0, afterClaim.stderr || afterClaim.stdout);
+    const afterPayload = JSON.parse(afterClaim.stdout);
+    assert.equal(afterPayload.action, 'ready');
+    assert.equal(afterPayload.command, `atris task ready ${work.display_id}`);
     assert.equal(
       JSON.parse(runCli(['task', 'show', decision.display_id, '--json'], { cwd: dir, env }).stdout).status,
       'open',
-      'a refused next must leave the decision row unclaimed',
+      'next must leave the decision row unclaimed',
     );
   } finally {
     cleanupTempDir(dir);

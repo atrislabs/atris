@@ -10,10 +10,13 @@ const {
   deskNextCommand,
   folderName,
   personName,
+  pickNext,
   renderFresh,
   renderWorkspace,
   shouldAutoInitFresh,
   spokenLineCount,
+  taskCommand,
+  taskNextCommand,
 } = require('../lib/first-minute');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -135,6 +138,16 @@ test('desk next command uses first-minute verbs without ready templates', () => 
   }], 'keshav'), 'atris task claim CLI-1 --as keshav');
   assert.equal(deskNextCommand([{ status: 'done', display_id: 'CLI-0' }], 'keshav'), 'atris task next');
   assert.equal(deskNextCommand([], 'keshav'), 'atris task new');
+  assert.equal(taskNextCommand([{ status: 'done', display_id: 'CLI-0' }], 'keshav'), 'atris task new');
+  assert.equal(taskNextCommand([], 'keshav'), 'atris task new');
+  assert.equal(taskCommand({ status: 'claimed', display_id: 'LDY-1' }, 'keshav'), 'atris task ready LDY-1');
+  assert.equal(pickNext({
+    tasks: [
+      { status: 'open', display_id: 'UNW-1', updated_at: 10 },
+      { status: 'claimed', display_id: 'LDY-1', updated_at: 20 },
+    ],
+    person: 'keshav',
+  }).command, 'atris task ready LDY-1');
 });
 
 test('desk next command prefers certified review over claimed or open work', () => {
