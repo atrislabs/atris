@@ -12,6 +12,19 @@ tags:
 
 > Drop this in `~/.claude/skills/x-search/SKILL.md` and Claude Code becomes your X/Twitter intelligence tool.
 
+## Customer path (preferred)
+
+Logged-in customers should use the CLI. Same auth and billing as `atris youtube process` (5 credits).
+
+```bash
+atris x-search "MCP agents"
+atris x-search "MCP agents" --limit 5 --days 2
+atris x-search person --name "Leah Bonvissuto" --handle leahbon
+atris x-search --help
+```
+
+Add `--json` for the raw API payload. Curl below is the raw API for debugging only.
+
 ## Bootstrap (ALWAYS Run First)
 
 Before any X search operation, run this bootstrap to ensure everything is set up:
@@ -145,19 +158,16 @@ curl -s -X POST "https://api.atris.ai/api/x-search/research-person" \
 ## Workflows
 
 ### "Search X for tweets about a topic"
-1. Run bootstrap
-2. Search: `POST /x-search/search` with `{query, limit}`
-3. Display results: tweet text, author, engagement, links
+1. Prefer `atris x-search "<query>"` (or bootstrap + curl if debugging the API)
+2. Display results: tweet text, citations (x.com links), credits used/remaining
 
 ### "Find tweets from the last week about X"
-1. Run bootstrap
-2. Search with date filter: `POST /x-search/search` with `{query, limit, days_back: 7}`
-3. Display results sorted by engagement
+1. Prefer `atris x-search "<query>" --days 7 --limit 10`
+2. Display results and citations
 
 ### "Research a person before a meeting"
-1. Run bootstrap
-2. Research: `POST /x-search/research-person` with `{name, handle, company, context}`
-3. Display profile, background, talking points
+1. Prefer `atris x-search person --name "..." --handle ... --company ... --context "..."`
+2. Display profile, background, talking points
 
 ### "Monitor keyword clusters for revenue intel"
 1. Run bootstrap
@@ -214,21 +224,13 @@ curl -s -X POST "https://api.atris.ai/api/x-search/research-person" \
 # Setup (one time)
 npm install -g atris && atris login
 
-# Get token
+# Preferred: CLI
+atris x-search "AI agents" --limit 10 --days 7
+atris x-search person --name "John Doe" --handle johndoe --company Acme
+
+# Raw API (debug)
 TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
-
-# Search tweets
-curl -s -X POST "https://api.atris.ai/api/x-search/search" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"query": "AI agents", "limit": 10}'
-
-# Search last 7 days only
 curl -s -X POST "https://api.atris.ai/api/x-search/search" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"query": "AI agents", "limit": 10, "days_back": 7}'
-
-# Research a person
-curl -s -X POST "https://api.atris.ai/api/x-search/research-person" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"name": "John Doe", "handle": "johndoe", "company": "Acme"}'
 ```

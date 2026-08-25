@@ -700,5 +700,4 @@ module.exports = {
   parseArgs,
   showHelp,
   wrapText,
-  resolveStudyRoot,
 };

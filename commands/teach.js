@@ -93,5 +93,3 @@ function teach(subcommand, ...args) {
 }
 
 module.exports = teach;
-module.exports.teachRoot = teachRoot;
-module.exports.listCaseFiles = listCaseFiles;

@@ -619,6 +619,7 @@ function showHelpAll() {
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('  youtube    - Free local notes, weekly digest, or 5-credit cloud process for YouTube videos');
+  console.log('  x-search   - 5-credit X/Twitter search (tweet text + x.com links)');
   console.log('');
   console.log('Experiments:');
   console.log('  experiments init [slug]     - Prepare atris/experiments/ or scaffold a pack');
@@ -2351,6 +2352,10 @@ if (command === 'init') {
 } else if (command === 'youtube') {
   require('../commands/youtube').youtubeCommand(process.argv.slice(3))
     .then(() => exitWhenFlushed(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitWhenFlushed(1); });
+} else if (command === 'x-search') {
+  require('../commands/x-search').xSearchCommand(process.argv.slice(3))
+    .then((code) => exitWhenFlushed(Number.isInteger(code) ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitWhenFlushed(1); });
 } else if (command === 'run') {
   const args = process.argv.slice(3);
