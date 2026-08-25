@@ -139,9 +139,22 @@ test('personName prefers a given name from the saved account', () => {
 test('scratch folders stay this folder and real names stay', () => {
   assert.equal(folderName('/tmp/atris-use-now'), 'this folder');
   assert.equal(folderName('/tmp/atris-first-min-try'), 'this folder');
-  assert.equal(folderName('/var/folders/xx/yy/T/launch'), 'this folder');
+  assert.equal(folderName('/tmp/tmp'), 'this folder');
+  assert.equal(folderName('/tmp/temp'), 'this folder');
+  assert.equal(folderName('/tmp/a1b2c3d4e5f67890'), 'this folder');
+  assert.equal(folderName('/tmp/550e8400-e29b-41d4-a716-446655440000'), 'this folder');
+  assert.equal(folderName('/var/folders/xx/yy/T/launch'), 'launch');
+  assert.equal(folderName('/tmp/launch-day'), 'launch-day');
   assert.equal(folderName('/Users/keshav/launch-day'), 'launch-day');
   assert.equal(folderName('/Users/keshav/atris'), 'atris');
+});
+
+test('named empty folder under tmp keeps the room name', () => {
+  const text = renderFresh({ person: 'keshav', folder: folderName('/tmp/launch-day') });
+  assert.match(text, /hey keshav, launch-day is a clean start\./);
+  assert.match(text, /I'll set this up when you want\./);
+  assert.match(text, /^next: atris init --minimal$/m);
+  assert.ok(spokenLineCount(text) <= 4);
 });
 
 test('buildFirstMinute reads a claimed task from the local projection', () => {
@@ -227,9 +240,9 @@ test('empty dir bare atris names init, stays short, and does not hang', () => {
       env: { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /init/);
+    assert.match(res.stdout, /this folder is a clean start/);
     assert.match(res.stdout, /atris init --minimal/);
-    assert.match(res.stdout, /keshav|this folder|clean start/);
+    assert.match(res.stdout, /hey keshav,/);
     assert.ok(spokenLineCount(res.stdout) <= 6);
     assert.ok(res.stdout.length < 400);
     assert.doesNotMatch(res.stdout, /operating system|What do you want to build/i);
@@ -237,6 +250,28 @@ test('empty dir bare atris names init, stays short, and does not hang', () => {
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
   } finally {
     cleanupTempDir(dir);
+  }
+});
+
+test('empty named folder under tmp greets with the room name', () => {
+  const parent = makeTempDir();
+  const dir = path.join(parent, 'launch-day');
+  const home = path.join(parent, 'home');
+  fs.mkdirSync(dir);
+  fs.mkdirSync(home);
+  try {
+    const res = runCli([], {
+      cwd: dir,
+      env: { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /hey keshav, launch-day is a clean start\./);
+    assert.match(res.stdout, /I'll set this up when you want\./);
+    assert.match(res.stdout, /^next: atris init --minimal$/m);
+    assert.doesNotMatch(res.stdout, /this folder is a clean start/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(parent);
   }
 });
 
