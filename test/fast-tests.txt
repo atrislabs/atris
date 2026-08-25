@@ -122,6 +122,8 @@ test/sync-all.test.js
 test/task-accept-help.test.js
 test/task-claim-help.test.js
 test/task-proof-projection.test.js
+test/task-ready-help.test.js
+test/task-step-help.test.js
 test/task-workspace-scope.test.js
 test/theme.test.js
 test/todo-sections.test.js

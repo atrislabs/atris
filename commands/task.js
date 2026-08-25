@@ -13168,6 +13168,18 @@ async function run(args) {
     console.log('Usage: atris task claim <id> --as <member>');
     return;
   }
+  // `task ready --help` is a help request, not a run. Ready mutates
+  // review state, so never list or ready just to show usage.
+  if (sub === 'ready' && argsWantHelp(raw.slice(1))) {
+    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>"');
+    return;
+  }
+  // `task step --help` is a help request, not a run. Step mutates
+  // Plan/Do/Review, so never list or step just to show usage.
+  if (sub === 'step' && argsWantHelp(raw.slice(1))) {
+    console.log('Usage: atris task step <id> [--json]');
+    return;
+  }
   const result = await runTaskCommand(raw);
   const skipsRender = sub === 'clear-done' && hasFlag(raw, '--dry-run');
   if (MUTATING_TASK_COMMANDS.has(sub) && !skipsRender) autoRenderTodoFromDb();
