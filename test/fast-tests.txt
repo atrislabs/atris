@@ -123,6 +123,7 @@ test/sync-all.test.js
 test/task-accept-help.test.js
 test/task-claim-help.test.js
 test/task-desk-next.test.js
+test/task-first-minute.test.js
 test/task-next-help.test.js
 test/task-next-truth.test.js
 test/task-proof-projection.test.js

@@ -84,7 +84,7 @@ test('task desk renders projection display_id and resolver finds task by short i
     const env = { ATRIS_TASKS_DB: dbPath };
 
     // 1. Desk output must contain CLI-1259 verbatim
-    const desk = runCli(['task'], { cwd: dir, env });
+    const desk = runCli(['task', 'desk'], { cwd: dir, env });
     assert.equal(desk.status, 0, desk.stderr);
     assert.match(desk.stdout, /TASK DESK/);
     assert.match(desk.stdout, /CLI-1259/);
@@ -139,7 +139,7 @@ test('task desk renders database display_id without positional recomputation whe
     const env = { ATRIS_TASKS_DB: dbPath };
 
     // Desk must show task 205 with its true display_id
-    const desk = runCli(['task'], { cwd: dir, env });
+    const desk = runCli(['task', 'desk'], { cwd: dir, env });
     assert.equal(desk.status, 0, desk.stderr);
     assert.match(desk.stdout, /TASK DESK/);
 

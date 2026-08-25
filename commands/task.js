@@ -59,7 +59,7 @@ const {
   decisionMarkerFor,
   DECISION_REFUSE_REASON,
 } = require('../lib/task-decision');
-const { deskNextCommand, personName, pickNext, taskCommand, taskNextCommand } = require('../lib/first-minute');
+const { buildFirstMinute, deskNextCommand, personName, pickNext, taskCommand, taskNextCommand } = require('../lib/first-minute');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -161,7 +161,8 @@ atris task - durable local task state (SQLite, gitignored)
     atris task ready <id> --verify
     atris autoland tick   # second check runs, task lands
 
-  atris task                              Show the task desk
+  atris task                              Same two-line next as bare atris
+  atris task desk [--all]                 Show the full task desk
   atris task new "<title>" [--what-changes "..."] [--why-it-matters "..."] [--done-looks-like "..."] [--verify <cmd>]
                                            Create a task with a plain explanation; omitted fields get honest defaults
   atris task next [--tag <tag>] [--create-next]
@@ -6465,6 +6466,15 @@ function cmdDay(args) {
   }
   console.log('');
   console.log('add: atris task delegate "..." --to task-planner --tag tasks');
+}
+
+function cmdFirstMinute() {
+  const root = process.cwd();
+  const screen = buildFirstMinute({
+    root,
+    fresh: !fs.existsSync(path.join(root, 'atris')),
+  });
+  console.log(screen.text);
 }
 
 function cmdHome(args) {
@@ -13075,8 +13085,9 @@ async function runTaskCommand(args) {
   const raw = args || [];
   if (raw.includes('--help') || raw.includes('-h')) return help();
   const first = raw[0];
-  const sub = !first || first.startsWith('--') ? 'desk' : first;
-  const rest = !first || first.startsWith('--') ? raw : raw.slice(1);
+  if (!first) return cmdFirstMinute();
+  const sub = first.startsWith('--') ? 'desk' : first;
+  const rest = first.startsWith('--') ? raw : raw.slice(1);
   switch (sub) {
     case 'desk':   return cmdHome(rest);
     case 'today':  return cmdDay(rest);
