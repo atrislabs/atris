@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { pickRunnableMission, runBudgetSeconds } = require('./run-front');
+const { refuseHeadlessUnless } = require('../lib/noninteractive');
 
 const CLI_PATH = path.join(__dirname, '..', 'bin', 'atris.js');
 const DEFAULT_LEG_WALL_SECONDS = 3600;
@@ -194,6 +195,13 @@ async function autopilotFront(args = []) {
   if (args[0] === 'stop') return autopilotStop(root);
   if (args[0] === 'status') return autopilotStatus(root);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') { showFrontHelp(); return 0; }
+  // Bare headless invoke used to start a mission loop and hang. --auto is
+  // the existing proceed flag pulse and spaceship already pass.
+  if (!args.includes('--auto') && refuseHeadlessUnless(args, {
+    allowYes: true,
+    allowOnce: true,
+    usage: 'Usage: atris autopilot [--yes|--auto|--once]',
+  })) return 2;
 
   const existing = readState(root);
   if (existing && pidAlive(existing.pid) && existing.pid !== process.pid) {

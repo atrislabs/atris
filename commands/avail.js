@@ -10,6 +10,7 @@
 
 const { ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson, getAppBaseUrl, httpRequest } = require('../utils/api');
+const { argsWantHelp } = require('../lib/noninteractive');
 
 const DAY_INDEX = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 };
 const DAY_LABEL = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -381,14 +382,14 @@ Examples:
 }
 
 async function availCommand(argv = []) {
+  if (argsWantHelp(argv)) {
+    printHelp();
+    return 2;
+  }
   if (!argv.length || argv[0]?.startsWith('-') || argv[0] === 'show' || argv[0] === 'get') {
     return showAvail({ json: argv.includes('--json') });
   }
   const sub = argv[0].toLowerCase();
-  if (sub === '--help' || sub === '-h' || sub === 'help') {
-    printHelp();
-    return 0;
-  }
   if (sub === 'set' || sub === 'update') return setAvail(argv.slice(1));
   if (sub === 'slots') return slotsAvail(argv.slice(1));
   console.error(`Unknown subcommand: ${sub}`);

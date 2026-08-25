@@ -1164,7 +1164,21 @@ if (!command || !knownCommands.includes(command)) {
   const directSingleWordNatural = !natural.multiword
     && SINGLE_WORD_NATURAL_INTENTS.has(userInput.toLowerCase());
 
-  if (natural.asJson && !natural.multiword && !directSingleWordNatural) {
+  // An unmatched first token that looks like a command (or a typo of one)
+  // is not a request to create work, even when extra args follow
+  // (`atris taks list`). Quoted sentences and named work verbs (`fix`,
+  // `build`) still go to one-lap. Free-sentence task creation needs
+  // atris "<request>", task new, or wish.
+  const firstToken = String((natural.positionals && natural.positionals[0]) || command || '').trim();
+  const firstLooksLikeCommand = Boolean(firstToken) && !/\s/.test(firstToken);
+  const firstIsWorkVerb = SINGLE_WORD_NATURAL_INTENTS.has(firstToken.toLowerCase());
+  const unknownCommandToken = Boolean(command)
+    && firstLooksLikeCommand
+    && !knownCommands.includes(firstToken)
+    && !firstIsWorkVerb
+    && !directSingleWordNatural;
+
+  if (unknownCommandToken && natural.asJson) {
     console.log(JSON.stringify({
       ok: false,
       error: command ? `unknown command: ${command}` : 'unknown command',
@@ -1175,10 +1189,7 @@ if (!command || !knownCommands.includes(command)) {
     process.exit(2);
   }
 
-  // A single unmatched argv[1] that looks like a verb is a typo or missing
-  // command, not a request to create work. Free-sentence task creation needs
-  // atris "<request>", task new, or wish.
-  if (command && !natural.multiword && !directSingleWordNatural) {
+  if (unknownCommandToken) {
     const suggestions = suggestCommands(command);
     console.error(`Unknown command: "${command}". Run "atris help" for available commands.`);
     if (suggestions.length) {

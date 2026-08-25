@@ -291,3 +291,87 @@ test('29: signup help prints usage and does not mint or solve proof-of-work', ()
     cleanupTempDir(dir);
   }
 });
+
+test('30: typo plus extra args exits 2 and does not create a task', () => {
+  const dir = makeTempDir();
+  try {
+    assert.equal(runCli(['init', '--yes', '--minimal'], { cwd: dir, timeout: 60000 }).status, 0);
+    const beforeTodo = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+
+    for (const args of [
+      ['taks', 'list'],
+      ['misson', 'status'],
+      ['xyzzy', 'now'],
+    ]) {
+      const res = runCli(args, { cwd: dir });
+      assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
+      assert.match(res.stderr + res.stdout, /Unknown command/i);
+      assert.doesNotMatch(res.stdout, /Got it\. I saved|First task:|Focus: taks list|Focus: misson status/i);
+    }
+
+    const typoJson = runCli(['taks', 'list', '--json'], { cwd: dir });
+    assert.equal(typoJson.status, 2, typoJson.stdout + typoJson.stderr);
+    assert.equal(JSON.parse(typoJson.stdout).error, 'unknown command: taks');
+
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'context_profile.json')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), beforeTodo);
+
+    const quoted = runCli(['fix the login', '--json'], { cwd: dir });
+    const payload = JSON.parse(quoted.stdout);
+    assert.notEqual(payload.error, 'unknown command: fix the login');
+    assert.notEqual(payload.command, 'fix the login');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('31: avail --help prints usage and does not authenticate', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-avail-home-');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    for (const args of [
+      ['avail', '--help'],
+      ['avail', '-h'],
+      ['avail', 'help'],
+    ]) {
+      const res = runCli(args, {
+        cwd: dir,
+        env: {
+          HOME: home,
+          ATRIS_API_URL: 'http://127.0.0.1:9',
+          ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+        },
+        timeout: 4000,
+      });
+      assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
+      assert.match(res.stdout + res.stderr, /Usage: atris avail/i);
+      assert.doesNotMatch(res.stdout + res.stderr, /Authentication failed|ECONNREFUSED|Booking availability/i);
+    }
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('32: headless autopilot exits 2 without starting a mission', () => {
+  const dir = makeTempDir();
+  try {
+    assert.equal(runCli(['init', '--yes', '--minimal'], { cwd: dir, timeout: 60000 }).status, 0);
+    const res = runCli(['autopilot'], { cwd: dir, timeout: 5000 });
+    assert.equal(res.status, 2, res.stdout + res.stderr);
+    assert.match(res.stderr + res.stdout, /Usage: atris autopilot|Headless|Pass --yes/i);
+    assert.doesNotMatch(res.stdout + res.stderr, /Takeoff|Autopilot on|Bounded Proof|mission_started/i);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'autopilot.json')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
