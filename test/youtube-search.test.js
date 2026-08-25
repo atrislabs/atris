@@ -19,7 +19,14 @@ test('parseSearchArgs accepts query with limit and json', () => {
   assert.equal(options.query, 'MCP agents');
   assert.equal(options.limit, 10);
   assert.equal(options.json, true);
+  assert.equal(options.paid, false);
   assert.equal(options.help, false);
+});
+
+test('parseSearchArgs accepts --paid before or after the query', () => {
+  assert.equal(parseSearchArgs(['--paid', 'MCP agents']).paid, true);
+  assert.equal(parseSearchArgs(['MCP agents', '--paid', '--limit', '3']).paid, true);
+  assert.equal(parseSearchArgs(['MCP agents', '--paid', '--limit', '3']).limit, 3);
 });
 
 test('parseSearchArgs defaults limit to 5 and supports --help', () => {
@@ -72,7 +79,20 @@ test('youtube search --help prints usage without calling the runner', async () =
   assert.equal(runnerCalls, 0);
   assert.match(output.join('\n'), /Usage: atris youtube search/);
   assert.match(output.join('\n'), /--limit/);
+  assert.match(output.join('\n'), /--paid/);
   assert.match(output.join('\n'), /zero credits|Does not bill credits/i);
+  assert.match(output.join('\n'), /5 credits/);
+});
+
+test('youtube --help lists paid search', async () => {
+  const output = [];
+  const status = await youtubeCommand(['--help'], {
+    output: (line) => output.push(line),
+  });
+  assert.equal(status, 0);
+  const text = output.join('\n');
+  assert.match(text, /search --paid/);
+  assert.match(text, /5 credits, watch permalinks/);
 });
 
 test('youtube search prints youtu.be links from mocked runner', async () => {
@@ -146,4 +166,230 @@ test('youtube search runner failure surfaces stderr', async () => {
   });
   assert.equal(status, 1);
   assert.match(output.join('\n'), /yt-dlp exploded/);
+});
+
+test('youtube search --paid posts /youtube/search and prints titles, permalinks, credits', async () => {
+  const calls = [];
+  const output = [];
+  let runnerCalls = 0;
+
+  const status = await youtubeCommand(['search', '--paid', 'MCP agents', '--limit', '5'], {
+    output: (line) => output.push(line),
+    runner: () => {
+      runnerCalls += 1;
+      return { status: 0, stdout: '' };
+    },
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          status: 'success',
+          credits_used: 5,
+          credits_remaining: 995,
+          data: {
+            results: [
+              { title: 'MCP Agents in 2026', url: 'https://www.youtube.com/watch?v=mcp2026a' },
+              { title: 'Agent Stack Tour', permalink: 'https://www.youtube.com/watch?v=mcp2026b' },
+            ],
+          },
+        },
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(runnerCalls, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].pathname, '/youtube/search');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.equal(calls[0].options.token, 'token-123');
+  assert.equal(calls[0].options.retries, 0);
+  assert.deepEqual(calls[0].options.body, { query: 'MCP agents', limit: 5 });
+
+  const text = output.join('\n');
+  assert.match(text, /MCP Agents in 2026 \| https:\/\/www\.youtube\.com\/watch\?v=mcp2026a/);
+  assert.match(text, /Agent Stack Tour \| https:\/\/www\.youtube\.com\/watch\?v=mcp2026b/);
+  assert.match(text, /Credits: 5 used, 995 remaining/);
+  assert.doesNotMatch(text, /token-123/);
+});
+
+test('youtube search --paid --json prints the raw payload', async () => {
+  const output = [];
+  const status = await youtubeCommand(['search', '--paid', 'hello', '--json'], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        status: 'success',
+        credits_used: 5,
+        data: { results: [{ title: 'Hi', url: 'https://www.youtube.com/watch?v=hi1234' }] },
+      },
+    }),
+  });
+  assert.equal(status, 0);
+  const parsed = JSON.parse(output.join('\n'));
+  assert.equal(parsed.credits_used, 5);
+  assert.equal(parsed.data.results[0].title, 'Hi');
+});
+
+test('youtube search --paid empty results prints credits and exits 2', async () => {
+  const output = [];
+  const status = await youtubeCommand(['search', '--paid', 'nothing here'], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: { status: 'success', credits_used: 0, credits_remaining: 1000, data: { results: [] } },
+    }),
+  });
+  assert.equal(status, 2);
+  assert.match(output.join('\n'), /no videos found/);
+  assert.match(output.join('\n'), /Credits: 0 used, 1000 remaining/);
+});
+
+test('youtube search --paid surfaces 401 login hint', async () => {
+  const output = [];
+  const status = await youtubeCommand(['search', '--paid', 'agents'], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    loadCredentials: () => ({ token: 't' }),
+    apiRequestJson: async () => ({
+      ok: false,
+      status: 401,
+      error: 'Not authenticated',
+    }),
+  });
+  assert.equal(status, 1);
+  assert.match(output.join('\n'), /401/);
+  assert.match(output.join('\n'), /atris login --force/);
+});
+
+test('youtube search --paid surfaces 402 credits hint', async () => {
+  const output = [];
+  const status = await youtubeCommand(['search', '--paid', 'agents'], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: false,
+      status: 402,
+      error: 'Insufficient credits',
+    }),
+  });
+  assert.equal(status, 1);
+  assert.match(output.join('\n'), /402/);
+  assert.match(output.join('\n'), /Check Atris credits/);
+});
+
+test('youtube search --paid mints only the youtube scope after an expired user wall and retries', async () => {
+  const calls = [];
+  const persisted = [];
+  const output = [];
+  const secret = 'minted-youtube-search-secret';
+
+  const status = await youtubeCommand(['search', '--paid', 'MCP agents'], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ error: 'token_invalid', detail: 'Token expired' }),
+    loadCredentials: () => ({
+      token: 'user-jwt',
+      refresh_token: 'refresh-jwt',
+      email: 'owner@example.com',
+    }),
+    persistMintedAgentToken: (_credentials, token) => {
+      persisted.push(token);
+    },
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      if (pathname === '/auth/agent-token') {
+        return {
+          ok: true,
+          status: 200,
+          data: { access_token: secret, scopes: ['youtube'], daily_credit_cap: 50 },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          credits_used: 5,
+          data: { results: [{ title: 'ok from mint', url: 'https://www.youtube.com/watch?v=minted1' }] },
+        },
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(calls[0].pathname, '/auth/agent-token');
+  assert.equal(calls[0].options.token, 'user-jwt');
+  assert.deepEqual(calls[0].options.body.scopes, ['youtube']);
+  assert.equal(calls[0].options.body.scopes.includes('x-search'), false);
+  assert.equal(calls[1].pathname, '/youtube/search');
+  assert.equal(calls[1].options.token, secret);
+  assert.deepEqual(persisted, [secret]);
+  assert.match(output.join('\n'), /ok from mint/);
+  assert.match(output.join('\n'), /https:\/\/www\.youtube\.com\/watch\?v=minted1/);
+  assert.doesNotMatch(output.join('\n'), new RegExp(secret));
+  assert.doesNotMatch(output.join('\n'), /\/auth\/cli|Choose login method|Opening browser/);
+});
+
+test('youtube search --paid remints after a billed 401 and retries once', async () => {
+  const calls = [];
+  const secret = 'minted-after-401-yt-search';
+  const status = await youtubeCommand(['search', '--paid', 'agents'], {
+    output: () => {},
+    ensureValidCredentials: async () => ({ credentials: { token: 'user-jwt' } }),
+    loadCredentials: () => ({ token: 'user-jwt', refresh_token: 'refresh-jwt' }),
+    persistMintedAgentToken: () => {},
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, token: options.token, body: options.body });
+      if (pathname === '/youtube/search' && options.token === 'user-jwt') {
+        return { ok: false, status: 401, error: 'agent token required' };
+      }
+      if (pathname === '/auth/agent-token') {
+        assert.deepEqual(options.body.scopes, ['youtube']);
+        return { ok: true, status: 200, data: { access_token: secret, scopes: ['youtube'] } };
+      }
+      return {
+        ok: true,
+        status: 200,
+        data: { data: { results: [{ title: 'retried', url: 'https://www.youtube.com/watch?v=retry1' }] } },
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(calls[0].pathname, '/youtube/search');
+  assert.equal(calls[0].token, 'user-jwt');
+  assert.equal(calls[1].pathname, '/auth/agent-token');
+  assert.equal(calls[2].pathname, '/youtube/search');
+  assert.equal(calls[2].token, secret);
+});
+
+test('youtube search --paid with no stored JWT fails in one sentence and stays off the login wall', async () => {
+  const output = [];
+  let apiCalls = 0;
+  let runnerCalls = 0;
+  const status = await youtubeCommand(['search', '--paid', 'agents'], {
+    output: (line) => output.push(line),
+    runner: () => {
+      runnerCalls += 1;
+      return { status: 0, stdout: '' };
+    },
+    ensureValidCredentials: async () => ({ error: 'not_logged_in' }),
+    loadCredentials: () => null,
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      return { ok: true, status: 200, data: {} };
+    },
+  });
+  assert.equal(status, 1);
+  assert.equal(apiCalls, 0);
+  assert.equal(runnerCalls, 0);
+  assert.equal(output.join('\n').trim(), 'not signed in. run atris login first.');
+  assert.doesNotMatch(output.join('\n'), /\/auth\/cli|Choose login method|Opening browser|https:\/\//);
 });
