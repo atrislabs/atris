@@ -230,6 +230,7 @@ Two layers, never mixed. The reply the person reads is flowing prose: ideas, spe
 | `400` | Invalid YouTube URL | Check URL format |
 | `502` | Transcript or cloud processing failed | Retry; credits auto-refunded when backend fails |
 | search exit 2 | ytsearch/yt-dlp missing or no results | Install yt-dlp, or put ytsearch on PATH |
+| search 429 | YouTube rate-limited local search | retry later; do not use --paid |
 
 ---
 

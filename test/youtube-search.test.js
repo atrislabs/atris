@@ -168,6 +168,103 @@ test('youtube search runner failure surfaces stderr', async () => {
   assert.match(output.join('\n'), /yt-dlp exploded/);
 });
 
+test('youtube search retries once after a 429 then prints videos', async () => {
+  const output = [];
+  const sleeps = [];
+  let apiCalls = 0;
+  const calls = [];
+  const status = await youtubeCommand(['search', 'MCP agents 2026'], {
+    output: (line) => output.push(line),
+    sleep: async (ms) => { sleeps.push(ms); },
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      return { ok: false, status: 500, error: 'should not bill' };
+    },
+    runner: (query, limit) => {
+      calls.push({ query, limit });
+      if (calls.length === 1) {
+        return {
+          status: 1,
+          stdout: '',
+          stderr: 'ERROR: [youtube] HTTP Error 429: Too Many Requests',
+        };
+      }
+      return {
+        status: 0,
+        stdout: 'MCP Agents in 2026 | Dev Channel | 18:22 | 42000 | 20260820 | https://youtu.be/mcp2026a\n',
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.deepEqual(calls, [
+    { query: 'MCP agents 2026', limit: 5 },
+    { query: 'MCP agents 2026', limit: 5 },
+  ]);
+  assert.deepEqual(sleeps, [1000]);
+  assert.equal(apiCalls, 0);
+  const text = output.join('\n');
+  assert.match(text, /https:\/\/youtu\.be\/mcp2026a/);
+  assert.match(text, /MCP Agents in 2026/);
+  assert.doesNotMatch(text, /429|Too Many Requests|\/youtube\/search|--paid/);
+});
+
+test('youtube search persistent 429 prints one sentence and stays off paid', async () => {
+  const output = [];
+  const sleeps = [];
+  let apiCalls = 0;
+  let runnerCalls = 0;
+  const status = await youtubeCommand(['search', 'agents'], {
+    output: (line) => output.push(line),
+    sleep: async (ms) => { sleeps.push(ms); },
+    apiRequestJson: async (pathname) => {
+      apiCalls += 1;
+      return { ok: false, status: 500, error: `unexpected ${pathname}` };
+    },
+    runner: () => {
+      runnerCalls += 1;
+      return {
+        status: 1,
+        stdout: '',
+        stderr: 'ERROR: Sign in to confirm you’re not a bot',
+      };
+    },
+  });
+
+  assert.equal(status, 1);
+  assert.equal(runnerCalls, 2);
+  assert.deepEqual(sleeps, [1000]);
+  assert.equal(apiCalls, 0);
+  const text = output.join('\n');
+  assert.equal(
+    text.trim(),
+    'youtube rate-limited local search. do not use --paid as a fallback; retry later.',
+  );
+  assert.doesNotMatch(text, /\/youtube\/search/);
+  assert.doesNotMatch(text, /Sign in to confirm|not a bot/);
+  assert.doesNotMatch(text, /try --paid|run --paid|search --paid/);
+});
+
+test('youtube search rate-limit retry still prints unrelated yt-dlp detail', async () => {
+  const output = [];
+  let runnerCalls = 0;
+  const status = await youtubeCommand(['search', 'agents'], {
+    output: (line) => output.push(line),
+    sleep: async () => {},
+    runner: () => {
+      runnerCalls += 1;
+      if (runnerCalls === 1) {
+        return { status: 1, stdout: '', stderr: 'HTTP Error 429: Too Many Requests' };
+      }
+      return { status: 1, stdout: '', stderr: 'yt-dlp exploded' };
+    },
+  });
+  assert.equal(status, 1);
+  assert.equal(runnerCalls, 2);
+  assert.match(output.join('\n'), /yt-dlp exploded/);
+  assert.doesNotMatch(output.join('\n'), /rate-limited|--paid|\/youtube\/search/);
+});
+
 test('youtube search --paid posts /youtube/search and prints titles, permalinks, credits', async () => {
   const calls = [];
   const output = [];
