@@ -647,6 +647,10 @@ function showHelp() {
   console.log('  switch     - Switch account globally (atris switch <name>)');
   console.log('  use        - Set account for this terminal only (atris use <name>)');
   console.log('  accounts   - Manage accounts (list, add, remove)');
+  console.log('  balance    - Show credit balance in dollars');
+  console.log('  usage      - Show developer API usage');
+  console.log('  api-key    - Create, list, rotate, or revoke a developer API key');
+  console.log('  topup      - Buy credits and print a Stripe checkout URL');
   console.log('');
   console.log('Integrations:');
   console.log('  github    - github cli wrapper (doctor, auth, pr list/create/checks/view)');
@@ -2205,6 +2209,22 @@ if (command === 'init') {
     process.exit(0);
   }
   require('../commands/auth').accountsCmd();
+} else if (command === 'balance') {
+  Promise.resolve(require('../commands/balance').balanceCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'usage') {
+  Promise.resolve(require('../commands/usage').usageCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'api-key') {
+  Promise.resolve(require('../commands/api-key').apiKeyCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'topup') {
+  Promise.resolve(require('../commands/topup').topupCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === '_resolve') {
   // Hidden: resolve a profile name query → print exact profile name
   require('../commands/auth').resolveProfile();
