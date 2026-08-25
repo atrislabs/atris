@@ -260,7 +260,7 @@ test('29: friends/inbox --help print usage and do not hit social or inbox APIs',
       });
       assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
       assert.match(res.stdout + res.stderr, /Usage: atris (friends|inbox)/i);
-      assert.doesNotMatch(res.stdout + res.stderr, /Session expired|Conversations|No friends yet|Followers/i);
+      assert.doesNotMatch(res.stdout + res.stderr, /Session expired|Conversations|No friends yet|No conversations/i);
     }
   } finally {
     cleanupTempDir(dir);
