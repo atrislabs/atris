@@ -110,13 +110,13 @@ function parseShellWords(command) {
 }
 
 function printedAtrisArgs(output, label) {
-  const prefix = `${label}:`;
+  const prefix = `${label}:`.toLowerCase();
   const line = String(output || '')
     .split(/\r?\n/)
     .map((row) => row.trimStart())
-    .find((row) => row.startsWith(prefix) && row.includes('atris '));
+    .find((row) => row.toLowerCase().startsWith(prefix) && /\batris\s/.test(row));
   assert.ok(line, `missing ${label} Atris command in output:\n${output}`);
-  return parseShellWords(line.slice(line.indexOf('atris ') + 'atris '.length));
+  return parseShellWords(line.slice(line.toLowerCase().indexOf('atris ') + 'atris '.length));
 }
 
 function assertOk(result, label) {
