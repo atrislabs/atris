@@ -182,7 +182,8 @@ test('uncertified review task first-minute is ready to look at', () => {
 
 test('headless flags never auto-init without an explicit yes', () => {
   assert.equal(shouldAutoInitFresh([], { ATRIS_NO_INTERACTIVE: '1' }), false);
-  assert.equal(shouldAutoInitFresh(['--yes'], { ATRIS_NO_INTERACTIVE: '1' }), false);
+  assert.equal(shouldAutoInitFresh(['--yes'], { ATRIS_NO_INTERACTIVE: '1' }), true);
+  assert.equal(shouldAutoInitFresh(['-y'], { ATRIS_NO_INTERACTIVE: '1' }), true);
   assert.equal(shouldAutoInitFresh(['--json', '--yes'], {}), false);
   assert.equal(shouldAutoInitFresh(['--yes'], {}), true);
 });
@@ -334,7 +335,7 @@ test('empty named folder under tmp greets with the room name', () => {
   }
 });
 
-test('empty dir --json and no-interactive --yes never init', () => {
+test('empty dir --json does not init', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
   fs.mkdirSync(home, { recursive: true });
@@ -347,8 +348,17 @@ test('empty dir --json and no-interactive --yes never init', () => {
     const payload = JSON.parse(json.stdout);
     assert.equal(payload.next_action, 'atris init --minimal --yes');
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
 
-    const blocked = runCli(['--yes'], {
+test('empty dir no-interactive without --yes does not init', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  try {
+    const blocked = runCli([], {
       cwd: dir,
       env: {
         HOME: home,
@@ -358,8 +368,34 @@ test('empty dir --json and no-interactive --yes never init', () => {
       },
     });
     assert.equal(blocked.status, 0, blocked.stderr || blocked.stdout);
-    assert.match(blocked.stdout, /atris init --minimal/);
+    assert.match(blocked.stdout, /^next: atris init --minimal$/m);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('empty dir --yes inits even under no-interactive', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  try {
+    const started = runCli(['--yes'], {
+      cwd: dir,
+      timeout: 60000,
+      env: {
+        HOME: home,
+        USER: 'keshav',
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+      },
+    });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
+    assert.match(started.stdout, /atris initialized/);
+    assert.match(started.stdout, /^next: atris task claim /m);
+    assert.doesNotMatch(started.stdout, /I'll set this up when you want/);
+    assert.doesNotMatch(started.stdout, /What do you want to build/);
   } finally {
     cleanupTempDir(dir);
   }
