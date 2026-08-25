@@ -64,7 +64,7 @@ rg "syncCheckoutCommand|checkoutBehindMessage|trackedTreeIsClean" commands/sync-
 rg "logAtris|logsDigest|addInboxIdea|--repl" commands/log.js bin/atris.js test/logs-digest.test.js test/dogfood-papercuts.test.js test/dogfood-p0.test.js  # `atris log \"note\"` inbox write, optional --repl editor, and read-only daily digest
 rg "logSyncAtris" commands/log-sync.js      # Log sync command
 rg "experimentsCommand" commands/experiments.js  # Experiments CLI command
-rg "loginAtris|switchAccount|useAccount|accountsCmd|showAuthHelp|--global|scope" bin/atris.js commands/auth.js lib/cli-scope.js test/dogfood-p1.test.js # Auth/account commands + workspace vs --global account list
+rg "loginAtris|mintAgentToken|parseAgentTokenArgs|--agent|agent-token|showAuthHelp|--global|scope" bin/atris.js commands/auth.js lib/cli-scope.js test/auth-agent-token.test.js test/dogfood-p1.test.js # Auth/account commands, scoped agent-token mint from stored JWT (`atris login --agent`), and workspace vs --global account list
 rg "doctorCommand|task_support|public bin shim" commands/doctor.js bin/atris.js package.json test/dogfood-p1.test.js # atris doctor --json: node, task-support 22+, auth, workspace, tiny POSIX bin shim (helpers stay internal)
 rg "agentDoctor|inspectAgentCliWiring|agent dogfood|agentDogfoodCommand|agentSpawnCommand|agent_spawns" bin/atris.js commands/agent-spawn.js test/commands.test.js test/agent-spawn.test.js commands/init.js # Local AI CLI wiring doctor, Devin/Droid GLM 5.2 dogfood smoke, durable worker spawn requests, and Devin init scaffold
 rg "activateAtris|showActivateHelp|activate and next --help" bin/atris.js commands/activate.js test/commands.test.js # Activate command + wiki status + non-mutating help

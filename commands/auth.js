@@ -1,8 +1,220 @@
-const { loadCredentials, saveCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
+const { loadCredentials, saveCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, saveProfile, getTokenExpiryEpochSeconds, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
 const { getAppBaseUrl, apiRequestJson } = require('../utils/api');
 const { isNonInteractive, wantsJson } = require('../lib/noninteractive');
+const { hasFlag, readFlag } = require('../lib/arg-parser');
 const fs = require('fs');
 const path = require('path');
+
+const AGENT_TOKEN_PATH = '/auth/agent-token';
+const DEFAULT_AGENT_SCOPES = ['x-search', 'youtube'];
+const DEFAULT_DAILY_CREDIT_CAP = 50;
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function wantsAgentToken(args = []) {
+  if (hasFlag(args, '--agent')) return true;
+  const first = args.find((arg) => arg && !String(arg).startsWith('-'));
+  return first === 'agent-token';
+}
+
+function parseScopeList(raw) {
+  if (!raw) return [...DEFAULT_AGENT_SCOPES];
+  const scopes = String(raw).split(',').map((part) => part.trim()).filter(Boolean);
+  if (scopes.length === 0) {
+    throw new Error('scopes must list at least one value');
+  }
+  return scopes;
+}
+
+function parseDailyCreditCap(args) {
+  const present = args.some((arg) => arg === '--daily-credit-cap' || String(arg).startsWith('--daily-credit-cap='));
+  const raw = readFlag(args, '--daily-credit-cap', '');
+  if (!present) return DEFAULT_DAILY_CREDIT_CAP;
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error('daily credit cap must be a positive integer');
+  }
+  return value;
+}
+
+function parseAgentTokenArgs(args = []) {
+  return {
+    agent: wantsAgentToken(args),
+    scopes: parseScopeList(readFlag(args, '--scopes', '')),
+    dailyCreditCap: parseDailyCreditCap(args),
+    json: wantsJson(args),
+    help: hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help',
+  };
+}
+
+function extractAgentAccessToken(data) {
+  if (!data || typeof data !== 'object') return null;
+  return firstNonEmptyString(
+    data.access_token,
+    data.token,
+    data.agent_access,
+    data.agent_token,
+    data.agent_access_token,
+  );
+}
+
+function expiryFromValue(value) {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const ms = value > 1e12 ? value : value * 1000;
+    return new Date(ms).toISOString();
+  }
+  return null;
+}
+
+function extractAgentTokenMeta(data, requested, token) {
+  const payload = data && typeof data === 'object' ? data : {};
+  const scopes = Array.isArray(payload.scopes) && payload.scopes.length
+    ? payload.scopes.map(String)
+    : requested.scopes;
+  const rawCap = payload.daily_credit_cap;
+  const dailyCreditCap = Number.isFinite(Number(rawCap)) ? Number(rawCap) : requested.dailyCreditCap;
+  const expiresAt = expiryFromValue(payload.expires_at ?? payload.expiry ?? payload.expires ?? payload.exp)
+    || expiryFromValue(getTokenExpiryEpochSeconds(token));
+  return { scopes, dailyCreditCap, expiresAt };
+}
+
+function persistMintedAgentToken(credentials, token, extras = {}) {
+  const next = {
+    token,
+    refresh_token: extras.refresh_token || credentials.refresh_token || null,
+    email: credentials.email || null,
+    user_id: credentials.user_id || null,
+    provider: credentials.provider || null,
+    saved_at: extras.saved_at || new Date().toISOString(),
+  };
+  if (credentials.source_profile) {
+    saveProfile(credentials.source_profile, next);
+    return next;
+  }
+  saveCredentials(next.token, next.refresh_token, next.email, next.user_id, next.provider);
+  return next;
+}
+
+function printAgentTokenMint(meta, output) {
+  output('minted scoped agent token');
+  output(`scopes: ${meta.scopes.join(', ')}`);
+  output(`daily credit cap: ${meta.dailyCreditCap}`);
+  if (meta.expiresAt) output(`expires: ${meta.expiresAt}`);
+}
+
+function redactSecret(text, secret) {
+  if (!secret || !text) return text;
+  return String(text).split(secret).join('[redacted]');
+}
+
+async function postAgentToken(api, token, body) {
+  return api(AGENT_TOKEN_PATH, {
+    method: 'POST',
+    token,
+    body,
+    retries: 0,
+  });
+}
+
+async function mintAgentToken(args = [], deps = {}) {
+  const output = deps.output || console.log;
+  const outputError = deps.outputError || console.error;
+  const api = deps.apiRequestJson || apiRequestJson;
+  const load = deps.loadCredentials || loadCredentials;
+  const persist = deps.persistMintedAgentToken || persistMintedAgentToken;
+  const now = deps.now || (() => new Date().toISOString());
+
+  let options;
+  try {
+    options = parseAgentTokenArgs(args);
+  } catch (error) {
+    const message = error.message || String(error);
+    if (wantsJson(args)) {
+      output(JSON.stringify({ ok: false, error: message }, null, 2));
+    } else {
+      outputError(message);
+    }
+    return 1;
+  }
+
+  const credentials = load() || {};
+  const accessToken = firstNonEmptyString(credentials.token);
+  const refreshToken = firstNonEmptyString(credentials.refresh_token);
+  if (!accessToken && !refreshToken) {
+    if (options.json) {
+      output(JSON.stringify({
+        ok: false,
+        error: 'not_logged_in',
+        next: 'atris login',
+      }, null, 2));
+    } else {
+      output('not signed in. run atris login first, then atris login --agent.');
+    }
+    return 1;
+  }
+
+  const body = {
+    scopes: options.scopes,
+    daily_credit_cap: options.dailyCreditCap,
+  };
+  let authToken = accessToken || refreshToken;
+  let result = await postAgentToken(api, authToken, body);
+  if (!result.ok && result.status === 401 && refreshToken && authToken !== refreshToken) {
+    authToken = refreshToken;
+    result = await postAgentToken(api, authToken, body);
+  }
+
+  if (!result.ok) {
+    const detail = redactSecret(result.error || 'agent token request failed', accessToken);
+    if (options.json) {
+      output(JSON.stringify({
+        ok: false,
+        error: redactSecret(detail, refreshToken),
+        status: result.status || 0,
+      }, null, 2));
+    } else {
+      outputError(redactSecret(detail, refreshToken));
+    }
+    return 1;
+  }
+
+  const minted = extractAgentAccessToken(result.data);
+  if (!minted) {
+    const message = 'backend did not return an agent token';
+    if (options.json) {
+      output(JSON.stringify({ ok: false, error: message }, null, 2));
+    } else {
+      outputError(message);
+    }
+    return 1;
+  }
+
+  persist(credentials, minted, {
+    refresh_token: firstNonEmptyString(result.data && result.data.refresh_token) || refreshToken,
+    saved_at: now(),
+  });
+
+  const meta = extractAgentTokenMeta(result.data, options, minted);
+  if (options.json) {
+    output(JSON.stringify({
+      ok: true,
+      minted: true,
+      scopes: meta.scopes,
+      daily_credit_cap: meta.dailyCreditCap,
+      expires_at: meta.expiresAt,
+    }, null, 2));
+    return 0;
+  }
+
+  printAgentTokenMint(meta, output);
+  return 0;
+}
 
 async function printWhoamiPayload(asJson) {
   const ensured = await ensureValidCredentials(apiRequestJson);
@@ -60,6 +272,20 @@ async function loginAtris(options = {}) {
 
   try {
     const existing = loadCredentials();
+
+    if (wantsAgentToken(args)) {
+      if (directToken) {
+        saveCredentials(
+          String(directToken).trim(),
+          existing?.refresh_token || null,
+          existing?.email || null,
+          existing?.user_id || null,
+          existing?.provider || 'manual',
+        );
+      }
+      const code = await mintAgentToken(args);
+      process.exit(code);
+    }
 
     // Direct token mode (non-interactive)
     if (directToken) {
@@ -675,4 +901,19 @@ function shellInit() {
   console.log(lines.join('\n'));
 }
 
-module.exports = { loginAtris, logoutAtris, whoamiAtris, switchAccount, useAccount, accountsCmd, listAccountsCmd, resolveProfile, profileEmail, activateGlobal, switchSession, shellInit };
+module.exports = {
+  loginAtris,
+  logoutAtris,
+  whoamiAtris,
+  switchAccount,
+  useAccount,
+  accountsCmd,
+  resolveProfile,
+  profileEmail,
+  activateGlobal,
+  switchSession,
+  shellInit,
+  parseAgentTokenArgs,
+  mintAgentToken,
+  wantsAgentToken,
+};

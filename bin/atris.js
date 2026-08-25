@@ -709,7 +709,7 @@ function showHelpAll() {
   console.log('  agent      - Select cloud agent, spawn worker requests, or run `agent doctor`');
   console.log('  chat       - Chat with Atris 2 Fast in this workspace (--agent for cloud agent; or: atris chat scan)');
   console.log('  fast       - Chat with Atris2 Fast');
-  console.log('  login      - Sign in or add another account');
+  console.log('  login      - Sign in, add an account, or mint a scoped agent token (--agent)');
   console.log('  logout     - Sign out of current account');
   console.log('  whoami     - Show active account');
   console.log('  switch     - Switch account globally (atris switch <name>)');
@@ -957,7 +957,7 @@ function showReleaseHelp() {
 
 function showAuthHelp(commandName) {
   const usage = {
-    login: 'Usage: atris login [--token <token>] [--force]',
+    login: 'Usage: atris login [--token <token>] [--force] [--agent]',
     logout: 'Usage: atris logout',
     whoami: 'Usage: atris whoami [--json]',
     switch: 'Usage: atris switch [account] [--global]',
@@ -970,6 +970,7 @@ function showAuthHelp(commandName) {
   console.log('Description:');
   if (commandName === 'login') {
     console.log('  Sign in with browser OAuth or a pasted API token.');
+    console.log('  --agent mints a scoped agent token from stored credentials. No browser.');
   } else if (commandName === 'logout') {
     console.log('  Sign out of the current Atris account.');
   } else if (commandName === 'whoami') {
@@ -984,8 +985,11 @@ function showAuthHelp(commandName) {
   console.log('');
   console.log('Options:');
   if (commandName === 'login') {
-    console.log('  --token <token>  Save an API token without prompting.');
-    console.log('  --force, -f      Re-run login even if credentials already exist.');
+    console.log('  --token <token>           Save an API token without prompting.');
+    console.log('  --force, -f               Re-run login even if credentials already exist.');
+    console.log('  --agent                   Mint a scoped agent token from the stored login.');
+    console.log('  --scopes <list>           Comma-separated scopes (default: x-search,youtube).');
+    console.log('  --daily-credit-cap <n>    Daily credit cap (default: 50).');
   } else if (commandName === 'switch') {
     console.log('  --global, -g     Switch the account for all terminals.');
   }
