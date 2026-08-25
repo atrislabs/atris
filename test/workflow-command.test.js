@@ -93,8 +93,29 @@ test('do in an uninitialized directory gives a plain error, not a stack trace', 
   const res = runCli(['do'], { cwd: dir });
   assert.equal(res.status, 1);
   assert.match(res.stdout, /executor\.md not found/);
+  assert.match(res.stdout, /atris init/);
   const combined = res.stdout + res.stderr;
   assert.ok(!/at .*workflow\.js:\d+/.test(combined), `stack trace leaked:\n${combined}`);
+});
+
+test('do after init --yes --minimal does not send you back to init', () => {
+  const dir = makeTempDir();
+  const init = runCli(['init', '--yes', '--minimal'], { cwd: dir });
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+  assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
+  assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
+  assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'executor', 'MEMBER.md')), false);
+  assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'executor.md')), false);
+
+  const res = runCli(['do'], { cwd: dir });
+  const combined = res.stdout + res.stderr;
+  assert.equal(res.status, 0, combined);
+  assert.match(res.stdout, /PROMPT ONLY/);
+  assert.match(res.stdout, /Atris Do — Executor Agent Activated/);
+  assert.match(res.stdout, /You are the Executor\./);
+  assert.match(res.stdout, /Executor spec: atris\/team\/executor\/MEMBER\.md \(missing\)/);
+  assert.doesNotMatch(combined, /executor\.md not found|Run "atris init"/);
+  assert.doesNotMatch(combined, /What do you want to build|Describe the desired outcome/);
 });
 
 test('plan on an initialized workspace prints the navigator prompt shape', () => {

@@ -44,9 +44,9 @@ rg "missionDrive|destinationHash|mission_destination_change_proposed|pending_des
 rg "askCommand|currentMissionCommand|approveCommand|stopCommand|answerCommand|readyCommand|checkCommand|missionCard" commands/human-missions.js commands/mission.js lib/cloud-mission.js bin/atris.js test/human-missions.test.js  # Public human mission commands: ask, current card, answer, approve, stop, readiness, and check results over the cloud mission client
 rg "decideCommand|collectOpenDecisions|normalizeHumanAsk|answerMissionHumanAsk" commands/decide.js commands/mission.js lib/mission-human-asks.js lib/self-drive.js test/decide.test.js  # Mission human-decision bridge: list open asks deterministically, route yes/no through mission pings, persist answered metadata, and ignore answered asks in mission/self-drive reads
 rg "starterMembers|team members ready|firstMissionCommand|packed golden path|printedAtrisArgs|golden path e2e|what someone can do now|--minimal|mapStubFromTree" commands/init.js bin/atris.js commands/task.js test/init-non-interactive.test.js test/golden-path-e2e.test.js test/repo-shape.test.js test/dogfood-papercuts.test.js atris/team/customer-lead atris/GOLDEN_PATH_PAPERCUTS.md  # Quiet first-run output plus packed-install zero-knowledge contract: six-member starter team, init --minimal lean scaffold, ready-on-init mission, autoland, durable papercut status
-rg "function planAtris" commands/workflow.js   # Plan command (line 363)
-rg "function doAtris" commands/workflow.js     # Do command (line 709)
-rg "function reviewAtris" commands/workflow.js  # Review command (line 1062): default certified queue, --verbose legacy validator prompt
+rg "function planAtris" commands/workflow.js   # Plan command (line 370)
+rg "function doAtris" commands/workflow.js     # Do command (line 717): initialized workspace is enough; missing executor spec after init --minimal does not send you back to init
+rg "function reviewAtris" commands/workflow.js  # Review command (line 1077): default certified queue, --verbose legacy validator prompt
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
 rg "analyticsAtris|showAnalyticsHelp|status and analytics --help" bin/atris.js commands/analytics.js test/commands.test.js  # Analytics command + workspace-free help
@@ -1178,19 +1178,20 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 1. **`atris plan`** - Navigator mode
 
-- Entry: `commands/workflow.js:362-701` (planAtris function)
+- Entry: `commands/workflow.js:370-714` (planAtris function)
 - Outputs: navigator.md spec + Inbox context + TODO.md
 - Purpose: Brainstorm and create tasks from inbox
 
 2. **`atris do`** - Executor mode
 
-- Entry: `commands/workflow.js:709-1060` (doAtris function)
+- Entry: `commands/workflow.js:717-1075` (doAtris function)
 - Outputs: executor.md spec + TODO.md + MAP.md
 - Purpose: Build tasks with step-by-step confirmation
+- Missing `team/executor` after `init --minimal` is optional context, not "run init". Regression: `test/workflow-command.test.js` (`do after init --yes --minimal does not send you back to init`).
 
 3. **`atris review`** - Validator mode
 
-- Entry: `commands/workflow.js:1062-1551` (reviewAtris function)
+- Entry: `commands/workflow.js:1077-1566` (reviewAtris function)
 - Outputs: validator.md spec + TODO.md + MAP.md + journal
 - Purpose: Ultrathink validation, test, clean docs
 
@@ -1801,9 +1802,9 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 - `upgradeAtris()` — npm upgrade (line 1214)
 **Modular commands (in commands/):**
 
-- `planAtris()` → `commands/workflow.js:362-701`
-- `doAtris()` → `commands/workflow.js:709-1060`
-- `reviewAtris()` → `commands/workflow.js:1062-1551`
+- `planAtris()` → `commands/workflow.js:370-714`
+- `doAtris()` → `commands/workflow.js:717-1075`
+- `reviewAtris()` → `commands/workflow.js:1077-1566`
 - `statusAtris()` → `commands/status.js:124-384`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
 - `brainstormAtris()` → `commands/brainstorm.js:21-355`
