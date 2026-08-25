@@ -9,6 +9,7 @@ const { execSync } = require('node:child_process');
 const path = require('path');
 const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
+const { argsWantHelp } = require('../lib/noninteractive');
 const {
   compactErrorPayload,
   compactSuccessPayload,
@@ -13155,6 +13156,12 @@ const MUTATING_TASK_COMMANDS = new Set([
 async function run(args) {
   const raw = args || [];
   const sub = !raw[0] || raw[0].startsWith('--') ? 'desk' : raw[0];
+  // `task accept --help` is a help request, not a run. Accept mutates
+  // review rows, so never list or accept just to show usage.
+  if (sub === 'accept' && argsWantHelp(raw.slice(1))) {
+    console.log('Usage: atris task accept <id> [--proof "..."] [--public]');
+    return;
+  }
   const result = await runTaskCommand(raw);
   const skipsRender = sub === 'clear-done' && hasFlag(raw, '--dry-run');
   if (MUTATING_TASK_COMMANDS.has(sub) && !skipsRender) autoRenderTodoFromDb();

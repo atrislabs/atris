@@ -119,6 +119,7 @@ test/smoke.fast.test.js
 test/staleness-parser.test.js
 test/strings.test.js
 test/sync-all.test.js
+test/task-accept-help.test.js
 test/task-proof-projection.test.js
 test/task-workspace-scope.test.js
 test/theme.test.js
