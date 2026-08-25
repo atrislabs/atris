@@ -25,7 +25,7 @@ test('suggestCommand returns null for input that is not close to any command', (
 });
 
 test('suggestCommand never suggests private underscore commands', () => {
-  // "_start" is a real internal command; a typo near it must not surface it.
+  // Internal underscore names must never be suggested for a public typo.
   const s = suggestCommand('start');
   assert.ok(s === null || !s.startsWith('_'));
 });

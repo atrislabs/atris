@@ -361,6 +361,35 @@ test('31: avail --help prints usage and does not authenticate', () => {
   }
 });
 
+test('33: leftover _start exits 2 without spawning a runner', () => {
+  const dir = makeTempDir();
+  try {
+    for (const verb of ['_start', 'start']) {
+      const res = runCli([verb], { cwd: dir });
+      assert.equal(res.status, 2, `${verb}: ${res.stdout}\n${res.stderr}`);
+      assert.match(res.stderr + res.stdout, /Unknown command|Did you mean|atris help/i);
+      assert.doesNotMatch(res.stdout + res.stderr, /Takeoff|mission_started|Bounded Proof|start_mission_run/i);
+    }
+    assertNoMissionSpawn(dir);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('33: help and --help do not write workspace state', () => {
+  const dir = makeTempDir();
+  try {
+    for (const args of [['help'], ['--help'], ['help', '--all'], ['help', '--json']]) {
+      const res = runCli(args, { cwd: dir });
+      assert.equal(res.status, 0, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
+    }
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false, 'help must not create .atris');
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false, 'help must not scaffold atris/');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('32: headless autopilot exits 2 without starting a mission', () => {
   const dir = makeTempDir();
   try {

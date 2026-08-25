@@ -475,7 +475,7 @@ function showStartHelp() {
 }
 
 function showHelpShort() {
-  console.log('atris — you say what you want; atris builds it, checks it, and shows proof.');
+  console.log('atris: you say what you want; atris builds it, checks it, and shows proof.');
   console.log('');
   console.log('Golden path:');
   console.log('  atris init [--yes] [--minimal]   scaffold this project');
@@ -514,33 +514,29 @@ function showHelpAll() {
   console.log('you say what you want in plain words. atris builds it, checks it, and shows you proof.');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  console.log('Quick Start:');
+  console.log('Quick start:');
   console.log('');
-  console.log('  1. atris                  Open a persistent AI computer for this workspace');
-  console.log('     npx atris              Same command after a local project install');
-  console.log('  2. Describe what you want run, built, researched, or validated');
-  console.log('  3. Atris acts with context, memory, tools, and a review loop');
+  console.log('  1. atris                  load context (MAP, tasks, journal)');
+  console.log('     npx atris              same after a local install');
+  console.log('  2. say what you want built, checked, or researched');
+  console.log('  3. atris files the work, then you review');
   console.log('');
   console.log('Common invocations:');
-  console.log('  atris "<request>"         Build one isolated change, verify it, and stop in Review');
+  console.log('  atris "<request>"         one isolated change, then Review');
   console.log('  atris "<request>" --verify "<cmd>" --json');
-  console.log('                            Supply proof explicitly and return one JSON result');
-  console.log('  atris init [--yes]        Global install: initialize this project');
-  console.log('  npx atris init [--yes]    Local install: initialize this project');
+  console.log('  atris init [--yes]        scaffold this project');
+  console.log('  npx atris init [--yes]    same after a local install');
+  console.log('  atris mission status      current mission + next move');
+  console.log('  atris task ready <id> --proof "..."');
   console.log('  atris computer');
-  console.log('  atris ask "what you want" [--budget <usd>]');
-  console.log('  atris mission              Show the current mission');
-  console.log('  atris approve              Approve the step waiting for you');
-  console.log('  atris stop                 Stop the current mission');
-  console.log('  atris check <run-id>       Show the checks for a mission');
-  console.log('  atris ready --json         Show which mission features are ready');
-  console.log('  atris engine validate latest  check the newest ask receipt with a cheap referee');
+  console.log('  atris engine validate latest');
   console.log('  atris business init "My Company"');
   console.log('  atris run');
   console.log('  atris drill');
   console.log('  atris status');
   console.log('  atris soul');
   console.log('  atris fleet status');
+  console.log('  ask/stop/ready            see atris mission and atris task ready');
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
@@ -1134,8 +1130,6 @@ if (command === '--version' || command === '-v' || process.argv.includes('--vers
 // If no command OR command is not recognized, treat as natural language
 // Voice-friendly aliases — natural language → command mapping
 // Solves speech-to-text issues (inspired by gstack v0.14.6 voice-triggers)
-const START_MISSION_OBJECTIVE = 'self improve goal after goal: pick one useful bounded mission from current Atris state, run proof, and continue only with real next work';
-
 // One-word voice aliases like start/go/audit/deploy must not spawn runners.
 // Unmatched single verbs exit 2 with did-you-mean (see below). Keep phrases
 // that name a real command without overnight side effects.
@@ -1901,31 +1895,6 @@ if (command === 'init') {
   const { installCommand } = require('../commands/install');
   const code = installCommand(process.argv.slice(3), { verb: command });
   process.exit(typeof code === 'number' ? code : 0);
-} else if (command === '_start') {
-  const args = process.argv.slice(3);
-  if (argsWantHelp(args)) {
-    showStartHelp();
-    process.exit(2);
-  }
-
-  if (args.includes('--json')) {
-    console.log(JSON.stringify({
-      ok: true,
-      action: 'start_mission_run',
-      route: `atris mission run "${START_MISSION_OBJECTIVE}"`,
-      reason: 'casual_launch',
-      objective: START_MISSION_OBJECTIVE,
-      expected_loop: 'mission_run',
-    }, null, 2));
-    process.exit(0);
-  }
-
-  Promise.resolve(require('../commands/mission').missionCommand(['run', START_MISSION_OBJECTIVE, ...args]))
-    .then(() => process.exit(process.exitCode || 0))
-    .catch((error) => {
-      console.error(`✗ Start failed: ${error.message || error}`);
-      process.exit(1);
-    });
 } else if (command === 'task') {
   // SQLite-backed task plane. ~/.atris/tasks.db, gitignored, per-workspace.
   Promise.resolve(require('../commands/task').run(process.argv.slice(3)))
