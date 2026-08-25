@@ -73,7 +73,7 @@ function makeReleaseRepo({
 }
 
 test('release help names preflight', () => {
-  const top = runCli(['--help'], repoRoot);
+  const top = runCli(['help', '--all'], repoRoot);
   assert.equal(top.status, 0, top.stderr);
   assert.match(top.stdout, /release preflight/);
 

@@ -10,13 +10,14 @@ const { missionHeartbeatLines } = require('../commands/mission');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson } = require('./helpers/mission-json');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-run-reliability-'));
 }
 
 function runCli(args, cwd, env = {}) {
-  return spawnSync(process.execPath, [cliPath, ...args], {
+  return spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
     timeout: 20000,
@@ -30,7 +31,7 @@ function runCli(args, cwd, env = {}) {
 
 function runCliAsync(args, cwd, env = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cliPath, ...args], {
+    const child = spawn(process.execPath, [cliPath, ...withMissionFullJson(args)], {
       cwd,
       env: {
         ...process.env,

@@ -9,6 +9,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson } = require('./helpers/mission-json');
 const {
   buildTickPrompt,
   extractCheckFeedback,
@@ -27,7 +28,7 @@ function makeRepo() {
 function runCli(args, cwd) {
   const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
   delete env.ATRIS_RUNNER_PROFILE;
-  return spawnSync(process.execPath, [cliPath, ...args], {
+  return spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
     env,

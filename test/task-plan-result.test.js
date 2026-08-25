@@ -244,6 +244,7 @@ test('task plan and ready automatically save Plan and Result traces', () => {
       '--try',
       'click signup and confirm the account screen opens',
       '--json',
+      '--full',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
     const readyBody = JSON.parse(ready.stdout);

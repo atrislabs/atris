@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson } = require('./helpers/mission-json');
 
 function makeRepo() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-state-root-'));
@@ -19,7 +20,7 @@ function makeRepo() {
 function runCli(args, cwd) {
   const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
   delete env.ATRIS_RUNNER_PROFILE;
-  return spawnSync(process.execPath, [cliPath, ...args], { cwd, encoding: 'utf8', env });
+  return spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], { cwd, encoding: 'utf8', env });
 }
 
 // Proven footgun (2026-07-16): `atris mission ...` run from a subdirectory

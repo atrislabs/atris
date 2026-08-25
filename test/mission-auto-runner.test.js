@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson } = require('./helpers/mission-json');
 const {
   resolveMissionRunnerSelection,
   resolveMissionTickRunner,
@@ -42,7 +43,7 @@ function withPath(nextPath, fn) {
 }
 
 function runCli(args, cwd, env = {}) {
-  return spawnSync(process.execPath, [cliPath, ...args], {
+  return spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
     timeout: 30000,

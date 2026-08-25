@@ -8,6 +8,7 @@ const { missionHeartbeatLines } = require('../commands/mission');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson } = require('./helpers/mission-json');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-heartbeat-test-'));
@@ -18,7 +19,7 @@ function cleanupTempDir(dir) {
 }
 
 function runCli(args, { cwd, env = {}, timeout = 15000, allowTimeout = false } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
+  const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
     timeout,

@@ -8,6 +8,7 @@ const { withTaskReadyResult } = require('./helpers/task-result');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson } = require('./helpers/mission-json');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-run-review-drain-test-'));
@@ -18,7 +19,7 @@ function cleanupTempDir(dir) {
 }
 
 function runCli(args, { cwd } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...withTaskReadyResult(args)], {
+  const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(withTaskReadyResult(args))], {
     cwd,
     encoding: 'utf8',
     timeout: 30000,

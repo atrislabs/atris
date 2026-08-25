@@ -247,7 +247,7 @@ test('brain compile refreshes the card from doctrine and preserves outside text'
     fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), '# Owner rules\n', 'utf8');
 
-    const first = runCli(dir, ['brain', 'compile', '--root', dir, '--verify']);
+    const first = runCli(dir, ['brain', 'compile', '--yes', '--root', dir, '--verify']);
     assert.equal(first.status, 0, first.stderr || first.stdout);
     const firstAgents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
     assert.match(firstAgents, /Start with the answer/);
@@ -262,7 +262,7 @@ test('brain compile refreshes the card from doctrine and preserves outside text'
     const cursorFile = path.join(dir, '.cursor', 'rules', 'atris-voice.mdc');
     fs.appendFileSync(cursorFile, '\nowner cursor tail\n', 'utf8');
 
-    const second = runCli(dir, ['brain', 'compile', '--root', dir, '--verify']);
+    const second = runCli(dir, ['brain', 'compile', '--yes', '--root', dir, '--verify']);
     assert.equal(second.status, 0, second.stderr || second.stdout);
     const agents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
     const cursor = fs.readFileSync(cursorFile, 'utf8');

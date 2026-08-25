@@ -537,7 +537,7 @@ function assertMissionVerifier(command, asJson = false) {
 
 function stripKnownFlags(args, valueNames, booleanNames = []) {
   const valueSet = new Set(valueNames);
-  const booleanSet = new Set(booleanNames);
+  const booleanSet = new Set(['--full', '--verbose', ...booleanNames]);
   const out = [];
   for (let i = 0; i < args.length; i += 1) {
     const arg = String(args[i]);
@@ -588,6 +588,8 @@ const MISSION_RUN_VALUE_FLAGS = [
 ];
 const MISSION_RUN_BOOLEAN_FLAGS = [
   '--json',
+  '--full',
+  '--verbose',
   '--due',
   '--detach',
   '--headless',

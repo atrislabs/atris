@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson } = require('./helpers/mission-json');
 
 function makeRepo() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-depth-guard-'));
@@ -26,7 +27,7 @@ function runCli(args, cwd, extraEnv = {}) {
   delete env.ATRIS_DISPATCH_DEPTH;
   delete env.ATRIS_DISPATCH_MAX_DEPTH;
   Object.assign(env, extraEnv);
-  return spawnSync(process.execPath, [cliPath, ...args], {
+  return spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
     env,

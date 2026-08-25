@@ -7,13 +7,14 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson, jsonErrorDetail } = require('./helpers/mission-json');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-budget-tier-test-'));
 }
 
 function runCli(args, cwd, env = {}) {
-  return spawnSync(process.execPath, [cliPath, ...args], {
+  return spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
     timeout: 20000,
@@ -118,7 +119,7 @@ test('mission budget rejects unknown tier names', () => {
       '--json',
     ], dir);
     assert.equal(start.status, 2);
-    assert.match(JSON.parse(start.stdout).error, /Unknown --budget "forever"/);
+    assert.match(jsonErrorDetail(JSON.parse(start.stdout)), /Unknown --budget "forever"/);
 
     const run = runCli([
       'mission', 'run', 'bad tier run',
@@ -126,7 +127,7 @@ test('mission budget rejects unknown tier names', () => {
       '--json',
     ], dir);
     assert.equal(run.status, 2);
-    assert.match(JSON.parse(run.stdout).error, /Unknown --budget "forever"/);
+    assert.match(jsonErrorDetail(JSON.parse(run.stdout)), /Unknown --budget "forever"/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -232,7 +232,7 @@ test('empty results: buildBenchReport and renderBenchReportText never throw', ()
 test('cli: empty state exits 0 with a plain no-runs line, never a stack trace', () => {
   const stateRoot = makeTempDir();
   try {
-    const result = spawnSync(process.execPath, [cliPath, 'bench', 'report', '--pack', 'agents-v1'], {
+    const result = spawnSync(process.execPath, [cliPath, 'bench', 'report', '--pack', 'agents-v1', '--here'], {
       cwd: stateRoot,
       encoding: 'utf8',
     });
@@ -255,7 +255,7 @@ test('cli: --json emits the atris.bench.report.v1 envelope', () => {
         tasks: ALL_FIVE.map((id) => task(id, true, 1000)),
       }),
     ]);
-    const result = spawnSync(process.execPath, [cliPath, 'bench', 'report', '--pack', 'agents-v1', '--json'], {
+    const result = spawnSync(process.execPath, [cliPath, 'bench', 'report', '--pack', 'agents-v1', '--json', '--here'], {
       cwd: stateRoot,
       encoding: 'utf8',
     });

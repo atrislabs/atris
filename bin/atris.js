@@ -2943,7 +2943,13 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'business') {
   {
-    const gate = requireAccountBound(process.argv.slice(3));
+    const raw = process.argv.slice(3);
+    const helpOnly = raw.length === 0
+      || raw.includes('--help')
+      || raw.includes('-h')
+      || raw[0] === 'help'
+      || raw[0] === 'quickstart';
+    const gate = helpOnly ? { ok: true, args: raw } : requireAccountBound(raw);
     if (!gate.ok) process.exit(refuseAccountGlobal());
     const subcommand = gate.args[0];
     const args = gate.args.slice(1);

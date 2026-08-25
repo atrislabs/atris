@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson, jsonErrorDetail } = require('./helpers/mission-json');
 
 function makeTempDir() {
   // Worktrees land in <parent>/.agent-worktrees/<repo>/..., so give the repo a
@@ -22,7 +23,7 @@ function cleanupTempDir(base) {
 }
 
 function runCli(args, { cwd } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
+  const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
     timeout: 20000,
@@ -123,7 +124,7 @@ test('mission start --worktree outside a git repo fails with a clear error', () 
     assert.notEqual(res.status, 0, 'must fail outside a git repo');
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.ok, false);
-    assert.match(payload.error, /worktree/i);
+    assert.match(jsonErrorDetail(payload), /worktree/i);
   } finally {
     cleanupTempDir(base);
   }

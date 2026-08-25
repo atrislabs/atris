@@ -195,9 +195,14 @@ test('help smokes: plan --help exits clean and top-level help lists the workflow
 
   const help = runCli(['help'], { cwd: dir });
   assert.equal(help.status, 0, help.stderr);
-  assert.match(help.stdout, /plan\s+- /);
-  assert.match(help.stdout, /do\s+- /);
-  assert.match(help.stdout, /review\s+- /);
+  assert.match(help.stdout, /Golden path:/);
+  assert.match(help.stdout, /atris review/);
+
+  const allHelp = runCli(['help', '--all'], { cwd: dir });
+  assert.equal(allHelp.status, 0, allHelp.stderr);
+  assert.match(allHelp.stdout, /plan\s+- /);
+  assert.match(allHelp.stdout, /do\s+- /);
+  assert.match(allHelp.stdout, /review\s+- /);
 });
 
 // ---- cloud relay helpers (in-process unit tests) ----

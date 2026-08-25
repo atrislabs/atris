@@ -7,6 +7,21 @@ const os = require('node:os');
 const path = require('node:path');
 const { evaluateAutoAccept, parseVerifyCommand, repoHygieneGate, runVerifyCommand } = require('../lib/auto-accept-certified');
 
+let isolatedVerifyRoot;
+
+function isolatedWorkspaceRoot() {
+  if (isolatedVerifyRoot) return isolatedVerifyRoot;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auto-accept-ws-'));
+  fs.mkdirSync(path.join(root, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'lib', 'auto-accept-certified.js'), 'module.exports = {};\n');
+  isolatedVerifyRoot = root;
+  return root;
+}
+
+test.after(() => {
+  if (isolatedVerifyRoot) fs.rmSync(isolatedVerifyRoot, { recursive: true, force: true, maxRetries: 5 });
+});
+
 function trustRoot(actor, passed = 10, failed = 0) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auto-accept-trust-'));
   const state = path.join(root, '.atris', 'state');
@@ -26,7 +41,7 @@ function reviewTask(overrides = {}) {
     display_id: 'OBL-TEST',
     status: 'review',
     tag: 'self-improve',
-    workspace_root: process.cwd(),
+    workspace_root: isolatedWorkspaceRoot(),
     metadata: {
       approval_status: 'pending',
       agent_certified: true,

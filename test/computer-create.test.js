@@ -1679,6 +1679,7 @@ test('business init seeds Atris operator onboarding as the first computer path',
       'business',
       'init',
       'Acme Corp',
+      '--account',
     ], {
       cwd,
       env: {

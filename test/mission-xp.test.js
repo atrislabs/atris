@@ -7,6 +7,8 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { withMissionFullJson } = require('./helpers/mission-json');
+const { withTaskReadyResult } = require('./helpers/task-result');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 function makeTempDir() {
@@ -18,7 +20,7 @@ function cleanupTempDir(dir) {
 }
 
 function runCli(args, { cwd, env = {} } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
+  const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(withTaskReadyResult(args))], {
     cwd,
     encoding: 'utf8',
     timeout: 15000,

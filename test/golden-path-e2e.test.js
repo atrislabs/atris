@@ -207,6 +207,7 @@ test('golden path e2e runs init delegate ready autoland status without human inp
       '--result',
       'Operators can now land a demo fix faster because the proof path is clear.',
       '--json',
+      '--full',
     ], { cwd: workspace, env }), 'task ready');
 
     assert.equal(ready.action, 'ready');
