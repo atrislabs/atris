@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const {
   buildFirstMinute,
+  deskNextCommand,
   folderName,
   personName,
   renderFresh,
@@ -102,6 +103,51 @@ test('ready review task first-minute waits for a human ok', () => {
   assert.match(text, /last recap: week one loop/);
   assert.match(text, /^next: atris task accept UNW-2$/m);
   assert.ok(spokenLineCount(text) <= 4);
+});
+
+test('desk next command uses first-minute verbs without ready templates', () => {
+  assert.equal(deskNextCommand([{
+    status: 'review',
+    display_id: 'UNW-2',
+    review: { agent_certified: true, agent_review_pass_count: 2 },
+    updated_at: 10,
+  }], 'keshav'), 'atris task accept UNW-2');
+  assert.equal(deskNextCommand([{
+    status: 'review',
+    display_id: 'UNW-8',
+    review: { agent_review_pass_count: 2 },
+    updated_at: 10,
+  }], 'keshav'), 'atris task accept UNW-8');
+  assert.equal(deskNextCommand([{
+    status: 'claimed',
+    display_id: 'CLI-9',
+    updated_at: 10,
+  }], 'keshav'), 'atris task ready CLI-9');
+  assert.doesNotMatch(deskNextCommand([{
+    status: 'claimed',
+    display_id: 'CLI-9',
+    updated_at: 10,
+  }], 'keshav'), /<[^>]+>/);
+  assert.equal(deskNextCommand([{
+    status: 'open',
+    display_id: 'CLI-1',
+    updated_at: 10,
+  }], 'keshav'), 'atris task claim CLI-1 --as keshav');
+  assert.equal(deskNextCommand([{ status: 'done', display_id: 'CLI-0' }], 'keshav'), 'atris task next');
+  assert.equal(deskNextCommand([], 'keshav'), 'atris task new');
+});
+
+test('desk next command prefers certified review over claimed or open work', () => {
+  assert.equal(deskNextCommand([
+    { status: 'open', display_id: 'CLI-1', updated_at: 40 },
+    { status: 'claimed', display_id: 'CLI-9', updated_at: 30 },
+    {
+      status: 'review',
+      display_id: 'UNW-2',
+      review: { agent_certified: true, agent_review_pass_count: 2 },
+      updated_at: 10,
+    },
+  ], 'keshav'), 'atris task accept UNW-2');
 });
 
 test('uncertified review task first-minute is ready to look at', () => {
