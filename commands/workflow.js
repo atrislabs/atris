@@ -728,11 +728,16 @@ async function doAtris() {
 
   const cwd = process.cwd();
   const targetDir = path.join(cwd, 'atris');
-  const executorFile = fs.existsSync(path.join(targetDir, 'team', 'executor', 'MEMBER.md'))
-    ? path.join(targetDir, 'team', 'executor', 'MEMBER.md')
-    : path.join(targetDir, 'team', 'executor.md');
+  const memberExecutor = path.join(targetDir, 'team', 'executor', 'MEMBER.md');
+  const legacyExecutor = path.join(targetDir, 'team', 'executor.md');
+  const executorFile = fs.existsSync(memberExecutor)
+    ? memberExecutor
+    : (fs.existsSync(legacyExecutor) ? legacyExecutor : null);
 
-  if (!fs.existsSync(executorFile)) {
+  // Prompt-mode do only needs an initialized workspace. The executor spec is
+  // optional context, same as PERSONA.md. A missing spec after init --minimal
+  // must not send the operator back to init.
+  if (!executorFile && !fs.existsSync(targetDir)) {
     console.log('✗ executor.md not found. Run "atris init" first.');
     process.exit(1);
   }
@@ -755,8 +760,7 @@ async function doAtris() {
     }
   }
 
-  // Load executor spec
-  const executorSpec = fs.readFileSync(executorFile, 'utf8');
+  const executorSpec = executorFile ? fs.readFileSync(executorFile, 'utf8') : '';
 
   // Load PERSONA.md
   const personaFile = path.join(targetDir, 'PERSONA.md');
@@ -799,7 +803,7 @@ async function doAtris() {
   // All tasks available (no tag filtering)
   const filteredTasks = tasksContent;
 
-  const executorPath = path.relative(process.cwd(), executorFile);
+  const executorPath = executorFile ? path.relative(process.cwd(), executorFile) : null;
   const personaFileRef = fs.existsSync(personaFile) ? path.relative(process.cwd(), personaFile) : null;
   const taskSourcePath = taskFilePath ? path.relative(process.cwd(), taskFilePath) : null;
   const featuresReadmePath = path.join(targetDir, 'features', 'README.md');
@@ -846,7 +850,7 @@ async function doAtris() {
   console.log('');
 
   console.log('📁 CONTEXT FILES (agent should read):');
-  console.log(`- Executor spec: ${executorPath}`);
+  console.log(`- Executor spec: ${executorPath || 'atris/team/executor/MEMBER.md (missing)'}`);
   console.log(`- Persona: ${personaFileRef || 'atris/PERSONA.md (missing)'}`);
   const mapDisplay = mapPath
     ? `${mapPath}${mapIsPlaceholder ? ' (placeholder — generate first)' : ''}`
@@ -897,7 +901,7 @@ async function doAtris() {
   console.log('You are the Executor.');
   console.log('');
   console.log('Read these files:');
-  console.log(`- ${executorPath}`);
+  if (executorPath) console.log(`- ${executorPath}`);
   if (personaFileRef) console.log(`- ${personaFileRef}`);
   if (mapPath) console.log(`- ${mapPath}`);
   if (taskSourcePath) console.log(`- ${taskSourcePath}`);
@@ -934,10 +938,12 @@ async function doAtris() {
       console.log('');
     }
 
-    console.log('🔧 EXECUTOR SPEC (full):');
-    console.log('─────────────────────────────────────────────────────────────');
-    console.log(executorSpec);
-    console.log('');
+    if (executorSpec) {
+      console.log('🔧 EXECUTOR SPEC (full):');
+      console.log('─────────────────────────────────────────────────────────────');
+      console.log(executorSpec);
+      console.log('');
+    }
 
     if (filteredTasks) {
       console.log(`📋 TASKS TO EXECUTE (full, from ${taskSource}):`);
