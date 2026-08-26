@@ -60,6 +60,7 @@ const {
 } = require('../lib/context-gatherer');
 const {
   buildFirstMinute,
+  freshMinuteJson,
   isBareAtrisFlag,
   shouldAutoInitFresh,
 } = require('../lib/first-minute');
@@ -1338,13 +1339,7 @@ async function interactiveEntry(userInput, options = {}) {
   // Fresh folder is the first-minute product: one next command, no menu.
   if (state.state === 'fresh') {
     if (options.asJson) {
-      console.log(JSON.stringify({
-        schema: 'atris.one_lap.v1',
-        ok: false,
-        status: 'stuck',
-        reason: 'this workspace is not initialized',
-        next_action: 'atris init --minimal --yes',
-      }, null, 2));
+      console.log(JSON.stringify(freshMinuteJson(), null, 2));
       return 2;
     }
     if (shouldAutoInitFresh(process.argv.slice(2))) {

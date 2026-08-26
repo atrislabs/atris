@@ -9,6 +9,7 @@ const {
   buildFirstMinute,
   deskNextCommand,
   folderName,
+  freshMinuteJson,
   personName,
   pickNext,
   renderFresh,
@@ -77,6 +78,9 @@ test('fresh first-minute copy names init and stays short', () => {
   assert.match(text, /^next: atris init --minimal$/m);
   assert.equal(spokenLineCount(text), 2);
   assert.ok(text.length < 200);
+  const json = freshMinuteJson();
+  assert.equal(json.next_action, 'atris init --minimal --yes');
+  assert.equal(json.reason, 'this workspace is not initialized');
 });
 
 test('claimed task first-minute names the person or title and one next command', () => {
@@ -522,6 +526,27 @@ test('atris test in an empty folder still names init', () => {
     assert.match(res.stdout, /^next: atris init --minimal$/m);
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|For an agent|generate a complete `atris\/MAP\.md`/);
     assert.doesNotMatch(res.stdout, /Got it\. I saved your first direction|First useful step: test/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris do in an empty folder talks like first-minute', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const doit = runCli(['do'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(doit.status, 0, doit.stderr || doit.stdout);
+    assert.equal(doit.stdout.trim(), minute.stdout.trim());
+    assert.match(doit.stdout, /this folder is a clean start/);
+    assert.match(doit.stdout, /^next: atris init --minimal$/m);
+    assert.equal(spokenLineCount(doit.stdout), spokenLineCount(minute.stdout));
+    assert.doesNotMatch(doit.stdout, /executor\.md|Run "atris init"/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
   } finally {
     cleanupTempDir(dir);
