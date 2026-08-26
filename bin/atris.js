@@ -256,8 +256,14 @@ function applyRunnerFlags(args) {
       if (saved) {
         process.env.ATRIS_RUNNER_PROFILE = saved;
       } else if (RUNNER_SPAWNING_COMMANDS.includes(command)) {
-        const resolved = engine.resolveDefaultEngine();
-        if (resolved.source === 'house') process.env.ATRIS_RUNNER_PROFILE = resolved.name;
+        // resolveDefaultEngine reads the registry, and a first read seeds
+        // .atris/state/engines.json. An unbound scratch folder is not a room,
+        // so skip that seed here. The command refuse still runs after this.
+        const { isUnboundScratchFolder } = require('../lib/scratch-root');
+        if (!isUnboundScratchFolder(process.cwd())) {
+          const resolved = engine.resolveDefaultEngine();
+          if (resolved.source === 'house') process.env.ATRIS_RUNNER_PROFILE = resolved.name;
+        }
       }
     } catch {}
   }

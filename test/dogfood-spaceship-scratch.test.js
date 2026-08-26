@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 const {
   UNBOUND_SCRATCH_MESSAGE,
@@ -60,6 +60,11 @@ function combined(result) {
 }
 
 function assertNoMint(dir) {
+  assert.equal(
+    fs.existsSync(path.join(dir, '.atris', 'state', 'engines.json')),
+    false,
+    'must not mint .atris/state/engines.json',
+  );
   assert.equal(fs.existsSync(path.join(dir, '.atris')), false, 'must not mint .atris/');
   assert.equal(fs.existsSync(path.join(dir, 'atris')), false, 'must not mint atris/');
 }
@@ -90,6 +95,25 @@ test('unbound scratch autopilot --yes refuses and does not mint', () => {
     const out = combined(res);
     assert.equal(out.includes(UNBOUND_SCRATCH_MESSAGE), true);
     assert.doesNotMatch(out, /Autopilot on|Takeoff|mission_started|self-chosen mission/i);
+    // applyRunnerFlags used to seed engines.json before this refuse.
+    assertNoMint(dir);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('unbound scratch autopilot --json refuses and does not mint', () => {
+  const dir = makeScratch();
+  const env = isolatedEnv(dir);
+  try {
+    const res = runCli(['autopilot', '--json'], { cwd: dir, env });
+    assert.equal(res.status, 2, res.stdout + res.stderr);
+    const body = JSON.parse(res.stdout);
+    assert.equal(body.ok, false);
+    assert.equal(body.command, 'autopilot');
+    assert.equal(body.running, false);
+    assert.equal(body.error, 'pass --yes to start');
+    assert.doesNotMatch(combined(res), /this folder is not a room|Autopilot on|Takeoff/i);
     assertNoMint(dir);
   } finally {
     cleanup(dir);
@@ -144,6 +168,54 @@ test('unbound scratch spaceship and autopilot --help stay usage', () => {
     assert.doesNotMatch(combined(auto), /this folder is not a room|Autopilot on/i);
     assertNoMint(dir);
   } finally {
+    cleanup(dir);
+  }
+});
+
+function startCli(args, { cwd, env } = {}) {
+  return spawn(process.execPath, [cliPath, ...args], {
+    cwd,
+    env: {
+      ...scrubAgentEnv(),
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_NONINTERACTIVE: '1',
+      NODE_NO_WARNINGS: '1',
+      ...(env || {}),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+test('bound workspace under tmp can still start autopilot --yes', async () => {
+  const dir = makeScratch('atris-bound-ap-');
+  const env = isolatedEnv(dir);
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+  const child = startCli(['autopilot', '--yes', '--once'], { cwd: dir, env });
+  let out = '';
+  child.stdout.on('data', (chunk) => { out += chunk; });
+  child.stderr.on('data', (chunk) => { out += chunk; });
+  try {
+    const started = await new Promise((resolve) => {
+      const deadline = Date.now() + 4000;
+      const timer = setInterval(() => {
+        if (/Autopilot on/.test(out) || /this folder is not a room/.test(out) || Date.now() > deadline) {
+          clearInterval(timer);
+          resolve(/Autopilot on/.test(out));
+        }
+      }, 50);
+    });
+    assert.equal(started, true, out);
+    assert.doesNotMatch(out, /this folder is not a room/);
+  } finally {
+    try { child.kill('SIGTERM'); } catch { /* already gone */ }
+    await new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode) {
+        resolve();
+        return;
+      }
+      child.once('close', resolve);
+    });
     cleanup(dir);
   }
 });
