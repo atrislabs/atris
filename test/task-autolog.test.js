@@ -64,7 +64,7 @@ test('task accept autologs to project log and associated member log', () => {
     assert.equal(created.status, 0, created.stderr);
     const task = JSON.parse(created.stdout).task;
     assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'auto-improver'], { cwd: dir, env }).status, 0);
-    const proof = `${'context '.repeat(35)}Verifiers: node --test test/task-autolog.test.js passed, git diff --check clean, receipt captured in daily log`;
+    const proof = `${'context '.repeat(35)}Verifiers: node --check test/task-autolog.test.js passed, receipt captured in daily log`;
     const ready = runCli(['task', 'ready', task.display_id, '--proof', proof, '--as', 'auto-improver'], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
 

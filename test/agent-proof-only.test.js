@@ -54,7 +54,7 @@ function setupReviewTask(dir) {
   const claimed = runCli(['task', 'claim', id, '--as', 'executor'], { cwd: dir });
   assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
   const ready = runCli(
-    ['task', 'ready', id, '--proof', 'node --test test/agent-proof-only.test.js -> pass'],
+    ['task', 'ready', id, '--proof', 'Receipt saved at atris/runs/proof.json'],
     { cwd: dir },
   );
   assert.equal(ready.status, 0, ready.stderr || ready.stdout);

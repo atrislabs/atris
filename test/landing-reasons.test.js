@@ -142,16 +142,15 @@ test('autoland status, land status, and task reviews speak without snake_case', 
     const parsed = JSON.parse(created.stdout);
     const ref = String(parsed.task?.display_id || parsed.task?.id || parsed.display_id || parsed.id);
     assert.equal(runCli(['task', 'claim', ref, '--as', 'builder'], repo).status, 0);
-    const proof = 'Command passed: git diff --check. Evidence inspected: clean tree, change verified in place.';
-    assert.equal(runCli(['task', 'ready', ref, '--proof', proof, '--as', 'builder'], repo).status, 0);
-    assert.equal(runCli(['task', 'ready', ref, '--proof', proof, '--as', 'codex-review'], repo).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--verify', 'git diff --check', '--as', 'builder'], repo).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--verify', 'git diff --check', '--as', 'codex-review'], repo).status, 0);
 
     const single = runCli(['task', 'new', 'Tighten the retry sentence so operators trust the pause', '--tag', 'code', '--json'], repo);
     assert.equal(single.status, 0, single.stderr || single.stdout);
     const singleParsed = JSON.parse(single.stdout);
     const singleRef = String(singleParsed.task?.display_id || singleParsed.task?.id || singleParsed.display_id || singleParsed.id);
     assert.equal(runCli(['task', 'claim', singleRef, '--as', 'builder'], repo).status, 0);
-    assert.equal(runCli(['task', 'ready', singleRef, '--proof', proof, '--as', 'builder'], repo).status, 0);
+    assert.equal(runCli(['task', 'ready', singleRef, '--verify', 'git diff --check', '--as', 'builder'], repo).status, 0);
 
     const autolandStatus = runCli(['autoland', 'status'], repo);
     assert.equal(autolandStatus.status, 0, autolandStatus.stderr || autolandStatus.stdout);

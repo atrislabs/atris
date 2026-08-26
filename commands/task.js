@@ -18,6 +18,7 @@ const {
 const {
   taskProofState,
   LOCAL_SUCCESS_PROOF_EXAMPLE,
+  unrunNamedProofCommandIssue,
 } = require('../lib/task-proof');
 const {
   candidatePolicyGate,
@@ -513,6 +514,11 @@ function weakProofDetail(issue) {
 function requireMeaningfulTaskProof(label, proof, { required = true } = {}) {
   const issue = meaningfulTaskProofIssue(proof, { required });
   if (issue) failTask(label, 'weak_proof', weakProofDetail(issue));
+}
+
+function requireRanNamedProofCommand(label, proof, ranCommand = '') {
+  const issue = unrunNamedProofCommandIssue(proof, ranCommand);
+  if (issue) failTask(label, issue.reason, issue.detail);
 }
 
 function sendProofIssue(res, proof, issue) {
@@ -8740,7 +8746,7 @@ function taskStepError(reason, detail, { status = 409, exitCode = 1, page = null
 }
 
 function taskStepStatusForReason(reason) {
-  if (['goal_required', 'exit_required', 'proof_needed_required', 'first_move_required', 'proof_required', 'weak_proof', 'invalid_reward'].includes(reason)) {
+  if (['goal_required', 'exit_required', 'proof_needed_required', 'first_move_required', 'proof_required', 'weak_proof', 'proof_command_not_run', 'invalid_reward'].includes(reason)) {
     return 400;
   }
   if (reason === 'not_found') return 404;
@@ -8953,6 +8959,10 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
     if (proofIssue) {
       throw taskStepError(proof ? 'weak_proof' : 'proof_required', weakProofDetail(proofIssue), { status: 400, exitCode: 2, page: actionPage });
     }
+    const unrunIssue = unrunNamedProofCommandIssue(proof, '');
+    if (unrunIssue) {
+      throw taskStepError(unrunIssue.reason, unrunIssue.detail, { status: 400, exitCode: 2, page: actionPage });
+    }
     const missionXpIssue = missionXpEndToEndProofIssue(task, proof, task.workspace_root || process.cwd());
     if (missionXpIssue) {
       throw taskStepError(MISSION_XP_END_TO_END_REASON, missionXpIssue, { status: 409, exitCode: 1, page: actionPage });
@@ -8999,6 +9009,10 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
     const proofIssue = meaningfulTaskProofIssue(proof);
     if (proofIssue) {
       throw taskStepError(proof ? 'weak_proof' : 'proof_required', weakProofDetail(proofIssue), { status: 400, exitCode: 2, page: actionPage });
+    }
+    const unrunIssue = unrunNamedProofCommandIssue(proof, '');
+    if (unrunIssue) {
+      throw taskStepError(unrunIssue.reason, unrunIssue.detail, { status: 400, exitCode: 2, page: actionPage });
     }
     const parsedReward = parseStepReviewReward(options.reward);
     if (!parsedReward.ok) {
@@ -9740,9 +9754,10 @@ function cmdReady(args) {
     console.error('atris task ready: id required');
     process.exit(2);
   }
-  // Two ways to prove: --proof "<note>" (claimed, pattern-checked, unchanged) or
-  // --verify "<command>" which actually RUNS the command and gates ready on exit 0,
-  // turning a claim into executed evidence. --verify can carry an optional --proof note.
+  // Two ways to prove: --proof "<note>" (claimed, pattern-checked) or
+  // --verify "<command>" which actually RUNS the command and gates ready on exit 0.
+  // If --proof names npm test, node --test, or git diff --check, this process
+  // must have run that command. A sentence that names one of those is a lie.
   const proofFlag = flag(args, '--proof');
   const verifyFlag = flag(args, '--verify');
   const proofUrl = textFlag(args, ['--proof-url']);
@@ -9818,6 +9833,7 @@ function cmdReady(args) {
     process.exit(2);
   }
   requireMeaningfulTaskProof('atris task ready', proof);
+  requireRanNamedProofCommand('atris task ready', proof, usedVerify);
   const lesson = flag(args, '--lesson') || '';
   const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
   const landing = landingFlags(args);
@@ -12840,6 +12856,14 @@ function postTaskApiReady({ res, taskDb, db, taskId, body }) {
   const proof = String(body.proof || '').trim();
   const proofIssue = meaningfulTaskProofIssue(proof);
   if (proofIssue) return sendProofIssue(res, proof, proofIssue);
+  const unrunIssue = unrunNamedProofCommandIssue(proof, '');
+  if (unrunIssue) {
+    return sendJson(res, 400, {
+      ok: false,
+      reason: unrunIssue.reason,
+      detail: unrunIssue.detail,
+    });
+  }
   const nextTaskInput = normalizeReviewNextTaskInput(body.next);
   const actor = String(body.actor || DEFAULT_OWNER);
   const resultText = String(body.result || '').replace(/\s+/g, ' ').trim();
