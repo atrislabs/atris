@@ -443,10 +443,7 @@ module.exports = {
   buildSearchPayload,
   buildPersonPayload,
   formatXSearchResult,
-  formatEmptyXSearchResult,
   xSearchHasResults,
-  xSearchCredits,
-  creditsWereRefunded,
   xSearchApplyRel,
   xSearchCommand,
 };
