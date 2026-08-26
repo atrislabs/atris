@@ -187,7 +187,7 @@ test('review keeps daily update style certified work queued even when it is smal
     const review = runCli(['review'], { cwd: dir, env });
     assert.equal(review.status, 0, review.stderr);
     assert.doesNotMatch(review.stdout, /reviews auto-accepted since your last look/);
-    assert.match(review.stdout, new RegExp(`say yes: atris task accept ${task.display_id}`));
+    assert.match(review.stdout, new RegExp(`next: atris task accept ${task.display_id}`));
     assert.equal(showTask(dir, env, task.display_id).status, 'review');
   } finally {
     cleanupTempDir(dir);
@@ -208,7 +208,7 @@ test('review keeps protected tiny auth work queued', () => {
 
     const review = runCli(['review'], { cwd: dir, env });
     assert.equal(review.status, 0, review.stderr);
-    assert.match(review.stdout, new RegExp(`say yes: atris task accept ${task.display_id}`));
+    assert.match(review.stdout, new RegExp(`next: atris task accept ${task.display_id}`));
     assert.equal(showTask(dir, env, task.display_id).status, 'review');
   } finally {
     cleanupTempDir(dir);
@@ -231,7 +231,7 @@ test('review autoaccept config off restores the human approval queue', () => {
     const review = runCli(['review'], { cwd: dir, env });
     assert.equal(review.status, 0, review.stderr);
     assert.doesNotMatch(review.stdout, /reviews auto-accepted since your last look/);
-    assert.match(review.stdout, new RegExp(`say yes: atris task accept ${task.display_id}`));
+    assert.match(review.stdout, new RegExp(`next: atris task accept ${task.display_id}`));
     assert.equal(showTask(dir, env, task.display_id).status, 'review');
   } finally {
     cleanupTempDir(dir);

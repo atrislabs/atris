@@ -76,7 +76,7 @@ test('14: unknown single-token verbs exit 2 and do not mint a task', () => {
 
     const quotedWrite = runCli(['ship the landing page'], { cwd: dir, env: headless });
     assert.equal(quotedWrite.status, 0, quotedWrite.stdout + quotedWrite.stderr);
-    assert.match(quotedWrite.stdout + quotedWrite.stderr, /Got it\. I saved|First useful step: ship the landing page/i);
+    assert.match(quotedWrite.stdout + quotedWrite.stderr, /ready to claim[\s\S]*next: atris task claim/i);
 
     const created = runCli(['task', 'new', 'keep task new working after unknown verbs', '--json'], {
       cwd: dir,

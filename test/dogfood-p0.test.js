@@ -121,35 +121,38 @@ test('P0-1: non-interactive log with no args exits without REPL hang', () => {
 
 test('P0-2: whoami/now/skill list/member list --json emit JSON', () => {
   const dir = makeTempDir();
+  const home = makeTempDir();
+  const env = { HOME: home };
   try {
-    assert.equal(runCli(['init', '--yes'], { cwd: dir, timeout: 60000 }).status, 0);
+    assert.equal(runCli(['init', '--yes'], { cwd: dir, env, timeout: 60000 }).status, 0);
 
-    const now = runCli(['now', '--json'], { cwd: dir });
+    const now = runCli(['now', '--json'], { cwd: dir, env });
     assert.equal(now.status, 0, now.stderr);
     const nowJson = JSON.parse(now.stdout);
     assert.equal(nowJson.ok, true);
     assert.ok(typeof nowJson.content === 'string');
 
-    const skills = runCli(['skill', 'list', '--json'], { cwd: dir });
+    const skills = runCli(['skill', 'list', '--json'], { cwd: dir, env });
     assert.equal(skills.status, 0, skills.stderr);
     const skillJson = JSON.parse(skills.stdout);
     assert.equal(skillJson.ok, true);
     assert.ok(Array.isArray(skillJson.skills));
 
-    const members = runCli(['member', 'list', '--json'], { cwd: dir });
+    const members = runCli(['member', 'list', '--json'], { cwd: dir, env });
     assert.equal(members.status, 0, members.stderr);
     const memberJson = JSON.parse(members.stdout);
     assert.equal(memberJson.ok, true);
     assert.ok(memberJson.count >= 1);
     assert.ok(Array.isArray(memberJson.members));
 
-    const whoami = runCli(['whoami', '--json'], { cwd: dir });
+    const whoami = runCli(['whoami', '--json'], { cwd: dir, env });
     // not logged in in clean env: still must be JSON
     const whoamiJson = JSON.parse(whoami.stdout);
     assert.equal(whoamiJson.ok, false);
     assert.equal(whoamiJson.logged_in, false);
   } finally {
     cleanupTempDir(dir);
+    cleanupTempDir(home);
   }
 });
 

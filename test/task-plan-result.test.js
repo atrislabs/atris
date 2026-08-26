@@ -26,6 +26,17 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+function writePassingTest(root) {
+  const testDir = path.join(root, 'test');
+  fs.mkdirSync(testDir, { recursive: true });
+  fs.writeFileSync(path.join(testDir, 'pass.test.js'), [
+    "const test = require('node:test');",
+    "const assert = require('node:assert/strict');",
+    "test('fixture passes', () => assert.equal(1, 1));",
+    '',
+  ].join('\n'), 'utf8');
+}
+
 // Accept paths gate on agent env markers, so results must not depend on which
 // agent (if any) is running this suite. Strip the markers from the base env;
 // tests that exercise the gate re-add one explicitly via their env override.
@@ -186,6 +197,7 @@ test('task plan and ready automatically save Plan and Result traces', () => {
   const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    writePassingTest(dir);
     writeMember(dir, 'signup-owner', {
       role: 'Signup Owner',
       description: 'Knows the signup files and checks.',
@@ -231,8 +243,8 @@ test('task plan and ready automatically save Plan and Result traces', () => {
       ref,
       '--as',
       'signup-owner',
-      '--proof',
-      'node --test test/task-plan-result.test.js passed for signup result trace',
+      '--verify',
+      'node --test test/pass.test.js',
       '--result',
       'Signup reviewers can see what changed and what to try next so approval saves time and helps users sign up.',
       '--changed',
@@ -383,6 +395,7 @@ test('task accept prints a concise human landing', () => {
   const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    writePassingTest(dir);
 
     const add = runCli(['task', 'add', 'Clarify accept landing', '--tag', 'product', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
@@ -394,8 +407,8 @@ test('task accept prints a concise human landing', () => {
       ref,
       '--as',
       'architect',
-      '--proof',
-      'node --test test/task-plan-result.test.js passed for accept landing',
+      '--verify',
+      'node --test test/pass.test.js',
       '--result',
       'Operators can read a concise accept landing so approval decisions are faster.',
       '--changed',
@@ -429,6 +442,7 @@ test('task accept receipt shows the next active mission route', () => {
   const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    writePassingTest(dir);
     fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
     fs.appendFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), JSON.stringify({
       schema: 'atris.mission.v1',
@@ -458,8 +472,8 @@ test('task accept receipt shows the next active mission route', () => {
       ref,
       '--as',
       'architect',
-      '--proof',
-      'node --test test/task-plan-result.test.js passed for route accept landing',
+      '--verify',
+      'node --test test/pass.test.js',
       '--result',
       'Operators can see the next mission after accepting proof so they know where to continue.',
       '--changed',
@@ -522,6 +536,7 @@ test('task accept --public publishes AgentXP in the same landing', async () => {
       ATRIS_AGENTXP_SYNC_TOKEN: 'sync-secret',
     };
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    writePassingTest(dir);
 
     const add = runCli(['task', 'add', 'Publish accept landing', '--tag', 'product', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
@@ -533,8 +548,8 @@ test('task accept --public publishes AgentXP in the same landing', async () => {
       ref,
       '--as',
       'architect',
-      '--proof',
-      'node --test test/task-plan-result.test.js passed for public accept landing',
+      '--verify',
+      'node --test test/pass.test.js',
       '--result',
       'Operators can publish accepted proof in the same landing so AgentXP updates do not need a second step.',
       '--changed',
