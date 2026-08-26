@@ -12,7 +12,7 @@ const {
   formatYoutubeResult,
   fileBriefFromNotes,
   ensureNotesApply,
-  APPLY_INCOMPLETE_MESSAGE,
+  APPLY_NEXT_MESSAGE,
   youtubeCommand,
 } = require('../commands/youtube');
 
@@ -329,7 +329,7 @@ function notesApplyWorkspace(id, notes = '# Apply Gate Video\n\nBody.\n') {
   return { cwd, workDir };
 }
 
-test('youtube notes without apply writes a claimable stub and stays incomplete', async () => {
+test('youtube notes without apply writes a claimable stub and a next-line', async () => {
   const url = 'https://www.youtube.com/watch?v=apply01';
   const { cwd, workDir } = notesApplyWorkspace('apply01');
   const output = [];
@@ -342,8 +342,8 @@ test('youtube notes without apply writes a claimable stub and stays incomplete',
     runner: () => ({ status: 0 }),
   });
 
-  assert.equal(status, 2);
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), true);
+  assert.equal(status, 0);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), true);
   const stub = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-apply01.apply.md'), 'utf8');
   assert.match(stub, /source: https:\/\/www\.youtube\.com\/watch\?v=apply01/);
   assert.match(stub, /^change: fill this$/m);
@@ -376,12 +376,12 @@ test('youtube notes with an apply receipt is complete', async () => {
   });
 
   assert.equal(status, 0);
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   assert.equal(fs.readFileSync(applyPath, 'utf8'), filled);
   assert.equal(ensureNotesApply({ cwd, url, now: '2026-08-26', output: () => {} }), 0);
 });
 
-test('youtube notes without wiki still stays incomplete when apply is missing', async () => {
+test('youtube notes without wiki still exits 0 when apply is missing', async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-apply-nowiki-'));
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-nowiki-'));
   fs.writeFileSync(path.join(workDir, 'yt_apply03.md'), '# No Wiki\n\nClip.\n');
@@ -395,8 +395,8 @@ test('youtube notes without wiki still stays incomplete when apply is missing', 
     runner: () => ({ status: 0 }),
   });
 
-  assert.equal(status, 2);
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), true);
+  assert.equal(status, 0);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
 });

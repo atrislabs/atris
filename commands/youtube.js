@@ -573,8 +573,8 @@ function fileBriefFromNotes({ cwd, url, workDir, now } = {}) {
   }
 }
 
-const APPLY_INCOMPLETE_MESSAGE =
-  'notes incomplete: write one apply (change + receipt) before process.';
+const APPLY_NEXT_MESSAGE =
+  'next: write one apply (change + receipt) before process.';
 
 function applySidecarRel(id) {
   return applyGate.applySidecarRel('youtube', id);
@@ -588,7 +588,8 @@ function ensureNotesApply({ cwd, url, now, output } = {}) {
     rel: id ? applySidecarRel(id) : null,
     now,
     output,
-    incompleteMessage: APPLY_INCOMPLETE_MESSAGE,
+    incompleteMessage: APPLY_NEXT_MESSAGE,
+    required: false,
   });
 }
 
@@ -1852,7 +1853,7 @@ module.exports = {
   formatYoutubeResult,
   fileBriefFromNotes,
   ensureNotesApply,
-  APPLY_INCOMPLETE_MESSAGE,
+  APPLY_NEXT_MESSAGE,
   isPlaylistUrl,
   parseNotesArgs,
   expandNotesTargets,
