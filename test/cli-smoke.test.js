@@ -589,7 +589,7 @@ test('default entry auto-advances to plan when inbox has items', () => {
   }
 });
 
-test('default entry gathers first-contact context before MAP bootstrap', () => {
+test('default entry keeps placeholder MAP on first-minute and gathers after MAP is real', () => {
   const dir = makeTempDir();
   try {
     const env = {
@@ -606,14 +606,19 @@ test('default entry gathers first-contact context before MAP bootstrap', () => {
     assert.match(bare.stdout, /^next: atris /m);
     assert.doesNotMatch(bare.stdout, /What do you want to build/);
 
-    // the hot-start path (answer passed as argv) still gathers context
+    // placeholder MAP stays on first-minute. `test` is not a new first task.
+    const verb = runCli(['test'], { cwd: dir, env });
+    assert.equal(verb.status, 0, verb.stderr);
+    assert.match(verb.stdout, /generate map\.md/i);
+    assert.match(verb.stdout, /^next: atris task (claim|ready) /m);
+    assert.doesNotMatch(verb.stdout, /BOOTSTRAP REQUIRED|Got it\. I saved your first direction|First useful step: test|next setup:/);
+
+    // first-contact still gathers once MAP is a real index
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
     const res = runCli(['help me organize college applications'], { cwd: dir, env });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Got it\. I saved your first direction/);
     assert.match(res.stdout, /First task:/);
-    assert.match(res.stdout, /next setup:/i);
-    assert.match(res.stdout, /next setup/i);
-    assert.match(res.stdout, /MAP\.md/i);
     assert.match(fs.readFileSync(path.join(dir, '.atris', 'state', 'context_profile.json'), 'utf8'), /college applications/);
     assert.match(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /First useful step: help me organize college applications/);
   } finally {

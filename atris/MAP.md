@@ -227,7 +227,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris build user dashboard` → Hot start with feature
 - **Value:** Single command for everything, natural language input
 - **Argument routing:** `bin/atris.js:127-165` strips only recognized controls, preserves the operator sentence, and keeps single-word command typo behavior.
-- **Natural entry:** `bin/atris.js:1045-1074` routes multiword unknown input into the one-lap path; `bin/atris.js:1135-1335` preserves fresh-workspace context gathering and uses one lap only after MAP/context readiness.
+- **Natural entry:** `bin/atris.js:1045-1074` routes multiword unknown input into the one-lap path; `bin/atris.js:1335` `interactiveEntry` keeps a placeholder or missing MAP on first-minute, gathers first-contact only after MAP is real, and uses one lap only after MAP/context readiness.
 - **Coordinator:** `commands/one-lap.js:1-361` resumes matching active wishes, requires one exact task and mission, blocks protected actions, selects a ready executor, requires an allowlisted mission verifier, and renders text or `atris.one_lap.v1` JSON.
 - **Execution gate:** `lib/fleet.js:757-1076` atomically claims the exact task, builds in an isolated worktree, reruns the coordinator-owned verifier without a shell, leaves master unchanged, moves passing work to Review, and writes `atris.dispatch_receipt.v1`.
 - **Proof gate:** `lib/receipt-evidence.js:31-66` treats missing verifier state as non-passing.
@@ -1524,8 +1524,9 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 **Purpose:** First `atris` contact asks for human context before planning or agent bootstrap, then persists the answer and creates a starter onboarding task.
 
-- **Entry point:** `bin/atris.js:1344` (`interactiveEntry`)
+- **Entry point:** `bin/atris.js:1335` (`interactiveEntry`)
 - **First-minute screen:** `lib/first-minute.js` (`buildFirstMinute`) prints one win and one next command for bare `atris`, default `atris task` (`commands/task.js` `cmdFirstMinute`), and the human head of `atris do` (`commands/workflow.js` `doAtris`); empty folders name `atris init --minimal`; `shouldAutoInitFresh` runs `init --minimal` on `--yes`/`-y` even under `ATRIS_NO_INTERACTIVE`, then the post-init screen names the seeded claim; `--json` and headless without `--yes` stay print-only; claimed work names `atris task ready <id>`; certified review names `atris task accept <id>`; throwaway names (`tmp`, `temp`, `atris-*`, hashes) stay "this folder"; a real basename like `launch-day` stays even under `/tmp`; person name prefers the saved account first name
+- **Placeholder MAP:** after init, `bin/atris.js` `interactiveEntry` keeps `atris test` and other requests on first-minute when `MAP.md` is placeholder or missing. The generate-map task is already yours or ready to claim. It does not print `BOOTSTRAP REQUIRED` or ask an agent to rewrite MAP as a wall. Empty folders with no `atris/` can still name init. Headless never prompts. Regression: `test/first-minute.test.js`
 - **Task desk next:** `lib/first-minute.js` (`deskNextCommand`) reuses `pickNext`/`taskCommand` for `commands/task.js` `renderTaskDesk` on `atris task desk` and `atris task --all`; claimed desk copy is `atris task ready <id>`
 - **Task next:** `commands/task.js` (`cmdNextTruth`) reuses `pickNext`/`taskCommand`/`taskNextCommand` so `atris task next` names the same accept/ready/claim/new command as bare atris and the desk; `--create-next` still seeds Endgame fallback
 - **Helper:** `lib/context-gatherer.js`
