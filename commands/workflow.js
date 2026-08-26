@@ -1,7 +1,16 @@
 const fs = require('fs');
 const path = require('path');
 const { getLogPath } = require('../lib/journal');
-const { buildFirstMinute, freshMinuteJson, isCertifiedReview, personName, pickNext, taskCommand } = require('../lib/first-minute');
+const {
+  buildFirstMinute,
+  freshMinuteJson,
+  isCertifiedReview,
+  isFreshWorkspace,
+  personName,
+  pickNext,
+  speakFirstMinute,
+  taskCommand,
+} = require('../lib/first-minute');
 const { isNonInteractive } = require('../lib/noninteractive');
 const { buildToolResultBody } = require('../lib/tool-result-encode');
 
@@ -1213,8 +1222,20 @@ async function reviewAtris() {
   const wantsTaskJson = args.includes('--json');
 
   if (!executeFlag && !showFull) {
+    const root = process.cwd();
     const forwarded = ['reviews', ...args.filter(arg => !['--execute', '--full', '--verbose'].includes(arg))];
     const { run: runTaskCommand } = require('./task');
+    const queueShape = args.some((arg) => arg === '--all' || arg === '--limit' || arg === '--group-by');
+    // Empty folder talks like bare atris. After init, stay in the room.
+    if (isFreshWorkspace(root) && !queueShape) {
+      const code = speakFirstMinute({
+        root,
+        fresh: true,
+        asJson: wantsTaskJson,
+      });
+      if (code !== 0) process.exit(code);
+      return;
+    }
     if (wantsTaskJson || wantsReviewQueue(args)) {
       await runTaskCommand(forwarded);
       return;

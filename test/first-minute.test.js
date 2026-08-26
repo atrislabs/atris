@@ -559,6 +559,35 @@ test('atris plan in an empty folder talks like first-minute', () => {
   }
 });
 
+test('atris review in an empty folder talks like first-minute', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const review = runCli(['review'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(review.status, 0, review.stderr || review.stdout);
+    assert.equal(review.stdout.trim(), minute.stdout.trim());
+    assert.match(review.stdout, /this folder is a clean start/);
+    assert.match(review.stdout, /^next: atris init --minimal$/m);
+    assert.equal(spokenLineCount(review.stdout), spokenLineCount(minute.stdout));
+    assert.notEqual(review.stdout.trim(), 'nothing is waiting on you.');
+    assert.doesNotMatch(review.stdout, /^nothing is waiting on you\.$/m);
+    assert.doesNotMatch(review.stdout, /validator\.md|Run "atris init"/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    const help = runCli(['review', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris review/);
+    assert.doesNotMatch(help.stdout, /clean start|nothing is waiting on you|validator\.md/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris do in an empty folder talks like first-minute', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
@@ -740,6 +769,31 @@ test('atris test after init --minimal talks like first-minute, not bootstrap', (
     const payload = JSON.parse(json.stdout);
     assert.equal(payload.next_action, `atris task ready ${claim[1]}`);
     assert.notEqual(payload.next_action, 'atris init --yes');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris review after init --minimal stays in the room', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+
+    const review = runCli(['review'], { cwd: dir, env });
+    assert.equal(review.status, 0, review.stderr || review.stdout);
+    assert.match(review.stdout, /^nothing is waiting on you\.$/m);
+    assert.equal(spokenLineCount(review.stdout), 1);
+    assert.doesNotMatch(review.stdout, /clean start|atris init --minimal|validator\.md not found|Run "atris init"/);
+    assert.doesNotMatch(review.stdout, /Atris Review is the human checkpoint|Need the legacy Validator/);
   } finally {
     cleanupTempDir(dir);
   }
