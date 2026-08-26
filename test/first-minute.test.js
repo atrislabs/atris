@@ -532,6 +532,33 @@ test('atris test in an empty folder still names init', () => {
   }
 });
 
+test('atris plan in an empty folder talks like first-minute', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const planned = runCli(['plan'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+    assert.equal(planned.stdout.trim(), minute.stdout.trim());
+    assert.match(planned.stdout, /this folder is a clean start/);
+    assert.match(planned.stdout, /^next: atris init --minimal$/m);
+    assert.equal(spokenLineCount(planned.stdout), spokenLineCount(minute.stdout));
+    assert.doesNotMatch(planned.stdout, /navigator\.md|Run "atris init"/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    const help = runCli(['plan', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris plan/);
+    assert.doesNotMatch(help.stdout, /clean start|navigator\.md/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris do in an empty folder talks like first-minute', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');

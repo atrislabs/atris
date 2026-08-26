@@ -123,14 +123,35 @@ function todayLogFile(dir) {
   return path.join(yearDir, `${year}-${month}-${day}.md`);
 }
 
-test('plan in an uninitialized directory gives a plain error, not a stack trace', () => {
+test('plan in an uninitialized folder talks like first-minute', () => {
   const dir = makeTempDir();
-  const res = runCli(['plan'], { cwd: dir });
-  assert.equal(res.status, 1);
-  assert.match(res.stdout, /navigator\.md not found/);
-  assert.match(res.stdout, /atris init/);
-  const combined = res.stdout + res.stderr;
+  const env = isolatedDoEnv(dir);
+  const minute = runCli([], { cwd: dir, env });
+  const planned = runCli(['plan'], { cwd: dir, env });
+  assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  assert.match(planned.stdout, /this folder is a clean start/);
+  assert.match(planned.stdout, /^next: atris init --minimal$/m);
+  assert.equal(nextLine(planned.stdout), nextLine(minute.stdout));
+  assert.equal(planned.stdout.trim(), minute.stdout.trim());
+  assert.equal(spokenLineCount(spokenDoBody(planned.stdout)), 2);
+  assert.doesNotMatch(planned.stdout, /navigator\.md|Run "atris init"/);
+  assert.doesNotMatch(planned.stdout, /PROMPT ONLY|Atris Plan|What do you want to build/);
+  const combined = planned.stdout + planned.stderr;
   assert.ok(!/at .*workflow\.js:\d+/.test(combined), `stack trace leaked:\n${combined}`);
+  assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+  const jsonMinute = runCli(['--json'], { cwd: dir, env });
+  const jsonPlan = runCli(['plan', '--json'], { cwd: dir, env });
+  assert.equal(jsonPlan.status, jsonMinute.status);
+  assert.deepEqual(JSON.parse(jsonPlan.stdout), JSON.parse(jsonMinute.stdout));
+  assert.doesNotMatch(jsonPlan.stdout, /navigator\.md/);
+
+  const help = runCli(['plan', '--help'], { cwd: dir, env });
+  assert.equal(help.status, 0, help.stderr || help.stdout);
+  assert.match(help.stdout, /Usage: atris plan/);
+  assert.doesNotMatch(help.stdout, /clean start|navigator\.md/);
+  assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 });
 
 test('do in an uninitialized folder talks like first-minute', () => {
@@ -186,6 +207,12 @@ test('plan after init --yes --minimal does not send you back to init', () => {
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
   assert.match(verbose.stdout, /You are the Navigator\./);
   assert.match(verbose.stdout, /Navigator spec: atris\/team\/navigator\/MEMBER\.md \(missing\)/);
+
+  const asked = runCli(['plan', 'ship', 'the', 'landing', 'page'], { cwd: dir });
+  assert.equal(asked.status, 0, asked.stderr || asked.stdout);
+  assert.match(asked.stdout, /DIRECT REQUEST/);
+  assert.match(asked.stdout, /ship the landing page/);
+  assert.doesNotMatch(asked.stdout + asked.stderr, /navigator\.md not found|Run "atris init"/);
 });
 
 test('do after init --yes --minimal does not send you back to init', () => {
