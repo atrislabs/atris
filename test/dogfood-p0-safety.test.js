@@ -118,6 +118,28 @@ test('25: bare spaceship plans only; no overnight run', () => {
   }
 });
 
+test('25: spaceship --json headless is JSON and does not start', () => {
+  const dir = makeTempDir();
+  try {
+    for (const args of [
+      ['spaceship', '--json'],
+      ['spaceship', '--json', '--once'],
+    ]) {
+      const res = runCli(args, { cwd: dir });
+      assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
+      const body = JSON.parse(res.stdout);
+      assert.equal(body.ok, false);
+      assert.equal(body.command, 'spaceship');
+      assert.equal(body.running, false);
+      assert.equal(body.error, 'pass --yes to start');
+      assert.doesNotMatch(res.stdout + res.stderr, /spaceship plan|spaceship start:|EMAIL FAILED|tick 1 start/i);
+      assert.equal(fs.existsSync(path.join(dir, 'atris', '.spaceship')), false);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('25: serve/dream/scout/interview refuse headless without proceed flag', () => {
   const dir = makeTempDir();
   try {

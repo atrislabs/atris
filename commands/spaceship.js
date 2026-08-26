@@ -14,12 +14,13 @@
  *   atris spaceship --hours 0.01 --tick-cmd /tmp/stub.sh --no-email --yes
  *
  * Without --yes, spaceship only prints the plan (no email, no overnight run).
+ * `--json` without --yes prints a JSON refuse and still does not start.
  */
 
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const { hasYesFlag, argsWantHelp } = require('../lib/noninteractive');
+const { hasYesFlag, argsWantHelp, wantsJson } = require('../lib/noninteractive');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'spaceship.sh');
 
@@ -56,12 +57,25 @@ function spaceship(args = []) {
     return Promise.resolve({ success: true, help: true });
   }
 
+  // Same proceed-flag gate as autopilot: --json is not consent, --once is
+  // not consent. Only --yes / -y start the overnight run.
+  if (wantsJson(list) && !hasYesFlag(list)) {
+    console.log(JSON.stringify({
+      ok: false,
+      command: 'spaceship',
+      running: false,
+      error: 'pass --yes to start',
+      usage: 'atris spaceship [--yes|--auto] [--once]',
+    }, null, 2));
+    process.exit(2);
+  }
+
   if (!hasYesFlag(list)) {
     for (const line of planLines(list)) console.log(line);
     process.exit(2);
   }
 
-  const runArgs = list.filter((a) => a !== '--yes' && a !== '-y');
+  const runArgs = list.filter((a) => a !== '--yes' && a !== '-y' && a !== '--json');
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(SCRIPT)) {
       reject(new Error(`spaceship.sh not found at ${SCRIPT}`));
