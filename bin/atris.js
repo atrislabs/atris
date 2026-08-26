@@ -2741,8 +2741,7 @@ if (command === 'init') {
 } else if (command === 'slack') {
   {
     const raw = process.argv.slice(3);
-    const helpOnly = raw.length === 0 || raw.includes('--help') || raw.includes('-h') || raw[0] === 'help';
-    const gate = helpOnly ? { ok: true, args: raw } : requireAccountBound(raw);
+    const gate = requireAccountBound(raw);
     if (!gate.ok) process.exit(refuseAccountGlobal());
     const { slackCommand } = require('../commands/integrations');
     const subcommand = gate.args[0];
