@@ -64,6 +64,7 @@ const {
   firstTalkCommand,
   folderName,
   isBareAtrisFlag,
+  isTaskNextLook,
   personName,
   renderFirstTalk,
   shouldAutoInitFresh,
@@ -1388,6 +1389,20 @@ async function interactiveEntry(userInput, options = {}) {
       }
       if (shouldAutoInitFresh(process.argv.slice(2))) {
         return runMinimalInit();
+      }
+      printFirstMinuteScreen({ root: workspaceDir, fresh: true });
+      return 0;
+    }
+    if (isTaskNextLook(request)) {
+      if (options.asJson) {
+        console.log(JSON.stringify({
+          schema: 'atris.one_lap.v1',
+          ok: false,
+          status: 'stuck',
+          reason: 'this folder is empty',
+          next_action: firstTalkCommand(room),
+        }, null, 2));
+        return 2;
       }
       printFirstMinuteScreen({ root: workspaceDir, fresh: true });
       return 0;

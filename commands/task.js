@@ -6958,9 +6958,7 @@ function cmdNext(args) {
       });
       return;
     }
-    const screen = buildFirstMinute({ root, fresh: true });
-    console.log(screen.text);
-    return;
+    return speakFirstMinute({ root, fresh: true });
   }
   if (!hasFlag(args, '--create-next')) return cmdNextTruth(args);
   const owner = flag(args, '--as') || DEFAULT_OWNER;
