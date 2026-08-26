@@ -150,6 +150,7 @@ test('plan in an uninitialized folder talks like first-minute', () => {
   const help = runCli(['plan', '--help'], { cwd: dir, env });
   assert.equal(help.status, 0, help.stderr || help.stdout);
   assert.match(help.stdout, /Usage: atris plan/);
+  assert.match(help.stdout, /--prompt/);
   assert.doesNotMatch(help.stdout, /clean start|navigator\.md/);
   assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 });
@@ -214,34 +215,46 @@ test('do in an uninitialized folder talks like first-minute', () => {
   const help = runCli(['do', '--help'], { cwd: dir, env });
   assert.equal(help.status, 0, help.stderr || help.stdout);
   assert.match(help.stdout, /Usage: atris do/);
+  assert.match(help.stdout, /--prompt/);
   assert.doesNotMatch(help.stdout, /clean start|executor\.md/);
   assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 });
 
 test('plan after init --yes --minimal does not send you back to init', () => {
   const dir = makeTempDir();
-  const init = runCli(['init', '--yes', '--minimal'], { cwd: dir });
+  const env = isolatedDoEnv(dir);
+  const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env });
   assert.equal(init.status, 0, init.stderr || init.stdout);
   assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
   assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
   assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'navigator', 'MEMBER.md')), false);
   assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'navigator.md')), false);
 
-  const res = runCli(['plan'], { cwd: dir });
+  const minute = runCli([], { cwd: dir, env });
+  const res = runCli(['plan'], { cwd: dir, env });
   const combined = res.stdout + res.stderr;
+  assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(res.status, 0, combined);
-  assert.match(res.stdout, /PROMPT ONLY/);
+  assert.equal(res.stdout.trim(), minute.stdout.trim());
+  assert.equal(spokenLineCount(spokenDoBody(res.stdout)), 2);
+  assert.doesNotMatch(res.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(res.stdout, /Atris Plan — Navigator Agent Activated/);
   assert.doesNotMatch(res.stdout, /Navigator spec: atris\/team\/navigator\/MEMBER\.md \(missing\)/);
   assert.doesNotMatch(combined, /navigator\.md not found|Run "atris init"/);
   assert.doesNotMatch(combined, /What do you want to build|Describe the desired outcome/);
 
-  const verbose = runCli(['plan', '--verbose'], { cwd: dir });
+  const prompted = runCli(['plan', '--prompt'], { cwd: dir, env });
+  assert.equal(prompted.status, 0, prompted.stderr || prompted.stdout);
+  assert.match(prompted.stdout, /^PROMPT ONLY/m);
+  assert.match(prompted.stdout, /You are the Navigator\./);
+  assert.match(prompted.stdout, /COPY\/PASTE PROMPT FOR YOUR CODING AGENT:/);
+
+  const verbose = runCli(['plan', '--verbose'], { cwd: dir, env });
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
   assert.match(verbose.stdout, /You are the Navigator\./);
   assert.match(verbose.stdout, /Navigator spec: atris\/team\/navigator\/MEMBER\.md \(missing\)/);
 
-  const asked = runCli(['plan', 'ship', 'the', 'landing', 'page'], { cwd: dir });
+  const asked = runCli(['plan', 'ship', 'the', 'landing', 'page'], { cwd: dir, env });
   assert.equal(asked.status, 0, asked.stderr || asked.stdout);
   assert.match(asked.stdout, /DIRECT REQUEST/);
   assert.match(asked.stdout, /ship the landing page/);
@@ -250,17 +263,22 @@ test('plan after init --yes --minimal does not send you back to init', () => {
 
 test('do after init --yes --minimal does not send you back to init', () => {
   const dir = makeTempDir();
-  const init = runCli(['init', '--yes', '--minimal'], { cwd: dir });
+  const env = isolatedDoEnv(dir);
+  const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env });
   assert.equal(init.status, 0, init.stderr || init.stdout);
   assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
   assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
   assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'executor', 'MEMBER.md')), false);
   assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'executor.md')), false);
 
-  const res = runCli(['do'], { cwd: dir });
+  const minute = runCli([], { cwd: dir, env });
+  const res = runCli(['do'], { cwd: dir, env });
   const combined = res.stdout + res.stderr;
+  assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(res.status, 0, combined);
-  assert.match(res.stdout, /PROMPT ONLY/);
+  assert.equal(res.stdout.trim(), minute.stdout.trim());
+  assert.equal(spokenLineCount(spokenDoBody(res.stdout)), 2);
+  assert.doesNotMatch(res.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
   assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
   assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT|You are the Executor\./);
@@ -268,7 +286,13 @@ test('do after init --yes --minimal does not send you back to init', () => {
   assert.doesNotMatch(combined, /executor\.md not found|Run "atris init"/);
   assert.doesNotMatch(combined, /What do you want to build|Describe the desired outcome/);
 
-  const verbose = runCli(['do', '--verbose'], { cwd: dir });
+  const prompted = runCli(['do', '--prompt'], { cwd: dir, env });
+  assert.equal(prompted.status, 0, prompted.stderr || prompted.stdout);
+  assert.match(prompted.stdout, /^PROMPT ONLY/m);
+  assert.match(prompted.stdout, /You are the Executor\./);
+  assert.match(prompted.stdout, /COPY\/PASTE PROMPT FOR YOUR CODING AGENT:/);
+
+  const verbose = runCli(['do', '--verbose'], { cwd: dir, env });
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
   assert.match(verbose.stdout, /You are the Executor\./);
   assert.match(verbose.stdout, /Executor spec: atris\/team\/executor\/MEMBER\.md \(missing\)/);
@@ -311,8 +335,8 @@ test('plan on an initialized workspace prints the navigator prompt shape', () =>
   const dir = initializedWorkspace();
   const brief = runCli(['plan'], { cwd: dir });
   assert.equal(brief.status, 0, brief.stderr);
-  assert.match(brief.stdout, /^PROMPT ONLY/m);
   assert.match(brief.stdout, /^next: /m);
+  assert.doesNotMatch(brief.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(brief.stdout, /Atris Plan — Navigator Agent Activated/);
   assert.doesNotMatch(brief.stdout, /COPY\/PASTE PROMPT|You are the Navigator\./);
 
@@ -380,7 +404,8 @@ test('do prints the first-minute head; executor paste stays on --verbose', () =>
 
   const res = runCli(['do'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /^PROMPT ONLY/m);
+  assert.match(res.stdout, /^next: /m);
+  assert.doesNotMatch(res.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
   assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
   assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT|You are the Executor\./);
@@ -405,7 +430,8 @@ test('plan names a claimed task the same way first-minute does', () => {
   const plan = runCli(['plan'], { cwd: dir, env });
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(plan.status, 0, plan.stderr || plan.stdout);
-  assert.match(plan.stdout, /^PROMPT ONLY/m);
+  assert.equal(plan.stdout.trim(), minute.stdout.trim());
+  assert.doesNotMatch(plan.stdout, /PROMPT ONLY/);
   assert.match(plan.stdout, /"ship the landing page" is already yours\./);
   assert.equal(nextLine(plan.stdout), nextLine(minute.stdout));
   assert.equal(nextLine(plan.stdout), 'atris task ready CLI-9');
@@ -433,7 +459,8 @@ test('do names a claimed task the same way first-minute does', () => {
   const doit = runCli(['do'], { cwd: dir, env });
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(doit.status, 0, doit.stderr || doit.stdout);
-  assert.match(doit.stdout, /^PROMPT ONLY/m);
+  assert.equal(doit.stdout.trim(), minute.stdout.trim());
+  assert.doesNotMatch(doit.stdout, /PROMPT ONLY/);
   assert.match(doit.stdout, /"ship the landing page" is already yours\./);
   assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
   assert.equal(nextLine(doit.stdout), 'atris task ready CLI-9');
@@ -624,6 +651,10 @@ test('help smokes: plan --help exits clean and top-level help lists the workflow
   const planHelp = runCli(['plan', '--help'], { cwd: dir });
   assert.equal(planHelp.status, 0, planHelp.stderr);
   assert.match(planHelp.stdout, /plan/i);
+  assert.match(planHelp.stdout, /--prompt/);
+  const doHelp = runCli(['do', '--help'], { cwd: dir });
+  assert.equal(doHelp.status, 0, doHelp.stderr);
+  assert.match(doHelp.stdout, /--prompt/);
 
   const help = runCli(['help'], { cwd: dir });
   assert.equal(help.status, 0, help.stderr);
