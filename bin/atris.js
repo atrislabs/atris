@@ -594,6 +594,7 @@ function showHelpAll() {
   console.log('  report     - Weekly block: landings, journal completions, and Career XP');
   console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');
+  console.log('  revisions  - show possible human revisions after atris-assisted landings');
   console.log('  search     - Search workspace memory (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
   console.log('  close      - track open loops with deadlines and daily escalation');
@@ -861,6 +862,21 @@ function showAnalyticsHelp() {
   console.log('');
   console.log('Options:');
   console.log('  --help, -h   Show this help.');
+  console.log('');
+}
+
+function showRevisionsHelp() {
+  console.log('');
+  console.log('usage: atris revisions [--json]');
+  console.log('');
+  console.log('description:');
+  console.log('  count possible human revisions after atris-assisted landings.');
+  console.log('  uses same-file git follow-ups as a signal, not proof of intent.');
+  console.log('  saves one rolling seven-day summary row per utc day.');
+  console.log('');
+  console.log('options:');
+  console.log('  --json       print the measured landings and revision signals as json.');
+  console.log('  --help, -h   show this help.');
   console.log('');
 }
 
@@ -2589,6 +2605,14 @@ if (command === 'init') {
     process.exit(0);
   }
   require('../commands/analytics').analyticsAtris();
+} else if (command === 'revisions') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showRevisionsHelp();
+    process.exit(0);
+  }
+  const code = require('../commands/revisions').revisionsCommand(args);
+  process.exit(code);
 } else if (command === 'clean') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h')) {
