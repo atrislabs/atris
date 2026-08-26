@@ -402,6 +402,15 @@ test('atris youtube process mints a youtube token from the stored JWT and retrie
     provider: 'atris',
   });
 
+  const applyDir = path.join(dir, 'atris', 'wiki', 'briefs');
+  fs.mkdirSync(applyDir, { recursive: true });
+  fs.writeFileSync(path.join(applyDir, 'youtube-abc123.apply.md'), [
+    'source: https://youtu.be/abc123',
+    'change: commands/youtube.js',
+    'receipt: node --test test/billed-command-auth.test.js',
+    '',
+  ].join('\n'));
+
   const mock = await startHttpMock((request) => {
     if (request.url === '/api/auth/validate') {
       return { status: 200, body: { valid: false, error: 'Token expired' } };

@@ -394,6 +394,19 @@ async function extractLocalTranscript(youtubeUrl, deps = {}) {
 }
 
 async function processYoutube(options, deps = {}) {
+  const applyStatus = (deps.ensureProcessApply || ensureProcessApply)({
+    cwd: deps.cwd || process.cwd(),
+    url: options.youtubeUrl,
+    now: deps.now,
+    output: deps.output,
+  });
+  if (applyStatus !== 0) {
+    const err = new Error(PROCESS_APPLY_MESSAGE);
+    err.exitCode = applyStatus;
+    err.applyRequired = true;
+    throw err;
+  }
+
   const apiFn = deps.apiRequestJson || apiRequestJson;
   const ensureBilled = deps.ensureBilledCommandAuth || ensureBilledCommandAuth;
   let auth = await ensureBilled('youtube', deps);
@@ -575,6 +588,8 @@ function fileBriefFromNotes({ cwd, url, workDir, now } = {}) {
 
 const APPLY_NEXT_MESSAGE =
   'next: write one apply (change + receipt) before process.';
+const PROCESS_APPLY_MESSAGE =
+  'write one apply (change + receipt) before process.';
 
 function applySidecarRel(id) {
   return applyGate.applySidecarRel('youtube', id);
@@ -590,6 +605,19 @@ function ensureNotesApply({ cwd, url, now, output } = {}) {
     output,
     incompleteMessage: APPLY_NEXT_MESSAGE,
     required: false,
+  });
+}
+
+function ensureProcessApply({ cwd, url, now, output } = {}) {
+  const id = videoIdFromUrl(url);
+  return applyGate.ensureApply({
+    cwd,
+    source: url,
+    rel: id ? applySidecarRel(id) : null,
+    now,
+    output,
+    incompleteMessage: PROCESS_APPLY_MESSAGE,
+    required: true,
   });
 }
 
@@ -1833,8 +1861,8 @@ async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
     const data = await processYoutube(options, deps);
     output(options.json ? JSON.stringify(data, null, 2) : formatYoutubeResult(data));
   } catch (err) {
-    output(err.message);
-    status = 1;
+    if (!err.applyRequired) output(err.message);
+    status = Number.isInteger(err.exitCode) ? err.exitCode : 1;
   }
   if (!deps.output && !deps.apiRequestJson && !deps.ensureValidCredentials && !deps.ensureBilledCommandAuth && !deps.extractLocalTranscript) {
     process.exit(status);
@@ -1853,7 +1881,9 @@ module.exports = {
   formatYoutubeResult,
   fileBriefFromNotes,
   ensureNotesApply,
+  ensureProcessApply,
   APPLY_NEXT_MESSAGE,
+  PROCESS_APPLY_MESSAGE,
   isPlaylistUrl,
   parseNotesArgs,
   expandNotesTargets,
