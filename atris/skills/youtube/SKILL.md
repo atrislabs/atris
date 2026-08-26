@@ -25,6 +25,8 @@ search QUERY (free)
     |
    pick a URL --> notes URL (free)
     |
+   write one Apply (claimable)
+    |
    store knowledge? --> process URL (5 credits)
 
 --paid QUERY only if the user asked to buy permalinks
