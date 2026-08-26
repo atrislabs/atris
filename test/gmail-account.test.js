@@ -218,6 +218,7 @@ test('gmail connect times out with a nonzero exit and browser instructions', asy
   assert.deepEqual(lines, ['waiting for gmail account default...']);
   assert.deepEqual(errors, [
     'connection timed out. finish in your browser: https://accounts.example.test/finish',
+    'or connect from settings: https://atris.ai/dashboard/settings?connect=gmail&account=default',
   ]);
   assert.equal(calls[0].options.body.account_id, 'default');
   assert.equal(calls.filter((call) => call.pathname === '/integrations/gmail/accounts').length, 2);
