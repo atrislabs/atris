@@ -375,6 +375,7 @@ async function gmailConnect(accountName, deps = {}) {
   }
 
   console.error(`connection timed out. finish in your browser: ${authUrl}`);
+  console.error(`or connect from settings: https://atris.ai/dashboard/settings?connect=gmail&account=${accountId}`);
   process.exit(1);
 }
 
