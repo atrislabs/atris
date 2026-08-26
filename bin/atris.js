@@ -1314,15 +1314,6 @@ function printFirstUseNext() {
   console.log(`Then: ${firstUseCommand()}`);
 }
 
-function printStarterTaskNext(starter) {
-  console.log('next setup: open atris/MAP.md, then claim the starter task.');
-  if (starter && starter.display_id) {
-    console.log(`Next: atris task claim ${starter.display_id} --as ${localOwnerName()}`);
-    return;
-  }
-  console.log('Next: atris task next --as ' + localOwnerName());
-}
-
 function runMinimalInit() {
   const script = process.argv[1] || path.join(__dirname, 'atris.js');
   const result = spawnSync(process.execPath, [script, 'init', '--minimal', '--yes'], {
@@ -1446,6 +1437,29 @@ async function interactiveEntry(userInput, options = {}) {
     return 2;
   }
 
+  // Placeholder or missing MAP is already a first-minute job. Do not send the
+  // operator to a rewrite lobby, and do not treat `test` as a new first task.
+  if (mapStatus !== 'ready') {
+    const screenOptions = {
+      root: workspaceDir,
+      context,
+      missions: activeMissions,
+    };
+    if (options.asJson) {
+      const screen = buildFirstMinute(screenOptions);
+      console.log(JSON.stringify({
+        schema: 'atris.one_lap.v1',
+        ok: false,
+        status: 'stuck',
+        reason: 'the generate-map task is already waiting',
+        next_action: screen.nextCommand,
+      }, null, 2));
+      return 2;
+    }
+    printFirstMinuteScreen(screenOptions);
+    return 0;
+  }
+
   if (userInput && mapStatus === 'ready' && !gatherContext && options.oneLap !== false) {
     return require('../commands/one-lap').runOneLap(userInput, {
       root: workspaceDir,
@@ -1460,8 +1474,8 @@ async function interactiveEntry(userInput, options = {}) {
       schema: 'atris.one_lap.v1',
       ok: false,
       status: 'stuck',
-      reason: mapStatus !== 'ready' ? 'the workspace map is not ready' : 'first-contact context is required',
-      next_action: mapStatus !== 'ready' ? 'atris init --yes' : 'atris "<first direction>"',
+      reason: 'first-contact context is required',
+      next_action: 'atris "<first direction>"',
     }, null, 2));
     return 2;
   }
@@ -1492,10 +1506,6 @@ async function interactiveEntry(userInput, options = {}) {
       } else if (starter && starter.title) {
         console.log(`First task: ${starter.title}`);
       }
-      if (mapStatus !== 'ready') {
-        printStarterTaskNext(starter);
-        return;
-      }
       await planCmd(answer);
       return;
     }
@@ -1523,16 +1533,7 @@ async function interactiveEntry(userInput, options = {}) {
     } else if (starter && starter.title) {
       console.log(`First task: ${starter.title}`);
     }
-    if (mapStatus !== 'ready') {
-      printStarterTaskNext(starter);
-      return;
-    }
     await planCmd(answer);
-    return;
-  }
-
-  if (mapStatus !== 'ready') {
-    printMapBootstrap({ userInput });
     return;
   }
 
@@ -1549,30 +1550,6 @@ async function askContextGatherer(workspaceDir) {
   const answer = await new Promise(r => rl.question('> ', r));
   rl.close();
   return answer;
-}
-
-function printMapBootstrap({ userInput, prefix = 'Bootstrap required' } = {}) {
-  console.log('');
-  console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log(`│ ${String(prefix).toUpperCase().padEnd(60)}│`);
-  console.log('└─────────────────────────────────────────────────────────────┘');
-  console.log('');
-  console.log('Atris needs a real `atris/MAP.md` so future steps are grounded in the workspace.');
-  console.log('');
-  console.log('For an agent:');
-  console.log('─────────────────────────────────────────────────────────────');
-  console.log('Read `atris/atris.md`, then generate a complete `atris/MAP.md` for this repo.');
-  console.log('Rules: include file:line refs, keep it grep-friendly, do NOT change code.');
-  if (userInput) {
-    console.log('');
-    console.log('After MAP is generated, continue with:');
-    console.log(`- ${userInput}`);
-  } else {
-    console.log('');
-    console.log('Then rerun: atris');
-  }
-  console.log('─────────────────────────────────────────────────────────────');
-  console.log('');
 }
 
 // Boot status: plain rows, honest numbers, one next action.

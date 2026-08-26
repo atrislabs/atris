@@ -35,6 +35,11 @@ function writeAccount(home, account) {
   fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify(account, null, 2), 'utf8');
 }
 
+function nextLine(stdout) {
+  const match = String(stdout || '').match(/^next: (.+)$/m);
+  return match ? match[1] : '';
+}
+
 function runCli(args, { cwd, env, timeout = 15000 } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
@@ -498,6 +503,85 @@ test('workspace with a ready task names the win and points at accept', () => {
     assert.doesNotMatch(res.stdout, /review-chat/);
     assert.doesNotMatch(res.stdout, /What do you want to build/);
     assert.ok(spokenLineCount(res.stdout) <= 6);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris test in an empty folder still names init', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  try {
+    const res = runCli(['test'], {
+      cwd: dir,
+      env: { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /this folder is a clean start/);
+    assert.match(res.stdout, /^next: atris init --minimal$/m);
+    assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|For an agent|generate a complete `atris\/MAP\.md`/);
+    assert.doesNotMatch(res.stdout, /Got it\. I saved your first direction|First useful step: test/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris test after init --minimal talks like first-minute, not bootstrap', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /^next: atris task claim /m);
+
+    const minute = runCli([], { cwd: dir, env });
+    const verb = runCli(['test'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(verb.status, 0, verb.stderr || verb.stdout);
+    assert.match(verb.stdout, /generate map\.md/i);
+    assert.match(verb.stdout, /ready to claim|already yours/);
+    assert.equal(nextLine(verb.stdout), nextLine(minute.stdout));
+    assert.match(nextLine(verb.stdout), /^atris task (claim|ready) /);
+    assert.equal(verb.stdout.match(/^next:/mg).length, 1);
+    assert.doesNotMatch(verb.stdout, /BOOTSTRAP REQUIRED|For an agent|generate a complete `atris\/MAP\.md`/);
+    assert.doesNotMatch(verb.stdout, /Got it\. I saved your first direction|First useful step: test|next setup: open atris\/MAP\.md/);
+
+    const claim = nextLine(minute.stdout).match(/^atris task claim (\S+) --as (\S+)$/);
+    assert.ok(claim, `expected claim next, got: ${nextLine(minute.stdout)}`);
+    const claimed = runCli(['task', 'claim', claim[1], '--as', claim[2]], { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
+
+    const afterMinute = runCli([], { cwd: dir, env });
+    const afterVerb = runCli(['test'], { cwd: dir, env });
+    assert.equal(afterMinute.status, 0, afterMinute.stderr || afterMinute.stdout);
+    assert.equal(afterVerb.status, 0, afterVerb.stderr || afterVerb.stdout);
+    assert.match(afterVerb.stdout, /already yours/);
+    assert.equal(nextLine(afterVerb.stdout), nextLine(afterMinute.stdout));
+    assert.equal(nextLine(afterVerb.stdout), `atris task ready ${claim[1]}`);
+    assert.doesNotMatch(afterVerb.stdout, /BOOTSTRAP REQUIRED|For an agent|generate a complete `atris\/MAP\.md`/);
+    assert.doesNotMatch(afterVerb.stdout, /Got it\. I saved your first direction|First useful step: test|next setup: open atris\/MAP\.md/);
+
+    fs.rmSync(path.join(dir, 'atris', 'MAP.md'), { force: true });
+    const missing = runCli(['test'], { cwd: dir, env });
+    assert.equal(missing.status, 0, missing.stderr || missing.stdout);
+    assert.equal(nextLine(missing.stdout), `atris task ready ${claim[1]}`);
+    assert.doesNotMatch(missing.stdout, /BOOTSTRAP REQUIRED|For an agent|generate a complete `atris\/MAP\.md`/);
+
+    const json = runCli(['test', '--json'], { cwd: dir, env });
+    assert.equal(json.status, 2, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.next_action, `atris task ready ${claim[1]}`);
+    assert.notEqual(payload.next_action, 'atris init --yes');
   } finally {
     cleanupTempDir(dir);
   }

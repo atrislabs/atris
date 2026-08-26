@@ -181,17 +181,25 @@ test('force init and update preserve extra members in an existing workspace', ()
   }
 });
 
-test('first-use command after init creates a starter task instead of MAP homework', () => {
+test('first-use command after init talks like first-minute instead of MAP homework', () => {
   const dir = makeTempDir();
   try {
     const init = runInit(['--yes'], { cwd: dir });
     assert.equal(init.status, 0, `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`);
 
+    const minute = runCli([], { cwd: dir });
     const res = runCli(['help me choose the first useful step for this project'], { cwd: dir });
+    assert.equal(minute.status, 0, `stdout:\n${minute.stdout}\nstderr:\n${minute.stderr}`);
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-    assert.match(res.stdout, /First task: [A-Z]+-\d+/);
-    assert.match(res.stdout, /Next: atris task claim [A-Z]+-\d+ --as /);
-    assert.match(res.stdout, /next setup: open atris\/MAP\.md, then claim the starter task\./);
+    assert.match(res.stdout, /generate map\.md/i);
+    assert.match(res.stdout, /ready to claim|already yours/);
+    assert.match(res.stdout, /^next: atris task (claim|ready) /m);
+    assert.equal(
+      (res.stdout.match(/^next: (.+)$/m) || [])[1],
+      (minute.stdout.match(/^next: (.+)$/m) || [])[1]
+    );
+    assert.doesNotMatch(res.stdout, /First useful step: help me choose/);
+    assert.doesNotMatch(res.stdout, /next setup: open atris\/MAP\.md/);
     assert.doesNotMatch(res.stdout, /^Mission: atris mission start/m);
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|generate a complete `atris\/MAP\.md`/);
   } finally {
