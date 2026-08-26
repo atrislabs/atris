@@ -350,7 +350,11 @@ test('task CLI blocks weak ready proof, positive reviews without proof, and bare
     assert.equal(bareDone.status, 2);
     assert.match(bareDone.stdout, /weak_proof/);
 
-    const strongDone = runCli(['task', 'done', bareDoneRef, '--proof', 'node --test test/task-proof.test.js passed', '--json'], { cwd: dir, env });
+    const liedDone = runCli(['task', 'done', bareDoneRef, '--proof', 'node --test test/task-proof.test.js passed', '--json'], { cwd: dir, env });
+    assert.equal(liedDone.status, 2);
+    assert.match(liedDone.stdout, /"reason":"proof_command_not_run"|"reason": "proof_command_not_run"/);
+
+    const strongDone = runCli(['task', 'done', bareDoneRef, '--proof', 'Receipt saved at atris/runs/proof.json', '--json'], { cwd: dir, env });
     assert.equal(strongDone.status, 0, strongDone.stderr);
 
     const weakReady = runCli(['task', 'ready', ref, '--proof', 'done', '--json'], { cwd: dir, env });

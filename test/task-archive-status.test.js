@@ -142,7 +142,7 @@ test('atris task archive --from-failed opts in to failed→archived but never to
     // Simulate a human completion: lift agent proof-only mode for this call
     // (the test process may run inside an agent session with CLAUDECODE set).
     const humanEnv = { ...env, ATRIS_AGENT_PROOF_ONLY: '0' };
-    const markedDone = runCli(['task', 'done', doneTaskRef.display_id, '--as', 'codex', '--proof', 'ran node --test test/task-archive-status.test.js; 4/4 pass'], { cwd: dir, env: humanEnv });
+    const markedDone = runCli(['task', 'done', doneTaskRef.display_id, '--as', 'codex', '--proof', 'Receipt saved at atris/runs/proof.json'], { cwd: dir, env: humanEnv });
     assert.equal(markedDone.status, 0, markedDone.stderr || markedDone.stdout);
     const archiveDone = runCli(['task', 'archive', doneTaskRef.display_id, '--reason', 'should never work', '--from-failed', '--json'], { cwd: dir, env });
     assert.notEqual(archiveDone.status, 0);

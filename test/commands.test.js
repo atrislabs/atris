@@ -5804,7 +5804,7 @@ test('brain compile counts task review episodes as learning state', () => {
     const add = runCli(['task', 'add', 'Teach brain about reviewed tasks', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'done', ref, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'done', ref, '--proof', 'Receipt saved at atris/runs/proof.json'], { cwd: dir, env }).status, 0);
 
     const review = runCli([
       'task', 'review', ref,
@@ -5845,7 +5845,7 @@ test('brain scorecard derives deduped scorecards from task review episodes', () 
     const add = runCli(['task', 'add', 'Score reviewed task episodes', '--tag', 'rsi', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'done', ref, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'done', ref, '--proof', 'Receipt saved at atris/runs/proof.json'], { cwd: dir, env }).status, 0);
 
     const review = runCli([
       'task', 'review', ref,
@@ -7139,7 +7139,7 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
     assert.equal(claimed.status, 0, claimed.stderr);
     assert.match(claimed.stdout, new RegExp(`claimed\\s+${ref}\\s+\\[codex\\]`));
 
-    const done = runCli(['task', 'done', id.slice(0, 8), '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env });
+    const done = runCli(['task', 'done', id.slice(0, 8), '--proof', 'Receipt saved at atris/runs/proof.json'], { cwd: dir, env });
     assert.equal(done.status, 0, done.stderr);
     assert.match(done.stdout, new RegExp(`done ${ref}`));
 
@@ -7505,7 +7505,7 @@ test('task display refs stay stable in filtered list views', () => {
 
     const older = JSON.parse(runCli(['task', 'add', 'Older closed task', '--json'], { cwd: dir, env }).stdout);
     const current = JSON.parse(runCli(['task', 'add', 'Current open task', '--json'], { cwd: dir, env }).stdout);
-    assert.equal(runCli(['task', 'done', older.task.display_id, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'done', older.task.display_id, '--proof', 'Receipt saved at atris/runs/proof.json'], { cwd: dir, env }).status, 0);
 
     const open = runCli(['task', 'list', '--status', 'open'], { cwd: dir, env });
     assert.equal(open.status, 0, open.stderr);
@@ -9155,7 +9155,7 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
     const addPayload = JSON.parse(add.stdout);
     const id = addPayload.task_id;
     const ref = addPayload.task.display_id;
-    assert.equal(runCli(['task', 'done', ref, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'done', ref, '--proof', 'Receipt saved at atris/runs/proof.json'], { cwd: dir, env }).status, 0);
 
     const review = runCli([
       'task', 'review', ref,
@@ -14092,7 +14092,7 @@ test('task render archives old completed records from TODO view', () => {
       const created = runCli(['task', 'new', `Completed task ${i}`, '--tag', 'agent', '--json'], { cwd: dir, env });
       assert.equal(created.status, 0, created.stderr);
       const id = JSON.parse(created.stdout).task_id;
-      const done = runCli(['task', 'done', id, '--proof', `node --test test/commands.test.js passed for archive ${i}`, '--json'], { cwd: dir, env });
+      const done = runCli(['task', 'done', id, '--proof', `Receipt saved at atris/runs/archive-${i}.json`, '--json'], { cwd: dir, env });
       assert.equal(done.status, 0, done.stderr);
     }
 
@@ -14158,7 +14158,7 @@ test('task render archives old blocked records from TODO view', () => {
       const created = runCli(['task', 'new', `Blocked task ${i}`, '--tag', 'agent', '--json'], { cwd: dir, env });
       assert.equal(created.status, 0, created.stderr);
       const id = JSON.parse(created.stdout).task_id;
-      const failed = runCli(['task', 'done', id, '--failed', '--proof', `node --test test/commands.test.js passed for blocked archive ${i}`, '--json'], { cwd: dir, env });
+      const failed = runCli(['task', 'done', id, '--failed', '--proof', `Receipt saved at atris/runs/blocked-archive-${i}.json`, '--json'], { cwd: dir, env });
       assert.equal(failed.status, 0, failed.stderr);
     }
 

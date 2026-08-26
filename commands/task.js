@@ -9397,6 +9397,7 @@ function cmdDone(args) {
   if (canComplete) {
     if (!failed || hasReview) requireMeaningfulTaskProof('atris task done', proof);
     else if (proof) requireMeaningfulTaskProof('atris task done', proof);
+    if (proof) requireRanNamedProofCommand('atris task done', proof, '');
   }
   const result = taskDb.doneTask(db, {
     id: taskId,
