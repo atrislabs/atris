@@ -1740,6 +1740,9 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 - `atris/skills/README.md` — Skills pattern + Claude symlink instructions
 - `atris/skills/copy-editor/SKILL.md` — Repo-owned anti-slop copy editor skill, including memo-specific slop gate
 - `commands/skill.js` and `test/skill-audit-codeblocks.test.js` - Skill audit checks and code-block XML regression coverage
+- `atris skill eval <skill-path>` routes through `commands/skill-eval.js`, runs an independent bench engine in a neutral temporary directory, and appends an `atris.skill_eval.v1` row to `.atris/state/scorecards.jsonl`
+- `lib/skill-eval-gate.js` finds changed `SKILL.md` files and requires a newer passing receipt whose judge differs from the worker model; `lib/auto-accept-certified.js` runs it through the shared landing hygiene gate
+- `test/skill-eval-gate.test.js` covers missing, stale, valid, unrelated-diff, and same-worker receipt behavior
 - `commands/skill.js:668-719` - `atris skill create <customer>/<skill>` scaffolds customer skills under `atris/customers/<customer>/skills/`
 - `commands/skill.js:967-982` - `atris skill --help` prints usage and exits 0; flag-shaped create names do not make a junk folder
 - `commands/plugin.js:176` — `buildPlugin` packages universal `atris/skills` into `atris-workspace.plugin`

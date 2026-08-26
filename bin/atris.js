@@ -739,6 +739,7 @@ function showHelpAll() {
   console.log('  skill list          - Show all skills with compliance status');
   console.log('  skill audit [name]  - Validate skill against Anthropic guide');
   console.log('  skill fix [name]    - Auto-fix common compliance issues');
+  console.log('  skill eval <path>   - Run an independent rubric review and write its receipt');
   console.log('  skill delete <name> - Delete a skill and its symlinks');
   console.log('');
   console.log('Team:');
@@ -2795,7 +2796,8 @@ if (command === 'init') {
 } else if (command === 'skill') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
-  require('../commands/skill').skillCommand(subcommand, ...args);
+  const code = require('../commands/skill').skillCommand(subcommand, ...args);
+  if (Number.isInteger(code) && code !== 0) process.exitCode = code;
 } else if (command === 'member') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);

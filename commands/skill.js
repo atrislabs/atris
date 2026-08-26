@@ -977,6 +977,7 @@ function skillCommand(subcommand, ...args) {
     console.log('  list [--json]       Show all skills with compliance status');
     console.log('  audit [name|--all]  Validate skill against Anthropic guide');
     console.log('  fix [name|--all]    Auto-fix common compliance issues');
+    console.log('  eval <skill-path>   Run an independent rubric review and write its receipt');
     console.log('');
     process.exit(0);
   }
@@ -988,6 +989,8 @@ function skillCommand(subcommand, ...args) {
       return skillAudit(args[0] || '--all');
     case 'fix':
       return skillFix(args[0] || '--all');
+    case 'eval':
+      return require('./skill-eval').skillEvalCommand(args);
     case 'create':
     case 'new':
       return skillCreate(args[0], ...args.slice(1));
@@ -1008,6 +1011,7 @@ function skillCommand(subcommand, ...args) {
       console.log('  list [--json]       Show all skills with compliance status');
       console.log('  audit [name|--all]  Validate skill against Anthropic guide');
       console.log('  fix [name|--all]    Auto-fix common compliance issues');
+      console.log('  eval <skill-path>   Run an independent rubric review and write its receipt');
       console.log('');
       console.log('Create flags:');
       console.log('  --integration       Use integration template (bootstrap + API)');
