@@ -111,6 +111,24 @@ test('unbound scratch spaceship without --yes still prints the plan only', () =>
   }
 });
 
+test('unbound scratch autopilot --json still JSON and does not start', () => {
+  const dir = makeScratch();
+  const env = isolatedEnv(dir);
+  try {
+    const res = runCli(['autopilot', '--json'], { cwd: dir, env });
+    assert.equal(res.status, 2, res.stdout + res.stderr);
+    const body = JSON.parse(res.stdout);
+    assert.equal(body.ok, false);
+    assert.equal(body.command, 'autopilot');
+    assert.equal(body.running, false);
+    assert.match(String(body.error || ''), /--yes|usage/i);
+    assert.doesNotMatch(combined(res), /this folder is not a room|Autopilot on|Takeoff/i);
+    assertNoMint(dir);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('unbound scratch spaceship --json still JSON and does not start', () => {
   const dir = makeScratch();
   const env = isolatedEnv(dir);

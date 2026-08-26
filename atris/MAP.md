@@ -1063,7 +1063,7 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 - **Goal-selection rank:** `commands/mission.js` `missionGoalSelectionRank` — fresh goal selection in `selectAtrisGoalMission`/`selectCodexGoalMission` ranks running < planning < ready before recency, so review-parked missions never outrank moving work
 - **Native Codex goal runner boundary:** `commands/mission.js` `selectCodexGoalMission` selects only `codex_goal` runners, matching the fail-closed `ackMissionGoal` contract; `caller_session` and `current_agent` missions stay executable through their own loop without emitting an impossible native-goal create/ack request. Regression: `test/mission-status.test.js` (`mission goal skips caller-session missions that cannot use the native Codex ack`).
 - **Stop/status:** `atris autopilot stop` / `atris autopilot status`; state in `.atris/state/autopilot.json`, stop marker `.atris/state/autopilot.stop`
-- **Dispatch:** `bin/atris.js` `command === 'run'` and `command === 'autopilot'` branches — default routes to the fronts, `--legacy` routes to the old loops below
+- **Dispatch:** `bin/atris.js` `command === 'run'` and `command === 'autopilot'` branches — default routes to the fronts, `--legacy` routes to the old loops below; autopilot skips `applyRunnerFlags` on help and unbound scratch so engine registry seed cannot mint `.atris/state`
 - **Regression:** `test/front-doors.test.js`
 
 **Search:** `rg "runMissionFront|autopilotFront|legPlan" commands/run-front.js commands/autopilot-front.js`
