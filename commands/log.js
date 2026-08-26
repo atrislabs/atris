@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile, addInboxIdea } = require('../lib/file-ops');
+const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
 const { isForcedNonInteractive } = require('../lib/noninteractive');
 
 function readPipedStdin() {
@@ -69,7 +70,7 @@ function printCapture(asJson, ids, notes, rel) {
 }
 
 function logAtris() {
-  const targetDir = path.join(process.cwd(), 'atris');
+  const root = process.cwd();
   const args = process.argv.slice(3);
   const asJson = args.includes('--json');
   const forced = isForcedNonInteractive(args);
@@ -77,18 +78,10 @@ function logAtris() {
   const positional = args.filter((arg) => !String(arg).startsWith('-'));
   const note = positional.join(' ').trim();
 
-  if (!fs.existsSync(targetDir)) {
-    const message = 'atris/ folder not found. Run "atris init" first.';
-    if (asJson) {
-      printLogJson({
-        ok: false,
-        error: message,
-        next_command: 'atris init --yes --minimal',
-      });
-    } else {
-      console.error(`✗ Error: ${message}`);
-    }
-    process.exit(1);
+  // Empty folder talks like bare atris. Do not create atris/ or write
+  // a journal. After init, a note still captures.
+  if (isFreshWorkspace(root)) {
+    process.exit(speakFirstMinute({ root, fresh: true, asJson }));
   }
 
   ensureLogDirectory();

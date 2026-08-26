@@ -802,6 +802,62 @@ test('atris wish in an empty folder talks like first-minute', () => {
   }
 });
 
+test('atris log in an empty folder talks like first-minute', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const logged = runCli(['log'], { cwd: dir, env });
+    const leftover = runCli(['log', 'friction'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(logged.status, 0, logged.stderr || logged.stdout);
+    assert.equal(leftover.status, 0, leftover.stderr || leftover.stdout);
+    assert.equal(logged.stdout.trim(), minute.stdout.trim());
+    assert.equal(leftover.stdout.trim(), minute.stdout.trim());
+    assert.match(leftover.stdout, /this folder is a clean start/);
+    assert.match(leftover.stdout, /^next: atris init --minimal$/m);
+    assert.equal(spokenLineCount(leftover.stdout), spokenLineCount(minute.stdout));
+    assert.doesNotMatch(leftover.stdout + leftover.stderr, /folder not found|Run "atris init"|captured I|journal:/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'logs')), false);
+
+    const jsonMinute = runCli(['--json'], { cwd: dir, env });
+    const jsonLog = runCli(['log', '--json'], { cwd: dir, env });
+    const jsonNote = runCli(['log', 'friction', '--json'], { cwd: dir, env });
+    assert.equal(jsonLog.status, jsonMinute.status);
+    assert.equal(jsonNote.status, jsonMinute.status);
+    assert.deepEqual(JSON.parse(jsonLog.stdout), JSON.parse(jsonMinute.stdout));
+    assert.deepEqual(JSON.parse(jsonNote.stdout), JSON.parse(jsonMinute.stdout));
+    assert.doesNotMatch(jsonNote.stdout, /folder not found|inbox_capture|captured I/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'logs')), false);
+
+    const help = runCli(['log', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris log/);
+    assert.doesNotMatch(help.stdout, /clean start|folder not found|captured I/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'logs')), false);
+
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+    const captured = runCli(['log', 'friction'], { cwd: dir, env });
+    assert.equal(captured.status, 0, captured.stderr || captured.stdout);
+    assert.match(captured.stdout, /captured I\d+: friction/);
+    assert.doesNotMatch(captured.stdout + captured.stderr, /folder not found|Business not found/i);
+    const jsonCapture = runCli(['log', 'later', '--json'], { cwd: dir, env });
+    assert.equal(jsonCapture.status, 0, jsonCapture.stderr || jsonCapture.stdout);
+    const payload = JSON.parse(jsonCapture.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.action, 'inbox_capture');
+    assert.equal(payload.note, 'later');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris test after init --minimal talks like first-minute, not bootstrap', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
