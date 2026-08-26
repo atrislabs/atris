@@ -264,10 +264,25 @@ test('bare mission keeps local status but uses the cloud card without local stat
       encoding: 'utf8',
       env: env(emptyRoot),
     });
-    assert.equal(cloud.status, 1, cloud.stderr || cloud.stdout);
+    assert.equal(cloud.status, 2, cloud.stderr || cloud.stdout);
     const cloudPayload = JSON.parse(cloud.stdout);
-    assert.match(cloudPayload.error, /not signed in/i);
+    assert.equal(cloudPayload.next_action, 'atris init --minimal --yes');
+    assert.equal(cloudPayload.reason, 'this workspace is not initialized');
+    assert.doesNotMatch(cloud.stdout, /business\.json|not signed in|--mission/);
     assert.equal(cloudPayload.action, undefined);
+
+    const roomRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-human-mission-room-'));
+    fs.mkdirSync(path.join(roomRoot, 'atris'), { recursive: true });
+    const room = spawnSync(process.execPath, [cliPath, 'mission', '--json'], {
+      cwd: roomRoot,
+      encoding: 'utf8',
+      env: env(roomRoot),
+    });
+    assert.equal(room.status, 1, room.stderr || room.stdout);
+    const roomPayload = JSON.parse(room.stdout);
+    assert.match(roomPayload.error, /not signed in/i);
+    assert.doesNotMatch(room.stdout, /business\.json|atris init --minimal/);
+    fs.rmSync(roomRoot, { recursive: true, force: true });
   } finally {
     fs.rmSync(localRoot, { recursive: true, force: true });
     fs.rmSync(emptyRoot, { recursive: true, force: true });
