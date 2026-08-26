@@ -113,6 +113,7 @@ test('xSearchCommand --help prints usage without calling the API', async () => {
   assert.match(output.join('\n'), /Usage: atris x-search/);
   assert.match(output.join('\n'), /--limit/);
   assert.match(output.join('\n'), /person --name/);
+  assert.match(output.join('\n'), /Empty or failed search refunds the credits/);
 });
 
 test('xSearchCommand prints content, citations, and credits', async () => {
@@ -423,14 +424,72 @@ test('empty x-search does not owe an apply', async () => {
     apiRequestJson: async () => ({
       ok: true,
       status: 200,
-      data: { status: 'success', credits_used: 5, data: { content: '', citations: [] } },
+      data: { status: 'success', credits_used: 0, credits_remaining: 1000, data: { content: '', citations: [] } },
     }),
   });
 
-  assert.equal(status, 0);
+  assert.equal(status, 2);
   assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
   assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('quiet topic'))), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+});
+
+test('empty x-search surfaces a server-side refund and does not invent a refund call', async () => {
+  const cwd = applyWorkspace('quiet topic');
+  const calls = [];
+  const output = [];
+  const status = await xSearchCommand(['quiet topic'], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          status: 'success',
+          credits_used: 0,
+          credits_remaining: 1000,
+          credits_refunded: 5,
+          data: { content: '', citations: [] },
+        },
+      };
+    },
+  });
+
+  assert.equal(status, 2);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].pathname, '/x-search/search');
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  const text = output.join('\n');
+  assert.match(text, /no results/);
+  assert.match(text, /Credits: 0 used, 1000 remaining/);
+  assert.match(text, /credits refunded/);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('quiet topic'))), false);
+});
+
+test('empty citations payload is a refunded empty search', async () => {
+  const cwd = applyWorkspace('ghost cites');
+  const output = [];
+  const status = await xSearchCommand(['ghost cites'], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: { credits_used: 0, credits_remaining: 50, data: { citations: [] } },
+    }),
+  });
+
+  assert.equal(status, 2);
+  const text = output.join('\n');
+  assert.match(text, /no results/);
+  assert.match(text, /credits refunded/);
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
 });
 
 test('failed x-search does not owe an apply', async () => {
@@ -450,5 +509,41 @@ test('failed x-search does not owe an apply', async () => {
 
   assert.equal(status, 1);
   assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('agents'))), false);
+});
+
+test('502 with refunded credits surfaces them and does not invent a refund call', async () => {
+  const cwd = applyWorkspace('agents');
+  const calls = [];
+  const output = [];
+  const status = await xSearchCommand(['agents'], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return {
+        ok: false,
+        status: 502,
+        error: 'Search failed',
+        data: {
+          error: 'Search failed',
+          credits_used: 0,
+          credits_remaining: 1000,
+          credits_refunded: 5,
+        },
+      };
+    },
+  });
+
+  assert.equal(status, 1);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].pathname, '/x-search/search');
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  const text = output.join('\n');
+  assert.match(text, /502/);
+  assert.match(text, /credits refunded/);
+  assert.match(text, /Credits: 0 used, 1000 remaining/);
   assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('agents'))), false);
 });
