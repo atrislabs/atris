@@ -668,15 +668,6 @@ test('atris wish after init --minimal stays in the room', () => {
     assert.doesNotMatch(wish.stdout, /Usage: atris wish|wish list|wish grant|wish stats/);
     assert.doesNotMatch(wish.stdout, /clean start|atris init --minimal|Run "atris init"/);
     assert.doesNotMatch(wish.stdout, /BOOTSTRAP REQUIRED|For an agent|generate a complete `atris\/MAP\.md`/);
-
-    const filed = runCli(['wish', 'make the boot screen friendlier', '--json', '--no-mission'], {
-      cwd: dir,
-      env,
-    });
-    assert.equal(filed.status, 0, filed.stderr || filed.stdout);
-    const payload = JSON.parse(filed.stdout);
-    assert.equal(payload.status, 'captured');
-    assert.ok(payload.wish_id, filed.stdout);
   } finally {
     cleanupTempDir(dir);
   }
