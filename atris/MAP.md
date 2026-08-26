@@ -62,7 +62,7 @@ rg "compactErrorPayload|printCliJson|wantsFull|cli-json|withMissionFullJson|stri
 rg "stream --once|ATRIS_NONINTERACTIVE|orb --json|orb --pick|isNonInteractive" commands/stream.js commands/orb.js lib/noninteractive.js test/dogfood-pass2.test.js  # Watch-loop --once / non-TTY exit; orb --json moves + pick
 rg "Plan only|refuseBrainWriteWithoutYes|--yes" commands/sync.js commands/brain.js bin/atris.js test/dogfood-pass2.test.js  # update/brain default plan-only; writes require --yes; non-TTY without --yes exits 2
 rg "syncCheckoutCommand|checkoutBehindMessage|trackedTreeIsClean" commands/sync-checkout.js lib/checkout-sync.js bin/atris.js commands/status.js test/sync-checkout.test.js  # Clean current-branch fetch + fast-forward command and boot/status upstream-behind warning
-rg "logAtris|logsDigest|addInboxIdea|--repl" commands/log.js bin/atris.js test/logs-digest.test.js test/dogfood-papercuts.test.js test/dogfood-p0.test.js  # `atris log \"note\"` inbox write, optional --repl editor, and read-only daily digest
+rg "logAtris|logsDigest|addInboxIdea|--repl|inbox_capture" commands/log.js bin/atris.js test/log-inbox.test.js test/logs-digest.test.js test/dogfood-papercuts.test.js test/dogfood-p0.test.js  # `atris log \"note\"` local inbox write, one-word notes included, --json capture, optional --repl editor, and read-only daily digest
 rg "logSyncAtris" commands/log-sync.js      # Log sync command
 rg "experimentsCommand" commands/experiments.js  # Experiments CLI command
 rg "loginAtris|mintAgentToken|mintScopedAgentToken|ensureBilledCommandAuth|parseAgentTokenArgs|--agent|agent-token|showAuthHelp|--global|scope" bin/atris.js commands/auth.js lib/cli-scope.js test/auth-agent-token.test.js test/billed-command-auth.test.js test/dogfood-p1.test.js # Auth/account commands, scoped agent-token mint from stored JWT (`atris login --agent`), billed-command auto-mint via ensureBilledCommandAuth, and workspace vs --global account list
@@ -746,18 +746,19 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 ### Feature: Daily Logging (`atris log`)
 
-**Purpose:** Add ideas to inbox in today's journal
+**Purpose:** Add ideas to inbox in today's journal without a live business
 
-- **Entry point:** `commands/log.js:4-56` (logAtris function)
+- **Entry point:** `commands/log.js:71` (logAtris), router `bin/atris.js` `command === 'log'`
 - **Creates:** `atris/logs/YYYY/YYYY-MM-DD.md` files
 - **Logic:**
-- Uses `lib/journal.js` for file operations
-- Interactive readline session
-- Appends to `## Inbox` section
-- Type "exit" to quit
-- **Value:** Quick brain dump without context switching
+- `atris log "note"` and one-word `atris log text` append to `## Inbox` locally
+- `--json` emits `{ ok, action: inbox_capture, id, note, journal, next_command }`
+- One slug-like word is never a live business lookup
+- Optional `--repl` editor; headless never opens a prompt
+- Type "exit" to quit the REPL
+- **Value:** First-minute capture works in a workspace with no business slug
 
-**Search:** `rg "logAtris" commands/log.js`
+**Search:** `rg "logAtris|inbox_capture" commands/log.js test/log-inbox.test.js`
 
 ### Feature: Journal Sync (`atris log sync`)
 

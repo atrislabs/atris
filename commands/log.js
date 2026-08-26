@@ -12,11 +12,82 @@ function readPipedStdin() {
   }
 }
 
+function journalRel(logFile) {
+  return (path.relative(process.cwd(), logFile) || logFile).split(path.sep).join('/');
+}
+
+function printLogJson(payload) {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function printReplNeeded(asJson, dateFormatted, rel) {
+  const error = `Daily log REPL needs a terminal (${dateFormatted}).`;
+  if (asJson) {
+    printLogJson({
+      ok: false,
+      error,
+      journal: rel,
+      next_command: 'atris log "note"',
+    });
+    return;
+  }
+  console.log(error);
+  console.log(`journal: ${rel}`);
+  console.log('Next: atris log --repl   # in a terminal, or atris log "note" / atris wish --json --no-mission');
+}
+
+function captureNotes(logFile, notes) {
+  return notes.map((note) => addInboxIdea(logFile, note));
+}
+
+function printCapture(asJson, ids, notes, rel) {
+  if (asJson) {
+    const payload = {
+      ok: true,
+      action: 'inbox_capture',
+      journal: rel,
+      next_command: 'atris logs',
+    };
+    if (notes.length === 1) {
+      payload.id = `I${ids[0]}`;
+      payload.note = notes[0];
+    } else {
+      payload.count = notes.length;
+      payload.ids = ids.map((id) => `I${id}`);
+      payload.notes = notes;
+    }
+    printLogJson(payload);
+    return;
+  }
+  if (notes.length === 1) {
+    console.log(`captured I${ids[0]}: ${notes[0]}`);
+    console.log(`journal: ${rel}`);
+    console.log('Next: atris logs');
+    return;
+  }
+  console.log(`captured ${notes.length} note${notes.length === 1 ? '' : 's'} in ${rel}`);
+}
+
 function logAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
+  const args = process.argv.slice(3);
+  const asJson = args.includes('--json');
+  const forced = isForcedNonInteractive(args);
+  const wantsRepl = args.includes('--repl');
+  const positional = args.filter((arg) => !String(arg).startsWith('-'));
+  const note = positional.join(' ').trim();
 
   if (!fs.existsSync(targetDir)) {
-    console.error('✗ Error: atris/ folder not found. Run "atris init" first.');
+    const message = 'atris/ folder not found. Run "atris init" first.';
+    if (asJson) {
+      printLogJson({
+        ok: false,
+        error: message,
+        next_command: 'atris init --yes --minimal',
+      });
+    } else {
+      console.error(`✗ Error: ${message}`);
+    }
     process.exit(1);
   }
 
@@ -27,27 +98,11 @@ function logAtris() {
     createLogFile(logFile, dateFormatted);
   }
 
-  const args = process.argv.slice(3);
-  const rel = path.relative(process.cwd(), logFile) || logFile;
-  const forced = isForcedNonInteractive(args);
-  const wantsRepl = args.includes('--repl');
-  const positional = args.filter((arg) => !String(arg).startsWith('-'));
-  const note = positional.join(' ').trim();
+  const rel = journalRel(logFile);
 
-  // `atris log "sentence"` (or multi-word args) appends to today's Inbox.
+  // `atris log "sentence"` (or one slug-like word) appends to today's Inbox.
   if (note && !wantsRepl) {
-    const id = addInboxIdea(logFile, note);
-    console.log(`captured I${id}: ${note}`);
-    console.log(`journal: ${rel}`);
-    console.log('Next: atris logs');
-    return;
-  }
-
-  // Forced headless: never open a REPL.
-  if (forced) {
-    console.log(`Daily log REPL needs a terminal (${dateFormatted}).`);
-    console.log(`journal: ${rel}`);
-    console.log('Next: atris log --repl   # in a terminal, or atris log "note" / atris wish --json --no-mission');
+    printCapture(asJson, captureNotes(logFile, [note]), [note], rel);
     return;
   }
 
@@ -56,16 +111,17 @@ function logAtris() {
     const piped = readPipedStdin();
     const lines = piped.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const notes = lines.filter((line) => line.toLowerCase() !== 'exit');
-    if (notes.length === 0) {
-      console.log(`Daily log REPL needs a terminal (${dateFormatted}).`);
-      console.log(`journal: ${rel}`);
-      console.log('Next: atris log --repl   # in a terminal, or atris log "note" / atris logs --json');
+    if (notes.length > 0 && !wantsRepl) {
+      printCapture(asJson, captureNotes(logFile, notes), notes, rel);
       return;
     }
-    for (const noteLine of notes) {
-      addInboxIdea(logFile, noteLine);
-    }
-    console.log(`captured ${notes.length} note${notes.length === 1 ? '' : 's'} in ${rel}`);
+    printReplNeeded(asJson, dateFormatted, rel);
+    return;
+  }
+
+  // Forced headless: never open a REPL.
+  if (forced) {
+    printReplNeeded(asJson, dateFormatted, rel);
     return;
   }
 

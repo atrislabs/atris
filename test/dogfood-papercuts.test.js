@@ -65,6 +65,7 @@ test('default help is short; help --all is long; help --json lists commands', ()
   assert.equal(payload.ok, true);
   assert.ok(Array.isArray(payload.commands));
   assert.ok(payload.commands.some((row) => row.name === 'task' && row.json === true));
+  assert.ok(payload.commands.some((row) => row.name === 'log' && row.json === true));
 });
 
 test('engine --help prints usage, not the roster', () => {
@@ -92,6 +93,16 @@ test('log "an idea" lands in today Inbox without business lookup', () => {
     const journal = fs.readFileSync(todayJournal(dir), 'utf8');
     assert.match(journal, /## Inbox/);
     assert.match(journal, /an idea for later/);
+
+    const oneWord = runCli(['log', 'friction'], {
+      cwd: dir,
+      env: { ATRIS_NONINTERACTIVE: '1' },
+      input: '',
+    });
+    assert.equal(oneWord.status, 0, oneWord.stderr || oneWord.stdout);
+    assert.match(oneWord.stdout, /captured I\d+: friction/);
+    assert.doesNotMatch(oneWord.stdout + oneWord.stderr, /Business not found/i);
+    assert.match(fs.readFileSync(todayJournal(dir), 'utf8'), /friction/);
   } finally {
     cleanupTempDir(dir);
   }
