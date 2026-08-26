@@ -11523,7 +11523,6 @@ module.exports = {
   missionVerifierTimeoutMs,
   missionLandingStepSummary,
   missionLandingLines,
-  missionGuardBlockedText,
   missionGuardNextText,
   missionVerifierCheckedText,
   missionVerifierHighLevelTestText,

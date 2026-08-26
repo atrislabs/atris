@@ -417,6 +417,5 @@ async function feedbackCommand() {
 
 module.exports = {
   feedbackCommand,
-  findFeedbackItem,
   triageFeedback,
 };
