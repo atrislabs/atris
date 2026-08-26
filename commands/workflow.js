@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getLogPath } = require('../lib/journal');
-const { buildFirstMinute, isCertifiedReview, personName, pickNext, taskCommand } = require('../lib/first-minute');
+const { buildFirstMinute, freshMinuteJson, isCertifiedReview, personName, pickNext, taskCommand } = require('../lib/first-minute');
 const { isNonInteractive } = require('../lib/noninteractive');
 const { buildToolResultBody } = require('../lib/tool-result-encode');
 
@@ -834,19 +834,25 @@ async function doAtris() {
 
   const cwd = process.cwd();
   const targetDir = path.join(cwd, 'atris');
+
+  // Empty folder talks like bare atris. Missing executor.md after
+  // init --minimal is optional context, not a factory bounce.
+  if (!fs.existsSync(targetDir)) {
+    if (args.includes('--json')) {
+      console.log(JSON.stringify(freshMinuteJson(), null, 2));
+      process.exit(2);
+    }
+    const screen = buildFirstMinute({ root: cwd, fresh: true });
+    console.log('');
+    console.log(screen.text);
+    return;
+  }
+
   const memberExecutor = path.join(targetDir, 'team', 'executor', 'MEMBER.md');
   const legacyExecutor = path.join(targetDir, 'team', 'executor.md');
   const executorFile = fs.existsSync(memberExecutor)
     ? memberExecutor
     : (fs.existsSync(legacyExecutor) ? legacyExecutor : null);
-
-  // Prompt-mode do only needs an initialized workspace. The executor spec is
-  // optional context, same as PERSONA.md. A missing spec after init --minimal
-  // must not send the operator back to init.
-  if (!executorFile && !fs.existsSync(targetDir)) {
-    console.log('✗ executor.md not found. Run "atris init" first.');
-    process.exit(1);
-  }
 
   // Load project profile for context
   let context = 'ROOT';

@@ -133,14 +133,35 @@ test('plan in an uninitialized directory gives a plain error, not a stack trace'
   assert.ok(!/at .*workflow\.js:\d+/.test(combined), `stack trace leaked:\n${combined}`);
 });
 
-test('do in an uninitialized directory gives a plain error, not a stack trace', () => {
+test('do in an uninitialized folder talks like first-minute', () => {
   const dir = makeTempDir();
-  const res = runCli(['do'], { cwd: dir });
-  assert.equal(res.status, 1);
-  assert.match(res.stdout, /executor\.md not found/);
-  assert.match(res.stdout, /atris init/);
-  const combined = res.stdout + res.stderr;
+  const env = isolatedDoEnv(dir);
+  const minute = runCli([], { cwd: dir, env });
+  const doit = runCli(['do'], { cwd: dir, env });
+  assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+  assert.equal(doit.status, 0, doit.stderr || doit.stdout);
+  assert.match(doit.stdout, /this folder is a clean start/);
+  assert.match(doit.stdout, /^next: atris init --minimal$/m);
+  assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
+  assert.equal(doit.stdout.trim(), minute.stdout.trim());
+  assert.equal(spokenLineCount(spokenDoBody(doit.stdout)), 2);
+  assert.doesNotMatch(doit.stdout, /executor\.md|Run "atris init"/);
+  assert.doesNotMatch(doit.stdout, /PROMPT ONLY|Atris Do|What do you want to build/);
+  const combined = doit.stdout + doit.stderr;
   assert.ok(!/at .*workflow\.js:\d+/.test(combined), `stack trace leaked:\n${combined}`);
+  assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+  const jsonMinute = runCli(['--json'], { cwd: dir, env });
+  const jsonDo = runCli(['do', '--json'], { cwd: dir, env });
+  assert.equal(jsonDo.status, jsonMinute.status);
+  assert.deepEqual(JSON.parse(jsonDo.stdout), JSON.parse(jsonMinute.stdout));
+  assert.doesNotMatch(jsonDo.stdout, /executor\.md/);
+
+  const help = runCli(['do', '--help'], { cwd: dir, env });
+  assert.equal(help.status, 0, help.stderr || help.stdout);
+  assert.match(help.stdout, /Usage: atris do/);
+  assert.doesNotMatch(help.stdout, /clean start|executor\.md/);
+  assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 });
 
 test('plan after init --yes --minimal does not send you back to init', () => {
