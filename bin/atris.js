@@ -2704,13 +2704,10 @@ if (command === 'init') {
 } else if (command === 'gmail') {
   {
     const raw = process.argv.slice(3);
-    const helpOnly = raw.length === 0 || raw.includes('--help') || raw.includes('-h') || raw[0] === 'help';
     const { gmailCommand, extractGmailMailboxAccount } = require('../commands/integrations');
     const mailbox = extractGmailMailboxAccount(raw);
-    const gateInput = helpOnly
-      ? mailbox.args
-      : (mailbox.mailboxAccountId ? ['--account', ...mailbox.args] : mailbox.args);
-    const gate = helpOnly ? { ok: true, args: mailbox.args } : requireAccountBound(gateInput);
+    const gateInput = mailbox.mailboxAccountId ? ['--account', ...mailbox.args] : mailbox.args;
+    const gate = requireAccountBound(gateInput);
     if (!gate.ok) process.exit(refuseAccountGlobal());
     const subcommand = gate.args[0];
     const args = gate.args.slice(1);

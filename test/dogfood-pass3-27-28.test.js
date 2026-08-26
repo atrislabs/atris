@@ -57,7 +57,13 @@ test('27/28: unbound folder refuses inbox/gmail/slack/errors/truth without dumpi
   try {
     for (const args of [
       ['inbox'],
+      ['gmail'],
       ['gmail', 'inbox'],
+      ['gmail', 'list'],
+      ['gmail', 'read'],
+      ['gmail', 'archive'],
+      ['gmail', 'accounts'],
+      ['gmail', 'use'],
       ['slack'],
       ['slack', 'channels'],
       ['slack', 'dms'],
@@ -66,22 +72,56 @@ test('27/28: unbound folder refuses inbox/gmail/slack/errors/truth without dumpi
     ]) {
       const result = runCli(args, {
         cwd: dir,
-        env: { HOME: home, ATRIS_HOME: home, ATRIS_NONINTERACTIVE: '1' },
+        env: {
+          HOME: home,
+          ATRIS_HOME: home,
+          ATRIS_NONINTERACTIVE: '1',
+          ATRIS_API_URL: 'http://127.0.0.1:1',
+        },
       });
       assert.equal(result.status, 2, `${args.join(' ')} status=${result.status}`);
       const out = `${result.stderr}${result.stdout}`;
       assert.match(out, /account-global; pass --account to continue/);
-      assert.doesNotMatch(out, /web-guardian|dogfood@example|Conversations|Channels|payroll|502|Slack commands|Fetching Slack/);
+      assert.doesNotMatch(out, /web-guardian|dogfood@example|Conversations|Channels|payroll|502|Slack commands|Fetching Slack|Gmail commands|Fetching inbox|Fetching message|Archiving |ECONNREFUSED|api\.atris\.ai/);
       assert.equal(out.includes(ACCOUNT_GLOBAL_MESSAGE), true);
     }
 
+    const helpEnv = {
+      HOME: home,
+      ATRIS_HOME: home,
+      ATRIS_NONINTERACTIVE: '1',
+      ATRIS_API_URL: 'http://127.0.0.1:1',
+    };
     const slackHelp = runCli(['slack', '--help'], {
       cwd: dir,
-      env: { HOME: home, ATRIS_HOME: home, ATRIS_NONINTERACTIVE: '1' },
+      env: helpEnv,
     });
     assert.equal(slackHelp.status, 0, slackHelp.stderr + slackHelp.stdout);
     assert.match(slackHelp.stdout, /Slack commands/);
-    assert.doesNotMatch(`${slackHelp.stderr}${slackHelp.stdout}`, /account-global|Fetching Slack/);
+    assert.doesNotMatch(`${slackHelp.stderr}${slackHelp.stdout}`, /account-global|Fetching Slack|ECONNREFUSED|api\.atris\.ai/);
+
+    const gmailHelp = runCli(['gmail', '--help'], {
+      cwd: dir,
+      env: helpEnv,
+    });
+    assert.equal(gmailHelp.status, 0, gmailHelp.stderr + gmailHelp.stdout);
+    assert.match(gmailHelp.stdout, /Gmail commands/);
+    assert.doesNotMatch(`${gmailHelp.stderr}${gmailHelp.stdout}`, /account-global|Fetching inbox|Fetching message|Archiving |ECONNREFUSED|api\.atris\.ai/);
+
+    const bound = path.join(dir, 'bound');
+    fs.mkdirSync(path.join(bound, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(bound, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(bound, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz_dogfood',
+      slug: 'dogfood-co',
+    }));
+    const boundGmail = runCli(['gmail'], {
+      cwd: bound,
+      env: helpEnv,
+    });
+    assert.equal(boundGmail.status, 0, boundGmail.stderr + boundGmail.stdout);
+    assert.match(boundGmail.stdout, /Gmail commands/);
+    assert.doesNotMatch(`${boundGmail.stderr}${boundGmail.stdout}`, /account-global|Fetching inbox/);
   } finally {
     cleanupTempDir(dir);
   }
