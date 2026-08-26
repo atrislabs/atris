@@ -12,6 +12,7 @@ const ROOT = path.join(__dirname, '..');
 const RULE_PIPED_GATES = 'piped-gate-commands-mask-exit-codes';
 const RULE_HOOK_BYPASS = 'dispatched-engines-bypass-hooks-under-pressure';
 const RULE_DURABLE_TASKS = 'endgame-tasks-must-be-durable-db-rows';
+const RULE_ATOMIC_WORK = 'one-concern-per-pr';
 const RULE_PRUNED_REVIEW_PROSE = 'review-prose-defers-to-machine-gates';
 const SOURCE_EXTENSIONS = new Set(['.cjs', '.js', '.json', '.mjs', '.sh', '.yaml', '.yml']);
 const SOURCE_TARGETS = ['commands', 'lib', 'scripts', '.github', 'package.json'];
@@ -95,6 +96,39 @@ function hookBypassFindings(briefs) {
   });
 }
 
+function oneConcernPerPrFindings(briefs) {
+  return briefs.flatMap(({ name, text }) => {
+    const oneConcern = /one concern per PR/i.test(text);
+    const splitLargerWork = /split anything larger into separate PRs/i.test(text);
+    const durableHistory = /git history guides future agents/i.test(text);
+    const cheapRecovery = /small PRs are cheap to revert and bisect/i.test(text);
+    return oneConcern && splitLargerWork && durableHistory && cheapRecovery
+      ? []
+      : [`${name} ${RULE_ATOMIC_WORK}`];
+  });
+}
+
+function currentDispatchBriefs() {
+  return [
+    {
+      name: 'codex flight brief',
+      text: buildPrompt({
+        worktreePath: '/tmp/review-correction-codex',
+        branch: 'test/review-correction',
+        brief: 'Make the bounded change.',
+        verifyCmd: 'node --test test/example.test.js',
+      }),
+    },
+    {
+      name: 'fleet brief',
+      text: buildFleetPrompt({
+        id: 'fixture-task',
+        title: 'Make the bounded change. Check: node --test test/example.test.js',
+      }, { worktreePath: '/tmp/review-correction-fleet' }),
+    },
+  ];
+}
+
 function durableTaskFindings(files) {
   return files.flatMap(({ name, text }) => {
     const durableSection = /durable-db workspaces/i.test(text);
@@ -134,29 +168,11 @@ test(RULE_HOOK_BYPASS, () => {
     name: 'unsafe dispatch brief',
     text: 'Commit the change with git commit --no-verify.',
   }];
-  const currentBriefs = [
-    {
-      name: 'codex flight brief',
-      text: buildPrompt({
-        worktreePath: '/tmp/review-correction-codex',
-        branch: 'test/review-correction',
-        brief: 'Make the bounded change.',
-        verifyCmd: 'node --test test/example.test.js',
-      }),
-    },
-    {
-      name: 'fleet brief',
-      text: buildFleetPrompt({
-        id: 'fixture-task',
-        title: 'Make the bounded change. Check: node --test test/example.test.js',
-      }, { worktreePath: '/tmp/review-correction-fleet' }),
-    },
-  ];
 
   assert.deepEqual(hookBypassFindings(unsafeFixture), [
     `unsafe dispatch brief ${RULE_HOOK_BYPASS}`,
   ]);
-  assert.deepEqual(hookBypassFindings(currentBriefs), [],
+  assert.deepEqual(hookBypassFindings(currentDispatchBriefs()), [],
     'every dispatch brief must stop when a git hook blocks a commit');
 });
 
@@ -176,6 +192,19 @@ test(RULE_DURABLE_TASKS, (t) => {
     name: 'atris/skills/endgame/SKILL.md',
     text: fs.readFileSync(currentSkill, 'utf8'),
   }]), [], 'database-backed tasks must be created through the task command');
+});
+
+test(RULE_ATOMIC_WORK, () => {
+  const unsafeFixture = [{
+    name: 'unsafe dispatch brief',
+    text: 'Put every requested change into one large PR.',
+  }];
+
+  assert.deepEqual(oneConcernPerPrFindings(unsafeFixture), [
+    `unsafe dispatch brief ${RULE_ATOMIC_WORK}`,
+  ]);
+  assert.deepEqual(oneConcernPerPrFindings(currentDispatchBriefs()), [],
+    'every dispatch brief must order one concern per PR');
 });
 
 test(RULE_PRUNED_REVIEW_PROSE, (t) => {
