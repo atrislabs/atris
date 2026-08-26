@@ -1791,8 +1791,26 @@ function verifierTimeoutSeconds(verifierResult) {
   return Number.isFinite(ms) ? Math.round(ms / 1000) : 0;
 }
 
-function missionVerifierCheckedText(verifierResult, mission) {
-  if (!verifierResult) return 'UNVERIFIED: tick recorded but nothing was checked; treat this increment as unproven.';
+function missionGuardBlockedText(guard) {
+  if (!guard || guard.allowed !== false) return '';
+  const detail = String(guard.detail || '').trim();
+  const reason = String(guard.reason || 'the check was held').trim();
+  return `VERIFY DID NOT RUN: ${reason}${detail ? ` (${detail})` : ''}. Treat this increment as unproven.`;
+}
+
+function missionGuardNextText(guard, missionId) {
+  if (!guard || guard.allowed !== false || !missionId) return '';
+  if (guard.unreadable) {
+    return `repair the mission diff tooling failure, then rerun: atris mission tick ${missionId} --verify`;
+  }
+  return `review the protected diff and receipt before resuming: atris mission run ${missionId}`;
+}
+
+function missionVerifierCheckedText(verifierResult, mission, guard = null) {
+  if (!verifierResult) {
+    return missionGuardBlockedText(guard)
+      || 'UNVERIFIED: tick recorded but nothing was checked; treat this increment as unproven.';
+  }
   if (verifierResult.mode === 'engine-unavailable') {
     return 'VERIFY FAILED: the engine verify pass was unavailable; treat this increment as unproven.';
   }
@@ -1818,8 +1836,15 @@ function missionVerifierCheckedText(verifierResult, mission) {
   return `VERIFY FAILED: ${command}.`;
 }
 
-function missionVerifierHighLevelTestText(verifierResult, mission) {
-  if (!verifierResult) return 'No automated verifier ran for this receipt; judge it from the receipt, changed files, and next action.';
+function missionVerifierHighLevelTestText(verifierResult, mission, guard = null) {
+  if (!verifierResult) {
+    if (guard && guard.allowed === false) {
+      const detail = String(guard.detail || '').trim();
+      const reason = String(guard.reason || 'the check was held').trim();
+      return `No automated verifier ran: ${reason}${detail ? ` (${detail})` : ''}. Clear the hold, then rerun to get a real verdict.`;
+    }
+    return 'No automated verifier ran for this receipt; judge it from the receipt, changed files, and next action.';
+  }
   if (verifierResult.mode === 'engine-unavailable') {
     return 'No changed-surface commands were confirmed because the engine verify pass was unavailable.';
   }
@@ -1870,11 +1895,12 @@ function missionFallbackChangedText(mission, status, tickIndex, { ranTicks = nul
   return `${mission.objective} recorded tick ${tickIndex}.`;
 }
 
-function missionTickResultLines(mission, tickIndex, receiptPath, verifierResult = null, stepSummary = '') {
+function missionTickResultLines(mission, tickIndex, receiptPath, verifierResult = null, stepSummary = '', guard = null) {
   return missionLandingLines(missionReceiptLanding(mission, {
-    tick: { tick_index: tickIndex },
+    tick: { tick_index: tickIndex, protected_lane_guard: guard },
     summary: stepSummary,
     verifier_result: verifierResult,
+    protected_lane_guard: guard,
   }, receiptPath));
 }
 
@@ -1904,6 +1930,9 @@ function missionReceiptStatus(mission, result) {
 function missionReceiptNextText(mission, result, receiptPath = '') {
   if (result?.next) return String(result.next);
   if (result?.landing?.next) return String(result.landing.next);
+  const guard = result?.protected_lane_guard || result?.tick?.protected_lane_guard || null;
+  const guardNext = missionGuardNextText(guard, mission?.id);
+  if (guardNext) return guardNext;
   if (result?.verifier_result?.passed === true) {
     if (!mission?.always_on && receiptPath) {
       return `Review proof, then run: atris mission complete ${mission.id} --proof "${receiptPath}".`;
@@ -1920,8 +1949,9 @@ function missionReceiptLanding(mission, result, receiptPath = '') {
   const summary = missionReceiptSummaryText(result);
   const changed = missionLandingStepSummary(summary)
     || missionFallbackChangedText(mission, status, missionReceiptTickIndex(mission, result));
-  const checked = missionVerifierCheckedText(verifierResult, mission);
-  const tested = missionVerifierHighLevelTestText(verifierResult, mission);
+  const guard = result?.protected_lane_guard || result?.tick?.protected_lane_guard || null;
+  const checked = missionVerifierCheckedText(verifierResult, mission, guard);
+  const tested = missionVerifierHighLevelTestText(verifierResult, mission, guard);
   const reason = missionHumanReasonText(mission, changed);
   return {
     schema: 'atris.result_landing.v1',
@@ -2476,20 +2506,25 @@ function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalRecei
   const changed = missionRunChangedText(mission, ranTicks, effectiveMaxTicks, ticks, createdNext);
   const reason = missionHumanReasonText(mission, changed);
   const lastTick = ticks[ticks.length - 1] || null;
+  const guard = lastTick?.protected_lane_guard || null;
   const verifier = lastTick && lastTick.verifier_passed == null ? null : mission.verifier_result;
   const checked = verifier
-    ? missionVerifierCheckedText(verifier, mission)
-    : pauseReason === 'no-progress'
-      ? `Run stopped: ${mission.stop_reason || 'no progress across consecutive ticks'}.`
-      : pauseReason
-        ? `Run paused: ${pauseReason}.`
-        : 'UNVERIFIED: run recorded but nothing was checked; treat this increment as unproven.';
+    ? missionVerifierCheckedText(verifier, mission, guard)
+    : missionGuardBlockedText(guard)
+      || (pauseReason === 'no-progress'
+        ? `Run stopped: ${mission.stop_reason || 'no progress across consecutive ticks'}.`
+        : pauseReason
+          ? `Run paused: ${pauseReason}.`
+          : 'UNVERIFIED: run recorded but nothing was checked; treat this increment as unproven.');
   const tested = verifier
-    ? missionVerifierHighLevelTestText(verifier, mission)
-    : mission.verifier
-      ? `Verifier was configured but not completed: ${mission.verifier}.`
-      : 'No verifier command was recorded for this mission.';
-  const nextLine = missionRunCreatedNextLine(createdNext, continuationGoal, mission);
+    ? missionVerifierHighLevelTestText(verifier, mission, guard)
+    : (guard && guard.allowed === false)
+      ? missionVerifierHighLevelTestText(null, mission, guard)
+      : mission.verifier
+        ? `Verifier was configured but not completed: ${mission.verifier}.`
+        : 'No verifier command was recorded for this mission.';
+  const nextLine = missionGuardNextText(guard, mission?.id)
+    || missionRunCreatedNextLine(createdNext, continuationGoal, mission);
   const lines = [
     'Landing:',
     `  Changed: ${changed}`,
@@ -9669,6 +9704,7 @@ async function executeMissionRunTicksPhase(context) {
           tick: tickRecord,
           frozen,
           verifier_result: verifierResult,
+          protected_lane_guard: result.protected_lane_guard || null,
           rate_limit_info: lastRateLimit,
           worktree: tickWorktree,
         });
@@ -9726,7 +9762,7 @@ async function executeMissionRunTicksPhase(context) {
         last_tick_index: tickIdx,
         last_tick_layer: result.layer,
         last_tick_layer_source: result.layer_source,
-        verifier_result: verifierResult || latestOnDisk.verifier_result || null,
+        verifier_result: verifierResult || (verifyEach && result.protected_lane_guard && result.protected_lane_guard.allowed === false ? null : latestOnDisk.verifier_result) || null,
         last_check_feedback: verifierResult
           ? extractCheckFeedback(verifierResult)
           : latestOnDisk.last_check_feedback || '',
@@ -10237,9 +10273,7 @@ function tickMission(args) {
 	    const protectedLaneGuard = tickRecord.protected_lane_guard || { allowed: true };
 	    if (!protectedLaneGuard.allowed) {
 	      status = 'paused';
-	      nextAction = protectedLaneGuard.unreadable
-	        ? `repair the mission diff tooling failure, then rerun: atris mission run ${mission.id}`
-	        : `review the protected diff and receipt before resuming: atris mission run ${mission.id}`;
+	      nextAction = missionGuardNextText(protectedLaneGuard, mission.id);
 	    } else if (verifierResult?.passed && nextGoalChain && !nextGoalChain.pause_ready) {
 	      status = 'running';
 	      nextAction = missionGoalChainNextAction(nextGoalChain);
@@ -10277,7 +10311,7 @@ function tickMission(args) {
       last_tick_index: tickIdx,
 	      last_tick_layer: tickRecord.layer,
 	      last_tick_layer_source: tickRecord.layer_source,
-	      verifier_result: verifierResult || mission.verifier_result || null,
+	      verifier_result: verifierResult || (verify && !protectedLaneGuard.allowed ? null : mission.verifier_result) || null,
 	      last_check_feedback: verifierResult
 	        ? extractCheckFeedback(verifierResult)
 	        : mission.last_check_feedback || '',
@@ -10310,8 +10344,11 @@ function tickMission(args) {
     const outputMission = continuationGoal?.parent || saved;
     const atrisGoalState = refreshAtrisGoalController(process.cwd(), { missionId: outputMission.id });
     const codexGoalState = refreshCodexGoalController(process.cwd());
+    const verifyToolingFailed = Boolean(verify && !verifierResult && protectedLaneGuard.unreadable);
+    const skipDetail = missionGuardBlockedText(protectedLaneGuard)
+      || 'VERIFY DID NOT RUN: the check could not start. Treat this increment as unproven.';
     const fullTick = {
-      ok: true,
+      ok: !verifyToolingFailed,
       action: 'mission_tick',
       mission: outputMission,
       tick: tickRecord,
@@ -10325,20 +10362,31 @@ function tickMission(args) {
       operator_summary_warning: operatorSummaryWarning,
       cached: Boolean(tickRecord.cached),
       next_command: outputMission.next_action || null,
+      ...(verifyToolingFailed ? {
+        reason: 'verify_did_not_run',
+        detail: skipDetail,
+      } : {}),
     };
     if (asJson) {
       printCliJson(
         fullTick,
-        compactSuccessPayload({
-          action: 'mission_tick',
-          ids: {
-            mission_id: outputMission.id,
-            tick_index: tickIdx,
-            status: outputMission.status,
-            receipt_path: receiptPath,
-          },
-          next_command: outputMission.next_action || null,
-        }),
+        verifyToolingFailed
+          ? compactErrorPayload({
+            reason: 'verify_did_not_run',
+            detail: skipDetail,
+            selected_ref: outputMission.id,
+            next_command: outputMission.next_action || null,
+          })
+          : compactSuccessPayload({
+            action: 'mission_tick',
+            ids: {
+              mission_id: outputMission.id,
+              tick_index: tickIdx,
+              status: outputMission.status,
+              receipt_path: receiptPath,
+            },
+            next_command: outputMission.next_action || null,
+          }),
         args,
       );
     } else {
@@ -10346,13 +10394,14 @@ function tickMission(args) {
         fullTick,
         [
           ...(tickRecord.cached ? [`Reused receipt for tick ${tickIdx}: ${receiptPath}`] : []),
-          ...missionTickResultLines(outputMission, tickIdx, receiptPath, verifierResult, summary || tickRecord.summary),
+          ...missionTickResultLines(outputMission, tickIdx, receiptPath, verifierResult, summary || tickRecord.summary, protectedLaneGuard),
           ...(missionBlockerReceiptLine(blocker) ? [missionBlockerReceiptLine(blocker)] : []),
           ...(continuationGoal?.mission ? [`Next goal: ${continuationGoal.mission.objective}`] : []),
         ],
         false,
       );
     }
+    if (verifyToolingFailed) process.exitCode = 2;
   } finally {
     releaseMissionLock(lock);
   }
@@ -11474,6 +11523,8 @@ module.exports = {
   missionVerifierTimeoutMs,
   missionLandingStepSummary,
   missionLandingLines,
+  missionGuardBlockedText,
+  missionGuardNextText,
   missionVerifierCheckedText,
   missionVerifierHighLevelTestText,
   buildEngineVerifyPrompt,

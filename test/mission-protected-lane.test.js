@@ -15,6 +15,11 @@ const {
   prepareMissionGitGuard,
 } = require('../lib/mission-protected-lane');
 const { runLocalTerminal } = require('../commands/probe');
+const {
+  missionGuardNextText,
+  missionVerifierCheckedText,
+  missionVerifierHighLevelTestText,
+} = require('../commands/mission');
 const { withMissionFullJson } = require('./helpers/mission-json');
 
 const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
@@ -251,9 +256,121 @@ test('a protected mission tick pauses and writes the matched surface to its rece
   assert.equal(payload.tick.status, 'paused-for-review');
   assert.equal(payload.tick.reason, 'protected-lane-review');
   assert.equal(payload.verifier_result, null);
+  assert.notEqual(payload.tick.verifier_passed, true);
+  assert.notEqual(payload.mission.verifier_result?.passed, true);
+  assert.match(receipt.result.landing.checked, /^VERIFY DID NOT RUN:/);
+  assert.match(receipt.result.landing.checked, /human review: csp/);
+  assert.doesNotMatch(receipt.result.landing.checked, /UNVERIFIED: tick recorded but nothing was checked/);
+  assert.match(receipt.result.landing.next, /atris mission run /);
   assert.deepEqual(receipt.result.tick.protected_lane_guard.surfaces, ['csp']);
   assert.match(receipt.result.tick.protected_lane_guard.reason, /human review: csp/);
   assert.equal(git(['diff', '--cached', '--quiet']).status, 1);
+});
+
+test('a held tick names why verify did not run instead of saying nothing was checked', () => {
+  const unreadable = {
+    allowed: false,
+    unreadable: true,
+    status: 'paused-for-retry',
+    reason: 'mission diff could not be read; repair the tooling failure and rerun',
+    detail: 'spawnSync git ENOBUFS',
+  };
+  const protectedHold = {
+    allowed: false,
+    unreadable: false,
+    status: 'paused-for-review',
+    reason: 'protected mission surface requires human review: csp',
+  };
+
+  assert.match(missionVerifierCheckedText(null, {}, unreadable), /^VERIFY DID NOT RUN:/);
+  assert.match(missionVerifierCheckedText(null, {}, unreadable), /ENOBUFS/);
+  assert.doesNotMatch(missionVerifierCheckedText(null, {}, unreadable), /UNVERIFIED: tick recorded but nothing was checked/);
+  assert.match(missionVerifierHighLevelTestText(null, {}, unreadable), /could not be read/);
+  assert.match(missionGuardNextText(unreadable, 'mission-busy'), /atris mission tick mission-busy --verify/);
+
+  assert.match(missionVerifierCheckedText(null, {}, protectedHold), /human review: csp/);
+  assert.equal(missionVerifierCheckedText(null, {}), 'UNVERIFIED: tick recorded but nothing was checked; treat this increment as unproven.');
+});
+
+test('tick --verify fails loud when the workspace diff is unreadable', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-enobufs-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'mission-lead'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'atris.md'), '# Atris\n');
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'mission-lead', 'MEMBER.md'), '# Mission Lead\n');
+  const env = {
+    ...process.env,
+    ATRIS_SKIP_UPDATE_CHECK: '1',
+    ATRIS_TASKS_DB: path.join(root, '.atris', 'state', 'tasks.db'),
+  };
+  const run = (args, extraEnv = {}) => spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...env, ...extraEnv },
+  });
+  const git = (args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  assert.equal(git(['init', '-q']).status, 0);
+  assert.equal(git(['config', 'user.email', 'guard@example.test']).status, 0);
+  assert.equal(git(['config', 'user.name', 'Mission Guard Test']).status, 0);
+  assert.equal(git(['add', '.']).status, 0);
+  assert.equal(git(['commit', '-qm', 'base']).status, 0);
+
+  const started = run([
+    'mission', 'start', 'prove busy workspace verify fails loud',
+    '--owner', 'mission-lead',
+    '--runner', 'manual',
+    '--verify', 'node -e "process.exit(0)"',
+    '--json',
+  ]);
+  assert.equal(started.status, 0, started.stderr || started.stdout);
+  const mission = JSON.parse(started.stdout).mission;
+  fs.writeFileSync(path.join(root, 'notes.txt'), 'busy workspace dirt\n');
+
+  const which = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' });
+  const realGit = String(which.stdout || '').trim();
+  assert.ok(realGit);
+  const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-fake-git-'));
+  t.after(() => fs.rmSync(binDir, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(binDir, 'git'),
+    [
+      '#!/usr/bin/env node',
+      "'use strict';",
+      `const { spawnSync } = require('child_process');`,
+      `const args = process.argv.slice(2);`,
+      `if (args[0] === 'diff') {`,
+      `  process.stderr.write('spawnSync git ENOBUFS\\n');`,
+      `  process.exit(1);`,
+      `}`,
+      `const child = spawnSync(${JSON.stringify(realGit)}, args, { cwd: process.cwd(), stdio: 'inherit' });`,
+      `process.exit(child.status == null ? 1 : child.status);`,
+      '',
+    ].join('\n'),
+    { mode: 0o755 },
+  );
+
+  const ticked = run([
+    'mission', 'tick', mission.id,
+    '--verify',
+    '--summary', 'The workspace is busy and the check could not start.',
+    '--json',
+  ], { PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}` });
+  assert.equal(ticked.status, 2, ticked.stderr || ticked.stdout);
+  const payload = JSON.parse(ticked.stdout);
+  const receipt = JSON.parse(fs.readFileSync(path.join(root, payload.receipt_path || payload.ids?.receipt_path || ''), 'utf8'));
+
+  assert.equal(payload.ok, false);
+  assert.equal(payload.reason, 'verify_did_not_run');
+  assert.equal(payload.verifier_result, null);
+  assert.notEqual(payload.tick?.verifier_passed, true);
+  assert.notEqual(payload.mission?.verifier_result?.passed, true);
+  assert.match(String(payload.detail || ''), /VERIFY DID NOT RUN/);
+  assert.match(String(payload.next_command || ''), /atris mission tick /);
+  assert.match(receipt.result.landing.checked, /^VERIFY DID NOT RUN:/);
+  assert.match(receipt.result.landing.checked, /ENOBUFS/);
+  assert.doesNotMatch(receipt.result.landing.checked, /UNVERIFIED: tick recorded but nothing was checked/);
+  assert.notEqual(receipt.result.passed, true);
 });
 
 test('the Atris2 local relay keeps the mission Git wrapper first on PATH', async (t) => {
