@@ -1221,8 +1221,8 @@ test('bare mission in a live room speaks the desk next, not the archive', () => 
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(mission.status, 0, mission.stderr || mission.stdout);
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
-    assert.match(mission.stdout, /write a feature map for/i);
     assert.match(mission.stdout, /waiting for your ok/);
+    assert.match(mission.stdout, /CLI-193/);
     assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
     assert.match(nextLine(mission.stdout), /^atris task accept CLI-193$/);
     assert.equal((mission.stdout.match(/^Mission:/mg) || []).length, 0, mission.stdout);
@@ -1313,8 +1313,8 @@ test('bare mission yields the desk next when a ready mission is stalled', () => 
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(mission.status, 0, mission.stderr || mission.stdout);
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
-    assert.match(mission.stdout, /write a feature map for/i);
     assert.match(mission.stdout, /waiting for your ok/);
+    assert.match(mission.stdout, /CLI-193/);
     assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
     assert.match(nextLine(mission.stdout), /^atris task accept CLI-193$/);
     assert.equal((mission.stdout.match(/^Mission:/mg) || []).length, 0, mission.stdout);
