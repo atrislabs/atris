@@ -64,6 +64,7 @@ const {
   firstTalkCommand,
   folderName,
   isBareAtrisFlag,
+  isFirstTalkLine,
   isTaskNextLook,
   personName,
   renderFirstTalk,
@@ -1407,7 +1408,7 @@ async function interactiveEntry(userInput, options = {}) {
       printFirstMinuteScreen({ root: workspaceDir, fresh: true });
       return 0;
     }
-    if (isAtrisMetaQuestion(request)) {
+    if (!isFirstTalkLine(request) && isAtrisMetaQuestion(request)) {
       if (options.asJson) {
         console.log(JSON.stringify({
           schema: 'atris.overview.v1',
