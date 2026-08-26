@@ -788,33 +788,34 @@ function showHelp(options = {}) {
 
 function showPlanHelp() {
   console.log('');
-  console.log('Usage: atris plan [--execute] [--full]');
+  console.log('Usage: atris plan [--execute] [--prompt|--verbose|--full]');
   console.log('');
   console.log('Description:');
-  console.log('  Activate the Navigator agent to plan work.');
-  console.log('  Default is PROMPT ONLY: prints a copy/pasteable prompt for your coding agent.');
-  console.log('  Reads your journal Inbox, TODO.md, MAP.md, and features/.');
+  console.log('  Same two spoken lines as bare atris.');
+  console.log('  --prompt prints the navigator copy/paste prompt.');
+  console.log('  Leftover words stay a request.');
   console.log('');
   console.log('Options:');
   console.log('  --execute   ACTION TAKEN: run in agent mode via Atris cloud (requires login + agent).');
-  console.log('  --full      Print full spec/context dumps (verbose copy/paste).');
-  console.log('  --verbose   Alias for --full.');
+  console.log('  --prompt    Print the navigator copy/paste prompt.');
+  console.log('  --verbose   Alias for --prompt, plus full spec dumps.');
+  console.log('  --full      Alias for --verbose.');
   console.log('');
 }
 
 function showDoHelp() {
   console.log('');
-  console.log('Usage: atris do [--execute] [--full]');
+  console.log('Usage: atris do [--execute] [--prompt|--verbose|--full]');
   console.log('');
   console.log('Description:');
-  console.log('  Activate the Executor agent to build tasks.');
-  console.log('  Default is PROMPT ONLY: same win and next command as bare atris.');
-  console.log('  --verbose prints the executor paste and file dump. Reads TODO.md and features/*/build.md.');
+  console.log('  Same two spoken lines as bare atris.');
+  console.log('  --prompt prints the executor copy/paste prompt.');
   console.log('');
   console.log('Options:');
   console.log('  --execute   ACTION TAKEN: edit code + run commands via Atris cloud.');
-  console.log('  --full      Print full spec/context dumps (verbose copy/paste).');
-  console.log('  --verbose   Alias for --full.');
+  console.log('  --prompt    Print the executor copy/paste prompt.');
+  console.log('  --verbose   Alias for --prompt, plus full spec dumps.');
+  console.log('  --full      Alias for --verbose.');
   console.log('');
 }
 

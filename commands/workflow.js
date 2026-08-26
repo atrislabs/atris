@@ -481,9 +481,10 @@ async function planAtris(userInput = null) {
   const executeFlag = args.includes('--execute');
   const showFull = args.includes('--full') || args.includes('--verbose');
   const leftoverRequest = args
-    .filter((token) => !['--execute', '--full', '--verbose', '--json'].includes(token))
+    .filter((token) => !['--execute', '--full', '--verbose', '--json', '--prompt'].includes(token))
     .join(' ')
     .trim();
+  const showPrompt = showFull || args.includes('--prompt');
 
   const config = loadConfig();
   // Auto-enable local execution mode for "2 fast" / "2 pro" product aliases.
@@ -591,15 +592,18 @@ async function planAtris(userInput = null) {
   } catch {
     firstMinute = null;
   }
-  const liveStatus = firstMinute && firstMinute.task && firstMinute.task.status;
-  const hasLiveTask = liveStatus === 'claimed' || liveStatus === 'review' || liveStatus === 'open';
-  const showFactory = showFull || Boolean(requestText) || !hasLiveTask;
+  const showFactory = showPrompt || Boolean(requestText);
 
-  console.log(executionMode === 'prompt' ? 'PROMPT ONLY' : 'ACTION TAKEN');
-  console.log('');
-  if (firstMinute && firstMinute.text) {
-    console.log(firstMinute.text);
+  if (showFactory || executionMode !== 'prompt') {
+    console.log(executionMode === 'prompt' ? 'PROMPT ONLY' : 'ACTION TAKEN');
     console.log('');
+    if (firstMinute && firstMinute.text) {
+      console.log(firstMinute.text);
+      console.log('');
+    }
+  } else if (firstMinute && firstMinute.text) {
+    console.log('');
+    console.log(firstMinute.text);
   }
 
   if (showFactory) {
@@ -865,7 +869,7 @@ async function doAtris() {
   const { executeCodeExecution } = require('../utils/claude_sdk');
   const args = process.argv.slice(3);
   const executeFlag = args.includes('--execute');
-  const showFull = args.includes('--full') || args.includes('--verbose');
+  const showFull = args.includes('--full') || args.includes('--verbose') || args.includes('--prompt');
 
   const config = loadConfig();
   const executionMode = executeFlag ? 'agent' : (config.execution_mode || 'prompt');
@@ -1002,12 +1006,17 @@ async function doAtris() {
   const liveStatus = firstMinute && firstMinute.task && firstMinute.task.status;
   const hasLiveTask = liveStatus === 'claimed' || liveStatus === 'review' || liveStatus === 'open';
 
-  // Prompt-mode output: PERSONA head first, same truth as bare atris.
-  console.log(executionMode === 'prompt' ? 'PROMPT ONLY' : 'ACTION TAKEN');
-  console.log('');
-  if (firstMinute && firstMinute.text) {
-    console.log(firstMinute.text);
+  // Default stays the first-minute two lines. The factory paste stays on --prompt.
+  if (showFull || executionMode !== 'prompt') {
+    console.log(executionMode === 'prompt' ? 'PROMPT ONLY' : 'ACTION TAKEN');
     console.log('');
+    if (firstMinute && firstMinute.text) {
+      console.log(firstMinute.text);
+      console.log('');
+    }
+  } else if (firstMinute && firstMinute.text) {
+    console.log('');
+    console.log(firstMinute.text);
   }
 
   const backlogCount = workspaceSummary && Array.isArray(workspaceSummary.backlogTasks)

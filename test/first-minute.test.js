@@ -552,6 +552,7 @@ test('atris plan in an empty folder talks like first-minute', () => {
     const help = runCli(['plan', '--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /Usage: atris plan/);
+    assert.match(help.stdout, /--prompt/);
     assert.doesNotMatch(help.stdout, /clean start|navigator\.md/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
   } finally {
@@ -786,6 +787,53 @@ test('atris test after init --minimal talks like first-minute, not bootstrap', (
     const payload = JSON.parse(json.stdout);
     assert.equal(payload.next_action, `atris task ready ${claim[1]}`);
     assert.notEqual(payload.next_action, 'atris init --yes');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris do and plan after init --minimal stay two spoken lines', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+
+    const minute = runCli([], { cwd: dir, env });
+    const planned = runCli(['plan'], { cwd: dir, env });
+    const doit = runCli(['do'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+    assert.equal(doit.status, 0, doit.stderr || doit.stdout);
+    assert.equal(planned.stdout.trim(), minute.stdout.trim());
+    assert.equal(doit.stdout.trim(), minute.stdout.trim());
+    assert.equal(spokenLineCount(planned.stdout), 2);
+    assert.equal(spokenLineCount(doit.stdout), 2);
+    assert.doesNotMatch(planned.stdout, /PROMPT ONLY|Atris Plan|You are the Navigator/);
+    assert.doesNotMatch(doit.stdout, /PROMPT ONLY|Atris Do|You are the Executor/);
+    assert.doesNotMatch(planned.stdout + doit.stdout, /clean start|Run "atris init"/);
+
+    const planPrompt = runCli(['plan', '--prompt'], { cwd: dir, env });
+    const doPrompt = runCli(['do', '--prompt'], { cwd: dir, env });
+    assert.equal(planPrompt.status, 0, planPrompt.stderr || planPrompt.stdout);
+    assert.equal(doPrompt.status, 0, doPrompt.stderr || doPrompt.stdout);
+    assert.match(planPrompt.stdout, /^PROMPT ONLY/m);
+    assert.match(planPrompt.stdout, /You are the Navigator\./);
+    assert.match(doPrompt.stdout, /^PROMPT ONLY/m);
+    assert.match(doPrompt.stdout, /You are the Executor\./);
+
+    const asked = runCli(['plan', 'ship', 'the', 'landing', 'page'], { cwd: dir, env });
+    assert.equal(asked.status, 0, asked.stderr || asked.stdout);
+    assert.match(asked.stdout, /DIRECT REQUEST/);
+    assert.match(asked.stdout, /ship the landing page/);
+    assert.doesNotMatch(asked.stdout, /Run "atris init"/);
   } finally {
     cleanupTempDir(dir);
   }

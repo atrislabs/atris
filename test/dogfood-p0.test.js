@@ -200,11 +200,21 @@ test('P0-4: plan/do/ingest start with PROMPT ONLY or ACTION TAKEN', () => {
 
     const plan = runCli(['plan'], { cwd: dir });
     assert.equal(plan.status, 0, plan.stderr);
-    assert.equal(plan.stdout.trimStart().split(/\r?\n/)[0], 'PROMPT ONLY');
+    assert.notEqual(plan.stdout.trimStart().split(/\r?\n/)[0], 'PROMPT ONLY');
+    assert.match(plan.stdout, /^next: /m);
+
+    const planPrompt = runCli(['plan', '--prompt'], { cwd: dir });
+    assert.equal(planPrompt.status, 0, planPrompt.stderr);
+    assert.equal(planPrompt.stdout.trimStart().split(/\r?\n/)[0], 'PROMPT ONLY');
 
     const doit = runCli(['do'], { cwd: dir });
     assert.equal(doit.status, 0, doit.stderr);
-    assert.equal(doit.stdout.trimStart().split(/\r?\n/)[0], 'PROMPT ONLY');
+    assert.notEqual(doit.stdout.trimStart().split(/\r?\n/)[0], 'PROMPT ONLY');
+    assert.match(doit.stdout, /^next: /m);
+
+    const doPrompt = runCli(['do', '--prompt'], { cwd: dir });
+    assert.equal(doPrompt.status, 0, doPrompt.stderr);
+    assert.equal(doPrompt.stdout.trimStart().split(/\r?\n/)[0], 'PROMPT ONLY');
 
     const src = path.join(dir, 'note.md');
     fs.writeFileSync(src, '# note\n\nhello\n', 'utf8');
