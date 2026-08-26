@@ -78,6 +78,26 @@ function nextLine(stdout) {
   return match ? match[1] : '';
 }
 
+test('default atris task in an empty folder talks like first-minute', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    const env = taskEnv(dir, 'fresh.db');
+    const minute = runCli([], { cwd: dir, env });
+    const task = runCli(['task'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(task.status, 0, task.stderr || task.stdout);
+    assert.equal(task.stdout.trim(), minute.stdout.trim());
+    assert.match(task.stdout, /this folder is a clean start/);
+    assert.equal(nextLine(task.stdout), 'atris init --minimal');
+    assert.ok(spokenLineCount(task.stdout) <= 4);
+    assert.doesNotMatch(task.stdout, /No open tasks|atris task new|TASK DESK/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('default atris task is short and names the same next as bare atris', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
