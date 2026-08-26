@@ -1148,6 +1148,122 @@ test('atris ask and mission after init --minimal stay in the room', () => {
   }
 });
 
+test('bare mission in a live room speaks the desk next, not the archive', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    writeReadyWorkspace(dir, [{
+      id: 'task-map',
+      display_id: 'CLI-193',
+      title: 'write a feature map for the live room',
+      status: 'review',
+      review: { agent_certified: true, agent_review_pass_count: 2 },
+      created_at: 1,
+      updated_at: 2,
+    }]);
+    fs.writeFileSync(
+      path.join(dir, 'atris', 'reports', 'rebased-pack-co-first-loop-recap.md'),
+      '# Rebased Pack Co First Loop Recap\n',
+    );
+    const old = '2026-01-01T00:00:00Z';
+    const archiveRows = [
+      {
+        schema: 'atris.mission.v1',
+        id: 'mission-done',
+        objective: 'Ship the old pack',
+        owner: 'executor',
+        status: 'complete',
+        created_at: old,
+        updated_at: old,
+      },
+      {
+        schema: 'atris.mission.v1',
+        id: 'mission-stopped',
+        objective: 'Stop the stale loop',
+        owner: 'executor',
+        status: 'stopped',
+        created_at: old,
+        updated_at: old,
+      },
+      {
+        schema: 'atris.mission.v1',
+        id: 'mission-ready-old',
+        objective: 'Ready for a hundred days',
+        owner: 'executor',
+        status: 'ready',
+        created_at: old,
+        updated_at: old,
+        last_tick_at: old,
+      },
+    ];
+    fs.writeFileSync(
+      path.join(dir, '.atris', 'state', 'missions.jsonl'),
+      `${archiveRows.map((row) => JSON.stringify(row)).join('\n')}\n`,
+    );
+
+    const minute = runCli([], { cwd: dir, env });
+    const mission = runCli(['mission'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(mission.status, 0, mission.stderr || mission.stdout);
+    assert.equal(mission.stdout.trim(), minute.stdout.trim());
+    assert.match(mission.stdout, /write a feature map for/i);
+    assert.match(mission.stdout, /waiting for your ok/);
+    assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
+    assert.match(nextLine(mission.stdout), /^atris task accept CLI-193$/);
+    assert.equal((mission.stdout.match(/^Mission:/mg) || []).length, 0, mission.stdout);
+    assert.doesNotMatch(mission.stdout, /Ship the old pack|Stop the stale loop|Ready for a hundred days|mission-done|mission-stopped|mission-ready-old/);
+
+    const archive = runCli(['mission', '--all'], { cwd: dir, env });
+    assert.equal(archive.status, 0, archive.stderr || archive.stdout);
+    assert.ok((archive.stdout.match(/^Mission:/mg) || []).length >= 3, archive.stdout);
+    assert.match(archive.stdout, /Ship the old pack|mission-done/);
+
+    const listed = runCli(['mission', 'list'], { cwd: dir, env });
+    assert.equal(listed.status, 0, listed.stderr || listed.stdout);
+    assert.ok((listed.stdout.match(/^Mission:/mg) || []).length >= 3, listed.stdout);
+
+    const helpBefore = fs.readFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), 'utf8');
+    const help = runCli(['mission', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris mission|atris mission /);
+    assert.doesNotMatch(help.stdout, /waiting for your ok|write a feature map|Ship the old pack/);
+    assert.equal(fs.readFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), 'utf8'), helpBefore);
+
+    const now = new Date().toISOString();
+    fs.appendFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: 'mission-live',
+      objective: 'Keep the live mission visible',
+      owner: 'executor',
+      status: 'running',
+      created_at: now,
+      updated_at: now,
+      last_tick_at: now,
+    })}\n`);
+    const live = runCli(['mission'], { cwd: dir, env });
+    assert.equal(live.status, 0, live.stderr || live.stdout);
+    assert.equal((live.stdout.match(/^Mission:/mg) || []).length, 1, live.stdout);
+    assert.match(live.stdout, /mission-live|Keep the live mission visible/);
+    assert.doesNotMatch(live.stdout, /waiting for your ok|Ship the old pack|Stop the stale loop|Ready for a hundred days/);
+
+    const liveJson = runCli(['mission', '--json'], { cwd: dir, env });
+    assert.equal(liveJson.status, 0, liveJson.stderr || liveJson.stdout);
+    const livePayload = JSON.parse(liveJson.stdout);
+    assert.equal(livePayload.action, 'mission_status');
+    assert.equal(livePayload.missions.length, 1);
+    assert.equal(livePayload.missions[0].id, 'mission-live');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris wish after init --minimal stays in the room', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');

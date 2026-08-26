@@ -983,6 +983,28 @@ function hasLocalMissionState(root = process.cwd()) {
     .some((mission) => mission && mission.id && mission.cloud !== true);
 }
 
+const LIVE_MISSION_TICK_MS = 24 * 60 * 60 * 1000;
+
+function isLiveInFlightMission(mission, now = Date.now()) {
+  if (!mission || !mission.id || mission.cloud === true) return false;
+  const status = String(mission.status || '');
+  if (TERMINAL_STATUSES.has(status) || status === 'paused' || status === 'blocked') return false;
+  if (status === 'running') return true;
+  const lastTickAt = Date.parse(mission.last_tick_at || '');
+  if (!Number.isFinite(lastTickAt)) return false;
+  const age = now - lastTickAt;
+  return age >= 0 && age <= LIVE_MISSION_TICK_MS;
+}
+
+function pickLiveLocalMission(root = process.cwd()) {
+  return listMissions(root).find((mission) => isLiveInFlightMission(mission)) || null;
+}
+
+function wantsBareMissionArchive(args = []) {
+  return hasFlag(args, '--all')
+    && args.every((value) => value === '--all' || value === '--json');
+}
+
 function terminalNextAction(status) {
   if (status === 'complete') return 'mission complete';
   if (status === 'stopped') return 'mission stopped';
@@ -10937,6 +10959,8 @@ function help() {
   console.log(`
 atris mission - durable goal + loop + owner + proof state
 
+  atris mission                 Same next as bare atris, or the one live mission
+  atris mission list | --all    Full mission archive
   atris mission start "<objective>" --owner <member> [--destination "<text>"] [--verify "..."] [--always-on] [--budget quick|long|deep] [--xp-task] [--worktree] [--take-goal-slot]
                       [--runner manual|claude|atris2|codex_goal] [--model <id>]
                       (runner claude spawns local claude -p per tick, --model passes through;
@@ -11372,16 +11396,21 @@ function missionCommand(args) {
   if (args[0] === 'answer') {
     return require('./human-missions').answerCommand(args.slice(1));
   }
-  if (isBareMission && !hasLocalMissionState(resolveWorkspaceRoot())) {
+  if (isBareMission) {
     const root = resolveWorkspaceRoot();
-    // Empty folder talks like bare atris. After init, show a live mission
-    // if one is running. Otherwise speak the same desk next as bare atris.
-    // Do not bounce to atris ask or mint a mission.
-    if (isFreshWorkspace(root)) {
+    const asJson = args.includes('--json');
+    // Empty folder talks like bare atris. A live in-flight mission shows
+    // that one card. Completed, stopped, or old ready rows stay in the
+    // archive. After init with no live mission, speak the desk next.
+    const live = pickLiveLocalMission(root);
+    if (live) {
+      return statusMission(asJson ? [live.id, '--json'] : [live.id]);
+    }
+    if (isFreshWorkspace(root) || hasLocalMissionState(root)) {
       const code = speakFirstMinute({
         root,
-        fresh: true,
-        asJson: args.includes('--json'),
+        fresh: isFreshWorkspace(root),
+        asJson,
       });
       process.exitCode = code;
       return code;
@@ -11391,8 +11420,11 @@ function missionCommand(args) {
       fallbackOnMissing: true,
     });
   }
-  const subcommand = isBareMission ? 'status' : (args[0] || 'status');
-  const rest = isBareMission ? args : args.slice(1);
+  if (wantsBareMissionArchive(args)) {
+    return statusMission(args.filter((value) => value !== '--all'));
+  }
+  const subcommand = args[0] || 'status';
+  const rest = args.slice(1);
   // Every mission verb resolves its state store from process.cwd(). Running one
   // from a subdirectory used to create a nested .atris store the fleet never
   // reads (proven footgun: a nested .atris appeared under
