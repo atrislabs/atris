@@ -21,6 +21,7 @@ function makeTempRepo() {
   fs.writeFileSync(path.join(repo, 'README.md'), '# fixture\n');
   runGit(['add', '.'], repo);
   runGit(['commit', '-m', 'init'], repo);
+  fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });
   const state = path.join(repo, '.atris', 'state');
   fs.mkdirSync(state, { recursive: true });
   const trustedBuilder = Array.from({ length: 10 }, () => JSON.stringify({ claimed_by: 'builder', outcome: 'accepted' }));

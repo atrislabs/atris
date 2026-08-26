@@ -679,6 +679,38 @@ test('atris task next in an empty folder talks like first-minute', () => {
   }
 });
 
+test('atris task new in an empty folder talks like first-minute', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const created = runCli(['task', 'new', 'count the words'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    assert.equal(created.stdout.trim(), minute.stdout.trim());
+    assert.match(created.stdout, /this folder is a clean start/);
+    assert.match(created.stdout, /^next: atris init --minimal$/m);
+    assert.equal(spokenLineCount(created.stdout), spokenLineCount(minute.stdout));
+    assert.doesNotMatch(created.stdout, /count the words/);
+    assert.doesNotMatch(created.stdout, /TH\d|WRK-|CLI-|Warning: put the why|No open tasks|TASK DESK/);
+    assert.doesNotMatch(created.stderr, /Warning: put the why/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'tasks.projection.json')), false);
+
+    const help = runCli(['task', 'new', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /atris task new/);
+    assert.doesNotMatch(help.stdout, /clean start|count the words/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris ask and mission in an empty folder talk like first-minute', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
@@ -935,6 +967,12 @@ test('atris task next after init --minimal stays in the room', () => {
     assert.doesNotMatch(next.stdout, /clean start|atris init --minimal|atris task new/);
     assert.doesNotMatch(task.stdout, /clean start|atris init --minimal|No open tasks/);
     assert.equal(next.stdout.match(/^next:/mg).length, 1);
+
+    const filed = runCli(['task', 'new', 'count the words'], { cwd: dir, env });
+    assert.equal(filed.status, 0, filed.stderr || filed.stdout);
+    assert.match(filed.stdout, /count the words/);
+    assert.doesNotMatch(filed.stdout, /this folder is a clean start|atris init --minimal/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'tasks.projection.json')), true);
   } finally {
     cleanupTempDir(dir);
   }

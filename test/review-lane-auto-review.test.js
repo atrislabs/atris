@@ -54,6 +54,7 @@ function writeFailingReceipt(dir, rel = 'atris/runs/failing.json') {
 }
 
 function readyTaskWithProof(dir, proof) {
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
   const created = runCli(['task', 'new', 'auto review probe', '--tag', 'probe'], { cwd: dir });
   assert.equal(created.status, 0, created.stderr || created.stdout);
   const ref = created.stdout.trim().split('\t')[0];

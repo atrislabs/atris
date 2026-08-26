@@ -99,6 +99,7 @@ function makeTempRepo() {
   fs.writeFileSync(path.join(repo, 'README.md'), '# fixture\n');
   runGit(['add', '.'], repo);
   runGit(['commit', '-m', 'init'], repo);
+  fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });
   fs.mkdirSync(path.join(repo, '.atris', 'state'), { recursive: true });
   return { base, repo };
 }
