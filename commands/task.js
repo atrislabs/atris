@@ -6879,7 +6879,36 @@ function cmdNextTruth(args) {
   console.log(`next: ${command}`);
 }
 
+function isUninitializedTaskFolder(cwd = process.cwd()) {
+  const workspace = getTaskDb().workspaceRoot(cwd);
+  if (fs.existsSync(path.join(workspace, 'atris'))) return false;
+  const existing = readProjectionFile(workspace);
+  return !(existing && Array.isArray(existing.tasks) && existing.tasks.length > 0);
+}
+
 function cmdNext(args) {
+  const root = process.cwd();
+  // Empty folder talks like bare atris. Walk up like the task db so a
+  // project subdir stays in the room; stop before inheriting /tmp.
+  // A leftover projection with live tasks still names that work.
+  if (isUninitializedTaskFolder(root)) {
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: 'init',
+        command: 'atris init --minimal',
+        task_id: null,
+        owner: String(flag(args, '--as') || personName() || DEFAULT_OWNER),
+        scope: normalizeTaskQueueScope(taskQueueScopeFromArgs(args)),
+        projection_path: null,
+        task: null,
+      });
+      return;
+    }
+    const screen = buildFirstMinute({ root, fresh: true });
+    console.log(screen.text);
+    return;
+  }
   if (!hasFlag(args, '--create-next')) return cmdNextTruth(args);
   const owner = flag(args, '--as') || DEFAULT_OWNER;
   const scope = taskQueueScopeFromArgs(args);
