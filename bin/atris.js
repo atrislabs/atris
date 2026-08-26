@@ -819,8 +819,9 @@ function showReviewHelp() {
   console.log('Usage: atris review [--limit N|--all|--json] [--full|--execute]');
   console.log('');
   console.log('Description:');
-  console.log('  Show the certified Review queue: proof-ready work waiting for');
-  console.log('  human accept or revise. Human accept is the AgentXP gate.');
+  console.log('  Show the one finished thing waiting for your ok.');
+  console.log('  Certified work leads with atris task accept. Uncertified stays');
+  console.log('  still being checked. Use --json/--all for the full queue.');
   console.log('  Use --full/--verbose for the legacy Validator prompt.');
   console.log('');
   console.log('Options:');

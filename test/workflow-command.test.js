@@ -23,6 +23,8 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { spawnSync } = require('node:child_process');
+const { spokenLineCount } = require('../lib/first-minute');
+const { renderReviewMinute } = require('../commands/workflow');
 
 const { spokenLineCount } = require('../lib/first-minute');
 
@@ -283,7 +285,121 @@ test('do names a claimed task the same way first-minute does', () => {
   assert.match(verbose.stdout, /You are the Executor\./);
 });
 
-test('review --verbose prints the validator prompt and reacts to journal completions', () => {
+test('review talks like first-minute when a certified task is waiting', () => {
+  const dir = makeTempDir();
+  writeClaimedWorkspace(dir, {
+    id: 'task-2',
+    display_id: 'UNW-2',
+    title: 'Print a human line like 4 words so the count is easy to read.',
+    status: 'review',
+    updated_at: 20,
+    review: { agent_certified: true, agent_review_pass_count: 2 },
+  });
+  const env = isolatedDoEnv(dir);
+
+  const minute = runCli([], { cwd: dir, env });
+  const review = runCli(['review'], { cwd: dir, env });
+  assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+  assert.equal(review.status, 0, review.stderr || review.stdout);
+  assert.match(review.stdout, /"print a human line like" is waiting for your ok\./);
+  assert.equal(nextLine(review.stdout), 'atris task accept UNW-2');
+  assert.equal(nextLine(review.stdout), nextLine(minute.stdout));
+  assert.ok(spokenLineCount(review.stdout) >= 2 && spokenLineCount(review.stdout) <= 4);
+  assert.doesNotMatch(review.stdout, /Atris Review is the human checkpoint/);
+  assert.doesNotMatch(review.stdout, /Need the legacy Validator prompt/);
+  assert.doesNotMatch(review.stdout, /needs you|say yes:/);
+  assert.doesNotMatch(review.stdout, /any learnings\?/);
+  assert.doesNotMatch(review.stdout, /┌|└|│|Validator Agent Activated/);
+});
+
+test('review keeps uncertified work still being checked, not needs-you', () => {
+  const dir = makeTempDir();
+  writeClaimedWorkspace(dir, {
+    id: 'task-3',
+    display_id: 'UNW-3',
+    title: 'Second check still open',
+    status: 'review',
+    updated_at: 30,
+    review: { agent_review_pass_count: 1 },
+  });
+  const env = isolatedDoEnv(dir);
+  const review = runCli(['review'], { cwd: dir, env });
+  assert.equal(review.status, 0, review.stderr || review.stdout);
+  assert.match(review.stdout, /"second check still open" is still being checked\./);
+  assert.doesNotMatch(review.stdout, /waiting for your ok|needs you|atris task accept/);
+  assert.doesNotMatch(review.stdout, /Atris Review is the human checkpoint/);
+  assert.ok(spokenLineCount(review.stdout) <= 4);
+});
+
+test('review --json still emits the certified queue', () => {
+  const dir = makeTempDir();
+  writeClaimedWorkspace(dir, {
+    id: 'task-2',
+    display_id: 'UNW-2',
+    title: 'Print a human line like 4 words so the count is easy to read.',
+    status: 'review',
+    updated_at: 20,
+    review: {
+      approval_status: 'pending',
+      agent_certified: true,
+      agent_review_pass_count: 2,
+      proof: 'context '.repeat(35) + 'Verifiers: node --test test/workflow-command.test.js passed',
+    },
+  });
+  const env = isolatedDoEnv(dir);
+  const res = runCli(['review', '--json'], { cwd: dir, env });
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  const payload = JSON.parse(res.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.action, 'review_queue');
+  assert.ok(payload.queue);
+});
+
+test('review headless never prompts', () => {
+  const dir = initializedWorkspace();
+  const env = isolatedDoEnv(dir);
+  const review = runCli(['review'], { cwd: dir, env, input: '' });
+  assert.equal(review.status, 0, review.stderr || review.stdout);
+  assert.doesNotMatch(review.stdout + review.stderr, /any learnings\?/);
+  const verbose = runCli(['review', '--verbose'], { cwd: dir, env, input: '' });
+  assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
+  assert.doesNotMatch(verbose.stdout + verbose.stderr, /any learnings\?/);
+});
+
+test('renderReviewMinute leads with certified accept and keeps uncertified checking', () => {
+  const text = renderReviewMinute({
+    person: 'keshav',
+    tasks: [
+      {
+        title: 'Print a human line like 4 words so the count is easy to read.',
+        status: 'review',
+        display_id: 'UNW-2',
+        updated_at: 20,
+        review: { agent_certified: true, agent_review_pass_count: 2 },
+      },
+      {
+        title: 'Second check still open',
+        status: 'review',
+        display_id: 'UNW-3',
+        updated_at: 30,
+        review: { agent_review_pass_count: 1 },
+      },
+    ],
+  });
+  assert.match(text, /hey keshav, "print a human line like" is waiting for your ok\./);
+  assert.match(text, /1 still being checked\./);
+  assert.match(text, /^next: atris task accept UNW-2$/m);
+  assert.doesNotMatch(text, /needs you|ready to look at|human checkpoint/);
+  assert.equal(spokenLineCount(text), 3);
+});
+
+test('renderReviewMinute empty queue is one spoken line', () => {
+  const text = renderReviewMinute({ person: 'keshav', tasks: [] });
+  assert.equal(text, 'nothing is waiting on you.');
+  assert.equal(spokenLineCount(text), 1);
+});
+
+test('review --verbose keeps the old validator explainer', () => {
   const dir = initializedWorkspace();
   fs.writeFileSync(
     todayLogFile(dir),

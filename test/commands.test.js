@@ -19452,7 +19452,7 @@ test('status stays local even when .atris/business.json exists', () => {
   }
 });
 
-test('review default mode renders certified task review console', () => {
+test('review default mode leads with certified accept like first-minute', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -19470,10 +19470,10 @@ test('review default mode renders certified task review console', () => {
 
     const res = runCli(['review'], { cwd: dir, env });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris Review is the human checkpoint/);
-    assert.match(res.stdout, /one finished thing is waiting for your ok\. it passed both checks\./);
-    assert.match(res.stdout, new RegExp(`say yes: atris task accept ${ref}`));
-    assert.match(res.stdout, /Need the legacy Validator prompt/);
+    assert.match(res.stdout, /is waiting for your ok\./);
+    assert.match(res.stdout, new RegExp(`^next: atris task accept ${ref}$`, 'm'));
+    assert.doesNotMatch(res.stdout, /Atris Review is the human checkpoint/);
+    assert.doesNotMatch(res.stdout, /Need the legacy Validator prompt/);
     assert.doesNotMatch(res.stdout, /I checked the review setup\./);
     assert.doesNotMatch(res.stdout, /┌|└|│|Validator Agent Activated/);
   } finally {
