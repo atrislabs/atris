@@ -5,7 +5,8 @@
  *   atris gmail inbox [--account <id>]       - List recent emails
  *   atris gmail read <id> [--account <id>]   - Read specific email
  *   atris gmail archive <id> [...] [--account <id>] - Archive messages
- *   atris gmail accounts    - List connected Gmail accounts
+ *   atris gmail accounts                     - List connected Gmail accounts
+ *   atris gmail use [<account_id>]           - Set or show sticky Gmail account
  *   atris calendar today    - Show today's events
  *   atris calendar yesterday - Show yesterday's events
  *   atris calendar week     - Show this week's events
@@ -30,6 +31,60 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const CALENDAR_CACHE_PATH = path.join(os.homedir(), '.atris', 'calendar-events-cache.json');
+
+function gmailAccountStatePath() {
+  return process.env.ATRIS_GMAIL_ACCOUNT_FILE
+    || path.join(os.homedir(), '.atris', 'gmail-account.json');
+}
+
+function readGmailStickyAccount() {
+  try {
+    const data = JSON.parse(fs.readFileSync(gmailAccountStatePath(), 'utf8'));
+    const id = String(data.account_id || '').trim();
+    return id || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeGmailStickyAccount(accountId) {
+  const filePath = gmailAccountStatePath();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify({ account_id: accountId }, null, 2)}\n`, 'utf8');
+}
+
+function resolveGmailAccountId(explicitId) {
+  const trimmed = String(explicitId || '').trim();
+  if (trimmed) return trimmed;
+  const sticky = readGmailStickyAccount();
+  if (sticky) return sticky;
+  return 'default';
+}
+
+function gmailAccountIdentity(account = {}) {
+  const id = String(account.account_id || account.id || 'default').trim() || 'default';
+  const email = String(account.email_address || account.email || 'unknown').toLowerCase();
+  const name = String(account.display_name || account.name || id).toLowerCase();
+  return { id, email, name };
+}
+
+async function fetchGmailAccounts(token) {
+  const result = await apiRequestJson('/integrations/gmail/accounts', {
+    method: 'GET',
+    token,
+  });
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to fetch accounts'}`);
+    process.exit(1);
+  }
+  const accounts = result.data?.accounts || result.data || [];
+  return Array.isArray(accounts) ? accounts : [];
+}
+
+function findGmailAccount(accounts, accountId) {
+  const wanted = String(accountId || '').trim().toLowerCase();
+  return accounts.find((account) => gmailAccountIdentity(account).id.toLowerCase() === wanted) || null;
+}
 
 async function getAuth() {
   const ensured = await ensureValidCredentials(apiRequestJson);
@@ -90,13 +145,11 @@ function parseGmailArgs(args = []) {
 async function gmailInbox(options = {}) {
   const { token, email } = await getAuth();
   const limit = options.limit || 10;
+  const accountId = resolveGmailAccountId(options.accountId);
 
   console.log('📬 Fetching inbox...\n');
 
-  let path = `/integrations/gmail/messages?max_results=${limit}`;
-  if (options.accountId) {
-    path = `/integrations/gmail/messages?max_results=${limit}&account_id=${encodeURIComponent(options.accountId)}`;
-  }
+  const path = `/integrations/gmail/messages?max_results=${limit}&account_id=${encodeURIComponent(accountId)}`;
 
   const result = await apiRequestJson(path, {
     method: 'GET',
@@ -145,13 +198,11 @@ async function gmailRead(messageId, options = {}) {
   }
 
   const token = await getAuthToken();
+  const accountId = resolveGmailAccountId(options.accountId);
 
   console.log('📧 Fetching message...\n');
 
-  let path = `/integrations/gmail/messages/${messageId}`;
-  if (options.accountId) {
-    path = `${path}?account_id=${encodeURIComponent(options.accountId)}`;
-  }
+  const path = `/integrations/gmail/messages/${messageId}?account_id=${encodeURIComponent(accountId)}`;
 
   const result = await apiRequestJson(path, {
     method: 'GET',
@@ -183,11 +234,11 @@ async function gmailArchive(messageIds, options = {}) {
   }
 
   const token = await getAuthToken();
+  const accountId = resolveGmailAccountId(options.accountId);
 
   console.log(`Archiving ${ids.length} message${ids.length === 1 ? '' : 's'}...`);
 
-  const body = { message_ids: ids };
-  if (options.accountId) body.account_id = options.accountId;
+  const body = { message_ids: ids, account_id: accountId };
 
   const result = await apiRequestJson('/integrations/gmail/messages/batch-archive', {
     method: 'POST',
@@ -206,18 +257,8 @@ async function gmailArchive(messageIds, options = {}) {
 
 async function gmailAccounts() {
   const token = await getAuthToken();
-
-  const result = await apiRequestJson('/integrations/gmail/accounts', {
-    method: 'GET',
-    token,
-  });
-
-  if (!result.ok) {
-    console.error(`Error: ${result.error || 'Failed to fetch accounts'}`);
-    process.exit(1);
-  }
-
-  const accounts = result.data?.accounts || result.data || [];
+  const accounts = await fetchGmailAccounts(token);
+  const activeId = resolveGmailAccountId(null);
 
   if (!accounts.length) {
     console.log('no connected accounts.');
@@ -225,10 +266,47 @@ async function gmailAccounts() {
   }
 
   for (const account of accounts) {
-    const email = String(account.email_address || account.email || 'unknown').toLowerCase();
-    const name = String(account.display_name || account.name || '').toLowerCase();
-    console.log(`${email}, ${name}`);
+    const { id, email, name } = gmailAccountIdentity(account);
+    const active = id.toLowerCase() === activeId.toLowerCase() ? ' (active)' : '';
+    console.log(`${email}, ${name}${active}`);
   }
+}
+
+async function gmailUse(accountId) {
+  const token = await getAuthToken();
+  const accounts = await fetchGmailAccounts(token);
+  const trimmed = String(accountId || '').trim();
+
+  if (!trimmed) {
+    const effectiveId = resolveGmailAccountId(null);
+    const match = findGmailAccount(accounts, effectiveId);
+    if (match) {
+      const { name, email } = gmailAccountIdentity(match);
+      console.log(`using ${name} (${email})`);
+      return;
+    }
+    console.log(`using ${effectiveId}`);
+    return;
+  }
+
+  const match = findGmailAccount(accounts, trimmed);
+  if (!match) {
+    console.error(`unknown gmail account "${trimmed}".`);
+    if (accounts.length) {
+      console.error('connected accounts:');
+      for (const account of accounts) {
+        const { id, email, name } = gmailAccountIdentity(account);
+        console.error(`  ${id}: ${email}, ${name}`);
+      }
+    } else {
+      console.error('no connected accounts.');
+    }
+    process.exit(1);
+  }
+
+  const { id, name, email } = gmailAccountIdentity(match);
+  writeGmailStickyAccount(id);
+  console.log(`now using ${name} (${email})`);
 }
 
 async function gmailCommand(subcommand, ...args) {
@@ -252,12 +330,16 @@ async function gmailCommand(subcommand, ...args) {
     case 'accounts':
       await gmailAccounts();
       break;
+    case 'use':
+      await gmailUse(args[0]);
+      break;
     default:
       console.log('Gmail commands:');
       console.log('  atris gmail inbox [--account <id>]       - List recent emails');
       console.log('  atris gmail read <id> [--account <id>]   - Read specific email');
       console.log('  atris gmail archive <id> [...] [--account <id>] - Archive messages (reversible, All Mail keeps them)');
       console.log('  atris gmail accounts                     - List connected Gmail accounts');
+      console.log('  atris gmail use [<account_id>]           - Set or show sticky Gmail account');
   }
 }
 
@@ -1768,6 +1850,10 @@ module.exports = {
   gmailCommand,
   extractGmailMailboxAccount,
   parseGmailArgs,
+  readGmailStickyAccount,
+  writeGmailStickyAccount,
+  resolveGmailAccountId,
+  gmailAccountStatePath,
   calendarCommand,
   twitterCommand,
   slackCommand,
