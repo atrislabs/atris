@@ -35,6 +35,10 @@ jobs:
         # Focused subset deliberately replaced the full "npm test" gate in
         # be0c484a: the full suite has known-flaky subprocess tests locally.
         # Run the full suite (marker-free env) before pushing a v* tag.
+        env:
+          # _start was removed on purpose in #690 (leftover _start no longer
+          # spawns runners). Any other command removal still blocks publish.
+          ATRIS_ALLOW_COMMAND_REMOVALS: "_start"
         run: |
           node -c commands/mission.js
           node --test test/mission-status.test.js test/check-command-regression.test.js test/repo-shape.test.js
