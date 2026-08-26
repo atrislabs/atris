@@ -610,6 +610,43 @@ test('atris do in an empty folder talks like first-minute', () => {
   }
 });
 
+test('atris do after init and claim stays in the room', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_OPERATOR: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
+
+    const before = runCli([], { cwd: dir, env });
+    assert.equal(before.status, 0, before.stderr || before.stdout);
+    const claim = nextLine(before.stdout);
+    assert.match(claim, /^atris task claim \S+ --as keshav$/);
+
+    const claimed = runCli(claim.replace(/^atris /, '').split(' '), { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
+
+    const minute = runCli([], { cwd: dir, env });
+    const doit = runCli(['do'], { cwd: dir, env });
+    const planned = runCli(['plan'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(doit.status, 0, doit.stderr || doit.stdout);
+    assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+    assert.equal(doit.stdout.trim(), minute.stdout.trim());
+    assert.equal(planned.stdout.trim(), minute.stdout.trim());
+    assert.match(minute.stdout, /already yours/);
+    assert.match(nextLine(doit.stdout), /^atris task ready \S+$/);
+    assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
+    assert.equal(spokenLineCount(doit.stdout), 2);
+    assert.doesNotMatch(doit.stdout + planned.stdout, /executor\.md not found|navigator\.md not found|Run "atris init"/);
+    assert.doesNotMatch(doit.stdout + planned.stdout, /PROMPT ONLY|What do you want to build/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris task next in an empty folder talks like first-minute', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');

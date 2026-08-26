@@ -196,15 +196,17 @@ test('P0-3: fresh init --yes seeds one task visible to status and task list', fu
   }
 });
 
-test('P0-4: plan/do/ingest start with PROMPT ONLY or ACTION TAKEN', () => {
+test('P0-4: plan/do stay in the room after init; ingest still names the write', () => {
   const dir = makeTempDir();
   try {
     assert.equal(runCli(['init', '--yes'], { cwd: dir, timeout: 60000 }).status, 0);
 
+    const minute = runCli([], { cwd: dir });
     const plan = runCli(['plan'], { cwd: dir });
     assert.equal(plan.status, 0, plan.stderr);
-    assert.notEqual(plan.stdout.trimStart().split(/\r?\n/)[0], 'PROMPT ONLY');
+    assert.equal(plan.stdout.trim(), minute.stdout.trim());
     assert.match(plan.stdout, /^next: /m);
+    assert.doesNotMatch(plan.stdout, /PROMPT ONLY|navigator\.md not found|Run "atris init"/);
 
     const planPrompt = runCli(['plan', '--prompt'], { cwd: dir });
     assert.equal(planPrompt.status, 0, planPrompt.stderr);
@@ -212,8 +214,9 @@ test('P0-4: plan/do/ingest start with PROMPT ONLY or ACTION TAKEN', () => {
 
     const doit = runCli(['do'], { cwd: dir });
     assert.equal(doit.status, 0, doit.stderr);
-    assert.notEqual(doit.stdout.trimStart().split(/\r?\n/)[0], 'PROMPT ONLY');
+    assert.equal(doit.stdout.trim(), minute.stdout.trim());
     assert.match(doit.stdout, /^next: /m);
+    assert.doesNotMatch(doit.stdout, /PROMPT ONLY|executor\.md not found|Run "atris init"/);
 
     const doPrompt = runCli(['do', '--prompt'], { cwd: dir });
     assert.equal(doPrompt.status, 0, doPrompt.stderr);

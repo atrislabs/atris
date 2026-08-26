@@ -965,8 +965,8 @@ test('do prints first-minute only by default', () => {
 
     const res = runCli(['do'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.doesNotMatch(res.stdout, /PROMPT ONLY/);
     assert.match(res.stdout, /^next: /m);
+    assert.doesNotMatch(res.stdout, /PROMPT ONLY|executor\.md not found|Run "atris init"/);
     assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT/);
     assert.doesNotMatch(res.stdout, /You are the Executor/);
     assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);

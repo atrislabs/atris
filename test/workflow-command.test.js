@@ -186,6 +186,12 @@ test('review in an uninitialized folder talks like first-minute', () => {
   assert.match(help.stdout, /Usage: atris review/);
   assert.doesNotMatch(help.stdout, /clean start|nothing is waiting on you|validator\.md/);
   assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+  const verbose = runCli(['review', '--verbose'], { cwd: dir, env });
+  assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
+  assert.equal(verbose.stdout.trim(), minute.stdout.trim());
+  assert.doesNotMatch(verbose.stdout + verbose.stderr, /validator\.md not found|Run "atris init"/);
+  assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 });
 
 test('do in an uninitialized folder talks like first-minute', () => {
@@ -237,6 +243,7 @@ test('plan after init --yes --minimal does not send you back to init', () => {
   assert.equal(res.status, 0, combined);
   assert.equal(res.stdout.trim(), minute.stdout.trim());
   assert.equal(spokenLineCount(spokenDoBody(res.stdout)), 2);
+  assert.match(res.stdout, /^next: /m);
   assert.doesNotMatch(res.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(res.stdout, /Atris Plan — Navigator Agent Activated/);
   assert.doesNotMatch(res.stdout, /Navigator spec: atris\/team\/navigator\/MEMBER\.md \(missing\)/);
@@ -278,6 +285,7 @@ test('do after init --yes --minimal does not send you back to init', () => {
   assert.equal(res.status, 0, combined);
   assert.equal(res.stdout.trim(), minute.stdout.trim());
   assert.equal(spokenLineCount(spokenDoBody(res.stdout)), 2);
+  assert.match(res.stdout, /^next: /m);
   assert.doesNotMatch(res.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
   assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
@@ -329,12 +337,22 @@ test('review after init --yes --minimal does not send you back to init', () => {
   assert.equal(payload.action, 'review_queue');
   assert.ok(payload.queue);
   assert.doesNotMatch(jsonReview.stdout, /this workspace is not initialized|atris init --minimal/);
+
+  const verbose = runCli(['review', '--verbose'], { cwd: dir, env });
+  const verboseCombined = verbose.stdout + verbose.stderr;
+  assert.equal(verbose.status, 0, verboseCombined);
+  assert.doesNotMatch(verboseCombined, /validator\.md not found|Run "atris init"/);
+  assert.doesNotMatch(verboseCombined, /clean start|atris init --minimal/);
+  assert.match(verbose.stdout, /You are the Validator\./);
+  assert.match(verbose.stdout, /Validator spec: atris\/team\/validator\/MEMBER\.md \(missing\)/);
 });
 
 test('plan on an initialized workspace prints the navigator prompt shape', () => {
   const dir = initializedWorkspace();
+  const minute = runCli([], { cwd: dir });
   const brief = runCli(['plan'], { cwd: dir });
   assert.equal(brief.status, 0, brief.stderr);
+  assert.equal(brief.stdout.trim(), minute.stdout.trim());
   assert.match(brief.stdout, /^next: /m);
   assert.doesNotMatch(brief.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(brief.stdout, /Atris Plan — Navigator Agent Activated/);
@@ -402,8 +420,10 @@ test('do prints the first-minute head; executor paste stays on --verbose', () =>
   fs.mkdirSync(featureDir, { recursive: true });
   fs.writeFileSync(path.join(featureDir, 'build.md'), '# build plan\n');
 
+  const minute = runCli([], { cwd: dir });
   const res = runCli(['do'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr);
+  assert.equal(res.stdout.trim(), minute.stdout.trim());
   assert.match(res.stdout, /^next: /m);
   assert.doesNotMatch(res.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
@@ -431,10 +451,10 @@ test('plan names a claimed task the same way first-minute does', () => {
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(plan.status, 0, plan.stderr || plan.stdout);
   assert.equal(plan.stdout.trim(), minute.stdout.trim());
-  assert.doesNotMatch(plan.stdout, /PROMPT ONLY/);
   assert.match(plan.stdout, /"ship the landing page" is already yours\./);
   assert.equal(nextLine(plan.stdout), nextLine(minute.stdout));
   assert.equal(nextLine(plan.stdout), 'atris task ready CLI-9');
+  assert.doesNotMatch(plan.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(plan.stdout, /Atris Plan — Navigator Agent Activated/);
   assert.doesNotMatch(plan.stdout, /CONTEXT FILES \(agent should read\)/);
   assert.doesNotMatch(plan.stdout, /COPY\/PASTE PROMPT|You are the Navigator\./);
@@ -460,11 +480,11 @@ test('do names a claimed task the same way first-minute does', () => {
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(doit.status, 0, doit.stderr || doit.stdout);
   assert.equal(doit.stdout.trim(), minute.stdout.trim());
-  assert.doesNotMatch(doit.stdout, /PROMPT ONLY/);
   assert.match(doit.stdout, /"ship the landing page" is already yours\./);
   assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
   assert.equal(nextLine(doit.stdout), 'atris task ready CLI-9');
   assert.equal(spokenLineCount(spokenDoBody(doit.stdout)), 2);
+  assert.doesNotMatch(doit.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(doit.stdout, /Atris Do — Executor Agent Activated/);
   assert.doesNotMatch(doit.stdout, /Context: UNKNOWN/);
   assert.doesNotMatch(doit.stdout, /Backlog tasks: 0/);
