@@ -1,7 +1,7 @@
 ---
 name: youtube
 description: "YouTube discovery and learning. Use atris youtube search QUERY to get free youtu.be links (local ytsearch/yt-dlp, zero credits). Use atris youtube search --paid QUERY to buy watch permalinks from Atris (5 credits, login required). A YouTube link in any message routes here: run atris youtube notes URL FIRST (free, about 30s, quotes verified). Never summarize a video from model memory. Use atris youtube process only to store it as queryable knowledge (5 credits). Triggers on: youtube search, find videos, paid youtube search, any youtube.com or youtu.be link, youtube, video, watch this, notes on this."
-version: 2.6.0
+version: 2.7.0
 tags:
   - youtube
   - research
@@ -230,7 +230,7 @@ Two layers, never mixed. The reply the person reads is flowing prose: ideas, spe
 | `400` | Invalid YouTube URL | Check URL format |
 | `502` | Transcript or cloud processing failed | Retry; credits auto-refunded when backend fails |
 | search exit 2 | ytsearch/yt-dlp missing or no results | Install yt-dlp, or put ytsearch on PATH |
-| search 429 | YouTube rate-limited local search | retry later; do not use --paid |
+| search 429 | YouTube rate-limited local search | serve last same-query free rows if younger than one hour; otherwise retry later; do not use --paid |
 
 ---
 
