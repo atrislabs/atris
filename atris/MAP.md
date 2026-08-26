@@ -31,7 +31,7 @@ For details, read `atris/wiki/concepts/owner-computer-model.md` before changing 
 rg "async function interactiveEntry|shouldGatherContext|renderContextGathererPrompt|buildFirstMinute|shouldAutoInitFresh" bin/atris.js lib/context-gatherer.js lib/first-minute.js    # Main entry points: cold-start dispatcher, first-minute bare atris screen, first-contact context gatherer, legacy natural-language mode
 rg "pickLane|loadOverrides|routerCommand|promotionCandidates|autoLaneForMessage|appendAutoOutcome|modelForMode|buildPayload|connectorTurnPolicy|formatApprovalReceipt|formatTaskPreviewRows|resolveRoute|formatUsage|normalizeChatCommandArgs|CHAT_COMMANDS|filterChatCommands|attachSlashMenu|attachChatCtrlC|runChatSlash|async function chat|postTurn|runAxSpawnCommand|runAxYoutubeCommand|runChatDogfood|extractYoutubeUrl|AX Cloud-First Standard|verify-ax-cloud-standard" ax lib/ax-auto-lane.js commands/router.js test/ax-auto-lane.test.js test/router-promote.test.js test/cli-smoke.test.js test/ax.test.js scripts/verify-ax-cloud-standard.js atris/team/codex-executor/MEMBER.md  # ax Atris2 local coding-agent CLI: deterministic explainable auto lane selection, local outcome traces, reflex overrides, gated promotion, cloud-first by default, explicit --local workspace opt-in, Fast/Pro/Max/Code Fast modes, SSE streaming, workspace_path, readline slash menu and Ctrl-C conventions, chat history, connector turn isolation, Gmail approval previews, doctor/help, durable worker spawn aliases, local YouTube URL routing, and safe 25-loop --dogfood-chat checklist
 rg "atrisFastChat|atrisFastOnce|streamProChat|text_delta|Usage: atris fast" bin/atris.js utils/api.js test/commands.test.js test/api-stream.test.js  # Atris2 Fast one-shot chat CLI and SSE text_delta streaming
-rg "brainstormAtris|Usage: atris brainstorm|brainstorm help|isNonInteractive" commands/brainstorm.js lib/noninteractive.js test/commands.test.js test/dogfood-p0.test.js  # Brainstorm command + workspace-free help; headless captures idea args without prompting
+rg "brainstormAtris|Usage: atris brainstorm|brainstorm help|addInboxIdea|Describe the desired outcome" commands/brainstorm.js lib/noninteractive.js test/brainstorm-headless.test.js test/commands.test.js test/dogfood-p0.test.js  # Brainstorm: named idea captures inbox and exits; no wizard; --json is a receipt; hang regressions in test/brainstorm-headless.test.js
 rg "isNonInteractive|isForcedNonInteractive|ATRIS_NONINTERACTIVE|refuseHeadlessUnless|isHelpToken|argsWantHelp|rejectUnsupportedJson|whoami --json|PROMPT ONLY|ACTION TAKEN|seedInitTaskPlane|importJournalFile|join --help|signup help|avail --help|helpOnly|write start help|showStartHelp|start --help|task accept --help|task claim --help|task ready --help|task step --help|task next --help|task show --help" lib/noninteractive.js lib/workspace-scaffold.js commands/auth.js commands/log.js commands/now.js commands/skill.js commands/member.js commands/version.js commands/workflow.js commands/wiki.js commands/task.js commands/social.js commands/signup.js commands/avail.js commands/spaceship.js commands/dream.js commands/scout.js commands/interview.js commands/autopilot-front.js commands/write.js bin/atris.js test/dogfood-p0.test.js test/dogfood-p0-safety.test.js test/signup.test.js test/write.test.js test/dogfood-pass4.test.js test/task-accept-help.test.js test/task-claim-help.test.js test/task-ready-help.test.js test/task-step-help.test.js test/task-next-help.test.js test/task-show-help.test.js  # Dogfood P0 + pass-4 safety: help on start/voice words is usage before NL; noninteractive guard; help-before-network; headless autopilot --json status; JSON contracts; task accept/claim/ready/step/next/show --help is usage only
 rg "voiceTriggers|Unknown command|Did you mean|SINGLE_WORD_NATURAL_INTENTS|unknownCommandToken|isFlagLikeAnswer|_start" bin/atris.js lib/known-commands.js lib/context-gatherer.js test/dogfood-p0-safety.test.js test/dogfood-pass2.test.js test/dogfood-pass4.test.js test/one-lap-router.test.js  # One-word start/go/audit/deploy and leftover _start no longer spawn runners; unmatched first tokens (`taks list`) and lone verbs (`build`, `fix`) exit 2; quoted sentences still create work after init; empty-folder task new / wish do not mint; start --help is usage; flag titles never become tasks
 rg "refuseUnboundCloudComputer|parseMissionId|cloud-computer|--mission|speakFirstMinute|isFreshWorkspace" commands/human-missions.js commands/mission.js lib/first-minute.js test/human-missions.test.js test/first-minute.test.js test/dogfood-p0-safety.test.js  # Empty-folder bare ask/mission reuse speakFirstMinute like bare atris; after init, bare ask stays on first-minute and bare mission stays on the local card or honest no-mission; unbound scratch folders still need --mission <id> for stop/ready
@@ -781,26 +781,23 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 ### Feature: Brainstorm Mode (`atris brainstorm`) — v2.0.0
 
-**Purpose:** Conversational exploration before planning - supportive, one question at a time
+**Purpose:** Named explore command. Capture one idea locally, then exit.
 
-- **Entry point:** `bin/atris.js:113` (command routing)
-- **Handler:** `commands/brainstorm.js:21-355` (brainstormAtris function)
-- **Help:** `commands/brainstorm.js:23-36` short-circuits before workspace/log setup; regression: `test/commands.test.js:14321-14331`
+- **Entry point:** `bin/atris.js:2509` (command routing)
+- **Handler:** `commands/brainstorm.js:70-100` (brainstormAtris function)
+- **Help:** `commands/brainstorm.js:10-24` short-circuits before workspace/log setup; regression: `test/commands.test.js:18028-18043`
 - **How it works:**
-- Interactive session with supportive questioning
-- 3-4 sentences max per response
-- ONE question at a time (never multiple)
-- No files created (exploration only)
-- User says "ready" or "plan" to exit
+- `atris brainstorm "<idea>"` writes today's inbox and exits
+- Never opens a TTY prompt or wizard, even when stdin is a TTY
+- ATRIS_NO_INTERACTIVE=1 and no-tty return the same capture path
+- `--json` prints a real JSON receipt (`ok`, `action`, `inbox_id`, `next_command`)
+- No idea on the command line prints the next capture command and exits
 - **Workflow:** Optional step 0 before `atris plan`
 - brainstorm (optional) → plan → do → review
-- **Value:** Helps users clarify uncertain ideas before committing to implementation
-- **Documentation:**
-- `atris/PERSONA.md` (communication style guide)
-- `atris.md` (master spec — see BRAINSTORM section)
-- `atris/features/brainstorm/` (feature specs)
+- **Value:** Agents can file an idea without a human at the keyboard
+- **Regression:** `test/brainstorm-headless.test.js` times out a hang; `test/dogfood-p0.test.js` covers the non-interactive capture line
 
-**Search:** `rg "brainstormAtris|Usage: atris brainstorm|brainstorm help" commands/brainstorm.js test/commands.test.js`
+**Search:** `rg "brainstormAtris|Usage: atris brainstorm|brainstorm help|addInboxIdea" commands/brainstorm.js test/brainstorm-headless.test.js test/commands.test.js`
 
 ### Feature: System Status (`atris status`)
 
@@ -1847,7 +1844,7 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 - `reviewAtris()` / `renderReviewMinute()` → `commands/workflow.js` (empty folder uses speakFirstMinute; after init, claim/ready/accept matches bare atris; certified accept; --verbose validator prompt)
 - `statusAtris()` → `commands/status.js:124-384`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
-- `brainstormAtris()` → `commands/brainstorm.js:21-355`
+- `brainstormAtris()` → `commands/brainstorm.js:70-100`
 - `autopilotAtris()` → `commands/autopilot.js:3209-3672`
 - `writeLesson()` → `commands/autopilot.js:999-1023`
 - `getVerifyCommand()` → `commands/autopilot.js:1099-1111`
