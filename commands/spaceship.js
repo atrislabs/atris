@@ -15,12 +15,15 @@
  *
  * Without --yes, spaceship only prints the plan (no email, no overnight run).
  * `--json` without --yes prints a JSON refuse and still does not start.
+ * `--yes` from an unbound scratch folder refuses: that folder is not a room.
  */
 
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { hasYesFlag, argsWantHelp, wantsJson } = require('../lib/noninteractive');
+const { isUnboundScratchFolder, refuseUnboundScratch } = require('../lib/scratch-root');
+const { resolveWorkspaceRoot } = require('../lib/mission-root');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'spaceship.sh');
 
@@ -50,6 +53,15 @@ function planLines(args = []) {
   ];
 }
 
+function spaceshipTargetRoot(args = []) {
+  const list = Array.isArray(args) ? args : [];
+  const idx = list.indexOf('--repo');
+  const raw = idx !== -1 && list[idx + 1] && !String(list[idx + 1]).startsWith('-')
+    ? path.resolve(list[idx + 1])
+    : process.cwd();
+  return resolveWorkspaceRoot(raw);
+}
+
 function spaceship(args = []) {
   const list = Array.isArray(args) ? args : [];
   if (argsWantHelp(list) || list.includes('--help') || list.includes('-h')) {
@@ -73,6 +85,12 @@ function spaceship(args = []) {
   if (!hasYesFlag(list)) {
     for (const line of planLines(list)) console.log(line);
     process.exit(2);
+  }
+
+  // --yes starts the run. It is not a workspace unlock. An unbound
+  // scratch folder is not a room (same class as slack/gmail from scratch).
+  if (isUnboundScratchFolder(spaceshipTargetRoot(list))) {
+    process.exit(refuseUnboundScratch());
   }
 
   const runArgs = list.filter((a) => a !== '--yes' && a !== '-y' && a !== '--json');
@@ -99,4 +117,4 @@ function spaceship(args = []) {
   });
 }
 
-module.exports = { spaceship, SCRIPT, printUsage, planLines };
+module.exports = { spaceship, SCRIPT, printUsage, planLines, spaceshipTargetRoot };

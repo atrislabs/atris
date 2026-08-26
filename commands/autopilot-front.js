@@ -9,6 +9,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { pickRunnableMission, runBudgetSeconds } = require('./run-front');
 const { refuseHeadlessUnless, wantsJson, hasYesFlag } = require('../lib/noninteractive');
+const { isUnboundScratchFolder, refuseUnboundScratch } = require('../lib/scratch-root');
+const { resolveWorkspaceRoot } = require('../lib/mission-root');
 
 const CLI_PATH = path.join(__dirname, '..', 'bin', 'atris.js');
 const DEFAULT_LEG_WALL_SECONDS = 3600;
@@ -216,7 +218,7 @@ async function autopilotFront(args = []) {
   // (e.g. backend/) wrote its loop state into a nested .atris, so a later
   // `autopilot stop`/`status` from the root couldn't see the running loop.
   // Same resolver the mission/task/usage stores use; falls back to cwd.
-  const root = require('../lib/mission-root').resolveWorkspaceRoot(process.cwd());
+  const root = resolveWorkspaceRoot(process.cwd());
   if (args[0] === 'stop') return autopilotStop(root);
   if (args[0] === 'status') return autopilotStatus(root);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') { showFrontHelp(); return 0; }
@@ -240,6 +242,10 @@ async function autopilotFront(args = []) {
     allowOnce: false,
     usage: 'Usage: atris autopilot [--yes|--auto] [--once]',
   })) return 2;
+
+  // --yes / --auto start the loop. They are not a workspace unlock.
+  // An unbound scratch folder is not a room (same class as slack/gmail).
+  if (isUnboundScratchFolder(root)) return refuseUnboundScratch();
 
   const existing = readState(root);
   if (existing && pidAlive(existing.pid) && existing.pid !== process.pid) {
