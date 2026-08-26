@@ -449,7 +449,7 @@ async function planAtris(userInput = null) {
   const executeFlag = args.includes('--execute');
   const showFull = args.includes('--full') || args.includes('--verbose');
   const leftoverRequest = args
-    .filter((token) => !['--execute', '--full', '--verbose'].includes(token))
+    .filter((token) => !['--execute', '--full', '--verbose', '--json'].includes(token))
     .join(' ')
     .trim();
 
@@ -467,6 +467,20 @@ async function planAtris(userInput = null) {
 
   const cwd = process.cwd();
   const targetDir = path.join(cwd, 'atris');
+
+  // Empty folder talks like bare atris. Missing navigator.md after
+  // init --minimal is optional context, not a factory bounce.
+  if (!fs.existsSync(targetDir)) {
+    if (args.includes('--json')) {
+      console.log(JSON.stringify(freshMinuteJson(), null, 2));
+      process.exit(2);
+    }
+    const screen = buildFirstMinute({ root: cwd, fresh: true });
+    console.log('');
+    console.log(screen.text);
+    return;
+  }
+
   const memberNavigator = path.join(targetDir, 'team', 'navigator', 'MEMBER.md');
   const legacyNavigator = path.join(targetDir, 'team', 'navigator.md');
   const navigatorFile = fs.existsSync(memberNavigator)
@@ -475,14 +489,6 @@ async function planAtris(userInput = null) {
   const personaPath = path.join(targetDir, 'PERSONA.md');
   const mapFilePath = path.join(targetDir, 'MAP.md');
   const featuresReadmePath = path.join(targetDir, 'features', 'README.md');
-
-  // Prompt-mode plan only needs an initialized workspace. The navigator spec is
-  // optional context, same as PERSONA.md. A missing spec after init --minimal
-  // must not send the operator back to init.
-  if (!navigatorFile && !fs.existsSync(targetDir)) {
-    console.log('✗ navigator.md not found. Run "atris init" first.');
-    process.exit(1);
-  }
 
   const navigatorSpec = navigatorFile ? fs.readFileSync(navigatorFile, 'utf8') : '';
 
