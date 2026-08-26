@@ -2,9 +2,12 @@
 
 const { apiRequestJson } = require('../utils/api');
 const { ensureBilledCommandAuth } = require('./auth');
+const applyGate = require('../lib/apply-gate');
 
 const DEFAULT_TIMEOUT_MS = 120000;
 const COST_HINT = '5 credits per search';
+const APPLY_INCOMPLETE_MESSAGE =
+  'x-search incomplete: write one apply (change + receipt) for this query.';
 
 function showXSearchHelp(output = console.log, commandName = 'atris x-search') {
   output('');
@@ -265,6 +268,35 @@ async function runXSearch(options, deps = {}) {
   return result.data;
 }
 
+function xSearchApplySource(options) {
+  if (options?.mode === 'person') return options.name;
+  return options?.query;
+}
+
+function xSearchApplyRel(source) {
+  return applyGate.applySidecarRel('x-search', applyGate.applySlug(source));
+}
+
+function xSearchHasResults(data) {
+  const payload = data?.data && typeof data.data === 'object' ? data.data : data;
+  const content = payload?.content != null ? String(payload.content).trim() : '';
+  const citations = Array.isArray(payload?.citations)
+    ? payload.citations
+    : (Array.isArray(data?.citations) ? data.citations : []);
+  return Boolean(content) || citations.length > 0;
+}
+
+function ensureXSearchApply({ cwd, source, now, output } = {}) {
+  return applyGate.ensureApply({
+    cwd,
+    source,
+    rel: source ? xSearchApplyRel(source) : null,
+    now,
+    output,
+    incompleteMessage: APPLY_INCOMPLETE_MESSAGE,
+  });
+}
+
 function formatXSearchResult(data) {
   const lines = [];
   const payload = data?.data && typeof data.data === 'object' ? data.data : data;
@@ -320,6 +352,15 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
   try {
     const data = await runXSearch(options, deps);
     output(options.json ? JSON.stringify(data, null, 2) : formatXSearchResult(data));
+    if (xSearchHasResults(data)) {
+      const ensureApply = deps.ensureApply || ensureXSearchApply;
+      status = ensureApply({
+        cwd: deps.cwd || process.cwd(),
+        source: xSearchApplySource(options),
+        now: deps.applyNow,
+        output,
+      });
+    }
   } catch (err) {
     output(err.message);
     status = 1;
@@ -332,9 +373,12 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
 
 module.exports = {
   DEFAULT_TIMEOUT_MS,
+  APPLY_INCOMPLETE_MESSAGE,
   parseXSearchArgs,
   buildSearchPayload,
   buildPersonPayload,
   formatXSearchResult,
+  xSearchHasResults,
+  xSearchApplyRel,
   xSearchCommand,
 };

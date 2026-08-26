@@ -9,6 +9,7 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
 const { ensureBilledCommandAuth } = require('../commands/auth');
+const { xSearchApplyRel } = require('../commands/x-search');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -267,6 +268,15 @@ test('atris x-search mints an x-search token from the stored JWT and retries', a
     }
     return { status: 404, body: { error: `unexpected ${request.url}` } };
   });
+
+  const applyDir = path.join(dir, 'atris', 'wiki', 'briefs');
+  fs.mkdirSync(applyDir, { recursive: true });
+  fs.writeFileSync(path.join(dir, xSearchApplyRel('MCP agents')), [
+    'source: MCP agents',
+    'change: commands/x-search.js',
+    'receipt: node --test test/billed-command-auth.test.js',
+    '',
+  ].join('\n'));
 
   try {
     const res = await runCliAsync(['x-search', 'MCP agents'], {
