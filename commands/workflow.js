@@ -448,6 +448,10 @@ async function planAtris(userInput = null) {
   const args = process.argv.slice(3);
   const executeFlag = args.includes('--execute');
   const showFull = args.includes('--full') || args.includes('--verbose');
+  const leftoverRequest = args
+    .filter((token) => !['--execute', '--full', '--verbose'].includes(token))
+    .join(' ')
+    .trim();
 
   const config = loadConfig();
   // Auto-enable local execution mode for "2 fast" / "2 pro" product aliases.
@@ -507,7 +511,8 @@ async function planAtris(userInput = null) {
 
   // Detect uncertainty in inbox context (or direct user input)
   const uncertaintySignals = ['not sure', 'maybe', 'but ', 'thinking about', 'uncertain', 'unclear', 'unsure', 'don\'t know'];
-  const combinedContext = [userInput, inboxContext].filter(Boolean).join('\n');
+  const requestText = String(userInput || leftoverRequest || '').trim();
+  const combinedContext = [requestText, inboxContext].filter(Boolean).join('\n');
   const hasUncertainty = combinedContext && uncertaintySignals.some(signal =>
     combinedContext.toLowerCase().includes(signal)
   );
@@ -550,7 +555,7 @@ async function planAtris(userInput = null) {
   }
   const liveStatus = firstMinute && firstMinute.task && firstMinute.task.status;
   const hasLiveTask = liveStatus === 'claimed' || liveStatus === 'review' || liveStatus === 'open';
-  const showFactory = showFull || Boolean(userInput) || !hasLiveTask;
+  const showFactory = showFull || Boolean(requestText) || !hasLiveTask;
 
   console.log(executionMode === 'prompt' ? 'PROMPT ONLY' : 'ACTION TAKEN');
   console.log('');
@@ -578,10 +583,10 @@ async function planAtris(userInput = null) {
     console.log('');
   }
 
-  if (userInput) {
+  if (requestText) {
     console.log('🎯 DIRECT REQUEST:');
     console.log('─────────────────────────────────────────────────────────────');
-    console.log(userInput);
+    console.log(requestText);
     console.log('');
     console.log('─────────────────────────────────────────────────────────────');
     console.log('');
@@ -653,9 +658,9 @@ async function planAtris(userInput = null) {
     console.log('Note: If `atris/MAP.md` is missing or placeholder, generate it from `atris/atris.md` before writing tasks.');
     console.log('');
   }
-  if (userInput) {
+  if (requestText) {
     console.log('Direct request:');
-    console.log(userInput);
+    console.log(requestText);
     console.log('');
   }
   console.log('Workflow:');
@@ -715,8 +720,8 @@ async function planAtris(userInput = null) {
     let userPrompt = `You are the Navigator. Take ideas from Inbox → break them down into perfect, manageable tasks.\n\n`;
     userPrompt += `⚠️ CRITICAL: You MUST create visualizations BEFORE writing tasks!\n\n`;
 
-    if (userInput) {
-      userPrompt += `## DIRECT REQUEST:\n${userInput}\n\n`;
+    if (requestText) {
+      userPrompt += `## DIRECT REQUEST:\n${requestText}\n\n`;
     }
 
     if (inboxContext) {

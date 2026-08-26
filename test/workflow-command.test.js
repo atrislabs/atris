@@ -26,8 +26,6 @@ const { spawnSync } = require('node:child_process');
 const { spokenLineCount } = require('../lib/first-minute');
 const { renderReviewMinute } = require('../commands/workflow');
 
-const { spokenLineCount } = require('../lib/first-minute');
-
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
