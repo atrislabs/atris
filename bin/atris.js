@@ -2739,8 +2739,9 @@ if (command === 'init') {
     const raw = process.argv.slice(3);
     const { gmailCommand, extractGmailMailboxAccount } = require('../commands/integrations');
     const mailbox = extractGmailMailboxAccount(raw);
-    const gateInput = mailbox.mailboxAccountId ? ['--account', ...mailbox.args] : mailbox.args;
-    const gate = requireAccountBound(gateInput);
+    // Mailbox --account <id> is a selector, not the workspace opt-in.
+    // Scratch folders refuse every gmail verb the same way as slack/inbox.
+    const gate = requireAccountBound(mailbox.args.filter((arg) => arg !== '--account'));
     if (!gate.ok) {
       process.exit(refuseAccountGlobal());
       return;
