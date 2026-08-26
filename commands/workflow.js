@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { getLogPath } = require('../lib/journal');
-const { buildFirstMinute } = require('../lib/first-minute');
+const { buildFirstMinute, isCertifiedReview, personName, pickNext, taskCommand } = require('../lib/first-minute');
+const { isNonInteractive } = require('../lib/noninteractive');
 const { buildToolResultBody } = require('../lib/tool-result-encode');
 
 function wrapWorkflowText(text, width = 76) {
@@ -41,6 +42,77 @@ function printWorkflowBrief(lines) {
     }
   }
   console.log('');
+}
+
+function reviewSoftTitle(title, maxWords = 5) {
+  const words = String(title || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  if (!words.length) return '';
+  const text = words.slice(0, maxWords).join(' ').replace(/[.,;:!?]+$/g, '');
+  return `"${text.toLowerCase()}"`;
+}
+
+function loadReviewTasks(root = process.cwd()) {
+  try {
+    const taskDb = require('../lib/task-db');
+    const db = taskDb.open();
+    const workspaceRoot = taskDb.workspaceRoot(root);
+    const rows = taskDb.listTasks(db, { workspaceRoot, limit: 200 });
+    if (Array.isArray(rows) && rows.length) return taskDb.withTaskDisplayRefs(rows);
+  } catch {
+    // Fall through to the local projection. Tests and fresh folders often have no db.
+  }
+  const projectionPath = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(projectionPath, 'utf8'));
+    return Array.isArray(parsed.tasks) ? parsed.tasks : [];
+  } catch {
+    return [];
+  }
+}
+
+function wantsReviewQueue(args = []) {
+  const list = Array.isArray(args) ? args : [];
+  return list.includes('--json')
+    || list.includes('--all')
+    || list.includes('--limit')
+    || list.includes('--group-by');
+}
+
+function renderReviewMinute({
+  root = process.cwd(),
+  person,
+  tasks,
+} = {}) {
+  const who = person != null ? person : personName();
+  const greet = who ? `hey ${who}, ` : '';
+  const all = Array.isArray(tasks) ? tasks : loadReviewTasks(root);
+  const reviews = all.filter((task) => task && task.status === 'review');
+  const checking = reviews.filter((task) => !isCertifiedReview(task));
+  const picked = pickNext({ tasks: reviews, person: who });
+  const task = picked.task || null;
+  const title = task ? reviewSoftTitle(task.title) : '';
+
+  if (task && isCertifiedReview(task)) {
+    const win = title
+      ? `${greet}${title} is waiting for your ok.`
+      : `${greet}one finished thing is waiting for your ok.`;
+    const lines = [win];
+    if (checking.length === 1) lines.push('1 still being checked.');
+    if (checking.length > 1) lines.push(`${checking.length} still being checked.`);
+    lines.push('');
+    lines.push(`next: ${taskCommand(task, who)}`);
+    return lines.join('\n');
+  }
+
+  if (checking.length === 1) {
+    const named = title || reviewSoftTitle(checking[0] && checking[0].title);
+    if (named) return `${greet}${named} is still being checked.`;
+    return `${greet}1 finished thing is still being checked.`;
+  }
+  if (checking.length > 1) {
+    return `${greet}${checking.length} finished things are still being checked.`;
+  }
+  return 'nothing is waiting on you.';
 }
 
 const CONFIDENCE_GATE_LINES = [
@@ -1098,19 +1170,11 @@ async function reviewAtris() {
   if (!executeFlag && !showFull) {
     const forwarded = ['reviews', ...args.filter(arg => !['--execute', '--full', '--verbose'].includes(arg))];
     const { run: runTaskCommand } = require('./task');
-    if (!wantsTaskJson) {
-      printWorkflowBrief([
-        'Atris Review is the human checkpoint for proof-ready work.',
-        'Accept only when the proof is real; revise when the claim is vague, stale, or too narrow.',
-        'Agents can add review proof here, but XP waits for human accept.',
-      ]);
+    if (wantsTaskJson || wantsReviewQueue(args)) {
+      await runTaskCommand(forwarded);
+      return;
     }
-    await runTaskCommand(forwarded);
-    if (!wantsTaskJson) {
-      printWorkflowBrief([
-        'Need the legacy Validator prompt? Run `atris review --verbose`.',
-      ]);
-    }
+    console.log(renderReviewMinute());
     return;
   }
 
@@ -1513,8 +1577,8 @@ async function reviewAtris() {
     }
   }
 
-  // Prompt for learnings (skip if stdin is not a TTY)
-  if (!process.stdin.isTTY) return;
+  // Prompt for learnings. Headless and forced non-interactive never ask.
+  if (isNonInteractive()) return;
 
   console.log('');
   if (showFull) {
@@ -1667,6 +1731,7 @@ module.exports = {
   planAtris,
   doAtris,
   reviewAtris,
+  renderReviewMinute,
   executeAgentSDKFast,
   makeCloudExecutor,
   postToolResult

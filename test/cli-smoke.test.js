@@ -985,17 +985,17 @@ test('do --full includes full executor dumps', () => {
   }
 });
 
-test('review prints concise validator prompt by default', () => {
+test('review prints a first-minute screen by default', () => {
   const dir = makeTempDir();
   try {
     runCli(['init'], { cwd: dir, input: '\n' });
 
     const res = runCli(['review'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris Review is the human checkpoint/);
-    assert.match(res.stdout, /nothing is waiting on you\. everything that finished has already landed\./);
+    assert.match(res.stdout, /nothing is waiting on you\./);
+    assert.doesNotMatch(res.stdout, /Atris Review is the human checkpoint/);
+    assert.doesNotMatch(res.stdout, /Need the legacy Validator prompt/);
     assert.doesNotMatch(res.stdout, /clear completed tasks out of TODO/);
-    assert.match(res.stdout, /Need the legacy Validator prompt\? Run `atris review --verbose`/);
     assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT/);
   } finally {
     cleanupTempDir(dir);
