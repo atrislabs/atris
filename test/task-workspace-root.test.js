@@ -6,6 +6,8 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const { workspaceRoot } = require('../lib/task-db');
+const { resolveWorkspaceRoot } = require('../lib/mission-root');
+const { isGenericScratchRoot } = require('../lib/scratch-root');
 
 function makeTree() {
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ws-root-')));
@@ -80,4 +82,27 @@ test('non-git tree falls back to the nearest bare atris/ marker', () => {
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
+});
+
+// A src/ folder inside a real project still walks up. The /tmp stop must not
+// break ordinary repo walk-up just because the checkout happens to live under tmp.
+test('src inside a real project still walks up to that project', () => {
+  const { base, repo } = makeTree();
+  try {
+    const src = path.join(repo, 'src');
+    fs.mkdirSync(src, { recursive: true });
+    assert.equal(workspaceRoot(src), repo);
+    assert.equal(resolveWorkspaceRoot(src), repo);
+    assert.equal(workspaceRoot(src), workspaceRoot(repo));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('generic scratch roots are /tmp, /private/tmp, /var/tmp, and os.tmpdir', () => {
+  assert.equal(isGenericScratchRoot('/tmp'), true);
+  assert.equal(isGenericScratchRoot('/private/tmp'), true);
+  assert.equal(isGenericScratchRoot('/var/tmp'), true);
+  assert.equal(isGenericScratchRoot(os.tmpdir()), true);
+  assert.equal(isGenericScratchRoot(path.join(os.tmpdir(), 'atris-next-room')), false);
 });
