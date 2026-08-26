@@ -1233,7 +1233,7 @@ async function reviewAtris() {
         fresh: true,
         asJson: wantsTaskJson,
       });
-      process.exitCode = code;
+      if (code !== 0) process.exit(code);
       return;
     }
     if (wantsTaskJson || wantsReviewQueue(args)) {
