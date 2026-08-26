@@ -727,7 +727,7 @@ function showHelpAll() {
   console.log('  supabase  - supabase cli wrapper (doctor, auth, status/db/functions)');
   console.log('  linear    - linear cli wrapper (doctor, auth, issue list/create/view/update)');
   console.log('  stripe    - stripe cli wrapper (doctor, auth, listen/trigger/products)');
-  console.log('  gmail      - Email commands (inbox, read, archive, accounts, use)');
+  console.log('  gmail      - email commands (connect, inbox, read, archive, accounts, use)');
   console.log('  calendar   - Calendar commands (today, week)');
   console.log('  twitter    - Twitter commands (post)');
   console.log('  slack      - Slack commands (channels)');

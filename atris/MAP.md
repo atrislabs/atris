@@ -1492,6 +1492,7 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 - **Entry point:** `commands/integrations.js`
 - **Commands:**
+- `atris gmail connect [name]` (`commands/integrations.js:269`): starts browser auth and polls for the named account; dispatch near `commands/integrations.js:400`
 - `atris gmail [inbox|read <id>]` (`commands/integrations.js:312`): Email inbox and message reading; unbound scratch folders refuse bare `atris gmail` via `requireAccountBound` before this runs
 - `atris calendar [today|week]` (lines 167-184): Calendar events
 - `atris twitter [post <text>]` (lines 232-246): Twitter posting
@@ -1500,10 +1501,11 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 - **Auth:** Uses `getAuthToken()` (line 16) from `~/.atris/credentials.json`
 - **Routing:** `bin/atris.js:2703` (`command === 'gmail'`) and `bin/atris.js:2738` (`command === 'slack'`): always `requireAccountBound`; `--help` still prints usage
 - **Help:** `bin/atris.js:884-894` (`showIntegrationsHelp`) and `bin/atris.js:1467-1472` route `integrations --help` before auth/session state or backend status checks
+- **Gmail connect regression:** `test/gmail-account.test.js:99` (name validation), `test/gmail-account.test.js:129` (poll success), `test/gmail-account.test.js:182` (timeout)
 - **Regression:** `test/commands.test.js:4279-4294` covers integrations help without login errors or `.atris` creation
 - **Value:** Manage external services without leaving the CLI
 
-**Search:** `rg "gmailCommand|calendarCommand|twitterCommand|slackCommand|integrationsStatus|showIntegrationsHelp|integrations --help|--approved|requireAccountBound" bin/atris.js commands/integrations.js lib/account-bound.js test/commands.test.js test/dogfood-pass3-27-28.test.js`
+**Search:** `rg "gmailConnect|gmailCommand|calendarCommand|twitterCommand|slackCommand|integrationsStatus|showIntegrationsHelp|integrations --help|--approved|requireAccountBound" bin/atris.js commands/integrations.js lib/account-bound.js test/gmail-account.test.js test/commands.test.js test/dogfood-pass3-27-28.test.js`
 
 ### Feature: State Detection
 
