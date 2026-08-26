@@ -1469,9 +1469,10 @@ test('bare wish stops nudging old shipped wishes without reviews', () => {
     });
 
     const nudge = runCli(['wish'], { cwd: dir });
-    assert.equal(nudge.status, 2);
+    assert.equal(nudge.status, 0, nudge.stderr || nudge.stdout);
     assert.match(nudge.stdout, /#1 make fresh nudge: atris wish review 1 "<one sentence>"/);
     assert.doesNotMatch(nudge.stdout, /stale nudge/);
+    assert.doesNotMatch(nudge.stdout, /Usage: atris wish/);
 
     const list = runCli(['wish', 'list'], { cwd: dir });
     assert.equal(list.status, 0, list.stderr || list.stdout);
@@ -1647,8 +1648,8 @@ test('bare wish prints review nudges for completed or verified wishes', () => {
     });
 
     const res = runCli(['wish'], { cwd: dir });
-    assert.equal(res.status, 2);
-    assert.match(res.stdout, /Usage: atris wish/);
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.doesNotMatch(res.stdout, /Usage: atris wish/);
     assert.match(res.stdout, /Wishes ready for review:/);
     assert.match(res.stdout, /make completed thing: atris wish review \S+ "<one sentence>"/);
     assert.match(res.stdout, /make verified thing: atris wish review \S+ "<one sentence>"/);

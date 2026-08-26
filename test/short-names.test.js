@@ -145,7 +145,7 @@ test('wish display uses short labels and review accepts a bare display number', 
     assert.doesNotMatch(list.stdout, /wish-2026-07-06/);
 
     const nudge = runCli(['wish'], { cwd: dir });
-    assert.equal(nudge.status, 2);
+    assert.equal(nudge.status, 0, nudge.stderr || nudge.stdout);
     assert.match(nudge.stdout, /#8 orb loop: atris wish review 8 "<one sentence>"/);
     assert.doesNotMatch(nudge.stdout, /wish-2026-07-06-claim-orb-loop/);
 

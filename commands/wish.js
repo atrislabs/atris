@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+const { buildFirstMinute } = require('../lib/first-minute');
 const {
   analyzeWishParts,
   auditWish,
@@ -41,6 +44,15 @@ const {
 const { enqueueCloudMission, VALID_CLOUD_LANES } = require('../lib/cloud-mission');
 const { printWishStats } = require('../lib/wish-stats');
 const { parseVerifyCommand } = require('../lib/auto-accept-certified');
+
+function printWishReceptionist(root = process.cwd()) {
+  const fresh = !fs.existsSync(path.join(root, 'atris'));
+  const screen = buildFirstMinute({ root, fresh });
+  console.log('');
+  console.log(screen.text);
+  if (!fresh) printReviewNudges(root);
+  return 0;
+}
 
 function showHelp() {
   console.log('');
@@ -396,14 +408,12 @@ function printLessons(root) {
 
 function wishCommand(args = [], deps = {}) {
   const first = String(args[0] || '').trim();
-  if (!first) {
-    showHelp();
-    printReviewNudges(process.cwd());
-    return 2;
-  }
   if (first === '--help' || first === '-h' || first === 'help') {
     showHelp();
     return 0;
+  }
+  if (!first) {
+    return printWishReceptionist(process.cwd());
   }
   if (first === 'show') {
     return printWishShow(process.cwd(), args[1]);
