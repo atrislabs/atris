@@ -60,7 +60,7 @@ const {
   decisionMarkerFor,
   DECISION_REFUSE_REASON,
 } = require('../lib/task-decision');
-const { buildFirstMinute, deskNextCommand, personName, pickNext, taskCommand, taskNextCommand } = require('../lib/first-minute');
+const { buildFirstMinute, deskNextCommand, personName, pickNext, speakFirstMinute, taskCommand, taskNextCommand } = require('../lib/first-minute');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -6166,6 +6166,23 @@ function renderTaskDesk(rows, refRows = rows) {
 }
 
 function cmdAdd(args) {
+  const root = process.cwd();
+  // Empty folder talks like bare atris. A leftover title is not a
+  // task desk. After init, a title still files.
+  if (isUninitializedTaskFolder(root)) {
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: 'init',
+        command: 'atris init --minimal',
+        task_id: null,
+        projection_path: null,
+        task: null,
+      });
+      return;
+    }
+    return speakFirstMinute({ root, fresh: true });
+  }
   const pos = positional(args);
   const title = pos.join(' ').trim();
   if (!title) {
