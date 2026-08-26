@@ -15,6 +15,8 @@ const CACHE_PATH = path.join(CACHE_HOME, '.atris', 'youtube-search-cache.json');
 const RATE_LIMIT_MESSAGE =
   'youtube rate-limited local search. do not use --paid as a fallback; retry later.';
 const CACHE_NOTE = 'cached because youtube rate-limited local search.';
+const PAID_CACHE_REFUSE =
+  'free cache still has results for this query. drop --paid or wait until the cache expires.';
 const SAMPLE_ROW = {
   title: 'MCP Agents in 2026',
   channel: 'Dev Channel',
@@ -456,42 +458,121 @@ test('youtube search persistent 429 with corrupt cache keeps the rate-limit sent
   assert.equal(output.join('\n').trim(), RATE_LIMIT_MESSAGE);
 });
 
-test('youtube search --paid does not read or write the free search cache', async () => {
+test('youtube search --paid refuses on a fresh free-cache hit and does not bill', async () => {
+  const now = 1_700_000_000_000;
   const fsMock = mockSearchFs({
-    [CACHE_PATH]: JSON.stringify({
-      query: 'MCP agents',
-      savedAt: Date.now(),
+    [CACHE_PATH]: `${JSON.stringify({
+      query: 'MCP agents 2026',
+      savedAt: now - 10 * 60 * 1000,
       rows: [SAMPLE_ROW],
-    }),
+    })}\n`,
   });
   const before = fsMock.store[CACHE_PATH];
   const output = [];
+  let apiCalls = 0;
+  let authCalls = 0;
+
+  const status = await youtubeCommand(['search', '--paid', 'mcp  agents 2026', '--limit', '5'], {
+    ...cacheDeps({ fs: fsMock, now: () => now }),
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0, stdout: '' }),
+    ensureBilledCommandAuth: async () => {
+      authCalls += 1;
+      return { ok: true, token: 'should-not-mint' };
+    },
+    ensureValidCredentials: async () => ({ credentials: { token: 'should-not-use' } }),
+    apiRequestJson: async (pathname) => {
+      apiCalls += 1;
+      return { ok: false, status: 500, error: `unexpected ${pathname}` };
+    },
+  });
+
+  assert.equal(status, 2);
+  assert.equal(apiCalls, 0);
+  assert.equal(authCalls, 0);
+  assert.equal(fsMock.store[CACHE_PATH], before);
+  assert.equal(output.join('\n').trim(), PAID_CACHE_REFUSE);
+  assert.doesNotMatch(output.join('\n'), /credits|\/youtube\/search|token|burn|should-not/i);
+});
+
+test('youtube search --paid proceeds when the free cache is absent', async () => {
+  const output = [];
+  const calls = [];
+  const fsMock = mockSearchFs();
 
   const status = await youtubeCommand(['search', '--paid', 'MCP agents', '--limit', '5'], {
     ...cacheDeps({ fs: fsMock }),
     output: (line) => output.push(line),
     runner: () => ({ status: 0, stdout: '' }),
     ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
-    apiRequestJson: async () => ({
-      ok: true,
-      status: 200,
-      data: {
-        status: 'success',
-        credits_used: 5,
-        credits_remaining: 995,
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return {
+        ok: true,
+        status: 200,
         data: {
-          results: [
-            { title: 'Paid Only', url: 'https://www.youtube.com/watch?v=paid111' },
-          ],
+          status: 'success',
+          credits_used: 5,
+          credits_remaining: 995,
+          data: {
+            results: [
+              { title: 'Paid Only', url: 'https://www.youtube.com/watch?v=paid111' },
+            ],
+          },
         },
-      },
-    }),
+      };
+    },
   });
 
   assert.equal(status, 0);
-  assert.equal(fsMock.store[CACHE_PATH], before);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].pathname, '/youtube/search');
+  assert.equal(fsMock.store[CACHE_PATH], undefined);
   assert.match(output.join('\n'), /Paid Only \| https:\/\/www\.youtube\.com\/watch\?v=paid111/);
-  assert.doesNotMatch(output.join('\n'), /cached because|youtu\.be\/mcp2026a/);
+});
+
+test('youtube search --paid proceeds when the free cache is stale', async () => {
+  const now = 1_700_000_000_000;
+  const fsMock = mockSearchFs({
+    [CACHE_PATH]: JSON.stringify({
+      query: 'MCP agents',
+      savedAt: now - (60 * 60 * 1000) - 1,
+      rows: [SAMPLE_ROW],
+    }),
+  });
+  const before = fsMock.store[CACHE_PATH];
+  const output = [];
+  const calls = [];
+
+  const status = await youtubeCommand(['search', '--paid', 'MCP agents'], {
+    ...cacheDeps({ fs: fsMock, now: () => now }),
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          status: 'success',
+          credits_used: 5,
+          credits_remaining: 990,
+          data: {
+            results: [
+              { title: 'Stale Cache Paid', url: 'https://www.youtube.com/watch?v=stale01' },
+            ],
+          },
+        },
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].pathname, '/youtube/search');
+  assert.equal(fsMock.store[CACHE_PATH], before);
+  assert.match(output.join('\n'), /Stale Cache Paid \| https:\/\/www\.youtube\.com\/watch\?v=stale01/);
+  assert.doesNotMatch(output.join('\n'), new RegExp(PAID_CACHE_REFUSE));
 });
 
 test('youtube search --paid posts /youtube/search and prints titles, permalinks, credits', async () => {
@@ -500,6 +581,7 @@ test('youtube search --paid posts /youtube/search and prints titles, permalinks,
   let runnerCalls = 0;
 
   const status = await youtubeCommand(['search', '--paid', 'MCP agents', '--limit', '5'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     runner: () => {
       runnerCalls += 1;
@@ -545,6 +627,7 @@ test('youtube search --paid posts /youtube/search and prints titles, permalinks,
 test('youtube search --paid --json prints the raw payload', async () => {
   const output = [];
   const status = await youtubeCommand(['search', '--paid', 'hello', '--json'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
     apiRequestJson: async () => ({
@@ -566,6 +649,7 @@ test('youtube search --paid --json prints the raw payload', async () => {
 test('youtube search --paid empty results prints credits and exits 2', async () => {
   const output = [];
   const status = await youtubeCommand(['search', '--paid', 'nothing here'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
     apiRequestJson: async () => ({
@@ -582,6 +666,7 @@ test('youtube search --paid empty results prints credits and exits 2', async () 
 test('youtube search --paid surfaces 401 login hint', async () => {
   const output = [];
   const status = await youtubeCommand(['search', '--paid', 'agents'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
     loadCredentials: () => ({ token: 't' }),
@@ -599,6 +684,7 @@ test('youtube search --paid surfaces 401 login hint', async () => {
 test('youtube search --paid surfaces 402 credits hint', async () => {
   const output = [];
   const status = await youtubeCommand(['search', '--paid', 'agents'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
     apiRequestJson: async () => ({
@@ -619,6 +705,7 @@ test('youtube search --paid mints only the youtube scope after an expired user w
   const secret = 'minted-youtube-search-secret';
 
   const status = await youtubeCommand(['search', '--paid', 'MCP agents'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ error: 'token_invalid', detail: 'Token expired' }),
     loadCredentials: () => ({
@@ -667,6 +754,7 @@ test('youtube search --paid remints after a billed 401 and retries once', async 
   const calls = [];
   const secret = 'minted-after-401-yt-search';
   const status = await youtubeCommand(['search', '--paid', 'agents'], {
+    ...cacheDeps(),
     output: () => {},
     ensureValidCredentials: async () => ({ credentials: { token: 'user-jwt' } }),
     loadCredentials: () => ({ token: 'user-jwt', refresh_token: 'refresh-jwt' }),
@@ -701,6 +789,7 @@ test('youtube search --paid with no stored JWT fails in one sentence and stays o
   let apiCalls = 0;
   let runnerCalls = 0;
   const status = await youtubeCommand(['search', '--paid', 'agents'], {
+    ...cacheDeps(),
     output: (line) => output.push(line),
     runner: () => {
       runnerCalls += 1;
