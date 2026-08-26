@@ -6,6 +6,7 @@
  *   atris feedback submit "message here"       Submit feedback
  *   atris feedback                              List feedback
  *   atris feedback list                         List feedback
+ *   atris feedback triage <id> [--dispatch]     Build or dispatch a reproduction brief
  *   atris feedback resolve <id> "<resolution>"  Mark resolved (admin)
  *   atris feedback close <id>                   Close as wontfix (admin)
  *   atris feedback delete <id>                  Delete feedback (admin)
@@ -18,10 +19,17 @@ const fs = require('fs');
 const path = require('path');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
+const {
+  planFeedbackTriage,
+  renderFeedbackTriageBrief,
+  dispatchFeedbackTriage,
+  recordFeedbackTriageVerdict,
+} = require('../lib/feedback-triage');
 
 const KNOWN_FEEDBACK_COMMANDS = new Set([
   'list',
   'submit',
+  'triage',
   'resolve',
   'close',
   'delete',
@@ -151,6 +159,43 @@ async function resolveIdPrefix(prefix, { token, businessId }) {
   return { id: matches[0].id, item: matches[0] };
 }
 
+function findFeedbackItem(prefix, items) {
+  const requested = String(prefix || '').trim();
+  if (!requested) return { error: 'feedback id is required' };
+  const matches = (items || []).filter((item) => String(item && item.id || '').startsWith(requested));
+  if (matches.length === 0) return { error: `No feedback matches id prefix "${requested}"` };
+  if (matches.length > 1) return { error: `Ambiguous id "${requested}"; matches ${matches.length} items. Use a longer prefix.` };
+  return { item: matches[0] };
+}
+
+async function triageFeedback(idPrefix, options = {}) {
+  const workspace = path.resolve(options.workspace || process.cwd());
+  const token = options.token || getAuth().token;
+  const fetchItems = options.fetchFeedbackItems || fetchFeedbackItems;
+  const items = await fetchItems({ token, businessId: options.businessId, limit: 200 });
+  const lookup = findFeedbackItem(idPrefix, items);
+  if (lookup.error) throw new Error(lookup.error);
+
+  const brief = planFeedbackTriage(lookup.item, workspace);
+  const write = options.write || console.log;
+  write(renderFeedbackTriageBrief(brief));
+  if (!options.dispatch) return { brief, dispatch: null, verdict: null };
+
+  const dispatchBrief = options.dispatchFeedbackTriage || dispatchFeedbackTriage;
+  const dispatched = await dispatchBrief(brief, workspace, options.dispatchDeps || {});
+  const recordVerdict = options.recordFeedbackTriageVerdict || recordFeedbackTriageVerdict;
+  const recorded = recordVerdict(lookup.item, workspace, {
+    verdict: dispatched.verdict,
+    evidence: dispatched.evidence,
+    verify_command: brief.verify_command,
+    engine: dispatched.engine,
+  });
+  write('');
+  write(`verdict: ${recorded.record.verdict}`);
+  write(`${recorded.appended ? 'recorded' : 'already recorded'}: ${path.relative(workspace, recorded.path)}`);
+  return { brief, dispatch: dispatched, verdict: recorded };
+}
+
 async function resolveFeedback(idPrefix, resolution) {
   if (!idPrefix || !resolution) {
     console.error('Usage: atris feedback resolve <id> "<resolution>"');
@@ -236,6 +281,8 @@ function printHelp(write = console.log) {
   write('  atris feedback submit "msg" --business <slug>');
   write('  atris feedback                         List feedback');
   write('  atris feedback list                    List feedback');
+  write('  atris feedback triage <id>             Print a reproduction brief');
+  write('  atris feedback triage <id> --dispatch  Run triage and record its verdict');
   write('  atris feedback resolve <id> "<note>"   Mark resolved (admin)');
   write('  atris feedback close <id>              Close as wontfix (admin)');
   write('  atris feedback delete <id>             Delete feedback (admin)');
@@ -296,7 +343,8 @@ function rejectUnknownFeedbackCommand(subcommand) {
 
 async function feedbackCommand() {
   const rawArgs = process.argv.slice(3);
-  const [businessArg, args] = extractFlag(rawArgs, '--business', '-b');
+  const dispatchRequested = rawArgs.includes('--dispatch');
+  const [businessArg, args] = extractFlag(rawArgs.filter((arg) => arg !== '--dispatch'), '--business', '-b');
   const businessId = resolveBusinessArg(businessArg);
   if (businessArg && !businessId) {
     console.error(`Error: unknown business "${businessArg}". Check ~/.atris/businesses.json`);
@@ -326,6 +374,14 @@ async function feedbackCommand() {
       rejectMissingFeedbackMessage();
     }
     await submitFeedback(message, { businessId });
+    return;
+  }
+
+  if (subcommand === 'triage') {
+    if (!args[1] || args.length !== 2) {
+      throw new Error('usage: atris feedback triage <id> [--dispatch]');
+    }
+    await triageFeedback(args[1], { businessId, dispatch: dispatchRequested });
     return;
   }
 
@@ -359,4 +415,8 @@ async function feedbackCommand() {
   rejectUnknownFeedbackCommand(subcommand);
 }
 
-module.exports = { feedbackCommand };
+module.exports = {
+  feedbackCommand,
+  findFeedbackItem,
+  triageFeedback,
+};

@@ -758,6 +758,7 @@ function showHelpAll() {
   console.log('Feedback:');
   console.log('  feedback "msg"             - Submit feedback');
   console.log('  feedback                   - List feedback queue');
+  console.log('  feedback triage <id>       - Print a reproduction brief (--dispatch to run)');
   console.log('  feedback resolve <id> "<note>" - Mark resolved (admin)');
   console.log('  feedback close <id>        - Close as wontfix (admin)');
   console.log('  feedback delete <id>       - Delete feedback (admin)');
