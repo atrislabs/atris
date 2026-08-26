@@ -12776,7 +12776,7 @@ test('task proof-only agent env blocks acceptance verbs', () => {
     const ready = runCli([
       'task', 'ready', ref,
       '--as', 'codex',
-      '--proof', 'node --check commands/task.js passed and git status --porcelain passed for proof-only guard',
+      '--verify', `node --check ${path.join(repoRoot, 'commands', 'task.js')}`,
       '--json',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
@@ -13785,7 +13785,7 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(certifiedCreated.status, 0, certifiedCreated.stderr);
     const certifiedTask = JSON.parse(certifiedCreated.stdout).task;
     assert.equal(runCli(['task', 'claim', certifiedTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const certifiedProof = `Product proof: Human approval queue shows a compact certified packet without stale objective text. ${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, focused node --check review queue test, live atris task reviews json showing rows, git status --porcelain -- commands/task.js test/commands.test.js clean`;
+    const certifiedProof = `Product proof: Human approval queue shows a compact certified packet without stale objective text. ${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, focused review queue behavior checked, live atris task reviews json showing rows, git status --porcelain -- commands/task.js test/commands.test.js clean`;
     assert.equal(runCli([
       'task', 'ready', certifiedTask.display_id,
       '--proof', certifiedProof,
@@ -14710,12 +14710,14 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
     assert.equal(created.status, 0, created.stderr);
     const task = JSON.parse(created.stdout).task;
     const ref = task.display_id;
-    const stalePrProof = 'Verified #1600 remains OPEN/draft/CLEAN at head be8797f. git diff --check passed.';
+    const stalePrVerify = `node --check ${path.join(repoRoot, 'commands', 'task.js')}`;
+    const stalePrProof = `Verified #1600 remains OPEN/draft/CLEAN at head be8797f. ${stalePrVerify} passed.`;
 
     assert.equal(runCli([
       'task', 'ready', ref,
       '--as', 'codex',
       '--proof', stalePrProof,
+      '--verify', stalePrVerify,
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', ref,
