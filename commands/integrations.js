@@ -5,6 +5,8 @@
  *   atris gmail inbox [--account <id>]       - List recent emails for a mailbox
  *   atris gmail read <id> [--account <id>]   - Read specific email
  *   atris gmail archive <id> [...] [--account <id>] - Archive messages
+ *   atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>] - Send an email
+ *   atris gmail voice [account] [--clear]    - Edit an account's writing voice
  *   atris gmail connect [name]              - Connect or reconnect a Gmail account
  *   atris gmail accounts                     - List connected Gmail accounts and the active account
  *   atris gmail use [<account_id|name>]      - Choose or set the active Gmail account
@@ -35,6 +37,8 @@ const { spawnSync } = require('child_process');
 const CALENDAR_CACHE_PATH = path.join(os.homedir(), '.atris', 'calendar-events-cache.json');
 const GMAIL_CONNECT_POLL_MS = 3000;
 const GMAIL_CONNECT_TIMEOUT_MS = 3 * 60 * 1000;
+const GMAIL_SEND_USAGE = 'usage: atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>]';
+const GMAIL_VOICE_USAGE = 'usage: atris gmail voice [account] [--clear]';
 
 function gmailAccountStatePath() {
   return process.env.ATRIS_GMAIL_ACCOUNT_FILE
@@ -311,6 +315,155 @@ async function gmailArchive(messageIds, options = {}) {
   console.log(`Archived ${archived} message${archived === 1 ? '' : 's'}. They stay searchable in All Mail.`);
 }
 
+function parseGmailSendArgs(args = []) {
+  let accountId = null;
+  let bodyFile = null;
+  const positional = [];
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--account' || arg === '--body-file') {
+      const value = String(args[i + 1] || '').trim();
+      if (!value || value.startsWith('--')) {
+        console.error(GMAIL_SEND_USAGE);
+        process.exit(2);
+      }
+      if (arg === '--account') accountId = value;
+      else bodyFile = value;
+      i += 1;
+      continue;
+    }
+    positional.push(arg);
+  }
+
+  const [to, subject, ...bodyParts] = positional;
+  if (!String(to || '').trim()
+    || !String(subject || '').trim()
+    || (bodyFile ? bodyParts.length > 0 : bodyParts.length === 0)) {
+    console.error(GMAIL_SEND_USAGE);
+    process.exit(2);
+  }
+
+  let body = bodyParts.join(' ');
+  if (bodyFile) {
+    try {
+      body = fs.readFileSync(bodyFile, 'utf8');
+    } catch (error) {
+      console.error(`could not read body file "${bodyFile}": ${error.message}`);
+      process.exit(1);
+    }
+  }
+
+  return { to, subject, body, accountId };
+}
+
+async function gmailSend(to, subject, body, options = {}) {
+  const token = await getAuthToken();
+  const accountId = resolveGmailAccountId(options.accountId);
+  const accounts = await fetchGmailAccounts(token);
+  const account = findGmailAccount(accounts, accountId);
+
+  if (!account) {
+    console.error(`gmail account "${accountId}" is not connected.`);
+    process.exit(1);
+  }
+
+  const result = await apiRequestJson('/integrations/gmail/send', {
+    method: 'POST',
+    token,
+    body: { to, subject, body, account_id: accountId },
+  });
+
+  if (!result.ok) {
+    console.error(`could not send gmail message: ${result.error || 'request failed'}`);
+    process.exit(1);
+  }
+
+  const { email, id } = gmailAccountIdentity(account);
+  console.log(`sent to ${to} from ${email || id}`);
+}
+
+function parseGmailVoiceArgs(args = []) {
+  let clear = false;
+  const positional = [];
+  for (const arg of args) {
+    if (arg === '--clear') clear = true;
+    else positional.push(arg);
+  }
+  if (positional.length > 1 || positional.some((arg) => String(arg).startsWith('--'))) {
+    console.error(GMAIL_VOICE_USAGE);
+    process.exit(2);
+  }
+  return { accountId: positional[0] || null, clear };
+}
+
+function editGmailVoice(currentVoice, deps = {}) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-gmail-voice-'));
+  const voicePath = path.join(tempDir, 'voice.md');
+  let editedVoice;
+  let editorError = null;
+
+  try {
+    fs.writeFileSync(voicePath, currentVoice, 'utf8');
+    const editor = deps.editor || process.env.EDITOR || 'vi';
+    const shell = deps.shell || process.env.SHELL || '/bin/sh';
+    const run = deps.spawnSync || spawnSync;
+    const result = run(shell, ['-c', 'exec $EDITOR "$1"', 'atris-gmail-voice', voicePath], {
+      stdio: 'inherit',
+      env: { ...process.env, EDITOR: editor },
+    });
+    if (result.error || result.status !== 0) {
+      editorError = result.error?.message || `editor exited with status ${result.status}`;
+    } else {
+      editedVoice = fs.readFileSync(voicePath, 'utf8');
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  if (editorError) {
+    console.error(`could not edit gmail voice: ${editorError}`);
+    process.exit(1);
+  }
+  return editedVoice;
+}
+
+async function gmailVoice(accountId, options = {}) {
+  const token = await getAuthToken();
+  const resolvedAccountId = resolveGmailAccountId(accountId);
+  const accounts = await fetchGmailAccounts(token);
+  const account = findGmailAccount(accounts, resolvedAccountId);
+
+  if (!account) {
+    console.error(`gmail account "${resolvedAccountId}" is not connected.`);
+    process.exit(1);
+  }
+
+  let voiceMd = '';
+  if (!options.clear) {
+    const stdinIsTTY = options.stdinIsTTY === undefined
+      ? Boolean(process.stdin.isTTY)
+      : options.stdinIsTTY;
+    voiceMd = stdinIsTTY
+      ? editGmailVoice(String(account.voice_md || ''), options)
+      : String((options.readStdin || (() => fs.readFileSync(0, 'utf8')))());
+  }
+
+  const { id, name } = gmailAccountIdentity(account);
+  const result = await apiRequestJson(`/integrations/gmail/accounts/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    token,
+    body: { voice_md: voiceMd },
+  });
+
+  if (!result.ok) {
+    console.error(`could not ${options.clear ? 'clear' : 'save'} gmail voice: ${result.error || 'request failed'}`);
+    process.exit(1);
+  }
+
+  console.log(`voice ${options.clear ? 'cleared' : 'saved'} for ${name}`);
+}
+
 function openGmailAuthUrl(authUrl, deps = {}) {
   const run = deps.spawnSync || spawnSync;
   const platform = deps.platform || process.platform;
@@ -457,6 +610,16 @@ async function gmailCommand(subcommand, ...args) {
       await gmailArchive(parsed.positional, { accountId: parsed.accountId || undefined });
       break;
     }
+    case 'send': {
+      const parsed = parseGmailSendArgs(args);
+      await gmailSend(parsed.to, parsed.subject, parsed.body, { accountId: parsed.accountId || undefined });
+      break;
+    }
+    case 'voice': {
+      const parsed = parseGmailVoiceArgs(args);
+      await gmailVoice(parsed.accountId, { clear: parsed.clear });
+      break;
+    }
     case 'connect':
       await gmailConnect(args[0]);
       break;
@@ -471,6 +634,8 @@ async function gmailCommand(subcommand, ...args) {
       console.log('  atris gmail inbox [--account <id>]       - list recent emails for a mailbox');
       console.log('  atris gmail read <id> [--account <id>]   - read specific email');
       console.log('  atris gmail archive <id> [...] [--account <id>] - archive messages (reversible, all mail keeps them)');
+      console.log('  atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>] - send an email');
+      console.log('  atris gmail voice [account] [--clear]    - edit or clear an account writing voice');
       console.log('  atris gmail connect [name]               - connect or reconnect a gmail account');
       console.log('  atris gmail accounts                     - list connected gmail accounts and the active account');
       console.log('  atris gmail use [<account_id|name>]      - choose or set the active gmail account');
@@ -1983,6 +2148,8 @@ async function integrationsStatus(args = []) {
 module.exports = {
   gmailCommand,
   gmailConnect,
+  gmailSend,
+  gmailVoice,
   gmailUse,
   extractGmailMailboxAccount,
   parseGmailArgs,

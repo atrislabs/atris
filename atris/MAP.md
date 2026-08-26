@@ -1496,23 +1496,25 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 - **Entry point:** `commands/integrations.js`
 - **Commands:**
-- `atris gmail inbox [--account <id>]` (`commands/integrations.js:197`, `gmailInbox`): lists messages and names the resolved mailbox when its email is known
-- `atris gmail connect [name]` (`commands/integrations.js:322`, `gmailConnect`): starts browser auth and polls for the named account; unbound scratch folders refuse `atris gmail connect` via the same `requireAccountBound` lock (exit 2, no Gmail network, no OAuth)
-- `atris gmail accounts` (`commands/integrations.js:381`, `gmailAccounts`): prints the default-first, aligned account roster and marks the sticky account
-- `atris gmail use [<account_id|name>]` (`commands/integrations.js:394`, `gmailUse`): picks an account interactively or resolves an id/display name and persists it as sticky
-- Gmail dispatch and help live in `commands/integrations.js:441` (`gmailCommand`); unbound scratch folders refuse bare `atris gmail` via `requireAccountBound` before this runs
+- `atris gmail inbox [--account <id>]` (`commands/integrations.js:201`, `gmailInbox`): lists messages and names the resolved mailbox when its email is known
+- `atris gmail send <to> <subject> <body...> [--account <id>]` (`commands/integrations.js:360`, `gmailSend`): resolves the sticky/default mailbox, verifies it is connected, and sends the joined body or `--body-file` contents
+- `atris gmail voice [account] [--clear]` (`commands/integrations.js:431`, `gmailVoice`): edits, pipes, or clears per-account `voice_md` through the Gmail account API
+- `atris gmail connect [name]` (`commands/integrations.js:475`, `gmailConnect`): starts browser auth and polls for the named account; unbound scratch folders refuse `atris gmail connect` via the same `requireAccountBound` lock (exit 2, no Gmail network, no OAuth)
+- `atris gmail accounts` (`commands/integrations.js:535`, `gmailAccounts`): prints the default-first, aligned account roster and marks the sticky account
+- `atris gmail use [<account_id|name>]` (`commands/integrations.js:548`, `gmailUse`): picks an account interactively or resolves an id/display name and persists it as sticky
+- Gmail dispatch and help live in `commands/integrations.js:595` (`gmailCommand`); unbound scratch folders refuse bare `atris gmail` via `requireAccountBound` before this runs
 - `atris calendar [today|week]` (lines 167-184): Calendar events
 - `atris twitter [post <text>]` (lines 232-246): Twitter posting
-- `atris slack [channels]` (`commands/integrations.js:1078`): Slack channel listing; unbound scratch folders refuse bare `atris slack` via `requireAccountBound` before this runs
+- `atris slack [channels]` (`commands/integrations.js:1377`): Slack channel listing; unbound scratch folders refuse bare `atris slack` via `requireAccountBound` before this runs
 - `atris integrations` (lines 298-338): Show status of all integrations
-- **Auth:** Uses `getAuthToken()` (line 16) from `~/.atris/credentials.json`
-- **Routing:** `bin/atris.js:2736` (`command === 'gmail'`) and `bin/atris.js:2774` (`command === 'slack'`): always `requireAccountBound`; a refused gmail gate returns before `gmailCommand` so connect cannot fall through to exit 0; `--help` still prints usage
-- **Help:** `bin/atris.js:884-894` (`showIntegrationsHelp`) and `bin/atris.js:1467-1472` route `integrations --help` before auth/session state or backend status checks
-- **Gmail regressions:** `test/gmail-account.test.js:99` (connect validation), `test/gmail-account.test.js:129` (poll success), `test/gmail-account.test.js:182` (timeout), `test/gmail-account.test.js:297` (inbox mailbox header), `test/gmail-account.test.js:385` (account roster), `test/gmail-account.test.js:431` (interactive display-name picker), `test/dogfood-pass3-27-28.test.js` (unbound scratch `gmail connect` exits 2 with no network or connect flow)
+- **Auth:** Uses `getAuthToken()` (`commands/integrations.js:159`) from `~/.atris/credentials.json`
+- **Routing:** `bin/atris.js:2737` (`command === 'gmail'`) and `bin/atris.js:2775` (`command === 'slack'`): always `requireAccountBound`; a refused gmail gate returns before `gmailCommand` so connect cannot fall through to exit 0; `--help` still prints usage
+- **Help:** `bin/atris.js:1021` (`showIntegrationsHelp`) routes `integrations --help` before auth/session state or backend status checks; Gmail subcommand help is in `commands/integrations.js:595`
+- **Gmail regressions:** `test/gmail-account.test.js:99` (connect validation), `test/gmail-account.test.js:129` (poll success), `test/gmail-account.test.js:182` (timeout), `test/gmail-account.test.js:298` (inbox mailbox header), `test/gmail-account.test.js:386` (send request), `test/gmail-account.test.js:436` (unowned send refusal), `test/gmail-account.test.js:471` (send usage), `test/gmail-account.test.js:501` (voice clear), `test/gmail-account.test.js:531` (piped voice), `test/gmail-account.test.js:564` (account roster), `test/gmail-account.test.js:610` (interactive display-name picker), `test/dogfood-pass3-27-28.test.js` (unbound scratch `gmail connect` exits 2 with no network or connect flow)
 - **Regression:** `test/commands.test.js:4279-4294` covers integrations help without login errors or `.atris` creation
 - **Value:** Manage external services without leaving the CLI
 
-**Search:** `rg "gmailInbox|gmailConnect|gmailAccounts|gmailUse|gmailCommand|calendarCommand|twitterCommand|slackCommand|integrationsStatus|showIntegrationsHelp|integrations --help|--approved|requireAccountBound" bin/atris.js commands/integrations.js lib/account-bound.js test/gmail-account.test.js test/commands.test.js test/dogfood-pass3-27-28.test.js`
+**Search:** `rg "gmailInbox|gmailSend|gmailVoice|gmailConnect|gmailAccounts|gmailUse|gmailCommand|calendarCommand|twitterCommand|slackCommand|integrationsStatus|showIntegrationsHelp|integrations --help|--approved|requireAccountBound" bin/atris.js commands/integrations.js lib/account-bound.js test/gmail-account.test.js test/commands.test.js test/dogfood-pass3-27-28.test.js`
 
 ### Feature: State Detection
 
