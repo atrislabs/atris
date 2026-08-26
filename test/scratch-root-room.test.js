@@ -218,7 +218,7 @@ test('empty folder under tmp does not inherit the tmp workspace', () => {
     const review = runCli(['review'], { cwd: child, env });
     const reviewText = combined(review);
     assert.doesNotMatch(reviewText, parentWork);
-    assert.match(review.stdout, /nothing is waiting|clean start|no task history/i);
+    assert.match(review.stdout, /nothing is waiting|is empty|no task history/i);
   } finally {
     taskDbSafeClose();
     fs.rmSync(child, { recursive: true, force: true });

@@ -145,7 +145,7 @@ test('atris log in an uninitialized folder talks like first-minute', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.equal(res.stdout.trim(), minute.stdout.trim());
     assert.match(res.stdout, /this folder is empty/);
-    assert.match(res.stdout, /^next: atris "what should this folder be\\?"$/m);
+    assert.match(res.stdout, /^next: atris "what should this folder be\?"$/m);
     assert.doesNotMatch(`${res.stdout}\n${res.stderr}`, /folder not found|Run "atris init"|captured I/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'logs')), false);

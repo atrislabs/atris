@@ -78,7 +78,7 @@ test('brainstorm in an empty folder talks like first-minute and does not mint', 
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.equal(res.stdout.trim(), minute.stdout.trim());
     assert.match(res.stdout, /this folder is empty/);
-    assert.match(res.stdout, /^next: atris "what should this folder be\\?"$/m);
+    assert.match(res.stdout, /^next: atris "what should this folder be\?"$/m);
     assert.doesNotMatch(res.stdout + res.stderr, WIZARD_RE);
     assert.doesNotMatch(res.stdout + res.stderr, /captured I|journal:/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
