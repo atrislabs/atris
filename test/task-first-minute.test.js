@@ -88,8 +88,8 @@ test('default atris task in an empty folder talks like first-minute', () => {
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(task.status, 0, task.stderr || task.stdout);
     assert.equal(task.stdout.trim(), minute.stdout.trim());
-    assert.match(task.stdout, /this folder is a clean start/);
-    assert.equal(nextLine(task.stdout), 'atris init --minimal');
+    assert.match(task.stdout, /this folder is empty/);
+    assert.equal(nextLine(task.stdout), 'atris "what should this folder be?"');
     assert.ok(spokenLineCount(task.stdout) <= 4);
     assert.doesNotMatch(task.stdout, /No open tasks|atris task new|TASK DESK/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);

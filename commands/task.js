@@ -60,7 +60,17 @@ const {
   decisionMarkerFor,
   DECISION_REFUSE_REASON,
 } = require('../lib/task-decision');
-const { buildFirstMinute, deskNextCommand, personName, pickNext, speakFirstMinute, taskCommand, taskNextCommand } = require('../lib/first-minute');
+const {
+  buildFirstMinute,
+  deskNextCommand,
+  firstTalkCommand,
+  folderName,
+  personName,
+  pickNext,
+  speakFirstMinute,
+  taskCommand,
+  taskNextCommand,
+} = require('../lib/first-minute');
 const { loadContext } = require('../lib/state-detection');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
@@ -6173,9 +6183,9 @@ function cmdAdd(args) {
   if (isUninitializedTaskFolder(root)) {
     if (wantsJson(args)) {
       printJson({
-        ok: true,
-        action: 'init',
-        command: 'atris init --minimal',
+        ok: false,
+        action: 'none',
+        command: firstTalkCommand(folderName(root)),
         task_id: null,
         projection_path: null,
         task: null,
@@ -6937,9 +6947,9 @@ function cmdNext(args) {
   if (isUninitializedTaskFolder(root)) {
     if (wantsJson(args)) {
       printJson({
-        ok: true,
-        action: 'init',
-        command: 'atris init --minimal',
+        ok: false,
+        action: 'none',
+        command: firstTalkCommand(folderName(root)),
         task_id: null,
         owner: String(flag(args, '--as') || personName() || DEFAULT_OWNER),
         scope: normalizeTaskQueueScope(taskQueueScopeFromArgs(args)),

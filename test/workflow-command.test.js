@@ -130,8 +130,8 @@ test('plan in an uninitialized folder talks like first-minute', () => {
   const planned = runCli(['plan'], { cwd: dir, env });
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(planned.status, 0, planned.stderr || planned.stdout);
-  assert.match(planned.stdout, /this folder is a clean start/);
-  assert.match(planned.stdout, /^next: atris init --minimal$/m);
+  assert.match(planned.stdout, /this folder is empty/);
+  assert.match(planned.stdout, /^next: atris "what should this folder be\\?"$/m);
   assert.equal(nextLine(planned.stdout), nextLine(minute.stdout));
   assert.equal(planned.stdout.trim(), minute.stdout.trim());
   assert.equal(spokenLineCount(spokenDoBody(planned.stdout)), 2);
@@ -162,8 +162,8 @@ test('review in an uninitialized folder talks like first-minute', () => {
   const review = runCli(['review'], { cwd: dir, env });
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(review.status, 0, review.stderr || review.stdout);
-  assert.match(review.stdout, /this folder is a clean start/);
-  assert.match(review.stdout, /^next: atris init --minimal$/m);
+  assert.match(review.stdout, /this folder is empty/);
+  assert.match(review.stdout, /^next: atris "what should this folder be\\?"$/m);
   assert.equal(nextLine(review.stdout), nextLine(minute.stdout));
   assert.equal(review.stdout.trim(), minute.stdout.trim());
   assert.equal(spokenLineCount(review.stdout), 2);
@@ -201,8 +201,8 @@ test('do in an uninitialized folder talks like first-minute', () => {
   const doit = runCli(['do'], { cwd: dir, env });
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(doit.status, 0, doit.stderr || doit.stdout);
-  assert.match(doit.stdout, /this folder is a clean start/);
-  assert.match(doit.stdout, /^next: atris init --minimal$/m);
+  assert.match(doit.stdout, /this folder is empty/);
+  assert.match(doit.stdout, /^next: atris "what should this folder be\\?"$/m);
   assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
   assert.equal(doit.stdout.trim(), minute.stdout.trim());
   assert.equal(spokenLineCount(spokenDoBody(doit.stdout)), 2);

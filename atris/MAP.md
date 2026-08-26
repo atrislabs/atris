@@ -787,7 +787,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Handler:** `commands/brainstorm.js:71-101` (brainstormAtris function)
 - **Help:** `commands/brainstorm.js:11-24` short-circuits before workspace/log setup; regression: `test/commands.test.js:18028-18043`
 - **How it works:**
-- Empty folder reuses `speakFirstMinute` (same two spoken lines as bare `atris`, `next: atris init --minimal`). No `atris/` or `.atris/` mint
+- Empty folder reuses `speakFirstMinute` (same two spoken lines as bare `atris`, talk command). No `atris/` or `.atris/` mint
 - After `init --minimal`, `atris brainstorm "<idea>"` writes today's inbox and exits
 - Never opens a TTY prompt or wizard, even when stdin is a TTY
 - ATRIS_NO_INTERACTIVE=1 and no-tty return the same capture path
