@@ -11374,8 +11374,9 @@ function missionCommand(args) {
   }
   if (isBareMission && !hasLocalMissionState(resolveWorkspaceRoot())) {
     const root = resolveWorkspaceRoot();
-    // Empty folder talks like bare atris. After init, stay on the current
-    // card or an honest no-mission, and do not bounce back to init.
+    // Empty folder talks like bare atris. After init, show a live mission
+    // if one is running. Otherwise speak the same desk next as bare atris.
+    // Do not bounce to atris ask or mint a mission.
     if (isFreshWorkspace(root)) {
       const code = speakFirstMinute({
         root,
@@ -11385,7 +11386,10 @@ function missionCommand(args) {
       process.exitCode = code;
       return code;
     }
-    return require('./human-missions').currentMissionCommand(args);
+    return require('./human-missions').currentMissionCommand(args, {
+      root,
+      fallbackOnMissing: true,
+    });
   }
   const subcommand = isBareMission ? 'status' : (args[0] || 'status');
   const rest = isBareMission ? args : args.slice(1);

@@ -1112,14 +1112,37 @@ test('atris ask and mission after init --minimal stay in the room', () => {
     assert.doesNotMatch(asked.stdout, /clean start|atris init --minimal|business\.json|--mission|Start one with/);
     assert.doesNotMatch(asked.stdout + asked.stderr, /Atris needs to know what you want/);
 
-    assert.doesNotMatch(mission.stdout + mission.stderr, /clean start|atris init --minimal|business\.json|Pass --mission/);
-    if (mission.status === 0) {
-      const spoken = mission.stdout.trim() === minute.stdout.trim()
-        || /could not find a running mission|not signed in/i.test(mission.stdout + mission.stderr);
-      assert.ok(spoken, mission.stdout || mission.stderr);
-    } else {
-      assert.match(mission.stdout + mission.stderr, /could not find a running mission|not signed in/i);
-    }
+    assert.equal(mission.status, 0, mission.stderr || mission.stdout);
+    assert.equal(mission.stdout.trim(), minute.stdout.trim());
+    assert.match(mission.stdout, /generate map\.md/i);
+    assert.match(mission.stdout, /ready to claim|already yours/);
+    assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
+    assert.match(nextLine(mission.stdout), /^atris task (claim|ready) /);
+    assert.equal(mission.stdout.match(/^next:/mg).length, 1);
+    assert.doesNotMatch(mission.stdout + mission.stderr, /clean start|atris init --minimal|business\.json|--mission|Start one with|could not find a running mission|not signed in|Atris left your work unchanged/);
+
+    const missionHelp = runCli(['mission', '--help'], { cwd: dir, env });
+    assert.equal(missionHelp.status, 0, missionHelp.stderr || missionHelp.stdout);
+    assert.match(missionHelp.stdout, /Usage: atris mission|atris mission /);
+    assert.doesNotMatch(missionHelp.stdout, /clean start|generate map|business\.json|Start one with/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: 'mission-live',
+      objective: 'Keep the live mission visible',
+      owner: 'executor',
+      status: 'running',
+      created_at: '2026-08-26T12:00:00Z',
+      updated_at: '2026-08-26T12:01:00Z',
+    })}\n`);
+    const live = runCli(['mission', '--json'], { cwd: dir, env });
+    assert.equal(live.status, 0, live.stderr || live.stdout);
+    const livePayload = JSON.parse(live.stdout);
+    assert.equal(livePayload.action, 'mission_status');
+    assert.equal(livePayload.missions[0].id, 'mission-live');
+    assert.doesNotMatch(live.stdout, /ready to claim|Start one with|atris ask/);
   } finally {
     cleanupTempDir(dir);
   }
