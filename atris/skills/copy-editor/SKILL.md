@@ -465,8 +465,9 @@ Provide:
 
 Run this check before approving ANY writing. LLMs will violate these rules even when explicitly trying not to.
 
+The build enforces deterministic prose tells; see `commands/slop.js`. Review the judgment-only items below.
+
 ```
-[ ] No em dashes anywhere
 [ ] No rule of three (exactly 3 items in a list or 3 parallel phrases)
 [ ] No negative parallelisms ("didn't X, needed Y" or "not just X, it's Y")
 [ ] No AI vocabulary (crucial, delve, unpack, landscape, pivotal, testament, vibrant, etc.)

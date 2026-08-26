@@ -125,11 +125,10 @@ Review is not complete until residual risk is named.
 │ ✓ MAP.md updated (if needed)        │
 │ ✓ Wiki status checked (if present)  │
 │ ✓ Error handling present            │
-│ ✓ Anti-slop check (see below)       │
 └─────────────────────────────────────┘
 ```
 
-**Anti-slop gate:** Run `atris/policies/ANTISLOP.md` checklist on all output. Block if violations.
+**Anti-slop:** The build enforces deterministic tells; see `commands/slop.js`. Review only the remaining judgment calls in `atris/policies/ANTISLOP.md`.
 
 **Final ASCII:**
 ```

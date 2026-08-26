@@ -141,7 +141,7 @@ This skill compounds or it dies. The contract, every frontend session:
 - WCAG AA contrast (4.5:1 text, 3:1 UI)?
 - works on mobile (44px touch targets, no horizontal scroll, readable text)?
 - respects `prefers-reduced-motion`?
-- zero shout-cased copy? zero em dashes in copy?
+- zero shout-cased copy?
 - did you name the moves in craft vocabulary (vertical rhythm, negative space, bolder/quieter)?
 - did you use anti-attractors (named what to avoid, seeded a reference, set a constraint)?
 - if agent-facing: does it have agentic affordances (clear errors, structured output, stable exit codes)?

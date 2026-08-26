@@ -12,8 +12,36 @@ const ROOT = path.join(__dirname, '..');
 const RULE_PIPED_GATES = 'piped-gate-commands-mask-exit-codes';
 const RULE_HOOK_BYPASS = 'dispatched-engines-bypass-hooks-under-pressure';
 const RULE_DURABLE_TASKS = 'endgame-tasks-must-be-durable-db-rows';
+const RULE_PRUNED_REVIEW_PROSE = 'review-prose-defers-to-machine-gates';
 const SOURCE_EXTENSIONS = new Set(['.cjs', '.js', '.json', '.mjs', '.sh', '.yaml', '.yml']);
 const SOURCE_TARGETS = ['commands', 'lib', 'scripts', '.github', 'package.json'];
+const PRUNED_REVIEW_INSTRUCTIONS = Object.freeze([
+  {
+    file: 'atris/team/validator/MEMBER.md',
+    phrase: '│ ✓ Anti-slop check (see below)       │',
+    gate: 'commands/slop.js',
+  },
+  {
+    file: 'atris/team/validator/MEMBER.md',
+    phrase: '**Anti-slop gate:** Run `atris/policies/ANTISLOP.md` checklist on all output. Block if violations.',
+    gate: 'commands/slop.js',
+  },
+  {
+    file: 'atris/skills/design/SKILL.md',
+    phrase: '- zero shout-cased copy? zero em dashes in copy?',
+    gate: 'commands/slop.js',
+  },
+  {
+    file: 'atris/skills/copy-editor/SKILL.md',
+    phrase: '[ ] No em dashes anywhere',
+    gate: 'commands/slop.js',
+  },
+  {
+    file: 'atris/policies/ANTISLOP.md',
+    phrase: '- [ ] No em dashes (\u2014) unless direct quote or title separator',
+    gate: 'commands/slop.js',
+  },
+]);
 
 function fixtureRoot(t, files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-review-correction-'));
@@ -79,6 +107,16 @@ function durableTaskFindings(files) {
   });
 }
 
+function prunedReviewInstructionFindings(root) {
+  return PRUNED_REVIEW_INSTRUCTIONS.flatMap(({ file, phrase, gate }) => {
+    const target = path.join(root, file);
+    if (!fs.existsSync(target)) return [];
+    return fs.readFileSync(target, 'utf8').includes(phrase)
+      ? [`${file} ${gate} ${RULE_PRUNED_REVIEW_PROSE}`]
+      : [];
+  });
+}
+
 test(RULE_PIPED_GATES, (t) => {
   const fixture = fixtureRoot(t, {
     'scripts/verify.js': "const verify = 'node --test test/unit.test.js | tail -n 20';\n",
@@ -138,4 +176,17 @@ test(RULE_DURABLE_TASKS, (t) => {
     name: 'atris/skills/endgame/SKILL.md',
     text: fs.readFileSync(currentSkill, 'utf8'),
   }]), [], 'database-backed tasks must be created through the task command');
+});
+
+test(RULE_PRUNED_REVIEW_PROSE, (t) => {
+  const files = {};
+  for (const { file, phrase } of PRUNED_REVIEW_INSTRUCTIONS) {
+    files[file] = `${files[file] || ''}${phrase}\n`;
+  }
+  const fixture = fixtureRoot(t, files);
+
+  assert.equal(prunedReviewInstructionFindings(fixture).length, PRUNED_REVIEW_INSTRUCTIONS.length,
+    'each exact pruned instruction must trip the regression gate when planted');
+  assert.deepEqual(prunedReviewInstructionFindings(ROOT), [],
+    'review instructions must defer deterministic checks to their machine gates');
 });
