@@ -726,7 +726,7 @@ function showHelpAll() {
   console.log('  supabase  - supabase cli wrapper (doctor, auth, status/db/functions)');
   console.log('  linear    - linear cli wrapper (doctor, auth, issue list/create/view/update)');
   console.log('  stripe    - stripe cli wrapper (doctor, auth, listen/trigger/products)');
-  console.log('  gmail      - Email commands (inbox, read, archive)');
+  console.log('  gmail      - Email commands (inbox, read, archive, accounts)');
   console.log('  calendar   - Calendar commands (today, week)');
   console.log('  twitter    - Twitter commands (post)');
   console.log('  slack      - Slack commands (channels)');
@@ -2728,11 +2728,16 @@ if (command === 'init') {
   {
     const raw = process.argv.slice(3);
     const helpOnly = raw.length === 0 || raw.includes('--help') || raw.includes('-h') || raw[0] === 'help';
-    const gate = helpOnly ? { ok: true, args: raw } : requireAccountBound(raw);
+    const { gmailCommand, extractGmailMailboxAccount } = require('../commands/integrations');
+    const mailbox = extractGmailMailboxAccount(raw);
+    const gateInput = helpOnly
+      ? mailbox.args
+      : (mailbox.mailboxAccountId ? ['--account', ...mailbox.args] : mailbox.args);
+    const gate = helpOnly ? { ok: true, args: mailbox.args } : requireAccountBound(gateInput);
     if (!gate.ok) process.exit(refuseAccountGlobal());
-    const { gmailCommand } = require('../commands/integrations');
     const subcommand = gate.args[0];
     const args = gate.args.slice(1);
+    if (mailbox.mailboxAccountId) args.push('--account', mailbox.mailboxAccountId);
     gmailCommand(subcommand, ...args)
       .then(() => process.exit(0))
       .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
