@@ -330,7 +330,7 @@ test('bare mission keeps local status but uses the cloud card without local stat
     });
     assert.equal(cloud.status, 2, cloud.stderr || cloud.stdout);
     const cloudPayload = JSON.parse(cloud.stdout);
-    assert.equal(cloudPayload.next_action, 'atris "what should this folder be?"');
+    assert.equal(cloudPayload.next_action, 'atris "what do you want here?"');
     assert.equal(cloudPayload.reason, 'this folder is empty');
     assert.doesNotMatch(cloud.stdout, /business\.json|not signed in|--mission/);
     assert.equal(cloudPayload.action, undefined);

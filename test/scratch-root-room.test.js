@@ -207,12 +207,12 @@ test('empty folder under tmp does not inherit the tmp workspace', () => {
 
     const bare = runCli([], { cwd: child, env });
     assert.match(bare.stdout, /is empty/);
-    assert.match(bare.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(bare.stdout, /^next: atris "what do you want here\?"$/m);
     assert.doesNotMatch(combined(bare), parentWork);
 
     const task = runCli(['task'], { cwd: child, env });
     assert.match(task.stdout, /is empty/);
-    assert.match(task.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(task.stdout, /^next: atris "what do you want here\?"$/m);
     assert.doesNotMatch(combined(task), parentWork);
 
     const review = runCli(['review'], { cwd: child, env });

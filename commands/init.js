@@ -468,41 +468,8 @@ function initAtris() {
     }
   }
 
-  // Create INTUITION.md - captures learnings, preferences, dead ends
-  const intuitionFile = path.join(targetDir, 'INTUITION.md');
-  if (!fs.existsSync(intuitionFile)) {
-    fs.writeFileSync(intuitionFile, `# INTUITION.md
-
-> Accumulated learnings. Read before major decisions. Update after discoveries.
-
----
-
-## Tripwires
-
-*Things that seem obvious but break unexpectedly. Check these first when debugging.*
-
-- (none yet — add when you hit surprising failures)
-
----
-
-## Preferences
-
-*Patterns this codebase prefers. Follow these over generic best practices.*
-
-- (none yet — add as you discover the codebase style)
-
----
-
-## Dead Ends
-
-*Approaches tried and abandoned. Don't retry without new information.*
-
-- (none yet — log failed approaches so future agents skip them)
-
----
-`);
-    markReady('workspace', 'INTUITION.md', '✓ Created INTUITION.md');
-  }
+  // INTUITION.md was retired into lessons.md. Do not write a parallel lesson file.
+  // Leave a user's existing INTUITION.md alone if one is already on disk.
 
   // Create lessons.md (feedback loop for learning across features)
   const lessonsFile = path.join(targetDir, 'lessons.md');

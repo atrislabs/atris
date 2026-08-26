@@ -71,7 +71,7 @@ function assertFirstMinute(result, minute) {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(result.stdout.trim(), minute.stdout.trim());
   assert.match(result.stdout, /this folder is empty/);
-  assert.equal(nextLine(result.stdout), 'atris "what should this folder be?"');
+  assert.equal(nextLine(result.stdout), 'atris "what do you want here?"');
   assert.equal(spokenLineCount(result.stdout), spokenLineCount(minute.stdout));
   assert.doesNotMatch(result.stdout, /I saved a first step|atris task claim |No open tasks|atris task new/);
 }
@@ -128,7 +128,7 @@ test('talk line still starts a room and task next then names the claim', () => {
   const dir = makeScratch();
   const env = isolatedEnv(dir);
   try {
-    const talk = runCli(['what should this folder be?'], { cwd: dir, env, timeout: 60000 });
+    const talk = runCli(['what do you want here?'], { cwd: dir, env, timeout: 60000 });
     assert.equal(talk.status, 0, talk.stderr || talk.stdout);
     assert.match(talk.stdout, /I saved a first step for this folder/);
     assert.match(nextLine(talk.stdout), /^atris task claim \S+ --as keshav$/);
