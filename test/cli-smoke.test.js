@@ -995,9 +995,14 @@ test('review prints a first-minute screen by default', () => {
   try {
     runCli(['init'], { cwd: dir, input: '\n' });
 
+    const minute = runCli([], { cwd: dir });
     const res = runCli(['review'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /nothing is waiting on you\./);
+    if (/^next: atris task (claim|ready|accept) /m.test(minute.stdout)) {
+      assert.equal(res.stdout.trim(), minute.stdout.trim());
+    } else {
+      assert.match(res.stdout, /nothing is waiting on you\./);
+    }
     assert.doesNotMatch(res.stdout, /Atris Review is the human checkpoint/);
     assert.doesNotMatch(res.stdout, /Need the legacy Validator prompt/);
     assert.doesNotMatch(res.stdout, /clear completed tasks out of TODO/);

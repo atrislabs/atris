@@ -774,7 +774,7 @@ test('atris test after init --minimal talks like first-minute, not bootstrap', (
   }
 });
 
-test('atris review after init --minimal stays in the room', () => {
+test('atris review after init --minimal matches bare atris claim next', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
   fs.mkdirSync(home, { recursive: true });
@@ -787,11 +787,19 @@ test('atris review after init --minimal stays in the room', () => {
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
+    assert.match(init.stdout, /^next: atris task claim /m);
 
+    const minute = runCli([], { cwd: dir, env });
     const review = runCli(['review'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(review.status, 0, review.stderr || review.stdout);
-    assert.match(review.stdout, /^nothing is waiting on you\.$/m);
-    assert.equal(spokenLineCount(review.stdout), 1);
+    assert.equal(review.stdout.trim(), minute.stdout.trim());
+    assert.match(review.stdout, /ready to claim/);
+    assert.match(nextLine(review.stdout), /^atris task claim \S+ --as \S+$/);
+    assert.equal(nextLine(review.stdout), nextLine(minute.stdout));
+    assert.equal(spokenLineCount(review.stdout), spokenLineCount(minute.stdout));
+    assert.equal(spokenLineCount(review.stdout), 2);
+    assert.doesNotMatch(review.stdout, /^nothing is waiting on you\.$/m);
     assert.doesNotMatch(review.stdout, /clean start|atris init --minimal|validator\.md not found|Run "atris init"/);
     assert.doesNotMatch(review.stdout, /Atris Review is the human checkpoint|Need the legacy Validator/);
   } finally {
