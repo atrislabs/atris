@@ -58,7 +58,7 @@ function writeReceipt(workspace, name, result) {
 // chars of the builder proof, so the diffstat must lead or it is truncated
 // away and every row queues as size_unknown.
 function smallProof(receiptRel) {
-  return `1 file changed, 2 insertions(+). ${'context '.repeat(30)}Verifier receipt ${receiptRel} shows the verify passed. Checks: receipt ${receiptRel}; node scripts/marker.js passed; git diff --check passed.`;
+  return `1 file changed, 2 insertions(+). ${'context '.repeat(30)}Verifier receipt ${receiptRel} shows the verify passed. Checks: receipt ${receiptRel}; node scripts/marker.js passed.`;
 }
 
 // `task reviews` is a READ path: it must never spawn a stored verify. The

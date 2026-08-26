@@ -11,7 +11,7 @@ const { scrubAgentEnv } = require('./helpers/agent-env');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const CLEAN_RESULT = 'Operators can now read the whole team day on one page instead of scrolling raw logs.';
-const PROOF = 'node --test test/task-result-gate.test.js passed and the task projection was inspected.';
+const PROOF = 'Receipt saved at atris/runs/proof.json and the task projection was inspected.';
 
 function hasNodeSqlite() {
   const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {

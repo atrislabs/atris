@@ -70,7 +70,7 @@ function writeReceipt(dir, name, result) {
 }
 
 function verifiedProof(receiptRel) {
-  return `${'context '.repeat(35)}Verifier receipt ${receiptRel} shows the verify passed. Checks: receipt ${receiptRel}; node --test test/task-tag.test.js passed; git diff --check passed.`;
+  return `${'context '.repeat(35)}Verifier receipt ${receiptRel} shows the verify passed. Checks: receipt ${receiptRel}; node --check test/task-tag.test.js passed.`;
 }
 
 function setupReadyTask(dir, env, { title, tag, proof }) {

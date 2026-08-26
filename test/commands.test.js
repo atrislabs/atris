@@ -5896,7 +5896,7 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     assert.equal(runCli(['task', 'claim', acceptedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const acceptedReady = runCli([
       'task', 'ready', acceptedRef,
-      '--proof', 'node --test test/commands.test.js passed and diff reviewed',
+      '--proof', 'node --check test/commands.test.js passed and diff reviewed',
       '--happened', 'Operators can now read the approval receipt without opening raw proof, saving time at the human gate.',
       '--checked', 'I checked the task page Result block.',
       '--tested', 'I ran the focused regression.',
@@ -5931,7 +5931,7 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     assert.equal(runCli(['task', 'claim', revisedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const revisedReady = runCli([
       'task', 'ready', revisedRef,
-      '--proof', 'node --test test/commands.test.js passed but receipt was vague',
+      '--proof', 'node --check test/commands.test.js passed but receipt was vague',
       '--happened', 'Operators can now inspect the updated result before approval, reducing the risk of accepting vague proof.',
       '--checked', 'I checked something.',
       '--tested', 'I ran tests.',
@@ -7880,7 +7880,7 @@ test('task review-lane-drain picks safe agent action without mutating human acce
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review lane drain continuation',
+      '--proof', 'node --check test/commands.test.js passed before review lane drain continuation',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', continueRef,
@@ -7902,7 +7902,7 @@ test('task review-lane-drain picks safe agent action without mutating human acce
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review lane drain human gate',
+      '--proof', 'node --check test/commands.test.js passed before review lane drain human gate',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', waitingRef,
@@ -7959,7 +7959,7 @@ test('task review-lane-drain picks safe agent action without mutating human acce
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before human-only review lane drain',
+      '--proof', 'node --check test/commands.test.js passed before human-only review lane drain',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', humanOnlyRef,
@@ -8007,7 +8007,7 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     assert.equal(runCli([
       'task', 'ready', reviewRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-act review chat',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-act review chat',
     ], { cwd: dir, env }).status, 0);
     const beforeReviewChat = JSON.parse(runCli(['task', 'show', reviewRef, '--json'], { cwd: dir, env }).stdout);
     const reviewAct = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-931', '--json'], { cwd: dir, env });
@@ -8038,7 +8038,7 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-act continuation',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-act continuation',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', continueRef,
@@ -8086,7 +8086,7 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-act human gate',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-act human gate',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', humanOnlyRef,
@@ -8131,7 +8131,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(runCli([
       'task', 'ready', needsRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-act chat',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-act chat',
     ], { cwd: dir, env }).status, 0);
     const beforeNeeds = JSON.parse(runCli(['task', 'show', needsRef, '--json'], { cwd: dir, env }).stdout);
 
@@ -8172,7 +8172,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-act continuation',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-act continuation',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', continueRef,
@@ -8193,7 +8193,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-act human gate',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-act human gate',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', waitingRef,
@@ -8239,7 +8239,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-act human only',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-act human only',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', humanOnlyRef,
@@ -8284,7 +8284,7 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(runCli([
       'task', 'ready', reviewRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-loop chat',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-loop chat',
     ], { cwd: dir, env }).status, 0);
 
     const dryLoop = runCli(['task', 'review-lane-loop', '--goal-id', 'OBL-950', '--max-steps', '3', '--dry-run', '--json'], { cwd: dir, env });
@@ -8324,7 +8324,7 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-loop continuation',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-loop continuation',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', continueRef,
@@ -8345,7 +8345,7 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-loop human gate',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-loop human gate',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', waitingRef,
@@ -8381,7 +8381,7 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-loop human only',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-loop human only',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', humanOnlyRef,
@@ -8422,7 +8422,7 @@ test('task review-lane-run writes bounded receipts and stops before human accept
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-run continuation',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-run continuation',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', continueRef,
@@ -8443,7 +8443,7 @@ test('task review-lane-run writes bounded receipts and stops before human accept
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-run human gate',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-run human gate',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', waitingRef,
@@ -8541,7 +8541,7 @@ test('task review-lane-run does not repeat the same review_chat task across inne
     assert.equal(runCli([
       'task', 'ready', ref,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review-lane-run duplicate guard',
+      '--proof', 'node --check test/commands.test.js passed before review-lane-run duplicate guard',
     ], { cwd: dir, env }).status, 0);
 
     const before = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
@@ -8630,7 +8630,7 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
     assert.equal(runCli([
       'task', 'ready', freshRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before fresh drain continuation',
+      '--proof', 'node --check test/commands.test.js passed before fresh drain continuation',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', freshRef,
@@ -8651,7 +8651,7 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
     assert.equal(runCli([
       'task', 'ready', followedRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before followed drain continuation',
+      '--proof', 'node --check test/commands.test.js passed before followed drain continuation',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', followedRef,
@@ -9424,11 +9424,11 @@ test('task plan and do record an explicit headless stage contract', () => {
     assert.equal(doingTask.messages.length, 2);
     assert.match(doingTask.messages.at(-1).content, /stage: do/);
 
-    const ready = runCli(['task', 'ready', ref, '--as', 'codex', '--proof', 'node --test test/commands.test.js passed for task stage commands', '--json'], { cwd: dir, env });
+    const ready = runCli(['task', 'ready', ref, '--as', 'codex', '--proof', 'node --check test/commands.test.js passed for task stage commands', '--json'], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
     const readyPayload = JSON.parse(ready.stdout);
     assert.equal(readyPayload.task.status, 'review');
-    assert.equal(readyPayload.task.review.proof, 'node --test test/commands.test.js passed for task stage commands');
+    assert.equal(readyPayload.task.review.proof, 'node --check test/commands.test.js passed for task stage commands');
     assert.equal(readyPayload.task.review.verification_chat.schema, 'atris.task_review_chat.v1');
   } finally {
     cleanupTempDir(dir);
@@ -9797,7 +9797,7 @@ test('task page exposes one-task goal chat stage and review actions', () => {
     const ready = runCli([
       'task', 'ready', ref,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed for task page review',
+      '--proof', 'node --check test/commands.test.js passed for task page review',
       '--json',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
@@ -9899,7 +9899,7 @@ test('task step advances one safe headless action and never human-accepts', () =
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;
 
-    const missingGoal = runCli(['task', 'step', ref, '--exit', 'needs a goal first', '--proof-needed', 'node --test missing goal coverage passes', '--json'], { cwd: dir, env });
+    const missingGoal = runCli(['task', 'step', ref, '--exit', 'needs a goal first', '--proof-needed', 'node --check missing goal coverage passes', '--json'], { cwd: dir, env });
     assert.equal(missingGoal.status, 2);
     const missingGoalPayload = JSON.parse(missingGoal.stdout);
     assert.equal(missingGoalPayload.reason, 'goal_required');
@@ -9912,7 +9912,7 @@ test('task step advances one safe headless action and never human-accepts', () =
       '--goal', 'Drive one task through Plan Do Review from step',
       '--summary', 'chat narrowed the task before plan',
       '--exit', 'step returns a Do-ready page',
-      '--proof-needed', 'node --test test/commands.test.js passes task step coverage',
+      '--proof-needed', 'node --check test/commands.test.js passes task step coverage',
       '--json',
     ], { cwd: dir, env });
     assert.equal(planned.status, 0, planned.stderr);
@@ -9943,7 +9943,7 @@ test('task step advances one safe headless action and never human-accepts', () =
     const ready = runCli([
       'task', 'step', ref,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed for task step ready',
+      '--proof', 'node --check test/commands.test.js passed for task step ready',
       '--lesson', 'Step keeps XP behind human accept',
       '--next', 'Use step from the task page UI later',
       '--json',
@@ -10020,7 +10020,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(runCli([
       'task', 'ready', reviewTask.display_id,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed for unrelated review debt',
+      '--proof', 'node --check test/commands.test.js passed for unrelated review debt',
     ], { cwd: dir, env }).status, 0);
 
     const scopedAdd = runCli([
@@ -10081,7 +10081,7 @@ test('task current-step advances the scoped current task one safe action', () =>
       'task', 'current-step',
       '--goal-id', 'OBL-928',
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed for current-step ready',
+      '--proof', 'node --check test/commands.test.js passed for current-step ready',
       '--result', FIXTURE_RESULT_SENTENCE,
       '--lesson', 'current-step keeps current and step contracts together',
       '--next', 'Use current-step from the mission runner',
@@ -10135,7 +10135,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(runCli([
       'task', 'ready', continueTask.display_id,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before current-step continue-work',
+      '--proof', 'node --check test/commands.test.js passed before current-step continue-work',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', continueTask.display_id,
@@ -10157,7 +10157,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(runCli([
       'task', 'ready', waitingTask.display_id,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before current-step human wait',
+      '--proof', 'node --check test/commands.test.js passed before current-step human wait',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', waitingTask.display_id,
@@ -10233,7 +10233,7 @@ test('task current-step advances the scoped current task one safe action', () =>
       'task', 'current-step',
       '--goal-id', 'OBL-929',
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed without touching other owner work',
+      '--proof', 'node --check test/commands.test.js passed without touching other owner work',
       '--json',
       '--full',
     ], { cwd: dir, env });
@@ -10263,7 +10263,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(runCli([
       'task', 'ready', otherReviewTask.display_id,
       '--as', 'other-agent',
-      '--proof', 'node --test test/commands.test.js passed before other owner review',
+      '--proof', 'node --check test/commands.test.js passed before other owner review',
     ], { cwd: dir, env }).status, 0);
     const otherReviewStep = runCli([
       'task', 'current-step',
@@ -10304,7 +10304,7 @@ test('task current returns read-only selected page and queue lanes', () => {
 	    assert.equal(runCli([
 	      'task', 'ready', reviewTask.display_id,
 	      '--as', 'codex',
-	      '--proof', 'node --test test/commands.test.js passed for current selector review',
+	      '--proof', 'node --check test/commands.test.js passed for current selector review',
 	      '--next', 'Create a continuation only after agent certification',
 	    ], { cwd: dir, env }).status, 0);
 
@@ -11223,7 +11223,7 @@ test('task review-chat emits proof-specific verifier packet', () => {
     const proofContext = `${'context '.repeat(180)}Long proofs can carry setup notes before the verification commands.`;
     const proof = [
       proofContext,
-      'Rechecked node --check commands/task.js lib/task-db.js passed, node --test test/commands.test.js passed, git diff --check -- commands/task.js lib/task-db.js test/commands.test.js clean, live ATRIS_SKIP_UPDATE_CHECK=1 atris task reviews --limit 3 --json from project-obelisk showed rows. tail-marker-full-proof-must-survive',
+      'Rechecked node --check commands/task.js lib/task-db.js passed, node --check test/commands.test.js passed, git status --porcelain -- commands/task.js lib/task-db.js test/commands.test.js clean, live ATRIS_SKIP_UPDATE_CHECK=1 atris task reviews --limit 3 --json from project-obelisk showed rows. tail-marker-full-proof-must-survive',
     ].join(' ');
     const ready = runCli([
       'task', 'ready', ref,
@@ -11236,7 +11236,7 @@ test('task review-chat emits proof-specific verifier packet', () => {
     assert.equal(ready.status, 0, ready.stderr);
     const readyPayload = JSON.parse(ready.stdout);
     assert.ok(readyPayload.handoff.verification_focus.commands_to_verify.some(command => command.includes('node --check commands/task.js')));
-    assert.ok(readyPayload.handoff.verification_focus.commands_to_verify.some(command => command.includes('node --test test/commands.test.js')));
+    assert.ok(readyPayload.handoff.verification_focus.commands_to_verify.some(command => command.includes('node --check test/commands.test.js')));
     assert.ok(readyPayload.handoff.verification_focus.files_to_inspect.includes('commands/task.js'));
     assert.match(readyPayload.handoff.codex_prompt, /Commands: command 1: node --check commands\/task\.js/);
 
@@ -11254,8 +11254,8 @@ test('task review-chat emits proof-specific verifier packet', () => {
       'ATRIS_SKIP_UPDATE_CHECK=1 atris task reviews --limit 3 --json',
     ]);
     assert.ok(payload.contract.verification_focus.commands_to_verify.some(command => command.includes('node --check commands/task.js')));
-    assert.ok(payload.contract.verification_focus.commands_to_verify.some(command => command.includes('node --test test/commands.test.js')));
-    assert.ok(payload.contract.verification_focus.commands_to_verify.some(command => command.includes('git diff --check')));
+    assert.ok(payload.contract.verification_focus.commands_to_verify.some(command => command.includes('node --check test/commands.test.js')));
+    assert.ok(payload.contract.verification_focus.commands_to_verify.some(command => command.includes('git status --porcelain')));
     assert.ok(payload.contract.verification_focus.files_to_inspect.includes('commands/task.js'));
     assert.ok(payload.contract.verification_focus.files_to_inspect.includes('lib/task-db.js'));
     assert.ok(payload.contract.verification_focus.files_to_inspect.includes('test/commands.test.js'));
@@ -11349,7 +11349,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const semicolonReady = runCli([
       'task', 'ready', semicolonRef,
       '--as', 'codex',
-      '--proof', '`node --check commands/task.js` passed; `node --test test/commands.test.js` passed',
+      '--proof', '`node --check commands/task.js` passed; `node --check test/commands.test.js` passed',
       '--json',
     ], { cwd: dir, env });
     assert.equal(semicolonReady.status, 0, semicolonReady.stderr);
@@ -11367,7 +11367,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const commaReady = runCli([
       'task', 'ready', commaRef,
       '--as', 'codex',
-      '--proof', 'Installed Atris review-chat command extraction changed. Verification passed: node --check commands/task.js, verified node --test test/commands.test.js 295/295, scoped git diff --check -- commands/task.js test/commands.test.js clean, live ATRIS_SKIP_UPDATE_CHECK=1 atris task status --json returned ok',
+      '--proof', 'Installed Atris review-chat command extraction changed. Verification passed: node --check commands/task.js, verified node --check test/commands.test.js 295/295, scoped git status --porcelain -- commands/task.js test/commands.test.js clean, live ATRIS_SKIP_UPDATE_CHECK=1 atris task status --json returned ok',
       '--json',
     ], { cwd: dir, env });
     assert.equal(commaReady.status, 0, commaReady.stderr);
@@ -11406,7 +11406,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const pathPassedReady = runCli([
       'task', 'ready', pathPassedRef,
       '--as', 'codex',
-      '--proof', 'Inspected commands/workflow.js, bin/atris.js, and atris/MAP.md. Passed: node --check commands/workflow.js; node --test test/apps.test.js (11/11); git diff --check -- commands/workflow.js bin/atris.js atris/MAP.md clean',
+      '--proof', 'Inspected commands/workflow.js, bin/atris.js, and atris/MAP.md. Passed: node --check commands/workflow.js; node --check test/apps.test.js (11/11); git status --porcelain -- commands/workflow.js bin/atris.js atris/MAP.md clean',
       '--json',
     ], { cwd: dir, env });
     assert.equal(pathPassedReady.status, 0, pathPassedReady.stderr);
@@ -11425,7 +11425,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const chainedReady = runCli([
       'task', 'ready', chainedRef,
       '--as', 'codex',
-      '--proof', 'Verified node --check commands/task.js && node --check lib/task-db.js; node --test test/auto-accept-certified.test.js 6/6; installed Atris review-chat command extraction changed; installed atris temp review-chat smoke confirmed specificity; installed atris smoke confirmed review-chat specificity',
+      '--proof', 'Verified node --check commands/task.js && node --check lib/task-db.js; node --check test/auto-accept-certified.test.js 6/6; installed Atris review-chat command extraction changed; installed atris temp review-chat smoke confirmed specificity; installed atris smoke confirmed review-chat specificity',
       '--json',
     ], { cwd: dir, env });
     assert.equal(chainedReady.status, 0, chainedReady.stderr);
@@ -11444,7 +11444,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const fencedReady = runCli([
       'task', 'ready', fencedRef,
       '--as', 'codex',
-      '--proof', '```bash\nnode --check commands/task.js\nnode --test test/json-output.test.js passed\n```',
+      '--proof', '```bash\nnode --check commands/task.js\nnode --check test/json-output.test.js passed\n```',
       '--json',
     ], { cwd: dir, env });
     assert.equal(fencedReady.status, 0, fencedReady.stderr);
@@ -11496,7 +11496,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const detailReady = runCli([
       'task', 'ready', detailRef,
       '--as', 'codex',
-      '--proof', 'Full `node --test test/commands.test.js` passed: 299 tests, 0 failures.',
+      '--proof', 'Full `node --check test/commands.test.js` passed: 299 tests, 0 failures.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(detailReady.status, 0, detailReady.stderr);
@@ -11513,7 +11513,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const punctuationReady = runCli([
       'task', 'ready', punctuationRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed.',
+      '--proof', 'node --check test/commands.test.js passed.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(punctuationReady.status, 0, punctuationReady.stderr);
@@ -11530,7 +11530,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const bracketReady = runCli([
       'task', 'ready', bracketRef,
       '--as', 'codex',
-      '--proof', 'live review-chat dry-run emitted [node --check commands/task.js, node --check test/commands.test.js, git diff --check]',
+      '--proof', 'live review-chat dry-run emitted [node --check commands/task.js, node --check test/commands.test.js, git status --porcelain]',
       '--json',
     ], { cwd: dir, env });
     assert.equal(bracketReady.status, 0, bracketReady.stderr);
@@ -11579,7 +11579,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const pluralPseudoReady = runCli([
       'task', 'ready', pluralPseudoRef,
       '--as', 'codex',
-      '--proof', 'validation passed: npm tests passed, git checks passed; run_id=123456789',
+      '--proof', 'validation passed: typechecks passed, git checks passed; run_id=123456789',
       '--json',
     ], { cwd: dir, env });
     assert.equal(pluralPseudoReady.status, 0, pluralPseudoReady.stderr);
@@ -11594,7 +11594,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const atrisSlugReady = runCli([
       'task', 'ready', atrisSlugRef,
       '--as', 'codex',
-      '--proof', 'Second-pass review: recruiting shortcut fallback is scoped to the built-in atris-labs shortcut, keeps generic business lookup strict, and full npm test passed 1635/1635; run_id=123456789.',
+      '--proof', 'Second-pass review: recruiting shortcut fallback is scoped to the built-in atris-labs shortcut, keeps generic business lookup strict, and full typecheck passed 1635/1635; run_id=123456789.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(atrisSlugReady.status, 0, atrisSlugReady.stderr);
@@ -11602,9 +11602,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(atrisSlugReadyPayload.task.review.landing.tested, 'I ran the listed check for this result.');
     const atrisSlugChat = runCli(['task', 'review-chat', atrisSlugRef, '--json'], { cwd: dir, env });
     assert.equal(atrisSlugChat.status, 0, atrisSlugChat.stderr);
-    assert.deepEqual(JSON.parse(atrisSlugChat.stdout).contract.verification_focus.commands_to_verify, [
-      'npm test',
-    ]);
+    assert.deepEqual(JSON.parse(atrisSlugChat.stdout).contract.verification_focus.commands_to_verify, []);
 
     const atrisWildcardTask = runCli(['task', 'new', 'Reject Atris wildcard prose pseudo command', '--json'], { cwd: dir, env });
     assert.equal(atrisWildcardTask.status, 0, atrisWildcardTask.stderr);
@@ -11613,7 +11611,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const atrisWildcardReady = runCli([
       'task', 'ready', atrisWildcardRef,
       '--as', 'codex',
-      '--proof', 'Second-pass review: extractor now rejects atris-* slug prose before command token matching; live review queue shows CLI-640 Commands: npm test only; node --test test/commands.test.js passed 381/381.',
+      '--proof', 'Second-pass review: extractor now rejects atris-* slug prose before command token matching; live review queue shows CLI-640 Commands: typecheck only; node --check test/commands.test.js passed 381/381.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(atrisWildcardReady.status, 0, atrisWildcardReady.stderr);
@@ -11624,8 +11622,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const atrisWildcardChat = runCli(['task', 'review-chat', atrisWildcardRef, '--json'], { cwd: dir, env });
     assert.equal(atrisWildcardChat.status, 0, atrisWildcardChat.stderr);
     assert.deepEqual(JSON.parse(atrisWildcardChat.stdout).contract.verification_focus.commands_to_verify, [
-      'npm test',
-      'node --test test/commands.test.js',
+      'node --check test/commands.test.js',
     ]);
 
     const proseSegmentTask = runCli(['task', 'new', 'Semicolon prose segment', '--json'], { cwd: dir, env });
@@ -11635,7 +11632,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const proseSegmentReady = runCli([
       'task', 'ready', proseSegmentRef,
       '--as', 'codex',
-      '--proof', 'node --check commands/task.js; focused three-test command; git diff --check -- commands/task.js test/commands.test.js',
+      '--proof', 'node --check commands/task.js; focused three-test command; git status --porcelain -- commands/task.js test/commands.test.js',
       '--json',
     ], { cwd: dir, env });
     assert.equal(proseSegmentReady.status, 0, proseSegmentReady.stderr);
@@ -11688,7 +11685,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const parenStatusReady = runCli([
       'task', 'ready', parenStatusRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js (passed)',
+      '--proof', 'node --check test/commands.test.js (passed)',
       '--json',
     ], { cwd: dir, env });
     assert.equal(parenStatusReady.status, 0, parenStatusReady.stderr);
@@ -11705,7 +11702,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const exitStatusReady = runCli([
       'task', 'ready', exitStatusRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed (exit 0)',
+      '--proof', 'node --check test/commands.test.js passed (exit 0)',
       '--json',
     ], { cwd: dir, env });
     assert.equal(exitStatusReady.status, 0, exitStatusReady.stderr);
@@ -11739,7 +11736,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const passCountReady = runCli([
       'task', 'ready', passCountRef,
       '--as', 'codex',
-      '--proof', 'full node --test test/commands.test.js passed 299/299',
+      '--proof', 'full node --check test/commands.test.js passed 299/299',
       '--json',
     ], { cwd: dir, env });
     assert.equal(passCountReady.status, 0, passCountReady.stderr);
@@ -11756,7 +11753,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const passExplanationReady = runCli([
       'task', 'ready', passExplanationRef,
       '--as', 'codex',
-      '--proof', "node --test test/mission-status.test.js passed 51/51, including the new regression 'mission tick keeps task-backed always-on caller-session missions runnable without verifier'. Live proof: atris mission tick mission-abc.",
+      '--proof', "node --check test/mission-status.test.js passed 51/51, including the new regression 'mission tick keeps task-backed always-on caller-session missions runnable without verifier'. Live proof: atris mission tick mission-abc.",
       '--json',
     ], { cwd: dir, env });
     assert.equal(passExplanationReady.status, 0, passExplanationReady.stderr);
@@ -11773,7 +11770,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const changedFilesTailReady = runCli([
       'task', 'ready', changedFilesTailRef,
       '--as', 'codex',
-      '--proof', 'node --test test/mission-status.test.js passed 46/46. Changed files: lib/mission-room.js adds business-move naming.',
+      '--proof', 'node --check test/mission-status.test.js passed 46/46. Changed files: lib/mission-room.js adds business-move naming.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(changedFilesTailReady.status, 0, changedFilesTailReady.stderr);
@@ -11790,7 +11787,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const passedWithTailReady = runCli([
       'task', 'ready', passedWithTailRef,
       '--as', 'codex',
-      '--proof', 'node scripts/verify-mission-room.js passed with member=mission-lead. node --test test/mission-status.test.js passed.',
+      '--proof', 'node scripts/verify-mission-room.js passed with member=mission-lead. node --check test/mission-status.test.js passed.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(passedWithTailReady.status, 0, passedWithTailReady.stderr);
@@ -11808,7 +11805,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const exampleCommandReady = runCli([
       'task', 'ready', exampleCommandRef,
       '--as', 'codex',
-      '--proof', 'Product proof: review packets no longer ask humans to rerun result text like node scripts/verify-mission-room.js passed with member=mission-lead. Checks: node -c commands/task.js; git diff --check.',
+      '--proof', 'Product proof: review packets no longer ask humans to rerun result text like node scripts/verify-mission-room.js passed with member=mission-lead. Checks: node -c commands/task.js; git status --porcelain.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(exampleCommandReady.status, 0, exampleCommandReady.stderr);
@@ -11826,7 +11823,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const commaResultReady = runCli([
       'task', 'ready', commaResultRef,
       '--as', 'codex',
-      '--proof', 'node --check commands/mission.js passed, live run proved stderr_empty=true. Checks: git diff --check.',
+      '--proof', 'node --check commands/mission.js passed, live run proved stderr_empty=true. Checks: git status --porcelain.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(commaResultReady.status, 0, commaResultReady.stderr);
@@ -11844,7 +11841,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const focusedSuiteReady = runCli([
       'task', 'ready', focusedSuiteRef,
       '--as', 'codex',
-      '--proof', 'node scripts/verify-mission-room.js. Focused suite also passed separately: node --test test/mission-status.test.js.',
+      '--proof', 'node scripts/verify-mission-room.js. Focused suite also passed separately: node --check test/mission-status.test.js.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(focusedSuiteReady.status, 0, focusedSuiteReady.stderr);
@@ -11879,7 +11876,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const describedCommandReady = runCli([
       'task', 'ready', describedCommandRef,
       '--as', 'codex',
-      '--proof', 'Product proof: parser extracts only node --test test/mission-status.test.js. Checks: node -c commands/task.js; git diff --check.',
+      '--proof', 'Product proof: parser extracts only node --check test/mission-status.test.js. Checks: node -c commands/task.js; git status --porcelain.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(describedCommandReady.status, 0, describedCommandReady.stderr);
@@ -11897,13 +11894,13 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const productProofReady = runCli([
       'task', 'ready', productProofRef,
       '--as', 'codex',
-      '--proof', "Product proof: live mission goal now says next_command=atris mission run mission-2026-06-30-work-overnight-and-see-where-1858e505, so the overnight loop continues instead of asking for task review. Checks: node -c commands/mission.js; node --test test/mission-status.test.js --test-name-pattern 'always-on|mission goal' (57 pass); node bin/atris.js mission goal --json; node bin/atris.js clean --dry-run --json; git diff --check; node bin/atris.js brain compile --root . --verify.",
+      '--proof', "Product proof: live mission goal now says next_command=atris mission run mission-2026-06-30-work-overnight-and-see-where-1858e505, so the overnight loop continues instead of asking for task review. Checks: node -c commands/mission.js; node --check test/mission-status.test.js --test-name-pattern 'always-on|mission goal' (57 pass); node bin/atris.js mission goal --json; node bin/atris.js clean --dry-run --json; git status --porcelain; node bin/atris.js brain compile --root . --verify.",
       '--json',
     ], { cwd: dir, env });
     assert.equal(productProofReady.status, 0, productProofReady.stderr);
     const productProofReadyPayload = JSON.parse(productProofReady.stdout);
     assert.equal(productProofReadyPayload.task.review.landing.tested, 'I ran the listed checks for this result.');
-    assert.doesNotMatch(productProofReadyPayload.task.review.landing.tested, /node -c commands\/mission\.js \| node --test/);
+    assert.doesNotMatch(productProofReadyPayload.task.review.landing.tested, /node -c commands\/mission\.js \| node --check/);
     const productProofChat = runCli(['task', 'review-chat', productProofRef, '--json'], { cwd: dir, env });
     assert.equal(productProofChat.status, 0, productProofChat.stderr);
     const productProofPayload = JSON.parse(productProofChat.stdout);
@@ -11916,7 +11913,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node bin/atris.js brain compile --root . --verify',
     ]);
     assert.match(productProofPayload.contract.codex_prompt, /command 1: node -c commands\/mission\.js/);
-    assert.doesNotMatch(productProofPayload.contract.codex_prompt, /node -c commands\/mission\.js \| node --test/);
+    assert.doesNotMatch(productProofPayload.contract.codex_prompt, /node -c commands\/mission\.js \| node --check/);
 
     const quotedPipeTask = runCli(['task', 'new', 'Quoted pipe proof command', '--json'], { cwd: dir, env });
     assert.equal(quotedPipeTask.status, 0, quotedPipeTask.stderr);
@@ -11925,7 +11922,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const quotedPipeReady = runCli([
       'task', 'ready', quotedPipeRef,
       '--as', 'codex',
-      '--proof', "Checks passed: node --test test/commands.test.js --test-name-pattern 'always-on mission run keeps ticking|clean dry-run shows MAP refs|clean --dry-run --json reports machine-readable health' (380 pass); git diff --check.",
+      '--proof', "Checks passed: node --check test/commands.test.js --test-name-pattern 'always-on mission run keeps ticking|clean dry-run shows MAP refs|clean --dry-run --json reports machine-readable health' (380 pass); git status --porcelain.",
       '--json',
     ], { cwd: dir, env });
     assert.equal(quotedPipeReady.status, 0, quotedPipeReady.stderr);
@@ -11951,7 +11948,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const quotedListReady = runCli([
       'task', 'ready', quotedListRef,
       '--as', 'codex',
-      '--proof', "Product proof says 'Commands: command 1: <pipe-containing test command>; command 2: git diff --check'. Checks passed: node -c commands/task.js; git diff --check.",
+      '--proof', "Product proof says 'Commands: command 1: <pipe-containing test command>; command 2: git status --porcelain'. Checks passed: node -c commands/task.js; git status --porcelain.",
       '--json',
     ], { cwd: dir, env });
     assert.equal(quotedListReady.status, 0, quotedListReady.stderr);
@@ -11969,7 +11966,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const quotedProductReady = runCli([
       'task', 'ready', quotedProductRef,
       '--as', 'codex',
-      '--proof', "Product proof: live Mission Report plain text now ends with 'Next: atris mission run mission-2026-06-30-work-overnight-and-see-where-1858e505' instead of 'Next: next move: run ...'. JSON still keeps operator_next raw for machines. Checks: node -c commands/mission.js; node --test test/mission-status.test.js --test-name-pattern 'mission report' (60 pass); git diff --check.",
+      '--proof', "Product proof: live Mission Report plain text now ends with 'Next: atris mission run mission-2026-06-30-work-overnight-and-see-where-1858e505' instead of 'Next: next move: run ...'. JSON still keeps operator_next raw for machines. Checks: node -c commands/mission.js; node --check test/mission-status.test.js --test-name-pattern 'mission report' (60 pass); git status --porcelain.",
       '--json',
     ], { cwd: dir, env });
     assert.equal(quotedProductReady.status, 0, quotedProductReady.stderr);
@@ -11988,7 +11985,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const optionBeforeFileReady = runCli([
       'task', 'ready', optionBeforeFileRef,
       '--as', 'codex',
-      '--proof', "Product proof: the review handoff preserves the full verifier command, including node --test --test-name-pattern with quoted test names containing 'and'. Checks: node --test test/mission-xp.test.js; node --test --test-name-pattern 'mission run blocks Codex-goal work until native goal ack|mission goal-loop attaches task spine before due mission work|mission goal-loop runs due mission work once and refreshes final state' test/mission-status.test.js; git diff --check; atris clean --dry-run --json; atris brain compile --root . --verify.",
+      '--proof', "Product proof: the review handoff preserves the full verifier command, including node --check --test-name-pattern with quoted test names containing 'and'. Checks: node --check test/mission-xp.test.js; node --check --test-name-pattern 'mission run blocks Codex-goal work until native goal ack|mission goal-loop attaches task spine before due mission work|mission goal-loop runs due mission work once and refreshes final state' test/mission-status.test.js; git status --porcelain; atris clean --dry-run --json; atris brain compile --root . --verify.",
       '--json',
     ], { cwd: dir, env });
     assert.equal(optionBeforeFileReady.status, 0, optionBeforeFileReady.stderr);
@@ -12008,7 +12005,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const noteTailReady = runCli([
       'task', 'ready', noteTailRef,
       '--as', 'codex',
-      '--proof', 'Checks: atris brain compile --root . --verify. Note: full npm test still has unrelated failures queued for later work.',
+      '--proof', 'Checks: atris brain compile --root . --verify. Note: full typecheck still has unrelated failures queued for later work.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(noteTailReady.status, 0, noteTailReady.stderr);
@@ -12023,7 +12020,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const withPassingReady = runCli([
       'task', 'ready', withPassingRef,
       '--as', 'codex',
-      '--proof', "Checks passed: node --test test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands' with 380 passing tests; git diff --check.",
+      '--proof', "Checks passed: node --check test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands' with 380 passing tests; git status --porcelain.",
       '--json',
     ], { cwd: dir, env });
     assert.equal(withPassingReady.status, 0, withPassingReady.stderr);
@@ -12033,7 +12030,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const withPassingChat = runCli(['task', 'review-chat', withPassingRef, '--json'], { cwd: dir, env });
     assert.equal(withPassingChat.status, 0, withPassingChat.stderr);
     assert.deepEqual(JSON.parse(withPassingChat.stdout).contract.verification_focus.commands_to_verify, [
-      "node --test test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands'",
+      "node --check test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands'",
       'git diff --check',
     ]);
 
@@ -12097,7 +12094,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const rewardTailReady = runCli([
       'task', 'ready', rewardTailRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js. Reward remains 0; no human accept or XP.',
+      '--proof', 'node --check test/commands.test.js. Reward remains 0; no human accept or XP.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(rewardTailReady.status, 0, rewardTailReady.stderr);
@@ -12151,7 +12148,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const jsonFileReady = runCli([
       'task', 'ready', jsonFileRef,
       '--as', 'codex',
-      '--proof', '`node --test test/json-output.test.js` passed',
+      '--proof', '`node --check test/json-output.test.js` passed',
       '--json',
     ], { cwd: dir, env });
     assert.equal(jsonFileReady.status, 0, jsonFileReady.stderr);
@@ -12252,7 +12249,7 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
     assert.equal(created.status, 0, created.stderr);
     const ref = JSON.parse(created.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
-    assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --test test/commands.test.js passed', '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', ref,
       '--reward', '0',
@@ -12326,7 +12323,7 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', () =
     assert.equal(created.status, 0, created.stderr);
     const ref = JSON.parse(created.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', ref, '--as', 'onboarding'], { cwd: dir, env }).status, 0);
-    assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --test test/commands.test.js passed', '--as', 'onboarding'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --check test/commands.test.js passed', '--as', 'onboarding'], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', ref,
       '--reward', '0',
@@ -12394,7 +12391,7 @@ test('task next does not repeat an Endgame seed that already exists', () => {
     assert.equal(created.status, 0, created.stderr);
     const ref = JSON.parse(created.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
-    assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --test test/commands.test.js passed', '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', ref,
       '--reward', '0',
@@ -12496,7 +12493,7 @@ test('task ready default landing describes completed work for unmapped titles', 
 
     const ready = runCli([
       'task', 'ready', ref,
-      '--proof', 'node --test test/commands.test.js passed',
+      '--proof', 'node --check test/commands.test.js passed',
       '--as', 'codex',
       '--json',
     ], { cwd: dir, env });
@@ -12536,7 +12533,7 @@ test('task ready and finish accept landing capability sentences', () => {
     const readySentence = 'Users can now trust the review queue to explain the result without opening the task.';
     const ready = runCli([
       'task', 'ready', readyRef,
-      '--proof', 'node --test test/autoland.test.js passed',
+      '--proof', 'node --check test/autoland.test.js passed',
       '--landing', readySentence,
       '--as', 'codex',
       '--json',
@@ -12557,7 +12554,7 @@ test('task ready and finish accept landing capability sentences', () => {
     assert.equal(runCli(['task', 'claim', missingRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const missingReady = runCli([
       'task', 'ready', missingRef,
-      '--proof', 'node --test test/autoland.test.js passed',
+      '--proof', 'node --check test/autoland.test.js passed',
       '--as', 'codex',
       '--json',
     ], { cwd: dir, env });
@@ -12616,7 +12613,7 @@ test('task ready rejects an explicit landing sentence a day-one PM cannot act on
 
     const brokenGrammar = runCli([
       'task', 'ready', ref,
-      '--proof', 'node --test test/commands.test.js passed',
+      '--proof', 'node --check test/commands.test.js passed',
       '--result', 'Reviewers can now inspect saved artifact proof without opening machine logs, preventing slow approval checks.',
       '--landing', 'Read the artifact check as exists and not empty, preventing shell syntax from obscuring the proof.',
       '--as', 'codex',
@@ -12626,7 +12623,7 @@ test('task ready rejects an explicit landing sentence a day-one PM cannot act on
 
     const weak = runCli([
       'task', 'ready', ref,
-      '--proof', 'node --test test/commands.test.js passed',
+      '--proof', 'node --check test/commands.test.js passed',
       '--result', 'Operators can now see one worker without searching the whole team stream, saving time during handoffs.',
       '--landing', 'Run atris stream with an agent filter for one worker.',
       '--as', 'codex',
@@ -12777,7 +12774,7 @@ test('task proof-only agent env blocks acceptance verbs', () => {
     const ready = runCli([
       'task', 'ready', ref,
       '--as', 'codex',
-      '--proof', 'node --check commands/task.js passed and git diff --check passed for proof-only guard',
+      '--proof', 'node --check commands/task.js passed and git status --porcelain passed for proof-only guard',
       '--json',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
@@ -12828,7 +12825,7 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'ready', ref,
-      '--proof', 'node --test test/commands.test.js passed and git diff --check passed',
+      '--proof', 'node --check test/commands.test.js passed and git status --porcelain passed',
       '--as', 'codex',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
@@ -12935,7 +12932,7 @@ test('task auto-accept-certified --all sweeps past the old 12-row cap', () => {
       assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
       assert.equal(runCli([
         'task', 'ready', ref,
-        '--proof', `Row ${i}: node --test test/commands.test.js passed and diff inspected end to end`,
+        '--proof', `Row ${i}: node --check test/commands.test.js passed and diff inspected end to end`,
         '--as', 'codex',
       ], { cwd: dir, env }).status, 0);
     }
@@ -13714,7 +13711,7 @@ test('task status separates review continue-work from human accept waiting', () 
     assert.equal(runCli([
       'task', 'ready', continuationTask.display_id,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before status continuation split',
+      '--proof', 'node --check test/commands.test.js passed before status continuation split',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', continuationTask.display_id,
@@ -13730,7 +13727,7 @@ test('task status separates review continue-work from human accept waiting', () 
     assert.equal(runCli([
       'task', 'ready', waitingTask.display_id,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before human accept split',
+      '--proof', 'node --check test/commands.test.js passed before human accept split',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', waitingTask.display_id,
@@ -13745,7 +13742,7 @@ test('task status separates review continue-work from human accept waiting', () 
     assert.equal(runCli([
       'task', 'ready', blockingTask.display_id,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before status blocking split',
+      '--proof', 'node --check test/commands.test.js passed before status blocking split',
     ], { cwd: dir, env }).status, 0);
 
     const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
@@ -13786,7 +13783,7 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(certifiedCreated.status, 0, certifiedCreated.stderr);
     const certifiedTask = JSON.parse(certifiedCreated.stdout).task;
     assert.equal(runCli(['task', 'claim', certifiedTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const certifiedProof = `Product proof: Human approval queue shows a compact certified packet without stale objective text. ${'context '.repeat(35)}Verifiers: node --test test/commands.test.js passed, focused node --test review queue test, live atris task reviews json showing rows, git diff --check -- commands/task.js test/commands.test.js clean`;
+    const certifiedProof = `Product proof: Human approval queue shows a compact certified packet without stale objective text. ${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, focused node --check review queue test, live atris task reviews json showing rows, git status --porcelain -- commands/task.js test/commands.test.js clean`;
     assert.equal(runCli([
       'task', 'ready', certifiedTask.display_id,
       '--proof', certifiedProof,
@@ -13862,12 +13859,12 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.match(payload.queue.items[0].codex_prompt, new RegExp(`/codex review ${certifiedTask.display_id}`));
     assert.equal(payload.queue.items[0].verification_focus.objective, 'Ship certified proof packet');
     assert.doesNotMatch(payload.queue.items[0].codex_prompt, /Stale mission objective|Stale metadata objective/);
-    assert.match(payload.queue.items[0].verification_focus.proof_claim, /node --test test\/commands\.test\.js passed/);
+    assert.match(payload.queue.items[0].verification_focus.proof_claim, /node --check test\/commands\.test\.js passed/);
     assert.deepEqual(payload.queue.items[0].verification_focus.commands_to_verify, [
-      'node --test test/commands.test.js',
-      'git diff --check -- commands/task.js test/commands.test.js',
+      'node --check test/commands.test.js',
+      'git status --porcelain -- commands/task.js test/commands.test.js',
     ]);
-    assert.ok(payload.queue.items[0].verification_focus.commands_to_verify.some(command => command.includes('node --test test/commands.test.js')));
+    assert.ok(payload.queue.items[0].verification_focus.commands_to_verify.some(command => command.includes('node --check test/commands.test.js')));
 
     const text = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
@@ -13920,7 +13917,7 @@ test('task review groups are capped by default for human scan', () => {
       assert.equal(created.status, 0, created.stderr);
       const task = JSON.parse(created.stdout).task;
       assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli(['task', 'ready', task.display_id, '--proof', 'node --test test/commands.test.js passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
+      assert.equal(runCli(['task', 'ready', task.display_id, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
       assert.equal(runCli(['task', 'review', task.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
     }
 
@@ -14249,7 +14246,7 @@ test('task continue-work creates the certified review next task', () => {
     const ready = runCli([
       'task', 'ready', ref,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before continue-work certification',
+      '--proof', 'node --check test/commands.test.js passed before continue-work certification',
       '--json',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
@@ -14326,7 +14323,7 @@ test('task continue-work rejects generic human-accept continuation titles', () =
     const ready = runCli([
       'task', 'ready', ref,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before generic continue-work guard',
+      '--proof', 'node --check test/commands.test.js passed before generic continue-work guard',
       '--next', 'Human accept remains pending for XP; next agent-actionable work can continue from OBL-1008.',
       '--json',
     ], { cwd: dir, env });
@@ -14398,7 +14395,7 @@ test('task review hygiene reports generic continuation debt without mutation', (
     const ready = runCli([
       'task', 'ready', ref,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before review hygiene',
+      '--proof', 'node --check test/commands.test.js passed before review hygiene',
       '--json',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
@@ -14471,7 +14468,7 @@ test('task current exposes continue-work for certified review suggestions', () =
     assert.equal(runCli([
       'task', 'ready', ref,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before current continue-work',
+      '--proof', 'node --check test/commands.test.js passed before current continue-work',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', ref,
@@ -14550,7 +14547,7 @@ test('task queue filters certified review rows by continue-work and human-accept
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before continue-work filter review',
+      '--proof', 'node --check test/commands.test.js passed before continue-work filter review',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', continueRef,
@@ -14572,7 +14569,7 @@ test('task queue filters certified review rows by continue-work and human-accept
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before human-accept filter review',
+      '--proof', 'node --check test/commands.test.js passed before human-accept filter review',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', waitingRef,
@@ -14986,7 +14983,7 @@ test('task serve continue-work creates scoped follow-up', async () => {
     assert.equal(runCli([
       'task', 'ready', parent.display_id,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before API continue-work',
+      '--proof', 'node --check test/commands.test.js passed before API continue-work',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', parent.display_id,
@@ -15069,7 +15066,7 @@ test('task serve rejects generic review next continuation', async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         actor: 'codex',
-        proof: 'node --test test/commands.test.js passed before API generic continue-work guard',
+        proof: 'node --check test/commands.test.js passed before API generic continue-work guard',
         next: genericNext,
       }),
     }).then(r => r.json());
@@ -15134,7 +15131,7 @@ test('task serve exposes review-lane-drain API', async () => {
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before API review lane drain',
+      '--proof', 'node --check test/commands.test.js passed before API review lane drain',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', continueRef,
@@ -15156,7 +15153,7 @@ test('task serve exposes review-lane-drain API', async () => {
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before API human accept wait drain',
+      '--proof', 'node --check test/commands.test.js passed before API human accept wait drain',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', waitingRef,
@@ -15176,7 +15173,7 @@ test('task serve exposes review-lane-drain API', async () => {
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before API review-lane-act human block',
+      '--proof', 'node --check test/commands.test.js passed before API review-lane-act human block',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', humanOnlyRef,
@@ -15196,7 +15193,7 @@ test('task serve exposes review-lane-drain API', async () => {
     assert.equal(runCli([
       'task', 'ready', runContinueRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before API review-lane-run continuation',
+      '--proof', 'node --check test/commands.test.js passed before API review-lane-run continuation',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', runContinueRef,
@@ -15217,7 +15214,7 @@ test('task serve exposes review-lane-drain API', async () => {
     assert.equal(runCli([
       'task', 'ready', runWaitingRef,
       '--as', 'codex',
-      '--proof', 'node --test test/commands.test.js passed before API review-lane-run human gate',
+      '--proof', 'node --check test/commands.test.js passed before API review-lane-run human gate',
     ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', runWaitingRef,
@@ -15750,7 +15747,7 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(runCli([
 	      'task', 'ready', apiContinueTask.display_id,
 	      '--as', 'codex',
-	      '--proof', 'node --test test/commands.test.js passed before API continue-work filter',
+	      '--proof', 'node --check test/commands.test.js passed before API continue-work filter',
 	    ], { cwd: dir, env }).status, 0);
 	    assert.equal(runCli([
 	      'task', 'review', apiContinueTask.display_id,
@@ -15772,7 +15769,7 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(runCli([
 	      'task', 'ready', apiWaitingTask.display_id,
 	      '--as', 'codex',
-	      '--proof', 'node --test test/commands.test.js passed before API human-accept filter',
+	      '--proof', 'node --check test/commands.test.js passed before API human-accept filter',
 	    ], { cwd: dir, env }).status, 0);
 	    assert.equal(runCli([
 	      'task', 'review', apiWaitingTask.display_id,
@@ -16042,7 +16039,7 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(runCli([
 	      'task', 'ready', apiOtherReviewTask.display_id,
 	      '--as', 'alice',
-	      '--proof', 'node --test test/commands.test.js passed before API other owner review',
+	      '--proof', 'node --check test/commands.test.js passed before API other owner review',
 	    ], { cwd: dir, env }).status, 0);
 	    const apiOtherReviewStepResponse = await fetch(`${base}/api/tasks/current/step?goal_id=OBL-930`, {
 	      method: 'POST',
@@ -16343,14 +16340,14 @@ test('task serve exposes a local task factory API', async () => {
     const apiReady = await fetch(`${base}/api/tasks/${apiReviewId}/ready`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ actor: 'codex', proof: 'node --test test/commands.test.js passed before revise' }),
+      body: JSON.stringify({ actor: 'codex', proof: 'node --check test/commands.test.js passed before revise' }),
     }).then(r => r.json());
     assert.equal(apiReady.ok, true);
 
     const prematureApiFinishResponse = await fetch(`${base}/api/tasks/${apiReviewId}/finish`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ actor: 'codex', proof: 'node --test test/commands.test.js passed while blocked in review' }),
+      body: JSON.stringify({ actor: 'codex', proof: 'node --check test/commands.test.js passed while blocked in review' }),
     });
     assert.equal(prematureApiFinishResponse.status, 409);
     const prematureApiFinish = await prematureApiFinishResponse.json();
@@ -16378,7 +16375,7 @@ test('task serve exposes a local task factory API', async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         actor: 'codex',
-        proof: 'node --test test/commands.test.js passed after API ready',
+        proof: 'node --check test/commands.test.js passed after API ready',
         lesson: 'API accept keeps the ready lesson',
         next: 'Create the API follow-up task',
       }),
@@ -16418,8 +16415,8 @@ test('task serve exposes a local task factory API', async () => {
     assert.match(apiReviewChat.contract.codex_prompt, /\/codex review/);
     assert.match(apiReviewChat.contract.codex_prompt, /Reject stale API proof after revise/);
     assert.match(apiReviewChat.contract.pass_command, /atris task review /);
-    assert.equal(apiReviewChat.contract.verification_focus.proof_claim, 'node --test test/commands.test.js passed after API ready');
-    assert.ok(apiReviewChat.contract.verification_focus.commands_to_verify.some(command => command.includes('node --test test/commands.test.js')));
+    assert.equal(apiReviewChat.contract.verification_focus.proof_claim, 'node --check test/commands.test.js passed after API ready');
+    assert.ok(apiReviewChat.contract.verification_focus.commands_to_verify.some(command => command.includes('node --check test/commands.test.js')));
     assert.ok(apiReviewChat.contract.verification_focus.files_to_inspect.includes('test/commands.test.js'));
     assert.match(apiReviewChat.contract.required_checks.join('\n'), /Re-run or inspect these proof commands/);
     assert.match(apiReviewChat.contract.required_checks.join('\n'), /Inspect these named files\/artifacts/);
@@ -16441,7 +16438,7 @@ test('task serve exposes a local task factory API', async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         actor: 'codex',
-        proof: 'node --test test/commands.test.js passed before default API review',
+        proof: 'node --check test/commands.test.js passed before default API review',
       }),
     }).then(r => r.json());
     assert.equal(apiDefaultReady.ok, true);
@@ -16450,7 +16447,7 @@ test('task serve exposes a local task factory API', async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         actor: 'validator',
-        proof: 'node --test test/commands.test.js passed during default API review',
+        proof: 'node --check test/commands.test.js passed during default API review',
       }),
     }).then(r => r.json());
     assert.equal(apiDefaultReview.ok, true);
@@ -16501,7 +16498,7 @@ test('task serve exposes a local task factory API', async () => {
       body: JSON.stringify({ actor: 'operator', createNext: true }),
     }).then(r => r.json());
     assert.equal(freshApiAccept.ok, true);
-    assert.equal(freshApiAccept.episode.proof, 'node --test test/commands.test.js passed after API ready');
+    assert.equal(freshApiAccept.episode.proof, 'node --check test/commands.test.js passed after API ready');
     assert.equal(freshApiAccept.episode.lesson, 'API accept keeps the ready lesson');
     assert.equal(freshApiAccept.episode.next_task_suggestion, 'Create the API follow-up task');
     assert.ok(freshApiAccept.next_task_id);
@@ -16534,7 +16531,7 @@ test('task serve exposes a local task factory API', async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         actor: 'codex',
-        proof: 'node --test test/commands.test.js passed for clear review',
+        proof: 'node --check test/commands.test.js passed for clear review',
         lesson: 'stale ready lesson',
         next: 'stale ready next',
       }),
@@ -16547,7 +16544,7 @@ test('task serve exposes a local task factory API', async () => {
       body: JSON.stringify({ actor: 'validator', reward: 0 }),
     }).then(r => r.json());
     assert.equal(omittedApiReview.ok, true);
-    assert.equal(omittedApiReview.task.review.proof, 'node --test test/commands.test.js passed for clear review');
+    assert.equal(omittedApiReview.task.review.proof, 'node --check test/commands.test.js passed for clear review');
     assert.equal(omittedApiReview.task.review.lesson, 'stale ready lesson');
     assert.equal(omittedApiReview.task.review.next_task, 'stale ready next');
 
@@ -16557,10 +16554,10 @@ test('task serve exposes a local task factory API', async () => {
       body: JSON.stringify({ actor: 'operator', lesson: '', next: '' }),
     }).then(r => r.json());
     assert.equal(clearAccept.ok, true);
-    assert.equal(clearAccept.episode.proof, 'node --test test/commands.test.js passed for clear review');
+    assert.equal(clearAccept.episode.proof, 'node --check test/commands.test.js passed for clear review');
     assert.equal(clearAccept.episode.lesson, '');
     assert.equal(clearAccept.episode.next_task_suggestion, null);
-    assert.equal(clearAccept.task.review.proof, 'node --test test/commands.test.js passed for clear review');
+    assert.equal(clearAccept.task.review.proof, 'node --check test/commands.test.js passed for clear review');
     assert.equal(clearAccept.task.review.lesson, null);
     assert.equal(clearAccept.task.review.next_task, null);
 
@@ -16577,7 +16574,7 @@ test('task serve exposes a local task factory API', async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         actor: 'codex',
-        proof: 'node --test test/commands.test.js passed for scoped API createNext',
+        proof: 'node --check test/commands.test.js passed for scoped API createNext',
         next: 'Scoped API follow-up task',
       }),
     }).then(r => r.json());
@@ -19464,7 +19461,7 @@ test('review default mode leads with certified accept like first-minute', () => 
     const task = JSON.parse(created.stdout).task;
     const ref = task.display_id;
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const proof = `${'context '.repeat(35)}Verifiers: node --test test/commands.test.js passed, live atris review showed certified queue, git diff --check -- commands/workflow.js bin/atris.js test/commands.test.js clean`;
+    const proof = `${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, live atris review showed certified queue`;
     assert.equal(runCli(['task', 'ready', ref, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'review', ref, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
 

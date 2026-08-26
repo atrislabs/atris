@@ -60,7 +60,7 @@ function writeMissionReceipt(dir, name, { missionId = 'mission-boot-123', passed
 }
 
 function certifiedProofMentioning(receiptRel) {
-  return `${'context '.repeat(35)}Verifiers: node --test test/boot-panel-counts.test.js passed, receipt ${receiptRel} attached, git diff --check clean`;
+  return `${'context '.repeat(35)}Verifiers: node --check test/boot-panel-counts.test.js passed, receipt ${receiptRel} attached`;
 }
 
 function seedTask(dir, env, title, { claim, certify } = {}) {

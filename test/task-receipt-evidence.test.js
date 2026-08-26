@@ -55,7 +55,7 @@ function writeMissionReceipt(dir, name, { missionId = 'mission-test-123', passed
 
 // Long enough to pass the meaningful-proof bar, with verifier commands like real proofs.
 function certifiedProofMentioning(receiptRel) {
-  return `${'context '.repeat(35)}Verifiers: node --test test/task-receipt-evidence.test.js passed, receipt ${receiptRel} attached, git diff --check -- commands/task.js clean`;
+  return `${'context '.repeat(35)}Verifiers: node --check test/task-receipt-evidence.test.js passed, receipt ${receiptRel} attached`;
 }
 
 function setupCertifiedTask(dir, env, proof, title = 'Evidence surfacing task') {
@@ -175,7 +175,7 @@ test('review queue flags missing and failing receipts named in proof', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const failingRel = writeMissionReceipt(dir, 'mission-failing-receipt.json', { passed: false });
     const ghostRel = path.join('atris', 'runs', 'mission-ghost-receipt.json');
-    const proof = `${'context '.repeat(35)}Verifiers: receipts ${failingRel} and ${ghostRel} attached, node --test passed`;
+    const proof = `${'context '.repeat(35)}Verifiers: receipts ${failingRel} and ${ghostRel} attached, node --check passed`;
     setupCertifiedTask(dir, env, proof);
 
     const queue = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
@@ -325,7 +325,7 @@ test('proofs without receipt paths carry no evidence block', () => {
   const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), NODE_NO_WARNINGS: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const proof = `${'context '.repeat(35)}Verifiers: node --test test/commands.test.js passed, git diff --check clean`;
+    const proof = `${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, typecheck passed`;
     setupCertifiedTask(dir, env, proof);
 
     const queue = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
@@ -346,7 +346,7 @@ test('review queue puts green-evidence items first and counts them', () => {
     const receiptRel = writeMissionReceipt(dir, 'mission-green-receipt.json', { passed: true });
     // Green task is created FIRST (older updated_at); the prose task is newer.
     const greenTask = setupCertifiedTask(dir, env, certifiedProofMentioning(receiptRel), 'Green evidence task');
-    const proseProof = `${'context '.repeat(35)}Verifiers: node --test test/commands.test.js passed, git diff --check clean`;
+    const proseProof = `${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, typecheck passed`;
     const proseTask = setupCertifiedTask(dir, env, proseProof, 'Prose only task');
 
     const queue = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
@@ -375,9 +375,9 @@ test('accept-group spot-check targets the weakest evidence first', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const greenRel = writeMissionReceipt(dir, 'mission-green-receipt.json', { passed: true });
     const green = setupCertifiedTask(dir, env, certifiedProofMentioning(greenRel), 'Green receipt task');
-    const ghostProof = `${'context '.repeat(35)}Verifiers: receipt atris/runs/mission-ghost-receipt.json attached, node --test passed`;
+    const ghostProof = `${'context '.repeat(35)}Verifiers: receipt atris/runs/mission-ghost-receipt.json attached, node --check passed`;
     const ghost = setupCertifiedTask(dir, env, ghostProof, 'Missing receipt task');
-    const proseProof = `${'context '.repeat(35)}Verifiers: node --test test/commands.test.js passed, git diff --check clean`;
+    const proseProof = `${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, typecheck passed`;
     const prose = setupCertifiedTask(dir, env, proseProof, 'Prose only task');
 
     const preview = runCli(['task', 'accept-group', 'tag=evidence', '--spot-check', '2', '--json'], { cwd: dir, env });
@@ -404,7 +404,7 @@ test('review groups report how many tasks carry passing evidence', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const greenRel = writeMissionReceipt(dir, 'mission-green-receipt.json', { passed: true });
     setupCertifiedTask(dir, env, certifiedProofMentioning(greenRel), 'Green receipt task');
-    const proseProof = `${'context '.repeat(35)}Verifiers: node --test test/commands.test.js passed, git diff --check clean`;
+    const proseProof = `${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, typecheck passed`;
     setupCertifiedTask(dir, env, proseProof, 'Prose only task');
 
     const groups = runCli(['task', 'reviews', '--group-by', 'tag', '--json'], { cwd: dir, env });

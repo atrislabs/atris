@@ -4,7 +4,17 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { spawnSync } = require('node:child_process');
-const { tailText, taskProofLooksMeaningful, taskProofLooksExecuted, taskProofState, taskProofExecutionState, buildVerifiedProof } = require('../lib/task-proof');
+const {
+  tailText,
+  taskProofLooksMeaningful,
+  taskProofLooksExecuted,
+  taskProofState,
+  taskProofExecutionState,
+  namedUnrunProofCommand,
+  unrunNamedProofCommandIssue,
+  buildVerifiedProof,
+  PROOF_COMMAND_NOT_RUN,
+} = require('../lib/task-proof');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 const { withTaskReadyResult } = require('./helpers/task-result');
@@ -179,6 +189,76 @@ test('buildVerifiedProof turns a passing command into executed proof', () => {
   assert.deepEqual(calls[0][1], ['-lc', 'npm test']);
 });
 
+test('namedUnrunProofCommand spots npm test, node --test, and git diff --check until this process ran them', () => {
+  assert.equal(namedUnrunProofCommand('npm test passed; run_id=123456789'), 'npm test');
+  assert.equal(namedUnrunProofCommand('node --test test/task-proof.test.js passed'), 'node --test');
+  assert.equal(namedUnrunProofCommand('Command passed: git diff --check. Evidence inspected.'), 'git diff --check');
+  assert.equal(namedUnrunProofCommand('npm test passed', 'npm test'), '');
+  assert.equal(namedUnrunProofCommand('node --test test/task-proof.test.js passed', 'node --test test/task-proof.test.js'), '');
+  assert.equal(namedUnrunProofCommand('git diff --check passed', 'git diff --check'), '');
+  assert.equal(namedUnrunProofCommand('npm test passed', 'true'), 'npm test');
+  assert.equal(namedUnrunProofCommand('Receipt saved at atris/runs/proof.json'), '');
+  assert.equal(namedUnrunProofCommand('typecheck passed and the review packet is inspectable'), '');
+  assert.equal(namedUnrunProofCommand('node --check plus focused task tests'), '');
+  const issue = unrunNamedProofCommandIssue('npm test passed');
+  assert.equal(issue.reason, PROOF_COMMAND_NOT_RUN);
+  assert.match(issue.detail, /this process did not run it/);
+  assert.match(issue.detail, /--verify "npm test"/);
+  assert.equal(unrunNamedProofCommandIssue('npm test passed', 'npm test'), null);
+});
+
+test('task ready fails when --proof names a command this process did not run', () => {
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const add = runCli(['task', 'add', 'Named command must have run', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+
+    const lied = runCli(['task', 'ready', ref, '--proof', 'npm test passed; run_id=123456789', '--json'], { cwd: dir, env });
+    assert.equal(lied.status, 2);
+    assert.match(lied.stdout, /"reason":"proof_command_not_run"|"reason": "proof_command_not_run"/);
+    assert.match(lied.stdout, /this process did not run it/);
+    assert.doesNotMatch(lied.stdout + lied.stderr, /\?|say yes|Describe /);
+
+    const honest = runCli(['task', 'ready', ref, '--proof', 'Receipt saved at atris/runs/proof.json', '--json'], { cwd: dir, env });
+    assert.equal(honest.status, 0, honest.stderr);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task ready accepts a named command only after --verify ran it', () => {
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    runGit(['init'], dir);
+    const add = runCli(['task', 'add', 'Verify must cover the named command', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+
+    const mismatch = runCli([
+      'task', 'ready', ref,
+      '--verify', 'true',
+      '--no-falsify-check',
+      '--proof', 'npm test passed',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(mismatch.status, 2);
+    assert.match(mismatch.stdout, /proof_command_not_run/);
+
+    const ok = runCli(['task', 'ready', ref, '--verify', 'git diff --check', '--json'], { cwd: dir, env });
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(JSON.parse(ok.stdout).task.review.proof, /\[verified\] `git diff --check` passed \(exit 0\)/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('buildVerifiedProof refuses to vouch for a failing or empty command', () => {
   const failing = buildVerifiedProof('npm test', '', () => ({ status: 1, stdout: '', stderr: '3 failing\n' }));
   assert.equal(failing.ok, false);
@@ -278,7 +358,8 @@ test('task CLI blocks weak ready proof, positive reviews without proof, and bare
     assert.match(weakReady.stdout, /"reason":"weak_proof"|"reason": "weak_proof"/);
 
     const strongReady = runCli(['task', 'ready', ref, '--proof', 'node --test test/task-proof.test.js passed', '--json'], { cwd: dir, env });
-    assert.equal(strongReady.status, 0, strongReady.stderr);
+    assert.equal(strongReady.status, 2);
+    assert.match(strongReady.stdout, /"reason":"proof_command_not_run"|"reason": "proof_command_not_run"/);
 
     const review = runCli(['task', 'review', ref, '--reward', '1', '--json'], { cwd: dir, env });
     assert.equal(review.status, 2);

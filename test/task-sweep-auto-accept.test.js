@@ -54,7 +54,7 @@ function writeReceipt(dir, name, result) {
 }
 
 function verifiedProof(receiptRel) {
-  return `${'context '.repeat(35)}Verifier receipt ${receiptRel} shows the verify passed. Checks: receipt ${receiptRel}; node --test test/task-sweep-auto-accept.test.js passed; git diff --check passed.`;
+  return `${'context '.repeat(35)}Verifier receipt ${receiptRel} shows the verify passed. Checks: receipt ${receiptRel}; node --check test/task-sweep-auto-accept.test.js passed.`;
 }
 
 function setupReadyTask(dir, env, { title, tag = 'test', proof }) {
@@ -73,6 +73,19 @@ function setupReadyTask(dir, env, { title, tag = 'test', proof }) {
     '--json',
   ], { cwd: dir, env });
   assert.equal(ready.status, 0, ready.stderr);
+  return task;
+}
+
+function setupLegacyNamedProofTask(dir, env, { title, tag = 'test', proof }) {
+  const created = runCli(['task', 'new', title, '--tag', tag, '--json'], { cwd: dir, env });
+  assert.equal(created.status, 0, created.stderr);
+  const task = JSON.parse(created.stdout).task;
+  assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+  const taskDb = require('../lib/task-db');
+  const db = taskDb.open(env.ATRIS_TASKS_DB);
+  const ready = taskDb.readyTask(db, { id: task.id, actor: 'codex', proof });
+  assert.equal(ready.ready, true, ready.reason);
+  assert.equal(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).status, 0);
   return task;
 }
 
@@ -190,7 +203,7 @@ test('task sweep --auto-accept re-derives a node --test command from proof text,
   };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const task = setupReadyTask(dir, env, {
+    const task = setupLegacyNamedProofTask(dir, env, {
       title: 'test/refresh proof display',
       tag: 'test',
       proof: `${'context '.repeat(35)}Checks: node --test test/task-sweep-auto-accept.test.js passed and git diff --check passed, but no receipt verifier JSON was attached.`,
@@ -312,7 +325,7 @@ test('a proof citing a real, passing node --test path with no receipt at all aut
       test('always passes', () => {});
     `, 'utf8');
 
-    const task = setupReadyTask(dir, env, {
+    const task = setupLegacyNamedProofTask(dir, env, {
       title: 'Ship the always-pass regression, take two',
       tag: 'test',
       proof: `${'context '.repeat(35)}Checks: node --test test/always-pass.test.js passed. No receipt file was attached.`,

@@ -97,7 +97,7 @@ function certifiedTask(repo, title, { tag = 'code' } = {}) {
     || JSON.parse(created.stdout).id;
   assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
   assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
-  const proof = 'Command passed: git diff --check. Evidence inspected: clean tree, change verified in place.';
+  const proof = 'Receipt saved at atris/runs/demo-receipt.json. Evidence inspected: clean tree, change verified in place.';
   assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'builder'], repo).status, 0);
   assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'codex-review'], repo).status, 0);
   return String(id);
@@ -444,7 +444,7 @@ test('digest reports protected reviews before certification', () => {
     const ref = task.display_id || task.id;
     assert.equal(runCli(['task', 'claim', ref, '--as', 'linguist'], repo).status, 0);
     const ready = runCli([
-      'task', 'ready', ref, '--proof', 'Command passed: git diff --check. Evidence inspected: sentence is pinned.', '--as', 'linguist',
+      'task', 'ready', ref, '--verify', 'git diff --check', '--as', 'linguist',
     ], repo);
     assert.equal(ready.status, 0, ready.stderr || ready.stdout);
 
@@ -466,7 +466,7 @@ test('autoland status does not call one-pass protected work approval-ready', () 
     const ref = task.display_id || task.id;
     assert.equal(runCli(['task', 'claim', ref, '--as', 'linguist'], repo).status, 0);
     const ready = runCli([
-      'task', 'ready', ref, '--proof', 'Command passed: git diff --check. Evidence inspected: protected wording is pinned.', '--as', 'linguist',
+      'task', 'ready', ref, '--verify', 'git diff --check', '--as', 'linguist',
     ], repo);
     assert.equal(ready.status, 0, ready.stderr || ready.stdout);
 
@@ -496,7 +496,7 @@ test('autoland status speaks in plain sentences and puts your decisions first', 
     const protectedRef = task.display_id || task.id;
     assert.equal(runCli(['task', 'claim', protectedRef, '--as', 'linguist'], repo).status, 0);
     const ready = runCli([
-      'task', 'ready', protectedRef, '--proof', 'Command passed: git diff --check. Evidence inspected: protected wording is pinned.', '--as', 'linguist',
+      'task', 'ready', protectedRef, '--verify', 'git diff --check', '--as', 'linguist',
     ], repo);
     assert.equal(ready.status, 0, ready.stderr || ready.stdout);
 
@@ -653,7 +653,9 @@ test('live update receipt keeps the exact sent text when the daily digest is sen
   try {
     for (const key of agentEnvKeys) delete process.env[key];
     process.env.ATRIS_TASKS_DB = path.join(repo, '.atris', 'fixture-tasks.db');
-    const taskRef = certifiedTask(repo, 'Make live landing messages auditable for operators');
+    const taskRef = certifiedVerifiedTask(repo, 'Make live landing messages auditable for operators', {
+      verify: 'git diff --check',
+    });
     const policy = {
       enabled: true,
       enabled_by: 'keshav',
@@ -863,8 +865,8 @@ test('autoland help forms are read-only and do not run a heartbeat', () => {
 test('live auto-accept refuses without policy, lands with it, blocks denied lanes', () => {
   const { base, repo } = makeTempRepo();
   try {
-    const codeTask = certifiedTask(repo, 'Fix the flaky moves test', { tag: 'code' });
-    const billingTask = certifiedTask(repo, 'Send the June invoice', { tag: 'billing' });
+    const codeTask = certifiedVerifiedTask(repo, 'Fix the flaky moves test', { tag: 'code', verify: 'git diff --check' });
+    const billingTask = certifiedVerifiedTask(repo, 'Send the June invoice', { tag: 'billing', verify: 'git diff --check' });
 
     // explicit off: live refuses
     autoland.writePolicy(repo, { enabled: false, enabled_by: 'keshav' });
@@ -960,8 +962,7 @@ function proofBackedTask(repo, title, { tag = 'code' } = {}) {
   const id = JSON.parse(created.stdout).task?.display_id || JSON.parse(created.stdout).task?.id;
   assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
   assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
-  const proof = 'Command passed: git diff --check. Evidence inspected: clean tree, change verified in place.';
-  assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'builder'], repo).status, 0);
+  assert.equal(runCli(['task', 'ready', String(id), '--verify', 'git diff --check', '--as', 'builder'], repo).status, 0);
   return String(id);
 }
 
@@ -1336,8 +1337,7 @@ test('two passes from one actor cannot land until the tick independently re-runs
     const id = proofBackedTask(repo, 'Same reviewer twice', { tag: 'code' });
     // second pass by the SAME actor: not certified and not landable
     // (needs_independent_reviewer) until a distinct actor re-runs the check
-    const proof = 'Command passed: git diff --check. Evidence inspected: clean tree, change verified in place.';
-    assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'builder'], repo).status, 0);
+    assert.equal(runCli(['task', 'ready', String(id), '--verify', 'git diff --check', '--as', 'builder'], repo).status, 0);
 
     autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
     const tick = runCli(['autoland', 'tick', '--json'], repo);
@@ -1811,8 +1811,8 @@ test('daily tick verifies planning missions after all linked repair tasks close'
       'task',
       'ready',
       ref,
-      '--proof',
-      'Command passed: git diff --check. Evidence inspected: repair task can close before the mission verifier re-runs.',
+      '--verify',
+      'git diff --check',
       '--as',
       'builder',
       '--json',

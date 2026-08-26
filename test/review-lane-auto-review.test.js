@@ -105,7 +105,7 @@ test('review lane drains a green-receipt task to certified with zero human turns
 test('auto review refuses prose-only proof and stays safely stopped', () => {
   const dir = makeTempDir();
   try {
-    readyTaskWithProof(dir, 'ran node --test test/sample.test.js: 3/3 pass, no receipt file written');
+    readyTaskWithProof(dir, 'ran node --check test/sample.test.js: 3/3 pass, no receipt file written');
     reviewLaneRun(dir); // posts the review chat
     const second = reviewLaneRun(dir);
     assert.equal(second.payload.ok, true, 'no-evidence stop must stay a safe stop');
@@ -121,7 +121,7 @@ test('evidence-less reviews do not head-block green tasks behind them', () => {
   const dir = makeTempDir();
   try {
     // Task A: meaningful proof, no receipt. Task B behind it: green receipt.
-    readyTaskWithProof(dir, 'ran node --test test/sample.test.js: 3/3 pass, no receipt file written');
+    readyTaskWithProof(dir, 'ran node --check test/sample.test.js: 3/3 pass, no receipt file written');
     const receipt = writePassingReceipt(dir);
     readyTaskWithProof(dir, 'suite green; run_id=123456789; receipt ' + receipt);
 
