@@ -6,8 +6,8 @@ const applyGate = require('../lib/apply-gate');
 
 const DEFAULT_TIMEOUT_MS = 120000;
 const COST_HINT = '5 credits per search';
-const APPLY_INCOMPLETE_MESSAGE =
-  'x-search incomplete: write one apply (change + receipt) for this query.';
+const APPLY_NEXT_MESSAGE =
+  'next: write one apply (change + receipt) for this query.';
 
 function showXSearchHelp(output = console.log, commandName = 'atris x-search') {
   output('');
@@ -347,7 +347,8 @@ function ensureXSearchApply({ cwd, source, now, output } = {}) {
     rel: source ? xSearchApplyRel(source) : null,
     now,
     output,
-    incompleteMessage: APPLY_INCOMPLETE_MESSAGE,
+    incompleteMessage: APPLY_NEXT_MESSAGE,
+    required: false,
   });
 }
 
@@ -438,7 +439,7 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
 
 module.exports = {
   DEFAULT_TIMEOUT_MS,
-  APPLY_INCOMPLETE_MESSAGE,
+  APPLY_NEXT_MESSAGE,
   parseXSearchArgs,
   buildSearchPayload,
   buildPersonPayload,
