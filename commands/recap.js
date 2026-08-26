@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { isCertifiedReview } = require('../lib/first-minute');
+const { isCertifiedReview, personName } = require('../lib/first-minute');
 const { isRealTestRunnerProof, quoteVerifierCommand } = require('../lib/verifier-quality');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -234,17 +234,83 @@ function renderShare(data) {
   return lines.join('\n');
 }
 
+function recapSoftTitle(title, maxWords = 5) {
+  const words = String(title || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  if (!words.length) return '';
+  const text = words.slice(0, maxWords).join(' ').replace(/[.,;:!?]+$/g, '');
+  return `"${text.toLowerCase()}"`;
+}
+
+function renderRecapMinute(data, { person } = {}) {
+  const who = person != null ? person : personName();
+  const greet = who ? `hey ${who}, ` : '';
+  if (data.empty) {
+    return [
+      `${greet}no task history yet.`,
+      '',
+      'next: atris init --minimal',
+    ].join('\n');
+  }
+
+  const waiting = Array.isArray(data.waiting) ? data.waiting : [];
+  const checking = Array.isArray(data.checking) ? data.checking : [];
+  const shipped = Array.isArray(data.shipped) ? data.shipped : [];
+  const inProgress = Array.isArray(data.inProgress) ? data.inProgress : [];
+  const certified = waiting[0] || null;
+  const title = certified ? recapSoftTitle(certified.title) : '';
+
+  if (certified) {
+    const win = title
+      ? `${greet}${title} is waiting for your ok.`
+      : `${greet}one finished thing is waiting for your ok.`;
+    const lines = [win];
+    if (checking.length === 1) lines.push('1 still being checked.');
+    if (checking.length > 1) lines.push(`${checking.length} still being checked.`);
+    if (data.next) {
+      lines.push('');
+      lines.push(`next: ${data.next}`);
+    }
+    return lines.join('\n');
+  }
+
+  if (checking.length === 1) {
+    const named = recapSoftTitle(checking[0] && checking[0].title);
+    if (named) return `${greet}${named} is still being checked.`;
+    return `${greet}1 finished thing is still being checked.`;
+  }
+  if (checking.length > 1) {
+    return `${greet}${checking.length} finished things are still being checked.`;
+  }
+
+  if (shipped.length) {
+    const named = recapSoftTitle(shipped[0].title);
+    return named
+      ? `${greet}you already shipped ${named}.`
+      : `${greet}you already shipped the last finished thing.`;
+  }
+
+  if (inProgress.length) {
+    const item = inProgress[0];
+    const named = recapSoftTitle(item && item.title);
+    if (item && item.owner && named) return `${greet}${named} is already yours.`;
+    if (named) return `${greet}${named} is ready to claim.`;
+  }
+
+  return `${greet}quiet window. nothing moved in this period.`;
+}
+
 function printRecapHelp() {
   console.log(`
-atris recap - what got done, in plain English
+atris recap - what got done, in spoken lines
 
-  atris recap              Last 7 days: done, needs you, still being checked, still working
-  atris recap --days 30    Widen the window
-  atris recap --share      Paste-ready summary for Slack, email, or a customer
-  atris recap --json       Structured output for agents and dashboards
+  atris recap              a few spoken lines: waiting for your ok, still being checked
+  atris recap --verbose    the old report
+  atris recap --days 30    widen the window
+  atris recap --share      paste-ready summary for Slack, email, or a customer
+  atris recap --json       structured output for agents and dashboards
 
-Looks at Atris' saved work and explains it without internal jargon:
-what changed, how it was checked, and what still needs you.
+certified work names atris task accept. uncertified stays still being checked.
+use --verbose or --share for the old report.
 `);
 }
 
@@ -260,7 +326,15 @@ function recapAtris(args = []) {
     console.log(JSON.stringify(data, null, 2));
     return;
   }
-  console.log(args.includes('--share') ? renderShare(data) : renderRecap(data));
+  if (args.includes('--share')) {
+    console.log(renderShare(data));
+    return;
+  }
+  if (args.includes('--verbose') || args.includes('--full')) {
+    console.log(renderRecap(data));
+    return;
+  }
+  console.log(renderRecapMinute(data));
 }
 
-module.exports = { recapAtris, buildRecapData, renderRecap, renderShare };
+module.exports = { recapAtris, buildRecapData, renderRecap, renderRecapMinute, renderShare };

@@ -492,7 +492,7 @@ function showHelpShort() {
   console.log('  atris task claim <id> --as <m>  take ownership');
   console.log('  atris task ready <id> --proof "..."');
   console.log('  atris review                    validate');
-  console.log('  atris recap                     plain-english what landed');
+  console.log('  atris recap                     spoken recap of what landed');
   console.log('  atris mission status            active goals + next move');
   console.log('');
   console.log('More: atris help --all   ·   machine list: atris help --json');
@@ -503,7 +503,7 @@ function helpCatalog() {
     { name: 'init', summary: 'scaffold atris/ in this project', json: false, interactive_risk: 'medium' },
     { name: 'task', summary: 'local task plane: new, claim, ready, accept', json: true, interactive_risk: 'low' },
     { name: 'review', summary: 'validate work and capture learnings', json: false, interactive_risk: 'low' },
-    { name: 'recap', summary: 'plain-english what your team did', json: true, interactive_risk: 'low' },
+    { name: 'recap', summary: 'spoken recap of what your team did', json: true, interactive_risk: 'low' },
     { name: 'mission', summary: 'durable goal + owner + verifier + tick', json: true, interactive_risk: 'medium' },
     { name: 'log', summary: 'append an idea to today inbox (or --repl)', json: false, interactive_risk: 'medium' },
     { name: 'wish', summary: 'headless inbox / mission intake', json: true, interactive_risk: 'low' },
@@ -589,7 +589,7 @@ function showHelpAll() {
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
   console.log('  brief      - Show the one-glance operator brief');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
-  console.log('  recap      - What your AI team did, in plain English (--share for paste-ready)');
+  console.log('  recap      - What your AI team did, in spoken lines (--verbose for the old report)');
   console.log('  report     - Weekly block: landings, journal completions, and Career XP');
   console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');

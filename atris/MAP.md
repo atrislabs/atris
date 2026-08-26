@@ -1007,18 +1007,19 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 ### Feature: Recap (`atris recap`)
 
-**Purpose:** Plain-English report of what the AI team did — for the operator, or paste-ready for a customer. Receipts made legible; zero internal jargon in output.
+**Purpose:** Spoken recap of what the AI team did for the operator. Receipts stay legible; zero internal jargon in output. `--share` is paste-ready for a customer.
 
-- **Entry point:** `commands/recap.js` (`recapAtris`, `buildRecapData`, `renderRecap`, `renderShare`)
+- **Entry point:** `commands/recap.js` (`recapAtris`, `buildRecapData`, `renderRecapMinute`, `renderRecap`, `renderShare`)
 - **Routing:** `bin/atris.js` (`command === 'recap'` branch, `knownCommands` list, Context & tracking help line)
 - **Data sources:** task DB via `lib/task-db` (`listTasks` + `taskDisplayRefMap`); empty or missing db falls through to `.atris/state/tasks.projection.json`, same as first-minute
 - **Buckets:** shipped = `done` within `--days` window (default 7); waiting = certified / two-pass `review` via `lib/first-minute.js` `isCertifiedReview` (needs human accept); checking = uncertified `review` (still being checked, not needs-you); in progress = `open`/`claimed`
+- **Default:** `renderRecapMinute` talks like first-minute / review: a few spoken lines. Certified waiting names `atris task accept <id>`. Uncertified stays still being checked. No `RECAP` header, Plain English manifesto, or share footer.
 - **Next:** one certified accept names `atris task accept <id>`; recap does not send humans to `atris task reviews` when that accept is the next move
-- **Proof line:** `metadata.latest_agent_proof` (or certified marker), compressed to one line per item
-- **Modes:** default report, `--share` (paste-ready for Slack/email/customer), `--json` (agents/dashboards), `--days N`
-- **Regression:** `test/recap.test.js` (buckets, jargon ban, share format, projection fallback, empty workspace, certified-only needs-you, headless mixed board)
+- **Proof line:** `metadata.latest_agent_proof` (or certified marker), compressed to one line per item on `--verbose` / `--share`
+- **Modes:** default spoken lines, `--verbose`/`--full` old report, `--share` (paste-ready for Slack/email/customer), `--json` (agents/dashboards), `--days N`
+- **Regression:** `test/recap.test.js` (buckets, jargon ban, share format, projection fallback, empty workspace, certified-only needs-you, spoken default, verbose report, headless mixed board)
 
-**Search:** `rg "recapAtris|plainCheck|isCertifiedReview|isRealTestRunnerProof|classifyVerifier" commands/recap.js lib/first-minute.js lib/verifier-quality.js commands/task.js test/recap.test.js test/dogfood-p1.test.js`
+**Search:** `rg "recapAtris|renderRecapMinute|plainCheck|isCertifiedReview|isRealTestRunnerProof|classifyVerifier" commands/recap.js lib/first-minute.js lib/verifier-quality.js commands/task.js test/recap.test.js test/dogfood-p1.test.js`
 rg "fleetWorkspaceStatus|fleet --global" commands/fleet.js test/dogfood-p1.test.js # Fleet defaults to workspace; --global hits Swarlo
 rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js test/dogfood-p1.test.js # Engine roster workspace vs --global
 

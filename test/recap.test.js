@@ -5,7 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { buildRecapData, renderRecap, renderShare } = require('../commands/recap');
+const { spokenLineCount } = require('../lib/first-minute');
+const { buildRecapData, renderRecap, renderRecapMinute, renderShare } = require('../commands/recap');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -95,6 +96,9 @@ test('buildRecapData reports empty workspace without crashing', () => {
     const data = buildRecapData(dir);
     assert.equal(data.empty, true);
     assert.match(renderRecap(data), /No task history yet/);
+    assert.match(renderRecapMinute(data, { person: 'keshav' }), /hey keshav, no task history yet\./);
+    assert.match(renderRecapMinute(data, { person: 'keshav' }), /^next: atris init --minimal$/m);
+    assert.doesNotMatch(renderRecapMinute(data), /RECAP|Plain English|Share this/);
     assert.match(renderShare(data), /Nothing to share yet/);
   } finally {
     resetDbEnv();
@@ -289,6 +293,12 @@ test('recap treats only certified review as needs you, same as first-minute', ()
     assert.match(out, /UNW-4/);
     assert.doesNotMatch(out, /3 needs you/);
     assert.doesNotMatch(out, /task reviews/);
+    const spoken = renderRecapMinute(data, { person: 'keshav' });
+    assert.match(spoken, /hey keshav, "print a human line like" is waiting for your ok\./);
+    assert.match(spoken, /2 still being checked\./);
+    assert.match(spoken, /^next: atris task accept UNW-2$/m);
+    assert.doesNotMatch(spoken, /RECAP|Plain English|Share this|needs you|NEEDS YOU/);
+    assert.equal(spokenLineCount(spoken), 3);
     const share = renderShare(data);
     assert.match(share, /1 ready for you to approve or send back/);
     assert.match(share, /2 still being checked/);
@@ -317,10 +327,45 @@ test('two-pass review without the certified flag still needs you', () => {
     assert.equal(data.checking.length, 0);
     assert.equal(data.next, 'atris task accept UNW-8');
     assert.match(renderRecap(data), /^ {2}next: atris task accept UNW-8$/m);
+    assert.match(renderRecapMinute(data, { person: 'keshav' }), /^next: atris task accept UNW-8$/m);
+    assert.match(renderRecapMinute(data, { person: 'keshav' }), /"two pass no flag" is waiting for your ok\./);
   } finally {
     resetDbEnv();
     cleanup(dir);
   }
+});
+
+test('renderRecapMinute leads with certified accept and keeps uncertified checking', () => {
+  const text = renderRecapMinute({
+    empty: false,
+    waiting: [{
+      id: 'UNW-2',
+      title: 'Print a human line like 4 words so the count is easy to read.',
+    }],
+    checking: [{ id: 'UNW-3', title: 'Second check still open' }],
+    shipped: [],
+    inProgress: [],
+    next: 'atris task accept UNW-2',
+  }, { person: 'keshav' });
+  assert.match(text, /hey keshav, "print a human line like" is waiting for your ok\./);
+  assert.match(text, /1 still being checked\./);
+  assert.match(text, /^next: atris task accept UNW-2$/m);
+  assert.doesNotMatch(text, /RECAP|Plain English|Share this|needs you|NEEDS YOU/);
+  assert.equal(spokenLineCount(text), 3);
+});
+
+test('renderRecapMinute keeps uncertified work still being checked, not needs-you', () => {
+  const text = renderRecapMinute({
+    empty: false,
+    waiting: [],
+    checking: [{ id: 'UNW-3', title: 'Second check still open' }],
+    shipped: [],
+    inProgress: [],
+    next: null,
+  }, { person: 'keshav' });
+  assert.equal(text, 'hey keshav, "second check still open" is still being checked.');
+  assert.doesNotMatch(text, /waiting for your ok|needs you|atris task accept|RECAP|Share this/);
+  assert.equal(spokenLineCount(text), 1);
 });
 
 test('headless recap on mixed review board names one accept and does not prompt', () => {
@@ -362,13 +407,26 @@ test('headless recap on mixed review board names one accept and does not prompt'
     };
     const recap = runCli(['recap'], { cwd: dir, env });
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
-    assert.match(recap.stdout, /1 needs you/);
-    assert.match(recap.stdout, /2 still being checked/);
-    assert.match(recap.stdout, /^ {2}next: atris task accept UNW-2$/m);
+    assert.match(recap.stdout, /"print a human line like" is waiting for your ok\./);
+    assert.match(recap.stdout, /2 still being checked\./);
+    assert.match(recap.stdout, /^next: atris task accept UNW-2$/m);
+    assert.doesNotMatch(recap.stdout, /RECAP/);
+    assert.doesNotMatch(recap.stdout, /Plain English/);
+    assert.doesNotMatch(recap.stdout, /Share this/);
+    assert.doesNotMatch(recap.stdout, /needs you/);
     assert.doesNotMatch(recap.stdout, /3 needs you/);
     assert.doesNotMatch(recap.stdout, /task reviews/);
     assert.doesNotMatch(recap.stdout, /\? $/m);
     assert.doesNotMatch(recap.stdout, /What do you want/);
+    assert.ok(spokenLineCount(recap.stdout) >= 2 && spokenLineCount(recap.stdout) <= 4);
+    const verbose = runCli(['recap', '--verbose'], { cwd: dir, env });
+    assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
+    assert.match(verbose.stdout, /RECAP/);
+    assert.match(verbose.stdout, /Plain English: what changed, how it was checked, and what still needs you/);
+    assert.match(verbose.stdout, /Share this: atris recap --share/);
+    assert.match(verbose.stdout, /^ {2}next: atris task accept UNW-2$/m);
+    assert.doesNotMatch(verbose.stdout, /\? $/m);
+    assert.doesNotMatch(verbose.stdout, /What do you want/);
     const json = runCli(['recap', '--json'], { cwd: dir, env });
     assert.equal(json.status, 0, json.stderr || json.stdout);
     const payload = JSON.parse(json.stdout);
@@ -378,5 +436,51 @@ test('headless recap on mixed review board names one accept and does not prompt'
   } finally {
     resetDbEnv();
     cleanup(parent);
+  }
+});
+
+test('headless recap keeps uncertified work still being checked and does not prompt', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-recap-parent-'));
+  const dir = path.join(parent, 'atris-use-now');
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    writeProjection(dir, [{
+      id: 'task-3',
+      display_id: 'UNW-3',
+      title: 'Second check still open',
+      status: 'review',
+      updated_at: 30,
+      review: { agent_review_pass_count: 1 },
+    }]);
+    const env = {
+      HOME: path.join(parent, 'home'),
+      USER: 'keshavrao',
+      ATRIS_TASKS_DB: path.join(dir, 'empty.db'),
+      ATRIS_NO_INTERACTIVE: '1',
+    };
+    const recap = runCli(['recap'], { cwd: dir, env, timeout: 15000 });
+    assert.equal(recap.status, 0, recap.stderr || recap.stdout);
+    assert.match(recap.stdout, /"second check still open" is still being checked\./);
+    assert.doesNotMatch(recap.stdout, /waiting for your ok|needs you|atris task accept|RECAP|Share this/);
+    assert.doesNotMatch(recap.stdout, /\? $/m);
+    assert.doesNotMatch(recap.stdout, /What do you want/);
+    assert.ok(spokenLineCount(recap.stdout) <= 4);
+  } finally {
+    resetDbEnv();
+    cleanup(parent);
+  }
+});
+
+test('recap --help names spoken default and verbose report', () => {
+  const dir = makeTempDir();
+  try {
+    const help = runCli(['recap', '--help'], { cwd: dir });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /spoken lines/);
+    assert.match(help.stdout, /--verbose/);
+    assert.match(help.stdout, /old report/);
+    assert.doesNotMatch(help.stdout, /Last 7 days: done, needs you/);
+  } finally {
+    cleanup(dir);
   }
 });
