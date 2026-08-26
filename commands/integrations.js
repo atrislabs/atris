@@ -2148,7 +2148,6 @@ async function integrationsStatus(args = []) {
 module.exports = {
   gmailCommand,
   gmailConnect,
-  gmailSend,
   gmailVoice,
   gmailUse,
   extractGmailMailboxAccount,
