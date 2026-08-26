@@ -134,3 +134,30 @@ test('log help names local inbox, not a live business slug', () => {
   assert.match(res.stdout, /No live business required/);
   assert.doesNotMatch(res.stdout, /business-slug|business log history/i);
 });
+
+test('atris log in an uninitialized folder talks like first-minute', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  try {
+    const minute = runCli([], { cwd: dir, env: { HOME: home, USER: 'keshav' } });
+    const res = runCli(['log', 'friction'], { cwd: dir, env: { HOME: home, USER: 'keshav' } });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.equal(res.stdout.trim(), minute.stdout.trim());
+    assert.match(res.stdout, /this folder is a clean start/);
+    assert.match(res.stdout, /^next: atris init --minimal$/m);
+    assert.doesNotMatch(`${res.stdout}\n${res.stderr}`, /folder not found|Run "atris init"|captured I/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'logs')), false);
+
+    const json = runCli(['log', 'friction', '--json'], { cwd: dir, env: { HOME: home, USER: 'keshav' } });
+    const jsonMinute = runCli(['--json'], { cwd: dir, env: { HOME: home, USER: 'keshav' } });
+    assert.equal(json.status, jsonMinute.status);
+    assert.deepEqual(JSON.parse(json.stdout), JSON.parse(jsonMinute.stdout));
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'logs')), false);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
