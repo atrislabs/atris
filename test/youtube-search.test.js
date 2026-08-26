@@ -8,6 +8,7 @@ const {
   parseSearchStdout,
   formatSearchResults,
   youtubeCommand,
+  APPLY_INCOMPLETE_MESSAGE,
 } = require('../commands/youtube');
 
 const CACHE_HOME = '/tmp/atris-yt-search-cache-home';
@@ -661,6 +662,74 @@ test('youtube search --paid empty results prints credits and exits 2', async () 
   assert.equal(status, 2);
   assert.match(output.join('\n'), /no videos found/);
   assert.match(output.join('\n'), /Credits: 0 used, 1000 remaining/);
+  assert.match(output.join('\n'), /credits refunded/);
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+});
+
+test('empty paid youtube search surfaces a server-side refund and does not invent a refund call', async () => {
+  const calls = [];
+  const output = [];
+  const status = await youtubeCommand(['search', '--paid', 'quiet topic'], {
+    ...cacheDeps(),
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          status: 'success',
+          credits_used: 0,
+          credits_remaining: 1000,
+          credits_refunded: 5,
+          data: { results: [] },
+        },
+      };
+    },
+  });
+
+  assert.equal(status, 2);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].pathname, '/youtube/search');
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  const text = output.join('\n');
+  assert.match(text, /no videos found/);
+  assert.match(text, /Credits: 0 used, 1000 remaining/);
+  assert.match(text, /credits refunded/);
+});
+
+test('502 paid youtube search with refunded credits surfaces them and does not invent a refund call', async () => {
+  const calls = [];
+  const output = [];
+  const status = await youtubeCommand(['search', '--paid', 'agents'], {
+    ...cacheDeps(),
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return {
+        ok: false,
+        status: 502,
+        error: 'Search failed',
+        data: {
+          error: 'Search failed',
+          credits_used: 0,
+          credits_remaining: 1000,
+          credits_refunded: 5,
+        },
+      };
+    },
+  });
+
+  assert.equal(status, 1);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].pathname, '/youtube/search');
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  const text = output.join('\n');
+  assert.match(text, /502/);
+  assert.match(text, /credits refunded/);
+  assert.match(text, /Credits: 0 used, 1000 remaining/);
 });
 
 test('youtube search --paid surfaces 401 login hint', async () => {

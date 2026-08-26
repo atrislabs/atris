@@ -1518,24 +1518,50 @@ function paidSearchVideos(data) {
   return rows;
 }
 
-function creditsLine(data) {
-  const payload = unwrapSearchPayload(data);
-  const used = data?.credits_used !== undefined ? data.credits_used : payload.credits_used;
-  const remaining = data?.credits_remaining !== undefined
+function paidSearchCredits(data) {
+  if (!data || typeof data !== 'object') {
+    return { used: undefined, remaining: undefined, refunded: undefined };
+  }
+  const payload = unwrapSearchPayload(data) || {};
+  const used = data.credits_used !== undefined ? data.credits_used : payload.credits_used;
+  const remaining = data.credits_remaining !== undefined
     ? data.credits_remaining
     : payload.credits_remaining;
-  if (used === undefined && remaining === undefined) return '';
-  return `Credits: ${used !== undefined ? used : '?'} used, ${remaining !== undefined ? remaining : '?'} remaining`;
+  let refunded = data.credits_refunded !== undefined
+    ? data.credits_refunded
+    : payload.credits_refunded;
+  if (refunded === undefined && (data.refunded === true || payload.refunded === true)) {
+    refunded = true;
+  }
+  return { used, remaining, refunded };
+}
+
+function creditsWereRefunded(credits) {
+  if (!credits) return false;
+  if (credits.used === 0) return true;
+  if (credits.refunded === true) return true;
+  return typeof credits.refunded === 'number' && credits.refunded > 0;
+}
+
+function formatCreditsLines(credits) {
+  const lines = [];
+  if (credits.used !== undefined || credits.remaining !== undefined) {
+    lines.push(`Credits: ${credits.used !== undefined ? credits.used : '?'} used, ${credits.remaining !== undefined ? credits.remaining : '?'} remaining`);
+  }
+  if (creditsWereRefunded(credits)) {
+    lines.push('credits refunded');
+  }
+  return lines;
 }
 
 function formatPaidSearchResults(data) {
   const lines = paidSearchVideos(data).map((row) => (
     row.title ? `${row.title} | ${row.url}` : row.url
   ));
-  const credits = creditsLine(data);
-  if (credits) {
+  const creditLines = formatCreditsLines(paidSearchCredits(data));
+  if (creditLines.length) {
     if (lines.length) lines.push('');
-    lines.push(credits);
+    lines.push(...creditLines);
   }
   return lines.join('\n');
 }
@@ -1548,7 +1574,13 @@ function youtubeSearchFailureError(result) {
       : result.status === 502
         ? ' YouTube search is unavailable; retry in a few seconds.'
         : '';
-  return new Error(`YouTube search failed (${result.status}): ${resultErrorText(result)}.${hint}`);
+  const credits = paidSearchCredits(result.data);
+  const refundHint = result.status === 502 && creditsWereRefunded(credits)
+    ? ' credits refunded.'
+    : '';
+  const lines = [`YouTube search failed (${result.status}): ${resultErrorText(result)}.${hint}${refundHint}`];
+  lines.push(...formatCreditsLines(credits));
+  return new Error(lines.join('\n'));
 }
 
 async function requestPaidYoutubeSearch(options, deps = {}) {
