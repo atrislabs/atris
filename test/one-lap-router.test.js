@@ -208,19 +208,19 @@ test('an unverifiable local ask dispatches with the repo default verifier', () =
   }
 });
 
-test('one-word work intents route to clean one-lap JSON while unknown command JSON stays an error', () => {
+test('one-word work intents exit 2 as unknown commands while quoted sentences still create work', () => {
   const setup = setupRouter();
   try {
     const direct = runCli(['fix', '--engine', 'codex', '--json'], setup.workspace, setup.env);
-    assert.equal(direct.status, 0, direct.stderr || direct.stdout);
-    const payload = JSON.parse(direct.stdout);
-    assert.equal(payload.schema, 'atris.one_lap.v1');
-    assert.equal(payload.ask, 'fix');
-    assert.equal(payload.status, 'waiting_input');
+    assert.equal(direct.status, 2, direct.stderr || direct.stdout);
+    assert.equal(JSON.parse(direct.stdout).error, 'unknown command: fix');
 
     const typo = runCli(['statsu', '--json'], setup.workspace, setup.env);
     assert.equal(typo.status, 2, typo.stderr || typo.stdout);
     assert.equal(JSON.parse(typo.stdout).error, 'unknown command: statsu');
+
+    const quoted = runCli(['fix the login', '--json'], setup.workspace, setup.env);
+    assert.notEqual(JSON.parse(quoted.stdout).error, 'unknown command: fix the login');
   } finally {
     fs.rmSync(setup.root, { recursive: true, force: true });
   }

@@ -39,6 +39,66 @@ function runCli(args, { cwd, env, timeout = TIMEOUT_MS, input } = {}) {
   return result;
 }
 
+test('14: unknown single-token verbs exit 2 and do not mint a task', () => {
+  const dir = makeTempDir();
+  const headless = { ATRIS_NO_INTERACTIVE: '1', ATRIS_NONINTERACTIVE: '1' };
+  try {
+    assert.equal(runCli(['init', '--yes', '--minimal'], {
+      cwd: dir,
+      timeout: 60000,
+      env: headless,
+    }).status, 0);
+
+    const help = runCli(['help', '--json'], { cwd: dir, env: headless });
+    assert.equal(help.status, 0, help.stderr);
+    const catalog = JSON.parse(help.stdout);
+    const names = (catalog.commands || []).map((row) => row.name || row);
+    assert.equal(names.includes('build'), false);
+
+    const beforeList = runCli(['task', 'list', '--json'], { cwd: dir, env: headless });
+    const beforeTitles = (JSON.parse(beforeList.stdout).tasks || []).map((row) => row.title);
+
+    for (const verb of ['build', 'fix', 'make', 'implement']) {
+      const res = runCli([verb], { cwd: dir, env: headless });
+      assert.equal(res.status, 2, `${verb}: ${res.stdout}\n${res.stderr}`);
+      assert.match(res.stderr + res.stdout, /Unknown command/i);
+      assert.doesNotMatch(res.stdout + res.stderr, /Got it\. I saved|First useful step|First task:/i);
+    }
+
+    const json = runCli(['build', '--json'], { cwd: dir, env: headless });
+    assert.equal(json.status, 2, json.stdout + json.stderr);
+    assert.equal(JSON.parse(json.stdout).error, 'unknown command: build');
+
+    const quoted = runCli(['fix the login', '--json'], { cwd: dir, env: headless });
+    const quotedBody = JSON.parse(quoted.stdout);
+    assert.notEqual(quotedBody.error, 'unknown command: fix the login');
+    assert.notEqual(quotedBody.command, 'fix the login');
+
+    const quotedWrite = runCli(['ship the landing page'], { cwd: dir, env: headless });
+    assert.equal(quotedWrite.status, 0, quotedWrite.stdout + quotedWrite.stderr);
+    assert.match(quotedWrite.stdout + quotedWrite.stderr, /Got it\. I saved|First useful step: ship the landing page/i);
+
+    const created = runCli(['task', 'new', 'keep task new working after unknown verbs', '--json'], {
+      cwd: dir,
+      env: headless,
+    });
+    assert.equal(created.status, 0, created.stderr + created.stdout);
+
+    const afterTodo = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+    assert.doesNotMatch(afterTodo, /First useful step: build/);
+    const afterList = runCli(['task', 'list', '--json'], { cwd: dir, env: headless });
+    const afterTitles = (JSON.parse(afterList.stdout).tasks || []).map((row) => row.title);
+    assert.ok(!afterTitles.includes('First useful step: build'), afterTitles.join(' | '));
+    assert.ok(afterTitles.some((title) => /keep task new working/.test(title)), afterTitles.join(' | '));
+    for (const title of beforeTitles) {
+      assert.ok(afterTitles.includes(title), title);
+    }
+    assert.doesNotMatch(afterTodo, /First useful step: (build|fix|make|implement)\b/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('16: current-step --json error body is compact unless --full', () => {
   const dir = makeTempDir();
   try {
