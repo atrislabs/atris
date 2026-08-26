@@ -2,12 +2,12 @@
  * Integration commands for Atris CLI
  *
  * Usage:
- *   atris gmail inbox [--account <id>]       - List recent emails
+ *   atris gmail inbox [--account <id>]       - List recent emails for a mailbox
  *   atris gmail read <id> [--account <id>]   - Read specific email
  *   atris gmail archive <id> [...] [--account <id>] - Archive messages
  *   atris gmail connect [name]              - Connect or reconnect a Gmail account
- *   atris gmail accounts                     - List connected Gmail accounts
- *   atris gmail use [<account_id>]           - Set or show sticky Gmail account
+ *   atris gmail accounts                     - List connected Gmail accounts and the active account
+ *   atris gmail use [<account_id|name>]      - Choose or set the active Gmail account
  *   atris calendar today    - Show today's events
  *   atris calendar yesterday - Show yesterday's events
  *   atris calendar week     - Show this week's events
@@ -29,6 +29,7 @@ const {
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const readline = require('readline');
 const { spawnSync } = require('child_process');
 
 const CALENDAR_CACHE_PATH = path.join(os.homedir(), '.atris', 'calendar-events-cache.json');
@@ -66,17 +67,44 @@ function resolveGmailAccountId(explicitId) {
 
 function gmailAccountIdentity(account = {}) {
   const id = String(account.account_id || account.id || 'default').trim() || 'default';
-  const email = String(account.email_address || account.email || 'unknown').toLowerCase();
-  const name = String(account.display_name || account.name || id).toLowerCase();
+  const email = String(account.email_address || account.email || '').trim().toLowerCase();
+  const name = String(account.display_name || account.name || id).trim().toLowerCase() || id.toLowerCase();
   return { id, email, name };
 }
 
-async function fetchGmailAccounts(token) {
+function sortGmailAccounts(accounts) {
+  return [...accounts].sort((left, right) => {
+    const leftIdentity = gmailAccountIdentity(left);
+    const rightIdentity = gmailAccountIdentity(right);
+    const leftDefault = leftIdentity.id.toLowerCase() === 'default';
+    const rightDefault = rightIdentity.id.toLowerCase() === 'default';
+    if (leftDefault !== rightDefault) return leftDefault ? -1 : 1;
+    return leftIdentity.name.localeCompare(rightIdentity.name)
+      || leftIdentity.id.localeCompare(rightIdentity.id);
+  });
+}
+
+function formatGmailAccountRows(accounts, activeId = null) {
+  const rows = sortGmailAccounts(accounts).map((account) => {
+    const identity = gmailAccountIdentity(account);
+    return { ...identity, emailLabel: identity.email || 'email pending' };
+  });
+  const nameWidth = Math.max(...rows.map((row) => row.name.length));
+  const emailWidth = Math.max(...rows.map((row) => row.emailLabel.length));
+  const active = String(activeId || '').toLowerCase();
+  return rows.map((row) => {
+    const marker = row.id.toLowerCase() === active ? '  (active)' : '';
+    return `${row.name.padEnd(nameWidth)}  ${row.emailLabel.padEnd(emailWidth)}${marker}`.trimEnd();
+  });
+}
+
+async function fetchGmailAccounts(token, options = {}) {
   const result = await apiRequestJson('/integrations/gmail/accounts', {
     method: 'GET',
     token,
   });
   if (!result.ok) {
+    if (options.quiet) return [];
     console.error(`Error: ${result.error || 'Failed to fetch accounts'}`);
     process.exit(1);
   }
@@ -87,6 +115,27 @@ async function fetchGmailAccounts(token) {
 function findGmailAccount(accounts, accountId) {
   const wanted = String(accountId || '').trim().toLowerCase();
   return accounts.find((account) => gmailAccountIdentity(account).id.toLowerCase() === wanted) || null;
+}
+
+function findGmailAccountForUse(accounts, selector) {
+  const wanted = String(selector || '').trim().toLowerCase();
+  return findGmailAccount(accounts, wanted)
+    || accounts.find((account) => gmailAccountIdentity(account).name === wanted)
+    || null;
+}
+
+async function promptForGmailAccount(deps = {}) {
+  if (deps.prompt) return deps.prompt('choose account: ');
+  const rl = readline.createInterface({
+    input: deps.input || process.stdin,
+    output: deps.output || process.stdout,
+  });
+  return new Promise((resolve) => {
+    rl.question('choose account: ', (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
 }
 
 async function getAuth() {
@@ -149,7 +198,11 @@ async function gmailInbox(options = {}) {
   const { token, email } = await getAuth();
   const limit = options.limit || 10;
   const accountId = resolveGmailAccountId(options.accountId);
+  const accounts = await fetchGmailAccounts(token, { quiet: true });
+  const account = findGmailAccount(accounts, accountId);
+  const mailboxEmail = account ? gmailAccountIdentity(account).email : '';
 
+  if (mailboxEmail) console.log(`inbox for ${mailboxEmail} (${accountId.toLowerCase()})`);
   console.log('📬 Fetching inbox...\n');
 
   const path = `/integrations/gmail/messages?max_results=${limit}&account_id=${encodeURIComponent(accountId)}`;
@@ -335,38 +388,44 @@ async function gmailAccounts() {
     return;
   }
 
-  for (const account of accounts) {
-    const { id, email, name } = gmailAccountIdentity(account);
-    const active = id.toLowerCase() === activeId.toLowerCase() ? ' (active)' : '';
-    console.log(`${email}, ${name}${active}`);
-  }
+  for (const line of formatGmailAccountRows(accounts, activeId)) console.log(line);
 }
 
-async function gmailUse(accountId) {
+async function gmailUse(accountId, deps = {}) {
   const token = await getAuthToken();
   const accounts = await fetchGmailAccounts(token);
-  const trimmed = String(accountId || '').trim();
+  let selector = String(accountId || '').trim();
 
-  if (!trimmed) {
-    const effectiveId = resolveGmailAccountId(null);
-    const match = findGmailAccount(accounts, effectiveId);
-    if (match) {
-      const { name, email } = gmailAccountIdentity(match);
-      console.log(`using ${name} (${email})`);
+  if (!selector) {
+    if (!accounts.length) {
+      console.log('no connected accounts.');
       return;
     }
-    console.log(`using ${effectiveId}`);
-    return;
+    if (accounts.length === 1) {
+      const { name, email } = gmailAccountIdentity(accounts[0]);
+      console.log(`${name} (${email || 'email pending'}) is already the only gmail account.`);
+      return;
+    }
+
+    const sortedAccounts = sortGmailAccounts(accounts);
+    const activeId = resolveGmailAccountId(null);
+    const rows = formatGmailAccountRows(sortedAccounts, activeId);
+    rows.forEach((line, index) => console.log(`${index + 1}. ${line}`));
+    const answer = String(await promptForGmailAccount(deps) || '').trim();
+    const number = /^\d+$/.test(answer) ? Number(answer) : 0;
+    selector = number >= 1 && number <= sortedAccounts.length
+      ? gmailAccountIdentity(sortedAccounts[number - 1]).id
+      : answer;
   }
 
-  const match = findGmailAccount(accounts, trimmed);
+  const match = findGmailAccountForUse(accounts, selector);
   if (!match) {
-    console.error(`unknown gmail account "${trimmed}".`);
+    console.error(`unknown gmail account "${selector}".`);
     if (accounts.length) {
       console.error('connected accounts:');
-      for (const account of accounts) {
+      for (const account of sortGmailAccounts(accounts)) {
         const { id, email, name } = gmailAccountIdentity(account);
-        console.error(`  ${id}: ${email}, ${name}`);
+        console.error(`  ${id.toLowerCase()}: ${email || 'email pending'}, ${name}`);
       }
     } else {
       console.error('no connected accounts.');
@@ -376,7 +435,7 @@ async function gmailUse(accountId) {
 
   const { id, name, email } = gmailAccountIdentity(match);
   writeGmailStickyAccount(id);
-  console.log(`now using ${name} (${email})`);
+  console.log(`now using ${name} (${email || 'email pending'})`);
 }
 
 async function gmailCommand(subcommand, ...args) {
@@ -404,16 +463,16 @@ async function gmailCommand(subcommand, ...args) {
       await gmailAccounts();
       break;
     case 'use':
-      await gmailUse(args[0]);
+      await gmailUse(args.join(' '));
       break;
     default:
       console.log('gmail commands:');
-      console.log('  atris gmail inbox [--account <id>]       - list recent emails');
+      console.log('  atris gmail inbox [--account <id>]       - list recent emails for a mailbox');
       console.log('  atris gmail read <id> [--account <id>]   - read specific email');
       console.log('  atris gmail archive <id> [...] [--account <id>] - archive messages (reversible, all mail keeps them)');
       console.log('  atris gmail connect [name]               - connect or reconnect a gmail account');
-      console.log('  atris gmail accounts                     - list connected gmail accounts');
-      console.log('  atris gmail use [<account_id>]           - set or show sticky gmail account');
+      console.log('  atris gmail accounts                     - list connected gmail accounts and the active account');
+      console.log('  atris gmail use [<account_id|name>]      - choose or set the active gmail account');
   }
 }
 
@@ -1923,6 +1982,7 @@ async function integrationsStatus(args = []) {
 module.exports = {
   gmailCommand,
   gmailConnect,
+  gmailUse,
   extractGmailMailboxAccount,
   parseGmailArgs,
   gmailAccountStatePath,

@@ -249,8 +249,9 @@ test('gmail inbox without --account uses default account_id when no sticky accou
     restore();
   }
 
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].pathname, '/integrations/gmail/messages?max_results=10&account_id=default');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].pathname, '/integrations/gmail/accounts');
+  assert.equal(calls[1].pathname, '/integrations/gmail/messages?max_results=10&account_id=default');
 });
 
 test('gmail inbox uses sticky account when flag absent', async () => {
@@ -268,8 +269,9 @@ test('gmail inbox uses sticky account when flag absent', async () => {
     restore();
   }
 
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].pathname, '/integrations/gmail/messages?max_results=10&account_id=personal');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].pathname, '/integrations/gmail/accounts');
+  assert.equal(calls[1].pathname, '/integrations/gmail/messages?max_results=10&account_id=personal');
 });
 
 test('gmail inbox with --account overrides sticky account', async () => {
@@ -287,8 +289,32 @@ test('gmail inbox with --account overrides sticky account', async () => {
     restore();
   }
 
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].pathname, '/integrations/gmail/messages?max_results=10&account_id=work');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].pathname, '/integrations/gmail/accounts');
+  assert.equal(calls[1].pathname, '/integrations/gmail/messages?max_results=10&account_id=work');
+});
+
+test('gmail inbox starts with the resolved mailbox when its email is known', async () => {
+  const calls = [];
+  const { integrations, restore } = withMockedIntegrations(
+    accountsApi(async (pathname, options) => {
+      calls.push({ pathname, options });
+      return { ok: true, status: 200, data: { messages: [] } };
+    }),
+    { stickyAccountId: 'personal' },
+  );
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    await integrations.gmailCommand('inbox');
+  } finally {
+    console.log = originalLog;
+    restore();
+  }
+
+  assert.equal(lines[0], 'inbox for home@example.com (personal)');
+  assert.equal(calls[0].pathname, '/integrations/gmail/messages?max_results=10&account_id=personal');
 });
 
 test('gmail read with --account adds account_id query param', async () => {
@@ -356,7 +382,7 @@ test('gmail archive with --account adds account_id to json body', async () => {
   });
 });
 
-test('gmail accounts marks the active account and keeps lowercase output', async () => {
+test('gmail accounts aligns display names and marks the active account', async () => {
   const { integrations, restore } = withMockedIntegrations(accountsApi(async () => ({ ok: true, status: 200, data: [] })));
   const lines = [];
   const originalLog = console.log;
@@ -369,28 +395,88 @@ test('gmail accounts marks the active account and keeps lowercase output', async
   }
 
   assert.deepEqual(lines, [
-    'me@example.com, work inbox (active)',
-    'home@example.com, personal',
-    'keshav@research.com, research',
+    'work inbox  me@example.com       (active)',
+    'personal    home@example.com',
+    'research    keshav@research.com',
   ]);
 });
 
-test('gmail use with no arg prints the current sticky account', async () => {
+test('gmail accounts falls back to account ids and shows pending email', async () => {
+  const accounts = [
+    { account_id: 'team', email_address: 'Team@Example.com', display_name: 'Team' },
+    { account_id: 'beta', email_address: null, display_name: null },
+    { account_id: 'default', email_address: 'default@example.com', display_name: null },
+  ];
   const { integrations, restore } = withMockedIntegrations(
-    accountsApi(async () => ({ ok: true, status: 200, data: [] })),
-    { stickyAccountId: 'research' },
+    accountsApi(async () => ({ ok: true, status: 200, data: [] }), accounts),
+    { stickyAccountId: 'beta' },
   );
   const lines = [];
   const originalLog = console.log;
   console.log = (line) => lines.push(String(line));
   try {
-    await integrations.gmailCommand('use');
+    await integrations.gmailCommand('accounts');
   } finally {
     console.log = originalLog;
     restore();
   }
 
-  assert.deepEqual(lines, ['using research (keshav@research.com)']);
+  assert.deepEqual(lines, [
+    'default  default@example.com',
+    'beta     email pending        (active)',
+    'team     team@example.com',
+  ]);
+});
+
+test('gmail use with no arg numbers accounts and resolves a display name', async () => {
+  const { integrations, gmailAccountFile, restore } = withMockedIntegrations(
+    accountsApi(async () => ({ ok: true, status: 200, data: [] })),
+    { stickyAccountId: 'research' },
+  );
+  const lines = [];
+  const prompts = [];
+  const originalLog = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    await integrations.gmailUse(undefined, {
+      prompt: async (prompt) => {
+        prompts.push(prompt);
+        return 'Work Inbox';
+      },
+    });
+    assert.deepEqual(JSON.parse(fs.readFileSync(gmailAccountFile, 'utf8')), { account_id: 'default' });
+  } finally {
+    console.log = originalLog;
+    restore();
+  }
+
+  assert.deepEqual(prompts, ['choose account: ']);
+  assert.deepEqual(lines, [
+    '1. work inbox  me@example.com',
+    '2. personal    home@example.com',
+    '3. research    keshav@research.com  (active)',
+    'now using work inbox (me@example.com)',
+  ]);
+});
+
+test('gmail use with one account says it is already the only one', async () => {
+  const { integrations, restore } = withMockedIntegrations(
+    accountsApi(
+      async () => ({ ok: true, status: 200, data: [] }),
+      [{ account_id: 'default', email_address: null, display_name: 'Solo' }],
+    ),
+  );
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    await integrations.gmailUse();
+  } finally {
+    console.log = originalLog;
+    restore();
+  }
+
+  assert.deepEqual(lines, ['solo (email pending) is already the only gmail account.']);
 });
 
 test('gmail use persists a valid account and prints confirmation', async () => {
