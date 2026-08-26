@@ -1201,17 +1201,16 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 - Entry: `commands/workflow.js:865-1244` (doAtris function)
 - Empty folder: `lib/first-minute.js` `buildFirstMinute({ fresh: true })` and `freshMinuteJson` (same two spoken lines and `--json` next as bare `atris`). No `executor.md` bounce.
-- Human head after init: `buildFirstMinute` (same two spoken lines as bare `atris`); never prints `Context: UNKNOWN` or `Backlog tasks: 0` when a claimed/review/open task exists
-- Default stays the first-minute two lines with no `PROMPT ONLY` banner; `--prompt` / `--verbose` / `--full` prints the executor paste and file dump. `--help` names `--prompt`.
-- Missing `team/executor` after `init --minimal` is optional context, not "run init". Regression: `test/workflow-command.test.js` (`do in an uninitialized folder talks like first-minute`, `do after init --yes --minimal does not send you back to init`, `do names a claimed task the same way first-minute does`), `test/first-minute.test.js` (`atris do in an empty folder talks like first-minute`, `atris do and plan after init --minimal stay two spoken lines`)
+- After init, including MAP plus a claimed starter: default `do` reprints the same two spoken lines as bare `atris`. No `PROMPT ONLY` and no `executor.md not found`. `--prompt` / `--verbose` / `--full` prints the executor paste and file dump. `--help` names `--prompt`.
+- Missing `team/executor` after `init --minimal` is optional context, not "run init". Regression: `test/workflow-command.test.js` (`do in an uninitialized folder talks like first-minute`, `do after init --yes --minimal does not send you back to init`, `do names a claimed task the same way first-minute does`), `test/first-minute.test.js` (`atris do in an empty folder talks like first-minute`, `atris do after init and claim stays in the room`, `atris do and plan after init --minimal stay two spoken lines`)
 
 3. **`atris review`** - Human checkpoint, first-minute voice
 
 - Entry: `commands/workflow.js:1246` `reviewAtris` / `renderReviewMinute` (`commands/workflow.js:96`)
-- Empty folder: `lib/first-minute.js` `isFreshWorkspace` + `speakFirstMinute` (same two spoken lines and `--json` next as bare `atris`). No `validator.md` bounce and no lone `nothing is waiting on you.`
+- Empty folder: `lib/first-minute.js` `isFreshWorkspace` + `speakFirstMinute` (same two spoken lines and `--json` next as bare `atris`), including `--verbose`. No `validator.md` bounce and no lone `nothing is waiting on you.`
 - After init: stay in the room. If first-minute next is `atris task claim|ready|accept`, review prints those same two spoken lines. Certified leads with the win and `atris task accept <id>`. Uncertified stays "still being checked", not needs-you. `nothing is waiting on you.` only when there is no claim/ready/accept next.
 - `--all` / `--limit` / `--group-by`: certified queue via `task reviews`. After init, `--json` also keeps that queue.
-- `--verbose` / `--full`: legacy Validator prompt
+- `--verbose` / `--full`: legacy Validator prompt. Missing `team/validator` after `init --minimal` is optional context, not "run init"
 - Headless never prompts (`isNonInteractive`)
 - `--help` stays usage
 - Regression: `test/workflow-command.test.js` (`review in an uninitialized folder talks like first-minute`, `review after init --yes --minimal does not send you back to init`, `review talks like first-minute`, `renderReviewMinute names an open claim`), `test/first-minute.test.js` (`atris review in an empty folder talks like first-minute`, `atris review after init --minimal matches bare atris claim next`)

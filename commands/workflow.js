@@ -14,6 +14,7 @@ const {
   taskCommand,
 } = require('../lib/first-minute');
 const { isNonInteractive } = require('../lib/noninteractive');
+const { loadContext } = require('../lib/state-detection');
 const { buildToolResultBody } = require('../lib/tool-result-encode');
 
 function wrapWorkflowText(text, width = 76) {
@@ -584,7 +585,6 @@ async function planAtris(userInput = null) {
 
   let firstMinute = null;
   try {
-    const { loadContext } = require('../lib/state-detection');
     firstMinute = buildFirstMinute({
       root: cwd,
       context: loadContext(cwd) || {},
@@ -988,7 +988,6 @@ async function doAtris() {
 
   let workspaceSummary = null;
   try {
-    const { loadContext } = require('../lib/state-detection');
     workspaceSummary = loadContext(cwd);
   } catch {
     workspaceSummary = null;
@@ -1252,22 +1251,24 @@ async function reviewAtris() {
   const executeFlag = args.includes('--execute');
   const showFull = args.includes('--full') || args.includes('--verbose');
   const wantsTaskJson = args.includes('--json');
+  const root = process.cwd();
+  const queueShape = args.some((arg) => arg === '--all' || arg === '--limit' || arg === '--group-by');
+
+  // Empty folder talks like bare atris, including --verbose. After init, stay
+  // in the room. A missing validator spec is optional context, not "run init".
+  if (isFreshWorkspace(root) && !queueShape) {
+    const code = speakFirstMinute({
+      root,
+      fresh: true,
+      asJson: wantsTaskJson,
+    });
+    if (code !== 0) process.exit(code);
+    return;
+  }
 
   if (!executeFlag && !showFull) {
-    const root = process.cwd();
     const forwarded = ['reviews', ...args.filter(arg => !['--execute', '--full', '--verbose'].includes(arg))];
     const { run: runTaskCommand } = require('./task');
-    const queueShape = args.some((arg) => arg === '--all' || arg === '--limit' || arg === '--group-by');
-    // Empty folder talks like bare atris. After init, stay in the room.
-    if (isFreshWorkspace(root) && !queueShape) {
-      const code = speakFirstMinute({
-        root,
-        fresh: true,
-        asJson: wantsTaskJson,
-      });
-      if (code !== 0) process.exit(code);
-      return;
-    }
     if (wantsTaskJson || wantsReviewQueue(args)) {
       await runTaskCommand(forwarded);
       return;
@@ -1280,18 +1281,14 @@ async function reviewAtris() {
   const config = loadConfig();
   const executionMode = executeFlag ? 'agent' : (config.execution_mode || 'prompt');
 
-  const targetDir = path.join(process.cwd(), 'atris');
-  const validatorFile = fs.existsSync(path.join(targetDir, 'team', 'validator', 'MEMBER.md'))
-    ? path.join(targetDir, 'team', 'validator', 'MEMBER.md')
-    : path.join(targetDir, 'team', 'validator.md');
+  const targetDir = path.join(root, 'atris');
+  const memberValidator = path.join(targetDir, 'team', 'validator', 'MEMBER.md');
+  const legacyValidator = path.join(targetDir, 'team', 'validator.md');
+  const validatorFile = fs.existsSync(memberValidator)
+    ? memberValidator
+    : (fs.existsSync(legacyValidator) ? legacyValidator : null);
 
-  if (!fs.existsSync(validatorFile)) {
-    console.log('✗ validator.md not found. Run "atris init" first.');
-    process.exit(1);
-  }
-
-  // Read validator.md
-  const validatorSpec = fs.readFileSync(validatorFile, 'utf8');
+  const validatorSpec = validatorFile ? fs.readFileSync(validatorFile, 'utf8') : '';
 
   // Read project-specific testing guide if it exists (optional - projects can add their own)
   // Checks common locations: root, backend/, atris/ directories
@@ -1370,7 +1367,9 @@ async function reviewAtris() {
     }
   })();
 
-  const validatorPath = path.relative(process.cwd(), validatorFile);
+  const validatorPath = validatorFile
+    ? path.relative(process.cwd(), validatorFile)
+    : 'atris/team/validator/MEMBER.md (missing)';
   const todoPathRef = taskFilePath ? path.relative(process.cwd(), taskFilePath) : null;
   const journalPathRef = path.relative(process.cwd(), logFile);
   const personaPath = path.join(targetDir, 'PERSONA.md');
