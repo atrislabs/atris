@@ -702,7 +702,7 @@ test('atris task new in an empty folder talks like first-minute', () => {
 
     const help = runCli(['task', 'new', '--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /Usage: atris task/);
+    assert.match(help.stdout, /atris task new/);
     assert.doesNotMatch(help.stdout, /clean start|count the words/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
