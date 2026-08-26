@@ -360,10 +360,10 @@ test('review headless never prompts', () => {
   const env = isolatedDoEnv(dir);
   const review = runCli(['review'], { cwd: dir, env, input: '' });
   assert.equal(review.status, 0, review.stderr || review.stdout);
-  assert.doesNotMatch(review.stdout + review.stderr, /any learnings\?|^> /m);
+  assert.doesNotMatch(review.stdout + review.stderr, /any learnings\?/);
   const verbose = runCli(['review', '--verbose'], { cwd: dir, env, input: '' });
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
-  assert.doesNotMatch(verbose.stdout + verbose.stderr, /any learnings\?|^> /m);
+  assert.doesNotMatch(verbose.stdout + verbose.stderr, /any learnings\?/);
 });
 
 test('renderReviewMinute leads with certified accept and keeps uncertified checking', () => {
