@@ -1210,6 +1210,80 @@ test('completed history does not say shipped when other work is still live', () 
   assert.match(text, /^next: atris do$/m);
 });
 
+test('completed-only TODO is history even when leftover context still names work', () => {
+  const dir = makeTempDir();
+  try {
+    writeReadyWorkspace(dir, []);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '(Empty)',
+      '',
+      '## In Progress',
+      '',
+      '(Empty)',
+      '',
+      '## Completed',
+      '',
+      '- validate thing',
+      '',
+    ].join('\n'), 'utf8');
+    const screen = buildFirstMinute({
+      root: dir,
+      person: 'keshav',
+      folder: 'launch-day',
+      context: {
+        backlogTasks: ['**t1:** generate map.md — scan'],
+        inProgressTasks: [],
+        completedTasks: ['validate thing'],
+      },
+    });
+    assert.match(screen.text, /you already shipped "validate thing"/);
+    assert.doesNotMatch(screen.text, /generate map\.md|is waiting/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('TODO backlog is named before completed history', () => {
+  const dir = makeTempDir();
+  try {
+    writeReadyWorkspace(dir, []);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '- build the useful thing',
+      '',
+      '## In Progress',
+      '',
+      '(Empty)',
+      '',
+      '## Completed',
+      '',
+      '- validate old thing',
+      '',
+    ].join('\n'), 'utf8');
+    const screen = buildFirstMinute({
+      root: dir,
+      person: 'keshav',
+      folder: 'launch-day',
+      context: {
+        backlogTasks: ['build the useful thing'],
+        completedTasks: ['validate old thing'],
+      },
+    });
+    assert.match(screen.text, /"build the useful thing" is waiting/);
+    assert.doesNotMatch(screen.text, /you already shipped/);
+    assert.match(screen.text, /^next: atris do$/m);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('named empty folder next command starts a first task when pasted', () => {
   const parent = makeTempDir();
   const dir = path.join(parent, 'launch-day');
