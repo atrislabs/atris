@@ -13,8 +13,22 @@ const {
   fileBriefFromNotes,
   ensureNotesApply,
   APPLY_NEXT_MESSAGE,
+  PROCESS_APPLY_MESSAGE,
   youtubeCommand,
 } = require('../commands/youtube');
+
+function filledApplyWorkspace(id, url) {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-'));
+  const applyDir = path.join(cwd, 'atris', 'wiki', 'briefs');
+  fs.mkdirSync(applyDir, { recursive: true });
+  fs.writeFileSync(path.join(applyDir, `youtube-${id}.apply.md`), [
+    `source: ${url}`,
+    'change: commands/youtube.js',
+    'receipt: node --test test/youtube.test.js',
+    '',
+  ].join('\n'));
+  return cwd;
+}
 
 test('parseYoutubeArgs accepts process form with query, storage, json, and timeout', () => {
   const options = parseYoutubeArgs([
@@ -69,12 +83,15 @@ test('youtubeCommand calls the process_youtube endpoint without curl', async () 
   const calls = [];
   const output = [];
   let extractorCalls = 0;
+  const url = 'https://youtube.com/watch?v=abc123';
+  const cwd = filledApplyWorkspace('abc123', url);
 
   const status = await youtubeCommand([
-    'https://youtube.com/watch?v=abc123',
+    url,
     '--query',
     'Extract lessons',
   ], {
+    cwd,
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
     extractLocalTranscript: async () => {
@@ -116,10 +133,13 @@ test('youtubeCommand calls the process_youtube endpoint without curl', async () 
 
 test('youtubeCommand sends local transcript first without caching it', async () => {
   const calls = [];
+  const url = 'https://youtube.com/watch?v=abc123';
+  const cwd = filledApplyWorkspace('abc123', url);
 
   const status = await youtubeCommand([
-    'https://youtube.com/watch?v=abc123',
+    url,
   ], {
+    cwd,
     output: () => {},
     ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
     extractLocalTranscript: async () => ({
@@ -147,10 +167,13 @@ test('youtubeCommand sends local transcript first without caching it', async () 
 
 test('youtubeCommand falls back to cloud video after local transcript failure', async () => {
   const calls = [];
+  const url = 'https://youtube.com/watch?v=abc123';
+  const cwd = filledApplyWorkspace('abc123', url);
 
   const status = await youtubeCommand([
-    'https://youtube.com/watch?v=abc123',
+    url,
   ], {
+    cwd,
     output: () => {},
     ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
     extractLocalTranscript: async () => ({
@@ -401,17 +424,90 @@ test('youtube notes without wiki still exits 0 when apply is missing', async () 
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
 });
 
+test('youtube process without apply exits 2 and never calls the api', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-noapply-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const output = [];
+  let apiCalls = 0;
+  let extractCalls = 0;
+  let authCalls = 0;
+
+  const status = await youtubeCommand(['process', 'https://youtu.be/proc01'], {
+    cwd,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => {
+      authCalls += 1;
+      return { credentials: { token: 'token-123' } };
+    },
+    extractLocalTranscript: async () => {
+      extractCalls += 1;
+      return null;
+    },
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      return { ok: true, status: 200, data: {} };
+    },
+  });
+
+  assert.equal(status, 2);
+  assert.equal(apiCalls, 0);
+  assert.equal(extractCalls, 0);
+  assert.equal(authCalls, 0);
+  assert.equal(output.includes(PROCESS_APPLY_MESSAGE), true);
+  const stub = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-proc01.apply.md'), 'utf8');
+  assert.match(stub, /^change: fill this$/m);
+  assert.match(stub, /^receipt: fill this$/m);
+});
+
+test('youtube process with a stub-only apply refuses without rewriting it', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-stub-'));
+  const applyDir = path.join(cwd, 'atris', 'wiki', 'briefs');
+  fs.mkdirSync(applyDir, { recursive: true });
+  const applyPath = path.join(applyDir, 'youtube-proc02.apply.md');
+  const stub = [
+    'source: https://youtu.be/proc02',
+    'change: fill this',
+    'receipt: fill this',
+    '',
+  ].join('\n');
+  fs.writeFileSync(applyPath, stub);
+  const output = [];
+  let apiCalls = 0;
+
+  const status = await youtubeCommand(['https://youtu.be/proc02'], {
+    cwd,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    extractLocalTranscript: async () => null,
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      return { ok: true, status: 200, data: {} };
+    },
+  });
+
+  assert.equal(status, 2);
+  assert.equal(apiCalls, 0);
+  assert.equal(output.includes(PROCESS_APPLY_MESSAGE), true);
+  assert.equal(fs.readFileSync(applyPath, 'utf8'), stub);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+});
+
 test('youtube process mints only the youtube scope after an expired user wall and retries', async () => {
   const calls = [];
   const persisted = [];
   const output = [];
   const secret = 'minted-youtube-secret';
+  const url = 'https://youtube.com/watch?v=abc123';
+  const cwd = filledApplyWorkspace('abc123', url);
 
   const status = await youtubeCommand([
-    'https://youtube.com/watch?v=abc123',
+    url,
     '--query',
     'Extract lessons',
   ], {
+    cwd,
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ error: 'token_invalid', detail: 'Token expired' }),
     loadCredentials: () => ({
@@ -462,7 +558,10 @@ test('youtube process mints only the youtube scope after an expired user wall an
 test('youtube process remints after a billed 401 and retries once', async () => {
   const calls = [];
   const secret = 'minted-youtube-after-401';
-  const status = await youtubeCommand(['https://youtube.com/watch?v=abc123'], {
+  const url = 'https://youtube.com/watch?v=abc123';
+  const cwd = filledApplyWorkspace('abc123', url);
+  const status = await youtubeCommand([url], {
+    cwd,
     output: () => {},
     ensureValidCredentials: async () => ({ credentials: { token: 'user-jwt' } }),
     loadCredentials: () => ({ token: 'user-jwt', refresh_token: 'refresh-jwt' }),
@@ -496,7 +595,10 @@ test('youtube process remints after a billed 401 and retries once', async () => 
 test('youtube process with no stored JWT fails in one sentence and stays off the login wall', async () => {
   const output = [];
   let apiCalls = 0;
-  const status = await youtubeCommand(['https://youtube.com/watch?v=abc123'], {
+  const url = 'https://youtube.com/watch?v=abc123';
+  const cwd = filledApplyWorkspace('abc123', url);
+  const status = await youtubeCommand([url], {
+    cwd,
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ error: 'not_logged_in' }),
     loadCredentials: () => null,
