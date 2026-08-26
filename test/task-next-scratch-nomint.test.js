@@ -102,6 +102,16 @@ test('unbound scratch task next speaks first-minute and does not mint', () => {
     assertFirstMinute(brainstorm, minute);
     assertNoMint(dir);
 
+    const leftoverHi = runCli(['brainstorm', 'hi'], { cwd: dir, env });
+    assertFirstMinute(leftoverHi, minute);
+    assertNoMint(dir);
+
+    for (const leftover of ['brainstorm hi', 'wish hi', 'log hi', 'plan hi', 'do hi']) {
+      const quoted = runCli([leftover], { cwd: dir, env });
+      assertFirstMinute(quoted, minute);
+      assertNoMint(dir);
+    }
+
     const help = runCli(['task', 'next', '--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /Usage: atris task next/);
@@ -139,6 +149,15 @@ test('talk line still starts a room and task next then names the claim', () => {
     assert.equal(next.status, 0, next.stderr || next.stdout);
     assert.match(nextLine(next.stdout), /^atris task (claim|show|ready) /);
     assert.doesNotMatch(next.stdout, /this folder is empty|atris task new/);
+
+    const wish = runCli(['wish', 'hi', '--no-mission'], { cwd: dir, env: { ...env, ATRIS_WISH_NO_DRIVER: '1' } });
+    assert.match(wish.stdout, /Got it: "hi"\./);
+    assert.doesNotMatch(wish.stdout, /this folder is empty|I saved a first step/);
+
+    const brainstorm = runCli(['brainstorm', 'hi'], { cwd: dir, env });
+    assert.equal(brainstorm.status, 0, brainstorm.stderr || brainstorm.stdout);
+    assert.match(brainstorm.stdout, /captured I\d+: hi/);
+    assert.doesNotMatch(brainstorm.stdout, /this folder is empty|I saved a first step|Describe the desired outcome/);
   } finally {
     cleanup(dir);
   }

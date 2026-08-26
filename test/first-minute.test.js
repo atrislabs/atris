@@ -12,6 +12,7 @@ const {
   folderName,
   isFirstTalkLine,
   freshMinuteJson,
+  isLeftoverVerbLook,
   isTaskNextLook,
   personName,
   pickNext,
@@ -216,6 +217,23 @@ test('task next is a look, not first talk', () => {
   assert.equal(isFirstTalkLine('atris "what do you want here?"'), true);
   assert.equal(isFirstTalkLine('what is atris?'), false);
   assert.equal(isFirstTalkLine('task next'), false);
+});
+
+test('leftover words after known verbs are a look, not first talk', () => {
+  assert.equal(isLeftoverVerbLook('brainstorm hi'), true);
+  assert.equal(isLeftoverVerbLook('wish hi'), true);
+  assert.equal(isLeftoverVerbLook('log hi'), true);
+  assert.equal(isLeftoverVerbLook('plan hi'), true);
+  assert.equal(isLeftoverVerbLook('do hi'), true);
+  assert.equal(isLeftoverVerbLook('BRAINSTORM HI'), true);
+  assert.equal(isLeftoverVerbLook('task next'), true);
+  assert.equal(isLeftoverVerbLook('task next --json'), true);
+  assert.equal(isLeftoverVerbLook('brainstorm'), false);
+  assert.equal(isLeftoverVerbLook('wish'), false);
+  assert.equal(isLeftoverVerbLook('what do you want here?'), false);
+  assert.equal(isLeftoverVerbLook('count the words'), false);
+  assert.equal(isLeftoverVerbLook('task new count words'), false);
+  assert.equal(isLeftoverVerbLook(''), false);
 });
 
 test('personName prefers a given name from the saved account', () => {

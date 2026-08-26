@@ -65,7 +65,7 @@ const {
   folderName,
   isBareAtrisFlag,
   isFirstTalkLine,
-  isTaskNextLook,
+  isLeftoverVerbLook,
   personName,
   renderFirstTalk,
   shouldAutoInitFresh,
@@ -1394,7 +1394,7 @@ async function interactiveEntry(userInput, options = {}) {
       printFirstMinuteScreen({ root: workspaceDir, fresh: true });
       return 0;
     }
-    if (isTaskNextLook(request)) {
+    if (isLeftoverVerbLook(request)) {
       if (options.asJson) {
         console.log(JSON.stringify({
           schema: 'atris.one_lap.v1',
