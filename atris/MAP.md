@@ -45,7 +45,7 @@ rg "askCommand|currentMissionCommand|approveCommand|stopCommand|answerCommand|re
 rg "decideCommand|collectOpenDecisions|normalizeHumanAsk|answerMissionHumanAsk" commands/decide.js commands/mission.js lib/mission-human-asks.js lib/self-drive.js test/decide.test.js  # Mission human-decision bridge: list open asks deterministically, route yes/no through mission pings, persist answered metadata, and ignore answered asks in mission/self-drive reads
 rg "starterMembers|team members ready|firstMissionCommand|packed golden path|printedAtrisArgs|golden path e2e|what someone can do now|--minimal|mapStubFromTree" commands/init.js bin/atris.js commands/task.js test/init-non-interactive.test.js test/golden-path-e2e.test.js test/repo-shape.test.js test/dogfood-papercuts.test.js atris/team/customer-lead atris/GOLDEN_PATH_PAPERCUTS.md  # Quiet first-run output plus packed-install zero-knowledge contract: six-member starter team, init --minimal lean scaffold, ready-on-init mission, autoland, durable papercut status; printedAtrisArgs (test/golden-path-e2e.test.js:112) matches Next/next labels; packed path follows init --minimal, then the printed claim/ready/autoland commands
 rg "function planAtris" commands/workflow.js   # Plan command (line 370)
-rg "function doAtris" commands/workflow.js     # Do command (line 718): PERSONA head reuses buildFirstMinute; factory banner and file dump stay on --verbose/--full; missing executor spec after init --minimal does not send you back to init
+rg "function doAtris" commands/workflow.js     # Do command (line 718): PERSONA head reuses buildFirstMinute; executor paste and file dump stay on --verbose/--full; missing executor spec after init --minimal does not send you back to init
 rg "function reviewAtris" commands/workflow.js  # Review command (line 1077): default certified queue, --verbose legacy validator prompt
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
@@ -1191,14 +1191,14 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 2. **`atris do`** - Executor mode
 
-- Entry: `commands/workflow.js:718-1095` (doAtris function)
+- Entry: `commands/workflow.js:718-1086` (doAtris function)
 - Human head: `lib/first-minute.js` `buildFirstMinute` (same win + next as bare `atris`); never prints `Context: UNKNOWN` or `Backlog tasks: 0` when a claimed/review/open task exists
-- Default stays PROMPT ONLY with the copy/paste executor prompt below the fold; `--verbose`/`--full` prints the file dump
+- Default stays PROMPT ONLY plus the first-minute two lines; `--verbose`/`--full` prints the executor paste and file dump
 - Missing `team/executor` after `init --minimal` is optional context, not "run init". Regression: `test/workflow-command.test.js` (`do after init --yes --minimal does not send you back to init`, `do names a claimed task the same way first-minute does`)
 
 3. **`atris review`** - Validator mode
 
-- Entry: `commands/workflow.js:1077-1566` (reviewAtris function)
+- Entry: `commands/workflow.js:1088-1582` (reviewAtris function)
 - Outputs: validator.md spec + TODO.md + MAP.md + journal
 - Purpose: Ultrathink validation, test, clean docs
 
@@ -1812,8 +1812,8 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 **Modular commands (in commands/):**
 
 - `planAtris()` → `commands/workflow.js:370-714`
-- `doAtris()` → `commands/workflow.js:718-1095`
-- `reviewAtris()` → `commands/workflow.js:1077-1566`
+- `doAtris()` → `commands/workflow.js:718-1086`
+- `reviewAtris()` → `commands/workflow.js:1088-1582`
 - `statusAtris()` → `commands/status.js:124-384`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
 - `brainstormAtris()` → `commands/brainstorm.js:21-355`

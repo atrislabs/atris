@@ -907,40 +907,38 @@ async function doAtris() {
       console.log(`📋 Backlog tasks: ${backlogCount}`);
     }
     console.log('');
-  }
 
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('📋 COPY/PASTE PROMPT FOR YOUR CODING AGENT:');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('');
-  console.log('You are the Executor.');
-  console.log('');
-  console.log('Read these files:');
-  if (executorPath) console.log(`- ${executorPath}`);
-  if (personaFileRef) console.log(`- ${personaFileRef}`);
-  if (mapPath) console.log(`- ${mapPath}`);
-  if (taskSourcePath) console.log(`- ${taskSourcePath}`);
-  if (featuresReadmeRef) console.log(`- ${featuresReadmeRef}`);
-  console.log('');
-  if (!mapPath || mapIsPlaceholder) {
-    console.log('Note: If `atris/MAP.md` is missing or placeholder, generate it from `atris/atris.md` before navigating the codebase.');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📋 COPY/PASTE PROMPT FOR YOUR CODING AGENT:');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('');
-  }
-  console.log('Workflow:');
-  console.log('1) Read atris/TODO.md — claim next unclaimed Backlog task');
-  console.log('   Move to ## In Progress: add "Claimed by: executor at YYYY-MM-DD HH:MM"');
-  console.log('2) Run the Confidence Gate against the task before editing');
-  printConfidenceGate('   ');
-  console.log('3) Execute step-by-step. Run tests as you go.');
-  console.log('4) Before completion, rerun the gate against proof and residual risk');
-  console.log('5) When done, move task to ## Completed');
-  console.log('6) Log to atris/team/executor/logs/YYYY-MM-DD.md');
-  console.log('   (Task, Delivered, Errors hit, Learned)');
-  console.log('');
-  console.log('⛔ Do NOT plan — just execute what\'s written.');
-  console.log('');
+    console.log('You are the Executor.');
+    console.log('');
+    console.log('Read these files:');
+    if (executorPath) console.log(`- ${executorPath}`);
+    if (personaFileRef) console.log(`- ${personaFileRef}`);
+    if (mapPath) console.log(`- ${mapPath}`);
+    if (taskSourcePath) console.log(`- ${taskSourcePath}`);
+    if (featuresReadmeRef) console.log(`- ${featuresReadmeRef}`);
+    console.log('');
+    if (!mapPath || mapIsPlaceholder) {
+      console.log('Note: If `atris/MAP.md` is missing or placeholder, generate it from `atris/atris.md` before navigating the codebase.');
+      console.log('');
+    }
+    console.log('Workflow:');
+    console.log('1) Read atris/TODO.md — claim next unclaimed Backlog task');
+    console.log('   Move to ## In Progress: add "Claimed by: executor at YYYY-MM-DD HH:MM"');
+    console.log('2) Run the Confidence Gate against the task before editing');
+    printConfidenceGate('   ');
+    console.log('3) Execute step-by-step. Run tests as you go.');
+    console.log('4) Before completion, rerun the gate against proof and residual risk');
+    console.log('5) When done, move task to ## Completed');
+    console.log('6) Log to atris/team/executor/logs/YYYY-MM-DD.md');
+    console.log('   (Task, Delivered, Errors hit, Learned)');
+    console.log('');
+    console.log('⛔ Do NOT plan — just execute what\'s written.');
+    console.log('');
 
-  if (showFull) {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('📎 APPENDIX (full context dumps):');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -967,12 +965,6 @@ async function doAtris() {
       console.log('');
     }
 
-  }
-
-  if (!showFull) {
-    console.log('atris do --verbose prints the executor file dump.');
-    console.log('');
-  } else {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     if (!hasLiveTask) {
       console.log('💡 Next: Run "atris review" after execution');

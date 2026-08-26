@@ -24,6 +24,8 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawnSync } = require('node:child_process');
 
+const { spokenLineCount } = require('../lib/first-minute');
+
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
@@ -59,6 +61,10 @@ function runCli(args, { cwd, input, env } = {}) {
 function nextLine(stdout) {
   const match = String(stdout || '').match(/^next: (.+)$/m);
   return match ? match[1] : '';
+}
+
+function spokenDoBody(stdout) {
+  return String(stdout || '').replace(/^(PROMPT ONLY|ACTION TAKEN)\s*/m, '');
 }
 
 function writeClaimedWorkspace(dir, task = {
@@ -152,13 +158,14 @@ test('do after init --yes --minimal does not send you back to init', () => {
   assert.match(res.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
   assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
-  assert.match(res.stdout, /You are the Executor\./);
+  assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT|You are the Executor\./);
   assert.doesNotMatch(res.stdout, /Executor spec: atris\/team\/executor\/MEMBER\.md \(missing\)/);
   assert.doesNotMatch(combined, /executor\.md not found|Run "atris init"/);
   assert.doesNotMatch(combined, /What do you want to build|Describe the desired outcome/);
 
   const verbose = runCli(['do', '--verbose'], { cwd: dir });
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
+  assert.match(verbose.stdout, /You are the Executor\./);
   assert.match(verbose.stdout, /Executor spec: atris\/team\/executor\/MEMBER\.md \(missing\)/);
 });
 
@@ -220,7 +227,7 @@ test('plan --full dumps the actual navigator spec content', () => {
   assert.ok(full.stdout.includes(marker), '--full should include the spec content');
 });
 
-test('do prints the executor prompt shape and surfaces feature build plans', () => {
+test('do prints the first-minute head; executor paste stays on --verbose', () => {
   const dir = initializedWorkspace();
   const featureDir = path.join(dir, 'atris', 'features', 'sample-feature');
   fs.mkdirSync(featureDir, { recursive: true });
@@ -231,13 +238,15 @@ test('do prints the executor prompt shape and surfaces feature build plans', () 
   assert.match(res.stdout, /^PROMPT ONLY/m);
   assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
   assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
-  assert.match(res.stdout, /You are the Executor\./);
-  assert.match(res.stdout, /claim next unclaimed Backlog task/);
-  assert.match(res.stdout, /Do NOT plan — just execute/);
+  assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT|You are the Executor\./);
+  assert.doesNotMatch(res.stdout, /claim next unclaimed Backlog task/);
+  assert.doesNotMatch(res.stdout, /Do NOT plan — just execute/);
   assert.doesNotMatch(res.stdout, /Feature build plans found/);
 
   const full = runCli(['do', '--full'], { cwd: dir });
   assert.equal(full.status, 0, full.stderr);
+  assert.match(full.stdout, /COPY\/PASTE PROMPT FOR YOUR CODING AGENT:/);
+  assert.match(full.stdout, /You are the Executor\./);
   assert.match(full.stdout, /Feature build plans found: 1/);
   assert.match(full.stdout, /sample-feature[\/\\]build\.md/);
 });
@@ -255,12 +264,13 @@ test('do names a claimed task the same way first-minute does', () => {
   assert.match(doit.stdout, /"ship the landing page" is already yours\./);
   assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
   assert.equal(nextLine(doit.stdout), 'atris task ready CLI-9');
+  assert.equal(spokenLineCount(spokenDoBody(doit.stdout)), 2);
   assert.doesNotMatch(doit.stdout, /Atris Do — Executor Agent Activated/);
   assert.doesNotMatch(doit.stdout, /Context: UNKNOWN/);
   assert.doesNotMatch(doit.stdout, /Backlog tasks: 0/);
   assert.doesNotMatch(doit.stdout, /CONTEXT FILES \(agent should read\)/);
+  assert.doesNotMatch(doit.stdout, /COPY\/PASTE PROMPT|You are the Executor\./);
   assert.doesNotMatch(doit.stdout, /What do you want to build|Describe the desired outcome/);
-  assert.match(doit.stdout, /You are the Executor\./);
 
   const verbose = runCli(['do', '--verbose'], { cwd: dir, env });
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
@@ -269,6 +279,8 @@ test('do names a claimed task the same way first-minute does', () => {
   assert.doesNotMatch(verbose.stdout, /Context: UNKNOWN/);
   assert.doesNotMatch(verbose.stdout, /Backlog tasks: 0/);
   assert.match(verbose.stdout, /CONTEXT FILES \(agent should read\)/);
+  assert.match(verbose.stdout, /COPY\/PASTE PROMPT FOR YOUR CODING AGENT:/);
+  assert.match(verbose.stdout, /You are the Executor\./);
 });
 
 test('review --verbose prints the validator prompt and reacts to journal completions', () => {
