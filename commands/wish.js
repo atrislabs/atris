@@ -420,8 +420,10 @@ function wishCommand(args = [], deps = {}) {
   }
   const root = process.cwd();
   // Empty folder talks like bare atris. A leftover sentence is not a
-  // wish desk. After init, a plain sentence still files.
-  if (!first || (isFreshWorkspace(root) && !isWishDeskVerb(first))) {
+  // wish desk. After init, a plain sentence still files. A cloud wish
+  // runs remotely and needs no local workspace, so it skips the gate.
+  const wantsCloud = args.includes('--cloud');
+  if (!first || (isFreshWorkspace(root) && !isWishDeskVerb(first) && !wantsCloud)) {
     return printWishReceptionist(root);
   }
   if (first === 'show') {
