@@ -1,7 +1,7 @@
 ---
 name: youtube
-description: "YouTube discovery and learning. Use atris youtube search QUERY to get free youtu.be links (local ytsearch/yt-dlp, zero credits). Use atris youtube search --paid QUERY to buy watch permalinks from Atris (5 credits, login required). A YouTube link in any message routes here: run atris youtube notes URL FIRST (free, about 30s, quotes verified). Never summarize a video from model memory. Use atris youtube process only to store it as queryable knowledge (5 credits). Triggers on: youtube search, find videos, paid youtube search, any youtube.com or youtu.be link, youtube, video, watch this, notes on this."
-version: 2.7.0
+description: "YouTube discovery and learning. Get watch permalinks with atris youtube search QUERY (free, local ytsearch/yt-dlp). On 429 the CLI already retries; use cached rows if printed, else STOP. Never run --paid after a 429. --paid only when the user explicitly asked to buy permalinks (5 credits). After a URL is picked, atris youtube notes URL (free). atris youtube process only to store knowledge (5 credits). Never paste tokens. Never /auth/cli. Mint with atris login --agent from a stored login. Never summarize a video from model memory. Triggers on: youtube search, find videos, paid youtube search, any youtube.com or youtu.be link, youtube, video, watch this, notes on this."
+version: 2.8.0
 tags:
   - youtube
   - research
@@ -11,47 +11,52 @@ tags:
 
 # YouTube Skill
 
-Three rails. Pick before running anything:
+## Feature map
 
-- **Search / discovery (free)** → `atris youtube search "<query>"`. Local ytsearch or yt-dlp `ytsearchN:`. Returns title, channel, duration, views, upload_date, and a `youtu.be` link. Zero credits. Use this to *get* video links; do not call process until the user picks one.
-- **Paid search (5 credits)** → `atris youtube search --paid "<query>"`. Posts `/youtube/search` with the stored token or a youtube-scope agent mint. Prints watch permalinks, titles, and credits. Use this when the customer wants to buy permalinks the same way as `atris x-search`. Do not replace free search with this.
-- **Notes / learning (free)** → `atris youtube notes <url>`. Local captions + a fast engine, about 30 seconds, quotes verified against the transcript. Use when the goal is to learn from a video you already have.
-- **Process / product (5 credits)** → `atris youtube process <url>`. Credits-billed cloud knowledge store. Use when a customer/agent needs the video stored as Atris knowledge.
+Hard path. Follow in order. Soft memory does not override this.
 
-If the user says "find videos", "search youtube", or "get youtube links" → search. If they say "learn from", "notes on", "alpha", or "rabbit hole" → notes. If they say "process", "store", "add to knowledge" → process.
+```
+search QUERY (free)
+    |
+   429 --> CLI already retried once
+        --> cached rows printed? use them
+        --> rate-limit sentence printed? STOP
+             do not run --paid
+    |
+   pick a URL --> notes URL (free)
+    |
+   store knowledge? --> process URL (5 credits)
+
+--paid QUERY only if the user asked to buy permalinks
+login: atris login --agent from a stored login
+never paste tokens, never /auth/cli
+```
+
+1. Get watch permalinks: `atris youtube search QUERY` (free).
+2. If 429: wait/retry is already in the CLI. If it prints cached rows, use those. If it prints `youtube rate-limited local search. do not use --paid as a fallback; retry later.`, STOP. Do not run `--paid`.
+3. `--paid` only when the user explicitly asked to buy permalinks.
+4. `atris youtube notes URL` after a URL is picked (free).
+5. `atris youtube process` only to store knowledge (5 credits). Process is a different 5-credit store, not a search fallback.
+6. Never paste tokens. Never `/auth/cli`. Mint with `atris login --agent` from a stored login.
+
+If the user says "find videos", "search youtube", or "get youtube links" → search. If they say "learn from", "notes on", "alpha", or "rabbit hole" → notes. If they say "process", "store", "add to knowledge" → process. "Buy permalinks" or "paid search" is the only ask that unlocks `--paid`.
 
 Never summarize a video from model memory; that is fabrication.
 
-## Bootstrap (ALWAYS Run First)
+## Bootstrap
+
+Search and notes need no login. Paid search and process need a stored login, then `atris login --agent`. Never print credentials. Never `/auth/cli`.
 
 ```bash
 #!/bin/bash
 set -e
 
-# 1. Check atris CLI
 if ! command -v atris &> /dev/null; then
   echo "Installing atris CLI..."
   npm install -g atris
 fi
 
-# 2. Optional login (required only for process / credits)
-if [ ! -f ~/.atris/credentials.json ]; then
-  echo "Not logged in. Search and notes still work. Process needs: atris login"
-fi
-
-# 3. Extract token when present
-if [ -f ~/.atris/credentials.json ]; then
-  if command -v node &> /dev/null; then
-    TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
-  elif command -v python3 &> /dev/null; then
-    TOKEN=$(python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.atris/credentials.json')))['token'])")
-  elif command -v jq &> /dev/null; then
-    TOKEN=$(jq -r '.token' ~/.atris/credentials.json)
-  fi
-  export ATRIS_TOKEN="$TOKEN"
-fi
-
-echo "Ready. YouTube skill active (search + notes free; process 5 credits)."
+echo "Ready. Feature map: free search, 429 cache-or-stop, notes, then process."
 ```
 
 ---
@@ -66,14 +71,18 @@ atris youtube search "MCP agents" --json
 
 Uses `ytsearch` on PATH when present, else bundled `scripts/det/ytsearch`, else `yt-dlp --flat-playlist --print` with `ytsearchN:`. No credits. No `/agent/process_youtube` call.
 
-## Paid search (5 credits)
+On 429 the CLI retries once, then serves `~/.atris/youtube-search-cache.json` if the same query is younger than one hour. If it prints the rate-limit sentence, stop. Do not run `--paid`.
+
+## Paid search (5 credits, opt-in buy only)
+
+Only when the user explicitly asked to buy permalinks. A 429 or a missing cache is not that ask.
 
 ```bash
 atris youtube search --paid "MCP agents 2026"
 atris youtube search --paid "MCP agents" --limit 10
 ```
 
-Requires login. Uses the stored token, or mints a youtube-scope agent token from disk the same way as `atris youtube process` and `atris x-search`. Never `/auth/cli`. Prints `title | watch permalink` plus credits. Empty or failed searches refund.
+Requires a stored login, then `atris login --agent`. The CLI mints a youtube-scope agent token from disk the same way as `atris youtube process` and `atris x-search`. Never `/auth/cli`. Never paste tokens. Prints `title | watch permalink` plus credits. Empty or failed searches refund.
 
 Line contract:
 
@@ -90,10 +99,7 @@ title | channel | duration | views | upload_date | https://youtu.be/ID
 Base: `https://api.atris.ai/api`
 Auth: `-H "Authorization: Bearer $TOKEN"`
 
-### Get Token
-```bash
-TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
-```
+Do not extract or paste tokens. The CLI reads the stored login. Agents mint with `atris login --agent`.
 
 ### Process a Video
 ```bash
@@ -203,7 +209,7 @@ Two layers, never mixed. The reply the person reads is flowing prose: ideas, spe
 
 `atris youtube search` shells to local ytsearch/yt-dlp and never hits the Atris API.
 
-`atris youtube search --paid` posts `{query, limit}` to `/youtube/search` with bearer auth. Agent tokens need the youtube scope.
+`atris youtube search --paid` posts `{query, limit}` to `/youtube/search` with bearer auth. Agent tokens need the youtube scope. This is an opt-in buy, not a 429 fallback.
 
 `atris youtube` process first tries local transcript extraction with `yt-dlp`. It sends timestamped `transcript_text` to `/agent/process_youtube` with `cache_transcript=false`. If local transcript processing fails with a retryable error, it falls back to cloud video processing. Use `--json` to inspect `metadata.processing_method` and `metadata.transcript_source`.
 
@@ -225,35 +231,33 @@ Two layers, never mixed. The reply the person reads is flowing prose: ideas, spe
 
 | Error | Meaning | Fix |
 |-------|---------|-----|
-| `401` | Token expired/invalid | `atris login --force` |
+| `401` | Token expired/invalid | `atris login --agent` from a stored login |
 | `402` | Not enough credits | Check balance, purchase at atris.ai |
 | `400` | Invalid YouTube URL | Check URL format |
 | `502` | Transcript or cloud processing failed | Retry; credits auto-refunded when backend fails |
 | search exit 2 | ytsearch/yt-dlp missing or no results | Install yt-dlp, or put ytsearch on PATH |
-| search 429 | YouTube rate-limited local search | serve last same-query free rows if younger than one hour; otherwise retry later; do not use --paid |
+| search 429 | YouTube rate-limited local search | CLI already retried; use cached rows if printed; if the rate-limit sentence prints, STOP; do not use --paid |
 
 ---
 
 ## Quick Reference
 
 ```bash
-# Setup (once)
+# Setup: human stores a login, then agents mint. never /auth/cli
 npm install -g atris && atris login
+atris login --agent
 
 # Free: discover videos
 atris youtube search "MCP agents 2026"
 atris youtube search "MCP agents" --limit 10
 
-# Paid: watch permalinks from Atris (5 credits)
+# Paid: only if the user asked to buy permalinks (5 credits). never a 429 fallback
 atris youtube search --paid "MCP agents 2026"
 
 # Free: notes on a URL you already have
 atris youtube notes "https://youtu.be/VIDEO_ID"
 
-# Get token (process only)
-TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
-
-# Process a video (5 credits)
+# Process a video (5 credits). different store from paid search
 atris youtube process "https://youtube.com/watch?v=..." --query "Create a outline (flowing, idea-first) and action brief"
 
 # Process + store to agent knowledge
