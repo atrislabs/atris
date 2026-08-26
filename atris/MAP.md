@@ -150,7 +150,7 @@ rg "addTask|claimTask|doneTask|appendTaskCompletionLogs|listTasks|workspaceRoot|
 rg "missionBlockerTitle|missionXpTaskTitle|Mission XP" lib/self-drive.js commands/mission.js commands/task.js test/self-drive.test.js test/mission-xp.test.js  # Mission-generated task titles stay short and plain while full context remains in task metadata and dialogue
 rg "codexGoalCommand|completed_task_closed|thread_goals" commands/codex-goal.js commands/mission.js test/codex-goal.test.js test/mission-status.test.js  # Native Codex goal boundary: read-only status, completed-task reset refusal, and scheduled-loop stop
 rg "integrationsStatus|--global|scope: 'workspace'" bin/atris.js commands/integrations.js test/dogfood-p1.test.js # Integrations default workspace; --global for account hosts
-rg "requireAccountBound|refuseAccountGlobal|ACCOUNT_GLOBAL_MESSAGE|isBoundBusinessWorkspace|join --help|friends --help|inbox --help|signup help|avail --help" lib/account-bound.js bin/atris.js commands/social.js commands/signup.js commands/avail.js test/dogfood-pass3-27-28.test.js test/dogfood-p0-safety.test.js test/signup.test.js # Unbound folders refuse account-global inbox/gmail/slack/errors; bare atris slack and atris gmail refuse the same way (no send/dm/channels or inbox/read/archive listing); slack/gmail --help still print usage and do not hit the network; join/friends/inbox/signup/avail help prints usage and does not hit the network
+rg "requireAccountBound|refuseAccountGlobal|ACCOUNT_GLOBAL_MESSAGE|isBoundBusinessWorkspace|join --help|friends --help|inbox --help|signup help|avail --help" lib/account-bound.js bin/atris.js commands/social.js commands/signup.js commands/avail.js test/dogfood-pass3-27-28.test.js test/dogfood-p0-safety.test.js test/signup.test.js # Unbound folders refuse account-global inbox/gmail/slack/errors; bare atris slack and atris gmail (including gmail connect) refuse the same way (no send/dm/channels, inbox/read/archive listing, or OAuth/link flow); slack/gmail --help still print usage and do not hit the network; join/friends/inbox/signup/avail help prints usage and does not hit the network
 - Help-before-network: `commands/social.js:173` friends, `commands/social.js:391` join, `commands/social.js:571` friendsCommand, `commands/social.js:581` inboxCommand, `commands/signup.js:53` signup help, `commands/avail.js:385` avail help (before the `--` show path). Regression: `test/dogfood-p0-safety.test.js` (`29:` `31:`) and `test/signup.test.js`.
 - Typo-plus-args: `bin/atris.js:1219` `unknownCommandToken` refuses `taks list` / `misson status` without creating a task. Regression: `test/dogfood-p0-safety.test.js` (`30:`).
 - Lone unknown verbs: `bin/atris.js:1219` also refuses `atris build` / `atris fix` (not in `help --json`) so they cannot mint `First useful step: build`. Quoted `atris "<request>"`, multiword `atris build a thing`, `task new`, and `wish` still create work. Regression: `test/dogfood-pass2.test.js` (`14:`) and `test/one-lap-router.test.js`.
@@ -1495,16 +1495,16 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 - **Entry point:** `commands/integrations.js`
 - **Commands:**
-- `atris gmail connect [name]` (`commands/integrations.js:269`): starts browser auth and polls for the named account; dispatch near `commands/integrations.js:400`
-- `atris gmail [inbox|read <id>]` (`commands/integrations.js:312`): Email inbox and message reading; unbound scratch folders refuse bare `atris gmail` via `requireAccountBound` before this runs
+- `atris gmail connect [name]` (`commands/integrations.js:269`): starts browser auth and polls for the named account; dispatch near `commands/integrations.js:400`; unbound scratch folders refuse `atris gmail connect` via the same `requireAccountBound` lock (exit 2, no Gmail network, no OAuth)
+- `atris gmail [inbox|read <id>]` (`commands/integrations.js:145`): Email inbox and message reading; unbound scratch folders refuse bare `atris gmail` via `requireAccountBound` before this runs
 - `atris calendar [today|week]` (lines 167-184): Calendar events
 - `atris twitter [post <text>]` (lines 232-246): Twitter posting
 - `atris slack [channels]` (`commands/integrations.js:1078`): Slack channel listing; unbound scratch folders refuse bare `atris slack` via `requireAccountBound` before this runs
 - `atris integrations` (lines 298-338): Show status of all integrations
 - **Auth:** Uses `getAuthToken()` (line 16) from `~/.atris/credentials.json`
-- **Routing:** `bin/atris.js:2703` (`command === 'gmail'`) and `bin/atris.js:2738` (`command === 'slack'`): always `requireAccountBound`; `--help` still prints usage
+- **Routing:** `bin/atris.js:2736` (`command === 'gmail'`) and `bin/atris.js:2774` (`command === 'slack'`): always `requireAccountBound`; a refused gmail gate returns before `gmailCommand` so connect cannot fall through to exit 0; `--help` still prints usage
 - **Help:** `bin/atris.js:884-894` (`showIntegrationsHelp`) and `bin/atris.js:1467-1472` route `integrations --help` before auth/session state or backend status checks
-- **Gmail connect regression:** `test/gmail-account.test.js:99` (name validation), `test/gmail-account.test.js:129` (poll success), `test/gmail-account.test.js:182` (timeout)
+- **Gmail connect regression:** `test/gmail-account.test.js:99` (name validation), `test/gmail-account.test.js:129` (poll success), `test/gmail-account.test.js:182` (timeout), `test/dogfood-pass3-27-28.test.js` (unbound scratch `gmail connect` exits 2 with no network or connect flow)
 - **Regression:** `test/commands.test.js:4279-4294` covers integrations help without login errors or `.atris` creation
 - **Value:** Manage external services without leaving the CLI
 

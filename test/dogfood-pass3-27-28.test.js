@@ -64,6 +64,7 @@ test('27/28: unbound folder refuses inbox/gmail/slack/errors/truth without dumpi
       ['gmail', 'archive'],
       ['gmail', 'accounts'],
       ['gmail', 'use'],
+      ['gmail', 'connect'],
       ['slack'],
       ['slack', 'channels'],
       ['slack', 'dms'],
@@ -82,7 +83,7 @@ test('27/28: unbound folder refuses inbox/gmail/slack/errors/truth without dumpi
       assert.equal(result.status, 2, `${args.join(' ')} status=${result.status}`);
       const out = `${result.stderr}${result.stdout}`;
       assert.match(out, /account-global; pass --account to continue/);
-      assert.doesNotMatch(out, /web-guardian|dogfood@example|Conversations|Channels|payroll|502|Slack commands|Fetching Slack|Gmail commands|Fetching inbox|Fetching message|Archiving |ECONNREFUSED|api\.atris\.ai/);
+      assert.doesNotMatch(out, /web-guardian|dogfood@example|Conversations|Channels|payroll|502|Slack commands|Fetching Slack|Gmail commands|gmail commands|Fetching inbox|Fetching message|Archiving |waiting for gmail|open this url|ECONNREFUSED|api\.atris\.ai|\/integrations\/gmail\/start/);
       assert.equal(out.includes(ACCOUNT_GLOBAL_MESSAGE), true);
     }
 
@@ -105,8 +106,8 @@ test('27/28: unbound folder refuses inbox/gmail/slack/errors/truth without dumpi
       env: helpEnv,
     });
     assert.equal(gmailHelp.status, 0, gmailHelp.stderr + gmailHelp.stdout);
-    assert.match(gmailHelp.stdout, /Gmail commands/);
-    assert.doesNotMatch(`${gmailHelp.stderr}${gmailHelp.stdout}`, /account-global|Fetching inbox|Fetching message|Archiving |ECONNREFUSED|api\.atris\.ai/);
+    assert.match(gmailHelp.stdout, /gmail commands/i);
+    assert.doesNotMatch(`${gmailHelp.stderr}${gmailHelp.stdout}`, /account-global|Fetching inbox|Fetching message|Archiving |waiting for gmail|ECONNREFUSED|api\.atris\.ai/);
 
     const bound = path.join(dir, 'bound');
     fs.mkdirSync(path.join(bound, '.atris'), { recursive: true });
@@ -120,8 +121,56 @@ test('27/28: unbound folder refuses inbox/gmail/slack/errors/truth without dumpi
       env: helpEnv,
     });
     assert.equal(boundGmail.status, 0, boundGmail.stderr + boundGmail.stdout);
-    assert.match(boundGmail.stdout, /Gmail commands/);
+    assert.match(boundGmail.stdout, /gmail commands/i);
     assert.doesNotMatch(`${boundGmail.stderr}${boundGmail.stdout}`, /account-global|Fetching inbox/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('unbound scratch gmail connect refuses with exit 2 and never starts a connect flow', () => {
+  const dir = makeTempDir('atris-gmail-connect-scratch-');
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+    token: 'fake-token',
+    email: 'dogfood@example.com',
+  }));
+
+  const env = {
+    HOME: home,
+    ATRIS_HOME: home,
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_NONINTERACTIVE: '1',
+    ATRIS_API_URL: 'http://127.0.0.1:1',
+  };
+
+  try {
+    const result = runCli(['gmail', 'connect'], { cwd: dir, env });
+    assert.equal(result.status, 2, result.stderr + result.stdout);
+    const out = `${result.stderr}${result.stdout}`;
+    assert.equal(out.includes(ACCOUNT_GLOBAL_MESSAGE), true);
+    assert.doesNotMatch(out, /waiting for gmail|connected |open this url|auth url|ECONNREFUSED|api\.atris\.ai|\/integrations\/gmail\/start|invalid gmail account name/i);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const help = runCli(['gmail', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr + help.stdout);
+    assert.match(help.stdout, /gmail commands/i);
+    assert.match(help.stdout, /connect/);
+    assert.doesNotMatch(`${help.stderr}${help.stdout}`, /account-global|waiting for gmail|ECONNREFUSED|api\.atris\.ai/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const bound = path.join(dir, 'bound');
+    fs.mkdirSync(path.join(bound, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(bound, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(bound, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz_dogfood',
+      slug: 'dogfood-co',
+    }));
+    const boundUsage = runCli(['gmail'], { cwd: bound, env });
+    assert.equal(boundUsage.status, 0, boundUsage.stderr + boundUsage.stdout);
+    assert.match(boundUsage.stdout, /gmail connect/);
+    assert.doesNotMatch(`${boundUsage.stderr}${boundUsage.stdout}`, /account-global/);
   } finally {
     cleanupTempDir(dir);
   }
