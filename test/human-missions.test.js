@@ -227,6 +227,70 @@ test('a missing current route uses plain words and says what to do next', async 
   }
 });
 
+test('a missing current route can fall back to the desk next', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-human-mission-desk-'));
+  try {
+    fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [{
+        id: 'task-map',
+        display_id: 'TH1',
+        title: 'generate map.md — scan codebase',
+        status: 'open',
+        created_at: 1,
+        updated_at: 1,
+      }],
+    }, null, 2));
+
+    const missing = outputCapture();
+    const missingCode = await currentMissionCommand([], {
+      ...missing,
+      root,
+      fallbackOnMissing: true,
+      loadCredentials: credentials,
+      apiRequestJson: async () => ({
+        ok: false,
+        status: 404,
+        data: { detail: 'Not Found' },
+        error: 'Not Found',
+      }),
+    });
+    assert.equal(missingCode, 0);
+    assert.match(missing.stdout.join('\n'), /generate map\.md/i);
+    assert.match(missing.stdout.join('\n'), /ready to claim/);
+    assert.match(missing.stdout.join('\n'), /atris task claim TH1 --as /);
+    assert.doesNotMatch(missing.stdout.join('\n') + missing.stderr.join('\n'), /could not find a running mission|Start one with|business\.json|--mission|atris ask/);
+
+    const live = outputCapture();
+    const liveCode = await currentMissionCommand(['--json'], {
+      ...live,
+      root,
+      fallbackOnMissing: true,
+      loadCredentials: credentials,
+      apiRequestJson: async (pathname) => {
+        assert.equal(pathname, '/atris2/missions/current');
+        return {
+          ok: true,
+          status: 200,
+          data: {
+            mission_id: 'mission-live',
+            title: 'Keep the live mission visible',
+            state: 'working',
+            progress_pct: 20,
+          },
+        };
+      },
+    });
+    assert.equal(liveCode, 0);
+    assert.equal(JSON.parse(live.stdout.join('\n')).mission_id, 'mission-live');
+    assert.doesNotMatch(live.stdout.join('\n'), /ready to claim|generate map/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('bare mission keeps local status but uses the cloud card without local state', () => {
   const localRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-human-mission-local-'));
   const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-human-mission-cloud-'));
@@ -273,15 +337,20 @@ test('bare mission keeps local status but uses the cloud card without local stat
 
     const roomRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-human-mission-room-'));
     fs.mkdirSync(path.join(roomRoot, 'atris'), { recursive: true });
-    const room = spawnSync(process.execPath, [cliPath, 'mission', '--json'], {
+    const room = spawnSync(process.execPath, [cliPath, 'mission'], {
       cwd: roomRoot,
       encoding: 'utf8',
       env: env(roomRoot),
     });
-    assert.equal(room.status, 1, room.stderr || room.stdout);
-    const roomPayload = JSON.parse(room.stdout);
-    assert.match(roomPayload.error, /not signed in/i);
-    assert.doesNotMatch(room.stdout, /business\.json|atris init --minimal/);
+    const minute = spawnSync(process.execPath, [cliPath], {
+      cwd: roomRoot,
+      encoding: 'utf8',
+      env: env(roomRoot),
+    });
+    assert.equal(room.status, 0, room.stderr || room.stdout);
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(room.stdout.trim(), minute.stdout.trim());
+    assert.doesNotMatch(room.stdout + room.stderr, /business\.json|atris ask|could not find a running mission|not signed in|--mission/);
     fs.rmSync(roomRoot, { recursive: true, force: true });
   } finally {
     fs.rmSync(localRoot, { recursive: true, force: true });

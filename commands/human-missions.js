@@ -634,6 +634,15 @@ async function currentMissionCommand(args = [], options = {}) {
     outputCard(card, asJson, options.log || console.log);
     return 0;
   } catch (caught) {
+    if (options.fallbackOnMissing) {
+      const code = speakFirstMinute({
+        root: options.root || process.cwd(),
+        asJson,
+        log: options.log || console.log,
+      });
+      if (options.setProcessExitCode !== false) process.exitCode = code;
+      return code;
+    }
     return reportError(caught, 'show the current mission', asJson, options);
   }
 }
