@@ -61,6 +61,7 @@ const {
   DECISION_REFUSE_REASON,
 } = require('../lib/task-decision');
 const { buildFirstMinute, deskNextCommand, personName, pickNext, speakFirstMinute, taskCommand, taskNextCommand } = require('../lib/first-minute');
+const { loadContext } = require('../lib/state-detection');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -6493,9 +6494,19 @@ function cmdDay(args) {
 
 function cmdFirstMinute() {
   const root = process.cwd();
+  const fresh = !fs.existsSync(path.join(root, 'atris'));
+  let context = {};
+  if (!fresh) {
+    try {
+      context = loadContext(root);
+    } catch {
+      context = {};
+    }
+  }
   const screen = buildFirstMinute({
     root,
-    fresh: !fs.existsSync(path.join(root, 'atris')),
+    fresh,
+    context,
   });
   console.log(screen.text);
 }
