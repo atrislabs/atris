@@ -11,6 +11,7 @@ const {
   firstTalkCommand,
   folderName,
   freshMinuteJson,
+  isTaskNextLook,
   personName,
   pickNext,
   renderFirstTalk,
@@ -199,6 +200,15 @@ test('headless flags never auto-init without an explicit yes', () => {
   assert.equal(shouldAutoInitFresh(['-y'], { ATRIS_NO_INTERACTIVE: '1' }), true);
   assert.equal(shouldAutoInitFresh(['--json', '--yes'], {}), false);
   assert.equal(shouldAutoInitFresh(['--yes'], {}), true);
+});
+
+test('task next is a look, not first talk', () => {
+  assert.equal(isTaskNextLook('task next'), true);
+  assert.equal(isTaskNextLook('task next --json'), true);
+  assert.equal(isTaskNextLook('TASK NEXT --as keshav'), true);
+  assert.equal(isTaskNextLook('what should this folder be?'), false);
+  assert.equal(isTaskNextLook('task new count words'), false);
+  assert.equal(isTaskNextLook(''), false);
 });
 
 test('personName prefers a given name from the saved account', () => {
