@@ -572,6 +572,79 @@ function fileBriefFromNotes({ cwd, url, workDir, now } = {}) {
   }
 }
 
+const APPLY_INCOMPLETE_MESSAGE =
+  'notes incomplete: write one apply (change + receipt) before process.';
+
+function applySidecarRel(id) {
+  return `atris/wiki/briefs/youtube-${id}.apply.md`;
+}
+
+function parseApplyFields(text) {
+  const change = String(text || '').match(/^change:\s*(.+)$/im);
+  const receipt = String(text || '').match(/^receipt:\s*(.+)$/im);
+  return {
+    change: change ? change[1].trim() : '',
+    receipt: receipt ? receipt[1].trim() : '',
+  };
+}
+
+function isFilledApply(fields) {
+  const empty = (value) => !value || /^fill this$/i.test(value);
+  return !empty(fields.change) && !empty(fields.receipt);
+}
+
+function readApplyReceipt({ cwd, url } = {}) {
+  const id = videoIdFromUrl(url);
+  if (!id || !cwd) return null;
+  const rel = applySidecarRel(id);
+  const abs = path.join(cwd, rel);
+  if (!fs.existsSync(abs)) return null;
+  return { rel, text: fs.readFileSync(abs, 'utf8') };
+}
+
+function writeApplyStub({ cwd, url, now } = {}) {
+  try {
+    const id = videoIdFromUrl(url);
+    if (!id || !cwd) return null;
+    const wikiDir = path.join(cwd, 'atris', 'wiki');
+    if (!fs.existsSync(wikiDir)) return null;
+
+    const rel = applySidecarRel(id);
+    const abs = path.join(cwd, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    if (!fs.existsSync(abs)) {
+      fs.writeFileSync(abs, [
+        `source: ${url}`,
+        'change: fill this',
+        'receipt: fill this',
+      ].join('\n') + '\n');
+    }
+
+    const date = dateStamp(now);
+    const journalPath = path.join(cwd, 'atris', 'logs', date.slice(0, 4), `${date}.md`);
+    fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+    let existing = '';
+    if (fs.existsSync(journalPath)) existing = fs.readFileSync(journalPath, 'utf8');
+    const line = `- [claimable] apply: fill this -> ${rel}`;
+    if (!existing.includes(line)) {
+      const prefix = existing && !existing.endsWith('\n') ? '\n' : '';
+      fs.writeFileSync(journalPath, `${existing}${prefix}${line}\n`);
+    }
+    return rel;
+  } catch {
+    return null;
+  }
+}
+
+function ensureNotesApply({ cwd, url, now, output } = {}) {
+  const print = typeof output === 'function' ? output : (line = '') => console.error(line);
+  const existing = readApplyReceipt({ cwd, url });
+  if (existing && isFilledApply(parseApplyFields(existing.text))) return 0;
+  writeApplyStub({ cwd, url, now });
+  print(APPLY_INCOMPLETE_MESSAGE);
+  return 2;
+}
+
 const DIGEST_ENGINE_TIMEOUT_MS = 240000;
 const DEFAULT_DIGEST_DAYS = 7;
 
@@ -1226,8 +1299,15 @@ function runSingleYoutubeNotes(url, engine, deps = {}) {
     return 1;
   }
   const status = readRunnerStatus(result);
-  if (status === 0) fileNotesBrief(url, deps);
-  return status;
+  if (status !== 0) return status;
+  fileNotesBrief(url, deps);
+  const ensureApply = deps.ensureApply || ensureNotesApply;
+  return ensureApply({
+    cwd: deps.cwd || process.cwd(),
+    url,
+    now: deps.now,
+    output: deps.output,
+  });
 }
 
 function runYoutubeNotes(args = [], deps = {}) {
@@ -1792,6 +1872,8 @@ module.exports = {
   shouldRetryWithLocalTranscript,
   formatYoutubeResult,
   fileBriefFromNotes,
+  ensureNotesApply,
+  APPLY_INCOMPLETE_MESSAGE,
   isPlaylistUrl,
   parseNotesArgs,
   expandNotesTargets,

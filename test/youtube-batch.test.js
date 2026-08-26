@@ -63,6 +63,7 @@ test('single-url notes still run the existing path with an optional engine', asy
       briefs.push(url);
       return briefFor(url);
     },
+    ensureApply: () => 0,
     expander: () => {
       expanded += 1;
       return [];

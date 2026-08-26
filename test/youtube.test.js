@@ -11,6 +11,8 @@ const {
   shouldRetryWithLocalTranscript,
   formatYoutubeResult,
   fileBriefFromNotes,
+  ensureNotesApply,
+  APPLY_INCOMPLETE_MESSAGE,
   youtubeCommand,
 } = require('../commands/youtube');
 
@@ -317,6 +319,86 @@ test('fileBriefFromNotes files youtu.be notes and stays silent without a wiki', 
   });
   assert.equal(fs.existsSync(path.join(bare, 'atris', 'wiki')), false);
   assert.equal(fs.existsSync(path.join(bare, 'atris', 'logs')), false);
+});
+
+function notesApplyWorkspace(id, notes = '# Apply Gate Video\n\nBody.\n') {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-apply-'));
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  fs.writeFileSync(path.join(workDir, `yt_${id}.md`), notes);
+  return { cwd, workDir };
+}
+
+test('youtube notes without apply writes a claimable stub and stays incomplete', async () => {
+  const url = 'https://www.youtube.com/watch?v=apply01';
+  const { cwd, workDir } = notesApplyWorkspace('apply01');
+  const output = [];
+
+  const status = await youtubeCommand(['notes', url], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 2);
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), true);
+  const stub = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-apply01.apply.md'), 'utf8');
+  assert.match(stub, /source: https:\/\/www\.youtube\.com\/watch\?v=apply01/);
+  assert.match(stub, /^change: fill this$/m);
+  assert.match(stub, /^receipt: fill this$/m);
+  const journal = fs.readFileSync(path.join(cwd, 'atris', 'logs', '2026', '2026-08-26.md'), 'utf8');
+  assert.match(journal, /\[claimable\] apply: fill this -> atris\/wiki\/briefs\/youtube-apply01\.apply\.md/);
+});
+
+test('youtube notes with an apply receipt is complete', async () => {
+  const url = 'https://youtu.be/apply02';
+  const { cwd, workDir } = notesApplyWorkspace('apply02');
+  const applyDir = path.join(cwd, 'atris', 'wiki', 'briefs');
+  fs.mkdirSync(applyDir, { recursive: true });
+  const applyPath = path.join(applyDir, 'youtube-apply02.apply.md');
+  const filled = [
+    `source: ${url}`,
+    'change: commands/youtube.js',
+    'receipt: node --test test/youtube.test.js',
+    '',
+  ].join('\n');
+  fs.writeFileSync(applyPath, filled);
+  const output = [];
+
+  const status = await youtubeCommand(['notes', url], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(fs.readFileSync(applyPath, 'utf8'), filled);
+  assert.equal(ensureNotesApply({ cwd, url, now: '2026-08-26', output: () => {} }), 0);
+});
+
+test('youtube notes without wiki still stays incomplete when apply is missing', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-apply-nowiki-'));
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-nowiki-'));
+  fs.writeFileSync(path.join(workDir, 'yt_apply03.md'), '# No Wiki\n\nClip.\n');
+  const output = [];
+
+  const status = await youtubeCommand(['notes', 'https://youtu.be/apply03'], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 2);
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
 });
 
 test('youtube process mints only the youtube scope after an expired user wall and retries', async () => {
