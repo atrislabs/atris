@@ -383,6 +383,184 @@ test('gmail archive with --account adds account_id to json body', async () => {
   });
 });
 
+test('gmail send posts the joined body from the selected connected account', async () => {
+  const calls = [];
+  const { integrations, restore } = withMockedIntegrations(async (pathname, options) => {
+    calls.push({ pathname, options });
+    if (pathname === '/integrations/gmail/accounts') {
+      return { ok: true, status: 200, data: { accounts: SAMPLE_ACCOUNTS } };
+    }
+    return { ok: true, status: 200, data: { sent: true } };
+  });
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    await integrations.gmailCommand(
+      'send',
+      'friend@example.com',
+      'Status update',
+      'hello',
+      'from',
+      'atris',
+      '--account',
+      'personal',
+    );
+  } finally {
+    console.log = originalLog;
+    restore();
+  }
+
+  assert.deepEqual(calls, [
+    {
+      pathname: '/integrations/gmail/accounts',
+      options: { method: 'GET', token: 'test-token' },
+    },
+    {
+      pathname: '/integrations/gmail/send',
+      options: {
+        method: 'POST',
+        token: 'test-token',
+        body: {
+          to: 'friend@example.com',
+          subject: 'Status update',
+          body: 'hello from atris',
+          account_id: 'personal',
+        },
+      },
+    },
+  ]);
+  assert.deepEqual(lines, ['sent to friend@example.com from home@example.com']);
+});
+
+test('gmail send refuses an account that is not connected before the send request', async () => {
+  const calls = [];
+  const { integrations, restore } = withMockedIntegrations(async (pathname, options) => {
+    calls.push({ pathname, options });
+    return { ok: true, status: 200, data: { accounts: SAMPLE_ACCOUNTS } };
+  });
+  const errors = [];
+  const originalError = console.error;
+  const originalExit = process.exit;
+  console.error = (line) => errors.push(String(line));
+  process.exit = (code) => {
+    throw new Error(`exit:${code}`);
+  };
+  try {
+    await assert.rejects(
+      () => integrations.gmailCommand(
+        'send',
+        'friend@example.com',
+        'Status update',
+        'hello',
+        '--account',
+        'missing',
+      ),
+      /exit:1/,
+    );
+  } finally {
+    console.error = originalError;
+    process.exit = originalExit;
+    restore();
+  }
+
+  assert.deepEqual(errors, ['gmail account "missing" is not connected.']);
+  assert.deepEqual(calls.map((call) => call.pathname), ['/integrations/gmail/accounts']);
+});
+
+test('gmail send exits 2 with one lowercase usage line when arguments are missing', async () => {
+  const calls = [];
+  const { integrations, restore } = withMockedIntegrations(async (pathname, options) => {
+    calls.push({ pathname, options });
+    return { ok: true, status: 200, data: {} };
+  });
+  const errors = [];
+  const originalError = console.error;
+  const originalExit = process.exit;
+  console.error = (line) => errors.push(String(line));
+  process.exit = (code) => {
+    throw new Error(`exit:${code}`);
+  };
+  try {
+    await assert.rejects(
+      () => integrations.gmailCommand('send', 'friend@example.com', 'Status update'),
+      /exit:2/,
+    );
+  } finally {
+    console.error = originalError;
+    process.exit = originalExit;
+    restore();
+  }
+
+  assert.deepEqual(errors, [
+    'usage: atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>]',
+  ]);
+  assert.deepEqual(calls, []);
+});
+
+test('gmail voice --clear patches an empty voice for the selected account', async () => {
+  const calls = [];
+  const { integrations, restore } = withMockedIntegrations(async (pathname, options) => {
+    calls.push({ pathname, options });
+    if (pathname === '/integrations/gmail/accounts') {
+      return { ok: true, status: 200, data: SAMPLE_ACCOUNTS };
+    }
+    return { ok: true, status: 200, data: {} };
+  });
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    await integrations.gmailCommand('voice', 'personal', '--clear');
+  } finally {
+    console.log = originalLog;
+    restore();
+  }
+
+  assert.deepEqual(calls[1], {
+    pathname: '/integrations/gmail/accounts/personal',
+    options: {
+      method: 'PATCH',
+      token: 'test-token',
+      body: { voice_md: '' },
+    },
+  });
+  assert.deepEqual(lines, ['voice cleared for personal']);
+});
+
+test('gmail voice reads piped stdin and patches the sticky account voice', async () => {
+  const calls = [];
+  const { integrations, restore } = withMockedIntegrations(async (pathname, options) => {
+    calls.push({ pathname, options });
+    if (pathname === '/integrations/gmail/accounts') {
+      return { ok: true, status: 200, data: { accounts: SAMPLE_ACCOUNTS } };
+    }
+    return { ok: true, status: 200, data: {} };
+  }, { stickyAccountId: 'research' });
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    await integrations.gmailVoice(undefined, {
+      stdinIsTTY: false,
+      readStdin: () => 'direct, warm, concise.\n',
+    });
+  } finally {
+    console.log = originalLog;
+    restore();
+  }
+
+  assert.deepEqual(calls[1], {
+    pathname: '/integrations/gmail/accounts/research',
+    options: {
+      method: 'PATCH',
+      token: 'test-token',
+      body: { voice_md: 'direct, warm, concise.\n' },
+    },
+  });
+  assert.deepEqual(lines, ['voice saved for research']);
+});
+
 test('gmail accounts aligns display names and marks the active account', async () => {
   const { integrations, restore } = withMockedIntegrations(accountsApi(async () => ({ ok: true, status: 200, data: [] })));
   const lines = [];
