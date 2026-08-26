@@ -75,6 +75,13 @@ test('27/28: unbound folder refuses inbox/gmail/slack/errors/truth without dumpi
       ['slack'],
       ['slack', 'channels'],
       ['slack', 'dms'],
+      ['slack', 'send'],
+      ['slack', 'send', '#x', 'hi', '--approved'],
+      ['slack', 'send', '#x', 'hi', '--approved', '--account', 'foo'],
+      ['slack', 'dm', 'U123', 'hi', '--approved', '--account', 'foo'],
+      ['slack', 'channels', '--account', 'foo'],
+      ['slack', 'messages', '#x', '--account', 'foo'],
+      ['slack', 'search', 'hi', '--account', 'foo'],
       ['errors', '--json'],
       ['truth'],
     ]) {
@@ -90,7 +97,7 @@ test('27/28: unbound folder refuses inbox/gmail/slack/errors/truth without dumpi
       assert.equal(result.status, 2, `${args.join(' ')} status=${result.status}`);
       const out = `${result.stderr}${result.stdout}`;
       assert.match(out, /account-global; pass --account to continue/);
-      assert.doesNotMatch(out, /web-guardian|dogfood@example|Conversations|Channels|payroll|502|Slack commands|Fetching Slack|Gmail commands|gmail commands|Fetching inbox|Fetching message|Archiving |waiting for gmail|open this url|ECONNREFUSED|api\.atris\.ai|\/integrations\/gmail\/start|not connected|sent to |could not send gmail/);
+      assert.doesNotMatch(out, /web-guardian|dogfood@example|Conversations|Channels|payroll|502|Slack commands|Fetching Slack|Sending to |Sending DM|Searching Slack|Reading Slack|Internal server error|Gmail commands|gmail commands|Fetching inbox|Fetching message|Archiving |waiting for gmail|open this url|ECONNREFUSED|api\.atris\.ai|\/integrations\/gmail\/start|\/integrations\/slack\/|not connected|sent to |could not send gmail/);
       assert.equal(out.includes(ACCOUNT_GLOBAL_MESSAGE), true);
     }
 
@@ -247,6 +254,92 @@ test('unbound scratch gmail send refuses even with --account', () => {
       'someone@example.com',
       'hi',
       'body',
+      '--approved',
+      '--account',
+      'foo',
+    ], { cwd: bound, env });
+    assert.notEqual(boundSend.status, 2, boundSend.stderr + boundSend.stdout);
+    assert.doesNotMatch(`${boundSend.stderr}${boundSend.stdout}`, /account-global/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('unbound scratch slack send refuses even with --account', () => {
+  const dir = makeTempDir('atris-slack-send-scratch-');
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+    token: 'fake-token',
+    email: 'dogfood@example.com',
+  }));
+
+  const env = {
+    HOME: home,
+    ATRIS_HOME: home,
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_NONINTERACTIVE: '1',
+    ATRIS_API_URL: 'http://127.0.0.1:1',
+  };
+
+  try {
+    const bare = runCli(['slack', 'send', '#x', 'hi', '--approved'], {
+      cwd: dir,
+      env,
+    });
+    assert.equal(bare.status, 2, bare.stderr + bare.stdout);
+    const bareOut = `${bare.stderr}${bare.stdout}`;
+    assert.equal(bareOut.includes(ACCOUNT_GLOBAL_MESSAGE), true);
+    assert.doesNotMatch(bareOut, /Sending to |Sending DM|Searching Slack|Reading Slack|Fetching Slack|Internal server error|ECONNREFUSED|api\.atris\.ai|\/integrations\/slack\//i);
+
+    const withAccount = runCli([
+      'slack',
+      'send',
+      '#x',
+      'hi',
+      '--approved',
+      '--account',
+      'foo',
+    ], { cwd: dir, env });
+    assert.equal(withAccount.status, 2, withAccount.stderr + withAccount.stdout);
+    const withAccountOut = `${withAccount.stderr}${withAccount.stdout}`;
+    assert.equal(withAccountOut.includes(ACCOUNT_GLOBAL_MESSAGE), true);
+    assert.equal(withAccountOut, bareOut);
+    assert.doesNotMatch(withAccountOut, /Sending to |Sending DM|Searching Slack|Reading Slack|Fetching Slack|Internal server error|ECONNREFUSED|api\.atris\.ai|\/integrations\/slack\//i);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    for (const args of [
+      ['slack', 'dm', 'U123', 'hi', '--approved', '--account', 'foo'],
+      ['slack', 'channels', '--account', 'foo'],
+      ['slack', 'messages', '#x', '--account', 'foo'],
+      ['slack', 'search', 'hi', '--account', 'foo'],
+    ]) {
+      const result = runCli(args, { cwd: dir, env });
+      assert.equal(result.status, 2, `${args.join(' ')} status=${result.status}`);
+      const out = `${result.stderr}${result.stdout}`;
+      assert.equal(out, bareOut);
+      assert.doesNotMatch(out, /Sending to |Sending DM|Searching Slack|Reading Slack|Fetching Slack|Internal server error|ECONNREFUSED|api\.atris\.ai|\/integrations\/slack\//i);
+    }
+
+    const help = runCli(['slack', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr + help.stdout);
+    assert.match(help.stdout, /Slack commands/);
+    assert.match(help.stdout, /send/);
+    assert.doesNotMatch(`${help.stderr}${help.stdout}`, /account-global|Sending to |Fetching Slack|ECONNREFUSED|api\.atris\.ai/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const bound = path.join(dir, 'bound');
+    fs.mkdirSync(path.join(bound, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(bound, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(bound, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz_dogfood',
+      slug: 'dogfood-co',
+    }));
+    const boundSend = runCli([
+      'slack',
+      'send',
+      '#x',
+      'hi',
       '--approved',
       '--account',
       'foo',

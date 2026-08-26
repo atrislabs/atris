@@ -2767,9 +2767,15 @@ if (command === 'init') {
 } else if (command === 'slack') {
   {
     const raw = process.argv.slice(3);
-    const gate = requireAccountBound(raw);
-    if (!gate.ok) process.exit(refuseAccountGlobal());
-    const { slackCommand } = require('../commands/integrations');
+    const { slackCommand, extractGmailMailboxAccount } = require('../commands/integrations');
+    const account = extractGmailMailboxAccount(raw);
+    // Account --account <id> is a selector, not the workspace opt-in.
+    // Scratch folders refuse every slack verb the same way as gmail/inbox.
+    const gate = requireAccountBound(account.args.filter((arg) => arg !== '--account'));
+    if (!gate.ok) {
+      process.exit(refuseAccountGlobal());
+      return;
+    }
     const subcommand = gate.args[0];
     const args = gate.args.slice(1);
     slackCommand(subcommand, ...args)

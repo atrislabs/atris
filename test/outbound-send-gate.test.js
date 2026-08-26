@@ -13,10 +13,20 @@ function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'outbound-send-gate-'));
 }
 
-// Default the CLI cwd to a temp dir, never the repo root: a repo-root cwd
+function bindWorkspace(dir) {
+  fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({
+    business_id: 'biz_outbound',
+    slug: 'outbound-co',
+  }));
+  return dir;
+}
+
+// Default the CLI cwd to a bound temp dir, never the repo root: a repo-root cwd
 // makes the CLI mutate the checkout's own .atris/state during the suite
-// (CLI-1241).
-const scratchCwd = makeTempDir();
+// (CLI-1241). --account is a selector, not the workspace unlock.
+const scratchCwd = bindWorkspace(makeTempDir());
 test.after(() => fs.rmSync(scratchCwd, { recursive: true, force: true }));
 
 function runCli(args, { cwd, env } = {}) {
