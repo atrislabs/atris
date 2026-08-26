@@ -1881,7 +1881,6 @@ module.exports = {
   formatYoutubeResult,
   fileBriefFromNotes,
   ensureNotesApply,
-  ensureProcessApply,
   APPLY_NEXT_MESSAGE,
   PROCESS_APPLY_MESSAGE,
   isPlaylistUrl,
