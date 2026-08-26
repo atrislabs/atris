@@ -1263,6 +1263,7 @@ async function reviewAtris() {
       await runTaskCommand(forwarded);
       return;
     }
+    console.log('');
     console.log(renderReviewMinute());
     return;
   }
