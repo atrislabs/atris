@@ -22,6 +22,7 @@ test/bench-agents-harness.test.js
 test/bench-report.test.js
 test/bench-tasks.test.js
 test/boot-impression.test.js
+test/brainstorm-headless.test.js
 test/brain-consistency.test.js
 test/brain-contribution-card-escaping.test.js
 test/brain-count-todo-items.test.js
