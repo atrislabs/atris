@@ -88,6 +88,7 @@ const {
   resolveDefaultVerifier,
 } = require('../lib/default-verifier');
 const { resolveWorkspaceRoot, redirectToWorkspaceRoot } = require('../lib/mission-root');
+const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
 const { readJson, writeJson } = require('../lib/json-file');
 const {
   normalizeHumanAsks,
@@ -11372,6 +11373,18 @@ function missionCommand(args) {
     return require('./human-missions').answerCommand(args.slice(1));
   }
   if (isBareMission && !hasLocalMissionState(resolveWorkspaceRoot())) {
+    const root = resolveWorkspaceRoot();
+    // Empty folder talks like bare atris. After init, stay on the current
+    // card or an honest no-mission, and do not bounce back to init.
+    if (isFreshWorkspace(root)) {
+      const code = speakFirstMinute({
+        root,
+        fresh: true,
+        asJson: args.includes('--json'),
+      });
+      process.exitCode = code;
+      return code;
+    }
     return require('./human-missions').currentMissionCommand(args);
   }
   const subcommand = isBareMission ? 'status' : (args[0] || 'status');

@@ -14,6 +14,7 @@ const {
 const { apiRequestJson } = require('../utils/api');
 const { decodeJwtClaims, loadCredentials } = require('../utils/auth');
 const { isHelpToken } = require('../lib/noninteractive');
+const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
 
 const PACKAGE_PATH = path.join(__dirname, '..', 'package.json');
 const HUMAN_STATES = Object.freeze({
@@ -533,11 +534,27 @@ function credentialsOrThrow(options = {}) {
   return credentials;
 }
 
+function isBareAsk(args = []) {
+  return (Array.isArray(args) ? args : []).every((value) => value === '--json');
+}
+
 async function askCommand(args, options = {}) {
   const asJson = args.includes('--json');
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     (options.log || console.log)('Usage: atris ask "what you want" [--budget <usd>] [--json]');
     return 0;
+  }
+  const root = options.root || process.cwd();
+  const fresh = isFreshWorkspace(root);
+  // Empty folder talks like bare atris. Do not start a mission or hit the
+  // network. After init, bare ask stays in the room.
+  if (!options.businessId && (fresh || isBareAsk(args))) {
+    return speakFirstMinute({
+      root,
+      fresh,
+      asJson,
+      log: options.log || console.log,
+    });
   }
   const unbound = refuseUnboundCloudComputer(args, options, 'ask');
   if (unbound) return reportError(unbound, 'start that mission', asJson, options);
