@@ -131,16 +131,30 @@ function watchStopFile(root, child, { intervalMs = 2000 } = {}) {
   return () => clearInterval(poll);
 }
 
-function driveLeg(root, legArgs, current) {
+function recordChildPid(root, state, pid) {
+  if (!state) return;
+  if (Number.isFinite(pid) && pid > 0) state.child_pid = pid;
+  else delete state.child_pid;
+  writeState(root, state);
+}
+
+function killPid(pid) {
+  if (!pidAlive(pid)) return false;
+  try { process.kill(pid, 'SIGTERM'); return true; } catch { return false; }
+}
+
+function driveLeg(root, legArgs, current, state) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [CLI_PATH, ...legArgs], { cwd: root, stdio: 'inherit' });
     current.child = child;
+    recordChildPid(root, state, child.pid);
     // Stop fast: a stop file written by `atris autopilot stop` in another
     // terminal terminates the running leg, not just the loop between legs.
     const stopWatch = watchStopFile(root, child);
     const finish = (code) => {
       stopWatch();
       current.child = null;
+      recordChildPid(root, state, null);
       resolve(Number.isFinite(code) ? code : 1);
     };
     child.on('error', () => finish(1));
@@ -152,10 +166,14 @@ function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 function autopilotStop(root = process.cwd()) {
   requestStop(root);
-  const state = readState(root);
-  if (state && pidAlive(state.pid)) {
-    try { process.kill(state.pid, 'SIGTERM'); } catch {}
-    console.log(`Stopping autopilot (pid ${state.pid}).`);
+  const state = readState(root) || {};
+  const wrapperPid = Number(state.pid);
+  const childPid = Number(state.child_pid);
+  const killedChild = killPid(childPid);
+  const killedWrapper = wrapperPid !== childPid && killPid(wrapperPid);
+  if (killedChild || killedWrapper) {
+    const extra = killedChild && Number.isFinite(childPid) ? `, leg ${childPid}` : '';
+    console.log(`Stopping autopilot (pid ${Number.isFinite(wrapperPid) ? wrapperPid : childPid}${extra}).`);
   } else {
     console.log('No live autopilot process; stop marker written so the next start clears it.');
   }
@@ -202,7 +220,7 @@ async function autopilotFront(args = []) {
   if (args[0] === 'stop') return autopilotStop(root);
   if (args[0] === 'status') return autopilotStatus(root);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') { showFrontHelp(); return 0; }
-  if (wantsJson(args) && !hasYesFlag(args) && !args.includes('--auto') && !args.includes('--once')) {
+  if (wantsJson(args) && !hasYesFlag(args)) {
     const state = readState(root);
     const alive = Boolean(state && pidAlive(state.pid));
     console.log(JSON.stringify({
@@ -210,16 +228,17 @@ async function autopilotFront(args = []) {
       command: 'autopilot',
       running: alive,
       error: 'pass --yes to start',
-      usage: 'atris autopilot [--yes|--auto|--once]',
+      usage: 'atris autopilot [--yes|--auto] [--once]',
     }, null, 2));
     return 2;
   }
   // Bare headless invoke used to start a mission loop and hang. --auto is
-  // the existing proceed flag pulse and spaceship already pass.
+  // the existing proceed flag pulse and spaceship already pass. --once is
+  // a duration, not consent: it still needs --yes off a TTY.
   if (!args.includes('--auto') && refuseHeadlessUnless(args, {
     allowYes: true,
-    allowOnce: true,
-    usage: 'Usage: atris autopilot [--yes|--auto|--once]',
+    allowOnce: false,
+    usage: 'Usage: atris autopilot [--yes|--auto] [--once]',
   })) return 2;
 
   const existing = readState(root);
@@ -272,7 +291,7 @@ async function autopilotFront(args = []) {
     console.log(`\nautopilot leg ${state.legs}: ${plan.label}`);
 
     const legStarted = Date.now();
-    const code = await driveLeg(root, plan.args, current);
+    const code = await driveLeg(root, plan.args, current, state);
     state.last_exit = code;
     writeState(root, state);
 

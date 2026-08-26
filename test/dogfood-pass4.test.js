@@ -8,7 +8,7 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 const { ACCOUNT_GLOBAL_MESSAGE } = require('../lib/account-bound');
-const { requestStop, watchStopFile } = require('../commands/autopilot-front');
+const { requestStop, watchStopFile, writeState } = require('../commands/autopilot-front');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -79,14 +79,26 @@ test('30: autopilot --json prints status and does not spawn', () => {
   const dir = makeTempDir();
   try {
     assert.equal(runCli(['init', '--yes', '--minimal'], { cwd: dir, timeout: 60000 }).status, 0);
-    const res = runCli(['autopilot', '--json'], { cwd: dir, timeout: 5000 });
-    assert.equal(res.status, 2, res.stdout + res.stderr);
-    const body = JSON.parse(res.stdout);
-    assert.equal(body.ok, false);
-    assert.equal(body.command, 'autopilot');
-    assert.equal(body.running, false);
-    assert.match(String(body.error || body.usage || ''), /--yes|usage/i);
-    assert.doesNotMatch(res.stdout + res.stderr, /Autopilot on|Takeoff|mission_started/i);
+
+    for (const args of [
+      ['autopilot', '--json'],
+      ['autopilot', '--json', '--once'],
+    ]) {
+      const res = runCli(args, { cwd: dir, timeout: 5000 });
+      assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
+      const body = JSON.parse(res.stdout);
+      assert.equal(body.ok, false);
+      assert.equal(body.command, 'autopilot');
+      assert.equal(body.running, false);
+      assert.match(String(body.error || body.usage || ''), /--yes|usage/i);
+      assert.doesNotMatch(res.stdout + res.stderr, /Autopilot on|Takeoff|mission_started/i);
+    }
+
+    const once = runCli(['autopilot', '--once'], { cwd: dir, timeout: 5000 });
+    assert.equal(once.status, 2, once.stdout + once.stderr);
+    assert.match(once.stderr + once.stdout, /Usage: atris autopilot|Pass --yes/i);
+    assert.doesNotMatch(once.stdout + once.stderr, /Autopilot on|Takeoff|mission_started/i);
+
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'autopilot.json')), false);
   } finally {
@@ -96,18 +108,47 @@ test('30: autopilot --json prints status and does not spawn', () => {
 
 test('30: autopilot stop kills the current-leg child', async () => {
   const dir = makeTempDir();
+  const live = [];
   try {
     const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], {
       stdio: 'ignore',
     });
+    live.push(child);
     const stopWatch = watchStopFile(dir, child, { intervalMs: 20 });
     requestStop(dir);
-    const code = await new Promise((resolve) => {
+    const watched = await new Promise((resolve) => {
       child.on('close', (exitCode, signal) => resolve({ exitCode, signal }));
     });
     stopWatch();
-    assert.ok(code.signal === 'SIGTERM' || code.exitCode !== 0);
+    assert.ok(watched.signal === 'SIGTERM' || watched.exitCode !== 0);
+
+    const orphan = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], {
+      stdio: 'ignore',
+    });
+    live.push(orphan);
+    writeState(dir, {
+      pid: 999999999,
+      child_pid: orphan.pid,
+      started_at: new Date().toISOString(),
+      legs: 1,
+      current_leg: 'test sleeper',
+    });
+    const res = runCli(['autopilot', 'stop'], { cwd: dir });
+    assert.equal(res.status, 0, res.stdout + res.stderr);
+    assert.match(res.stdout, /Stopping autopilot/);
+    const stopped = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ timeout: true }), 3000);
+      orphan.on('close', (exitCode, signal) => {
+        clearTimeout(timer);
+        resolve({ exitCode, signal });
+      });
+    });
+    assert.equal(stopped.timeout, undefined, 'current-leg child still alive after stop');
+    assert.ok(stopped.signal === 'SIGTERM' || stopped.exitCode !== 0);
   } finally {
+    for (const proc of live) {
+      try { process.kill(proc.pid, 'SIGKILL'); } catch { /* already gone */ }
+    }
     cleanupTempDir(dir);
   }
 });
