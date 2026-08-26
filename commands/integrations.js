@@ -2,8 +2,10 @@
  * Integration commands for Atris CLI
  *
  * Usage:
- *   atris gmail inbox       - List recent emails
- *   atris gmail read <id>   - Read specific email
+ *   atris gmail inbox [--account <id>]       - List recent emails
+ *   atris gmail read <id> [--account <id>]   - Read specific email
+ *   atris gmail archive <id> [...] [--account <id>] - Archive messages
+ *   atris gmail accounts    - List connected Gmail accounts
  *   atris calendar today    - Show today's events
  *   atris calendar yesterday - Show yesterday's events
  *   atris calendar week     - Show this week's events
@@ -51,13 +53,52 @@ async function getAuthToken() {
 // GMAIL
 // ============================================================================
 
+function extractGmailMailboxAccount(args = []) {
+  const out = [];
+  let mailboxAccountId = null;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--account' && args[i + 1] && !String(args[i + 1]).startsWith('-')) {
+      mailboxAccountId = args[i + 1];
+      i += 1;
+      continue;
+    }
+    out.push(arg);
+  }
+  return { args: out, mailboxAccountId };
+}
+
+function parseGmailArgs(args = []) {
+  const options = { accountId: null };
+  const positional = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--account') {
+      options.accountId = String(args[i + 1] || '').trim();
+      if (!options.accountId) {
+        console.error('Usage: --account requires an account id');
+        process.exit(1);
+      }
+      i += 1;
+    } else {
+      positional.push(arg);
+    }
+  }
+  return { ...options, positional };
+}
+
 async function gmailInbox(options = {}) {
   const { token, email } = await getAuth();
   const limit = options.limit || 10;
 
   console.log('📬 Fetching inbox...\n');
 
-  const result = await apiRequestJson(`/integrations/gmail/messages?max_results=${limit}`, {
+  let path = `/integrations/gmail/messages?max_results=${limit}`;
+  if (options.accountId) {
+    path = `/integrations/gmail/messages?max_results=${limit}&account_id=${encodeURIComponent(options.accountId)}`;
+  }
+
+  const result = await apiRequestJson(path, {
     method: 'GET',
     token,
   });
@@ -97,9 +138,9 @@ async function gmailInbox(options = {}) {
   }
 }
 
-async function gmailRead(messageId) {
+async function gmailRead(messageId, options = {}) {
   if (!messageId) {
-    console.error('Usage: atris gmail read <message_id>');
+    console.error('Usage: atris gmail read <message_id> [--account <id>]');
     process.exit(1);
   }
 
@@ -107,7 +148,12 @@ async function gmailRead(messageId) {
 
   console.log('📧 Fetching message...\n');
 
-  const result = await apiRequestJson(`/integrations/gmail/messages/${messageId}`, {
+  let path = `/integrations/gmail/messages/${messageId}`;
+  if (options.accountId) {
+    path = `${path}?account_id=${encodeURIComponent(options.accountId)}`;
+  }
+
+  const result = await apiRequestJson(path, {
     method: 'GET',
     token,
   });
@@ -129,10 +175,10 @@ async function gmailRead(messageId) {
   console.log(msg.body || msg.snippet || '(no body)');
 }
 
-async function gmailArchive(messageIds) {
+async function gmailArchive(messageIds, options = {}) {
   const ids = (messageIds || []).map(id => String(id || '').trim()).filter(Boolean);
   if (!ids.length) {
-    console.error('Usage: atris gmail archive <message_id> [<message_id> ...]');
+    console.error('Usage: atris gmail archive <message_id> [<message_id> ...] [--account <id>]');
     process.exit(1);
   }
 
@@ -140,10 +186,13 @@ async function gmailArchive(messageIds) {
 
   console.log(`Archiving ${ids.length} message${ids.length === 1 ? '' : 's'}...`);
 
+  const body = { message_ids: ids };
+  if (options.accountId) body.account_id = options.accountId;
+
   const result = await apiRequestJson('/integrations/gmail/messages/batch-archive', {
     method: 'POST',
     token,
-    body: { message_ids: ids },
+    body,
   });
 
   if (!result.ok) {
@@ -155,23 +204,60 @@ async function gmailArchive(messageIds) {
   console.log(`Archived ${archived} message${archived === 1 ? '' : 's'}. They stay searchable in All Mail.`);
 }
 
+async function gmailAccounts() {
+  const token = await getAuthToken();
+
+  const result = await apiRequestJson('/integrations/gmail/accounts', {
+    method: 'GET',
+    token,
+  });
+
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to fetch accounts'}`);
+    process.exit(1);
+  }
+
+  const accounts = result.data?.accounts || result.data || [];
+
+  if (!accounts.length) {
+    console.log('no connected accounts.');
+    return;
+  }
+
+  for (const account of accounts) {
+    const email = String(account.email_address || account.email || 'unknown').toLowerCase();
+    const name = String(account.display_name || account.name || '').toLowerCase();
+    console.log(`${email}, ${name}`);
+  }
+}
+
 async function gmailCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'inbox':
-    case 'list':
-      await gmailInbox();
+    case 'list': {
+      const parsed = parseGmailArgs(args);
+      await gmailInbox({ accountId: parsed.accountId || undefined });
       break;
-    case 'read':
-      await gmailRead(args[0]);
+    }
+    case 'read': {
+      const parsed = parseGmailArgs(args);
+      await gmailRead(parsed.positional[0], { accountId: parsed.accountId || undefined });
       break;
-    case 'archive':
-      await gmailArchive(args);
+    }
+    case 'archive': {
+      const parsed = parseGmailArgs(args);
+      await gmailArchive(parsed.positional, { accountId: parsed.accountId || undefined });
+      break;
+    }
+    case 'accounts':
+      await gmailAccounts();
       break;
     default:
       console.log('Gmail commands:');
-      console.log('  atris gmail inbox       - List recent emails');
-      console.log('  atris gmail read <id>   - Read specific email');
-      console.log('  atris gmail archive <id> [...] - Archive messages (reversible, All Mail keeps them)');
+      console.log('  atris gmail inbox [--account <id>]       - List recent emails');
+      console.log('  atris gmail read <id> [--account <id>]   - Read specific email');
+      console.log('  atris gmail archive <id> [...] [--account <id>] - Archive messages (reversible, All Mail keeps them)');
+      console.log('  atris gmail accounts                     - List connected Gmail accounts');
   }
 }
 
@@ -1680,6 +1766,8 @@ async function integrationsStatus(args = []) {
 
 module.exports = {
   gmailCommand,
+  extractGmailMailboxAccount,
+  parseGmailArgs,
   calendarCommand,
   twitterCommand,
   slackCommand,
