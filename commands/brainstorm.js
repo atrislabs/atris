@@ -12,7 +12,7 @@ function printHelp() {
   console.log('Usage: atris brainstorm "<idea>" [--json]');
   console.log('');
   console.log('Description:');
-  console.log('  Capture an idea to today inbox and exit.');
+  console.log('  Capture an idea to today\'s inbox and exit.');
   console.log('  Never waits on a prompt. Headless.');
   console.log('');
   console.log('Options:');

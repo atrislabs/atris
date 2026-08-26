@@ -779,7 +779,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Search:** `rg "logSyncAtris" commands/log-sync.js`
 
-### Feature: Brainstorm Mode (`atris brainstorm`) — v2.0.0
+### Feature: Brainstorm Mode (`atris brainstorm`)
 
 **Purpose:** Named explore command. Capture one idea locally, then exit.
 
