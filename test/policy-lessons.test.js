@@ -220,6 +220,7 @@ test('atris lesson mine --json writes the policy state file and lessons.md', () 
 
 test('task ready surfaces policy hints on evidence-less proof and stays quiet on receipt-backed proof', () => {
   const dir = makeTempDir();
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
   try {
     writePolicyLessons(dir, mineProofPolicy(fixtureHistory()));
 

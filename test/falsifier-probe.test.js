@@ -61,6 +61,7 @@ test('a command that cannot start is reported, not counted as a verdict', () => 
 
 test('task ready refuses a verifier that cannot fail, and takes the same work with a real one', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-falsify-cli-'));
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
   try {
     const env = {
       ...process.env,

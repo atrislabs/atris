@@ -13991,6 +13991,7 @@ test('task status resolves goal_id display refs to parent task objectives', () =
 test('task status treats reviewed failures as closed task health', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
   const dbPath = path.join(dir, 'tasks.db');
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
@@ -14021,6 +14022,7 @@ test('task status treats reviewed failures as closed task health', () => {
 test('task status keeps failed blockers out of review handoff', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
   const dbPath = path.join(dir, 'tasks.db');
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
