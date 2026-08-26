@@ -2740,12 +2740,15 @@ if (command === 'init') {
     const mailbox = extractGmailMailboxAccount(raw);
     const gateInput = mailbox.mailboxAccountId ? ['--account', ...mailbox.args] : mailbox.args;
     const gate = requireAccountBound(gateInput);
-    if (!gate.ok) process.exit(refuseAccountGlobal());
+    if (!gate.ok) {
+      process.exit(refuseAccountGlobal());
+      return;
+    }
     const subcommand = gate.args[0];
     const args = gate.args.slice(1);
     if (mailbox.mailboxAccountId) args.push('--account', mailbox.mailboxAccountId);
     gmailCommand(subcommand, ...args)
-      .then(() => process.exit(0))
+      .then(() => process.exit(process.exitCode || 0))
       .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'calendar') {
