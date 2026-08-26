@@ -461,21 +461,26 @@ async function planAtris(userInput = null) {
     return;
   }
 
-  const targetDir = path.join(process.cwd(), 'atris');
-  const navigatorFile = fs.existsSync(path.join(targetDir, 'team', 'navigator', 'MEMBER.md'))
-    ? path.join(targetDir, 'team', 'navigator', 'MEMBER.md')
-    : path.join(targetDir, 'team', 'navigator.md');
+  const cwd = process.cwd();
+  const targetDir = path.join(cwd, 'atris');
+  const memberNavigator = path.join(targetDir, 'team', 'navigator', 'MEMBER.md');
+  const legacyNavigator = path.join(targetDir, 'team', 'navigator.md');
+  const navigatorFile = fs.existsSync(memberNavigator)
+    ? memberNavigator
+    : (fs.existsSync(legacyNavigator) ? legacyNavigator : null);
   const personaPath = path.join(targetDir, 'PERSONA.md');
   const mapFilePath = path.join(targetDir, 'MAP.md');
   const featuresReadmePath = path.join(targetDir, 'features', 'README.md');
 
-  if (!fs.existsSync(navigatorFile)) {
+  // Prompt-mode plan only needs an initialized workspace. The navigator spec is
+  // optional context, same as PERSONA.md. A missing spec after init --minimal
+  // must not send the operator back to init.
+  if (!navigatorFile && !fs.existsSync(targetDir)) {
     console.log('✗ navigator.md not found. Run "atris init" first.');
     process.exit(1);
   }
 
-  // Read navigator.md
-  const navigatorSpec = fs.readFileSync(navigatorFile, 'utf8');
+  const navigatorSpec = navigatorFile ? fs.readFileSync(navigatorFile, 'utf8') : '';
 
   // Read journal Inbox for context
   const { logFile } = getLogPath();
@@ -509,7 +514,7 @@ async function planAtris(userInput = null) {
 
   const taskSourcePath = taskFilePath ? path.relative(process.cwd(), taskFilePath) : null;
   const journalPath = path.relative(process.cwd(), logFile);
-  const navigatorPath = path.relative(process.cwd(), navigatorFile);
+  const navigatorPath = navigatorFile ? path.relative(process.cwd(), navigatorFile) : null;
   const personaFileRef = fs.existsSync(personaPath) ? path.relative(process.cwd(), personaPath) : null;
   const mapFileRef = fs.existsSync(mapFilePath) ? path.relative(process.cwd(), mapFilePath) : null;
   const featuresReadmeRef = fs.existsSync(featuresReadmePath) ? path.relative(process.cwd(), featuresReadmePath) : null;
@@ -533,8 +538,28 @@ async function planAtris(userInput = null) {
         .length
     : 0;
 
+  let firstMinute = null;
+  try {
+    const { loadContext } = require('../lib/state-detection');
+    firstMinute = buildFirstMinute({
+      root: cwd,
+      context: loadContext(cwd) || {},
+    });
+  } catch {
+    firstMinute = null;
+  }
+  const liveStatus = firstMinute && firstMinute.task && firstMinute.task.status;
+  const hasLiveTask = liveStatus === 'claimed' || liveStatus === 'review' || liveStatus === 'open';
+  const showFactory = showFull || Boolean(userInput) || !hasLiveTask;
+
   console.log(executionMode === 'prompt' ? 'PROMPT ONLY' : 'ACTION TAKEN');
   console.log('');
+  if (firstMinute && firstMinute.text) {
+    console.log(firstMinute.text);
+    console.log('');
+  }
+
+  if (showFactory) {
   console.log('┌─────────────────────────────────────────────────────────────┐');
   console.log('│ Atris Plan — Navigator Agent Activated                      │');
   console.log('└─────────────────────────────────────────────────────────────┘');
@@ -562,7 +587,7 @@ async function planAtris(userInput = null) {
     console.log('');
   }
   console.log('📁 CONTEXT FILES (agent should read):');
-  console.log(`- Navigator spec: ${navigatorPath}`);
+  console.log(`- Navigator spec: ${navigatorPath || 'atris/team/navigator/MEMBER.md (missing)'}`);
   console.log(`- Persona: ${personaFileRef || 'atris/PERSONA.md (missing)'}`);
   const mapDisplay = mapFileRef
     ? `${mapFileRef}${mapIsPlaceholder ? ' (placeholder — generate first)' : ''}`
@@ -593,10 +618,12 @@ async function planAtris(userInput = null) {
   console.log('');
 
   if (showFull) {
-    console.log('📋 NAVIGATOR SPEC (full):');
-    console.log('─────────────────────────────────────────────────────────────');
-    console.log(navigatorSpec);
-    console.log('');
+    if (navigatorSpec) {
+      console.log('📋 NAVIGATOR SPEC (full):');
+      console.log('─────────────────────────────────────────────────────────────');
+      console.log(navigatorSpec);
+      console.log('');
+    }
     console.log('📥 INBOX CONTEXT (full):');
     console.log('─────────────────────────────────────────────────────────────');
     console.log(inboxContext || '(No items in Inbox)');
@@ -614,7 +641,7 @@ async function planAtris(userInput = null) {
   console.log('You are the Navigator.');
   console.log('');
   console.log('Read these files:');
-  console.log(`- ${navigatorPath}`);
+  if (navigatorPath) console.log(`- ${navigatorPath}`);
   if (personaFileRef) console.log(`- ${personaFileRef}`);
   if (mapFileRef) console.log(`- ${mapFileRef}`);
   if (taskSourcePath) console.log(`- ${taskSourcePath}`);
@@ -652,6 +679,7 @@ async function planAtris(userInput = null) {
   }
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
+  }
 
   // Check execution mode
   if (executionMode === 'agent') {

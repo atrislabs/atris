@@ -301,7 +301,7 @@ test('plan ignores legacy local execution config unless Atris 2 alias is present
     fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
     fs.writeFileSync(path.join(dir, 'atris', '.config'), '{"execution_mode":"local"}\n', 'utf8');
 
-    const res = runCli(['plan'], { cwd: dir });
+    const res = runCli(['plan', '--verbose'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Atris Plan - Navigator Agent Activated|Atris Plan .* Navigator Agent Activated/);
     assert.doesNotMatch(res.stderr, /Cannot read properties/);
@@ -945,7 +945,7 @@ test('plan suggests brainstorm when uncertainty detected', () => {
     runCli(['init'], { cwd: dir, input: '\n' });
     runCli(['log'], { cwd: dir, input: "not sure what to build yet\nexit\n" });
 
-    const res = runCli(['plan'], { cwd: dir });
+    const res = runCli(['plan', '--verbose'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Try `atris brainstorm` first/);
   } finally {

@@ -44,8 +44,8 @@ rg "missionDrive|destinationHash|mission_destination_change_proposed|pending_des
 rg "askCommand|currentMissionCommand|approveCommand|stopCommand|answerCommand|readyCommand|checkCommand|missionCard" commands/human-missions.js commands/mission.js lib/cloud-mission.js bin/atris.js test/human-missions.test.js  # Public human mission commands: ask, current card, answer, approve, stop, readiness, and check results over the cloud mission client
 rg "decideCommand|collectOpenDecisions|normalizeHumanAsk|answerMissionHumanAsk" commands/decide.js commands/mission.js lib/mission-human-asks.js lib/self-drive.js test/decide.test.js  # Mission human-decision bridge: list open asks deterministically, route yes/no through mission pings, persist answered metadata, and ignore answered asks in mission/self-drive reads
 rg "starterMembers|team members ready|firstMissionCommand|packed golden path|printedAtrisArgs|golden path e2e|what someone can do now|--minimal|mapStubFromTree" commands/init.js bin/atris.js commands/task.js test/init-non-interactive.test.js test/golden-path-e2e.test.js test/repo-shape.test.js test/dogfood-papercuts.test.js atris/team/customer-lead atris/GOLDEN_PATH_PAPERCUTS.md  # Quiet first-run output plus packed-install zero-knowledge contract: six-member starter team, init --minimal lean scaffold, ready-on-init mission, autoland, durable papercut status; printedAtrisArgs (test/golden-path-e2e.test.js:112) matches Next/next labels; packed path follows init --minimal, then the printed claim/ready/autoland commands
-rg "function planAtris" commands/workflow.js   # Plan command (line 443)
-rg "function doAtris" commands/workflow.js     # Do command (line 790): PERSONA head reuses buildFirstMinute; executor paste and file dump stay on --verbose/--full; missing executor spec after init --minimal does not send you back to init
+rg "function planAtris" commands/workflow.js   # Plan command (line 443): first-minute head when a claimed/open/review task exists; factory banner and navigator paste stay on --verbose/--full or a direct request; missing navigator spec after init --minimal does not send you back to init
+rg "function doAtris" commands/workflow.js     # Do command (line 818): PERSONA head reuses buildFirstMinute; executor paste and file dump stay on --verbose/--full; missing executor spec after init --minimal does not send you back to init
 rg "function reviewAtris|renderReviewMinute" commands/workflow.js test/workflow-command.test.js  # Review command: default first-minute spoken screen (certified -> accept; uncertified still being checked); --json/--all/--limit/--group-by keep the queue; --verbose legacy validator prompt; headless never prompts
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
@@ -1186,13 +1186,14 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 1. **`atris plan`** - Navigator mode
 
-- Entry: `commands/workflow.js:370-714` (planAtris function)
-- Outputs: navigator.md spec + Inbox context + TODO.md
-- Purpose: Brainstorm and create tasks from inbox
+- Entry: `commands/workflow.js:443-816` (planAtris function)
+- Human head: `lib/first-minute.js` `buildFirstMinute` when a claimed/open/review task exists (same win + next as bare `atris`)
+- Default stays PROMPT ONLY plus the first-minute lines when live work exists; `--verbose`/`--full` or a direct request prints the navigator paste and file dump
+- Missing `team/navigator` after `init --minimal` is optional context, not "run init". Empty folders still say init. Regression: `test/workflow-command.test.js` (`plan after init --yes --minimal does not send you back to init`, `plan names a claimed task the same way first-minute does`)
 
 2. **`atris do`** - Executor mode
 
-- Entry: `commands/workflow.js:718-1086` (doAtris function)
+- Entry: `commands/workflow.js:818-1186` (doAtris function)
 - Human head: `lib/first-minute.js` `buildFirstMinute` (same win + next as bare `atris`); never prints `Context: UNKNOWN` or `Backlog tasks: 0` when a claimed/review/open task exists
 - Default stays PROMPT ONLY plus the first-minute two lines; `--verbose`/`--full` prints the executor paste and file dump
 - Missing `team/executor` after `init --minimal` is optional context, not "run init". Regression: `test/workflow-command.test.js` (`do after init --yes --minimal does not send you back to init`, `do names a claimed task the same way first-minute does`)
