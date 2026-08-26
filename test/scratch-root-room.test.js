@@ -9,7 +9,11 @@ const { spawnSync } = require('node:child_process');
 
 const { workspaceRoot } = require('../lib/task-db');
 const { resolveWorkspaceRoot } = require('../lib/mission-root');
-const { isGenericScratchRoot } = require('../lib/scratch-root');
+const {
+  isGenericScratchRoot,
+  isUnderGenericScratchRoot,
+  isUnboundScratchFolder,
+} = require('../lib/scratch-root');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -141,6 +145,20 @@ function leakNeedles(scratch) {
   }
   return [...new Set(needles.filter(Boolean))];
 }
+
+test('empty child under tmp is an unbound scratch folder', () => {
+  const scratch = scratchRoot();
+  const child = fs.mkdtempSync(path.join(scratch, 'atris-unbound-'));
+  try {
+    assert.equal(isUnderGenericScratchRoot(child), true);
+    assert.equal(isUnboundScratchFolder(child), true);
+    assert.equal(isUnboundScratchFolder(scratch), !fs.existsSync(path.join(scratch, 'atris')));
+    fs.mkdirSync(path.join(child, 'atris'), { recursive: true });
+    assert.equal(isUnboundScratchFolder(child), false);
+  } finally {
+    fs.rmSync(child, { recursive: true, force: true });
+  }
+});
 
 test('empty folder under tmp does not inherit the tmp workspace', () => {
   const scratch = scratchRoot();
