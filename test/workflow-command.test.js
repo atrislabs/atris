@@ -154,6 +154,39 @@ test('plan in an uninitialized folder talks like first-minute', () => {
   assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 });
 
+test('review in an uninitialized folder talks like first-minute', () => {
+  const dir = makeTempDir();
+  const env = isolatedDoEnv(dir);
+  const minute = runCli([], { cwd: dir, env });
+  const review = runCli(['review'], { cwd: dir, env });
+  assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+  assert.equal(review.status, 0, review.stderr || review.stdout);
+  assert.match(review.stdout, /this folder is a clean start/);
+  assert.match(review.stdout, /^next: atris init --minimal$/m);
+  assert.equal(nextLine(review.stdout), nextLine(minute.stdout));
+  assert.equal(review.stdout.trim(), minute.stdout.trim());
+  assert.equal(spokenLineCount(review.stdout), 2);
+  assert.doesNotMatch(review.stdout, /^nothing is waiting on you\.$/m);
+  assert.notEqual(review.stdout.trim(), 'nothing is waiting on you.');
+  assert.doesNotMatch(review.stdout, /validator\.md|Run "atris init"/);
+  assert.doesNotMatch(review.stdout, /PROMPT ONLY|Atris Review|Need the legacy Validator/);
+  const combined = review.stdout + review.stderr;
+  assert.ok(!/at .*workflow\.js:\d+/.test(combined), `stack trace leaked:\n${combined}`);
+  assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+  const jsonMinute = runCli(['--json'], { cwd: dir, env });
+  const jsonReview = runCli(['review', '--json'], { cwd: dir, env });
+  assert.equal(jsonReview.status, jsonMinute.status);
+  assert.deepEqual(JSON.parse(jsonReview.stdout), JSON.parse(jsonMinute.stdout));
+  assert.doesNotMatch(jsonReview.stdout, /review_queue|validator\.md/);
+
+  const help = runCli(['review', '--help'], { cwd: dir, env });
+  assert.equal(help.status, 0, help.stderr || help.stdout);
+  assert.match(help.stdout, /Usage: atris review/);
+  assert.doesNotMatch(help.stdout, /clean start|nothing is waiting on you|validator\.md/);
+  assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+});
+
 test('do in an uninitialized folder talks like first-minute', () => {
   const dir = makeTempDir();
   const env = isolatedDoEnv(dir);
@@ -239,6 +272,32 @@ test('do after init --yes --minimal does not send you back to init', () => {
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
   assert.match(verbose.stdout, /You are the Executor\./);
   assert.match(verbose.stdout, /Executor spec: atris\/team\/executor\/MEMBER\.md \(missing\)/);
+});
+
+test('review after init --yes --minimal does not send you back to init', () => {
+  const dir = makeTempDir();
+  const env = isolatedDoEnv(dir);
+  const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env });
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+  assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
+  assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
+
+  const review = runCli(['review'], { cwd: dir, env });
+  const combined = review.stdout + review.stderr;
+  assert.equal(review.status, 0, combined);
+  assert.match(review.stdout, /^nothing is waiting on you\.$/m);
+  assert.equal(spokenLineCount(review.stdout), 1);
+  assert.doesNotMatch(combined, /clean start|atris init --minimal/);
+  assert.doesNotMatch(combined, /validator\.md not found|Run "atris init"/);
+  assert.doesNotMatch(review.stdout, /Atris Review is the human checkpoint|Need the legacy Validator/);
+
+  const jsonReview = runCli(['review', '--json'], { cwd: dir, env });
+  assert.equal(jsonReview.status, 0, jsonReview.stderr || jsonReview.stdout);
+  const payload = JSON.parse(jsonReview.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.action, 'review_queue');
+  assert.ok(payload.queue);
+  assert.doesNotMatch(jsonReview.stdout, /this workspace is not initialized|atris init --minimal/);
 });
 
 test('plan on an initialized workspace prints the navigator prompt shape', () => {
