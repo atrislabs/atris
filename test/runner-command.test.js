@@ -5,6 +5,7 @@ const assert = require('node:assert');
 
 const {
   DEFAULT_CLAUDE_RUNNER_MODEL,
+  DEFAULT_FABLE_RUNNER_MODEL,
   DEFAULT_CLAUDE_RUNNER_BIN,
   RUNNER_PROFILES,
   RUNNER_PROFILE_DEFS,
@@ -170,9 +171,9 @@ test('compat runner profiles resolve to concrete runner configs', () => {
     {
       profile: 'fable',
       bin: 'claude',
-      model: DEFAULT_CLAUDE_RUNNER_MODEL,
+      model: DEFAULT_FABLE_RUNNER_MODEL,
       template: '',
-      command: /claude -p .*--model claude-opus-4-8\b/,
+      command: /claude -p .*--model claude-fable-5\b/,
     },
     {
       profile: 'composer',
@@ -272,6 +273,7 @@ test('runnerAvailabilityFailureMessage reports unknown profiles without rethrowi
 // does not resolve differently across Claude Code versions or account rollouts.
 test('default model is pinned to Opus 4.8', () => {
   assert.equal(DEFAULT_CLAUDE_RUNNER_MODEL, 'claude-opus-4-8');
+  assert.equal(DEFAULT_FABLE_RUNNER_MODEL, 'claude-fable-5');
 });
 
 // --- buildRunnerCommand: --model always injected ---

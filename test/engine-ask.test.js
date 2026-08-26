@@ -105,6 +105,18 @@ test('shared questions fan out with one model and jobs files may pin models inde
   }
 });
 
+test('Fable defaults to the real model and gets a deep-reasoning timeout', () => {
+  const parsed = parseEngineAskArgs(['find the real cause', '--engine', 'fable']);
+  assert.equal(parsed.jobs[0].model, 'claude-fable-5');
+  assert.equal(parsed.timeoutMs, 10 * 60 * 1000);
+
+  const overridden = parseEngineAskArgs(['find the real cause', '--engine', 'fable', '--timeout', '30']);
+  assert.equal(overridden.timeoutMs, 30000);
+
+  const invocation = buildReadOnlyEngineInvocation('fable', 'find the real cause');
+  assert.deepEqual(invocation.args.slice(2, 4), ['--model', 'claude-fable-5']);
+});
+
 test('ask limits cap total cost, concurrency, and timeout before any engine starts', () => {
   const tooMany = [];
   for (let index = 0; index < MAX_ASK_JOBS + 1; index += 1) tooMany.push('--engine', 'codex');

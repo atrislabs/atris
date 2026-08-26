@@ -1,7 +1,7 @@
 ---
 name: engines
 description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, and Antigravity (agy). Triggers on: use codex, use cursor, use devin, use grok, use agy, use antigravity, use fable, use claude, use atris, engine, dispatch to, worker agent, second opinion build."
-version: 1.4.0
+version: 1.4.1
 tags:
   - engines
   - claude
@@ -28,6 +28,13 @@ One contract, ten live profiles. The orchestrator writes a bounded task prompt, 
 - build: `atris engine <name> <task-id>`
 - switch: `atris engine <name>`
 
+## Fable means Fable
+
+Use `atris engine fable "<bounded question>"` for Fable's take. The canonical
+profile pins `claude-fable-5`, gives deep Fable asks ten minutes by default,
+and records the resolved model in the receipt. An explicit `--model` or
+`--timeout` still wins.
+
 ## Raw binary fallback and debugging
 
 Raw spawns are not the default because they skip Atris receipts, watch, and coaching.
@@ -38,7 +45,7 @@ Raw spawns are not the default because they skip Atris receipts, watch, and coac
 | Claude | `claude -p "<prompt>"` | Uses the local Claude configuration. Add `--model opus` for maximum-depth review or `--model sonnet` for speed. |
 | Codex | `codex exec --dangerously-bypass-approvals-and-sandbox -o <result-file> "<prompt>"` (run from the target repo/worktree; read-only research: `--sandbox read-only`) | Headless, exits when done — run it as a tracked background Bash task like the other engines and completion auto-wakes the session. Final answer lands in the `-o` file. Verified live 2026-08-11. Outside a git repo add `--skip-git-repo-check` or it exits 1. ONE-SHOT SESSIONS (`claude -p` workers): run codex in the FOREGROUND and wait — a one-shot session never wakes again, so backgrounding strands the result (observed 2026-08-11). The old plugin path (`codex-companion.mjs task --background`) is deprecated for dispatch: its job store never notifies the session (a finished result sat unread overnight, 2026-08-10) |
 | Cursor | `cursor-agent --trust -p "<prompt>"` (run from the target repo) | Headless print mode; `--trust` required for non-interactive |
-| Fable | `claude -p "<prompt>" --model opus` | Maximum-depth Claude review. The `fable` Atris profile is the leader lane and uses the installed Claude CLI. |
+| Fable | `claude -p "<prompt>" --model claude-fable-5` | Raw fallback only. Prefer `atris engine fable` so the model, longer timeout, live log, and receipt stay honest. |
 | Composer | `atris run "<objective>" --engine composer` | Fast navigator/executor profile routed through the installed `ax` binary. |
 | Haiku | `claude -p "<prompt>" --model claude-haiku-4-5` | Fast validation and bounded read-only checks. |
 | Devin | `devin -p --permission-mode dangerous -- "<prompt>"` (run from the target repo) | Default permission mode is read-only for writes — build work NEEDS `--permission-mode dangerous`, so only run it in an isolated worktree. Also `devin cloud` for sessions that outlive this machine. Supports `--model swe-1.7` |
@@ -65,7 +72,8 @@ Each engine CLI can pin a specific model. Current best picks:
 
 | Engine | Flag | Best models today |
 |--------|------|-------------------|
-| Claude / Fable | `--model opus` | `opus` currently resolves to Opus 5; use the explicit Opus 4.8 identifier only for reproducibility |
+| Claude | `--model opus` | `opus` follows the local Claude alias; use an explicit model identifier for reproducibility |
+| Fable | `--model claude-fable-5` | Canonical Fable 5 route; `atris engine fable` pins it automatically |
 | Devin | `--model swe-1.7` | `swe-1.7` (free right now: use it as the volume executor for parallel bounded slices), `swe-1.7-lightning` for speed |
 | Cursor | `--model cursor-grok-4.6-xhigh` | `cursor-grok-4.6-xhigh` for second-opinion builds, `cursor-grok-4.6-high-fast` for quick pinned asks (answered in ~12s live 2026-08-12), `composer-2.5` for fast edits; parameterized Claude via `'claude-opus-4-8[effort=high]'`; `--list-models` shows the full menu |
 | Composer | `--engine composer` | `composer 2.5` through the Atris profile |
