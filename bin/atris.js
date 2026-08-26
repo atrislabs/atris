@@ -1216,9 +1216,14 @@ if (!command || !knownCommands.includes(command)) {
   const firstToken = String((natural.positionals && natural.positionals[0]) || command || '').trim();
   const firstLooksLikeCommand = Boolean(firstToken) && !/\s/.test(firstToken);
   const firstIsWorkVerb = SINGLE_WORD_NATURAL_INTENTS.has(firstToken.toLowerCase());
+  // `atris test` is the documented first-minute alias, not an unknown command
+  // and not a new first task. Extra words (`atris test the login`) still
+  // create work once MAP is real.
+  const firstMinuteAlias = firstToken.toLowerCase() === 'test' && !natural.multiword;
   const unknownCommandToken = Boolean(command)
     && firstLooksLikeCommand
     && !knownCommands.includes(firstToken)
+    && !firstMinuteAlias
     && (!natural.multiword || !firstIsWorkVerb);
 
   if (unknownCommandToken && natural.asJson) {
@@ -1244,7 +1249,14 @@ if (!command || !knownCommands.includes(command)) {
   }
 
   // Launch interactive entry (the "Performance")
-  interactiveEntry(userInput, { oneLap: true, asJson: natural.asJson, engine: natural.engine, verifier: natural.verifier, optionError: natural.error })
+  interactiveEntry(firstMinuteAlias ? '' : userInput, {
+    oneLap: true,
+    asJson: natural.asJson,
+    engine: natural.engine,
+    verifier: natural.verifier,
+    optionError: natural.error,
+    firstMinuteAlias,
+  })
     .then((code) => process.exit(Number.isInteger(code) ? code : 0))
     .catch((error) => {
       console.error(`✗ Error: ${error.message || error}`);
@@ -1356,7 +1368,7 @@ async function interactiveEntry(userInput, options = {}) {
 
   const context = loadContext(workspaceDir);
 
-  if (options.asJson && !String(userInput || '').trim()) {
+  if (options.asJson && !String(userInput || '').trim() && !options.firstMinuteAlias) {
     console.log(JSON.stringify({
       schema: 'atris.one_lap.v1',
       ok: false,

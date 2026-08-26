@@ -4,6 +4,8 @@
 
 This checklist prevents slop by forcing intentionality. Before finalizing ANY output, run through these gates.
 
+The build enforces deterministic prose tells; see `commands/slop.js`. Review only the judgment calls below.
+
 ---
 
 ## The Differentiation Gate
@@ -40,7 +42,6 @@ If you can't answer in one sentence, you're hedging. Pick a direction and commit
 
 ### Punctuation
 - [ ] No sparkles or decorative emoji (✨ 🚀 💡 🎯)
-- [ ] No em dashes (—) unless direct quote or title separator
 - [ ] No ellipsis for drama (...)
 - [ ] No exclamation points unless error/warning
 
