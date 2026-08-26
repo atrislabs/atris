@@ -91,10 +91,10 @@ test('claimed task first-minute names the person or title and one next command',
     person: 'keshav',
     folder: 'atris',
     task: { title: 'Ship the landing page', status: 'claimed', display_id: 'CLI-9' },
-    nextCommand: 'atris task ready CLI-9',
+    nextCommand: 'atris task show CLI-9',
   });
   assert.match(text, /hey keshav, "ship the landing page" is already yours\./);
-  assert.match(text, /^next: atris task ready CLI-9$/m);
+  assert.match(text, /^next: atris task show CLI-9$/m);
   assert.equal(text.match(/^next:/mg).length, 1);
   assert.ok(spokenLineCount(text) <= 4);
 });
@@ -137,7 +137,7 @@ test('desk next command uses first-minute verbs without ready templates', () => 
     status: 'claimed',
     display_id: 'CLI-9',
     updated_at: 10,
-  }], 'keshav'), 'atris task ready CLI-9');
+  }], 'keshav'), 'atris task show CLI-9');
   assert.doesNotMatch(deskNextCommand([{
     status: 'claimed',
     display_id: 'CLI-9',
@@ -152,14 +152,14 @@ test('desk next command uses first-minute verbs without ready templates', () => 
   assert.equal(deskNextCommand([], 'keshav'), 'atris task new');
   assert.equal(taskNextCommand([{ status: 'done', display_id: 'CLI-0' }], 'keshav'), 'atris task new');
   assert.equal(taskNextCommand([], 'keshav'), 'atris task new');
-  assert.equal(taskCommand({ status: 'claimed', display_id: 'LDY-1' }, 'keshav'), 'atris task ready LDY-1');
+  assert.equal(taskCommand({ status: 'claimed', display_id: 'LDY-1' }, 'keshav'), 'atris task show LDY-1');
   assert.equal(pickNext({
     tasks: [
       { status: 'open', display_id: 'UNW-1', updated_at: 10 },
       { status: 'claimed', display_id: 'LDY-1', updated_at: 20 },
     ],
     person: 'keshav',
-  }).command, 'atris task ready LDY-1');
+  }).command, 'atris task show LDY-1');
 });
 
 test('desk next command prefers certified review over claimed or open work', () => {
@@ -249,7 +249,7 @@ test('buildFirstMinute reads a claimed task from the local projection', () => {
       folder: 'atris',
     });
     assert.match(screen.text, /"ship the landing page"/);
-    assert.equal(screen.nextCommand, 'atris task ready CLI-9');
+    assert.equal(screen.nextCommand, 'atris task show CLI-9');
   } finally {
     cleanupTempDir(dir);
   }
@@ -443,7 +443,7 @@ test('workspace with a claimed task names the person or title and one next comma
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /keshav|ship the landing page/i);
-    assert.match(res.stdout, /^next: atris task ready CLI-9$/m);
+    assert.match(res.stdout, /^next: atris task show CLI-9$/m);
     assert.equal(res.stdout.match(/^next:/mg).length, 1);
     assert.doesNotMatch(res.stdout, /What do you want to build|context   loaded|Atris Do/);
     assert.ok(spokenLineCount(res.stdout) <= 6);
@@ -1243,10 +1243,23 @@ test('named empty folder next command starts a first task when pasted', () => {
     assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
     assert.doesNotMatch(claimed.stdout + claimed.stderr, /No open tasks|id required|unknown/i);
 
+    const afterTask = runCli(['task'], { cwd: dir, env });
+    assert.equal(afterTask.status, 0, afterTask.stderr || afterTask.stdout);
+    assert.doesNotMatch(afterTask.stdout, /No open tasks/);
+    assert.match(afterTask.stdout, /^next: atris task show /m);
+
     const after = runCli(['task', 'next'], { cwd: dir, env });
     assert.equal(after.status, 0, after.stderr || after.stdout);
     assert.doesNotMatch(after.stdout, /No open tasks/);
-    assert.match(after.stdout, /^next: atris task ready /m);
+    assert.match(after.stdout, /^next: atris task show /m);
+    const afterNext = String(after.stdout).match(/^next: (.+)$/m);
+    const afterTaskNext = String(afterTask.stdout).match(/^next: (.+)$/m);
+    assert.equal(afterNext && afterNext[1], afterTaskNext && afterTaskNext[1]);
+
+    const showArgs = String(after.stdout).match(/^next: atris (.+)$/m)[1].split(/\s+/);
+    const shown = runCli(showArgs, { cwd: dir, env });
+    assert.equal(shown.status, 0, shown.stderr || shown.stdout);
+    assert.doesNotMatch(shown.stdout + shown.stderr, /No open tasks|id required|unknown/i);
     assert.equal(renderFirstTalk({
       person: 'keshav',
       folder: 'launch-day',

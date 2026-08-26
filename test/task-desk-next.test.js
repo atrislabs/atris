@@ -121,7 +121,7 @@ test('task desk next line names accept for a two-pass review', () => {
   }
 });
 
-test('task desk next line names ready for a claimed task without templates', () => {
+test('task desk next line names show for a claimed task without templates', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   try {
@@ -141,7 +141,7 @@ test('task desk next line names ready for a claimed task without templates', () 
     const desk = runCli(['task', 'desk'], { cwd: dir, env: deskEnv(dir) });
     assert.equal(desk.status, 0, desk.stderr || desk.stdout);
     assert.match(desk.stdout, /TASK DESK/);
-    assert.equal(nextLine(desk.stdout), `atris task ready ${ref}`);
+    assert.equal(nextLine(desk.stdout), `atris task show ${ref}`);
     assert.doesNotMatch(desk.stdout, /<cmd>|<plain sentence>|next: atris task next/);
     assert.doesNotMatch(desk.stdout, /Describe the desired outcome|say yes:/i);
   } finally {

@@ -88,7 +88,7 @@ function assertSameNext(dir, env, expected) {
   return { desk, next };
 }
 
-test('task next names ready for a claimed task even when the unix user differs', () => {
+test('task next names show for a claimed task even when the unix user differs', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   try {
@@ -99,17 +99,22 @@ test('task next names ready for a claimed task even when the unix user differs',
     const ref = JSON.parse(created.stdout).task.display_id;
     const claimed = runCli(['task', 'claim', ref, '--as', 'keshav'], { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
-    const expected = `atris task ready ${ref}`;
+    const expected = `atris task show ${ref}`;
     const { desk, next } = assertSameNext(dir, env, expected);
     assert.equal(nextLine(desk.stdout), expected);
     const json = runCli(['task', 'next', '--json'], { cwd: dir, env });
     assert.equal(json.status, 0, json.stderr || json.stdout);
     const payload = JSON.parse(json.stdout);
-    assert.equal(payload.action, 'ready');
+    assert.equal(payload.action, 'show');
     assert.equal(payload.command, expected);
     assert.equal(payload.task.display_id, ref);
     assert.equal(payload.task.status, 'claimed');
     assert.doesNotMatch(next.stdout, /No open tasks/);
+    assert.doesNotMatch(desk.stdout, /No open tasks/);
+    const pasted = runCli(['task', 'show', ref], { cwd: dir, env });
+    assert.equal(pasted.status, 0, pasted.stderr || pasted.stdout);
+    assert.match(pasted.stdout, new RegExp(ref));
+    assert.doesNotMatch(pasted.stdout + pasted.stderr, /No open tasks|id required|unknown/i);
   } finally {
     cleanupTempDir(dir);
   }

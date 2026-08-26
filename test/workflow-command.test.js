@@ -482,7 +482,7 @@ test('do names a claimed task the same way first-minute does', () => {
   assert.equal(doit.stdout.trim(), minute.stdout.trim());
   assert.match(doit.stdout, /"ship the landing page" is already yours\./);
   assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
-  assert.equal(nextLine(doit.stdout), 'atris task ready CLI-9');
+  assert.equal(nextLine(doit.stdout), 'atris task show CLI-9');
   assert.equal(spokenLineCount(spokenDoBody(doit.stdout)), 2);
   assert.doesNotMatch(doit.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(doit.stdout, /Atris Do — Executor Agent Activated/);
@@ -495,7 +495,7 @@ test('do names a claimed task the same way first-minute does', () => {
   const verbose = runCli(['do', '--verbose'], { cwd: dir, env });
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
   assert.match(verbose.stdout, /"ship the landing page" is already yours\./);
-  assert.equal(nextLine(verbose.stdout), 'atris task ready CLI-9');
+  assert.equal(nextLine(verbose.stdout), 'atris task show CLI-9');
   assert.doesNotMatch(verbose.stdout, /Context: UNKNOWN/);
   assert.doesNotMatch(verbose.stdout, /Backlog tasks: 0/);
   assert.match(verbose.stdout, /CONTEXT FILES \(agent should read\)/);

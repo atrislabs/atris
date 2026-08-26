@@ -116,7 +116,7 @@ test('default atris task is short and names the same next as bare atris', () => 
     assert.equal(bare.status, 0, bare.stderr || bare.stdout);
     assert.equal(task.status, 0, task.stderr || task.stdout);
     assert.equal(nextLine(task.stdout), nextLine(bare.stdout));
-    assert.equal(nextLine(task.stdout), 'atris task ready CLI-9');
+    assert.equal(nextLine(task.stdout), 'atris task show CLI-9');
     assert.ok(spokenLineCount(task.stdout) <= 4);
     assert.doesNotMatch(task.stdout, /TASK DESK|Why it matters|What changes|Done looks like/);
     assert.doesNotMatch(task.stdout, /Describe the desired outcome|say yes:/i);
@@ -146,8 +146,8 @@ test('task desk and task --all still print the long desk', () => {
     assert.match(all.stdout, /TASK DESK/);
     assert.match(desk.stdout, /Why it matters/);
     assert.match(all.stdout, /Why it matters/);
-    assert.equal(nextLine(desk.stdout), 'atris task ready CLI-9');
-    assert.equal(nextLine(all.stdout), 'atris task ready CLI-9');
+    assert.equal(nextLine(desk.stdout), 'atris task show CLI-9');
+    assert.equal(nextLine(all.stdout), 'atris task show CLI-9');
   } finally {
     cleanupTempDir(dir);
   }
