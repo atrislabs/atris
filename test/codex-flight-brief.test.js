@@ -19,3 +19,16 @@ test('dispatch brief forbids bypassing git hooks with --no-verify', () => {
   assert.match(prompt, /never bypass it with --no-verify/i);
   assert.match(prompt, /STOP and report/i);
 });
+
+test('dispatch brief orders one concern per PR', () => {
+  const prompt = buildPrompt({
+    worktreePath: '/tmp/wt',
+    branch: 'feat/x',
+    brief: 'do the thing',
+    verifyCmd: 'npm run test:fast',
+  });
+  assert.match(prompt, /one concern per PR/i);
+  assert.match(prompt, /split anything larger into separate PRs/i);
+  assert.match(prompt, /git history guides future agents/i);
+  assert.match(prompt, /small PRs are cheap to revert and bisect/i);
+});

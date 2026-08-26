@@ -68,6 +68,10 @@ test('buildFleetPrompt is generated, bounded, and carries the contract', () => {
   assert.match(prompt, /real exit code/);
   assert.match(prompt, /Done requires a receipt/);
   assert.match(prompt, /grep the whole repo for its callers/);
+  assert.match(prompt, /one concern per PR/i);
+  assert.match(prompt, /split anything larger into separate PRs/i);
+  assert.match(prompt, /git history guides future agents/i);
+  assert.match(prompt, /small PRs are cheap to revert and bisect/i);
   assert.match(prompt, /Final report/);
 });
 
