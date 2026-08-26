@@ -28,7 +28,7 @@ login
 
 1. Login: stored login, then `atris login --agent` if needed. Never paste tokens. Never `/auth/cli`.
 2. Search: `atris x-search "QUERY"`. Always billed (5 credits). Empty or failed search refunds.
-3. One Apply: name a product change plus a receipt that can fail. If missing, the CLI writes a fill-this stub and exits incomplete.
+3. One Apply: name a product change plus a receipt that can fail. If missing, the CLI writes a fill-this stub and a next-line. Search still exits 0.
 4. Stop. Empty or failed search does not owe an Apply.
 
 ## Customer path (preferred)

@@ -12,7 +12,7 @@ const {
   formatXSearchResult,
   xSearchHasResults,
   xSearchApplyRel,
-  APPLY_INCOMPLETE_MESSAGE,
+  APPLY_NEXT_MESSAGE,
   xSearchCommand,
 } = require('../commands/x-search');
 
@@ -373,7 +373,7 @@ test('xSearchHasResults is false for empty payloads', () => {
   assert.equal(xSearchHasResults(successSearchData().data), true);
 });
 
-test('x-search without apply writes a claimable stub and stays incomplete', async () => {
+test('x-search without apply writes a claimable stub and a next-line', async () => {
   const cwd = applyWorkspace('MCP agents');
   const output = [];
   const status = await xSearchCommand(['MCP agents'], {
@@ -384,8 +384,8 @@ test('x-search without apply writes a claimable stub and stays incomplete', asyn
     apiRequestJson: async () => successSearchData(),
   });
 
-  assert.equal(status, 2);
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), true);
+  assert.equal(status, 0);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), true);
   const rel = xSearchApplyRel('MCP agents');
   const stub = fs.readFileSync(path.join(cwd, rel), 'utf8');
   assert.match(stub, /^source: MCP agents$/m);
@@ -409,7 +409,7 @@ test('x-search with an apply receipt is complete', async () => {
   });
 
   assert.equal(status, 0);
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   assert.equal(fs.readFileSync(path.join(cwd, rel), 'utf8'), filled);
 });
 
@@ -429,7 +429,7 @@ test('empty x-search does not owe an apply', async () => {
   });
 
   assert.equal(status, 2);
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('quiet topic'))), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
 });
@@ -462,7 +462,7 @@ test('empty x-search surfaces a server-side refund and does not invent a refund 
   assert.equal(status, 2);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].pathname, '/x-search/search');
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   const text = output.join('\n');
   assert.match(text, /no results/);
   assert.match(text, /Credits: 0 used, 1000 remaining/);
@@ -489,7 +489,7 @@ test('empty citations payload is a refunded empty search', async () => {
   const text = output.join('\n');
   assert.match(text, /no results/);
   assert.match(text, /credits refunded/);
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
 });
 
 test('failed x-search does not owe an apply', async () => {
@@ -508,7 +508,7 @@ test('failed x-search does not owe an apply', async () => {
   });
 
   assert.equal(status, 1);
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('agents'))), false);
 });
 
@@ -540,7 +540,7 @@ test('502 with refunded credits surfaces them and does not invent a refund call'
   assert.equal(status, 1);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].pathname, '/x-search/search');
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   const text = output.join('\n');
   assert.match(text, /502/);
   assert.match(text, /credits refunded/);
