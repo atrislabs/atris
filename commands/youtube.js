@@ -1261,6 +1261,8 @@ const LOCAL_SEARCH_CACHE_TTL_MS = 60 * 60 * 1000;
 const LOCAL_SEARCH_CACHE_FILE = 'youtube-search-cache.json';
 const LOCAL_SEARCH_CACHE_NOTE =
   'cached because youtube rate-limited local search.';
+const PAID_SEARCH_FRESH_CACHE_REFUSE =
+  'free cache still has results for this query. drop --paid or wait until the cache expires.';
 
 function showYoutubeSearchHelp(output = console.log, commandName = 'atris youtube') {
   output('');
@@ -1556,6 +1558,10 @@ async function requestPaidYoutubeSearch(options, deps = {}) {
 
 async function runPaidYoutubeSearch(options, deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
+  if (readFreshLocalSearchCache(options.query, deps)) {
+    output(PAID_SEARCH_FRESH_CACHE_REFUSE);
+    return 2;
+  }
   const data = await requestPaidYoutubeSearch(options, deps);
   if (options.json) {
     output(JSON.stringify(data, null, 2));

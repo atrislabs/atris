@@ -34,7 +34,7 @@ never paste tokens, never /auth/cli
 
 1. Get watch permalinks: `atris youtube search QUERY` (free).
 2. If 429: wait/retry is already in the CLI. If it prints cached rows, use those. If it prints `youtube rate-limited local search. do not use --paid as a fallback; retry later.`, STOP. Do not run `--paid`.
-3. `--paid` only when the user explicitly asked to buy permalinks.
+3. `--paid` only when the user explicitly asked to buy permalinks. The CLI hard-refuses `--paid` when the free cache still has a fresh same-query hit.
 4. `atris youtube notes URL` after a URL is picked (free).
 5. `atris youtube process` only to store knowledge (5 credits). Process is a different 5-credit store, not a search fallback.
 6. Never paste tokens. Never `/auth/cli`. Mint with `atris login --agent` from a stored login.
