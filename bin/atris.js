@@ -56,12 +56,16 @@ const {
   createStarterTask,
   shouldGatherContext,
   isAtrisMetaQuestion,
+  isFlagLikeAnswer,
   renderPrompt: renderContextGathererPrompt,
 } = require('../lib/context-gatherer');
 const {
   buildFirstMinute,
-  freshMinuteJson,
+  firstTalkCommand,
+  folderName,
   isBareAtrisFlag,
+  personName,
+  renderFirstTalk,
   shouldAutoInitFresh,
 } = require('../lib/first-minute');
 
@@ -1344,13 +1348,13 @@ function printFirstUseNext() {
   console.log(`Then: ${firstUseCommand()}`);
 }
 
-function runMinimalInit() {
+function runMinimalInit({ silent = false } = {}) {
   const script = process.argv[1] || path.join(__dirname, 'atris.js');
   const result = spawnSync(process.execPath, [script, 'init', '--minimal', '--yes'], {
     cwd: process.cwd(),
     env: process.env,
     encoding: 'utf8',
-    stdio: 'inherit',
+    stdio: silent ? ['ignore', 'pipe', 'pipe'] : 'inherit',
   });
   return Number.isInteger(result.status) ? result.status : 1;
 }
@@ -1366,16 +1370,65 @@ async function interactiveEntry(userInput, options = {}) {
   const workspaceDir = process.cwd();
   const state = detectWorkspaceState(workspaceDir);
 
-  // Fresh folder is the first-minute product: one next command, no menu.
+  // Fresh folder is a conversation, not a scaffold form.
   if (state.state === 'fresh') {
+    const request = String(userInput || '').trim();
+    const room = folderName(workspaceDir);
+    const who = personName();
+    if (!request) {
+      if (options.asJson) {
+        console.log(JSON.stringify({
+          schema: 'atris.one_lap.v1',
+          ok: false,
+          status: 'stuck',
+          reason: 'this folder is empty',
+          next_action: firstTalkCommand(room),
+        }, null, 2));
+        return 2;
+      }
+      if (shouldAutoInitFresh(process.argv.slice(2))) {
+        return runMinimalInit();
+      }
+      printFirstMinuteScreen({ root: workspaceDir, fresh: true });
+      return 0;
+    }
+    if (isAtrisMetaQuestion(request)) {
+      if (options.asJson) {
+        console.log(JSON.stringify({
+          schema: 'atris.overview.v1',
+          ok: true,
+          product: 'Atris',
+        }, null, 2));
+        return 0;
+      }
+      printAtrisOverview();
+      return 0;
+    }
+    if (isFlagLikeAnswer(request)) {
+      printFirstMinuteScreen({ root: workspaceDir, fresh: true });
+      return 0;
+    }
+    const initStatus = runMinimalInit({ silent: true });
+    if (initStatus !== 0) return initStatus;
+    saveContextProfile(workspaceDir, request, { source: 'first_talk' });
+    const starter = createStarterTask(workspaceDir, request);
+    const next = starter && starter.display_id
+      ? `atris task claim ${starter.display_id} --as ${who || 'operator'}`
+      : `atris task new "first useful step for ${room}"`;
     if (options.asJson) {
-      console.log(JSON.stringify(freshMinuteJson(), null, 2));
-      return 2;
+      console.log(JSON.stringify({
+        schema: 'atris.one_lap.v1',
+        ok: true,
+        status: 'started',
+        next_action: next,
+        task: starter && starter.display_id
+          ? { display_id: starter.display_id, title: starter.title }
+          : null,
+      }, null, 2));
+      return 0;
     }
-    if (shouldAutoInitFresh(process.argv.slice(2))) {
-      return runMinimalInit();
-    }
-    printFirstMinuteScreen({ root: workspaceDir, fresh: true });
+    console.log('');
+    console.log(renderFirstTalk({ person: who, folder: room, starter }));
     return 0;
   }
 

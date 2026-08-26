@@ -268,7 +268,7 @@ test('golden path e2e runs init delegate ready autoland status without human inp
   }
 });
 
-test('packed golden path follows printed init claim ready and autoland handoffs', () => {
+test('packed golden path follows printed talk claim ready and autoland handoffs', () => {
   assert.ok(hasNodeSqlite(), 'packed golden path requires a Node runtime with node:sqlite');
 
   const root = makeTempDir();
@@ -329,11 +329,15 @@ test('packed golden path follows printed init claim ready and autoland handoffs'
 
     const firstRun = runInstalled([]);
     assertGoldenPathStep(firstRun, 'first run');
-    const init = runInstalled(printedAtrisArgs(firstRun.stdout, 'next'), { timeout: 30000 });
-    assertGoldenPathStep(init, 'printed init');
-    assert.match(init.stdout, /atris initialized/);
+    assert.match(firstRun.stdout, /is empty\./);
+    assert.match(firstRun.stdout, /next: atris "what should workspace be\?"/);
 
-    const claimArgs = printedAtrisArgs(init.stdout, 'next');
+    const talk = runInstalled(printedAtrisArgs(firstRun.stdout, 'next'), { timeout: 30000 });
+    assertGoldenPathStep(talk, 'printed first talk');
+    assert.match(talk.stdout, /I saved a first step for workspace/);
+    assert.doesNotMatch(talk.stdout, /atris initialized|What do you want to build|minimal scaffold/i);
+
+    const claimArgs = printedAtrisArgs(talk.stdout, 'next');
     assert.equal(claimArgs[0], 'task');
     assert.equal(claimArgs[1], 'claim');
     const taskRef = claimArgs[2];
@@ -343,6 +347,15 @@ test('packed golden path follows printed init claim ready and autoland handoffs'
     assertGoldenPathStep(claimed, 'printed task claim');
     assert.match(claimed.stdout, new RegExp(`task ready ${taskRef} --verify "git diff --check"`));
     assert.match(claimed.stdout, /Then: atris autoland tick/);
+
+    const afterClaim = runInstalled([]);
+    assertGoldenPathStep(afterClaim, 'first minute after claim');
+    assert.doesNotMatch(afterClaim.stdout, /No open tasks/);
+    const showArgs = printedAtrisArgs(afterClaim.stdout, 'next');
+    assert.deepEqual(showArgs, ['task', 'show', taskRef]);
+    const shown = runInstalled(showArgs);
+    assertGoldenPathStep(shown, 'printed task show after claim');
+    assert.match(shown.stdout, new RegExp(taskRef));
 
     fs.appendFileSync(path.join(workspace, 'README.md'), '\nFirst useful step complete.\n', 'utf8');
     const readyArgs = printedAtrisArgs(claimed.stdout, 'Next');

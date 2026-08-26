@@ -12164,7 +12164,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
   }
 });
 
-test('task next names review-chat for uncertified review and leaves open work unclaimed', () => {
+test('task next names accept for uncertified review and leaves open work unclaimed', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -12185,8 +12185,8 @@ test('task next names review-chat for uncertified review and leaves open work un
     const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
-    assert.equal(payload.action, 'review-chat');
-    assert.equal(payload.command, `atris task review-chat ${reviewRef} --as codex-review`);
+    assert.equal(payload.action, 'accept');
+    assert.equal(payload.command, `atris task accept ${reviewRef}`);
     assert.equal(payload.task_id, JSON.parse(reviewAdd.stdout).task.id);
 
     const openShow = runCli(['task', 'show', openPayload.task.display_id, '--json'], { cwd: dir, env });
@@ -12218,8 +12218,8 @@ test('task next surfaces review debt when no open work exists', () => {
     const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
-    assert.equal(payload.action, 'review-chat');
-    assert.equal(payload.command, `atris task review-chat ${reviewRef} --as codex-review`);
+    assert.equal(payload.action, 'accept');
+    assert.equal(payload.command, `atris task accept ${reviewRef}`);
     assert.equal(payload.task_id, JSON.parse(reviewAdd.stdout).task.id);
   } finally {
     cleanupTempDir(dir);
@@ -16979,8 +16979,9 @@ test('fresh workspace prompt gives one primary first command plus local fallback
     const home = path.join(dir, 'home');
     const res = runCli([], { cwd: dir, env: { HOME: home } });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /init/);
-    assert.match(res.stdout, /^next: atris init --minimal$/m);
+    assert.match(res.stdout, /is empty/);
+    assert.match(res.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.doesNotMatch(res.stdout, /atris init --minimal/);
     assert.ok(res.stdout.trim().split('\n').filter(Boolean).length <= 6);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(home, '.atris')), false);

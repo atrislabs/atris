@@ -206,19 +206,19 @@ test('empty folder under tmp does not inherit the tmp workspace', () => {
     assert.doesNotMatch(missionText, /Mission: #\d+/);
 
     const bare = runCli([], { cwd: child, env });
-    assert.match(bare.stdout, /clean start/);
-    assert.match(bare.stdout, /^next: atris init --minimal$/m);
+    assert.match(bare.stdout, /is empty/);
+    assert.match(bare.stdout, /^next: atris "what should this folder be\?"$/m);
     assert.doesNotMatch(combined(bare), parentWork);
 
     const task = runCli(['task'], { cwd: child, env });
-    assert.match(task.stdout, /clean start/);
-    assert.match(task.stdout, /^next: atris init --minimal$/m);
+    assert.match(task.stdout, /is empty/);
+    assert.match(task.stdout, /^next: atris "what should this folder be\?"$/m);
     assert.doesNotMatch(combined(task), parentWork);
 
     const review = runCli(['review'], { cwd: child, env });
     const reviewText = combined(review);
     assert.doesNotMatch(reviewText, parentWork);
-    assert.match(review.stdout, /nothing is waiting|clean start|no task history/i);
+    assert.match(review.stdout, /nothing is waiting|is empty|no task history/i);
   } finally {
     taskDbSafeClose();
     fs.rmSync(child, { recursive: true, force: true });

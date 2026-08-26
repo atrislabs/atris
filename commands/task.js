@@ -60,7 +60,18 @@ const {
   decisionMarkerFor,
   DECISION_REFUSE_REASON,
 } = require('../lib/task-decision');
-const { buildFirstMinute, deskNextCommand, personName, pickNext, speakFirstMinute, taskCommand, taskNextCommand } = require('../lib/first-minute');
+const {
+  buildFirstMinute,
+  deskNextCommand,
+  firstTalkCommand,
+  folderName,
+  personName,
+  pickNext,
+  speakFirstMinute,
+  taskCommand,
+  taskNextCommand,
+} = require('../lib/first-minute');
+const { loadContext } = require('../lib/state-detection');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -6172,9 +6183,9 @@ function cmdAdd(args) {
   if (isUninitializedTaskFolder(root)) {
     if (wantsJson(args)) {
       printJson({
-        ok: true,
-        action: 'init',
-        command: 'atris init --minimal',
+        ok: false,
+        action: 'none',
+        command: firstTalkCommand(folderName(root)),
         task_id: null,
         projection_path: null,
         task: null,
@@ -6493,9 +6504,19 @@ function cmdDay(args) {
 
 function cmdFirstMinute() {
   const root = process.cwd();
+  const fresh = !fs.existsSync(path.join(root, 'atris'));
+  let context = {};
+  if (!fresh) {
+    try {
+      context = loadContext(root);
+    } catch {
+      context = {};
+    }
+  }
   const screen = buildFirstMinute({
     root,
-    fresh: !fs.existsSync(path.join(root, 'atris')),
+    fresh,
+    context,
   });
   console.log(screen.text);
 }
@@ -6840,9 +6861,24 @@ function cmdNextTruth(args) {
   const workspaceRoot = taskDb.workspaceRoot();
   const rows = taskDb.listTasks(db, { workspaceRoot, limit: 500 });
   const existingProj = readProjectionFile(workspaceRoot);
+  const dbHasActionable = rows.some((task) => {
+    const status = task && task.status;
+    return status === 'open' || status === 'claimed' || status === 'review';
+  });
+  const projHasActionable = Boolean(
+    existingProj
+    && Array.isArray(existingProj.tasks)
+    && existingProj.tasks.some((task) => {
+      const status = task && task.status;
+      return status === 'open' || status === 'claimed' || status === 'review';
+    }),
+  );
   let projection;
   let outPath;
-  if (rows.length === 0 && existingProj && Array.isArray(existingProj.tasks) && existingProj.tasks.length > 0) {
+  if (!dbHasActionable && projHasActionable) {
+    projection = existingProj;
+    outPath = path.resolve(path.join(workspaceRoot || '.', '.atris', 'state', 'tasks.projection.json'));
+  } else if (rows.length === 0 && existingProj && Array.isArray(existingProj.tasks) && existingProj.tasks.length > 0) {
     projection = existingProj;
     outPath = path.resolve(path.join(workspaceRoot || '.', '.atris', 'state', 'tasks.projection.json'));
   } else {
@@ -6911,9 +6947,9 @@ function cmdNext(args) {
   if (isUninitializedTaskFolder(root)) {
     if (wantsJson(args)) {
       printJson({
-        ok: true,
-        action: 'init',
-        command: 'atris init --minimal',
+        ok: false,
+        action: 'none',
+        command: firstTalkCommand(folderName(root)),
         task_id: null,
         owner: String(flag(args, '--as') || personName() || DEFAULT_OWNER),
         scope: normalizeTaskQueueScope(taskQueueScopeFromArgs(args)),
@@ -9796,16 +9832,17 @@ function appendRelabelArchivedJournalReceipt(workspaceRoot, { actor, count, ids 
 function cmdReady(args) {
   const pos = positional(args);
   const id = pos[0];
-  if (!id) {
-    console.error('atris task ready: id required');
+  const proofFlag = flag(args, '--proof');
+  const verifyFlag = flag(args, '--verify');
+  const resultFlag = textFlag(args, ['--result']);
+  if (!id || (!proofFlag && !verifyFlag && !resultFlag)) {
+    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>"');
     process.exit(2);
   }
   // Two ways to prove: --proof "<note>" (claimed, pattern-checked) or
   // --verify "<command>" which actually RUNS the command and gates ready on exit 0.
   // If --proof names npm test, node --test, or git diff --check, this process
   // must have run that command. A sentence that names one of those is a lie.
-  const proofFlag = flag(args, '--proof');
-  const verifyFlag = flag(args, '--verify');
   const proofUrl = textFlag(args, ['--proof-url']);
   const iFetched = hasFlag(args, '--i-fetched');
   if (proofUrl && !iFetched) {

@@ -130,8 +130,8 @@ test('plan in an uninitialized folder talks like first-minute', () => {
   const planned = runCli(['plan'], { cwd: dir, env });
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(planned.status, 0, planned.stderr || planned.stdout);
-  assert.match(planned.stdout, /this folder is a clean start/);
-  assert.match(planned.stdout, /^next: atris init --minimal$/m);
+  assert.match(planned.stdout, /this folder is empty/);
+  assert.match(planned.stdout, /^next: atris "what should this folder be\?"$/m);
   assert.equal(nextLine(planned.stdout), nextLine(minute.stdout));
   assert.equal(planned.stdout.trim(), minute.stdout.trim());
   assert.equal(spokenLineCount(spokenDoBody(planned.stdout)), 2);
@@ -162,8 +162,8 @@ test('review in an uninitialized folder talks like first-minute', () => {
   const review = runCli(['review'], { cwd: dir, env });
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(review.status, 0, review.stderr || review.stdout);
-  assert.match(review.stdout, /this folder is a clean start/);
-  assert.match(review.stdout, /^next: atris init --minimal$/m);
+  assert.match(review.stdout, /this folder is empty/);
+  assert.match(review.stdout, /^next: atris "what should this folder be\?"$/m);
   assert.equal(nextLine(review.stdout), nextLine(minute.stdout));
   assert.equal(review.stdout.trim(), minute.stdout.trim());
   assert.equal(spokenLineCount(review.stdout), 2);
@@ -201,8 +201,8 @@ test('do in an uninitialized folder talks like first-minute', () => {
   const doit = runCli(['do'], { cwd: dir, env });
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(doit.status, 0, doit.stderr || doit.stdout);
-  assert.match(doit.stdout, /this folder is a clean start/);
-  assert.match(doit.stdout, /^next: atris init --minimal$/m);
+  assert.match(doit.stdout, /this folder is empty/);
+  assert.match(doit.stdout, /^next: atris "what should this folder be\?"$/m);
   assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
   assert.equal(doit.stdout.trim(), minute.stdout.trim());
   assert.equal(spokenLineCount(spokenDoBody(doit.stdout)), 2);
@@ -453,7 +453,7 @@ test('plan names a claimed task the same way first-minute does', () => {
   assert.equal(plan.stdout.trim(), minute.stdout.trim());
   assert.match(plan.stdout, /"ship the landing page" is already yours\./);
   assert.equal(nextLine(plan.stdout), nextLine(minute.stdout));
-  assert.equal(nextLine(plan.stdout), 'atris task ready CLI-9');
+  assert.equal(nextLine(plan.stdout), 'atris task show CLI-9');
   assert.doesNotMatch(plan.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(plan.stdout, /Atris Plan — Navigator Agent Activated/);
   assert.doesNotMatch(plan.stdout, /CONTEXT FILES \(agent should read\)/);
@@ -464,7 +464,7 @@ test('plan names a claimed task the same way first-minute does', () => {
   const verbose = runCli(['plan', '--verbose'], { cwd: dir, env });
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
   assert.match(verbose.stdout, /"ship the landing page" is already yours\./);
-  assert.equal(nextLine(verbose.stdout), 'atris task ready CLI-9');
+  assert.equal(nextLine(verbose.stdout), 'atris task show CLI-9');
   assert.match(verbose.stdout, /CONTEXT FILES \(agent should read\)/);
   assert.match(verbose.stdout, /COPY\/PASTE PROMPT FOR YOUR CODING AGENT:/);
   assert.match(verbose.stdout, /You are the Navigator\./);
@@ -482,7 +482,7 @@ test('do names a claimed task the same way first-minute does', () => {
   assert.equal(doit.stdout.trim(), minute.stdout.trim());
   assert.match(doit.stdout, /"ship the landing page" is already yours\./);
   assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
-  assert.equal(nextLine(doit.stdout), 'atris task ready CLI-9');
+  assert.equal(nextLine(doit.stdout), 'atris task show CLI-9');
   assert.equal(spokenLineCount(spokenDoBody(doit.stdout)), 2);
   assert.doesNotMatch(doit.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(doit.stdout, /Atris Do — Executor Agent Activated/);
@@ -495,7 +495,7 @@ test('do names a claimed task the same way first-minute does', () => {
   const verbose = runCli(['do', '--verbose'], { cwd: dir, env });
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
   assert.match(verbose.stdout, /"ship the landing page" is already yours\./);
-  assert.equal(nextLine(verbose.stdout), 'atris task ready CLI-9');
+  assert.equal(nextLine(verbose.stdout), 'atris task show CLI-9');
   assert.doesNotMatch(verbose.stdout, /Context: UNKNOWN/);
   assert.doesNotMatch(verbose.stdout, /Backlog tasks: 0/);
   assert.match(verbose.stdout, /CONTEXT FILES \(agent should read\)/);
@@ -639,7 +639,7 @@ test('renderReviewMinute names a claimed ready next instead of an empty desk', (
     }],
   });
   assert.match(text, /hey keshav, "ship the landing page" is already yours\./);
-  assert.match(text, /^next: atris task ready CLI-9$/m);
+  assert.match(text, /^next: atris task show CLI-9$/m);
   assert.doesNotMatch(text, /nothing is waiting on you/);
   assert.equal(spokenLineCount(text), 2);
 });

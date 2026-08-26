@@ -55,20 +55,20 @@ test('29: start --help in a temp init dir prints usage and files no task', () =>
     const before = titlesFromTodo(dir);
     assert.doesNotMatch(before, /First useful step: start --help/);
 
-    for (const args of [['start', '--help'], ['start', '-h'], ['start', 'help']]) {
+    for (const args of [['start', '--help'], ['start', '-h'], ['start', 'help'], ['go', '--help']]) {
       const res = runCli(args, { cwd: dir });
       assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
-      assert.match(res.stdout + res.stderr, /Usage: atris start/i);
+      assert.match(res.stdout + res.stderr, /Usage: atris /i);
       assert.doesNotMatch(res.stdout + res.stderr, /First useful step|Got it\. I saved/i);
     }
 
     const after = titlesFromTodo(dir);
-    assert.doesNotMatch(after, /First useful step: start --help/);
+    assert.doesNotMatch(after, /First useful step: (start|go) --help/);
     const listed = runCli(['task', 'list', '--json'], { cwd: dir });
     if (listed.status === 0 && listed.stdout.trim()) {
       const body = JSON.parse(listed.stdout);
       const titles = (body.tasks || []).map((row) => row.title);
-      assert.ok(!titles.some((title) => /start --help/.test(title)), titles.join(' | '));
+      assert.ok(!titles.some((title) => /(start|go) --help/.test(title)), titles.join(' | '));
     }
   } finally {
     cleanupTempDir(dir);

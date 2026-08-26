@@ -998,7 +998,7 @@ test('review prints a first-minute screen by default', () => {
     const minute = runCli([], { cwd: dir });
     const res = runCli(['review'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    if (/^next: atris task (claim|ready|accept) /m.test(minute.stdout)) {
+    if (/^next: atris task (claim|show|ready|accept) /m.test(minute.stdout)) {
       assert.equal(res.stdout.trim(), minute.stdout.trim());
     } else {
       assert.match(res.stdout, /nothing is waiting on you\./);

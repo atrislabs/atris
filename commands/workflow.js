@@ -64,7 +64,7 @@ function reviewSoftTitle(title, maxWords = 5) {
 }
 
 function isHumanDeskNext(command) {
-  return /^atris task (?:claim|ready|accept)\b/.test(String(command || ''));
+  return /^atris task (?:claim|show|ready|accept)\b/.test(String(command || ''));
 }
 
 function loadReviewTasks(root = process.cwd()) {
