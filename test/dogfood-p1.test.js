@@ -60,6 +60,7 @@ test('doctor --json reports node and task-support', () => {
 
 test('radar/fleet/engine/integrations/accounts default to workspace scope', () => {
   const dir = makeTempWorkspace();
+  const realDir = fs.realpathSync(dir);
   const db = path.join(dir, 'tasks.db');
   const env = { ATRIS_TASKS_DB: db };
   try {
@@ -68,7 +69,7 @@ test('radar/fleet/engine/integrations/accounts default to workspace scope', () =
     const radarPayload = JSON.parse(radar.stdout);
     assert.equal(radarPayload.scope, 'workspace');
     for (const wt of radarPayload.worktrees || []) {
-      assert.ok(String(wt.path).startsWith(dir), `other-repo worktree leaked: ${wt.path}`);
+      assert.ok(String(wt.path).startsWith(realDir), `other-repo worktree leaked: ${wt.path}`);
     }
 
     const fleet = run(['fleet', '--json'], dir, env);

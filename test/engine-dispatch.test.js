@@ -353,7 +353,8 @@ test('runDispatchFlight happy path: claims, builds, re-verifies for real, ships,
     assert.ok(calls.some((c) => c.startsWith('worktree start --agent cursor --task dispatch-cli-900')));
     const readyCall = calls.find((c) => c.startsWith('task ready CLI-900'));
     assert.ok(readyCall, 'task ready must be called on a landed task');
-    assert.match(readyCall, /Check re-run: node --test test\/widget\.test\.js/);
+    assert.match(readyCall, /the declared verifier passed \(exit 0\)/i);
+    assert.match(readyCall, /--checked node --test test\/widget\.test\.js passed before landing/);
     assert.match(readyCall, /# pass 3/, 'proof must carry the real verify output, not just prose');
     assert.ok(fleet.landArrival, 'sanity: shared land primitive still exported');
   } finally {
@@ -457,10 +458,11 @@ test('runDispatchFlight review-only verifies explicitly, readies the task, and l
 
     const readyCall = calls.find((call) => call.startsWith('task ready CLI-900'));
     assert.ok(readyCall, 'a verified review-only build must move the task to Review');
-    assert.match(readyCall, /Check re-run: node --test test\/one-lap-review\.test\.js/);
+    assert.match(readyCall, /the declared verifier passed \(exit 0\)/i);
+    assert.match(readyCall, /--checked node --test test\/one-lap-review\.test\.js passed in the isolated worktree/);
     assert.doesNotMatch(readyCall, /test\/widget\.test\.js/, 'operator Check: text must not override the explicit verifier');
     assert.match(readyCall, /Receipt saved at atris\/runs\/dispatch-/);
-    assert.match(readyCall, /commit 2222222222222222222222222222222222222222; node --test test\/one-lap-review[.]test[.]js passed \(exit 0\)/);
+    assert.match(readyCall, /commit 2222222222222222222222222222222222222222; the declared verifier passed \(exit 0\)/);
 
     const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
     assert.equal(receipt.schema, 'atris.dispatch_receipt.v1');

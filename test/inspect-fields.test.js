@@ -26,6 +26,17 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
+function writePassingTest(root) {
+  const testDir = path.join(root, 'test');
+  fs.mkdirSync(testDir, { recursive: true });
+  fs.writeFileSync(path.join(testDir, 'pass.test.js'), [
+    "const test = require('node:test');",
+    "const assert = require('node:assert/strict');",
+    "test('fixture passes', () => assert.equal(1, 1));",
+    '',
+  ].join('\n'), 'utf8');
+}
+
 function runCli(args, { cwd, env = {} } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
@@ -174,6 +185,7 @@ test('task inspect CLI returns review metadata without parsing show output', () 
   const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    writePassingTest(dir);
     const add = runCli(['task', 'add', 'Inspect review metadata', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr || add.stdout);
     const ref = JSON.parse(add.stdout).task.display_id;
@@ -182,8 +194,8 @@ test('task inspect CLI returns review metadata without parsing show output', () 
       'task',
       'ready',
       ref,
-      '--proof',
-      'node --test test/inspect-fields.test.js passed',
+      '--verify',
+      'node --test test/pass.test.js',
       '--result',
       'Reviewers can inspect pending proof metadata directly so review checks save time and reduce approval risk.',
       '--json',
@@ -195,12 +207,12 @@ test('task inspect CLI returns review metadata without parsing show output', () 
     const payload = JSON.parse(inspect.stdout);
     assert.equal(payload.action, 'task_inspect');
     assert.equal(payload.fields.review.approval_status, 'pending');
-    assert.match(payload.fields.review.proof, /inspect-fields\.test\.js passed/);
+    assert.match(payload.fields.review.proof, /node --test test\/pass\.test\.js/);
 
     const text = runCli(['task', 'inspect', ref, '--fields', 'review'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr || text.stdout);
     assert.match(text.stdout, /"approval_status":"pending"/);
-    assert.match(text.stdout, /inspect-fields\.test\.js passed/);
+    assert.match(text.stdout, /node --test test\/pass\.test\.js/);
   } finally {
     cleanupTempDir(dir);
   }
