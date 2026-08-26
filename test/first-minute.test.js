@@ -79,11 +79,11 @@ test('fresh first-minute copy starts a conversation and stays short', () => {
   assert.match(text, /hey keshav, this folder is empty\./);
   assert.doesNotMatch(text, /I'll set this up when you want/);
   assert.doesNotMatch(text, /atris init --minimal/);
-  assert.match(text, /^next: atris "what should this folder be\?"$/m);
+  assert.match(text, /^next: atris "what do you want here\?"$/m);
   assert.equal(spokenLineCount(text), 2);
   assert.ok(text.length < 200);
   const json = freshMinuteJson();
-  assert.equal(json.next_action, 'atris "what should this folder be?"');
+  assert.equal(json.next_action, 'atris "what do you want here?"');
   assert.equal(json.reason, 'this folder is empty');
 });
 
@@ -113,7 +113,8 @@ test('ready review task first-minute waits for a human ok', () => {
     recap: { title: 'week one loop' },
     nextCommand: 'atris task accept UNW-2',
   });
-  assert.match(text, /one finished thing is waiting for your ok \(UNW-2\)\./);
+  assert.match(text, /hey keshav, something finished\. waiting on you\./);
+  assert.doesNotMatch(text.split('\n')[0], /UNW-2/);
   assert.doesNotMatch(text, /you already shipped/);
   assert.doesNotMatch(text, /so the count is easy to read/);
   assert.match(text, /last recap: week one loop/);
@@ -188,7 +189,8 @@ test('uncertified review task first-minute still waits for a human ok', () => {
     },
     nextCommand: 'atris task accept UNW-4',
   });
-  assert.match(text, /one finished thing is waiting for your ok \(UNW-4\)\./);
+  assert.match(text, /hey keshav, something finished\. waiting on you\./);
+  assert.doesNotMatch(text.split('\n')[0], /UNW-4/);
   assert.doesNotMatch(text, /you already shipped/);
   assert.doesNotMatch(text, /review-chat/);
   assert.match(text, /^next: atris task accept UNW-4$/m);
@@ -206,7 +208,7 @@ test('task next is a look, not first talk', () => {
   assert.equal(isTaskNextLook('task next'), true);
   assert.equal(isTaskNextLook('task next --json'), true);
   assert.equal(isTaskNextLook('TASK NEXT --as keshav'), true);
-  assert.equal(isTaskNextLook('what should this folder be?'), false);
+  assert.equal(isTaskNextLook('what do you want here?'), false);
   assert.equal(isTaskNextLook('task new count words'), false);
   assert.equal(isTaskNextLook(''), false);
 });
@@ -236,10 +238,10 @@ test('named empty folder under tmp keeps the room name', () => {
   const text = renderFresh({ person: 'keshav', folder: folderName('/tmp/launch-day') });
   assert.match(text, /hey keshav, launch-day is empty\./);
   assert.doesNotMatch(text, /I'll set this up when you want/);
-  assert.match(text, /^next: atris "what should launch-day be\?"$/m);
+  assert.match(text, /^next: atris "what do you want here\?"$/m);
   assert.doesNotMatch(text, /atris init --minimal/);
   assert.equal(spokenLineCount(text), 2);
-  assert.equal(firstTalkCommand('launch-day'), 'atris "what should launch-day be?"');
+  assert.equal(firstTalkCommand('launch-day'), 'atris "what do you want here?"');
 });
 
 test('buildFirstMinute reads a claimed task from the local projection', () => {
@@ -307,7 +309,8 @@ test('buildFirstMinute prefers a certified review over a newer uncertified one',
       folder: 'this folder',
     });
     assert.equal(screen.nextCommand, 'atris task accept UNW-2');
-    assert.match(screen.text, /one finished thing is waiting for your ok \(UNW-2\)/);
+    assert.match(screen.text, /something finished\. waiting on you\./);
+    assert.doesNotMatch(screen.text.split('\n')[0], /UNW-2/);
     assert.doesNotMatch(screen.text, /you already shipped/);
     assert.doesNotMatch(screen.text, /review-chat/);
   } finally {
@@ -326,7 +329,7 @@ test('empty dir bare atris starts a conversation, stays short, and does not hang
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /this folder is empty/);
-    assert.match(res.stdout, /atris "what should this folder be\?"/);
+    assert.match(res.stdout, /atris "what do you want here\?"/);
     assert.match(res.stdout, /hey keshav,/);
     assert.doesNotMatch(res.stdout, /I'll set this up when you want/);
     assert.doesNotMatch(res.stdout, /atris init --minimal/);
@@ -354,7 +357,7 @@ test('empty named folder under tmp greets with the room name', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /hey keshav, launch-day is empty\./);
     assert.doesNotMatch(res.stdout, /I'll set this up when you want/);
-    assert.match(res.stdout, /^next: atris "what should launch-day be\?"$/m);
+    assert.match(res.stdout, /^next: atris "what do you want here\?"$/m);
     assert.doesNotMatch(res.stdout, /atris init --minimal/);
     assert.doesNotMatch(res.stdout, /this folder is empty/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -374,7 +377,7 @@ test('empty dir --json does not init', () => {
     });
     assert.equal(json.status, 2, json.stderr || json.stdout);
     const payload = JSON.parse(json.stdout);
-    assert.equal(payload.next_action, 'atris "what should this folder be?"');
+    assert.equal(payload.next_action, 'atris "what do you want here?"');
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
   } finally {
     cleanupTempDir(dir);
@@ -396,7 +399,7 @@ test('empty dir no-interactive without --yes does not init', () => {
       },
     });
     assert.equal(blocked.status, 0, blocked.stderr || blocked.stdout);
-    assert.match(blocked.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(blocked.stdout, /^next: atris "what do you want here\?"$/m);
     assert.doesNotMatch(blocked.stdout, /atris init --minimal/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
   } finally {
@@ -421,6 +424,8 @@ test('empty dir --yes inits even under no-interactive', () => {
     });
     assert.equal(started.status, 0, started.stderr || started.stdout);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'lessons.md')));
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'INTUITION.md')), false);
     assert.match(started.stdout, /atris initialized/);
     assert.match(started.stdout, /^next: atris task claim /m);
     assert.doesNotMatch(started.stdout, /I'll set this up when you want/);
@@ -518,7 +523,8 @@ test('workspace with a ready task names the win and points at accept', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /hey keshav,/);
     assert.doesNotMatch(res.stdout, /keshavrao/);
-    assert.match(res.stdout, /one finished thing is waiting for your ok \(UNW-2\)/);
+    assert.match(res.stdout, /something finished\. waiting on you\./);
+    assert.doesNotMatch(res.stdout.split('\n').find((line) => line.includes('hey keshav')) || '', /UNW-2/);
     assert.match(res.stdout, /^next: atris task accept UNW-2$/m);
     assert.equal(res.stdout.match(/^next:/mg).length, 1);
     assert.doesNotMatch(res.stdout, /you already shipped/);
@@ -541,7 +547,7 @@ test('atris test in an empty folder still names init', () => {
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /this folder is empty/);
-    assert.match(res.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(res.stdout, /^next: atris "what do you want here\?"$/m);
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|For an agent|generate a complete `atris\/MAP\.md`/);
     assert.doesNotMatch(res.stdout, /Got it\. I saved your first direction|First useful step: test/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -562,7 +568,7 @@ test('atris plan in an empty folder talks like first-minute', () => {
     assert.equal(planned.status, 0, planned.stderr || planned.stdout);
     assert.equal(planned.stdout.trim(), minute.stdout.trim());
     assert.match(planned.stdout, /this folder is empty/);
-    assert.match(planned.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(planned.stdout, /^next: atris "what do you want here\?"$/m);
     assert.equal(spokenLineCount(planned.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(planned.stdout, /navigator\.md|Run "atris init"/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -590,7 +596,7 @@ test('atris review in an empty folder talks like first-minute', () => {
     assert.equal(review.status, 0, review.stderr || review.stdout);
     assert.equal(review.stdout.trim(), minute.stdout.trim());
     assert.match(review.stdout, /this folder is empty/);
-    assert.match(review.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(review.stdout, /^next: atris "what do you want here\?"$/m);
     assert.equal(spokenLineCount(review.stdout), spokenLineCount(minute.stdout));
     assert.notEqual(review.stdout.trim(), 'nothing is waiting on you.');
     assert.doesNotMatch(review.stdout, /^nothing is waiting on you\.$/m);
@@ -619,7 +625,7 @@ test('atris do in an empty folder talks like first-minute', () => {
     assert.equal(doit.status, 0, doit.stderr || doit.stdout);
     assert.equal(doit.stdout.trim(), minute.stdout.trim());
     assert.match(doit.stdout, /this folder is empty/);
-    assert.match(doit.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(doit.stdout, /^next: atris "what do you want here\?"$/m);
     assert.equal(spokenLineCount(doit.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(doit.stdout, /executor\.md|Run "atris init"/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -680,7 +686,7 @@ test('atris task next in an empty folder talks like first-minute', () => {
     assert.equal(task.stdout.trim(), minute.stdout.trim());
     assert.equal(next.stdout.trim(), minute.stdout.trim());
     assert.match(next.stdout, /this folder is empty/);
-    assert.match(next.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(next.stdout, /^next: atris "what do you want here\?"$/m);
     assert.equal(spokenLineCount(next.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(next.stdout, /No open tasks|atris task new/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -709,7 +715,7 @@ test('atris task new in an empty folder talks like first-minute', () => {
     assert.equal(created.status, 0, created.stderr || created.stdout);
     assert.equal(created.stdout.trim(), minute.stdout.trim());
     assert.match(created.stdout, /this folder is empty/);
-    assert.match(created.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(created.stdout, /^next: atris "what do you want here\?"$/m);
     assert.equal(spokenLineCount(created.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(created.stdout, /count the words/);
     assert.doesNotMatch(created.stdout, /TH\d|WRK-|CLI-|Warning: put the why|No open tasks|TASK DESK/);
@@ -748,8 +754,8 @@ test('atris ask and mission in an empty folder talk like first-minute', () => {
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
     assert.match(asked.stdout, /this folder is empty/);
     assert.match(mission.stdout, /this folder is empty/);
-    assert.match(asked.stdout, /^next: atris "what should this folder be\?"$/m);
-    assert.match(mission.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(asked.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(mission.stdout, /^next: atris "what do you want here\?"$/m);
     assert.equal(spokenLineCount(asked.stdout), spokenLineCount(minute.stdout));
     assert.equal(spokenLineCount(mission.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(asked.stdout, /business\.json|cloud-computer|--mission|Start one with|Atris needs to know what you want/);
@@ -791,7 +797,7 @@ test('atris wish in an empty folder talks like first-minute', () => {
     assert.equal(wish.status, 0, wish.stderr || wish.stdout);
     assert.equal(wish.stdout.trim(), minute.stdout.trim());
     assert.match(wish.stdout, /this folder is empty/);
-    assert.match(wish.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(wish.stdout, /^next: atris "what do you want here\?"$/m);
     assert.equal(spokenLineCount(wish.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(wish.stdout, /Usage: atris wish|wish list|wish grant|wish stats|wish board|wish rewards/);
     assert.doesNotMatch(wish.stdout, /Run "atris init"/);
@@ -801,7 +807,7 @@ test('atris wish in an empty folder talks like first-minute', () => {
     assert.equal(leftover.status, 0, leftover.stderr || leftover.stdout);
     assert.equal(leftover.stdout.trim(), minute.stdout.trim());
     assert.match(leftover.stdout, /this folder is empty/);
-    assert.match(leftover.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(leftover.stdout, /^next: atris "what do you want here\?"$/m);
     assert.equal(spokenLineCount(leftover.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(leftover.stdout, /Got it/);
     assert.doesNotMatch(leftover.stdout, /Usage: atris wish|wish list|wish grant|waiting on you/);
@@ -835,7 +841,7 @@ test('atris log in an empty folder talks like first-minute', () => {
     assert.equal(logged.stdout.trim(), minute.stdout.trim());
     assert.equal(leftover.stdout.trim(), minute.stdout.trim());
     assert.match(leftover.stdout, /this folder is empty/);
-    assert.match(leftover.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(leftover.stdout, /^next: atris "what do you want here\?"$/m);
     assert.equal(spokenLineCount(leftover.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(leftover.stdout + leftover.stderr, /folder not found|Run "atris init"|captured I|journal:/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -888,7 +894,7 @@ test('atris brainstorm in an empty folder talks like first-minute', () => {
     assert.equal(leftover.status, 0, leftover.stderr || leftover.stdout);
     assert.equal(leftover.stdout.trim(), minute.stdout.trim());
     assert.match(leftover.stdout, /this folder is empty/);
-    assert.match(leftover.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(leftover.stdout, /^next: atris "what do you want here\?"$/m);
     assert.equal(spokenLineCount(leftover.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(leftover.stdout + leftover.stderr, /folder not found|Run "atris init"|captured I|journal:|Describe the desired outcome/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -1231,7 +1237,8 @@ test('bare mission in a live room speaks the desk next, not the archive', () => 
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(mission.status, 0, mission.stderr || mission.stdout);
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
-    assert.match(mission.stdout, /waiting for your ok/);
+    assert.match(mission.stdout, /something finished\. waiting on you\./);
+    assert.doesNotMatch((mission.stdout.split('\n').find((line) => /something finished/.test(line)) || ''), /CLI-193/);
     assert.match(mission.stdout, /CLI-193/);
     assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
     assert.match(nextLine(mission.stdout), /^atris task accept CLI-193$/);
@@ -1323,7 +1330,8 @@ test('bare mission yields the desk next when a ready mission is stalled', () => 
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(mission.status, 0, mission.stderr || mission.stdout);
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
-    assert.match(mission.stdout, /waiting for your ok/);
+    assert.match(mission.stdout, /something finished\. waiting on you\./);
+    assert.doesNotMatch((mission.stdout.split('\n').find((line) => /something finished/.test(line)) || ''), /CLI-193/);
     assert.match(mission.stdout, /CLI-193/);
     assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
     assert.match(nextLine(mission.stdout), /^atris task accept CLI-193$/);
@@ -1479,11 +1487,11 @@ test('named empty folder next command starts a first task when pasted', () => {
     assert.match(first.stdout, /hey keshav, launch-day is empty\./);
     const next = String(first.stdout).match(/^next: (.+)$/m);
     assert.ok(next, first.stdout);
-    assert.equal(next[1], 'atris "what should launch-day be?"');
+    assert.equal(next[1], 'atris "what do you want here?"');
     assert.doesNotMatch(first.stdout, /atris init --minimal/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 
-    const pasted = runCli(['what should launch-day be?'], { cwd: dir, env, timeout: 60000 });
+    const pasted = runCli(['what do you want here?'], { cwd: dir, env, timeout: 60000 });
     assert.equal(pasted.status, 0, pasted.stderr || pasted.stdout);
     assert.match(pasted.stdout, /I saved a first step for launch-day/);
     assert.doesNotMatch(pasted.stdout, /launch-day is empty/);

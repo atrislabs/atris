@@ -16980,7 +16980,7 @@ test('fresh workspace prompt gives one primary first command plus local fallback
     const res = runCli([], { cwd: dir, env: { HOME: home } });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /is empty/);
-    assert.match(res.stdout, /^next: atris "what should this folder be\?"$/m);
+    assert.match(res.stdout, /^next: atris "what do you want here\?"$/m);
     assert.doesNotMatch(res.stdout, /atris init --minimal/);
     assert.ok(res.stdout.trim().split('\n').filter(Boolean).length <= 6);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);

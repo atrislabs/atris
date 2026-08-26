@@ -224,7 +224,7 @@ test('task next in an uninitialized folder talks like first-minute', () => {
     assert.equal(task.stdout.trim(), minute.stdout.trim());
     assert.equal(next.stdout.trim(), minute.stdout.trim());
     assert.match(next.stdout, /this folder is empty/);
-    assert.equal(nextLine(next.stdout), 'atris "what should this folder be?"');
+    assert.equal(nextLine(next.stdout), 'atris "what do you want here?"');
     assert.doesNotMatch(next.stdout, /No open tasks|atris task new/);
     assert.doesNotMatch(next.stdout, /atris task step |Describe the desired outcome|say yes:/i);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -235,7 +235,7 @@ test('task next in an uninitialized folder talks like first-minute', () => {
     assert.equal(json.status, 0, json.stderr || json.stdout);
     const payload = JSON.parse(json.stdout);
     assert.equal(payload.action, 'none');
-    assert.equal(payload.command, 'atris "what should this folder be?"');
+    assert.equal(payload.command, 'atris "what do you want here?"');
     assert.equal(payload.task_id, null);
     assert.doesNotMatch(json.stdout, /atris task new/);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);

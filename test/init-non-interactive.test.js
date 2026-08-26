@@ -181,6 +181,33 @@ test('force init and update preserve extra members in an existing workspace', ()
   }
 });
 
+test('init --minimal writes lessons.md and does not create INTUITION.md', () => {
+  const dir = makeTempDir();
+  try {
+    const existing = path.join(dir, 'atris', 'INTUITION.md');
+    fs.mkdirSync(path.dirname(existing), { recursive: true });
+    fs.writeFileSync(existing, '# keep me\n', 'utf8');
+    const res = runInit(['--minimal', '--yes'], { cwd: dir });
+    assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'lessons.md')));
+    assert.equal(fs.readFileSync(existing, 'utf8'), '# keep me\n');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('init --minimal on a fresh folder does not write INTUITION.md', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runInit(['--minimal', '--yes'], { cwd: dir });
+    assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'lessons.md')));
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'INTUITION.md')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('first-use command after init talks like first-minute instead of MAP homework', () => {
   const dir = makeTempDir();
   try {
