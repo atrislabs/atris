@@ -10,6 +10,7 @@ const {
   deskNextCommand,
   firstTalkCommand,
   folderName,
+  isFirstTalkLine,
   freshMinuteJson,
   isTaskNextLook,
   personName,
@@ -211,6 +212,10 @@ test('task next is a look, not first talk', () => {
   assert.equal(isTaskNextLook('what do you want here?'), false);
   assert.equal(isTaskNextLook('task new count words'), false);
   assert.equal(isTaskNextLook(''), false);
+  assert.equal(isFirstTalkLine('what do you want here?'), true);
+  assert.equal(isFirstTalkLine('atris "what do you want here?"'), true);
+  assert.equal(isFirstTalkLine('what is atris?'), false);
+  assert.equal(isFirstTalkLine('task next'), false);
 });
 
 test('personName prefers a given name from the saved account', () => {
