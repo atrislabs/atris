@@ -2,7 +2,7 @@
  * atris terminal <business> <command...> [--timeout N]
  *
  * Run a shell command directly on a business EC2 workspace via the warm runner.
- * This is the load-bearing primitive for fast bulk ops — one bash call beats
+ * This is the load-bearing primitive for fast bulk ops: one bash call beats
  * hundreds of rate-limited individual file API calls.
  *
  * SAFETY:
@@ -161,7 +161,7 @@ async function terminalAtris() {
     slug = cwdSlug;
     command = args.join(' ');
   } else if (firstLooksLikeSlug && args.length === 1) {
-    // First (and only) arg is a slug-shaped word — could be the slug with no command
+    // First and only arg is a slug-shaped word with no command.
     console.error('Missing command. Usage: atris terminal <business> <command>');
     process.exit(1);
   } else {
