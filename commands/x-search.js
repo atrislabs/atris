@@ -16,6 +16,7 @@ function showXSearchHelp(output = console.log, commandName = 'atris x-search') {
   output('');
   output(`Search X/Twitter via Atris (${COST_HINT}).`);
   output('Requires login. Same auth path as atris youtube process.');
+  output('Empty or failed search refunds the credits.');
   output('');
   output('Options:');
   output('  --limit <n>         Max results hint (search only)');
@@ -216,6 +217,58 @@ function resultErrorText(result) {
   }
 }
 
+function unwrapXSearchPayload(data) {
+  return data?.data && typeof data.data === 'object' ? data.data : data;
+}
+
+function xSearchContent(data) {
+  const payload = unwrapXSearchPayload(data);
+  return payload?.content != null ? String(payload.content).trim() : '';
+}
+
+function xSearchCitations(data) {
+  const payload = unwrapXSearchPayload(data);
+  if (Array.isArray(payload?.citations)) return payload.citations;
+  if (Array.isArray(data?.citations)) return data.citations;
+  return [];
+}
+
+function xSearchCredits(data) {
+  if (!data || typeof data !== 'object') {
+    return { used: undefined, remaining: undefined, refunded: undefined };
+  }
+  const payload = unwrapXSearchPayload(data) || {};
+  const used = data.credits_used !== undefined ? data.credits_used : payload.credits_used;
+  const remaining = data.credits_remaining !== undefined
+    ? data.credits_remaining
+    : payload.credits_remaining;
+  let refunded = data.credits_refunded !== undefined
+    ? data.credits_refunded
+    : payload.credits_refunded;
+  if (refunded === undefined && (data.refunded === true || payload.refunded === true)) {
+    refunded = true;
+  }
+  return { used, remaining, refunded };
+}
+
+function creditsWereRefunded(credits) {
+  if (!credits) return false;
+  if (credits.used === 0) return true;
+  if (credits.refunded === true) return true;
+  return typeof credits.refunded === 'number' && credits.refunded > 0;
+}
+
+function formatCreditsLines(credits) {
+  const lines = [];
+  if (credits.used !== undefined || credits.remaining !== undefined) {
+    lines.push(`Credits: ${credits.used !== undefined ? credits.used : '?'} used, ${credits.remaining !== undefined ? credits.remaining : '?'} remaining`);
+  }
+  if (creditsWereRefunded(credits)) {
+    lines.push('credits refunded');
+  }
+  return lines;
+}
+
 function xSearchFailureError(result) {
   const hint = result.status === 401
     ? ' Run "atris login --force".'
@@ -224,7 +277,13 @@ function xSearchFailureError(result) {
       : result.status === 502
         ? ' xAI is unavailable; retry in a few seconds.'
         : '';
-  return new Error(`X search failed (${result.status}): ${resultErrorText(result)}.${hint}`);
+  const credits = xSearchCredits(result.data);
+  const refundHint = result.status === 502 && creditsWereRefunded(credits)
+    ? ' credits refunded.'
+    : '';
+  const lines = [`X search failed (${result.status}): ${resultErrorText(result)}.${hint}${refundHint}`];
+  lines.push(...formatCreditsLines(credits));
+  return new Error(lines.join('\n'));
 }
 
 async function ensureToken(deps = {}) {
@@ -278,12 +337,7 @@ function xSearchApplyRel(source) {
 }
 
 function xSearchHasResults(data) {
-  const payload = data?.data && typeof data.data === 'object' ? data.data : data;
-  const content = payload?.content != null ? String(payload.content).trim() : '';
-  const citations = Array.isArray(payload?.citations)
-    ? payload.citations
-    : (Array.isArray(data?.citations) ? data.citations : []);
-  return Boolean(content) || citations.length > 0;
+  return Boolean(xSearchContent(data)) || xSearchCitations(data).length > 0;
 }
 
 function ensureXSearchApply({ cwd, source, now, output } = {}) {
@@ -299,11 +353,8 @@ function ensureXSearchApply({ cwd, source, now, output } = {}) {
 
 function formatXSearchResult(data) {
   const lines = [];
-  const payload = data?.data && typeof data.data === 'object' ? data.data : data;
-  const content = payload?.content != null ? String(payload.content).trim() : '';
-  const citations = Array.isArray(payload?.citations)
-    ? payload.citations
-    : (Array.isArray(data?.citations) ? data.citations : []);
+  const content = xSearchContent(data);
+  const citations = xSearchCitations(data);
 
   if (content) {
     lines.push(content);
@@ -321,15 +372,22 @@ function formatXSearchResult(data) {
     }
   }
 
-  const used = data?.credits_used !== undefined ? data.credits_used : payload?.credits_used;
-  const remaining = data?.credits_remaining !== undefined
-    ? data.credits_remaining
-    : payload?.credits_remaining;
-  if (used !== undefined || remaining !== undefined) {
+  const creditLines = formatCreditsLines(xSearchCredits(data));
+  if (creditLines.length) {
     lines.push('');
-    lines.push(`Credits: ${used !== undefined ? used : '?'} used, ${remaining !== undefined ? remaining : '?'} remaining`);
+    lines.push(...creditLines);
   }
 
+  return lines.join('\n');
+}
+
+function formatEmptyXSearchResult(data) {
+  const lines = ['no results'];
+  const creditLines = formatCreditsLines(xSearchCredits(data));
+  if (creditLines.length) {
+    lines.push('');
+    lines.push(...creditLines);
+  }
   return lines.join('\n');
 }
 
@@ -351,8 +409,13 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
   let status = 0;
   try {
     const data = await runXSearch(options, deps);
-    output(options.json ? JSON.stringify(data, null, 2) : formatXSearchResult(data));
-    if (xSearchHasResults(data)) {
+    const hasResults = xSearchHasResults(data);
+    if (options.json) {
+      output(JSON.stringify(data, null, 2));
+    } else {
+      output(hasResults ? formatXSearchResult(data) : formatEmptyXSearchResult(data));
+    }
+    if (hasResults) {
       const ensureApply = deps.ensureApply || ensureXSearchApply;
       status = ensureApply({
         cwd: deps.cwd || process.cwd(),
@@ -360,6 +423,8 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
         now: deps.applyNow,
         output,
       });
+    } else {
+      status = 2;
     }
   } catch (err) {
     output(err.message);

@@ -1,7 +1,7 @@
 ---
 name: x-search
 description: "X/Twitter search via xAI Grok API. Use when user wants to search tweets, monitor topics, find viral posts, or run social listening. Costs 5 credits per search. Triggers on x search, tweet search, twitter search, social listening, revenue intel, viral tweets."
-version: 2.1.0
+version: 2.2.0
 tags:
   - x-search
   - social
@@ -27,7 +27,7 @@ login
 ```
 
 1. Login: stored login, then `atris login --agent` if needed. Never paste tokens. Never `/auth/cli`.
-2. Search: `atris x-search "QUERY"`. Always billed (5 credits). No free discovery path.
+2. Search: `atris x-search "QUERY"`. Always billed (5 credits). Empty or failed search refunds.
 3. One Apply: name a product change plus a receipt that can fail. If missing, the CLI writes a fill-this stub and exits incomplete.
 4. Stop. Empty or failed search does not owe an Apply.
 
