@@ -282,11 +282,18 @@ test('review after init --yes --minimal does not send you back to init', () => {
   assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
   assert.ok(fs.existsSync(path.join(dir, 'atris', 'atris.md')));
 
+  const minute = runCli([], { cwd: dir, env });
   const review = runCli(['review'], { cwd: dir, env });
   const combined = review.stdout + review.stderr;
+  assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(review.status, 0, combined);
-  assert.match(review.stdout, /^nothing is waiting on you\.$/m);
-  assert.equal(spokenLineCount(review.stdout), 1);
+  assert.equal(review.stdout.trim(), minute.stdout.trim());
+  assert.match(review.stdout, /ready to claim/);
+  assert.match(nextLine(review.stdout), /^atris task claim \S+ --as \S+$/);
+  assert.equal(nextLine(review.stdout), nextLine(minute.stdout));
+  assert.equal(spokenLineCount(review.stdout), spokenLineCount(minute.stdout));
+  assert.equal(spokenLineCount(review.stdout), 2);
+  assert.doesNotMatch(review.stdout, /^nothing is waiting on you\.$/m);
   assert.doesNotMatch(combined, /clean start|atris init --minimal/);
   assert.doesNotMatch(combined, /validator\.md not found|Run "atris init"/);
   assert.doesNotMatch(review.stdout, /Atris Review is the human checkpoint|Need the legacy Validator/);
@@ -555,6 +562,39 @@ test('renderReviewMinute leads with certified accept and keeps uncertified check
   assert.match(text, /^next: atris task accept UNW-2$/m);
   assert.doesNotMatch(text, /needs you|ready to look at|human checkpoint/);
   assert.equal(spokenLineCount(text), 3);
+});
+
+test('renderReviewMinute names an open claim the same way first-minute does', () => {
+  const text = renderReviewMinute({
+    person: 'keshav',
+    tasks: [{
+      title: 'Generate MAP.md scan codebase',
+      status: 'open',
+      display_id: 'LYG-1',
+      updated_at: 20,
+    }],
+  });
+  assert.match(text, /hey keshav, "generate map.md scan codebase" is ready to claim\./);
+  assert.match(text, /^next: atris task claim LYG-1 --as keshav$/m);
+  assert.doesNotMatch(text, /nothing is waiting on you/);
+  assert.equal(spokenLineCount(text), 2);
+});
+
+test('renderReviewMinute names a claimed ready next instead of an empty desk', () => {
+  const text = renderReviewMinute({
+    person: 'keshav',
+    tasks: [{
+      title: 'Ship the landing page',
+      status: 'claimed',
+      display_id: 'CLI-9',
+      claimed_by: 'keshav',
+      updated_at: 20,
+    }],
+  });
+  assert.match(text, /hey keshav, "ship the landing page" is already yours\./);
+  assert.match(text, /^next: atris task ready CLI-9$/m);
+  assert.doesNotMatch(text, /nothing is waiting on you/);
+  assert.equal(spokenLineCount(text), 2);
 });
 
 test('renderReviewMinute empty queue is one spoken line', () => {

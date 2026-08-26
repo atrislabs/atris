@@ -3,11 +3,13 @@ const path = require('path');
 const { getLogPath } = require('../lib/journal');
 const {
   buildFirstMinute,
+  folderName,
   freshMinuteJson,
   isCertifiedReview,
   isFreshWorkspace,
   personName,
   pickNext,
+  renderWorkspace,
   speakFirstMinute,
   taskCommand,
 } = require('../lib/first-minute');
@@ -58,6 +60,10 @@ function reviewSoftTitle(title, maxWords = 5) {
   if (!words.length) return '';
   const text = words.slice(0, maxWords).join(' ').replace(/[.,;:!?]+$/g, '');
   return `"${text.toLowerCase()}"`;
+}
+
+function isHumanDeskNext(command) {
+  return /^atris task (?:claim|ready|accept)\b/.test(String(command || ''));
 }
 
 function loadReviewTasks(root = process.cwd()) {
@@ -120,6 +126,23 @@ function renderReviewMinute({
   }
   if (checking.length > 1) {
     return `${greet}${checking.length} finished things are still being checked.`;
+  }
+
+  // Review is the human desk. If first-minute next is claim, ready, or
+  // accept, say that same next. "nothing is waiting" is only for an empty desk.
+  if (tasks === undefined) {
+    const screen = buildFirstMinute({ root, person: who });
+    if (isHumanDeskNext(screen.nextCommand)) return screen.text;
+  } else {
+    const room = pickNext({ tasks: all, person: who });
+    if (isHumanDeskNext(room.command)) {
+      return renderWorkspace({
+        person: who,
+        folder: folderName(root),
+        task: room.task || null,
+        nextCommand: room.command,
+      });
+    }
   }
   return 'nothing is waiting on you.';
 }
