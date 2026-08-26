@@ -15,7 +15,7 @@
 
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
-const { requireAccountBound, refuseAccountGlobal } = require('../lib/account-bound');
+const { looksLikeBusinessSlug, requireAccountBound, refuseAccountGlobal } = require('../lib/account-bound');
 const { argsWantHelp, wantsJson } = require('../lib/noninteractive');
 
 function sleep(ms) {
@@ -181,7 +181,7 @@ async function fleetReport() {
   const wake = gate.args.includes('--wake');
   const dryRun = gate.args.includes('--dry-run');
   const board = gate.args.includes('--leaderboard');
-  const slug = gate.args.find((a) => !a.startsWith('--'));
+  const slug = gate.args.find((a) => looksLikeBusinessSlug(a));
 
   if (!allAlive && !slug && !board) {
     console.log(usage);

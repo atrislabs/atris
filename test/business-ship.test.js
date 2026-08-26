@@ -171,6 +171,33 @@ test('business help lists the ship subcommand', async () => {
   }
 });
 
+test('business ship without --yes does not post', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-business-ship-noyes-'));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-business-ship-noyes-cwd-'));
+  const requests = [];
+  const server = await startShipApi(requests);
+  writeCreds(home);
+  try {
+    const res = await runCli(['business', 'ship', 'A neighborhood coffee cart', '--account'], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api`,
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+    assert.equal(res.status, 2, res.stderr || res.stdout);
+    assert.match(res.stderr, /Pass --yes to create a live business/);
+    assert.doesNotMatch(res.stdout + res.stderr, /Shipping business/);
+    assert.equal(requests.length, 0);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('business ship posts the contract and prints the live summary', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-business-ship-home-'));
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-business-ship-cwd-'));

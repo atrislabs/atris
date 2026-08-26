@@ -2,7 +2,7 @@
  * atris terminal <business> <command...> [--timeout N]
  *
  * Run a shell command directly on a business EC2 workspace via the warm runner.
- * This is the load-bearing primitive for fast bulk ops — one bash call beats
+ * This is the load-bearing primitive for fast bulk ops: one bash call beats
  * hundreds of rate-limited individual file API calls.
  *
  * SAFETY:
@@ -27,7 +27,7 @@ const path = require('path');
 const { loadCredentials, abortOnAuthFailure } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
-const { requireAccountBound, refuseAccountGlobal } = require('../lib/account-bound');
+const { looksLikeBusinessSlug, requireAccountBound, refuseAccountGlobal } = require('../lib/account-bound');
 const { argsWantHelp, wantsJson } = require('../lib/noninteractive');
 
 function sleep(ms) {
@@ -151,8 +151,8 @@ async function terminalAtris() {
     try { return JSON.parse(fs.readFileSync(bizFile, 'utf8')).slug; } catch { return null; }
   })();
 
-  // If first arg is a single word with no shell metacharacters, it might be a slug
-  const firstLooksLikeSlug = args[0] && /^[a-z0-9-]+$/i.test(args[0]) && !args[0].includes(' ');
+  // Flags like --json match a hyphenated word regex. Require a real slug first.
+  const firstLooksLikeSlug = looksLikeBusinessSlug(args[0]);
 
   if (firstLooksLikeSlug && args.length > 1) {
     slug = args[0];
@@ -161,7 +161,7 @@ async function terminalAtris() {
     slug = cwdSlug;
     command = args.join(' ');
   } else if (firstLooksLikeSlug && args.length === 1) {
-    // First (and only) arg is a slug-shaped word — could be the slug with no command
+    // First and only arg is a slug-shaped word with no command.
     console.error('Missing command. Usage: atris terminal <business> <command>');
     process.exit(1);
   } else {
