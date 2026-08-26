@@ -985,7 +985,7 @@ function hasLocalMissionState(root = process.cwd()) {
 
 const LIVE_MISSION_TICK_MS = 24 * 60 * 60 * 1000;
 
-function isLiveInFlightMission(mission, now = Date.now()) {
+function isLiveInFlightMission(mission, now = Date.now(), root = process.cwd()) {
   if (!mission || !mission.id || mission.cloud === true) return false;
   const status = String(mission.status || '');
   if (TERMINAL_STATUSES.has(status) || status === 'paused' || status === 'blocked') return false;
@@ -993,11 +993,14 @@ function isLiveInFlightMission(mission, now = Date.now()) {
   const lastTickAt = Date.parse(mission.last_tick_at || '');
   if (!Number.isFinite(lastTickAt)) return false;
   const age = now - lastTickAt;
-  return age >= 0 && age <= LIVE_MISSION_TICK_MS;
+  if (!(age >= 0 && age <= LIVE_MISSION_TICK_MS)) return false;
+  // ready/planning with a recent receipt is still parked unless a driver is
+  // alive. A stalled ready row is the archive, not the live card.
+  return missionDriverHealth(mission, root).alive === true;
 }
 
 function pickLiveLocalMission(root = process.cwd()) {
-  return listMissions(root).find((mission) => isLiveInFlightMission(mission)) || null;
+  return listMissions(root).find((mission) => isLiveInFlightMission(mission, Date.now(), root)) || null;
 }
 
 function wantsBareMissionArchive(args = []) {
@@ -11400,8 +11403,9 @@ function missionCommand(args) {
     const root = resolveWorkspaceRoot();
     const asJson = args.includes('--json');
     // Empty folder talks like bare atris. A live in-flight mission shows
-    // that one card. Completed, stopped, or old ready rows stay in the
-    // archive. After init with no live mission, speak the desk next.
+    // that one card. Completed, stopped, stalled, or ready-with-no-driver
+    // rows stay in the archive. After init with no live mission, speak the
+    // desk next.
     const live = pickLiveLocalMission(root);
     if (live) {
       return statusMission(asJson ? [live.id, '--json'] : [live.id]);

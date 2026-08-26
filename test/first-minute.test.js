@@ -1272,6 +1272,62 @@ test('bare mission in a live room speaks the desk next, not the archive', () => 
   }
 });
 
+test('bare mission yields the desk next when a ready mission is stalled', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    writeReadyWorkspace(dir, [{
+      id: 'task-map',
+      display_id: 'CLI-193',
+      title: 'write a feature map for the live room',
+      status: 'review',
+      review: { agent_certified: true, agent_review_pass_count: 2 },
+      created_at: 1,
+      updated_at: 2,
+    }]);
+    const lastTick = new Date(Date.now() - (13 * 60 * 60 * 1000)).toISOString();
+    fs.writeFileSync(
+      path.join(dir, '.atris', 'state', 'missions.jsonl'),
+      `${JSON.stringify({
+        schema: 'atris.mission.v1',
+        id: 'mission-80',
+        n: 80,
+        objective: 'Keep the overnight loop warm',
+        owner: 'executor',
+        status: 'ready',
+        created_at: lastTick,
+        updated_at: lastTick,
+        last_tick_at: lastTick,
+      })}\n`,
+    );
+
+    const minute = runCli([], { cwd: dir, env });
+    const mission = runCli(['mission'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(mission.status, 0, mission.stderr || mission.stdout);
+    assert.equal(mission.stdout.trim(), minute.stdout.trim());
+    assert.match(mission.stdout, /write a feature map for/i);
+    assert.match(mission.stdout, /waiting for your ok/);
+    assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
+    assert.match(nextLine(mission.stdout), /^atris task accept CLI-193$/);
+    assert.equal((mission.stdout.match(/^Mission:/mg) || []).length, 0, mission.stdout);
+    assert.doesNotMatch(mission.stdout, /Keep the overnight loop warm|mission-80|no live driver|atris mission run 80/);
+
+    const listed = runCli(['mission', 'list'], { cwd: dir, env });
+    assert.equal(listed.status, 0, listed.stderr || listed.stdout);
+    assert.match(listed.stdout, /mission-80|Keep the overnight loop warm/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris wish after init --minimal stays in the room', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
