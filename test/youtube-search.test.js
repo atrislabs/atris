@@ -8,7 +8,7 @@ const {
   parseSearchStdout,
   formatSearchResults,
   youtubeCommand,
-  APPLY_INCOMPLETE_MESSAGE,
+  APPLY_NEXT_MESSAGE,
 } = require('../commands/youtube');
 
 const CACHE_HOME = '/tmp/atris-yt-search-cache-home';
@@ -663,7 +663,7 @@ test('youtube search --paid empty results prints credits and exits 2', async () 
   assert.match(output.join('\n'), /no videos found/);
   assert.match(output.join('\n'), /Credits: 0 used, 1000 remaining/);
   assert.match(output.join('\n'), /credits refunded/);
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
 });
 
 test('empty paid youtube search surfaces a server-side refund and does not invent a refund call', async () => {
@@ -692,7 +692,7 @@ test('empty paid youtube search surfaces a server-side refund and does not inven
   assert.equal(status, 2);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].pathname, '/youtube/search');
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   const text = output.join('\n');
   assert.match(text, /no videos found/);
   assert.match(text, /Credits: 0 used, 1000 remaining/);
@@ -725,7 +725,7 @@ test('502 paid youtube search with refunded credits surfaces them and does not i
   assert.equal(status, 1);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].pathname, '/youtube/search');
-  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   const text = output.join('\n');
   assert.match(text, /502/);
   assert.match(text, /credits refunded/);
