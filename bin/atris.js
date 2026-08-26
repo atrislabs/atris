@@ -2454,7 +2454,20 @@ if (command === 'init') {
   process.exit(code);
 } else if (command === 'autopilot') {
   const args = process.argv.slice(3);
-  applyRunnerFlags(args);
+  const { isUnboundScratchFolder, refuseUnboundScratch } = require('../lib/scratch-root');
+  const { resolveWorkspaceRoot } = require('../lib/mission-root');
+  const autopilotRoot = resolveWorkspaceRoot(process.cwd());
+  const autopilotHelp = argsWantHelp(args) || args[0] === 'help';
+  const autopilotControl = args[0] === 'stop' || args[0] === 'status';
+  const autopilotJsonPlan = args.includes('--json') && !args.includes('--yes') && !args.includes('-y');
+  // applyRunnerFlags seeds .atris/state/engines.json. Help, stop/status, JSON
+  // plan, and an unbound scratch start must not mint a room. --yes is not an unlock.
+  if (!autopilotHelp && !autopilotControl && !autopilotJsonPlan && isUnboundScratchFolder(autopilotRoot)) {
+    process.exit(refuseUnboundScratch());
+  }
+  if (!autopilotHelp && !isUnboundScratchFolder(autopilotRoot)) {
+    applyRunnerFlags(args);
+  }
 
   if (args.includes('--legacy')) {
     const legacyArgs = args.filter(a => a !== '--legacy');
