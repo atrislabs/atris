@@ -58,20 +58,30 @@ test('27/28: unbound folder refuses inbox/gmail/slack/errors/truth without dumpi
     for (const args of [
       ['inbox'],
       ['gmail', 'inbox'],
+      ['slack'],
       ['slack', 'channels'],
+      ['slack', 'dms'],
       ['errors', '--json'],
       ['truth'],
     ]) {
       const result = runCli(args, {
         cwd: dir,
-        env: { HOME: home, ATRIS_HOME: home },
+        env: { HOME: home, ATRIS_HOME: home, ATRIS_NONINTERACTIVE: '1' },
       });
       assert.equal(result.status, 2, `${args.join(' ')} status=${result.status}`);
       const out = `${result.stderr}${result.stdout}`;
       assert.match(out, /account-global; pass --account to continue/);
-      assert.doesNotMatch(out, /web-guardian|dogfood@example|Conversations|Channels|payroll|502/);
+      assert.doesNotMatch(out, /web-guardian|dogfood@example|Conversations|Channels|payroll|502|Slack commands|Fetching Slack/);
       assert.equal(out.includes(ACCOUNT_GLOBAL_MESSAGE), true);
     }
+
+    const slackHelp = runCli(['slack', '--help'], {
+      cwd: dir,
+      env: { HOME: home, ATRIS_HOME: home, ATRIS_NONINTERACTIVE: '1' },
+    });
+    assert.equal(slackHelp.status, 0, slackHelp.stderr + slackHelp.stdout);
+    assert.match(slackHelp.stdout, /Slack commands/);
+    assert.doesNotMatch(`${slackHelp.stderr}${slackHelp.stdout}`, /account-global|Fetching Slack/);
   } finally {
     cleanupTempDir(dir);
   }
