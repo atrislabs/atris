@@ -506,7 +506,7 @@ function helpCatalog() {
     { name: 'review', summary: 'validate work and capture learnings', json: false, interactive_risk: 'low' },
     { name: 'recap', summary: 'spoken recap of what your team did', json: true, interactive_risk: 'low' },
     { name: 'mission', summary: 'durable goal + owner + verifier + tick', json: true, interactive_risk: 'medium' },
-    { name: 'log', summary: 'append an idea to today inbox (or --repl)', json: false, interactive_risk: 'medium' },
+    { name: 'log', summary: 'append an idea to today inbox (or --repl)', json: true, interactive_risk: 'low' },
     { name: 'wish', summary: 'headless inbox / mission intake', json: true, interactive_risk: 'low' },
     { name: 'learn', summary: 'structured project learnings', json: false, interactive_risk: 'low' },
     { name: 'activate', summary: 'load atris context for this session', json: false, interactive_risk: 'low' },
@@ -2035,7 +2035,6 @@ if (command === 'init') {
 } else if (command === 'log') {
   const logArgs = process.argv.slice(3);
   const subcommand = logArgs[0];
-  const positional = logArgs.filter((arg) => !String(arg).startsWith('-'));
   if (subcommand === 'sync') {
     require('../commands/log-sync').logSyncAtris()
       .then(() => process.exit(0))
@@ -2044,24 +2043,16 @@ if (command === 'init') {
         process.exit(1);
       });
   } else if (subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
-    console.log('Usage: atris log ["note"] | --repl | sync | <business-slug> | help');
+    console.log('Usage: atris log ["note"] [--json] | --repl | sync | help');
     console.log('');
     console.log('  atris log "an idea"      Append a note to today\'s ## Inbox');
+    console.log('  atris log text           One word still lands in Inbox. No live business required');
+    console.log('  atris log "an idea" --json');
     console.log('  atris log --repl         Open today\'s journal REPL');
     console.log('  atris log                Open the REPL (needs a terminal)');
     console.log('  atris log sync           Sync the local journal to cloud');
-    console.log('  atris log <slug>         Show business log history (single slug token)');
     console.log('  atris wish "..."         Headless inbox write; add --json --no-mission for agents');
     process.exit(0);
-  } else if (
-    positional.length === 1
-    && !logArgs.includes('--repl')
-    && /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(positional[0])
-  ) {
-    // Business log: atris log <business-slug> (single slug token only)
-    require('../commands/context-sync').businessLog(positional[0])
-      .then(() => process.exit(0))
-      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else {
     logCmd();
   }
