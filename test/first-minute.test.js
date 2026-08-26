@@ -553,6 +553,35 @@ test('atris do in an empty folder talks like first-minute', () => {
   }
 });
 
+test('atris wish in an empty folder talks like first-minute', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const wish = runCli(['wish'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(wish.status, 0, wish.stderr || wish.stdout);
+    assert.equal(wish.stdout.trim(), minute.stdout.trim());
+    assert.match(wish.stdout, /this folder is a clean start/);
+    assert.match(wish.stdout, /^next: atris init --minimal$/m);
+    assert.equal(spokenLineCount(wish.stdout), spokenLineCount(minute.stdout));
+    assert.doesNotMatch(wish.stdout, /Usage: atris wish|wish list|wish grant|wish stats|wish board|wish rewards/);
+    assert.doesNotMatch(wish.stdout, /Run "atris init"/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    const help = runCli(['wish', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris wish/);
+    assert.doesNotMatch(help.stdout, /clean start/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris test after init --minimal talks like first-minute, not bootstrap', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
@@ -607,6 +636,47 @@ test('atris test after init --minimal talks like first-minute, not bootstrap', (
     const payload = JSON.parse(json.stdout);
     assert.equal(payload.next_action, `atris task ready ${claim[1]}`);
     assert.notEqual(payload.next_action, 'atris init --yes');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris wish after init --minimal stays in the room', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+
+    const minute = runCli([], { cwd: dir, env });
+    const wish = runCli(['wish'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(wish.status, 0, wish.stderr || wish.stdout);
+    assert.equal(wish.stdout.trim(), minute.stdout.trim());
+    assert.match(wish.stdout, /generate map\.md/i);
+    assert.match(wish.stdout, /ready to claim|already yours/);
+    assert.equal(nextLine(wish.stdout), nextLine(minute.stdout));
+    assert.match(nextLine(wish.stdout), /^atris task (claim|ready) /);
+    assert.equal(wish.stdout.match(/^next:/mg).length, 1);
+    assert.doesNotMatch(wish.stdout, /Usage: atris wish|wish list|wish grant|wish stats/);
+    assert.doesNotMatch(wish.stdout, /clean start|atris init --minimal|Run "atris init"/);
+    assert.doesNotMatch(wish.stdout, /BOOTSTRAP REQUIRED|For an agent|generate a complete `atris\/MAP\.md`/);
+
+    const filed = runCli(['wish', 'make the boot screen friendlier', '--json', '--no-mission'], {
+      cwd: dir,
+      env,
+    });
+    assert.equal(filed.status, 0, filed.stderr || filed.stdout);
+    const payload = JSON.parse(filed.stdout);
+    assert.equal(payload.status, 'captured');
+    assert.ok(payload.wish_id, filed.stdout);
   } finally {
     cleanupTempDir(dir);
   }
