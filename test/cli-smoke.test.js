@@ -953,15 +953,17 @@ test('plan suggests brainstorm when uncertainty detected', () => {
   }
 });
 
-test('do prints concise executor prompt by default', () => {
+test('do prints first-minute only by default', () => {
   const dir = makeTempDir();
   try {
     runCli(['init'], { cwd: dir, input: '\n' });
 
     const res = runCli(['do'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /COPY\/PASTE PROMPT/);
-    assert.match(res.stdout, /You are the Executor/);
+    assert.match(res.stdout, /^PROMPT ONLY/m);
+    assert.match(res.stdout, /^next: /m);
+    assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT/);
+    assert.doesNotMatch(res.stdout, /You are the Executor/);
     assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
     assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
     assert.doesNotMatch(res.stdout, /EXECUTOR SPEC — How to Build/);
