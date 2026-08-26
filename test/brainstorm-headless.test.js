@@ -63,6 +63,32 @@ function initWorkspace(dir, home) {
   assert.equal(init.status, 0, init.stderr || init.stdout);
 }
 
+test('brainstorm in an empty folder talks like first-minute and does not mint', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-brainstorm-home-');
+  try {
+    const env = { HOME: home, USER: 'keshav' };
+    const minute = runCli([], { cwd: dir, env });
+    const res = runCli(['brainstorm', 'count words'], {
+      cwd: dir,
+      env,
+      input: '',
+    });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.equal(res.stdout.trim(), minute.stdout.trim());
+    assert.match(res.stdout, /this folder is a clean start/);
+    assert.match(res.stdout, /^next: atris init --minimal$/m);
+    assert.doesNotMatch(res.stdout + res.stderr, WIZARD_RE);
+    assert.doesNotMatch(res.stdout + res.stderr, /captured I|journal:/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
 test('brainstorm with an idea captures inbox and exits without a wizard', () => {
   const dir = makeTempDir();
   const home = makeTempDir('atris-brainstorm-home-');

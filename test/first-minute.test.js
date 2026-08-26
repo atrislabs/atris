@@ -858,6 +858,56 @@ test('atris log in an empty folder talks like first-minute', () => {
   }
 });
 
+test('atris brainstorm in an empty folder talks like first-minute', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const leftover = runCli(['brainstorm', 'count words'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(leftover.status, 0, leftover.stderr || leftover.stdout);
+    assert.equal(leftover.stdout.trim(), minute.stdout.trim());
+    assert.match(leftover.stdout, /this folder is a clean start/);
+    assert.match(leftover.stdout, /^next: atris init --minimal$/m);
+    assert.equal(spokenLineCount(leftover.stdout), spokenLineCount(minute.stdout));
+    assert.doesNotMatch(leftover.stdout + leftover.stderr, /folder not found|Run "atris init"|captured I|journal:|Describe the desired outcome/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const jsonMinute = runCli(['--json'], { cwd: dir, env });
+    const jsonIdea = runCli(['brainstorm', 'count words', '--json'], { cwd: dir, env });
+    assert.equal(jsonIdea.status, jsonMinute.status);
+    assert.deepEqual(JSON.parse(jsonIdea.stdout), JSON.parse(jsonMinute.stdout));
+    assert.doesNotMatch(jsonIdea.stdout, /folder not found|captured I|inbox_id/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const help = runCli(['brainstorm', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris brainstorm/);
+    assert.doesNotMatch(help.stdout, /clean start|folder not found|captured I/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+    const captured = runCli(['brainstorm', 'count words'], { cwd: dir, env });
+    assert.equal(captured.status, 0, captured.stderr || captured.stdout);
+    assert.match(captured.stdout, /captured I\d+: count words/);
+    assert.doesNotMatch(captured.stdout + captured.stderr, /folder not found|Describe the desired outcome/);
+    const jsonCapture = runCli(['brainstorm', 'later', '--json'], { cwd: dir, env });
+    assert.equal(jsonCapture.status, 0, jsonCapture.stderr || jsonCapture.stdout);
+    const payload = JSON.parse(jsonCapture.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.action, 'captured');
+    assert.equal(payload.text, 'later');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris test after init --minimal talks like first-minute, not bootstrap', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');

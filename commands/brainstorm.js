@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { addInboxIdea } = require('../lib/file-ops');
+const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
 const { wantsJson } = require('../lib/noninteractive');
 const { compactErrorPayload, compactSuccessPayload, printCliJson } = require('../lib/cli-json');
 
@@ -74,9 +75,9 @@ async function brainstormAtris() {
     return;
   }
 
-  const targetDir = path.join(process.cwd(), 'atris');
-  if (!fs.existsSync(targetDir)) {
-    throw new Error('atris/ folder not found. Run "atris init" first.');
+  const root = process.cwd();
+  if (isFreshWorkspace(root)) {
+    process.exit(speakFirstMinute({ root, fresh: true, asJson: wantsJson(args) }));
   }
 
   ensureLogDirectory();
