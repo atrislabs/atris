@@ -1,5 +1,6 @@
 const { apiRequestJson } = require('../utils/api');
 const { ensureBilledCommandAuth } = require('./auth');
+const applyGate = require('../lib/apply-gate');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -576,73 +577,19 @@ const APPLY_INCOMPLETE_MESSAGE =
   'notes incomplete: write one apply (change + receipt) before process.';
 
 function applySidecarRel(id) {
-  return `atris/wiki/briefs/youtube-${id}.apply.md`;
-}
-
-function parseApplyFields(text) {
-  const change = String(text || '').match(/^change:\s*(.+)$/im);
-  const receipt = String(text || '').match(/^receipt:\s*(.+)$/im);
-  return {
-    change: change ? change[1].trim() : '',
-    receipt: receipt ? receipt[1].trim() : '',
-  };
-}
-
-function isFilledApply(fields) {
-  const empty = (value) => !value || /^fill this$/i.test(value);
-  return !empty(fields.change) && !empty(fields.receipt);
-}
-
-function readApplyReceipt({ cwd, url } = {}) {
-  const id = videoIdFromUrl(url);
-  if (!id || !cwd) return null;
-  const rel = applySidecarRel(id);
-  const abs = path.join(cwd, rel);
-  if (!fs.existsSync(abs)) return null;
-  return { rel, text: fs.readFileSync(abs, 'utf8') };
-}
-
-function writeApplyStub({ cwd, url, now } = {}) {
-  try {
-    const id = videoIdFromUrl(url);
-    if (!id || !cwd) return null;
-    const wikiDir = path.join(cwd, 'atris', 'wiki');
-    if (!fs.existsSync(wikiDir)) return null;
-
-    const rel = applySidecarRel(id);
-    const abs = path.join(cwd, rel);
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    if (!fs.existsSync(abs)) {
-      fs.writeFileSync(abs, [
-        `source: ${url}`,
-        'change: fill this',
-        'receipt: fill this',
-      ].join('\n') + '\n');
-    }
-
-    const date = dateStamp(now);
-    const journalPath = path.join(cwd, 'atris', 'logs', date.slice(0, 4), `${date}.md`);
-    fs.mkdirSync(path.dirname(journalPath), { recursive: true });
-    let existing = '';
-    if (fs.existsSync(journalPath)) existing = fs.readFileSync(journalPath, 'utf8');
-    const line = `- [claimable] apply: fill this -> ${rel}`;
-    if (!existing.includes(line)) {
-      const prefix = existing && !existing.endsWith('\n') ? '\n' : '';
-      fs.writeFileSync(journalPath, `${existing}${prefix}${line}\n`);
-    }
-    return rel;
-  } catch {
-    return null;
-  }
+  return applyGate.applySidecarRel('youtube', id);
 }
 
 function ensureNotesApply({ cwd, url, now, output } = {}) {
-  const print = typeof output === 'function' ? output : (line = '') => console.error(line);
-  const existing = readApplyReceipt({ cwd, url });
-  if (existing && isFilledApply(parseApplyFields(existing.text))) return 0;
-  writeApplyStub({ cwd, url, now });
-  print(APPLY_INCOMPLETE_MESSAGE);
-  return 2;
+  const id = videoIdFromUrl(url);
+  return applyGate.ensureApply({
+    cwd,
+    source: url,
+    rel: id ? applySidecarRel(id) : null,
+    now,
+    output,
+    incompleteMessage: APPLY_INCOMPLETE_MESSAGE,
+  });
 }
 
 const DIGEST_ENGINE_TIMEOUT_MS = 240000;

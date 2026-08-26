@@ -2,13 +2,49 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const {
   parseXSearchArgs,
   buildSearchPayload,
   buildPersonPayload,
   formatXSearchResult,
+  xSearchHasResults,
+  xSearchApplyRel,
+  APPLY_INCOMPLETE_MESSAGE,
   xSearchCommand,
 } = require('../commands/x-search');
+
+function applyWorkspace(source, filled = false) {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-apply-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki', 'briefs'), { recursive: true });
+  if (filled && source) {
+    const rel = xSearchApplyRel(source);
+    fs.writeFileSync(path.join(cwd, rel), [
+      `source: ${source}`,
+      'change: commands/x-search.js',
+      'receipt: node --test test/x-search.test.js',
+      '',
+    ].join('\n'));
+  }
+  return cwd;
+}
+
+function successSearchData(content = '1. @levelsio: MCP agents are shipping.', citations = [
+  'https://x.com/levelsio/status/1',
+]) {
+  return {
+    ok: true,
+    status: 200,
+    data: {
+      status: 'success',
+      credits_used: 5,
+      credits_remaining: 995,
+      data: { content, citations },
+    },
+  };
+}
 
 test('parseXSearchArgs accepts query with limit, days, and json', () => {
   const options = parseXSearchArgs([
@@ -82,8 +118,11 @@ test('xSearchCommand --help prints usage without calling the API', async () => {
 test('xSearchCommand prints content, citations, and credits', async () => {
   const calls = [];
   const output = [];
+  const cwd = applyWorkspace('MCP agents', true);
 
   const status = await xSearchCommand(['MCP agents', '--limit', '5', '--days', '2'], {
+    cwd,
+    applyNow: '2026-08-26',
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
     apiRequestJson: async (pathname, options) => {
@@ -129,7 +168,10 @@ test('xSearchCommand prints content, citations, and credits', async () => {
 
 test('xSearchCommand --json prints raw payload', async () => {
   const output = [];
+  const cwd = applyWorkspace('hello', true);
   const status = await xSearchCommand(['hello', '--json'], {
+    cwd,
+    applyNow: '2026-08-26',
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
     apiRequestJson: async () => ({
@@ -183,7 +225,10 @@ test('xSearchCommand mints only the x-search scope after an expired user wall an
   const output = [];
   const secret = 'minted-x-search-secret';
 
+  const cwd = applyWorkspace('MCP agents', true);
   const status = await xSearchCommand(['MCP agents'], {
+    cwd,
+    applyNow: '2026-08-26',
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ error: 'token_invalid', detail: 'Token expired' }),
     loadCredentials: () => ({
@@ -227,7 +272,10 @@ test('xSearchCommand mints only the x-search scope after an expired user wall an
 test('xSearchCommand remints after a billed 401 and retries once', async () => {
   const calls = [];
   const secret = 'minted-after-401-secret';
+  const cwd = applyWorkspace('agents', true);
   const status = await xSearchCommand(['agents'], {
+    cwd,
+    applyNow: '2026-08-26',
     output: () => {},
     ensureValidCredentials: async () => ({ credentials: { token: 'user-jwt' } }),
     loadCredentials: () => ({ token: 'user-jwt', refresh_token: 'refresh-jwt' }),
@@ -273,6 +321,7 @@ test('xSearchCommand with no stored JWT fails in one sentence and stays off the 
 
 test('xSearchCommand person posts to research-person', async () => {
   const calls = [];
+  const cwd = applyWorkspace('Leah Bonvissuto', true);
   const status = await xSearchCommand([
     'person',
     '--name',
@@ -280,6 +329,8 @@ test('xSearchCommand person posts to research-person', async () => {
     '--handle',
     'leahbon',
   ], {
+    cwd,
+    applyNow: '2026-08-26',
     output: () => {},
     ensureValidCredentials: async () => ({ credentials: { token: 'token-abc' } }),
     apiRequestJson: async (pathname, options) => {
@@ -312,4 +363,92 @@ test('xSearchCommand missing query exits 2 with usage hint', async () => {
   });
   assert.equal(status, 2);
   assert.match(output.join('\n'), /Missing query/);
+});
+
+test('xSearchHasResults is false for empty payloads', () => {
+  assert.equal(xSearchHasResults({ data: { content: '', citations: [] } }), false);
+  assert.equal(xSearchHasResults({ data: { content: '   ', citations: [] } }), false);
+  assert.equal(xSearchHasResults({ status: 'success' }), false);
+  assert.equal(xSearchHasResults(successSearchData().data), true);
+});
+
+test('x-search without apply writes a claimable stub and stays incomplete', async () => {
+  const cwd = applyWorkspace('MCP agents');
+  const output = [];
+  const status = await xSearchCommand(['MCP agents'], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => successSearchData(),
+  });
+
+  assert.equal(status, 2);
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), true);
+  const rel = xSearchApplyRel('MCP agents');
+  const stub = fs.readFileSync(path.join(cwd, rel), 'utf8');
+  assert.match(stub, /^source: MCP agents$/m);
+  assert.match(stub, /^change: fill this$/m);
+  assert.match(stub, /^receipt: fill this$/m);
+  const journal = fs.readFileSync(path.join(cwd, 'atris', 'logs', '2026', '2026-08-26.md'), 'utf8');
+  assert.match(journal, /\[claimable\] apply: fill this -> atris\/wiki\/briefs\/x-search-mcp-agents\.apply\.md/);
+});
+
+test('x-search with an apply receipt is complete', async () => {
+  const cwd = applyWorkspace('MCP agents', true);
+  const rel = xSearchApplyRel('MCP agents');
+  const filled = fs.readFileSync(path.join(cwd, rel), 'utf8');
+  const output = [];
+  const status = await xSearchCommand(['MCP agents'], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => successSearchData(),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(fs.readFileSync(path.join(cwd, rel), 'utf8'), filled);
+});
+
+test('empty x-search does not owe an apply', async () => {
+  const cwd = applyWorkspace('quiet topic');
+  const output = [];
+  const status = await xSearchCommand(['quiet topic'], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: { status: 'success', credits_used: 5, data: { content: '', citations: [] } },
+    }),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('quiet topic'))), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+});
+
+test('failed x-search does not owe an apply', async () => {
+  const cwd = applyWorkspace('agents');
+  const output = [];
+  const status = await xSearchCommand(['agents'], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: false,
+      status: 502,
+      error: 'Search failed',
+    }),
+  });
+
+  assert.equal(status, 1);
+  assert.equal(output.includes(APPLY_INCOMPLETE_MESSAGE), false);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('agents'))), false);
 });
