@@ -27,7 +27,7 @@ const path = require('path');
 const { loadCredentials, abortOnAuthFailure } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
-const { requireAccountBound, refuseAccountGlobal } = require('../lib/account-bound');
+const { looksLikeBusinessSlug, requireAccountBound, refuseAccountGlobal } = require('../lib/account-bound');
 const { argsWantHelp, wantsJson } = require('../lib/noninteractive');
 
 function sleep(ms) {
@@ -151,8 +151,8 @@ async function terminalAtris() {
     try { return JSON.parse(fs.readFileSync(bizFile, 'utf8')).slug; } catch { return null; }
   })();
 
-  // If first arg is a single word with no shell metacharacters, it might be a slug
-  const firstLooksLikeSlug = args[0] && /^[a-z0-9-]+$/i.test(args[0]) && !args[0].includes(' ');
+  // Flags like --json match a hyphenated word regex. Require a real slug first.
+  const firstLooksLikeSlug = looksLikeBusinessSlug(args[0]);
 
   if (firstLooksLikeSlug && args.length > 1) {
     slug = args[0];
