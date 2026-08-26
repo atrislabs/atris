@@ -1,8 +1,6 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const { buildFirstMinute } = require('../lib/first-minute');
+const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
 const {
   analyzeWishParts,
   auditWish,
@@ -45,13 +43,21 @@ const { enqueueCloudMission, VALID_CLOUD_LANES } = require('../lib/cloud-mission
 const { printWishStats } = require('../lib/wish-stats');
 const { parseVerifyCommand } = require('../lib/auto-accept-certified');
 
+const WISH_DESK_VERBS = new Set([
+  'show', 'close', 'status', 'get', 'list', 'ls', 'board',
+  'rewards', 'stats', 'improve', 'lessons', 'again',
+  'answer', 'grant', 'review', 'say',
+]);
+
 function printWishReceptionist(root = process.cwd()) {
-  const fresh = !fs.existsSync(path.join(root, 'atris'));
-  const screen = buildFirstMinute({ root, fresh });
-  console.log('');
-  console.log(screen.text);
+  const fresh = isFreshWorkspace(root);
+  const code = speakFirstMinute({ root, fresh });
   if (!fresh) printReviewNudges(root);
-  return 0;
+  return code;
+}
+
+function isWishDeskVerb(token) {
+  return WISH_DESK_VERBS.has(String(token || '').trim());
 }
 
 function showHelp() {
@@ -412,8 +418,11 @@ function wishCommand(args = [], deps = {}) {
     showHelp();
     return 0;
   }
-  if (!first) {
-    return printWishReceptionist(process.cwd());
+  const root = process.cwd();
+  // Empty folder talks like bare atris. A leftover sentence is not a
+  // wish desk. After init, a plain sentence still files.
+  if (!first || (isFreshWorkspace(root) && !isWishDeskVerb(first))) {
+    return printWishReceptionist(root);
   }
   if (first === 'show') {
     return printWishShow(process.cwd(), args[1]);

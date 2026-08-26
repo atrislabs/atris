@@ -690,7 +690,12 @@ test('atris wish in an empty folder talks like first-minute', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
   fs.mkdirSync(home, { recursive: true });
-  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    ATRIS_WISH_NO_DRIVER: '1',
+  };
   try {
     const minute = runCli([], { cwd: dir, env });
     const wish = runCli(['wish'], { cwd: dir, env });
@@ -704,10 +709,22 @@ test('atris wish in an empty folder talks like first-minute', () => {
     assert.doesNotMatch(wish.stdout, /Run "atris init"/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 
+    const leftover = runCli(['wish', 'count the words'], { cwd: dir, env });
+    assert.equal(leftover.status, 0, leftover.stderr || leftover.stdout);
+    assert.equal(leftover.stdout.trim(), minute.stdout.trim());
+    assert.match(leftover.stdout, /this folder is a clean start/);
+    assert.match(leftover.stdout, /^next: atris init --minimal$/m);
+    assert.equal(spokenLineCount(leftover.stdout), spokenLineCount(minute.stdout));
+    assert.doesNotMatch(leftover.stdout, /Got it/);
+    assert.doesNotMatch(leftover.stdout, /Usage: atris wish|wish list|wish grant|waiting on you/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'wishes.jsonl')), false);
+
     const help = runCli(['wish', '--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /Usage: atris wish/);
-    assert.doesNotMatch(help.stdout, /clean start/);
+    assert.doesNotMatch(help.stdout, /clean start|Got it/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
   } finally {
@@ -906,6 +923,15 @@ test('atris wish after init --minimal stays in the room', () => {
     assert.doesNotMatch(wish.stdout, /Usage: atris wish|wish list|wish grant|wish stats/);
     assert.doesNotMatch(wish.stdout, /clean start|atris init --minimal|Run "atris init"/);
     assert.doesNotMatch(wish.stdout, /BOOTSTRAP REQUIRED|For an agent|generate a complete `atris\/MAP\.md`/);
+
+    const filed = runCli(['wish', 'count the words'], {
+      cwd: dir,
+      env: { ...env, ATRIS_WISH_NO_DRIVER: '1' },
+    });
+    assert.notEqual(filed.status, null, filed.stderr || filed.stdout);
+    assert.match(filed.stdout, /Got it: "count the words"/);
+    assert.doesNotMatch(filed.stdout, /this folder is a clean start|atris init --minimal/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'wishes.jsonl')), true);
   } finally {
     cleanupTempDir(dir);
   }
