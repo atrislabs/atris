@@ -46,7 +46,7 @@ test('plan, do, and review prompts include the confidence gate', () => {
     assert.match(plan.stdout, /Run the Confidence Gate before writing tasks/);
     assert.match(plan.stdout, /stale sources, missing owner, weak proof/);
 
-    const doing = runCli(['do'], { cwd: dir });
+    const doing = runCli(['do', '--verbose'], { cwd: dir });
     assert.equal(doing.status, 0, doing.stderr);
     assert.match(doing.stdout, /Run the Confidence Gate against the task before editing/);
     assert.match(doing.stdout, /rerun the gate against proof and residual risk/);
