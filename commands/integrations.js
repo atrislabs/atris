@@ -5,6 +5,7 @@
  *   atris gmail inbox [--account <id>]       - List recent emails
  *   atris gmail read <id> [--account <id>]   - Read specific email
  *   atris gmail archive <id> [...] [--account <id>] - Archive messages
+ *   atris gmail connect [name]              - Connect or reconnect a Gmail account
  *   atris gmail accounts                     - List connected Gmail accounts
  *   atris gmail use [<account_id>]           - Set or show sticky Gmail account
  *   atris calendar today    - Show today's events
@@ -31,6 +32,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const CALENDAR_CACHE_PATH = path.join(os.homedir(), '.atris', 'calendar-events-cache.json');
+const GMAIL_CONNECT_POLL_MS = 3000;
+const GMAIL_CONNECT_TIMEOUT_MS = 3 * 60 * 1000;
 
 function gmailAccountStatePath() {
   return process.env.ATRIS_GMAIL_ACCOUNT_FILE
@@ -255,6 +258,73 @@ async function gmailArchive(messageIds, options = {}) {
   console.log(`Archived ${archived} message${archived === 1 ? '' : 's'}. They stay searchable in All Mail.`);
 }
 
+function openGmailAuthUrl(authUrl, deps = {}) {
+  const run = deps.spawnSync || spawnSync;
+  const platform = deps.platform || process.platform;
+  const command = platform === 'darwin' ? 'open' : 'xdg-open';
+  const opened = run(command, [authUrl], { stdio: 'ignore' });
+  return !opened.error && opened.status === 0;
+}
+
+async function gmailConnect(accountName, deps = {}) {
+  const accountId = String(accountName || 'default').trim();
+  if (!/^[a-z0-9-]{1,32}$/.test(accountId)) {
+    console.error('invalid gmail account name. use 1 to 32 lowercase letters, numbers, or hyphens.');
+    process.exit(1);
+  }
+
+  const token = await getAuthToken();
+  const result = await apiRequestJson('/integrations/gmail/start', {
+    method: 'POST',
+    token,
+    body: { account_id: accountId },
+  });
+
+  if (!result.ok) {
+    const detail = String(result.error || 'request failed').toLowerCase();
+    console.error(`could not start gmail connection: ${detail}`);
+    process.exit(1);
+  }
+
+  const authUrl = String(result.data?.auth_url || result.data?.url || '').trim();
+  if (!authUrl) {
+    console.error('could not start gmail connection: the server did not return an auth url.');
+    process.exit(1);
+  }
+
+  const openAuthUrl = deps.openAuthUrl || openGmailAuthUrl;
+  if (!openAuthUrl(authUrl, deps)) {
+    console.log(`open this url in your browser: ${authUrl}`);
+  }
+
+  console.log(`waiting for gmail account ${accountId}...`);
+
+  const pollIntervalMs = deps.pollIntervalMs ?? GMAIL_CONNECT_POLL_MS;
+  const timeoutMs = deps.timeoutMs ?? GMAIL_CONNECT_TIMEOUT_MS;
+  const sleep = deps.sleep || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const maxPolls = Math.max(1, Math.ceil(timeoutMs / pollIntervalMs));
+
+  for (let poll = 0; poll < maxPolls; poll += 1) {
+    await sleep(pollIntervalMs);
+    const accountsResult = await apiRequestJson('/integrations/gmail/accounts', {
+      method: 'GET',
+      token,
+    });
+    const accounts = accountsResult.ok
+      ? (accountsResult.data?.accounts || accountsResult.data || [])
+      : [];
+    const match = Array.isArray(accounts) ? findGmailAccount(accounts, accountId) : null;
+    const email = match ? gmailAccountIdentity(match).email.trim() : '';
+    if (email && email !== 'unknown') {
+      console.log(`connected ${email} as ${accountId}`);
+      return;
+    }
+  }
+
+  console.error(`connection timed out. finish in your browser: ${authUrl}`);
+  process.exit(1);
+}
+
 async function gmailAccounts() {
   const token = await getAuthToken();
   const accounts = await fetchGmailAccounts(token);
@@ -327,6 +397,9 @@ async function gmailCommand(subcommand, ...args) {
       await gmailArchive(parsed.positional, { accountId: parsed.accountId || undefined });
       break;
     }
+    case 'connect':
+      await gmailConnect(args[0]);
+      break;
     case 'accounts':
       await gmailAccounts();
       break;
@@ -334,12 +407,13 @@ async function gmailCommand(subcommand, ...args) {
       await gmailUse(args[0]);
       break;
     default:
-      console.log('Gmail commands:');
-      console.log('  atris gmail inbox [--account <id>]       - List recent emails');
-      console.log('  atris gmail read <id> [--account <id>]   - Read specific email');
-      console.log('  atris gmail archive <id> [...] [--account <id>] - Archive messages (reversible, All Mail keeps them)');
-      console.log('  atris gmail accounts                     - List connected Gmail accounts');
-      console.log('  atris gmail use [<account_id>]           - Set or show sticky Gmail account');
+      console.log('gmail commands:');
+      console.log('  atris gmail inbox [--account <id>]       - list recent emails');
+      console.log('  atris gmail read <id> [--account <id>]   - read specific email');
+      console.log('  atris gmail archive <id> [...] [--account <id>] - archive messages (reversible, all mail keeps them)');
+      console.log('  atris gmail connect [name]               - connect or reconnect a gmail account');
+      console.log('  atris gmail accounts                     - list connected gmail accounts');
+      console.log('  atris gmail use [<account_id>]           - set or show sticky gmail account');
   }
 }
 
@@ -1848,6 +1922,7 @@ async function integrationsStatus(args = []) {
 
 module.exports = {
   gmailCommand,
+  gmailConnect,
   extractGmailMailboxAccount,
   parseGmailArgs,
   gmailAccountStatePath,

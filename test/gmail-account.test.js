@@ -96,6 +96,133 @@ test('parseGmailArgs splits account flag from positional ids', () => {
   });
 });
 
+test('gmail connect rejects invalid names before any network call', async () => {
+  const calls = [];
+  const { integrations, restore } = withMockedIntegrations(async (pathname, options) => {
+    calls.push({ pathname, options });
+    return { ok: true, status: 200, data: {} };
+  });
+  const errors = [];
+  const originalError = console.error;
+  const originalExit = process.exit;
+  console.error = (line) => errors.push(String(line));
+  process.exit = (code) => {
+    throw new Error(`exit:${code}`);
+  };
+  try {
+    await assert.rejects(
+      () => integrations.gmailCommand('connect', 'Bad Name'),
+      /exit:1/,
+    );
+  } finally {
+    console.error = originalError;
+    process.exit = originalExit;
+    restore();
+  }
+
+  assert.deepEqual(calls, []);
+  assert.deepEqual(errors, [
+    'invalid gmail account name. use 1 to 32 lowercase letters, numbers, or hyphens.',
+  ]);
+});
+
+test('gmail connect polls until the named account has an email address', async () => {
+  const calls = [];
+  let accountPolls = 0;
+  const { integrations, restore } = withMockedIntegrations(async (pathname, options) => {
+    calls.push({ pathname, options });
+    if (pathname === '/integrations/gmail/start') {
+      return { ok: true, status: 200, data: { url: 'https://accounts.example.test/connect' } };
+    }
+    accountPolls += 1;
+    return {
+      ok: true,
+      status: 200,
+      data: {
+        accounts: accountPolls === 1
+          ? [{ account_id: 'research', email_address: '' }]
+          : [{ account_id: 'research', email_address: 'Research@Example.com' }],
+      },
+    };
+  });
+  const lines = [];
+  const sleeps = [];
+  const opened = [];
+  const originalLog = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    await integrations.gmailConnect('research', {
+      openAuthUrl: (url) => { opened.push(url); return true; },
+      sleep: async (milliseconds) => { sleeps.push(milliseconds); },
+      pollIntervalMs: 3,
+      timeoutMs: 9,
+    });
+  } finally {
+    console.log = originalLog;
+    restore();
+  }
+
+  assert.deepEqual(opened, ['https://accounts.example.test/connect']);
+  assert.deepEqual(sleeps, [3, 3]);
+  assert.deepEqual(lines, [
+    'waiting for gmail account research...',
+    'connected research@example.com as research',
+  ]);
+  assert.deepEqual(calls[0], {
+    pathname: '/integrations/gmail/start',
+    options: {
+      method: 'POST',
+      token: 'test-token',
+      body: { account_id: 'research' },
+    },
+  });
+  assert.equal(calls.filter((call) => call.pathname === '/integrations/gmail/accounts').length, 2);
+});
+
+test('gmail connect times out with a nonzero exit and browser instructions', async () => {
+  const calls = [];
+  const { integrations, restore } = withMockedIntegrations(async (pathname, options) => {
+    calls.push({ pathname, options });
+    if (pathname === '/integrations/gmail/start') {
+      return { ok: true, status: 200, data: { auth_url: 'https://accounts.example.test/finish' } };
+    }
+    return { ok: true, status: 200, data: { accounts: [] } };
+  });
+  const lines = [];
+  const errors = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  const originalExit = process.exit;
+  console.log = (line) => lines.push(String(line));
+  console.error = (line) => errors.push(String(line));
+  process.exit = (code) => {
+    throw new Error(`exit:${code}`);
+  };
+  try {
+    await assert.rejects(
+      () => integrations.gmailConnect(undefined, {
+        openAuthUrl: () => true,
+        sleep: async () => {},
+        pollIntervalMs: 3,
+        timeoutMs: 6,
+      }),
+      /exit:1/,
+    );
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+    process.exit = originalExit;
+    restore();
+  }
+
+  assert.deepEqual(lines, ['waiting for gmail account default...']);
+  assert.deepEqual(errors, [
+    'connection timed out. finish in your browser: https://accounts.example.test/finish',
+  ]);
+  assert.equal(calls[0].options.body.account_id, 'default');
+  assert.equal(calls.filter((call) => call.pathname === '/integrations/gmail/accounts').length, 2);
+});
+
 test('gmailAccountStatePath honors ATRIS_GMAIL_ACCOUNT_FILE', () => {
   const previous = process.env.ATRIS_GMAIL_ACCOUNT_FILE;
   process.env.ATRIS_GMAIL_ACCOUNT_FILE = '/tmp/custom-gmail-account.json';
