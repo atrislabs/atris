@@ -1846,6 +1846,45 @@ test('atris ask and mission in an empty folder talk like first-minute', () => {
   }
 });
 
+test('atris stop in an empty folder talks first-talk, not cloud-computer', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
+    assert.match(stopped.stdout, /^hey keshav, nothing is running\.$/m);
+    assert.match(stopped.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.equal(nextLine(stopped.stdout), nextLine(minute.stdout));
+    assert.equal(spokenLineCount(stopped.stdout), spokenLineCount(minute.stdout));
+    assert.doesNotMatch(stopped.stdout + stopped.stderr, /cloud-computer|business\.json|init|Pass --mission|Atris left your work unchanged/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const jsonStop = runCli(['stop', '--json'], { cwd: dir, env });
+    const jsonMinute = runCli(['--json'], { cwd: dir, env });
+    assert.equal(jsonStop.status, jsonMinute.status);
+    const payload = JSON.parse(jsonStop.stdout);
+    assert.equal(payload.reason, 'nothing is running');
+    assert.equal(payload.next_action, 'atris "what do you want here?"');
+    assert.doesNotMatch(jsonStop.stdout, /cloud-computer|business\.json|init|Pass --mission/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const help = runCli(['stop', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris stop/);
+    assert.doesNotMatch(help.stdout, /nothing is running|cloud-computer|business\.json|clean start/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris wish in an empty folder talks like first-minute', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');

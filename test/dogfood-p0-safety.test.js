@@ -191,10 +191,43 @@ test('25: improve --dry-run --json does not call the paid endpoint', () => {
   }
 });
 
-test('26: atris stop from unbound folder exits 2 without stopping cloud work', () => {
+test('26: atris stop in an empty folder talks first-talk and does not mint', () => {
   const dir = makeTempDir();
   const home = makeTempDir('atris-dogfood-stop-home-');
   try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    const res = runCli(['stop'], {
+      cwd: dir,
+      env: {
+        HOME: home,
+        USER: 'keshav',
+        ATRIS_OPERATOR: 'keshav',
+        ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+      },
+    });
+    assert.equal(res.status, 0, res.stdout + res.stderr);
+    assert.match(res.stdout, /^hey keshav, nothing is running\.$/m);
+    assert.match(res.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.doesNotMatch(res.stdout + res.stderr, /cloud-computer|business\.json|init|Pass --mission|\bStopped\b|703h|ship the launch/i);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('26b: atris stop after init without a binding still needs --mission', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-stop-room-home-');
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
     fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
       token: 'test-token',
