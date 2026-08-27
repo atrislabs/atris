@@ -6,6 +6,7 @@ const {
   folderName,
   freshMinuteJson,
   isCertifiedReview,
+  listUserVisibleWork,
   isFreshWorkspace,
   personName,
   pickNext,
@@ -506,7 +507,7 @@ async function planAtris(userInput = null) {
   // init --minimal is optional context, not a factory bounce.
   if (!fs.existsSync(targetDir)) {
     if (args.includes('--json')) {
-      console.log(JSON.stringify(freshMinuteJson(), null, 2));
+      console.log(JSON.stringify(freshMinuteJson(folderName(cwd), listUserVisibleWork(cwd)), null, 2));
       process.exit(2);
     }
     const screen = buildFirstMinute({ root: cwd, fresh: true });
@@ -881,7 +882,7 @@ async function doAtris() {
   // init --minimal is optional context, not a factory bounce.
   if (!fs.existsSync(targetDir)) {
     if (args.includes('--json')) {
-      console.log(JSON.stringify(freshMinuteJson(), null, 2));
+      console.log(JSON.stringify(freshMinuteJson(folderName(cwd), listUserVisibleWork(cwd)), null, 2));
       process.exit(2);
     }
     const screen = buildFirstMinute({ root: cwd, fresh: true });

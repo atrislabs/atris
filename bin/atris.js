@@ -61,11 +61,12 @@ const {
 } = require('../lib/context-gatherer');
 const {
   buildFirstMinute,
-  firstTalkCommand,
   folderName,
+  freshMinuteJson,
   isBareAtrisFlag,
   isFirstTalkLine,
   isLeftoverVerbLook,
+  listUserVisibleWork,
   personName,
   renderFirstTalk,
   shouldAutoInitFresh,
@@ -1379,13 +1380,7 @@ async function interactiveEntry(userInput, options = {}) {
     const who = personName();
     if (!request) {
       if (options.asJson) {
-        console.log(JSON.stringify({
-          schema: 'atris.one_lap.v1',
-          ok: false,
-          status: 'stuck',
-          reason: 'this folder is empty',
-          next_action: firstTalkCommand(room),
-        }, null, 2));
+        console.log(JSON.stringify(freshMinuteJson(room, listUserVisibleWork(workspaceDir)), null, 2));
         return 2;
       }
       if (shouldAutoInitFresh(process.argv.slice(2))) {
@@ -1396,13 +1391,7 @@ async function interactiveEntry(userInput, options = {}) {
     }
     if (isLeftoverVerbLook(request)) {
       if (options.asJson) {
-        console.log(JSON.stringify({
-          schema: 'atris.one_lap.v1',
-          ok: false,
-          status: 'stuck',
-          reason: 'this folder is empty',
-          next_action: firstTalkCommand(room),
-        }, null, 2));
+        console.log(JSON.stringify(freshMinuteJson(room, listUserVisibleWork(workspaceDir)), null, 2));
         return 2;
       }
       printFirstMinuteScreen({ root: workspaceDir, fresh: true });
