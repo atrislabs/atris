@@ -14,7 +14,7 @@ const {
 const { apiRequestJson } = require('../utils/api');
 const { decodeJwtClaims, loadCredentials } = require('../utils/auth');
 const { isHelpToken } = require('../lib/noninteractive');
-const { firstTalkCommand, isFreshWorkspace, personName, speakFirstMinute } = require('../lib/first-minute');
+const { isFreshWorkspace, speakFirstMinute, speakNothingRunning } = require('../lib/first-minute');
 
 const PACKAGE_PATH = path.join(__dirname, '..', 'package.json');
 const HUMAN_STATES = Object.freeze({
@@ -737,25 +737,6 @@ async function approveCommand(args, options = {}) {
     return 0;
   }
   return changeCurrentMission('approve', {}, args, options);
-}
-
-function speakNothingRunning({ asJson = false, log = console.log } = {}) {
-  const next = firstTalkCommand();
-  if (asJson) {
-    log(JSON.stringify({
-      schema: 'atris.one_lap.v1',
-      ok: false,
-      status: 'stuck',
-      reason: 'nothing is running',
-      next_action: next,
-    }, null, 2));
-    return 2;
-  }
-  const person = personName();
-  const hello = person ? `hey ${person}, ` : '';
-  log('');
-  log(`${hello}nothing is running.\n\nnext: ${next}`);
-  return 0;
 }
 
 async function stopCommand(args, options = {}) {

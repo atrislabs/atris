@@ -251,6 +251,38 @@ test('26b: atris stop after init without a binding still needs --mission', () =>
   }
 });
 
+test('26c: atris status in an empty folder talks first-talk and does not mint', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-status-home-');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    const res = runCli(['status'], {
+      cwd: dir,
+      env: {
+        HOME: home,
+        USER: 'keshav',
+        ATRIS_OPERATOR: 'keshav',
+        ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+      },
+    });
+    assert.equal(res.status, 0, res.stdout + res.stderr);
+    assert.match(res.stdout, /^hey keshav, nothing is running\.$/m);
+    assert.match(res.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.doesNotMatch(res.stdout + res.stderr, /Run "atris init"|folder not found|init --minimal|claim|cloud-computer|business\.json|Where we are|TASK BOARD/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
 test('29: join --help prints usage and does not look up an invite', () => {
   const dir = makeTempDir();
   const home = makeTempDir('atris-dogfood-join-home-');
