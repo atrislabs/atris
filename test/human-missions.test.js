@@ -447,6 +447,32 @@ test('stop in an empty folder talks first-talk and does not hit the cloud', asyn
   }
 });
 
+test('stop in a folder with a file names the file and does not hit the cloud', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-human-stop-file-'));
+  fs.writeFileSync(path.join(root, 'notes.txt'), 'already writing\n', 'utf8');
+  const output = outputCapture();
+  try {
+    const code = await stopCommand([], {
+      ...output,
+      root,
+      setProcessExitCode: false,
+      loadCredentials: credentials,
+      apiRequestJson: async () => {
+        throw new Error('file-folder stop must not hit the network');
+      },
+    });
+    const spoken = output.stdout.join('\n');
+    assert.equal(code, 0);
+    assert.match(spoken, /notes.txt is already here/);
+    assert.match(spoken, /next: atris do/);
+    assert.doesNotMatch(spoken, /nothing is running|what do you want here|cloud-computer|business\.json|Pass --mission/);
+    assert.equal(fs.existsSync(path.join(root, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(root, '.atris')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('mission answer sends text to the current mission', async () => {
   const calls = [];
   const output = outputCapture();

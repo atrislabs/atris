@@ -283,6 +283,42 @@ test('26c: atris status in an empty folder talks first-talk and does not mint', 
   }
 });
 
+test('26d: atris status and stop in a file folder name the file and do not mint', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-status-file-home-');
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    const env = {
+      HOME: home,
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+      ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    };
+    const status = runCli(['status'], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stdout + status.stderr);
+    assert.equal(stopped.status, 0, stopped.stdout + stopped.stderr);
+    assert.match(status.stdout, /^hey keshav, notes.txt is already here\.$/m);
+    assert.match(status.stdout, /^next: atris do$/m);
+    assert.match(stopped.stdout, /^hey keshav, notes.txt is already here\.$/m);
+    assert.match(stopped.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(status.stdout + stopped.stdout + status.stderr + stopped.stderr, /nothing is running|what do you want here|Run "atris init"|cloud-computer|business\.json/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
 test('29: join --help prints usage and does not look up an invite', () => {
   const dir = makeTempDir();
   const home = makeTempDir('atris-dogfood-join-home-');
