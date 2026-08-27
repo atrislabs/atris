@@ -2374,9 +2374,8 @@ test('atris launchpad in a folder with a file names the file, not init', () => {
 test('atris engine in an empty folder talks first-talk and does not mint engines.json', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
-  const work = path.join(dir, 'work');
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-engine-scratch-'));
   fs.mkdirSync(home, { recursive: true });
-  fs.mkdirSync(work, { recursive: true });
   const env = {
     HOME: home,
     ATRIS_HOME: home,
@@ -2436,6 +2435,7 @@ test('atris engine in an empty folder talks first-talk and does not mint engines
     assert.equal(fs.existsSync(path.join(work, '.atris')), false);
     assert.equal(fs.existsSync(path.join(work, 'atris')), false);
   } finally {
+    cleanupTempDir(work);
     cleanupTempDir(dir);
   }
 });
