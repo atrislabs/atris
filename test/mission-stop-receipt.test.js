@@ -172,7 +172,7 @@ test('mission status surfaces the completion gate for completed missions', () =>
     const completed = runCli(['mission', 'complete', mission.id, '--proof', tick.receipt_path, '--json'], { cwd: dir });
     assert.equal(completed.status, 0, completed.stderr || completed.stdout);
 
-    const status = runCli(['mission', 'status', '--json'], { cwd: dir });
+    const status = runCli(['mission', 'list', '--json'], { cwd: dir });
     assert.equal(status.status, 0, status.stderr || status.stdout);
     const payload = JSON.parse(status.stdout);
     const saved = payload.missions.find((entry) => entry.id === mission.id);
@@ -193,7 +193,7 @@ test('forced completions are visibly marked in mission status', () => {
     const completed = runCli(['mission', 'complete', mission.id, '--proof', 'operator override', '--force', '--json'], { cwd: dir });
     assert.equal(completed.status, 0, completed.stderr || completed.stdout);
 
-    const status = runCli(['mission', 'status', '--json'], { cwd: dir });
+    const status = runCli(['mission', 'list', '--json'], { cwd: dir });
     assert.equal(status.status, 0, status.stderr || status.stdout);
 
     const nowMd = fs.readFileSync(path.join(dir, 'atris', 'status', 'now.md'), 'utf8');

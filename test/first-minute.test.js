@@ -1794,6 +1794,8 @@ test('atris ask and mission in an empty folder talk like first-minute', () => {
     const asked = runCli(['ask'], { cwd: dir, env });
     const askedWant = runCli(['ask', 'make', 'the', 'home', 'page', 'clearer'], { cwd: dir, env });
     const mission = runCli(['mission'], { cwd: dir, env });
+    const missionStatus = runCli(['mission', 'status'], { cwd: dir, env });
+    const missionList = runCli(['mission', 'list'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(asked.status, 0, asked.stderr || asked.stdout);
     assert.equal(askedWant.status, 0, askedWant.stderr || askedWant.stdout);
@@ -1801,6 +1803,8 @@ test('atris ask and mission in an empty folder talk like first-minute', () => {
     assert.equal(asked.stdout.trim(), minute.stdout.trim());
     assert.equal(askedWant.stdout.trim(), minute.stdout.trim());
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
+    assert.equal(missionStatus.stdout.trim(), minute.stdout.trim());
+    assert.equal(missionList.stdout.trim(), minute.stdout.trim());
     assert.match(asked.stdout, /this folder is empty/);
     assert.match(mission.stdout, /this folder is empty/);
     assert.match(asked.stdout, /^next: atris "what do you want here\?"$/m);
@@ -2283,9 +2287,11 @@ test('bare mission in a live room speaks the desk next, not the archive', () => 
 
     const minute = runCli([], { cwd: dir, env });
     const mission = runCli(['mission'], { cwd: dir, env });
+    const missionStatus = runCli(['mission', 'status'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(mission.status, 0, mission.stderr || mission.stdout);
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
+    assert.equal(missionStatus.stdout.trim(), minute.stdout.trim());
     assert.match(mission.stdout, /something finished\. waiting on you\./);
     assert.doesNotMatch((mission.stdout.split('\n').find((line) => /something finished/.test(line)) || ''), /CLI-193/);
     assert.match(mission.stdout, /CLI-193/);

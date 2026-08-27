@@ -53,7 +53,7 @@ test('mission start from a subdirectory anchors state at the workspace root', ()
     assert.match(started.stderr, /anchoring mission state to the workspace root/);
 
     // The mission is visible from the root store.
-    const status = runCli(['mission', 'status', '--json'], repo);
+    const status = runCli(['mission', 'list', '--json'], repo);
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.match(status.stdout, /prove the ordering path installs/);
   } finally {

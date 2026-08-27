@@ -67,7 +67,7 @@ function completeMission(dir, missionId, proof, extraArgs = []) {
 }
 
 function missionById(dir, missionId) {
-  const res = runCli(['mission', 'status', '--json'], { cwd: dir });
+  const res = runCli(['mission', 'list', '--json'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr || res.stdout);
   const payload = JSON.parse(res.stdout);
   return (payload.missions || []).find((mission) => mission.id === missionId) || null;

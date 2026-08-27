@@ -1008,6 +1008,37 @@ function wantsBareMissionArchive(args = []) {
     && args.every((value) => value === '--all' || value === '--json');
 }
 
+function missionStatusRef(args = []) {
+  return stripKnownFlags(args, ['--status', '--limit'], ['--json', '--local', '--all'])[0] || '';
+}
+
+function wantsSpokenMissionStatus(args = []) {
+  if (hasFlag(args, '--all') || hasFlag(args, '--local') || hasFlag(args, '--cloud')) return false;
+  if (readFlag(args, '--status', '') || readFlag(args, '--limit', '')) return false;
+  return !missionStatusRef(args);
+}
+
+function speakMissionDoor(args = [], root = resolveWorkspaceRoot()) {
+  const asJson = args.includes('--json');
+  const live = pickLiveLocalMission(root);
+  if (live) {
+    return statusMission(asJson ? [live.id, '--json'] : [live.id]);
+  }
+  if (isFreshWorkspace(root) || hasLocalMissionState(root)) {
+    const code = speakFirstMinute({
+      root,
+      fresh: isFreshWorkspace(root),
+      asJson,
+    });
+    process.exitCode = code;
+    return code;
+  }
+  return require('./human-missions').currentMissionCommand(args, {
+    root,
+    fallbackOnMissing: true,
+  });
+}
+
 function terminalNextAction(status) {
   if (status === 'complete') return 'mission complete';
   if (status === 'stopped') return 'mission stopped';
@@ -4836,9 +4867,16 @@ function statusMission(args) {
     console.log('Use --status active for planning, running, ready, paused, and blocked missions.');
     return;
   }
+  const root = resolveWorkspaceRoot();
+  if (isFreshWorkspace(root) && !missionStatusRef(args)) {
+    return speakMissionDoor(args, root);
+  }
+  if (wantsSpokenMissionStatus(args)) {
+    return speakMissionDoor(args, root);
+  }
   const asJson = wantsJson(args);
   const localOnly = hasFlag(args, '--local');
-  const ref = stripKnownFlags(args, ['--status', '--limit'], ['--json', '--local'])[0] || '';
+  const ref = missionStatusRef(args);
   const statusFilter = readFlag(args, '--status', '');
   if (statusFilter && !VALID_STATUSES.has(statusFilter) && !STATUS_ALIASES.has(statusFilter)) {
     exitMissionError(`Invalid --status: ${statusFilter}`, 2, asJson);
@@ -4896,7 +4934,7 @@ function statusMission(args) {
         ...missionStatusLandingLines(mission.last_landing),
         ...(completionGateLabel(mission.completion_gate) ? [`  gate: ${completionGateLabel(mission.completion_gate)}`] : []),
       ])
-      : ['No missions yet. Run: atris mission start "..." --owner <member>'],
+      : ['No missions yet.'],
     asJson,
   );
 }
@@ -9039,7 +9077,7 @@ async function parseAndValidateMissionRunPhase(args) {
     error: null,
   };
   if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    help();
+    console.log('Usage: atris mission run <id|objective> [--max-ticks 4] [--max-wall 3600]');
     context.handled = true;
     return context;
   }
@@ -10958,7 +10996,30 @@ async function goalLoopMission(args) {
   if (completedTaskClosed) process.exitCode = 2;
 }
 
-function help() {
+function help(args = []) {
+  if (hasFlag(args, '--full')) {
+    helpFull();
+    return;
+  }
+  console.log(`
+Usage: atris mission
+
+Keep working on one goal.
+
+  atris mission          what's in front of you
+  atris mission start    begin one goal
+  atris mission status   same as atris mission
+  atris mission stop     stop the live goal
+  atris mission list     every saved goal
+
+Hours of keep-working: atris spaceship
+Keep going until you stop: atris autopilot
+
+More flags: atris mission help --full
+`.trim());
+}
+
+function helpFull() {
   console.log(`
 atris mission - durable goal + loop + owner + proof state
 
@@ -11400,32 +11461,16 @@ function missionCommand(args) {
     return require('./human-missions').answerCommand(args.slice(1));
   }
   if (isBareMission) {
-    const root = resolveWorkspaceRoot();
-    const asJson = args.includes('--json');
     // Empty folder talks like bare atris. A live in-flight mission shows
     // that one card. Completed, stopped, stalled, or ready-with-no-driver
     // rows stay in the archive. After init with no live mission, speak the
     // desk next.
-    const live = pickLiveLocalMission(root);
-    if (live) {
-      return statusMission(asJson ? [live.id, '--json'] : [live.id]);
-    }
-    if (isFreshWorkspace(root) || hasLocalMissionState(root)) {
-      const code = speakFirstMinute({
-        root,
-        fresh: isFreshWorkspace(root),
-        asJson,
-      });
-      process.exitCode = code;
-      return code;
-    }
-    return require('./human-missions').currentMissionCommand(args, {
-      root,
-      fallbackOnMissing: true,
-    });
+    return speakMissionDoor(args);
   }
   if (wantsBareMissionArchive(args)) {
-    return statusMission(args.filter((value) => value !== '--all'));
+    const root = resolveWorkspaceRoot();
+    if (isFreshWorkspace(root)) return speakMissionDoor(args, root);
+    return statusMission(args);
   }
   const subcommand = args[0] || 'status';
   const rest = args.slice(1);
@@ -11444,8 +11489,6 @@ function missionCommand(args) {
     case 'new':
       return startMission(rest);
     case 'status':
-    case 'list':
-    case 'ls':
     case 'show':
     case 'info':
     case 'view':
@@ -11456,6 +11499,16 @@ function missionCommand(args) {
         });
       }
       return statusMission(rest);
+    case 'list':
+    case 'ls': {
+      if (hasFlag(rest, '--help') || hasFlag(rest, '-h') || String(rest[0] || '').trim() === 'help') {
+        console.log('Usage: atris mission list [--status <state>] [--limit <n>] [--local] [--json]');
+        return;
+      }
+      const listRoot = resolveWorkspaceRoot();
+      if (isFreshWorkspace(listRoot)) return speakMissionDoor(rest, listRoot);
+      return statusMission(rest.includes('--all') ? rest : ['--all', ...rest]);
+    }
     case 'doctor':
     case 'check':
       return doctorMission(rest);
@@ -11509,7 +11562,7 @@ function missionCommand(args) {
     case 'help':
     case '--help':
     case '-h':
-      return help();
+      return help(rest);
     default: {
       const first = String(subcommand || '');
       if (first && !first.startsWith('-')) {
