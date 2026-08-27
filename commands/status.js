@@ -4,7 +4,13 @@ const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journa
 const { parseTodo, getTeamActivity } = require('../lib/todo');
 const { clarify } = require('../lib/autoland');
 const { checkoutBehindMessage } = require('../lib/checkout-sync');
-const { isFreshWorkspace, speakNothingRunning } = require('../lib/first-minute');
+const {
+  isFreshWorkspace,
+  isKeepWorkingMinute,
+  buildFirstMinute,
+  speakKeepWorkingMinute,
+  speakNothingRunning,
+} = require('../lib/first-minute');
 
 // Box drawing helpers
 const W = 64; // inner width
@@ -123,11 +129,30 @@ function parseStatusTodo(todoFile) {
   }
 }
 
+function hasLiveKeepWorkingRun(root = process.cwd()) {
+  try {
+    const { pickLiveLocalMission } = require('./mission');
+    return Boolean(pickLiveLocalMission(root));
+  } catch {
+    return false;
+  }
+}
+
 function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   // Fresh folder: empty talks first-talk. A file already here
   // names that file, same as bare atris. Do not mint a room.
   if (isFreshWorkspace()) {
     process.exit(speakNothingRunning({ asJson: jsonMode }));
+  }
+
+  // Just-minted file folder, nothing running: same two lines as
+  // first-minute / the next do. A live mission still gets the board.
+  // --verbose keeps the factory dump because the operator asked for it.
+  if (!verbose && !hasLiveKeepWorkingRun()) {
+    const minute = buildFirstMinute({ root: process.cwd() });
+    if (isKeepWorkingMinute(minute)) {
+      process.exit(speakKeepWorkingMinute({ asJson: jsonMode }));
+    }
   }
 
   const targetDir = path.join(process.cwd(), 'atris');

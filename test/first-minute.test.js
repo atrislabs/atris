@@ -26,6 +26,8 @@ const {
   renderWorkspace,
   shouldAutoInitFresh,
   spokenLineCount,
+  spokenWinReason,
+  isKeepWorkingMinute,
   taskCommand,
   taskNextCommand,
   visibleWorkTitle,
@@ -134,6 +136,16 @@ test('fresh first-minute copy starts a conversation and stays short', () => {
   const json = freshMinuteJson();
   assert.equal(json.next_action, 'atris "what do you want here?"');
   assert.equal(json.reason, 'this folder is empty');
+});
+
+test('keep-working minute is next do, and the win line drops the greeting', () => {
+  assert.equal(isKeepWorkingMinute({ nextCommand: 'atris do' }), true);
+  assert.equal(isKeepWorkingMinute({ nextCommand: 'atris task claim CLI-1 --as keshav' }), false);
+  assert.equal(isKeepWorkingMinute(null), false);
+  assert.equal(
+    spokenWinReason('hey keshav, "notes.md" is already yours.\n\nnext: atris do'),
+    '"notes.md" is already yours',
+  );
 });
 
 test('fresh first-minute names a file already here instead of empty', () => {
@@ -2028,6 +2040,99 @@ test('atris status and stop in a git folder name the last commit, not empty firs
   } finally {
     cleanupTempDir(dir);
     cleanupTempDir(homeParent);
+  }
+});
+
+test('atris status after minting a file folder talks keep-working, not factory let-it-run', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.md'), 'already writing\n', 'utf8');
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const firstDo = runCli(['do'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(firstDo.status, 0, firstDo.stderr || firstDo.stdout);
+    assert.match(firstDo.stdout, /hey keshav, notes.md is ready\./);
+    assert.match(firstDo.stdout, /^next: atris do$/m);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+
+    const listed = runCli(['mission', 'list'], { cwd: dir, env });
+    assert.equal(listed.status, 0, listed.stderr || listed.stdout);
+    assert.match(listed.stdout, /No missions yet/i);
+
+    const minute = runCli([], { cwd: dir, env });
+    const again = runCli(['do'], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(again.status, 0, again.stderr || again.stdout);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.equal(status.stdout.trim(), again.stdout.trim());
+    assert.equal(status.stdout.trim(), minute.stdout.trim());
+    assert.match(status.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(status.stdout, /^next: atris do$/m);
+    assert.equal(spokenLineCount(status.stdout), 2);
+    assert.doesNotMatch(
+      status.stdout + status.stderr,
+      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running|what do you want here/,
+    );
+
+    const jsonStatus = runCli(['status', '--json'], { cwd: dir, env });
+    assert.equal(jsonStatus.status, 0, jsonStatus.stderr || jsonStatus.stdout);
+    const payload = JSON.parse(jsonStatus.stdout);
+    assert.equal(payload.next_action, 'atris do');
+    assert.equal(payload.reason, '"notes.md" is already yours');
+    assert.doesNotMatch(jsonStatus.stdout, /Where we are|let it run|Generate MAP/);
+
+    const quick = runCli(['status', '--quick'], { cwd: dir, env });
+    assert.equal(quick.status, 0, quick.stderr || quick.stdout);
+    assert.equal(quick.stdout.trim(), status.stdout.trim());
+    assert.doesNotMatch(quick.stdout + quick.stderr, /Where we are|Decision: let it run|📋/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris status after mint still tells the truth when a live mission is running', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.md'), 'already writing\n', 'utf8');
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const firstDo = runCli(['do'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(firstDo.status, 0, firstDo.stderr || firstDo.stdout);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    const now = new Date().toISOString();
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: 'mission-live',
+      objective: 'Keep the live mission visible',
+      owner: 'executor',
+      status: 'running',
+      created_at: now,
+      updated_at: now,
+    })}\n`);
+
+    const status = runCli(['status'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.match(status.stdout, /Where we are:/);
+    assert.match(status.stdout, /Decision: let it run/);
+    assert.doesNotMatch(status.stdout, /"notes\.md" is already yours/);
+  } finally {
+    cleanupTempDir(dir);
   }
 });
 
