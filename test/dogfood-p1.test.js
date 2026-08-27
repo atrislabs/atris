@@ -115,11 +115,13 @@ test('land in empty repo prints one-line error without stack', () => {
   try {
     spawnSync('git', ['init', '-b', 'main', '-q'], { cwd: dir });
     const result = run(['land'], dir);
-    assert.equal(result.status, 1);
+    assert.equal(result.status, 2);
     const err = `${result.stderr || ''}${result.stdout || ''}`;
-    assert.match(err, /no commits yet/i);
+    assert.match(err, /no commits/i);
     assert.doesNotMatch(err, /at Object\.landCommand|Error: no master/);
     assert.doesNotMatch(err, /node:internal/);
+    const spoken = err.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    assert.equal(spoken.length, 1, err);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

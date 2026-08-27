@@ -381,3 +381,71 @@ test('countLabel uses singular nouns for a count of one', () => {
   assert.equal(countLabel(0, 'day'), '0 days');
   assert.equal(countLabel(2, 'change'), '2 changes');
 });
+
+function spokenLines(result) {
+  return `${result.stdout || ''}\n${result.stderr || ''}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function assertCalmLandEmpty(result, pattern) {
+  assert.equal(result.status, 2, result.stderr || result.stdout);
+  const spoken = spokenLines(result);
+  assert.equal(spoken.length, 1, spoken.join('\n'));
+  assert.match(spoken[0], pattern);
+  assert.doesNotMatch(spoken[0], /—/);
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /at Object\.|Error: no master|node:internal|Describe the desired|what do you want/i);
+}
+
+test('land in an empty folder prints one sentence and no stack', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-empty-folder-'));
+  try {
+    const result = runCli(['land'], dir);
+    assertCalmLandEmpty(result, /not a git repo yet/);
+
+    const json = runCli(['land', '--json'], dir);
+    assert.equal(json.status, 2, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.reason, 'not_a_git_repo');
+    assert.match(payload.detail, /not a git repo yet/);
+    assert.doesNotMatch(`${json.stdout}${json.stderr}`, /at Object\.|node:internal/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('land after git init with no commits prints one sentence and no stack', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-init-empty-'));
+  try {
+    spawnSync('git', ['init', '-b', 'main', '-q'], { cwd: dir, encoding: 'utf8' });
+    const result = runCli(['land'], dir);
+    assertCalmLandEmpty(result, /no commits/);
+
+    const json = runCli(['land', '--json'], dir);
+    assert.equal(json.status, 2, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.reason, 'no_commits');
+    assert.match(payload.detail, /no commits/);
+    assert.doesNotMatch(`${json.stdout}${json.stderr}`, /at Object\.|node:internal|fix: git/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('land with commits but no master or main prints one sentence and no stack', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-no-base-'));
+  try {
+    runGit(['init', '-b', 'develop'], dir);
+    runGit(['config', 'user.email', 'test@example.com'], dir);
+    runGit(['config', 'user.name', 'Test'], dir);
+    runGit(['commit', '--allow-empty', '-m', 'init'], dir);
+    const result = runCli(['land'], dir);
+    assertCalmLandEmpty(result, /no master or main/);
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /fix: git checkout/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

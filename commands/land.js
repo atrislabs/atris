@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { runGit } = require('../lib/git-spawn');
+const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
 const { listWorktrees, statusCounts } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
@@ -236,14 +237,18 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
 // merged branch residue.
 function landSummary(cwd = process.cwd(), ttlDays = DEFAULT_TTL_DAYS) {
   const root = repoRoot(cwd);
-  if (!root) return null;
-  const board = collectBoard(root, { ttlDays, light: true });
-  return {
-    branches: board.summary.active + board.summary.due,
-    due: board.summary.due,
-    stale: board.summary.stale,
-    ttlDays,
-  };
+  if (!root || !hasCommits(root)) return null;
+  try {
+    const board = collectBoard(root, { ttlDays, light: true });
+    return {
+      branches: board.summary.active + board.summary.due,
+      due: board.summary.due,
+      stale: board.summary.stale,
+      ttlDays,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function salvageDir(root) {
@@ -636,6 +641,40 @@ function readFollowingFlag(args, name, fallback = '') {
   return args[idx + 1] || fallback;
 }
 
+const EMPTY_LAND = {
+  not_a_git_repo: 'this folder is not a git repo yet, so there is nothing to land.',
+  no_commits: 'nothing is in the air yet because this folder has no commits.',
+  no_base: 'no master or main branch yet, so there is nothing to land.',
+};
+
+function emptyLandKindFromError(err) {
+  if (err && err.code === 'LAND_NO_BASE') return 'no_base';
+  const msg = String(err && err.message || err || '');
+  if (/not a git/i.test(msg)) return 'not_a_git_repo';
+  if (/no commits/i.test(msg)) return 'no_commits';
+  if (/no master\/main/i.test(msg)) return 'no_base';
+  return '';
+}
+
+function printEmptyLand(kind, json) {
+  const reason = EMPTY_LAND[kind] ? kind : 'no_base';
+  const detail = EMPTY_LAND[reason];
+  if (json) {
+    const payload = compactErrorPayload({ reason, detail });
+    printCliJson(payload, payload, ['--json']);
+  } else {
+    console.log(detail);
+  }
+  return 2;
+}
+
+function finishLandError(err, json) {
+  const kind = emptyLandKindFromError(err);
+  if (kind) return printEmptyLand(kind, json);
+  console.error(String(err && err.message || err).split('\n')[0]);
+  return 2;
+}
+
 function showHelp() {
   console.log('');
   console.log('atris land: the landing, what is actually done vs still in the air');
@@ -666,20 +705,14 @@ function landCommand(args = []) {
     showHelp();
     return 0;
   }
+  const json = args.includes('--json');
   const root = repoRoot();
-  if (!root) {
-    console.error('not a git repository. fix: git init -b main');
-    return 1;
-  }
-  if (!hasCommits(root)) {
-    console.error('no commits yet. fix: git commit --allow-empty -m init');
-    return 1;
-  }
+  if (!root) return printEmptyLand('not_a_git_repo', json);
+  if (!hasCommits(root)) return printEmptyLand('no_commits', json);
   const ttlRaw = readFollowingFlag(args, '--ttl', '');
   const ttlParsed = Number(ttlRaw);
   const ttlDays = ttlRaw !== '' && Number.isFinite(ttlParsed) && ttlParsed >= 0 ? ttlParsed : DEFAULT_TTL_DAYS;
   const base = readFollowingFlag(args, '--base', '');
-  const json = args.includes('--json');
 
   if (args.includes('--reap')) {
     try {
@@ -688,8 +721,7 @@ function landCommand(args = []) {
       else printReceipt(receipt);
       return 0;
     } catch (err) {
-      console.error(String(err && err.message || err));
-      return 1;
+      return finishLandError(err, json);
     }
   }
 
@@ -706,8 +738,7 @@ function landCommand(args = []) {
       else printStory(story);
       return 0;
     } catch (err) {
-      console.error(String(err && err.message || err));
-      return 1;
+      return finishLandError(err, json);
     }
   }
 
@@ -717,8 +748,7 @@ function landCommand(args = []) {
     else printBoard(board);
     return 0;
   } catch (err) {
-    console.error(String(err && err.message || err));
-    return 1;
+    return finishLandError(err, json);
   }
 }
 

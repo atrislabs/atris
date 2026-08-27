@@ -1944,18 +1944,14 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'land') {
   // landCommand can throw synchronously on empty repos; wrap so callers get a
-  // one-line error instead of an uncaught stack from Promise.resolve(fn()).
+  // one-line sentence instead of an uncaught stack from Promise.resolve(fn()).
   Promise.resolve()
     .then(() => require('../commands/land').landCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => {
-      const msg = String(err && err.message || err || '');
-      if (/no master\/main|no commits|not a git/i.test(msg)) {
-        console.error(msg);
-      } else {
-        console.error(`land: ${msg}`);
-      }
-      process.exit(1);
+      const msg = String(err && err.message || err || 'land could not run').split('\n')[0];
+      console.log(msg);
+      process.exit(2);
     });
 } else if (command === 'caretaker') {
   Promise.resolve(require('../commands/caretaker').caretakerCommand(process.argv.slice(3)))
