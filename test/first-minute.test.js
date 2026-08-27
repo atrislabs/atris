@@ -559,6 +559,51 @@ test('workspace with a ready task names the win and points at accept', () => {
   }
 });
 
+test('first talk files the user sentence and names it as the win', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const empty = runCli([], { cwd: dir, env });
+    assert.equal(empty.status, 0, empty.stderr || empty.stdout);
+    assert.match(empty.stdout, /hey keshav, this folder is empty\./);
+    assert.match(empty.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.doesNotMatch(empty.stdout, /I saved a first step|first useful step/i);
+
+    for (const leftover of ['brainstorm hi', 'wish hi', 'task next']) {
+      const look = runCli([leftover], { cwd: dir, env });
+      assert.equal(look.status, 0, look.stderr || look.stdout);
+      assert.equal(look.stdout.trim(), empty.stdout.trim(), leftover);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, leftover);
+    }
+
+    const help = runCli(['--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Golden path:/);
+    assert.doesNotMatch(help.stdout, /this folder is empty|I saved a first step|is ready\./);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    const talk = runCli(['a notes app for keshav'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(talk.status, 0, talk.stderr || talk.stdout);
+    assert.match(talk.stdout, /hey keshav, a notes app for keshav is ready\./);
+    assert.match(talk.stdout, /^next: atris task claim [A-Z0-9]+-\d+ --as keshav$/m);
+    assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
+    assert.equal(spokenLineCount(talk.stdout), 2);
+
+    const todo = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+    assert.match(todo, /a notes app for keshav/);
+    assert.doesNotMatch(todo, /[Ff]irst useful step/);
+
+    const after = runCli([], { cwd: dir, env });
+    assert.equal(after.status, 0, after.stderr || after.stdout);
+    assert.match(after.stdout, /a notes app for keshav is ready to claim/);
+    assert.doesNotMatch(after.stdout, /first useful step/i);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris test in an empty folder still names init', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
@@ -573,6 +618,37 @@ test('atris test in an empty folder still names init', () => {
     assert.match(res.stdout, /^next: atris "what do you want here\?"$/m);
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|For an agent|generate a complete `atris\/MAP\.md`/);
     assert.doesNotMatch(res.stdout, /Got it\. I saved your first direction|First useful step: test/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris recap in an empty folder talks like first-minute', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const recap = runCli(['recap'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(recap.status, 0, recap.stderr || recap.stdout);
+    assert.equal(recap.stdout.trim(), minute.stdout.trim());
+    assert.match(recap.stdout, /this folder is empty/);
+    assert.match(recap.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.doesNotMatch(recap.stdout, /atris init --minimal|no task history yet/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    const jsonMinute = runCli(['--json'], { cwd: dir, env });
+    const jsonRecap = runCli(['recap', '--json'], { cwd: dir, env });
+    assert.equal(jsonRecap.status, jsonMinute.status);
+    assert.deepEqual(JSON.parse(jsonRecap.stdout), JSON.parse(jsonMinute.stdout));
+
+    const help = runCli(['recap', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /spoken lines/);
+    assert.doesNotMatch(help.stdout, /this folder is empty|atris init --minimal/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
   } finally {
     cleanupTempDir(dir);
@@ -1516,12 +1592,16 @@ test('named empty folder next command starts a first task when pasted', () => {
 
     const pasted = runCli(['what do you want here?'], { cwd: dir, env, timeout: 60000 });
     assert.equal(pasted.status, 0, pasted.stderr || pasted.stdout);
-    assert.match(pasted.stdout, /I saved a first step for launch-day/);
+    assert.match(pasted.stdout, /hey keshav, launch-day is ready\./);
+    assert.doesNotMatch(pasted.stdout, /I saved a first step|first useful step/i);
     assert.doesNotMatch(pasted.stdout, /launch-day is empty/);
     assert.doesNotMatch(pasted.stdout, /atris initialized|What do you want to build|minimal scaffold/i);
     const claimNext = String(pasted.stdout).match(/^next: (.+)$/m);
     assert.ok(claimNext, pasted.stdout);
     assert.match(claimNext[1], /^atris task claim [A-Z0-9]+-\d+ --as keshav$/);
+    const todo = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+    assert.match(todo, /launch-day/);
+    assert.doesNotMatch(todo, /[Ff]irst useful step|what do you want here/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'context_profile.json')));
 
@@ -1550,9 +1630,9 @@ test('named empty folder next command starts a first task when pasted', () => {
     assert.equal(renderFirstTalk({
       person: 'keshav',
       folder: 'launch-day',
-      starter: { display_id: 'LDY-1' },
+      starter: { display_id: 'LDY-1', title: 'launch-day' },
     }), [
-      'hey keshav, I saved a first step for launch-day.',
+      'hey keshav, launch-day is ready.',
       '',
       'next: atris task claim LDY-1 --as keshav',
     ].join('\n'));

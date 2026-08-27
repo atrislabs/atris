@@ -65,7 +65,8 @@ test('context gatherer creates an onboarding task when Atris workspace exists', 
     const rows = taskDb.listTasks(db, { workspaceRoot: taskDb.workspaceRoot(dir) });
     assert.equal(rows.length, 1);
     assert.equal(rows[0].tag, 'onboarding');
-    assert.match(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /First useful step: build a simple personal website/);
+    assert.match(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /build a simple personal website/);
+    assert.doesNotMatch(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /First useful step:/);
   } finally {
     taskDb.close();
     if (previousDb === undefined) delete process.env.ATRIS_TASKS_DB;
@@ -74,14 +75,12 @@ test('context gatherer creates an onboarding task when Atris workspace exists', 
   }
 });
 
-test('starterTaskTitle truncates a long answer on a word boundary, never mid-word', () => {
+test('starterTaskTitle uses the user sentence, clips long answers, and never prefixes first useful step', () => {
   const answer = 'build an autonomous onboarding assistant that greets every new teammate and sets up their first project end to end';
   const title = starterTaskTitle(answer);
-  assert.ok(title.startsWith('First useful step: '), `unexpected prefix: "${title}"`);
-  const summary = title.slice('First useful step: '.length);
-  assert.ok(summary.endsWith('...'), `expected an ellipsis, got "${summary}"`);
-  // The words before the ellipsis are a whole-word prefix of the answer.
-  const body = summary.slice(0, -3).trim();
+  assert.doesNotMatch(title, /first useful step/i);
+  assert.ok(title.endsWith('...'), `expected an ellipsis, got "${title}"`);
+  const body = title.slice(0, -3).trim();
   const answerWords = answer.split(' ');
   const bodyWords = body.split(' ');
   assert.deepEqual(
@@ -89,8 +88,9 @@ test('starterTaskTitle truncates a long answer on a word boundary, never mid-wor
     answerWords.slice(0, bodyWords.length),
     `last word "${bodyWords[bodyWords.length - 1]}" was cut mid-word`,
   );
-  // A short answer passes through untouched, no ellipsis.
-  assert.equal(starterTaskTitle('ship the landing page'), 'First useful step: ship the landing page');
+  assert.equal(starterTaskTitle('a notes app for keshav'), 'a notes app for keshav');
+  assert.equal(starterTaskTitle('what do you want here?'), 'this folder');
+  assert.equal(starterTaskTitle('atris "what do you want here?"', 'launch-day'), 'launch-day');
 });
 
 test('isAtrisMetaQuestion distinguishes questions about Atris from task requests', () => {

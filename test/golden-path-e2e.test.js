@@ -334,7 +334,8 @@ test('packed golden path follows printed talk claim ready and autoland handoffs'
 
     const talk = runInstalled(printedAtrisArgs(firstRun.stdout, 'next'), { timeout: 30000 });
     assertGoldenPathStep(talk, 'printed first talk');
-    assert.match(talk.stdout, /I saved a first step for workspace/);
+    assert.match(talk.stdout, /workspace is ready\./);
+    assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
     assert.doesNotMatch(talk.stdout, /atris initialized|What do you want to build|minimal scaffold/i);
 
     const claimArgs = printedAtrisArgs(talk.stdout, 'next');
