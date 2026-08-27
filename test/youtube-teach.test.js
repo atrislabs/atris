@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const {
   parseTeachArgs,
   parseCaptionCues,
@@ -16,8 +17,22 @@ const {
   extractTeachSource,
   isThinTeachLesson,
   TEACH_THIN_REFUSE,
+  teachExperimentSlug,
   youtubeCommand,
 } = require('../commands/youtube');
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
+
+function findPython() {
+  for (const candidate of ['python3', 'python']) {
+    const result = spawnSync(candidate, ['--version'], { encoding: 'utf8' });
+    if (!result.error && result.status === 0) return candidate;
+  }
+  return null;
+}
+
+const pythonCmd = findPython();
 
 const TEACH_URL = 'https://www.youtube.com/watch?v=teach01';
 const TEACH_VTT = [
@@ -161,6 +176,12 @@ function thinSource() {
     cues: parseCaptionCues(THIN_VTT),
   };
 }
+
+test('teachExperimentSlug lowercases the video id for validate.py', () => {
+  assert.equal(teachExperimentSlug('teach01', 1), 'teach-teach01-s1');
+  assert.equal(teachExperimentSlug('NYFGCESmikA', 1), 'teach-nyfgcesmika-s1');
+  assert.equal(teachExperimentSlug('abc_def', 2), 'teach-abc-def-s2');
+});
 
 test('parseTeachArgs defaults to section 1 and accepts --section and --save', () => {
   assert.deepEqual(parseTeachArgs([TEACH_URL]), {
@@ -359,6 +380,7 @@ test('youtube teach --save still exits 0 when apply is missing', async () => {
   assert.match(out.text(), /next: write one apply/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.apply.md')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1', 'measure.py')), true);
 });
 
 test('youtube teach --save on lex highlight files the brief and exits 0', async () => {
@@ -379,6 +401,7 @@ test('youtube teach --save on lex highlight files the brief and exits 0', async 
   assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-NYFGCESmikA-s1.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-NYFGCESmikA-s1.apply.md')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-nyfgcesmika-s1', 'measure.py')), true);
 });
 
 test('youtube teach --save refuses a thin chapter and writes no brief', async () => {
@@ -408,6 +431,73 @@ test('youtube teach --save refuses a thin chapter and writes no brief', async ()
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01-s1.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01-s1.apply.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('youtube teach rich --save mints a measure.py that validate.py accepts and scores 0 or 1 honestly', async () => {
+  assert.ok(pythonCmd, 'python3 is required to score the minted pack');
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-mint-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+
+  assert.equal(status, 0);
+  const packDir = path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1');
+  for (const name of ['program.md', 'measure.py', 'loop.py', 'reset.py', 'results.tsv']) {
+    assert.equal(fs.existsSync(path.join(packDir, name)), true, name);
+  }
+  const program = fs.readFileSync(path.join(packDir, 'program.md'), 'utf8');
+  assert.ok(program.length < 1200);
+  assert.match(program, /omakase model/);
+  const measureSrc = fs.readFileSync(path.join(packDir, 'measure.py'), 'utf8');
+  assert.match(measureSrc, /what is the omakase model\?/);
+  assert.match(measureSrc, /omakase model/);
+
+  const validated = spawnSync(pythonCmd, [VALIDATE_PY, packDir], { encoding: 'utf8' });
+  assert.equal(validated.status, 0, validated.stderr || validated.stdout);
+  assert.match(validated.stdout, /PASS/);
+
+  function scoreFixture(text) {
+    const fixture = path.join(cwd, 'fixture.md');
+    fs.writeFileSync(fixture, text);
+    const measured = spawnSync(pythonCmd, [path.join(packDir, 'measure.py')], {
+      cwd: packDir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ATRIS_REPO_ROOT: cwd,
+        ATRIS_TEACH_MEASURE_FIXTURE: fixture,
+      },
+    });
+    assert.equal(measured.status, 0, measured.stderr || measured.stdout);
+    return JSON.parse(measured.stdout.trim().split('\n').pop());
+  }
+
+  const miss = scoreFixture('feelings and vibes and a chat about nothing');
+  assert.equal(miss.score, 0);
+  assert.equal(miss.passed, 0);
+  assert.equal(miss.total, 1);
+  assert.equal(miss.status, 'fail');
+
+  const hit = scoreFixture('keep the omakase model as the default stack');
+  assert.equal(hit.score, 1);
+  assert.equal(hit.passed, 1);
+  assert.equal(hit.total, 1);
+  assert.equal(hit.status, 'pass');
+
+  const stub = spawnSync(pythonCmd, [path.join(packDir, 'measure.py')], {
+    cwd: packDir,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_REPO_ROOT: cwd },
+  });
+  assert.equal(stub.status, 0, stub.stderr || stub.stdout);
+  const stubPayload = JSON.parse(stub.stdout.trim().split('\n').pop());
+  assert.equal(stubPayload.score, 0);
 });
 
 test('youtube teach thin chapter without --save still writes no atris files', async () => {
