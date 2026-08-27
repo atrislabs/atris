@@ -4,6 +4,7 @@ const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journa
 const { parseTodo, getTeamActivity } = require('../lib/todo');
 const { clarify } = require('../lib/autoland');
 const { checkoutBehindMessage } = require('../lib/checkout-sync');
+const { isFreshWorkspace, speakNothingRunning } = require('../lib/first-minute');
 
 // Box drawing helpers
 const W = 64; // inner width
@@ -123,16 +124,13 @@ function parseStatusTodo(todoFile) {
 }
 
 function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
-  const targetDir = path.join(process.cwd(), 'atris');
-
-  if (!fs.existsSync(targetDir)) {
-    if (jsonMode) {
-      console.log(JSON.stringify({ error: 'atris/ folder not found' }));
-      process.exit(1);
-    }
-    console.log('✗ atris/ folder not found. Run "atris init" first.');
-    process.exit(1);
+  // Empty folder: nothing is running. Same first-talk next as bare atris.
+  // Do not mint a room, do not write .atris, do not name init.
+  if (isFreshWorkspace()) {
+    process.exit(speakNothingRunning({ asJson: jsonMode }));
   }
+
+  const targetDir = path.join(process.cwd(), 'atris');
 
   // Load task board state.
   const todoFile = path.join(targetDir, 'TODO.md');
