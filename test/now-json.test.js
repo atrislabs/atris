@@ -117,15 +117,18 @@ test('now --json after init prints ok plus next or current', () => {
   const env = { HOME: home, USER: 'keshav' };
   try {
     assert.equal(runCli(['init', '--yes'], { cwd: dir, env, timeout: 60000 }).status, 0);
-    const markdown = runCli(['now'], { cwd: dir, env });
-    assert.equal(markdown.status, 0, markdown.stderr || markdown.stdout);
-    assert.match(markdown.stdout, /# now/);
+    const spoken = runCli(['now'], { cwd: dir, env });
+    const minute = runCli([], { cwd: dir, env });
+    assert.equal(spoken.status, 0, spoken.stderr || spoken.stdout);
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(spoken.stdout.trim(), minute.stdout.trim());
+    assert.doesNotMatch(spoken.stdout, MARKDOWN_NOW_RE);
 
     const res = runCli(['now', '--json'], { cwd: dir, env, input: '' });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = assertNowJson(res, { ok: true });
     assert.ok(payload.next || payload.current);
-    assert.notEqual(res.stdout.trim(), markdown.stdout.trim());
+    assert.notEqual(res.stdout.trim(), spoken.stdout.trim());
   } finally {
     cleanupTempDir(dir);
   }
