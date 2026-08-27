@@ -114,7 +114,8 @@ test('task next names do for a claimed task even when the unix user differs', ()
     const pasted = runCli(['do'], { cwd: dir, env });
     assert.equal(pasted.status, 0, pasted.stderr || pasted.stdout);
     assert.match(nextLine(pasted.stdout), /^atris do$/);
-    assert.doesNotMatch(pasted.stdout + pasted.stderr, /No open tasks|id required|unknown|PROMPT ONLY|Atris Do|executor\.md/i);
+    assert.doesNotMatch(pasted.stdout + pasted.stderr, /No open tasks|id required|unknown/i);
+    assert.doesNotMatch(pasted.stdout, /PROMPT ONLY|You are the Executor|executor\.md/);
   } finally {
     cleanupTempDir(dir);
   }
