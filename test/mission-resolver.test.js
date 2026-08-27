@@ -239,6 +239,8 @@ test('an unmatched bare number errors instead of silently starting a new mission
 test('a genuine multi-word objective still starts a new mission (unchanged behavior)', () => {
   const { base, repo } = makeRepo();
   try {
+    fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'atris', 'MAP.md'), '# Test repository\n');
     const before = listMissions(repo);
     assert.equal(before.length, 0);
 

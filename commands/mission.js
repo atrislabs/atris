@@ -11011,6 +11011,7 @@ Keep working on one goal.
   atris mission status   same as atris mission
   atris mission stop     stop the live goal
   atris mission list     every saved goal
+  atris mission inspect <id> --fields status,runner,ack,pings
 
 Hours of keep-working: atris spaceship
 Keep going until you stop: atris autopilot
