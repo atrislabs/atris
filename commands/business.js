@@ -3277,11 +3277,14 @@ async function deployBusiness(slug) {
   // Upload workspace files
   const workspaceDir = path.join(bizDir, 'workspace');
   let uploadCount = 0;
+  let uploadFailureCount = 0;
+  let uploadTotal = 0;
   if (fs.existsSync(workspaceDir)) {
     const files = walkDir(workspaceDir);
     for (const filePath of files) {
       const relativePath = path.relative(workspaceDir, filePath);
       if (relativePath.startsWith('.')) continue;
+      uploadTotal++;
       try {
         const content = fs.readFileSync(filePath, 'utf8');
         const uploadResult = await apiRequestJson(
@@ -3291,9 +3294,14 @@ async function deployBusiness(slug) {
         if (uploadResult.ok) {
           uploadCount++;
           process.stdout.write(`  Uploaded: ${relativePath}\n`);
+        } else {
+          uploadFailureCount++;
+          const detail = uploadResult.errorMessage || uploadResult.error || uploadResult.status || 'unknown error';
+          console.log(`  Failed: ${relativePath} (${detail})`);
         }
       } catch (e) {
-        // Skip binary files or errors
+        uploadFailureCount++;
+        console.log(`  Failed: ${relativePath} (${e.message || String(e)})`);
       }
     }
   }
@@ -3314,6 +3322,10 @@ async function deployBusiness(slug) {
 
   console.log(`\n  Deployed ${uploadCount} files to ${bizConfig.name}`);
   console.log(`  Dashboard: https://atris.ai/dashboard/gm/${bizConfig.business_id}`);
+  if (uploadFailureCount > 0) {
+    console.log(`  ${uploadFailureCount} of ${uploadTotal} files failed to upload`);
+    process.exitCode = 1;
+  }
   console.log('');
 }
 
