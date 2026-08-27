@@ -16,6 +16,7 @@ const { decodeJwtClaims, loadCredentials } = require('../utils/auth');
 const { isHelpToken } = require('../lib/noninteractive');
 const {
   buildFirstMinute,
+  isClaimMinute,
   isFreshWorkspace,
   isKeepWorkingMinute,
   speakFirstMinute,
@@ -176,8 +177,9 @@ function parseMissionId(args = []) {
 /**
  * Scratch / unbound folders must not drive account-current cloud work.
  * Empty-folder stop talks first-talk instead. After do/claim, nothing
- * running talks keep-working instead. After a room exists without
- * that keep-working next, require an explicit id: atris stop --mission <id>
+ * running talks keep-working instead. After init, claim-ready talks
+ * the claim instead. After a room exists without that keep-working
+ * or claim next, require an explicit id: atris stop --mission <id>
  */
 function refuseUnboundCloudComputer(args = [], options = {}, commandName = 'stop') {
   const root = options.root || process.cwd();
@@ -777,15 +779,20 @@ async function stopCommand(args, options = {}) {
     }
   }
   // After do/claim, nothing running: same two keep-working
-  // lines as bare atris / status / recap. Not factory
-  // cloud-computer. Do not mint a room or bind a computer.
-  // A bound computer still stops the current mission.
+  // lines as bare atris / status / recap. After init, next
+  // is claim: same two lines as bare atris / status / now.
+  // Not factory cloud-computer. Do not mint a room or bind
+  // a computer. A bound computer still stops the current
+  // mission.
   if (!parseMissionId(args) && !hasLiveKeepWorkingRun(root)) {
     const unbound = refuseUnboundCloudComputer(args, options, 'stop');
     if (unbound) {
       const minute = buildFirstMinute({ root });
       if (isKeepWorkingMinute(minute)) {
         return speakKeepWorkingMinute(speak);
+      }
+      if (isClaimMinute(minute)) {
+        return speakFirstMinute(speak);
       }
     }
   }
