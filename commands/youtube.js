@@ -30,6 +30,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`Usage: ${commandName} search "<query>" [--limit N] [--json]`);
   output(`       ${commandName} search --paid "<query>" [--limit N] [--json]`);
   output(`       ${commandName} notes <youtube-url> [youtube-url-or-playlist...] [engine] [--save]`);
+  output(`       ${commandName} teach <youtube-url> [--section N] [--save]`);
   output(`       ${commandName} unsave <url-or-id>`);
   output(`       ${commandName} process <youtube-url> [options]`);
   output(`       ${commandName} digest [--days N]`);
@@ -42,6 +43,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links');
   output('search --paid = 5 credits, watch permalinks + titles from Atris');
   output('notes = free local notes to stdout; ephemeral unless --save');
+  output('teach = one chapter from local captions; ephemeral unless --save');
   output('process = 5 credits cloud knowledge (needs a filled Apply)');
   output('digest = one decision page from this week\'s video briefs');
   output('watch = subscribed channels turn into briefs without a human');
@@ -51,7 +53,8 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('Options:');
   output('  --limit <n>         Max search results (default: 5)');
   output('  --paid              Bill 5 credits for watch permalinks (search only)');
-  output('  --save              File brief, journal line, and apply stub (notes only)');
+  output('  --save              File brief, journal line, and apply stub (notes and teach)');
+  output('  --section <n>       Chapter to teach, 1-based (teach only, default: 1)');
   output('  --unsave            Delete filed brief and apply stub (no paid calls)');
   output('  --query, -q <text>  Focus question for the analysis');
   output('  --agent <id>        Agent id to store knowledge against');
@@ -69,6 +72,8 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`  ${commandName} search --paid "MCP agents 2026"`);
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID`);
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID --save`);
+  output(`  ${commandName} teach "https://www.youtube.com/watch?v=VIDEO_ID"`);
+  output(`  ${commandName} teach "https://www.youtube.com/watch?v=VIDEO_ID" --section 2`);
   output(`  ${commandName} notes --unsave VIDEO_ID`);
   output(`  ${commandName} unsave VIDEO_ID`);
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID https://youtu.be/OTHER_ID`);
@@ -307,14 +312,14 @@ function fetchCaptionText(urlString, redirects = 0) {
   });
 }
 
-function parseCaptionText(raw) {
+function parseCaptionCues(raw) {
   const trimmed = String(raw || '').trimStart();
-  if (!trimmed) return '';
+  if (!trimmed) return [];
 
   if (trimmed.startsWith('{')) {
     try {
       const payload = JSON.parse(trimmed);
-      const segments = [];
+      const cues = [];
       for (const event of payload.events || []) {
         const text = (event.segs || [])
           .map((piece) => piece.utf8 || '')
@@ -322,18 +327,21 @@ function parseCaptionText(raw) {
           .replace(/\s+/g, ' ')
           .trim();
         if (!text) continue;
-        const line = timestampedCaptionLine(text, Number(event.tStartMs));
-        if (segments[segments.length - 1] === line) continue;
-        segments.push(line);
+        const startMs = Number(event.tStartMs);
+        const cue = { startMs: Number.isFinite(startMs) ? startMs : 0, text };
+        if (cues.length && cues[cues.length - 1].text === cue.text && cues[cues.length - 1].startMs === cue.startMs) {
+          continue;
+        }
+        cues.push(cue);
       }
-      return segments.join('\n');
+      return cues;
     } catch {
-      return '';
+      return [];
     }
   }
 
   if (/^WEBVTT/i.test(trimmed) || trimmed.includes('-->')) {
-    const segments = [];
+    const cues = [];
     for (const block of String(raw).split(/\r?\n\r?\n+/)) {
       const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
       const timeLine = lines.find((line) => line.includes('-->'));
@@ -346,7 +354,28 @@ function parseCaptionText(raw) {
         .filter((line, index, all) => index === 0 || line !== all[index - 1])
         .join(' ')
         .trim();
-      const captionLine = timestampedCaptionLine(text, startMs);
+      if (!text) continue;
+      const cue = { startMs: startMs == null ? 0 : startMs, text };
+      if (cues.length && cues[cues.length - 1].text === cue.text && cues[cues.length - 1].startMs === cue.startMs) {
+        continue;
+      }
+      cues.push(cue);
+    }
+    return cues;
+  }
+
+  return [];
+}
+
+function parseCaptionText(raw) {
+  const trimmed = String(raw || '').trimStart();
+  if (!trimmed) return '';
+
+  const cues = parseCaptionCues(raw);
+  if (cues.length) {
+    const segments = [];
+    for (const cue of cues) {
+      const captionLine = timestampedCaptionLine(cue.text, cue.startMs);
       if (!captionLine || segments[segments.length - 1] === captionLine) continue;
       segments.push(captionLine);
     }
@@ -1907,6 +1936,349 @@ async function runYoutubeSearch(args = [], deps = {}) {
   return 0;
 }
 
+const YTTEACH_USAGE = 'usage: atris youtube teach <youtube-url> [--section N] [--save]';
+const TEACH_PAID_REFUSE = 'teach is free local captions. drop --paid.';
+const TEACH_APPLY_NEXT_MESSAGE = APPLY_NEXT_MESSAGE;
+const MECHANISM_STOP = new Set([
+  'the', 'this', 'that', 'and', 'but', 'for', 'with', 'from', 'you', 'we', 'they',
+  'what', 'when', 'how', 'why', 'there', 'here', 'then', 'just', 'also', 'very',
+  'really', 'about', 'into', 'over', 'after', 'before', 'because', 'while', 'where',
+  'which', 'their', 'your', 'our', 'its', 'not', 'all', 'any', 'some', 'more', 'most',
+  'other', 'first', 'second', 'next', 'last', 'new', 'old', 'good', 'bad', 'big',
+  'small', 'long', 'short', 'video', 'chapter', 'section', 'youtube', 'transcript',
+  'yeah', 'okay', 'ok', 'so', 'well', 'like', 'right', 'now', 'one', 'two',
+]);
+
+function parseTeachArgs(argv = []) {
+  const args = [...argv];
+  const options = {
+    help: false,
+    save: false,
+    url: null,
+    section: 1,
+  };
+
+  if (args.length === 0 || ['help', '--help', '-h'].includes(args[0])) {
+    options.help = true;
+    return options;
+  }
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i]);
+    if (arg === '--help' || arg === '-h' || arg === 'help') {
+      options.help = true;
+    } else if (arg === '--save') {
+      options.save = true;
+    } else if (arg === '--paid') {
+      throw new Error(TEACH_PAID_REFUSE);
+    } else if (arg === '--section') {
+      const raw = args[i + 1];
+      const value = Number.parseInt(raw, 10);
+      if (raw == null || String(raw).startsWith('--') || !Number.isInteger(value) || value < 1) {
+        throw new Error('--section must be a positive integer');
+      }
+      options.section = value;
+      i += 1;
+    } else if (arg.startsWith('--section=')) {
+      const value = Number.parseInt(arg.slice('--section='.length), 10);
+      if (!Number.isInteger(value) || value < 1) {
+        throw new Error('--section must be a positive integer');
+      }
+      options.section = value;
+    } else if (arg.startsWith('-')) {
+      throw new Error(`Unknown option: ${arg}`);
+    } else if (!options.url && looksLikeYoutubeUrl(arg)) {
+      options.url = arg;
+    } else {
+      throw new Error(`Unexpected argument: ${arg}`);
+    }
+  }
+
+  if (options.help) return options;
+  if (!options.url) throw new Error('Missing YouTube URL. Run "atris youtube teach --help".');
+  return options;
+}
+
+function chapterStartSeconds(chapter) {
+  if (!chapter) return NaN;
+  if (chapter.startSeconds != null) return Number(chapter.startSeconds);
+  return Number(chapter.start_time);
+}
+
+function chapterEndSeconds(chapter) {
+  if (!chapter) return NaN;
+  if (chapter.endSeconds != null) return Number(chapter.endSeconds);
+  return Number(chapter.end_time);
+}
+
+function normalizeChapters(rawChapters, durationSeconds) {
+  const duration = Number(durationSeconds) || 0;
+  const list = Array.isArray(rawChapters) ? rawChapters.filter(Boolean) : [];
+  if (!list.length) {
+    return [{
+      index: 1,
+      title: 'full video',
+      startSeconds: 0,
+      endSeconds: duration || Infinity,
+    }];
+  }
+  return list.map((chapter, index) => {
+    const start = chapterStartSeconds(chapter);
+    const startSeconds = Number.isFinite(start) ? start : 0;
+    const nextStart = chapterStartSeconds(list[index + 1]);
+    const explicitEnd = chapterEndSeconds(chapter);
+    const endSeconds = Number.isFinite(explicitEnd)
+      ? explicitEnd
+      : (Number.isFinite(nextStart) ? nextStart : (duration || Infinity));
+    const title = String(chapter.title || `section ${index + 1}`).trim() || `section ${index + 1}`;
+    return { index: index + 1, title, startSeconds, endSeconds };
+  });
+}
+
+function sliceCuesForChapter(cues = [], chapter) {
+  if (!chapter) return [];
+  const startMs = Number(chapter.startSeconds) * 1000;
+  const endMs = Number(chapter.endSeconds) * 1000;
+  return (cues || []).filter((cue) => {
+    const at = Number(cue.startMs);
+    if (!Number.isFinite(at)) return false;
+    if (!Number.isFinite(startMs)) return true;
+    if (at < startMs) return false;
+    if (Number.isFinite(endMs) && at >= endMs) return false;
+    return true;
+  });
+}
+
+function extractTeachNumbers(text) {
+  const found = [];
+  const seen = new Set();
+  const cleaned = String(text || '')
+    .replace(/\[\d{1,2}:\d{2}(?::\d{2})?\]/g, ' ')
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\b/g, ' ');
+  const pattern = /(?:\$\s*)?\d[\d,]*(?:\.\d+)?(?:\s*(?:%|percent|million|billion|thousand|k\b|people|hours?|minutes?|years?|months?|weeks?|days?|cycles?))?/gi;
+  for (const match of cleaned.matchAll(pattern)) {
+    const token = String(match[0] || '').replace(/\s+/g, ' ').trim();
+    if (!token || /^\d$/.test(token)) continue;
+    const key = token.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    found.push(token);
+  }
+  return found.slice(0, 8);
+}
+
+function extractTeachMechanisms(text) {
+  const found = [];
+  const seen = new Set();
+  const add = (value) => {
+    const token = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!token) return;
+    const key = token.toLowerCase();
+    if (seen.has(key) || MECHANISM_STOP.has(key) || key.length < 3) return;
+    seen.add(key);
+    found.push(key);
+  };
+
+  const raw = String(text || '');
+  for (const match of raw.matchAll(/"([^"]{2,60})"/g)) add(match[1]);
+  for (const match of raw.matchAll(/\b([A-Za-z][\w+-]*(?:\s+[A-Za-z][\w+-]*){0,3})\s+(?:model|pattern|principle|loop|system|method|rule|cycle)\b/gi)) {
+    add(match[1]);
+  }
+  for (const match of raw.matchAll(/\b(\d+[A-Za-z][A-Za-z0-9]+)\b/g)) add(match[1]);
+  for (const match of raw.matchAll(/\b([A-Z]{2,5})\b/g)) add(match[1]);
+  for (const match of raw.matchAll(/\b([A-Z][a-zA-Z0-9+]{2,}(?:\s+[A-Z][a-zA-Z0-9+]*){0,3})\b/g)) {
+    add(match[1]);
+  }
+  return found.slice(0, 8);
+}
+
+function oneTeachCheck(mechanisms, numbers, title) {
+  if (mechanisms[0]) return `what is ${mechanisms[0]}?`;
+  if (numbers[0]) return `what does ${numbers[0]} measure in this chapter?`;
+  return `what is the point of ${title || 'this chapter'}?`;
+}
+
+function quoteYoutubeUrl(url) {
+  return `"${String(url || '').replace(/"/g, '')}"`;
+}
+
+function formatTeachLesson({ url, section, chapters, chapter, cues, title } = {}) {
+  const total = Array.isArray(chapters) && chapters.length ? chapters.length : 1;
+  const heading = String(chapter?.title || 'full video').trim().toLowerCase();
+  const videoTitle = String(title || '').trim().toLowerCase();
+  const body = (cues || []).map((cue) => cue.text).join(' ');
+  const numbers = extractTeachNumbers(body);
+  const mechanisms = extractTeachMechanisms(body);
+  const lines = [
+    `section ${section}/${total}  ${heading}`,
+  ];
+  if (videoTitle) lines.push(videoTitle);
+  lines.push('');
+  lines.push('numbers');
+  if (numbers.length) lines.push(...numbers);
+  else lines.push('none');
+  lines.push('');
+  lines.push('mechanisms');
+  if (mechanisms.length) lines.push(...mechanisms);
+  else lines.push('none');
+  lines.push('');
+  lines.push('check');
+  lines.push(oneTeachCheck(mechanisms, numbers, heading));
+  if (section < total) {
+    lines.push('');
+    lines.push(`next: atris youtube teach ${quoteYoutubeUrl(url)} --section ${section + 1}`);
+  } else {
+    lines.push('');
+    lines.push('next: last section');
+  }
+  return lines.join('\n');
+}
+
+function teachBriefRel(id, section) {
+  return `atris/wiki/briefs/youtube-${id}-s${section}.md`;
+}
+
+function fileTeachBrief({ cwd, url, section, lesson, now } = {}) {
+  try {
+    const id = videoIdFromUrl(url);
+    if (!id || !cwd) return null;
+    const wikiDir = path.join(cwd, 'atris', 'wiki');
+    if (!fs.existsSync(wikiDir)) return null;
+    const rel = teachBriefRel(id, section);
+    const briefsDir = path.join(cwd, 'atris', 'wiki', 'briefs');
+    fs.mkdirSync(briefsDir, { recursive: true });
+    const date = dateStamp(now);
+    const header = [
+      String(lesson || '').split('\n')[0] || `teach section ${section}`,
+      '',
+      `date: ${date}`,
+      `source: ${url}`,
+      `section: ${section}`,
+      'rail: atris youtube teach, one chapter from local captions',
+    ].join('\n');
+    fs.writeFileSync(path.join(cwd, rel), `${header}\n\n${lesson}\n`);
+
+    const journalPath = path.join(cwd, 'atris', 'logs', date.slice(0, 4), `${date}.md`);
+    fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+    let existing = '';
+    if (fs.existsSync(journalPath)) existing = fs.readFileSync(journalPath, 'utf8');
+    const line = `- [claimable] taught: section ${section} -> ${rel}`;
+    if (!existing.includes(line)) {
+      const prefix = existing && !existing.endsWith('\n') ? '\n' : '';
+      fs.writeFileSync(journalPath, `${existing}${prefix}${line}\n`);
+    }
+    return rel;
+  } catch {
+    return null;
+  }
+}
+
+function ensureTeachApply({ cwd, url, section, now, output } = {}) {
+  const id = videoIdFromUrl(url);
+  return applyGate.ensureApply({
+    cwd,
+    source: url,
+    rel: id ? applySidecarRel(`${id}-s${section}`) : null,
+    now,
+    output,
+    incompleteMessage: TEACH_APPLY_NEXT_MESSAGE,
+    required: false,
+  });
+}
+
+async function extractTeachSource(youtubeUrl, deps = {}) {
+  if (typeof deps.extractTeachSource === 'function') {
+    return deps.extractTeachSource(youtubeUrl, deps);
+  }
+  const runner = deps.spawnSync || spawnSync;
+  const result = runner('yt-dlp', ['-J', '--skip-download', '--no-warnings', youtubeUrl], {
+    encoding: 'utf8',
+    timeout: 20000,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0 || !result.stdout) return null;
+
+  let info;
+  try {
+    info = JSON.parse(result.stdout);
+  } catch {
+    return null;
+  }
+
+  const selected = chooseCaptionTrack(info);
+  if (!selected?.track?.url) return null;
+  const rawCaption = await (deps.fetchCaptionText || fetchCaptionText)(selected.track.url);
+  const cues = parseCaptionCues(rawCaption);
+  if (!cues.length) return null;
+
+  return {
+    id: info.id || videoIdFromUrl(youtubeUrl),
+    title: info.title || '',
+    url: youtubeUrl,
+    durationSeconds: Number(info.duration || 0) || undefined,
+    language: selected.language || 'unknown',
+    chapters: normalizeChapters(info.chapters, info.duration),
+    cues,
+  };
+}
+
+async function runYoutubeTeach(args = [], deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  let parsed;
+  try {
+    parsed = parseTeachArgs(args);
+  } catch (err) {
+    output(err.message || YTTEACH_USAGE);
+    return 2;
+  }
+  if (parsed.help) {
+    showYoutubeHelp(output, deps.commandName || 'atris youtube');
+    return 0;
+  }
+
+  const source = await (deps.extractTeachSource || extractTeachSource)(parsed.url, deps);
+  if (!source || !Array.isArray(source.cues) || !source.cues.length) {
+    output('no english captions for this url. teach stays local and will not call process.');
+    return 2;
+  }
+
+  const chapters = normalizeChapters(source.chapters, source.durationSeconds);
+  if (parsed.section > chapters.length) {
+    output(`section ${parsed.section} is past ${chapters.length} chapters. try --section ${chapters.length}`);
+    return 2;
+  }
+
+  const chapter = chapters[parsed.section - 1];
+  const cues = sliceCuesForChapter(source.cues, chapter);
+  const lesson = formatTeachLesson({
+    url: parsed.url,
+    section: parsed.section,
+    chapters,
+    chapter,
+    cues,
+    title: source.title,
+  });
+  output(lesson);
+
+  if (!parsed.save) return 0;
+
+  fileTeachBrief({
+    cwd: deps.cwd || process.cwd(),
+    url: parsed.url,
+    section: parsed.section,
+    lesson,
+    now: deps.now,
+  });
+  const ensureApply = deps.ensureApply || ensureTeachApply;
+  return ensureApply({
+    cwd: deps.cwd || process.cwd(),
+    url: parsed.url,
+    section: parsed.section,
+    now: deps.now,
+    output,
+  });
+}
+
 async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
   if (argv[0] === 'search') {
@@ -1924,6 +2296,11 @@ async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
   if (argv[0] === 'notes') {
     const code = runYoutubeNotes(argv.slice(1), deps);
     if (!deps.output && !deps.spawnSync && !deps.runner && !deps.expander) process.exit(code);
+    return code;
+  }
+  if (argv[0] === 'teach') {
+    const code = await runYoutubeTeach(argv.slice(1), { ...deps, output });
+    if (!deps.output && !deps.extractTeachSource && !deps.spawnSync && !deps.runner) process.exit(code);
     return code;
   }
   if (argv[0] === 'digest') {
@@ -1984,5 +2361,11 @@ module.exports = {
   parseSearchArgs,
   parseSearchStdout,
   formatSearchResults,
+  parseTeachArgs,
+  parseCaptionCues,
+  normalizeChapters,
+  sliceCuesForChapter,
+  formatTeachLesson,
+  extractTeachSource,
   youtubeCommand,
 };

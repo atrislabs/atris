@@ -499,6 +499,8 @@ test('youtube help says notes stay ephemeral unless --save', async () => {
   const text = output.join('\n');
   assert.equal(status, 0);
   assert.match(text, /ephemeral unless --save/);
+  assert.match(text, /teach <youtube-url>/);
+  assert.match(text, /one chapter from local captions/);
   assert.match(text, /unsave <url-or-id>/);
   assert.match(text, /needs a filled Apply/);
 });
