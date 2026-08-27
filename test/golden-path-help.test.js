@@ -24,7 +24,7 @@ function runCli(args) {
   return result;
 }
 
-test('main help is short; help --all surfaces the golden path workflow', () => {
+test('main help is short; help --all opens first-minute then the catalog', () => {
   const mainHelp = runCli(['help']);
   assert.equal(mainHelp.status, 0, mainHelp.stderr);
   const shortLines = mainHelp.stdout.split(/\r?\n/).filter((line) => line.trim()).length;
@@ -50,12 +50,25 @@ test('main help is short; help --all surfaces the golden path workflow', () => {
 
   const allHelp = runCli(['help', '--all']);
   assert.equal(allHelp.status, 0, allHelp.stderr);
+  assert.match(allHelp.stdout, /^you say what you want\. already won\. one next step\./);
+  assert.match(allHelp.stdout, /atris later "/);
+  assert.match(allHelp.stdout, /atris do\b/);
+  assert.match(allHelp.stdout, /atris spaceship/);
+  assert.match(allHelp.stdout, /atris autopilot/);
+  assert.match(allHelp.stdout, /atris mission/);
+  assert.match(allHelp.stdout, /atris recap/);
+  assert.match(allHelp.stdout, /atris review/);
+  assert.match(allHelp.stdout, /atris stop\b/);
+  assert.match(allHelp.stdout, /Keep working/);
+  assert.doesNotMatch(allHelp.stdout, /━/);
+  assert.doesNotMatch(allHelp.stdout, /shows you proof/);
+  assert.doesNotMatch(allHelp.stdout, /Quick start:/);
+  assert.doesNotMatch(allHelp.stdout, /load context \(MAP, tasks, journal\)/);
+  const allTop = allHelp.stdout.split(/\r?\n/).slice(0, 12).join('\n');
+  assert.doesNotMatch(allTop, /task claim|task ready|--proof|Golden path:/);
   assert.match(allHelp.stdout, /golden path \(one tick, by cron or by hand\):/);
   assert.match(allHelp.stdout, /atris task delegate "fix the login bug" --to <member>/);
   assert.match(allHelp.stdout, /atris autoland tick   # second check runs, task lands/);
-  assert.match(allHelp.stdout, /atris task ready <id> --proof/);
-  assert.match(allHelp.stdout, /atris mission status/);
-  assert.match(allHelp.stdout, /ask\/stop\/ready\s+see atris mission and atris task ready/);
   assert.doesNotMatch(allHelp.stdout, /atris ask "what you want"/);
   assert.doesNotMatch(allHelp.stdout, /atris stop\s+Stop the current mission/);
   assert.doesNotMatch(allHelp.stdout, /atris ready --json\s+Show which mission features are ready/);
