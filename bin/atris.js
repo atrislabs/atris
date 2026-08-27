@@ -2442,7 +2442,14 @@ if (command === 'init') {
     process.exit(0);
   }
 
-  applyRunnerFlags(args);
+  const { isUnboundScratchFolder } = require('../lib/scratch-root');
+  const { runObjective, runMissionFront } = require('../commands/run-front');
+  const runTalkOnly = !runObjective(args) && !hasYesFlag(args) && !args.includes('--legacy');
+  // applyRunnerFlags seeds .atris/state/engines.json. First-talk and
+  // unbound scratch must not mint a room. --yes is not an unlock.
+  if (!runTalkOnly && !isUnboundScratchFolder(process.cwd())) {
+    applyRunnerFlags(args);
+  }
 
   if (args.includes('--legacy')) {
     const legacyArgs = args.filter(a => a !== '--legacy');
@@ -2462,7 +2469,7 @@ if (command === 'init') {
         process.exit(1);
       });
   } else {
-    require('../commands/run-front').runMissionFront(args)
+    runMissionFront(args)
       .then((code) => process.exit(code || 0))
       .catch((error) => {
         console.error(`\u2717 Run failed: ${error.message || error}`);

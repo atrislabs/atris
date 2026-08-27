@@ -8,6 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 const { spokenLineCount } = require('../lib/first-minute');
+const { UNBOUND_SCRATCH_MESSAGE } = require('../lib/scratch-root');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -28,6 +29,7 @@ function isolatedEnv(dir, extra = {}) {
   return {
     HOME: home,
     ATRIS_HOME: home,
+    ATRIS_RUNNER_PROFILE: '',
     USER: 'keshav',
     ATRIS_OPERATOR: 'keshav',
     ...extra,
@@ -174,6 +176,50 @@ test('autopilot --help stays usage', () => {
     assert.match(res.stdout, /Usage: atris autopilot/);
     assert.match(res.stdout, /--yes/);
     assert.doesNotMatch(res.stdout, /Autopilot on|Takeoff/i);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('empty-folder atris run talks first-talk and does not mint engines.json', () => {
+  const dir = makeTempDir();
+  const env = isolatedEnv(dir);
+  try {
+    const desk = runCli([], { cwd: dir, env });
+    assert.equal(desk.status, 0, combined(desk));
+    assert.match(desk.stdout, /hey keshav, this folder is empty\./);
+    assert.match(desk.stdout, /next: atris "what do you want here\?"/);
+    assertNoMint(dir);
+
+    const res = runCli(['run'], { cwd: dir, env });
+    assert.equal(res.status, desk.status, combined(res));
+    assert.equal(res.stdout.trim(), desk.stdout.trim());
+    assert.doesNotMatch(combined(res), /Resuming mission|Explore the world for hours|no runnable mission|atris run "<objective>"/i);
+    assert.doesNotMatch(combined(res), /spaceship start:|EMAIL FAILED|EMAIL sent/i);
+    assertNoMint(dir);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'engines.json')), false);
+
+    const leftoverHi = runCli(['brainstorm', 'hi'], { cwd: dir, env });
+    assert.equal(leftoverHi.status, desk.status, combined(leftoverHi));
+    assert.equal(leftoverHi.stdout.trim(), desk.stdout.trim());
+    const leftoverWish = runCli(['wish', 'hi'], { cwd: dir, env });
+    assert.equal(leftoverWish.status, desk.status, combined(leftoverWish));
+    assert.equal(leftoverWish.stdout.trim(), desk.stdout.trim());
+    const status = runCli(['status'], { cwd: dir, env });
+    assert.equal(status.status, 0, combined(status));
+    assert.match(status.stdout, /nothing is running/);
+    const stream = runCli(['stream', '--once'], { cwd: dir, env });
+    assert.notEqual(stream.status, undefined, combined(stream));
+    const shipTalk = runCli(['spaceship'], { cwd: dir, env });
+    assert.equal(shipTalk.status, 2, combined(shipTalk));
+    assert.match(shipTalk.stdout, /I can keep working here for 4 hours\./);
+    assertNoMint(dir);
+
+    const ship = runCli(['spaceship', '--yes'], { cwd: dir, env });
+    assert.equal(ship.status, 2, combined(ship));
+    assert.equal(combined(ship).includes(UNBOUND_SCRATCH_MESSAGE), true);
+    assert.doesNotMatch(combined(ship), /spaceship start:|EMAIL FAILED|EMAIL sent|tick 1 start/i);
+    assertNoMint(dir);
   } finally {
     cleanup(dir);
   }

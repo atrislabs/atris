@@ -185,11 +185,14 @@ test('autopilot inviteLines talks keep-working English', () => {
 test('atris run with no objective talks like bare atris', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-front-run-'));
   try {
-    const desk = runCli([], { cwd: root, env: { USER: 'keshav', ATRIS_OPERATOR: 'keshav' } });
-    const res = runCli(['run'], { cwd: root, env: { USER: 'keshav', ATRIS_OPERATOR: 'keshav' } });
+    const env = { USER: 'keshav', ATRIS_OPERATOR: 'keshav', ATRIS_RUNNER_PROFILE: '' };
+    const desk = runCli([], { cwd: root, env });
+    const res = runCli(['run'], { cwd: root, env });
     assert.equal(res.status, desk.status);
     assert.equal(res.stdout.trim(), desk.stdout.trim());
     assert.doesNotMatch(res.stdout, /Resuming mission|no runnable mission/i);
+    assert.equal(fs.existsSync(path.join(root, '.atris')), false);
+    assert.equal(fs.existsSync(path.join(root, 'atris')), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
