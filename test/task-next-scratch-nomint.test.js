@@ -140,7 +140,8 @@ test('talk line still starts a room and task next then names the claim', () => {
   try {
     const talk = runCli(['what do you want here?'], { cwd: dir, env, timeout: 60000 });
     assert.equal(talk.status, 0, talk.stderr || talk.stdout);
-    assert.match(talk.stdout, /I saved a first step for this folder/);
+    assert.match(talk.stdout, /this folder is ready\./);
+    assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
     assert.match(nextLine(talk.stdout), /^atris task claim \S+ --as keshav$/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), true);

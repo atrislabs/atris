@@ -620,7 +620,8 @@ test('default entry keeps placeholder MAP on first-minute and gathers after MAP 
     assert.match(res.stdout, /Got it\. I saved your first direction/);
     assert.match(res.stdout, /First task:/);
     assert.match(fs.readFileSync(path.join(dir, '.atris', 'state', 'context_profile.json'), 'utf8'), /college applications/);
-    assert.match(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /First useful step: help me organize college applications/);
+    assert.match(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /help me organize college applications/);
+    assert.doesNotMatch(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /First useful step:/);
   } finally {
     cleanupTempDir(dir);
   }

@@ -1428,9 +1428,10 @@ async function interactiveEntry(userInput, options = {}) {
     if (initStatus !== 0) return initStatus;
     saveContextProfile(workspaceDir, request, { source: 'first_talk' });
     const starter = createStarterTask(workspaceDir, request);
+    const spokenTitle = (starter && starter.title) || room;
     const next = starter && starter.display_id
       ? `atris task claim ${starter.display_id} --as ${who || 'operator'}`
-      : `atris task new "first useful step for ${room}"`;
+      : `atris task new "${spokenTitle}"`;
     if (options.asJson) {
       console.log(JSON.stringify({
         schema: 'atris.one_lap.v1',
@@ -2150,7 +2151,8 @@ if (command === 'init') {
   }
   require('../commands/now').nowAtris(args);
 } else if (command === 'recap') {
-  require('../commands/recap').recapAtris(process.argv.slice(3));
+  const recapCode = require('../commands/recap').recapAtris(process.argv.slice(3));
+  if (Number.isInteger(recapCode)) process.exit(recapCode);
 } else if (command === 'activate') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
