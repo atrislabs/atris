@@ -304,13 +304,18 @@ test('26d: atris status and stop in a file folder name the file and do not mint'
     };
     const status = runCli(['status'], { cwd: dir, env });
     const stopped = runCli(['stop'], { cwd: dir, env });
+    const pad = runCli(['launchpad'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stdout + status.stderr);
     assert.equal(stopped.status, 0, stopped.stdout + stopped.stderr);
+    assert.equal(pad.status, 0, pad.stdout + pad.stderr);
     assert.match(status.stdout, /^hey keshav, notes.txt is already here\.$/m);
     assert.match(status.stdout, /^next: atris do$/m);
     assert.match(stopped.stdout, /^hey keshav, notes.txt is already here\.$/m);
     assert.match(stopped.stdout, /^next: atris do$/m);
-    assert.doesNotMatch(status.stdout + stopped.stdout + status.stderr + stopped.stderr, /nothing is running|what do you want here|Run "atris init"|cloud-computer|business\.json/);
+    assert.equal(pad.stdout.trim(), status.stdout.trim());
+    assert.match(pad.stdout, /^hey keshav, notes.txt is already here\.$/m);
+    assert.match(pad.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(status.stdout + stopped.stdout + pad.stdout + status.stderr + stopped.stderr + pad.stderr, /nothing is running|what do you want here|Run "atris init"|Set up this workspace|cloud-computer|business\.json/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
   } finally {
@@ -350,22 +355,27 @@ test('26e: atris status after minting a file folder talks keep-working, not fact
     const status = runCli(['status'], { cwd: dir, env });
     const recap = runCli(['recap'], { cwd: dir, env });
     const now = runCli(['now'], { cwd: dir, env });
+    const pad = runCli(['launchpad'], { cwd: dir, env });
     assert.equal(again.status, 0, again.stdout + again.stderr);
     assert.equal(status.status, 0, status.stdout + status.stderr);
     assert.equal(recap.status, 0, recap.stdout + recap.stderr);
     assert.equal(now.status, 0, now.stdout + now.stderr);
+    assert.equal(pad.status, 0, pad.stdout + pad.stderr);
     assert.equal(status.stdout.trim(), again.stdout.trim());
     assert.equal(recap.stdout.trim(), status.stdout.trim());
     assert.equal(now.stdout.trim(), status.stdout.trim());
+    assert.equal(pad.stdout.trim(), status.stdout.trim());
     assert.match(status.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
     assert.match(status.stdout, /^next: atris do$/m);
     assert.match(recap.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
     assert.match(recap.stdout, /^next: atris do$/m);
     assert.match(now.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
     assert.match(now.stdout, /^next: atris do$/m);
+    assert.match(pad.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(pad.stdout, /^next: atris do$/m);
     assert.doesNotMatch(
-      status.stdout + status.stderr + recap.stdout + recap.stderr + now.stdout + now.stderr,
-      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running|ready to claim|# now|Current operating truth/,
+      status.stdout + status.stderr + recap.stdout + recap.stderr + now.stdout + now.stderr + pad.stdout + pad.stderr,
+      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|Set up this workspace|nothing is running|ready to claim|# now|Current operating truth/,
     );
   } finally {
     cleanupTempDir(dir);
@@ -480,21 +490,62 @@ test('26h: atris status after init --yes --minimal talks the claim, not factory 
     const minute = runCli([], { cwd: dir, env });
     const now = runCli(['now'], { cwd: dir, env });
     const status = runCli(['status'], { cwd: dir, env });
+    const pad = runCli(['launchpad'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stdout + minute.stderr);
     assert.equal(now.status, 0, now.stdout + now.stderr);
     assert.equal(status.status, 0, status.stdout + status.stderr);
+    assert.equal(pad.status, 0, pad.stdout + pad.stderr);
     assert.equal(status.stdout.trim(), minute.stdout.trim());
     assert.equal(status.stdout.trim(), now.stdout.trim());
+    assert.equal(pad.stdout.trim(), status.stdout.trim());
     assert.match(status.stdout, /ready to claim/);
     assert.match(status.stdout, /^next: atris task claim /m);
+    assert.match(pad.stdout, /ready to claim/);
+    assert.match(pad.stdout, /^next: atris task claim /m);
     assert.doesNotMatch(
-      status.stdout + status.stderr,
-      /Where we are|Decision: let it run|TASK BOARD|What is queued|already yours|# now|Current operating truth/,
+      status.stdout + status.stderr + pad.stdout + pad.stderr,
+      /Where we are|Decision: let it run|TASK BOARD|What is queued|already yours|# now|Current operating truth|Set up this workspace|atris init/,
     );
 
     const quick = runCli(['status', '--quick'], { cwd: dir, env });
     assert.equal(quick.status, 0, quick.stdout + quick.stderr);
     assert.equal(quick.stdout.trim(), status.stdout.trim());
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('26i: atris launchpad in an empty folder talks first-talk and does not mint', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-launchpad-empty-home-');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    const env = {
+      HOME: home,
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+    };
+    const minute = runCli([], { cwd: dir, env });
+    const now = runCli(['now'], { cwd: dir, env });
+    const pad = runCli(['launchpad'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stdout + minute.stderr);
+    assert.equal(now.status, 0, now.stdout + now.stderr);
+    assert.equal(pad.status, 0, pad.stdout + pad.stderr);
+    assert.equal(pad.stdout.trim(), minute.stdout.trim());
+    assert.equal(pad.stdout.trim(), now.stdout.trim());
+    assert.match(pad.stdout, /^hey keshav, this folder is empty\.$/m);
+    assert.match(pad.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.doesNotMatch(pad.stdout + pad.stderr, /Run "atris init"|Set up this workspace|WHAT HAPPENED|folder not found|init --minimal|claim/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
   } finally {
     cleanupTempDir(dir);
     cleanupTempDir(home);

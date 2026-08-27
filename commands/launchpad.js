@@ -3,6 +3,14 @@
 const fs = require('fs');
 const path = require('path');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
+const {
+  isFreshWorkspace,
+  isKeepWorkingMinute,
+  isClaimMinute,
+  buildFirstMinute,
+  speakFirstMinute,
+  speakKeepWorkingMinute,
+} = require('../lib/first-minute');
 
 const ACTIVE_MISSION_STATUSES = new Set(['planning', 'running', 'ready']);
 
@@ -185,15 +193,18 @@ function loadTaskProjection(root) {
   };
 }
 
-function chooseNextAction({ root, actor, tasks, missions, brain, endgame }) {
-  if (!fs.existsSync(path.join(root, 'atris'))) {
-    return {
-      kind: 'bootstrap',
-      label: 'Initialize this workspace',
-      command: 'atris init',
-      why: 'No atris/ directory exists yet.',
-    };
+function hasLiveKeepWorkingRun(root = process.cwd()) {
+  try {
+    const { pickLiveLocalMission } = require('./mission');
+    return Boolean(pickLiveLocalMission(root));
+  } catch {
+    return false;
   }
+}
+
+function chooseNextAction({ actor, tasks, missions, brain, endgame }) {
+  // No-room folders belong to first-minute, not factory init.
+  // launchpadCommand speaks those two lines before this ranking runs.
 
   const ownClaimed = newest(tasks.filter(task => (
     task.status === 'claimed'
@@ -609,8 +620,32 @@ function launchpadCommand(args = []) {
     showLaunchpadHelp();
     return 0;
   }
-  const payload = collectLaunchpad(process.cwd(), args);
-  if (hasFlag(args, '--json')) {
+  const asJson = hasFlag(args, '--json');
+  const root = process.cwd();
+
+  // Fresh folder: empty talks first-talk. A file already here
+  // names that file, same as bare atris. Do not mint a room.
+  if (isFreshWorkspace(root)) {
+    return speakFirstMinute({ root, fresh: true, asJson });
+  }
+
+  // Just-minted file folder, nothing running: same two lines as
+  // first-minute / the next do. After init, next is claim: same
+  // two lines as bare atris / status / now. Not factory init.
+  // A live mission still gets the board. --json on the claim
+  // path keeps the factory card for scripts.
+  if (!hasLiveKeepWorkingRun(root)) {
+    const minute = buildFirstMinute({ root });
+    if (isKeepWorkingMinute(minute)) {
+      return speakKeepWorkingMinute({ root, asJson });
+    }
+    if (!asJson && isClaimMinute(minute)) {
+      return speakFirstMinute({ root });
+    }
+  }
+
+  const payload = collectLaunchpad(root, args);
+  if (asJson) {
     console.log(JSON.stringify(payload, null, 2));
   } else {
     process.stdout.write(renderLaunchpad(payload));

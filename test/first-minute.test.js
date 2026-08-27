@@ -2236,6 +2236,218 @@ test('atris now after init --yes --minimal talks the claim, not factory now.md',
   }
 });
 
+test('atris launchpad in an empty folder talks first-talk, not factory init', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const now = runCli(['now'], { cwd: dir, env });
+    const pad = runCli(['launchpad'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(now.status, 0, now.stderr || now.stdout);
+    assert.equal(pad.status, 0, pad.stderr || pad.stdout);
+    assert.equal(pad.stdout.trim(), minute.stdout.trim());
+    assert.equal(pad.stdout.trim(), now.stdout.trim());
+    assert.match(pad.stdout, /^hey keshav, this folder is empty\.$/m);
+    assert.match(pad.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.equal(spokenLineCount(pad.stdout), spokenLineCount(minute.stdout));
+    assert.doesNotMatch(
+      pad.stdout + pad.stderr,
+      /Run "atris init"|atris init|Set up this workspace|WHAT HAPPENED|WHAT TO WORK ON NEXT|No waiting work was found|folder not found|init --minimal|claim|\+---/,
+    );
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const jsonPad = runCli(['launchpad', '--json'], { cwd: dir, env });
+    const jsonMinute = runCli(['--json'], { cwd: dir, env });
+    assert.equal(jsonPad.status, jsonMinute.status);
+    const payload = JSON.parse(jsonPad.stdout);
+    assert.equal(payload.reason, 'this folder is empty');
+    assert.equal(payload.next_action, 'atris "what do you want here?"');
+    assert.doesNotMatch(jsonPad.stdout, /folder not found|init|claim|atris\.launchpad\.v1|bootstrap/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const help = runCli(['launchpad', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris launchpad/);
+    assert.doesNotMatch(help.stdout, /this folder is empty|Run "atris init"|Set up this workspace|WHAT HAPPENED/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris launchpad in a folder with a file names the file, not init', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    const now = runCli(['now'], { cwd: dir, env });
+    const pad = runCli(['launchpad'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.equal(now.status, 0, now.stderr || now.stdout);
+    assert.equal(pad.status, 0, pad.stderr || pad.stdout);
+    assert.equal(pad.stdout.trim(), minute.stdout.trim());
+    assert.equal(pad.stdout.trim(), status.stdout.trim());
+    assert.equal(pad.stdout.trim(), now.stdout.trim());
+    assert.match(pad.stdout, /^hey keshav, notes.txt is already here\.$/m);
+    assert.match(pad.stdout, /^next: atris do$/m);
+    assert.equal(spokenLineCount(pad.stdout), spokenLineCount(minute.stdout));
+    assert.doesNotMatch(
+      pad.stdout + pad.stderr,
+      /Run "atris init"|atris init|Set up this workspace|WHAT HAPPENED|WHAT TO WORK ON NEXT|No waiting work was found|this folder is empty|what do you want here|nothing is running|claim|\+---/,
+    );
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const jsonPad = runCli(['launchpad', '--json'], { cwd: dir, env });
+    const jsonMinute = runCli(['--json'], { cwd: dir, env });
+    assert.equal(jsonPad.status, jsonMinute.status);
+    const payload = JSON.parse(jsonPad.stdout);
+    assert.equal(payload.reason, 'notes.txt is already here');
+    assert.equal(payload.next_action, 'atris do');
+    assert.doesNotMatch(jsonPad.stdout, /folder not found|init|claim|atris\.launchpad\.v1|bootstrap|what do you want here/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const help = runCli(['launchpad', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris launchpad/);
+    assert.doesNotMatch(help.stdout, /notes.txt is already here|Run "atris init"|Set up this workspace/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris launchpad after minting a file folder talks keep-working, not factory', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.md'), 'already writing\n', 'utf8');
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const firstDo = runCli(['do'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(firstDo.status, 0, firstDo.stderr || firstDo.stdout);
+    assert.match(firstDo.stdout, /hey keshav, notes.md is ready\./);
+    assert.match(firstDo.stdout, /^next: atris do$/m);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+
+    const listed = runCli(['mission', 'list'], { cwd: dir, env });
+    assert.equal(listed.status, 0, listed.stderr || listed.stdout);
+    assert.match(listed.stdout, /No missions yet/i);
+
+    const minute = runCli([], { cwd: dir, env });
+    const again = runCli(['do'], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    const now = runCli(['now'], { cwd: dir, env });
+    const pad = runCli(['launchpad'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(again.status, 0, again.stderr || again.stdout);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.equal(now.status, 0, now.stderr || now.stdout);
+    assert.equal(pad.status, 0, pad.stderr || pad.stdout);
+    assert.equal(pad.stdout.trim(), minute.stdout.trim());
+    assert.equal(pad.stdout.trim(), again.stdout.trim());
+    assert.equal(pad.stdout.trim(), status.stdout.trim());
+    assert.equal(pad.stdout.trim(), now.stdout.trim());
+    assert.match(pad.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(pad.stdout, /^next: atris do$/m);
+    assert.equal(spokenLineCount(pad.stdout), 2);
+    assert.doesNotMatch(
+      pad.stdout + pad.stderr,
+      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|Set up this workspace|WHAT HAPPENED|RUN THIS|atris init|nothing is running|what do you want here|ready to claim|# now|\+---/,
+    );
+
+    const jsonPad = runCli(['launchpad', '--json'], { cwd: dir, env });
+    assert.equal(jsonPad.status, 0, jsonPad.stderr || jsonPad.stdout);
+    const payload = JSON.parse(jsonPad.stdout);
+    assert.equal(payload.next_action, 'atris do');
+    assert.equal(payload.reason, '"notes.md" is already yours');
+    assert.doesNotMatch(jsonPad.stdout, /Where we are|let it run|Generate MAP|atris\.launchpad\.v1|bootstrap|atris init/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris launchpad after init --yes --minimal talks the claim, not factory init', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /^next: atris task claim /m);
+
+    const minute = runCli([], { cwd: dir, env });
+    const now = runCli(['now'], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    const pad = runCli(['launchpad'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(now.status, 0, now.stderr || now.stdout);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.equal(pad.status, 0, pad.stderr || pad.stdout);
+    assert.equal(pad.stdout.trim(), minute.stdout.trim());
+    assert.equal(pad.stdout.trim(), now.stdout.trim());
+    assert.equal(pad.stdout.trim(), status.stdout.trim());
+    assert.match(pad.stdout, /generate map\.md/i);
+    assert.match(pad.stdout, /ready to claim/);
+    assert.match(pad.stdout, /^next: atris task claim /m);
+    assert.equal(nextLine(pad.stdout), nextLine(minute.stdout));
+    assert.match(nextLine(pad.stdout), /^atris task claim \S+ --as \S+$/);
+    assert.equal(spokenLineCount(pad.stdout), spokenLineCount(minute.stdout));
+    assert.equal(spokenLineCount(pad.stdout), 2);
+    assert.doesNotMatch(
+      pad.stdout + pad.stderr,
+      /Where we are|Decision: let it run|TASK BOARD|What is queued|What is blocking|Set up this workspace|WHAT HAPPENED|RUN THIS|atris init|nothing is running|what do you want here|already yours|# now|\+---/,
+    );
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    const nowStamp = new Date().toISOString();
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: 'mission-live',
+      objective: 'Keep the live mission visible',
+      owner: 'executor',
+      status: 'running',
+      created_at: nowStamp,
+      updated_at: nowStamp,
+    })}\n`);
+    const live = runCli(['launchpad'], { cwd: dir, env });
+    assert.equal(live.status, 0, live.stderr || live.stdout);
+    assert.match(live.stdout, /WHAT HAPPENED|RUN THIS|Live job|New change ready to start|No clear next move/);
+    assert.doesNotMatch(live.stdout, /ready to claim|Set up this workspace|atris init/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris status and stop in a git folder name the last commit, not empty first-talk', () => {
   const dir = makeTempDir();
   const homeParent = makeTempDir();
