@@ -329,24 +329,25 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
 
     const firstRun = runInstalled([]);
     assertGoldenPathStep(firstRun, 'first run');
-    assert.match(firstRun.stdout, /is empty\./);
-    assert.match(firstRun.stdout, /next: atris "what do you want here\?"/);
+    assert.match(firstRun.stdout, /README\.md is already here\./);
+    assert.match(firstRun.stdout, /^next: atris do$/m);
 
-    const talk = runInstalled(printedAtrisArgs(firstRun.stdout, 'next'), { timeout: 30000 });
-    assertGoldenPathStep(talk, 'printed first talk');
-    assert.match(talk.stdout, /workspace is ready\./);
+    const doArgs = printedAtrisArgs(firstRun.stdout, 'next');
+    assert.deepEqual(doArgs, ['do']);
+
+    const talk = runInstalled(doArgs, { timeout: 30000 });
+    assertGoldenPathStep(talk, 'printed do from files already here');
+    assert.match(talk.stdout, /README\.md is ready\./);
+    assert.match(talk.stdout, /^next: atris do$/m);
     assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
     assert.doesNotMatch(talk.stdout, /atris initialized|What do you want to build|minimal scaffold/i);
-
-    const doArgs = printedAtrisArgs(talk.stdout, 'next');
-    assert.deepEqual(doArgs, ['do']);
     assert.doesNotMatch(talk.stdout, /atris task (claim|show) /);
 
     const doit = runInstalled(doArgs);
-    assertGoldenPathStep(doit, 'printed do after first talk');
+    assertGoldenPathStep(doit, 'second do after first-talk');
     assert.match(doit.stdout, /already yours/);
     assert.match(doit.stdout, /^next: atris do$/m);
-    assert.doesNotMatch(doit.stdout, /atris task show |PROMPT ONLY|Atris Do|executor\.md/);
+    assert.doesNotMatch(doit.stdout, /atris task show |PROMPT ONLY|You are the Executor|executor\.md/);
 
     const afterDo = runInstalled([]);
     assertGoldenPathStep(afterDo, 'first minute after do');
