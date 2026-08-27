@@ -141,6 +141,28 @@ function collect() {
   };
 }
 
+function escapeRe(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function assertTeachApplyClaimable(cwd, { id, section, tokens = [], date = '2026-08-27' } = {}) {
+  const packRel = `atris/experiments/${teachExperimentSlug(id, section)}`;
+  const applyRel = `atris/wiki/briefs/youtube-${id}-s${section}.apply.md`;
+  const sidecar = fs.readFileSync(path.join(cwd, applyRel), 'utf8');
+  assert.match(sidecar, new RegExp(escapeRe(packRel)));
+  assert.match(sidecar, /keep only if measure\.py moves 0→1/);
+  assert.match(sidecar, /scores 1 only when the fixture contains the check tokens/);
+  for (const token of tokens) {
+    assert.doesNotMatch(sidecar, new RegExp(escapeRe(token), 'i'));
+  }
+  const journal = fs.readFileSync(path.join(cwd, 'atris', 'logs', date.slice(0, 4), `${date}.md`), 'utf8');
+  assert.match(journal, /\[claimable\] apply: /);
+  assert.match(journal, new RegExp(escapeRe(packRel)));
+  assert.match(journal, /keep only if measure\.py moves 0→1/);
+  assert.match(journal, /scores 1 only when the fixture contains the check tokens/);
+  return { packRel, applyRel, sidecar, journal };
+}
+
 function fixtureSource() {
   return {
     id: 'teach01',
@@ -365,7 +387,7 @@ test('youtube teach without --save writes no atris files', async () => {
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
 });
 
-test('youtube teach --save still exits 0 when apply is missing', async () => {
+test('youtube teach --save writes one pack-named apply claimable', async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-save-'));
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const out = collect();
@@ -377,13 +399,19 @@ test('youtube teach --save still exits 0 when apply is missing', async () => {
   });
 
   assert.equal(status, 0);
-  assert.match(out.text(), /next: write one apply/);
+  assert.match(out.text(), /next: apply atris\/experiments\/teach-teach01-s1\. keep only if measure\.py moves 0→1/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
-  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.apply.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1', 'measure.py')), true);
+  const claim = assertTeachApplyClaimable(cwd, {
+    id: 'teach01',
+    section: 1,
+    tokens: ['omakase model', 'what is the omakase model?'],
+  });
+  assert.doesNotMatch(claim.sidecar, /fill this/i);
+  assert.doesNotMatch(claim.journal, /apply: fill this/);
 });
 
-test('youtube teach --save on lex highlight files the brief and exits 0', async () => {
+test('youtube teach --save on lex highlight files the brief and a pack-named apply', async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-lex-save-'));
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const out = collect();
@@ -397,11 +425,15 @@ test('youtube teach --save on lex highlight files the brief and exits 0', async 
   assert.equal(status, 0);
   assert.match(out.text(), /60 seconds to install/);
   assert.match(out.text(), /overton window/);
-  assert.match(out.text(), /next: write one apply/);
+  assert.match(out.text(), /next: apply atris\/experiments\/teach-nyfgcesmika-s1\. keep only if measure\.py moves 0→1/);
   assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-NYFGCESmikA-s1.md')), true);
-  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-NYFGCESmikA-s1.apply.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-nyfgcesmika-s1', 'measure.py')), true);
+  assertTeachApplyClaimable(cwd, {
+    id: 'NYFGCESmikA',
+    section: 1,
+    tokens: ['overton window', '60 seconds to install', 'what is the overton window?'],
+  });
 });
 
 test('youtube teach --save refuses a thin chapter and writes no brief', async () => {
@@ -490,6 +522,11 @@ test('youtube teach rich --save mints a measure.py that validate.py accepts and 
   assert.equal(hit.total, 1);
   assert.equal(hit.status, 'pass');
 
+  const claim = assertTeachApplyClaimable(cwd, {
+    id: 'teach01',
+    section: 1,
+    tokens: ['omakase model', 'what is the omakase model?'],
+  });
   const stub = spawnSync(pythonCmd, [path.join(packDir, 'measure.py')], {
     cwd: packDir,
     encoding: 'utf8',
@@ -498,6 +535,43 @@ test('youtube teach rich --save mints a measure.py that validate.py accepts and 
   assert.equal(stub.status, 0, stub.stderr || stub.stdout);
   const stubPayload = JSON.parse(stub.stdout.trim().split('\n').pop());
   assert.equal(stubPayload.score, 0);
+  assert.doesNotMatch(claim.sidecar, /omakase model/i);
+});
+
+test('youtube teach rich --save apply sidecar omits check tokens so measure.py scores 0', async () => {
+  assert.ok(pythonCmd, 'python3 is required to score the minted pack');
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-apply-claim-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+
+  assert.equal(status, 0);
+  const claim = assertTeachApplyClaimable(cwd, {
+    id: 'teach01',
+    section: 1,
+    tokens: ['omakase model', 'what is the omakase model?'],
+  });
+  assert.match(claim.sidecar, /^change: apply atris\/experiments\/teach-teach01-s1$/m);
+  assert.match(claim.sidecar, /^receipt: keep only if measure\.py moves 0→1\. scores 1 only when the fixture contains the check tokens\.$/m);
+  assert.match(
+    claim.journal,
+    /\[claimable\] apply: atris\/experiments\/teach-teach01-s1\. keep only if measure\.py moves 0→1\. scores 1 only when the fixture contains the check tokens\./,
+  );
+
+  const measured = spawnSync(pythonCmd, [path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1', 'measure.py')], {
+    cwd: path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1'),
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_REPO_ROOT: cwd },
+  });
+  assert.equal(measured.status, 0, measured.stderr || measured.stdout);
+  const payload = JSON.parse(measured.stdout.trim().split('\n').pop());
+  assert.equal(payload.score, 0);
+  assert.equal(payload.status, 'fail');
 });
 
 test('youtube teach thin chapter without --save still writes no atris files', async () => {

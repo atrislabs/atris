@@ -1940,6 +1940,7 @@ const YTTEACH_USAGE = 'usage: atris youtube teach <youtube-url> [--section N] [-
 const TEACH_PAID_REFUSE = 'teach is free local captions. drop --paid.';
 const TEACH_THIN_REFUSE = 'thin: no number or named mechanism. no brief.';
 const TEACH_APPLY_NEXT_MESSAGE = APPLY_NEXT_MESSAGE;
+const TEACH_KEEP_RULE = 'keep only if measure.py moves 0→1. scores 1 only when the fixture contains the check tokens.';
 const MECHANISM_STOP = new Set([
   'the', 'this', 'that', 'and', 'but', 'for', 'with', 'from', 'you', 'we', 'they',
   'what', 'when', 'how', 'why', 'there', 'here', 'then', 'just', 'also', 'very',
@@ -2192,6 +2193,10 @@ function teachExperimentSlug(id, section) {
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '') || 'video';
   return `teach-${safe}-s${Number(section) || 1}`;
+}
+
+function teachExperimentRel(id, section) {
+  return `atris/experiments/${teachExperimentSlug(id, section)}`;
 }
 
 function teachCheckNeedles(lesson = {}) {
@@ -2485,16 +2490,22 @@ function fileTeachBrief({ cwd, url, section, lesson, now } = {}) {
   }
 }
 
-function ensureTeachApply({ cwd, url, section, now, output } = {}) {
+function ensureTeachApply({ cwd, url, section, packRel, now, output } = {}) {
   const id = videoIdFromUrl(url);
+  const pack = packRel || (id ? teachExperimentRel(id, section) : null);
   return applyGate.ensureApply({
     cwd,
     source: url,
     rel: id ? applySidecarRel(`${id}-s${section}`) : null,
     now,
     output,
-    incompleteMessage: TEACH_APPLY_NEXT_MESSAGE,
+    incompleteMessage: pack
+      ? `next: apply ${pack}. keep only if measure.py moves 0→1`
+      : TEACH_APPLY_NEXT_MESSAGE,
     required: false,
+    change: pack ? `apply ${pack}` : undefined,
+    receipt: pack ? TEACH_KEEP_RULE : undefined,
+    journalLine: pack ? `- [claimable] apply: ${pack}. ${TEACH_KEEP_RULE}` : undefined,
   });
 }
 
@@ -2585,21 +2596,21 @@ async function runYoutubeTeach(args = [], deps = {}) {
     lesson: lesson.text,
     now: deps.now,
   });
-  const ensureApply = deps.ensureApply || ensureTeachApply;
-  const applyStatus = ensureApply({
-    cwd: deps.cwd || process.cwd(),
-    url: parsed.url,
-    section: parsed.section,
-    now: deps.now,
-    output,
-  });
-  fileTeachExperiment({
+  const packRel = fileTeachExperiment({
     cwd: deps.cwd || process.cwd(),
     url: parsed.url,
     section: parsed.section,
     lesson,
   });
-  return applyStatus;
+  const ensureApply = deps.ensureApply || ensureTeachApply;
+  return ensureApply({
+    cwd: deps.cwd || process.cwd(),
+    url: parsed.url,
+    section: parsed.section,
+    packRel,
+    now: deps.now,
+    output,
+  });
 }
 
 async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
