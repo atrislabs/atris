@@ -779,10 +779,14 @@ async function stopCommand(args, options = {}) {
   // After do/claim, nothing running: same two keep-working
   // lines as bare atris / status / recap. Not factory
   // cloud-computer. Do not mint a room or bind a computer.
+  // A bound computer still stops the current mission.
   if (!parseMissionId(args) && !hasLiveKeepWorkingRun(root)) {
-    const minute = buildFirstMinute({ root });
-    if (isKeepWorkingMinute(minute)) {
-      return speakKeepWorkingMinute(speak);
+    const unbound = refuseUnboundCloudComputer(args, options, 'stop');
+    if (unbound) {
+      const minute = buildFirstMinute({ root });
+      if (isKeepWorkingMinute(minute)) {
+        return speakKeepWorkingMinute(speak);
+      }
     }
   }
   return changeCurrentMission('stop', {}, args, options);
