@@ -231,6 +231,79 @@ test('fresh first-minute names dirty git work instead of the last commit', () =>
   assert.doesNotMatch(clean, /still open|still has open work/);
 });
 
+test('fresh first-minute names a feature branch already here instead of the last commit', () => {
+  const text = renderFresh({
+    person: 'keshav',
+    folder: 'this folder',
+    files: ['notes.txt', 'draft.md', 'readme.md'],
+    commit: 'tweak readme',
+    branch: 'notes-app',
+  });
+  assert.equal(text, [
+    'hey keshav, notes-app is already here.',
+    '',
+    'next: atris do',
+  ].join('\n'));
+  assert.equal(spokenLineCount(text), 2);
+  const json = freshMinuteJson('this folder', ['notes.txt', 'draft.md', 'readme.md'], {
+    commit: 'tweak readme',
+    branch: 'notes-app',
+  });
+  assert.equal(json.reason, 'notes-app is already here');
+  assert.equal(json.next_action, 'atris do');
+  const long = 'keshav-notes-app-that-remembers-every-idea-plus-backups-sharing-and-a-home-screen-for-later';
+  const clipped = renderFresh({
+    person: 'keshav',
+    folder: 'this folder',
+    files: ['notes.txt'],
+    commit: 'tweak readme',
+    branch: long,
+  });
+  assert.match(clipped, /hey keshav, .+\.\.\. is already here\./);
+  assert.doesNotMatch(clipped, /home-screen-for-later|git log|origin\/|[0-9a-f]{7,}/);
+  assert.match(clipped, /^next: atris do$/m);
+  const fromOrigin = renderFresh({
+    person: 'keshav',
+    folder: 'this folder',
+    files: ['notes.txt'],
+    commit: 'tweak readme',
+    branch: 'origin/notes-app',
+  });
+  assert.match(fromOrigin, /hey keshav, notes-app is already here\./);
+  assert.doesNotMatch(fromOrigin, /origin\/|tweak readme/);
+  for (const trunk of ['main', 'master', 'HEAD', '', 'd3fb7ced']) {
+    const fallback = renderFresh({
+      person: 'keshav',
+      folder: 'this folder',
+      files: ['notes.txt'],
+      commit: 'tweak readme',
+      branch: trunk,
+    });
+    assert.match(fallback, /hey keshav, tweak readme is already here\./, trunk || '(empty)');
+    assert.doesNotMatch(fallback, /notes-app|still open|origin\//, trunk || '(empty)');
+  }
+  const dirtyWins = renderFresh({
+    person: 'keshav',
+    folder: 'this folder',
+    files: ['notes.txt'],
+    commit: 'tweak readme',
+    branch: 'notes-app',
+    dirty: ['notes.txt'],
+  });
+  assert.match(dirtyWins, /hey keshav, notes.txt is still open\./);
+  assert.match(dirtyWins, /^next: atris do$/m);
+  assert.doesNotMatch(dirtyWins, /notes-app|tweak readme|already here/);
+  const hiddenOnly = renderFresh({
+    person: 'keshav',
+    folder: 'this folder',
+    files: ['.git', '.DS_Store'],
+    commit: 'tweak readme',
+    branch: 'notes-app',
+  });
+  assert.match(hiddenOnly, /hey keshav, this folder is empty\./);
+  assert.match(hiddenOnly, /^next: atris "what do you want here\?"$/m);
+});
+
 test('fresh first-minute names one or two files and never dumps a listing', () => {
   const two = renderFresh({
     person: 'keshav',
@@ -1100,6 +1173,108 @@ test('unbound dirty git folder names open work and does not mint', () => {
     assert.match(after.stdout, /"a notes app for keshav" is already yours/);
     assert.equal(nextLine(after.stdout), 'atris do');
     assert.doesNotMatch(after.stdout, /still open|notes\.txt is already here/);
+  } finally {
+    cleanupTempDir(parent);
+  }
+});
+
+test('unbound git folder on a feature branch names the branch and does not mint', () => {
+  const parent = makeTempDir();
+  const dir = path.join(parent, 'notes');
+  const home = path.join(parent, 'home');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(home, { recursive: true });
+  commitIn(dir, 'tweak readme', {
+    'notes.txt': 'already writing\n',
+    'draft.md': 'two\n',
+    'readme.md': 'three\n',
+  });
+  gitOk(dir, ['checkout', '-q', '-b', 'notes-app']);
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(home, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const recap = runCli(['recap'], { cwd: dir, env });
+    const planned = runCli(['plan'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(recap.status, 0, recap.stderr || recap.stdout);
+    assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+    assert.match(minute.stdout, /hey keshav, notes-app is already here\./);
+    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.equal(spokenLineCount(minute.stdout), 2);
+    assert.doesNotMatch(minute.stdout, /tweak readme|this folder already has work|still open|notes\.txt|draft\.md|git log|master|HEAD|origin\/|what do you want here/);
+    assert.doesNotMatch(minute.stdout, /[0-9a-f]{7,}/);
+    assert.equal(recap.stdout.trim(), minute.stdout.trim());
+    assert.equal(planned.stdout.trim(), minute.stdout.trim());
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    for (const leftover of ['brainstorm hi', 'wish hi', 'task next']) {
+      const look = runCli([leftover], { cwd: dir, env });
+      assert.equal(look.status, 0, look.stderr || look.stdout, leftover);
+      assert.equal(look.stdout.trim(), minute.stdout.trim(), leftover);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, leftover);
+      assert.equal(fs.existsSync(path.join(dir, '.atris')), false, leftover);
+    }
+
+    const jsonMinute = runCli(['--json'], { cwd: dir, env });
+    const jsonPayload = JSON.parse(jsonMinute.stdout);
+    assert.equal(jsonMinute.status, 2);
+    assert.equal(jsonPayload.next_action, 'atris do');
+    assert.equal(jsonPayload.reason, 'notes-app is already here');
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    const help = runCli(['--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Golden path:/);
+    assert.doesNotMatch(help.stdout, /notes-app is already here|tweak readme is already here|this folder is empty/);
+
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'still writing\n', 'utf8');
+    const dirty = runCli([], { cwd: dir, env });
+    assert.equal(dirty.status, 0, dirty.stderr || dirty.stdout);
+    assert.match(dirty.stdout, /hey keshav, notes.txt is still open\./);
+    assert.match(dirty.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(dirty.stdout, /notes-app|tweak readme|already here|git status|origin\//);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    gitOk(dir, ['checkout', '-q', '--', 'notes.txt']);
+
+    gitOk(dir, ['checkout', '-q', '--detach']);
+    const detached = runCli([], { cwd: dir, env });
+    assert.equal(detached.status, 0, detached.stderr || detached.stdout);
+    assert.match(detached.stdout, /hey keshav, tweak readme is already here\./);
+    assert.match(detached.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(detached.stdout, /notes-app|still open|origin\/|HEAD|what do you want here/);
+    assert.doesNotMatch(detached.stdout, /[0-9a-f]{7,}/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    gitOk(dir, ['checkout', '-q', '-B', 'master']);
+    const trunk = runCli([], { cwd: dir, env });
+    assert.equal(trunk.status, 0, trunk.stderr || trunk.stdout);
+    assert.match(trunk.stdout, /hey keshav, tweak readme is already here\./);
+    assert.match(trunk.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(trunk.stdout, /notes-app|still open|origin\//);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    gitOk(dir, ['checkout', '-q', '-b', 'keshav-notes-app-that-remembers-every-idea-plus-backups-sharing-and-a-home-screen-for-later']);
+    const long = runCli([], { cwd: dir, env });
+    assert.equal(long.status, 0, long.stderr || long.stdout);
+    assert.match(long.stdout, /hey keshav, .+\.\.\. is already here\./);
+    assert.match(long.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(long.stdout, /home-screen-for-later|tweak readme|origin\//);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    gitOk(dir, ['checkout', '-q', 'notes-app']);
+    const talk = runCli(['a notes app for keshav'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(talk.status, 0, talk.stderr || talk.stdout);
+    assert.match(talk.stdout, /hey keshav, a notes app for keshav is ready\./);
+    assert.match(talk.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(talk.stdout, /notes-app is already here|still open|atris task (claim|show) /);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+
+    const after = runCli([], { cwd: dir, env });
+    assert.equal(after.status, 0, after.stderr || after.stdout);
+    assert.match(after.stdout, /"a notes app for keshav" is already yours/);
+    assert.equal(nextLine(after.stdout), 'atris do');
+    assert.doesNotMatch(after.stdout, /notes-app is already here|notes\.txt is already here/);
   } finally {
     cleanupTempDir(parent);
   }
