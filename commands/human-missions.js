@@ -14,7 +14,7 @@ const {
 const { apiRequestJson } = require('../utils/api');
 const { decodeJwtClaims, loadCredentials } = require('../utils/auth');
 const { isHelpToken } = require('../lib/noninteractive');
-const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
+const { firstTalkCommand, isFreshWorkspace, personName, speakFirstMinute } = require('../lib/first-minute');
 
 const PACKAGE_PATH = path.join(__dirname, '..', 'package.json');
 const HUMAN_STATES = Object.freeze({
@@ -168,7 +168,8 @@ function parseMissionId(args = []) {
 
 /**
  * Scratch / unbound folders must not drive account-current cloud work.
- * Require an explicit mission/task id: atris stop --mission <id>
+ * Empty-folder stop talks first-talk instead. After a room exists,
+ * require an explicit mission/task id: atris stop --mission <id>
  */
 function refuseUnboundCloudComputer(args = [], options = {}, commandName = 'stop') {
   const root = options.root || process.cwd();
@@ -738,10 +739,42 @@ async function approveCommand(args, options = {}) {
   return changeCurrentMission('approve', {}, args, options);
 }
 
+function speakNothingRunning({ asJson = false, log = console.log } = {}) {
+  const next = firstTalkCommand();
+  if (asJson) {
+    log(JSON.stringify({
+      schema: 'atris.one_lap.v1',
+      ok: false,
+      status: 'stuck',
+      reason: 'nothing is running',
+      next_action: next,
+    }, null, 2));
+    return 2;
+  }
+  const person = personName();
+  const hello = person ? `hey ${person}, ` : '';
+  log('');
+  log(`${hello}nothing is running.\n\nnext: ${next}`);
+  return 0;
+}
+
 async function stopCommand(args, options = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     (options.log || console.log)('Usage: atris stop [--mission <id>] [--json]');
     return 0;
+  }
+  const root = options.root || process.cwd();
+  const asJson = args.includes('--json');
+  // Empty folder: nothing is running. Same first-talk next as bare atris.
+  // Do not mint a room, do not hit the cloud, do not name business.json.
+  if (isFreshWorkspace(root) && !parseMissionId(args)) {
+    const unbound = refuseUnboundCloudComputer(args, options, 'stop');
+    if (unbound) {
+      return speakNothingRunning({
+        asJson,
+        log: options.log || console.log,
+      });
+    }
   }
   return changeCurrentMission('stop', {}, args, options);
 }

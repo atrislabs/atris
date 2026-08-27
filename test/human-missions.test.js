@@ -422,6 +422,31 @@ test('stop stops the current mission', async () => {
   assert.equal(JSON.parse(output.stdout.join('\n')).state, 'stopped');
 });
 
+test('stop in an empty folder talks first-talk and does not hit the cloud', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-human-stop-empty-'));
+  const output = outputCapture();
+  try {
+    const code = await stopCommand([], {
+      ...output,
+      root,
+      setProcessExitCode: false,
+      loadCredentials: credentials,
+      apiRequestJson: async () => {
+        throw new Error('empty-folder stop must not hit the network');
+      },
+    });
+    const spoken = output.stdout.join('\n');
+    assert.equal(code, 0);
+    assert.match(spoken, /nothing is running/);
+    assert.match(spoken, /next: atris "what do you want here\?"/);
+    assert.doesNotMatch(spoken, /cloud-computer|business\.json|Pass --mission/);
+    assert.equal(fs.existsSync(path.join(root, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(root, '.atris')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('mission answer sends text to the current mission', async () => {
   const calls = [];
   const output = outputCapture();
