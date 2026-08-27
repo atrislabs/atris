@@ -57,6 +57,39 @@ function assertNowJson(result, { ok }) {
   return payload;
 }
 
+test('now --json in a file folder names the file and does not mint', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.md'), 'already writing\n', 'utf8');
+  try {
+    const spoken = runCli(['now'], {
+      cwd: dir,
+      env: { HOME: home, USER: 'keshav' },
+      input: '',
+    });
+    assert.equal(spoken.status, 0, spoken.stderr || spoken.stdout);
+    assert.match(spoken.stdout, /^hey keshav, notes.md is already here\.$/m);
+    assert.match(spoken.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(spoken.stdout + spoken.stderr, /Run "atris init"|folder not found|# now|Current operating truth/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    const res = runCli(['now', '--json'], {
+      cwd: dir,
+      env: { HOME: home, USER: 'keshav' },
+      input: '',
+    });
+    assert.equal(res.status, 2, res.stderr || res.stdout);
+    const payload = assertNowJson(res, { ok: false });
+    assert.equal(payload.current, 'notes.md is already here');
+    assert.equal(payload.next, 'atris do');
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('now --json in an empty folder prints real JSON and does not mint', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');

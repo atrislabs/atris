@@ -3,6 +3,13 @@ const path = require('path');
 const { hasRenderedSections, isOpenSection } = require('../lib/todo-sections');
 const { renderMorningCardRow } = require('../lib/receipt-block');
 const { historicalLandingText } = require('../lib/autoland');
+const {
+  buildFirstMinute,
+  isFreshWorkspace,
+  isKeepWorkingMinute,
+  speakFirstMinute,
+  speakKeepWorkingMinute,
+} = require('../lib/first-minute');
 
 const NOW_PATH = path.join('atris', 'now.md');
 const TASK_EPISODES_PATH = path.join('.atris', 'state', 'task_episodes.jsonl');
@@ -589,8 +596,16 @@ function printNowJson(payload) {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+function hasLiveKeepWorkingRun(root = process.cwd()) {
+  try {
+    const { pickLiveLocalMission } = require('./mission');
+    return Boolean(pickLiveLocalMission(root));
+  } catch {
+    return false;
+  }
+}
+
 function nowJsonPayload(root = process.cwd()) {
-  const { buildFirstMinute, isFreshWorkspace } = require('../lib/first-minute');
   const fresh = isFreshWorkspace(root);
   const screen = buildFirstMinute({ root, fresh });
   const payload = { ok: !fresh };
@@ -628,6 +643,23 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
       const payload = nowJsonPayload(root);
       printNowJson(payload);
       return payload.ok ? 0 : 2;
+    }
+
+    // Fresh folder: empty talks first-talk. A file already here
+    // names that file, same as bare atris / now --json. Do not mint.
+    // Just-minted file folder, nothing running: same two lines as
+    // first-minute / status / recap. Not factory MAP.md.
+    // --init / --refresh / --all / --path still write now.md.
+    if (!init && !refresh && !all && !pathOnly) {
+      if (isFreshWorkspace(root)) {
+        return speakFirstMinute({ root, fresh: true });
+      }
+      if (!hasLiveKeepWorkingRun(root)) {
+        const minute = buildFirstMinute({ root });
+        if (isKeepWorkingMinute(minute)) {
+          return speakKeepWorkingMinute({ root });
+        }
+      }
     }
 
     let result;

@@ -349,19 +349,59 @@ test('26e: atris status after minting a file folder talks keep-working, not fact
     const again = runCli(['do'], { cwd: dir, env });
     const status = runCli(['status'], { cwd: dir, env });
     const recap = runCli(['recap'], { cwd: dir, env });
+    const now = runCli(['now'], { cwd: dir, env });
     assert.equal(again.status, 0, again.stdout + again.stderr);
     assert.equal(status.status, 0, status.stdout + status.stderr);
     assert.equal(recap.status, 0, recap.stdout + recap.stderr);
+    assert.equal(now.status, 0, now.stdout + now.stderr);
     assert.equal(status.stdout.trim(), again.stdout.trim());
     assert.equal(recap.stdout.trim(), status.stdout.trim());
+    assert.equal(now.stdout.trim(), status.stdout.trim());
     assert.match(status.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
     assert.match(status.stdout, /^next: atris do$/m);
     assert.match(recap.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
     assert.match(recap.stdout, /^next: atris do$/m);
+    assert.match(now.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(now.stdout, /^next: atris do$/m);
     assert.doesNotMatch(
-      status.stdout + status.stderr + recap.stdout + recap.stderr,
-      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running|ready to claim/,
+      status.stdout + status.stderr + recap.stdout + recap.stderr + now.stdout + now.stderr,
+      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running|ready to claim|# now|Current operating truth/,
     );
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('26f: atris now in a file folder names the file and does not mint', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-now-file-home-');
+  fs.writeFileSync(path.join(dir, 'notes.md'), 'already writing\n', 'utf8');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    const env = {
+      HOME: home,
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+      ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    };
+    const minute = runCli([], { cwd: dir, env });
+    const now = runCli(['now'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stdout + minute.stderr);
+    assert.equal(now.status, 0, now.stdout + now.stderr);
+    assert.equal(now.stdout.trim(), minute.stdout.trim());
+    assert.match(now.stdout, /^hey keshav, notes.md is already here\.$/m);
+    assert.match(now.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|# now|Current operating truth|Generate MAP\.md|claim/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
   } finally {
     cleanupTempDir(dir);
     cleanupTempDir(home);
