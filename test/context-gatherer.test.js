@@ -52,7 +52,9 @@ test('context gatherer creates an onboarding task when Atris workspace exists', 
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const previousDb = process.env.ATRIS_TASKS_DB;
+  const previousUser = process.env.USER;
   process.env.ATRIS_TASKS_DB = path.join(dir, 'tasks.db');
+  process.env.USER = 'keshav';
   const taskDb = require('../lib/task-db');
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -61,16 +63,22 @@ test('context gatherer creates an onboarding task when Atris workspace exists', 
     assert.equal(task.inserted, true);
     assert.equal(task.title, starterTaskTitle('build a simple personal website'));
     assert.match(task.display_id, /^[A-Z0-9]{3}-1$/);
+    assert.equal(task.status, 'claimed');
+    assert.equal(task.claimed_by, 'keshav');
     const db = taskDb.open();
     const rows = taskDb.listTasks(db, { workspaceRoot: taskDb.workspaceRoot(dir) });
     assert.equal(rows.length, 1);
     assert.equal(rows[0].tag, 'onboarding');
+    assert.equal(rows[0].status, 'claimed');
+    assert.equal(rows[0].claimed_by, 'keshav');
     assert.match(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /build a simple personal website/);
     assert.doesNotMatch(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /First useful step:/);
   } finally {
     taskDb.close();
     if (previousDb === undefined) delete process.env.ATRIS_TASKS_DB;
     else process.env.ATRIS_TASKS_DB = previousDb;
+    if (previousUser === undefined) delete process.env.USER;
+    else process.env.USER = previousUser;
     cleanupTempDir(dir);
   }
 });

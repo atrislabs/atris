@@ -61,6 +61,7 @@ const {
 } = require('../lib/context-gatherer');
 const {
   buildFirstMinute,
+  firstTalkJson,
   folderName,
   freshMinuteJson,
   isBareAtrisFlag,
@@ -1417,20 +1418,8 @@ async function interactiveEntry(userInput, options = {}) {
     if (initStatus !== 0) return initStatus;
     saveContextProfile(workspaceDir, request, { source: 'first_talk' });
     const starter = createStarterTask(workspaceDir, request);
-    const spokenTitle = (starter && starter.title) || room;
-    const next = starter && starter.display_id
-      ? `atris task claim ${starter.display_id} --as ${who || 'operator'}`
-      : `atris task new "${spokenTitle}"`;
     if (options.asJson) {
-      console.log(JSON.stringify({
-        schema: 'atris.one_lap.v1',
-        ok: true,
-        status: 'started',
-        next_action: next,
-        task: starter && starter.display_id
-          ? { display_id: starter.display_id, title: starter.title }
-          : null,
-      }, null, 2));
+      console.log(JSON.stringify(firstTalkJson({ starter, person: who, folder: room }), null, 2));
       return 0;
     }
     console.log('');
