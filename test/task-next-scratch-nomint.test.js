@@ -142,14 +142,14 @@ test('talk line still starts a room and task next then names the claim', () => {
     assert.equal(talk.status, 0, talk.stderr || talk.stdout);
     assert.match(talk.stdout, /this folder is ready\./);
     assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
-    assert.match(nextLine(talk.stdout), /^atris task show \S+$/);
-    assert.doesNotMatch(talk.stdout, /atris task claim /);
+    assert.equal(nextLine(talk.stdout), 'atris do');
+    assert.doesNotMatch(talk.stdout, /atris task (claim|show) /);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), true);
 
     const next = runCli(['task', 'next'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr || next.stdout);
-    assert.match(nextLine(next.stdout), /^atris task (claim|show|ready) /);
+    assert.match(nextLine(next.stdout), /^atris task (claim|show|ready) |^atris do$/);
     assert.doesNotMatch(next.stdout, /this folder is empty|atris task new/);
 
     const wish = runCli(['wish', 'hi', '--no-mission'], { cwd: dir, env: { ...env, ATRIS_WISH_NO_DRIVER: '1' } });

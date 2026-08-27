@@ -272,8 +272,8 @@ test('task list marks decision rows and task next refuses them', () => {
     const afterClaim = runCli(['task', 'next', '--as', 'fleet-codex', '--json'], { cwd: dir, env });
     assert.equal(afterClaim.status, 0, afterClaim.stderr || afterClaim.stdout);
     const afterPayload = JSON.parse(afterClaim.stdout);
-    assert.equal(afterPayload.action, 'show');
-    assert.equal(afterPayload.command, `atris task show ${work.display_id}`);
+    assert.equal(afterPayload.action, 'do');
+    assert.equal(afterPayload.command, 'atris do');
     assert.equal(
       JSON.parse(runCli(['task', 'show', decision.display_id, '--json'], { cwd: dir, env }).stdout).status,
       'open',
