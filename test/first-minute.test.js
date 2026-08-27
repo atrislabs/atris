@@ -12,6 +12,7 @@ const {
   folderName,
   isFirstTalkLine,
   freshMinuteJson,
+  freshNextCommand,
   isLeftoverVerbLook,
   isTaskNextLook,
   personName,
@@ -94,10 +95,12 @@ test('fresh first-minute names a file already here instead of empty', () => {
   assert.equal(text, [
     'hey keshav, notes.txt is already here.',
     '',
-    'next: atris "what do you want here?"',
+    'next: atris do',
   ].join('\n'));
   assert.equal(spokenLineCount(text), 2);
-  assert.equal(freshMinuteJson('this folder', ['notes.txt']).reason, 'notes.txt is already here');
+  const json = freshMinuteJson('this folder', ['notes.txt']);
+  assert.equal(json.reason, 'notes.txt is already here');
+  assert.equal(json.next_action, 'atris do');
 });
 
 test('fresh first-minute names one or two files and never dumps a listing', () => {
@@ -107,6 +110,7 @@ test('fresh first-minute names one or two files and never dumps a listing', () =
     files: ['notes.txt', 'draft.md'],
   });
   assert.match(two, /hey keshav, draft.md and notes.txt are already here\./);
+  assert.match(two, /^next: atris do$/m);
   assert.equal(spokenLineCount(two), 2);
   const many = renderFresh({
     person: 'keshav',
@@ -114,7 +118,8 @@ test('fresh first-minute names one or two files and never dumps a listing', () =
     files: ['a.txt', 'b.txt', 'c.txt', 'd.txt'],
   });
   assert.match(many, /hey keshav, this folder already has work\./);
-  assert.doesNotMatch(many, /a\.txt|b\.txt|c\.txt|d\.txt/);
+  assert.match(many, /^next: atris do$/m);
+  assert.doesNotMatch(many, /a\.txt|b\.txt|c\.txt|d\.txt|what do you want here/);
   assert.equal(spokenLineCount(many), 2);
 });
 
@@ -125,6 +130,7 @@ test('hidden names do not count as work in a fresh folder', () => {
     files: ['.DS_Store', '.git', 'notes.txt', 'tasks.db'],
   });
   assert.match(text, /hey keshav, notes.txt is already here\./);
+  assert.match(text, /^next: atris do$/m);
   assert.doesNotMatch(text, /this folder is empty|this folder already has work|\.DS_Store|\.git|tasks\.db/);
   const hiddenOnly = renderFresh({
     person: 'keshav',
@@ -132,6 +138,14 @@ test('hidden names do not count as work in a fresh folder', () => {
     files: ['.DS_Store', '.git', 'tasks.db', 'tasks.db-wal'],
   });
   assert.match(hiddenOnly, /hey keshav, this folder is empty\./);
+  assert.match(hiddenOnly, /^next: atris "what do you want here\?"$/m);
+});
+
+test('fresh next is do when files are here and talk when empty', () => {
+  assert.equal(freshNextCommand(['notes.txt']), 'atris do');
+  assert.equal(freshNextCommand(['draft.md', 'notes.txt']), 'atris do');
+  assert.equal(freshNextCommand(['.git', 'tasks.db']), 'atris "what do you want here?"');
+  assert.equal(freshNextCommand([]), 'atris "what do you want here?"');
 });
 
 test('claimed task first-minute names the person or title and one next command', () => {
@@ -665,11 +679,13 @@ test('unbound folder with notes.txt names the file and does not mint', () => {
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.equal(doit.status, 0, doit.stderr || doit.stdout);
     assert.match(minute.stdout, /hey keshav, notes.txt is already here\./);
-    assert.match(minute.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(minute.stdout, /what do you want here/);
     assert.equal(spokenLineCount(minute.stdout), 2);
     assert.doesNotMatch(minute.stdout, /this folder is empty|this folder already has work|\.DS_Store|\.git/);
     assert.equal(recap.stdout.trim(), minute.stdout.trim());
     assert.equal(doit.stdout.trim(), minute.stdout.trim());
+    assert.doesNotMatch(doit.stdout, /PROMPT ONLY|Atris Do|What do you want to build|executor\.md|Run "atris init"/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
 
@@ -680,6 +696,15 @@ test('unbound folder with notes.txt names the file and does not mint', () => {
       assert.equal(fs.existsSync(path.join(dir, 'atris')), false, leftover);
       assert.equal(fs.existsSync(path.join(dir, '.atris')), false, leftover);
     }
+
+    const jsonMinute = runCli(['--json'], { cwd: dir, env });
+    const jsonDo = runCli(['do', '--json'], { cwd: dir, env });
+    assert.equal(jsonDo.status, jsonMinute.status);
+    const jsonPayload = JSON.parse(jsonMinute.stdout);
+    assert.deepEqual(JSON.parse(jsonDo.stdout), jsonPayload);
+    assert.equal(jsonPayload.next_action, 'atris do');
+    assert.equal(jsonPayload.reason, 'notes.txt is already here');
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 
     const help = runCli(['--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
@@ -727,7 +752,8 @@ test('unbound folder names a directory that already has work', () => {
     const minute = runCli([], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.match(minute.stdout, /hey keshav, src is already here\./);
-    assert.match(minute.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(minute.stdout, /what do you want here/);
     assert.doesNotMatch(minute.stdout, /this folder is empty|home is already here|app\.js/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
   } finally {
@@ -749,10 +775,11 @@ test('unbound folder with a few files names work without a listing', () => {
     const doit = runCli(['do'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.match(minute.stdout, /hey keshav, this folder already has work\./);
-    assert.match(minute.stdout, /^next: atris "what do you want here\?"$/m);
-    assert.doesNotMatch(minute.stdout, /notes\.txt|draft\.md|readme\.md|this folder is empty/);
+    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(minute.stdout, /notes\.txt|draft\.md|readme\.md|this folder is empty|what do you want here/);
     assert.equal(recap.stdout.trim(), minute.stdout.trim());
     assert.equal(doit.stdout.trim(), minute.stdout.trim());
+    assert.doesNotMatch(doit.stdout, /PROMPT ONLY|Atris Do|What do you want to build|executor\.md|Run "atris init"/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
   } finally {
