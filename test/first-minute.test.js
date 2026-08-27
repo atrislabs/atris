@@ -1761,22 +1761,28 @@ test('atris do after init and claim stays in the room', () => {
     const minute = runCli([], { cwd: dir, env });
     const doit = runCli(['do'], { cwd: dir, env });
     const planned = runCli(['plan'], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(doit.status, 0, doit.stderr || doit.stdout);
     assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+    assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
     assert.equal(doit.stdout.trim(), minute.stdout.trim());
     assert.equal(planned.stdout.trim(), minute.stdout.trim());
+    assert.equal(stopped.stdout.trim(), minute.stdout.trim());
     assert.match(minute.stdout, /already yours/);
     assertKeepWorkingNext(doit.stdout);
     assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
+    assert.equal(nextLine(stopped.stdout), nextLine(minute.stdout));
     assert.notEqual(nextLine(doit.stdout), 'atris do');
-    assert.doesNotMatch(doit.stdout, /spaceship|autopilot|hours/);
+    assert.doesNotMatch(doit.stdout + stopped.stdout, /spaceship|autopilot|hours/);
+    assert.doesNotMatch(stopped.stdout + stopped.stderr, /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged/);
     const status = runCli(['status'], { cwd: dir, env });
     const now = runCli(['now'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.equal(now.status, 0, now.stderr || now.stdout);
     assert.equal(status.stdout.trim(), minute.stdout.trim());
     assert.equal(now.stdout.trim(), minute.stdout.trim());
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
     assert.equal(spokenLineCount(doit.stdout), 2);
     assert.doesNotMatch(doit.stdout + planned.stdout, /executor\.md not found|navigator\.md not found|Run "atris init"/);
     assert.doesNotMatch(doit.stdout + planned.stdout, /PROMPT ONLY|What do you want to build/);
@@ -2552,15 +2558,18 @@ test('atris status after minting a file folder talks keep-working, not factory l
     const status = runCli(['status'], { cwd: dir, env });
     const recap = runCli(['recap'], { cwd: dir, env });
     const now = runCli(['now'], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(again.status, 0, again.stderr || again.stdout);
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.equal(now.status, 0, now.stderr || now.stdout);
+    assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
     assert.equal(status.stdout.trim(), again.stdout.trim());
     assert.equal(status.stdout.trim(), minute.stdout.trim());
     assert.equal(recap.stdout.trim(), status.stdout.trim());
     assert.equal(now.stdout.trim(), status.stdout.trim());
+    assert.equal(stopped.stdout.trim(), status.stdout.trim());
     assert.match(status.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
     assert.equal(nextLine(status.stdout), keepWorking);
     assert.notEqual(nextLine(status.stdout), 'atris do');
@@ -2568,11 +2577,16 @@ test('atris status after minting a file folder talks keep-working, not factory l
     assert.equal(nextLine(recap.stdout), keepWorking);
     assert.match(now.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
     assert.equal(nextLine(now.stdout), keepWorking);
+    assert.match(stopped.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.equal(nextLine(stopped.stdout), keepWorking);
+    assert.notEqual(nextLine(stopped.stdout), 'atris do');
     assert.equal(spokenLineCount(status.stdout), 2);
+    assert.equal(spokenLineCount(stopped.stdout), 2);
     assert.doesNotMatch(
-      status.stdout + status.stderr + recap.stdout + recap.stderr + now.stdout + now.stderr,
-      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running|what do you want here|ready to claim|# now|Current operating truth/,
+      status.stdout + status.stderr + recap.stdout + recap.stderr + now.stdout + now.stderr + stopped.stdout + stopped.stderr,
+      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running|what do you want here|ready to claim|# now|Current operating truth|cloud-computer|business\.json|Pass --mission|Atris left your work unchanged/,
     );
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
 
     const jsonStatus = runCli(['status', '--json'], { cwd: dir, env });
     assert.equal(jsonStatus.status, 0, jsonStatus.stderr || jsonStatus.stdout);
@@ -2596,10 +2610,131 @@ test('atris status after minting a file folder talks keep-working, not factory l
     assert.equal(nowPayload.current, '"notes.md" is already yours');
     assert.doesNotMatch(jsonNow.stdout, /Where we are|let it run|Generate MAP|# now/);
 
+    const jsonStop = runCli(['stop', '--json'], { cwd: dir, env });
+    assert.equal(jsonStop.status, 0, jsonStop.stderr || jsonStop.stdout);
+    const stopPayload = JSON.parse(jsonStop.stdout);
+    assert.equal(stopPayload.next_action, keepWorking);
+    assert.equal(stopPayload.reason, '"notes.md" is already yours');
+    assert.doesNotMatch(jsonStop.stdout, /Where we are|let it run|cloud-computer|business\.json|Pass --mission/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+
     const quick = runCli(['status', '--quick'], { cwd: dir, env });
     assert.equal(quick.status, 0, quick.stderr || quick.stdout);
     assert.equal(quick.stdout.trim(), status.stdout.trim());
     assert.doesNotMatch(quick.stdout + quick.stderr, /Where we are|Decision: let it run|📋/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris stop after minting a file folder talks keep-working, not cloud-computer', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const firstDo = runCli(['do'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(firstDo.status, 0, firstDo.stderr || firstDo.stdout);
+    assert.match(firstDo.stdout, /hey keshav, notes.txt is ready\./);
+    const keepWorking = assertKeepWorkingNext(firstDo.stdout);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+
+    const minute = runCli([], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    const recap = runCli(['recap'], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.equal(recap.status, 0, recap.stderr || recap.stdout);
+    assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
+    assert.equal(stopped.stdout.trim(), minute.stdout.trim());
+    assert.equal(stopped.stdout.trim(), status.stdout.trim());
+    assert.equal(stopped.stdout.trim(), recap.stdout.trim());
+    assert.match(stopped.stdout, /^hey keshav, "notes\.txt" is already yours\.$/m);
+    assert.equal(nextLine(stopped.stdout), keepWorking);
+    assert.notEqual(nextLine(stopped.stdout), 'atris do');
+    assert.equal(spokenLineCount(stopped.stdout), 2);
+    assert.doesNotMatch(
+      stopped.stdout + stopped.stderr,
+      /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged|Where we are|Decision: let it run|nothing is running|what do you want here|ready to claim|spaceship|autopilot|hours/,
+    );
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+
+    const jsonStop = runCli(['stop', '--json'], { cwd: dir, env });
+    assert.equal(jsonStop.status, 0, jsonStop.stderr || jsonStop.stdout);
+    const payload = JSON.parse(jsonStop.stdout);
+    assert.equal(payload.reason, '"notes.txt" is already yours');
+    assert.equal(payload.next_action, keepWorking);
+    assert.doesNotMatch(jsonStop.stdout, /cloud-computer|business\.json|Pass --mission/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris stop after init and claim talks keep-working, not cloud-computer', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_OPERATOR: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+
+    const before = runCli([], { cwd: dir, env });
+    assert.equal(before.status, 0, before.stderr || before.stdout);
+    const claim = nextLine(before.stdout);
+    assert.match(claim, /^atris task claim \S+ --as keshav$/);
+
+    const claimed = runCli(claim.replace(/^atris /, '').split(' '), { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
+
+    const minute = runCli([], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    const recap = runCli(['recap'], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.equal(recap.status, 0, recap.stderr || recap.stdout);
+    assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
+    assert.equal(stopped.stdout.trim(), minute.stdout.trim());
+    assert.equal(stopped.stdout.trim(), status.stdout.trim());
+    assert.equal(stopped.stdout.trim(), recap.stdout.trim());
+    assert.match(stopped.stdout, /already yours/);
+    const keepWorking = assertKeepWorkingNext(stopped.stdout);
+    assert.equal(nextLine(stopped.stdout), nextLine(minute.stdout));
+    assert.equal(nextLine(stopped.stdout), nextLine(status.stdout));
+    assert.notEqual(keepWorking, 'atris do');
+    assert.equal(spokenLineCount(stopped.stdout), 2);
+    assert.doesNotMatch(
+      stopped.stdout + stopped.stderr,
+      /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged|Where we are|Decision: let it run|nothing is running|what do you want here|spaceship|autopilot|hours/,
+    );
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+
+    const jsonStop = runCli(['stop', '--json'], { cwd: dir, env });
+    assert.equal(jsonStop.status, 0, jsonStop.stderr || jsonStop.stdout);
+    const payload = JSON.parse(jsonStop.stdout);
+    assert.match(String(payload.reason || ''), /already yours/);
+    assert.equal(payload.next_action, keepWorking);
+    assert.doesNotMatch(jsonStop.stdout, /cloud-computer|business\.json|Pass --mission/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
   } finally {
     cleanupTempDir(dir);
   }

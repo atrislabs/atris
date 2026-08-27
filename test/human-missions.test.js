@@ -473,6 +473,64 @@ test('stop in a folder with a file names the file and does not hit the cloud', a
   }
 });
 
+test('stop after a claimed file talks keep-working and does not hit the cloud', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-human-stop-claimed-'));
+  fs.writeFileSync(path.join(root, 'notes.md'), 'already writing\n', 'utf8');
+  fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+    schema: 'atris.task_projection.v1',
+    tasks: [{
+      id: 'task-2',
+      display_id: 'T2',
+      title: 'notes.md',
+      status: 'claimed',
+      claimed_by: 'keshav',
+      updated_at: 20,
+    }],
+  }), 'utf8');
+  const output = outputCapture();
+  const prevDb = process.env.ATRIS_TASKS_DB;
+  const prevUser = process.env.USER;
+  const prevOperator = process.env.ATRIS_OPERATOR;
+  try {
+    process.env.ATRIS_TASKS_DB = path.join(root, 'empty.db');
+    process.env.USER = 'keshav';
+    process.env.ATRIS_OPERATOR = 'keshav';
+    const taskDb = require('../lib/task-db');
+    if (typeof taskDb.close === 'function') taskDb.close();
+    const code = await stopCommand([], {
+      ...output,
+      root,
+      setProcessExitCode: false,
+      loadCredentials: credentials,
+      apiRequestJson: async () => {
+        throw new Error('claimed-file stop must not hit the network');
+      },
+    });
+    const spoken = output.stdout.join('\n');
+    assert.equal(code, 0);
+    assert.match(spoken, /"notes.md" is already yours/);
+    assert.match(spoken, /next: atris task ready T2 --verify "git diff --check"/);
+    assert.doesNotMatch(spoken, /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged|nothing is running|what do you want here|atris do/);
+    assert.equal(fs.existsSync(path.join(root, '.atris', 'business.json')), false);
+  } finally {
+    if (prevDb == null) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = prevDb;
+    if (prevUser == null) delete process.env.USER;
+    else process.env.USER = prevUser;
+    if (prevOperator == null) delete process.env.ATRIS_OPERATOR;
+    else process.env.ATRIS_OPERATOR = prevOperator;
+    try {
+      const taskDb = require('../lib/task-db');
+      if (typeof taskDb.close === 'function') taskDb.close();
+    } catch {
+      // keep cleanup going
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('mission answer sends text to the current mission', async () => {
   const calls = [];
   const output = outputCapture();

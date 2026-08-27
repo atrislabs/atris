@@ -14,7 +14,14 @@ const {
 const { apiRequestJson } = require('../utils/api');
 const { decodeJwtClaims, loadCredentials } = require('../utils/auth');
 const { isHelpToken } = require('../lib/noninteractive');
-const { isFreshWorkspace, speakFirstMinute, speakNothingRunning } = require('../lib/first-minute');
+const {
+  buildFirstMinute,
+  isFreshWorkspace,
+  isKeepWorkingMinute,
+  speakFirstMinute,
+  speakKeepWorkingMinute,
+  speakNothingRunning,
+} = require('../lib/first-minute');
 
 const PACKAGE_PATH = path.join(__dirname, '..', 'package.json');
 const HUMAN_STATES = Object.freeze({
@@ -168,8 +175,9 @@ function parseMissionId(args = []) {
 
 /**
  * Scratch / unbound folders must not drive account-current cloud work.
- * Empty-folder stop talks first-talk instead. After a room exists,
- * require an explicit mission/task id: atris stop --mission <id>
+ * Empty-folder stop talks first-talk instead. After do/claim, nothing
+ * running talks keep-working instead. After a room exists without
+ * that keep-working next, require an explicit id: atris stop --mission <id>
  */
 function refuseUnboundCloudComputer(args = [], options = {}, commandName = 'stop') {
   const root = options.root || process.cwd();
@@ -739,6 +747,15 @@ async function approveCommand(args, options = {}) {
   return changeCurrentMission('approve', {}, args, options);
 }
 
+function hasLiveKeepWorkingRun(root = process.cwd()) {
+  try {
+    const { pickLiveLocalMission } = require('./mission');
+    return Boolean(pickLiveLocalMission(root));
+  } catch {
+    return false;
+  }
+}
+
 async function stopCommand(args, options = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     (options.log || console.log)('Usage: atris stop [--mission <id>] [--json]');
@@ -746,16 +763,26 @@ async function stopCommand(args, options = {}) {
   }
   const root = options.root || process.cwd();
   const asJson = args.includes('--json');
+  const speak = {
+    root,
+    asJson,
+    log: options.log || console.log,
+  };
   // Fresh folder: empty talks first-talk. A file already here
   // names that file, same as bare atris. Do not mint a room.
   if (isFreshWorkspace(root) && !parseMissionId(args)) {
     const unbound = refuseUnboundCloudComputer(args, options, 'stop');
     if (unbound) {
-      return speakNothingRunning({
-        root,
-        asJson,
-        log: options.log || console.log,
-      });
+      return speakNothingRunning(speak);
+    }
+  }
+  // After do/claim, nothing running: same two keep-working
+  // lines as bare atris / status / recap. Not factory
+  // cloud-computer. Do not mint a room or bind a computer.
+  if (!parseMissionId(args) && !hasLiveKeepWorkingRun(root)) {
+    const minute = buildFirstMinute({ root });
+    if (isKeepWorkingMinute(minute)) {
+      return speakKeepWorkingMinute(speak);
     }
   }
   return changeCurrentMission('stop', {}, args, options);
