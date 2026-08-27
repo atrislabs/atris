@@ -455,6 +455,52 @@ test('26g: atris now after init --yes --minimal talks the claim, not factory now
   }
 });
 
+test('26h: atris status after init --yes --minimal talks the claim, not factory let-it-run', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-status-init-home-');
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    const env = {
+      HOME: home,
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+      ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    };
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stdout + init.stderr);
+
+    const minute = runCli([], { cwd: dir, env });
+    const now = runCli(['now'], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stdout + minute.stderr);
+    assert.equal(now.status, 0, now.stdout + now.stderr);
+    assert.equal(status.status, 0, status.stdout + status.stderr);
+    assert.equal(status.stdout.trim(), minute.stdout.trim());
+    assert.equal(status.stdout.trim(), now.stdout.trim());
+    assert.match(status.stdout, /ready to claim/);
+    assert.match(status.stdout, /^next: atris task claim /m);
+    assert.doesNotMatch(
+      status.stdout + status.stderr,
+      /Where we are|Decision: let it run|TASK BOARD|What is queued|already yours|# now|Current operating truth/,
+    );
+
+    const quick = runCli(['status', '--quick'], { cwd: dir, env });
+    assert.equal(quick.status, 0, quick.stdout + quick.stderr);
+    assert.equal(quick.stdout.trim(), status.stdout.trim());
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
 test('29: join --help prints usage and does not look up an invite', () => {
   const dir = makeTempDir();
   const home = makeTempDir('atris-dogfood-join-home-');

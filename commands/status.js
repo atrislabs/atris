@@ -7,7 +7,9 @@ const { checkoutBehindMessage } = require('../lib/checkout-sync');
 const {
   isFreshWorkspace,
   isKeepWorkingMinute,
+  isClaimMinute,
   buildFirstMinute,
+  speakFirstMinute,
   speakKeepWorkingMinute,
   speakNothingRunning,
 } = require('../lib/first-minute');
@@ -146,12 +148,18 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   }
 
   // Just-minted file folder, nothing running: same two lines as
-  // first-minute / the next do. A live mission still gets the board.
-  // --verbose keeps the factory dump because the operator asked for it.
+  // first-minute / the next do. After init, next is claim: same
+  // two lines as bare atris / now. Not factory let-it-run.
+  // A live mission still gets the board. --verbose keeps the
+  // factory dump because the operator asked for it. --json on
+  // the claim path keeps the factory board for scripts.
   if (!verbose && !hasLiveKeepWorkingRun()) {
     const minute = buildFirstMinute({ root: process.cwd() });
     if (isKeepWorkingMinute(minute)) {
       process.exit(speakKeepWorkingMinute({ asJson: jsonMode }));
+    }
+    if (!jsonMode && isClaimMinute(minute)) {
+      process.exit(speakFirstMinute());
     }
   }
 

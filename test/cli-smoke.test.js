@@ -933,6 +933,18 @@ test('status --quick reflects inbox count', () => {
   const dir = makeTempDir();
   try {
     runCli(['init'], { cwd: dir, input: '\n' });
+    const stateDir = path.join(dir, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    const now = new Date().toISOString();
+    fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), `${JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: 'mission-live',
+      objective: 'Keep the live mission visible',
+      owner: 'executor',
+      status: 'running',
+      created_at: now,
+      updated_at: now,
+    })}\n`);
 
     let res = runCli(['status', '--quick'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
