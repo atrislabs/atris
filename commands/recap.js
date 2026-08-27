@@ -4,6 +4,7 @@ const {
   isCertifiedReview,
   isFreshWorkspace,
   isKeepWorkingMinute,
+  isClaimMinute,
   buildFirstMinute,
   listUserVisibleWork,
   personName,
@@ -370,6 +371,9 @@ function recapAtris(args = []) {
   // Just-minted file folder, nothing running: same two lines as
   // first-minute / status / recap. After the work is yours, next
   // is task ready so keep-working is not a do loop. Not factory MAP.md.
+  // After init, next is claim: same two lines as bare atris /
+  // status / now / stop. --json keeps the recap receipt and
+  // fills next from first-minute so it is not silent.
   // A claimed non-seed task still recaps that work. A live mission
   // and --verbose / --share keep the recap report.
   if (
@@ -384,6 +388,14 @@ function recapAtris(args = []) {
         root,
         asJson: args.includes('--json'),
       });
+    }
+    if (isClaimMinute(minute)) {
+      if (args.includes('--json')) {
+        data.next = minute.nextCommand || null;
+        console.log(JSON.stringify(data, null, 2));
+        return;
+      }
+      return speakFirstMinute({ root });
     }
   }
   if (args.includes('--json')) {

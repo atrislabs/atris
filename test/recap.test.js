@@ -601,6 +601,47 @@ test('headless recap still names a claimed non-seed task when factory map.md is 
   }
 });
 
+test('headless recap after init-shaped claim keeps the next, not silent', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-recap-claim-'));
+  const dir = path.join(parent, 'claim-room');
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n', 'utf8');
+  try {
+    writeProjection(dir, [
+      {
+        id: 'task-1',
+        display_id: 'INT-1',
+        title: 'Generate MAP.md — scan codebase',
+        status: 'open',
+        updated_at: 10,
+      },
+    ]);
+    const env = {
+      HOME: path.join(parent, 'home'),
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_TASKS_DB: path.join(dir, 'empty.db'),
+      ATRIS_NO_INTERACTIVE: '1',
+    };
+    const recap = runCli(['recap'], { cwd: dir, env });
+    assert.equal(recap.status, 0, recap.stderr || recap.stdout);
+    assert.match(recap.stdout, /generate map\.md/i);
+    assert.match(recap.stdout, /ready to claim/);
+    assert.match(recap.stdout, /^next: atris task claim INT-1 --as keshav$/m);
+    assert.doesNotMatch(recap.stdout, /RECAP|Plain English|Share this|no task history yet|already yours/i);
+    assert.equal(spokenLineCount(recap.stdout), 2);
+
+    const json = runCli(['recap', '--json'], { cwd: dir, env });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.next, 'atris task claim INT-1 --as keshav');
+    assert.doesNotMatch(json.stdout, /RECAP|Plain English|Share this/);
+  } finally {
+    resetDbEnv();
+    cleanup(parent);
+  }
+});
+
 test('recap --help names spoken default and verbose report', () => {
   const dir = makeTempDir();
   try {
