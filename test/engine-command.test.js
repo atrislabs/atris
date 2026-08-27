@@ -47,7 +47,9 @@ function runCli(args, cwd) {
 }
 
 function tmpRoot(prefix = 'atris-engine-test-') {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+  return root;
 }
 
 function withEnvProfile(value, fn) {

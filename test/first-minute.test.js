@@ -33,6 +33,7 @@ const {
   taskNextCommand,
   visibleWorkTitle,
 } = require('../lib/first-minute');
+const { UNBOUND_SCRATCH_MESSAGE } = require('../lib/scratch-root');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -2365,6 +2366,169 @@ test('atris launchpad in a folder with a file names the file, not init', () => {
     assert.doesNotMatch(help.stdout, /notes.txt is already here|Run "atris init"|Set up this workspace/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris engine in an empty folder talks first-talk and does not mint engines.json', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  const work = path.join(dir, 'work');
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(work, { recursive: true });
+  const env = {
+    HOME: home,
+    ATRIS_HOME: home,
+    USER: 'keshav',
+    ATRIS_OPERATOR: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_NONINTERACTIVE: '1',
+    ATRIS_RUNNER_PROFILE: '',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const before = fs.readdirSync(work).sort();
+    const desk = runCli([], { cwd: work, env });
+    assert.equal(desk.status, 0, desk.stderr || desk.stdout);
+    assert.match(desk.stdout, /^hey keshav, this folder is empty\.$/m);
+    assert.match(desk.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.deepEqual(fs.readdirSync(work).sort(), before);
+
+    for (const args of [['engine'], ['engines'], ['engine', '--json']]) {
+      const res = runCli(args, { cwd: work, env });
+      if (args.includes('--json')) {
+        const jsonDesk = runCli(['--json'], { cwd: work, env });
+        assert.equal(res.status, jsonDesk.status, res.stderr || res.stdout);
+        assert.equal(res.stdout.trim(), jsonDesk.stdout.trim());
+        const payload = JSON.parse(res.stdout);
+        assert.equal(payload.reason, 'this folder is empty');
+        assert.equal(payload.next_action, 'atris "what do you want here?"');
+        assert.doesNotMatch(res.stdout, /"scope"|atris-fast|engines\.json/);
+      } else {
+        assert.equal(res.status, desk.status, res.stderr || res.stdout);
+        assert.equal(res.stdout.trim(), desk.stdout.trim());
+        assert.equal(spokenLineCount(res.stdout), spokenLineCount(desk.stdout));
+      }
+      assert.doesNotMatch(
+        `${res.stdout}\n${res.stderr}`,
+        /engines: \d+ intelligence|intelligences found|default engine|scope.: .workspace/,
+      );
+      assert.deepEqual(fs.readdirSync(work).sort(), before, `listing changed after atris ${args.join(' ')}`);
+      assert.equal(fs.existsSync(path.join(work, '.atris')), false);
+      assert.equal(fs.existsSync(path.join(work, 'atris')), false);
+      assert.equal(fs.existsSync(path.join(work, '.atris', 'state', 'engines.json')), false);
+    }
+
+    const leftoverHi = runCli(['brainstorm', 'hi'], { cwd: work, env });
+    assert.equal(leftoverHi.status, desk.status, leftoverHi.stderr || leftoverHi.stdout);
+    assert.equal(leftoverHi.stdout.trim(), desk.stdout.trim());
+    const leftoverWish = runCli(['wish', 'hi'], { cwd: work, env });
+    assert.equal(leftoverWish.status, desk.status, leftoverWish.stderr || leftoverWish.stdout);
+    assert.equal(leftoverWish.stdout.trim(), desk.stdout.trim());
+    const runTalk = runCli(['run'], { cwd: work, env });
+    assert.equal(runTalk.status, desk.status, runTalk.stderr || runTalk.stdout);
+    assert.equal(runTalk.stdout.trim(), desk.stdout.trim());
+    const ship = runCli(['spaceship', '--yes'], { cwd: work, env });
+    assert.equal(ship.status, 2, ship.stderr || ship.stdout);
+    assert.equal(`${ship.stdout}\n${ship.stderr}`.includes(UNBOUND_SCRATCH_MESSAGE), true);
+    assert.deepEqual(fs.readdirSync(work).sort(), before);
+    assert.equal(fs.existsSync(path.join(work, '.atris')), false);
+    assert.equal(fs.existsSync(path.join(work, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris engine in a folder with a file names the file and does not mint', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  const work = path.join(dir, 'work');
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(work, { recursive: true });
+  fs.writeFileSync(path.join(work, 'notes.txt'), 'already writing\n', 'utf8');
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_OPERATOR: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const before = fs.readdirSync(work).sort();
+    const desk = runCli([], { cwd: work, env });
+    assert.equal(desk.status, 0, desk.stderr || desk.stdout);
+    assert.match(desk.stdout, /^hey keshav, notes.txt is already here\.$/m);
+    assert.match(desk.stdout, /^next: atris do$/m);
+
+    for (const args of [['engine'], ['engines'], ['engine', '--json']]) {
+      const res = runCli(args, { cwd: work, env });
+      if (args.includes('--json')) {
+        const jsonDesk = runCli(['--json'], { cwd: work, env });
+        assert.equal(res.status, jsonDesk.status, res.stderr || res.stdout);
+        assert.equal(res.stdout.trim(), jsonDesk.stdout.trim());
+        const payload = JSON.parse(res.stdout);
+        assert.equal(payload.reason, 'notes.txt is already here');
+        assert.equal(payload.next_action, 'atris do');
+      } else {
+        assert.equal(res.status, desk.status, res.stderr || res.stdout);
+        assert.equal(res.stdout.trim(), desk.stdout.trim());
+      }
+      assert.doesNotMatch(`${res.stdout}\n${res.stderr}`, /engines: \d+ intelligence|intelligences found/);
+      assert.deepEqual(fs.readdirSync(work).sort(), before);
+      assert.equal(fs.existsSync(path.join(work, '.atris')), false);
+      assert.equal(fs.existsSync(path.join(work, 'atris')), false);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris engine after init --yes --minimal still lists engines', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_OPERATOR: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
+
+    const minute = runCli([], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.match(nextLine(minute.stdout), /^atris task claim \S+ --as keshav$/);
+
+    const roster = runCli(['engine'], { cwd: dir, env });
+    assert.equal(roster.status, 0, roster.stderr || roster.stdout);
+    assert.match(roster.stdout, /engines: \d+ intelligence/);
+    assert.match(roster.stdout, /default:/);
+    assert.doesNotMatch(roster.stdout, /this folder is empty|notes\.txt is already here|what do you want here/);
+
+    const jsonRoster = runCli(['engine', '--json'], { cwd: dir, env });
+    assert.equal(jsonRoster.status, 0, jsonRoster.stderr || jsonRoster.stdout);
+    const payload = JSON.parse(jsonRoster.stdout);
+    assert.equal(payload.scope, 'workspace');
+    assert.equal(typeof payload.default, 'string');
+    assert.ok(Array.isArray(payload.engines));
+    assert.ok(payload.engines.some((engine) => engine.id === 'atris-fast'));
+
+    const jsonRecap = runCli(['recap', '--json'], { cwd: dir, env });
+    assert.equal(jsonRecap.status, 0, jsonRecap.stderr || jsonRecap.stdout);
+    const recap = JSON.parse(jsonRecap.stdout);
+    assert.equal(recap.next, nextLine(minute.stdout));
+    assert.match(String(recap.next || ''), /^atris task claim \S+ --as keshav$/);
+
+    for (const args of [['status'], ['now'], ['stop'], ['mission'], ['launchpad'], ['next'], ['run']]) {
+      const res = runCli(args, { cwd: dir, env });
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+      assert.equal(nextLine(res.stdout), nextLine(minute.stdout), `next drifted after atris ${args.join(' ')}`);
+    }
   } finally {
     cleanupTempDir(dir);
   }
