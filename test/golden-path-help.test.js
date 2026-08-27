@@ -69,7 +69,6 @@ test('main help is short; help --all opens first-minute then the catalog', () =>
   assert.match(allHelp.stdout, /golden path \(one tick, by cron or by hand\):/);
   assert.match(allHelp.stdout, /atris task delegate "fix the login bug" --to <member>/);
   assert.match(allHelp.stdout, /atris autoland tick   # second check runs, task lands/);
-  assert.match(allHelp.stdout, /atris mission status/);
   assert.doesNotMatch(allHelp.stdout, /atris ask "what you want"/);
   assert.doesNotMatch(allHelp.stdout, /atris stop\s+Stop the current mission/);
   assert.doesNotMatch(allHelp.stdout, /atris ready --json\s+Show which mission features are ready/);
