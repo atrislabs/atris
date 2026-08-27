@@ -319,6 +319,50 @@ test('26d: atris status and stop in a file folder name the file and do not mint'
   }
 });
 
+test('26e: atris status after minting a file folder talks keep-working, not factory let-it-run', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-status-mint-home-');
+  fs.writeFileSync(path.join(dir, 'notes.md'), 'already writing\n', 'utf8');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    const env = {
+      HOME: home,
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+      ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    };
+    const firstDo = runCli(['do'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(firstDo.status, 0, firstDo.stdout + firstDo.stderr);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+
+    const listed = runCli(['mission', 'list'], { cwd: dir, env });
+    assert.match(listed.stdout, /No missions yet/i);
+
+    const again = runCli(['do'], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    assert.equal(again.status, 0, again.stdout + again.stderr);
+    assert.equal(status.status, 0, status.stdout + status.stderr);
+    assert.equal(status.stdout.trim(), again.stdout.trim());
+    assert.match(status.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(status.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(
+      status.stdout + status.stderr,
+      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running/,
+    );
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
 test('29: join --help prints usage and does not look up an invite', () => {
   const dir = makeTempDir();
   const home = makeTempDir('atris-dogfood-join-home-');

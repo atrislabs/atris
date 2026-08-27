@@ -11598,6 +11598,8 @@ module.exports = {
   reapPausedMissions,
   missionHeartbeatLines,
   listMissions,
+  pickLiveLocalMission,
+  isLiveInFlightMission,
   freezeMissionVerifier,
   markMissionReviewReady,
   listWorktreeRollupMissions,
