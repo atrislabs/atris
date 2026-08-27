@@ -199,6 +199,11 @@ test('empty-folder atris run talks first-talk and does not mint engines.json', (
     assertNoMint(dir);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'engines.json')), false);
 
+    const badProfile = runCli(['run', '--dry-run', '--runner-profile', 'atris-9'], { cwd: dir, env });
+    assert.equal(badProfile.status, 1, combined(badProfile));
+    assert.match(badProfile.stderr, /Unknown --runner-profile "atris-9"/);
+    assertNoMint(dir);
+
     const leftoverHi = runCli(['brainstorm', 'hi'], { cwd: dir, env });
     assert.equal(leftoverHi.status, desk.status, combined(leftoverHi));
     assert.equal(leftoverHi.stdout.trim(), desk.stdout.trim());

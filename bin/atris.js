@@ -211,7 +211,7 @@ function parseNaturalEntryArgs(args = []) {
   };
 }
 
-function applyRunnerFlags(args) {
+function applyRunnerFlags(args, options = {}) {
   // --engine <name> is the operator-facing spelling of --runner-profile:
   // one flag rents a specific intelligence for this run.
   const engineFlag = readOptionArg(args, '--engine');
@@ -251,6 +251,9 @@ function applyRunnerFlags(args) {
     process.env.ATRIS_RUNNER_MODEL = runnerModel;
     process.env.ATRIS_CLAUDE_MODEL = runnerModel;
   }
+  // Talk-only and unbound scratch still validate --engine / --runner-profile.
+  // They skip this seed so resolveDefaultEngine cannot mint engines.json.
+  if (options.seed === false) return;
   // No per-run choice and no env: the workspace's saved engine
   // (.atris/engine.json, written by `atris engine <name>`) becomes the
   // profile for every loop spawn. For the loop commands themselves, fall all
@@ -2445,11 +2448,11 @@ if (command === 'init') {
   const { isUnboundScratchFolder } = require('../lib/scratch-root');
   const { runObjective, runMissionFront } = require('../commands/run-front');
   const runTalkOnly = !runObjective(args) && !hasYesFlag(args) && !args.includes('--legacy');
-  // applyRunnerFlags seeds .atris/state/engines.json. First-talk and
-  // unbound scratch must not mint a room. --yes is not an unlock.
-  if (!runTalkOnly && !isUnboundScratchFolder(process.cwd())) {
-    applyRunnerFlags(args);
-  }
+  // Flag validation always runs. The engine-registry seed is what mints
+  // .atris/state/engines.json, so first-talk and unbound scratch skip only that.
+  applyRunnerFlags(args, {
+    seed: !runTalkOnly && !isUnboundScratchFolder(process.cwd()),
+  });
 
   if (args.includes('--legacy')) {
     const legacyArgs = args.filter(a => a !== '--legacy');
@@ -2493,8 +2496,8 @@ if (command === 'init') {
   if (!autopilotHelp && !autopilotControl && !autopilotJsonPlan && !autopilotTalkOnly && isUnboundScratchFolder(autopilotRoot)) {
     process.exit(refuseUnboundScratch());
   }
-  if (!autopilotHelp && !isUnboundScratchFolder(autopilotRoot)) {
-    applyRunnerFlags(args);
+  if (!autopilotHelp) {
+    applyRunnerFlags(args, { seed: !isUnboundScratchFolder(autopilotRoot) });
   }
 
   if (args.includes('--legacy')) {

@@ -918,6 +918,7 @@ test('runner-profile validation fails fast while aliases stay compatible', () =>
     assert.match(bad.stderr, /Unknown --runner-profile "atris-9"/);
     assert.match(bad.stderr, /Known profiles: atris-fast/);
     assert.doesNotMatch(bad.stderr, /atris2-fast|atris-2-fast/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
 
     runCli(['init'], { cwd: dir, input: '\n' });
     for (const profile of ['atris-fast', 'atris2-fast', 'atris-2-fast']) {
