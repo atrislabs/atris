@@ -546,6 +546,15 @@ async function ensureValidCredentials(apiRequestJson, options = {}) {
     return { error: 'not_logged_in' };
   }
 
+  const claims = decodeJwtClaims(credentials.token);
+  if (claims?.type === 'agent_access') {
+    if (typeof claims.exp === 'number' && claims.exp <= Math.floor(Date.now() / 1000)) {
+      return { error: 'token_invalid', detail: 'Agent token expired. Mint a new one: atris login --agent' };
+    }
+    // Server-side scope enforcement on every real request is unchanged and remains the actual security boundary.
+    return { credentials, user: null, source: 'agent_token' };
+  }
+
   if (credentials.refresh_token && shouldRefreshToken(credentials.token)) {
     const proactive = await performTokenRefresh(credentials, apiRequestJson);
     if (proactive.ok) {

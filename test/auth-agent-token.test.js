@@ -13,15 +13,25 @@ const {
   mintAgentToken,
   wantsAgentToken,
 } = require('../commands/auth');
+const { ensureValidCredentials } = require('../utils/auth');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const SECRET = 'minted-agent-access-token-secret';
 
 function jwtWithExp(exp) {
+  return jwtWithClaims({ exp });
+}
+
+function jwtWithClaims(claims) {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({ exp })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
   return `${header}.${payload}.sig`;
+}
+
+function restoreEnv(name, value) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
 }
 
 function makeTempDir() {
@@ -126,6 +136,102 @@ function closeServer(server) {
     server.close((err) => (err ? reject(err) : resolve()));
   });
 }
+
+test('unexpired agent_access token skips the user-token validation preflight', async () => {
+  const previousToken = process.env.ATRIS_TOKEN;
+  const token = jwtWithClaims({
+    type: 'agent_access',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  });
+  process.env.ATRIS_TOKEN = token;
+
+  try {
+    const result = await ensureValidCredentials(async () => {
+      throw new Error('agent token must not make a validation request');
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.credentials.token, token);
+    assert.equal(result.user, null);
+    assert.equal(result.source, 'agent_token');
+  } finally {
+    restoreEnv('ATRIS_TOKEN', previousToken);
+  }
+});
+
+test('expired agent_access token returns a mint hint without attempting refresh', async () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  const previousHome = process.env.HOME;
+  const previousToken = process.env.ATRIS_TOKEN;
+  const previousProfile = process.env.ATRIS_PROFILE;
+  const token = jwtWithClaims({
+    type: 'agent_access',
+    exp: Math.floor(Date.now() / 1000) - 60,
+  });
+
+  process.env.HOME = home;
+  delete process.env.ATRIS_TOKEN;
+  delete process.env.ATRIS_PROFILE;
+  writeCredentials(home, {
+    token,
+    refresh_token: 'must-not-refresh',
+    provider: 'atris',
+  });
+
+  let networkCalls = 0;
+  try {
+    const result = await ensureValidCredentials(async () => {
+      networkCalls += 1;
+      throw new Error('expired agent token must not make a refresh request');
+    });
+
+    assert.deepEqual(result, {
+      error: 'token_invalid',
+      detail: 'Agent token expired. Mint a new one: atris login --agent',
+    });
+    assert.equal(networkCalls, 0);
+  } finally {
+    restoreEnv('HOME', previousHome);
+    restoreEnv('ATRIS_TOKEN', previousToken);
+    restoreEnv('ATRIS_PROFILE', previousProfile);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('normal user token still uses the user-token validation preflight', async () => {
+  const previousToken = process.env.ATRIS_TOKEN;
+  const token = jwtWithClaims({
+    type: 'user_access',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  });
+  const calls = [];
+  process.env.ATRIS_TOKEN = token;
+
+  try {
+    const result = await ensureValidCredentials(async (pathname, options) => {
+      calls.push({ pathname, options });
+      return {
+        ok: true,
+        status: 200,
+        data: { valid: true, user: { id: 'user-1' } },
+      };
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.source, 'access_token');
+    assert.deepEqual(calls, [{
+      pathname: '/auth/validate',
+      options: {
+        method: 'POST',
+        body: { token },
+        token,
+      },
+    }]);
+  } finally {
+    restoreEnv('ATRIS_TOKEN', previousToken);
+  }
+});
 
 test('parseAgentTokenArgs defaults scopes and cap, and accepts overrides', () => {
   assert.equal(wantsAgentToken(['--agent']), true);
