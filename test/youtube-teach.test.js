@@ -14,6 +14,8 @@ const {
   extractTeachNumbers,
   extractTeachMechanisms,
   extractTeachSource,
+  isThinTeachLesson,
+  TEACH_THIN_REFUSE,
   youtubeCommand,
 } = require('../commands/youtube');
 
@@ -71,6 +73,20 @@ const LEX_CHAPTERS = [
   { start_time: 87, title: 'Introduction', end_time: 176 },
 ];
 
+const THIN_URL = 'https://www.youtube.com/watch?v=thin01';
+const THIN_VTT = [
+  'WEBVTT',
+  '',
+  '00:00:00.000 --> 00:00:08.000',
+  'welcome back friends this is just a chat',
+  '',
+  '00:00:08.000 --> 00:00:16.000',
+  'today we talk about feelings and vibes',
+].join('\n');
+const THIN_CHAPTERS = [
+  { start_time: 0, title: 'Welcome', end_time: 30 },
+];
+
 function lessonBlock(text, name) {
   const lines = String(text || '').split('\n');
   const start = lines.findIndex((line) => line === name);
@@ -119,6 +135,30 @@ function fixtureSource() {
     language: 'en',
     chapters: TEACH_CHAPTERS,
     cues: parseCaptionCues(TEACH_VTT),
+  };
+}
+
+function lexSource() {
+  return {
+    id: 'NYFGCESmikA',
+    title: 'DHH: Future of Programming | Lex Fridman Podcast #501',
+    url: LEX_URL,
+    durationSeconds: 176,
+    language: 'en',
+    chapters: LEX_CHAPTERS,
+    cues: parseCaptionCues(LEX_VTT),
+  };
+}
+
+function thinSource() {
+  return {
+    id: 'thin01',
+    title: 'a thin chat',
+    url: THIN_URL,
+    durationSeconds: 30,
+    language: 'en',
+    chapters: THIN_CHAPTERS,
+    cues: parseCaptionCues(THIN_VTT),
   };
 }
 
@@ -319,6 +359,70 @@ test('youtube teach --save still exits 0 when apply is missing', async () => {
   assert.match(out.text(), /next: write one apply/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.apply.md')), true);
+});
+
+test('youtube teach --save on lex highlight files the brief and exits 0', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-lex-save-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const out = collect();
+  const status = await youtubeCommand(['teach', LEX_URL, '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: out.output,
+    extractTeachSource: async () => lexSource(),
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /60 seconds to install/);
+  assert.match(out.text(), /overton window/);
+  assert.match(out.text(), /next: write one apply/);
+  assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-NYFGCESmikA-s1.md')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-NYFGCESmikA-s1.apply.md')), true);
+});
+
+test('youtube teach --save refuses a thin chapter and writes no brief', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-save-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const source = thinSource();
+  const body = source.cues.map((cue) => cue.text).join(' ');
+  const numbers = extractTeachNumbers(body);
+  const mechanisms = extractTeachMechanisms(body);
+  assert.deepEqual(numbers, []);
+  assert.deepEqual(mechanisms, []);
+  assert.equal(isThinTeachLesson({ numbers, mechanisms }), true);
+
+  const out = collect();
+  const status = await youtubeCommand(['teach', THIN_URL, '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: out.output,
+    extractTeachSource: async () => source,
+  });
+
+  const text = out.text();
+  assert.equal(status, 2);
+  assert.match(text, /numbers\nnone/);
+  assert.match(text, /mechanisms\nnone/);
+  assert.match(text, new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01-s1.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01-s1.apply.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+});
+
+test('youtube teach thin chapter without --save still writes no atris files', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-nosave-'));
+  const out = collect();
+  const status = await youtubeCommand(['teach', THIN_URL], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => thinSource(),
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /numbers\nnone/);
+  assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
 });
 
 test('extractTeachSource reads fixture yt-dlp chapters and VTT without network', async () => {

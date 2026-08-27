@@ -1938,6 +1938,7 @@ async function runYoutubeSearch(args = [], deps = {}) {
 
 const YTTEACH_USAGE = 'usage: atris youtube teach <youtube-url> [--section N] [--save]';
 const TEACH_PAID_REFUSE = 'teach is free local captions. drop --paid.';
+const TEACH_THIN_REFUSE = 'thin: no number or named mechanism. no brief.';
 const TEACH_APPLY_NEXT_MESSAGE = APPLY_NEXT_MESSAGE;
 const MECHANISM_STOP = new Set([
   'the', 'this', 'that', 'and', 'but', 'for', 'with', 'from', 'you', 'we', 'they',
@@ -2137,7 +2138,7 @@ function quoteYoutubeUrl(url) {
   return `"${String(url || '').replace(/"/g, '')}"`;
 }
 
-function formatTeachLesson({ url, section, chapters, chapter, cues, title } = {}) {
+function teachLessonFromCues({ url, section, chapters, chapter, cues, title } = {}) {
   const total = Array.isArray(chapters) && chapters.length ? chapters.length : 1;
   const heading = String(chapter?.title || 'full video').trim().toLowerCase();
   const videoTitle = String(title || '').trim().toLowerCase();
@@ -2166,7 +2167,17 @@ function formatTeachLesson({ url, section, chapters, chapter, cues, title } = {}
     lines.push('');
     lines.push('next: last section');
   }
-  return lines.join('\n');
+  return { text: lines.join('\n'), numbers, mechanisms };
+}
+
+function formatTeachLesson(opts) {
+  return teachLessonFromCues(opts).text;
+}
+
+function isThinTeachLesson(lesson = {}) {
+  const numbers = Array.isArray(lesson.numbers) ? lesson.numbers : [];
+  const mechanisms = Array.isArray(lesson.mechanisms) ? lesson.mechanisms : [];
+  return numbers.length === 0 && mechanisms.length === 0;
 }
 
 function teachBriefRel(id, section) {
@@ -2285,7 +2296,7 @@ async function runYoutubeTeach(args = [], deps = {}) {
 
   const chapter = chapters[parsed.section - 1];
   const cues = sliceCuesForChapter(source.cues, chapter);
-  const lesson = formatTeachLesson({
+  const lesson = teachLessonFromCues({
     url: parsed.url,
     section: parsed.section,
     chapters,
@@ -2293,15 +2304,19 @@ async function runYoutubeTeach(args = [], deps = {}) {
     cues,
     title: source.title,
   });
-  output(lesson);
+  output(lesson.text);
 
   if (!parsed.save) return 0;
+  if (isThinTeachLesson(lesson)) {
+    output(TEACH_THIN_REFUSE);
+    return 2;
+  }
 
   fileTeachBrief({
     cwd: deps.cwd || process.cwd(),
     url: parsed.url,
     section: parsed.section,
-    lesson,
+    lesson: lesson.text,
     now: deps.now,
   });
   const ensureApply = deps.ensureApply || ensureTeachApply;
@@ -2404,5 +2419,7 @@ module.exports = {
   extractTeachNumbers,
   extractTeachMechanisms,
   extractTeachSource,
+  isThinTeachLesson,
+  TEACH_THIN_REFUSE,
   youtubeCommand,
 };
