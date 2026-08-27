@@ -53,7 +53,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('Options:');
   output('  --limit <n>         Max search results (default: 5)');
   output('  --paid              Bill 5 credits for watch permalinks (search only)');
-  output('  --save              File brief, journal line, and apply stub (notes and teach)');
+  output('  --save              File brief, journal, apply stub; teach also mints a keep/revert experiment');
   output('  --section <n>       Chapter to teach, 1-based (teach only, default: 1)');
   output('  --unsave            Delete filed brief and apply stub (no paid calls)');
   output('  --query, -q <text>  Focus question for the analysis');
@@ -2184,6 +2184,272 @@ function teachBriefRel(id, section) {
   return `atris/wiki/briefs/youtube-${id}-s${section}.md`;
 }
 
+function teachExperimentSlug(id, section) {
+  const safe = String(id || 'video')
+    .toLowerCase()
+    .replace(/_/g, '-')
+    .replace(/[^a-z0-9-]+/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'video';
+  return `teach-${safe}-s${Number(section) || 1}`;
+}
+
+function teachCheckNeedles(lesson = {}) {
+  const mechanisms = Array.isArray(lesson.mechanisms) ? lesson.mechanisms : [];
+  const numbers = Array.isArray(lesson.numbers) ? lesson.numbers : [];
+  if (mechanisms[0]) return [String(mechanisms[0]).toLowerCase()];
+  if (numbers[0]) return [String(numbers[0]).toLowerCase()];
+  return [];
+}
+
+function teachCheckLine(lesson = {}) {
+  return oneTeachCheck(lesson.mechanisms || [], lesson.numbers || [], '');
+}
+
+function fileTeachExperiment({ cwd, url, section, lesson } = {}) {
+  try {
+    const id = videoIdFromUrl(url);
+    if (!id || !cwd) return null;
+    const slug = teachExperimentSlug(id, section);
+    const rel = `atris/experiments/${slug}`;
+    const dir = path.join(cwd, rel);
+    fs.mkdirSync(dir, { recursive: true });
+
+    const check = teachCheckLine(lesson);
+    const needles = teachCheckNeedles(lesson);
+    const applyRel = applySidecarRel(`${id}-s${section}`);
+    const program = [
+      '# Program',
+      '',
+      `Target: the taught fail-able check ${JSON.stringify(check)}. measure.py scores 1 only when the fixture contains ${needles.map((n) => JSON.stringify(n)).join(' and ') || 'the check tokens'}. The default fixture is the teach apply sidecar. Score is 0 if that file is missing or omits the token. Keep a candidate only when the score moves from 0 to 1.`,
+      '',
+    ].join('\n');
+
+    const measurePy = [
+      '"""Score whether the taught check is present in the product fixture."""',
+      '',
+      'from __future__ import annotations',
+      '',
+      'import json',
+      'import os',
+      'from pathlib import Path',
+      '',
+      '',
+      'EXPERIMENT_DIR = Path(__file__).resolve().parent',
+      `CHECK = ${JSON.stringify(check)}`,
+      `NEEDLES = ${JSON.stringify(needles)}`,
+      `DEFAULT_TARGET = ${JSON.stringify(applyRel)}`,
+      '',
+      '',
+      'def repo_root() -> Path:',
+      '    env = os.environ.get("ATRIS_REPO_ROOT")',
+      '    if env:',
+      '        return Path(env).resolve()',
+      '    return EXPERIMENT_DIR.parents[2]',
+      '',
+      '',
+      'def fixture_path():',
+      '    env = os.environ.get("ATRIS_TEACH_MEASURE_FIXTURE")',
+      '    if env:',
+      '        return Path(env).resolve()',
+      '    target = repo_root() / DEFAULT_TARGET',
+      '    return target if target.is_file() else None',
+      '',
+      '',
+      'def fail_payload(reason: str) -> dict:',
+      '    return {',
+      '        "score": 0,',
+      '        "passed": 0,',
+      '        "total": 1,',
+      '        "status": "fail",',
+      '        "reason": reason,',
+      '        "check": CHECK,',
+      '    }',
+      '',
+      '',
+      'def score_text(text: str) -> dict:',
+      '    blob = text.lower()',
+      '    found = bool(NEEDLES) and all(needle.lower() in blob for needle in NEEDLES)',
+      '    score = 1 if found else 0',
+      '    return {',
+      '        "score": score,',
+      '        "passed": score,',
+      '        "total": 1,',
+      '        "status": "pass" if score == 1 else "fail",',
+      '        "check": CHECK,',
+      '    }',
+      '',
+      '',
+      'def main() -> int:',
+      '    path = fixture_path()',
+      '    if path is None or not path.is_file():',
+      '        payload = fail_payload("fixture missing")',
+      '    else:',
+      '        payload = score_text(path.read_text(encoding="utf-8"))',
+      '    print(json.dumps(payload))',
+      '    return 0',
+      '',
+      '',
+      'if __name__ == "__main__":',
+      '    raise SystemExit(main())',
+      '',
+    ].join('\n');
+
+    const loopPy = [
+      '"""Keep a candidate only when the taught-check score moves from 0 to 1."""',
+      '',
+      'from __future__ import annotations',
+      '',
+      'import argparse',
+      'import csv',
+      'import json',
+      'import os',
+      'from pathlib import Path',
+      'import subprocess',
+      'import sys',
+      'from datetime import datetime, timezone',
+      '',
+      '',
+      'EXPERIMENT_DIR = Path(__file__).resolve().parent',
+      'DEFAULT_MEASURE = EXPERIMENT_DIR / "measure.py"',
+      'DEFAULT_RESULTS = EXPERIMENT_DIR / "results.tsv"',
+      '',
+      '',
+      'def run_measure(measure_path: Path) -> dict:',
+      '    proc = subprocess.run(',
+      '        [sys.executable, str(measure_path)],',
+      '        cwd=str(EXPERIMENT_DIR),',
+      '        capture_output=True,',
+      '        text=True,',
+      '        check=True,',
+      '    )',
+      '    return json.loads(proc.stdout.strip().splitlines()[-1])',
+      '',
+      '',
+      'def append_result(results_path: Path, row: dict) -> None:',
+      '    write_header = not results_path.exists() or results_path.stat().st_size == 0',
+      '    with results_path.open("a", newline="", encoding="utf-8") as handle:',
+      '        writer = csv.DictWriter(',
+      '            handle,',
+      '            fieldnames=[',
+      '                "timestamp",',
+      '                "trial",',
+      '                "status",',
+      '                "old_score",',
+      '                "new_score",',
+      '                "proposal",',
+      '                "description",',
+      '            ],',
+      '            delimiter="\\t",',
+      '        )',
+      '        if write_header:',
+      '            writer.writeheader()',
+      '        writer.writerow(row)',
+      '',
+      '',
+      'def main() -> int:',
+      '    parser = argparse.ArgumentParser(description="Run the taught-check keep/revert loop.")',
+      '    parser.add_argument("--proposal", action="append", default=[])',
+      '    args = parser.parse_args()',
+      '',
+      '    measure_path = DEFAULT_MEASURE.resolve()',
+      '    results_path = DEFAULT_RESULTS.resolve()',
+      '',
+      '    baseline = run_measure(measure_path)',
+      '    current_score = float(baseline["score"])',
+      '    print(f"BASELINE {current_score:.4f}")',
+      '',
+      '    if not args.proposal:',
+      '        append_result(',
+      '            results_path,',
+      '            {',
+      '                "timestamp": datetime.now(timezone.utc).isoformat(),',
+      '                "trial": 0,',
+      '                "status": "baseline",',
+      '                "old_score": f"{current_score:.4f}",',
+      '                "new_score": f"{current_score:.4f}",',
+      '                "proposal": "measure.py",',
+      '                "description": "current taught-check fixture score",',
+      '            },',
+      '        )',
+      '',
+      '    for trial_index, proposal in enumerate(args.proposal, start=1):',
+      '        proposal_path = Path(proposal).resolve()',
+      '        status = "error"',
+      '        old_score = current_score',
+      '        new_score = current_score',
+      '        description = ""',
+      '',
+      '        try:',
+      '            proc = subprocess.run(',
+      '                [sys.executable, str(proposal_path)],',
+      '                cwd=str(EXPERIMENT_DIR),',
+      '                capture_output=True,',
+      '                text=True,',
+      '                check=True,',
+      '                env={**os.environ, "EXPERIMENT_DIR": str(EXPERIMENT_DIR)},',
+      '            )',
+      '            if proc.stdout.strip():',
+      '                description = proc.stdout.strip().splitlines()[-1][:200]',
+      '',
+      '            measured = run_measure(measure_path)',
+      '            new_score = float(measured["score"])',
+      '            if old_score < 1 and new_score > old_score:',
+      '                status = "kept"',
+      '                current_score = new_score',
+      '            else:',
+      '                status = "reverted"',
+      '        except subprocess.CalledProcessError as exc:',
+      '            stderr = (exc.stderr or exc.stdout or "").strip()',
+      '            description = (stderr.splitlines()[-1] if stderr else "proposal failed")[:200]',
+      '            status = "error"',
+      '',
+      '        append_result(',
+      '            results_path,',
+      '            {',
+      '                "timestamp": datetime.now(timezone.utc).isoformat(),',
+      '                "trial": trial_index,',
+      '                "status": status,',
+      '                "old_score": f"{old_score:.4f}",',
+      '                "new_score": f"{new_score:.4f}",',
+      '                "proposal": proposal_path.name,',
+      '                "description": description,',
+      '            },',
+      '        )',
+      '        print(f"TRIAL {trial_index} {status.upper()} score={new_score:.4f} proposal={proposal_path.name}")',
+      '',
+      '    final_measure = run_measure(measure_path)',
+      '    print(f"FINAL {final_measure[\'score\']:.4f}")',
+      '    return 0',
+      '',
+      '',
+      'if __name__ == "__main__":',
+      '    raise SystemExit(main())',
+      '',
+    ].join('\n');
+
+    fs.writeFileSync(path.join(dir, 'program.md'), program);
+    fs.writeFileSync(path.join(dir, 'measure.py'), measurePy);
+    fs.writeFileSync(path.join(dir, 'loop.py'), loopPy);
+    fs.writeFileSync(
+      path.join(dir, 'reset.py'),
+      [
+        '"""The target is the product fixture, not a local candidate file."""',
+        '',
+        'print("teach experiment target is the apply sidecar or ATRIS_TEACH_MEASURE_FIXTURE; nothing local to restore")',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(
+      path.join(dir, 'results.tsv'),
+      'timestamp\ttrial\tstatus\told_score\tnew_score\tproposal\tdescription\n',
+    );
+    return rel;
+  } catch {
+    return null;
+  }
+}
+
 function fileTeachBrief({ cwd, url, section, lesson, now } = {}) {
   try {
     const id = videoIdFromUrl(url);
@@ -2320,13 +2586,20 @@ async function runYoutubeTeach(args = [], deps = {}) {
     now: deps.now,
   });
   const ensureApply = deps.ensureApply || ensureTeachApply;
-  return ensureApply({
+  const applyStatus = ensureApply({
     cwd: deps.cwd || process.cwd(),
     url: parsed.url,
     section: parsed.section,
     now: deps.now,
     output,
   });
+  fileTeachExperiment({
+    cwd: deps.cwd || process.cwd(),
+    url: parsed.url,
+    section: parsed.section,
+    lesson,
+  });
+  return applyStatus;
 }
 
 async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
@@ -2421,5 +2694,7 @@ module.exports = {
   extractTeachSource,
   isThinTeachLesson,
   TEACH_THIN_REFUSE,
+  teachExperimentSlug,
+  fileTeachExperiment,
   youtubeCommand,
 };
