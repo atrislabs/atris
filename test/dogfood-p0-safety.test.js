@@ -660,6 +660,60 @@ test('26l: atris stop after init --yes --minimal talks the claim, not cloud-comp
   }
 });
 
+test('26m: atris recap after init --yes --minimal talks the claim, not silent next', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-recap-init-home-');
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    const env = {
+      HOME: home,
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+      ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    };
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stdout + init.stderr);
+
+    const minute = runCli([], { cwd: dir, env });
+    const now = runCli(['now'], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
+    const recap = runCli(['recap'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stdout + minute.stderr);
+    assert.equal(now.status, 0, now.stdout + now.stderr);
+    assert.equal(status.status, 0, status.stdout + status.stderr);
+    assert.equal(stopped.status, 0, stopped.stdout + stopped.stderr);
+    assert.equal(recap.status, 0, recap.stdout + recap.stderr);
+    assert.equal(recap.stdout.trim(), minute.stdout.trim());
+    assert.equal(recap.stdout.trim(), now.stdout.trim());
+    assert.equal(recap.stdout.trim(), status.stdout.trim());
+    assert.equal(recap.stdout.trim(), stopped.stdout.trim());
+    assert.match(recap.stdout, /ready to claim/);
+    assert.match(recap.stdout, /^next: atris task claim /m);
+    assert.doesNotMatch(
+      recap.stdout + recap.stderr,
+      /RECAP|Plain English|Share this|no task history yet|already yours|# now|Current operating truth|Where we are|Decision: let it run/,
+    );
+
+    const jsonRecap = runCli(['recap', '--json'], { cwd: dir, env });
+    assert.equal(jsonRecap.status, 0, jsonRecap.stdout + jsonRecap.stderr);
+    const payload = JSON.parse(jsonRecap.stdout);
+    assert.match(String(payload.next || ''), /^atris task claim /);
+    assert.doesNotMatch(jsonRecap.stdout, /RECAP|Plain English|Share this/);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
 test('26k: atris stop after init and claim talks keep-working, not cloud-computer', () => {
   const dir = makeTempDir();
   const home = makeTempDir('atris-dogfood-stop-claim-home-');
