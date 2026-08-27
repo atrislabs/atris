@@ -8,9 +8,10 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { pickRunnableMission, runBudgetSeconds } = require('./run-front');
-const { refuseHeadlessUnless, wantsJson, hasYesFlag } = require('../lib/noninteractive');
+const { wantsJson, hasYesFlag } = require('../lib/noninteractive');
 const { isUnboundScratchFolder, refuseUnboundScratch } = require('../lib/scratch-root');
 const { resolveWorkspaceRoot } = require('../lib/mission-root');
+const { personName } = require('../lib/first-minute');
 
 const CLI_PATH = path.join(__dirname, '..', 'bin', 'atris.js');
 const DEFAULT_LEG_WALL_SECONDS = 3600;
@@ -192,13 +193,23 @@ function autopilotStatus(root = process.cwd()) {
   return 0;
 }
 
+function greet(person) {
+  return person ? `hey ${person}, ` : '';
+}
+
+function inviteLines() {
+  return [
+    `${greet(personName())}I can keep working until you stop.`,
+    '',
+    'next: atris autopilot --yes',
+  ];
+}
+
 function showFrontHelp() {
   console.log('');
   console.log('Usage: atris autopilot [options]');
   console.log('');
-  console.log('Keeps the workspace moving: picks the most logical mission or member,');
-  console.log('drives it through the mission runtime, then picks the next one.');
-  console.log('Runs until you stop it.');
+  console.log('Keep working until you stop. Pass --yes to start.');
   console.log('');
   console.log('Options:');
   console.log('  --minutes N | --hours N   Total budget (default: unlimited)');
@@ -234,14 +245,12 @@ async function autopilotFront(args = []) {
     }, null, 2));
     return 2;
   }
-  // Bare headless invoke used to start a mission loop and hang. --auto is
-  // the existing proceed flag pulse and spaceship already pass. --once is
-  // a duration, not consent: it still needs --yes off a TTY.
-  if (!args.includes('--auto') && refuseHeadlessUnless(args, {
-    allowYes: true,
-    allowOnce: false,
-    usage: 'Usage: atris autopilot [--yes|--auto] [--once]',
-  })) return 2;
+  // Bare invoke used to start a loop. --auto is the proceed flag pulse
+  // and spaceship already pass. --once is a duration, not consent.
+  if (!args.includes('--auto') && !hasYesFlag(args)) {
+    for (const line of inviteLines()) console.log(line);
+    return 2;
+  }
 
   // --yes / --auto start the loop. They are not a workspace unlock.
   // An unbound scratch folder is not a room (same class as slack/gmail).
@@ -330,6 +339,7 @@ async function autopilotFront(args = []) {
 
 module.exports = {
   autopilotFront,
+  inviteLines,
   maxLegsFlag,
   stopRequested,
   requestStop,

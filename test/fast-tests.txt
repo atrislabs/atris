@@ -50,6 +50,7 @@ test/deck-layout.test.js
 test/deck-review.test.js
 test/deck-schema.test.js
 test/deck-video.test.js
+test/dogfood-hours-lingo.test.js
 test/engine-dispatch.test.js
 test/escape-regexp.test.js
 test/file-ops-inbox.test.js

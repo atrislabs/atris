@@ -202,7 +202,8 @@ test('T4: spaceship --help prints short usage, not script dump', () => {
   }
   const usage = logs.join('\n');
   assert.match(usage, /Usage: atris spaceship/);
-  assert.doesNotMatch(usage, /SES|spaceship_update\.py|BACKEND_DEFAULT/);
+  assert.match(usage, /Keep working here for a few hours/);
+  assert.doesNotMatch(usage, /survives bad ticks|SES|spaceship_update\.py|BACKEND_DEFAULT/i);
 
   const cli = runCli(['spaceship', '--help'], { cwd: repoRoot });
   assert.equal(cli.status, 0, cli.stderr);

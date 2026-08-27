@@ -96,7 +96,8 @@ test('30: autopilot --json prints status and does not spawn', () => {
 
     const once = runCli(['autopilot', '--once'], { cwd: dir, timeout: 5000 });
     assert.equal(once.status, 2, once.stdout + once.stderr);
-    assert.match(once.stderr + once.stdout, /Usage: atris autopilot|Pass --yes/i);
+    assert.match(once.stderr + once.stdout, /keep working until you stop|next: atris autopilot --yes/i);
+    assert.doesNotMatch(once.stderr + once.stdout, /Usage: atris autopilot/);
     assert.doesNotMatch(once.stdout + once.stderr, /Autopilot on|Takeoff|mission_started/i);
 
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);

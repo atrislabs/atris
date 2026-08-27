@@ -110,8 +110,8 @@ test('25: bare spaceship plans only; no overnight run', () => {
   try {
     const res = runCli(['spaceship'], { cwd: dir });
     assert.equal(res.status, 2, res.stdout + res.stderr);
-    assert.match(res.stdout + res.stderr, /spaceship plan|Pass --yes|Usage: atris spaceship/i);
-    assert.doesNotMatch(res.stdout + res.stderr, /spaceship start:|EMAIL FAILED|tick 1 start/i);
+    assert.match(res.stdout + res.stderr, /keep working here for 4 hours|next: atris spaceship --yes/i);
+    assert.doesNotMatch(res.stdout + res.stderr, /spaceship start:|EMAIL FAILED|tick 1 start|spaceship plan|budget:/i);
     assert.equal(fs.existsSync(path.join(dir, 'atris', '.spaceship')), false);
   } finally {
     cleanupTempDir(dir);
@@ -418,8 +418,8 @@ test('32: headless autopilot exits 2 without starting a mission', () => {
     assert.equal(runCli(['init', '--yes', '--minimal'], { cwd: dir, timeout: 60000 }).status, 0);
     const res = runCli(['autopilot'], { cwd: dir, timeout: 5000 });
     assert.equal(res.status, 2, res.stdout + res.stderr);
-    assert.match(res.stderr + res.stdout, /Usage: atris autopilot|Headless|Pass --yes/i);
-    assert.doesNotMatch(res.stdout + res.stderr, /Takeoff|Autopilot on|Bounded Proof|mission_started/i);
+    assert.match(res.stderr + res.stdout, /keep working until you stop|next: atris autopilot --yes/i);
+    assert.doesNotMatch(res.stdout + res.stderr, /Usage: atris autopilot|Takeoff|Autopilot on|Bounded Proof|mission_started/i);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'autopilot.json')), false);
   } finally {

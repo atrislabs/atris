@@ -96,14 +96,30 @@ test('unbound scratch autopilot --yes refuses and does not mint', () => {
   }
 });
 
+test('unbound scratch autopilot without --yes talks and does not start', () => {
+  const dir = makeScratch();
+  const env = isolatedEnv(dir);
+  try {
+    const res = runCli(['autopilot'], { cwd: dir, env });
+    assert.equal(res.status, 2, res.stdout + res.stderr);
+    assert.match(res.stdout, /I can keep working until you stop\./);
+    assert.match(res.stdout, /^next: atris autopilot --yes$/m);
+    assert.doesNotMatch(combined(res), /this folder is not a room|Usage: atris autopilot|Autopilot on|Takeoff/i);
+    assertNoMint(dir);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('unbound scratch spaceship without --yes still prints the plan only', () => {
   const dir = makeScratch();
   const env = isolatedEnv(dir);
   try {
     const res = runCli(['spaceship'], { cwd: dir, env });
     assert.equal(res.status, 2, res.stdout + res.stderr);
-    assert.match(res.stdout, /spaceship plan \(no run\)/);
-    assert.match(res.stdout, /Pass --yes to start the overnight run/);
+    assert.match(res.stdout, /I can keep working here for 4 hours\./);
+    assert.match(res.stdout, /I'll write you if something changes\. next: atris spaceship --yes/);
+    assert.doesNotMatch(res.stdout, /spaceship plan|budget:|tick:|interval/i);
     assert.doesNotMatch(combined(res), /this folder is not a room|spaceship start:|EMAIL FAILED|tick 1 start/i);
     assertNoMint(dir);
   } finally {
