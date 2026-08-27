@@ -130,7 +130,9 @@ test('P0-2: whoami/now/skill list/member list --json emit JSON', () => {
     assert.equal(now.status, 0, now.stderr);
     const nowJson = JSON.parse(now.stdout);
     assert.equal(nowJson.ok, true);
-    assert.ok(typeof nowJson.content === 'string');
+    assert.ok(nowJson.next || nowJson.current);
+    assert.doesNotMatch(now.stdout, /\u001b\[/);
+    assert.doesNotMatch(now.stdout, /^# now/m);
 
     const skills = runCli(['skill', 'list', '--json'], { cwd: dir, env });
     assert.equal(skills.status, 0, skills.stderr);

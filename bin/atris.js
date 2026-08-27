@@ -2120,11 +2120,8 @@ if (command === 'init') {
   }
 } else if (command === 'now') {
   const args = process.argv.slice(3);
-  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    require('../commands/now').nowAtris(args);
-    process.exit(0);
-  }
-  require('../commands/now').nowAtris(args);
+  const nowCode = require('../commands/now').nowAtris(args);
+  process.exit(Number.isInteger(nowCode) ? nowCode : 0);
 } else if (command === 'recap') {
   const recapCode = require('../commands/recap').recapAtris(process.argv.slice(3));
   if (Number.isInteger(recapCode)) process.exit(recapCode);
