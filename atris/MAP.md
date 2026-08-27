@@ -336,8 +336,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 - **Entry point:** `bin/atris.js` command routing for `experiments`
 - **Handler:** `commands/experiments.js`
-- **Core functions:** `commands/experiments.js:55` (`ensureExperimentsFramework`), `commands/experiments.js:310` (`buildBenchmarkArtifact`), `commands/experiments.js:409` (`experimentsRun`), `commands/experiments.js:469` (`experimentsCompare`), `commands/experiments.js:501` (`experimentsReplay`)
-- **Daily loop:** `commands/experiments.js:524` (`experimentsDaily`), `commands/experiments.js:530` (`experimentsQueue`), `commands/experiments.js:543` (`experimentsCommand` routes `daily` and `queue`)
+- **Core functions:** `commands/experiments.js:55` (`ensureExperimentsFramework`), `commands/experiments.js:141` (`parseMeasureScore`), `commands/experiments.js:154` (`runMeasureJson`), `commands/experiments.js:182` (`experimentsKeep`), `commands/experiments.js:398` (`buildBenchmarkArtifact`), `commands/experiments.js:509` (`experimentsRun`), `commands/experiments.js:571` (`experimentsCompare`), `commands/experiments.js:603` (`experimentsReplay`)
+- **Daily loop:** `commands/experiments.js:625` (`experimentsDaily`), `commands/experiments.js:631` (`experimentsQueue`), `commands/experiments.js:644` (`experimentsCommand` routes `daily`, `queue`, and `keep`)
 - **Daily engine:** `lib/experiments/daily.js:18` (`queuePath`), `lib/experiments/daily.js:53` (`readQueue`), `lib/experiments/daily.js:69` (`appendQueueEntry`), `lib/experiments/daily.js:227` (`evaluateKeepRule`), `lib/experiments/daily.js:259` (`runApplyScript`), `lib/experiments/daily.js:394` (`runDaily`), `lib/experiments/daily.js:584` (`queueAdd`), `lib/experiments/daily.js:604` (`queueList`)
 - **Autoland hook:** `commands/autoland.js:577` runs `atris experiments daily --json` during `autoland tick` when policy `daily_experiment` is not false
 - **How it works:**
@@ -345,6 +345,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris experiments init [slug]` scaffolds a new bounded experiment pack
 - `atris experiments validate` runs structural checks and context-bloat validation
 - `atris experiments run <slug>` executes a pack; Endstate packs also emit JSON receipts + append `results.tsv`
+- `atris experiments keep <slug>` runs `atris/experiments/<slug>/measure.py` against the current working tree and prints a keep line only when the score is 1 (minted packs start at 0). Score 0 prints a revert/refuse line and exits 1 without deleting the pack. Missing slug, pack, or measure.py exits 2.
 - `atris experiments compare endstate` reads the latest baseline + stack receipts, prints the side-by-side scorecard, and declares `stack wins` or `no winner yet` from the Level 1 rule
 - `atris experiments replay endstate` validates both packs, emits fresh dry-run receipts, then compares the latest result in one command
 - Endstate packs pin runner profiles in `runner.json` (`baseline-single` vs `stack-coordinated`) so baseline and stack resolve different live prompt strategies
@@ -365,10 +366,10 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris/experiments/taste-loop/` - Frozen writing, website, and video-prompt references with an independent scorer and all-modality keep/revert gate
 - `atris/experiments/sessionstart-plant/` - keep/revert metric for SessionStart plant via pack PreToolUse/config-guard; score 1 only when Write and Bash `cat >>` both deny, hash unchanged, disableAllHooks stays false, and voice-card UserPromptSubmit is still allowed (`measure.py`, `probe.js`)
 - `atris/experiments/teach-thin-save/` - keep/revert metric for `atris youtube teach --save` on a fixture thin chapter; score 1 only when the live command prints the thin refuse, writes no `atris/wiki/briefs` file, and exits 2 (`measure.py`, `probe.js`)
-- `atris/experiments/teach-<videoid>-s<n>/` - minted by rich `atris youtube teach --save`; `measure.py` is derived from that chapter's printed fail-able check and scores 1 only when the fixture contains the number-with-units or named mechanism (`loop.py` keep-0-to-1). The apply sidecar and journal Inbox claim name this pack path and the keep rule, and the sidecar omits those check tokens so baseline stays 0.
+- `atris/experiments/teach-<videoid>-s<n>/` - minted by rich `atris youtube teach --save`; `measure.py` is derived from that chapter's printed fail-able check and scores 1 only when the fixture contains the number-with-units or named mechanism (`loop.py` keep-0-to-1). The apply sidecar and journal Inbox claim name this pack path and the keep rule, and the sidecar omits those check tokens so baseline stays 0. `atris experiments keep <slug>` is the CLI gate for that rule.
 - **Value:** Makes self-improvement loops and scoreable benchmark runs first-class Atris CLI concepts instead of repo-local convention
 
-**Search:** `rg "experimentsCommand|experimentsRun|experimentsCompare|experimentsReplay|buildBenchmarkArtifact|ensureExperimentsFramework|experimentsDaily|experimentsQueue|sessionstart-plant|teach-thin-save|fileTeachExperiment|ensureTeachApply|teachExperimentSlug" commands/experiments.js commands/init.js lib/experiments/daily.js commands/autoland.js commands/youtube.js atris/experiments/sessionstart-plant atris/experiments/teach-thin-save`
+**Search:** `rg "experimentsCommand|experimentsKeep|runMeasureJson|experimentsRun|experimentsCompare|experimentsReplay|buildBenchmarkArtifact|ensureExperimentsFramework|experimentsDaily|experimentsQueue|sessionstart-plant|teach-thin-save|fileTeachExperiment|ensureTeachApply|teachExperimentSlug" commands/experiments.js commands/init.js lib/experiments/daily.js commands/autoland.js commands/youtube.js atris/experiments/sessionstart-plant atris/experiments/teach-thin-save`
 
 ### Feature: Receipts (`atris receipt`)
 
