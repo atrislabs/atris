@@ -113,6 +113,7 @@ test/runtime-bootstrap.test.js
 test/self-heal-prompt.test.js
 test/self-heal.test.js
 test/serve.test.js
+test/sessionstart-plant.test.js
 test/signup.test.js
 test/site.test.js
 test/skill-audit-codeblocks.test.js

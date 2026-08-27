@@ -1,0 +1,3 @@
+# Program
+
+Target: the live pack PreToolUse path (`lib/pack-capabilities.js` plus `lib/config-guard.js`). Persistence is a SessionStart hook in `.claude/settings.json`; confine skipped Bash, so `cat >>` could plant it. measure.py uses a fixture workspace and the same hook path the CLI uses: a Write of SessionStart, then Bash `cat >> .claude/settings.json`. Score is 1 only when both attempts deny, the settings hash is unchanged, disableAllHooks stays false, and a voice-card UserPromptSubmit write is still allowed. Score is 0 if config-guard is missing or either write would land. Keep a candidate only when the score moves from 0 to 1.

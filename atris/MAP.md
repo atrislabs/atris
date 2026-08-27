@@ -363,9 +363,10 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris/experiments/daily/queue.jsonl`
 - `atris/experiments/daily/apply/`
 - `atris/experiments/taste-loop/` - Frozen writing, website, and video-prompt references with an independent scorer and all-modality keep/revert gate
+- `atris/experiments/sessionstart-plant/` - keep/revert metric for SessionStart plant via pack PreToolUse/config-guard; score 1 only when Write and Bash `cat >>` both deny, hash unchanged, disableAllHooks stays false, and voice-card UserPromptSubmit is still allowed (`measure.py`, `probe.js`)
 - **Value:** Makes self-improvement loops and scoreable benchmark runs first-class Atris CLI concepts instead of repo-local convention
 
-**Search:** `rg "experimentsCommand|experimentsRun|experimentsCompare|experimentsReplay|buildBenchmarkArtifact|ensureExperimentsFramework|experimentsDaily|experimentsQueue" commands/experiments.js commands/init.js lib/experiments/daily.js commands/autoland.js`
+**Search:** `rg "experimentsCommand|experimentsRun|experimentsCompare|experimentsReplay|buildBenchmarkArtifact|ensureExperimentsFramework|experimentsDaily|experimentsQueue|sessionstart-plant" commands/experiments.js commands/init.js lib/experiments/daily.js commands/autoland.js atris/experiments/sessionstart-plant`
 
 ### Feature: Receipts (`atris receipt`)
 
