@@ -7,10 +7,14 @@ const { spawnSync } = require('node:child_process');
 
 const {
   pickRunnableMission,
+  isHoursMission,
   runObjective,
   runBudgetSeconds,
   runTickBudget,
 } = require('../commands/run-front');
+const { planLines, spokenHours } = require('../commands/spaceship');
+const { inviteLines } = require('../commands/autopilot-front');
+const { spokenLineCount } = require('../lib/first-minute');
 const {
   requestStop,
   clearStop,
@@ -137,13 +141,55 @@ test('atris autopilot status reports not running when idle', () => {
   }
 });
 
-test('atris run with no objective and no missions explains itself', () => {
+test('isHoursMission names keep-working work', () => {
+  assert.equal(isHoursMission({ objective: 'Explore the world for hours' }), true);
+  assert.equal(isHoursMission({ objective: 'ship the login fix' }), false);
+  assert.equal(isHoursMission({ overnight_loop: { requested_hours: 4 } }), true);
+});
+
+test('spaceship planLines talks keep-working English', () => {
+  const prev = process.env.ATRIS_OPERATOR;
+  process.env.ATRIS_OPERATOR = 'keshav';
+  try {
+    const text = planLines([]).join('\n');
+    assert.match(text, /hey keshav, I can keep working here for 4 hours\./);
+    assert.match(text, /I'll write you if something changes\. next: atris spaceship --yes/);
+    assert.equal(spokenLineCount(text), 2);
+    assert.doesNotMatch(text, /budget:|tick:|interval|spaceship plan/i);
+    assert.equal(spokenHours('1'), '1 hour');
+    const quiet = planLines(['--no-email', '--hours', '8']).join('\n');
+    assert.match(quiet, /keep working here for 8 hours/);
+    assert.doesNotMatch(quiet, /I'll write you/);
+    assert.match(quiet, /^next: atris spaceship --yes$/m);
+  } finally {
+    if (prev === undefined) delete process.env.ATRIS_OPERATOR;
+    else process.env.ATRIS_OPERATOR = prev;
+  }
+});
+
+test('autopilot inviteLines talks keep-working English', () => {
+  const prev = process.env.ATRIS_OPERATOR;
+  process.env.ATRIS_OPERATOR = 'keshav';
+  try {
+    const text = inviteLines().join('\n');
+    assert.match(text, /hey keshav, I can keep working until you stop\./);
+    assert.match(text, /^next: atris autopilot --yes$/m);
+    assert.equal(spokenLineCount(text), 2);
+    assert.doesNotMatch(text, /Usage: atris autopilot|always-on|runtime|tick/i);
+  } finally {
+    if (prev === undefined) delete process.env.ATRIS_OPERATOR;
+    else process.env.ATRIS_OPERATOR = prev;
+  }
+});
+
+test('atris run with no objective talks like bare atris', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-front-run-'));
   try {
-    const res = runCli(['run'], { cwd: root });
-    assert.equal(res.status, 1);
-    assert.match(res.stdout, /no runnable mission/i);
-    assert.match(res.stdout, /atris run "<objective>"/);
+    const desk = runCli([], { cwd: root, env: { USER: 'keshav', ATRIS_OPERATOR: 'keshav' } });
+    const res = runCli(['run'], { cwd: root, env: { USER: 'keshav', ATRIS_OPERATOR: 'keshav' } });
+    assert.equal(res.status, desk.status);
+    assert.equal(res.stdout.trim(), desk.stdout.trim());
+    assert.doesNotMatch(res.stdout, /Resuming mission|no runnable mission/i);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -160,6 +206,7 @@ test('atris run --help describes the mission front door and legacy escape hatch'
 test('atris autopilot --help describes the loop and stop control', () => {
   const res = runCli(['autopilot', '--help']);
   assert.equal(res.status, 0, res.stderr || res.stdout);
+  assert.match(res.stdout, /Usage: atris autopilot/);
   assert.match(res.stdout, /until you stop/i);
   assert.match(res.stdout, /autopilot stop/);
   assert.match(res.stdout, /--legacy/);

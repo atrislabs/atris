@@ -47,7 +47,7 @@ const {
   requireAccountBound,
   refuseAccountGlobal,
 } = require('../lib/account-bound');
-const { isHelpToken, argsWantHelp } = require('../lib/noninteractive');
+const { isHelpToken, argsWantHelp, hasYesFlag } = require('../lib/noninteractive');
 
 // State detection for smart default
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
@@ -2512,9 +2512,10 @@ if (command === 'init') {
   const autopilotHelp = argsWantHelp(args) || args[0] === 'help';
   const autopilotControl = args[0] === 'stop' || args[0] === 'status';
   const autopilotJsonPlan = args.includes('--json') && !args.includes('--yes') && !args.includes('-y');
+  const autopilotTalkOnly = !hasYesFlag(args) && !args.includes('--auto') && !args.includes('--legacy');
   // applyRunnerFlags seeds .atris/state/engines.json. Help, stop/status, JSON
-  // plan, and an unbound scratch start must not mint a room. --yes is not an unlock.
-  if (!autopilotHelp && !autopilotControl && !autopilotJsonPlan && isUnboundScratchFolder(autopilotRoot)) {
+  // plan, and an unbound scratch talk must not mint a room. --yes is not an unlock.
+  if (!autopilotHelp && !autopilotControl && !autopilotJsonPlan && !autopilotTalkOnly && isUnboundScratchFolder(autopilotRoot)) {
     process.exit(refuseUnboundScratch());
   }
   if (!autopilotHelp && !isUnboundScratchFolder(autopilotRoot)) {

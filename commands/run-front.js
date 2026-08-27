@@ -1,9 +1,12 @@
 // atris run: thin front door over the mission runtime loop.
 // One bounded pursuit: start a mission from the objective (or resume the most
-// logical runnable mission), tick it, complete on pass, then exit.
+// logical runnable mission after --yes), then exit.
+// A hours / keep-working mission is never started from a bare invoke.
 // The old plan→do→review loop lives on behind `atris run --legacy`.
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { hasYesFlag, wantsJson } = require('../lib/noninteractive');
+const { speakFirstMinute } = require('../lib/first-minute');
 
 const CLI_PATH = path.join(__dirname, '..', 'bin', 'atris.js');
 
@@ -91,6 +94,14 @@ function pickRunnableMission(root = process.cwd(), missionMap = null, options = 
   return candidates[0] || null;
 }
 
+function isHoursMission(mission) {
+  if (!mission) return false;
+  if (mission.overnight_loop) return true;
+  const text = `${mission.objective || ''} ${mission.stop_condition || ''}`;
+  if (/\b(overnight|nonstop|forever|goal\s+after\s+goal|self[-\s]?improve)\b/i.test(text)) return true;
+  return /\bhours?\b/i.test(text);
+}
+
 function runTickBudget(args, budgetSeconds) {
   const explicit = positiveNumber(readValueFlag(args, '--max-ticks'));
   if (explicit) return Math.floor(explicit);
@@ -122,14 +133,17 @@ async function runMissionFront(args = []) {
     return result.ok ? 0 : 1;
   }
 
+  // Bare `atris run` talks like the desk. A long keep-working mission
+  // needs an objective or an explicit --yes. Headless never prompts.
+  if (!hasYesFlag(args)) {
+    return speakFirstMinute({ asJson: wantsJson(args) });
+  }
+
   const mission = pickRunnableMission(process.cwd(), null, {
     allowCallerSessionRunners: liveCodexSession(),
   });
   if (!mission) {
-    console.log('No objective given and no runnable mission found.');
-    console.log('Start one: atris run "<objective>" [--minutes N] [--owner <member>]');
-    console.log('Or keep going indefinitely: atris autopilot');
-    return 1;
+    return speakFirstMinute({ asJson: wantsJson(args) });
   }
   console.log(`Resuming mission ${mission.id} (${mission.status}): ${mission.objective}`);
   const result = spawnSync(process.execPath, [
@@ -144,6 +158,7 @@ async function runMissionFront(args = []) {
 module.exports = {
   runMissionFront,
   pickRunnableMission,
+  isHoursMission,
   runObjective,
   runBudgetSeconds,
   runTickBudget,

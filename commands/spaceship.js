@@ -13,7 +13,7 @@
  *   atris spaceship --hours 4 --repo /path/to/repo --interval 780 --yes
  *   atris spaceship --hours 0.01 --tick-cmd /tmp/stub.sh --no-email --yes
  *
- * Without --yes, spaceship only prints the plan (no email, no overnight run).
+ * Without --yes, spaceship only talks the keep-working plan (no email, no run).
  * `--json` without --yes prints a JSON refuse and still does not start.
  * `--yes` from an unbound scratch folder refuses: that folder is not a room.
  */
@@ -24,8 +24,30 @@ const { spawn } = require('child_process');
 const { hasYesFlag, argsWantHelp, wantsJson } = require('../lib/noninteractive');
 const { isUnboundScratchFolder, refuseUnboundScratch } = require('../lib/scratch-root');
 const { resolveWorkspaceRoot } = require('../lib/mission-root');
+const { personName } = require('../lib/first-minute');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'spaceship.sh');
+
+function greet(person) {
+  return person ? `hey ${person}, ` : '';
+}
+
+function readFlagValue(args, name) {
+  const list = Array.isArray(args) ? args : [];
+  const idx = list.indexOf(name);
+  const raw = idx !== -1 && list[idx + 1] && !String(list[idx + 1]).startsWith('-')
+    ? String(list[idx + 1]).trim()
+    : '';
+  return raw;
+}
+
+function spokenHours(raw) {
+  const text = raw === undefined || raw === null ? '4' : String(raw).trim();
+  const n = Number(text);
+  if (!Number.isFinite(n) || n <= 0) return '4 hours';
+  if (n === 1) return `${text} hour`;
+  return `${text} hours`;
+}
 
 function printUsage() {
   const lines = [
@@ -34,22 +56,22 @@ function printUsage() {
     '                       [--idle-alert N] [--halt-alert N] [--label NAME]',
     '                       [--no-email] [--yes]',
     '',
-    'Bounded overnight runner. Survives bad ticks and emails on state changes.',
-    'Without --yes, prints the plan only (no email, no overnight run).',
-    'Defaults: --hours 4, --interval 780, tick = atris autopilot --auto --iterations=1',
+    "Keep working here for a few hours. I'll write you if something changes.",
+    'Without --yes, I only say the plan. --no-email stays quiet.',
   ];
   console.log(lines.join('\n'));
 }
 
 function planLines(args = []) {
-  const hoursIdx = args.indexOf('--hours');
-  const hours = hoursIdx !== -1 && args[hoursIdx + 1] ? args[hoursIdx + 1] : '4';
+  const list = Array.isArray(args) ? args : [];
+  const hours = spokenHours(readFlagValue(list, '--hours') || '4');
+  const next = list.includes('--no-email')
+    ? 'next: atris spaceship --yes'
+    : "I'll write you if something changes. next: atris spaceship --yes";
   return [
-    'spaceship plan (no run):',
-    `  budget: ${hours}h`,
-    '  email: on meaningful state changes (unless --no-email)',
-    '  tick: atris autopilot --auto --iterations=1',
-    'Pass --yes to start the overnight run.',
+    `${greet(personName())}I can keep working here for ${hours}.`,
+    '',
+    next,
   ];
 }
 
@@ -117,4 +139,4 @@ function spaceship(args = []) {
   });
 }
 
-module.exports = { spaceship, SCRIPT, printUsage, planLines, spaceshipTargetRoot };
+module.exports = { spaceship, SCRIPT, printUsage, planLines, spokenHours, spaceshipTargetRoot };
