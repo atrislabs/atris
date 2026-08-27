@@ -901,7 +901,7 @@ test('first talk files the user sentence and names it as the win', () => {
 
     const help = runCli(['--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /Golden path:/);
+    assert.match(help.stdout, /already won\. one next step/);
     assert.doesNotMatch(help.stdout, /this folder is empty|I saved a first step|is ready\./);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 
@@ -1069,7 +1069,7 @@ test('unbound folder with notes.txt names the file and does not mint', () => {
 
     const help = runCli(['--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /Golden path:/);
+    assert.match(help.stdout, /already won\. one next step/);
     assert.doesNotMatch(help.stdout, /notes.txt is already here|this folder is empty/);
 
     const talk = runCli(['a notes app for keshav'], { cwd: dir, env, timeout: 60000 });
@@ -1194,7 +1194,7 @@ test('unbound git folder names the last commit and does not mint', () => {
 
     const help = runCli(['--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /Golden path:/);
+    assert.match(help.stdout, /already won\. one next step/);
     assert.doesNotMatch(help.stdout, /add notes app is already here|this folder is empty/);
 
     const doit = runCli(['do'], { cwd: dir, env, timeout: 60000 });
@@ -1253,7 +1253,7 @@ test('unbound dirty git folder names open work and does not mint', () => {
 
     const help = runCli(['--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /Golden path:/);
+    assert.match(help.stdout, /already won\. one next step/);
     assert.doesNotMatch(help.stdout, /notes.txt is still open|add notes app is already here|this folder is empty/);
 
     const extraParent = makeTempDir();
@@ -1366,7 +1366,7 @@ test('unbound git folder on a feature branch names the branch and does not mint'
 
     const help = runCli(['--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /Golden path:/);
+    assert.match(help.stdout, /already won\. one next step/);
     assert.doesNotMatch(help.stdout, /notes-app is already here|tweak readme is already here|this folder is empty/);
 
     fs.writeFileSync(path.join(dir, 'notes.txt'), 'still writing\n', 'utf8');

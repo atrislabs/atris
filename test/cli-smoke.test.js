@@ -869,12 +869,13 @@ test('help lists essential commands', () => {
   try {
     const res = runCli(['help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Golden path:/);
-    assert.match(res.stdout, /atris init/);
-    assert.match(res.stdout, /atris task/);
-    assert.match(res.stdout, /atris review/);
-    assert.match(res.stdout, /atris recap/);
-    assert.match(res.stdout, /atris mission status/);
+    assert.match(res.stdout, /already won\. one next step/);
+    assert.match(res.stdout, /atris later "/);
+    assert.match(res.stdout, /atris do\b/);
+    assert.match(res.stdout, /Keep working/);
+    assert.match(res.stdout, /atris spaceship/);
+    assert.match(res.stdout, /atris autopilot/);
+    assert.match(res.stdout, /atris mission/);
     assert.match(res.stdout, /help --all/);
   } finally {
     cleanupTempDir(dir);
@@ -1138,13 +1139,12 @@ test('help shows 6 essential commands', () => {
     cleanupTempDir(dir);
   }
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /Golden path:/);
-  assert.match(res.stdout, /atris init/);
-  assert.match(res.stdout, /atris task new/);
-  assert.match(res.stdout, /atris task claim/);
-  assert.match(res.stdout, /atris task ready/);
-  assert.match(res.stdout, /atris review/);
-  assert.match(res.stdout, /atris recap/);
-  assert.match(res.stdout, /atris mission status/);
+  assert.match(res.stdout, /already won\. one next step/);
+  assert.match(res.stdout, /atris later "/);
+  assert.match(res.stdout, /atris do\b/);
+  assert.match(res.stdout, /Keep working/);
+  assert.match(res.stdout, /atris spaceship/);
+  assert.match(res.stdout, /atris autopilot/);
+  assert.match(res.stdout, /atris mission/);
   assert.match(res.stdout, /--all/);
 });

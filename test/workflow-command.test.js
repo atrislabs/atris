@@ -678,8 +678,8 @@ test('help smokes: plan --help exits clean and top-level help lists the workflow
 
   const help = runCli(['help'], { cwd: dir });
   assert.equal(help.status, 0, help.stderr);
-  assert.match(help.stdout, /Golden path:/);
-  assert.match(help.stdout, /atris review/);
+  assert.match(help.stdout, /already won\. one next step/);
+  assert.match(help.stdout, /atris do\b/);
 
   const allHelp = runCli(['help', '--all'], { cwd: dir });
   assert.equal(allHelp.status, 0, allHelp.stderr);

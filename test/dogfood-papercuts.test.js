@@ -50,9 +50,11 @@ test('default help is short; help --all is long; help --json lists commands', ()
   assert.equal(shortHelp.status, 0, shortHelp.stderr);
   const shortLines = shortHelp.stdout.split(/\r?\n/).filter((line) => line.trim()).length;
   assert.ok(shortLines <= 16, `expected <=16 non-empty lines, got ${shortLines}`);
-  assert.match(shortHelp.stdout, /Golden path:/);
-  assert.match(shortHelp.stdout, /task new/);
-  assert.match(shortHelp.stdout, /mission status/);
+  assert.match(shortHelp.stdout, /already won\. one next step/);
+  assert.match(shortHelp.stdout, /atris later "/);
+  assert.match(shortHelp.stdout, /atris do\b/);
+  assert.match(shortHelp.stdout, /Keep working/);
+  assert.match(shortHelp.stdout, /atris mission/);
 
   const allHelp = runCli(['help', '--all']);
   assert.equal(allHelp.status, 0, allHelp.stderr);
