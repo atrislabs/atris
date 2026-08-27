@@ -11,7 +11,9 @@ const engine = require('../commands/engine');
 const computer = require('../commands/computer');
 
 function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-engine-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-engine-test-'));
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+  return dir;
 }
 
 function runCli(args, cwd, env = {}) {
@@ -1217,6 +1219,19 @@ test('ATRIS_BACKEND_URL is accepted as a backend root for API paths', () => {
     else process.env.ATRIS_API_URL = previousApi;
     if (previousBackend === undefined) delete process.env.ATRIS_BACKEND_URL;
     else process.env.ATRIS_BACKEND_URL = previousBackend;
+  }
+});
+
+test('readEngineRegistry does not mint engines.json in an empty folder', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-engine-empty-'));
+  try {
+    const before = fs.readdirSync(dir).sort();
+    require('../lib/engine-registry').readEngineRegistry(dir);
+    assert.deepEqual(fs.readdirSync(dir).sort(), before);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
