@@ -348,14 +348,19 @@ test('26e: atris status after minting a file folder talks keep-working, not fact
 
     const again = runCli(['do'], { cwd: dir, env });
     const status = runCli(['status'], { cwd: dir, env });
+    const recap = runCli(['recap'], { cwd: dir, env });
     assert.equal(again.status, 0, again.stdout + again.stderr);
     assert.equal(status.status, 0, status.stdout + status.stderr);
+    assert.equal(recap.status, 0, recap.stdout + recap.stderr);
     assert.equal(status.stdout.trim(), again.stdout.trim());
+    assert.equal(recap.stdout.trim(), status.stdout.trim());
     assert.match(status.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
     assert.match(status.stdout, /^next: atris do$/m);
+    assert.match(recap.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(recap.stdout, /^next: atris do$/m);
     assert.doesNotMatch(
-      status.stdout + status.stderr,
-      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running/,
+      status.stdout + status.stderr + recap.stdout + recap.stderr,
+      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running|ready to claim/,
     );
   } finally {
     cleanupTempDir(dir);

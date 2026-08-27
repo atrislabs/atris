@@ -354,6 +354,42 @@ test('renderRecapMinute leads with certified accept and keeps uncertified checki
   assert.equal(spokenLineCount(text), 3);
 });
 
+test('renderRecapMinute names a claimed file, not factory map.md', () => {
+  const text = renderRecapMinute({
+    empty: false,
+    waiting: [],
+    checking: [],
+    shipped: [],
+    inProgress: [
+      { id: 'T1', title: 'Generate MAP.md — scan codebase', owner: null },
+      { id: 'T2', title: 'notes.md', owner: 'keshav' },
+    ],
+    next: null,
+  }, { person: 'keshav' });
+  assert.match(text, /^hey keshav, "notes.md" is already yours\.$/m);
+  assert.match(text, /^next: atris do$/m);
+  assert.doesNotMatch(text, /generate map|ready to claim/i);
+  assert.equal(spokenLineCount(text), 2);
+});
+
+test('renderRecapMinute still names a claimed non-seed task', () => {
+  const text = renderRecapMinute({
+    empty: false,
+    waiting: [],
+    checking: [],
+    shipped: [],
+    inProgress: [
+      { id: 'T1', title: 'Generate MAP.md — scan codebase', owner: null },
+      { id: 'T2', title: 'Ship the landing page', owner: 'keshav' },
+    ],
+    next: null,
+  }, { person: 'keshav' });
+  assert.match(text, /^hey keshav, "ship the landing page" is already yours\.$/m);
+  assert.match(text, /^next: atris do$/m);
+  assert.doesNotMatch(text, /generate map|ready to claim/i);
+  assert.equal(spokenLineCount(text), 2);
+});
+
 test('renderRecapMinute keeps uncertified work still being checked, not needs-you', () => {
   const text = renderRecapMinute({
     empty: false,
@@ -465,6 +501,100 @@ test('headless recap keeps uncertified work still being checked and does not pro
     assert.doesNotMatch(recap.stdout, /\? $/m);
     assert.doesNotMatch(recap.stdout, /What do you want/);
     assert.ok(spokenLineCount(recap.stdout) <= 4);
+  } finally {
+    resetDbEnv();
+    cleanup(parent);
+  }
+});
+
+test('headless recap after a claimed file skips factory map.md and does not prompt', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-recap-file-'));
+  const dir = path.join(parent, 'notes-room');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.md'), 'already writing\n', 'utf8');
+  try {
+    writeProjection(dir, [
+      {
+        id: 'task-1',
+        display_id: 'T1',
+        title: 'Generate MAP.md — scan codebase',
+        status: 'open',
+        updated_at: 10,
+      },
+      {
+        id: 'task-2',
+        display_id: 'T2',
+        title: 'notes.md',
+        status: 'claimed',
+        claimed_by: 'keshav',
+        updated_at: 20,
+      },
+    ]);
+    const env = {
+      HOME: path.join(parent, 'home'),
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_TASKS_DB: path.join(dir, 'empty.db'),
+      ATRIS_NO_INTERACTIVE: '1',
+    };
+    const recap = runCli(['recap'], { cwd: dir, env });
+    assert.equal(recap.status, 0, recap.stderr || recap.stdout);
+    assert.match(recap.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(recap.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(recap.stdout, /generate map|ready to claim|RECAP|Share this/i);
+    assert.doesNotMatch(recap.stdout, /\? $/m);
+    assert.doesNotMatch(recap.stdout, /What do you want/);
+    assert.equal(spokenLineCount(recap.stdout), 2);
+
+    const json = runCli(['recap', '--json'], { cwd: dir, env });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.next_action, 'atris do');
+    assert.equal(payload.reason, '"notes.md" is already yours');
+    assert.doesNotMatch(json.stdout, /generate map|ready to claim/i);
+  } finally {
+    resetDbEnv();
+    cleanup(parent);
+  }
+});
+
+test('headless recap still names a claimed non-seed task when factory map.md is open', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-recap-claimed-'));
+  const dir = path.join(parent, 'landing-room');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n', 'utf8');
+  try {
+    writeProjection(dir, [
+      {
+        id: 'task-1',
+        display_id: 'T1',
+        title: 'Generate MAP.md — scan codebase',
+        status: 'open',
+        updated_at: 10,
+      },
+      {
+        id: 'task-2',
+        display_id: 'T2',
+        title: 'Ship the landing page',
+        status: 'claimed',
+        claimed_by: 'keshav',
+        updated_at: 20,
+      },
+    ]);
+    const env = {
+      HOME: path.join(parent, 'home'),
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_TASKS_DB: path.join(dir, 'empty.db'),
+      ATRIS_NO_INTERACTIVE: '1',
+    };
+    const recap = runCli(['recap'], { cwd: dir, env });
+    assert.equal(recap.status, 0, recap.stderr || recap.stdout);
+    assert.match(recap.stdout, /^hey keshav, "ship the landing page" is already yours\.$/m);
+    assert.match(recap.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(recap.stdout, /generate map|ready to claim|RECAP/i);
+    assert.equal(spokenLineCount(recap.stdout), 2);
   } finally {
     resetDbEnv();
     cleanup(parent);

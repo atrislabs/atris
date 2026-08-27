@@ -1,6 +1,15 @@
 const fs = require('fs');
 const path = require('path');
-const { isCertifiedReview, isFreshWorkspace, listUserVisibleWork, personName, speakFirstMinute } = require('../lib/first-minute');
+const {
+  isCertifiedReview,
+  isFreshWorkspace,
+  isKeepWorkingMinute,
+  buildFirstMinute,
+  listUserVisibleWork,
+  personName,
+  speakFirstMinute,
+  speakKeepWorkingMinute,
+} = require('../lib/first-minute');
 const { isRealTestRunnerProof, quoteVerifierCommand } = require('../lib/verifier-quality');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -241,6 +250,20 @@ function recapSoftTitle(title, maxWords = 5) {
   return `"${text.toLowerCase()}"`;
 }
 
+function hasLiveKeepWorkingRun(root = process.cwd()) {
+  try {
+    const { pickLiveLocalMission } = require('./mission');
+    return Boolean(pickLiveLocalMission(root));
+  } catch {
+    return false;
+  }
+}
+
+function pickSpokenInProgress(items) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  return list.find((item) => item.owner) || list[0] || null;
+}
+
 function renderRecapMinute(data, { person } = {}) {
   const who = person != null ? person : personName();
   const greet = who ? `hey ${who}, ` : '';
@@ -290,9 +313,15 @@ function renderRecapMinute(data, { person } = {}) {
   }
 
   if (inProgress.length) {
-    const item = inProgress[0];
+    const item = pickSpokenInProgress(inProgress);
     const named = recapSoftTitle(item && item.title);
-    if (item && item.owner && named) return `${greet}${named} is already yours.`;
+    if (item && item.owner && named) {
+      return [
+        `${greet}${named} is already yours.`,
+        '',
+        'next: atris do',
+      ].join('\n');
+    }
     if (named) return `${greet}${named} is ready to claim.`;
   }
 
@@ -336,6 +365,24 @@ function recapAtris(args = []) {
       asJson: args.includes('--json'),
       files: visibleBefore,
     });
+  }
+  // Just-minted file folder, nothing running: same two lines as
+  // first-minute / status / the next do. Not factory MAP.md.
+  // A claimed non-seed task still recaps that work. A live mission
+  // and --verbose / --share keep the recap report.
+  if (
+    !args.includes('--verbose')
+    && !args.includes('--full')
+    && !args.includes('--share')
+    && !hasLiveKeepWorkingRun(root)
+  ) {
+    const minute = buildFirstMinute({ root, files: visibleBefore });
+    if (isKeepWorkingMinute(minute)) {
+      return speakKeepWorkingMinute({
+        root,
+        asJson: args.includes('--json'),
+      });
+    }
   }
   if (args.includes('--json')) {
     console.log(JSON.stringify(data, null, 2));

@@ -2069,17 +2069,22 @@ test('atris status after minting a file folder talks keep-working, not factory l
     const minute = runCli([], { cwd: dir, env });
     const again = runCli(['do'], { cwd: dir, env });
     const status = runCli(['status'], { cwd: dir, env });
+    const recap = runCli(['recap'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(again.status, 0, again.stderr || again.stdout);
     assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.equal(status.stdout.trim(), again.stdout.trim());
     assert.equal(status.stdout.trim(), minute.stdout.trim());
+    assert.equal(recap.stdout.trim(), status.stdout.trim());
     assert.match(status.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
     assert.match(status.stdout, /^next: atris do$/m);
+    assert.match(recap.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(recap.stdout, /^next: atris do$/m);
     assert.equal(spokenLineCount(status.stdout), 2);
     assert.doesNotMatch(
-      status.stdout + status.stderr,
-      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running|what do you want here/,
+      status.stdout + status.stderr + recap.stdout + recap.stderr,
+      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running|what do you want here|ready to claim/,
     );
 
     const jsonStatus = runCli(['status', '--json'], { cwd: dir, env });
@@ -2088,6 +2093,13 @@ test('atris status after minting a file folder talks keep-working, not factory l
     assert.equal(payload.next_action, 'atris do');
     assert.equal(payload.reason, '"notes.md" is already yours');
     assert.doesNotMatch(jsonStatus.stdout, /Where we are|let it run|Generate MAP/);
+
+    const jsonRecap = runCli(['recap', '--json'], { cwd: dir, env });
+    assert.equal(jsonRecap.status, 0, jsonRecap.stderr || jsonRecap.stdout);
+    const recapPayload = JSON.parse(jsonRecap.stdout);
+    assert.equal(recapPayload.next_action, 'atris do');
+    assert.equal(recapPayload.reason, '"notes.md" is already yours');
+    assert.doesNotMatch(jsonRecap.stdout, /Where we are|let it run|Generate MAP|ready to claim/);
 
     const quick = runCli(['status', '--quick'], { cwd: dir, env });
     assert.equal(quick.status, 0, quick.stderr || quick.stdout);
