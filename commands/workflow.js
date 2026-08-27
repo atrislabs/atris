@@ -510,7 +510,7 @@ async function planAtris(userInput = null) {
   // init --minimal is optional context, not a factory bounce.
   if (!fs.existsSync(targetDir)) {
     if (args.includes('--json')) {
-      console.log(JSON.stringify(freshMinuteJson(folderName(cwd), listUserVisibleWork(cwd)), null, 2));
+      console.log(JSON.stringify(freshMinuteJson(folderName(cwd), listUserVisibleWork(cwd), { root: cwd }), null, 2));
       process.exit(2);
     }
     const screen = buildFirstMinute({ root: cwd, fresh: true });
@@ -894,7 +894,7 @@ async function doAtris() {
       return;
     }
     if (args.includes('--json')) {
-      console.log(JSON.stringify(freshMinuteJson(folderName(cwd), visible), null, 2));
+      console.log(JSON.stringify(freshMinuteJson(folderName(cwd), visible, { root: cwd }), null, 2));
       process.exit(2);
     }
     const screen = buildFirstMinute({ root: cwd, fresh: true });
