@@ -522,38 +522,16 @@ function helpCatalog() {
 }
 
 function showHelpAll() {
+  console.log('you say what you want. already won. one next step.');
   console.log('');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('atris');
-  console.log('you say what you want in plain words. atris builds it, checks it, and shows you proof.');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('');
-  console.log('Quick start:');
-  console.log('');
-  console.log('  1. atris                  load context (MAP, tasks, journal)');
-  console.log('     npx atris              same after a local install');
-  console.log('  2. say what you want built, checked, or researched');
-  console.log('  3. atris files the work, then you review');
-  console.log('');
-  console.log('Common invocations:');
-  console.log('  atris "<request>"         one isolated change, then Review');
-  console.log('  atris "<request>" --verify "<cmd>" --json');
-  console.log('  atris init [--yes]        scaffold this project');
-  console.log('  npx atris init [--yes]    same after a local install');
-  console.log('  atris mission status      current mission + next move');
-  console.log('  atris task ready <id> --proof "..."');
-  console.log('  atris computer');
-  console.log('  atris engine validate latest');
-  console.log('  atris playbook                 workspace style rules and paired trials');
-  console.log('  atris business init "My Company"');
-  console.log('  atris run');
-  console.log('  atris drill');
-  console.log('  atris status');
-  console.log('  atris soul');
-  console.log('  atris fleet status');
-  console.log('  ask/stop/ready            see atris mission and atris task ready');
-  console.log('');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('  atris later "..."                remember without a room');
+  console.log('  atris do                         work already here');
+  console.log('  atris spaceship                  Keep working for a few hours');
+  console.log('  atris autopilot                  Keep working until you stop');
+  console.log('  atris mission                    the one goal');
+  console.log('  atris recap                      what got done');
+  console.log('  atris review                     check the work');
+  console.log('  atris stop                       stop the live goal');
   console.log('');
   console.log('Atris Computers:');
   console.log('  Owner = User | Business');

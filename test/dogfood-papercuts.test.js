@@ -59,6 +59,12 @@ test('default help is short; help --all is long; help --json lists commands', ()
   const allHelp = runCli(['help', '--all']);
   assert.equal(allHelp.status, 0, allHelp.stderr);
   assert.ok(allHelp.stdout.length > shortHelp.stdout.length * 3);
+  assert.match(allHelp.stdout, /^you say what you want\. already won\. one next step\./);
+  assert.match(allHelp.stdout, /atris later "/);
+  assert.match(allHelp.stdout, /atris recap/);
+  assert.match(allHelp.stdout, /atris review/);
+  assert.match(allHelp.stdout, /atris stop\b/);
+  assert.doesNotMatch(allHelp.stdout, /━|shows you proof|Quick start:|load context \(MAP, tasks, journal\)/);
   assert.match(allHelp.stdout, /golden path \(one tick/);
 
   const jsonHelp = runCli(['help', '--json']);
