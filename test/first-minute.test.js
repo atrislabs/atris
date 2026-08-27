@@ -716,6 +716,25 @@ test('unbound folder of only hidden files still says empty', () => {
   }
 });
 
+test('unbound folder names a directory that already has work', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'app.js'), 'console.log(1)\n', 'utf8');
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.match(minute.stdout, /hey keshav, src is already here\./);
+    assert.match(minute.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.doesNotMatch(minute.stdout, /this folder is empty|home is already here|app\.js/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('unbound folder with a few files names work without a listing', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
