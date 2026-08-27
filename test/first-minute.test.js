@@ -68,6 +68,34 @@ function runCli(args, { cwd, env, timeout = 15000 } = {}) {
   return result;
 }
 
+function gitOk(dir, args, extraEnv = {}) {
+  const result = spawnSync('git', args, {
+    cwd: dir,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: 't',
+      GIT_AUTHOR_EMAIL: 't@t',
+      GIT_COMMITTER_NAME: 't',
+      GIT_COMMITTER_EMAIL: 't@t',
+      ...extraEnv,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result;
+}
+
+function commitIn(dir, message, files = { 'notes.txt': 'already writing\n' }) {
+  for (const [name, body] of Object.entries(files)) {
+    const full = path.join(dir, name);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, body, 'utf8');
+  }
+  gitOk(dir, ['init', '-q']);
+  gitOk(dir, ['add', '-A']);
+  gitOk(dir, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', message]);
+}
+
 function writeReadyWorkspace(dir, tasks) {
   fs.mkdirSync(path.join(dir, 'atris', 'reports'), { recursive: true });
   fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
@@ -103,6 +131,44 @@ test('fresh first-minute names a file already here instead of empty', () => {
   const json = freshMinuteJson('this folder', ['notes.txt']);
   assert.equal(json.reason, 'notes.txt is already here');
   assert.equal(json.next_action, 'atris do');
+});
+
+test('fresh first-minute names a git commit already here instead of files', () => {
+  const text = renderFresh({
+    person: 'keshav',
+    folder: 'this folder',
+    files: ['notes.txt', 'draft.md', 'readme.md'],
+    commit: 'add notes app',
+  });
+  assert.equal(text, [
+    'hey keshav, add notes app is already here.',
+    '',
+    'next: atris do',
+  ].join('\n'));
+  assert.equal(spokenLineCount(text), 2);
+  const json = freshMinuteJson('this folder', ['notes.txt', 'draft.md', 'readme.md'], {
+    commit: 'add notes app',
+  });
+  assert.equal(json.reason, 'add notes app is already here');
+  assert.equal(json.next_action, 'atris do');
+  const long = 'add a notes app that remembers every idea keshav ever wrote down and then some';
+  const clipped = renderFresh({
+    person: 'keshav',
+    folder: 'this folder',
+    files: ['notes.txt'],
+    commit: long,
+  });
+  assert.match(clipped, /hey keshav, .+\.\.\. is already here\./);
+  assert.doesNotMatch(clipped, /then some|git log|master|[0-9a-f]{7,}/);
+  assert.match(clipped, /^next: atris do$/m);
+  const hiddenOnly = renderFresh({
+    person: 'keshav',
+    folder: 'this folder',
+    files: ['.git', '.DS_Store'],
+    commit: 'add notes app',
+  });
+  assert.match(hiddenOnly, /hey keshav, this folder is empty\./);
+  assert.match(hiddenOnly, /^next: atris "what do you want here\?"$/m);
 });
 
 test('fresh first-minute names one or two files and never dumps a listing', () => {
@@ -808,6 +874,114 @@ test('unbound folder with a few files names work without a listing', () => {
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
   } finally {
     cleanupTempDir(dir);
+  }
+});
+
+test('unbound git folder names the last commit and does not mint', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  commitIn(dir, 'add notes app', {
+    'notes.txt': 'already writing\n',
+    'draft.md': 'two\n',
+    'readme.md': 'three\n',
+  });
+  fs.writeFileSync(path.join(dir, 'extra.txt'), 'dirty leftover\n', 'utf8');
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const recap = runCli(['recap'], { cwd: dir, env });
+    const planned = runCli(['plan'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(recap.status, 0, recap.stderr || recap.stdout);
+    assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+    assert.match(minute.stdout, /hey keshav, add notes app is already here\./);
+    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.equal(spokenLineCount(minute.stdout), 2);
+    assert.doesNotMatch(minute.stdout, /this folder already has work|notes\.txt|draft\.md|extra\.txt|git log|master|HEAD|what do you want here/);
+    assert.doesNotMatch(minute.stdout, /[0-9a-f]{7,}/);
+    assert.equal(recap.stdout.trim(), minute.stdout.trim());
+    assert.equal(planned.stdout.trim(), minute.stdout.trim());
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    for (const leftover of ['brainstorm hi', 'wish hi', 'task next']) {
+      const look = runCli([leftover], { cwd: dir, env });
+      assert.equal(look.status, 0, look.stderr || look.stdout, leftover);
+      assert.equal(look.stdout.trim(), minute.stdout.trim(), leftover);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, leftover);
+      assert.equal(fs.existsSync(path.join(dir, '.atris')), false, leftover);
+    }
+
+    const jsonMinute = runCli(['--json'], { cwd: dir, env });
+    const jsonPayload = JSON.parse(jsonMinute.stdout);
+    assert.equal(jsonMinute.status, 2);
+    assert.equal(jsonPayload.next_action, 'atris do');
+    assert.equal(jsonPayload.reason, 'add notes app is already here');
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    const help = runCli(['--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Golden path:/);
+    assert.doesNotMatch(help.stdout, /add notes app is already here|this folder is empty/);
+
+    const doit = runCli(['do'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(doit.status, 0, doit.stderr || doit.stdout);
+    assert.match(doit.stdout, /hey keshav, this folder is ready\./);
+    assert.match(doit.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(doit.stdout, /already here|atris task (claim|show) |PROMPT ONLY|executor\.md/);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('unbound git folder with no commits still names files and does not mint', () => {
+  const parent = makeTempDir();
+  const dir = path.join(parent, 'notes');
+  const child = path.join(dir, 'inbox');
+  const home = path.join(parent, 'home');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(home, { recursive: true });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    gitOk(dir, ['init', '-q']);
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+    const noCommit = runCli([], { cwd: dir, env });
+    assert.equal(noCommit.status, 0, noCommit.stderr || noCommit.stdout);
+    assert.match(noCommit.stdout, /hey keshav, notes.txt is already here\./);
+    assert.match(noCommit.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(noCommit.stdout, /add notes app|this folder already has work|git log/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    const emptyGit = makeTempDir();
+    const emptyHome = path.join(emptyGit, 'home');
+    fs.mkdirSync(emptyHome, { recursive: true });
+    gitOk(emptyGit, ['init', '-q']);
+    const emptyEnv = { HOME: emptyHome, USER: 'keshav', ATRIS_TASKS_DB: path.join(emptyGit, 'tasks.db') };
+    try {
+      const empty = runCli([], { cwd: emptyGit, env: emptyEnv });
+      assert.equal(empty.status, 0, empty.stderr || empty.stdout);
+      assert.match(empty.stdout, /hey keshav, this folder is empty\./);
+      assert.match(empty.stdout, /^next: atris "what do you want here\?"$/m);
+      assert.equal(fs.existsSync(path.join(emptyGit, 'atris')), false);
+    } finally {
+      cleanupTempDir(emptyGit);
+    }
+
+    commitIn(dir, 'parent win', { 'notes.txt': 'already writing\n' });
+    fs.mkdirSync(child, { recursive: true });
+    fs.writeFileSync(path.join(child, 'notes.txt'), 'child notes\n', 'utf8');
+    const nested = runCli([], {
+      cwd: child,
+      env: { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(child, 'tasks.db') },
+    });
+    assert.equal(nested.status, 0, nested.stderr || nested.stdout);
+    assert.match(nested.stdout, /hey keshav, notes.txt is already here\./);
+    assert.doesNotMatch(nested.stdout, /parent win|add notes app|this folder already has work/);
+    assert.equal(fs.existsSync(path.join(child, 'atris')), false);
+  } finally {
+    cleanupTempDir(parent);
   }
 });
 
