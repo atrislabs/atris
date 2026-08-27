@@ -284,7 +284,7 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
     HOME: home,
     XDG_CONFIG_HOME: path.join(home, '.config'),
     XDG_CACHE_HOME: path.join(home, '.cache'),
-    ATRIS_TASKS_DB: null,
+    ATRIS_TASKS_DB: path.join(root, 'tasks.db'),
     ATRIS_SKIP_UPDATE_CHECK: '1',
     NODE_NO_WARNINGS: '1',
   };

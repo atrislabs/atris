@@ -52,17 +52,30 @@ function nextLine(stdout) {
   return match ? match[1] : '';
 }
 
+function assertDeskAcceptsReview(stdout, id = 'CLI-193') {
+  assert.match(stdout, /something finished\. waiting on you\./);
+  assert.doesNotMatch(stdout, /write a feature map for/i);
+  assert.doesNotMatch((String(stdout).split('\n').find((line) => /something finished/.test(line)) || ''), new RegExp(id));
+  assert.match(stdout, new RegExp(id));
+  assert.match(nextLine(stdout), new RegExp(`^atris task accept ${id}$`));
+}
+
 function runCli(args, { cwd, env, timeout = 15000 } = {}) {
+  const merged = {
+    ...process.env,
+    ATRIS_SKIP_UPDATE_CHECK: '1',
+    ATRIS_NO_INTERACTIVE: '1',
+    ...(env || {}),
+  };
+  // A host ATRIS_TASKS_DB would let a leftover review steal first-minute.
+  if (!env || !Object.prototype.hasOwnProperty.call(env, 'ATRIS_TASKS_DB') || env.ATRIS_TASKS_DB == null) {
+    delete merged.ATRIS_TASKS_DB;
+  }
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
     timeout,
-    env: {
-      ...process.env,
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      ATRIS_NO_INTERACTIVE: '1',
-      ...(env || {}),
-    },
+    env: merged,
   });
   if (result.error && result.error.code === 'ETIMEDOUT') {
     assert.fail(`cli hung past ${timeout}ms (args: ${args.join(' ') || '(none)'})`);
@@ -2292,11 +2305,8 @@ test('bare mission in a live room speaks the desk next, not the archive', () => 
     assert.equal(mission.status, 0, mission.stderr || mission.stdout);
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
     assert.equal(missionStatus.stdout.trim(), minute.stdout.trim());
-    assert.match(mission.stdout, /something finished\. waiting on you\./);
-    assert.doesNotMatch((mission.stdout.split('\n').find((line) => /something finished/.test(line)) || ''), /CLI-193/);
-    assert.match(mission.stdout, /CLI-193/);
+    assertDeskAcceptsReview(mission.stdout);
     assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
-    assert.match(nextLine(mission.stdout), /^atris task accept CLI-193$/);
     assert.equal((mission.stdout.match(/^Mission:/mg) || []).length, 0, mission.stdout);
     assert.doesNotMatch(mission.stdout, /Ship the old pack|Stop the stale loop|Ready for a hundred days|mission-done|mission-stopped|mission-ready-old/);
 
@@ -2385,11 +2395,8 @@ test('bare mission yields the desk next when a ready mission is stalled', () => 
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(mission.status, 0, mission.stderr || mission.stdout);
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
-    assert.match(mission.stdout, /something finished\. waiting on you\./);
-    assert.doesNotMatch((mission.stdout.split('\n').find((line) => /something finished/.test(line)) || ''), /CLI-193/);
-    assert.match(mission.stdout, /CLI-193/);
+    assertDeskAcceptsReview(mission.stdout);
     assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
-    assert.match(nextLine(mission.stdout), /^atris task accept CLI-193$/);
     assert.equal((mission.stdout.match(/^Mission:/mg) || []).length, 0, mission.stdout);
     assert.doesNotMatch(mission.stdout, /Keep the overnight loop warm|mission-80|no live driver|atris mission run 80/);
 
@@ -2398,6 +2405,64 @@ test('bare mission yields the desk next when a ready mission is stalled', () => 
     assert.match(listed.stdout, /mission-80|Keep the overnight loop warm/);
   } finally {
     cleanupTempDir(dir);
+  }
+});
+
+test('leftover review in a shared db does not hijack a git room first-minute', () => {
+  const parent = makeTempDir();
+  const home = path.join(parent, 'home');
+  const leftover = path.join(parent, 'leftover-room');
+  const room = path.join(parent, 'fresh-room');
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(leftover, { recursive: true });
+  const dbPath = path.join(parent, 'shared.db');
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: dbPath,
+  };
+  const taskDb = require('../lib/task-db');
+  try {
+    writeReadyWorkspace(leftover, [{
+      id: 'task-map',
+      display_id: 'CLI-193',
+      title: 'write a feature map for the live room',
+      status: 'review',
+      review: { agent_certified: true, agent_review_pass_count: 2 },
+      created_at: 1,
+      updated_at: 2,
+    }]);
+    fs.writeFileSync(
+      path.join(leftover, 'atris', 'reports', 'rebased-pack-co-first-loop-recap.md'),
+      '# Rebased Pack Co First Loop Recap\n',
+    );
+    taskDb.close();
+    const db = taskDb.open(dbPath);
+    const added = taskDb.addTask(db, {
+      title: 'write a feature map for the live room',
+      workspaceRoot: leftover,
+      status: 'review',
+      claimedBy: 'executor',
+      metadata: { review: { agent_certified: true, agent_review_pass_count: 2 } },
+    });
+    assert.equal(added.inserted, true, 'leftover review must land in the shared db');
+    taskDb.close();
+
+    const leftoverMinute = runCli([], { cwd: leftover, env });
+    assert.equal(leftoverMinute.status, 0, leftoverMinute.stderr || leftoverMinute.stdout);
+    assert.match(leftoverMinute.stdout, /something finished\. waiting on you\.|waiting for your ok/);
+    assert.match(nextLine(leftoverMinute.stdout), /^atris task accept /);
+
+    commitIn(room, 'initial toy repo', { 'README.md': '# Toy repo\n' });
+    const minute = runCli([], { cwd: room, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.match(minute.stdout, /initial toy repo is already here/);
+    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(minute.stdout, /waiting for your ok|waiting on you|write a feature map|atris task accept|Rebased Pack Co|CLI-193/);
+  } finally {
+    try { taskDb.close(); } catch { /* already closed */ }
+    cleanupTempDir(parent);
   }
 });
 
