@@ -597,7 +597,7 @@ test('first talk files the user sentence and names it as the win', () => {
 
     const after = runCli([], { cwd: dir, env });
     assert.equal(after.status, 0, after.stderr || after.stdout);
-    assert.match(after.stdout, /a notes app for keshav is ready to claim/);
+    assert.match(after.stdout, /"a notes app for keshav" is ready to claim/);
     assert.doesNotMatch(after.stdout, /first useful step/i);
   } finally {
     cleanupTempDir(dir);
