@@ -356,15 +356,18 @@ test('26e: atris status after minting a file folder talks keep-working, not fact
     const recap = runCli(['recap'], { cwd: dir, env });
     const now = runCli(['now'], { cwd: dir, env });
     const pad = runCli(['launchpad'], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
     assert.equal(again.status, 0, again.stdout + again.stderr);
     assert.equal(status.status, 0, status.stdout + status.stderr);
     assert.equal(recap.status, 0, recap.stdout + recap.stderr);
     assert.equal(now.status, 0, now.stdout + now.stderr);
     assert.equal(pad.status, 0, pad.stdout + pad.stderr);
+    assert.equal(stopped.status, 0, stopped.stdout + stopped.stderr);
     assert.equal(status.stdout.trim(), again.stdout.trim());
     assert.equal(recap.stdout.trim(), status.stdout.trim());
     assert.equal(now.stdout.trim(), status.stdout.trim());
     assert.equal(pad.stdout.trim(), status.stdout.trim());
+    assert.equal(stopped.stdout.trim(), status.stdout.trim());
     assert.match(status.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
     assert.match(status.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
     assert.doesNotMatch(status.stdout, /^next: atris do$/m);
@@ -375,10 +378,14 @@ test('26e: atris status after minting a file folder talks keep-working, not fact
     assert.match(pad.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
     assert.match(pad.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
     assert.doesNotMatch(pad.stdout, /^next: atris do$/m);
+    assert.match(stopped.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(stopped.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.doesNotMatch(stopped.stdout, /^next: atris do$/m);
     assert.doesNotMatch(
-      status.stdout + status.stderr + recap.stdout + recap.stderr + now.stdout + now.stderr + pad.stdout + pad.stderr,
-      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|Set up this workspace|nothing is running|ready to claim|# now|Current operating truth/,
+      status.stdout + status.stderr + recap.stdout + recap.stderr + now.stdout + now.stderr + pad.stdout + pad.stderr + stopped.stdout + stopped.stderr,
+      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|Set up this workspace|nothing is running|ready to claim|# now|Current operating truth|cloud-computer|business\.json|Pass --mission/,
     );
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
   } finally {
     cleanupTempDir(dir);
     cleanupTempDir(home);
@@ -548,6 +555,108 @@ test('26i: atris launchpad in an empty folder talks first-talk and does not mint
     assert.doesNotMatch(pad.stdout + pad.stderr, /Run "atris init"|Set up this workspace|WHAT HAPPENED|folder not found|init --minimal|claim/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('26j: atris stop after minting a file folder talks keep-working, not cloud-computer', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-stop-mint-home-');
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    const env = {
+      HOME: home,
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+      ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    };
+    const firstDo = runCli(['do'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(firstDo.status, 0, firstDo.stdout + firstDo.stderr);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+
+    const minute = runCli([], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    const recap = runCli(['recap'], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stdout + minute.stderr);
+    assert.equal(status.status, 0, status.stdout + status.stderr);
+    assert.equal(recap.status, 0, recap.stdout + recap.stderr);
+    assert.equal(stopped.status, 0, stopped.stdout + stopped.stderr);
+    assert.equal(stopped.stdout.trim(), minute.stdout.trim());
+    assert.equal(stopped.stdout.trim(), status.stdout.trim());
+    assert.equal(stopped.stdout.trim(), recap.stdout.trim());
+    assert.match(stopped.stdout, /^hey keshav, "notes\.txt" is already yours\.$/m);
+    assert.match(stopped.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.doesNotMatch(stopped.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(
+      stopped.stdout + stopped.stderr,
+      /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged|Where we are|Decision: let it run|nothing is running|what do you want here|spaceship|autopilot|hours/,
+    );
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('26k: atris stop after init and claim talks keep-working, not cloud-computer', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir('atris-dogfood-stop-claim-home-');
+  try {
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+      token: 'test-token',
+      email: 'dogfood@example.com',
+      user_id: 'u-1',
+    }), 'utf8');
+
+    const env = {
+      HOME: home,
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
+      ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    };
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stdout + init.stderr);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+
+    const before = runCli([], { cwd: dir, env });
+    assert.equal(before.status, 0, before.stdout + before.stderr);
+    const claimLine = String(before.stdout).match(/^next: (atris task claim \S+ --as \S+)$/m);
+    assert.ok(claimLine, before.stdout);
+    const claimed = runCli(claimLine[1].replace(/^atris /, '').split(' '), { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stdout + claimed.stderr);
+
+    const minute = runCli([], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stdout + minute.stderr);
+    assert.equal(status.status, 0, status.stdout + status.stderr);
+    assert.equal(stopped.status, 0, stopped.stdout + stopped.stderr);
+    assert.equal(stopped.stdout.trim(), minute.stdout.trim());
+    assert.equal(stopped.stdout.trim(), status.stdout.trim());
+    assert.match(stopped.stdout, /already yours/);
+    assert.match(stopped.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.doesNotMatch(stopped.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(
+      stopped.stdout + stopped.stderr,
+      /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged|Where we are|Decision: let it run|nothing is running|what do you want here|spaceship|autopilot|hours/,
+    );
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
   } finally {
     cleanupTempDir(dir);
     cleanupTempDir(home);
