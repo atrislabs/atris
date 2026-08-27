@@ -109,7 +109,7 @@ rg "founderCommand|--global|singleRepo|defaultScanRoot" commands/founder.js test
 rg "teachRoot|atris/teach|only reads" commands/teach.js test/dogfood-pass2-t1-t5.test.js  # teach reads ./atris/teach only
 rg "showLearnHelp|learnAtris|learn help|learnLogSchemaLines|title→key|detail→insight" commands/learn.js test/commands.test.js test/dogfood-papercuts.test.js # Project learnings + schema on help/validation + title/detail aliases
 rg "showSoulHelp|async function soul|soul help" commands/soul.js test/commands.test.js # Soul/persona command + workspace-free help
-rg "workspace-free help smoke|showSearchHelp|showLearnHelp|showSoulHelp|showHelpShort|help --all|help --json|ask/stop/ready" bin/atris.js commands/learn.js commands/soul.js test/commands.test.js test/golden-path-help.test.js test/dogfood-papercuts.test.js test/dogfood-p0-safety.test.js  # Help surfaces: short golden path, --all, --json, workspace-free help smoke; default help has no em dash; --all points ask/stop/ready at mission and task ready
+rg "workspace-free help smoke|showSearchHelp|showLearnHelp|showSoulHelp|showHelpShort|help --all|help --json|ask/stop/ready|already won" bin/atris.js commands/learn.js commands/soul.js test/commands.test.js test/golden-path-help.test.js test/dogfood-papercuts.test.js test/dogfood-p0-safety.test.js  # Help surfaces: short first-minute doors, --all catalog, --json; default help has no em dash and no claim/ready/proof; --all points ask/stop/ready at mission and task ready
 rg "resolveFunctionalOwner|explicit_member_owner|remap_reason|engine_owner_resolved" lib/functional-owner.js commands/mission.js test/dogfood-papercuts.test.js test/mission-status.test.js  # Keep existing member owners; document remap_reason when engines remap
 rg "skillColor|skillList|NO_COLOR" commands/skill.js test/dogfood-papercuts.test.js  # skill list ANSI gated on TTY / NO_COLOR
 rg "clipCell|member list" commands/member.js  # member list role column uses clipCell ellipsis
@@ -1135,7 +1135,7 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 - **Post-cycle clean:** `commands/run.js:552` (cleanAtris call) — self-heal MAP.md refs
 - **Post-cycle push:** `commands/run.js:386` (execSync git push) — disabled with `--no-push`
 - **Routing:** `bin/atris.js:113-138` (command dispatch + flag parsing)
-- **Help text:** `bin/atris.js:447` (showHelp function)
+- **Help text:** `bin/atris.js:494` (showHelpShort first-minute doors) · `bin/atris.js:779` (showHelp --all/--json)
 - **Known commands:** `lib/known-commands.js:3` (knownCommands array)
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
 - **Flags:**
@@ -1577,7 +1577,7 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 **Logic:**
 
-- Lines 199-353: Help text (showHelp function)
+- Lines 494-505: Help text (showHelpShort first-minute doors)
 - Lines 443-449: Known commands list (knownCommands array)
 - Lines 525-669: Natural language routing (cold/hot start)
 - Lines 783-1212: Command dispatch (if/else chain)

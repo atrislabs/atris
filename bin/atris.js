@@ -492,17 +492,14 @@ function showStartHelp() {
 }
 
 function showHelpShort() {
-  console.log('atris: you say what you want; atris builds it, checks it, and shows proof.');
+  console.log('atris: you say what you want. already won. one next step.');
   console.log('');
-  console.log('Golden path:');
-  console.log('  atris init [--yes] [--minimal]   scaffold this project');
-  console.log('  atris                           load context (MAP, tasks, journal)');
-  console.log('  atris task new "..."            file work');
-  console.log('  atris task claim <id> --as <m>  take ownership');
-  console.log('  atris task ready <id> --proof "..."');
-  console.log('  atris review                    validate');
-  console.log('  atris recap                     spoken recap of what landed');
-  console.log('  atris mission status            active goals + next move');
+  console.log('  atris "what do you want here?"   empty folder');
+  console.log('  atris later "..."                remember without a room');
+  console.log('  atris do                         work already here');
+  console.log('  atris spaceship                  Keep working for a few hours');
+  console.log('  atris autopilot                  Keep working until you stop');
+  console.log('  atris mission                    the one goal');
   console.log('');
   console.log('More: atris help --all   ·   machine list: atris help --json');
 }
@@ -773,7 +770,7 @@ function showHelpAll() {
   console.log('');
   console.log('Other:');
   console.log('  version    - Show Atris version');
-  console.log('  help       - Short golden path (help --all for every command)');
+  console.log('  help       - you say what you want (help --all for every command)');
   console.log('');
   console.log('Tip: Just run "atris" to get started');
   console.log('');
