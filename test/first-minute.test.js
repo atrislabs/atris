@@ -1934,6 +1934,103 @@ test('atris status in an empty folder talks first-talk, not init', () => {
   }
 });
 
+test('atris status and stop in a folder with a file name the file, not empty first-talk', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
+    assert.equal(status.stdout.trim(), minute.stdout.trim());
+    assert.equal(stopped.stdout.trim(), minute.stdout.trim());
+    assert.match(status.stdout, /^hey keshav, notes.txt is already here\.$/m);
+    assert.match(status.stdout, /^next: atris do$/m);
+    assert.match(stopped.stdout, /^hey keshav, notes.txt is already here\.$/m);
+    assert.match(stopped.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(status.stdout + stopped.stdout, /nothing is running|what do you want here|this folder is empty|Run "atris init"|cloud-computer|business\.json/);
+    assert.equal(spokenLineCount(status.stdout), spokenLineCount(minute.stdout));
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const jsonStatus = runCli(['status', '--json'], { cwd: dir, env });
+    const jsonStop = runCli(['stop', '--json'], { cwd: dir, env });
+    const jsonMinute = runCli(['--json'], { cwd: dir, env });
+    assert.equal(jsonStatus.status, jsonMinute.status);
+    assert.equal(jsonStop.status, jsonMinute.status);
+    const statusPayload = JSON.parse(jsonStatus.stdout);
+    const stopPayload = JSON.parse(jsonStop.stdout);
+    assert.equal(statusPayload.reason, 'notes.txt is already here');
+    assert.equal(statusPayload.next_action, 'atris do');
+    assert.equal(stopPayload.reason, 'notes.txt is already here');
+    assert.equal(stopPayload.next_action, 'atris do');
+    assert.doesNotMatch(jsonStatus.stdout + jsonStop.stdout, /nothing is running|what do you want here|init|claim/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const quick = runCli(['status', '--quick'], { cwd: dir, env });
+    assert.equal(quick.status, 0, quick.stderr || quick.stdout);
+    assert.equal(quick.stdout.trim(), minute.stdout.trim());
+    assert.doesNotMatch(quick.stdout + quick.stderr, /nothing is running|what do you want here|Run "atris init"|📋/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const help = runCli(['status', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris status/);
+    assert.doesNotMatch(help.stdout, /notes.txt is already here|nothing is running|this folder is empty|Run "atris init"/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris status and stop in a git folder name the last commit, not empty first-talk', () => {
+  const dir = makeTempDir();
+  const homeParent = makeTempDir();
+  const home = path.join(homeParent, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  commitIn(dir, 'add notes app', {
+    'notes.txt': 'already writing\n',
+    'draft.md': 'two\n',
+  });
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(home, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    const status = runCli(['status'], { cwd: dir, env });
+    const stopped = runCli(['stop'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
+    assert.equal(status.stdout.trim(), minute.stdout.trim());
+    assert.equal(stopped.stdout.trim(), minute.stdout.trim());
+    assert.match(status.stdout, /^hey keshav, add notes app is already here\.$/m);
+    assert.match(status.stdout, /^next: atris do$/m);
+    assert.match(stopped.stdout, /^hey keshav, add notes app is already here\.$/m);
+    assert.match(stopped.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(status.stdout + stopped.stdout, /nothing is running|what do you want here|notes\.txt|draft\.md|this folder is empty/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    const jsonStatus = runCli(['status', '--json'], { cwd: dir, env });
+    const jsonStop = runCli(['stop', '--json'], { cwd: dir, env });
+    assert.equal(JSON.parse(jsonStatus.stdout).reason, 'add notes app is already here');
+    assert.equal(JSON.parse(jsonStatus.stdout).next_action, 'atris do');
+    assert.equal(JSON.parse(jsonStop.stdout).reason, 'add notes app is already here');
+    assert.equal(JSON.parse(jsonStop.stdout).next_action, 'atris do');
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(homeParent);
+  }
+});
+
 test('atris wish in an empty folder talks like first-minute', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');

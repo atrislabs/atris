@@ -746,12 +746,13 @@ async function stopCommand(args, options = {}) {
   }
   const root = options.root || process.cwd();
   const asJson = args.includes('--json');
-  // Empty folder: nothing is running. Same first-talk next as bare atris.
-  // Do not mint a room, do not hit the cloud, do not name business.json.
+  // Fresh folder: empty talks first-talk. A file already here
+  // names that file, same as bare atris. Do not mint a room.
   if (isFreshWorkspace(root) && !parseMissionId(args)) {
     const unbound = refuseUnboundCloudComputer(args, options, 'stop');
     if (unbound) {
       return speakNothingRunning({
+        root,
         asJson,
         log: options.log || console.log,
       });

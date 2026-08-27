@@ -124,8 +124,8 @@ function parseStatusTodo(todoFile) {
 }
 
 function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
-  // Empty folder: nothing is running. Same first-talk next as bare atris.
-  // Do not mint a room, do not write .atris, do not name init.
+  // Fresh folder: empty talks first-talk. A file already here
+  // names that file, same as bare atris. Do not mint a room.
   if (isFreshWorkspace()) {
     process.exit(speakNothingRunning({ asJson: jsonMode }));
   }
