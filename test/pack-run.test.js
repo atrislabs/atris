@@ -473,7 +473,7 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.equal(settings.permissions.disableBypassPermissionsMode, 'disable');
     assert.equal(settings.permissions.disableAutoMode, 'disable');
     assert.equal(settings.disableSkillShellExecution, true);
-    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write|WebFetch');
+    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write|WebFetch|Bash');
     assert.match(output, /capability trust card:/);
     assert.match(output, /requested by pack: pack\.read, web\.read/);
     assert.match(output, /granted for this run: pack\.read, web\.read/);
@@ -487,6 +487,7 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
     assert.deepEqual(receipt.grantedTools, ['Read', 'Glob', 'Grep', 'Skill', 'WebFetch', 'WebSearch']);
     assert.deepEqual(receipt.usedTools, []);
     assert.equal(receipt.enforcement.packRootFileBoundary, true);
+    assert.equal(receipt.enforcement.claudeSettingsGuard, true);
     assert.equal(receipt.enforcement.preLaunchContextBoundary, true);
     assert.equal(receipt.enforcement.declaredTreeSymlinksRejected, true);
     assert.equal(receipt.enforcement.packOpeningSlashCommandsEscaped, true);
@@ -675,7 +676,7 @@ test('declared --trust auto-approves only inside the tool ceiling and never bypa
       ['Read', 'Glob', 'Grep', 'Skill', 'Edit', 'Write'],
       'dontAsk must pre-approve every granted tool by its exact Claude permission name',
     );
-    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write|WebFetch');
+    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Read|Glob|Grep|Edit|Write|WebFetch|Bash');
     assert.match(output, /pre-approved inside the declared ceiling/);
     assert.match(output, /imported\/managed deny rules still win/);
     assert.match(output, /later Claude or policy denials may not appear/);

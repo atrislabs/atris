@@ -37,6 +37,7 @@ test/codex-goal.test.js
 test/company-brain-sync.test.js
 test/compile.test.js
 test/confidence-gate.test.js
+test/config-guard.test.js
 test/console-packet-shape.test.js
 test/context-gatherer.test.js
 test/coverage.fast.test.js
