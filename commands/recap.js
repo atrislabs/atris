@@ -350,7 +350,22 @@ function recapAtris(args = []) {
     printRecapHelp();
     return;
   }
-  const root = process.cwd();
+  const cwd = process.cwd();
+  const taskDb = loadTaskDb();
+  let root = cwd;
+  try {
+    root = taskDb ? taskDb.workspaceRoot(cwd) : cwd;
+  } catch {
+    root = cwd;
+  }
+  // cd src in a real git project still recaps that project. An empty
+  // child under /tmp stays its own room and does not inherit /tmp.
+  let inProjectSubdir = false;
+  try {
+    inProjectSubdir = fs.realpathSync(cwd) !== fs.realpathSync(root);
+  } catch {
+    inProjectSubdir = path.resolve(cwd) !== path.resolve(root);
+  }
   const visibleBefore = listUserVisibleWork(root);
   const daysIdx = args.indexOf('--days');
   const days = daysIdx !== -1 ? Number(args[daysIdx + 1]) : DEFAULT_DAYS;
@@ -358,6 +373,7 @@ function recapAtris(args = []) {
   if (
     data.empty
     && isFreshWorkspace(root)
+    && !inProjectSubdir
     && !args.includes('--verbose')
     && !args.includes('--full')
     && !args.includes('--share')
@@ -380,6 +396,7 @@ function recapAtris(args = []) {
     !args.includes('--verbose')
     && !args.includes('--full')
     && !args.includes('--share')
+    && !inProjectSubdir
     && !hasLiveKeepWorkingRun(root)
   ) {
     const minute = buildFirstMinute({ root, files: visibleBefore });
