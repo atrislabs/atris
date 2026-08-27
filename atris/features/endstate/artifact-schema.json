@@ -71,6 +71,15 @@
           "items": { "type": "string" }
         }
       }
+    },
+    "provider_seed": {
+      "type": "object",
+      "properties": {
+        "status": { "type": "string", "enum": ["ok", "wedged", "inconclusive", "missing", "skipped"] },
+        "provider": { "type": "string" },
+        "row_id": { "type": "string" },
+        "reason": { "type": "string" }
+      }
     }
   }
 }

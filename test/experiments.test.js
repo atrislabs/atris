@@ -85,6 +85,35 @@ function prepareEndstateWorkspace(dir) {
   }
 }
 
+function writeEndstateArtifact(dir, slug, artifact) {
+  const artifactsDir = path.join(dir, 'atris', 'experiments', slug, 'artifacts');
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(artifactsDir, `${artifact.run_id}.json`),
+    JSON.stringify(artifact, null, 2),
+    'utf8'
+  );
+}
+
+function endstateArtifact(overrides = {}) {
+  const track = overrides.track || 'baseline';
+  return {
+    run_id: overrides.run_id || `2099-01-01T00-00-00-000Z-${track}`,
+    track,
+    repo_commits: { atris_cli: 'cli-sha', atrisos_backend: 'backend-sha' },
+    task_brief: 'prove the benchmark comparison path',
+    prompt_context: 'benchmark prompt context',
+    changed_files: [],
+    tests: [{ command: 'node --test test/experiments.test.js', status: 'pass' }],
+    review: { status: 'draft', summary: 'draft benchmark receipt' },
+    wiki: { status: 'not_applicable', before: '', after: '' },
+    elapsed_seconds: 0,
+    interventions: { count: 0, events: [] },
+    score: 35,
+    ...overrides,
+  };
+}
+
 test('init creates experiments framework assets', () => {
   const dir = makeTempDir();
   try {
@@ -336,6 +365,39 @@ test('experiments compare endstate summarizes the latest receipts', { skip: !pyt
     assert.match(compare.stdout, /stack: 35\/100 \| review: draft \| interventions: 0/);
     assert.match(compare.stdout, /Decision: no winner yet\./);
     assert.match(compare.stdout, /Scores are tied at 35\/100/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments compare endstate reports provider seed wedge as inconclusive', () => {
+  const dir = makeTempDir();
+  try {
+    prepareEndstateWorkspace(dir);
+    writeEndstateArtifact(dir, 'endstate-baseline', endstateArtifact({
+      run_id: '2099-01-01T00-00-00-000Z-baseline',
+      track: 'baseline',
+    }));
+    writeEndstateArtifact(dir, 'endstate-stack', endstateArtifact({
+      run_id: '2099-01-01T00-00-00-000Z-stack',
+      track: 'stack',
+      review: {
+        status: 'fail',
+        summary: 'provider row seed-42 wedged during re-cert',
+      },
+      provider_seed: {
+        status: 'wedged',
+        provider: 'fireworks',
+        row_id: 'seed-42',
+        reason: 'provider row seed-42 wedged during re-cert',
+      },
+    }));
+
+    const compare = runCli(['experiments', 'compare', 'endstate'], { cwd: dir });
+    assert.equal(compare.status, 0, compare.stderr);
+    assert.match(compare.stdout, /stack: 35\/100 \| review: fail \| interventions: 0 \| provider seed: wedged/);
+    assert.match(compare.stdout, /Decision: inconclusive\./);
+    assert.match(compare.stdout, /stack\/fireworks: provider row seed-42 wedged during re-cert/);
   } finally {
     cleanupTempDir(dir);
   }

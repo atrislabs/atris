@@ -16,6 +16,7 @@ const {
   scoreEndstateArtifact,
   summarizeReview,
   writeArtifact,
+  providerSeedDiagnostic,
 } = require('../lib/endstate');
 const daily = require('../lib/experiments/daily');
 
@@ -478,7 +479,9 @@ function formatCompareLine(label, entry) {
   const score = getArtifactScore(artifact);
   const review = artifact.review?.status || 'unknown';
   const interventions = artifact.interventions?.count || 0;
-  return `  ${label}: ${score}/100 | review: ${review} | interventions: ${interventions} | artifact: ${path.relative(process.cwd(), entry.filePath)}`;
+  const providerSeed = providerSeedDiagnostic(artifact);
+  const seedStatus = providerSeed ? ` | provider seed: ${providerSeed.status}` : '';
+  return `  ${label}: ${score}/100 | review: ${review} | interventions: ${interventions}${seedStatus} | artifact: ${path.relative(process.cwd(), entry.filePath)}`;
 }
 
 function experimentsCompare(target = 'endstate') {
@@ -501,7 +504,9 @@ function experimentsCompare(target = 'endstate') {
     console.log(formatCompareLine('baseline', baselineEntry));
     console.log(formatCompareLine('stack', stackEntry));
     console.log('');
-    if (comparison.winner === 'stack') {
+    if (comparison.inconclusive) {
+      console.log('Decision: inconclusive.');
+    } else if (comparison.winner === 'stack') {
       console.log('Decision: stack wins.');
     } else {
       console.log('Decision: no winner yet.');

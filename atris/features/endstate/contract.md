@@ -55,6 +55,7 @@ Each run must emit:
 - wiki delta or `not_applicable`
 - elapsed time
 - intervention count
+- optional `provider_seed` health when the run depends on a seeded provider row
 
 Schema source of truth: `atris/features/endstate/artifact-schema.json`
 
@@ -86,5 +87,7 @@ The stack wins Level 1 if it beats the baseline on total score and does not lose
 
 - The benchmark harness can validate both packs, emit dry-run receipts, compare
   the latest artifacts, and replay that full public rehearsal in one command.
+- Comparisons report wedged provider seed rows as inconclusive re-cert state, so
+  provider infrastructure failures do not masquerade as a stack-vs-baseline loss.
 - The remaining gap is not tooling. It is evidence: a real head-to-head result
   on pinned snapshots that clears the Level 1 rule.
