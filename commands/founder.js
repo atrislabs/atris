@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_DAYS = 28;
@@ -321,6 +322,17 @@ function founderCommand(args = [], options = {}) {
 
   const cwd = path.resolve(options.cwd || process.cwd());
   const currentWorkspace = workspaceRoot(cwd);
+
+  // Empty folder talks like bare atris. Do not write scorecard.jsonl.
+  // After init, founder still lists and scores.
+  if (isFreshWorkspace(cwd) || isFreshWorkspace(currentWorkspace)) {
+    return speakFirstMinute({
+      root: cwd,
+      fresh: true,
+      asJson: parsed.json,
+    });
+  }
+
   const root = parsed.root
     ? path.resolve(cwd, parsed.root)
     : (parsed.global ? defaultScanRoot(cwd, currentWorkspace) : currentWorkspace);

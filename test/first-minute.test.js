@@ -2394,7 +2394,7 @@ test('atris engine in an empty folder talks first-talk and does not mint engines
     assert.match(desk.stdout, /^next: atris "what do you want here\?"$/m);
     assert.deepEqual(fs.readdirSync(work).sort(), before);
 
-    for (const args of [['engine'], ['engines'], ['engine', '--json']]) {
+    for (const args of [['engine'], ['engines'], ['engine', '--json'], ['founder'], ['founder', '--json']]) {
       const res = runCli(args, { cwd: work, env });
       if (args.includes('--json')) {
         const jsonDesk = runCli(['--json'], { cwd: work, env });
@@ -2403,7 +2403,7 @@ test('atris engine in an empty folder talks first-talk and does not mint engines
         const payload = JSON.parse(res.stdout);
         assert.equal(payload.reason, 'this folder is empty');
         assert.equal(payload.next_action, 'atris "what do you want here?"');
-        assert.doesNotMatch(res.stdout, /"scope"|atris-fast|engines\.json/);
+        assert.doesNotMatch(res.stdout, /"scope"|atris-fast|engines\.json|commitsThisWeek|scorecard\.jsonl/);
       } else {
         assert.equal(res.status, desk.status, res.stderr || res.stdout);
         assert.equal(res.stdout.trim(), desk.stdout.trim());
@@ -2411,12 +2411,13 @@ test('atris engine in an empty folder talks first-talk and does not mint engines
       }
       assert.doesNotMatch(
         `${res.stdout}\n${res.stderr}`,
-        /engines: \d+ intelligence|intelligences found|default engine|scope.: .workspace/,
+        /engines: \d+ intelligence|intelligences found|default engine|scope.: .workspace|last 7 days:|commits landed|scorecard/,
       );
       assert.deepEqual(fs.readdirSync(work).sort(), before, `listing changed after atris ${args.join(' ')}`);
       assert.equal(fs.existsSync(path.join(work, '.atris')), false);
       assert.equal(fs.existsSync(path.join(work, 'atris')), false);
       assert.equal(fs.existsSync(path.join(work, '.atris', 'state', 'engines.json')), false);
+      assert.equal(fs.existsSync(path.join(work, '.atris', 'state', 'founder', 'scorecard.jsonl')), false);
     }
 
     const leftoverHi = runCli(['brainstorm', 'hi'], { cwd: work, env });
@@ -2461,7 +2462,7 @@ test('atris engine in a folder with a file names the file and does not mint', ()
     assert.match(desk.stdout, /^hey keshav, notes.txt is already here\.$/m);
     assert.match(desk.stdout, /^next: atris do$/m);
 
-    for (const args of [['engine'], ['engines'], ['engine', '--json']]) {
+    for (const args of [['engine'], ['engines'], ['engine', '--json'], ['founder'], ['founder', '--json']]) {
       const res = runCli(args, { cwd: work, env });
       if (args.includes('--json')) {
         const jsonDesk = runCli(['--json'], { cwd: work, env });
@@ -2474,7 +2475,7 @@ test('atris engine in a folder with a file names the file and does not mint', ()
         assert.equal(res.status, desk.status, res.stderr || res.stdout);
         assert.equal(res.stdout.trim(), desk.stdout.trim());
       }
-      assert.doesNotMatch(`${res.stdout}\n${res.stderr}`, /engines: \d+ intelligence|intelligences found/);
+      assert.doesNotMatch(`${res.stdout}\n${res.stderr}`, /engines: \d+ intelligence|intelligences found|last 7 days:|commits landed/);
       assert.deepEqual(fs.readdirSync(work).sort(), before);
       assert.equal(fs.existsSync(path.join(work, '.atris')), false);
       assert.equal(fs.existsSync(path.join(work, 'atris')), false);
@@ -2517,6 +2518,19 @@ test('atris engine after init --yes --minimal still lists engines', () => {
     assert.equal(typeof payload.default, 'string');
     assert.ok(Array.isArray(payload.engines));
     assert.ok(payload.engines.some((engine) => engine.id === 'atris-fast'));
+
+    const founder = runCli(['founder'], { cwd: dir, env });
+    assert.equal(founder.status, 0, founder.stderr || founder.stdout);
+    assert.match(founder.stdout, /last 7 days:/);
+    assert.doesNotMatch(founder.stdout, /this folder is empty|what do you want here|notes\.txt is already here/);
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'founder', 'scorecard.jsonl')));
+
+    const founderJson = runCli(['founder', '--json'], { cwd: dir, env });
+    assert.equal(founderJson.status, 0, founderJson.stderr || founderJson.stdout);
+    const founderBody = JSON.parse(founderJson.stdout);
+    assert.equal(typeof founderBody.commitsThisWeek, 'number');
+    assert.ok(Array.isArray(founderBody.perRepo));
+    assert.doesNotMatch(founderJson.stdout, /this folder is empty|what do you want here/);
 
     const jsonRecap = runCli(['recap', '--json'], { cwd: dir, env });
     assert.equal(jsonRecap.status, 0, jsonRecap.stderr || jsonRecap.stdout);

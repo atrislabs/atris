@@ -263,6 +263,7 @@ test('18: close with no args exits 2; sign status when off exits 0', () => {
     assert.equal(sign.status, 0, sign.stdout + sign.stderr);
     assert.match(sign.stdout, /co-author is off/i);
 
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const founder = runCli(['founder', '--json'], { cwd: dir });
     assert.equal(founder.status, 0, founder.stdout + founder.stderr);
     const founderBody = JSON.parse(founder.stdout);

@@ -58,6 +58,10 @@ function writeTaskProjection(scanRoot, tasks) {
   fs.writeFileSync(file, `${JSON.stringify({ tasks }, null, 2)}\n`, 'utf8');
 }
 
+function bindRoom(cwd) {
+  fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
+}
+
 function readRows(cwd) {
   const file = path.join(cwd, '.atris', 'state', 'founder', 'scorecard.jsonl');
   return fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
@@ -85,6 +89,7 @@ test('counts default-branch commits and closed tasks in rolling 7-day windows, t
       { id: 'last-done', status: 'done', done_at: '2026-07-30T08:00:00Z' },
       { id: 'open', status: 'open', updated_at: '2026-08-06T08:00:00Z' },
     ]);
+    bindRoom(alpha);
 
     const run = runFounder(alpha, ['--root', scanRoot, '--days', '21'], '2026-08-10T08:00:00Z');
     assert.equal(run.status, 0, run.stderr);
@@ -138,6 +143,7 @@ test('score alias uses 28 days and reports missing task data without failing', (
   try {
     const alpha = initRepo(scanRoot, 'alpha');
     commitAt(alpha, '2026-08-06T12:00:00Z', 'one current commit');
+    bindRoom(alpha);
 
     const run = runFounder(alpha, ['score'], '2026-08-07');
     assert.equal(run.status, 0, run.stderr);
@@ -158,6 +164,7 @@ test('malformed task data is treated as unavailable', () => {
   try {
     const alpha = initRepo(scanRoot, 'alpha');
     commitAt(alpha, '2026-08-06T12:00:00Z', 'one current commit');
+    bindRoom(alpha);
     const projection = path.join(scanRoot, '.atris', 'state', 'tasks.projection.json');
     fs.mkdirSync(path.dirname(projection), { recursive: true });
     fs.writeFileSync(projection, '{not json\n', 'utf8');
@@ -175,6 +182,7 @@ test('founder --json emits a parseable scorecard', () => {
   try {
     const alpha = initRepo(scanRoot, 'alpha');
     commitAt(alpha, '2026-08-06T12:00:00Z', 'one current commit');
+    bindRoom(alpha);
     const run = runFounder(alpha, ['--json', '--root', scanRoot], '2026-08-07T12:00:00Z');
     assert.equal(run.status, 0, run.stderr);
     const body = JSON.parse(run.stdout);
@@ -182,5 +190,72 @@ test('founder --json emits a parseable scorecard', () => {
     assert.ok(Array.isArray(body.perRepo));
   } finally {
     fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test('empty folder founder talks first-talk and does not write scorecard.jsonl', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-founder-empty-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-founder-empty-home-'));
+  try {
+    const run = spawnSync(process.execPath, [cliPath, 'founder'], {
+      cwd: dir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: home,
+        USER: 'keshav',
+        ATRIS_OPERATOR: 'keshav',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+        ATRIS_NONINTERACTIVE: '1',
+        CI: 'true',
+      },
+    });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    assert.match(run.stdout, /^hey keshav, this folder is empty\.$/m);
+    assert.match(run.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.doesNotMatch(run.stdout, /last 7 days:|scorecard|commits landed/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.deepEqual(fs.readdirSync(dir), []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('empty folder founder --json talks first-talk and writes nothing', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-founder-empty-json-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-founder-empty-json-home-'));
+  try {
+    const env = {
+      ...process.env,
+      HOME: home,
+      USER: 'keshav',
+      ATRIS_OPERATOR: 'keshav',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_NONINTERACTIVE: '1',
+      CI: 'true',
+    };
+    const desk = spawnSync(process.execPath, [cliPath, '--json'], {
+      cwd: dir,
+      encoding: 'utf8',
+      env,
+    });
+    const run = spawnSync(process.execPath, [cliPath, 'founder', '--json'], {
+      cwd: dir,
+      encoding: 'utf8',
+      env,
+    });
+    assert.equal(run.status, desk.status, run.stderr || run.stdout);
+    assert.equal(run.stdout.trim(), desk.stdout.trim());
+    const body = JSON.parse(run.stdout);
+    assert.equal(body.reason, 'this folder is empty');
+    assert.equal(body.next_action, 'atris "what do you want here?"');
+    assert.doesNotMatch(run.stdout, /commitsThisWeek|scorecard\.jsonl/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+    assert.deepEqual(fs.readdirSync(dir), []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });
