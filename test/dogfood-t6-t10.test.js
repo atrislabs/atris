@@ -130,6 +130,7 @@ test('T9: top-level lesson help matches real argv; lesson --help prints schema',
 test('T10: founder --json emits JSON scorecard', () => {
   const dir = makeTempDir();
   try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const run = runCli(['founder', '--json', '--root', dir], {
       cwd: dir,
       env: { ATRIS_FOUNDER_NOW: '2026-08-10T08:00:00.000Z' },

@@ -118,6 +118,7 @@ test('T1: who and founder default to this workspace', () => {
     fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed\n');
     git(dir, ['add', 'seed.txt']);
     git(dir, ['commit', '-qm', 'seed']);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     const who = runCli(['who', '--json'], { cwd: dir });
     assert.equal(who.status, 0, who.stderr);
