@@ -38,11 +38,33 @@ test('parseNotesArgs keeps the engine as the one non-url trailing word', () => {
       ],
       engine: 'haiku',
       help: false,
+      save: false,
+      unsave: false,
     },
   );
   assert.equal(isPlaylistUrl('https://www.youtube.com/playlist?list=PLxx'), true);
   assert.equal(isPlaylistUrl('https://www.youtube.com/watch?v=aaa&list=PLxx'), true);
   assert.equal(isPlaylistUrl('https://www.youtube.com/watch?v=aaa'), false);
+  assert.deepEqual(
+    parseNotesArgs(['https://youtu.be/ccc', '--save']),
+    {
+      urls: ['https://youtu.be/ccc'],
+      engine: null,
+      help: false,
+      save: true,
+      unsave: false,
+    },
+  );
+  assert.deepEqual(
+    parseNotesArgs(['--unsave', 'ccc123xyz']),
+    {
+      urls: ['ccc123xyz'],
+      engine: null,
+      help: false,
+      save: false,
+      unsave: true,
+    },
+  );
 });
 
 test('single-url notes still run the existing path with an optional engine', async () => {
@@ -75,8 +97,37 @@ test('single-url notes still run the existing path with an optional engine', asy
     url: 'https://www.youtube.com/watch?v=abc123',
     engine: 'grok',
   }]);
-  assert.deepEqual(briefs, ['https://www.youtube.com/watch?v=abc123']);
+  assert.deepEqual(briefs, []);
   assert.equal(expanded, 0);
+});
+
+test('single-url notes --save files the brief', async () => {
+  const calls = [];
+  const briefs = [];
+  const status = await youtubeCommand([
+    'notes',
+    'https://www.youtube.com/watch?v=abc123',
+    '--save',
+    'grok',
+  ], {
+    output: () => {},
+    runner: (url, engine) => {
+      calls.push({ url, engine });
+      return { status: 0 };
+    },
+    briefFiler: ({ url }) => {
+      briefs.push(url);
+      return briefFor(url);
+    },
+    ensureApply: () => 0,
+  });
+
+  assert.equal(status, 0);
+  assert.deepEqual(calls, [{
+    url: 'https://www.youtube.com/watch?v=abc123',
+    engine: 'grok',
+  }]);
+  assert.deepEqual(briefs, ['https://www.youtube.com/watch?v=abc123']);
 });
 
 test('multi-url notes run sequentially and keep the shared engine', async () => {
@@ -108,9 +159,35 @@ test('multi-url notes run sequentially and keep the shared engine', async () => 
     { url: 'https://www.youtube.com/watch?v=aaa111', engine: 'haiku' },
     { url: 'https://youtu.be/bbb222', engine: 'haiku' },
   ]);
+  assert.match(log.text(), /aaa111  1s  ok/);
+  assert.match(log.text(), /bbb222  1s  ok/);
+  assert.match(log.text(), /url or id  seconds  result/);
+});
+
+test('multi-url notes --save files briefs', async () => {
+  const log = collect();
+  const status = await youtubeCommand([
+    'notes',
+    '--save',
+    'https://www.youtube.com/watch?v=aaa111',
+    'https://youtu.be/bbb222',
+    'haiku',
+  ], {
+    output: log.output,
+    runner: () => ({ status: 0 }),
+    briefFiler: ({ url }) => briefFor(url),
+    nowMs: (() => {
+      let n = 0;
+      return () => {
+        n += 1000;
+        return n;
+      };
+    })(),
+  });
+
+  assert.equal(status, 0);
   assert.match(log.text(), /aaa111  1s  atris\/wiki\/briefs\/youtube-aaa111.md/);
   assert.match(log.text(), /bbb222  1s  atris\/wiki\/briefs\/youtube-bbb222.md/);
-  assert.match(log.text(), /url or id  seconds  result/);
 });
 
 test('playlist expansion caps at 10 and prints a cap note', async () => {
@@ -168,7 +245,7 @@ test('one failed video records FAILED and the batch continues', async () => {
     'https://www.youtube.com/watch?v=pass02',
   ]);
   assert.match(log.text(), /fail01  \d+s  FAILED/);
-  assert.match(log.text(), /pass02  \d+s  atris\/wiki\/briefs\/youtube-pass02.md/);
+  assert.match(log.text(), /pass02  \d+s  ok/);
 });
 
 test('all-fail notes batch exits 2', async () => {

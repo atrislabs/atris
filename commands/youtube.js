@@ -29,7 +29,8 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('');
   output(`Usage: ${commandName} search "<query>" [--limit N] [--json]`);
   output(`       ${commandName} search --paid "<query>" [--limit N] [--json]`);
-  output(`       ${commandName} notes <youtube-url> [youtube-url-or-playlist...] [engine]`);
+  output(`       ${commandName} notes <youtube-url> [youtube-url-or-playlist...] [engine] [--save]`);
+  output(`       ${commandName} unsave <url-or-id>`);
   output(`       ${commandName} process <youtube-url> [options]`);
   output(`       ${commandName} digest [--days N]`);
   output(`       ${commandName} watch add <channel-url-or-@handle>`);
@@ -40,8 +41,8 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('');
   output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links');
   output('search --paid = 5 credits, watch permalinks + titles from Atris');
-  output('notes = free local notes for one url, several urls, or a playlist');
-  output('process = 5 credits cloud knowledge');
+  output('notes = free local notes to stdout; ephemeral unless --save');
+  output('process = 5 credits cloud knowledge (needs a filled Apply)');
   output('digest = one decision page from this week\'s video briefs');
   output('watch = subscribed channels turn into briefs without a human');
   output('Process a YouTube video through Atris using timestamped transcript-first analysis.');
@@ -50,6 +51,8 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('Options:');
   output('  --limit <n>         Max search results (default: 5)');
   output('  --paid              Bill 5 credits for watch permalinks (search only)');
+  output('  --save              File brief, journal line, and apply stub (notes only)');
+  output('  --unsave            Delete filed brief and apply stub (no paid calls)');
   output('  --query, -q <text>  Focus question for the analysis');
   output('  --agent <id>        Agent id to store knowledge against');
   output('  --store             Save as agent knowledge (requires --agent)');
@@ -65,6 +68,9 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`  ${commandName} search "MCP agents" --limit 10`);
   output(`  ${commandName} search --paid "MCP agents 2026"`);
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID`);
+  output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID --save`);
+  output(`  ${commandName} notes --unsave VIDEO_ID`);
+  output(`  ${commandName} unsave VIDEO_ID`);
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID https://youtu.be/OTHER_ID`);
   output(`  ${commandName} notes https://www.youtube.com/playlist?list=PLAYLIST_ID`);
   output(`  ${commandName} https://www.youtube.com/watch?v=VIDEO_ID`);
@@ -504,6 +510,14 @@ function videoIdFromUrl(url) {
   return short ? short[1] : null;
 }
 
+function videoIdFromArg(arg) {
+  const fromUrl = videoIdFromUrl(arg);
+  if (fromUrl) return fromUrl;
+  const text = String(arg || '').trim();
+  if (/^[A-Za-z0-9_-]{6,}$/.test(text)) return text;
+  return null;
+}
+
 function looksLikeYoutubeUrl(arg) {
   const text = String(arg || '').trim();
   if (!text || text.startsWith('-')) return false;
@@ -519,17 +533,24 @@ function parseNotesArgs(argv = []) {
   const urls = [];
   let engine = null;
   let help = false;
+  let save = false;
+  let unsave = false;
   for (const raw of argv) {
     const arg = String(raw);
-    if (arg === '--help' || arg === '-h' || arg === 'help') {
-      help = true;
-      continue;
-    }
+    if (arg === '--help' || arg === '-h' || arg === 'help') help = true;
+    else if (arg === '--save') save = true;
+    else if (arg === '--unsave') unsave = true;
+  }
+  for (const raw of argv) {
+    const arg = String(raw);
+    if (arg === '--help' || arg === '-h' || arg === 'help') continue;
+    if (arg === '--save' || arg === '--unsave') continue;
     if (arg.startsWith('-')) continue;
     if (looksLikeYoutubeUrl(arg)) urls.push(arg);
+    else if (unsave && videoIdFromArg(arg)) urls.push(arg);
     else engine = arg;
   }
-  return { urls, engine, help };
+  return { urls, engine, help, save, unsave };
 }
 
 function dateStamp(now) {
@@ -606,6 +627,59 @@ function ensureNotesApply({ cwd, url, now, output } = {}) {
     incompleteMessage: APPLY_NEXT_MESSAGE,
     required: false,
   });
+}
+
+function youtubeBriefRel(id) {
+  return `atris/wiki/briefs/youtube-${id}.md`;
+}
+
+function unsaveYoutubeNotes(target, deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  const cwd = deps.cwd || process.cwd();
+  const id = videoIdFromArg(target);
+  if (!id) {
+    output('usage: atris youtube unsave <url-or-id>');
+    return 2;
+  }
+  const briefRel = youtubeBriefRel(id);
+  const applyRel = applySidecarRel(id);
+  const removed = [];
+  for (const rel of [briefRel, applyRel]) {
+    const abs = path.join(cwd, rel);
+    try {
+      if (fs.existsSync(abs)) {
+        fs.unlinkSync(abs);
+        removed.push(rel);
+      }
+    } catch {
+      // already gone or unreadable: do not error
+    }
+  }
+  if (!removed.length) {
+    output(`already gone: ${briefRel} and ${applyRel}`);
+    return 0;
+  }
+  output(`removed ${removed.join(' and ')}`);
+  return 0;
+}
+
+function runYoutubeUnsave(args = [], deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  const parsed = parseNotesArgs(['--unsave', ...args]);
+  if (parsed.help) {
+    showYoutubeHelp(output, deps.commandName || 'atris youtube');
+    return 0;
+  }
+  if (!parsed.urls.length) {
+    output('usage: atris youtube unsave <url-or-id>');
+    return 2;
+  }
+  let code = 0;
+  for (const target of parsed.urls) {
+    const status = unsaveYoutubeNotes(target, deps);
+    if (status !== 0) code = status;
+  }
+  return code;
 }
 
 function ensureProcessApply({ cwd, url, now, output } = {}) {
@@ -1236,7 +1310,7 @@ function runOneNotesItem(item, engine, deps = {}) {
   } catch {
     status = 1;
   }
-  const brief = status === 0 ? fileNotesBrief(item.url, deps) : null;
+  const brief = status === 0 && deps.save ? fileNotesBrief(item.url, deps) : null;
   const seconds = Math.max(0, Math.round((readNowMs(deps) - started) / 1000));
   const ok = status === 0;
   output(`${label}  ${seconds}s  ${ok ? (brief || 'ok') : 'FAILED'}`);
@@ -1252,7 +1326,8 @@ function formatNotesSummary(rows = []) {
   return lines.join('\n');
 }
 
-function runYoutubeNotesBatch({ urls, engine } = {}, deps = {}) {
+function runYoutubeNotesBatch({ urls, engine, save } = {}, deps = {}) {
+  deps = { ...deps, save: save === true || deps.save === true };
   const output = deps.output || ((line = '') => console.error(line));
   const items = expandNotesTargets(urls || [], deps);
   const rows = [];
@@ -1276,6 +1351,7 @@ function runSingleYoutubeNotes(url, engine, deps = {}) {
   }
   const status = readRunnerStatus(result);
   if (status !== 0) return status;
+  if (!deps.save) return 0;
   fileNotesBrief(url, deps);
   const ensureApply = deps.ensureApply || ensureNotesApply;
   return ensureApply({
@@ -1293,15 +1369,19 @@ function runYoutubeNotes(args = [], deps = {}) {
     showYoutubeHelp(output, deps.commandName || 'atris youtube');
     return 0;
   }
+  if (parsed.unsave) {
+    return runYoutubeUnsave(args, deps);
+  }
   if (!parsed.urls.length) {
     output(YTNOTES_USAGE);
     output(YTNOTES_HINT);
     return 2;
   }
+  const nextDeps = { ...deps, save: parsed.save };
   if (parsed.urls.length === 1 && !isPlaylistUrl(parsed.urls[0])) {
-    return runSingleYoutubeNotes(parsed.urls[0], parsed.engine, deps);
+    return runSingleYoutubeNotes(parsed.urls[0], parsed.engine, nextDeps);
   }
-  return runYoutubeNotesBatch(parsed, deps);
+  return runYoutubeNotesBatch(parsed, nextDeps);
 }
 
 const DEFAULT_SEARCH_LIMIT = 5;
@@ -1836,6 +1916,11 @@ async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
     }
     return code;
   }
+  if (argv[0] === 'unsave') {
+    const code = runYoutubeUnsave(argv.slice(1), deps);
+    if (!deps.output && !deps.spawnSync && !deps.runner && !deps.expander) process.exit(code);
+    return code;
+  }
   if (argv[0] === 'notes') {
     const code = runYoutubeNotes(argv.slice(1), deps);
     if (!deps.output && !deps.spawnSync && !deps.runner && !deps.expander) process.exit(code);
@@ -1881,6 +1966,7 @@ module.exports = {
   formatYoutubeResult,
   fileBriefFromNotes,
   ensureNotesApply,
+  unsaveYoutubeNotes,
   APPLY_NEXT_MESSAGE,
   PROCESS_APPLY_MESSAGE,
   isPlaylistUrl,

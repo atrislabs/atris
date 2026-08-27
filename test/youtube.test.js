@@ -12,6 +12,7 @@ const {
   formatYoutubeResult,
   fileBriefFromNotes,
   ensureNotesApply,
+  unsaveYoutubeNotes,
   APPLY_NEXT_MESSAGE,
   PROCESS_APPLY_MESSAGE,
   youtubeCommand,
@@ -352,9 +353,9 @@ function notesApplyWorkspace(id, notes = '# Apply Gate Video\n\nBody.\n') {
   return { cwd, workDir };
 }
 
-test('youtube notes without apply writes a claimable stub and a next-line', async () => {
-  const url = 'https://www.youtube.com/watch?v=apply01';
-  const { cwd, workDir } = notesApplyWorkspace('apply01');
+test('youtube notes without --save writes no brief or apply', async () => {
+  const url = 'https://www.youtube.com/watch?v=nosave1';
+  const { cwd, workDir } = notesApplyWorkspace('nosave1');
   const output = [];
 
   const status = await youtubeCommand(['notes', url], {
@@ -366,7 +367,28 @@ test('youtube notes without apply writes a claimable stub and a next-line', asyn
   });
 
   assert.equal(status, 0);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-nosave1.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-nosave1.apply.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+});
+
+test('youtube notes --save writes a claimable stub and a next-line', async () => {
+  const url = 'https://www.youtube.com/watch?v=apply01';
+  const { cwd, workDir } = notesApplyWorkspace('apply01');
+  const output = [];
+
+  const status = await youtubeCommand(['notes', url, '--save'], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
   assert.equal(output.includes(APPLY_NEXT_MESSAGE), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-apply01.md')), true);
   const stub = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-apply01.apply.md'), 'utf8');
   assert.match(stub, /source: https:\/\/www\.youtube\.com\/watch\?v=apply01/);
   assert.match(stub, /^change: fill this$/m);
@@ -390,7 +412,7 @@ test('youtube notes with an apply receipt is complete', async () => {
   fs.writeFileSync(applyPath, filled);
   const output = [];
 
-  const status = await youtubeCommand(['notes', url], {
+  const status = await youtubeCommand(['notes', url, '--save'], {
     cwd,
     workDir,
     now: '2026-08-26',
@@ -404,13 +426,13 @@ test('youtube notes with an apply receipt is complete', async () => {
   assert.equal(ensureNotesApply({ cwd, url, now: '2026-08-26', output: () => {} }), 0);
 });
 
-test('youtube notes without wiki still exits 0 when apply is missing', async () => {
+test('youtube notes --save without wiki still exits 0 when apply is missing', async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-apply-nowiki-'));
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-nowiki-'));
   fs.writeFileSync(path.join(workDir, 'yt_apply03.md'), '# No Wiki\n\nClip.\n');
   const output = [];
 
-  const status = await youtubeCommand(['notes', 'https://youtu.be/apply03'], {
+  const status = await youtubeCommand(['notes', 'https://youtu.be/apply03', '--save'], {
     cwd,
     workDir,
     now: '2026-08-26',
@@ -422,6 +444,63 @@ test('youtube notes without wiki still exits 0 when apply is missing', async () 
   assert.equal(output.includes(APPLY_NEXT_MESSAGE), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+});
+
+test('youtube unsave removes filed brief and apply', async () => {
+  const url = 'https://www.youtube.com/watch?v=gone01';
+  const { cwd, workDir } = notesApplyWorkspace('gone01');
+  const saveStatus = await youtubeCommand(['notes', url, '--save'], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: () => {},
+    runner: () => ({ status: 0 }),
+  });
+  assert.equal(saveStatus, 0);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-gone01.md')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-gone01.apply.md')), true);
+
+  const output = [];
+  const status = await youtubeCommand(['unsave', url], {
+    cwd,
+    output: (line) => output.push(line),
+    runner: () => {
+      throw new Error('unsave must not run notes');
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.match(output.join('\n'), /removed atris\/wiki\/briefs\/youtube-gone01\.md and atris\/wiki\/briefs\/youtube-gone01\.apply\.md/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-gone01.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-gone01.apply.md')), false);
+});
+
+test('youtube notes --unsave and a missing id stay quiet', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-unsave-'));
+  const output = [];
+  const status = await youtubeCommand(['notes', '--unsave', 'gone02'], {
+    cwd,
+    output: (line) => output.push(line),
+    runner: () => {
+      throw new Error('unsave must not run notes');
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.match(output.join('\n'), /already gone: atris\/wiki\/briefs\/youtube-gone02\.md and atris\/wiki\/briefs\/youtube-gone02\.apply\.md/);
+  assert.equal(unsaveYoutubeNotes('gone02', { cwd, output: () => {} }), 0);
+});
+
+test('youtube help says notes stay ephemeral unless --save', async () => {
+  const output = [];
+  const status = await youtubeCommand(['--help'], {
+    output: (line) => output.push(line),
+  });
+  const text = output.join('\n');
+  assert.equal(status, 0);
+  assert.match(text, /ephemeral unless --save/);
+  assert.match(text, /unsave <url-or-id>/);
+  assert.match(text, /needs a filled Apply/);
 });
 
 test('youtube process without apply exits 2 and never calls the api', async () => {
