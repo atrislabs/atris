@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { isCertifiedReview, isFreshWorkspace, personName, speakFirstMinute } = require('../lib/first-minute');
+const { isCertifiedReview, isFreshWorkspace, listUserVisibleWork, personName, speakFirstMinute } = require('../lib/first-minute');
 const { isRealTestRunnerProof, quoteVerifierCommand } = require('../lib/verifier-quality');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -320,6 +320,7 @@ function recapAtris(args = []) {
     return;
   }
   const root = process.cwd();
+  const visibleBefore = listUserVisibleWork(root);
   const daysIdx = args.indexOf('--days');
   const days = daysIdx !== -1 ? Number(args[daysIdx + 1]) : DEFAULT_DAYS;
   const data = buildRecapData(root, { days });
@@ -333,6 +334,7 @@ function recapAtris(args = []) {
     return speakFirstMinute({
       root,
       asJson: args.includes('--json'),
+      files: visibleBefore,
     });
   }
   if (args.includes('--json')) {

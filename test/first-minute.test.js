@@ -122,14 +122,14 @@ test('hidden names do not count as work in a fresh folder', () => {
   const text = renderFresh({
     person: 'keshav',
     folder: 'this folder',
-    files: ['.DS_Store', '.git', 'notes.txt'],
+    files: ['.DS_Store', '.git', 'notes.txt', 'tasks.db'],
   });
   assert.match(text, /hey keshav, notes.txt is already here\./);
-  assert.doesNotMatch(text, /this folder is empty|this folder already has work|\.DS_Store|\.git/);
+  assert.doesNotMatch(text, /this folder is empty|this folder already has work|\.DS_Store|\.git|tasks\.db/);
   const hiddenOnly = renderFresh({
     person: 'keshav',
     folder: 'this folder',
-    files: ['.DS_Store', '.git'],
+    files: ['.DS_Store', '.git', 'tasks.db', 'tasks.db-wal'],
   });
   assert.match(hiddenOnly, /hey keshav, this folder is empty\./);
 });
