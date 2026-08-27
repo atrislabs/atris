@@ -2695,6 +2695,5 @@ module.exports = {
   isThinTeachLesson,
   TEACH_THIN_REFUSE,
   teachExperimentSlug,
-  fileTeachExperiment,
   youtubeCommand,
 };
