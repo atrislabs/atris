@@ -212,7 +212,7 @@ test('referee engine override reaches the ask machinery', async () => {
     });
     assert.equal(code, 0);
     assert.equal(launchedJob.engine, 'fable');
-    assert.equal(launchedJob.model, 'claude-opus-4-8');
+    assert.equal(launchedJob.model, 'claude-fable-5');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
