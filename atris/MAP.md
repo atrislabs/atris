@@ -28,7 +28,7 @@ For details, read `atris/wiki/concepts/owner-computer-model.md` before changing 
 
 ```bash
 # Core CLI logic
-rg "async function interactiveEntry|shouldGatherContext|renderContextGathererPrompt|buildFirstMinute|listUserVisibleWork|visibleWorkTitle|headCommitSubject|headBranchName|listDirtyWork|startFirstTalk|freshWinLine|freshNextCommand|laterNotePath|writeLaterNote|shouldAutoInitFresh|isTaskNextLook|isLeftoverVerbLook|isFirstTalkLine" bin/atris.js lib/context-gatherer.js lib/first-minute.js commands/later.js    # Main entry points: cold-start dispatcher, first-minute bare atris screen, first-contact context gatherer, leftover task next and leftover words after brainstorm/wish/log/plan/do/later/mission are a look not first-talk, pasted talk line is first-talk not overview, a folder with user-visible files is named not empty, a git repo with a HEAD commit names that subject instead of the file listing, a named feature branch names the branch instead of the commit, a dirty tree names one or two open files or this folder still has open work, atris later remembers words in .atris-later without minting, atris do starts from those files, legacy natural-language mode
+rg "async function interactiveEntry|shouldGatherContext|renderContextGathererPrompt|buildFirstMinute|listUserVisibleWork|visibleWorkTitle|headCommitSubject|headBranchName|listDirtyWork|startFirstTalk|freshWinLine|freshNextCommand|laterNotePath|writeLaterNote|shouldAutoInitFresh|isTaskNextLook|isLeftoverVerbLook|isFirstTalkLine" bin/atris.js lib/context-gatherer.js lib/first-minute.js commands/later.js    # Main entry points: cold-start dispatcher, first-minute bare atris screen, first-contact context gatherer, leftover task next and leftover words after brainstorm/wish/log/plan/do/later/mission/next are a look not first-talk, pasted talk line is first-talk not overview, a folder with user-visible files is named not empty, a git repo with a HEAD commit names that subject instead of the file listing, a named feature branch names the branch instead of the commit, a dirty tree names one or two open files or this folder still has open work, atris later remembers words in .atris-later without minting, atris do starts from those files, legacy natural-language mode
 rg "pickLane|loadOverrides|routerCommand|promotionCandidates|autoLaneForMessage|appendAutoOutcome|modelForMode|buildPayload|connectorTurnPolicy|formatApprovalReceipt|formatTaskPreviewRows|resolveRoute|formatUsage|normalizeChatCommandArgs|CHAT_COMMANDS|filterChatCommands|attachSlashMenu|attachChatCtrlC|runChatSlash|async function chat|postTurn|runAxSpawnCommand|runAxYoutubeCommand|runChatDogfood|extractYoutubeUrl|AX Cloud-First Standard|verify-ax-cloud-standard" ax lib/ax-auto-lane.js commands/router.js test/ax-auto-lane.test.js test/router-promote.test.js test/cli-smoke.test.js test/ax.test.js scripts/verify-ax-cloud-standard.js atris/team/codex-executor/MEMBER.md  # ax Atris2 local coding-agent CLI: deterministic explainable auto lane selection, local outcome traces, reflex overrides, gated promotion, cloud-first by default, explicit --local workspace opt-in, Fast/Pro/Max/Code Fast modes, SSE streaming, workspace_path, readline slash menu and Ctrl-C conventions, chat history, connector turn isolation, Gmail approval previews, doctor/help, durable worker spawn aliases, local YouTube URL routing, and safe 25-loop --dogfood-chat checklist
 rg "atrisFastChat|atrisFastOnce|streamProChat|text_delta|Usage: atris fast" bin/atris.js utils/api.js test/commands.test.js test/api-stream.test.js  # Atris2 Fast one-shot chat CLI and SSE text_delta streaming
 rg "brainstormAtris|Usage: atris brainstorm|brainstorm help|addInboxIdea|speakFirstMinute|Describe the desired outcome" commands/brainstorm.js lib/first-minute.js test/brainstorm-headless.test.js test/first-minute.test.js test/commands.test.js test/dogfood-p0.test.js  # Brainstorm: empty folder reuses speakFirstMinute (no mint); after init a named idea captures inbox and exits; no wizard; --json is a receipt or first-minute refuse
@@ -1415,15 +1415,16 @@ rg "printRoster|registryPayload|--global" commands/engine.js test/engine.test.js
 
 ### Feature: Auto-Advance (`atris next`)
 
-**Purpose:** Auto-advance to next workflow step based on journal state
+**Purpose:** First-minute talk for the next pasteable command. Two spoken lines. No fake yes/no.
 
-- **Entry point:** `bin/atris.js:1182` (interactiveEntry function)
-- **Help:** `bin/atris.js:769-779` (`showNextHelp`) and `bin/atris.js:1366-1373` route `next --help` before `interactiveEntry`
-- **Regression:** `test/commands.test.js:4310-4324` covers next help without context panels or temp state creation
-- **Logic:** Same as natural language entry - loads context, detects state, advances
-- **Value:** Single-command workflow progression without typing a description
+- **Command:** `commands/next.js:190` (`nextCommand`) speaks first-minute via `speakNext` (`commands/next.js:81`)
+- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2541` routes `next` to that command. `bin/atris.js:880` (`showNextHelp`) stays for `atris atris --help`
+- **Look:** empty folder and inited rooms reuse `buildFirstMinute` / `freshMinuteJson`. `--json` is `atris.one_lap.v1` with `next_action`. Exit 0. Headless. `ATRIS_NO_INTERACTIVE=1` never prompts
+- **Explicit verbs:** `yes` / `no` / `skip` still act on a next-moves card. Skip talks first-minute (`speakCard`). No `Do it?` line
+- **Leftover:** quoted `next hi` is a look (`lib/first-minute.js` `LEFTOVER_LOOK_VERBS`)
+- **Regression:** `test/next-card.test.js`, `test/dream.test.js` (`next ranker deals and consumes a dream card`), `test/commands.test.js` (`activate and next --help`)
 
-**Search:** `rg "command === 'next'|showNextHelp|activate and next --help" bin/atris.js test/commands.test.js`
+**Search:** `rg "nextCommand|speakNext|Do it\\?|atris next --json" commands/next.js test/next-card.test.js bin/atris.js`
 
 ### Feature: github cli integration (`atris github`)
 
