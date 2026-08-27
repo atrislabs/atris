@@ -197,7 +197,7 @@ test('empty folder under tmp does not inherit the tmp workspace', () => {
     const recapText = combined(recap);
     assert.doesNotMatch(recapText, parentWork);
     assert.doesNotMatch(recapText, anchor);
-    assert.match(recap.stdout, /no task history yet|nothing moved|quiet window|clean start/i);
+    assert.match(recap.stdout, /this folder is empty/);
 
     const mission = runCli(['mission'], { cwd: child, env });
     const missionText = combined(mission);

@@ -49,6 +49,4 @@ function laterAtris(args = process.argv.slice(3), {
 module.exports = {
   laterAtris,
   laterNotePath,
-  laterSentence,
-  laterUsage,
 };
