@@ -72,7 +72,7 @@ test('mission status from the main checkout rolls up sibling worktree missions',
     const mainMission = startMainMission(repo);
     const wtMission = startWorktreeMission(repo);
 
-    const res = runCli(['mission', 'status', '--json'], { cwd: repo });
+    const res = runCli(['mission', 'status', '--all', '--json'], { cwd: repo });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
     const byId = new Map(payload.missions.map((mission) => [mission.id, mission]));
@@ -86,7 +86,7 @@ test('mission status from the main checkout rolls up sibling worktree missions',
       'rolled-up mission must point at its source worktree',
     );
 
-    const text = runCli(['mission', 'status'], { cwd: repo });
+    const text = runCli(['mission', 'list'], { cwd: repo });
     assert.equal(text.status, 0, text.stderr || text.stdout);
     assert.match(text.stdout, /worktree mission/, 'text status must show the rolled-up mission');
     assert.match(text.stdout, /worktree:/, 'text status must show where the rolled-up mission lives');
@@ -102,7 +102,7 @@ test('mission status from inside a worktree rolls up main checkout missions', ()
     const mainMission = startMainMission(repo);
     const wtMission = startWorktreeMission(repo);
 
-    const res = runCli(['mission', 'status', '--json'], { cwd: wtMission.worktree.path });
+    const res = runCli(['mission', 'status', '--all', '--json'], { cwd: wtMission.worktree.path });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const byId = new Map(JSON.parse(res.stdout).missions.map((mission) => [mission.id, mission]));
     assert.ok(byId.has(wtMission.id), 'worktree-local mission must stay visible');
@@ -149,7 +149,8 @@ test('mission status outside a git repo still works without rollup', () => {
   const { base, repo } = makeTempDir();
   try {
     // No git init: rollup has nothing to enumerate and must not crash.
-    const res = runCli(['mission', 'status', '--json'], { cwd: repo });
+    fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });
+    const res = runCli(['mission', 'list', '--json'], { cwd: repo });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.deepEqual(JSON.parse(res.stdout).missions, []);
   } finally {

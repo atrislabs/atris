@@ -7639,26 +7639,33 @@ test('mission help documents status filters', () => {
   try {
     const help = runCli(['mission', '--help'], { cwd: dir });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /mission status \[id\] \[--status <state>\] \[--limit <n>\] \[--local\] \[--json\]/);
-    assert.match(help.stdout, /mission attach-task <id> \[--json\]/);
-    assert.match(help.stdout, /mission report \[id\] \[--limit <n>\] \[--local\] \[--json\]/);
-    assert.match(help.stdout, /mission timeline \[id\] \[--limit <n>\] \[--all\] \[--prune-preview\] \[--write\] \[--json\]/);
-    assert.match(help.stdout, /rolls up sibling git-worktree missions/);
-    assert.match(help.stdout, /mission goal \[--runtime codex\|atris\] \[--heartbeat\] \[--native-goal-status active\|paused\|usageLimited\|complete\] \[--native-goal-objective "\.\.\."\] \[--manual-ack\] \[--allow-native-goal-supersede\] \[--json\]/);
-    assert.match(help.stdout, /mission goal ack <id> --runtime codex --status active --objective "<objective>" --json/);
-    assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--native-goal-status active\|paused\|usageLimited\|complete\] \[--native-goal-objective "\.\.\."\] \[--dry-run\] \[--once\] \[--json\]/);
-    assert.match(help.stdout, /mission tick <id> \[--verify \["cmd"\]\] \[--complete-on-pass\] \[--self-drive\] \[--summary "\.\.\."\]\n\s+\[--native-goal-status active\|paused\|usageLimited\] \[--native-goal-objective "\.\.\."\] \[--json\]/);
-    assert.match(help.stdout, /--spend-full-budget\|--use-whole-budget\|--stop-when-done/);
-    assert.match(help.stdout, /--preflight\|--no-preflight\|--room-preflight\|--no-room-preflight/);
-    assert.match(help.stdout, /short time like "20 minutes" means finish early/);
-    assert.match(help.stdout, /long\/sleep time like "5 hours" keeps using the budget/);
-    assert.match(help.stdout, /Autonomy recipe:/);
-    assert.match(help.stdout, /Codex sessions: read native get_goal, then pass its status into atris mission goal --native-goal-status <status>/);
-    assert.match(help.stdout, /Overnight controller: atris mission goal --heartbeat --json/);
-    assert.match(help.stdout, /Bounded overnight runner: atris mission goal-loop --max-wall 28800 --no-claude --json/);
-    assert.match(help.stdout, /Headless: start with --runner claude --cadence "15m" --always-on/);
-    assert.match(help.stdout, /Backend\/web agents:/);
-    assert.match(help.stdout, /--status active shows planning\/running\/ready\/paused\/blocked missions/);
+    assert.match(help.stdout, /Usage: atris mission/);
+    assert.match(help.stdout, /Keep working on one goal/);
+    assert.match(help.stdout, /atris spaceship|atris autopilot/);
+    assert.doesNotMatch(help.stdout, /Autonomy recipe:|Backend\/web agents:|missions\.jsonl/);
+
+    const full = runCli(['mission', 'help', '--full'], { cwd: dir });
+    assert.equal(full.status, 0, full.stderr || full.stdout);
+    assert.match(full.stdout, /mission status \[id\] \[--status <state>\] \[--limit <n>\] \[--local\] \[--json\]/);
+    assert.match(full.stdout, /mission attach-task <id> \[--json\]/);
+    assert.match(full.stdout, /mission report \[id\] \[--limit <n>\] \[--local\] \[--json\]/);
+    assert.match(full.stdout, /mission timeline \[id\] \[--limit <n>\] \[--all\] \[--prune-preview\] \[--write\] \[--json\]/);
+    assert.match(full.stdout, /rolls up sibling git-worktree missions/);
+    assert.match(full.stdout, /mission goal \[--runtime codex\|atris\] \[--heartbeat\] \[--native-goal-status active\|paused\|usageLimited\|complete\] \[--native-goal-objective "\.\.\."\] \[--manual-ack\] \[--allow-native-goal-supersede\] \[--json\]/);
+    assert.match(full.stdout, /mission goal ack <id> --runtime codex --status active --objective "<objective>" --json/);
+    assert.match(full.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--native-goal-status active\|paused\|usageLimited\|complete\] \[--native-goal-objective "\.\.\."\] \[--dry-run\] \[--once\] \[--json\]/);
+    assert.match(full.stdout, /mission tick <id> \[--verify \["cmd"\]\] \[--complete-on-pass\] \[--self-drive\] \[--summary "\.\.\."\]\n\s+\[--native-goal-status active\|paused\|usageLimited\] \[--native-goal-objective "\.\.\."\] \[--json\]/);
+    assert.match(full.stdout, /--spend-full-budget\|--use-whole-budget\|--stop-when-done/);
+    assert.match(full.stdout, /--preflight\|--no-preflight\|--room-preflight\|--no-room-preflight/);
+    assert.match(full.stdout, /short time like "20 minutes" means finish early/);
+    assert.match(full.stdout, /long\/sleep time like "5 hours" keeps using the budget/);
+    assert.match(full.stdout, /Autonomy recipe:/);
+    assert.match(full.stdout, /Codex sessions: read native get_goal, then pass its status into atris mission goal --native-goal-status <status>/);
+    assert.match(full.stdout, /Overnight controller: atris mission goal --heartbeat --json/);
+    assert.match(full.stdout, /Bounded overnight runner: atris mission goal-loop --max-wall 28800 --no-claude --json/);
+    assert.match(full.stdout, /Headless: start with --runner claude --cadence "15m" --always-on/);
+    assert.match(full.stdout, /Backend\/web agents:/);
+    assert.match(full.stdout, /--status active shows planning\/running\/ready\/paused\/blocked missions/);
 
     for (const args of [['mission', 'status', '--help'], ['mission', 'status', '-h'], ['mission', 'status', 'help']]) {
       const statusHelp = runCli(args, { cwd: dir });
