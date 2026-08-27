@@ -207,6 +207,7 @@ test('26: atris stop in an empty folder talks first-talk and does not mint', () 
       env: {
         HOME: home,
         USER: 'keshav',
+        ATRIS_OPERATOR: 'keshav',
         ATRIS_API_BASE_URL: 'http://127.0.0.1:9',
       },
     });
