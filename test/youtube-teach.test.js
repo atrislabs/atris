@@ -11,6 +11,8 @@ const {
   normalizeChapters,
   sliceCuesForChapter,
   formatTeachLesson,
+  extractTeachNumbers,
+  extractTeachMechanisms,
   extractTeachSource,
   youtubeCommand,
 } = require('../commands/youtube');
@@ -34,6 +36,70 @@ const TEACH_CHAPTERS = [
   { start_time: 0, title: 'Omakase', end_time: 60 },
   { start_time: 600, title: 'Shape Up', end_time: 900 },
 ];
+
+const LEX_URL = 'https://www.youtube.com/watch?v=NYFGCESmikA';
+const LEX_VTT = [
+  'WEBVTT',
+  '',
+  '00:00:00.000 --> 00:00:08.000',
+  'Who would not get delirious if a genie says',
+  '',
+  '00:00:08.000 --> 00:00:16.000',
+  'every feature you have ever dreamed of in an operating',
+  'system I can deliver',
+  '',
+  '00:00:16.000 --> 00:00:22.000',
+  'most of them in five minutes a few in 20',
+  '',
+  '00:00:22.000 --> 00:00:30.000',
+  'I want the operating system that can install',
+  'in less than 60 seconds',
+  '',
+  '00:00:30.000 --> 00:00:38.000',
+  'I want the diver watch that can go down the Mariana Trench',
+  '',
+  '00:00:38.000 --> 00:00:46.000',
+  'just think "holy fuck, i\'m alive."',
+  '',
+  '00:00:46.000 --> 00:00:54.000',
+  'The Overton window does not open itself',
+  '',
+].join('\n');
+
+const LEX_CHAPTERS = [
+  { start_time: 0, title: 'Episode highlight', end_time: 87 },
+  { start_time: 87, title: 'Introduction', end_time: 176 },
+];
+
+function lessonBlock(text, name) {
+  const lines = String(text || '').split('\n');
+  const start = lines.findIndex((line) => line === name);
+  if (start < 0) return [];
+  const out = [];
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (!lines[i].trim()) break;
+    out.push(lines[i]);
+  }
+  return out;
+}
+
+function lexHighlightLesson() {
+  const chapters = normalizeChapters(LEX_CHAPTERS, 176);
+  const cues = sliceCuesForChapter(parseCaptionCues(LEX_VTT), chapters[0]);
+  return {
+    chapters,
+    cues,
+    body: cues.map((cue) => cue.text).join(' '),
+    text: formatTeachLesson({
+      url: LEX_URL,
+      section: 1,
+      chapters,
+      chapter: chapters[0],
+      cues,
+      title: 'DHH: Future of Programming | Lex Fridman Podcast #501',
+    }),
+  };
+}
 
 function collect() {
   const lines = [];
@@ -87,6 +153,49 @@ test('parseCaptionCues and sliceCuesForChapter keep one chapter from fixture VTT
   assert.match(second[0].text, /six-week cycle/);
 });
 
+test('lex highlight fixture keeps claim-bearing numbers and named mechanisms', () => {
+  const { body, text } = lexHighlightLesson();
+  assert.match(body, /holy fuck/i);
+  assert.match(body, /\b20\b/);
+  assert.match(body, /60 seconds/i);
+  assert.match(body, /overton window/i);
+
+  const numbers = extractTeachNumbers(body);
+  const mechanisms = extractTeachMechanisms(body);
+  for (const line of numbers) {
+    assert.match(line, /\d/);
+    assert.match(line, /[a-z]/i);
+    assert.doesNotMatch(line, /^\d[\d,]*$/);
+  }
+  for (const line of mechanisms) {
+    assert.doesNotMatch(line, /holy|fuck|i'm alive/i);
+    assert.doesNotMatch(line, /^(who|every|holy|the overton|mariana trench)$/);
+    assert.match(line, /window|model|principle|pattern|loop|cycle|method|rule|doctrine|framework|heuristic|\d+[a-z]/i);
+  }
+  assert.ok(numbers.some((line) => /60 seconds to install/i.test(line)));
+  assert.ok(mechanisms.some((line) => /overton window/i.test(line)));
+  assert.equal(mechanisms.some((line) => /holy fuck/i.test(line)), false);
+
+  const printedNumbers = lessonBlock(text, 'numbers');
+  const printedMechanisms = lessonBlock(text, 'mechanisms');
+  const check = lessonBlock(text, 'check')[0] || '';
+  for (const line of printedNumbers) {
+    if (line === 'none') continue;
+    assert.match(line, /\d/);
+    assert.match(line, /[a-z]/i);
+    assert.doesNotMatch(line, /^\d[\d,]*$/);
+  }
+  for (const line of printedMechanisms) {
+    if (line === 'none') continue;
+    assert.doesNotMatch(line, /holy|fuck/i);
+  }
+  assert.match(text, /60 seconds to install/);
+  assert.match(text, /overton window/);
+  assert.match(check, /overton window|60 seconds to install/);
+  assert.doesNotMatch(check, /holy|fuck/i);
+  assert.match(text, /next: atris youtube teach "https:\/\/www\.youtube\.com\/watch\?v=NYFGCESmikA" --section 2/);
+});
+
 test('formatTeachLesson prints numbers, mechanisms, one check, and a quoted next line', () => {
   const cues = parseCaptionCues(TEACH_VTT);
   const chapters = normalizeChapters(TEACH_CHAPTERS, 900);
@@ -138,6 +247,31 @@ test('youtube teach prints one chapter from fixture captions and chapters', asyn
   assert.match(text, /next: atris youtube teach "https:\/\/www\.youtube\.com\/watch\?v=teach01" --section 2/);
   assert.doesNotMatch(text, /six-week/);
   assert.doesNotMatch(text, /process_youtube/);
+});
+
+test('youtube teach prints the lex highlight as 60s install, Overton, and a real check', async () => {
+  const out = collect();
+  const status = await youtubeCommand(['teach', LEX_URL], {
+    output: out.output,
+    extractTeachSource: async () => ({
+      id: 'NYFGCESmikA',
+      title: 'DHH: Future of Programming | Lex Fridman Podcast #501',
+      url: LEX_URL,
+      durationSeconds: 176,
+      language: 'en',
+      chapters: LEX_CHAPTERS,
+      cues: parseCaptionCues(LEX_VTT),
+    }),
+  });
+
+  assert.equal(status, 0);
+  const text = out.text();
+  assert.match(text, /60 seconds to install/);
+  assert.match(text, /overton window/);
+  assert.match(text, /check\nwhat is the overton window\?/);
+  assert.doesNotMatch(text, /holy fuck/);
+  assert.doesNotMatch(text, /^20$/m);
+  assert.doesNotMatch(text, /^60$/m);
 });
 
 test('youtube teach --section 2 prints the second chapter', async () => {

@@ -1947,6 +1947,15 @@ const MECHANISM_STOP = new Set([
   'other', 'first', 'second', 'next', 'last', 'new', 'old', 'good', 'bad', 'big',
   'small', 'long', 'short', 'video', 'chapter', 'section', 'youtube', 'transcript',
   'yeah', 'okay', 'ok', 'so', 'well', 'like', 'right', 'now', 'one', 'two',
+  'who', 'every', 'holy', 'want', 'operating',
+]);
+const NUMBER_UNITS = 'percent|million|billion|thousand|people|hours?|minutes?|seconds?|years?|months?|weeks?|days?|cycles?';
+const NUMBER_CLAIM_VERBS = 'install|ship|hire|raise|cut|save|cost|last|weigh|span|spend';
+const MECHANISM_HEADS = 'window|model|principle|pattern|loop|cycle|method|rule|doctrine|framework|heuristic';
+const TEACH_SWEAR_RE = /\b(fuck(?:ing)?|shit|damn|ass|bitch|crap)\b/i;
+const GENERIC_MECHANISM_LEFT = new Set([
+  ...MECHANISM_STOP,
+  'a', 'an', 'in', 'of', 'to', 'my', 'i', 'im', "i'm",
 ]);
 
 function parseTeachArgs(argv = []) {
@@ -2049,51 +2058,77 @@ function sliceCuesForChapter(cues = [], chapter) {
   });
 }
 
+function teachCaptionWords(text) {
+  return String(text || '')
+    .replace(/\[\d{1,2}:\d{2}(?::\d{2})?\]/g, ' ')
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\b/g, ' ')
+    .replace(/[“”]/g, '"')
+    .split(/\s+/)
+    .map((word) => word.replace(/^[^A-Za-z0-9$%]+|[^A-Za-z0-9%]+$/g, ''))
+    .filter(Boolean);
+}
+
 function extractTeachNumbers(text) {
+  // Keep a number only with its unit or a nearby claim. Bare 20/60 are crumbs.
+  const words = teachCaptionWords(text);
   const found = [];
   const seen = new Set();
-  const cleaned = String(text || '')
-    .replace(/\[\d{1,2}:\d{2}(?::\d{2})?\]/g, ' ')
-    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\b/g, ' ');
-  const pattern = /(?:\$\s*)?\d[\d,]*(?:\.\d+)?(?:\s*(?:%|percent|million|billion|thousand|k\b|people|hours?|minutes?|years?|months?|weeks?|days?|cycles?))?/gi;
-  for (const match of cleaned.matchAll(pattern)) {
-    const token = String(match[0] || '').replace(/\s+/g, ' ').trim();
-    if (!token || /^\d$/.test(token)) continue;
-    const key = token.toLowerCase();
+  const numberRe = /^(?:\$)?(\d[\d,]*(?:\.\d+)?)(%?)$/;
+  const unitRe = new RegExp(`^(?:${NUMBER_UNITS})$`, 'i');
+  const verbRe = new RegExp(`\\b(?:${NUMBER_CLAIM_VERBS})\\b`, 'i');
+
+  for (let i = 0; i < words.length; i += 1) {
+    const match = words[i].match(numberRe);
+    if (!match) continue;
+    const nearby = words.slice(i + 1, i + 3);
+    const unit = nearby.find((word) => unitRe.test(word));
+    const hasPercent = match[2] === '%' || /%/.test(words[i]);
+    if (!unit && !hasPercent) continue;
+
+    const windowText = words.slice(Math.max(0, i - 6), Math.min(words.length, i + 7)).join(' ');
+    const verbMatch = windowText.match(verbRe);
+    const number = match[1];
+    let claim = hasPercent ? `${number}%` : `${number} ${String(unit).toLowerCase()}`;
+    if (verbMatch) claim += ` to ${verbMatch[0].toLowerCase()}`;
+    const key = claim.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    found.push(token);
+    found.push(claim);
   }
   return found.slice(0, 8);
 }
 
 function extractTeachMechanisms(text) {
+  // Named only: "Overton window", "omakase model". Drop quotes, swears, crumbs.
   const found = [];
   const seen = new Set();
   const add = (value) => {
-    const token = String(value || '').replace(/\s+/g, ' ').trim();
-    if (!token) return;
-    const key = token.toLowerCase();
-    if (seen.has(key) || MECHANISM_STOP.has(key) || key.length < 3) return;
-    seen.add(key);
-    found.push(key);
+    const token = String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!token || TEACH_SWEAR_RE.test(token)) return;
+    if (seen.has(token) || MECHANISM_STOP.has(token) || GENERIC_MECHANISM_LEFT.has(token)) return;
+    if (token.length < 4 && !/\d/.test(token)) return;
+    seen.add(token);
+    found.push(token);
   };
 
   const raw = String(text || '');
-  for (const match of raw.matchAll(/"([^"]{2,60})"/g)) add(match[1]);
-  for (const match of raw.matchAll(/\b([A-Za-z][\w+-]*(?:\s+[A-Za-z][\w+-]*){0,3})\s+(?:model|pattern|principle|loop|system|method|rule|cycle)\b/gi)) {
-    add(match[1]);
+  const namedRe = new RegExp(`\\b([A-Za-z][A-Za-z0-9+-]{2,})\\s+(${MECHANISM_HEADS})\\b`, 'gi');
+  for (const match of raw.matchAll(namedRe)) {
+    const left = String(match[1] || '').toLowerCase();
+    if (GENERIC_MECHANISM_LEFT.has(left) || MECHANISM_STOP.has(left)) continue;
+    add(`${match[1]} ${match[2]}`);
   }
   for (const match of raw.matchAll(/\b(\d+[A-Za-z][A-Za-z0-9]+)\b/g)) add(match[1]);
-  for (const match of raw.matchAll(/\b([A-Z]{2,5})\b/g)) add(match[1]);
-  for (const match of raw.matchAll(/\b([A-Z][a-zA-Z0-9+]{2,}(?:\s+[A-Z][a-zA-Z0-9+]*){0,3})\b/g)) {
-    add(match[1]);
-  }
   return found.slice(0, 8);
 }
 
 function oneTeachCheck(mechanisms, numbers, title) {
-  if (mechanisms[0]) return `what is ${mechanisms[0]}?`;
+  if (mechanisms[0]) {
+    const name = mechanisms[0];
+    const named = new RegExp(`\\b(?:${MECHANISM_HEADS})\\b`, 'i').test(name);
+    if (named && !/^(the|a|an)\s/i.test(name)) return `what is the ${name}?`;
+    return `what is ${name}?`;
+  }
   if (numbers[0]) return `what does ${numbers[0]} measure in this chapter?`;
   return `what is the point of ${title || 'this chapter'}?`;
 }
@@ -2366,6 +2401,8 @@ module.exports = {
   normalizeChapters,
   sliceCuesForChapter,
   formatTeachLesson,
+  extractTeachNumbers,
+  extractTeachMechanisms,
   extractTeachSource,
   youtubeCommand,
 };

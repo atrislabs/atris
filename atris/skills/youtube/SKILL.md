@@ -25,7 +25,7 @@ search QUERY (free)
     |
    pick a URL --> notes URL (free, ephemeral unless --save)
     |                 --save files the brief + apply stub
-    |            or teach URL [--section N] (one chapter, free, ephemeral unless --save)
+    |            or teach URL [--section N] (one chapter: claim numbers, named mechanisms, one check; free unless --save)
     |
    write one Apply (claimable) before process
     |
