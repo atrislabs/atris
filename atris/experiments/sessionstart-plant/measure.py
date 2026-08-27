@@ -28,12 +28,13 @@ def run_probe() -> dict:
         return fail_payload("probe.js missing")
 
     node = os.environ.get("ATRIS_EXPERIMENTS_NODE") or "node"
+    repo_root = os.environ.get("ATRIS_REPO_ROOT") or str(REPO_ROOT)
     proc = subprocess.run(
         [node, str(PROBE)],
-        cwd=str(REPO_ROOT),
+        cwd=repo_root,
         capture_output=True,
         text=True,
-        env={**os.environ, "ATRIS_REPO_ROOT": str(REPO_ROOT)},
+        env={**os.environ, "ATRIS_REPO_ROOT": repo_root},
     )
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "probe failed").strip().splitlines()
