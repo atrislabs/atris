@@ -576,6 +576,31 @@ function refreshNowFile(root = process.cwd(), options = {}) {
   return { path: nowPath, preserved: false };
 }
 
+function stripAnsi(text) {
+  return String(text || '').replace(/\u001b\[[0-9;]*m/g, '');
+}
+
+function spokenCurrent(text) {
+  const line = stripAnsi(text).split(/\n/).map((part) => part.trim()).find(Boolean) || '';
+  return line.replace(/^hey\s+[^,]+,\s*/i, '').replace(/\.$/, '');
+}
+
+function printNowJson(payload) {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function nowJsonPayload(root = process.cwd()) {
+  const { buildFirstMinute, isFreshWorkspace } = require('../lib/first-minute');
+  const fresh = isFreshWorkspace(root);
+  const screen = buildFirstMinute({ root, fresh });
+  const payload = { ok: !fresh };
+  const current = spokenCurrent(screen && screen.text);
+  const next = stripAnsi(screen && screen.nextCommand);
+  if (current) payload.current = current;
+  if (next) payload.next = next;
+  return payload;
+}
+
 function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
   const help = args.includes('--help') || args.includes('-h') || args[0] === 'help';
   if (help) {
@@ -588,8 +613,8 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
     console.log('  atris now --refresh Regenerate a small local now.md');
     console.log('  atris now --all     Refresh this parent and every child Atris workspace');
     console.log('  atris now --path    Print the file path only');
-    console.log('  atris now --json    Emit path and content as JSON');
-    return;
+    console.log('  atris now --json    Print ok, next or current as JSON');
+    return 0;
   }
 
   const init = args.includes('--init');
@@ -598,48 +623,65 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
   const pathOnly = args.includes('--path');
   const asJson = args.includes('--json');
 
-  let result;
-  if (all) {
-    const workspaces = findChildWorkspaces(root);
-    for (const workspace of workspaces) {
-      refreshNowFile(workspace.root);
+  try {
+    if (asJson && !init && !refresh && !all && !pathOnly) {
+      const payload = nowJsonPayload(root);
+      printNowJson(payload);
+      return payload.ok ? 0 : 2;
     }
-    result = refreshNowFile(root);
-    if (!pathOnly && !asJson) {
-      console.log(`Refreshed ${workspaces.length} child workspace${workspaces.length === 1 ? '' : 's'}.`);
+
+    let result;
+    if (all) {
+      const workspaces = findChildWorkspaces(root);
+      for (const workspace of workspaces) {
+        refreshNowFile(workspace.root);
+      }
+      result = refreshNowFile(root);
+      if (!pathOnly && !asJson) {
+        console.log(`Refreshed ${workspaces.length} child workspace${workspaces.length === 1 ? '' : 's'}.`);
+        console.log('');
+      }
+    } else if (refresh) {
+      result = refreshNowFile(root);
+    } else if (init) {
+      result = ensureNowFile(root);
+    } else {
+      result = ensureNowFile(root);
+    }
+
+    const rel = path.relative(root, result.path);
+    if (pathOnly) {
+      console.log(rel);
+      return 0;
+    }
+
+    if (asJson) {
+      const payload = nowJsonPayload(root);
+      printNowJson(payload);
+      return payload.ok ? 0 : 2;
+    }
+
+    const content = fs.readFileSync(result.path, 'utf8').trimEnd();
+    if (result.created) {
+      console.log(`Created ${rel}`);
       console.log('');
     }
-  } else if (refresh) {
-    result = refreshNowFile(root);
-  } else if (init) {
-    result = ensureNowFile(root);
-  } else {
-    result = ensureNowFile(root);
-  }
 
-  const rel = path.relative(root, result.path);
-  if (pathOnly) {
-    console.log(rel);
-    return;
+    console.log(content);
+    return 0;
+  } catch (err) {
+    const message = stripAnsi(err && err.message ? err.message : String(err));
+    if (asJson) {
+      printNowJson({
+        ok: false,
+        current: message.replace(/\.$/, ''),
+        next: 'atris init --yes',
+      });
+      return 2;
+    }
+    console.error(message);
+    return 1;
   }
-
-  const content = fs.readFileSync(result.path, 'utf8').trimEnd();
-  if (asJson) {
-    console.log(JSON.stringify({
-      ok: true,
-      path: rel,
-      created: Boolean(result.created),
-      content,
-    }, null, 2));
-    return;
-  }
-
-  if (result.created) {
-    console.log(`Created ${rel}`);
-    console.log('');
-  }
-
-  console.log(content);
 }
 
 module.exports = {
@@ -654,6 +696,7 @@ module.exports = {
   compactCommitSubject,
   truncateLine,
   nowAtris,
+  nowJsonPayload,
   refreshNowFile,
   renderDefaultNow,
   renderPortfolioNow,
