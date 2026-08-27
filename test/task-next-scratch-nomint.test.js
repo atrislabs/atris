@@ -142,7 +142,7 @@ test('talk line still starts a room and task next then names the claim', () => {
     assert.equal(talk.status, 0, talk.stderr || talk.stdout);
     assert.match(talk.stdout, /this folder is ready\./);
     assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
-    assert.equal(nextLine(talk.stdout), 'atris do');
+    assert.match(nextLine(talk.stdout), /^atris task ready \S+ --verify "git diff --check"$/);
     assert.doesNotMatch(talk.stdout, /atris task (claim|show) /);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), true);

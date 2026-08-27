@@ -148,7 +148,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   }
 
   // Just-minted file folder, nothing running: same two lines as
-  // first-minute / the next do. After init, next is claim: same
+  // first-minute / the next keep-working ready. After init, next is claim: same
   // two lines as bare atris / now. Not factory let-it-run.
   // A live mission still gets the board. --verbose keeps the
   // factory dump because the operator asked for it. --json on

@@ -366,13 +366,15 @@ test('26e: atris status after minting a file folder talks keep-working, not fact
     assert.equal(now.stdout.trim(), status.stdout.trim());
     assert.equal(pad.stdout.trim(), status.stdout.trim());
     assert.match(status.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
-    assert.match(status.stdout, /^next: atris do$/m);
+    assert.match(status.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.doesNotMatch(status.stdout, /^next: atris do$/m);
     assert.match(recap.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
-    assert.match(recap.stdout, /^next: atris do$/m);
+    assert.match(recap.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
     assert.match(now.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
-    assert.match(now.stdout, /^next: atris do$/m);
+    assert.match(now.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
     assert.match(pad.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
-    assert.match(pad.stdout, /^next: atris do$/m);
+    assert.match(pad.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.doesNotMatch(pad.stdout, /^next: atris do$/m);
     assert.doesNotMatch(
       status.stdout + status.stderr + recap.stdout + recap.stderr + now.stdout + now.stderr + pad.stdout + pad.stderr,
       /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|Set up this workspace|nothing is running|ready to claim|# now|Current operating truth/,

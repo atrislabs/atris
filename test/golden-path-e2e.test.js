@@ -325,7 +325,7 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
     const talk = runInstalled(doArgs, { timeout: 30000 });
     assertGoldenPathStep(talk, 'printed do from files already here');
     assert.match(talk.stdout, /README\.md is ready\./);
-    assert.match(talk.stdout, /^next: atris do$/m);
+    assert.match(talk.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
     assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
     assert.doesNotMatch(talk.stdout, /atris initialized|What do you want to build|minimal scaffold/i);
     assert.doesNotMatch(talk.stdout, /atris task (claim|show) /);
@@ -333,18 +333,26 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
     const doit = runInstalled(doArgs);
     assertGoldenPathStep(doit, 'second do after first-talk');
     assert.match(doit.stdout, /already yours/);
-    assert.match(doit.stdout, /^next: atris do$/m);
+    assert.match(doit.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.doesNotMatch(doit.stdout, /^next: atris do$/m);
     assert.doesNotMatch(doit.stdout, /atris task show |PROMPT ONLY|You are the Executor|executor\.md/);
 
     const afterDo = runInstalled([]);
     assertGoldenPathStep(afterDo, 'first minute after do');
     assert.doesNotMatch(afterDo.stdout, /No open tasks/);
-    assert.deepEqual(printedAtrisArgs(afterDo.stdout, 'next'), ['do']);
+    assert.match(afterDo.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
 
     const listed = parseJson(runInstalled(['task', 'list', '--json']), 'task list');
     const starter = (listed.tasks || []).find((row) => row && row.status === 'claimed');
     assert.ok(starter && starter.display_id, `claimed starter missing: ${JSON.stringify(listed)}`);
     const taskRef = starter.display_id;
+    assert.deepEqual(printedAtrisArgs(afterDo.stdout, 'next'), [
+      'task',
+      'ready',
+      taskRef,
+      '--verify',
+      'git diff --check',
+    ]);
 
     fs.appendFileSync(path.join(workspace, 'README.md'), '\nFirst useful step complete.\n', 'utf8');
     const ready = runInstalled([
