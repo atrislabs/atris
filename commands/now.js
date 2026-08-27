@@ -696,6 +696,7 @@ module.exports = {
   compactCommitSubject,
   truncateLine,
   nowAtris,
+  nowJsonPayload,
   refreshNowFile,
   renderDefaultNow,
   renderPortfolioNow,

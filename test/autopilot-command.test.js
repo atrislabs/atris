@@ -534,7 +534,7 @@ test('atris autopilot --help routes to the mission-runtime front door', () => {
   try {
     const r = runCli(['autopilot', '--help'], dir);
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /Keep working until you stop/);
+    assert.match(r.stdout, /mission or member/);
     assert.match(r.stdout, /--legacy/);
   } finally {
     cleanup(dir);
