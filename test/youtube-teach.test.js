@@ -1,0 +1,228 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const {
+  parseTeachArgs,
+  parseCaptionCues,
+  normalizeChapters,
+  sliceCuesForChapter,
+  formatTeachLesson,
+  extractTeachSource,
+  youtubeCommand,
+} = require('../commands/youtube');
+
+const TEACH_URL = 'https://www.youtube.com/watch?v=teach01';
+const TEACH_VTT = [
+  'WEBVTT',
+  '',
+  '00:00:02.000 --> 00:00:06.000',
+  '37signals has 80 people and uses the omakase model',
+  '',
+  '00:00:20.000 --> 00:00:24.000',
+  'Basecamp ships once a week',
+  '',
+  '00:10:00.000 --> 00:10:06.000',
+  'Shape Up is a six-week cycle with a cooldown',
+  '',
+].join('\n');
+
+const TEACH_CHAPTERS = [
+  { start_time: 0, title: 'Omakase', end_time: 60 },
+  { start_time: 600, title: 'Shape Up', end_time: 900 },
+];
+
+function collect() {
+  const lines = [];
+  return {
+    lines,
+    output: (line = '') => lines.push(String(line)),
+    text: () => lines.join('\n'),
+  };
+}
+
+function fixtureSource() {
+  return {
+    id: 'teach01',
+    title: 'DHH on Lex Fridman',
+    url: TEACH_URL,
+    durationSeconds: 900,
+    language: 'en',
+    chapters: TEACH_CHAPTERS,
+    cues: parseCaptionCues(TEACH_VTT),
+  };
+}
+
+test('parseTeachArgs defaults to section 1 and accepts --section and --save', () => {
+  assert.deepEqual(parseTeachArgs([TEACH_URL]), {
+    help: false,
+    save: false,
+    url: TEACH_URL,
+    section: 1,
+  });
+  assert.equal(parseTeachArgs([TEACH_URL, '--section', '2']).section, 2);
+  assert.equal(parseTeachArgs([TEACH_URL, '--section=3']).section, 3);
+  assert.equal(parseTeachArgs([TEACH_URL, '--save']).save, true);
+  assert.equal(parseTeachArgs(['--help']).help, true);
+  assert.throws(() => parseTeachArgs([TEACH_URL, '--paid']), /drop --paid/);
+  assert.throws(() => parseTeachArgs([TEACH_URL, '--section', '0']), /positive integer/);
+});
+
+test('parseCaptionCues and sliceCuesForChapter keep one chapter from fixture VTT', () => {
+  const cues = parseCaptionCues(TEACH_VTT);
+  const chapters = normalizeChapters(TEACH_CHAPTERS, 900);
+  assert.equal(cues.length, 3);
+  assert.equal(chapters.length, 2);
+
+  const first = sliceCuesForChapter(cues, chapters[0]);
+  const second = sliceCuesForChapter(cues, chapters[1]);
+  assert.equal(first.length, 2);
+  assert.match(first.map((cue) => cue.text).join(' '), /80 people/);
+  assert.match(first.map((cue) => cue.text).join(' '), /omakase/);
+  assert.doesNotMatch(first.map((cue) => cue.text).join(' '), /Shape Up/);
+  assert.equal(second.length, 1);
+  assert.match(second[0].text, /six-week cycle/);
+});
+
+test('formatTeachLesson prints numbers, mechanisms, one check, and a quoted next line', () => {
+  const cues = parseCaptionCues(TEACH_VTT);
+  const chapters = normalizeChapters(TEACH_CHAPTERS, 900);
+  const text = formatTeachLesson({
+    url: TEACH_URL,
+    section: 1,
+    chapters,
+    chapter: chapters[0],
+    cues: sliceCuesForChapter(cues, chapters[0]),
+    title: 'DHH on Lex Fridman',
+  });
+
+  assert.match(text, /section 1\/2  omakase/);
+  assert.match(text, /80 people/);
+  assert.match(text, /omakase/);
+  assert.match(text, /check\nwhat is /);
+  assert.match(text, /next: atris youtube teach "https:\/\/www\.youtube\.com\/watch\?v=teach01" --section 2/);
+  assert.doesNotMatch(text, /six-week/);
+});
+
+test('youtube help lists youtube teach', async () => {
+  const out = collect();
+  const status = await youtubeCommand(['--help'], { output: out.output });
+  assert.equal(status, 0);
+  assert.match(out.text(), /teach <youtube-url>/);
+  assert.match(out.text(), /--section N/);
+  assert.match(out.text(), /one chapter from local captions/);
+});
+
+test('youtube teach prints one chapter from fixture captions and chapters', async () => {
+  const out = collect();
+  let apiCalls = 0;
+  const status = await youtubeCommand(['teach', TEACH_URL], {
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      return { ok: true, status: 200, data: {} };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(apiCalls, 0);
+  const text = out.text();
+  assert.match(text, /section 1\/2  omakase/);
+  assert.match(text, /80 people/);
+  assert.match(text, /omakase/);
+  assert.match(text, /check\nwhat is /);
+  assert.match(text, /next: atris youtube teach "https:\/\/www\.youtube\.com\/watch\?v=teach01" --section 2/);
+  assert.doesNotMatch(text, /six-week/);
+  assert.doesNotMatch(text, /process_youtube/);
+});
+
+test('youtube teach --section 2 prints the second chapter', async () => {
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--section', '2'], {
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+
+  assert.equal(status, 0);
+  const text = out.text();
+  assert.match(text, /section 2\/2  shape up/);
+  assert.match(text, /six-week/);
+  assert.doesNotMatch(text, /80 people/);
+  assert.match(text, /next: last section/);
+});
+
+test('youtube teach without --save writes no atris files', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-nosave-'));
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+});
+
+test('youtube teach --save still exits 0 when apply is missing', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-save-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /next: write one apply/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.apply.md')), true);
+});
+
+test('extractTeachSource reads fixture yt-dlp chapters and VTT without network', async () => {
+  const source = await extractTeachSource(TEACH_URL, {
+    spawnSync: () => ({
+      status: 0,
+      stdout: JSON.stringify({
+        id: 'teach01',
+        title: 'DHH on Lex Fridman',
+        duration: 900,
+        chapters: TEACH_CHAPTERS,
+        automatic_captions: {
+          en: [{ ext: 'vtt', url: 'https://www.youtube.com/api/timedtext?v=teach01' }],
+        },
+      }),
+    }),
+    fetchCaptionText: async () => TEACH_VTT,
+  });
+
+  assert.equal(source.id, 'teach01');
+  assert.equal(source.chapters.length, 2);
+  assert.equal(source.chapters[0].title, 'Omakase');
+  assert.equal(source.cues.length, 3);
+  assert.match(source.cues[0].text, /80 people/);
+});
+
+test('youtube teach --paid is refused and never bills', async () => {
+  const out = collect();
+  let extractCalls = 0;
+  const status = await youtubeCommand(['teach', TEACH_URL, '--paid'], {
+    output: out.output,
+    extractTeachSource: async () => {
+      extractCalls += 1;
+      return fixtureSource();
+    },
+  });
+
+  assert.equal(status, 2);
+  assert.equal(extractCalls, 0);
+  assert.match(out.text(), /drop --paid/);
+});

@@ -1,7 +1,7 @@
 ---
 name: youtube
 description: "YouTube discovery and learning. Get watch permalinks with atris youtube search QUERY (free, local ytsearch/yt-dlp). On 429 the CLI already retries; use cached rows if printed, else STOP. Never run --paid after a 429. --paid only when the user explicitly asked to buy permalinks (5 credits). After a URL is picked, atris youtube notes URL (free, ephemeral unless --save). atris youtube process only to store knowledge (5 credits). Never paste tokens. Never /auth/cli. Mint with atris login --agent from a stored login. Never summarize a video from model memory. Triggers on: youtube search, find videos, paid youtube search, any youtube.com or youtu.be link, youtube, video, watch this, notes on this."
-version: 2.10.0
+version: 2.11.0
 tags:
   - youtube
   - research
@@ -25,6 +25,7 @@ search QUERY (free)
     |
    pick a URL --> notes URL (free, ephemeral unless --save)
     |                 --save files the brief + apply stub
+    |            or teach URL [--section N] (one chapter, free, ephemeral unless --save)
     |
    write one Apply (claimable) before process
     |
