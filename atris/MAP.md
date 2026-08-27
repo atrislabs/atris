@@ -541,15 +541,16 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 **Purpose:** Work is merged or reaped, never limbo — the board shows every unlanded branch/worktree; `--reap` salvages then deletes anything landed or past TTL
 
-- **Implementation:** `commands/land.js` (collectBoard, printBoard, reap, landSummary); the board orders overdue, active, then landed residue, labels aging active rows `stale`, and keeps fresh rows `in the air`; counts separate tracked, stale, overdue, and landed work
-- **Router:** `bin/atris.js` (`command === 'land'` dispatch)
+- **Implementation:** `commands/land.js` (collectBoard, printBoard, reap, landSummary, printEmptyLand); the board orders overdue, active, then landed residue, labels aging active rows `stale`, and keeps fresh rows `in the air`; counts separate tracked, stale, overdue, and landed work
+- **Empty / unborn repo:** `printEmptyLand` (`commands/land.js`) prints one human sentence on stdout and exits 2; `--json` is a compact refuse receipt; never a stack or wizard. `landSummary` returns null when there is no git history.
+- **Router:** `bin/atris.js` (`command === 'land'` dispatch); leftover throws print one line and exit 2
 - **Boot visibility:** `bin/atris.js` boot status (`landing` row via `landSummary`)
 - **Doctrine:** `atris.md` operating rules ("land or reap"), `AGENTS.md` agent contract table
 - **Salvage:** bundles + dirty patches under `.atris/salvage/<date>/` — a reap never loses work
-- **Regression:** `test/land.test.js` (board classification, category-specific cleanup guidance, reap, dry-run, worktree patch salvage)
+- **Regression:** `test/land.test.js` (board classification, empty folder, init-with-no-commits, category-specific cleanup guidance, reap, dry-run, worktree patch salvage); `test/dogfood-p1.test.js` (`land in empty repo prints one-line error without stack`)
 - **Value:** hundreds of agents can fan out without work silently dying in branches nobody merges
 
-**Search:** `rg "collectBoard|landCommand|hasCommits|no commits yet" commands/land.js bin/atris.js test/dogfood-p1.test.js`
+**Search:** `rg "collectBoard|landCommand|printEmptyLand|hasCommits|no commits" commands/land.js bin/atris.js test/land.test.js test/dogfood-p1.test.js`
 
 ### Feature: Member Worktrees (`atris worktree`)
 
