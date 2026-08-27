@@ -18,8 +18,11 @@ const {
   isTaskNextLook,
   personName,
   pickNext,
+  laterNextCommand,
+  laterNotePath,
   renderFirstTalk,
   renderFresh,
+  renderLaterRemember,
   renderWorkspace,
   shouldAutoInitFresh,
   spokenLineCount,
@@ -324,6 +327,48 @@ test('fresh first-minute names one or two files and never dumps a listing', () =
   assert.equal(spokenLineCount(many), 2);
 });
 
+test('later note wins over files, git, branch, and dirty work', () => {
+  const later = 'finish the notes app';
+  const remembered = renderFresh({
+    person: 'keshav',
+    folder: 'this folder',
+    later,
+  });
+  assert.equal(remembered, [
+    'hey keshav, finish the notes app is still open.',
+    '',
+    'next: atris do',
+  ].join('\n'));
+  const withFiles = renderFresh({
+    person: 'keshav',
+    folder: 'this folder',
+    files: ['notes.txt', 'draft.md'],
+    commit: 'add notes app',
+    branch: 'notes-app',
+    dirty: ['notes.txt'],
+    later,
+  });
+  assert.equal(withFiles, [
+    'hey keshav, finish the notes app is still open.',
+    '',
+    'next: atris',
+  ].join('\n'));
+  assert.doesNotMatch(withFiles, /already here|notes\.txt is still open|notes-app/);
+  const json = freshMinuteJson('this folder', ['notes.txt'], { later });
+  assert.equal(json.reason, 'finish the notes app is still open');
+  assert.equal(json.next_action, 'atris');
+  const remember = renderLaterRemember({
+    person: 'keshav',
+    sentence: later,
+    files: [],
+  });
+  assert.equal(remember, [
+    "hey keshav, I'll remember finish the notes app.",
+    '',
+    'next: atris do',
+  ].join('\n'));
+});
+
 test('hidden names do not count as work in a fresh folder', () => {
   const text = renderFresh({
     person: 'keshav',
@@ -347,6 +392,11 @@ test('fresh next is do when files are here and talk when empty', () => {
   assert.equal(freshNextCommand(['draft.md', 'notes.txt']), 'atris do');
   assert.equal(freshNextCommand(['.git', 'tasks.db']), 'atris "what do you want here?"');
   assert.equal(freshNextCommand([]), 'atris "what do you want here?"');
+  assert.equal(freshNextCommand([], 'this folder', { later: 'finish the notes app' }), 'atris do');
+  assert.equal(freshNextCommand(['notes.txt'], 'this folder', { later: 'finish the notes app' }), 'atris');
+  assert.equal(laterNextCommand([]), '');
+  assert.equal(laterNextCommand([], { later: 'finish the notes app' }), 'atris do');
+  assert.equal(laterNextCommand(['notes.txt'], { later: 'finish the notes app' }), 'atris');
 });
 
 test('visible work title names one or two files, or the folder', () => {
@@ -492,11 +542,13 @@ test('leftover words after known verbs are a look, not first talk', () => {
   assert.equal(isLeftoverVerbLook('log hi'), true);
   assert.equal(isLeftoverVerbLook('plan hi'), true);
   assert.equal(isLeftoverVerbLook('do hi'), true);
+  assert.equal(isLeftoverVerbLook('later hi'), true);
   assert.equal(isLeftoverVerbLook('BRAINSTORM HI'), true);
   assert.equal(isLeftoverVerbLook('task next'), true);
   assert.equal(isLeftoverVerbLook('task next --json'), true);
   assert.equal(isLeftoverVerbLook('brainstorm'), false);
   assert.equal(isLeftoverVerbLook('wish'), false);
+  assert.equal(isLeftoverVerbLook('later'), false);
   assert.equal(isLeftoverVerbLook('what do you want here?'), false);
   assert.equal(isLeftoverVerbLook('count the words'), false);
   assert.equal(isLeftoverVerbLook('task new count words'), false);
@@ -843,6 +895,7 @@ test('first talk files the user sentence and names it as the win', () => {
       assert.equal(look.status, 0, look.stderr || look.stdout);
       assert.equal(look.stdout.trim(), empty.stdout.trim(), leftover);
       assert.equal(fs.existsSync(path.join(dir, 'atris')), false, leftover);
+      assert.equal(fs.existsSync(laterNotePath(dir)), false, leftover);
     }
 
     const help = runCli(['--help'], { cwd: dir, env });
@@ -889,6 +942,89 @@ test('first talk files the user sentence and names it as the win', () => {
   }
 });
 
+test('later remembers words in an unbound folder without minting a room', () => {
+  const parent = makeTempDir();
+  const dir = path.join(parent, 'notes');
+  const home = path.join(parent, 'home');
+  fs.mkdirSync(dir);
+  fs.mkdirSync(home);
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const empty = runCli([], { cwd: dir, env });
+    assert.equal(empty.status, 0, empty.stderr || empty.stdout);
+    assert.match(empty.stdout, /hey keshav, notes is empty\./);
+    assert.match(empty.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.equal(fs.existsSync(laterNotePath(dir)), false);
+
+    const missing = runCli(['later'], { cwd: dir, env });
+    assert.equal(missing.status, 2, missing.stderr || missing.stdout);
+    assert.match(missing.stdout, /Usage: atris later/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+    assert.equal(fs.existsSync(laterNotePath(dir)), false);
+
+    const help = runCli(['later', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris later/);
+    assert.doesNotMatch(help.stdout, /I'll remember|still open|this folder is empty/);
+    assert.equal(fs.existsSync(laterNotePath(dir)), false);
+
+    const remembered = runCli(['later', 'finish the notes app'], { cwd: dir, env });
+    assert.equal(remembered.status, 0, remembered.stderr || remembered.stdout);
+    assert.equal(remembered.stdout.trim(), [
+      "hey keshav, I'll remember finish the notes app.",
+      '',
+      'next: atris do',
+    ].join('\n'));
+    assert.equal(spokenLineCount(remembered.stdout), 2);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+    assert.equal(fs.readFileSync(laterNotePath(dir), 'utf8').trim(), 'finish the notes app');
+
+    const minute = runCli([], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(minute.stdout.trim(), [
+      'hey keshav, finish the notes app is still open.',
+      '',
+      'next: atris do',
+    ].join('\n'));
+    assert.equal(spokenLineCount(minute.stdout), 2);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+
+    for (const leftover of ['brainstorm hi', 'wish hi', 'task next']) {
+      const look = runCli([leftover], { cwd: dir, env });
+      assert.equal(look.status, 0, look.stderr || look.stdout, leftover);
+      assert.equal(look.stdout.trim(), minute.stdout.trim(), leftover);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, leftover);
+      assert.equal(fs.existsSync(path.join(dir, '.atris')), false, leftover);
+      assert.equal(fs.readFileSync(laterNotePath(dir), 'utf8').trim(), 'finish the notes app', leftover);
+    }
+
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+    const withFiles = runCli([], { cwd: dir, env });
+    assert.equal(withFiles.status, 0, withFiles.stderr || withFiles.stdout);
+    assert.match(withFiles.stdout, /hey keshav, finish the notes app is still open\./);
+    assert.match(withFiles.stdout, /^next: atris$/m);
+    assert.doesNotMatch(withFiles.stdout, /notes\.txt is already here|what do you want here/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    const leftoverLater = runCli(['later hi'], { cwd: dir, env });
+    assert.equal(leftoverLater.status, 0, leftoverLater.stderr || leftoverLater.stdout);
+    assert.equal(leftoverLater.stdout.trim(), withFiles.stdout.trim());
+    assert.equal(fs.readFileSync(laterNotePath(dir), 'utf8').trim(), 'finish the notes app');
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+
+    const talk = runCli(['a notes app for keshav'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(talk.status, 0, talk.stderr || talk.stdout);
+    assert.match(talk.stdout, /hey keshav, a notes app for keshav is ready\./);
+    assert.match(talk.stdout, /^next: atris do$/m);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+  } finally {
+    cleanupTempDir(parent);
+  }
+});
+
 test('unbound folder with notes.txt names the file and does not mint', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
@@ -920,6 +1056,7 @@ test('unbound folder with notes.txt names the file and does not mint', () => {
       assert.equal(look.stdout.trim(), minute.stdout.trim(), leftover);
       assert.equal(fs.existsSync(path.join(dir, 'atris')), false, leftover);
       assert.equal(fs.existsSync(path.join(dir, '.atris')), false, leftover);
+      assert.equal(fs.existsSync(laterNotePath(dir)), false, leftover);
     }
 
     const jsonMinute = runCli(['--json'], { cwd: dir, env });
@@ -1044,6 +1181,7 @@ test('unbound git folder names the last commit and does not mint', () => {
       assert.equal(look.stdout.trim(), minute.stdout.trim(), leftover);
       assert.equal(fs.existsSync(path.join(dir, 'atris')), false, leftover);
       assert.equal(fs.existsSync(path.join(dir, '.atris')), false, leftover);
+      assert.equal(fs.existsSync(laterNotePath(dir)), false, leftover);
     }
 
     const jsonMinute = runCli(['--json'], { cwd: dir, env });
@@ -1102,6 +1240,7 @@ test('unbound dirty git folder names open work and does not mint', () => {
       assert.equal(look.stdout.trim(), minute.stdout.trim(), leftover);
       assert.equal(fs.existsSync(path.join(dir, 'atris')), false, leftover);
       assert.equal(fs.existsSync(path.join(dir, '.atris')), false, leftover);
+      assert.equal(fs.existsSync(laterNotePath(dir)), false, leftover);
     }
 
     const jsonMinute = runCli(['--json'], { cwd: dir, env });
@@ -1214,6 +1353,7 @@ test('unbound git folder on a feature branch names the branch and does not mint'
       assert.equal(look.stdout.trim(), minute.stdout.trim(), leftover);
       assert.equal(fs.existsSync(path.join(dir, 'atris')), false, leftover);
       assert.equal(fs.existsSync(path.join(dir, '.atris')), false, leftover);
+      assert.equal(fs.existsSync(laterNotePath(dir)), false, leftover);
     }
 
     const jsonMinute = runCli(['--json'], { cwd: dir, env });

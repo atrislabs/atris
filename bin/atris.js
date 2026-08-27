@@ -2131,6 +2131,9 @@ if (command === 'init') {
 } else if (command === 'recap') {
   const recapCode = require('../commands/recap').recapAtris(process.argv.slice(3));
   if (Number.isInteger(recapCode)) process.exit(recapCode);
+} else if (command === 'later') {
+  const laterCode = require('../commands/later').laterAtris(process.argv.slice(3));
+  process.exit(Number.isInteger(laterCode) ? laterCode : 0);
 } else if (command === 'activate') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
