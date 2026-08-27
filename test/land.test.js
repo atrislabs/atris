@@ -15,6 +15,7 @@ function makeTempRepo() {
   runGit(['init', '-b', 'master'], repo);
   runGit(['config', 'user.email', 'test@example.com'], repo);
   runGit(['config', 'user.name', 'Test'], repo);
+  runGit(['config', 'commit.gpgsign', 'false'], repo);
   fs.writeFileSync(path.join(repo, 'README.md'), '# fixture\n');
   runGit(['add', '.'], repo);
   runGit(['commit', '-m', 'init'], repo);
@@ -441,6 +442,7 @@ test('land with commits but no master or main prints one sentence and no stack',
     runGit(['init', '-b', 'develop'], dir);
     runGit(['config', 'user.email', 'test@example.com'], dir);
     runGit(['config', 'user.name', 'Test'], dir);
+    runGit(['config', 'commit.gpgsign', 'false'], dir);
     runGit(['commit', '--allow-empty', '-m', 'init'], dir);
     const result = runCli(['land'], dir);
     assertCalmLandEmpty(result, /no master or main/);
