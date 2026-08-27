@@ -151,7 +151,7 @@ test('fresh first-minute names a git commit already here instead of files', () =
   });
   assert.equal(json.reason, 'add notes app is already here');
   assert.equal(json.next_action, 'atris do');
-  const long = 'add a notes app that remembers every idea keshav ever wrote down and then some';
+  const long = 'add a notes app that remembers every idea keshav ever wrote down plus backups sharing and a home screen';
   const clipped = renderFresh({
     person: 'keshav',
     folder: 'this folder',
@@ -159,7 +159,7 @@ test('fresh first-minute names a git commit already here instead of files', () =
     commit: long,
   });
   assert.match(clipped, /hey keshav, .+\.\.\. is already here\./);
-  assert.doesNotMatch(clipped, /then some|git log|master|[0-9a-f]{7,}/);
+  assert.doesNotMatch(clipped, /home screen|git log|master|[0-9a-f]{7,}/);
   assert.match(clipped, /^next: atris do$/m);
   const hiddenOnly = renderFresh({
     person: 'keshav',
