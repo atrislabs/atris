@@ -320,8 +320,12 @@ function recapAtris(args = []) {
     return;
   }
   const root = process.cwd();
+  const daysIdx = args.indexOf('--days');
+  const days = daysIdx !== -1 ? Number(args[daysIdx + 1]) : DEFAULT_DAYS;
+  const data = buildRecapData(root, { days });
   if (
-    isFreshWorkspace(root)
+    data.empty
+    && isFreshWorkspace(root)
     && !args.includes('--verbose')
     && !args.includes('--full')
     && !args.includes('--share')
@@ -331,9 +335,6 @@ function recapAtris(args = []) {
       asJson: args.includes('--json'),
     });
   }
-  const daysIdx = args.indexOf('--days');
-  const days = daysIdx !== -1 ? Number(args[daysIdx + 1]) : DEFAULT_DAYS;
-  const data = buildRecapData(root, { days });
   if (args.includes('--json')) {
     console.log(JSON.stringify(data, null, 2));
     return;
