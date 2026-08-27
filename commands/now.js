@@ -649,6 +649,8 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
     // names that file, same as bare atris / now --json. Do not mint.
     // Just-minted file folder, nothing running: same two lines as
     // first-minute / status / recap. Not factory MAP.md.
+    // After init, next is claim: same two lines as bare atris /
+    // now --json. Not factory now.md.
     // --init / --refresh / --all / --path still write now.md.
     if (!init && !refresh && !all && !pathOnly) {
       if (isFreshWorkspace(root)) {
@@ -659,6 +661,7 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
         if (isKeepWorkingMinute(minute)) {
           return speakKeepWorkingMinute({ root });
         }
+        return speakFirstMinute({ root });
       }
     }
 

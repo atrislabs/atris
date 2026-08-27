@@ -2103,6 +2103,60 @@ test('atris now in a folder with a file names the file, not init', () => {
   }
 });
 
+test('atris now after init --yes --minimal talks the claim, not factory now.md', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+  const env = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  try {
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /^next: atris task claim /m);
+
+    const minute = runCli([], { cwd: dir, env });
+    const now = runCli(['now'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(now.status, 0, now.stderr || now.stdout);
+    assert.equal(now.stdout.trim(), minute.stdout.trim());
+    assert.match(now.stdout, /generate map\.md/i);
+    assert.match(now.stdout, /ready to claim/);
+    assert.match(now.stdout, /^next: atris task claim /m);
+    assert.equal(nextLine(now.stdout), nextLine(minute.stdout));
+    assert.match(nextLine(now.stdout), /^atris task claim \S+ --as \S+$/);
+    assert.equal(spokenLineCount(now.stdout), spokenLineCount(minute.stdout));
+    assert.equal(spokenLineCount(now.stdout), 2);
+    assert.doesNotMatch(
+      now.stdout + now.stderr,
+      /# now|Current operating truth|What Matters Now|While You Were Away|Current Priority|## Signals|Open TODO items|Generate MAP\.md|this folder is empty|notes\.txt is already here|already yours/,
+    );
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
+
+    const jsonNow = runCli(['now', '--json'], { cwd: dir, env });
+    assert.equal(jsonNow.status, 0, jsonNow.stderr || jsonNow.stdout);
+    const payload = JSON.parse(jsonNow.stdout);
+    assert.equal(payload.ok, true);
+    assert.match(String(payload.current || ''), /ready to claim/);
+    assert.match(String(payload.next || ''), /^atris task claim \S+ --as \S+$/);
+    assert.equal(payload.next, nextLine(now.stdout));
+    assert.doesNotMatch(jsonNow.stdout, /# now|Current operating truth|What Matters Now|Open TODO items/);
+
+    const help = runCli(['now', '--help'], { cwd: dir, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris now/);
+    assert.doesNotMatch(help.stdout, /ready to claim|# now|Current operating truth/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris status and stop in a git folder name the last commit, not empty first-talk', () => {
   const dir = makeTempDir();
   const homeParent = makeTempDir();
