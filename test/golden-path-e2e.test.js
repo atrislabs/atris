@@ -268,7 +268,7 @@ test('golden path e2e runs init delegate ready autoland status without human inp
   }
 });
 
-test('packed golden path follows printed talk claim ready and autoland handoffs', () => {
+test('packed golden path follows printed talk do ready and autoland handoffs', () => {
   assert.ok(hasNodeSqlite(), 'packed golden path requires a Node runtime with node:sqlite');
 
   const root = makeTempDir();
@@ -338,42 +338,43 @@ test('packed golden path follows printed talk claim ready and autoland handoffs'
     assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
     assert.doesNotMatch(talk.stdout, /atris initialized|What do you want to build|minimal scaffold/i);
 
-    const claimArgs = printedAtrisArgs(talk.stdout, 'next');
-    assert.equal(claimArgs[0], 'task');
-    assert.equal(claimArgs[1], 'claim');
-    const taskRef = claimArgs[2];
-    assert.ok(taskRef, `printed task claim has no task ref: ${claimArgs.join(' ')}`);
+    const doArgs = printedAtrisArgs(talk.stdout, 'next');
+    assert.deepEqual(doArgs, ['do']);
+    assert.doesNotMatch(talk.stdout, /atris task (claim|show) /);
 
-    const claimed = runInstalled(claimArgs);
-    assertGoldenPathStep(claimed, 'printed task claim');
-    assert.match(claimed.stdout, new RegExp(`task ready ${taskRef} --verify "git diff --check"`));
-    assert.match(claimed.stdout, /Then: atris autoland tick/);
+    const doit = runInstalled(doArgs);
+    assertGoldenPathStep(doit, 'printed do after first talk');
+    assert.match(doit.stdout, /already yours/);
+    assert.match(doit.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(doit.stdout, /atris task show |PROMPT ONLY|Atris Do|executor\.md/);
 
-    const afterClaim = runInstalled([]);
-    assertGoldenPathStep(afterClaim, 'first minute after claim');
-    assert.doesNotMatch(afterClaim.stdout, /No open tasks/);
-    const showArgs = printedAtrisArgs(afterClaim.stdout, 'next');
-    assert.deepEqual(showArgs, ['task', 'show', taskRef]);
-    const shown = runInstalled(showArgs);
-    assertGoldenPathStep(shown, 'printed task show after claim');
-    assert.match(shown.stdout, new RegExp(taskRef));
+    const afterDo = runInstalled([]);
+    assertGoldenPathStep(afterDo, 'first minute after do');
+    assert.doesNotMatch(afterDo.stdout, /No open tasks/);
+    assert.deepEqual(printedAtrisArgs(afterDo.stdout, 'next'), ['do']);
+
+    const listed = parseJson(runInstalled(['task', 'list', '--json']), 'task list');
+    const starter = (listed.tasks || []).find((row) => row && row.status === 'claimed');
+    assert.ok(starter && starter.display_id, `claimed starter missing: ${JSON.stringify(listed)}`);
+    const taskRef = starter.display_id;
 
     fs.appendFileSync(path.join(workspace, 'README.md'), '\nFirst useful step complete.\n', 'utf8');
-    const readyArgs = printedAtrisArgs(claimed.stdout, 'Next');
-    const resultIndex = readyArgs.indexOf('--result');
-    assert.notEqual(resultIndex, -1, `printed task-ready command has no result: ${readyArgs.join(' ')}`);
-    assert.match(readyArgs[resultIndex + 1] || '', /^<who can do what now and why>$/);
-    readyArgs[resultIndex + 1] = 'New users can now finish a first proof loop faster because every next step is printed.';
-    const landingIndex = readyArgs.indexOf('--landing');
-    assert.notEqual(landingIndex, -1, `printed task-ready command has no landing: ${readyArgs.join(' ')}`);
-    assert.match(readyArgs[landingIndex + 1] || '', /^<what someone can do now>$/);
-    readyArgs[landingIndex + 1] = 'New users can now finish their first proof loop faster, skipping the hidden setup steps.';
-    const ready = runInstalled(readyArgs);
-    assertGoldenPathStep(ready, 'printed task-ready command');
+    const ready = runInstalled([
+      'task',
+      'ready',
+      taskRef,
+      '--verify',
+      'git diff --check',
+      '--result',
+      'New users can now finish a first proof loop faster because every next step is printed.',
+      '--landing',
+      'New users can now finish their first proof loop faster, skipping the hidden setup steps.',
+    ]);
+    assertGoldenPathStep(ready, 'task-ready after first-talk do');
     assert.match(ready.stdout, /proof is ready; autoland runs the second check and lands it once the hourly heartbeat runs \(start one with atris autoland tick\)\./);
 
-    const landed = runInstalled(printedAtrisArgs(claimed.stdout, 'Then'));
-    assertGoldenPathStep(landed, 'printed autoland tick');
+    const landed = runInstalled(['autoland', 'tick']);
+    assertGoldenPathStep(landed, 'autoland tick');
     assert.match(landed.stdout, new RegExp(`1 landed \\(${taskRef}\\)`));
 
     const taskResult = runInstalled(['task', 'show', taskRef, '--json']);

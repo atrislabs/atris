@@ -67,7 +67,8 @@ function reviewSoftTitle(title, maxWords = 5) {
 }
 
 function isHumanDeskNext(command) {
-  return /^atris task (?:claim|show|ready|accept)\b/.test(String(command || ''));
+  const text = String(command || '');
+  return /^atris do\b/.test(text) || /^atris task (?:claim|show|ready|accept)\b/.test(text);
 }
 
 function loadReviewTasks(root = process.cwd()) {
@@ -880,9 +881,9 @@ async function doAtris() {
   const cwd = process.cwd();
   const targetDir = path.join(cwd, 'atris');
 
-  // Empty folder talks like bare atris. Files already here are the
-  // start, so do begins first-talk from them instead of pointing at
-  // itself. Missing executor.md after init --minimal is optional
+  // Empty folder talks like bare atris. Files already here start
+  // first-talk, then next is atris do. A second do stays two first-minute
+  // lines. Missing executor.md after init --minimal is optional
   // context, not a factory bounce.
   if (!fs.existsSync(targetDir)) {
     const visible = listUserVisibleWork(cwd);

@@ -6847,10 +6847,12 @@ function createEndgameSeedTask(taskDb, db, seed, owner) {
 }
 
 function nextActionFromCommand(command) {
-  const match = String(command || '').trim().match(/^atris (?:task|mission) (\S+)/);
+  const text = String(command || '').trim();
+  const match = text.match(/^atris (?:task|mission) (\S+)/);
   const verb = match ? match[1] : '';
-  if (!verb || verb === 'new') return 'none';
-  return verb;
+  if (verb && verb !== 'new') return verb;
+  if (/^atris do\b/.test(text)) return 'do';
+  return 'none';
 }
 
 function cmdNextTruth(args) {
