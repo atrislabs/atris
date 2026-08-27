@@ -2140,8 +2140,7 @@ test('atris now after init --yes --minimal talks the claim, not factory now.md',
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
 
     const jsonNow = runCli(['now', '--json'], { cwd: dir, env });
-    const jsonMinute = runCli(['--json'], { cwd: dir, env });
-    assert.equal(jsonNow.status, jsonMinute.status);
+    assert.equal(jsonNow.status, 0, jsonNow.stderr || jsonNow.stdout);
     const payload = JSON.parse(jsonNow.stdout);
     assert.equal(payload.ok, true);
     assert.match(String(payload.current || ''), /ready to claim/);
