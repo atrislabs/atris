@@ -4544,6 +4544,21 @@ function initWorkspace(dir) {
   runCli(['init'], { cwd: dir, input: '\n' });
 }
 
+function writeLiveMission(dir) {
+  const stateDir = path.join(dir, '.atris', 'state');
+  fs.mkdirSync(stateDir, { recursive: true });
+  const now = new Date().toISOString();
+  fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), `${JSON.stringify({
+    schema: 'atris.mission.v1',
+    id: 'mission-live',
+    objective: 'Keep the live mission visible',
+    owner: 'executor',
+    status: 'running',
+    created_at: now,
+    updated_at: now,
+  })}\n`);
+}
+
 function writeTodayLog(dir, content) {
   const now = new Date();
   const yyyy = now.getFullYear().toString();
@@ -19312,6 +19327,7 @@ test('status default mode renders human summary', () => {
       '',
       '(Empty)',
     ].join('\n'), 'utf8');
+    writeLiveMission(dir);
 
     const res = runCli(['status'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
@@ -19451,8 +19467,10 @@ test('status stays local even when .atris/business.json exists', () => {
 
     const res = runCli(['status'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Where we are:/);
+    assert.match(res.stdout, /ready to claim/);
+    assert.match(res.stdout, /^next: atris task claim /m);
     assert.doesNotMatch(res.stdout, /last synced/i);
+    assert.doesNotMatch(res.stdout, /Where we are|Decision: let it run/);
   } finally {
     cleanupTempDir(dir);
   }

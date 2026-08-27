@@ -242,27 +242,13 @@ test('golden path e2e runs init delegate ready autoland status without human inp
     assert.equal(done.status, 'done');
     assert.equal(done.review?.approval_status, 'accepted');
 
-    const todoPath = path.join(workspace, 'atris', 'TODO.md');
-    fs.writeFileSync(todoPath, [
-      '# TODO.md',
-      '',
-      '## Backlog',
-      '',
-      '(Empty)',
-      '',
-      '## In Progress',
-      '',
-      '(Empty)',
-      '',
-      '## Completed',
-      '',
-      '(Empty)',
-      '',
-    ].join('\n'), 'utf8');
-
+    const minute = runCli([], { cwd: workspace, env });
     const status = runCli(['status'], { cwd: workspace, env });
     assertOk(status, 'status');
-    assert.match(status.stdout, /and 1 completed items still\s+sitting in TODO\./);
+    assert.equal(status.stdout.trim(), minute.stdout.trim());
+    assert.match(status.stdout, /ready to claim/);
+    assert.match(status.stdout, /^next: atris task claim /m);
+    assert.doesNotMatch(status.stdout, /Where we are|Decision: let it run/);
   } finally {
     cleanupTempDir(root);
   }
