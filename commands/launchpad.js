@@ -630,7 +630,7 @@ function launchpadCommand(args = []) {
   }
 
   // Just-minted file folder, nothing running: same two lines as
-  // first-minute / the next do. After init, next is claim: same
+  // first-minute / the next keep-working ready. After init, next is claim: same
   // two lines as bare atris / status / now. Not factory init.
   // A live mission still gets the board. --json on the claim
   // path keeps the factory card for scripts.

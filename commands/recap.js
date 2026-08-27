@@ -9,6 +9,7 @@ const {
   personName,
   speakFirstMinute,
   speakKeepWorkingMinute,
+  taskCommand,
 } = require('../lib/first-minute');
 const { isRealTestRunnerProof, quoteVerifierCommand } = require('../lib/verifier-quality');
 
@@ -319,7 +320,7 @@ function renderRecapMinute(data, { person } = {}) {
       return [
         `${greet}${named} is already yours.`,
         '',
-        'next: atris do',
+        `next: ${taskCommand({ display_id: item.id, status: 'claimed' })}`,
       ].join('\n');
     }
     if (named) return `${greet}${named} is ready to claim.`;
@@ -367,7 +368,8 @@ function recapAtris(args = []) {
     });
   }
   // Just-minted file folder, nothing running: same two lines as
-  // first-minute / status / the next do. Not factory MAP.md.
+  // first-minute / status / recap. After the work is yours, next
+  // is task ready so keep-working is not a do loop. Not factory MAP.md.
   // A claimed non-seed task still recaps that work. A live mission
   // and --verbose / --share keep the recap report.
   if (

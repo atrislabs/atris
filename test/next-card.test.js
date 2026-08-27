@@ -158,7 +158,7 @@ test('atris next --json is real JSON with a next command', () => {
     assert.equal(room.status, 0, room.stderr);
     const body = JSON.parse(room.stdout);
     assert.equal(body.schema, 'atris.one_lap.v1');
-    assert.equal(body.next_action, 'atris do');
+    assert.equal(body.next_action, 'atris task ready CLI-1 --verify "git diff --check"');
     assert.equal(body.ok, true);
   } finally {
     cleanup(root);

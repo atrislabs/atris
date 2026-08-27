@@ -882,9 +882,10 @@ async function doAtris() {
   const targetDir = path.join(cwd, 'atris');
 
   // Empty folder talks like bare atris. Files already here start
-  // first-talk, then next is atris do. A second do stays two first-minute
-  // lines. Missing executor.md after init --minimal is optional
-  // context, not a factory bounce.
+  // first-talk, then next is atris do. After that work is yours,
+  // next is task ready so keep-working is not a do loop. Missing
+  // executor.md after init --minimal is optional context, not a
+  // factory bounce.
   if (!fs.existsSync(targetDir)) {
     const visible = listUserVisibleWork(cwd);
     if (visible.length) {
