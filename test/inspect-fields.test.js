@@ -219,7 +219,7 @@ test('task inspect CLI returns review metadata without parsing show output', () 
 });
 
 test('mission and task help document inspect commands', () => {
-  const missionHelp = runCli(['mission', 'help'], { cwd: repoRoot });
+  const missionHelp = runCli(['mission', 'help', '--full'], { cwd: repoRoot });
   assert.equal(missionHelp.status, 0, missionHelp.stderr || missionHelp.stdout);
   assert.match(missionHelp.stdout, /atris mission inspect <id> --fields status,runner,ack,pings/);
 
