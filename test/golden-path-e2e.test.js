@@ -329,8 +329,9 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
 
     const firstRun = runInstalled([]);
     assertGoldenPathStep(firstRun, 'first run');
-    assert.match(firstRun.stdout, /README\.md is already here\./);
+    assert.match(firstRun.stdout, /initial toy repo is already here\./);
     assert.match(firstRun.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(firstRun.stdout, /README\.md is already here|what do you want here|git log|HEAD/);
 
     const doArgs = printedAtrisArgs(firstRun.stdout, 'next');
     assert.deepEqual(doArgs, ['do']);
