@@ -557,12 +557,14 @@ test('leftover words after known verbs are a look, not first talk', () => {
   assert.equal(isLeftoverVerbLook('do hi'), true);
   assert.equal(isLeftoverVerbLook('later hi'), true);
   assert.equal(isLeftoverVerbLook('mission hi'), true);
+  assert.equal(isLeftoverVerbLook('next hi'), true);
   assert.equal(isLeftoverVerbLook('BRAINSTORM HI'), true);
   assert.equal(isLeftoverVerbLook('task next'), true);
   assert.equal(isLeftoverVerbLook('task next --json'), true);
   assert.equal(isLeftoverVerbLook('brainstorm'), false);
   assert.equal(isLeftoverVerbLook('wish'), false);
   assert.equal(isLeftoverVerbLook('later'), false);
+  assert.equal(isLeftoverVerbLook('next'), false);
   assert.equal(isLeftoverVerbLook('what do you want here?'), false);
   assert.equal(isLeftoverVerbLook('count the words'), false);
   assert.equal(isLeftoverVerbLook('task new count words'), false);

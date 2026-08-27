@@ -8,6 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const nextMoves = require('../lib/next-moves');
+const { spokenLineCount } = require('../lib/first-minute');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -22,16 +23,32 @@ function cleanup(root) {
 }
 
 function runCli(args, cwd) {
+  const home = path.join(cwd, '.home');
+  fs.mkdirSync(home, { recursive: true });
   return spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
     timeout: 20000,
     env: {
       ...scrubAgentEnv(),
+      HOME: home,
+      USER: 'ubuntu',
+      LOGNAME: 'ubuntu',
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_NONINTERACTIVE: '1',
       NODE_NO_WARNINGS: '1',
     },
   });
+}
+
+function spoken(stdout) {
+  return String(stdout || '').replace(/^\n+/, '').trimEnd();
+}
+
+function nextLine(stdout) {
+  const match = String(stdout || '').match(/^next: (.+)$/m);
+  return match ? match[1] : '';
 }
 
 function appendJsonl(root, relative, rows) {
@@ -50,10 +67,20 @@ function writeTaskProjection(root, tasks) {
   fs.writeFileSync(file, JSON.stringify({ tasks }), 'utf8');
 }
 
-function writeLatestInbox(root, title) {
-  const dir = path.join(root, 'atris', 'logs', '2099');
+function writeTodayInbox(root, title) {
+  const now = new Date();
+  const year = String(now.getFullYear());
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const dir = path.join(root, 'atris', 'logs', year);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, '2099-01-01.md'), `# Log 2099-01-01\n\n## Inbox\n\n- **I1:** ${title}\n`, 'utf8');
+  fs.writeFileSync(path.join(dir, `${year}-${month}-${day}.md`), `# Log ${year}-${month}-${day}\n\n## Inbox\n\n- **I1:** ${title}\n`, 'utf8');
+}
+
+function writeReadyRoom(root) {
+  fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
+  fs.writeFileSync(path.join(root, 'atris', 'TODO.md'), '# TODO.md\n\n## Backlog\n\n(Empty)\n', 'utf8');
 }
 
 test('next cards rank waiting wishes, ready missions, old moves, and shipped wish reviews', () => {
@@ -63,7 +90,7 @@ test('next cards rank waiting wishes, ready missions, old moves, and shipped wis
     writeTaskProjection(root, [
       { id: 'task-1', display_id: 'CLI-1', title: 'task move', status: 'claimed', claimed_by: 'codex' },
     ]);
-    writeLatestInbox(root, 'inbox move');
+    writeTodayInbox(root, 'inbox move');
     appendJsonl(root, '.atris/state/wishes.jsonl', [
       { id: 'wish-7', n: 7, ts: '2099-01-01T00:00:00.000Z', text: 'haiku loop', status: 'needs_input', questions: ['Which kind of haiku loop?'] },
       { id: 'wish-8', n: 8, ts: '2099-01-01T00:01:00.000Z', text: 'shipped wish', status: 'complete' },
@@ -86,6 +113,70 @@ test('next cards rank waiting wishes, ready missions, old moves, and shipped wis
     assert.equal(cards[0].label, '#7 haiku loop');
     assert.equal(cards[0].status, 'waiting on you');
     assert.equal(cards.at(-1).label, '#8 shipped wish');
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('atris next is first-minute talk, not a fake yes/no', () => {
+  const root = tmp();
+  try {
+    const inboxTitle = 'already-known inbox line';
+    writeReadyRoom(root);
+    writeTodayInbox(root, inboxTitle);
+
+    const res = runCli(['next'], root);
+    assert.equal(res.status, 0, res.stderr);
+    const text = spoken(res.stdout);
+    assert.ok(spokenLineCount(text) <= 2, text);
+    assert.match(text, /^next: atris plan$/m);
+    assert.doesNotMatch(text, /Do it\?/);
+    assert.doesNotMatch(text, /yes \/ no \/ skip/);
+    assert.doesNotMatch(text, new RegExp(inboxTitle));
+    assert.match(nextLine(text), /^atris /);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('atris next --json is real JSON with a next command', () => {
+  const root = tmp();
+  try {
+    const empty = runCli(['next', '--json'], root);
+    assert.equal(empty.status, 0, empty.stderr);
+    const fresh = JSON.parse(empty.stdout);
+    assert.equal(fresh.schema, 'atris.one_lap.v1');
+    assert.equal(typeof fresh.next_action, 'string');
+    assert.match(fresh.next_action, /^atris /);
+    assert.doesNotMatch(empty.stdout, /Do it\?/);
+
+    writeReadyRoom(root);
+    writeTaskProjection(root, [
+      { id: 'task-1', display_id: 'CLI-1', title: 'claimed move', status: 'claimed', claimed_by: 'codex' },
+    ]);
+    const room = runCli(['next', '--json'], root);
+    assert.equal(room.status, 0, room.stderr);
+    const body = JSON.parse(room.stdout);
+    assert.equal(body.schema, 'atris.one_lap.v1');
+    assert.equal(body.next_action, 'atris do');
+    assert.equal(body.ok, true);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('atris next empty folder is two first-minute lines', () => {
+  const root = tmp();
+  try {
+    const res = runCli(['next'], root);
+    assert.equal(res.status, 0, res.stderr);
+    const text = spoken(res.stdout);
+    assert.equal(spokenLineCount(text), 2);
+    assert.match(text, /this folder is empty\./);
+    assert.match(text, /^next: atris "what do you want here\?"$/m);
+    assert.doesNotMatch(text, /Nothing to do/);
+    assert.doesNotMatch(text, /Do it\?/);
+    assert.equal(fs.existsSync(path.join(root, 'atris')), false);
   } finally {
     cleanup(root);
   }
@@ -127,7 +218,24 @@ test('atris next no parks the current card', () => {
     assert.equal(rows[0].label, '#1 park me');
 
     const again = runCli(['next'], root);
-    assert.equal(again.stdout.trim(), 'Nothing to do. Rest or wish.');
+    assert.doesNotMatch(again.stdout, /Do it\?/);
+    assert.match(again.stdout, /^next: /m);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('leftover words after next talk first-minute and do not mint', () => {
+  const root = tmp();
+  try {
+    const res = runCli(['next', 'hi'], root);
+    assert.equal(res.status, 0, res.stderr);
+    const text = spoken(res.stdout);
+    assert.equal(spokenLineCount(text), 2);
+    assert.match(text, /this folder is empty\./);
+    assert.doesNotMatch(text, /Do it\?/);
+    assert.doesNotMatch(text, /Say yes, no, or skip/);
+    assert.equal(fs.existsSync(path.join(root, 'atris')), false);
   } finally {
     cleanup(root);
   }
@@ -145,19 +253,12 @@ test('atris next skip deals the following card without parking', () => {
 
     const res = runCli(['next', 'skip'], root);
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /^#2 second mission\nWhy now: proof passed and needs your review\nDo it\? yes \/ no \/ skip\n$/);
+    const text = spoken(res.stdout);
+    assert.ok(spokenLineCount(text) <= 2, text);
+    assert.match(text, /#2 second mission is waiting\./);
+    assert.match(text, /^next: atris mission complete mission-2 --proof atris\/runs\/mission-2\.json$/m);
+    assert.doesNotMatch(text, /Do it\?/);
     assert.equal(fs.existsSync(path.join(root, '.atris', 'state', 'next_parked.jsonl')), false);
-  } finally {
-    cleanup(root);
-  }
-});
-
-test('atris next empty state is plain', () => {
-  const root = tmp();
-  try {
-    const res = runCli(['next'], root);
-    assert.equal(res.status, 0, res.stderr);
-    assert.equal(res.stdout.trim(), 'Nothing to do. Rest or wish.');
   } finally {
     cleanup(root);
   }

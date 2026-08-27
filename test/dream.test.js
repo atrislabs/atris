@@ -100,18 +100,16 @@ test('next ranker deals and consumes a dream card', () => {
     assert.equal(cards[0].source, 'dream');
     assert.equal(cards[0].kind, 'dream');
 
-    const oldLog = console.log;
-    const lines = [];
-    console.log = (line) => lines.push(String(line));
-    try {
-      nextCommand([], root);
-    } finally {
-      console.log = oldLog;
-    }
+    const lookLines = [];
+    nextCommand([], root, { log: (line) => lookLines.push(String(line)) });
+    assert.doesNotMatch(lookLines.join('\n'), /Do it\?/);
+    assert.equal(readDreamRows(root)[0].consumed_at, undefined);
 
-    assert.match(lines.join('\n'), /Check open wishes/);
+    const yesLines = [];
+    nextCommand(['yes'], root, { log: (line) => yesLines.push(String(line)) });
+    assert.match(yesLines.join('\n'), /Check open wishes|Open atris next/);
     const rows = readDreamRows(root);
-    assert.equal(rows[0].consumed_reason, 'dealt');
+    assert.equal(rows[0].consumed_reason, 'approve');
     assert.ok(rows[0].consumed_at);
     assert.equal(nextMoves.nextCards(root, 3).some((card) => card.source === 'dream'), false);
   } finally {
