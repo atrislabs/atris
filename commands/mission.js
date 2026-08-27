@@ -11600,7 +11600,6 @@ module.exports = {
   missionHeartbeatLines,
   listMissions,
   pickLiveLocalMission,
-  isLiveInFlightMission,
   freezeMissionVerifier,
   markMissionReviewReady,
   listWorktreeRollupMissions,
