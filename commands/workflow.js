@@ -13,7 +13,9 @@ const {
   renderWorkspace,
   speakFirstMinute,
   taskCommand,
+  visibleWorkTitle,
 } = require('../lib/first-minute');
+const { startFirstTalk } = require('../lib/context-gatherer');
 const { isNonInteractive } = require('../lib/noninteractive');
 const { loadContext } = require('../lib/state-detection');
 const { buildToolResultBody } = require('../lib/tool-result-encode');
@@ -878,11 +880,20 @@ async function doAtris() {
   const cwd = process.cwd();
   const targetDir = path.join(cwd, 'atris');
 
-  // Empty folder talks like bare atris. Missing executor.md after
-  // init --minimal is optional context, not a factory bounce.
+  // Empty folder talks like bare atris. Files already here are the
+  // start, so do begins first-talk from them instead of pointing at
+  // itself. Missing executor.md after init --minimal is optional
+  // context, not a factory bounce.
   if (!fs.existsSync(targetDir)) {
+    const visible = listUserVisibleWork(cwd);
+    if (visible.length) {
+      const title = visibleWorkTitle(visible, folderName(cwd));
+      const code = startFirstTalk(cwd, title, { asJson: args.includes('--json') });
+      if (code !== 0) process.exit(code);
+      return;
+    }
     if (args.includes('--json')) {
-      console.log(JSON.stringify(freshMinuteJson(folderName(cwd), listUserVisibleWork(cwd)), null, 2));
+      console.log(JSON.stringify(freshMinuteJson(folderName(cwd), visible), null, 2));
       process.exit(2);
     }
     const screen = buildFirstMinute({ root: cwd, fresh: true });

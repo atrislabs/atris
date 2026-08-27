@@ -24,6 +24,7 @@ const {
   spokenLineCount,
   taskCommand,
   taskNextCommand,
+  visibleWorkTitle,
 } = require('../lib/first-minute');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -146,6 +147,13 @@ test('fresh next is do when files are here and talk when empty', () => {
   assert.equal(freshNextCommand(['draft.md', 'notes.txt']), 'atris do');
   assert.equal(freshNextCommand(['.git', 'tasks.db']), 'atris "what do you want here?"');
   assert.equal(freshNextCommand([]), 'atris "what do you want here?"');
+});
+
+test('visible work title names one or two files, or the folder', () => {
+  assert.equal(visibleWorkTitle(['notes.txt']), 'notes.txt');
+  assert.equal(visibleWorkTitle(['notes.txt', 'draft.md']), 'draft.md and notes.txt');
+  assert.equal(visibleWorkTitle(['a.txt', 'b.txt', 'c.txt'], 'this folder'), 'this folder');
+  assert.equal(visibleWorkTitle(['.git', 'notes.txt']), 'notes.txt');
 });
 
 test('claimed task first-minute names the person or title and one next command', () => {
@@ -674,18 +682,17 @@ test('unbound folder with notes.txt names the file and does not mint', () => {
   try {
     const minute = runCli([], { cwd: dir, env });
     const recap = runCli(['recap'], { cwd: dir, env });
-    const doit = runCli(['do'], { cwd: dir, env });
+    const planned = runCli(['plan'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
-    assert.equal(doit.status, 0, doit.stderr || doit.stdout);
+    assert.equal(planned.status, 0, planned.stderr || planned.stdout);
     assert.match(minute.stdout, /hey keshav, notes.txt is already here\./);
     assert.match(minute.stdout, /^next: atris do$/m);
     assert.doesNotMatch(minute.stdout, /what do you want here/);
     assert.equal(spokenLineCount(minute.stdout), 2);
     assert.doesNotMatch(minute.stdout, /this folder is empty|this folder already has work|\.DS_Store|\.git/);
     assert.equal(recap.stdout.trim(), minute.stdout.trim());
-    assert.equal(doit.stdout.trim(), minute.stdout.trim());
-    assert.doesNotMatch(doit.stdout, /PROMPT ONLY|Atris Do|What do you want to build|executor\.md|Run "atris init"/);
+    assert.equal(planned.stdout.trim(), minute.stdout.trim());
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
 
@@ -698,10 +705,8 @@ test('unbound folder with notes.txt names the file and does not mint', () => {
     }
 
     const jsonMinute = runCli(['--json'], { cwd: dir, env });
-    const jsonDo = runCli(['do', '--json'], { cwd: dir, env });
-    assert.equal(jsonDo.status, jsonMinute.status);
     const jsonPayload = JSON.parse(jsonMinute.stdout);
-    assert.deepEqual(JSON.parse(jsonDo.stdout), jsonPayload);
+    assert.equal(jsonMinute.status, 2);
     assert.equal(jsonPayload.next_action, 'atris do');
     assert.equal(jsonPayload.reason, 'notes.txt is already here');
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -772,14 +777,13 @@ test('unbound folder with a few files names work without a listing', () => {
   try {
     const minute = runCli([], { cwd: dir, env });
     const recap = runCli(['recap'], { cwd: dir, env });
-    const doit = runCli(['do'], { cwd: dir, env });
+    const planned = runCli(['plan'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.match(minute.stdout, /hey keshav, this folder already has work\./);
     assert.match(minute.stdout, /^next: atris do$/m);
     assert.doesNotMatch(minute.stdout, /notes\.txt|draft\.md|readme\.md|this folder is empty|what do you want here/);
     assert.equal(recap.stdout.trim(), minute.stdout.trim());
-    assert.equal(doit.stdout.trim(), minute.stdout.trim());
-    assert.doesNotMatch(doit.stdout, /PROMPT ONLY|Atris Do|What do you want to build|executor\.md|Run "atris init"/);
+    assert.equal(planned.stdout.trim(), minute.stdout.trim());
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
   } finally {
@@ -890,6 +894,83 @@ test('atris review in an empty folder talks like first-minute', () => {
     assert.match(help.stdout, /Usage: atris review/);
     assert.doesNotMatch(help.stdout, /clean start|nothing is waiting on you|validator\.md/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris do in an unbound folder starts from files already here', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
+  fs.writeFileSync(path.join(dir, '.DS_Store'), '', 'utf8');
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.match(minute.stdout, /hey keshav, notes.txt is already here\./);
+    assert.match(minute.stdout, /^next: atris do$/m);
+
+    const doit = runCli(['do'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(doit.status, 0, doit.stderr || doit.stdout);
+    assert.match(doit.stdout, /hey keshav, notes.txt is ready\./);
+    assert.match(doit.stdout, /^next: atris task claim [A-Z0-9]+-\d+ --as keshav$/m);
+    assert.doesNotMatch(doit.stdout, /next: atris do|already here|this folder is empty/);
+    assert.doesNotMatch(doit.stdout, /PROMPT ONLY|Atris Do|What do you want to build|executor\.md|Run "atris init"/);
+    assert.equal(spokenLineCount(doit.stdout), 2);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+    assert.match(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /notes\.txt/);
+
+    const again = runCli(['do'], { cwd: dir, env });
+    const after = runCli([], { cwd: dir, env });
+    assert.equal(again.status, 0, again.stderr || again.stdout);
+    assert.equal(after.status, 0, after.stderr || after.stdout);
+    assert.equal(again.stdout.trim(), after.stdout.trim());
+    assert.match(after.stdout, /"notes\.txt" is ready to claim/);
+    assert.match(nextLine(after.stdout), /^atris task claim [A-Z0-9]+-\d+ --as keshav$/);
+    assert.doesNotMatch(after.stdout, /notes\.txt is already here|next: atris do|this folder is empty/);
+    assert.equal(nextLine(again.stdout), nextLine(doit.stdout));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris do in an unbound folder starts from a few files with one title', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'one\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'draft.md'), 'two\n', 'utf8');
+  const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
+  try {
+    const minute = runCli([], { cwd: dir, env });
+    assert.match(minute.stdout, /hey keshav, draft.md and notes.txt are already here\./);
+    assert.match(minute.stdout, /^next: atris do$/m);
+
+    const doit = runCli(['do'], { cwd: dir, env, timeout: 60000 });
+    assert.equal(doit.status, 0, doit.stderr || doit.stdout);
+    assert.match(doit.stdout, /hey keshav, draft.md and notes.txt is ready\./);
+    assert.match(doit.stdout, /^next: atris task claim [A-Z0-9]+-\d+ --as keshav$/m);
+    assert.doesNotMatch(doit.stdout, /next: atris do|already here|PROMPT ONLY|executor\.md/);
+    assert.equal(spokenLineCount(doit.stdout), 2);
+
+    const manyDir = makeTempDir();
+    const manyHome = path.join(manyDir, 'home');
+    fs.mkdirSync(manyHome, { recursive: true });
+    fs.writeFileSync(path.join(manyDir, 'a.txt'), 'a\n', 'utf8');
+    fs.writeFileSync(path.join(manyDir, 'b.txt'), 'b\n', 'utf8');
+    fs.writeFileSync(path.join(manyDir, 'c.txt'), 'c\n', 'utf8');
+    const manyEnv = { HOME: manyHome, USER: 'keshav', ATRIS_TASKS_DB: path.join(manyDir, 'tasks.db') };
+    try {
+      const manyDo = runCli(['do'], { cwd: manyDir, env: manyEnv, timeout: 60000 });
+      assert.equal(manyDo.status, 0, manyDo.stderr || manyDo.stdout);
+      assert.match(manyDo.stdout, /hey keshav, this folder is ready\./);
+      assert.match(manyDo.stdout, /^next: atris task claim [A-Z0-9]+-\d+ --as keshav$/m);
+      assert.doesNotMatch(manyDo.stdout, /next: atris do|already here|a\.txt|PROMPT ONLY/);
+    } finally {
+      cleanupTempDir(manyDir);
+    }
   } finally {
     cleanupTempDir(dir);
   }
