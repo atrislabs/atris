@@ -131,7 +131,7 @@ test('xSearchCommand --help prints usage without calling the API', async () => {
 test('xSearchCommand prints content, citations, and credits', async () => {
   const calls = [];
   const output = [];
-  const cwd = applyWorkspace('MCP agents', true);
+  const cwd = applyWorkspace('MCP agents');
 
   const status = await xSearchCommand(['MCP agents', '--limit', '5', '--days', '2'], {
     cwd,
