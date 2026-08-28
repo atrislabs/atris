@@ -77,8 +77,26 @@ const agent = String(readFlag(args, '--agent', '')).trim().toLowerCase();
 const model = String(readFlag(args, '--model', '')).trim();
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const atrisBin = process.env.ATRIS_BIN || path.join(scriptDir, '..', 'bin', 'atris.js');
-if (!fs.existsSync(atrisBin)) {
+// Resolution order: explicit env, repo checkout beside this script, then the
+// installed CLI on PATH (cloud workspaces carry this script without the repo).
+function resolveAtrisBin() {
+  const candidates = [
+    process.env.ATRIS_BIN,
+    path.join(scriptDir, '..', 'bin', 'atris.js'),
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  const pathDirs = String(process.env.PATH || '').split(path.delimiter);
+  for (const dir of pathDirs) {
+    if (!dir) continue;
+    const candidate = path.join(dir, 'atris');
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+const atrisBin = resolveAtrisBin();
+if (!atrisBin) {
   finish({ ok: false, reason: 'atris_bin_not_found', member, executed: false });
 }
 
