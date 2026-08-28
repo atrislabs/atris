@@ -40,8 +40,11 @@ function runCli(args, { cwd, env, timeout = TIMEOUT_MS, input } = {}) {
 }
 
 function todayJournal(dir) {
-  const year = String(new Date().getFullYear());
-  const day = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const year = String(now.getFullYear());
+  // Local calendar day, matching lib/file-ops getLogPath (UTC drifts a day
+  // ahead every evening west of Greenwich).
+  const day = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   return path.join(dir, 'atris', 'logs', year, `${day}.md`);
 }
 
