@@ -237,15 +237,25 @@ test('parseTeachArgs defaults to section 1 and accepts --section and --save', ()
   assert.deepEqual(parseTeachArgs([TEACH_URL]), {
     help: false,
     save: false,
+    json: false,
+    skip: false,
+    recap: null,
     url: TEACH_URL,
     section: 1,
   });
   assert.equal(parseTeachArgs([TEACH_URL, '--section', '2']).section, 2);
   assert.equal(parseTeachArgs([TEACH_URL, '--section=3']).section, 3);
   assert.equal(parseTeachArgs([TEACH_URL, '--save']).save, true);
+  assert.equal(parseTeachArgs([TEACH_URL, '--recap', 'omakase model']).recap, 'omakase model');
+  assert.equal(parseTeachArgs([TEACH_URL, '--recap=omakase model']).recap, 'omakase model');
+  assert.equal(parseTeachArgs(['recap', 'omakase model']).recap, 'omakase model');
+  assert.equal(parseTeachArgs([TEACH_URL, '--skip']).skip, true);
+  assert.equal(parseTeachArgs(['skip']).skip, true);
+  assert.equal(parseTeachArgs([TEACH_URL, '--json']).json, true);
   assert.equal(parseTeachArgs(['--help']).help, true);
   assert.throws(() => parseTeachArgs([TEACH_URL, '--paid']), /drop --paid/);
   assert.throws(() => parseTeachArgs([TEACH_URL, '--section', '0']), /positive integer/);
+  assert.throws(() => parseTeachArgs(['recap']), /unpaid check/);
 });
 
 test('parseCaptionCues and sliceCuesForChapter keep one chapter from fixture VTT', () => {
@@ -333,13 +343,17 @@ test('youtube help lists youtube teach', async () => {
   assert.equal(status, 0);
   assert.match(out.text(), /teach <youtube-url>/);
   assert.match(out.text(), /--section N/);
+  assert.match(out.text(), /--recap TEXT/);
+  assert.match(out.text(), /--skip/);
   assert.match(out.text(), /one chapter from local captions/);
 });
 
 test('youtube teach prints one chapter from fixture captions and chapters', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-print-'));
   const out = collect();
   let apiCalls = 0;
   const status = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
     output: out.output,
     extractTeachSource: async () => fixtureSource(),
     apiRequestJson: async () => {
@@ -362,8 +376,10 @@ test('youtube teach prints one chapter from fixture captions and chapters', asyn
 });
 
 test('youtube teach prints the lex highlight as 60s install, Overton, and a real check', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-lex-'));
   const out = collect();
   const status = await youtubeCommand(['teach', LEX_URL], {
+    cwd,
     output: out.output,
     extractTeachSource: async () => ({
       id: 'NYFGCESmikA',
@@ -386,9 +402,26 @@ test('youtube teach prints the lex highlight as 60s install, Overton, and a real
   assert.doesNotMatch(text, /^60$/m);
 });
 
-test('youtube teach --section 2 prints the second chapter', async () => {
+test('youtube teach --section 2 prints the second chapter after skip', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-s2-'));
+  const first = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(first, 0);
+  const skipped = await youtubeCommand(['teach', '--skip'], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => {
+      throw new Error('skip must not fetch captions');
+    },
+  });
+  assert.equal(skipped, 0);
+
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL, '--section', '2'], {
+    cwd,
     output: out.output,
     extractTeachSource: async () => fixtureSource(),
   });
@@ -399,6 +432,7 @@ test('youtube teach --section 2 prints the second chapter', async () => {
   assert.match(text, /six-week/);
   assert.doesNotMatch(text, /80 people/);
   assert.match(text, /next: last section/);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
 });
 
 test('youtube teach without --save writes no atris files', async () => {
@@ -452,6 +486,14 @@ test('youtube unsave after rich teach --save removes briefs apply and every sect
     output: () => {},
     extractTeachSource: async () => fixtureSource(),
   });
+  const skipped = await youtubeCommand(['teach', '--skip'], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => {
+      throw new Error('skip must not fetch captions');
+    },
+  });
+  assert.equal(skipped, 0);
   const save2 = await youtubeCommand(['teach', TEACH_URL, '--section', '2', '--save'], {
     cwd,
     now: '2026-08-27',
@@ -764,6 +806,224 @@ test('youtube teach without captions prints no apply next-step', async () => {
   assert.match(out.text(), /no english captions/);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
+});
+
+test('youtube teach empty tmp section 1 still prints the check and writes no atris tree', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-empty-'));
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /section 1\/2  omakase/);
+  assert.match(out.text(), /check\nwhat is the omakase model\?/);
+  assert.match(out.text(), /next: atris youtube teach "https:\/\/www\.youtube\.com\/watch\?v=teach01" --section 2/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
+});
+
+test('youtube teach --section 2 without recap exits 2 and prints the unpaid check', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-unpaid-'));
+  const first = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(first, 0);
+
+  const out = collect();
+  let extractCalls = 0;
+  const status = await youtubeCommand(['teach', TEACH_URL, '--section', '2'], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => {
+      extractCalls += 1;
+      return fixtureSource();
+    },
+  });
+
+  assert.equal(status, 2);
+  assert.equal(extractCalls, 0);
+  assert.equal(out.text().trim(), 'what is the omakase model?');
+  assert.doesNotMatch(out.text(), /section 2\/2/);
+  assert.doesNotMatch(out.text(), /shape up/);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
+});
+
+test('youtube teach --json stays quiet when a recap is still owed', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-json-owed-'));
+  const first = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(first, 0);
+
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--section', '2', '--json'], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+
+  assert.equal(status, 2);
+  assert.equal(out.text().trim(), '');
+  assert.doesNotMatch(out.text(), /omakase|section 2|\{/);
+});
+
+test('youtube teach recap with check tokens unlocks the next section', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-recap-ok-'));
+  const first = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(first, 0);
+
+  const recapOut = collect();
+  const recapped = await youtubeCommand(['teach', 'recap', 'the omakase model is the default stack'], {
+    cwd,
+    output: recapOut.output,
+    extractTeachSource: async () => {
+      throw new Error('recap must not fetch captions');
+    },
+  });
+  assert.equal(recapped, 0);
+  assert.doesNotMatch(recapOut.text(), /section 2\/2/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
+
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--section', '2'], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(status, 0);
+  assert.match(out.text(), /section 2\/2  shape up/);
+  assert.match(out.text(), /six-week/);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
+});
+
+test('youtube teach wrong recap still refuses the next section', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-recap-wrong-'));
+  const first = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(first, 0);
+
+  const recapOut = collect();
+  const recapped = await youtubeCommand(['teach', '--recap', 'feelings and vibes'], {
+    cwd,
+    output: recapOut.output,
+    extractTeachSource: async () => {
+      throw new Error('wrong recap must not fetch captions');
+    },
+  });
+  assert.equal(recapped, 2);
+  assert.equal(recapOut.text().trim(), 'what is the omakase model?');
+
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--section', '2'], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(status, 2);
+  assert.equal(out.text().trim(), 'what is the omakase model?');
+  assert.doesNotMatch(out.text(), /section 2\/2/);
+});
+
+test('youtube teach --skip unlocks the next section without claiming an answer', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-skip-'));
+  const first = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(first, 0);
+
+  const skipOut = collect();
+  const skipped = await youtubeCommand(['teach', TEACH_URL, '--skip'], {
+    cwd,
+    output: skipOut.output,
+    extractTeachSource: async () => {
+      throw new Error('skip must not fetch captions');
+    },
+  });
+  assert.equal(skipped, 0);
+  assert.doesNotMatch(skipOut.text(), /answered|correct|got it/i);
+  assert.doesNotMatch(skipOut.text(), /section 2\/2/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
+
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--section', '2'], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(status, 0);
+  assert.match(out.text(), /section 2\/2  shape up/);
+});
+
+test('youtube teach recap writes no wiki brief apply or experiment pack', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-recap-nowiki-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const first = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(first, 0);
+
+  const recapped = await youtubeCommand(['teach', TEACH_URL, '--recap', '80 people'], {
+    cwd,
+    now: '2026-08-27',
+    output: () => {},
+    extractTeachSource: async () => {
+      throw new Error('recap must not fetch captions');
+    },
+  });
+  assert.equal(recapped, 0);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('youtube teach --save path stays unchanged after a recap unlock', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-save-recap-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const first = await youtubeCommand(['teach', TEACH_URL, '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(first, 0);
+  const recapped = await youtubeCommand(['teach', 'recap', 'omakase model'], {
+    cwd,
+    output: () => {},
+  });
+  assert.equal(recapped, 0);
+
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--section', '2', '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(status, 0);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
+  assert.match(out.text(), /next: apply atris\/experiments\/teach-teach01-s2\. keep only if measure\.py moves 0→1/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s2.md')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s2', 'measure.py')), true);
 });
 
 test('youtube teach --paid is refused and never bills', async () => {

@@ -27,6 +27,7 @@ search QUERY (free)
     |                 rich ephemeral prints one apply next-step, no files
     |                 --save files brief + pack-named apply when notes have a number or named mechanism; thin --save refuses
     |            or teach URL [--section N] (one chapter: claim numbers, named mechanisms, one check; free unless --save)
+    |                 next --section refuses until recap/skip
     |
    write one Apply (claimable) before process
     |
