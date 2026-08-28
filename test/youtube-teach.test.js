@@ -159,6 +159,19 @@ function runExperimentsKeep(cwd, slug) {
   });
 }
 
+function runExperimentsRevert(cwd, slug) {
+  return spawnSync(process.execPath, [CLI_PATH, 'experiments', 'revert', slug], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...(pythonCmd ? { ATRIS_EXPERIMENTS_PYTHON: pythonCmd } : {}),
+    },
+  });
+}
+
 function assertTeachApplyClaimable(cwd, { id, section, tokens = [], date = '2026-08-27' } = {}) {
   const packRel = `atris/experiments/${teachExperimentSlug(id, section)}`;
   const applyRel = `atris/wiki/briefs/youtube-${id}-s${section}.apply.md`;
@@ -614,6 +627,32 @@ test('experiments keep refuses a minted teach pack at 0 and keeps after check to
   const kept = runExperimentsKeep(cwd, 'teach-teach01-s1');
   assert.equal(kept.status, 0, kept.stderr || kept.stdout);
   assert.match(kept.stdout, /keep teach-teach01-s1: measure\.py moved 0→1/);
+});
+
+test('experiments revert runs minted reset.py after a refused keep', async () => {
+  assert.ok(pythonCmd, 'python3 is required to score the minted pack');
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-revert-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+
+  assert.equal(status, 0);
+  const packDir = path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1');
+  assert.equal(fs.existsSync(path.join(packDir, 'reset.py')), true);
+
+  const refused = runExperimentsKeep(cwd, 'teach-teach01-s1');
+  assert.equal(refused.status, 1, refused.stderr || refused.stdout);
+  assert.match(`${refused.stdout}\n${refused.stderr}`, /revert teach-teach01-s1: measure\.py stayed 0\. refuse keep\./);
+
+  const reverted = runExperimentsRevert(cwd, 'teach-teach01-s1');
+  assert.equal(reverted.status, 0, reverted.stderr || reverted.stdout);
+  assert.match(reverted.stdout, /revert teach-teach01-s1: reset\.py ran/);
+  assert.equal(fs.existsSync(path.join(packDir, 'reset.py')), true);
 });
 
 test('youtube teach thin chapter without --save still writes no atris files', async () => {

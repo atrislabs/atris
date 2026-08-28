@@ -438,6 +438,160 @@ test('experiments keep succeeds only after the fixture contains check tokens', {
   }
 });
 
+function writeRestoreResetPack(dir, slug, fixtureRel, baseline, { crash = false, includeMeasure = true } = {}) {
+  const packDir = path.join(dir, 'atris', 'experiments', slug);
+  fs.mkdirSync(packDir, { recursive: true });
+  const resetLines = crash
+    ? [
+      'raise SystemExit("reset crashed")',
+      '',
+    ]
+    : [
+      'import os',
+      'from pathlib import Path',
+      `FIXTURE = ${JSON.stringify(fixtureRel)}`,
+      `BASELINE = ${JSON.stringify(baseline)}`,
+      'root = Path(os.environ.get("ATRIS_REPO_ROOT") or ".").resolve()',
+      'path = root / FIXTURE',
+      'path.parent.mkdir(parents=True, exist_ok=True)',
+      'path.write_text(BASELINE, encoding="utf-8")',
+      'print("reset restored baseline")',
+      '',
+    ];
+  fs.writeFileSync(path.join(packDir, 'reset.py'), resetLines.join('\n'));
+  if (includeMeasure) {
+    writeTokenMeasurePack(dir, slug, fixtureRel, 'omakase model');
+  }
+  return packDir;
+}
+
+test('experiments revert without a slug fails cleanly', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const result = runCli(['experiments', 'revert'], { cwd: dir });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /usage: atris experiments revert <slug>/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments revert fails cleanly on an invalid slug', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const result = runCli(['experiments', 'revert', 'Teach_Bad'], { cwd: dir });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /invalid experiment name\. use a lowercase-hyphen slug\./);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments revert fails cleanly when the pack is missing', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'experiments'), { recursive: true });
+    const result = runCli(['experiments', 'revert', 'teach-missing-s1'], { cwd: dir });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /experiment "teach-missing-s1" not found/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments revert fails cleanly when reset.py is missing', () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = path.join(dir, 'atris', 'experiments', 'teach-noreset-s1');
+    fs.mkdirSync(packDir, { recursive: true });
+    fs.writeFileSync(path.join(packDir, 'program.md'), '# Program\n');
+    const result = runCli(['experiments', 'revert', 'teach-noreset-s1'], { cwd: dir });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /has no reset\.py/);
+    assert.equal(fs.existsSync(packDir), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments revert restores a baseline file after a refused keep', { skip: !pythonCmd }, () => {
+  const dir = makeTempDir();
+  try {
+    const fixtureRel = 'atris/wiki/briefs/revert-target.apply.md';
+    const fixturePath = path.join(dir, fixtureRel);
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'briefs'), { recursive: true });
+    fs.writeFileSync(fixturePath, 'dirty: keep the omakase model as the default stack\n');
+    writeRestoreResetPack(dir, 'teach-revert01-s1', fixtureRel, 'change: apply atris/experiments/teach-revert01-s1\n');
+
+    const keptDirty = runCli(['experiments', 'keep', 'teach-revert01-s1'], { cwd: dir });
+    assert.equal(keptDirty.status, 0, keptDirty.stderr || keptDirty.stdout);
+    assert.match(keptDirty.stdout, /keep teach-revert01-s1: measure\.py moved 0→1/);
+
+    const reverted = runCli(['experiments', 'revert', 'teach-revert01-s1'], { cwd: dir });
+    assert.equal(reverted.status, 0, reverted.stderr || reverted.stdout);
+    assert.match(reverted.stdout, /revert teach-revert01-s1: reset\.py ran/);
+    assert.equal(fs.readFileSync(fixturePath, 'utf8'), 'change: apply atris/experiments/teach-revert01-s1\n');
+
+    const refused = runCli(['experiments', 'keep', 'teach-revert01-s1'], { cwd: dir });
+    assert.equal(refused.status, 1, refused.stderr || refused.stdout);
+    assert.match(`${refused.stdout}\n${refused.stderr}`, /revert teach-revert01-s1: measure\.py stayed 0\. refuse keep\./);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments revert succeeds on reset alone when measure.py is missing', { skip: !pythonCmd }, () => {
+  const dir = makeTempDir();
+  try {
+    const fixtureRel = 'atris/wiki/briefs/revert-nometric.apply.md';
+    const fixturePath = path.join(dir, fixtureRel);
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'briefs'), { recursive: true });
+    fs.writeFileSync(fixturePath, 'dirty\n');
+    writeRestoreResetPack(dir, 'teach-nometric-s1', fixtureRel, 'baseline\n', { includeMeasure: false });
+
+    const reverted = runCli(['experiments', 'revert', 'teach-nometric-s1'], { cwd: dir });
+    assert.equal(reverted.status, 0, reverted.stderr || reverted.stdout);
+    assert.match(reverted.stdout, /revert teach-nometric-s1: reset\.py ran/);
+    assert.doesNotMatch(reverted.stdout, /measure\.py/);
+    assert.equal(fs.readFileSync(fixturePath, 'utf8'), 'baseline\n');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments revert refuses when reset.py crashes', { skip: !pythonCmd }, () => {
+  const dir = makeTempDir();
+  try {
+    const fixtureRel = 'atris/wiki/briefs/revert-crash.apply.md';
+    const fixturePath = path.join(dir, fixtureRel);
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'briefs'), { recursive: true });
+    fs.writeFileSync(fixturePath, 'dirty\n');
+    writeRestoreResetPack(dir, 'teach-crash-s1', fixtureRel, 'baseline\n', { crash: true, includeMeasure: false });
+
+    const result = runCli(['experiments', 'revert', 'teach-crash-s1'], { cwd: dir });
+    assert.notEqual(result.status, 0, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /revert teach-crash-s1:.*refuse revert\./);
+    assert.equal(fs.readFileSync(fixturePath, 'utf8'), 'dirty\n');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments help lists revert next to keep', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const bare = runCli(['experiments'], { cwd: dir });
+    assert.match(bare.stdout, /keep <slug>[\s\S]*revert <slug>/);
+    const help = runCli(['experiments', '--help'], { cwd: dir });
+    assert.match(help.stdout, /keep <slug>[\s\S]*revert <slug>/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('experiments replay endstate runs the public rehearsal flow', { skip: !pythonCmd }, () => {
   const dir = makeTempDir();
   try {
