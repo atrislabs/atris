@@ -1,7 +1,7 @@
 ---
 name: youtube
 description: "YouTube discovery and learning. Get watch permalinks with atris youtube search QUERY (free, local ytsearch/yt-dlp). On 429 the CLI already retries; use cached rows if printed, else STOP. Never run --paid after a 429. --paid only when the user explicitly asked to buy permalinks (5 credits). After a URL is picked, atris youtube notes URL (free, ephemeral unless --save). atris youtube process only to store knowledge (5 credits). Never paste tokens. Never /auth/cli. Mint with atris login --agent from a stored login. Never summarize a video from model memory. Triggers on: youtube search, find videos, paid youtube search, any youtube.com or youtu.be link, youtube, video, watch this, notes on this."
-version: 2.11.0
+version: 2.12.0
 tags:
   - youtube
   - research
@@ -24,7 +24,7 @@ search QUERY (free)
              do not run --paid
     |
    pick a URL --> notes URL (free, ephemeral unless --save)
-    |                 --save files the brief + apply stub
+    |                 --save files brief + pack-named apply when notes have a number or named mechanism; thin --save refuses
     |            or teach URL [--section N] (one chapter: claim numbers, named mechanisms, one check; free unless --save)
     |
    write one Apply (claimable) before process
@@ -39,8 +39,8 @@ never paste tokens, never /auth/cli
 1. Get watch permalinks: `atris youtube search QUERY` (free).
 2. If 429: wait/retry is already in the CLI. If it prints cached rows, use those. If it prints `youtube rate-limited local search. do not use --paid as a fallback; retry later.`, STOP. Do not run `--paid`.
 3. `--paid` only when the user explicitly asked to buy permalinks. The CLI hard-refuses `--paid` when the free cache still has a fresh same-query hit.
-4. `atris youtube notes URL` after a URL is picked (free). Notes is ephemeral unless `--save`.
-5. Write one Apply (change + receipt) before `atris youtube process`. Process still requires a filled Apply (so you `--save`, fill Apply, then process).
+4. `atris youtube notes URL` after a URL is picked (free). Notes is ephemeral unless `--save`. Rich `--save` files the brief and mints `atris/experiments/notes-<id>/`; thin `--save` (no number-with-units and no named mechanism) refuses with no brief and exit 2. Do not auto `--paid`.
+5. Write one Apply (change + receipt) before `atris youtube process`. Process still requires a filled Apply (so you `--save` a rich brief, fill Apply, then process).
 6. Never paste tokens. Never `/auth/cli`. Mint with `atris login --agent` from a stored login.
 
 If the user says "find videos", "search youtube", or "get youtube links" → search. If they say "learn from", "notes on", "alpha", or "rabbit hole" → notes. If they say "process", "store", "add to knowledge" → process. "Buy permalinks" or "paid search" is the only ask that unlocks `--paid`.

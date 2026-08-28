@@ -15,8 +15,17 @@ const {
   unsaveYoutubeNotes,
   APPLY_NEXT_MESSAGE,
   PROCESS_APPLY_MESSAGE,
+  TEACH_THIN_REFUSE,
   youtubeCommand,
 } = require('../commands/youtube');
+
+const RICH_NOTES = [
+  '# Apply Gate Video',
+  '',
+  '37signals has 80 people and uses the omakase model',
+  '',
+].join('\n');
+const THIN_NOTES = '# Apply Gate Video\n\nwelcome back friends this is just a chat\n';
 
 function filledApplyWorkspace(id, url) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-'));
@@ -371,11 +380,32 @@ test('youtube notes without --save writes no brief or apply', async () => {
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-nosave1.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-nosave1.apply.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
-test('youtube notes --save writes a claimable stub and a next-line', async () => {
+test('youtube notes without --save stay ephemeral even when thin', async () => {
+  const url = 'https://www.youtube.com/watch?v=thin00';
+  const { cwd, workDir } = notesApplyWorkspace('thin00', THIN_NOTES);
+  const output = [];
+
+  const status = await youtubeCommand(['notes', url], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(output.includes(TEACH_THIN_REFUSE), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('youtube notes --save writes a pack-named apply and a next-line', async () => {
   const url = 'https://www.youtube.com/watch?v=apply01';
-  const { cwd, workDir } = notesApplyWorkspace('apply01');
+  const { cwd, workDir } = notesApplyWorkspace('apply01', RICH_NOTES);
   const output = [];
 
   const status = await youtubeCommand(['notes', url, '--save'], {
@@ -387,19 +417,22 @@ test('youtube notes --save writes a claimable stub and a next-line', async () =>
   });
 
   assert.equal(status, 0);
-  assert.equal(output.includes(APPLY_NEXT_MESSAGE), true);
+  assert.match(output.join('\n'), /next: apply atris\/experiments\/notes-apply01\. keep only if measure\.py moves 0→1/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-apply01.md')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-apply01', 'measure.py')), true);
   const stub = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-apply01.apply.md'), 'utf8');
   assert.match(stub, /source: https:\/\/www\.youtube\.com\/watch\?v=apply01/);
-  assert.match(stub, /^change: fill this$/m);
-  assert.match(stub, /^receipt: fill this$/m);
+  assert.match(stub, /^change: apply atris\/experiments\/notes-apply01$/m);
+  assert.match(stub, /^receipt: keep only if measure\.py moves 0→1/m);
+  assert.doesNotMatch(stub, /omakase model/i);
+  assert.doesNotMatch(stub, /fill this/i);
   const journal = fs.readFileSync(path.join(cwd, 'atris', 'logs', '2026', '2026-08-26.md'), 'utf8');
-  assert.match(journal, /\[claimable\] apply: fill this -> atris\/wiki\/briefs\/youtube-apply01\.apply\.md/);
+  assert.match(journal, /\[claimable\] apply: atris\/experiments\/notes-apply01\. keep only if measure\.py moves 0→1/);
 });
 
 test('youtube notes with an apply receipt is complete', async () => {
   const url = 'https://youtu.be/apply02';
-  const { cwd, workDir } = notesApplyWorkspace('apply02');
+  const { cwd, workDir } = notesApplyWorkspace('apply02', RICH_NOTES);
   const applyDir = path.join(cwd, 'atris', 'wiki', 'briefs');
   fs.mkdirSync(applyDir, { recursive: true });
   const applyPath = path.join(applyDir, 'youtube-apply02.apply.md');
@@ -429,7 +462,7 @@ test('youtube notes with an apply receipt is complete', async () => {
 test('youtube notes --save without wiki still exits 0 when apply is missing', async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-apply-nowiki-'));
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-nowiki-'));
-  fs.writeFileSync(path.join(workDir, 'yt_apply03.md'), '# No Wiki\n\nClip.\n');
+  fs.writeFileSync(path.join(workDir, 'yt_apply03.md'), RICH_NOTES);
   const output = [];
 
   const status = await youtubeCommand(['notes', 'https://youtu.be/apply03', '--save'], {
@@ -441,14 +474,37 @@ test('youtube notes --save without wiki still exits 0 when apply is missing', as
   });
 
   assert.equal(status, 0);
-  assert.equal(output.includes(APPLY_NEXT_MESSAGE), true);
+  assert.match(output.join('\n'), /next: apply atris\/experiments\/notes-apply03\. keep only if measure\.py moves 0→1/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-apply03', 'measure.py')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+});
+
+test('youtube notes --save refuses thin notes and writes no brief', async () => {
+  const url = 'https://www.youtube.com/watch?v=thin01';
+  const { cwd, workDir } = notesApplyWorkspace('thin01', THIN_NOTES);
+  const output = [];
+
+  const status = await youtubeCommand(['notes', url, '--save'], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 2);
+  assert.equal(output.includes(TEACH_THIN_REFUSE), true);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01.apply.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
 test('youtube unsave removes filed brief and apply', async () => {
   const url = 'https://www.youtube.com/watch?v=gone01';
-  const { cwd, workDir } = notesApplyWorkspace('gone01');
+  const { cwd, workDir } = notesApplyWorkspace('gone01', RICH_NOTES);
   const saveStatus = await youtubeCommand(['notes', url, '--save'], {
     cwd,
     workDir,
@@ -499,6 +555,7 @@ test('youtube help says notes stay ephemeral unless --save', async () => {
   const text = output.join('\n');
   assert.equal(status, 0);
   assert.match(text, /ephemeral unless --save/);
+  assert.match(text, /rich notes\/teach mint a keep\/revert experiment/);
   assert.match(text, /teach <youtube-url>/);
   assert.match(text, /one chapter from local captions/);
   assert.match(text, /unsave <url-or-id>/);
