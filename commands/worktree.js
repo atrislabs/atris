@@ -358,11 +358,14 @@ function statusCounts(root, {
   ignoredUnstagedFiles = new Set(),
   ignoredUntrackedFiles = new Set(),
   ignoreUntracked = null,
+  ignoreAny = null,
 } = {}) {
   if (!fs.existsSync(root)) return null;
   // -uall expands untracked directories to individual files so ignoredUntrackedFiles
   // and ignoreUntracked can match exact paths (plain porcelain collapses them to "?? dir/").
-  const expandUntracked = ignoredUntrackedFiles.size || typeof ignoreUntracked === 'function';
+  const expandUntracked = ignoredUntrackedFiles.size
+    || typeof ignoreUntracked === 'function'
+    || typeof ignoreAny === 'function';
   const statusArgs = expandUntracked ? ['status', '--porcelain', '-uall'] : ['status', '--porcelain'];
   const result = runGit(statusArgs, { cwd: root, check: false });
   if (result.status !== 0) return null;
@@ -371,6 +374,7 @@ function statusCounts(root, {
   let untracked = 0;
   for (const line of result.stdout.split(/\r?\n/).filter(Boolean)) {
     const file = line.slice(3);
+    if (typeof ignoreAny === 'function' && ignoreAny(file)) continue;
     if (ignoredUnstagedFiles.has(file) && line[0] === ' ' && line[1] !== ' ') continue;
     if (line.startsWith('??')) {
       if (ignoredUntrackedFiles.has(file)) continue;
@@ -457,6 +461,16 @@ function printStatus() {
 function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task, branch: branchOverride, path: pathOverride, base: baseOverride, now = new Date() } = {}) {
   const owner = member || agent;
   if (!owner || !task) throw new Error('createAgentWorktree: owner (member/agent) and task required');
+  // Every new flight pays down completed checkout debt before adding another
+  // full repo copy. Branches and commits survive worktree removal, while real
+  // uncommitted changes remain protected by cleanupWorktrees.
+  let reapedBeforeStart = [];
+  let cachePrunedBeforeStart = [];
+  try {
+    const cleaned = cleanupWorktrees({ root, base: defaultMainlineBase(root), apply: true });
+    reapedBeforeStart = cleaned.removed;
+    cachePrunedBeforeStart = cleaned.cachePruned;
+  } catch {}
   const branch = branchOverride || branchName(owner, task, now);
   const target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
   const explicitBase = Boolean(baseOverride);
@@ -489,7 +503,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     }, null, 2) + '\n',
     'utf8'
   );
-  return { path: target, branch, base: shipBase, checkoutBase, owner };
+  return { path: target, branch, base: shipBase, checkoutBase, owner, reapedBeforeStart, cachePrunedBeforeStart };
 }
 
 function startWorktree(args) {
@@ -542,6 +556,13 @@ function startWorktree(args) {
     return 2;
   }
   const { path: target, branch, base } = created;
+
+  if (created.reapedBeforeStart.length) {
+    console.log(`cleanup: reaped ${created.reapedBeforeStart.length} completed ${created.reapedBeforeStart.length === 1 ? 'worktree' : 'worktrees'}`);
+  }
+  if (created.cachePrunedBeforeStart.length) {
+    console.log(`cleanup: pruned ${created.cachePrunedBeforeStart.length} generated ${created.cachePrunedBeforeStart.length === 1 ? 'cache' : 'caches'}`);
+  }
 
   const counts = statusCounts(root);
   if (counts && (counts.staged || counts.unstaged || counts.untracked)) {
@@ -889,6 +910,14 @@ const PROTECTED_BRANCHES = new Set(['main', 'master']);
 // (zero commits yet), so without a grace window the janitor reaps it while
 // the engine that requested it is still booting inside.
 const WORKTREE_REAP_GRACE_MS = 60 * 60 * 1000;
+const COMPLETED_UNMERGED_REAP_MS = WORKTREE_REAP_GRACE_MS;
+const GENERATED_WORKTREE_CACHE_DIRS = [
+  '.derivedData',
+  '.next',
+  '.swiftpm',
+  '.cache/swiftpm',
+  'node_modules/.cache',
+];
 
 function worktreeWithinReapGrace(worktreePath, now = Date.now()) {
   try {
@@ -898,15 +927,84 @@ function worktreeWithinReapGrace(worktreePath, now = Date.now()) {
   }
 }
 
-function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = false } = {}) {
+function completedAgentOutputAgeMs(worktreePath, now = Date.now()) {
+  try {
+    const output = path.join(worktreePath, '.codex-last-message.txt');
+    return now - fs.statSync(output).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+function canonicalPath(value) {
+  try {
+    return fs.realpathSync(value);
+  } catch {
+    return path.resolve(value);
+  }
+}
+
+function listActiveProcessCwds() {
+  const result = spawnSync('lsof', ['-n', '-a', '-d', 'cwd', '-F', 'n'], {
+    encoding: 'utf8',
+    maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+  });
+  if (result.status !== 0) return [];
+  return String(result.stdout || '')
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('n'))
+    .map((line) => canonicalPath(line.slice(1)))
+    .filter(Boolean);
+}
+
+function worktreeHasActiveProcess(worktreePath, activeCwds) {
+  const resolved = canonicalPath(worktreePath);
+  const prefix = `${resolved}${path.sep}`;
+  return activeCwds.some((cwd) => {
+    const active = canonicalPath(cwd);
+    return active === resolved || active.startsWith(prefix);
+  });
+}
+
+function pruneGeneratedWorktreeCaches(worktreePath, { apply = false } = {}) {
+  const candidates = [];
+  const pruned = [];
+  for (const relative of GENERATED_WORKTREE_CACHE_DIRS) {
+    const target = path.join(worktreePath, relative);
+    if (!fs.existsSync(target)) continue;
+    const ignored = runGit(['check-ignore', '-q', '--', relative], { cwd: worktreePath, check: false });
+    if (ignored.status !== 0) continue;
+    const item = { worktree: worktreePath, path: target, relative };
+    candidates.push(item);
+    if (!apply) continue;
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+      pruned.push(item);
+    } catch (error) {
+      item.error = String((error && error.message) || error);
+    }
+  }
+  return { candidates, pruned };
+}
+
+function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = false, activeCwds: activeCwdsOverride } = {}) {
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
   const current = path.resolve(root);
+  const activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : listActiveProcessCwds();
   const base = normalizeTargetRef(root, baseOverride || defaultShipTarget(root));
   refreshRemoteRef(root, base);
   const candidates = [];
   const kept = [];
   const removed = [];
+  const cacheCandidates = [];
+  const cachePruned = [];
+  const pruneCachesForKept = (wtPath) => {
+    if (worktreeWithinReapGrace(wtPath)) return;
+    const caches = pruneGeneratedWorktreeCaches(wtPath, { apply });
+    cacheCandidates.push(...caches.candidates);
+    cachePruned.push(...caches.pruned);
+  };
 
   for (const wt of worktrees) {
     const wtPath = path.resolve(wt.path);
@@ -927,32 +1025,72 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       kept.push({ ...item, reason: 'protected_branch' });
       continue;
     }
-    const counts = statusCounts(wt.path);
-    if (!counts) {
+    if (worktreeHasActiveProcess(wtPath, activeCwds)) {
+      kept.push({ ...item, reason: 'active_process' });
+      continue;
+    }
+    const rawCounts = statusCounts(wt.path);
+    const counts = statusCounts(wt.path, { ignoreAny: isConductorArtifact });
+    if (!rawCounts || !counts) {
       kept.push({ ...item, reason: 'missing_or_unreadable' });
       continue;
     }
     if (counts.staged || counts.unstaged || counts.untracked) {
+      pruneCachesForKept(wtPath);
       kept.push({ ...item, reason: 'dirty', staged: counts.staged, unstaged: counts.unstaged, untracked: counts.untracked });
       continue;
     }
     if (!wt.head) {
+      pruneCachesForKept(wtPath);
       kept.push({ ...item, reason: 'missing_head' });
       continue;
     }
+    const artifactOnlyDirty = Boolean(
+      (rawCounts.staged || rawCounts.unstaged || rawCounts.untracked)
+      && !(counts.staged || counts.unstaged || counts.untracked)
+    );
     const merged = runGit(['merge-base', '--is-ancestor', wt.head, base], { cwd: root, check: false }).status === 0;
     if (!merged) {
-      kept.push({ ...item, reason: 'unmerged' });
+      const completedAgeMs = completedAgentOutputAgeMs(wtPath);
+      if (completedAgeMs === null || completedAgeMs < COMPLETED_UNMERGED_REAP_MS) {
+        pruneCachesForKept(wtPath);
+        kept.push({
+          ...item,
+          reason: completedAgeMs === null ? 'unmerged' : 'completed_unmerged_retention',
+          ...(completedAgeMs === null ? {} : { retention_hours: 1 }),
+        });
+        continue;
+      }
+      const candidate = {
+        ...item,
+        reason: 'completed_unmerged_checkout_expired',
+        branch_preserved: true,
+        artifact_only_dirty: artifactOnlyDirty,
+      };
+      candidates.push(candidate);
+      if (!apply) continue;
+      const removeArgs = ['worktree', 'remove'];
+      if (artifactOnlyDirty) removeArgs.push('--force');
+      removeArgs.push(wt.path);
+      const removedResult = runGit(removeArgs, { cwd: root, check: false });
+      if (removedResult.status === 0) {
+        removed.push(candidate);
+      } else {
+        kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
+      }
       continue;
     }
     if (worktreeWithinReapGrace(wtPath)) {
       kept.push({ ...item, reason: 'fresh_worktree_grace' });
       continue;
     }
-    const candidate = { ...item, reason: 'merged_into_base' };
+    const candidate = { ...item, reason: 'merged_into_base', artifact_only_dirty: artifactOnlyDirty };
     candidates.push(candidate);
     if (!apply) continue;
-    const removedResult = runGit(['worktree', 'remove', wt.path], { cwd: root, check: false });
+    const removeArgs = ['worktree', 'remove'];
+    if (artifactOnlyDirty) removeArgs.push('--force');
+    removeArgs.push(wt.path);
+    const removedResult = runGit(removeArgs, { cwd: root, check: false });
     if (removedResult.status === 0) {
       removed.push(candidate);
     } else {
@@ -960,7 +1098,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     }
   }
 
-  return { apply, base, candidates, removed, kept };
+  return { apply, base, candidates, removed, kept, cacheCandidates, cachePruned };
 }
 
 function cleanup(args) {
@@ -979,6 +1117,11 @@ function cleanup(args) {
   console.log(`${action}s: ${result.apply ? result.removed.length : result.candidates.length}`);
   for (const item of result.apply ? result.removed : result.candidates) {
     console.log(`${action}: ${item.path} branch=${item.branch} reason=${item.reason}`);
+  }
+  const cacheAction = result.apply ? 'cache_pruned' : 'cache_candidate';
+  console.log(`${cacheAction}s: ${result.apply ? result.cachePruned.length : result.cacheCandidates.length}`);
+  for (const item of result.apply ? result.cachePruned : result.cacheCandidates) {
+    console.log(`${cacheAction}: ${item.path}`);
   }
   console.log(`kept: ${result.kept.length}`);
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
@@ -1010,11 +1153,12 @@ function guide() {
   console.log('   --target <ref> overrides the default landing target (default: branch atris-base, else origin default branch)');
   console.log('   recommended verify: npm run test:fast && node --test <focused files>');
   console.log('');
-  console.log('5. Clean merged worktrees:');
+  console.log('5. Cleanup is part of creation and the janitor; run it directly any time:');
   console.log('   atris worktree cleanup');
   console.log('   atris worktree cleanup --apply');
   console.log('');
   console.log('Notes: start uses the current upstream/default remote base, not dirty local HEAD.');
+  console.log('Start reaps completed checkouts first. Cleanup preserves branches and source changes, skips live work, and prunes only ignored build caches.');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
   return 0;
 }
@@ -1032,7 +1176,7 @@ function help() {
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');
-  console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]');
+  console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and ignored build caches');
 }
 
 function worktreeCommand(args = []) {
