@@ -140,7 +140,7 @@ test('expired selected token prints one error and the agent re-mint command', ()
 
   try {
     const result = spawnSync(process.execPath, [cliPath, 'whoami'], {
-      cwd: repoRoot,
+      cwd: dir,
       encoding: 'utf8',
       env: {
         ...process.env,
