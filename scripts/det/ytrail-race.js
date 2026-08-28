@@ -179,14 +179,9 @@ if (require.main === module) {
 
 module.exports = {
   DEFAULT_URL,
-  DEFAULT_ENGINES,
   DEFAULT_TIMEOUT_MS,
   parseArgs,
   parseEvalLine,
-  createDefaultRunner,
-  pickWinner,
-  formatTable,
-  formatVerdict,
   runRace,
   main,
 };

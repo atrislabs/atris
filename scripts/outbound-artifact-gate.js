@@ -219,9 +219,6 @@ if (require.main === module) {
 module.exports = {
   HTML_TAG_RE,
   RENDERED_SOURCE_FENCE_RE,
-  SLOP_RULES,
-  COACH_INTERNAL_RE,
-  COACH_PRESSURE_RE,
   parseArgs,
   scanOutboundArtifact,
 };

@@ -177,5 +177,4 @@ if (require.main === module) {
 
 module.exports = {
   normalizeText,
-  repairNotes,
 };
