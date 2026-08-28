@@ -818,13 +818,20 @@ test('usage record and read round-trips in a temp workspace', () => {
 });
 
 test('usage sensor never initializes a pristine directory', () => {
-  const dir = makeTempDir();
+  // Wrap the pristine dir in a parent carrying a .git marker so the workspace
+  // walk stops at the wrapper instead of climbing to whatever the shared OS
+  // temp root happens to hold. Without this the test reads a foreign usage
+  // ledger any time another process has left an .atris under os.tmpdir().
+  const wrapper = makeTempDir();
+  const dir = path.join(wrapper, 'pristine');
+  fs.mkdirSync(dir);
+  fs.mkdirSync(path.join(wrapper, '.git'));
   try {
     usage.recordUsage('status', dir);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
     assert.equal(usage.readUsage(dir).length, 0);
   } finally {
-    cleanupTempDir(dir);
+    cleanupTempDir(wrapper);
   }
 });
 
