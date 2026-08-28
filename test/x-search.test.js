@@ -73,6 +73,19 @@ test('parseXSearchArgs accepts query with limit, days, save, and json', () => {
   assert.equal(options.save, true);
   assert.equal(options.json, true);
   assert.equal(options.help, false);
+  assert.equal(options.unsave, false);
+});
+
+test('parseXSearchArgs accepts unsave subcommand and --unsave', () => {
+  const sub = parseXSearchArgs(['unsave', 'MCP agents']);
+  assert.equal(sub.mode, 'unsave');
+  assert.equal(sub.source, 'MCP agents');
+  const flag = parseXSearchArgs(['MCP agents', '--unsave']);
+  assert.equal(flag.mode, 'search');
+  assert.equal(flag.query, 'MCP agents');
+  assert.equal(flag.unsave, true);
+  assert.throws(() => parseXSearchArgs(['unsave']), /usage: atris x-search unsave/);
+  assert.throws(() => parseXSearchArgs(['--unsave']), /usage: atris x-search unsave/);
 });
 
 test('buildSearchPayload maps days to days_back and omits unset fields', () => {
@@ -124,6 +137,8 @@ test('xSearchCommand --help prints usage without calling the API', async () => {
   assert.match(output.join('\n'), /Usage: atris x-search/);
   assert.match(output.join('\n'), /--limit/);
   assert.match(output.join('\n'), /--save/);
+  assert.match(output.join('\n'), /unsave <query-or-source>/);
+  assert.match(output.join('\n'), /matching experiment pack/);
   assert.match(output.join('\n'), /person --name/);
   assert.match(output.join('\n'), /Empty or failed search refunds the credits/);
 });

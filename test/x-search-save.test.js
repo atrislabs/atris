@@ -15,7 +15,10 @@ const {
 const {
   xSearchCommand,
   xSearchApplyRel,
+  xSearchBriefRel,
   xSearchExperimentSlug,
+  xSearchExperimentRel,
+  unsaveXSearch,
 } = require('../commands/x-search');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -265,4 +268,119 @@ test('x-search person rich --save mints the same keep/revert pack', async () => 
     source: 'Leah Bonvissuto',
     tokens: ['omakase model', 'what is the omakase model?'],
   });
+});
+
+test('x-search unsave after rich --save removes brief apply and pack', async () => {
+  const cwd = saveWorkspace();
+  const saveStatus = await runSearch('MCP agents', {
+    cwd,
+    output: () => {},
+    extraArgs: ['--save'],
+  });
+  assert.equal(saveStatus, 0);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchBriefRel('MCP agents'))), true);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('MCP agents'))), true);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchExperimentRel('MCP agents'), 'measure.py')), true);
+
+  let apiCalls = 0;
+  const out = collect();
+  const status = await xSearchCommand(['unsave', 'MCP agents'], {
+    cwd,
+    output: out.output,
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      throw new Error('unsave must not call x-search');
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(apiCalls, 0);
+  assert.match(out.text(), /removed atris\/wiki\/briefs\/x-search-mcp-agents\.md and atris\/wiki\/briefs\/x-search-mcp-agents\.apply\.md and atris\/experiments\/x-search-mcp-agents/);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchBriefRel('MCP agents'))), false);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('MCP agents'))), false);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchExperimentRel('MCP agents'))), false);
+});
+
+test('x-search unsave removes leftover pack when brief and apply are already gone', async () => {
+  const cwd = saveWorkspace();
+  const packRel = xSearchExperimentRel('MCP agents');
+  const packDir = path.join(cwd, packRel);
+  const otherDir = path.join(cwd, xSearchExperimentRel('other query'));
+  fs.mkdirSync(packDir, { recursive: true });
+  fs.mkdirSync(otherDir, { recursive: true });
+  fs.writeFileSync(path.join(packDir, 'measure.py'), 'print(0)\n');
+  fs.writeFileSync(path.join(otherDir, 'stay.txt'), 'ok\n');
+
+  let apiCalls = 0;
+  const out = collect();
+  const status = await xSearchCommand(['--unsave', 'MCP agents'], {
+    cwd,
+    output: out.output,
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      throw new Error('unsave must not call x-search');
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(apiCalls, 0);
+  assert.match(out.text(), /removed atris\/experiments\/x-search-mcp-agents/);
+  assert.equal(fs.existsSync(packDir), false);
+  assert.equal(fs.existsSync(path.join(otherDir, 'stay.txt')), true);
+});
+
+test('x-search unsave of a missing source stays quiet', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-unsave-'));
+  let apiCalls = 0;
+  const out = collect();
+  const status = await xSearchCommand(['unsave', 'gone query'], {
+    cwd,
+    output: out.output,
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      throw new Error('unsave must not call x-search');
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(apiCalls, 0);
+  assert.match(out.text(), /already gone: atris\/wiki\/briefs\/x-search-gone-query\.md and atris\/wiki\/briefs\/x-search-gone-query\.apply\.md/);
+  assert.equal(unsaveXSearch('gone query', { cwd, output: () => {} }), 0);
+});
+
+test('x-search person rich --save then unsave removes the minted pack', async () => {
+  const cwd = saveWorkspace();
+  const saveStatus = await xSearchCommand([
+    'person',
+    '--name',
+    'Leah Bonvissuto',
+    '--save',
+  ], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: () => {},
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => mockSearch(RICH_TEXT),
+  });
+  assert.equal(saveStatus, 0);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchBriefRel('Leah Bonvissuto'))), true);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchExperimentRel('Leah Bonvissuto'), 'measure.py')), true);
+
+  let apiCalls = 0;
+  const out = collect();
+  const status = await xSearchCommand(['unsave', 'Leah Bonvissuto'], {
+    cwd,
+    output: out.output,
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      throw new Error('unsave must not call x-search');
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(apiCalls, 0);
+  assert.match(out.text(), /removed atris\/wiki\/briefs\/x-search-leah-bonvissuto\.md and atris\/wiki\/briefs\/x-search-leah-bonvissuto\.apply\.md and atris\/experiments\/x-search-leah-bonvissuto/);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchBriefRel('Leah Bonvissuto'))), false);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('Leah Bonvissuto'))), false);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchExperimentRel('Leah Bonvissuto'))), false);
 });
