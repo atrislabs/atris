@@ -84,6 +84,25 @@ test('T1: unbound folder refuses account verbs without --account', () => {
   }
 });
 
+test('a provisioned agent workspace with a placed key is bound without business.json', () => {
+  const dir = makeTempDir();
+  try {
+    const gated = requireAccountBound(['list'], { cwd: dir });
+    assert.equal(gated.ok, false);
+
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, '.atris', 'agent-token.json'),
+      JSON.stringify({ token: 't', expires_at: new Date(Date.now() + 60_000).toISOString(), scopes: ['gmail-read'] })
+    );
+    const bound = requireAccountBound(['list'], { cwd: dir });
+    assert.equal(bound.ok, true);
+    assert.equal(bound.bound, true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('T1: teach reads ./atris/teach only', () => {
   const dir = makeTempDir();
   try {
