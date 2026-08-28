@@ -143,6 +143,30 @@ function runCliAsync(args, { cwd, env = {} } = {}) {
   });
 }
 
+function latestMissionState(dir, missionId) {
+  const stateFile = path.join(dir, '.atris', 'state', 'missions.jsonl');
+  if (!fs.existsSync(stateFile)) return null;
+  const lines = fs.readFileSync(stateFile, 'utf8').trim().split('\n');
+  for (let index = lines.length - 1; index >= 0; index--) {
+    try {
+      const mission = JSON.parse(lines[index]);
+      if (mission.id === missionId) return mission;
+    } catch {}
+  }
+  return null;
+}
+
+async function waitForMissionTicks(dir, missionId, minimumTicks, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  let mission = null;
+  while (Date.now() < deadline) {
+    mission = latestMissionState(dir, missionId);
+    if (Number(mission?.last_tick_index || 0) >= minimumTicks) return mission;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`mission did not persist ${minimumTicks} ticks within ${timeoutMs}ms; last tick was ${mission?.last_tick_index || 0}`);
+}
+
 function readSummaryReceipt(dir, stdout) {
   const match = stdout.match(/Proof: Summary receipt saved at (.+?\.json)\./);
   assert.ok(match, stdout);
@@ -5980,8 +6004,9 @@ test('detached mission driver records its exit reason in state and log', () => {
   }
 });
 
-test('detached always-on full-budget driver continues past a healthy max-ticks boundary', () => {
+test('detached always-on full-budget driver continues past a healthy max-ticks boundary', async () => {
   const dir = makeTempDir();
+  let runPromise = null;
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const now = new Date().toISOString();
@@ -5994,27 +6019,39 @@ test('detached always-on full-budget driver continues past a healthy max-ticks b
       runner: 'claude',
       verifier: 'node -e "process.exit(0)"',
       always_on: true,
-      cadence: '1s',
+      cadence: '5s',
       max_ticks: 1,
-      max_wall_seconds: 2,
+      max_wall_seconds: 30,
       created_at: now,
       started_at: now,
       updated_at: now,
       budget_contract: {
         policy: 'spend_full_budget',
-        requested_seconds: 2,
-        budget_label: '2 seconds',
+        requested_seconds: 30,
+        budget_label: '30 seconds',
         plain_language: 'Use the whole time.',
         stop_rule: 'keep picking the next useful move until time is up',
       },
     });
 
-    const run = runCli([
+    runPromise = runCliAsync([
       'mission', 'run', missionId, '--max-ticks', '1', '--no-claude', '--json',
     ], {
       cwd: dir,
       env: { ATRIS_MISSION_DRIVER_DETACHED: '1' },
     });
+    const afterTwoTicks = await waitForMissionTicks(dir, missionId, 2);
+    // Expire the saved contract only after two real ticks. The driver is now
+    // between cadence cycles, so its next budget check observes the deadline
+    // without depending on how long child processes took under suite load.
+    appendMissionState(dir, {
+      ...afterTwoTicks,
+      started_at: new Date(Date.now() - 31_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const run = await runPromise;
+    runPromise = null;
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.pause_reason, 'budget-exhausted');
@@ -6028,6 +6065,7 @@ test('detached always-on full-budget driver continues past a healthy max-ticks b
     assert.equal(state.exit_reason, 'budget-exhausted');
     assert.equal(state.remaining_budget_seconds, 0);
   } finally {
+    if (runPromise) await runPromise.catch(() => {});
     cleanupTempDir(dir);
   }
 });

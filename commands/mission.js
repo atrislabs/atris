@@ -9934,6 +9934,15 @@ async function executeMissionRunTicksPhase(context) {
       mission = resolveMission(mission.id, cwd) || mission;
       const remainingBudgetSeconds = missionFullBudgetRemainingSeconds(mission);
       const explicitExit = ['complete', 'stopped', 'paused'].includes(String(mission.status || ''));
+      if (!pauseReason
+        && detachedDriverLifecycle
+        && mission.always_on
+        && missionSpendsFullBudget(mission)
+        && remainingBudgetSeconds <= 0
+        && !explicitExit
+        && !controller.signal.aborted) {
+        pauseReason = 'budget-exhausted';
+      }
       const healthyCycleBoundary = !pauseReason || pauseReason === 'max-ticks-reached';
       const keepDetachedFullBudgetDriverAlive = Boolean(
         detachedDriverLifecycle
