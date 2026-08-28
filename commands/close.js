@@ -608,6 +608,7 @@ function commandList(args, context = {}) {
   if (lane && !VALID_LANES.has(lane)) throw new Error('lane must be business, life, or code');
 
   const now = context.now ? new Date(context.now) : new Date();
+  const autoClosed = autoCloseResolvedTaskReviewFlags(context.cwd, now);
   const autoParked = migrateOpenSlots(context.cwd, now);
   let flags = openFlags(context.cwd, { now: context.now });
   if (lane) flags = flags.filter((flag) => flag.lane === lane);
@@ -615,13 +616,16 @@ function commandList(args, context = {}) {
 
   if (options.json) {
     const payload = { open: flags.map(publicFlag) };
+    if (autoClosed.length > 0) payload.auto_closed = autoClosed.map(publicTaskReviewClosed);
     if (autoParked.length > 0) payload.auto_parked = autoParked;
     printJson(payload);
     return 0;
   }
 
+  autoClosed.forEach((item) => console.log(taskReviewClosedLine(item)));
   autoParked.forEach((flag) => console.log(migratedParkLine(flag)));
   if (flags.length === 0) {
+    if (autoClosed.length > 0) return 0;
     console.log('nothing open.');
     return 0;
   }
@@ -749,6 +753,7 @@ function commandSnooze(args, context = {}) {
 // one escalated event per overdue flag per day, return the resulting state.
 function sweepState(cwd = process.cwd(), now = new Date(), options = {}) {
   const today = isoDateOnly(now);
+  const autoClosed = autoCloseResolvedTaskReviewFlags(cwd, now);
   const autoParked = migrateOpenSlots(cwd, now, options);
   let flags = openFlags(cwd, { now });
   const overdue = flags.filter((flag) => flag.overdue).sort(compareSweepFlags);
@@ -770,6 +775,7 @@ function sweepState(cwd = process.cwd(), now = new Date(), options = {}) {
 
   flags = openFlags(cwd, { now });
   const result = { open: flags.length, overdue, escalated_today: escalatedToday };
+  if (autoClosed.length > 0) result.auto_closed = autoClosed;
   if (autoParked.length > 0) result.auto_parked = autoParked;
   return result;
 }
@@ -781,6 +787,7 @@ function commandSweep(args, context = {}) {
     open,
     overdue,
     escalated_today: escalatedToday,
+    auto_closed: autoClosed = [],
     auto_parked: autoParked = [],
   } = sweepState(context.cwd, now);
 
@@ -790,13 +797,16 @@ function commandSweep(args, context = {}) {
       overdue: overdue.length,
       escalated_today: escalatedToday,
     };
+    if (autoClosed.length > 0) payload.auto_closed = autoClosed.map(publicTaskReviewClosed);
     if (autoParked.length > 0) payload.auto_parked = autoParked;
     printJson(payload);
     return 0;
   }
 
+  autoClosed.forEach((item) => console.log(taskReviewClosedLine(item)));
   autoParked.forEach((flag) => console.log(migratedParkLine(flag)));
   if (overdue.length === 0) {
+    if (autoClosed.length > 0) return 0;
     console.log('nothing is overdue.');
     return 0;
   }
@@ -1031,7 +1041,11 @@ function taskSource(task) {
 
 function taskResolved(task) {
   const status = normalizeSpaces(task && task.status).toLowerCase();
-  return status === 'done' || status === 'accepted';
+  const review = reviewObject(task);
+  const metadata = task && task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+  const approval = normalizeSpaces(review.approval_status || metadata.approval_status).toLowerCase();
+  return ['done', 'accepted', 'closed'].includes(status)
+    || ['accepted', 'approved', 'done', 'closed'].includes(approval);
 }
 
 function reviewObject(task) {
@@ -1156,16 +1170,53 @@ function appendOpenedFromSource({ what, owner = 'operator', lane = 'code', ttlDa
   return event;
 }
 
-function appendClosedFromSource(flag, cwd, now, note) {
+function appendClosedFromSource(flag, cwd, now, note, proof = RESOLVED_IN_SOURCE_PROOF) {
   const event = {
     kind: 'closed',
     at: now.toISOString(),
     id: flag.id,
-    proof: RESOLVED_IN_SOURCE_PROOF,
+    proof,
   };
   if (note) event.note = note;
   appendEvent(event, cwd);
   return event;
+}
+
+function taskReviewFlag(flag) {
+  return flag && flag.source && flag.source.startsWith('task:')
+    && canonicalWhat(flag.what).includes('has waited in review too long');
+}
+
+function autoCloseResolvedTaskReviewFlags(cwd = process.cwd(), now = new Date()) {
+  const tasksById = latestById(readTaskProjection(cwd));
+  if (tasksById.size === 0) return [];
+
+  const closed = [];
+  const flags = foldEvents(readEvents(cwd), { now })
+    .filter((flag) => flag.status === 'open' || flag.status === 'parked')
+    .filter(taskReviewFlag);
+  for (const flag of flags) {
+    const watchedTaskId = flag.source.slice('task:'.length);
+    const task = tasksById.get(watchedTaskId);
+    if (!task || !taskResolved(task)) continue;
+    const ref = taskRef(task) || watchedTaskId;
+    const proof = `task ${ref.toLowerCase()} is closed in task projection`;
+    const event = appendClosedFromSource(flag, cwd, now, null, proof);
+    closed.push({ flag, event, task_ref: ref });
+  }
+  return closed;
+}
+
+function taskReviewClosedLine(item) {
+  return `auto-closed review reminder for task ${item.task_ref.toLowerCase()}.`;
+}
+
+function publicTaskReviewClosed(item) {
+  return {
+    id: item.event.id,
+    task_ref: item.task_ref,
+    proof: item.event.proof,
+  };
 }
 
 function scanState(cwd = process.cwd(), options = {}) {
