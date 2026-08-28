@@ -23,16 +23,19 @@ function showXSearchHelp(output = console.log, commandName = 'atris x-search') {
   output('');
   output(`Usage: ${commandName} "<query>" [--limit N] [--days N] [--save] [--json]`);
   output(`       ${commandName} person --name <name> [--handle <h>] [--company <c>] [--context <text>] [--save] [--json]`);
+  output(`       ${commandName} unsave <query-or-source>`);
   output('');
   output(`Search X/Twitter via Atris (${COST_HINT}).`);
   output('Requires login. Same auth path as atris youtube process.');
   output('Prints to stdout. --save files a brief only when the result is rich.');
+  output('unsave deletes the filed brief, apply stub, and matching experiment pack (no paid calls).');
   output('Empty or failed search refunds the credits.');
   output('');
   output('Options:');
   output('  --limit <n>         Max results hint (search only)');
   output('  --days <n>          Only tweets from the last N days (search only)');
   output('  --save              File brief, journal, apply; rich results mint a keep/revert experiment');
+  output('  --unsave            Delete filed brief, apply stub, and matching experiment pack (no paid calls)');
   output('  --json              Print the raw JSON response');
   output('  -h, --help          This help');
   output('');
@@ -47,6 +50,8 @@ function showXSearchHelp(output = console.log, commandName = 'atris x-search') {
   output(`  ${commandName} "MCP agents" --limit 5 --days 2`);
   output(`  ${commandName} "MCP agents" --save`);
   output(`  ${commandName} person --name "Leah Bonvissuto" --handle leahbon`);
+  output(`  ${commandName} unsave "MCP agents"`);
+  output(`  ${commandName} --unsave "MCP agents"`);
   output('');
 }
 
@@ -72,6 +77,7 @@ function parseSearchArgs(argv = []) {
     help: false,
     json: false,
     save: false,
+    unsave: false,
     query: null,
     limit: null,
     daysBack: null,
@@ -91,6 +97,8 @@ function parseSearchArgs(argv = []) {
       options.json = true;
     } else if (arg === '--save') {
       options.save = true;
+    } else if (arg === '--unsave') {
+      options.unsave = true;
     } else if (arg === '--limit') {
       options.limit = parsePositiveInt(readValue(args, i, arg), '--limit');
       i++;
@@ -127,7 +135,11 @@ function parseSearchArgs(argv = []) {
   }
 
   if (options.help) return options;
-  if (!options.query) throw new Error('Missing query. Run "atris x-search --help".');
+  if (!options.query) {
+    throw new Error(options.unsave
+      ? 'usage: atris x-search unsave <query-or-source>'
+      : 'Missing query. Run "atris x-search --help".');
+  }
   return options;
 }
 
@@ -203,10 +215,49 @@ function parsePersonArgs(argv = []) {
   return options;
 }
 
+function parseUnsaveArgs(argv = []) {
+  const args = [...argv];
+  const options = {
+    mode: 'unsave',
+    help: false,
+    source: null,
+  };
+
+  if (args.length === 0 || ['help', '--help', '-h'].includes(args[0])) {
+    if (args.length === 0) {
+      throw new Error('usage: atris x-search unsave <query-or-source>');
+    }
+    options.help = true;
+    return options;
+  }
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--help' || arg === '-h' || arg === 'help') {
+      options.help = true;
+    } else if (arg === '--unsave') {
+      continue;
+    } else if (arg.startsWith('-')) {
+      throw new Error(`Unknown option: ${arg}`);
+    } else if (!options.source) {
+      options.source = arg;
+    } else {
+      throw new Error(`Unexpected argument: ${arg}`);
+    }
+  }
+
+  if (options.help) return options;
+  if (!options.source) throw new Error('usage: atris x-search unsave <query-or-source>');
+  return options;
+}
+
 function parseXSearchArgs(argv = []) {
   const args = [...argv];
   if (args[0] === 'person') {
     return parsePersonArgs(args.slice(1));
+  }
+  if (args[0] === 'unsave') {
+    return parseUnsaveArgs(args.slice(1));
   }
   return parseSearchArgs(args);
 }
@@ -421,6 +472,42 @@ function fileXSearchBrief({ cwd, source, text, now } = {}) {
   }
 }
 
+function removeUnsaveRel(cwd, rel, removed) {
+  const abs = path.join(cwd, rel);
+  try {
+    if (!fs.existsSync(abs)) return;
+    const st = fs.lstatSync(abs);
+    if (st.isDirectory()) fs.rmSync(abs, { recursive: true, force: true });
+    else fs.unlinkSync(abs);
+    removed.push(rel);
+  } catch {
+    // already gone or unreadable: do not error
+  }
+}
+
+function unsaveXSearch(target, deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  const cwd = deps.cwd || process.cwd();
+  const source = String(target || '').trim();
+  if (!source) {
+    output('usage: atris x-search unsave <query-or-source>');
+    return 2;
+  }
+  const briefRel = xSearchBriefRel(source);
+  const applyRel = xSearchApplyRel(source);
+  const packRel = xSearchExperimentRel(source);
+  const removed = [];
+  for (const rel of [briefRel, applyRel, packRel]) {
+    removeUnsaveRel(cwd, rel, removed);
+  }
+  if (!removed.length) {
+    output(`already gone: ${briefRel} and ${applyRel}`);
+    return 0;
+  }
+  output(`removed ${removed.join(' and ')}`);
+  return 0;
+}
+
 function saveRichXSearch({ cwd, source, text, now } = {}) {
   const lesson = xSearchLessonFromText(text);
   if (isThinTeachLesson(lesson)) {
@@ -509,6 +596,10 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
     return 0;
   }
 
+  if (options.mode === 'unsave' || options.unsave) {
+    return unsaveXSearch(options.source || options.query, deps);
+  }
+
   let status = 0;
   try {
     const data = await runXSearch(options, deps);
@@ -561,6 +652,9 @@ module.exports = {
   buildPersonPayload,
   xSearchHasResults,
   xSearchApplyRel,
+  xSearchBriefRel,
   xSearchExperimentSlug,
+  xSearchExperimentRel,
+  unsaveXSearch,
   xSearchCommand,
 };
