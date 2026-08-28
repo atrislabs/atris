@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -1093,11 +1094,16 @@ test('unbound folder with notes.txt names the file and does not mint', () => {
     const minute = runCli([], { cwd: dir, env });
     const recap = runCli(['recap'], { cwd: dir, env });
     const planned = runCli(['plan'], { cwd: dir, env });
+    const mission = runCli(['mission'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+    assert.equal(mission.status, 0, mission.stderr || mission.stdout);
     assert.match(minute.stdout, /hey keshav, notes.txt is already here\./);
     assert.match(minute.stdout, /^next: atris do$/m);
+    assert.equal(mission.stdout.trim(), minute.stdout.trim());
+    assert.match(mission.stdout, /hey keshav, notes.txt is already here\./);
+    assert.match(mission.stdout, /^next: atris do$/m);
     assert.doesNotMatch(minute.stdout, /what do you want here/);
     assert.equal(spokenLineCount(minute.stdout), 2);
     assert.doesNotMatch(minute.stdout, /this folder is empty|this folder already has work|\.DS_Store|\.git/);
@@ -3431,6 +3437,8 @@ test('atris ask and mission after init --minimal stay in the room', () => {
     const minute = runCli([], { cwd: dir, env });
     const asked = runCli(['ask'], { cwd: dir, env });
     const mission = runCli(['mission'], { cwd: dir, env });
+    const missionStatus = runCli(['mission', 'status'], { cwd: dir, env });
+    const listed = runCli(['mission', 'list'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(asked.status, 0, asked.stderr || asked.stdout);
     assert.equal(asked.stdout.trim(), minute.stdout.trim());
@@ -3443,13 +3451,18 @@ test('atris ask and mission after init --minimal stay in the room', () => {
     assert.doesNotMatch(asked.stdout + asked.stderr, /Atris needs to know what you want/);
 
     assert.equal(mission.status, 0, mission.stderr || mission.stdout);
+    assert.equal(missionStatus.status, 0, missionStatus.stderr || missionStatus.stdout);
+    assert.equal(listed.status, 0, listed.stderr || listed.stdout);
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
+    assert.equal(missionStatus.stdout.trim(), minute.stdout.trim());
+    assert.match(listed.stdout, /No missions yet/i);
     assert.match(mission.stdout, /generate map\.md/i);
     assert.match(mission.stdout, /ready to claim|already yours/);
     assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
     assert.match(nextLine(mission.stdout), /^atris task (claim|show|ready) /);
     assert.equal(mission.stdout.match(/^next:/mg).length, 1);
     assert.doesNotMatch(mission.stdout + mission.stderr, /clean start|atris init --minimal|business\.json|--mission|Start one with|could not find a running mission|not signed in|Atris left your work unchanged/);
+    assert.doesNotMatch(missionStatus.stdout + listed.stdout, /Review the proof|"state":\s*"done"|mission_id/);
 
     const missionHelp = runCli(['mission', '--help'], { cwd: dir, env });
     assert.equal(missionHelp.status, 0, missionHelp.stderr || missionHelp.stdout);
@@ -3474,6 +3487,115 @@ test('atris ask and mission after init --minimal stay in the room', () => {
     assert.equal(livePayload.missions[0].id, 'mission-live');
     assert.doesNotMatch(live.stdout, /ready to claim|Start one with|atris ask/);
   } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('bare mission after init talks the claim, not a finished other-room mission', async () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  writeAccount(home, {
+    token: 'test-token',
+    email: 'dogfood@example.com',
+    user_id: 'u-1',
+  });
+  const initEnv = {
+    HOME: home,
+    USER: 'keshav',
+    ATRIS_NO_INTERACTIVE: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+  };
+  let server = null;
+  try {
+    const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env: initEnv, timeout: 60000 });
+    assert.equal(init.status, 0, init.stderr || init.stdout);
+    assert.match(init.stdout, /^next: atris task claim /m);
+
+    let currentHits = 0;
+    server = http.createServer((req, res) => {
+      if (String(req.url || '').includes('/atris2/missions/current')) {
+        currentHits += 1;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          mission_id: 'mission-other-room',
+          title: 'Ship leftover from another room',
+          state: 'done',
+          progress_pct: 100,
+          cost_usd: 0.06,
+          next: 'Review the proof',
+        }));
+        return;
+      }
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('not found');
+    });
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const { port } = server.address();
+    const env = {
+      ...initEnv,
+      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+    };
+
+    const minute = runCli([], { cwd: dir, env });
+    const mission = runCli(['mission'], { cwd: dir, env });
+    const missionStatus = runCli(['mission', 'status'], { cwd: dir, env });
+    const missionJson = runCli(['mission', '--json'], { cwd: dir, env });
+    const listed = runCli(['mission', 'list'], { cwd: dir, env });
+    assert.equal(minute.status, 0, minute.stderr || minute.stdout);
+    assert.equal(mission.status, 0, mission.stderr || mission.stdout);
+    assert.equal(missionStatus.status, 0, missionStatus.stderr || missionStatus.stdout);
+    assert.equal(missionJson.status, 0, missionJson.stderr || missionJson.stdout);
+    assert.equal(listed.status, 0, listed.stderr || listed.stdout);
+    assert.equal(mission.stdout.trim(), minute.stdout.trim());
+    assert.equal(missionStatus.stdout.trim(), minute.stdout.trim());
+    assert.match(mission.stdout, /ready to claim/);
+    assert.match(nextLine(mission.stdout), /^atris task claim \S+ --as \S+$/);
+    assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
+    assert.equal(spokenLineCount(mission.stdout), 2);
+    assert.match(listed.stdout, /No missions yet/i);
+    assert.doesNotMatch(
+      mission.stdout + missionStatus.stdout + missionJson.stdout + listed.stdout,
+      /Ship leftover from another room|mission-other-room|Review the proof|"state":\s*"done"|progress_pct/,
+    );
+    assert.equal(currentHits, 0, 'bare mission must not ask the account for a current card');
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(missionJson.stdout);
+    } catch {
+      parsed = null;
+    }
+    if (parsed) {
+      assert.notEqual(parsed.state, 'done');
+      assert.ok(!parsed.mission_id);
+      assert.match(String(parsed.next || parsed.next_action || ''), /^atris task claim /);
+    } else {
+      assert.equal(missionJson.stdout.trim(), minute.stdout.trim());
+    }
+
+    const nowStamp = new Date().toISOString();
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: 'mission-live',
+      objective: 'Keep the live mission visible',
+      owner: 'executor',
+      status: 'running',
+      created_at: nowStamp,
+      updated_at: nowStamp,
+    })}\n`);
+    const live = runCli(['mission'], { cwd: dir, env });
+    assert.equal(live.status, 0, live.stderr || live.stdout);
+    assert.match(live.stdout, /mission-live|Keep the live mission visible/);
+    assert.doesNotMatch(live.stdout, /ready to claim|Ship leftover from another room|Review the proof/);
+    assert.equal(currentHits, 0);
+  } finally {
+    if (server && server.listening) await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(dir);
   }
 });
