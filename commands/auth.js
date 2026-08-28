@@ -1,4 +1,4 @@
-const { loadCredentials, saveCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, saveProfile, getTokenExpiryEpochSeconds, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
+const { AGENT_TOKEN_EXPIRED_DETAIL, loadCredentials, saveCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, saveProfile, getTokenExpiryEpochSeconds, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
 const { getAppBaseUrl, apiRequestJson } = require('../utils/api');
 const { isNonInteractive, wantsJson } = require('../lib/noninteractive');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
@@ -281,6 +281,11 @@ async function mintAgentToken(args = [], deps = {}) {
 async function printWhoamiPayload(asJson) {
   const ensured = await ensureValidCredentials(apiRequestJson);
   if (ensured.error) {
+    if (!asJson && ensured.detail === AGENT_TOKEN_EXPIRED_DETAIL) {
+      console.error('the agent key expired.');
+      console.error('atris login --agent');
+      process.exit(1);
+    }
     if (asJson) {
       console.log(JSON.stringify({
         ok: false,

@@ -86,6 +86,7 @@ function promptUser(question) {
 }
 
 const TOKEN_REFRESH_BUFFER_SECONDS = 300;
+const AGENT_TOKEN_EXPIRED_DETAIL = 'Agent token expired. Mint a new one: atris login --agent';
 
 /**
  * Decode and parse the claims from a JWT token.
@@ -162,6 +163,48 @@ function getAtrisDir() {
 
 function getCredentialsPath() {
   return path.join(getAtrisDir(), 'credentials.json');
+}
+
+function getPlacedAgentTokenPath() {
+  const override = process.env.ATRIS_AGENT_TOKEN_FILE;
+  if (override && override.trim()) return override.trim();
+  return path.join(os.homedir(), '.atris', 'agent-token.json');
+}
+
+function expiryTimeMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 1e12 ? value : value * 1000;
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const trimmed = value.trim();
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) return numeric > 1e12 ? numeric : numeric * 1000;
+  }
+  const parsed = Date.parse(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function loadPlacedAgentToken() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(getPlacedAgentTokenPath(), 'utf8'));
+    const token = typeof parsed?.token === 'string' ? parsed.token.trim() : '';
+    if (!token || expiryTimeMs(parsed?.expires_at) === null) return null;
+    return {
+      token,
+      expires_at: parsed.expires_at,
+      scopes: Array.isArray(parsed.scopes) ? parsed.scopes : [],
+      provider: null,
+      source: 'agent_token_file',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isUnexpiredCredential(credentials) {
+  const expiresAt = expiryTimeMs(credentials?.expires_at);
+  return expiresAt !== null && expiresAt > Date.now();
 }
 
 function getSessionsDir() {
@@ -332,17 +375,36 @@ function saveCredentials(token, refreshToken, email, userId, provider) {
 }
 
 function loadCredentials() {
-  // Priority: ATRIS_TOKEN env var → ATRIS_PROFILE env var → per-terminal session file → global credentials.json
+  // Priority: ATRIS_TOKEN env var → placed agent token → ATRIS_PROFILE env var
+  // → per-terminal session file → global credentials.json. A fresh placed token
+  // overrides a different env token because cloud images can carry a stale one.
 
   // 0. Raw token injection. Headless boxes (cloud business computers) have no
   //    browser for `atris login`; the runner injects a scoped token as env
   //    instead, so no credentials file ever lands on disk.
   const envToken = process.env.ATRIS_TOKEN;
-  if (envToken && envToken.trim()) {
-    return { token: envToken.trim(), provider: null, source: 'env' };
+  const normalizedEnvToken = envToken && envToken.trim();
+  const placedAgentToken = loadPlacedAgentToken();
+  if (
+    normalizedEnvToken &&
+    placedAgentToken &&
+    placedAgentToken.token !== normalizedEnvToken &&
+    isUnexpiredCredential(placedAgentToken)
+  ) {
+    return placedAgentToken;
+  }
+  if (normalizedEnvToken) {
+    return { token: normalizedEnvToken, provider: null, source: 'env' };
   }
 
-  // 1. Explicit env var override
+  // 1. Backend-placed key for per-user cloud computers. Missing, malformed,
+  //    incomplete, and expired files are ignored so later sources keep their
+  //    existing order.
+  if (placedAgentToken && isUnexpiredCredential(placedAgentToken)) {
+    return placedAgentToken;
+  }
+
+  // 2. Explicit env var override
   const profileOverride = process.env.ATRIS_PROFILE;
   if (profileOverride) {
     const profile = loadProfile(profileOverride);
@@ -358,14 +420,14 @@ function loadCredentials() {
     }
   }
 
-  // 2. Per-terminal session override (set by atris switch)
+  // 3. Per-terminal session override (set by atris switch)
   const sessionProfile = getSessionProfile();
   if (sessionProfile) {
     const profile = loadProfile(sessionProfile);
     if (profile) return { ...profile, source_profile: sessionProfile };
   }
 
-  // 3. Global credentials.json
+  // 4. Global credentials.json
   const credentialsPath = getCredentialsPath();
 
   if (!fs.existsSync(credentialsPath)) {
@@ -546,10 +608,15 @@ async function ensureValidCredentials(apiRequestJson, options = {}) {
     return { error: 'not_logged_in' };
   }
 
+  const selectedExpiry = expiryTimeMs(credentials.expires_at);
+  if (selectedExpiry !== null && selectedExpiry <= Date.now()) {
+    return { error: 'token_invalid', detail: AGENT_TOKEN_EXPIRED_DETAIL };
+  }
+
   const claims = decodeJwtClaims(credentials.token);
   if (claims?.type === 'agent_access') {
     if (typeof claims.exp === 'number' && claims.exp <= Math.floor(Date.now() / 1000)) {
-      return { error: 'token_invalid', detail: 'Agent token expired. Mint a new one: atris login --agent' };
+      return { error: 'token_invalid', detail: AGENT_TOKEN_EXPIRED_DETAIL };
     }
     // Server-side scope enforcement on every real request is unchanged and remains the actual security boundary.
     return { credentials, user: null, source: 'agent_token' };
@@ -572,6 +639,7 @@ async function ensureValidCredentials(apiRequestJson, options = {}) {
 
     if (
       credentials.source !== 'env' &&
+      credentials.source !== 'agent_token_file' &&
       (updatedEmail !== credentials.email ||
         updatedProvider !== credentials.provider ||
         updatedUserId !== credentials.user_id)
@@ -680,6 +748,7 @@ async function displayAccountSummary(apiRequestJson) {
 }
 
 module.exports = {
+  AGENT_TOKEN_EXPIRED_DETAIL,
   decodeJwtClaims,
   getTokenExpiryEpochSeconds,
   shouldRefreshToken,

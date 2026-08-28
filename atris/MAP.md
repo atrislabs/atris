@@ -1256,13 +1256,14 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Regression:** `test/commands.test.js:4249-4294` covers auth/account help without login prompts, status output, `.atris` creation, session/profile dir creation, or credential deletion
 - JWT helpers: `decodeJwtClaims` (bin:59-74), `shouldRefreshToken` (bin:85-92)
 - **Credentials storage:** `~/.atris/credentials.json` (chmod 0o600 on save)
+- **Placed agent key:** `utils/auth.js:165-206,376-414` reads `~/.atris/agent-token.json` or `ATRIS_AGENT_TOKEN_FILE` after `ATRIS_TOKEN` and before profiles, with the narrow fresh-file override for a different stale environment token; `test/auth-placed-token.test.js` covers precedence, expiry fallback, silent ignores, and the re-mint error
 - **Login flow:**
   1. Browser OAuth: opens `{APP_BASE}/auth/cli`, user pastes code, CLI exchanges via `POST /auth/cli/exchange`
   2. Manual token: user pastes raw token, saved + validated
   3. Non-interactive: `--token <t>` flag for CI/scripts
-- **Token refresh:** `utils/auth.js:456-541` (`performTokenRefresh`) — saves new access token, optionally rotates refresh token, re-validates, updates user metadata. Profile-sourced creds write back to the profile file. `refreshAccessToken` (`:423`) sends `refresh_token` and omits `provider=google` unless the token is a Google OAuth refresh (`1//...`); that hint makes `/auth/refresh` skip app-JWT refresh and return `google_refresh_failed`.
-- **Credential guard:** `utils/auth.js:543-608` (`ensureValidCredentials`) — proactive refresh if within 5-min buffer, validate, fallback refresh
-- **Wake auth abort:** `utils/auth.js:438-454` (`isAuthFailure` / `abortOnAuthFailure`) — status/wake 401/403 stop polling and print login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `commands/computer.js:2259`, `commands/aeo.js:98`, `commands/pull.js:361`, `commands/push.js:530`, `commands/align.js:180`.
+- **Token refresh:** `utils/auth.js:518-603` (`performTokenRefresh`) saves new access token, optionally rotates refresh token, re-validates, updates user metadata. Profile-sourced creds write back to the profile file. `refreshAccessToken` (`:485`) sends `refresh_token` and omits `provider=google` unless the token is a Google OAuth refresh (`1//...`); that hint makes `/auth/refresh` skip app-JWT refresh and return `google_refresh_failed`.
+- **Credential guard:** `utils/auth.js:605-678` (`ensureValidCredentials`) checks selected-source and agent-JWT expiry, proactively refreshes within the 5-minute buffer, validates, then falls back to refresh
+- **Wake auth abort:** `utils/auth.js:500-516` (`isAuthFailure` / `abortOnAuthFailure`) stops status/wake polling on 401/403 and prints login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `commands/computer.js:2259`, `commands/aeo.js:98`, `commands/pull.js:361`, `commands/push.js:530`, `commands/align.js:180`.
 - **Dependencies:** `utils/auth.js` for token management, `utils/api.js` for HTTP
 - **Consumers:**
   - `commands/auth.js` (login/logout/whoami) — uses modular `utils/auth.js`
