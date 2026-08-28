@@ -115,6 +115,8 @@ test('Fable defaults to the real model and gets a deep-reasoning timeout', () =>
 
   const invocation = buildReadOnlyEngineInvocation('fable', 'find the real cause');
   assert.deepEqual(invocation.args.slice(2, 4), ['--model', 'claude-fable-5']);
+  assert.equal(invocation.args[invocation.args.indexOf('--permission-mode') + 1], 'plan');
+  assert.ok(!invocation.args.includes('--safe-mode'));
 });
 
 test('ask limits cap total cost, concurrency, and timeout before any engine starts', () => {

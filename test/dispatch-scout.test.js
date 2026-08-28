@@ -114,7 +114,7 @@ test('the scout ask is Haiku in read-only plan mode with local tools only', () =
   assert.equal(invocation.bin, 'claude');
   assert.match(invocation.args.join(' '), /--model claude-haiku-4-5/);
   assert.match(invocation.args.join(' '), /--permission-mode plan/);
-  assert.match(invocation.args.join(' '), /--safe-mode/);
+  assert.doesNotMatch(invocation.args.join(' '), /--safe-mode/);
   assert.match(invocation.args.join(' '), /--no-session-persistence/);
   assert.equal(invocation.args[invocation.args.indexOf('--tools') + 1], 'Read,Glob,Grep');
 });
