@@ -438,6 +438,56 @@ test('youtube teach --save writes one pack-named apply claimable', async () => {
   assert.doesNotMatch(claim.journal, /apply: fill this/);
 });
 
+test('youtube unsave after rich teach --save removes briefs apply and every section pack', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-unsave-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const save1 = await youtubeCommand(['teach', TEACH_URL, '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  const save2 = await youtubeCommand(['teach', TEACH_URL, '--section', '2', '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(save1, 0);
+  assert.equal(save2, 0);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.apply.md')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1', 'measure.py')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s2', 'measure.py')), true);
+
+  const keepDir = path.join(cwd, 'atris', 'experiments', 'teach-thin-save');
+  fs.mkdirSync(keepDir, { recursive: true });
+  fs.writeFileSync(path.join(keepDir, 'keep.txt'), 'stay\n');
+
+  const out = collect();
+  const status = await youtubeCommand(['unsave', 'teach01'], {
+    cwd,
+    output: out.output,
+    runner: () => {
+      throw new Error('unsave must not run notes');
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /removed /);
+  assert.match(out.text(), /atris\/wiki\/briefs\/youtube-teach01-s1\.md/);
+  assert.match(out.text(), /atris\/wiki\/briefs\/youtube-teach01-s1\.apply\.md/);
+  assert.match(out.text(), /atris\/experiments\/teach-teach01-s1/);
+  assert.match(out.text(), /atris\/experiments\/teach-teach01-s2/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.apply.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s2.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s2.apply.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s2')), false);
+  assert.equal(fs.existsSync(path.join(keepDir, 'keep.txt')), true);
+});
+
 test('youtube teach --save on lex highlight files the brief and a pack-named apply', async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-lex-save-'));
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });

@@ -55,7 +55,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('  --paid              Bill 5 credits for watch permalinks (search only)');
   output('  --save              File brief, journal, apply; rich notes/teach mint a keep/revert experiment');
   output('  --section <n>       Chapter to teach, 1-based (teach only, default: 1)');
-  output('  --unsave            Delete filed brief and apply stub (no paid calls)');
+  output('  --unsave            Delete filed brief, apply stub, and matching notes/teach experiment packs (no paid calls)');
   output('  --query, -q <text>  Focus question for the analysis');
   output('  --agent <id>        Agent id to store knowledge against');
   output('  --store             Save as agent knowledge (requires --agent)');
@@ -714,6 +714,50 @@ function youtubeBriefRel(id) {
   return `atris/wiki/briefs/youtube-${id}.md`;
 }
 
+function removeUnsaveRel(cwd, rel, removed) {
+  const abs = path.join(cwd, rel);
+  try {
+    if (!fs.existsSync(abs)) return;
+    const st = fs.lstatSync(abs);
+    if (st.isDirectory()) fs.rmSync(abs, { recursive: true, force: true });
+    else fs.unlinkSync(abs);
+    removed.push(rel);
+  } catch {
+    // already gone or unreadable: do not error
+  }
+}
+
+function listTeachSectionNumbers(cwd, id) {
+  const root = path.join(cwd, 'atris', 'experiments');
+  const sections = [];
+  try {
+    if (!fs.existsSync(root)) return sections;
+    for (const name of fs.readdirSync(root)) {
+      const match = String(name).match(/^teach-.+-s(\d+)$/);
+      if (!match) continue;
+      const section = Number(match[1]);
+      if (name === teachExperimentSlug(id, section)) sections.push(section);
+    }
+  } catch {
+    // missing experiments dir is fine
+  }
+  return sections.sort((a, b) => a - b);
+}
+
+function listTeachSidecarRels(cwd, id) {
+  const briefsDir = path.join(cwd, 'atris', 'wiki', 'briefs');
+  const prefix = `youtube-${id}-s`;
+  try {
+    if (!fs.existsSync(briefsDir)) return [];
+    return fs.readdirSync(briefsDir)
+      .filter((name) => name.startsWith(prefix) && name.endsWith('.md'))
+      .sort((a, b) => a.localeCompare(b, 'en'))
+      .map((name) => `atris/wiki/briefs/${name}`);
+  } catch {
+    return [];
+  }
+}
+
 function unsaveYoutubeNotes(target, deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
   const cwd = deps.cwd || process.cwd();
@@ -724,18 +768,26 @@ function unsaveYoutubeNotes(target, deps = {}) {
   }
   const briefRel = youtubeBriefRel(id);
   const applyRel = applySidecarRel(id);
-  const removed = [];
-  for (const rel of [briefRel, applyRel]) {
-    const abs = path.join(cwd, rel);
-    try {
-      if (fs.existsSync(abs)) {
-        fs.unlinkSync(abs);
-        removed.push(rel);
-      }
-    } catch {
-      // already gone or unreadable: do not error
-    }
+  const sections = listTeachSectionNumbers(cwd, id);
+  const rels = [];
+  const seen = new Set();
+  const add = (rel) => {
+    if (!rel || seen.has(rel)) return;
+    seen.add(rel);
+    rels.push(rel);
+  };
+  add(briefRel);
+  add(applyRel);
+  for (const section of sections) {
+    add(teachBriefRel(id, section));
+    add(applySidecarRel(`${id}-s${section}`));
   }
+  for (const rel of listTeachSidecarRels(cwd, id)) add(rel);
+  add(notesExperimentRel(id));
+  for (const section of sections) add(teachExperimentRel(id, section));
+
+  const removed = [];
+  for (const rel of rels) removeUnsaveRel(cwd, rel, removed);
   if (!removed.length) {
     output(`already gone: ${briefRel} and ${applyRel}`);
     return 0;

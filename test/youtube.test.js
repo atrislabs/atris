@@ -502,7 +502,7 @@ test('youtube notes --save refuses thin notes and writes no brief', async () => 
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
-test('youtube unsave removes filed brief and apply', async () => {
+test('youtube unsave removes filed brief apply and notes pack', async () => {
   const url = 'https://www.youtube.com/watch?v=gone01';
   const { cwd, workDir } = notesApplyWorkspace('gone01', RICH_NOTES);
   const saveStatus = await youtubeCommand(['notes', url, '--save'], {
@@ -515,6 +515,7 @@ test('youtube unsave removes filed brief and apply', async () => {
   assert.equal(saveStatus, 0);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-gone01.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-gone01.apply.md')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-gone01', 'measure.py')), true);
 
   const output = [];
   const status = await youtubeCommand(['unsave', url], {
@@ -526,9 +527,38 @@ test('youtube unsave removes filed brief and apply', async () => {
   });
 
   assert.equal(status, 0);
-  assert.match(output.join('\n'), /removed atris\/wiki\/briefs\/youtube-gone01\.md and atris\/wiki\/briefs\/youtube-gone01\.apply\.md/);
+  assert.match(output.join('\n'), /removed atris\/wiki\/briefs\/youtube-gone01\.md and atris\/wiki\/briefs\/youtube-gone01\.apply\.md and atris\/experiments\/notes-gone01/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-gone01.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-gone01.apply.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-gone01')), false);
+});
+
+test('youtube unsave removes leftover packs when brief and apply are already gone', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-unsave-packs-'));
+  const notesPack = path.join(cwd, 'atris', 'experiments', 'notes-gone03');
+  const teachPack = path.join(cwd, 'atris', 'experiments', 'teach-gone03-s2');
+  const otherPack = path.join(cwd, 'atris', 'experiments', 'notes-other99');
+  fs.mkdirSync(notesPack, { recursive: true });
+  fs.mkdirSync(teachPack, { recursive: true });
+  fs.mkdirSync(otherPack, { recursive: true });
+  fs.writeFileSync(path.join(notesPack, 'measure.py'), 'print(0)\n');
+  fs.writeFileSync(path.join(teachPack, 'measure.py'), 'print(0)\n');
+  fs.writeFileSync(path.join(otherPack, 'stay.txt'), 'ok\n');
+
+  const output = [];
+  const status = await youtubeCommand(['unsave', 'gone03'], {
+    cwd,
+    output: (line) => output.push(line),
+    runner: () => {
+      throw new Error('unsave must not run notes');
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.match(output.join('\n'), /removed atris\/experiments\/notes-gone03 and atris\/experiments\/teach-gone03-s2/);
+  assert.equal(fs.existsSync(notesPack), false);
+  assert.equal(fs.existsSync(teachPack), false);
+  assert.equal(fs.existsSync(path.join(otherPack, 'stay.txt')), true);
 });
 
 test('youtube notes --unsave and a missing id stay quiet', async () => {
@@ -559,6 +589,7 @@ test('youtube help says notes stay ephemeral unless --save', async () => {
   assert.match(text, /teach <youtube-url>/);
   assert.match(text, /one chapter from local captions/);
   assert.match(text, /unsave <url-or-id>/);
+  assert.match(text, /matching notes\/teach experiment packs/);
   assert.match(text, /needs a filled Apply/);
 });
 
