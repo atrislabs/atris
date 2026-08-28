@@ -15,6 +15,7 @@ const {
   xSearchCommand,
 } = require('../commands/x-search');
 const { TEACH_THIN_REFUSE } = require('../commands/youtube');
+const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
 function applyWorkspace(source, filled = false) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-apply-'));
@@ -140,6 +141,7 @@ test('xSearchCommand --help prints usage without calling the API', async () => {
   assert.match(output.join('\n'), /unsave <query-or-source>/);
   assert.match(output.join('\n'), /matching experiment pack/);
   assert.match(output.join('\n'), /person --name/);
+  assert.match(output.join('\n'), /Rich ephemeral prints one apply next-step/);
   assert.match(output.join('\n'), /Empty or failed search refunds the credits/);
 });
 
@@ -194,6 +196,7 @@ test('xSearchCommand prints content, citations, and credits', async () => {
   assert.match(text, /Credits: 5 used, 995 remaining/);
   assert.doesNotMatch(text, /thin: no number or named mechanism/);
   assert.doesNotMatch(text, /next: apply /);
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
   assertNoSaveFiles(cwd, 'MCP agents');
 });
 
@@ -215,6 +218,7 @@ test('xSearchCommand --json prints raw payload', async () => {
   const parsed = JSON.parse(output.join('\n'));
   assert.equal(parsed.credits_used, 5);
   assert.equal(parsed.data.content, 'hi');
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
 });
 
 test('xSearchCommand surfaces 401 login hint', async () => {
@@ -232,6 +236,7 @@ test('xSearchCommand surfaces 401 login hint', async () => {
   assert.equal(status, 1);
   assert.match(output.join('\n'), /401/);
   assert.match(output.join('\n'), /atris login --force/);
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
 });
 
 test('xSearchCommand surfaces 402 credits hint', async () => {
@@ -416,6 +421,7 @@ test('x-search person --save refuses thin research text', async () => {
   assert.equal(status, 2);
   assert.match(output.join('\n'), /just a chat about vibes/);
   assert.match(output.join('\n'), new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
   assertNoSaveFiles(cwd, 'Leah Bonvissuto');
 });
 
@@ -471,7 +477,62 @@ test('x-search without --save stays stdout only', async () => {
   assert.match(output.join('\n'), /MCP agents are shipping/);
   assert.doesNotMatch(output.join('\n'), /next: apply /);
   assert.doesNotMatch(output.join('\n'), new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
   assertNoSaveFiles(cwd, 'MCP agents');
+});
+
+test('x-search without --save prints one apply next-step when the result is rich', async () => {
+  const cwd = applyWorkspace('MCP agents');
+  const output = [];
+  const status = await xSearchCommand(['MCP agents'], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => successSearchData(
+      '37signals has 80 people and uses the omakase model',
+    ),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 1);
+  assert.doesNotMatch(output.join('\n'), /next: apply /);
+  assertNoSaveFiles(cwd, 'MCP agents');
+});
+
+test('x-search person without --save prints one apply next-step when research is rich', async () => {
+  const cwd = applyWorkspace('Leah Bonvissuto');
+  const output = [];
+  const status = await xSearchCommand([
+    'person',
+    '--name',
+    'Leah Bonvissuto',
+    '--handle',
+    'leahbon',
+  ], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        status: 'success',
+        credits_used: 5,
+        credits_remaining: 990,
+        data: {
+          content: '37signals has 80 people and uses the omakase model',
+          citations: ['https://x.com/leahbon'],
+        },
+      },
+    }),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 1);
+  assert.doesNotMatch(output.join('\n'), /next: apply /);
+  assertNoSaveFiles(cwd, 'Leah Bonvissuto');
 });
 
 test('x-search without --save does not rewrite an existing apply', async () => {
@@ -489,6 +550,7 @@ test('x-search without --save does not rewrite an existing apply', async () => {
 
   assert.equal(status, 0);
   assert.doesNotMatch(output.join('\n'), /next: apply /);
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
   assert.equal(fs.readFileSync(path.join(cwd, rel), 'utf8'), filled);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
@@ -510,6 +572,7 @@ test('x-search --save refuses a thin result and writes no atris files', async ()
   assert.equal(status, 2);
   assert.match(output.join('\n'), /feelings and vibes/);
   assert.match(output.join('\n'), new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
   assertNoSaveFiles(cwd, 'quiet chat');
 });
 
@@ -530,6 +593,7 @@ test('empty x-search does not owe an apply', async () => {
 
   assert.equal(status, 2);
   assert.doesNotMatch(output.join('\n'), /next: apply /);
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
   assertNoSaveFiles(cwd, 'quiet topic');
 });
 

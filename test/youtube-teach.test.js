@@ -20,6 +20,7 @@ const {
   teachExperimentSlug,
   youtubeCommand,
 } = require('../commands/youtube');
+const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
@@ -355,6 +356,7 @@ test('youtube teach prints one chapter from fixture captions and chapters', asyn
   assert.match(text, /omakase/);
   assert.match(text, /check\nwhat is /);
   assert.match(text, /next: atris youtube teach "https:\/\/www\.youtube\.com\/watch\?v=teach01" --section 2/);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
   assert.doesNotMatch(text, /six-week/);
   assert.doesNotMatch(text, /process_youtube/);
 });
@@ -409,6 +411,8 @@ test('youtube teach without --save writes no atris files', async () => {
   });
 
   assert.equal(status, 0);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
+  assert.doesNotMatch(out.text(), /next: apply /);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
@@ -426,6 +430,7 @@ test('youtube teach --save writes one pack-named apply claimable', async () => {
   });
 
   assert.equal(status, 0);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.match(out.text(), /next: apply atris\/experiments\/teach-teach01-s1\. keep only if measure\.py moves 0→1/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1', 'measure.py')), true);
@@ -537,6 +542,7 @@ test('youtube teach --save refuses a thin chapter and writes no brief', async ()
   assert.match(text, /numbers\nnone/);
   assert.match(text, /mechanisms\nnone/);
   assert.match(text, new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01-s1.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01-s1.apply.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
@@ -717,6 +723,7 @@ test('youtube teach thin chapter without --save still writes no atris files', as
   assert.equal(status, 0);
   assert.match(out.text(), /numbers\nnone/);
   assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
 });
 
@@ -742,6 +749,21 @@ test('extractTeachSource reads fixture yt-dlp chapters and VTT without network',
   assert.equal(source.chapters[0].title, 'Omakase');
   assert.equal(source.cues.length, 3);
   assert.match(source.cues[0].text, /80 people/);
+});
+
+test('youtube teach without captions prints no apply next-step', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-nocap-'));
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => null,
+  });
+
+  assert.equal(status, 2);
+  assert.match(out.text(), /no english captions/);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
 });
 
 test('youtube teach --paid is refused and never bills', async () => {

@@ -27,7 +27,8 @@ function showXSearchHelp(output = console.log, commandName = 'atris x-search') {
   output('');
   output(`Search X/Twitter via Atris (${COST_HINT}).`);
   output('Requires login. Same auth path as atris youtube process.');
-  output('Prints to stdout. --save files a brief only when the result is rich.');
+  output('Prints to stdout. Rich ephemeral prints one apply next-step (no files).');
+  output('--save files a brief only when the result is rich.');
   output('unsave deletes the filed brief, apply stub, and matching experiment pack (no paid calls).');
   output('Empty or failed search refunds the credits.');
   output('');
@@ -633,6 +634,12 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
         });
       }
     } else {
+      if (
+        !options.json
+        && !isThinTeachLesson(xSearchLessonFromText(xSearchContent(data)))
+      ) {
+        applyGate.hintEphemeralApply(output, 'x-search');
+      }
       status = 0;
     }
   } catch (err) {

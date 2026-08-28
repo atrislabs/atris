@@ -18,6 +18,7 @@ const {
   TEACH_THIN_REFUSE,
   youtubeCommand,
 } = require('../commands/youtube');
+const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
 const RICH_NOTES = [
   '# Apply Gate Video',
@@ -377,8 +378,32 @@ test('youtube notes without --save writes no brief or apply', async () => {
 
   assert.equal(status, 0);
   assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
+  assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-nosave1.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-nosave1.apply.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('youtube notes without --save prints one apply next-step when notes are rich', async () => {
+  const url = 'https://www.youtube.com/watch?v=rich01';
+  const { cwd, workDir } = notesApplyWorkspace('rich01', RICH_NOTES);
+  const output = [];
+
+  const status = await youtubeCommand(['notes', url], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('notes')).length, 1);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
+  assert.doesNotMatch(output.join('\n'), /next: apply /);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-rich01.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-rich01.apply.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
@@ -398,7 +423,28 @@ test('youtube notes without --save stay ephemeral even when thin', async () => {
 
   assert.equal(status, 0);
   assert.equal(output.includes(TEACH_THIN_REFUSE), false);
+  assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('youtube notes failed runner prints no apply next-step', async () => {
+  const url = 'https://www.youtube.com/watch?v=fail01';
+  const { cwd, workDir } = notesApplyWorkspace('fail01', RICH_NOTES);
+  const output = [];
+
+  const status = await youtubeCommand(['notes', url], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    runner: () => ({ status: 1 }),
+  });
+
+  assert.equal(status, 1);
+  assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-fail01.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
@@ -417,6 +463,7 @@ test('youtube notes --save writes a pack-named apply and a next-line', async () 
   });
 
   assert.equal(status, 0);
+  assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
   assert.match(output.join('\n'), /next: apply atris\/experiments\/notes-apply01\. keep only if measure\.py moves 0→1/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-apply01.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-apply01', 'measure.py')), true);
@@ -496,6 +543,7 @@ test('youtube notes --save refuses thin notes and writes no brief', async () => 
   assert.equal(status, 2);
   assert.equal(output.includes(TEACH_THIN_REFUSE), true);
   assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
+  assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01.apply.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
@@ -585,6 +633,7 @@ test('youtube help says notes stay ephemeral unless --save', async () => {
   const text = output.join('\n');
   assert.equal(status, 0);
   assert.match(text, /ephemeral unless --save/);
+  assert.match(text, /rich ephemeral notes\/teach print one apply next-step/);
   assert.match(text, /rich notes\/teach mint a keep\/revert experiment/);
   assert.match(text, /teach <youtube-url>/);
   assert.match(text, /one chapter from local captions/);
