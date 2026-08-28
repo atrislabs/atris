@@ -55,11 +55,25 @@ function withMockedIntegrations(apiRequestJson) {
 test('gmail triage rules archive broadcasts and keep personal mail', () => {
   assert.equal(gmailTriageVerdict({ from: 'News <noreply@updates.example>' }), 'archive');
   assert.equal(gmailTriageVerdict({ from: 'Maya <maya@example.com>' }), 'keep');
-  assert.equal(gmailTriageVerdict({
+  assert.deepEqual(gmailTriageVerdict({ from: 'News <noreply@updates.example>' }, { details: true }), {
+    verdict: 'archive',
+    reason: 'noreply sender',
+  });
+  assert.deepEqual(gmailTriageVerdict({ from: 'Digest <daily@mail.sendgrid.net>' }, { details: true }), {
+    verdict: 'archive',
+    reason: 'bulk mail domain',
+  });
+  assert.deepEqual(gmailTriageVerdict({
     from: 'Editor <editor@example.com>',
     headers: [{ name: 'List-Unsubscribe', value: '<https://example.com/unsubscribe>' }],
-  }), 'archive');
-  assert.equal(gmailTriageVerdict({ from: 'Digest <daily@mail.sendgrid.net>' }), 'archive');
+  }, { details: true }), {
+    verdict: 'archive',
+    reason: 'list or unsubscribe headers',
+  });
+  assert.deepEqual(gmailTriageVerdict({ from: 'Maya <maya@example.com>' }, { details: true }), {
+    verdict: 'keep',
+    reason: 'personal sender',
+  });
   assert.deepEqual(parseGmailTriageArgs([]), { accountId: null, limit: 25 });
   assert.deepEqual(parseGmailTriageArgs(['--limit', '7', '--account', 'work']), {
     accountId: 'work',
@@ -112,6 +126,7 @@ test('gmail triage records keep and archive verdicts without mutating the mailbo
     {
       account: 'work',
       verdict: 'archive',
+      reason: 'noreply sender',
       message_id: 'broadcast-1',
       from: 'Product News <no-reply@updates.example>',
       subject: 'weekly product news',
@@ -119,6 +134,7 @@ test('gmail triage records keep and archive verdicts without mutating the mailbo
     {
       account: 'work',
       verdict: 'keep',
+      reason: 'personal sender',
       message_id: 'personal-1',
       from: 'Maya <maya@example.com>',
       subject: 'dinner this week?',
