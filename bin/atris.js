@@ -636,6 +636,7 @@ function showHelpAll() {
   console.log('  experiments validate        - Validate experiment packs');
   console.log('  experiments run <slug>      - Execute a pack or record an Endstate receipt');
   console.log('  experiments keep <slug>     - Keep a pack only when measure.py moves 0 to 1');
+  console.log('  experiments revert <slug>   - Run a pack reset.py after a refused keep');
   console.log('  experiments benchmark [m]   - Run validate/runtime experiment benchmarks');
   console.log('  bench      - run core benchmark gates');
   console.log('');

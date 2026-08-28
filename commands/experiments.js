@@ -225,6 +225,89 @@ function experimentsKeep(name) {
   process.exit(1);
 }
 
+function lastProcessLine(result) {
+  const text = `${result && result.stderr ? result.stderr : ''}\n${result && result.stdout ? result.stdout : ''}`;
+  return text.trim().split(/\r?\n/).filter(Boolean).pop() || '';
+}
+
+function runResetScript(scriptPath, workspaceDir = process.cwd()) {
+  const python = resolvePython();
+  if (!python) {
+    return { ok: false, error: 'python not found. set ATRIS_EXPERIMENTS_PYTHON or install python3.' };
+  }
+
+  const result = spawnSync(python, [scriptPath], {
+    cwd: workspaceDir,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PYTHONDONTWRITEBYTECODE: '1',
+      ATRIS_REPO_ROOT: workspaceDir,
+    },
+  });
+
+  if (result.error) {
+    return { ok: false, error: result.error.message || 'reset.py failed to start' };
+  }
+
+  if (typeof result.status === 'number' && result.status !== 0) {
+    return { ok: false, error: lastProcessLine(result) || `reset.py exited ${result.status}` };
+  }
+
+  if (result.status == null) {
+    return { ok: false, error: lastProcessLine(result) || 'reset.py failed' };
+  }
+
+  return { ok: true };
+}
+
+function experimentsRevert(name) {
+  const token = String(name || '').trim();
+  if (!token || token === '--help' || token === '-h' || token === 'help') {
+    console.error('usage: atris experiments revert <slug>');
+    process.exit(2);
+  }
+  if (!SLUG_RE.test(token)) {
+    console.error('invalid experiment name. use a lowercase-hyphen slug.');
+    process.exit(2);
+  }
+
+  const workspaceDir = process.cwd();
+  if (!fs.existsSync(path.join(workspaceDir, 'atris'))) {
+    console.error('atris/ folder not found. run "atris init" first.');
+    process.exit(2);
+  }
+
+  const packDir = path.join(workspaceDir, 'atris', 'experiments', token);
+  if (!fs.existsSync(packDir) || !fs.statSync(packDir).isDirectory()) {
+    console.error(`experiment "${token}" not found.`);
+    process.exit(2);
+  }
+
+  const resetPath = path.join(packDir, 'reset.py');
+  if (!fs.existsSync(resetPath)) {
+    console.error(`experiment "${token}" has no reset.py.`);
+    process.exit(2);
+  }
+
+  const reset = runResetScript(resetPath, workspaceDir);
+  if (!reset.ok) {
+    console.error(`revert ${token}: ${reset.error}. refuse revert.`);
+    process.exit(1);
+  }
+
+  const measurePath = path.join(packDir, 'measure.py');
+  if (fs.existsSync(measurePath)) {
+    const measured = runMeasureJson(measurePath, workspaceDir);
+    if (measured.ok) {
+      console.log(`revert ${token}: reset.py ran. measure.py ${measured.score}`);
+      return;
+    }
+  }
+
+  console.log(`revert ${token}: reset.py ran`);
+}
+
 function experimentsInit(name) {
   const { experimentsDir } = ensureExperimentsFramework();
 
@@ -662,6 +745,8 @@ function experimentsCommand(subcommand, ...args) {
       return experimentsRun(args[0], ...args.slice(1));
     case 'keep':
       return experimentsKeep(args[0]);
+    case 'revert':
+      return experimentsRevert(args[0]);
     default:
       console.log('');
       console.log('Usage: atris experiments <subcommand> [name]');
@@ -671,6 +756,7 @@ function experimentsCommand(subcommand, ...args) {
       console.log('  validate [path|slug] Run structural validation on packs or a single pack');
       console.log('  run <slug>           Execute a pack or record an Endstate benchmark receipt');
       console.log('  keep <slug>          Keep a pack only when measure.py moves 0 to 1');
+      console.log('  revert <slug>        Run a pack reset.py to restore the working tree');
       console.log('  compare endstate     Compare the latest baseline and stack receipts');
       console.log('  replay endstate      Validate, dry-run, and compare the public benchmark flow');
       console.log('  benchmark [mode]     Run validate/runtime/all benchmark harness');
@@ -683,6 +769,7 @@ function experimentsCommand(subcommand, ...args) {
       console.log('  atris experiments validate');
       console.log('  atris experiments run endstate-baseline --dry-run');
       console.log('  atris experiments keep teach-teach01-s1');
+      console.log('  atris experiments revert teach-teach01-s1');
       console.log('  atris experiments compare endstate');
       console.log('  atris experiments replay endstate');
       console.log('  atris experiments benchmark runtime');
