@@ -23,6 +23,7 @@ const FAILED_TASK_BATCH_PREFIX = 'tasks:failed:';
 const PROBE_TIMEOUT_MS = 60 * 1000;
 const PROBE_HOLD_GAP_MS = 60 * 60 * 1000;
 const PROBE_STOP_AFTER_FAILED_CHECKS = 2;
+const MAX_OPEN_FLAGS = 10;
 
 function ledgerPath(cwd = process.cwd()) {
   return path.join(cwd, LEDGER_RELATIVE_PATH);
@@ -144,6 +145,15 @@ function foldEvents(events, options = {}) {
       flag.why = event.why || '';
     } else if (event.kind === 'snoozed') {
       flag.snoozed_until = event.until || null;
+    } else if (event.kind === 'parked') {
+      flag.status = 'parked';
+      flag.parked_at = event.parked_at || eventTime(event);
+      flag.why = normalizeSpaces(event.why || 'parked by request');
+    } else if (event.kind === 'reopened') {
+      flag.status = 'open';
+      flag.reopened_at = eventTime(event);
+      delete flag.parked_at;
+      delete flag.why;
     } else if (event.kind === 'escalated') {
       const day = event.day || (event.at ? String(event.at).slice(0, 10) : null);
       if (day && !flag.escalated_days.includes(day)) flag.escalated_days.push(day);
@@ -223,6 +233,12 @@ function openFlags(cwd = process.cwd(), options = {}) {
   return foldEvents(readEvents(cwd), options).filter((flag) => flag.status === 'open');
 }
 
+function parkedFlags(cwd = process.cwd(), options = {}) {
+  return foldEvents(readEvents(cwd), options)
+    .filter((flag) => flag.status === 'parked')
+    .sort((a, b) => (parseDate(b.parked_at) || 0) - (parseDate(a.parked_at) || 0));
+}
+
 function ownerWaitRank(flag) {
   return /^(you|me|operator|human|keshav)$/.test(String(flag.owner || '').toLowerCase()) ? 0 : 1;
 }
@@ -262,6 +278,16 @@ function listLine(flag) {
     parts.push(`${formatDays(flag.days_past_ttl)} past ttl`);
   }
   return parts.join(', ');
+}
+
+function parkedLine(flag) {
+  const what = trimSentenceEnd(flag.what.toLowerCase());
+  const day = flag.parked_at ? String(flag.parked_at).slice(0, 10) : 'unknown date';
+  return `${what}, parked ${day}, ${trimSentenceEnd(flag.why || 'parked by request').toLowerCase()}`;
+}
+
+function migratedParkLine(flag) {
+  return `parked ${trimSentenceEnd(flag.what).toLowerCase()}: ${trimSentenceEnd(flag.why).toLowerCase()}.`;
 }
 
 function sweepLine(flag) {
@@ -325,15 +351,70 @@ function publicFlag(flag) {
 }
 
 function printHelp() {
-  console.log('usage: atris close <add|list|done|dissolve|snooze|sweep|scan|check>');
-  console.log('add "<what>" [--owner x] [--lane life|business|code] [--ttl 7] [--when "<condition>"] [--source y] [--probe "<cmd that fails now>"]');
+  console.log('usage: atris close <add|list|park|parked|reopen|done|dissolve|snooze|sweep|scan|check>');
+  console.log('add "<what>" [--owner x] [--lane life|business|code] [--ttl 7] [--when "<condition>"] [--source y] [--probe "<cmd that fails now>"] [--replace <id>]');
   console.log('list [--json] [--lane x]');
+  console.log('park <id> [--why "..."]');
+  console.log('parked [--json]');
+  console.log('reopen <id> [--replace <id>]');
   console.log('done <id> [--proof "..."]  (a probed incident closes only after its probe holds)');
   console.log('check [id] [--json]  (run live probes; failing probe = old theory still live)');
   console.log('dissolve <id> --why "..."');
   console.log('snooze <id> --days n');
   console.log('sweep [--json]');
   console.log('scan [--json]');
+}
+
+function appendParkedEvent(flag, cwd, now, why, options = {}) {
+  const at = now.toISOString();
+  const event = {
+    kind: 'parked',
+    at,
+    id: flag.id,
+    parked_at: at,
+    why: normalizeSpaces(why || 'parked by request'),
+  };
+  if (options.automatic) event.automatic = true;
+  appendEvent(event, cwd);
+  return {
+    id: flag.id,
+    what: flag.what,
+    parked_at: at,
+    why: event.why,
+  };
+}
+
+function slotCapError(flags) {
+  const fullest = flags
+    .slice()
+    .sort(compareOpenFlags)
+    .slice(0, 3)
+    .map((flag) => trimSentenceEnd(flag.what).toLowerCase())
+    .join(', ');
+  const names = fullest ? ` the fullest loops are ${fullest}.` : '';
+  return new Error(`ten open loops is the cap.${names} park one first or use --replace <id>`);
+}
+
+function makeRoomForOpenFlag(cwd, now, replaceId, incomingWhat) {
+  const flags = openFlags(cwd, { now });
+  const hasReplacement = replaceId !== undefined;
+  if (hasReplacement && (replaceId === true || !normalizeSpaces(replaceId))) {
+    throw new Error('--replace needs an id');
+  }
+  if (!hasReplacement) {
+    if (flags.length >= MAX_OPEN_FLAGS) throw slotCapError(flags);
+    return null;
+  }
+  if (flags.length > MAX_OPEN_FLAGS) throw slotCapError(flags);
+
+  const replacement = flags.find((flag) => flag.id === replaceId);
+  if (!replacement) throw new Error(`${replaceId} is not open`);
+  return appendParkedEvent(
+    replacement,
+    cwd,
+    now,
+    `replaced to make room for ${trimSentenceEnd(incomingWhat).toLowerCase()}`
+  );
 }
 
 function commandAdd(args, context = {}) {
@@ -365,6 +446,8 @@ function commandAdd(args, context = {}) {
     }
     probeExit = result.exit_code;
   }
+
+  makeRoomForOpenFlag(context.cwd, now, options.replace, what);
 
   const openedAt = now.toISOString();
   const event = {
@@ -461,26 +544,133 @@ function commandCheck(args, context = {}) {
   return anyFailing ? 1 : 0;
 }
 
+function hasRunnableNextAction(flag) {
+  if (flag.probe) return true;
+  return /\b(accept|add|approve|book|build|call|check|choose|close|confirm|deploy|dissolve|email|fix|merge|pay|publish|reply|resolve|retry|review|run|send|ship|sign|test|update|verify|write)\b/.test(canonicalWhat(flag.what));
+}
+
+function hasMachineCheckableClose(flag) {
+  if (flag.probe) return true;
+  if (canonicalWhat(flag.close_condition).includes('source store resolves')) return true;
+  return /^(experiment|lesson|mission|pulse|task|usage|watch):/.test(canonicalWhat(flag.source));
+}
+
+function migrationReason(flag, duplicateIds) {
+  if (ownerWaitRank(flag) === 0) return 'waiting on a human';
+  if (!hasRunnableNextAction(flag)) return 'no runnable next action';
+  if (!hasMachineCheckableClose(flag)) return 'no machine-checkable close condition';
+  if (duplicateIds.has(flag.id)) return 'duplicates another open loop';
+  return '';
+}
+
+function compareOldestFlags(a, b) {
+  const aOpened = parseDate(a.opened_at) || 0;
+  const bOpened = parseDate(b.opened_at) || 0;
+  if (aOpened !== bOpened) return aOpened - bOpened;
+  return a.id.localeCompare(b.id);
+}
+
+function migrateOpenSlots(cwd = process.cwd(), now = new Date(), options = {}) {
+  const flags = openFlags(cwd, { now });
+  const excess = flags.length - MAX_OPEN_FLAGS;
+  const shouldWrite = options.dryRun !== true && options.write !== false && options.readOnly !== true;
+  if (excess <= 0 || !shouldWrite) return [];
+
+  const byWhat = new Map();
+  for (const flag of flags) {
+    const key = canonicalWhat(flag.what);
+    if (!byWhat.has(key)) byWhat.set(key, []);
+    byWhat.get(key).push(flag);
+  }
+  const duplicateIds = new Set(
+    Array.from(byWhat.values())
+      .filter((group) => group.length > 1)
+      .flat()
+      .map((flag) => flag.id)
+  );
+
+  const preferred = [];
+  const fallback = [];
+  for (const flag of flags.slice().sort(compareOldestFlags)) {
+    const why = migrationReason(flag, duplicateIds);
+    if (why) preferred.push({ flag, why });
+    else fallback.push({ flag, why: 'oldest loop above the active slot cap' });
+  }
+
+  return preferred.concat(fallback).slice(0, excess).map(({ flag, why }) => (
+    appendParkedEvent(flag, cwd, now, why, { automatic: true })
+  ));
+}
+
 function commandList(args, context = {}) {
   const { options } = parseArgs(args);
   const lane = options.lane ? String(options.lane).toLowerCase() : null;
   if (lane && !VALID_LANES.has(lane)) throw new Error('lane must be business, life, or code');
 
+  const now = context.now ? new Date(context.now) : new Date();
+  const autoParked = migrateOpenSlots(context.cwd, now);
   let flags = openFlags(context.cwd, { now: context.now });
   if (lane) flags = flags.filter((flag) => flag.lane === lane);
   flags.sort(compareOpenFlags);
 
   if (options.json) {
-    printJson({ open: flags.map(publicFlag) });
+    const payload = { open: flags.map(publicFlag) };
+    if (autoParked.length > 0) payload.auto_parked = autoParked;
+    printJson(payload);
     return 0;
   }
 
+  autoParked.forEach((flag) => console.log(migratedParkLine(flag)));
   if (flags.length === 0) {
     console.log('nothing open.');
     return 0;
   }
 
   flags.forEach((flag) => console.log(listLine(flag)));
+  return 0;
+}
+
+function commandPark(args, context = {}) {
+  const { positional, options } = parseArgs(args);
+  const id = positional[0];
+  if (!id) throw new Error('id is required');
+  const flag = requireOpenFlag(id, context);
+  const now = context.now ? new Date(context.now) : new Date();
+  const why = options.why === true ? undefined : options.why;
+  appendParkedEvent(flag, context.cwd, now, why);
+  console.log(`parked ${id}`);
+  return 0;
+}
+
+function commandParked(args, context = {}) {
+  const { options } = parseArgs(args);
+  const flags = parkedFlags(context.cwd, { now: context.now });
+  if (options.json) {
+    printJson({ parked: flags.map(publicFlag) });
+    return 0;
+  }
+  if (flags.length === 0) {
+    console.log('nothing parked.');
+    return 0;
+  }
+  flags.forEach((flag) => console.log(parkedLine(flag)));
+  return 0;
+}
+
+function commandReopen(args, context = {}) {
+  const { positional, options } = parseArgs(args);
+  const id = positional[0];
+  if (!id) throw new Error('id is required');
+  const flag = parkedFlags(context.cwd, { now: context.now }).find((item) => item.id === id);
+  if (!flag) throw new Error(`${id} is not parked`);
+  const now = context.now ? new Date(context.now) : new Date();
+  makeRoomForOpenFlag(context.cwd, now, options.replace, flag.what);
+  appendEvent({
+    kind: 'reopened',
+    at: now.toISOString(),
+    id,
+  }, context.cwd);
+  console.log(`reopened ${id}`);
   return 0;
 }
 
@@ -559,6 +749,7 @@ function commandSnooze(args, context = {}) {
 // one escalated event per overdue flag per day, return the resulting state.
 function sweepState(cwd = process.cwd(), now = new Date(), options = {}) {
   const today = isoDateOnly(now);
+  const autoParked = migrateOpenSlots(cwd, now, options);
   let flags = openFlags(cwd, { now });
   const overdue = flags.filter((flag) => flag.overdue).sort(compareSweepFlags);
   const escalatedToday = [];
@@ -578,23 +769,33 @@ function sweepState(cwd = process.cwd(), now = new Date(), options = {}) {
   }
 
   flags = openFlags(cwd, { now });
-  return { open: flags.length, overdue, escalated_today: escalatedToday };
+  const result = { open: flags.length, overdue, escalated_today: escalatedToday };
+  if (autoParked.length > 0) result.auto_parked = autoParked;
+  return result;
 }
 
 function commandSweep(args, context = {}) {
   const { options } = parseArgs(args);
   const now = context.now ? new Date(context.now) : new Date();
-  const { open, overdue, escalated_today: escalatedToday } = sweepState(context.cwd, now);
+  const {
+    open,
+    overdue,
+    escalated_today: escalatedToday,
+    auto_parked: autoParked = [],
+  } = sweepState(context.cwd, now);
 
   if (options.json) {
-    printJson({
+    const payload = {
       open,
       overdue: overdue.length,
       escalated_today: escalatedToday,
-    });
+    };
+    if (autoParked.length > 0) payload.auto_parked = autoParked;
+    printJson(payload);
     return 0;
   }
 
+  autoParked.forEach((flag) => console.log(migratedParkLine(flag)));
   if (overdue.length === 0) {
     console.log('nothing is overdue.');
     return 0;
@@ -1256,6 +1457,9 @@ function run(args = [], context = {}) {
     }
     if (subcommand === 'add') return commandAdd(rest, context);
     if (subcommand === 'list') return commandList(rest, context);
+    if (subcommand === 'park') return commandPark(rest, context);
+    if (subcommand === 'parked') return commandParked(rest, context);
+    if (subcommand === 'reopen') return commandReopen(rest, context);
     if (subcommand === 'done') return commandDone(rest, context);
     if (subcommand === 'dissolve') return commandDissolve(rest, context);
     if (subcommand === 'snooze') return commandSnooze(rest, context);
@@ -1277,6 +1481,7 @@ module.exports = {
   closeIdForWhat,
   foldEvents,
   openFlags,
+  parkedFlags,
   ledgerPath,
   readEvents,
   sweepLine,

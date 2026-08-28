@@ -583,7 +583,7 @@ function showHelpAll() {
   console.log('  revisions  - show possible human revisions after atris-assisted landings');
   console.log('  search     - Search workspace memory (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
-  console.log('  close      - track open loops with deadlines and daily escalation');
+  console.log('  close      - keep ten active loops and park the rest with their history');
   console.log('  harvest    - Find bugs and next actions from receipts, run logs, and thinking');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
   console.log('  slop       - Deterministic slop detector: frontend/prose tells, dead code (slop dead --exports)');
