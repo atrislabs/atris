@@ -128,8 +128,11 @@ test('atris install writes the brain files', () => withTempWorkspace(workspace =
   assert.ok(fs.statSync(path.join(atrisDir, 'wiki', 'index.md')).isFile());
   assert.ok(fs.statSync(path.join(atrisDir, 'team')).isDirectory());
   const logsDir = path.join(atrisDir, 'logs');
-  const yearDir = path.join(logsDir, String(new Date().getFullYear()));
-  const today = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const yearDir = path.join(logsDir, String(now.getFullYear()));
+  // Local calendar day, matching lib/file-ops getLogPath (UTC drifts a day
+  // ahead every evening west of Greenwich).
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   assert.ok(fs.statSync(path.join(yearDir, `${today}.md`)).isFile(), 'first dated log should exist');
   assert.match(result.stdout, /^atris\/MAP\.md$/m);
   assert.doesNotMatch(result.stdout, /Atris already installed/);
