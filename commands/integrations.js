@@ -443,8 +443,16 @@ async function gmailTriage(options = {}) {
   const accountId = resolveGmailAccountId(options.accountId);
   const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 25;
   const messages = await gmailInbox({ accountId, limit, quiet: true });
+  // The hourly pass rereads the newest window, so without this filter a message
+  // gets one row per hour it lingers and counts measure dwell time, not preference.
+  const seen = new Set(
+    readGmailVerdicts({ root: options.root, filePath: options.filePath, account: accountId, limit: null })
+      .map((row) => row.message_id),
+  );
+  const fresh = messages.filter((message) => !seen.has(String(message.id || message.message_id || '')));
+  const skipped = messages.length - fresh.length;
   const ts = new Date().toISOString();
-  const rows = messages.map((message) => {
+  const rows = fresh.map((message) => {
     const { verdict, reason } = gmailTriageVerdict(message, { details: true });
     return {
       ts,
@@ -460,7 +468,8 @@ async function gmailTriage(options = {}) {
 
   const keepCount = rows.filter((row) => row.verdict === 'keep').length;
   const archiveCount = rows.length - keepCount;
-  console.log(`gmail triage recorded ${keepCount} keep and ${archiveCount} archive verdict${rows.length === 1 ? '' : 's'}.`);
+  const skippedNote = skipped > 0 ? ` (${skipped} already judged)` : '';
+  console.log(`gmail triage recorded ${keepCount} keep and ${archiveCount} archive verdict${rows.length === 1 ? '' : 's'}${skippedNote}.`);
   return rows;
 }
 
