@@ -44,6 +44,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('search --paid = 5 credits, watch permalinks + titles from Atris');
   output('notes = free local notes to stdout; ephemeral unless --save');
   output('teach = one chapter from local captions; ephemeral unless --save');
+  output('rich ephemeral notes/teach print one apply next-step (no files)');
   output('process = 5 credits cloud knowledge (needs a filled Apply)');
   output('digest = one decision page from this week\'s video briefs');
   output('watch = subscribed channels turn into briefs without a human');
@@ -1505,9 +1506,14 @@ function runSingleYoutubeNotes(url, engine, deps = {}) {
   }
   const status = readRunnerStatus(result);
   if (status !== 0) return status;
-  if (!deps.save) return 0;
-  const saved = saveRichNotes(url, deps);
   const output = deps.output || ((line = '') => console.error(line));
+  if (!deps.save) {
+    const workDir = deps.workDir || path.join(process.env.TMPDIR || '/tmp', 'ytnotes');
+    const lesson = notesLessonFromText(readNotesText({ url, workDir }));
+    if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'notes');
+    return 0;
+  }
+  const saved = saveRichNotes(url, deps);
   if (saved.thin) {
     output(TEACH_THIN_REFUSE);
     return 2;
@@ -2719,7 +2725,10 @@ async function runYoutubeTeach(args = [], deps = {}) {
   });
   output(lesson.text);
 
-  if (!parsed.save) return 0;
+  if (!parsed.save) {
+    if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'teach');
+    return 0;
+  }
   if (isThinTeachLesson(lesson)) {
     output(TEACH_THIN_REFUSE);
     return 2;

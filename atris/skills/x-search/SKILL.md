@@ -23,6 +23,7 @@ login
     |
    stdout only unless --save
         |
+       rich ephemeral --> one apply next-step, no files
        --save + rich --> brief + pack + one Apply
        --save + thin --> refuse, no files, exit 2
     |
@@ -30,9 +31,9 @@ login
 ```
 
 1. Login: stored login, then `atris login --agent` if needed. Never paste tokens. Never `/auth/cli`.
-2. Search: `atris x-search "QUERY"`. Always billed (5 credits). Prints to stdout. Empty or failed search refunds and writes nothing.
+2. Search: `atris x-search "QUERY"`. Always billed (5 credits). Prints to stdout. Rich ephemeral prints one apply next-step and writes nothing. Empty or failed search refunds and writes nothing.
 3. `--save` only when you want a brief. Rich results (a number-with-units or a named mechanism) file the brief, mint `atris/experiments/x-search-<slug>/`, and write one Apply that names that pack and the keep rule. Thin `--save` prints `thin: no number or named mechanism. no brief.` and writes nothing.
-4. Stop. Do not invent an Apply after a default search. Empty or failed search does not owe an Apply.
+4. Stop. Thin, empty, or failed search does not print the ephemeral apply next-step.
 
 ## Customer path (preferred)
 
