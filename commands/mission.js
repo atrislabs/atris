@@ -978,11 +978,6 @@ function loadMissionMap(root = process.cwd()) {
   return map;
 }
 
-function hasLocalMissionState(root = process.cwd()) {
-  return readJsonLines(statePaths(root).missionsJsonl)
-    .some((mission) => mission && mission.id && mission.cloud !== true);
-}
-
 const LIVE_MISSION_TICK_MS = 24 * 60 * 60 * 1000;
 
 function isLiveInFlightMission(mission, now = Date.now(), root = process.cwd()) {
@@ -1024,19 +1019,15 @@ function speakMissionDoor(args = [], root = resolveWorkspaceRoot()) {
   if (live) {
     return statusMission(asJson ? [live.id, '--json'] : [live.id]);
   }
-  if (isFreshWorkspace(root) || hasLocalMissionState(root)) {
-    const code = speakFirstMinute({
-      root,
-      fresh: isFreshWorkspace(root),
-      asJson,
-    });
-    process.exitCode = code;
-    return code;
-  }
-  return require('./human-missions').currentMissionCommand(args, {
+  // Nothing running in this folder: same two spoken lines as bare atris.
+  // A finished or account-global mission from another room is not the live card.
+  const code = speakFirstMinute({
     root,
-    fallbackOnMissing: true,
+    fresh: isFreshWorkspace(root),
+    asJson,
   });
+  process.exitCode = code;
+  return code;
 }
 
 function terminalNextAction(status) {
