@@ -5,7 +5,8 @@
  *   atris gmail inbox [--account <id>]       - List recent emails for a mailbox
  *   atris gmail read <id> [--account <id>]   - Read specific email
  *   atris gmail archive <id> [...] [--account <id>] - Archive messages
- *   atris gmail verdicts [--account <id>] [--limit N] - List recent archive verdicts
+ *   atris gmail triage [--account <id>] [--limit N] - Record keep or archive verdicts
+ *   atris gmail verdicts [--account <id>] [--limit N] - List recent Gmail verdicts
  *   atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>] - Send an email
  *   atris gmail voice [account] [--clear]    - Edit an account's writing voice
  *   atris gmail connect [name]              - Connect or reconnect a Gmail account
@@ -40,7 +41,18 @@ const GMAIL_CONNECT_POLL_MS = 3000;
 const GMAIL_CONNECT_TIMEOUT_MS = 3 * 60 * 1000;
 const GMAIL_SEND_USAGE = 'usage: atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>]';
 const GMAIL_VOICE_USAGE = 'usage: atris gmail voice [account] [--clear]';
+const GMAIL_TRIAGE_USAGE = 'usage: atris gmail triage [--account <id>] [--limit N]';
 const GMAIL_VERDICTS_USAGE = 'usage: atris gmail verdicts [--account <id>] [--limit N]';
+const GMAIL_BULK_DOMAINS = [
+  'campaign-archive.com',
+  'constantcontact.com',
+  'hubspotemail.net',
+  'mailchimp.com',
+  'mailchimpapp.net',
+  'mailgun.org',
+  'sendgrid.net',
+  'substack.com',
+];
 
 function gmailVerdictsPath(root = process.cwd()) {
   return path.join(root, '.atris', 'state', 'gmail-verdicts.jsonl');
@@ -54,7 +66,7 @@ function appendGmailVerdicts(verdicts, options = {}) {
   const lines = rows.map((row) => JSON.stringify({
     ts: row.ts || new Date().toISOString(),
     account: String(row.account || ''),
-    verdict: 'archive',
+    verdict: row.verdict === 'keep' ? 'keep' : 'archive',
     message_id: String(row.message_id || ''),
     ...(row.from ? { from: row.from } : {}),
     ...(row.subject ? { subject: row.subject } : {}),
@@ -90,9 +102,26 @@ function printGmailVerdicts(options = {}) {
   }
   for (const row of rows) {
     const details = [row.from && `from ${row.from}`, row.subject && `subject ${row.subject}`].filter(Boolean);
-    console.log(`${row.ts} archive ${row.message_id} account ${row.account}${details.length ? `, ${details.join(', ')}` : ''}`);
+    console.log(`${row.ts} ${row.verdict || 'archive'} ${row.message_id} account ${row.account}${details.length ? `, ${details.join(', ')}` : ''}`);
   }
   return rows;
+}
+
+function parseGmailTriageArgs(args = []) {
+  let accountId = null;
+  let limit = 25;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    const value = String(args[i + 1] || '').trim();
+    if (arg === '--account' && value && !value.startsWith('--')) accountId = value;
+    else if (arg === '--limit' && /^\d+$/.test(value) && Number(value) > 0) limit = Number(value);
+    else {
+      console.error(GMAIL_TRIAGE_USAGE);
+      process.exit(1);
+    }
+    i += 1;
+  }
+  return { accountId, limit };
 }
 
 function parseGmailVerdictsArgs(args = []) {
@@ -278,8 +307,10 @@ async function gmailInbox(options = {}) {
   const account = findGmailAccount(accounts, accountId);
   const mailboxEmail = account ? gmailAccountIdentity(account).email : '';
 
-  if (mailboxEmail) console.log(`inbox for ${mailboxEmail} (${accountId.toLowerCase()})`);
-  console.log('📬 Fetching inbox...\n');
+  if (!options.quiet) {
+    if (mailboxEmail) console.log(`inbox for ${mailboxEmail} (${accountId.toLowerCase()})`);
+    console.log('📬 Fetching inbox...\n');
+  }
 
   const path = `/integrations/gmail/messages?max_results=${limit}&account_id=${encodeURIComponent(accountId)}`;
 
@@ -299,12 +330,15 @@ async function gmailInbox(options = {}) {
     process.exit(1);
   }
 
-  const messages = result.data?.messages || result.data || [];
+  const payload = result.data?.messages || result.data || [];
+  const messages = Array.isArray(payload) ? payload : [];
 
   if (messages.length === 0) {
-    console.log('No messages found.');
-    return;
+    if (!options.quiet) console.log('No messages found.');
+    return messages;
   }
+
+  if (options.quiet) return messages;
 
   console.log(`Found ${messages.length} messages:\n`);
   console.log('─'.repeat(60));
@@ -321,6 +355,69 @@ async function gmailInbox(options = {}) {
     console.log(`ID:   ${id}`);
     console.log('─'.repeat(60));
   }
+
+  return messages;
+}
+
+function gmailMessageHeaderText(message = {}) {
+  const lines = [];
+  const headers = message.headers;
+  if (Array.isArray(headers)) {
+    for (const header of headers) {
+      lines.push(`${String(header?.name || '')}: ${String(header?.value || '')}`);
+    }
+  } else if (headers && typeof headers === 'object') {
+    for (const [name, value] of Object.entries(headers)) lines.push(`${name}: ${String(value || '')}`);
+  } else if (headers) {
+    lines.push(String(headers));
+  }
+
+  for (const name of ['list_id', 'list_unsubscribe', 'mailing_list', 'unsubscribe']) {
+    if (message[name]) lines.push(`${name}: ${String(message[name])}`);
+  }
+  return lines.join('\n').toLowerCase();
+}
+
+function gmailTriageVerdict(message = {}) {
+  const from = String(message.from || message.sender || '').toLowerCase();
+  if (/(?:^|[^a-z0-9])(?:no[-_.]?reply|do[-_.]?not[-_.]?reply)(?:[^a-z0-9]|$)/i.test(from)) {
+    return 'archive';
+  }
+
+  const domain = from.match(/@([a-z0-9.-]+)/i)?.[1] || '';
+  if (GMAIL_BULK_DOMAINS.some((bulkDomain) => domain === bulkDomain || domain.endsWith(`.${bulkDomain}`))) {
+    return 'archive';
+  }
+
+  const headers = gmailMessageHeaderText(message);
+  if (/(?:^|\n)(?:list-id|list-unsubscribe|mailing-list|x-campaign-id|x-mailing-list)\s*:/i.test(headers)
+    || /(?:^|\n)precedence\s*:\s*(?:bulk|junk|list)/i.test(headers)
+    || /\bunsubscribe\b/i.test(headers)) {
+    return 'archive';
+  }
+
+  return 'keep';
+}
+
+async function gmailTriage(options = {}) {
+  const accountId = resolveGmailAccountId(options.accountId);
+  const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 25;
+  const messages = await gmailInbox({ accountId, limit, quiet: true });
+  const ts = new Date().toISOString();
+  const rows = messages.map((message) => ({
+    ts,
+    account: accountId,
+    verdict: gmailTriageVerdict(message),
+    message_id: String(message.id || message.message_id || ''),
+    from: String(message.from || message.sender || 'Unknown'),
+    subject: String(message.subject || '(no subject)'),
+  }));
+  appendGmailVerdicts(rows, { root: options.root, filePath: options.filePath });
+
+  const keepCount = rows.filter((row) => row.verdict === 'keep').length;
+  const archiveCount = rows.length - keepCount;
+  console.log(`gmail triage recorded ${keepCount} keep and ${archiveCount} archive verdict${rows.length === 1 ? '' : 's'}.`);
+  return rows;
 }
 
 async function gmailRead(messageId, options = {}) {
@@ -700,6 +797,11 @@ async function gmailCommand(subcommand, ...args) {
       await gmailArchive(parsed.positional, { accountId: parsed.accountId || undefined });
       break;
     }
+    case 'triage': {
+      const parsed = parseGmailTriageArgs(args);
+      await gmailTriage(parsed);
+      break;
+    }
     case 'verdicts': {
       const parsed = parseGmailVerdictsArgs(args);
       printGmailVerdicts(parsed);
@@ -729,7 +831,8 @@ async function gmailCommand(subcommand, ...args) {
       console.log('  atris gmail inbox [--account <id>]       - list recent emails for a mailbox');
       console.log('  atris gmail read <id> [--account <id>]   - read specific email');
       console.log('  atris gmail archive <id> [...] [--account <id>] - archive messages (reversible, all mail keeps them)');
-      console.log('  atris gmail verdicts [--account <id>] [--limit N] - list recent archive verdicts');
+      console.log('  atris gmail triage [--account <id>] [--limit N] - record keep or archive verdicts without changing mail');
+      console.log('  atris gmail verdicts [--account <id>] [--limit N] - list recent gmail verdicts');
       console.log('  atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>] - send an email');
       console.log('  atris gmail voice [account] [--clear]    - edit or clear an account writing voice');
       console.log('  atris gmail connect [name]               - connect or reconnect a gmail account');
@@ -2253,6 +2356,9 @@ module.exports = {
   appendGmailVerdicts,
   readGmailVerdicts,
   printGmailVerdicts,
+  parseGmailTriageArgs,
+  gmailTriageVerdict,
+  gmailTriage,
   calendarCommand,
   twitterCommand,
   slackCommand,
