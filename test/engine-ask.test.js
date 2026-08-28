@@ -250,8 +250,8 @@ test('timeout kills only the process group launched for that ask', async () => {
     assert.equal(result.timed_out, true);
     const launchedGrandchild = Number(result.stdout.trim());
     assert.ok(Number.isInteger(launchedGrandchild));
-    await wait(100);
-    assert.equal(processIsAlive(launchedGrandchild), false, 'the ask process tree must be gone');
+    await waitUntil(() => !processIsAlive(launchedGrandchild), 5000)
+      .catch(() => assert.fail('the ask process tree must be gone'));
     assert.equal(processIsAlive(unrelated.pid), true, 'an unrelated process must stay alive');
   } finally {
     try { process.kill(-unrelated.pid, 'SIGKILL'); } catch {}
