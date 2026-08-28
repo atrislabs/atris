@@ -53,7 +53,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('Options:');
   output('  --limit <n>         Max search results (default: 5)');
   output('  --paid              Bill 5 credits for watch permalinks (search only)');
-  output('  --save              File brief, journal, apply stub; teach also mints a keep/revert experiment');
+  output('  --save              File brief, journal, apply; rich notes/teach mint a keep/revert experiment');
   output('  --section <n>       Chapter to teach, 1-based (teach only, default: 1)');
   output('  --unsave            Delete filed brief and apply stub (no paid calls)');
   output('  --query, -q <text>  Focus question for the analysis');
@@ -645,16 +645,68 @@ function applySidecarRel(id) {
   return applyGate.applySidecarRel('youtube', id);
 }
 
-function ensureNotesApply({ cwd, url, now, output } = {}) {
+function notesExperimentSlug(id) {
+  return `notes-${experimentIdToken(id)}`;
+}
+
+function notesExperimentRel(id) {
+  return `atris/experiments/${notesExperimentSlug(id)}`;
+}
+
+function notesLessonFromText(text) {
+  const body = String(text || '');
+  return {
+    numbers: extractTeachNumbers(body),
+    mechanisms: extractTeachMechanisms(body),
+  };
+}
+
+function readNotesText({ url, workDir } = {}) {
   const id = videoIdFromUrl(url);
+  if (!id || !workDir) return '';
+  const notesPath = path.join(workDir, `yt_${id}.md`);
+  try {
+    if (!fs.existsSync(notesPath)) return '';
+    return fs.readFileSync(notesPath, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function saveRichNotes(url, deps = {}) {
+  const workDir = deps.workDir || path.join(process.env.TMPDIR || '/tmp', 'ytnotes');
+  const lesson = notesLessonFromText(readNotesText({ url, workDir }));
+  if (isThinTeachLesson(lesson)) {
+    return { thin: true, brief: null, packRel: null };
+  }
+  const brief = fileNotesBrief(url, deps);
+  const id = videoIdFromUrl(url);
+  const packRel = fileTeachExperiment({
+    cwd: deps.cwd || process.cwd(),
+    url,
+    lesson,
+    slug: id ? notesExperimentSlug(id) : null,
+    applyRel: id ? applySidecarRel(id) : null,
+  });
+  return { thin: false, brief, packRel };
+}
+
+function ensureNotesApply({ cwd, url, packRel, now, output } = {}) {
+  const id = videoIdFromUrl(url);
+  const pack = packRel || (id ? notesExperimentRel(id) : null);
   return applyGate.ensureApply({
     cwd,
     source: url,
     rel: id ? applySidecarRel(id) : null,
     now,
     output,
-    incompleteMessage: APPLY_NEXT_MESSAGE,
+    incompleteMessage: pack
+      ? `next: apply ${pack}. keep only if measure.py moves 0→1`
+      : APPLY_NEXT_MESSAGE,
     required: false,
+    change: pack ? `apply ${pack}` : undefined,
+    receipt: pack ? TEACH_KEEP_RULE : undefined,
+    journalLine: pack ? `- [claimable] apply: ${pack}. ${TEACH_KEEP_RULE}` : undefined,
   });
 }
 
@@ -1339,9 +1391,30 @@ function runOneNotesItem(item, engine, deps = {}) {
   } catch {
     status = 1;
   }
-  const brief = status === 0 && deps.save ? fileNotesBrief(item.url, deps) : null;
+  let brief = null;
+  let ok = status === 0;
+  if (ok && deps.save) {
+    const saved = saveRichNotes(item.url, deps);
+    if (saved.thin) {
+      output(TEACH_THIN_REFUSE);
+      ok = false;
+    } else {
+      brief = saved.brief;
+      const ensureApply = deps.ensureApply || ensureNotesApply;
+      try {
+        ensureApply({
+          cwd: deps.cwd || process.cwd(),
+          url: item.url,
+          packRel: saved.packRel,
+          now: deps.now,
+          output,
+        });
+      } catch {
+        // apply filing must never break the batch
+      }
+    }
+  }
   const seconds = Math.max(0, Math.round((readNowMs(deps) - started) / 1000));
-  const ok = status === 0;
   output(`${label}  ${seconds}s  ${ok ? (brief || 'ok') : 'FAILED'}`);
   return { url: item.url, id: item.id, seconds, ok, brief };
 }
@@ -1381,11 +1454,17 @@ function runSingleYoutubeNotes(url, engine, deps = {}) {
   const status = readRunnerStatus(result);
   if (status !== 0) return status;
   if (!deps.save) return 0;
-  fileNotesBrief(url, deps);
+  const saved = saveRichNotes(url, deps);
+  const output = deps.output || ((line = '') => console.error(line));
+  if (saved.thin) {
+    output(TEACH_THIN_REFUSE);
+    return 2;
+  }
   const ensureApply = deps.ensureApply || ensureNotesApply;
   return ensureApply({
     cwd: deps.cwd || process.cwd(),
     url,
+    packRel: saved.packRel,
     now: deps.now,
     output: deps.output,
   });
@@ -2185,14 +2264,17 @@ function teachBriefRel(id, section) {
   return `atris/wiki/briefs/youtube-${id}-s${section}.md`;
 }
 
-function teachExperimentSlug(id, section) {
-  const safe = String(id || 'video')
+function experimentIdToken(id) {
+  return String(id || 'video')
     .toLowerCase()
     .replace(/_/g, '-')
     .replace(/[^a-z0-9-]+/g, '')
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '') || 'video';
-  return `teach-${safe}-s${Number(section) || 1}`;
+}
+
+function teachExperimentSlug(id, section) {
+  return `teach-${experimentIdToken(id)}-s${Number(section) || 1}`;
 }
 
 function teachExperimentRel(id, section) {
@@ -2211,18 +2293,18 @@ function teachCheckLine(lesson = {}) {
   return oneTeachCheck(lesson.mechanisms || [], lesson.numbers || [], '');
 }
 
-function fileTeachExperiment({ cwd, url, section, lesson } = {}) {
+function fileTeachExperiment({ cwd, url, section, lesson, slug, applyRel } = {}) {
   try {
     const id = videoIdFromUrl(url);
     if (!id || !cwd) return null;
-    const slug = teachExperimentSlug(id, section);
-    const rel = `atris/experiments/${slug}`;
+    const packSlug = slug || teachExperimentSlug(id, section);
+    const rel = `atris/experiments/${packSlug}`;
     const dir = path.join(cwd, rel);
     fs.mkdirSync(dir, { recursive: true });
 
     const check = teachCheckLine(lesson);
     const needles = teachCheckNeedles(lesson);
-    const applyRel = applySidecarRel(`${id}-s${section}`);
+    const sidecarRel = applyRel || applySidecarRel(`${id}-s${section}`);
     const program = [
       '# Program',
       '',
@@ -2243,7 +2325,7 @@ function fileTeachExperiment({ cwd, url, section, lesson } = {}) {
       'EXPERIMENT_DIR = Path(__file__).resolve().parent',
       `CHECK = ${JSON.stringify(check)}`,
       `NEEDLES = ${JSON.stringify(needles)}`,
-      `DEFAULT_TARGET = ${JSON.stringify(applyRel)}`,
+      `DEFAULT_TARGET = ${JSON.stringify(sidecarRel)}`,
       '',
       '',
       'def repo_root() -> Path:',
@@ -2706,5 +2788,6 @@ module.exports = {
   isThinTeachLesson,
   TEACH_THIN_REFUSE,
   teachExperimentSlug,
+  notesExperimentSlug,
   youtubeCommand,
 };

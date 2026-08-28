@@ -2,6 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const {
   parseNotesArgs,
   isPlaylistUrl,
@@ -9,6 +12,18 @@ const {
   runYoutubeNotesBatch,
   youtubeCommand,
 } = require('../commands/youtube');
+
+const RICH_NOTES = '# Clip\n\nThe omakase model has 80 people.\n';
+
+function richNotesWorkspace(ids) {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-'));
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-notes-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  for (const id of ids) {
+    fs.writeFileSync(path.join(workDir, `yt_${id}.md`), RICH_NOTES);
+  }
+  return { cwd, workDir };
+}
 
 function collect() {
   const lines = [];
@@ -104,12 +119,15 @@ test('single-url notes still run the existing path with an optional engine', asy
 test('single-url notes --save files the brief', async () => {
   const calls = [];
   const briefs = [];
+  const { cwd, workDir } = richNotesWorkspace(['abc123']);
   const status = await youtubeCommand([
     'notes',
     'https://www.youtube.com/watch?v=abc123',
     '--save',
     'grok',
   ], {
+    cwd,
+    workDir,
     output: () => {},
     runner: (url, engine) => {
       calls.push({ url, engine });
@@ -166,6 +184,7 @@ test('multi-url notes run sequentially and keep the shared engine', async () => 
 
 test('multi-url notes --save files briefs', async () => {
   const log = collect();
+  const { cwd, workDir } = richNotesWorkspace(['aaa111', 'bbb222']);
   const status = await youtubeCommand([
     'notes',
     '--save',
@@ -173,9 +192,12 @@ test('multi-url notes --save files briefs', async () => {
     'https://youtu.be/bbb222',
     'haiku',
   ], {
+    cwd,
+    workDir,
     output: log.output,
     runner: () => ({ status: 0 }),
     briefFiler: ({ url }) => briefFor(url),
+    ensureApply: () => 0,
     nowMs: (() => {
       let n = 0;
       return () => {
