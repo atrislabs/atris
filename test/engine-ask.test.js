@@ -13,6 +13,7 @@ const {
   MAX_ASK_PROMPT_BYTES,
   parseEngineAskArgs,
   buildReadOnlyEngineInvocation,
+  buildAskSpawnEnv,
   runAskProcess,
   runEngineAskJobs,
   runEngineAskCommand,
@@ -102,6 +103,64 @@ test('shared questions fan out with one model and jobs files may pin models inde
     ]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('claude and fable ask spawn env pins USER to the OS username when a parent set a display name', async () => {
+  const osUser = os.userInfo().username;
+  assert.ok(osUser);
+  const built = buildAskSpawnEnv({
+    PATH: '/bin',
+    HOME: '/Users/keshavrao',
+    USER: 'keshav',
+    LOGNAME: 'keshav',
+    TERM: 'xterm',
+  });
+  assert.equal(built.USER, osUser);
+  assert.equal(built.LOGNAME, osUser);
+  assert.equal(built.PATH, '/bin');
+  assert.equal(built.HOME, '/Users/keshavrao');
+  assert.equal(built.TERM, 'xterm');
+  assert.equal(built.ANTHROPIC_API_KEY, undefined);
+
+  for (const engine of ['claude', 'fable']) {
+    const invocation = buildReadOnlyEngineInvocation(engine, 'say hi');
+    assert.equal(invocation.engine, engine);
+    assert.match(String(invocation.bin), /claude/);
+  }
+
+  const previousUser = process.env.USER;
+  const previousLogname = process.env.LOGNAME;
+  process.env.USER = 'keshav';
+  process.env.LOGNAME = 'keshav';
+  let spawnedEnv;
+  try {
+    const invocation = {
+      ...buildReadOnlyEngineInvocation('fable', 'say hi'),
+      ...fakeReplyInvocation({ stdout: 'hi' }),
+    };
+    const result = await runAskProcess(invocation, {
+      timeoutMs: 1000,
+      spawnProcess: (bin, args, options) => {
+        spawnedEnv = options.env;
+        return spawn(bin, args, options);
+      },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(spawnedEnv.USER, osUser);
+    assert.equal(spawnedEnv.LOGNAME, osUser);
+    assert.notEqual(spawnedEnv.USER, 'keshav');
+    assert.equal(spawnedEnv.PATH, process.env.PATH);
+    assert.equal(spawnedEnv.HOME, process.env.HOME);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(spawnedEnv, 'ANTHROPIC_API_KEY'),
+      Object.prototype.hasOwnProperty.call(process.env, 'ANTHROPIC_API_KEY'),
+    );
+  } finally {
+    if (previousUser === undefined) delete process.env.USER;
+    else process.env.USER = previousUser;
+    if (previousLogname === undefined) delete process.env.LOGNAME;
+    else process.env.LOGNAME = previousLogname;
   }
 });
 
