@@ -6,11 +6,14 @@ const { spawnSync } = require('child_process');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { isConductorArtifact } = require('../lib/conductor-artifacts');
+const close = require('./close');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
 const COMMAND_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 const GIT_OID_PATTERN = /^[0-9a-f]{40,64}$/;
 const ONE_LAP_PROOF_REF_PATTERN = /^refs\/atris\/one-lap\/([0-9a-f]{40,64})$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const SHIP_HEALTH_SOURCE = 'ship-health:experiments-daily';
 
 function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout });
@@ -672,6 +675,56 @@ function findPrimaryRoot(root) {
   return worktrees[0]?.path || root;
 }
 
+function shellQuote(value) {
+  const text = String(value || '');
+  if (/^[A-Za-z0-9_./:@+-]+$/.test(text)) return text;
+  return `'${text.replace(/'/g, `'"'"'`)}'`;
+}
+
+function experimentHealthProbe(statePath) {
+  const script = [
+    "const fs=require('fs')",
+    'const state=JSON.parse(fs.readFileSync(process.argv[1],\'utf8\'))',
+    'const last=Date.parse(state.last_run_date)',
+    `process.exit(Number.isFinite(last)&&Date.now()-last<=${DAY_MS}?0:1)`,
+  ].join(';');
+  return `${shellQuote(process.execPath)} -e ${shellQuote(script)} ${shellQuote(statePath)}`;
+}
+
+function runShipHealthCheck(workspaceRoot, options = {}) {
+  try {
+    const now = options.now ? new Date(options.now) : new Date();
+    const statePath = path.join(workspaceRoot, '.atris', 'state', 'experiments-daily.json');
+    const state = fs.existsSync(statePath)
+      ? JSON.parse(fs.readFileSync(statePath, 'utf8'))
+      : {};
+    const rawLastRunDate = state && state.last_run_date;
+    const lastRunMs = rawLastRunDate ? Date.parse(rawLastRunDate) : null;
+    if (rawLastRunDate && !Number.isFinite(lastRunMs)) {
+      throw new Error('experiment state date is unreadable');
+    }
+
+    const ageMs = Number.isFinite(lastRunMs) ? now.getTime() - lastRunMs : null;
+    if (ageMs !== null && ageMs <= DAY_MS) return { healthy: true, filed: false };
+
+    const days = ageMs === null ? 1 : Math.max(1, Math.floor(ageMs / DAY_MS));
+    console.log(`health check failed: no verified experiment in ${days} days. shipping still works, the metabolism does not.`);
+    const filed = close.upsertSourceFlag({
+      what: 'no verified experiment has run in over a day',
+      owner: 'operator',
+      lane: 'code',
+      ttlDays: 1,
+      source: SHIP_HEALTH_SOURCE,
+      closeCondition: 'a verified experiment ran within 24 hours',
+      probe: experimentHealthProbe(statePath),
+    }, workspaceRoot, { now });
+    return { healthy: false, ...filed };
+  } catch (error) {
+    console.log(`health check skipped: ${String(error && error.message || error).toLowerCase()}. shipping still works.`);
+    return { healthy: null, filed: false, error };
+  }
+}
+
 function shipWorktree(args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help') {
     shipHelp();
@@ -825,6 +878,7 @@ function shipWorktree(args) {
       }
     }
     console.log('pr: skipped (local mode)');
+    if (merge && !dryRun) runShipHealthCheck(primary || root);
     console.log('done: worktree shipped');
     return 0;
   }
@@ -870,6 +924,7 @@ function shipWorktree(args) {
       note: `worktree ship completed into ${targetRef}`,
     }, { worktree: root });
   } catch {}
+  if (merge && !dryRun) runShipHealthCheck(primary || root);
   console.log('done: worktree shipped');
   return 0;
 }
@@ -1219,5 +1274,6 @@ module.exports = {
   taskTokens,
   statusCounts,
   swarloClaim,
+  runShipHealthCheck,
   worktreeCommand,
 };

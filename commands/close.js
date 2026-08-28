@@ -1153,7 +1153,15 @@ function shortText(text, maxLength = 70) {
   return clipped || value.slice(0, maxLength).trim();
 }
 
-function appendOpenedFromSource({ what, owner = 'operator', lane = 'code', ttlDays = 3, source }, cwd, now) {
+function appendOpenedFromSource({
+  what,
+  owner = 'operator',
+  lane = 'code',
+  ttlDays = 3,
+  source,
+  probe,
+  closeCondition = 'the source store resolves it',
+}, cwd, now) {
   const event = {
     kind: 'opened',
     at: now.toISOString(),
@@ -1163,11 +1171,28 @@ function appendOpenedFromSource({ what, owner = 'operator', lane = 'code', ttlDa
     lane: VALID_LANES.has(lane) ? lane : 'code',
     opened_at: now.toISOString(),
     ttl_days: Number(ttlDays) || 3,
-    close_condition: 'the source store resolves it',
+    close_condition: normalizeSpaces(closeCondition) || 'the source store resolves it',
     source,
   };
+  const normalizedProbe = normalizeSpaces(probe || '');
+  if (normalizedProbe) event.probe = normalizedProbe;
   appendEvent(event, cwd);
   return event;
+}
+
+function upsertSourceFlag(candidate, cwd = process.cwd(), options = {}) {
+  const now = options.now ? new Date(options.now) : new Date();
+  const source = normalizeSpaces(candidate && candidate.source);
+  if (!source) throw new Error('source is required');
+
+  const flags = openFlags(cwd, { now });
+  const existing = flags.find((flag) => flag.source === source);
+  if (!existing && flags.length >= MAX_OPEN_FLAGS) {
+    return { filed: false, refreshed: false, reason: 'full' };
+  }
+
+  const event = appendOpenedFromSource({ ...candidate, source }, cwd, now);
+  return { filed: true, refreshed: Boolean(existing), event };
 }
 
 function appendClosedFromSource(flag, cwd, now, note, proof = RESOLVED_IN_SOURCE_PROOF) {
@@ -1533,6 +1558,7 @@ module.exports = {
   foldEvents,
   openFlags,
   parkedFlags,
+  upsertSourceFlag,
   ledgerPath,
   readEvents,
   sweepLine,
