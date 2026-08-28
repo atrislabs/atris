@@ -1,7 +1,7 @@
 ---
 name: engines
-description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, and Antigravity (agy). Triggers on: use codex, use cursor, use devin, use grok, use agy, use antigravity, use fable, use claude, use atris, engine, dispatch to, worker agent, second opinion build."
-version: 1.4.1
+description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, and Antigravity (agy). Triggers on: use codex, use cursor, use devin, use grok, use agy, use antigravity, use gemini, gemini session, use fable, use claude, use atris, engine, dispatch to, worker agent, second opinion build."
+version: 1.4.2
 tags:
   - engines
   - claude
@@ -14,6 +14,7 @@ tags:
   - grok
   - agy
   - antigravity
+  - gemini
   - atris
   - orchestration
 ---
@@ -50,7 +51,7 @@ Raw spawns are not the default because they skip Atris receipts, watch, and coac
 | Haiku | `claude -p "<prompt>" --model claude-haiku-4-5` | Fast validation and bounded read-only checks. |
 | Devin | `devin -p --permission-mode dangerous -- "<prompt>"` (run from the target repo) | Default permission mode is read-only for writes — build work NEEDS `--permission-mode dangerous`, so only run it in an isolated worktree. Also `devin cloud` for sessions that outlive this machine. Supports `--model swe-1.7` |
 | Grok | `grok --always-approve -p "<prompt>"` (run from the target repo) | Headless single-turn via `-p`; default model grok-4.6. Very fast on lookups (~5-10s, reads MAP first). Great for quick second opinions; use `--best-of-n <N>` for tricky bounded builds. Uses grok.com login |
-| Antigravity | `agy --mode accept-edits -p "<prompt>"` | `agy` executor profile. Use `--mode plan --sandbox` for read-only review and `--model <id>` to pin a model. |
+| Antigravity | `agy --mode accept-edits --add-dir "$PWD" -p "<prompt>"` (run from the target repo) | `agy` executor profile; also answers to "gemini". **`--add-dir` is mandatory for writes** — without it agy edits its own scratch folder (`~/.gemini/antigravity-cli/scratch/`) and the project never changes, which looks like a silent failure (verified live 2026-08-28). Use `--mode plan --sandbox` for read-only review, `--model <id>` to pin a model, and `--dangerously-skip-permissions` if a build still stalls on an approval prompt. |
 
 Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `cursor-agent` are allowlisted in `~/.claude/settings.json` so fresh and one-shot sessions can dispatch without a human approval click. A cold session that gets "requires approval" on an engine command means that allowlist regressed.
 
