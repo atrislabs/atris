@@ -376,7 +376,7 @@ test('ax chat defaults cloud and does not show local backend instructions when o
   try {
     await ax.chat({
       mode: 'fast',
-      cwd: os.tmpdir(),
+      cwd: NON_WORKSPACE_CWD,
       input: Readable.from(['hi\n', 'exit\n']),
       output,
       runtimeHealth: async () => {

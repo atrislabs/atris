@@ -4020,7 +4020,10 @@ async function runSelfTest(options = {}) {
     try {
       await chat({
         mode: 'fast',
-        cwd: os.tmpdir(),
+        // A stray .atris under os.tmpdir() (left by a concurrent run) makes the
+        // walk-up detector treat temp as a workspace, flipping this offline
+        // check into local mode. Pin a path with no workspace ancestor.
+        cwd: '/nonexistent/ax-non-workspace',
         input: Readable.from(['hi\n', 'exit\n']),
         output: chatOutput,
         runtimeHealth: async () => {
