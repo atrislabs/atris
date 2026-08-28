@@ -1,0 +1,268 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const {
+  extractTeachNumbers,
+  extractTeachMechanisms,
+  isThinTeachLesson,
+  TEACH_THIN_REFUSE,
+} = require('../commands/youtube');
+const {
+  xSearchCommand,
+  xSearchApplyRel,
+  xSearchExperimentSlug,
+} = require('../commands/x-search');
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
+const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
+
+function findPython() {
+  for (const candidate of ['python3', 'python']) {
+    const result = spawnSync(candidate, ['--version'], { encoding: 'utf8' });
+    if (!result.error && result.status === 0) return candidate;
+  }
+  return null;
+}
+
+const pythonCmd = findPython();
+
+const RICH_TEXT = '37signals has 80 people and uses the omakase model';
+const THIN_TEXT = 'welcome back friends this is just a chat about feelings and vibes';
+
+function collect() {
+  const lines = [];
+  return {
+    lines,
+    output: (line = '') => lines.push(String(line)),
+    text: () => lines.join('\n'),
+  };
+}
+
+function escapeRe(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function saveWorkspace() {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-save-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  return cwd;
+}
+
+function mockSearch(content, citations = ['https://x.com/levelsio/status/1']) {
+  return {
+    ok: true,
+    status: 200,
+    data: {
+      status: 'success',
+      credits_used: 5,
+      credits_remaining: 995,
+      data: { content, citations },
+    },
+  };
+}
+
+function runSearch(query, { cwd, output, content = RICH_TEXT, extraArgs = [] } = {}) {
+  return xSearchCommand([query, ...extraArgs], {
+    cwd,
+    applyNow: '2026-08-26',
+    output,
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => mockSearch(content),
+  });
+}
+
+function runExperimentsKeep(cwd, slug) {
+  return spawnSync(process.execPath, [CLI_PATH, 'experiments', 'keep', slug], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...(pythonCmd ? { ATRIS_EXPERIMENTS_PYTHON: pythonCmd } : {}),
+    },
+  });
+}
+
+function assertXSearchApplyClaimable(cwd, { source, tokens = [], date = '2026-08-26' } = {}) {
+  const packRel = `atris/experiments/${xSearchExperimentSlug(source)}`;
+  const applyRel = xSearchApplyRel(source);
+  const sidecar = fs.readFileSync(path.join(cwd, applyRel), 'utf8');
+  assert.match(sidecar, new RegExp(escapeRe(packRel)));
+  assert.match(sidecar, /keep only if measure\.py moves 0→1/);
+  assert.match(sidecar, /scores 1 only when the fixture contains the check tokens/);
+  for (const token of tokens) {
+    assert.doesNotMatch(sidecar, new RegExp(escapeRe(token), 'i'));
+  }
+  const journal = fs.readFileSync(path.join(cwd, 'atris', 'logs', date.slice(0, 4), `${date}.md`), 'utf8');
+  assert.match(journal, /\[claimable\] apply: /);
+  assert.match(journal, new RegExp(escapeRe(packRel)));
+  assert.match(journal, /keep only if measure\.py moves 0→1/);
+  return { packRel, applyRel, sidecar, journal };
+}
+
+test('xSearchExperimentSlug prefixes the query slug', () => {
+  assert.equal(xSearchExperimentSlug('MCP agents'), 'x-search-mcp-agents');
+  assert.equal(xSearchExperimentSlug('Leah Bonvissuto'), 'x-search-leah-bonvissuto');
+});
+
+test('x-search --save refuses a thin brief and writes no atris files', async () => {
+  const numbers = extractTeachNumbers(THIN_TEXT);
+  const mechanisms = extractTeachMechanisms(THIN_TEXT);
+  assert.deepEqual(numbers, []);
+  assert.deepEqual(mechanisms, []);
+  assert.equal(isThinTeachLesson({ numbers, mechanisms }), true);
+
+  const cwd = saveWorkspace();
+  const out = collect();
+  const status = await runSearch('quiet chat', {
+    cwd,
+    output: out.output,
+    content: THIN_TEXT,
+    extraArgs: ['--save'],
+  });
+
+  assert.equal(status, 2);
+  assert.match(out.text(), new RegExp(escapeRe(TEACH_THIN_REFUSE)));
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'x-search-quiet-chat.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('quiet chat'))), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('x-search without --save stays stdout only', async () => {
+  const cwd = saveWorkspace();
+  const out = collect();
+  const status = await runSearch('MCP agents', {
+    cwd,
+    output: out.output,
+    content: RICH_TEXT,
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /omakase model/);
+  assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('x-search rich --save mints a measure.py that validate.py accepts', async () => {
+  assert.ok(pythonCmd, 'python3 is required to score the minted pack');
+  const cwd = saveWorkspace();
+  const out = collect();
+  const status = await runSearch('MCP agents', {
+    cwd,
+    output: out.output,
+    content: RICH_TEXT,
+    extraArgs: ['--save'],
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /next: apply atris\/experiments\/x-search-mcp-agents\. keep only if measure\.py moves 0→1/);
+  const packDir = path.join(cwd, 'atris', 'experiments', 'x-search-mcp-agents');
+  for (const name of ['program.md', 'measure.py', 'loop.py', 'reset.py', 'results.tsv']) {
+    assert.equal(fs.existsSync(path.join(packDir, name)), true, name);
+  }
+  const program = fs.readFileSync(path.join(packDir, 'program.md'), 'utf8');
+  assert.ok(program.length < 1200);
+  assert.match(program, /omakase model/);
+  const measureSrc = fs.readFileSync(path.join(packDir, 'measure.py'), 'utf8');
+  assert.match(measureSrc, /omakase model/);
+
+  const validated = spawnSync(pythonCmd, [VALIDATE_PY, packDir], { encoding: 'utf8' });
+  assert.equal(validated.status, 0, validated.stderr || validated.stdout);
+  assert.match(validated.stdout, /PASS/);
+
+  function scoreFixture(text) {
+    const fixture = path.join(cwd, 'fixture.md');
+    fs.writeFileSync(fixture, text);
+    const measured = spawnSync(pythonCmd, [path.join(packDir, 'measure.py')], {
+      cwd: packDir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ATRIS_REPO_ROOT: cwd,
+        ATRIS_TEACH_MEASURE_FIXTURE: fixture,
+      },
+    });
+    assert.equal(measured.status, 0, measured.stderr || measured.stdout);
+    return JSON.parse(measured.stdout.trim().split('\n').pop());
+  }
+
+  const miss = scoreFixture('feelings and vibes and a chat about nothing');
+  assert.equal(miss.score, 0);
+  const hit = scoreFixture('keep the omakase model as the default stack');
+  assert.equal(hit.score, 1);
+
+  const claim = assertXSearchApplyClaimable(cwd, {
+    source: 'MCP agents',
+    tokens: ['omakase model', 'what is the omakase model?'],
+  });
+  const stub = spawnSync(pythonCmd, [path.join(packDir, 'measure.py')], {
+    cwd: packDir,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_REPO_ROOT: cwd },
+  });
+  assert.equal(stub.status, 0, stub.stderr || stub.stdout);
+  const stubPayload = JSON.parse(stub.stdout.trim().split('\n').pop());
+  assert.equal(stubPayload.score, 0);
+  assert.doesNotMatch(claim.sidecar, /omakase model/i);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'x-search-mcp-agents.md')), true);
+});
+
+test('experiments keep refuses a minted x-search pack at 0 and keeps after check tokens', async () => {
+  assert.ok(pythonCmd, 'python3 is required to score the minted pack');
+  const cwd = saveWorkspace();
+  const status = await runSearch('MCP agents', {
+    cwd,
+    output: () => {},
+    content: RICH_TEXT,
+    extraArgs: ['--save'],
+  });
+
+  assert.equal(status, 0);
+  const packDir = path.join(cwd, 'atris', 'experiments', 'x-search-mcp-agents');
+  const applyPath = path.join(cwd, xSearchApplyRel('MCP agents'));
+
+  const refused = runExperimentsKeep(cwd, 'x-search-mcp-agents');
+  assert.equal(refused.status, 1, refused.stderr || refused.stdout);
+  assert.match(`${refused.stdout}\n${refused.stderr}`, /revert x-search-mcp-agents: measure\.py stayed 0\. refuse keep\./);
+  assert.equal(fs.existsSync(path.join(packDir, 'measure.py')), true);
+
+  fs.appendFileSync(applyPath, '\nkeep the omakase model as the default stack\n');
+  const kept = runExperimentsKeep(cwd, 'x-search-mcp-agents');
+  assert.equal(kept.status, 0, kept.stderr || kept.stdout);
+  assert.match(kept.stdout, /keep x-search-mcp-agents: measure\.py moved 0→1/);
+});
+
+test('x-search person rich --save mints the same keep/revert pack', async () => {
+  const cwd = saveWorkspace();
+  const out = collect();
+  const status = await xSearchCommand([
+    'person',
+    '--name',
+    'Leah Bonvissuto',
+    '--save',
+  ], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: out.output,
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => mockSearch(RICH_TEXT),
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /next: apply atris\/experiments\/x-search-leah-bonvissuto\. keep only if measure\.py moves 0→1/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'x-search-leah-bonvissuto', 'measure.py')), true);
+  assertXSearchApplyClaimable(cwd, {
+    source: 'Leah Bonvissuto',
+    tokens: ['omakase model', 'what is the omakase model?'],
+  });
+});
