@@ -1,7 +1,7 @@
 ---
 name: x-search
 description: "X/Twitter search via xAI Grok API. Use when user wants to search tweets, monitor topics, find viral posts, or run social listening. Costs 5 credits per search. Triggers on x search, tweet search, twitter search, social listening, revenue intel, viral tweets."
-version: 2.2.0
+version: 2.3.0
 tags:
   - x-search
   - social
@@ -21,15 +21,18 @@ login
     |
    x-search QUERY (5 credits)
     |
-   write one Apply (claimable)
+   stdout only unless --save
+        |
+       --save + rich --> brief + pack + one Apply
+       --save + thin --> refuse, no files, exit 2
     |
    stop
 ```
 
 1. Login: stored login, then `atris login --agent` if needed. Never paste tokens. Never `/auth/cli`.
-2. Search: `atris x-search "QUERY"`. Always billed (5 credits). Empty or failed search refunds.
-3. One Apply: name a product change plus a receipt that can fail. If missing, the CLI writes a fill-this stub and a next-line. Search still exits 0.
-4. Stop. Empty or failed search does not owe an Apply.
+2. Search: `atris x-search "QUERY"`. Always billed (5 credits). Prints to stdout. Empty or failed search refunds and writes nothing.
+3. `--save` only when you want a brief. Rich results (a number-with-units or a named mechanism) file the brief, mint `atris/experiments/x-search-<slug>/`, and write one Apply that names that pack and the keep rule. Thin `--save` prints `thin: no number or named mechanism. no brief.` and writes nothing.
+4. Stop. Do not invent an Apply after a default search. Empty or failed search does not owe an Apply.
 
 ## Customer path (preferred)
 
@@ -38,6 +41,7 @@ Logged-in customers should use the CLI. Same auth and billing as `atris youtube 
 ```bash
 atris x-search "MCP agents"
 atris x-search "MCP agents" --limit 5 --days 2
+atris x-search "MCP agents" --save
 atris x-search person --name "Leah Bonvissuto" --handle leahbon
 atris x-search --help
 ```
@@ -245,6 +249,7 @@ npm install -g atris && atris login
 
 # Preferred: CLI
 atris x-search "AI agents" --limit 10 --days 7
+atris x-search "AI agents" --save
 atris x-search person --name "John Doe" --handle johndoe --company Acme
 
 # Raw API (debug)

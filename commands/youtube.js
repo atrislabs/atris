@@ -2295,16 +2295,18 @@ function teachCheckLine(lesson = {}) {
 
 function fileTeachExperiment({ cwd, url, section, lesson, slug, applyRel } = {}) {
   try {
-    const id = videoIdFromUrl(url);
-    if (!id || !cwd) return null;
-    const packSlug = slug || teachExperimentSlug(id, section);
+    const id = url ? videoIdFromUrl(url) : null;
+    if (!cwd) return null;
+    const packSlug = slug || (id ? teachExperimentSlug(id, section) : null);
+    if (!packSlug) return null;
     const rel = `atris/experiments/${packSlug}`;
     const dir = path.join(cwd, rel);
     fs.mkdirSync(dir, { recursive: true });
 
     const check = teachCheckLine(lesson);
     const needles = teachCheckNeedles(lesson);
-    const sidecarRel = applyRel || applySidecarRel(`${id}-s${section}`);
+    const sidecarRel = applyRel || (id ? applySidecarRel(`${id}-s${section}`) : null);
+    if (!sidecarRel) return null;
     const program = [
       '# Program',
       '',
@@ -2789,5 +2791,6 @@ module.exports = {
   TEACH_THIN_REFUSE,
   teachExperimentSlug,
   notesExperimentSlug,
+  fileTeachExperiment,
   youtubeCommand,
 };

@@ -1,26 +1,38 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { apiRequestJson } = require('../utils/api');
 const { ensureBilledCommandAuth } = require('./auth');
 const applyGate = require('../lib/apply-gate');
+const {
+  fileTeachExperiment,
+  extractTeachNumbers,
+  extractTeachMechanisms,
+  isThinTeachLesson,
+  TEACH_THIN_REFUSE,
+} = require('./youtube');
 
 const DEFAULT_TIMEOUT_MS = 120000;
 const COST_HINT = '5 credits per search';
 const APPLY_NEXT_MESSAGE =
   'next: write one apply (change + receipt) for this query.';
+const KEEP_RULE = 'keep only if measure.py moves 0→1. scores 1 only when the fixture contains the check tokens.';
 
 function showXSearchHelp(output = console.log, commandName = 'atris x-search') {
   output('');
-  output(`Usage: ${commandName} "<query>" [--limit N] [--days N] [--json]`);
-  output(`       ${commandName} person --name <name> [--handle <h>] [--company <c>] [--context <text>] [--json]`);
+  output(`Usage: ${commandName} "<query>" [--limit N] [--days N] [--save] [--json]`);
+  output(`       ${commandName} person --name <name> [--handle <h>] [--company <c>] [--context <text>] [--save] [--json]`);
   output('');
   output(`Search X/Twitter via Atris (${COST_HINT}).`);
   output('Requires login. Same auth path as atris youtube process.');
+  output('Prints to stdout. --save files a brief only when the result is rich.');
   output('Empty or failed search refunds the credits.');
   output('');
   output('Options:');
   output('  --limit <n>         Max results hint (search only)');
   output('  --days <n>          Only tweets from the last N days (search only)');
+  output('  --save              File brief, journal, apply; rich results mint a keep/revert experiment');
   output('  --json              Print the raw JSON response');
   output('  -h, --help          This help');
   output('');
@@ -33,6 +45,7 @@ function showXSearchHelp(output = console.log, commandName = 'atris x-search') {
   output('Examples:');
   output(`  ${commandName} "MCP agents"`);
   output(`  ${commandName} "MCP agents" --limit 5 --days 2`);
+  output(`  ${commandName} "MCP agents" --save`);
   output(`  ${commandName} person --name "Leah Bonvissuto" --handle leahbon`);
   output('');
 }
@@ -58,6 +71,7 @@ function parseSearchArgs(argv = []) {
     mode: 'search',
     help: false,
     json: false,
+    save: false,
     query: null,
     limit: null,
     daysBack: null,
@@ -75,6 +89,8 @@ function parseSearchArgs(argv = []) {
       options.help = true;
     } else if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--save') {
+      options.save = true;
     } else if (arg === '--limit') {
       options.limit = parsePositiveInt(readValue(args, i, arg), '--limit');
       i++;
@@ -121,6 +137,7 @@ function parsePersonArgs(argv = []) {
     mode: 'person',
     help: false,
     json: false,
+    save: false,
     name: null,
     handle: null,
     company: null,
@@ -139,6 +156,8 @@ function parsePersonArgs(argv = []) {
       options.help = true;
     } else if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--save') {
+      options.save = true;
     } else if (arg === '--name') {
       options.name = readValue(args, i, arg);
       i++;
@@ -336,19 +355,102 @@ function xSearchApplyRel(source) {
   return applyGate.applySidecarRel('x-search', applyGate.applySlug(source));
 }
 
+function xSearchExperimentSlug(source) {
+  return `x-search-${applyGate.applySlug(source)}`;
+}
+
+function xSearchExperimentRel(source) {
+  return `atris/experiments/${xSearchExperimentSlug(source)}`;
+}
+
+function xSearchBriefRel(source) {
+  return `atris/wiki/briefs/x-search-${applyGate.applySlug(source)}.md`;
+}
+
 function xSearchHasResults(data) {
   return Boolean(xSearchContent(data)) || xSearchCitations(data).length > 0;
 }
 
-function ensureXSearchApply({ cwd, source, now, output } = {}) {
+function xSearchLessonFromText(text) {
+  const body = String(text || '');
+  return {
+    numbers: extractTeachNumbers(body),
+    mechanisms: extractTeachMechanisms(body),
+  };
+}
+
+function dateStamp(now) {
+  if (typeof now === 'string' && /^\d{4}-\d{2}-\d{2}/.test(now)) {
+    return now.slice(0, 10);
+  }
+  const value = now instanceof Date ? now : new Date(now || Date.now());
+  if (Number.isNaN(value.getTime())) return new Date().toISOString().slice(0, 10);
+  return value.toISOString().slice(0, 10);
+}
+
+function fileXSearchBrief({ cwd, source, text, now } = {}) {
+  try {
+    if (!source || !cwd) return null;
+    const wikiDir = path.join(cwd, 'atris', 'wiki');
+    if (!fs.existsSync(wikiDir)) return null;
+    const rel = xSearchBriefRel(source);
+    fs.mkdirSync(path.join(cwd, 'atris', 'wiki', 'briefs'), { recursive: true });
+    const date = dateStamp(now);
+    const heading = String(source).trim().toLowerCase() || 'x search';
+    const header = [
+      heading,
+      '',
+      `date: ${date}`,
+      `source: ${source}`,
+      'rail: atris x-search',
+    ].join('\n');
+    fs.writeFileSync(path.join(cwd, rel), `${header}\n\n${String(text || '').trim()}\n`);
+
+    const journalPath = path.join(cwd, 'atris', 'logs', date.slice(0, 4), `${date}.md`);
+    fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+    let existing = '';
+    if (fs.existsSync(journalPath)) existing = fs.readFileSync(journalPath, 'utf8');
+    const line = `- [claimable] searched: ${heading} -> ${rel}`;
+    if (!existing.includes(line)) {
+      const prefix = existing && !existing.endsWith('\n') ? '\n' : '';
+      fs.writeFileSync(journalPath, `${existing}${prefix}${line}\n`);
+    }
+    return rel;
+  } catch {
+    return null;
+  }
+}
+
+function saveRichXSearch({ cwd, source, text, now } = {}) {
+  const lesson = xSearchLessonFromText(text);
+  if (isThinTeachLesson(lesson)) {
+    return { thin: true, brief: null, packRel: null };
+  }
+  const brief = fileXSearchBrief({ cwd, source, text, now });
+  const packRel = fileTeachExperiment({
+    cwd,
+    lesson,
+    slug: source ? xSearchExperimentSlug(source) : null,
+    applyRel: source ? xSearchApplyRel(source) : null,
+  });
+  return { thin: false, brief, packRel };
+}
+
+function ensureXSearchApply({ cwd, source, packRel, now, output } = {}) {
+  const pack = packRel || (source ? xSearchExperimentRel(source) : null);
   return applyGate.ensureApply({
     cwd,
     source,
     rel: source ? xSearchApplyRel(source) : null,
     now,
     output,
-    incompleteMessage: APPLY_NEXT_MESSAGE,
+    incompleteMessage: pack
+      ? `next: apply ${pack}. keep only if measure.py moves 0→1`
+      : APPLY_NEXT_MESSAGE,
     required: false,
+    change: pack ? `apply ${pack}` : undefined,
+    receipt: pack ? KEEP_RULE : undefined,
+    journalLine: pack ? `- [claimable] apply: ${pack}. ${KEEP_RULE}` : undefined,
   });
 }
 
@@ -416,16 +518,31 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
     } else {
       output(hasResults ? formatXSearchResult(data) : formatEmptyXSearchResult(data));
     }
-    if (hasResults) {
-      const ensureApply = deps.ensureApply || ensureXSearchApply;
-      status = ensureApply({
-        cwd: deps.cwd || process.cwd(),
-        source: xSearchApplySource(options),
-        now: deps.applyNow,
-        output,
-      });
-    } else {
+    if (!hasResults) {
       status = 2;
+    } else if (options.save) {
+      const source = xSearchApplySource(options);
+      const saved = saveRichXSearch({
+        cwd: deps.cwd || process.cwd(),
+        source,
+        text: xSearchContent(data),
+        now: deps.applyNow || deps.now,
+      });
+      if (saved.thin) {
+        output(TEACH_THIN_REFUSE);
+        status = 2;
+      } else {
+        const ensureApply = deps.ensureApply || ensureXSearchApply;
+        status = ensureApply({
+          cwd: deps.cwd || process.cwd(),
+          source,
+          packRel: saved.packRel,
+          now: deps.applyNow || deps.now,
+          output,
+        });
+      }
+    } else {
+      status = 0;
     }
   } catch (err) {
     output(err.message);
@@ -439,12 +556,11 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
 
 module.exports = {
   DEFAULT_TIMEOUT_MS,
-  APPLY_NEXT_MESSAGE,
   parseXSearchArgs,
   buildSearchPayload,
   buildPersonPayload,
-  formatXSearchResult,
   xSearchHasResults,
   xSearchApplyRel,
+  xSearchExperimentSlug,
   xSearchCommand,
 };
