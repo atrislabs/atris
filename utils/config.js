@@ -88,7 +88,6 @@ module.exports = {
   getConfigPath,
   loadConfig,
   saveConfig,
-  getLogSyncStatePath,
   loadLogSyncState,
   saveLogSyncState,
 };
