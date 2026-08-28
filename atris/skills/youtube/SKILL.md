@@ -28,6 +28,7 @@ search QUERY (free)
     |                 --save files brief + pack-named apply when notes have a number or named mechanism; thin --save refuses
     |            or teach URL [--section N] (one chapter: claim numbers, named mechanisms, one check; free unless --save)
     |                 next --section refuses until recap/skip
+    |                 owed prints unpaid check; successful unlock prints next section command
     |
    write one Apply (claimable) before process
     |
