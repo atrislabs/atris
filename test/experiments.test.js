@@ -341,6 +341,103 @@ test('experiments compare endstate summarizes the latest receipts', { skip: !pyt
   }
 });
 
+function writeTokenMeasurePack(dir, slug, fixtureRel, token) {
+  const packDir = path.join(dir, 'atris', 'experiments', slug);
+  fs.mkdirSync(packDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(packDir, 'measure.py'),
+    [
+      'import json, os',
+      'from pathlib import Path',
+      `TOKEN = ${JSON.stringify(token)}`,
+      `FIXTURE = ${JSON.stringify(fixtureRel)}`,
+      'root = Path(os.environ.get("ATRIS_REPO_ROOT") or ".").resolve()',
+      'path = root / FIXTURE',
+      'text = path.read_text(encoding="utf-8") if path.is_file() else ""',
+      'score = 1 if TOKEN.lower() in text.lower() else 0',
+      'print(json.dumps({"score": score, "passed": score, "total": 1, "status": "pass" if score == 1 else "fail"}))',
+      '',
+    ].join('\n')
+  );
+  return packDir;
+}
+
+test('experiments keep without a slug fails cleanly', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const result = runCli(['experiments', 'keep'], { cwd: dir });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /usage: atris experiments keep <slug>/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments keep fails cleanly when the pack is missing', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'experiments'), { recursive: true });
+    const result = runCli(['experiments', 'keep', 'teach-missing-s1'], { cwd: dir });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /experiment "teach-missing-s1" not found/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments keep fails cleanly when measure.py is missing', () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = path.join(dir, 'atris', 'experiments', 'teach-nometric-s1');
+    fs.mkdirSync(packDir, { recursive: true });
+    fs.writeFileSync(path.join(packDir, 'program.md'), '# Program\n');
+    const result = runCli(['experiments', 'keep', 'teach-nometric-s1'], { cwd: dir });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /has no measure\.py/);
+    assert.equal(fs.existsSync(packDir), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments keep refuses when measure.py stays at baseline 0', { skip: !pythonCmd }, () => {
+  const dir = makeTempDir();
+  try {
+    const fixtureRel = 'atris/wiki/briefs/keep-target.apply.md';
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'briefs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, fixtureRel), 'change: apply atris/experiments/teach-keep01-s1\n');
+    const packDir = writeTokenMeasurePack(dir, 'teach-keep01-s1', fixtureRel, 'omakase model');
+    const result = runCli(['experiments', 'keep', 'teach-keep01-s1'], { cwd: dir });
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /revert teach-keep01-s1: measure\.py stayed 0\. refuse keep\./);
+    assert.equal(fs.existsSync(path.join(packDir, 'measure.py')), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments keep succeeds only after the fixture contains check tokens', { skip: !pythonCmd }, () => {
+  const dir = makeTempDir();
+  try {
+    const fixtureRel = 'atris/wiki/briefs/keep-target.apply.md';
+    const fixturePath = path.join(dir, fixtureRel);
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'briefs'), { recursive: true });
+    fs.writeFileSync(fixturePath, 'change: apply atris/experiments/teach-keep01-s1\n');
+    writeTokenMeasurePack(dir, 'teach-keep01-s1', fixtureRel, 'omakase model');
+
+    const refused = runCli(['experiments', 'keep', 'teach-keep01-s1'], { cwd: dir });
+    assert.equal(refused.status, 1, refused.stderr || refused.stdout);
+
+    fs.appendFileSync(fixturePath, 'keep the omakase model as the default stack\n');
+    const kept = runCli(['experiments', 'keep', 'teach-keep01-s1'], { cwd: dir });
+    assert.equal(kept.status, 0, kept.stderr || kept.stdout);
+    assert.match(kept.stdout, /keep teach-keep01-s1: measure\.py moved 0→1/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('experiments replay endstate runs the public rehearsal flow', { skip: !pythonCmd }, () => {
   const dir = makeTempDir();
   try {

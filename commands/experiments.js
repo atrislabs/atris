@@ -138,6 +138,93 @@ function runPython(scriptPath, args = [], cwd = process.cwd()) {
   }
 }
 
+function parseMeasureScore(stdout) {
+  const line = String(stdout || '').trim().split(/\r?\n/).filter(Boolean).pop();
+  if (!line) return { ok: false, error: 'measure.py printed no score' };
+  try {
+    const payload = JSON.parse(line);
+    const score = Number(payload.score);
+    if (!Number.isFinite(score)) return { ok: false, error: 'measure.py printed no score' };
+    return { ok: true, score, payload };
+  } catch {
+    return { ok: false, error: 'measure.py printed no score' };
+  }
+}
+
+function runMeasureJson(scriptPath, workspaceDir = process.cwd()) {
+  const python = resolvePython();
+  if (!python) {
+    return { ok: false, error: 'python not found. set ATRIS_EXPERIMENTS_PYTHON or install python3.' };
+  }
+
+  const result = spawnSync(python, [scriptPath], {
+    cwd: workspaceDir,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PYTHONDONTWRITEBYTECODE: '1',
+      ATRIS_REPO_ROOT: workspaceDir,
+    },
+  });
+
+  if (result.error) {
+    return { ok: false, error: result.error.message || 'measure.py failed to start' };
+  }
+
+  const parsed = parseMeasureScore(result.stdout);
+  if (!parsed.ok) {
+    const detail = String(result.stderr || '').trim().split(/\r?\n/).filter(Boolean).pop();
+    return { ok: false, error: detail || parsed.error };
+  }
+  return parsed;
+}
+
+function experimentsKeep(name) {
+  const token = String(name || '').trim();
+  if (!token || token === '--help' || token === '-h' || token === 'help') {
+    console.error('usage: atris experiments keep <slug>');
+    process.exit(2);
+  }
+  if (!SLUG_RE.test(token)) {
+    console.error('invalid experiment name. use a lowercase-hyphen slug.');
+    process.exit(2);
+  }
+
+  const workspaceDir = process.cwd();
+  if (!fs.existsSync(path.join(workspaceDir, 'atris'))) {
+    console.error('atris/ folder not found. run "atris init" first.');
+    process.exit(2);
+  }
+
+  const packDir = path.join(workspaceDir, 'atris', 'experiments', token);
+  if (!fs.existsSync(packDir) || !fs.statSync(packDir).isDirectory()) {
+    console.error(`experiment "${token}" not found.`);
+    process.exit(2);
+  }
+
+  const measurePath = path.join(packDir, 'measure.py');
+  if (!fs.existsSync(measurePath)) {
+    console.error(`experiment "${token}" has no measure.py.`);
+    process.exit(2);
+  }
+
+  // Change is already on disk. Minted packs start at 0; keep only if current score is 1.
+  const measured = runMeasureJson(measurePath, workspaceDir);
+  if (!measured.ok) {
+    console.error(`revert ${token}: ${measured.error}. refuse keep.`);
+    process.exit(1);
+  }
+
+  if (measured.score === 1) {
+    console.log(`keep ${token}: measure.py moved 0→1`);
+    return;
+  }
+
+  const stayed = measured.score === 0 ? '0' : String(measured.score);
+  console.error(`revert ${token}: measure.py stayed ${stayed}. refuse keep.`);
+  process.exit(1);
+}
+
 function experimentsInit(name) {
   const { experimentsDir } = ensureExperimentsFramework();
 
@@ -573,6 +660,8 @@ function experimentsCommand(subcommand, ...args) {
       return experimentsReplay(args[0] || 'endstate');
     case 'run':
       return experimentsRun(args[0], ...args.slice(1));
+    case 'keep':
+      return experimentsKeep(args[0]);
     default:
       console.log('');
       console.log('Usage: atris experiments <subcommand> [name]');
@@ -581,6 +670,7 @@ function experimentsCommand(subcommand, ...args) {
       console.log('  init [slug]          Prepare atris/experiments/ or scaffold a new pack');
       console.log('  validate [path|slug] Run structural validation on packs or a single pack');
       console.log('  run <slug>           Execute a pack or record an Endstate benchmark receipt');
+      console.log('  keep <slug>          Keep a pack only when measure.py moves 0 to 1');
       console.log('  compare endstate     Compare the latest baseline and stack receipts');
       console.log('  replay endstate      Validate, dry-run, and compare the public benchmark flow');
       console.log('  benchmark [mode]     Run validate/runtime/all benchmark harness');
@@ -592,6 +682,7 @@ function experimentsCommand(subcommand, ...args) {
       console.log('  atris experiments init self-heal');
       console.log('  atris experiments validate');
       console.log('  atris experiments run endstate-baseline --dry-run');
+      console.log('  atris experiments keep teach-teach01-s1');
       console.log('  atris experiments compare endstate');
       console.log('  atris experiments replay endstate');
       console.log('  atris experiments benchmark runtime');

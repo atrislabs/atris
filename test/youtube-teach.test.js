@@ -23,6 +23,7 @@ const {
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
+const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
 
 function findPython() {
   for (const candidate of ['python3', 'python']) {
@@ -143,6 +144,19 @@ function collect() {
 
 function escapeRe(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function runExperimentsKeep(cwd, slug) {
+  return spawnSync(process.execPath, [CLI_PATH, 'experiments', 'keep', slug], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...(pythonCmd ? { ATRIS_EXPERIMENTS_PYTHON: pythonCmd } : {}),
+    },
+  });
 }
 
 function assertTeachApplyClaimable(cwd, { id, section, tokens = [], date = '2026-08-27' } = {}) {
@@ -572,6 +586,34 @@ test('youtube teach rich --save apply sidecar omits check tokens so measure.py s
   const payload = JSON.parse(measured.stdout.trim().split('\n').pop());
   assert.equal(payload.score, 0);
   assert.equal(payload.status, 'fail');
+});
+
+test('experiments keep refuses a minted teach pack at 0 and keeps after check tokens', async () => {
+  assert.ok(pythonCmd, 'python3 is required to score the minted pack');
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-keep-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+
+  assert.equal(status, 0);
+  const packDir = path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1');
+  const applyPath = path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.apply.md');
+  assert.equal(fs.existsSync(path.join(packDir, 'measure.py')), true);
+
+  const refused = runExperimentsKeep(cwd, 'teach-teach01-s1');
+  assert.equal(refused.status, 1, refused.stderr || refused.stdout);
+  assert.match(`${refused.stdout}\n${refused.stderr}`, /revert teach-teach01-s1: measure\.py stayed 0\. refuse keep\./);
+  assert.equal(fs.existsSync(path.join(packDir, 'measure.py')), true);
+
+  fs.appendFileSync(applyPath, '\nkeep the omakase model as the default stack\n');
+  const kept = runExperimentsKeep(cwd, 'teach-teach01-s1');
+  assert.equal(kept.status, 0, kept.stderr || kept.stdout);
+  assert.match(kept.stdout, /keep teach-teach01-s1: measure\.py moved 0→1/);
 });
 
 test('youtube teach thin chapter without --save still writes no atris files', async () => {
