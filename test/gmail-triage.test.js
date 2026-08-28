@@ -113,6 +113,7 @@ test('gmail triage records keep and archive verdicts without mutating the mailbo
 
   try {
     await integrations.gmailTriage({ accountId: 'work', limit: 2, root });
+    await integrations.gmailTriage({ accountId: 'work', limit: 2, root });
   } finally {
     console.log = originalLog;
     restore();
@@ -140,8 +141,13 @@ test('gmail triage records keep and archive verdicts without mutating the mailbo
       subject: 'dinner this week?',
     },
   ]);
-  assert.deepEqual(output, ['gmail triage recorded 1 keep and 1 archive verdicts.']);
+  assert.deepEqual(output, [
+    'gmail triage recorded 1 keep and 1 archive verdicts.',
+    'gmail triage recorded 0 keep and 0 archive verdicts (2 already judged).',
+  ]);
   assert.deepEqual(calls.map((call) => call.pathname), [
+    '/integrations/gmail/accounts',
+    '/integrations/gmail/messages?max_results=2&account_id=work',
     '/integrations/gmail/accounts',
     '/integrations/gmail/messages?max_results=2&account_id=work',
   ]);
