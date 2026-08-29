@@ -29,6 +29,7 @@ search QUERY (free)
     |            or teach URL [--section N] (one chapter: claim numbers, named mechanisms, one check; free unless --save)
     |                 next --section refuses until recap/skip
     |                 owed prints unpaid check; successful unlock prints next section command
+    |                 bare teach resumes owed, or prints a start command if nothing is owed
     |
    write one Apply (claimable) before process
     |
