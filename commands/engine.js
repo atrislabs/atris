@@ -1301,6 +1301,147 @@ function writeProbeReceipt(result, root = process.cwd()) {
   }
 }
 
+function runBenchCommand(args, root, deps = {}) {
+  const probe = deps.probe || probeEngine;
+
+  const names = [];
+  let runs = 3;
+  let timeout;
+  let json = false;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    if (a === '--runs') { runs = parseInt(args[i + 1] || '3', 10); i += 1; continue; }
+    if (a.startsWith('--runs=')) { runs = parseInt(a.slice('--runs='.length), 10); continue; }
+    if (a === '--timeout') { timeout = parseInt(args[i + 1] || '0', 10) * 1000; i += 1; continue; }
+    if (a.startsWith('--timeout=')) { timeout = parseInt(a.slice('--timeout='.length), 10) * 1000; continue; }
+    if (a === '--json') { json = true; continue; }
+    if (a.startsWith('--')) continue;
+    names.push(a);
+  }
+
+  let enginesToBench;
+  if (names.length) {
+    enginesToBench = names.map((n) => {
+      const c = canonicalEngineName(n);
+      if (!c) {
+        throw new Error(`Unknown engine "${n}". Known engines: ${RUNNER_PROFILE_NAMES.join(', ')}`);
+      }
+      return c;
+    });
+  } else {
+    enginesToBench = deps.installedEngines || RUNNER_PROFILE_NAMES.filter((n) => binInstalled(RUNNER_PROFILE_DEFS[n].bin));
+    if (!enginesToBench.length) {
+      if (json) {
+        console.log(JSON.stringify({ ok: false, error: 'no installed engines to bench' }, null, 2));
+      } else {
+        console.error('\n  no installed engines to bench\n');
+      }
+      return 1;
+    }
+  }
+
+  const probeOpts = {};
+  if (timeout) probeOpts.timeout = timeout;
+
+  const results = [];
+  let allHavePasses = true;
+
+  for (const engine of enginesToBench) {
+    const passedRuns = [];
+    let passes = 0;
+    for (let i = 0; i < runs; i += 1) {
+      const res = probe(engine, probeOpts);
+      if (res.pass) {
+        passedRuns.push(res.durationMs);
+        passes += 1;
+      }
+    }
+
+    let medianMs = 0;
+    let minMs = 0;
+    let maxMs = 0;
+
+    if (passes > 0) {
+      passedRuns.sort((a, b) => a - b);
+      minMs = passedRuns[0];
+      maxMs = passedRuns[passedRuns.length - 1];
+      const mid = Math.floor(passes / 2);
+      medianMs = passes % 2 !== 0 ? passedRuns[mid] : (passedRuns[mid - 1] + passedRuns[mid]) / 2;
+    } else {
+      allHavePasses = false;
+    }
+
+    results.push({
+      engine,
+      passes,
+      runs,
+      medianMs,
+      minMs,
+      maxMs,
+    });
+  }
+
+  results.sort((a, b) => {
+    if (a.passes === 0 && b.passes !== 0) return 1;
+    if (b.passes === 0 && a.passes !== 0) return -1;
+    if (a.passes === 0 && b.passes === 0) return a.engine.localeCompare(b.engine);
+    return a.medianMs - b.medianMs;
+  });
+
+  const stateFile = path.join(root, '.atris', 'state', 'engine-bench.latest.json');
+  let previous = null;
+  try {
+    if (fs.existsSync(stateFile)) {
+      previous = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    }
+  } catch {
+    // best-effort read
+  }
+
+  const stateObj = {
+    at: new Date().toISOString(),
+    runs,
+    results,
+  };
+
+  try {
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    fs.writeFileSync(stateFile, `${JSON.stringify(stateObj, null, 2)}\n`);
+  } catch {
+    // best-effort write
+  }
+
+  if (json) {
+    console.log(JSON.stringify({ ...stateObj, previous }, null, 2));
+    return allHavePasses ? 0 : 1;
+  }
+
+  console.log('');
+  for (const r of results) {
+    let deltaStr = '';
+    if (previous && previous.results) {
+      const prevRes = previous.results.find((pr) => pr.engine === r.engine);
+      if (prevRes && prevRes.passes > 0 && r.passes > 0) {
+        const diff = Math.round(r.medianMs - prevRes.medianMs);
+        if (diff > 0) deltaStr = ` (slower by ${diff}ms)`;
+        else if (diff < 0) deltaStr = ` (faster by ${Math.abs(diff)}ms)`;
+        else deltaStr = ' (no change)';
+      }
+    }
+
+    if (r.passes > 0) {
+      const ms = Math.round(r.medianMs);
+      console.log(`  ${r.engine.padEnd(12)} ${r.passes}/${r.runs} passes, median ${ms}ms${deltaStr}`);
+    } else {
+      console.error(`  ${r.engine.padEnd(12)} FAIL, 0/${r.runs} passes`);
+    }
+  }
+  console.log('');
+
+  return allHavePasses ? 0 : 1;
+}
+
 function runEngineTest(targets, { json, root } = {}) {
   let enginesToTest;
   if (targets && targets.length) {
@@ -1525,6 +1666,10 @@ function engineCommand(args = [], deps = {}) {
     return runEngineTest(positional.slice(1), { json, root });
   }
 
+  if (sub === 'bench') {
+    return runBenchCommand(scope.args.slice(scope.args.indexOf('bench') + 1), root, deps);
+  }
+
   if (sub === 'resolve') {
     return runResolveCommand(scope.args.slice(scope.args.indexOf('resolve') + 1), root);
   }
@@ -1552,7 +1697,7 @@ function engineCommand(args = [], deps = {}) {
   if (!sub || sub === 'list' || sub === 'status' || sub === 'help') {
     if (sub === 'help' || args.includes('--help') || args.includes('-h')) {
       console.log('\n  atris engine watch [<id>|latest] [--no-follow]\n                           follow one live transcript or list running engine work');
-      console.log('\n  atris engine            roster + current default\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine validate <receipt-path|latest> [--engine <name>]\n                           check ask answers with a different read-only referee\n  atris engine validate scoreboard\n                           show pass rates by worker engine\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+      console.log('\n  atris engine            roster + current default\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine bench [names...] [--runs N]\n                           ranked latency scoreboard of engine passes\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine validate <receipt-path|latest> [--engine <name>]\n                           check ask answers with a different read-only referee\n  atris engine validate scoreboard\n                           show pass rates by worker engine\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
       return 0;
     }
     if (isFreshWorkspace(root)) {
@@ -1608,6 +1753,7 @@ module.exports = {
   renderEngineChart,
   parseDispatchArgs,
   runDispatchCommand,
+  runBenchCommand,
   ENGINE_LOGIN_MANIFESTS,
   expandHomePath,
   normalizeLoginProvider,
