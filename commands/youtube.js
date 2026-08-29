@@ -44,7 +44,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links');
   output('search --paid = 5 credits, watch permalinks + titles from Atris');
   output('notes = free local notes to stdout; ephemeral unless --save');
-  output('teach = one chapter from local captions; ephemeral unless --save');
+  output('teach = one chapter from local captions; bare teach resumes unpaid checks');
   output('rich ephemeral notes/teach print one apply next-step (no files)');
   output('process = 5 credits cloud knowledge (needs a filled Apply)');
   output('digest = one decision page from this week\'s video briefs');
@@ -2082,6 +2082,8 @@ const TEACH_PAID_REFUSE = 'teach is free local captions. drop --paid.';
 const TEACH_THIN_REFUSE = 'thin: no number or named mechanism. no brief.';
 const TEACH_OWED_FILE = 'youtube-teach-owed.json';
 const TEACH_RECAP_MISSING = '--recap needs the unpaid check';
+const TEACH_RESUME_START = 'atris youtube teach <url>';
+const TEACH_RESUME_NEXT = 'next: atris youtube teach recap TEXT or atris youtube teach skip';
 const TEACH_APPLY_NEXT_MESSAGE = APPLY_NEXT_MESSAGE;
 const TEACH_KEEP_RULE = 'keep only if measure.py moves 0→1. scores 1 only when the fixture contains the check tokens.';
 const MECHANISM_STOP = new Set([
@@ -2111,12 +2113,14 @@ function parseTeachArgs(argv = []) {
     json: false,
     skip: false,
     owed: false,
+    resume: false,
     recap: null,
     url: null,
     section: 1,
   };
+  let sectionSet = false;
 
-  if (args.length === 0 || ['help', '--help', '-h'].includes(args[0])) {
+  if (args.length > 0 && ['help', '--help', '-h'].includes(args[0])) {
     options.help = true;
     return options;
   }
@@ -2153,6 +2157,7 @@ function parseTeachArgs(argv = []) {
         throw new Error('--section must be a positive integer');
       }
       options.section = value;
+      sectionSet = true;
       i += 1;
     } else if (arg.startsWith('--section=')) {
       const value = Number.parseInt(arg.slice('--section='.length), 10);
@@ -2160,6 +2165,7 @@ function parseTeachArgs(argv = []) {
         throw new Error('--section must be a positive integer');
       }
       options.section = value;
+      sectionSet = true;
     } else if (arg.startsWith('-')) {
       throw new Error(`Unknown option: ${arg}`);
     } else if (arg === 'recap' && options.recap == null && !options.url) {
@@ -2185,6 +2191,11 @@ function parseTeachArgs(argv = []) {
 
   if (options.help) return options;
   if (!options.url && options.recap == null && !options.skip && !options.owed) {
+    if (!sectionSet && !options.save) {
+      options.owed = true;
+      options.resume = true;
+      return options;
+    }
     throw new Error('Missing YouTube URL. Run "atris youtube teach --help".');
   }
   return options;
@@ -2482,6 +2493,7 @@ function printTeachOwed(parsed, deps, output) {
   }
   if (!rows.length) {
     output('nothing owed');
+    if (parsed.resume) output(TEACH_RESUME_START);
     return 0;
   }
   rows.forEach((row, index) => {
@@ -2490,6 +2502,7 @@ function printTeachOwed(parsed, deps, output) {
     output(`section ${row.section}`);
     if (row.check) output(row.check);
   });
+  if (parsed.resume) output(TEACH_RESUME_NEXT);
   return 0;
 }
 
