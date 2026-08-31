@@ -39,6 +39,9 @@ search QUERY (free)
    store knowledge? --> process URL (5 credits)
 
 --paid QUERY only if the user asked to buy permalinks
+    |
+   rows --> next: atris youtube teach <first-url>
+        --> --json stays quiet
 login: atris login --agent from a stored login
 never paste tokens, never /auth/cli
 ```
@@ -93,7 +96,7 @@ atris youtube search --paid "MCP agents 2026"
 atris youtube search --paid "MCP agents" --limit 10
 ```
 
-Requires a stored login, then `atris login --agent`. The CLI mints a youtube-scope agent token from disk the same way as `atris youtube process` and `atris x-search`. Never `/auth/cli`. Never paste tokens. Prints `title | watch permalink` plus credits. Empty or failed searches refund.
+Requires a stored login, then `atris login --agent`. The CLI mints a youtube-scope agent token from disk the same way as `atris youtube process` and `atris x-search`. Never `/auth/cli`. Never paste tokens. Prints `title | watch permalink` plus credits. A hit prints one next: `atris youtube teach <first-url>`. `--json` stays quiet. Empty or failed searches refund.
 
 Line contract:
 

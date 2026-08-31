@@ -634,6 +634,8 @@ test('youtube search --paid posts /youtube/search and prints titles, permalinks,
   assert.match(text, /Agent Stack Tour \| https:\/\/www\.youtube\.com\/watch\?v=mcp2026b/);
   assert.match(text, /Credits: 5 used, 995 remaining/);
   assert.doesNotMatch(text, /token-123/);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
+  assert.equal(output.includes('next: atris youtube teach "https://www.youtube.com/watch?v=mcp2026a"'), true);
 });
 
 test('youtube search --paid --json prints the raw payload', async () => {
@@ -653,7 +655,9 @@ test('youtube search --paid --json prints the raw payload', async () => {
     }),
   });
   assert.equal(status, 0);
-  const parsed = JSON.parse(output.join('\n'));
+  const text = output.join('\n');
+  assert.doesNotMatch(text, /next: atris youtube teach/);
+  const parsed = JSON.parse(text);
   assert.equal(parsed.credits_used, 5);
   assert.equal(parsed.data.results[0].title, 'Hi');
 });
@@ -674,6 +678,7 @@ test('youtube search --paid empty results prints credits and exits 2', async () 
   assert.match(output.join('\n'), /no videos found/);
   assert.match(output.join('\n'), /Credits: 0 used, 1000 remaining/);
   assert.match(output.join('\n'), /credits refunded/);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube teach/);
   assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
 });
 
