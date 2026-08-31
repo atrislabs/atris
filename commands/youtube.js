@@ -32,6 +32,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`       ${commandName} notes <youtube-url> [youtube-url-or-playlist...] [engine] [--save]`);
   output(`       ${commandName} teach <youtube-url> [--section N] [--save] [--recap TEXT] [--skip]`);
   output(`       ${commandName} teach owed [--json]`);
+  output(`       ${commandName} teach next [--json]`);
   output(`       ${commandName} unsave <url-or-id>`);
   output(`       ${commandName} process <youtube-url> [options]`);
   output(`       ${commandName} digest [--days N]`);
@@ -44,7 +45,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links');
   output('search --paid = 5 credits, watch permalinks + titles from Atris');
   output('notes = free local notes to stdout; ephemeral unless --save');
-  output('teach = one chapter from local captions; bare teach resumes unpaid checks');
+  output('teach = one chapter from local captions; bare teach resumes unpaid checks; next continues after recap or skip');
   output('rich ephemeral notes/teach print one apply next-step (no files)');
   output('process = 5 credits cloud knowledge (needs a filled Apply)');
   output('digest = one decision page from this week\'s video briefs');
@@ -60,6 +61,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('  --recap <text>      Unlock the next teach section with the unpaid check');
   output('  --skip              Unlock the next teach section without answering');
   output('  owed                Print the unpaid teach check (no network)');
+  output('  next                Next unlocked chapter (no url, no billing)');
   output('  --unsave            Delete filed brief, apply stub, and matching notes/teach experiment packs (no paid calls)');
   output('  --query, -q <text>  Focus question for the analysis');
   output('  --agent <id>        Agent id to store knowledge against');
@@ -79,6 +81,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID --save`);
   output(`  ${commandName} teach "https://www.youtube.com/watch?v=VIDEO_ID"`);
   output(`  ${commandName} teach "https://www.youtube.com/watch?v=VIDEO_ID" --section 2`);
+  output(`  ${commandName} teach next`);
   output(`  ${commandName} notes --unsave VIDEO_ID`);
   output(`  ${commandName} unsave VIDEO_ID`);
   output(`  ${commandName} notes https://www.youtube.com/watch?v=VIDEO_ID https://youtu.be/OTHER_ID`);
@@ -2077,13 +2080,14 @@ async function runYoutubeSearch(args = [], deps = {}) {
   return 0;
 }
 
-const YTTEACH_USAGE = 'usage: atris youtube teach <youtube-url> [--section N] [--save] [--recap TEXT] [--skip] | owed';
+const YTTEACH_USAGE = 'usage: atris youtube teach <youtube-url> [--section N] [--save] [--recap TEXT] [--skip] | owed | next';
 const TEACH_PAID_REFUSE = 'teach is free local captions. drop --paid.';
 const TEACH_THIN_REFUSE = 'thin: no number or named mechanism. no brief.';
 const TEACH_OWED_FILE = 'youtube-teach-owed.json';
 const TEACH_RECAP_MISSING = '--recap needs the unpaid check';
 const TEACH_RESUME_START = 'atris youtube teach <url>';
 const TEACH_RESUME_NEXT = 'next: atris youtube teach recap TEXT or atris youtube teach skip';
+const TEACH_CONTINUE_NEXT = 'next: atris youtube teach next';
 const TEACH_APPLY_NEXT_MESSAGE = APPLY_NEXT_MESSAGE;
 const TEACH_KEEP_RULE = 'keep only if measure.py moves 0→1. scores 1 only when the fixture contains the check tokens.';
 const MECHANISM_STOP = new Set([
@@ -2114,6 +2118,7 @@ function parseTeachArgs(argv = []) {
     skip: false,
     owed: false,
     resume: false,
+    next: false,
     recap: null,
     url: null,
     section: 1,
@@ -2182,6 +2187,8 @@ function parseTeachArgs(argv = []) {
       options.skip = true;
     } else if (arg === 'owed' && !options.url) {
       options.owed = true;
+    } else if (arg === 'next' && !options.url) {
+      options.next = true;
     } else if (!options.url && looksLikeYoutubeUrl(arg)) {
       options.url = arg;
     } else {
@@ -2190,7 +2197,7 @@ function parseTeachArgs(argv = []) {
   }
 
   if (options.help) return options;
-  if (!options.url && options.recap == null && !options.skip && !options.owed) {
+  if (!options.url && options.recap == null && !options.skip && !options.owed && !options.next) {
     if (!sectionSet && !options.save) {
       options.owed = true;
       options.resume = true;
@@ -2447,17 +2454,70 @@ function writeTeachOwedStore(deps, store) {
   }
 }
 
-function rememberTeachOwed(deps, { url, section, lesson } = {}) {
+function rememberTeachOwed(deps, { url, section, lesson, total } = {}) {
   const id = videoIdFromUrl(url);
   if (!id) return;
   const store = readTeachOwedStore(deps);
-  store[id] = {
+  const row = {
     section: Number(section) || 1,
     check: teachCheckLine(lesson),
     tokens: teachRecapTokens(lesson),
     url: url || undefined,
   };
+  const totalChapters = Number(total);
+  if (Number.isInteger(totalChapters) && totalChapters > 0) row.total = totalChapters;
+  store[id] = row;
   writeTeachOwedStore(deps, store);
+}
+
+function writeTeachContinue(store, id, entry) {
+  const nextSection = (Number(entry && entry.section) || 1) + 1;
+  const total = Number(entry && entry.total);
+  if (Number.isInteger(total) && total > 0 && nextSection > total) {
+    delete store[id];
+    return null;
+  }
+  const cursor = {
+    section: nextSection,
+    url: (entry && entry.url) || undefined,
+  };
+  if (Number.isInteger(total) && total > 0) cursor.total = total;
+  store[id] = cursor;
+  return cursor;
+}
+
+function lastTeachContinueEntry(store) {
+  const ids = Object.keys(store || {});
+  for (let i = ids.length - 1; i >= 0; i -= 1) {
+    const entry = store[ids[i]];
+    if (!entry || typeof entry !== 'object') continue;
+    if (String(entry.check || '').trim()) continue;
+    const url = String(entry.url || '').trim();
+    if (!url) continue;
+    return {
+      id: ids[i],
+      url,
+      section: Number(entry.section) || 1,
+    };
+  }
+  return null;
+}
+
+function lastTeachUnpaidEntry(store) {
+  const ids = Object.keys(store || {});
+  for (let i = ids.length - 1; i >= 0; i -= 1) {
+    const entry = store[ids[i]];
+    if (!entry || typeof entry !== 'object') continue;
+    const check = String(entry.check || '').trim();
+    if (!check) continue;
+    return {
+      id: ids[i],
+      check,
+      url: entry.url || null,
+      section: Number(entry.section) || 1,
+    };
+  }
+  return null;
 }
 
 function previousTeachUnlocked(owed, section) {
@@ -2469,8 +2529,7 @@ function printTeachUnlockNext(parsed, entry, output) {
   if (!parsed || parsed.json) return;
   const url = parsed.url || (entry && entry.url) || '';
   if (!url) return;
-  const nextSection = (Number(entry && entry.section) || 1) + 1;
-  output(`next: atris youtube teach ${quoteYoutubeUrl(url)} --section ${nextSection}`);
+  output(TEACH_CONTINUE_NEXT);
 }
 
 function listTeachOwedEntries(store) {
@@ -2482,7 +2541,7 @@ function listTeachOwedEntries(store) {
       section: Number(entry.section) || 1,
       check: String(entry.check || '').trim(),
     };
-  });
+  }).filter((row) => row.check);
 }
 
 function printTeachOwed(parsed, deps, output) {
@@ -2512,9 +2571,11 @@ function applyTeachRecap(parsed, deps, output) {
   let entry = id ? store[id] : null;
   if (!entry && !id) {
     const ids = Object.keys(store);
+    const unpaidIds = ids.filter((key) => store[key] && String(store[key].check || '').trim());
     if (parsed.recap) {
-      id = ids.find((key) => recapHitsTokens(parsed.recap, store[key] && store[key].tokens));
+      id = unpaidIds.find((key) => recapHitsTokens(parsed.recap, store[key] && store[key].tokens));
     }
+    if (!id && unpaidIds.length === 1) id = unpaidIds[0];
     if (!id && ids.length === 1) id = ids[0];
     entry = id ? store[id] : null;
   }
@@ -2523,9 +2584,13 @@ function applyTeachRecap(parsed, deps, output) {
     if (!parsed.json) output('recap the previous section first');
     return 2;
   }
+  if (!String(entry.check || '').trim()) {
+    printTeachUnlockNext(parsed, entry, output);
+    return 0;
+  }
   if (parsed.skip) {
     printTeachUnlockNext(parsed, entry, output);
-    delete store[id];
+    writeTeachContinue(store, id, entry);
     writeTeachOwedStore(deps, store);
     return 0;
   }
@@ -2534,8 +2599,30 @@ function applyTeachRecap(parsed, deps, output) {
     return 2;
   }
   printTeachUnlockNext(parsed, entry, output);
-  delete store[id];
+  writeTeachContinue(store, id, entry);
   writeTeachOwedStore(deps, store);
+  return 0;
+}
+
+function applyTeachNext(parsed, deps, output) {
+  const store = readTeachOwedStore(deps);
+  const cont = lastTeachContinueEntry(store);
+  if (cont) {
+    parsed.url = cont.url;
+    parsed.section = cont.section;
+    return 0;
+  }
+  const unpaid = lastTeachUnpaidEntry(store);
+  if (unpaid) {
+    if (!parsed.json) output(unpaid.check);
+    return 2;
+  }
+  if (parsed.json) {
+    output('[]');
+    return 0;
+  }
+  output('nothing owed');
+  output(TEACH_RESUME_START);
   return 0;
 }
 
@@ -2900,6 +2987,11 @@ async function runYoutubeTeach(args = [], deps = {}) {
     if (recapCode !== 0) return recapCode;
     if (!parsed.url || parsed.section <= 1) return 0;
   }
+  if (parsed.next) {
+    const nextCode = applyTeachNext(parsed, owedDeps, output);
+    if (nextCode !== 0) return nextCode;
+    if (!parsed.url) return 0;
+  }
 
   if (!parsed.url) {
     output('Missing YouTube URL. Run "atris youtube teach --help".');
@@ -2937,7 +3029,12 @@ async function runYoutubeTeach(args = [], deps = {}) {
     title: source.title,
   });
   output(lesson.text);
-  rememberTeachOwed(owedDeps, { url: parsed.url, section: parsed.section, lesson });
+  rememberTeachOwed(owedDeps, {
+    url: parsed.url,
+    section: parsed.section,
+    lesson,
+    total: chapters.length,
+  });
 
   if (!parsed.save) {
     if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'teach');
