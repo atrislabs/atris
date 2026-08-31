@@ -45,7 +45,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links');
   output('search --paid = 5 credits, watch permalinks + titles from Atris');
   output('notes = free local notes to stdout; ephemeral unless --save');
-  output('teach = one chapter from local captions; bare teach resumes unpaid checks; next continues after recap or skip');
+  output('teach = one chapter from local captions; bare teach resumes unpaid checks, then the next chapter after recap or skip');
   output('rich ephemeral notes/teach print one apply next-step (no files)');
   output('process = 5 credits cloud knowledge (needs a filled Apply)');
   output('digest = one decision page from this week\'s video briefs');
@@ -2626,6 +2626,12 @@ function applyTeachNext(parsed, deps, output) {
   return 0;
 }
 
+function applyTeachResume(parsed, deps, output) {
+  const store = readTeachOwedStore(deps);
+  if (lastTeachUnpaidEntry(store)) return printTeachOwed(parsed, deps, output);
+  return applyTeachNext(parsed, deps, output);
+}
+
 function teachCheckLine(lesson = {}) {
   return oneTeachCheck(lesson.mechanisms || [], lesson.numbers || [], '');
 }
@@ -2981,7 +2987,12 @@ async function runYoutubeTeach(args = [], deps = {}) {
   }
 
   const owedDeps = { ...deps, cwd: deps.cwd || process.cwd() };
-  if (parsed.owed) return printTeachOwed(parsed, owedDeps, output);
+  if (parsed.owed) {
+    if (!parsed.resume) return printTeachOwed(parsed, owedDeps, output);
+    const resumeCode = applyTeachResume(parsed, owedDeps, output);
+    if (resumeCode !== 0) return resumeCode;
+    if (!parsed.url) return 0;
+  }
   if (parsed.recap != null || parsed.skip) {
     const recapCode = applyTeachRecap(parsed, owedDeps, output);
     if (recapCode !== 0) return recapCode;

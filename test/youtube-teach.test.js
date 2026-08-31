@@ -1146,6 +1146,147 @@ test('bare youtube teach with empty owed prints nothing owed and one start comma
   assert.equal(fs.existsSync(path.join(cwd, '.atris', 'youtube-teach-owed.json')), false);
 });
 
+test('bare youtube teach after skip continues the next chapter without a url', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-skip-'));
+  const first = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(first, 0);
+  const skipped = await youtubeCommand(['teach', '--skip'], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => {
+      throw new Error('skip must not fetch captions');
+    },
+  });
+  assert.equal(skipped, 0);
+
+  const owedOut = collect();
+  const owedStatus = await youtubeCommand(['teach', 'owed'], {
+    cwd,
+    output: owedOut.output,
+    extractTeachSource: async () => {
+      throw new Error('owed must not fetch captions');
+    },
+  });
+  assert.equal(owedStatus, 0);
+  assert.equal(owedOut.text().trim(), 'nothing owed');
+
+  const out = collect();
+  let extractCalls = 0;
+  let extractedUrl = null;
+  const status = await youtubeCommand(['teach'], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async (url) => {
+      extractCalls += 1;
+      extractedUrl = url;
+      return fixtureSource();
+    },
+  });
+  assert.equal(status, 0);
+  assert.equal(extractCalls, 1);
+  assert.equal(extractedUrl, TEACH_URL);
+  assert.match(out.text(), /section 2\/2  shape up/);
+  assert.match(out.text(), /six-week/);
+  assert.doesNotMatch(out.text(), /nothing owed|80 people/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
+});
+
+test('bare youtube teach after recap continues the next chapter without a url', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-recap-'));
+  const first = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(first, 0);
+  const recapped = await youtubeCommand(['teach', 'recap', 'omakase model'], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => {
+      throw new Error('recap must not fetch captions');
+    },
+  });
+  assert.equal(recapped, 0);
+
+  const out = collect();
+  const status = await youtubeCommand(['teach'], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(status, 0);
+  assert.match(out.text(), /section 2\/2  shape up/);
+  assert.match(out.text(), /six-week/);
+  assert.doesNotMatch(out.text(), /nothing owed/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
+});
+
+test('bare youtube teach --json after skip stays without human next lines', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-json-skip-'));
+  const first = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(first, 0);
+  const skipped = await youtubeCommand(['teach', '--skip', '--json'], {
+    cwd,
+    output: () => {},
+    extractTeachSource: async () => {
+      throw new Error('skip must not fetch captions');
+    },
+  });
+  assert.equal(skipped, 0);
+
+  const out = collect();
+  const status = await youtubeCommand(['teach', '--json'], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+  assert.equal(status, 0);
+  assert.match(out.text(), /section 2\/2  shape up/);
+  assert.doesNotMatch(out.text(), /nothing owed|next: atris youtube teach/);
+});
+
+test('bare youtube teach unpaid owed still wins over a continue-cursor', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-unpaid-wins-'));
+  fs.mkdirSync(path.join(cwd, '.atris'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, '.atris', 'youtube-teach-owed.json'), `${JSON.stringify({
+    other99: {
+      section: 2,
+      url: 'https://www.youtube.com/watch?v=other99',
+    },
+    teach01: {
+      section: 1,
+      check: 'what is the omakase model?',
+      url: TEACH_URL,
+    },
+  })}\n`);
+
+  const out = collect();
+  let extractCalls = 0;
+  const status = await youtubeCommand(['teach'], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => {
+      extractCalls += 1;
+      throw new Error('unpaid owed must not fetch captions');
+    },
+  });
+  assert.equal(status, 0);
+  assert.equal(extractCalls, 0);
+  assert.match(out.text(), /teach01|watch\?v=teach01/);
+  assert.match(out.text(), /section 1/);
+  assert.match(out.text(), /what is the omakase model\?/);
+  assert.match(out.text(), /next: atris youtube teach recap TEXT or atris youtube teach skip/);
+  assert.doesNotMatch(out.text(), /nothing owed|section 2\/2|shape up|other99/i);
+});
+
 test('bare youtube teach does not steal a url or --section invocation', async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-steal-'));
   let extractCalls = 0;
