@@ -28,6 +28,7 @@ const SAMPLE_ROW = {
 };
 const SAMPLE_LINE =
   'MCP Agents in 2026 | Dev Channel | 18:22 | 42000 | 20260820 | https://youtu.be/mcp2026a';
+const TEACH_NEXT_LINE = 'next: atris youtube teach "https://youtu.be/mcp2026a"';
 
 function mockSearchFs(files = {}) {
   const store = { ...files };
@@ -132,6 +133,7 @@ test('youtube search --help prints usage without calling the runner', async () =
   assert.match(output.join('\n'), /--paid/);
   assert.match(output.join('\n'), /zero credits|Does not bill credits/i);
   assert.match(output.join('\n'), /5 credits/);
+  assert.match(output.join('\n'), /next: atris youtube teach/);
 });
 
 test('youtube --help lists paid search', async () => {
@@ -143,6 +145,7 @@ test('youtube --help lists paid search', async () => {
   const text = output.join('\n');
   assert.match(text, /search --paid/);
   assert.match(text, /5 credits, watch permalinks/);
+  assert.match(text, /hands off to teach/);
 });
 
 test('youtube search prints youtu.be links from mocked runner', async () => {
@@ -170,6 +173,8 @@ test('youtube search prints youtu.be links from mocked runner', async () => {
   assert.match(text, /https:\/\/youtu\.be\/mcp2026b/);
   assert.match(text, /MCP Agents in 2026/);
   assert.match(text, /Dev Channel/);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
+  assert.equal(output.includes(TEACH_NEXT_LINE), true);
 });
 
 test('youtube search --json prints parsed rows', async () => {
@@ -184,7 +189,9 @@ test('youtube search --json prints parsed rows', async () => {
   });
 
   assert.equal(status, 0);
-  const parsed = JSON.parse(output.join('\n'));
+  const text = output.join('\n');
+  assert.doesNotMatch(text, /next: atris youtube teach/);
+  const parsed = JSON.parse(text);
   assert.equal(parsed.length, 1);
   assert.equal(parsed[0].url, 'https://youtu.be/one123');
   assert.equal(parsed[0].upload_date, '20260101');
@@ -210,6 +217,7 @@ test('youtube search empty results exits 2', async () => {
   });
   assert.equal(status, 2);
   assert.match(output.join('\n'), /no videos found/);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube teach/);
   assert.equal(fsMock.store[CACHE_PATH], undefined);
 });
 
@@ -263,6 +271,7 @@ test('youtube search retries once after a 429 then prints videos', async () => {
   const text = output.join('\n');
   assert.match(text, /https:\/\/youtu\.be\/mcp2026a/);
   assert.match(text, /MCP Agents in 2026/);
+  assert.equal(output.includes(TEACH_NEXT_LINE), true);
   assert.doesNotMatch(text, /429|Too Many Requests|\/youtube\/search|--paid/);
 });
 
@@ -378,6 +387,8 @@ test('youtube search persistent 429 serves fresh same-query cache and stays off 
   const text = output.join('\n');
   assert.match(text, /MCP Agents in 2026 \| Dev Channel \| 18:22 \| 42000 \| 20260820 \| https:\/\/youtu\.be\/mcp2026a/);
   assert.match(text, new RegExp(CACHE_NOTE));
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
+  assert.equal(output.includes(TEACH_NEXT_LINE), true);
   assert.doesNotMatch(text, /\/youtube\/search|--paid|token/);
 });
 
