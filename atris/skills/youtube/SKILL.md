@@ -18,6 +18,9 @@ Hard path. Follow in order. Soft memory does not override this.
 ```
 search QUERY (free)
     |
+   rows --> next: atris youtube teach <first-url>
+        --> --json stays quiet
+    |
    429 --> CLI already retried once
         --> cached rows printed? use them
         --> rate-limit sentence printed? STOP
@@ -40,7 +43,7 @@ login: atris login --agent from a stored login
 never paste tokens, never /auth/cli
 ```
 
-1. Get watch permalinks: `atris youtube search QUERY` (free).
+1. Get watch permalinks: `atris youtube search QUERY` (free). A hit prints one next teach command.
 2. If 429: wait/retry is already in the CLI. If it prints cached rows, use those. If it prints `youtube rate-limited local search. do not use --paid as a fallback; retry later.`, STOP. Do not run `--paid`.
 3. `--paid` only when the user explicitly asked to buy permalinks. The CLI hard-refuses `--paid` when the free cache still has a fresh same-query hit.
 4. `atris youtube notes URL` after a URL is picked (free). Notes is ephemeral unless `--save`. Rich ephemeral prints one apply next-step and writes no files. Rich `--save` files the brief and mints `atris/experiments/notes-<id>/`; thin `--save` (no number-with-units and no named mechanism) refuses with no brief and exit 2. Do not auto `--paid`.
@@ -77,7 +80,7 @@ atris youtube search "MCP agents" --limit 10
 atris youtube search "MCP agents" --json
 ```
 
-Uses `ytsearch` on PATH when present, else bundled `scripts/det/ytsearch`, else `yt-dlp --flat-playlist --print` with `ytsearchN:`. No credits. No `/agent/process_youtube` call.
+Uses `ytsearch` on PATH when present, else bundled `scripts/det/ytsearch`, else `yt-dlp --flat-playlist --print` with `ytsearchN:`. No credits. No `/agent/process_youtube` call. A hit prints one next: `atris youtube teach <first-url>`. `--json` stays quiet.
 
 On 429 the CLI retries once, then serves `~/.atris/youtube-search-cache.json` if the same query is younger than one hour. If it prints the rate-limit sentence, stop. Do not run `--paid`.
 
@@ -96,9 +99,10 @@ Line contract:
 
 ```text
 title | channel | duration | views | upload_date | https://youtu.be/ID
+next: atris youtube teach "<first-url>"
 ```
 
-`upload_date` is `YYYYMMDD` (or `NA`) so callers can apply a freshness gate (for example last 6 weeks). After the user picks a URL, run notes (free) or process (5 credits).
+`upload_date` is `YYYYMMDD` (or `NA`) so callers can apply a freshness gate (for example last 6 weeks). `--json` stays machine-quiet. After the user picks a URL, run notes (free) or process (5 credits).
 
 ---
 

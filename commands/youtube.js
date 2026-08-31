@@ -42,7 +42,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`       ${commandName} watch tick`);
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
-  output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links');
+  output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links; hands off to teach');
   output('search --paid = 5 credits, watch permalinks + titles from Atris');
   output('notes = free local notes to stdout; ephemeral unless --save');
   output('teach = one chapter from local captions; bare teach resumes unpaid checks, then the next chapter after recap or skip');
@@ -1580,7 +1580,7 @@ function showYoutubeSearchHelp(output = console.log, commandName = 'atris youtub
   output('');
   output('Free local discovery. Uses ytsearch on PATH when present, else the');
   output('bundled scripts/det/ytsearch, else yt-dlp ytsearchN with the same print contract.');
-  output('Does not bill credits. Process stays the 5-credit step after you pick a URL.');
+  output('Does not bill credits. A hit prints one next: atris youtube teach <first-url>.');
   output('');
   output(`--paid buys watch permalinks from Atris (${PAID_SEARCH_COST_HINT}).`);
   output('Requires login. Same auth path as atris youtube process.');
@@ -1720,6 +1720,10 @@ function printSearchRows(rows, options, output) {
     return;
   }
   output(formatSearchResults(rows));
+  const firstUrl = Array.isArray(rows) && rows[0] && rows[0].url;
+  if (firstUrl) {
+    output(`next: atris youtube teach ${quoteYoutubeUrl(firstUrl)}`);
+  }
 }
 
 function writeLocalSearchCache(query, rows, deps = {}) {
