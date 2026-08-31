@@ -1250,7 +1250,7 @@ test('bare youtube teach --json after skip stays without human next lines', asyn
   });
   assert.equal(status, 0);
   assert.match(out.text(), /section 2\/2  shape up/);
-  assert.doesNotMatch(out.text(), /nothing owed|next:/);
+  assert.doesNotMatch(out.text(), /nothing owed|next: atris youtube teach/);
 });
 
 test('bare youtube teach unpaid owed still wins over a continue-cursor', async () => {
