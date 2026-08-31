@@ -2371,7 +2371,7 @@ function teachLessonFromCues({ url, section, chapters, chapter, cues, title } = 
   lines.push(oneTeachCheck(mechanisms, numbers, heading));
   if (section < total) {
     lines.push('');
-    lines.push(`next: atris youtube teach ${quoteYoutubeUrl(url)} --section ${section + 1}`);
+    lines.push(TEACH_RESUME_NEXT);
   } else {
     lines.push('');
     lines.push('next: last section');
