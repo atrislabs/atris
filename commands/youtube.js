@@ -43,7 +43,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
   output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links; hands off to teach');
-  output('search --paid = 5 credits, watch permalinks + titles from Atris');
+  output('search --paid = 5 credits, watch permalinks + titles from Atris; hands off to teach');
   output('notes = free local notes to stdout; ephemeral unless --save');
   output('teach = one chapter from local captions; bare teach resumes unpaid checks, then the next chapter after recap or skip');
   output('rich ephemeral notes/teach print one apply next-step (no files)');
@@ -1584,6 +1584,7 @@ function showYoutubeSearchHelp(output = console.log, commandName = 'atris youtub
   output('');
   output(`--paid buys watch permalinks from Atris (${PAID_SEARCH_COST_HINT}).`);
   output('Requires login. Same auth path as atris youtube process.');
+  output('A hit also prints one next: atris youtube teach <first-url>.');
   output('Empty or failed paid search refunds the credits.');
   output('');
   output('Options:');
@@ -1714,16 +1715,20 @@ function resolveSearchCachePath(deps = {}) {
   return path.join(homeDir, '.atris', LOCAL_SEARCH_CACHE_FILE);
 }
 
+function printSearchTeachNext(rows, options, output) {
+  if (options && options.json) return;
+  const firstUrl = Array.isArray(rows) && rows[0] && rows[0].url;
+  if (!firstUrl) return;
+  output(`next: atris youtube teach ${quoteYoutubeUrl(firstUrl)}`);
+}
+
 function printSearchRows(rows, options, output) {
   if (options.json) {
     output(JSON.stringify(rows, null, 2));
     return;
   }
   output(formatSearchResults(rows));
-  const firstUrl = Array.isArray(rows) && rows[0] && rows[0].url;
-  if (firstUrl) {
-    output(`next: atris youtube teach ${quoteYoutubeUrl(firstUrl)}`);
-  }
+  printSearchTeachNext(rows, options, output);
 }
 
 function writeLocalSearchCache(query, rows, deps = {}) {
@@ -1920,6 +1925,7 @@ async function runPaidYoutubeSearch(options, deps = {}) {
     return 2;
   }
   output(rendered);
+  printSearchTeachNext(videos, options, output);
   return 0;
 }
 
