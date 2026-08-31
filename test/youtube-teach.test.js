@@ -329,10 +329,10 @@ test('lex highlight fixture keeps claim-bearing numbers and named mechanisms', (
   assert.match(text, /overton window/);
   assert.match(check, /overton window|60 seconds to install/);
   assert.doesNotMatch(check, /holy|fuck/i);
-  assert.match(text, /next: atris youtube teach "https:\/\/www\.youtube\.com\/watch\?v=NYFGCESmikA" --section 2/);
+  assert.match(text, /next: atris youtube teach recap TEXT or atris youtube teach skip/);
 });
 
-test('formatTeachLesson prints numbers, mechanisms, one check, and a quoted next line', () => {
+test('formatTeachLesson prints numbers, mechanisms, one check, and the recap next line', () => {
   const cues = parseCaptionCues(TEACH_VTT);
   const chapters = normalizeChapters(TEACH_CHAPTERS, 900);
   const text = formatTeachLesson({
@@ -348,8 +348,8 @@ test('formatTeachLesson prints numbers, mechanisms, one check, and a quoted next
   assert.match(text, /80 people/);
   assert.match(text, /omakase/);
   assert.match(text, /check\nwhat is /);
-  assert.match(text, /next: atris youtube teach "https:\/\/www\.youtube\.com\/watch\?v=teach01" --section 2/);
-  assert.doesNotMatch(text, /six-week/);
+  assert.match(text, /next: atris youtube teach recap TEXT or atris youtube teach skip/);
+  assert.doesNotMatch(text, /six-week|--section 2/);
 });
 
 test('youtube help lists youtube teach', async () => {
@@ -387,7 +387,7 @@ test('youtube teach prints one chapter from fixture captions and chapters', asyn
   assert.match(text, /80 people/);
   assert.match(text, /omakase/);
   assert.match(text, /check\nwhat is /);
-  assert.match(text, /next: atris youtube teach "https:\/\/www\.youtube\.com\/watch\?v=teach01" --section 2/);
+  assert.match(text, /next: atris youtube teach recap TEXT or atris youtube teach skip/);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
   assert.doesNotMatch(text, /six-week/);
   assert.doesNotMatch(text, /process_youtube/);
@@ -838,7 +838,7 @@ test('youtube teach empty tmp section 1 still prints the check and writes no atr
   assert.equal(status, 0);
   assert.match(out.text(), /section 1\/2  omakase/);
   assert.match(out.text(), /check\nwhat is the omakase model\?/);
-  assert.match(out.text(), /next: atris youtube teach "https:\/\/www\.youtube\.com\/watch\?v=teach01" --section 2/);
+  assert.match(out.text(), /next: atris youtube teach recap TEXT or atris youtube teach skip/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
 });
@@ -1302,7 +1302,8 @@ test('bare youtube teach does not steal a url or --section invocation', async ()
   assert.equal(first, 0);
   assert.equal(extractCalls, 1);
   assert.match(firstOut.text(), /section 1\/2  omakase/);
-  assert.doesNotMatch(firstOut.text(), /nothing owed|next: atris youtube teach recap/);
+  assert.match(firstOut.text(), /next: atris youtube teach recap TEXT or atris youtube teach skip/);
+  assert.doesNotMatch(firstOut.text(), /nothing owed/);
 
   const lockedOut = collect();
   const locked = await youtubeCommand(['teach', TEACH_URL, '--section', '2'], {
