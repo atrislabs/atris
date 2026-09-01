@@ -30,6 +30,8 @@ function commitAll(cwd, message, { when = THREE_DAYS_AGO } = {}) {
 function makeRepo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-green-test-'));
   git(root, ['init', '-q', '-b', 'master']);
+  git(root, ['config', 'user.name', 'Bench Author']);
+  git(root, ['config', 'user.email', 'bench@example.com']);
   fs.writeFileSync(path.join(root, 'ok.txt'), 'ok\n');
   fs.writeFileSync(path.join(root, 'check.js'), "process.exit(require('fs').readFileSync('ok.txt','utf8').trim() === 'ok' ? 0 : 1);\n");
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'fixture', version: '0.0.0', scripts: { test: 'node check.js' } }));
