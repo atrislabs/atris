@@ -1622,8 +1622,21 @@ function buildTaskStreams(tasks, goals) {
 // from the existing review handoff, so this relabels what the certification
 // rules already allow and can never widen it.
 function taskApprovalFor(task, { reviewer = 'codex-review', hasExistingReviewFollowUp = null } = {}) {
-  const current = taskPageCurrentStage(task);
   const metadata = task && task.metadata || {};
+  const approvalStatus = (task && task.review && task.review.approval_status) || metadata.approval_status || null;
+  if (task && task.status === 'done' && approvalStatus === 'accepted') {
+    return taskApprovalControls({
+      question: 'Landed and accepted. Nothing to do.',
+      approveLabel: 'Approve the completed work',
+      acceptEnabled: false,
+      acceptCommand: null,
+      requestChangeEnabled: false,
+      requestChangeCommand: null,
+      blockedReason: null,
+      waitingOn: null,
+    });
+  }
+  const current = taskPageCurrentStage(task);
   const actions = taskPageActions(task, { reviewer, hasExistingReviewFollowUp });
   const inReview = current === 'review';
   const handoff = inReview

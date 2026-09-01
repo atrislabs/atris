@@ -33,10 +33,14 @@ module.exports = {
     assert.equal(failed.status, 1);
     assert.equal(parseJson(ctx.runCli(['task', 'show', ref, '--json'])).status, 'claimed');
 
-    const passingVerifier = `${process.execPath} -e "process.exit(0)"`;
+    fs.writeFileSync(path.join(ctx.workspace, 'bench-proof-gate-marker.js'), 'module.exports = { ok: true };\n');
+    const passingVerifier = 'node --check bench-proof-gate-marker.js';
     const ready = parseJson(ctx.runCli(['task', 'ready', ref, '--verify', passingVerifier, '--result', result, '--as', 'bench', '--json']));
-    assert.equal(ready.task.status, 'review');
-    assert.equal(ready.approval_status, 'pending');
+    assert.equal(ready.ok, true);
+    assert.equal(ready.action, 'ready');
+    const readyTask = parseJson(ctx.runCli(['task', 'show', ref, '--json']));
+    assert.equal(readyTask.status, 'review');
+    assert.equal(readyTask.review.approval_status, 'pending');
 
     const runsDir = path.join(ctx.workspace, 'atris', 'runs');
     const receipts = fs.existsSync(runsDir) ? fs.readdirSync(runsDir).filter((file) => file.endsWith('.json')) : [];

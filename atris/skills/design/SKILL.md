@@ -1,7 +1,7 @@
 ---
 name: design
 description: Frontend aesthetics policy. Use when building UI, components, landing pages, dashboards, or any frontend work. Prevents generic ai-generated look.
-version: 3.2.14
+version: 3.2.16
 allowed-tools: Read, Write, Edit, Bash, Glob
 tags:
   - design
@@ -115,6 +115,8 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D12 | one accent moment per card: brand accent for the primary action only, gold for confidence/progress fills, green only for completed; everything else tonal | judgment | active |
 | D13 | motion is calm and eased: 120-300ms ease-out on opacity/transform only, loops match a measured source cadence, prefers-reduced-motion always freezes them | judgment | active |
 | D14 | compact selectors lead with the chosen name and a discriminating icon; remove redundant field labels and visible type explanations when icon, title, and accessible label carry them | judgment | active |
+| D15 | copy density on landing pages: hero lede one sentence, one sentence per feature card, one line per FAQ answer, legal in one short footer paragraph; a section paragraph past ~40 words gets cut or moved one click deep (Keshav 2026-09-01: "SO much blabber yap text. keep it clean") | `<p>` in landing html over 60 words flags; otherwise judgment | active |
+| D16 | verify mobile with real device emulation (Playwright iPhone profile, WebKit for iOS), never headless Chrome --window-size: Chrome floors the window at 500px wide and renders a fake layout (caught 2026-09-01: two "passing" screenshots hid a broken phone nav) | command scan for `--window-size=3` or `--window-size=4` in verify scripts | active |
 | D15 | first viewport restraint: one dominant idea, at most one secondary live region, and everything else behind progressive disclosure; reject permanent three-column cockpit density as default SaaS structure | judgment | active |
 | D16 | one alignment contract per component: wrapper, metadata, controls, and rendered content share the same width and inset source at every viewport | judgment | active |
 | D17 | responsive corrections must test every disclosed state immediately below, at, and above each breakpoint; a fixed bug cannot reappear when a panel opens or the container narrows | judgment | promoted |

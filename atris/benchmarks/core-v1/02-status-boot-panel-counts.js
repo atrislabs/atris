@@ -26,9 +26,10 @@ module.exports = {
 
     const review = parseJson(ctx.runCli(['task', 'new', 'Finished proof waits on people: surface the review count', '--tag', 'bench', '--json']));
     parseJson(ctx.runCli(['task', 'claim', taskRef(review), '--as', 'bench', '--json']));
+    fs.writeFileSync(path.join(ctx.workspace, 'bench-boot-review-proof.js'), 'module.exports = { ok: true };\n');
     parseJson(ctx.runCli([
       'task', 'ready', taskRef(review),
-      '--proof', 'node --test test/bench-tasks.test.js passed',
+      '--verify', 'node --check bench-boot-review-proof.js',
       '--result', 'Operators can now trust the boot panel review count instead of guessing what is waiting.',
       '--as', 'bench',
       '--json',

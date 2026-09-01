@@ -135,6 +135,7 @@ test('x-search --save refuses a thin brief and writes no atris files', async () 
   assert.equal(status, 2);
   assert.match(out.text(), new RegExp(escapeRe(TEACH_THIN_REFUSE)));
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assert.doesNotMatch(out.text(), /next: atris youtube search/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'x-search-quiet-chat.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('quiet chat'))), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
@@ -153,6 +154,7 @@ test('x-search without --save stays stdout only', async () => {
   assert.equal(status, 0);
   assert.match(out.text(), /omakase model/);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('x-search')).length, 1);
+  assert.equal(out.lines.filter((line) => line === 'next: atris youtube search "MCP agents"').length, 1);
   assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
   assert.doesNotMatch(out.text(), /next: apply /);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
@@ -173,6 +175,7 @@ test('x-search rich --save mints a measure.py that validate.py accepts', async (
 
   assert.equal(status, 0);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assert.doesNotMatch(out.text(), /next: atris youtube search/);
   assert.match(out.text(), /next: apply atris\/experiments\/x-search-mcp-agents\. keep only if measure\.py moves 0→1/);
   const packDir = path.join(cwd, 'atris', 'experiments', 'x-search-mcp-agents');
   for (const name of ['program.md', 'measure.py', 'loop.py', 'reset.py', 'results.tsv']) {
@@ -267,6 +270,7 @@ test('x-search person rich --save mints the same keep/revert pack', async () => 
   });
 
   assert.equal(status, 0);
+  assert.doesNotMatch(out.text(), /next: atris youtube search/);
   assert.match(out.text(), /next: apply atris\/experiments\/x-search-leah-bonvissuto\. keep only if measure\.py moves 0→1/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'x-search-leah-bonvissuto', 'measure.py')), true);
   assertXSearchApplyClaimable(cwd, {

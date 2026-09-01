@@ -46,9 +46,13 @@ module.exports = {
     assert.equal(claimed.task.claimed_by, 'bench');
     assertProjectionStatus(ctx, created.task_id, 'claimed');
 
-    const ready = parseJson(ctx.runCli(['task', 'ready', ref, '--verify', 'node -e "process.exit(0)"', '--result', 'A team can follow one task from claim to done, so nothing gets lost when work changes hands.', '--as', 'bench', '--json']));
-    assert.equal(ready.task.status, 'review');
-    assert.equal(ready.approval_status, 'pending');
+    fs.writeFileSync(path.join(ctx.workspace, 'bench-lifecycle-proof.js'), 'module.exports = { ok: true };\n');
+    const ready = parseJson(ctx.runCli(['task', 'ready', ref, '--verify', 'node --check bench-lifecycle-proof.js', '--result', 'A team can follow one task from claim to done, so nothing gets lost when work changes hands.', '--as', 'bench', '--json']));
+    assert.equal(ready.ok, true);
+    assert.equal(ready.action, 'ready');
+    const readyTask = parseJson(ctx.runCli(['task', 'show', ref, '--json']));
+    assert.equal(readyTask.status, 'review');
+    assert.equal(readyTask.review.approval_status, 'pending');
     assertProjectionStatus(ctx, created.task_id, 'review');
 
     const accepted = parseJson(ctx.runCli(['task', 'accept', ref, '--as', 'bench-human', '--json']));

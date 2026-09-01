@@ -880,6 +880,30 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     recordJanitorState(state, { stopped: stoppedMissions, held: heldMissions, worktrees: receipt.worktrees_reaped });
   }
 
+  // 3b2. green landing, every tick: one stale branch that merges clean and
+  // passes the full verify in a scratch checkout lands on base and is pushed.
+  // A red branch opens a close flag the same hour instead of waiting for the
+  // TTL reap to salvage it. Off by policy: green_landing:false.
+  if (policy.green_landing !== false) {
+    try {
+      const { landStaleGreenBranches, summaryLine } = require('../lib/land-green');
+      const green = landStaleGreenBranches(root, {
+        verifyCommand: policy.verify_command || undefined,
+        limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : 1,
+      });
+      receipt.green_landing = {
+        candidates: green.candidates.length,
+        landed: green.landed,
+        red: green.red,
+        verdicts: green.verdicts.map((v) => ({ branch: v.branch, action: v.action, reason: v.reason || null, detail: v.detail || null, failing: v.verify ? v.verify.failing : undefined })),
+        summary: summaryLine(green),
+      };
+      state.green_landing = { at: green.at, ...receipt.green_landing };
+    } catch (err) {
+      receipt.green_landing_error = String((err && err.message) || err).slice(0, 200);
+    }
+  }
+
   // 3c. landing sweep, every tick: merged branch residue is cleared,
   // TTL-expired work is salvaged before deletion, and 48h-stale active work
   // is carried into the digest instead of silently aging forever.

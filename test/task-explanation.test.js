@@ -16,6 +16,7 @@ const {
   plainText,
   taskExplanation,
   explanationMarkdownLines,
+  approvalLines,
 } = require('../lib/task-explanation');
 const {
   enrichTaskProjection,
@@ -207,6 +208,82 @@ test('legacy tasks receive honest plain defaults at presentation time', () => {
     assert.match(firstLine, /^What changes:/);
     assert.ok(show.indexOf('What changes:') < show.indexOf('Technical details:'));
     assert.match(show, new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('landed accepted tasks stop asking for approval', () => {
+  const root = tempWorkspace();
+  const dbPath = path.join(root, '.atris', 'state', 'tasks.db');
+  const db = taskDb.open(dbPath);
+
+  try {
+    const acceptedId = taskDb.addTask(db, {
+      title: 'Ship the plain-language approval fix',
+      tag: 'tasks',
+      workspaceRoot: root,
+      status: 'done',
+      metadata: { approval_status: 'accepted' },
+    }).id;
+    const awaitingId = taskDb.addTask(db, {
+      title: 'Finish proof before human sign-off',
+      tag: 'tasks',
+      workspaceRoot: root,
+      status: 'done',
+      metadata: { approval_status: 'pending' },
+    }).id;
+    const reviewId = taskDb.addTask(db, {
+      title: 'Fix proof before this can clear review',
+      tag: 'tasks',
+      workspaceRoot: root,
+      status: 'review',
+      claimedBy: 'linguist',
+      metadata: {
+        approval_status: 'revise',
+        latest_agent_proof: 'node --test test/task-explanation.test.js passed',
+        verify: 'node --test test/task-explanation.test.js',
+        agent_review_pass_count: 1,
+        agent_certified: false,
+      },
+    }).id;
+
+    const projection = enrichTaskProjection(taskDb.taskProjection(db, { workspaceRoot: root, includeHistory: true }));
+    const accepted = projection.tasks.find(task => task.id === acceptedId);
+    const awaiting = projection.tasks.find(task => task.id === awaitingId);
+    const review = projection.tasks.find(task => task.id === reviewId);
+
+    assert.deepEqual(approvalLines(accepted.approval), ['Landed and accepted. Nothing to do.']);
+    assert.match(awaiting.approval.question, /Approve the completed work, or ask for a change\?/);
+    assert.match(awaiting.approval.approve.blocked_reason, /proof still needs its required checks/);
+    assert.deepEqual(approvalLines(awaiting.approval), [
+      'Approve the completed work, or ask for a change?',
+      'Cannot approve yet: The proof still needs its required checks before a person can approve it.',
+    ]);
+    assert.equal(review.approval.question, 'Approve the completed work, or ask for a change?');
+    assert.equal(review.approval.approve.enabled, false);
+    assert.match(review.approval.approve.blocked_reason, /proof still needs its required checks/);
+    assert.equal(approvalLines(review.approval)[0], 'Approve the completed work, or ask for a change?');
+    assert.equal(approvalLines(review.approval)[1], 'Cannot approve yet: The proof still needs its required checks before a person can approve it.');
+    assert.match(approvalLines(review.approval)[2], /^Ask for a change: atris task revise /);
+
+    const listRun = runTaskCli(root, dbPath, ['list', '--status', 'done']);
+    assert.equal(listRun.status, 0, listRun.stderr);
+    const acceptedBlock = listRun.stdout.split(/(?=What changes:)/).find(block => block.includes(acceptedId) || block.includes('Ship the plain-language approval fix'));
+    assert.match(acceptedBlock, /Landed and accepted\. Nothing to do\./);
+    assert.doesNotMatch(acceptedBlock, /Approve the completed work, or ask for a change\?/);
+    assert.doesNotMatch(acceptedBlock, /Cannot approve yet:/);
+
+    const showAccepted = runTaskCli(root, dbPath, ['show', acceptedId]);
+    assert.equal(showAccepted.status, 0, showAccepted.stderr);
+    assert.match(showAccepted.stdout, /Landed and accepted\. Nothing to do\./);
+    assert.doesNotMatch(showAccepted.stdout, /Approve the completed work, or ask for a change\?/);
+    assert.doesNotMatch(showAccepted.stdout, /Cannot approve yet:/);
+
+    const showAwaiting = runTaskCli(root, dbPath, ['show', awaitingId]);
+    assert.equal(showAwaiting.status, 0, showAwaiting.stderr);
+    assert.match(showAwaiting.stdout, /Approve the completed work, or ask for a change\?/);
+    assert.match(showAwaiting.stdout, /Cannot approve yet: The proof still needs its required checks before a person can approve it\./);
   } finally {
     cleanup(root);
   }

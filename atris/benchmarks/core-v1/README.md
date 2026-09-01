@@ -4,6 +4,8 @@
 
 `core-v1` is the fixed Atris benchmark pack used by `atris bench` and the daily keep/revert experiment loop. Each task is a deterministic Node spec that runs in a hermetic temp workspace and checks behavior through exit codes, files, state transitions, and parsed receipts.
 
+The pack runs inside `npm test`; a red case means a product contract moved, and the case must be updated the same day.
+
 ## tasks
 
 - `init-golden-path` - `atris init` creates the canonical workspace skeleton and `atris status` boots.
