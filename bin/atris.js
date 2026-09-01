@@ -2163,6 +2163,13 @@ if (command === 'init') {
     process.exit(0);
   }
   upgradeAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'chat' && (process.argv[3] === '--personal' || process.argv[3] === '-p')) {
+  require('../commands/ask').askAtris(process.argv.slice(4))
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(`✗ Ask failed: ${error.message || error}`);
+      process.exit(1);
+    });
 } else if (command === 'chat') {
   if (process.argv[3] === 'scan') {
     try {
@@ -3550,10 +3557,19 @@ async function chatAtris() {
   const fastLaneFlags = [];
   const messageArgs = [];
   let agentLane = false;
-  for (const arg of rawArgs) {
+  for (let index = 0; index < rawArgs.length; index += 1) {
+    const arg = rawArgs[index];
     if (arg === '--agent') {
       agentLane = true;
-    } else if (arg === '--print' || arg === '--headless' || arg === '--rapid' || arg === '--auto-approve') {
+    } else if (arg === '--effort') {
+      const next = rawArgs[index + 1];
+      if (next && !next.startsWith('-')) {
+        fastLaneFlags.push('--effort', next);
+        index += 1;
+      } else {
+        fastLaneFlags.push('--effort');
+      }
+    } else if (arg === '--print' || arg === '--headless' || arg === '--rapid' || arg === '--alpha' || arg === '--auto-approve') {
       fastLaneFlags.push(arg);
     } else {
       messageArgs.push(arg);
@@ -3567,10 +3583,13 @@ async function chatAtris() {
     console.log('');
     console.log('  Chat with Atris 2 Fast in this workspace: tools attached, same turn as `ax --fast`.');
     console.log('  Pass --rapid to use Atris Rapid instead.');
+    console.log('  Pass --alpha to use Atris Alpha (experimental preview lane).');
+    console.log('  Pass --effort medium|high|xhigh to override reasoning depth for the turn/session.');
     console.log('  Requires `atris login`.');
     console.log('');
     console.log('  atris chat                  Interactive chat (ax --fast --chat)');
     console.log('  atris chat --rapid          Interactive Rapid chat (ax --rapid --chat)');
+    console.log('  atris chat --alpha          Interactive Alpha chat (ax --alpha --chat)');
     console.log('  atris chat --rapid --auto-approve   Rapid chat that auto-approves safe git push');
     console.log('  atris chat "what now?"      One-shot message (ax --fast)');
     console.log('  atris chat --print "..."    Headless JSON result (ax --fast --print)');
@@ -3598,8 +3617,12 @@ async function chatAtris() {
   if (!agentLane) {
     try {
       const axPath = path.join(__dirname, '..', 'ax');
-      const lane = fastLaneFlags.includes('--rapid') ? '--rapid' : '--fast';
-      const extraFlags = fastLaneFlags.filter((flag) => flag !== '--rapid');
+      const lane = fastLaneFlags.includes('--alpha')
+        ? '--alpha'
+        : fastLaneFlags.includes('--rapid')
+          ? '--rapid'
+          : '--fast';
+      const extraFlags = fastLaneFlags.filter((flag) => flag !== '--rapid' && flag !== '--alpha');
       const axArgs = message
         ? [lane, ...extraFlags, message].filter(Boolean)
         : [lane, ...extraFlags, '--chat'];

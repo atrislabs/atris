@@ -3046,6 +3046,15 @@ function collectAutoImproverLogSignals(root) {
         || /^atris\/team\/[^/]+\/goals\.(md|json)$/.test(relative)
         || relative === 'atris/wiki/log.md';
       if (!isRuntimeLog) continue;
+      // Only scan logs from the last 7 days. Historical log lines keep
+      // triggering false-positive findings long after their root cause is
+      // fixed (e.g. "goal-from-mission blocked" from July when MISSION.md
+      // was repaired in August). Old evidence stays on disk for audits;
+      // it just stops feeding the pain score, so pain can actually drop.
+      if (logDate && isRuntimeLog) {
+        const logAgeDays = (Date.now() - new Date(logDate + 'T12:00:00').getTime()) / 864e5;
+        if (logAgeDays > 7) continue;
+      }
       const text = safeReadText(filePath);
       if (!text) continue;
       filesScanned += 1;
@@ -4047,14 +4056,6 @@ async function memberCreate(name, ...flags) {
     process.exit(1);
   }
 
-  // Scaffold
-  fs.mkdirSync(memberDir, { recursive: true });
-  fs.mkdirSync(path.join(memberDir, 'skills'), { recursive: true });
-  fs.mkdirSync(path.join(memberDir, 'tools'), { recursive: true });
-  fs.mkdirSync(path.join(memberDir, 'context'), { recursive: true });
-  const logPath = ensureMemberLog(memberDir, { name, role, description: description || `Handles ${role.toLowerCase()} tasks` });
-  ensureMissionFile(memberDir, { name, role, description: description || `Handles ${role.toLowerCase()} tasks` });
-
   const content = `---
 name: ${name}
 role: ${role}
@@ -4114,11 +4115,20 @@ tools: []
 2. Rule two
 `;
 
-  fs.writeFileSync(memberFile, content);
+  const memberDescription = description || `Handles ${role.toLowerCase()} tasks`;
+  const { logPath } = ensureMemberBundle(memberDir, {
+    name,
+    role,
+    description: memberDescription,
+    source: 'cli',
+    memberContent: content,
+  });
 
   console.log('');
   console.log(`✓ Created team/${name}/MEMBER.md`);
+  console.log(`✓ Created team/${name}/SOUL.md`);
   console.log(`✓ Created team/${name}/MISSION.md`);
+  console.log(`✓ Created team/${name}/goals.json + goals.md`);
   console.log(`✓ Created team/${name}/skills/`);
   console.log(`✓ Created team/${name}/tools/`);
   console.log(`✓ Created team/${name}/context/`);
@@ -4317,17 +4327,18 @@ function memberUpgrade(name) {
     process.exit(1);
   }
 
-  // Move flat file to directory format
+  // Move flat file to directory format, then backfill the complete identity bundle.
   fs.mkdirSync(memberDir, { recursive: true });
-  fs.mkdirSync(path.join(memberDir, 'skills'), { recursive: true });
-  fs.mkdirSync(path.join(memberDir, 'tools'), { recursive: true });
-  fs.mkdirSync(path.join(memberDir, 'context'), { recursive: true });
-  const logPath = ensureMemberLog(memberDir, { name, source: 'upgrade' });
   fs.renameSync(legacyFile, memberFile);
-  ensureMissionFile(memberDir, { name, description: 'Define why this member exists and how it chooses goals.' });
+  const { logPath } = ensureMemberBundle(memberDir, {
+    name,
+    role: name,
+    description: 'Define why this member exists and how it chooses goals.',
+    source: 'upgrade',
+  });
 
   console.log(`✓ Upgraded team/${name}.md → team/${name}/MEMBER.md`);
-  console.log(`✓ Created MISSION.md, skills/, tools/, context/, logs/${path.basename(logPath)}`);
+  console.log(`✓ Created SOUL.md, MISSION.md, goals.json, goals.md, skills/, tools/, context/, logs/${path.basename(logPath)}`);
 }
 
 // --- PUSH subcommand ---
@@ -5170,6 +5181,13 @@ Wiki content:
 ${pageContent}`;
 }
 
+function isWikiMinerNoiseName(value) {
+  const name = compactSentence(value || '', 120);
+  if (!name) return true;
+  if (/^[A-Z]{2,}$/.test(name)) return false;
+  return /^(?:i|me|my|mine|myself|we|us|our|ours|ourselves|you|your|yours|yourself|yourselves|he|him|his|himself|she|her|hers|herself|it|its|itself|they|them|their|theirs|themselves|this|that|these|those|the|wiki|mission)$/i.test(name);
+}
+
 function normalizeWikiMinerExtraction(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const allowedEntityTypes = new Set(['person', 'system', 'concept']);
@@ -5179,14 +5197,14 @@ function normalizeWikiMinerExtraction(raw) {
       type: allowedEntityTypes.has(String(entity?.type || '').toLowerCase()) ? String(entity.type).toLowerCase() : 'concept',
       name: compactSentence(entity?.name || '', 120),
     }))
-    .filter((entity) => entity.name);
+    .filter((entity) => !isWikiMinerNoiseName(entity.name));
   const relationships = (Array.isArray(raw.relationships) ? raw.relationships : [])
     .map((relationship) => ({
       from: compactSentence(relationship?.from || '', 120),
       to: compactSentence(relationship?.to || '', 120),
       type: allowedRelationTypes.has(String(relationship?.type || '').toLowerCase()) ? String(relationship.type).toLowerCase() : 'uses',
     }))
-    .filter((relationship) => relationship.from && relationship.to);
+    .filter((relationship) => !isWikiMinerNoiseName(relationship.from) && !isWikiMinerNoiseName(relationship.to));
   return { entities, relationships };
 }
 
@@ -5202,7 +5220,7 @@ function heuristicWikiMinerExtraction(pagePath, pageContent) {
     let match = pattern.exec(pageContent);
     while (match) {
       const value = compactSentence(match[1] || match[0], 80);
-      if (value && !/^the|this|that|wiki|mission$/i.test(value)) candidates.add(value);
+      if (!isWikiMinerNoiseName(value)) candidates.add(value);
       match = pattern.exec(pageContent);
     }
   }
@@ -5249,6 +5267,7 @@ async function callWikiMinerLlm(pagePath, pageContent, pageIndex) {
 function mergeWikiGraph(graph, extraction, sourcePath) {
   const entityMap = new Map();
   for (const entity of graph.entities || []) {
+    if (isWikiMinerNoiseName(entity.name)) continue;
     const key = `${String(entity.type || 'concept').toLowerCase()}:${lowerCompact(entity.name)}`;
     entityMap.set(key, { ...entity, sources: Array.isArray(entity.sources) ? entity.sources : [] });
   }
@@ -5261,6 +5280,7 @@ function mergeWikiGraph(graph, extraction, sourcePath) {
 
   const relationshipMap = new Map();
   for (const relationship of graph.relationships || []) {
+    if (isWikiMinerNoiseName(relationship.from) || isWikiMinerNoiseName(relationship.to)) continue;
     const key = `${lowerCompact(relationship.from)}|${String(relationship.type || 'uses').toLowerCase()}|${lowerCompact(relationship.to)}`;
     relationshipMap.set(key, { ...relationship, sources: Array.isArray(relationship.sources) ? relationship.sources : [] });
   }

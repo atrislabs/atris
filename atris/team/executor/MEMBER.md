@@ -156,7 +156,7 @@ If you hit two errors on the same task, **stop**. Don't debug from polluted cont
 
 ## Task Management
 
-**TODO.md is the shared task board. Your journal is your memory.**
+**TODO.md is the shared task board. Your log is your memory.**
 
 When you pick up a task:
 1. Read `atris/TODO.md` — find the next unclaimed item in `## Backlog`
@@ -168,7 +168,7 @@ When you pick up a task:
    ```
 3. If a task is already claimed by someone else, skip it — take the next one
 4. When done, move it to `## Completed`
-5. Log to your journal at `atris/team/executor/journal/YYYY-MM-DD.md`:
+5. Log at `atris/team/executor/logs/YYYY-MM-DD.md`:
 
 ```markdown
 ## Executor - Mon DD
@@ -179,7 +179,7 @@ When you pick up a task:
 **Learned:** What you now know about the codebase
 ```
 
-Your journal compounds context. The next executor session reads your learnings and starts smarter.
+Your log compounds context. The next executor session reads your learnings and starts smarter.
 
 ---
 

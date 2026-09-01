@@ -11104,10 +11104,16 @@ function taskAuditReceiptPath(at) {
 
 function runTaskAuditVerify(task, verify) {
   const { spawnSync } = require('child_process');
+  // Same measured ceiling as the landing gate: honest suites need minutes,
+  // not seconds. See lib/auto-accept-certified.js verifyTimeoutMs().
+  const rawTimeout = Number(process.env.ATRIS_VERIFY_TIMEOUT_MS);
+  const timeout = Number.isFinite(rawTimeout) && rawTimeout > 0
+    ? Math.min(rawTimeout, 60 * 60 * 1000)
+    : 10 * 60 * 1000;
   const result = spawnSync('bash', ['-c', verify], {
     cwd: task.workspace_root,
     encoding: 'utf8',
-    timeout: 120000,
+    timeout,
   });
   const passed = !result.error && result.status === 0;
   return {

@@ -363,7 +363,7 @@ test('ax help stays local and does not start an agent turn', () => {
 
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /ax - Atris local\/code agent/);
-  assert.match(res.stdout, /ax \[--auto\|--max\|--pro\|--fast\|--rapid\|--code-fast\] \[--local\|--cloud\] <message>/);
+  assert.match(res.stdout, /ax \[--auto\|--max\|--pro\|--fast\|--rapid\|--alpha\|--code-fast\] \[--local\|--cloud\] <message>/);
   assert.match(res.stdout, /--max {3}hosted Atris 2, highest reasoning/);
   assert.match(res.stdout, /--code-fast  Atris Code Fast public lane/);
   assert.doesNotMatch(res.stdout, /run\s+local workspace/);
@@ -898,12 +898,12 @@ test('runner-profile help lists canonical profile names only', () => {
   try {
     const run = runCli(['run', '--help'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr);
-    assert.match(run.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, agy\)/);
+    assert.match(run.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, agy, opencode\)/);
     assert.doesNotMatch(run.stdout, /atris2-fast|atris-2-fast/);
 
     const autopilot = runCli(['autopilot', '--legacy', '--help'], { cwd: dir });
     assert.equal(autopilot.status, 0, autopilot.stderr);
-    assert.match(autopilot.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, agy\)/);
+    assert.match(autopilot.stdout, /--runner-profile NAME\s+Runner profile for this run \(one of: atris-fast, claude, codex, cursor, fable, composer, haiku, devin, grok, agy, opencode\)/);
     assert.doesNotMatch(autopilot.stdout, /atris2-fast|atris-2-fast/);
   } finally {
     cleanupTempDir(dir);

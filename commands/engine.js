@@ -22,6 +22,7 @@ const { Writable } = require('stream');
 const {
   RUNNER_PROFILE_DEFS,
   RUNNER_PROFILE_NAMES,
+  HIDDEN_PROFILE_NAMES,
   buildRunnerCommand,
 } = require('../lib/runner-command');
 const { parseScopeFlag } = require('../lib/cli-scope');
@@ -124,10 +125,12 @@ function resolveDefaultEngine(root = process.cwd()) {
 
 function roster(root = process.cwd()) {
   const current = resolveDefaultEngine(root);
-  return engineRegistryView(root).map((engine) => ({
-    ...engine,
-    default: engine.id === current.name,
-  }));
+  return engineRegistryView(root)
+    .filter((engine) => !HIDDEN_PROFILE_NAMES.includes(engine.id))
+    .map((engine) => ({
+      ...engine,
+      default: engine.id === current.name,
+    }));
 }
 
 function setEngine(name, root = process.cwd()) {
@@ -932,13 +935,16 @@ function printRoster(root, { scope = 'workspace' } = {}) {
   console.log('');
 }
 
-function registryPayload(root, { scope = 'workspace' } = {}) {
+function registryPayload(root, { scope = 'workspace', includeHidden = false } = {}) {
   const current = resolveDefaultEngine(root);
   const registry = readEngineRegistry(root);
-  const engines = registry.engines.map((engine) => ({
-    ...engine,
-    default: engine.id === current.name,
-  }));
+  const engines = registry.engines
+    .map((engine) => ({
+      ...engine,
+      hidden: HIDDEN_PROFILE_NAMES.includes(engine.id),
+      default: engine.id === current.name,
+    }))
+    .filter((engine) => includeHidden || !engine.hidden);
   const scoped = scope === 'global'
     ? engines
     : engines.filter((engine) => engine.installed || engine.default || (engine.health && engine.health.status === 'ready'));
@@ -978,7 +984,8 @@ function centerChartLine(line, width, center = Math.floor((width - 1) / 2)) {
 }
 
 function renderEngineChart(registry) {
-  const engines = Array.isArray(registry) ? registry : ((registry && registry.engines) || []);
+  const engines = (Array.isArray(registry) ? registry : ((registry && registry.engines) || []))
+    .filter((entry) => !HIDDEN_PROFILE_NAMES.includes(entry.id));
   const specialDuties = new Set(ENGINE_DUTIES);
   const leaders = engines.filter((entry) => entry.duty === 'leader');
   const rolePool = engines.filter((entry) => !specialDuties.has(entry.duty));
@@ -1158,7 +1165,7 @@ function runDoctorCommand(args, root) {
     return 0;
   }
   console.log('');
-  for (const engine of engines) {
+  for (const engine of engines.filter((engine) => !HIDDEN_PROFILE_NAMES.includes(engine.id))) {
     const state = engine.installed ? 'installed' : 'missing';
     const health = engine.health.status.replace(/_/g, ' ');
     console.log(`  ${engine.id.padEnd(12)} ${String(engine.bin).padEnd(14)} ${state.padEnd(10)} health: ${health}`);
@@ -1697,14 +1704,14 @@ function engineCommand(args = [], deps = {}) {
   if (!sub || sub === 'list' || sub === 'status' || sub === 'help') {
     if (sub === 'help' || args.includes('--help') || args.includes('-h')) {
       console.log('\n  atris engine watch [<id>|latest] [--no-follow]\n                           follow one live transcript or list running engine work');
-      console.log('\n  atris engine            roster + current default\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json full registry: default + engines with tier, roles, fallback, health\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine bench [names...] [--runs N]\n                           ranked latency scoreboard of engine passes\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine validate <receipt-path|latest> [--engine <name>]\n                           check ask answers with a different read-only referee\n  atris engine validate scoreboard\n                           show pass rates by worker engine\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+      console.log('\n  atris engine            roster + current default\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json [--all] full registry: default + engines with tier, roles, fallback, health (--all includes hidden engines)\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine bench [names...] [--runs N]\n                           ranked latency scoreboard of engine passes\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine validate <receipt-path|latest> [--engine <name>]\n                           check ask answers with a different read-only referee\n  atris engine validate scoreboard\n                           show pass rates by worker engine\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
       return 0;
     }
     if (isFreshWorkspace(root)) {
       return speakFirstMinute({ root, fresh: true, asJson: json });
     }
     if (json) {
-      console.log(JSON.stringify(registryPayload(root, { scope: scope.kind }), null, 2));
+      console.log(JSON.stringify(registryPayload(root, { scope: scope.kind, includeHidden: args.includes('--all') }), null, 2));
       return 0;
     }
     printRoster(root, { scope: scope.kind });

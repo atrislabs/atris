@@ -190,12 +190,12 @@ Navigator creates validate.md with Status (v0 — planned) and Checks. The execu
 
 ## Task Management
 
-**TODO.md is the shared task board. Your journal is your memory.**
+**TODO.md is the shared task board. Your log is your memory.**
 
 When you create tasks:
 1. Write them to `atris/TODO.md` under `## Backlog` using format: `- **T#:** Description [explore|execute]`
 2. Each task: one job, clear exit condition, tagged `[explore]` or `[execute]`
-3. Log to your journal at `atris/team/navigator/journal/YYYY-MM-DD.md`:
+3. Log at `atris/team/navigator/logs/YYYY-MM-DD.md`:
 
 ```markdown
 ## Navigator - Mon DD
@@ -206,7 +206,7 @@ When you create tasks:
 **Pattern:** What you learned about the user's preferences
 ```
 
-Your journal is how you get smarter. Record what the user liked, what they pushed back on, what communication style works.
+Your log is how you get smarter. Record what the user liked, what they pushed back on, what communication style works.
 
 ---
 

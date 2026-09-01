@@ -2095,26 +2095,38 @@ function normalizeMissionReceiptResult(mission, result, receiptPath = '') {
 
 function missionRunStartNextLine(mission, nextCommand, warnings = []) {
   const missingVerifier = warnings.some((warning) => warning && warning.code === 'missing_verifier');
-  if (missingVerifier) return 'Add a verifier before completion, then run the first proof tick.';
+  if (missingVerifier) return 'Add a completion check, then start the first piece of work.';
   if (isCodexGoalMission(mission) && !codexNativeGoalAck(mission)) {
-    return 'Start the visible goal, then continue this mission.';
+    return 'Start the first piece of work in this chat.';
   }
-  if (/attach-task/.test(nextCommand || '')) return 'Attach task context, then continue this mission.';
-  return 'Run the first proof tick.';
+  if (/attach-task/.test(nextCommand || '')) return 'Start the first piece of work.';
+  return 'Keep working on the next useful result.';
+}
+
+function missionRunCheckPlanText(command) {
+  const check = String(command || '').trim();
+  if (!check) return 'No completion check is ready yet.';
+  if (/^git\s+diff\s+--check\b/i.test(check)) {
+    return 'Atris will check the changed files for formatting problems before the result is ready.';
+  }
+  if (/\bnode\s+--test\b/i.test(check)) {
+    return 'Atris will run the relevant behavior checks before the result is ready.';
+  }
+  if (/^test\s+-s\s+\S+/i.test(check)) {
+    return 'Atris will confirm the saved result exists and is not empty.';
+  }
+  return 'A completion check is ready and will run before the result is ready.';
 }
 
 function missionRunTakeoffLines(mission, { warnings = [], nextCommand = '' } = {}) {
-  const checked = mission.verifier
-    ? `Verifier configured: ${mission.verifier}.`
-    : 'No verifier was recorded for this mission.';
   return [
-    'Takeoff:',
+    'Mission started.',
     `  Goal: ${mission.objective}`,
-    `  Done when: ${mission.stop_condition || 'the mission has proof or a human decision'}.`,
+    `  Done when: ${mission.stop_condition || 'the result is checked and ready to review'}.`,
     ...(missionBudgetLine(mission) ? [`  Budget: ${missionBudgetLine(mission)}`] : []),
     ...missionGoalChainLines(mission),
-    '  Proof: Mission state saved in .atris/state/missions.jsonl.',
-    `  Check: ${checked}`,
+    '  Saved: Atris will remember this mission and its progress.',
+    `  How it will be checked: ${missionRunCheckPlanText(mission.verifier)}`,
     `  Next: ${missionRunStartNextLine(mission, nextCommand, warnings)}`,
   ];
 }
@@ -2176,16 +2188,9 @@ function selectMissionRunUsefulTarget(rawObjective, root = process.cwd()) {
   }
 }
 
-function missionRunPreflightSentence(text, max = 140) {
-  const clean = String(text || '').replace(/\s+/g, ' ').trim();
-  if (clean.length <= max) return clean;
-  return `${clean.slice(0, max - 3).replace(/\s+\S*$/, '').trimEnd()}...`;
-}
-
-function missionRunPreflightObjective(rawObjective, room, owner) {
-  const name = room?.name || 'Mission Room';
+function missionRunPreflightObjective(rawObjective, room) {
   const task = room?.task_plan_preview?.task || room?.truth_snapshot || rawObjective;
-  return `${name} with ${owner}: turn "${missionRunPreflightSentence(task)}" into one visible goal, task spine, proof receipt, and next action.`;
+  return String(task || rawObjective || '').replace(/\s+/g, ' ').trim();
 }
 
 function missionRunTrustedObjective(rawObjective, room, target) {
@@ -2257,7 +2262,7 @@ function buildMissionRunRoomPreflight(rawObjective, args = [], options = {}) {
   const written = writeMissionRoomReceipt(room, { root });
   const shapedObjective = trustedRun
     ? missionRunTrustedObjective(rawObjective, written.room, selectedTarget)
-    : missionRunPreflightObjective(rawObjective, written.room, ownerResolution.owner);
+    : missionRunPreflightObjective(rawObjective, written.room);
   const shaping = guardMissionRunShaping(rawObjective, shapedObjective, selectedTarget);
   const acceptedTarget = shaping.selectedTarget;
   const taskSpineRequired = !acceptedTarget && (explicitPreflight || signalPreflight);
@@ -4268,14 +4273,15 @@ async function startMissionFromRunObjective(objective, args) {
     landRun ? DEFAULT_LONG_RUN_VERIFIER : inferRunObjectiveVerifier(missionObjective)
       || inferRunObjectiveVerifier(rawObjective)
       || (missionRunPreflight?.trusted_run ? DEFAULT_LONG_RUN_VERIFIER : '')
-      || (inferredLoop.wantsLongRun ? DEFAULT_LONG_RUN_VERIFIER : ''),
+      || (inferredLoop.wantsLongRun ? DEFAULT_LONG_RUN_VERIFIER : '')
+      || (hasFlag(args, '--no-verify') ? '' : resolveDefaultVerifier(process.cwd(), { allowBroadSuite: false })),
   );
   const stopCondition = readFlag(
     args,
     '--stop',
     budgetStopCondition(budgetContract) || (inferredLoop.wantsLongRun
       ? `run for ${inferredLoop.requestedHours || 'the requested overnight window'} hour${inferredLoop.requestedHours === 1 ? '' : 's'}, or stop when proof is ready`
-      : (verifier ? 'verifier passes and visible goal lands' : 'visible goal lands and proof is ready')),
+      : (verifier ? 'the first result is checked and ready to review' : 'the first result is saved and ready to review')),
   );
   const startArgs = [
     missionObjective,

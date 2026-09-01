@@ -27,9 +27,10 @@ const {
   expandHomePath,
   formatEngineSeats,
   setEngineHealth,
+  readEngineRegistry,
   HOUSE_ENGINE,
 } = require('../commands/engine');
-const { RUNNER_PROFILE_NAMES } = require('../lib/runner-command');
+const { RUNNER_PROFILE_NAMES, RUNNER_PROFILE_DEFS } = require('../lib/runner-command');
 
 function runCli(args, cwd) {
   const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
@@ -191,6 +192,42 @@ test('cli: unknown engine name is a clean exit 2, not a stack trace', () => {
   assert.deepEqual(payload.known, Array.from(RUNNER_PROFILE_NAMES));
 });
 
+test('hidden engine: selectable and routable, absent from every public surface', () => {
+  const root = tmpRoot();
+
+  // Selectable: a hidden name flips the default like any other engine.
+  const set = runCli(['engine', 'commandcode'], root);
+  assert.equal(set.status, 0, set.stderr || set.stdout);
+  assert.match(set.stdout, /default engine changed to commandcode/);
+
+  // Routable: it seeds into the registry with health policy like the rest.
+  setEngineHealth('commandcode', 'ready', root);
+  const registered = readEngineRegistry(root).engines.find((engine) => engine.id === 'commandcode');
+  assert.ok(registered, 'registry keeps the hidden engine');
+  assert.equal(registered.health.status, 'ready');
+
+  // Hidden from the roster: no table row for it. (The footer may still name
+  // it as the operator-set default; hiding an explicit choice would be worse.)
+  const rosterOut = runCli(['engine'], root).stdout;
+  assert.ok(!/^.{4}commandcode\s/m.test(rosterOut), 'roster must not list the hidden engine');
+
+  // Hidden from the default --json list; present via --all with hidden: true.
+  const jsonPayload = JSON.parse(
+    runCli(['engine', 'list', '--json'], root).stdout.slice(runCli(['engine', 'list', '--json'], root).stdout.indexOf('{'))
+  );
+  assert.ok(!jsonPayload.engines.some((engine) => engine.id === 'commandcode'));
+  const allPayload = JSON.parse(
+    runCli(['engine', 'list', '--json', '--all'], root).stdout.slice(runCli(['engine', 'list', '--json', '--all'], root).stdout.indexOf('{'))
+  );
+  const commandcode = allPayload.engines.find((engine) => engine.id === 'commandcode');
+  assert.ok(commandcode, '--all must include the hidden engine');
+  assert.equal(commandcode.hidden, true);
+
+  // Unknown-engine hints never leak the hidden name.
+  const unknown = runCli(['engine', 'gpt-6'], root);
+  assert.ok(!/commandcode/.test(unknown.stderr), 'error hints must not reveal hidden engines');
+});
+
 test('cli: set default persists to .atris/engine.json, reset removes it', () => {
   const root = tmpRoot();
   const set = runCli(['engine', 'codex'], root);
@@ -234,7 +271,8 @@ test('routing honors saved health policy: credit_out engines are never picked', 
   // binaries are installed, resolve must refuse: the health file is policy
   // and routing decides from it, not from what happens to be on the PATH.
   const root = tmpRoot();
-  for (const name of RUNNER_PROFILE_NAMES) {
+  // Every registered engine, hidden ones included: policy flips are total.
+  for (const name of Object.keys(RUNNER_PROFILE_DEFS)) {
     setEngineHealth(name, 'credit_out', root);
   }
   const res = runCli(['engine', 'resolve', 'executor', '--json'], root);
@@ -294,7 +332,7 @@ test('nothing configured: the default comes from registry health, not the machin
   // No env, no .atris/engine.json. The registry health file is the only
   // input: flip it and the pick flips, without any probe in between.
   const root = tmpRoot();
-  for (const name of RUNNER_PROFILE_NAMES) {
+  for (const name of Object.keys(RUNNER_PROFILE_DEFS)) {
     setEngineHealth(name, 'not_installed', root);
   }
   // No ready engine anywhere: fall back to the house default anyway. The
@@ -322,7 +360,7 @@ test('routing believes a ready health flag even when the binary is missing', () 
   // The missing binary is a problem for the execution stage, where it must fail
   // in one plain sentence naming the binary.
   const root = tmpRoot();
-  for (const name of RUNNER_PROFILE_NAMES) {
+  for (const name of Object.keys(RUNNER_PROFILE_DEFS)) {
     setEngineHealth(name, 'not_installed', root);
   }
   setEngineHealth('devin', 'ready', root);

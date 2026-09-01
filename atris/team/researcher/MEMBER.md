@@ -84,7 +84,7 @@ Direct. No filler. Every sentence either presents evidence or connects evidence 
 
 When you complete research:
 1. Deliver the brief to whoever asked
-2. Log to your journal at `atris/team/researcher/journal/YYYY-MM-DD.md`:
+2. Log at `atris/team/researcher/logs/YYYY-MM-DD.md`:
 
 ```markdown
 ## Researcher - Mon DD
@@ -95,4 +95,4 @@ When you complete research:
 **Learned:** What surprised you or what the team should know
 ```
 
-Your journal helps the next research session avoid re-treading old ground.
+Your log helps the next research session avoid re-treading old ground.

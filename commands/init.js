@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { ensureMemberBundle } = require('../lib/member-scaffold');
 const { ensureExperimentsFramework } = require('./experiments');
 const { ensureWorkspaceBrain } = require('../lib/workspace-scaffold');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
@@ -569,16 +570,21 @@ function initAtris() {
         const source = path.join(sourceMemberDir, fileName);
         if (fs.existsSync(source)) fs.copyFileSync(source, path.join(targetMemberDir, fileName));
       });
+      ensureMemberBundle(targetMemberDir, {
+        name,
+        role: name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' '),
+        description: `Serve the team as ${name}.`,
+        source: 'atris init',
+      });
       markReady('team', name, `✓ Created team/${name}/ (identity + skills/ + tools/ + context/)`);
     }
   });
 
-  // Copy MEMBER.md template for creating custom members
+  // Copy the complete identity template for creating custom members.
   const templateSourceDir = path.join(__dirname, '..', 'atris', 'team', '_template');
   const templateTargetDir = path.join(teamDir, '_template');
-  if (!fs.existsSync(templateTargetDir)) {
-    fs.mkdirSync(templateTargetDir, { recursive: true });
-    const templateContent = `---
+  fs.mkdirSync(templateTargetDir, { recursive: true });
+  const templateContent = `---
 name: template-member
 role: Replace with role title
 description: Replace with one-line description of what this member does.
@@ -595,8 +601,16 @@ tools: []
 
 # Insert persona, workflow, and rules below
 `;
-    fs.writeFileSync(path.join(templateTargetDir, 'MEMBER.md'), templateContent);
-    markReady('workspace', 'team/_template/MEMBER.md', '✓ Created team/_template/MEMBER.md');
+  for (const fileName of ['MEMBER.md', 'SOUL.md']) {
+    const target = path.join(templateTargetDir, fileName);
+    if (fs.existsSync(target)) continue;
+    const source = path.join(templateSourceDir, fileName);
+    if (fs.existsSync(source)) {
+      fs.copyFileSync(source, target);
+    } else if (fileName === 'MEMBER.md') {
+      fs.writeFileSync(target, templateContent);
+    }
+    markReady('workspace', `team/_template/${fileName}`, `✓ Created team/_template/${fileName}`);
   }
   }
 

@@ -1554,7 +1554,7 @@ test('mission complete credits ad hoc passing receipt before no-verifier fallbac
   }
 });
 
-test('mission run objective starts with product takeoff instead of runner plumbing', () => {
+test('mission run objective starts with a plain summary instead of runner plumbing', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -1572,13 +1572,14 @@ test('mission run objective starts with product takeoff instead of runner plumbi
       'node -e "process.exit(0)"',
     ], { cwd: dir });
     assert.equal(started.status, 0, started.stderr || started.stdout);
-    assert.match(started.stdout, /^Takeoff:/m);
+    assert.match(started.stdout, /^Mission started\.$/m);
     assert.match(started.stdout, /Goal: human started takeoff/);
-    assert.match(started.stdout, /Done when: verifier passes and visible goal lands\./);
-    assert.match(started.stdout, /Proof: Mission state saved in \.atris\/state\/missions\.jsonl\./);
-    assert.match(started.stdout, /Check: Verifier configured: node -e "process\.exit\(0\)"/);
-    assert.match(started.stdout, /Next: Start the visible goal, then continue this mission\./);
+    assert.match(started.stdout, /Done when: the first result is checked and ready to review\./);
+    assert.match(started.stdout, /Saved: Atris will remember this mission and its progress\./);
+    assert.match(started.stdout, /How it will be checked: A completion check is ready and will run before the result is ready\./);
+    assert.match(started.stdout, /Next: Start the first piece of work in this chat\./);
     assert.doesNotMatch(started.stdout, /^(Started mission|Owner|Runner|Atris goal|Codex goal):/m);
+    assert.doesNotMatch(started.stdout, /verifier|visible goal|task spine|receipt|\.atris|jsonl/i);
     assert.doesNotMatch(started.stdout, /^Landing:/m);
   } finally {
     cleanupTempDir(dir);
@@ -3511,10 +3512,9 @@ test('mission run preflights a plain objective by default', () => {
     assert.equal(payload.ok, true);
     assert.equal(payload.action, 'mission_run_started');
     assert.equal(payload.mission.raw_objective, rawObjective);
-    assert.notEqual(payload.mission.objective, rawObjective);
+    assert.equal(payload.mission.objective, rawObjective);
     assert.equal(payload.mission.objective, payload.mission.mission_run_preflight.shaped_objective);
     assert.equal(payload.mission.mission_run_preflight.raw_objective, rawObjective);
-    assert.match(payload.mission.objective, /Mission Room with mission-lead/);
     assert.equal(payload.codex_goal_state.goal.objective, payload.mission.mission_run_preflight.visible_goal_objective);
   } finally {
     cleanupTempDir(dir);
@@ -3537,7 +3537,7 @@ test('mission run with an objective starts a visible-goal mission when preflight
     assert.equal(payload.mission.runner, 'codex_goal');
     assert.match(payload.mission.verifier, /atris-mission-run-verifier/);
     assert.match(payload.mission.verifier, /verifier smoke objective/);
-    assert.equal(payload.mission.stop_condition, 'verifier passes and visible goal lands');
+    assert.equal(payload.mission.stop_condition, 'the first result is checked and ready to review');
     assert.equal(payload.warnings.length, 0);
     assert.equal(payload.codex_goal_state.action, 'codex_goal_candidate');
     assert.equal(payload.codex_goal_state.goal.objective, 'atris mission run');
@@ -3642,13 +3642,11 @@ test('mission run preflights messy shower input before writing the visible goal'
     assert.equal(preflight.source, 'mission_room');
     assert.equal(preflight.raw_objective, rawObjective);
     assert.equal(payload.mission.raw_objective, rawObjective);
-    assert.notEqual(payload.mission.objective, rawObjective);
+    assert.equal(payload.mission.objective, rawObjective);
     assert.equal(payload.mission.objective, preflight.shaped_objective);
-    assert.match(payload.mission.objective, /Messy Input Goal Chain Mission Room with mission-lead/);
-    assert.match(payload.mission.objective, /one visible goal, task spine, proof receipt, and next action/);
     assert.equal(payload.codex_goal_state.goal.objective, preflight.visible_goal_objective);
     assert.equal(payload.codex_goal_state.goal.visible_goal.desired_objective, preflight.visible_goal_objective);
-    assert.notEqual(payload.native_goal_action.args.objective, rawObjective);
+    assert.equal(payload.native_goal_action.args.objective, rawObjective);
     assert.equal(payload.native_goal_action.args.objective, preflight.visible_goal_objective);
     assert.equal(payload.direct_goal_request.objective, preflight.visible_goal_objective);
     assert.equal(payload.direct_goal_request.mission_run_preflight.raw_objective, rawObjective);
@@ -4649,9 +4647,7 @@ test('mission run with overnight self-improve objective configures a heartbeat-s
     assert.match(payload.mission.stop_condition, /run for 6 hours/);
     assert.equal(payload.mission.raw_objective, rawObjective);
     assert.equal(payload.mission.mission_run_preflight.raw_objective, rawObjective);
-    assert.notEqual(payload.mission.objective, rawObjective);
-    assert.match(payload.mission.objective, /Mission Room with auto-improver/);
-    assert.match(payload.mission.objective, /one visible goal, task spine, proof receipt, and next action/);
+    assert.equal(payload.mission.objective, rawObjective);
     assert.equal(payload.codex_goal_state.goal.objective, payload.mission.mission_run_preflight.visible_goal_objective);
     assert.equal(payload.mission.xp_task.ref, payload.codex_goal_state.goal.task_spine.task_ref);
     assert.equal(fs.existsSync(path.join(dir, payload.mission.mission_run_preflight.room_receipt_path)), true);

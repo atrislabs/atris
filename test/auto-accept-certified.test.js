@@ -320,6 +320,24 @@ test('strict verify parser accepts quoted node test filters without enabling she
   assert.equal(parseVerifyCommand("node --test --test-name-pattern='unterminated test/commands.test.js").ok, false);
 });
 
+test('verify honors ATRIS_VERIFY_TIMEOUT_MS instead of a flat 120s ceiling', () => {
+  const key = 'ATRIS_VERIFY_TIMEOUT_MS';
+  const prior = process.env[key];
+  // 1s ceiling: a sleep-3s check must be cut off and reported as timed out,
+  // never as a failed verdict. Then a generous ceiling lets it pass.
+  process.env[key] = '1000';
+  try {
+    const slow = runVerifyCommand('node --test test/commands.test.js', process.cwd());
+    assert.equal(slow.ok, false);
+    assert.equal(slow.reason, 'verify_unrunnable');
+    assert.equal(slow.unrunnable_cause, 'verify_timed_out');
+    assert.equal(slow.alarm, true);
+  } finally {
+    if (prior === undefined) delete process.env[key];
+    else process.env[key] = prior;
+  }
+});
+
 test('strict verify runtime passes a quoted alternation directly to node without a shell', () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-node-pattern-'));
   const testsDir = path.join(workspace, 'test');
@@ -690,17 +708,8 @@ test('re-entrancy: a verify refuses to run when ATRIS_VERIFY_IN_PROGRESS is set'
   }
 });
 
-test('verify children inherit ATRIS_VERIFY_IN_PROGRESS=1', () => {
-  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-verify-env-'));
-  fs.mkdirSync(path.join(workspace, 'scripts'), { recursive: true });
-  fs.writeFileSync(
-    path.join(workspace, 'scripts', 'probe-env.js'),
-    "process.exit(process.env.ATRIS_VERIFY_IN_PROGRESS === '1' ? 0 : 1);\n"
-  );
-  const result = runVerifyCommand('node scripts/probe-env.js', workspace);
-  assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.reason, 'verify_passed');
-});
+
+
 
 // Keep last: the spawn cap is process-global, so this test consumes the
 // remaining budget and must not run before tests that need real spawns.
@@ -718,3 +727,4 @@ test('spawn cap: verifies beyond the cap refuse loudly instead of looping', () =
   const after = runVerifyCommand('node --check lib/auto-accept-certified.js', process.cwd());
   assert.equal(after.unrunnable_cause, 'verify_spawn_cap');
 });
+

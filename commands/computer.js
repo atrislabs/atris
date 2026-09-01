@@ -440,7 +440,7 @@ function appendSystemPrompt(basePrompt, extraPrompt) {
 function codeOpsCloudOptions(options = {}) {
   return {
     ...options,
-    worker: options.worker || 'claude',
+    worker: options.worker || null,
     mode: 'codeops',
     systemPrompt: appendSystemPrompt(options.systemPrompt, CODEOPS_WORKFLOW_PROMPT),
   };
@@ -449,7 +449,7 @@ function codeOpsCloudOptions(options = {}) {
 function recruitingCloudOptions(options = {}) {
   return {
     ...options,
-    worker: options.worker || 'claude',
+    worker: options.worker || null,
     mode: 'recruiting',
     systemPrompt: appendSystemPrompt(options.systemPrompt, RECRUITING_WORKFLOW_PROMPT),
   };
@@ -1124,7 +1124,7 @@ async function chooseComputerSurface(hasBusinessBinding, hasLocalHarness) {
 }
 
 async function chooseCloudLane(token, ctx, initialOptions = {}) {
-  let worker = initialOptions.worker || null;
+  let worker = initialOptions.worker || ctx?.worker || null;
   let model = initialOptions.model || null;
 
   if (!worker && useInteractiveCloudUi()) {
@@ -1664,6 +1664,19 @@ function computerCard(args = [], cwd = process.cwd()) {
   return card;
 }
 
+function savedBusinessWorker(slug) {
+  if (!slug) return null;
+  const wanted = String(slug).toLowerCase();
+  const businesses = loadBusinesses();
+  const entry = businesses[slug] || Object.values(businesses).find((item) => {
+    if (!item) return false;
+    return String(item.slug || '').toLowerCase() === wanted
+      || String(item.canonical_slug || '').toLowerCase() === wanted
+      || String(item.name || '').toLowerCase() === wanted;
+  });
+  return entry?.worker || null;
+}
+
 async function resolveBusinessContext(token) {
   const binding = readBusinessBinding();
   if (!binding) return null;
@@ -1674,6 +1687,7 @@ async function resolveBusinessContext(token) {
       businessId: binding.business_id,
       workspaceId: binding.workspace_id,
       businessName: binding.name || binding.slug || 'business',
+      worker: savedBusinessWorker(binding.slug),
     };
   }
 
@@ -1688,6 +1702,7 @@ async function resolveBusinessContext(token) {
     );
     if (match) {
       businesses[slug] = {
+        ...(businesses[slug] || {}),
         business_id: match.id,
         workspace_id: match.workspace_id,
         name: match.name,
@@ -1700,6 +1715,7 @@ async function resolveBusinessContext(token) {
         businessId: match.id,
         workspaceId: match.workspace_id,
         businessName: match.name || match.slug,
+        worker: businesses[slug].worker || null,
       };
     }
   }
@@ -1711,6 +1727,7 @@ async function resolveBusinessContext(token) {
       businessId: cached.business_id,
       workspaceId: cached.workspace_id,
       businessName: cached.name || slug,
+      worker: cached.worker || null,
     };
   }
 
@@ -1733,6 +1750,7 @@ function cachedBusinessContext(slug) {
     businessId: cached.business_id,
     workspaceId: cached.workspace_id || null,
     businessName: cached.name || cached.slug || slug,
+    worker: cached.worker || null,
   };
 }
 
@@ -1751,7 +1769,9 @@ async function resolveBusinessContextBySlug(token, slug, options = {}) {
       (b) => b.slug === slug || (b.name || '').toLowerCase() === slug.toLowerCase()
     );
     if (match) {
-      businesses[match.slug || slug] = {
+      const key = match.slug || slug;
+      businesses[key] = {
+        ...(businesses[key] || {}),
         business_id: match.id,
         workspace_id: match.workspace_id,
         name: match.name,
@@ -1764,6 +1784,7 @@ async function resolveBusinessContextBySlug(token, slug, options = {}) {
         businessId: match.id,
         workspaceId: match.workspace_id,
         businessName: match.name || match.slug,
+        worker: businesses[key].worker || null,
       };
     }
   }
@@ -1790,6 +1811,7 @@ async function resolveSingleBusinessShortcutFallback(token, slug) {
   const businesses = loadBusinesses();
   const businessName = shortcutBusinessLabel(wantedSlug, match.name || match.slug);
   businesses[wantedSlug] = {
+    ...(businesses[wantedSlug] || {}),
     business_id: match.id,
     workspace_id: match.workspace_id,
     name: businessName,
@@ -1803,6 +1825,7 @@ async function resolveSingleBusinessShortcutFallback(token, slug) {
     businessId: match.id,
     workspaceId: match.workspace_id,
     businessName,
+    worker: businesses[wantedSlug].worker || null,
   };
 }
 
@@ -3024,6 +3047,48 @@ async function computerLearn(token, ctx = null) {
   console.log(`  The computer is thinking... check back with: atris computer diff soul`);
 }
 
+function computerLane(rest, ctx) {
+  if (!ctx?.slug && !ctx?.businessId) {
+    console.error('No business selected. Pass --business <slug>.');
+    process.exitCode = 1;
+    return;
+  }
+  const businesses = loadBusinesses();
+  const key = Object.keys(businesses).find((slug) => {
+    const entry = businesses[slug] || {};
+    return slug === ctx.slug || entry.business_id === ctx.businessId;
+  });
+  if (!key) {
+    console.error(`Business ${ctx.slug || ctx.businessId} is not in the local business list yet. Run any computer command against it once, then retry.`);
+    process.exitCode = 1;
+    return;
+  }
+  const requested = (rest || '').trim().toLowerCase();
+  if (!requested) {
+    const current = businesses[key].worker || null;
+    console.log(current
+      ? `  Saved lane for ${key}: ${formatWorkerName(current)}`
+      : `  No saved lane for ${key}. Runs default to Claude unless you pass --worker.`);
+    console.log(`  Set one: atris computer lane <claude|openai> --business ${key}`);
+    return;
+  }
+  if (requested === 'clear' || requested === 'none') {
+    delete businesses[key].worker;
+    saveBusinesses(businesses);
+    console.log(`  Cleared saved lane for ${key}.`);
+    return;
+  }
+  if (!['claude', 'openai', 'codex'].includes(requested)) {
+    console.error(`Unknown lane "${requested}". Use claude, openai, or clear.`);
+    process.exitCode = 1;
+    return;
+  }
+  const normalized = requested === 'codex' ? 'openai' : requested;
+  businesses[key].worker = normalized;
+  saveBusinesses(businesses);
+  console.log(`  Saved lane for ${key}: ${formatWorkerName(normalized)}. Every run for this business now uses it unless you pass --worker.`);
+}
+
 async function computerExec(token, prompt, ctx = null, options = {}) {
   if (!prompt) {
     console.error('Usage: atris computer exec "<prompt>"');
@@ -3037,8 +3102,9 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
       console.error('  Computer did not become ready in time.');
       return;
     }
-    const worker = activeWorker(options.worker);
-    console.log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}`);
+    const worker = activeWorker(options.worker || ctx.worker);
+    const laneSource = options.worker ? '' : ctx.worker ? '  (saved for this business)' : '';
+    console.log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}${laneSource}`);
     const result = await apiRequestJson(`/business/${ctx.businessId}/chat`, {
       method: 'POST',
       token,
@@ -3451,7 +3517,7 @@ async function computerChat(token, ctx, initialOptions = {}) {
   const scriptedInput = initialOptions.message != null ? String(initialOptions.message) : pipedInput;
   if (!oneShotMessage) printCloudWordmark();
   const selection = oneShotMessage
-    ? { worker: initialOptions.worker, model: initialOptions.model }
+    ? { worker: initialOptions.worker || ctx?.worker || null, model: initialOptions.model }
     : await chooseCloudLane(token, ctx, initialOptions);
   if (selection.cancelled) return;
   let worker = activeWorker(selection.worker);
@@ -4377,6 +4443,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     case 'ls': return computerLs(token, rest || undefined, ctx);
     case 'cat': return computerCat(token, rest, ctx);
     case 'exec': return computerExec(token, rest, ctx, cloudOptions);
+    case 'lane': return computerLane(rest, ctx);
     case 'pull': {
       const parts = rest.split(' ').filter(Boolean);
       return computerPull(token, parts[0], parts[1], ctx);

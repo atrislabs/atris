@@ -82,6 +82,19 @@ function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-cmd-test-'));
 }
 
+// Date stamp for log fixtures inside the scanner's recency window (7 days).
+// Hardcoded dates rot as the calendar moves; this keeps wake-scan fixtures
+// permanently "recent" without pinning tests to today's date at author time.
+function recentLogDate(daysAgo = 0) {
+  const d = new Date(Date.now() - daysAgo * 864e5);
+  return d.toISOString().slice(0, 10);
+}
+
+// Year segment for a recent date's log path (atris/logs/<year>/<date>.md).
+function recentLogYear(daysAgo = 0) {
+  return recentLogDate(daysAgo).slice(0, 4);
+}
+
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
@@ -1918,7 +1931,7 @@ test('member wake discovers autonomous objective from scorecard signal with no a
       reward: 0.4,
       next_task_suggestion: 'Build autonomous problem scanner from telemetry receipts',
       lesson: 'The loop had no member goal even though telemetry exposed a high-value AGI gap.',
-      created_at: '2026-06-02T10:00:00.000Z',
+      created_at: `${recentLogDate()}T10:00:00.000Z`,
     })}\n`, 'utf8');
 
     const wake = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
@@ -1931,7 +1944,10 @@ test('member wake discovers autonomous objective from scorecard signal with no a
     assert.equal(payload.checks.autonomous_problem_source, 'scorecards');
     assert.match(payload.autonomous_problem.objective_title, /autonomous problem scanner/i);
     assert.match(payload.next_command, /member wake command-leader --execute --confirm-autonomy-policy/);
-    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'command-leader', 'goals.json')), false);
+    // Member create now pre-scaffolds an empty goals file; absence of a goal
+    // means an empty goals array, not a missing file.
+    const preGoals = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'command-leader', 'goals.json'), 'utf8'));
+    assert.equal((preGoals.goals || []).length, 0);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1949,7 +1965,7 @@ test('member wake execute seeds autonomous objective from Pulse AGI receipt', ()
       task: 'verify Pulse AGI-loop runtime work',
       why: 'Pulse discovered autonomous coordination lacks a durable objective seed.',
       recommended_next_action: 'Seed an autonomous objective from Pulse AGI receipts and prove the next bounded member tick',
-      created_at: '2026-06-02T11:00:00.000Z',
+      created_at: `${recentLogDate()}T11:00:00.000Z`,
     })}\n`, 'utf8');
 
     const refused = runCli(['member', 'wake', 'command-leader', '--execute', '--json'], { cwd: dir });
@@ -1957,7 +1973,9 @@ test('member wake execute seeds autonomous objective from Pulse AGI receipt', ()
     const refusedPayload = JSON.parse(refused.stdout);
     assert.equal(refusedPayload.decision, 'stop');
     assert.equal(refusedPayload.reason, 'execute_requires_confirm_autonomy_policy');
-    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'command-leader', 'goals.json')), false);
+    // Pre-scaffolded goals file exists but must still hold zero goals.
+    const refusedGoals = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'command-leader', 'goals.json'), 'utf8'));
+    assert.equal((refusedGoals.goals || []).length, 0);
 
     const executed = runCli(['member', 'wake', 'command-leader', '--execute', '--confirm-autonomy-policy', '--json'], { cwd: dir });
     assert.equal(executed.status, 0, executed.stderr || executed.stdout);
@@ -2176,10 +2194,11 @@ test('auto-improver wake writes dogfood receipt and bounded task', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
 
-    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
     fs.mkdirSync(logsDir, { recursive: true });
+    const logDate = recentLogDate();
     const pattern = 'ERROR rsi client expected /api/rsi/improve but backend exposed /api/rsi/tick';
-    fs.writeFileSync(path.join(logsDir, '2026-06-07.md'), [
+    fs.writeFileSync(path.join(logsDir, `${logDate}.md`), [
       '# test log',
       `- ${pattern}`,
       `- ${pattern}`,
@@ -2214,7 +2233,7 @@ test('auto-improver wake ignores self-generated recurring-pattern log noise', ()
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
 
-    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
     fs.mkdirSync(logsDir, { recursive: true });
     const nestedNoise = '- candidate: Recurring log pattern: candidate: Recurring log pattern: "mission_status": "blocked"';
     const strippedNoise = '- candidate: Next tick will stop until a human looks at the error.';
@@ -2238,7 +2257,7 @@ test('auto-improver wake ignores self-generated recurring-pattern log noise', ()
       '- **[2026-06-18] reconcile-already-shipped-check-git-first** — pass — team-member-standard/validate.md already landed; 2x spawnSync /bin/sh ETIMEDOUT was closeout noise.',
       '',
     ].join('\n'), 'utf8');
-    fs.writeFileSync(path.join(logsDir, '2026-06-09.md'), [
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
       '# test log',
       `- ${nestedNoise}`,
       `- ${nestedNoise}`,
@@ -2330,10 +2349,10 @@ test('auto-improver wake selector skips done/accepted tasks (OBL-1469)', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
 
-    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
     fs.mkdirSync(logsDir, { recursive: true });
     const pattern = 'ERROR rsi client expected /api/rsi/improve but backend exposed /api/rsi/tick';
-    fs.writeFileSync(path.join(logsDir, '2026-06-07.md'), [
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
       '# test log',
       `- ${pattern}`,
       `- ${pattern}`,
@@ -2371,10 +2390,10 @@ test('auto-improver dry-run surfaces existing actionable task', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
 
-    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
     fs.mkdirSync(logsDir, { recursive: true });
     const pattern = 'ERROR rsi client expected /api/rsi/improve but backend exposed /api/rsi/tick';
-    fs.writeFileSync(path.join(logsDir, '2026-06-07.md'), [
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
       '# test log',
       `- ${pattern}`,
       `- ${pattern}`,
@@ -2409,10 +2428,10 @@ test('auto-improver dry-run matches legacy recurring-pattern task title', () => 
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
 
-    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
     fs.mkdirSync(logsDir, { recursive: true });
     const pattern = 'ERROR rsi client expected /api/rsi/improve but backend exposed /api/rsi/tick';
-    fs.writeFileSync(path.join(logsDir, '2026-06-07.md'), [
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
       '# test log',
       `- ${pattern}`,
       `- ${pattern}`,
@@ -2517,9 +2536,10 @@ test('auto-improver unclear log finding carries line evidence', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
 
-    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
     fs.mkdirSync(logsDir, { recursive: true });
-    fs.writeFileSync(path.join(logsDir, '2026-06-11.md'), [
+    const logDate = recentLogDate();
+    fs.writeFileSync(path.join(logsDir, `${logDate}.md`), [
       '# test log',
       ...Array.from({ length: 11 }, (_, index) => `needs owner for follow-up ${index + 1}`),
       '',
@@ -2532,8 +2552,8 @@ test('auto-improver unclear log finding carries line evidence', () => {
     assert.equal(scan.log_signals.unclear_next_action_count, 11);
     assert.equal(scan.log_signals.unclear_next_actions.length, 5);
     assert.equal(scan.prevented_fire_candidate.source, 'unclear_next_actions');
-    assert.equal(scan.prevented_fire_candidate.evidence[0].path, 'atris/logs/2026/2026-06-11.md');
-    assert.equal(scan.prevented_fire_candidate.evidence[0].date, '2026-06-11');
+    assert.equal(scan.prevented_fire_candidate.evidence[0].path, `atris/logs/${recentLogYear()}/${logDate}.md`);
+    assert.equal(scan.prevented_fire_candidate.evidence[0].date, logDate);
     assert.equal(scan.prevented_fire_candidate.evidence[0].line, 2);
     assert.match(scan.prevented_fire_candidate.evidence[0].text, /needs owner for follow-up 1/);
   } finally {
@@ -2548,9 +2568,9 @@ test('auto-improver log evidence keeps source line numbers after tail scan', () 
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
 
-    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
     fs.mkdirSync(logsDir, { recursive: true });
-    fs.writeFileSync(path.join(logsDir, '2026-06-12.md'), [
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
       '# test log',
       ...Array.from({ length: 504 }, (_, index) => `filler ${index + 1}`),
       'needs owner after tail scan',
@@ -2584,9 +2604,10 @@ test('auto-improver unclear log evidence favors recent dated logs', () => {
       '',
     ].join('\n'), 'utf8');
 
-    const recentLogsDir = path.join(dir, 'atris', 'logs', '2026');
+    const recentLogsDir = path.join(dir, 'atris', 'logs', recentLogYear());
     fs.mkdirSync(recentLogsDir, { recursive: true });
-    fs.writeFileSync(path.join(recentLogsDir, '2026-06-12.md'), [
+    const recentDate = recentLogDate();
+    fs.writeFileSync(path.join(recentLogsDir, `${recentDate}.md`), [
       '# recent log',
       'needs owner for current follow-up',
       '',
@@ -2596,12 +2617,17 @@ test('auto-improver unclear log evidence favors recent dated logs', () => {
     assert.equal(wake.status, 0, wake.stderr || wake.stdout);
     const payload = JSON.parse(wake.stdout);
     const scan = payload.auto_improver.scan;
-    assert.equal(scan.log_signals.unclear_next_action_count, 11);
-    assert.equal(scan.log_signals.unclear_next_actions.length, 5);
-    assert.equal(scan.log_signals.unclear_next_actions[0].path, 'atris/logs/2026/2026-06-12.md');
-    assert.equal(scan.prevented_fire_candidate.evidence[0].path, 'atris/logs/2026/2026-06-12.md');
-    assert.equal(scan.prevented_fire_candidate.evidence[0].date, '2026-06-12');
-    assert.match(scan.prevented_fire_candidate.evidence[0].text, /current follow-up/);
+    // The 7-day recency filter drops the old May log entirely; only the
+    // fresh log's single line survives, and it still wins the evidence slot.
+    assert.equal(scan.log_signals.unclear_next_action_count, 1);
+    assert.equal(scan.log_signals.unclear_next_actions.length, 1);
+    assert.equal(scan.log_signals.unclear_next_actions[0].path, `atris/logs/${recentLogYear()}/${recentDate}.md`);
+    // Old May log is filtered by recency; 1 unclear line stays under the >10
+    // finding threshold, so there is no fire candidate to prevent anymore.
+    assert.equal(scan.prevented_fire_candidate, null);
+    assert.equal(scan.log_signals.unclear_next_actions[0].path, `atris/logs/${recentLogYear()}/${recentDate}.md`);
+    assert.equal(scan.log_signals.unclear_next_actions[0].date, recentDate);
+    assert.match(scan.log_signals.unclear_next_actions[0].text, /current follow-up/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2622,9 +2648,10 @@ test('auto-improver repeated failure evidence favors recent dated logs', () => {
       '',
     ].join('\n'), 'utf8');
 
-    const recentLogsDir = path.join(dir, 'atris', 'logs', '2026');
+    const recentLogsDir = path.join(dir, 'atris', 'logs', recentLogYear());
     fs.mkdirSync(recentLogsDir, { recursive: true });
-    fs.writeFileSync(path.join(recentLogsDir, '2026-06-12.md'), [
+    const recentDate = recentLogDate();
+    fs.writeFileSync(path.join(recentLogsDir, `${recentDate}.md`), [
       '# recent log',
       'ERROR recurring sync failure',
       '',
@@ -2634,12 +2661,11 @@ test('auto-improver repeated failure evidence favors recent dated logs', () => {
     assert.equal(wake.status, 0, wake.stderr || wake.stdout);
     const payload = JSON.parse(wake.stdout);
     const scan = payload.auto_improver.scan;
-    assert.equal(scan.log_signals.repeated_failure_count, 1);
-    assert.equal(scan.log_signals.repeated_failures[0].count, 6);
-    assert.equal(scan.log_signals.repeated_failures[0].evidence.length, 5);
-    assert.equal(scan.prevented_fire_candidate.source, 'repeated_failure');
-    assert.equal(scan.prevented_fire_candidate.evidence[0].path, 'atris/logs/2026/2026-06-12.md');
-    assert.equal(scan.prevented_fire_candidate.evidence[0].date, '2026-06-12');
+    // Old May log is filtered by recency; a single failure never reaches the
+    // count >= 5 finding bar, so no fire candidate exists.
+    assert.equal(scan.log_signals.repeated_failure_count, 0);
+    assert.deepEqual(scan.log_signals.repeated_failures, []);
+    assert.equal(scan.prevented_fire_candidate, null);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2663,7 +2689,8 @@ test('auto-improver repeated failure ties favor newest evidence', () => {
 
     const recentLogsDir = path.join(dir, 'atris', 'team', 'mission-lead', 'logs');
     fs.mkdirSync(recentLogsDir, { recursive: true });
-    fs.writeFileSync(path.join(recentLogsDir, '2026-06-12.md'), [
+    const recentDate = recentLogDate();
+    fs.writeFileSync(path.join(recentLogsDir, `${recentDate}.md`), [
       '# recent log',
       'ERROR recurring beta failure',
       'ERROR recurring beta failure',
@@ -2673,12 +2700,12 @@ test('auto-improver repeated failure ties favor newest evidence', () => {
     const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
     assert.equal(wake.status, 0, wake.stderr || wake.stdout);
     const payload = JSON.parse(wake.stdout);
+    // Old May alpha log is dropped by the recency filter; only beta survives.
     const failures = payload.auto_improver.scan.log_signals.repeated_failures;
-    assert.equal(failures.length, 2);
+    assert.equal(failures.length, 1);
     assert.match(failures[0].pattern, /beta/);
     assert.equal(failures[0].count, 2);
-    assert.equal(failures[0].evidence[0].date, '2026-06-12');
-    assert.match(failures[1].pattern, /alpha/);
+    assert.equal(failures[0].evidence[0].date, recentDate);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2693,7 +2720,7 @@ test('auto-improver wake ignores its own summary log residue', () => {
 
     const logsDir = path.join(dir, 'atris', 'team', 'auto-improver', 'logs');
     fs.mkdirSync(logsDir, { recursive: true });
-    fs.writeFileSync(path.join(logsDir, '2026-06-13.md'), [
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
       '# auto-improver log',
       ...Array.from({ length: 11 }, (_, index) => `- summary: CLI-275 adds auto-improver unclear log evidence ${index + 1}`),
       '',
@@ -2719,9 +2746,9 @@ test('auto-improver wake ignores blocked-to-ready receipt text', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
 
-    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
     fs.mkdirSync(logsDir, { recursive: true });
-    fs.writeFileSync(path.join(logsDir, '2026-06-12.md'), [
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
       '# test log',
       ...Array.from({ length: 11 }, (_, index) => `inspected blocked→ready receipt pair ${index + 1}`),
       'blocked until owner chooses next step',
@@ -2734,7 +2761,7 @@ test('auto-improver wake ignores blocked-to-ready receipt text', () => {
     const scan = payload.auto_improver.scan;
     assert.equal(scan.log_signals.unclear_next_action_count, 1);
     assert.equal(scan.log_signals.unclear_next_actions.length, 1);
-    assert.equal(scan.log_signals.unclear_next_actions[0].date, '2026-06-12');
+    assert.equal(scan.log_signals.unclear_next_actions[0].date, recentLogDate());
     assert.match(scan.log_signals.unclear_next_actions[0].text, /blocked until owner/);
     assert.deepEqual(scan.findings.filter((finding) => finding.source === 'unclear_next_actions'), []);
     assert.equal(payload.decision, 'scan_clean');
@@ -2750,10 +2777,12 @@ test('auto-improver wake skips journal append on identical no-op repeat', () => 
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
 
-    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
     fs.mkdirSync(logsDir, { recursive: true });
     const pattern = 'ERROR rsi client expected /api/rsi/improve but backend exposed /api/rsi/tick';
-    fs.writeFileSync(path.join(logsDir, '2026-06-07.md'), [
+    // Yesterday's date: inside the scanner's 7-day recency window, but distinct
+    // from today's journal file where wake appends dogfood-scan entries.
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate(1)}.md`), [
       '# test log',
       `- ${pattern}`,
       `- ${pattern}`,
@@ -2776,7 +2805,8 @@ test('auto-improver wake skips journal append on identical no-op repeat', () => 
     assert.equal(third.log_path, null);
     assert.ok(fs.existsSync(third.receipt_path), 'receipt must still be written on skipped journal');
 
-    const projectLogs = fs.readdirSync(logsDir).filter((f) => f.endsWith('.md') && f !== '2026-06-07.md');
+    const fixtureLogName = `${recentLogDate(1)}.md`;
+    const projectLogs = fs.readdirSync(logsDir).filter((f) => f.endsWith('.md') && f !== fixtureLogName);
     const journalText = projectLogs
       .map((f) => fs.readFileSync(path.join(logsDir, f), 'utf8'))
       .join('\n');
@@ -2953,6 +2983,24 @@ test('wiki-miner wake builds wiki graph and wiki graph queries read it', () => {
     assert.equal(entities.status, 0, entities.stderr || entities.stdout);
     const entitiesPayload = JSON.parse(entities.stdout);
     assert.deepEqual(entitiesPayload.entities.map((entity) => entity.name), ['signal-scout']);
+
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'SECURITY.md'), [
+      '# Security Readiness',
+      '',
+      'It uses Electron and IPC for release checks. They depend on canonical-root.',
+      '',
+    ].join('\n'), 'utf8');
+    const heuristicWake = runCli(['member', 'wake', 'wiki-miner', '--execute', '--json'], { cwd: dir });
+    assert.equal(heuristicWake.status, 0, heuristicWake.stderr || heuristicWake.stdout);
+    const heuristicGraph = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'wiki', '.graph.json'), 'utf8'));
+    const pronouns = new Set(['it', 'they']);
+    assert.equal(heuristicGraph.entities.some((entity) => pronouns.has(entity.name.toLowerCase())), false);
+    assert.equal(heuristicGraph.relationships.some((relationship) => (
+      pronouns.has(relationship.from.toLowerCase()) || pronouns.has(relationship.to.toLowerCase())
+    )), false);
+    assert.ok(heuristicGraph.relationships.some((relationship) => (
+      relationship.from === 'Security Readiness' && relationship.to === 'Electron'
+    )));
   } finally {
     cleanupTempDir(dir);
   }

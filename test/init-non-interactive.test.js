@@ -146,6 +146,18 @@ test('fresh init creates the six-member starter team with a safe customer lead',
     const res = runInit(['--yes'], { cwd: dir });
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.deepEqual(listTeamMembers(dir), STARTER_MEMBERS);
+    for (const name of STARTER_MEMBERS) {
+      const memberDir = path.join(dir, 'atris', 'team', name);
+      for (const fileName of ['MEMBER.md', 'SOUL.md', 'MISSION.md', 'goals.json', 'goals.md']) {
+        assert.ok(fs.existsSync(path.join(memberDir, fileName)), `${name}/${fileName} should exist`);
+      }
+      for (const dirName of ['skills', 'tools', 'context', 'logs']) {
+        assert.ok(fs.statSync(path.join(memberDir, dirName)).isDirectory(), `${name}/${dirName}/ should exist`);
+      }
+      assert.ok(fs.readdirSync(path.join(memberDir, 'logs')).some(file => file.endsWith('.md')));
+    }
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', '_template', 'MEMBER.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', '_template', 'SOUL.md')));
     const customerLeadDir = path.join(dir, 'atris', 'team', 'customer-lead');
     assert.ok(fs.existsSync(path.join(customerLeadDir, 'SOUL.md')));
     assert.ok(fs.existsSync(path.join(customerLeadDir, 'START_HERE.md')));

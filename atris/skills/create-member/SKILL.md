@@ -1,12 +1,6 @@
 ---
 name: create-member
 description: "Create and manage AI team members using the MEMBER.md format. Use when the user wants to define a new AI role, set up a team member, create an agent persona, or work with team/MEMBER.md files."
-version: 1.0.0
-tags:
-  - team
-  - member
-  - agent
-  - persona
 ---
 
 # Member Creator
@@ -25,13 +19,18 @@ Spec: https://github.com/atrislabs/member
 team/<name>/
 ├── MEMBER.md       REQUIRED  Persona + role + permissions
 ├── SOUL.md         REQUIRED  Identity, values, lessons — who the agent is
-├── skills/         OPTIONAL  SKILL.md files (capabilities)
+├── MISSION.md      REQUIRED  Durable purpose and goal-selection rule
+├── goals.json      REQUIRED  Machine-readable goal state
+├── goals.md        REQUIRED  Human-readable goal state
+├── logs/           REQUIRED  Dated continuity receipts
+│   └── YYYY-MM-DD.md
+├── skills/         REQUIRED  SKILL.md files (may start empty)
 │   └── <skill>/
 │       └── SKILL.md
-├── tools/          OPTIONAL  MCP servers, API docs, CLI docs
+├── tools/          REQUIRED  MCP servers, API docs, CLI docs (may start empty)
 │   ├── .mcp.json
 │   └── <tool>.md
-└── context/        OPTIONAL  Domain knowledge (markdown)
+└── context/        REQUIRED  Domain knowledge (may start empty)
     └── *.md
 ```
 
@@ -52,12 +51,16 @@ Ask the user:
 team/<name>/
 ├── MEMBER.md
 ├── SOUL.md
+├── MISSION.md
+├── goals.json
+├── goals.md
+├── logs/
 ├── skills/
 ├── tools/
 └── context/
 ```
 
-Use kebab-case for the name. Create all directories even if empty.
+Use kebab-case for the name. Create the full bundle in one operation, even when the directories and goal list start empty. Never overwrite existing identity, mission, goal, or log files while backfilling a member.
 
 ### Step 3: Write SOUL.md
 
@@ -167,15 +170,15 @@ Drop markdown files into `context/` with domain knowledge the member needs:
 
 No special format. Just markdown files the member references.
 
-## Flat File Format
+## Legacy Flat Files
 
-For simple members that just need a persona (no skills, tools, or context), use a flat file:
+Flat files are a legacy input only:
 
 ```
 team/<name>.md
 ```
 
-Same frontmatter, same format. Just no directory structure around it.
+Do not create new flat-file members. Upgrade an existing flat file with `atris member upgrade <name>` so it receives the complete directory bundle without losing its MEMBER.md content.
 
 ## Detection
 

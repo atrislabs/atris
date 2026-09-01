@@ -169,6 +169,18 @@ test('buildEngineCommand enables each engine native sandbox for one-lap executio
   assert.doesNotMatch(grok, /--always-approve/);
 });
 
+test('buildEngineCommand grants commandcode writes only when sealed or yolo', () => {
+  // Headless print mode blocks writes by default; --yolo is the only flag
+  // that lifts it (auto-accept is interactive-only). Sealed adds it because
+  // fleet builds always run in an isolated worktree.
+  const plain = fleet.buildEngineCommand('commandcode', '/tmp/p.md');
+  assert.doesNotMatch(plain, /--auto-accept|--yolo/);
+  const sealed = fleet.buildEngineCommand('commandcode', '/tmp/p.md', { sealed: true });
+  assert.match(sealed, /--yolo --trust$/);
+  const yolo = fleet.buildEngineCommand('commandcode', '/tmp/p.md', { yolo: true });
+  assert.match(yolo, /--yolo$/);
+});
+
 test('runDispatchCommand refuses without a task id or engine', () => {
   const before = console.error;
   const lines = [];

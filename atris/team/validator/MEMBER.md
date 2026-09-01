@@ -243,7 +243,7 @@ After validation:
 2. Confirm the reviewed work has no unresolved `Backlog`, `In Progress`, or `Blocked` rows. Completed rows are durable history.
 3. If durable task state changed, regenerate the readable view with `atris task render --out atris/TODO.md`; do not hand-delete rendered completed history.
 4. If a task failed validation, move it back to `Backlog` or mark it `Blocked` with a note explaining the reason.
-5. Log to your journal at `atris/team/validator/journal/YYYY-MM-DD.md`:
+5. Log at `atris/team/validator/logs/YYYY-MM-DD.md`:
 
 ```markdown
 ## Validator - Mon DD

@@ -239,7 +239,11 @@ test('model-capable engines receive exact model flags without weakening read-onl
   assert.deepEqual(grok.args.slice(4, 6), ['--sandbox', 'read-only']);
   assert.deepEqual(grok.args.slice(6, 8), ['--model', 'grok-composer-2.5-fast']);
 
-  for (const engine of ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'agy']) {
+  const opencode = buildReadOnlyEngineInvocation('opencode', 'inspect the router', 'opencode/big-pickle');
+  assert.deepEqual(opencode.args.slice(0, 2), ['--agent', 'plan']);
+  assert.deepEqual(opencode.args.slice(2, 4), ['-m', 'opencode/big-pickle']);
+
+  for (const engine of ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'agy', 'opencode']) {
     const invocation = buildReadOnlyEngineInvocation(engine, 'read only');
     assert.doesNotMatch(invocation.args.join(' '), /(?:^|\s)--worktree(?:\s|$)/);
     assert.match(invocation.args.join(' '), /Do not modify files/);

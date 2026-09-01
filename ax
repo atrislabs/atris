@@ -78,7 +78,7 @@ const ANSI = {
   magenta: '\x1b[35m'
 };
 
-const TIER_COLORS = { rapid: '\x1b[33m', fast: '\x1b[32m', pro: '\x1b[36m', max: '\x1b[35m' };
+const TIER_COLORS = { alpha: '\x1b[93m', rapid: '\x1b[33m', fast: '\x1b[32m', pro: '\x1b[36m', max: '\x1b[35m' };
 
 // Extend backend_api by adding one row here. Keep mutating endpoints narrow;
 // any non-get method is approval-gated before the HTTP request is made.
@@ -99,6 +99,7 @@ function tierColor(mode) {
 function modelForMode(mode) {
   if (mode === 'code-fast') return CODE_FAST.model;
   if (mode === 'max') return 'atris:max';
+  if (mode === 'alpha') return 'atris:alpha';
   if (mode === 'rapid') return 'atris:rapid';
   return mode === 'fast' ? 'atris:fast' : 'atris:pro';
 }
@@ -121,7 +122,7 @@ function postTurnTimeoutMs(payload = {}, options = {}) {
   // AX postTurn is the tool-capable Atris2 path. Fast tool turns need the same
   // headroom as pro because the backend can spend long stretches inside tools
   // without SSE traffic. Plain tool-free one-shot fast chat stays at 60s.
-  if ((model === 'atris:fast' || model === 'atris:rapid') && payloadCanRunTools(payload, options)) {
+  if ((model === 'atris:fast' || model === 'atris:rapid' || model === 'atris:alpha') && payloadCanRunTools(payload, options)) {
     timeoutMs = Math.max(timeoutMs, PRO_TURN_TIMEOUT_MS);
   }
   if (options.business || options.local) {
@@ -147,16 +148,18 @@ function formatSeconds(totalSeconds) {
 function tierLabel(mode) {
   if (mode === 'code-fast') return 'Atris Code Fast';
   if (mode === 'max') return 'Atris 2 Max';
+  if (mode === 'alpha') return 'Atris Alpha';
   if (mode === 'rapid') return 'Atris Rapid';
   if (mode === 'fast') return 'Atris 2 Fast';
   return 'Atris 2 Pro';
 }
 
-function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false } = {}, options = {}) {
+function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false, reasoningEffort = null } = {}, options = {}) {
+  const effortSuffix = reasoningEffort ? ` · effort ${reasoningEffort}` : '';
   return [
-    paint(`${tierLabel(mode)}${chat ? ' chat' : ''}`, [ANSI.bold, tierColor(normalizeMode(mode))], options),
+    paint(`${tierLabel(mode)}${chat ? ' chat' : ''}${effortSuffix}`, [ANSI.bold, tierColor(normalizeMode(mode))], options),
     cwd,
-    chat ? paint('shift-tab bypass · /auto /log /today /now /who · /fast /pro /max /rapid · exit to leave', [ANSI.muted], options) : '',
+    chat ? paint('shift-tab bypass · /auto /log /today /now /who · /fast /pro /max /rapid /alpha /effort · exit to leave', [ANSI.muted], options) : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -165,11 +168,11 @@ function formatUsage() {
     'ax - Atris local/code agent',
     '',
     'Usage:',
-    '  ax [--auto|--max|--pro|--fast|--rapid|--code-fast] [--local|--cloud] <message>',
-    '  ax [--auto|--max|--pro|--fast|--rapid|--code-fast] [--local|--cloud] --print <message>',
-    '  ax [--auto|--max|--pro|--fast|--rapid|--code-fast] [--local|--cloud] --chat',
-    '  ax [--max|--pro|--fast|--rapid] --business <slug> [<message>|--chat]',
-    '  ax [--max|--pro|--fast|--rapid|--code-fast] --doctor',
+    '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--code-fast] [--local|--cloud] <message>',
+    '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--code-fast] [--local|--cloud] --print <message>',
+    '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--code-fast] [--local|--cloud] --chat',
+    '  ax [--max|--pro|--fast|--rapid|--alpha] --business <slug> [<message>|--chat]',
+    '  ax [--max|--pro|--fast|--rapid|--alpha|--code-fast] --doctor',
     '  ax --approvals',
     '  ax --approve <approval-id>',
     '  ax --deny <approval-id>',
@@ -187,6 +190,8 @@ function formatUsage() {
     '  --pro   hosted Atris 2, deeper tool loop',
     '  --fast  hosted Atris 2, faster low-latency turns',
     '  --rapid  hosted Atris Rapid, cheapest chat and first-hop tools',
+    '  --alpha  hosted experimental lane (free preview model, swap via ATRIS2_ALPHA_MODEL)',
+    '  --effort <level>  reasoning effort: none, low, medium, high, xhigh, or default',
     '  --code-fast  Atris Code Fast public lane',
     '  --local opt into local backend/workspace tools',
     '  --cloud force authenticated cloud connectors/chat',
@@ -198,6 +203,7 @@ function formatUsage() {
     '  ax --pro find the config file and explain it',
     '  ax --fast what files are here',
     '  ax --rapid --chat',
+    '  ax --alpha --chat',
     '  ax --max refactor this module and verify the tests',
     '  ax --max --verify "npm test" fix the failing suite',
     '  ax --code-fast explain this error',
@@ -943,9 +949,20 @@ function insideWorkspaceCwd(startDir) {
   return found;
 }
 
+function pinLocalCheckout(options = {}) {
+  if (options.forceCloud || options.route === 'cloud') return false;
+  return Boolean(
+    options.forceLocal
+    || options.route === 'local'
+    || options.mode === 'alpha'
+  );
+}
+
 function resolveRoute(message, options = {}) {
   if (options.route === 'local' || options.forceLocal) return 'local';
   if (options.route === 'cloud' || options.forceCloud) return 'cloud';
+  // Alpha is the coding CLI: stay on this checkout. Never silent-cloud.
+  if (options.mode === 'alpha') return 'local';
   // Workspace standard v2 (2026-07-02, supersedes intent routing): inside a
   // workspace, tools are ALWAYS attached and the model decides whether to use
   // them — the Claude Code / Codex shape. v1 guessed intent with regexes and
@@ -970,6 +987,7 @@ function resolveRoute(message, options = {}) {
 function normalizeMode(mode) {
   if (mode === 'code-fast' || mode === 'code') return 'code-fast';
   if (mode === 'max') return 'max';
+  if (mode === 'alpha') return 'alpha';
   if (mode === 'rapid') return 'rapid';
   return mode === 'fast' ? 'fast' : 'pro';
 }
@@ -1127,7 +1145,24 @@ const TIER_BLURBS = {
   fast: 'quick answers, lowest latency',
   pro: 'deeper tool loop for real work',
   max: 'highest reasoning for the hardest jobs',
+  alpha: 'experimental preview lane',
 };
+
+const REASONING_EFFORTS = Object.freeze(['none', 'low', 'medium', 'high', 'xhigh']);
+
+function normalizeReasoningEffort(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw || raw === 'default' || raw === 'auto') return null;
+  const num = Number(raw);
+  if (Number.isInteger(num) && num >= 1 && num <= REASONING_EFFORTS.length) {
+    return REASONING_EFFORTS[num - 1];
+  }
+  return REASONING_EFFORTS.includes(raw) ? raw : '';
+}
+
+function formatReasoningEffortLabel(value) {
+  return value ? String(value) : 'lane default';
+}
 
 const CHAT_COMMANDS = Object.freeze([
   { name: '/help', description: 'list all commands', type: 'help' },
@@ -1137,6 +1172,8 @@ const CHAT_COMMANDS = Object.freeze([
   { name: '/pro', description: 'switch to a deeper tool loop', type: 'tier', mode: 'pro' },
   { name: '/max', description: 'switch to the highest reasoning lane', type: 'tier', mode: 'max' },
   { name: '/rapid', description: 'switch to the cheapest chat lane', type: 'tier', mode: 'rapid' },
+  { name: '/alpha', description: 'switch to the experimental preview lane', type: 'tier', mode: 'alpha' },
+  { name: '/effort', description: 'set reasoning effort (none → xhigh)', type: 'effort' },
   { name: '/new', description: 'start a new conversation', type: 'clear' },
   { name: '/clear', description: 'reset the current conversation', type: 'clear' },
   { name: '/context', description: 'show the conversation size', type: 'context' },
@@ -1263,14 +1300,44 @@ function runChatSlash(line, options = {}) {
   if (command.type === 'model') {
     return {
       type: 'model',
-      output: `· current lane: ${tierLabel(mode)} · switch with /fast /pro /max /rapid`,
+      output: `· current lane: ${tierLabel(mode)} · effort: ${formatReasoningEffortLabel(options.reasoningEffort)} · switch with /fast /pro /max /rapid /alpha · effort with /effort`,
+    };
+  }
+  if (command.type === 'effort') {
+    const current = formatReasoningEffortLabel(options.reasoningEffort);
+    if (parsed.arg) {
+      if (parsed.arg.toLowerCase() === 'default') {
+        return { type: 'effort', reasoningEffort: null, output: '· effort: lane default' };
+      }
+      const next = normalizeReasoningEffort(parsed.arg);
+      if (!next) {
+        return {
+          type: 'effort',
+          output: [
+            '· usage: /effort none|low|medium|high|xhigh|default',
+            ...REASONING_EFFORTS.map((level, index) => `  ${index + 1} ${level}`),
+          ].join('\n'),
+        };
+      }
+      return { type: 'effort', reasoningEffort: next, output: `· effort: ${next}` };
+    }
+    return {
+      type: 'effort',
+      output: [
+        `· effort: ${current}`,
+        '  pick: /effort none | low | medium | high | xhigh | default',
+        ...REASONING_EFFORTS.map((level, index) => `  ${index + 1} ${level}`),
+      ].join('\n'),
     };
   }
   if (command.type === 'status') {
     return { type: 'status', output: '' };
   }
   if (command.type === 'who') {
-    return { type: 'who', output: `· ${tierLabel(mode)} · ${TIER_BLURBS[mode] || 'chat'}` };
+    return {
+      type: 'who',
+      output: `· ${tierLabel(mode)} · effort ${formatReasoningEffortLabel(options.reasoningEffort)} · ${TIER_BLURBS[mode] || 'chat'}`,
+    };
   }
   if (command.type === 'auto') {
     const next = nextApproveMode(parsed.arg, options.approveMode);
@@ -2968,6 +3035,9 @@ function buildPayload(message, options = {}) {
   if (turnId) {
     payload.turn_id = turnId;
   }
+  if (options.reasoningEffort) {
+    payload.reasoning_effort = String(options.reasoningEffort);
+  }
   const connectorPolicy = !local ? connectorTurnPolicy(message, { ...options, turnId }) : null;
   if (connectorPolicy) {
     payload.connector_turn = connectorPolicy;
@@ -3164,7 +3234,7 @@ function isTurnInterruptedError(error) {
 
 async function postTurn(message, options = {}) {
   let route = options.business ? 'local' : resolveRoute(message, options);
-  if (route === 'local' && !options.business && options.route !== 'local' && !options.forceLocal
+  if (route === 'local' && !options.business && !pinLocalCheckout(options)
     && !(await localBackendReachable())) {
     route = 'cloud';
   }
@@ -3492,6 +3562,7 @@ async function runHeadlessTurn(message, options = {}) {
       route: options.route,
       business: options.business,
       verify: options.verify,
+      reasoningEffort: options.reasoningEffort,
       output: sink,
       showProgress: false,
     });
@@ -3528,13 +3599,16 @@ async function chat(options = {}) {
   const history = [];
   let lastCompactionNotice = 0;
   let conversationId = options.conversationId || `ax-${process.pid}-${Date.now().toString(36)}`;
-  const session = { approveMode: options.autoApprove || options.approveMode === 'auto' ? 'auto' : 'stage' };
+  const session = {
+    approveMode: options.autoApprove || options.approveMode === 'auto' ? 'auto' : 'stage',
+    reasoningEffort: options.reasoningEffort || null,
+  };
   let turnInFlight = false;
   let activeTurnController = null;
   let slashMenu = null;
   let pendingApprovalAbort = null;
 
-  output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
+  output.write(`${formatHeader({ mode, cwd, chat: true, reasoningEffort: session.reasoningEffort }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
   maybeWriteAtrisGoalBanner(output, cwd);
 
@@ -3577,11 +3651,21 @@ async function chat(options = {}) {
     if (!trimmed) return false;
     if (EXIT_WORDS.has(trimmed.toLowerCase())) return true;
 
-    const slash = runChatSlash(trimmed, { cwd, mode, history, approveMode: session.approveMode, isTTY: output.isTTY });
+    const slash = runChatSlash(trimmed, {
+      cwd,
+      mode,
+      history,
+      approveMode: session.approveMode,
+      reasoningEffort: session.reasoningEffort,
+      isTTY: output.isTTY,
+    });
     if (slash) {
       if (slash.type === 'exit') return true;
       if (slash.mode) mode = slash.mode;
       if (slash.approveMode) session.approveMode = slash.approveMode;
+      if (Object.prototype.hasOwnProperty.call(slash, 'reasoningEffort')) {
+        session.reasoningEffort = slash.reasoningEffort;
+      }
       if (slash.type === 'clear') {
         history.length = 0;
         conversationId = `ax-${process.pid}-${Date.now().toString(36)}`;
@@ -3696,12 +3780,12 @@ async function chat(options = {}) {
     const pendingTaskPreview = latestPendingTaskPreview(history);
     const route = pendingTaskPreview ? 'cloud' : options.route;
     maybeWriteAtrisGoalBanner(output, cwd);
-    let turnRoute = options.business ? 'cloud' : resolveRoute(trimmed, { route, cwd });
+    let turnRoute = options.business ? 'cloud' : resolveRoute(trimmed, { route, cwd, mode, forceLocal: options.forceLocal, forceCloud: options.forceCloud });
     // Same downgrade as postTurn: an auto-routed local turn with no local
     // backend listening becomes a cloud turn instead of a blocked preflight
     // that dumps localhost start instructions at a consumer. Explicit --local
-    // keeps the real error.
-    if (turnRoute === 'local' && route !== 'local' && !options.forceLocal) {
+    // and --alpha stay on this checkout and show the real error.
+    if (turnRoute === 'local' && !pinLocalCheckout({ ...options, route, mode })) {
       const probeLocal = options.localBackendProbe || localBackendReachable;
       if (!(await probeLocal())) turnRoute = 'cloud';
     }
@@ -3728,6 +3812,7 @@ async function chat(options = {}) {
         route,
         business: options.business,
         verify: options.verify,
+        reasoningEffort: session.reasoningEffort,
         conversationId,
         turnId,
         approveBackendApi: options.approveBackendApi,
@@ -4653,6 +4738,8 @@ async function main() {
       ? 'max'
       : args.includes('--rapid')
         ? 'rapid'
+        : args.includes('--alpha')
+          ? 'alpha'
         : args.includes('--fast')
           ? 'fast'
           : args.includes('--pro')
@@ -4666,7 +4753,8 @@ async function main() {
   const approvals = args.includes('--approvals');
   const printMode = args.includes('--print') || args.includes('--headless');
   const forceCloud = args.includes('--cloud');
-  const forceLocal = args.includes('--local');
+  const forceLocal = args.includes('--local')
+    || (explicitLane === 'alpha' && !args.includes('--cloud') && !businessSlug);
 
   let approveId = '';
   const approveIdx = args.indexOf('--approve');
@@ -4696,6 +4784,22 @@ async function main() {
   const autoApprove = args.includes('--auto-approve');
   if (autoApprove) args.splice(args.indexOf('--auto-approve'), 1);
 
+  let reasoningEffort = null;
+  const effortIdx = args.indexOf('--effort');
+  if (effortIdx !== -1) {
+    const rawEffort = String(args[effortIdx + 1] || '').trim();
+    if (!rawEffort) {
+      console.error('Usage: ax --effort none|low|medium|high|xhigh|default');
+      process.exit(1);
+    }
+    reasoningEffort = normalizeReasoningEffort(rawEffort);
+    if (reasoningEffort === '' && rawEffort.toLowerCase() !== 'default') {
+      console.error('Usage: ax --effort none|low|medium|high|xhigh|default');
+      process.exit(1);
+    }
+    args.splice(effortIdx, 2);
+  }
+
   const syncGrantsFlag = args.includes('--sync-grants');
   if (syncGrantsFlag) args.splice(args.indexOf('--sync-grants'), 1);
 
@@ -4723,7 +4827,7 @@ async function main() {
 
   const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
   const prompt = args
-    .filter(arg => !['--auto', '--auto-approve', '--max', '--fast', '--rapid', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h'].includes(arg))
+    .filter(arg => !['--auto', '--auto-approve', '--max', '--fast', '--rapid', '--alpha', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h', '--effort'].includes(arg))
     .join(' ')
     .trim();
 
@@ -4879,9 +4983,12 @@ async function main() {
           mode,
           cwd: process.cwd(),
           route: route === 'auto' ? undefined : route,
+          forceLocal,
+          forceCloud,
           business,
           verify,
           autoPick,
+          reasoningEffort,
         })
         : { ok: false, model: modelForMode(mode), output: '', durationMs: 0, error: 'missing prompt' };
       // Drain stdout before exiting: process.exit right after a large write
@@ -4894,7 +5001,18 @@ async function main() {
     }
 
     if (!prompt || args.includes('--chat')) {
-      await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify, auto: autoEnabled, autoApprove });
+      await chat({
+        mode,
+        cwd: process.cwd(),
+        route: route === 'auto' ? undefined : route,
+        forceLocal,
+        forceCloud,
+        business,
+        verify,
+        auto: autoEnabled,
+        autoApprove,
+        reasoningEffort,
+      });
       return;
     }
 
@@ -4904,7 +5022,16 @@ async function main() {
     const turnStartedAt = Date.now();
     let result;
     try {
-      result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
+      result = await turnFunctionForMode(mode)(prompt, {
+        mode,
+        cwd: process.cwd(),
+        route: route === 'auto' ? undefined : route,
+        forceLocal,
+        forceCloud,
+        business,
+        verify,
+        reasoningEffort,
+      });
       appendAutoOutcome(autoPick, {
         ok: true,
         model: modelForMode(mode),
@@ -5028,8 +5155,10 @@ module.exports = {
   messageApprovesPendingApproval,
   messageCancelsPendingApproval,
   modelForMode,
+  normalizeReasoningEffort,
   parseSseBlock,
   persistPendingApproval,
+  pinLocalCheckout,
   postApprovalExecution,
   postCodeFastTurn,
   postTurn,
@@ -5039,6 +5168,7 @@ module.exports = {
   renderStreamingMarkdown,
   renderTerminalMarkdown,
   resolveRoute,
+  REASONING_EFFORTS,
   runHeadlessTurn,
   runBenchmark,
   runSelfTest,

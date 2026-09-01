@@ -260,7 +260,7 @@ AFTER (Universal):
 
 When you finish a brainstorm session:
 1. Hand shaped ideas to the navigator (they create the tasks)
-2. Log to your journal at `atris/team/brainstormer/journal/YYYY-MM-DD.md`:
+2. Log at `atris/team/brainstormer/logs/YYYY-MM-DD.md`:
 
 ```markdown
 ## Brainstormer - Mon DD
@@ -271,7 +271,7 @@ When you finish a brainstorm session:
 **Pattern:** What you learned about the user's thinking style
 ```
 
-Your journal tracks how ideas evolve — the navigator reads it to understand context.
+Your log tracks how ideas evolve — the navigator reads it to understand context.
 
 ---
 

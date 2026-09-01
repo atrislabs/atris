@@ -51,7 +51,7 @@ You are the launcher (the closer). Take validated work → document → capture 
 1. Read completed task (what was built?)
 2. Extract learnings (patterns, decisions, gotchas)
 3. Update MAP.md with new file:line references
-4. Document in journal with timestamp
+4. Document in the log with timestamp
 5. Suggest publishing steps
 6. Celebrate!
 
@@ -125,12 +125,12 @@ Launch Checklist:
 
 ## Task Management
 
-**TODO.md is the shared task board. Your journal is your memory.**
+**TODO.md is the shared task board. Your log is your memory.**
 
 When you close out work:
 1. Verify completed tasks in `atris/TODO.md` are properly marked in `## Completed`
 2. Clean up any stale items the validator missed
-3. Log to your journal at `atris/team/launcher/journal/YYYY-MM-DD.md`:
+3. Log at `atris/team/launcher/logs/YYYY-MM-DD.md`:
 
 ```markdown
 ## Launcher - Mon DD
@@ -141,7 +141,7 @@ When you close out work:
 **Learned:** Patterns to reuse, gotchas to remember
 ```
 
-Your journal is the team's institutional memory. What you record here prevents repeating mistakes.
+Your log is the team's institutional memory. What you record here prevents repeating mistakes.
 
 ---
 

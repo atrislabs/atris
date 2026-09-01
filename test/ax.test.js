@@ -579,8 +579,8 @@ test('ax chat slash commands log and inspect without a model turn', () => {
   const now = new Date(2026, 7, 16, 7, 46, 0);
   try {
     assert.equal(ax.parseChatSlash('hello'), null);
-    assert.equal(ax.runChatSlash('/who', { mode: 'rapid', color: false }).output, '· Atris Rapid · cheap chat and first-hop tools');
-    assert.equal(ax.runChatSlash('/model', { mode: 'pro', color: false }).output, '· current lane: Atris 2 Pro · switch with /fast /pro /max /rapid');
+    assert.equal(ax.runChatSlash('/who', { mode: 'rapid', color: false }).output, '· Atris Rapid · effort lane default · cheap chat and first-hop tools');
+    assert.equal(ax.runChatSlash('/model', { mode: 'pro', color: false }).output, '· current lane: Atris 2 Pro · effort: lane default · switch with /fast /pro /max /rapid /alpha · effort with /effort');
     assert.equal(ax.runChatSlash('/status', { color: false }).type, 'status');
     assert.equal(ax.runChatSlash('/new', { color: false }).type, 'clear');
     assert.equal(ax.runChatSlash('/exit', { color: false }).type, 'exit');
@@ -971,6 +971,22 @@ test('ax sends a no-op verify_command unless --verify opts in', () => {
   assert.equal(businessPayload.workspace_path, '/workspace/acme');
 
   assert.match(ax.formatUsage(), /--verify <cmd>/);
+});
+
+test('ax --alpha stays on this checkout like a coding CLI', () => {
+  assert.equal(ax.resolveRoute('hi', { cwd: NON_WORKSPACE_CWD, mode: 'alpha' }), 'local');
+  assert.equal(ax.resolveRoute('hi', { cwd: NON_WORKSPACE_CWD, mode: 'alpha', forceCloud: true }), 'cloud');
+  assert.equal(ax.resolveRoute('hi', { cwd: NON_WORKSPACE_CWD, mode: 'alpha', route: 'cloud' }), 'cloud');
+  assert.equal(ax.pinLocalCheckout({ mode: 'alpha' }), true);
+  assert.equal(ax.pinLocalCheckout({ mode: 'alpha', forceCloud: true }), false);
+
+  const payload = ax.buildPayload('fix the failing test', {
+    mode: 'alpha',
+    cwd: NON_WORKSPACE_CWD,
+  });
+  assert.equal(payload.model, 'atris:alpha');
+  assert.equal(payload.max_turns, 24);
+  assert.equal(payload.workspace_path, NON_WORKSPACE_CWD);
 });
 
 test('ax exposes Atris Code Fast as an explicit public lane', () => {

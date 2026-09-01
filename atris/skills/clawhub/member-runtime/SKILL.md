@@ -1,6 +1,6 @@
 ---
 name: member-runtime
-description: "Load and run MEMBER.md team members -- complete AI workers with persona, skills, tools, context, and a journal that learns over time. Use when you want to activate a team member, run 'be my chief of staff', or manage stateful AI workers."
+description: "Load and run MEMBER.md team members -- complete AI workers with persona, skills, tools, context, and a log that learns over time. Use when you want to activate a team member, run 'be my chief of staff', or manage stateful AI workers."
 version: 1.0.0
 tags:
   - ai-agents
@@ -12,7 +12,7 @@ tags:
 
 # Member Runtime
 
-This skill teaches you how to load and run MEMBER.md team members. A member is a skill that manages skills -- it bundles a persona, capabilities, tools, permissions, and a journal that gets smarter over time.
+This skill teaches you how to load and run MEMBER.md team members. A member is a skill that manages skills -- it bundles a persona, capabilities, tools, permissions, and a log that gets smarter over time.
 
 Format spec: https://github.com/atrislabs/member
 
@@ -26,7 +26,7 @@ team/{name}/
   skills/                # What they can do (SKILL.md files)
   context/               # What they know (domain knowledge)
   tools/                 # What they use (API docs, configs)
-  journal/               # What they've learned (grows over time)
+  logs/                  # What they've learned (grows over time)
 ```
 
 ## How to Load a Member
@@ -61,23 +61,23 @@ For each skill in the frontmatter `skills` list:
 
 Read all markdown files in `team/{name}/context/`. These are domain knowledge the member references while working -- playbooks, reference docs, default preferences. Load them into your working context.
 
-### 5. Read the journal
+### 5. Read the log
 
 This is what makes members stateful. Before doing anything:
 
 1. Search memory for past entries from this member: `memory_search("{member-name} preferences patterns")`
-2. Read today's and yesterday's memory files for recent journal entries
+2. Read today's and yesterday's memory files for recent log entries
 3. Read `MEMORY.md` for durable preferences this member has recorded
 
-If no journal entries exist (first run), proceed with defaults from `context/preferences.md`.
+If no log entries exist (first run), proceed with defaults from `context/preferences.md`.
 
 ### 6. Become the member
 
 Adopt the persona, workflow, and rules from the MEMBER.md body. You are now this member. Follow their workflow step by step. Respect their permissions -- if `can-send: false`, draft but don't send.
 
-### 7. Write the journal
+### 7. Write the log
 
-After completing the task, write a journal entry to `memory/YYYY-MM-DD.md`:
+After completing the task, write a log entry to `logs/YYYY-MM-DD.md`:
 
 ```markdown
 ## {member-name} - {date}
@@ -100,7 +100,7 @@ The member's `permissions` field declares intent. Enforce it:
 
 ## Multiple Members
 
-Users can install multiple members. Each has its own persona, skills, and journal entries in memory. When switching between members, load the new member's MEMBER.md fresh -- don't carry over the previous member's persona.
+Users can install multiple members. Each has its own persona, skills, and log entries. When switching between members, load the new member's MEMBER.md fresh -- don't carry over the previous member's persona.
 
 To list installed members: scan `team/` for MEMBER.md files and flat .md files.
 

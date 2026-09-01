@@ -137,7 +137,11 @@ test('resolveRunnerProfile exposes the Atris Fast profile', () => {
 // keeps a runner swap a config edit (one alias line / one def) rather than a
 // copied profile body that can silently diverge.
 test('runner profile aliases reuse the canonical config, not duplicated bodies', () => {
-  assert.deepEqual(RUNNER_PROFILE_NAMES, Object.keys(RUNNER_PROFILE_DEFS));
+  // Operator-facing list = canonical defs minus hidden profiles, no aliases.
+  assert.deepEqual(
+    RUNNER_PROFILE_NAMES,
+    Object.keys(RUNNER_PROFILE_DEFS).filter((name) => !RUNNER_PROFILE_DEFS[name].hidden)
+  );
   for (const [alias, target] of Object.entries(RUNNER_PROFILE_ALIASES)) {
     // alias resolves to the SAME frozen object as its canonical target
     assert.strictEqual(RUNNER_PROFILES[alias], RUNNER_PROFILE_DEFS[target]);
@@ -150,6 +154,22 @@ test('runner profile aliases reuse the canonical config, not duplicated bodies',
       assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS[RUNNER_PROFILE_ALIASES[alias]]);
     });
   }
+});
+
+// Hidden profiles are private engines: fully resolvable and spawnable, but
+// absent from every operator-facing list.
+test('commandcode profile resolves but stays out of operator-facing lists', () => {
+  assert.ok(RUNNER_PROFILE_DEFS.commandcode, 'commandcode def exists');
+  assert.equal(RUNNER_PROFILE_DEFS.commandcode.hidden, true);
+  assert.ok(!RUNNER_PROFILE_NAMES.includes('commandcode'), 'hidden profile must not appear in RUNNER_PROFILE_NAMES');
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'commandcode' }, () => {
+    assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.commandcode);
+    assert.equal(resolveClaudeRunnerBin(), 'cmd');
+    // No pinned model: the profile template omits {modelFlag} entirely, so
+    // the run rides this machine's configured Command Code default.
+    assert.equal(resolveClaudeRunnerModel({}), DEFAULT_CLAUDE_RUNNER_MODEL);
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'cmd -p "$(cat /tmp/p.tmp)"');
+  });
 });
 
 test('Atris Fast runner profile resolves to ax --fast and atris:fast', () => {

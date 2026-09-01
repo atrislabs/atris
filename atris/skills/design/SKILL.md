@@ -1,7 +1,7 @@
 ---
 name: design
 description: Frontend aesthetics policy. Use when building UI, components, landing pages, dashboards, or any frontend work. Prevents generic ai-generated look.
-version: 3.1.1
+version: 3.2.14
 allowed-tools: Read, Write, Edit, Bash, Glob
 tags:
   - design
@@ -45,7 +45,7 @@ Font alternatives: instead of Inter: Instrument Sans, Plus Jakarta Sans, Outfit.
 
 **Scroll:** never override native scroll. use "peeking" (show a few px of next section) instead of full-screen hero + scroll arrow.
 
-**Responsive:** mobile-first. touch targets 44x44px minimum. no text under 14px on mobile. no horizontal scroll. container queries over media queries for components. adapt, don't amputate.
+**Responsive:** mobile-first. touch targets 44x44px minimum. no text under 14px on mobile. no horizontal scroll. container queries over media queries for components. adapt, don't amputate. compact overlays clear the full measured header stack; never anchor them from a guessed single header height.
 
 **Accessibility:** 4.5:1 contrast for text, 3:1 for UI (WCAG AA). visible focus indicators always. semantic HTML. never use color alone as an indicator. keyboard nav with logical tab order.
 
@@ -57,7 +57,9 @@ Font alternatives: instead of Inter: Instrument Sans, Plus Jakarta Sans, Outfit.
 
 **Hierarchy:** 2-3 text levels max. don't mix 5 competing styles.
 
-**No all-caps. ever.** never use the `uppercase` tailwind class, `text-transform: uppercase`, or shout-cased copy on eyebrow labels, section headers, buttons, badges, or anywhere else. random capitalized text mid-page reads as average ai-generated slop. if you need a quiet eyebrow label, reach for a smaller size (`text-[11px]`) or a muted color, never caps. write labels in sentence case ("Active tasks", not "ACTIVE TASKS") and let copy render as authored.
+**No all-caps. ever.** never use the `uppercase` tailwind class, `text-transform: uppercase`, or shout-cased copy on labels, section headers, buttons, badges, or anywhere else. random capitalized text mid-page reads as average ai-generated slop. write labels in sentence case ("Active tasks", not "ACTIVE TASKS") and let copy render as authored.
+
+**No eyebrow metadata.** Do not place tiny index, category, status, or implementation-type strips above real content. If the name changes the next action, make it a readable heading. If it does not, remove it. Generator metadata belongs in machine contracts and inspectors, never on the product canvas.
 
 **Copy:** no em dashes (the character, U+2014) anywhere in UI copy. no hedge words, no hype adverbs (the "-lessly" family). plain sentences a human would type.
 
@@ -106,13 +108,31 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D5 | no pulsing status dots outside loading skeletons | pulse class scan outside loading/skeleton files | graduated (design-gate) |
 | D6 | no arbitrary hex in color utilities, use brand vars | hex-in-color-utility scan | graduated (design-gate) |
 | D7 | no em dashes in UI copy or prose | U+2014 scan | graduated (atris slop) |
-| D8 | no claude-beige backgrounds, no instrument serif as default | judgment | active |
+| D8 | no claude-beige backgrounds, no instrument serif as default | judgment | promoted |
 | D9 | fuzzy wish gets translated to craft vocabulary and echoed back before building | judgment | active |
 | D10 | measured tokens over vibes: new components start from a measured recipe (exact colors, spacing, radii, type from a proven source), never from scratch | judgment | active |
 | D11 | layout contracts, not dioramas: min-height over fixed height, fluid max-width over fixed px, every overflow reachable (scroll or +N more), stress-test with hostile content before shipping | judgment | active |
 | D12 | one accent moment per card: brand accent for the primary action only, gold for confidence/progress fills, green only for completed; everything else tonal | judgment | active |
 | D13 | motion is calm and eased: 120-300ms ease-out on opacity/transform only, loops match a measured source cadence, prefers-reduced-motion always freezes them | judgment | active |
 | D14 | compact selectors lead with the chosen name and a discriminating icon; remove redundant field labels and visible type explanations when icon, title, and accessible label carry them | judgment | active |
+| D15 | first viewport restraint: one dominant idea, at most one secondary live region, and everything else behind progressive disclosure; reject permanent three-column cockpit density as default SaaS structure | judgment | active |
+| D16 | one alignment contract per component: wrapper, metadata, controls, and rendered content share the same width and inset source at every viewport | judgment | active |
+| D17 | responsive corrections must test every disclosed state immediately below, at, and above each breakpoint; a fixed bug cannot reappear when a panel opens or the container narrows | judgment | promoted |
+| D18 | no eyebrow metadata or tiny titles: important names become readable headings; indices, platform type names, and generator metadata stay off product surfaces | judgment | promoted |
+| D19 | bubbly flat UI means one generous rounded parent, flat content-rail rows, and circular controls with a real action or stable identity; never round every nested child | judgment | active |
+| D20 | compound controls own one visible focus shape on the outer geometry; a borderless child field may suppress its ring only when the parent provides `:focus-within` proof | judgment | active |
+| D21 | the reusable web component layer must match the product runtime: React and Next.js are canonical for Atris web; custom elements are compatibility code, never the source of truth | React field and function scan | graduated (component contract) |
+| D22 | every documented component prop must be proven with the standalone package stylesheet; demo-only CSS cannot be the hidden implementation of a public layout contract | standalone prop selector scan | graduated (component contract) |
+| D23 | an owner dashboard should begin as a project save state: current story, one resume action, active missions, and the responsible team; spatial world maps are earned later by real geography or dependency data | judgment | active |
+| D24 | `Since you left` is a learning and cleanup receipt, not a feature changelog: show what the system learned, removed, and carried forward so the human can stay present | judgment | active |
+| D25 | game-like dashboards use plain outcomes, visible stakes, and one obvious next action; invented quest names and internal loop language hide the work instead of clarifying it | judgment | active |
+| D26 | execution receipts read in causal order: inspect inputs, reason, change, then verify; never reverse the activity list or lead with the outcome | judgment | active |
+| D27 | in a compact composer, the send action must visibly dominate adjacent attachment and voice controls through size and accent while secondary controls remain full touch targets | judgment | active |
+| D28 | sibling icon controls on one composer rail share a single explicit frame and alignment anchor; glyph size alone must never determine their centers | judgment | active |
+| D29 | hide voice playback until its voice clears the product quality bar; a weak fallback control is worse than no control | judgment | active |
+| D30 | a floating rounded composer inherits the page canvas; never paint a full-width contrast band behind it unless that band is intentional chrome | judgment | active |
+| D31 | developer-only overlays stay off the product surface by default; any temporary visible launcher must have an immediate dismiss control | judgment | active |
+| D32 | before changing repeated UI copy, verify the operator's exact executable and surface; matching labels do not prove the installed app, dev app, header, and composer share one live path | judgment | active |
 
 Measured recipes live in the mimic studies: `~/arena/mimic-beautiful-ui/LESSONS.md` (18 AI-interface components with exact tokens) and its `remix.css` :root block (the portable Atris token sheet, coffee + paper themes). Start there before designing an agent surface.
 
@@ -154,3 +174,4 @@ This skill compounds or it dies. The contract, every frontend session:
 - Full policy: `atris/policies/atris-design.md`
 - Navigation: `atris/MAP.md`
 - Workflow: `atris/PERSONA.md`
+| D15 | marketing front pages: headline + one 2-line paragraph + buttons per section, card copy max 2 sentences, long artifacts live one click deep (Keshav 2026-08-31 "aggressive amounts of texts still", inspiration Oscar/Headway) | judgment | active |
