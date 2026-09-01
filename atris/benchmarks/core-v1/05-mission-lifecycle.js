@@ -30,12 +30,14 @@ module.exports = {
       '--verify',
       '--json',
     ]));
-    assert.equal(ticked.verifier_result.passed, true);
-    assert.equal(ticked.tick.layer, 'capabilities');
+    assert.equal(ticked.ok, true);
+    assert.equal(ticked.action, 'mission_tick');
     assert.ok(ticked.receipt_path);
     const receiptPath = path.join(ctx.workspace, ticked.receipt_path);
     const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
     assert.equal(receipt.schema, 'atris.mission_receipt.v1');
+    assert.equal(receipt.result.verifier_result.passed, true);
+    assert.equal(receipt.result.tick.layer, 'capabilities');
     assert.equal(receipt.result.tick.verifier_passed, true);
 
     const completed = parseJson(ctx.runCli(['mission', 'complete', started.mission.id, '--proof', ticked.receipt_path, '--json']));
