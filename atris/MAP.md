@@ -332,7 +332,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris bench results [--last N] [--json]` reads persisted run receipts
 - `atris bench tasks [--pack <id>] [--json]` lists pack metadata from the task specs
 - `atris bench report [--pack agents-v1] [--json]` reads `.atris/state/bench/results.jsonl`, groups by engine (latest full run wins), and prints N/25 passed, per-category counts, mean task duration, failed task ids, and skipped count; empty results print `no runs recorded for pack <pack>` and exit 0
-- **Regression:** `test/bench-runner.test.js`, `test/bench-tasks.test.js`, `test/bench-agents.test.js`, `test/bench-agents-harness.test.js`, `test/bench-report.test.js`, `test/mission-tick-prompt.test.js`
+- **Regression:** `test/bench-core-gate.test.js`, `test/bench-runner.test.js`, `test/bench-tasks.test.js`, `test/bench-agents.test.js`, `test/bench-agents-harness.test.js`, `test/bench-report.test.js`, `test/mission-tick-prompt.test.js`
 - **Search:** `rg "benchCommand|runBench|taskMetadata|withBenchContext|ENGINE_NAMES|buildBenchReport" commands/bench.js lib/bench/runner.js lib/bench/context.js lib/bench/engines.js lib/bench/report.js`
 
 ### Feature: Experiments (`atris experiments`)
