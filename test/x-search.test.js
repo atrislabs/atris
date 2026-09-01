@@ -141,7 +141,7 @@ test('xSearchCommand --help prints usage without calling the API', async () => {
   assert.match(output.join('\n'), /unsave <query-or-source>/);
   assert.match(output.join('\n'), /matching experiment pack/);
   assert.match(output.join('\n'), /person --name/);
-  assert.match(output.join('\n'), /Rich ephemeral prints one apply next-step/);
+  assert.match(output.join('\n'), /Rich ephemeral prints one apply next-step, then hands off to atris youtube search/);
   assert.match(output.join('\n'), /Empty or failed search refunds the credits/);
 });
 
@@ -197,6 +197,7 @@ test('xSearchCommand prints content, citations, and credits', async () => {
   assert.doesNotMatch(text, /thin: no number or named mechanism/);
   assert.doesNotMatch(text, /next: apply /);
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assert.doesNotMatch(text, /next: atris youtube search/);
   assertNoSaveFiles(cwd, 'MCP agents');
 });
 
@@ -219,6 +220,7 @@ test('xSearchCommand --json prints raw payload', async () => {
   assert.equal(parsed.credits_used, 5);
   assert.equal(parsed.data.content, 'hi');
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
 });
 
 test('xSearchCommand surfaces 401 login hint', async () => {
@@ -237,6 +239,7 @@ test('xSearchCommand surfaces 401 login hint', async () => {
   assert.match(output.join('\n'), /401/);
   assert.match(output.join('\n'), /atris login --force/);
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
 });
 
 test('xSearchCommand surfaces 402 credits hint', async () => {
@@ -422,6 +425,7 @@ test('x-search person --save refuses thin research text', async () => {
   assert.match(output.join('\n'), /just a chat about vibes/);
   assert.match(output.join('\n'), new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
   assertNoSaveFiles(cwd, 'Leah Bonvissuto');
 });
 
@@ -443,6 +447,7 @@ test('empty x-search --save still does not owe an apply', async () => {
   assert.equal(status, 2);
   assert.match(output.join('\n'), /no results/);
   assert.doesNotMatch(output.join('\n'), /next: apply /);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
   assertNoSaveFiles(cwd, 'quiet topic');
 });
 
@@ -478,6 +483,7 @@ test('x-search without --save stays stdout only', async () => {
   assert.doesNotMatch(output.join('\n'), /next: apply /);
   assert.doesNotMatch(output.join('\n'), new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
   assertNoSaveFiles(cwd, 'MCP agents');
 });
 
@@ -496,6 +502,11 @@ test('x-search without --save prints one apply next-step when the result is rich
 
   assert.equal(status, 0);
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 1);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search "MCP agents"').length, 1);
+  assert.equal(
+    output.indexOf('next: atris youtube search "MCP agents"'),
+    output.indexOf(ephemeralApplyMessage('x-search')) + 1,
+  );
   assert.doesNotMatch(output.join('\n'), /next: apply /);
   assertNoSaveFiles(cwd, 'MCP agents');
 });
@@ -531,6 +542,8 @@ test('x-search person without --save prints one apply next-step when research is
 
   assert.equal(status, 0);
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 1);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search "Leah Bonvissuto"').length, 1);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search "leahbon"/);
   assert.doesNotMatch(output.join('\n'), /next: apply /);
   assertNoSaveFiles(cwd, 'Leah Bonvissuto');
 });
@@ -551,6 +564,7 @@ test('x-search without --save does not rewrite an existing apply', async () => {
   assert.equal(status, 0);
   assert.doesNotMatch(output.join('\n'), /next: apply /);
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
   assert.equal(fs.readFileSync(path.join(cwd, rel), 'utf8'), filled);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
@@ -573,6 +587,7 @@ test('x-search --save refuses a thin result and writes no atris files', async ()
   assert.match(output.join('\n'), /feelings and vibes/);
   assert.match(output.join('\n'), new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
   assertNoSaveFiles(cwd, 'quiet chat');
 });
 
@@ -594,6 +609,7 @@ test('empty x-search does not owe an apply', async () => {
   assert.equal(status, 2);
   assert.doesNotMatch(output.join('\n'), /next: apply /);
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
   assertNoSaveFiles(cwd, 'quiet topic');
 });
 
@@ -630,6 +646,7 @@ test('empty x-search surfaces a server-side refund and does not invent a refund 
   assert.match(text, /no results/);
   assert.match(text, /Credits: 0 used, 1000 remaining/);
   assert.match(text, /credits refunded/);
+  assert.doesNotMatch(text, /next: atris youtube search/);
   assertNoSaveFiles(cwd, 'quiet topic');
 });
 
@@ -653,6 +670,7 @@ test('empty citations payload is a refunded empty search', async () => {
   assert.match(text, /no results/);
   assert.match(text, /credits refunded/);
   assert.doesNotMatch(text, /next: apply /);
+  assert.doesNotMatch(text, /next: atris youtube search/);
   assertNoSaveFiles(cwd, 'ghost cites');
 });
 
@@ -673,6 +691,7 @@ test('failed x-search does not owe an apply', async () => {
 
   assert.equal(status, 1);
   assert.doesNotMatch(output.join('\n'), /next: apply /);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
   assertNoSaveFiles(cwd, 'agents');
 });
 
@@ -709,5 +728,6 @@ test('502 with refunded credits surfaces them and does not invent a refund call'
   assert.match(text, /502/);
   assert.match(text, /credits refunded/);
   assert.match(text, /Credits: 0 used, 1000 remaining/);
+  assert.doesNotMatch(text, /next: atris youtube search/);
   assertNoSaveFiles(cwd, 'agents');
 });
