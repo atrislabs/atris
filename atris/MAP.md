@@ -560,10 +560,11 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - **Boot visibility:** `bin/atris.js` boot status (`landing` row via `landSummary`)
 - **Doctrine:** `atris.md` operating rules ("land or reap"), `AGENTS.md` agent contract table
 - **Salvage:** bundles + dirty patches under `.atris/salvage/<date>/` — a reap never loses work
-- **Regression:** `test/land.test.js` (board classification, empty folder, init-with-no-commits, category-specific cleanup guidance, reap, dry-run, worktree patch salvage); `test/dogfood-p1.test.js` (`land in empty repo prints one-line error without stack`)
+- **Green landing:** `lib/land-green.js` (landStaleGreenBranches, landOneBranch, failingLines, flagWhat, summaryLine); `atris land --auto [--dry-run] [--verify "<cmd>"] [--limit n]` and step 3b2 of the autoland tick (`commands/autoland.js` runTickBody, receipt.green_landing) take one stale active branch per tick, hold it with a named reason on merge conflict / dirty checkout / protected surface, verify the merged state in a scratch worktree (default `npm test`), fast-forward base and push when green, and open a `close` flag naming the failing tests when red; policy `green_landing:false` turns it off, `green_landing_limit` raises the cap
+- **Regression:** `test/land-green.test.js` (green lands + red flags, conflict / dirty / fresh holds, per-tick cap, dry run, failing-line lift); `test/land.test.js` (board classification, empty folder, init-with-no-commits, category-specific cleanup guidance, reap, dry-run, worktree patch salvage); `test/dogfood-p1.test.js` (`land in empty repo prints one-line error without stack`)
 - **Value:** hundreds of agents can fan out without work silently dying in branches nobody merges
 
-**Search:** `rg "collectBoard|landCommand|printEmptyLand|hasCommits|no commits" commands/land.js bin/atris.js test/land.test.js test/dogfood-p1.test.js`
+**Search:** `rg "collectBoard|landCommand|printEmptyLand|hasCommits|no commits|landStaleGreenBranches|green_landing" commands/land.js lib/land-green.js commands/autoland.js bin/atris.js test/land.test.js test/land-green.test.js test/dogfood-p1.test.js`
 
 ### Feature: Member Worktrees (`atris worktree`)
 
