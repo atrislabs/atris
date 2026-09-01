@@ -693,6 +693,11 @@ function showHelp() {
   console.log('  atris land --reap --dry-run    preview what would be cleared');
   console.log('  atris land --reap --force      also clear side copies holding');
   console.log('                                 commits that never landed (backs up first)');
+  console.log('  atris land --auto              land one stale branch that merges clean and');
+  console.log('                                 passes the full verify; a red one opens a flag');
+  console.log('  atris land --auto --dry-run    show which branch would be tried and why');
+  console.log('  atris land --auto --verify "<cmd>" --limit <n>');
+  console.log('                                 change the check (default: npm test) or the cap');
   console.log('  atris land --ttl <days>        change the 7-day overdue line');
   console.log('  atris land --json              machine-readable output');
   console.log('');
@@ -713,6 +718,26 @@ function landCommand(args = []) {
   const ttlParsed = Number(ttlRaw);
   const ttlDays = ttlRaw !== '' && Number.isFinite(ttlParsed) && ttlParsed >= 0 ? ttlParsed : DEFAULT_TTL_DAYS;
   const base = readFollowingFlag(args, '--base', '');
+
+  if (args.includes('--auto')) {
+    try {
+      const { landStaleGreenBranches, summaryLine, DEFAULT_VERIFY } = require('../lib/land-green');
+      const limitRaw = Number(readFollowingFlag(args, '--limit', ''));
+      const result = landStaleGreenBranches(root, {
+        ttlDays,
+        base,
+        dryRun: args.includes('--dry-run'),
+        push: !args.includes('--no-remote'),
+        verifyCommand: readFollowingFlag(args, '--verify', '') || DEFAULT_VERIFY,
+        limit: Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 1,
+      });
+      if (json) console.log(JSON.stringify(result, null, 2));
+      else console.log(`green landing: ${summaryLine(result)}`);
+      return 0;
+    } catch (err) {
+      return finishLandError(err, json);
+    }
+  }
 
   if (args.includes('--reap')) {
     try {
