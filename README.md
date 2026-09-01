@@ -99,6 +99,20 @@ Core loop: `plan` -> `do` -> `review`
 
 Integrates with any agent.
 
+### Publish a static site
+
+Upload any built static site, including a Vite or React output folder, to an
+Atris-hosted subdomain:
+
+```bash
+atris site publish dist --slug my-site --spa
+```
+
+Pass `--build` with a project folder to run its build script and publish the
+first output folder found at `dist`, `build`, or `out`. Use `--profile strict`
+for static content or `--profile app` when the site needs app-style browser
+permissions.
+
 ## Chat With Atris 2
 
 `ax` is the Atris 2 chat and coding-agent CLI. It uses the hosted Atris cloud by default, streams text, shows tool activity, and keeps fresh installs away from local setup.
