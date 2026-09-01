@@ -3122,7 +3122,7 @@ if (command === 'init') {
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'site') {
-  // Site: beautiful static site from a folder of markdown, in the anti-slop design system.
+  // Site: build markdown sites or publish static web folders.
   {
     const raw = process.argv.slice(3);
     const deployWrite = raw[0] === 'deploy'

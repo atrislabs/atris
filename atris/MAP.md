@@ -1066,6 +1066,15 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 **Search:** `rg "fullstack|registerSubdomain|createSite|uploadPages" commands/site-deploy.js test/site-deploy.test.js`
 
+### Feature: Site Publish (`atris site publish`)
+
+- **Routing and help:** `commands/site.js` sends `publish` to `lib/site-publish.js` and documents both site upload paths.
+- **Atomic publish:** Walks any static web folder, enforces the hosted page limits, maps text and binary content, and posts one publish body to `/api/sites/{slug}/publish`.
+- **Build lane:** `--build` runs the package build script and publishes the first existing `dist`, `build`, or `out` directory.
+- **Regression:** `test/site-publish.test.js` covers file mapping, normalized paths, both upload limits, request shape, and unverified publish failure.
+
+**Search:** `rg "collectPages|claim_subdomain|csp_profile|site is not live" lib/site-publish.js test/site-publish.test.js`
+
 ### Feature: Visualize Artifacts (`atris visualize`)
 
 **Purpose:** Generate Slack/deck-ready business visuals from a prompt, using workspace context and backend `gpt-image-2`.
