@@ -2372,9 +2372,6 @@ function teachLessonFromCues({ url, section, chapters, chapter, cues, title } = 
   if (section < total) {
     lines.push('');
     lines.push(TEACH_RESUME_NEXT);
-  } else {
-    lines.push('');
-    lines.push('next: last section');
   }
   return { text: lines.join('\n'), numbers, mechanisms };
 }

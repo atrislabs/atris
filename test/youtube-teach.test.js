@@ -349,7 +349,28 @@ test('formatTeachLesson prints numbers, mechanisms, one check, and the recap nex
   assert.match(text, /omakase/);
   assert.match(text, /check\nwhat is /);
   assert.match(text, /next: atris youtube teach recap TEXT or atris youtube teach skip/);
+  assert.doesNotMatch(text, /next: last section/);
   assert.doesNotMatch(text, /six-week|--section 2/);
+});
+
+test('formatTeachLesson last section omits the dead last-section next line', () => {
+  const cues = parseCaptionCues(TEACH_VTT);
+  const chapters = normalizeChapters(TEACH_CHAPTERS, 900);
+  const text = formatTeachLesson({
+    url: TEACH_URL,
+    section: 2,
+    chapters,
+    chapter: chapters[1],
+    cues: sliceCuesForChapter(cues, chapters[1]),
+    title: 'DHH on Lex Fridman',
+  });
+
+  assert.match(text, /section 2\/2  shape up/);
+  assert.match(text, /six-week/);
+  assert.match(text, /check\nwhat is /);
+  assert.doesNotMatch(text, /next: last section/);
+  assert.doesNotMatch(text, /next: atris youtube teach recap TEXT or atris youtube teach skip/);
+  assert.doesNotMatch(text, /80 people/);
 });
 
 test('youtube help lists youtube teach', async () => {
@@ -449,7 +470,8 @@ test('youtube teach --section 2 prints the second chapter after skip', async () 
   assert.match(text, /section 2\/2  shape up/);
   assert.match(text, /six-week/);
   assert.doesNotMatch(text, /80 people/);
-  assert.match(text, /next: last section/);
+  assert.doesNotMatch(text, /next: last section/);
+  assert.doesNotMatch(text, /next: atris youtube teach recap TEXT or atris youtube teach skip/);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
 });
 
@@ -783,6 +805,8 @@ test('youtube teach thin chapter without --save still writes no atris files', as
   assert.equal(status, 0);
   assert.match(out.text(), /numbers\nnone/);
   assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
+  assert.doesNotMatch(out.text(), /next: last section/);
+  assert.doesNotMatch(out.text(), /^next:/m);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
 });
@@ -923,6 +947,7 @@ test('youtube teach recap with check tokens unlocks the next section', async () 
   assert.equal(status, 0);
   assert.match(out.text(), /section 2\/2  shape up/);
   assert.match(out.text(), /six-week/);
+  assert.doesNotMatch(out.text(), /next: last section/);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
 });
 
@@ -1038,6 +1063,7 @@ test('youtube teach --save path stays unchanged after a recap unlock', async () 
   });
   assert.equal(status, 0);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
+  assert.doesNotMatch(out.text(), /next: last section/);
   assert.match(out.text(), /next: apply atris\/experiments\/teach-teach01-s2\. keep only if measure\.py moves 0→1/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s2.md')), true);

@@ -31,7 +31,7 @@ search QUERY (free)
     |                 --save files brief + pack-named apply when notes have a number or named mechanism; thin --save refuses
     |            or teach URL [--section N] (one chapter: claim numbers, named mechanisms, one check; free unless --save)
     |                 a taught section that is not last prints next: recap TEXT or skip
-    |                 last section prints next: last section
+    |                 last section: rich ephemeral apply / save pack apply; no dead last-section next
     |                 next --section refuses until recap/skip
     |                 owed prints unpaid check; successful unlock prints next section command
     |                 bare teach resumes owed, or prints a start command if nothing is owed
