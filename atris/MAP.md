@@ -1070,6 +1070,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 ### Feature: Site Publish (`atris site publish`)
 
+- **Docs:** `docs/site-publish.md` — flags, file handling, CSP profiles, recipes, exit codes, and troubleshooting.
 - **Routing and help:** `commands/site.js` sends `publish` to `lib/site-publish.js` and documents both site upload paths.
 - **Atomic publish:** Walks any static web folder, enforces the hosted page limits, maps text and binary content, and posts one publish body to `/api/sites/{slug}/publish`.
 - **Build lane:** `--build` runs the package build script and publishes the first existing `dist`, `build`, or `out` directory.

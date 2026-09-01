@@ -101,17 +101,14 @@ Integrates with any agent.
 
 ### Publish a static site
 
-Upload any built static site, including a Vite or React output folder, to an
-Atris-hosted subdomain:
+Upload any built static site to an Atris-hosted subdomain. See
+[docs/site-publish.md](docs/site-publish.md) for flags, limits, profiles, and
+troubleshooting.
 
 ```bash
 atris site publish dist --slug my-site --spa
+atris site publish . --slug my-next-app --profile app --build   # Next.js static export
 ```
-
-Pass `--build` with a project folder to run its build script and publish the
-first output folder found at `dist`, `build`, or `out`. Use `--profile strict`
-for static content or `--profile app` when the site needs app-style browser
-permissions.
 
 ## Chat With Atris 2
 
