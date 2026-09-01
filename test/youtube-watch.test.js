@@ -123,6 +123,10 @@ test('tick briefs only unseen videos', async () => {
   });
   assert.equal(firstStatus, 0);
   assert.deepEqual(ran, ['https://www.youtube.com/watch?v=new1']);
+  assert.deepEqual(
+    first.text().split('\n').filter((line) => line.startsWith('next: atris youtube teach')),
+    ['next: atris youtube teach "https://www.youtube.com/watch?v=new1"'],
+  );
 
   ran.length = 0;
   briefed.length = 0;
@@ -147,6 +151,10 @@ test('tick briefs only unseen videos', async () => {
   assert.deepEqual(briefed, ['https://www.youtube.com/watch?v=new2']);
   assert.match(second.text(), /channel https:\/\/www\.youtube\.com\/@veritasium: 1 new, 1 briefed/);
   assert.match(second.text(), /total: 1 new, 1 briefed/);
+  assert.deepEqual(
+    second.text().split('\n').filter((line) => line.startsWith('next: atris youtube teach')),
+    ['next: atris youtube teach "https://www.youtube.com/watch?v=new2"'],
+  );
 
   const state = loadWatchState(statePathFor(cwd));
   assert.equal(state.seen.new1, now);
@@ -232,8 +240,64 @@ test('failed fetch skips channel and continues', async () => {
   assert.match(out.text(), /channel https:\/\/www\.youtube\.com\/@ok: 1 new, 1 briefed/);
   assert.match(out.text(), /total: 1 new, 1 briefed/);
   assert.deepEqual(ran, ['https://www.youtube.com/watch?v=ok1']);
+  assert.deepEqual(
+    out.text().split('\n').filter((line) => line.startsWith('next: atris youtube teach')),
+    ['next: atris youtube teach "https://www.youtube.com/watch?v=ok1"'],
+  );
 
   const state = loadWatchState(statePathFor(cwd));
   assert.equal(state.seeded['https://www.youtube.com/@broken'], undefined);
   assert.equal(state.seen.ok1, now);
+});
+
+test('zero-briefed tick prints no teach next-step', async () => {
+  const cwd = tempCwd();
+  const now = '2026-08-15T19:40:00.000Z';
+
+  const empty = collect();
+  const emptyStatus = await youtubeCommand(['watch', 'tick'], {
+    cwd,
+    now,
+    output: empty.output,
+    fetcher: () => {
+      throw new Error('empty watch list should not fetch');
+    },
+    runner: () => {
+      throw new Error('empty watch list should not run notes');
+    },
+    briefFiler: () => {
+      throw new Error('empty watch list should not file a brief');
+    },
+  });
+  assert.equal(emptyStatus, 0);
+  assert.match(empty.text(), /total: 0 new, 0 briefed/);
+  assert.equal(empty.text().includes('next: atris youtube teach'), false);
+
+  await youtubeCommand(['watch', 'add', '@broken'], { cwd, now, output: () => {} });
+  const failed = collect();
+  const failStatus = await youtubeCommand(['watch', 'tick'], {
+    cwd,
+    now,
+    output: failed.output,
+    fetcher: () => {
+      throw new Error('network down');
+    },
+    runner: () => {
+      throw new Error('fetch-fail should not run notes');
+    },
+    briefFiler: () => {
+      throw new Error('fetch-fail should not file a brief');
+    },
+  });
+  assert.equal(failStatus, 0);
+  assert.match(failed.text(), /warning: channel https:\/\/www\.youtube\.com\/@broken fetch failed/);
+  assert.match(failed.text(), /total: 0 new, 0 briefed/);
+  assert.equal(failed.text().includes('next: atris youtube teach'), false);
+});
+
+test('watch help says tick hands off to teach when it briefed', async () => {
+  const out = collect();
+  const status = await youtubeCommand(['watch', 'help'], { output: out.output });
+  assert.equal(status, 0);
+  assert.match(out.text(), /tick hands off to teach when it briefed/);
 });
