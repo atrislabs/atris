@@ -55,6 +55,7 @@ test('parseNotesArgs keeps the engine as the one non-url trailing word', () => {
       help: false,
       save: false,
       unsave: false,
+      json: false,
     },
   );
   assert.equal(isPlaylistUrl('https://www.youtube.com/playlist?list=PLxx'), true);
@@ -68,6 +69,7 @@ test('parseNotesArgs keeps the engine as the one non-url trailing word', () => {
       help: false,
       save: true,
       unsave: false,
+      json: false,
     },
   );
   assert.deepEqual(
@@ -78,6 +80,18 @@ test('parseNotesArgs keeps the engine as the one non-url trailing word', () => {
       help: false,
       save: false,
       unsave: true,
+      json: false,
+    },
+  );
+  assert.deepEqual(
+    parseNotesArgs(['https://youtu.be/ddd', '--json']),
+    {
+      urls: ['https://youtu.be/ddd'],
+      engine: null,
+      help: false,
+      save: false,
+      unsave: false,
+      json: true,
     },
   );
 });

@@ -117,6 +117,7 @@ test('youtube notes --save refuses a thin brief and writes no atris files', asyn
   assert.equal(status, 2);
   assert.match(out.text(), new RegExp(escapeRe(TEACH_THIN_REFUSE)));
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 0);
+  assert.doesNotMatch(out.text(), /next: atris youtube teach/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01.apply.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
@@ -135,6 +136,7 @@ test('youtube notes without --save stay stdout only', async () => {
 
   assert.equal(status, 0);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 1);
+  assert.equal(out.lines.filter((line) => line === `next: atris youtube teach "${RICH_URL}"`).length, 1);
   assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
   assert.doesNotMatch(out.text(), /next: apply /);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
@@ -156,6 +158,7 @@ test('youtube notes rich --save mints a measure.py that validate.py accepts', as
 
   assert.equal(status, 0);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 0);
+  assert.doesNotMatch(out.text(), /next: atris youtube teach/);
   assert.match(out.text(), /next: apply atris\/experiments\/notes-notes01\. keep only if measure\.py moves 0→1/);
   const packDir = path.join(cwd, 'atris', 'experiments', 'notes-notes01');
   for (const name of ['program.md', 'measure.py', 'loop.py', 'reset.py', 'results.tsv']) {

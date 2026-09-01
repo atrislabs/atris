@@ -44,7 +44,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('');
   output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links; hands off to teach');
   output('search --paid = 5 credits, watch permalinks + titles from Atris; hands off to teach');
-  output('notes = free local notes to stdout; ephemeral unless --save');
+  output('notes = free local notes to stdout; ephemeral unless --save; hands off to teach');
   output('teach = one chapter from local captions; bare teach resumes unpaid checks, then the next chapter after recap or skip');
   output('rich ephemeral notes/teach print one apply next-step (no files)');
   output('process = 5 credits cloud knowledge (needs a filled Apply)');
@@ -572,22 +572,24 @@ function parseNotesArgs(argv = []) {
   let help = false;
   let save = false;
   let unsave = false;
+  let json = false;
   for (const raw of argv) {
     const arg = String(raw);
     if (arg === '--help' || arg === '-h' || arg === 'help') help = true;
     else if (arg === '--save') save = true;
     else if (arg === '--unsave') unsave = true;
+    else if (arg === '--json') json = true;
   }
   for (const raw of argv) {
     const arg = String(raw);
     if (arg === '--help' || arg === '-h' || arg === 'help') continue;
-    if (arg === '--save' || arg === '--unsave') continue;
+    if (arg === '--save' || arg === '--unsave' || arg === '--json') continue;
     if (arg.startsWith('-')) continue;
     if (looksLikeYoutubeUrl(arg)) urls.push(arg);
     else if (unsave && videoIdFromArg(arg)) urls.push(arg);
     else engine = arg;
   }
-  return { urls, engine, help, save, unsave };
+  return { urls, engine, help, save, unsave, json };
 }
 
 function dateStamp(now) {
@@ -1517,7 +1519,10 @@ function runSingleYoutubeNotes(url, engine, deps = {}) {
   if (!deps.save) {
     const workDir = deps.workDir || path.join(process.env.TMPDIR || '/tmp', 'ytnotes');
     const lesson = notesLessonFromText(readNotesText({ url, workDir }));
-    if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'notes');
+    if (!isThinTeachLesson(lesson)) {
+      applyGate.hintEphemeralApply(output, 'notes');
+      printYoutubeTeachNext(url, { json: deps.json }, output);
+    }
     return 0;
   }
   const saved = saveRichNotes(url, deps);
@@ -1550,7 +1555,7 @@ function runYoutubeNotes(args = [], deps = {}) {
     output(YTNOTES_HINT);
     return 2;
   }
-  const nextDeps = { ...deps, save: parsed.save };
+  const nextDeps = { ...deps, save: parsed.save, json: parsed.json };
   if (parsed.urls.length === 1 && !isPlaylistUrl(parsed.urls[0])) {
     return runSingleYoutubeNotes(parsed.urls[0], parsed.engine, nextDeps);
   }
@@ -1715,11 +1720,15 @@ function resolveSearchCachePath(deps = {}) {
   return path.join(homeDir, '.atris', LOCAL_SEARCH_CACHE_FILE);
 }
 
-function printSearchTeachNext(rows, options, output) {
+function printYoutubeTeachNext(url, options, output) {
   if (options && options.json) return;
+  if (!url) return;
+  output(`next: atris youtube teach ${quoteYoutubeUrl(url)}`);
+}
+
+function printSearchTeachNext(rows, options, output) {
   const firstUrl = Array.isArray(rows) && rows[0] && rows[0].url;
-  if (!firstUrl) return;
-  output(`next: atris youtube teach ${quoteYoutubeUrl(firstUrl)}`);
+  printYoutubeTeachNext(firstUrl, options, output);
 }
 
 function printSearchRows(rows, options, output) {
