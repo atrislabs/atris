@@ -153,6 +153,37 @@ test('dry run names the eligible branch without touching master', () => {
   }
 });
 
+test('a local master that lags origin lands onto the remote tip and pushes clean', () => {
+  const root = makeRepo();
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-green-origin-'));
+  try {
+    git(bare, ['init', '-q', '--bare', '-b', 'master']);
+    git(root, ['remote', 'add', 'origin', bare]);
+    git(root, ['push', '-q', 'origin', 'master']);
+    branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    // Origin moves ahead through someone else's clone.
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-green-other-'));
+    git(other, ['clone', '-q', bare, '.']);
+    fs.writeFileSync(path.join(other, 'elsewhere.txt'), 'other\n');
+    commitAll(other, 'someone else lands first', { when: new Date().toISOString() });
+    git(other, ['push', '-q', 'origin', 'master']);
+
+    const result = landStaleGreenBranches(root, { push: true, runCli: () => ({ status: 0, stdout: '' }) });
+    assert.deepEqual(result.landed, ['member/green'], JSON.stringify(result.verdicts));
+    const landed = result.verdicts[0];
+    assert.equal(landed.push.ok, true, JSON.stringify(landed.push));
+    const originLog = git(bare, ['log', '--format=%s', 'master']);
+    assert.match(originLog, /member\/green work/);
+    assert.match(originLog, /someone else lands first/);
+    assert.equal(git(root, ['rev-parse', 'master']), git(bare, ['rev-parse', 'master']));
+    assert.equal(fs.readFileSync(path.join(root, 'elsewhere.txt'), 'utf8'), 'other\n');
+    fs.rmSync(other, { recursive: true, force: true });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+  }
+});
+
 test('failing test names are lifted from node --test output and land in the flag text', () => {
   const out = [
     '✔ passes (1ms)',
