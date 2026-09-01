@@ -49,7 +49,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('rich ephemeral notes/teach print one apply next-step (no files)');
   output('process = 5 credits cloud knowledge (needs a filled Apply)');
   output('digest = one decision page from this week\'s video briefs');
-  output('watch = subscribed channels turn into briefs without a human');
+  output('watch = subscribed channels turn into briefs without a human; tick hands off to teach when it briefed');
   output('Process a YouTube video through Atris using timestamped transcript-first analysis.');
   output('Falls back to cloud video processing when local captions are unavailable.');
   output('');
@@ -1255,6 +1255,7 @@ async function tickWatch(deps = {}) {
   const state = loadWatchState(statePath);
   let totalNew = 0;
   let totalBriefed = 0;
+  let firstBriefedUrl = null;
 
   for (const row of state.channels) {
     const videosUrl = channelVideosUrl(row.channel);
@@ -1301,6 +1302,7 @@ async function tickWatch(deps = {}) {
       }
       markSeen(state, row.channel, video.id, timestamp);
       briefed += 1;
+      if (!firstBriefedUrl) firstBriefedUrl = url;
     }
 
     if (!isFresh) {
@@ -1317,6 +1319,9 @@ async function tickWatch(deps = {}) {
   }
 
   output(`total: ${totalNew} new, ${totalBriefed} briefed`);
+  if (totalBriefed > 0) {
+    printYoutubeTeachNext(firstBriefedUrl, {}, output);
+  }
   saveWatchState(statePath, state);
   return 0;
 }
