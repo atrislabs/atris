@@ -49,7 +49,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('rich ephemeral notes/teach print one apply next-step (no files)');
   output('process = 5 credits cloud knowledge (needs a filled Apply)');
   output('digest = one decision page from this week\'s video briefs');
-  output('watch = subscribed channels turn into briefs without a human; tick hands off to teach when it briefed');
+  output('watch = subscribed channels turn into briefs without a human; add hands off to tick; tick hands off to teach when it briefed');
   output('Process a YouTube video through Atris using timestamped transcript-first analysis.');
   output('Falls back to cloud video processing when local captions are unavailable.');
   output('');
@@ -1179,6 +1179,10 @@ function markSeen(state, channel, id, timestamp) {
   state.seenByChannel[channel][id] = timestamp;
 }
 
+function printWatchTickNext(output) {
+  output('next: atris youtube watch tick');
+}
+
 function addWatchChannel(channelInput, deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
   if (!channelInput) {
@@ -1198,6 +1202,7 @@ function addWatchChannel(channelInput, deps = {}) {
   const state = loadWatchState(statePath);
   if (state.channels.some((row) => row.channel === channel)) {
     output(`already watching ${channel}`);
+    printWatchTickNext(output);
     return 0;
   }
 
@@ -1207,6 +1212,7 @@ function addWatchChannel(channelInput, deps = {}) {
   });
   saveWatchState(statePath, state);
   output(`watching ${channel}`);
+  printWatchTickNext(output);
   return 0;
 }
 

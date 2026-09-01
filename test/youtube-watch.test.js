@@ -78,6 +78,10 @@ test('watch add/list/remove round-trip', async () => {
     { channel: 'https://www.youtube.com/@mkbhd', added: now },
   ]);
   assert.match(added.text(), /watching https:\/\/www\.youtube\.com\/@veritasium/);
+  assert.deepEqual(
+    added.text().split('\n').filter((line) => line.startsWith('next: atris youtube watch tick')),
+    ['next: atris youtube watch tick'],
+  );
 
   const listed = collect();
   const listStatus = await youtubeCommand(['watch', 'list'], { cwd, output: listed.output });
@@ -92,6 +96,8 @@ test('watch add/list/remove round-trip', async () => {
   });
   assert.equal(removeStatus, 0);
   assert.match(removed.text(), /removed https:\/\/www\.youtube\.com\/@veritasium/);
+  assert.equal(listed.text().includes('next: atris youtube watch tick'), false);
+  assert.equal(removed.text().includes('next: atris youtube watch tick'), false);
 
   const after = loadWatchState(statePathFor(cwd));
   assert.equal(after.channels.length, 1);
@@ -295,9 +301,50 @@ test('zero-briefed tick prints no teach next-step', async () => {
   assert.equal(failed.text().includes('next: atris youtube teach'), false);
 });
 
-test('watch help says tick hands off to teach when it briefed', async () => {
+test('already watching still prints one tick next-step', async () => {
+  const cwd = tempCwd();
+  const now = '2026-08-15T19:50:00.000Z';
+  await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
+
+  const again = collect();
+  const status = await youtubeCommand(['watch', 'add', '@veritasium'], {
+    cwd,
+    now,
+    output: again.output,
+  });
+  assert.equal(status, 0);
+  assert.match(again.text(), /already watching https:\/\/www\.youtube\.com\/@veritasium/);
+  assert.deepEqual(
+    again.text().split('\n').filter((line) => line.startsWith('next: atris youtube watch tick')),
+    ['next: atris youtube watch tick'],
+  );
+});
+
+test('watch add usage and bad input print no tick next-step', async () => {
+  const cwd = tempCwd();
+  const missing = collect();
+  const missingStatus = await youtubeCommand(['watch', 'add'], {
+    cwd,
+    output: missing.output,
+  });
+  assert.equal(missingStatus, 2);
+  assert.match(missing.text(), /usage: atris youtube watch add/);
+  assert.equal(missing.text().includes('next: atris youtube watch tick'), false);
+
+  const bad = collect();
+  const badStatus = await youtubeCommand(['watch', 'add', '!!!'], {
+    cwd,
+    output: bad.output,
+  });
+  assert.equal(badStatus, 2);
+  assert.match(bad.text(), /Invalid channel: !!!/);
+  assert.equal(bad.text().includes('next: atris youtube watch tick'), false);
+});
+
+test('watch help says add hands off to tick', async () => {
   const out = collect();
   const status = await youtubeCommand(['watch', 'help'], { output: out.output });
   assert.equal(status, 0);
+  assert.match(out.text(), /add hands off to tick/);
   assert.match(out.text(), /tick hands off to teach when it briefed/);
 });
