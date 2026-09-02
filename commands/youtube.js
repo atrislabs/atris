@@ -2596,8 +2596,8 @@ function printTeachUnlockNext(parsed, entry, output) {
 }
 
 function printTeachWatchTickNext(parsed, lesson, total, output) {
-  if (!parsed || parsed.json || parsed.save) return;
-  if (isThinTeachLesson(lesson)) return;
+  if (!parsed || parsed.json) return;
+  if (parsed.save && !isThinTeachLesson(lesson)) return;
   const section = Number(parsed.section) || 0;
   if (section < Number(total)) return;
   printWatchTickNext(output);
@@ -3126,6 +3126,7 @@ async function runYoutubeTeach(args = [], deps = {}) {
   }
   if (isThinTeachLesson(lesson)) {
     output(TEACH_THIN_REFUSE);
+    printTeachWatchTickNext(parsed, lesson, chapters.length, output);
     return 2;
   }
 

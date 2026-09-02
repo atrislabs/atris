@@ -105,6 +105,19 @@ const THIN_VTT = [
 const THIN_CHAPTERS = [
   { start_time: 0, title: 'Welcome', end_time: 30 },
 ];
+const THIN_MULTI_VTT = [
+  'WEBVTT',
+  '',
+  '00:00:00.000 --> 00:00:08.000',
+  'welcome back friends this is just a chat',
+  '',
+  '00:00:20.000 --> 00:00:28.000',
+  'today we talk about feelings and vibes',
+].join('\n');
+const THIN_MULTI_CHAPTERS = [
+  { start_time: 0, title: 'Welcome', end_time: 15 },
+  { start_time: 15, title: 'More vibes', end_time: 30 },
+];
 
 function lessonBlock(text, name) {
   const lines = String(text || '').split('\n');
@@ -242,6 +255,18 @@ function thinSource() {
     language: 'en',
     chapters: THIN_CHAPTERS,
     cues: parseCaptionCues(THIN_VTT),
+  };
+}
+
+function thinMultiSource() {
+  return {
+    id: 'thin01',
+    title: 'a thin chat',
+    url: THIN_URL,
+    durationSeconds: 30,
+    language: 'en',
+    chapters: THIN_MULTI_CHAPTERS,
+    cues: parseCaptionCues(THIN_MULTI_VTT),
   };
 }
 
@@ -681,7 +706,8 @@ test('youtube teach --save refuses a thin chapter and writes no brief', async ()
   assert.match(text, /numbers\nnone/);
   assert.match(text, /mechanisms\nnone/);
   assert.match(text, new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), []);
+  assert.deepEqual(nextLines(text, TEACH_RESUME_NEXT), []);
+  assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01-s1.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01-s1.apply.md')), false);
@@ -871,10 +897,85 @@ test('youtube teach thin chapter without --save still writes no atris files', as
   assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
   assert.doesNotMatch(out.text(), /next: last section/);
   assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), []);
-  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
-  assert.doesNotMatch(out.text(), /^next:/m);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
+});
+
+test('youtube teach ephemeral mid-section thin prints recap next only', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-mid-'));
+  const out = collect();
+  const status = await youtubeCommand(['teach', THIN_URL], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => thinMultiSource(),
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /section 1\/2/);
+  assert.match(out.text(), /numbers\nnone/);
+  assert.match(out.text(), /mechanisms\nnone/);
+  assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), [TEACH_RESUME_NEXT]);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
+});
+
+test('youtube teach --save last-section thin refuses and prints watch-tick next', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-save-last-'));
+  const out = collect();
+  const status = await youtubeCommand(['teach', THIN_URL, '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: out.output,
+    extractTeachSource: async () => thinSource(),
+  });
+
+  const text = out.text();
+  assert.equal(status, 2);
+  assert.match(text, /section 1\/1/);
+  assert.match(text, new RegExp(escapeRe(TEACH_THIN_REFUSE)));
+  assert.deepEqual(nextLines(text, TEACH_RESUME_NEXT), []);
+  assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01-s1.md')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('youtube teach --save mid-section thin refuses without watch-tick', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-save-mid-'));
+  const out = collect();
+  const status = await youtubeCommand(['teach', THIN_URL, '--save'], {
+    cwd,
+    now: '2026-08-27',
+    output: out.output,
+    extractTeachSource: async () => thinMultiSource(),
+  });
+
+  const text = out.text();
+  assert.equal(status, 2);
+  assert.match(text, /section 1\/2/);
+  assert.match(text, new RegExp(escapeRe(TEACH_THIN_REFUSE)));
+  assert.deepEqual(nextLines(text, TEACH_RESUME_NEXT), [TEACH_RESUME_NEXT]);
+  assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), []);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('youtube teach --json last-section thin prints no watch-tick next', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-json-'));
+  const out = collect();
+  const status = await youtubeCommand(['teach', THIN_URL, '--json'], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => thinSource(),
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /section 1\/1/);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), []);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
 });
 
 test('extractTeachSource reads fixture yt-dlp chapters and VTT without network', async () => {
