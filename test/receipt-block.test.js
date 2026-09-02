@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  earnedUsd,
   renderCard,
   renderPageSection,
   renderEmailLine,
@@ -167,4 +168,29 @@ test('morning card shows mission receipt rows through the receipt block renderer
   } finally {
     cleanup(dir);
   }
+});
+
+test('a receipt can carry the dollars it made, and the details line shows it', () => {
+  const receipt = fixtureReceipt();
+  assert.equal(earnedUsd(receipt), 0);
+  assert.doesNotMatch(renderPageSection(receipt), /earned/);
+
+  receipt.result.landing.earned_usd = '12000';
+  assert.equal(earnedUsd(receipt), 12000);
+  assert.match(renderPageSection(receipt), /^details: .*; earned \$12,000; mission mission-receipt-block$/m);
+
+  receipt.result.landing.earned_usd = 4500.5;
+  assert.match(renderPageSection(receipt), /earned \$4,500\.50/);
+
+  // Junk and negatives never move the number, and never reach the surface.
+  for (const junk of ['lots', -40, null, '']) {
+    receipt.result.landing.earned_usd = junk;
+    assert.equal(earnedUsd(receipt), 0);
+    assert.doesNotMatch(renderEmailLine(receipt), /earned|\$/);
+  }
+
+  // result.earned_usd works when the landing has none.
+  delete receipt.result.landing.earned_usd;
+  receipt.result.earned_usd = 250;
+  assert.equal(earnedUsd(receipt), 250);
 });
