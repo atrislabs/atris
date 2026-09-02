@@ -245,12 +245,17 @@ test('experiments keep refuses a minted x-search pack at 0 and keeps after check
   const refused = runExperimentsKeep(cwd, 'x-search-mcp-agents');
   assert.equal(refused.status, 1, refused.stderr || refused.stdout);
   assert.match(`${refused.stdout}\n${refused.stderr}`, /revert x-search-mcp-agents: measure\.py stayed 0\. refuse keep\./);
+  assert.doesNotMatch(`${refused.stdout}\n${refused.stderr}`, /next: atris youtube watch tick/);
   assert.equal(fs.existsSync(path.join(packDir, 'measure.py')), true);
 
   fs.appendFileSync(applyPath, '\nkeep the omakase model as the default stack\n');
   const kept = runExperimentsKeep(cwd, 'x-search-mcp-agents');
   assert.equal(kept.status, 0, kept.stderr || kept.stdout);
   assert.match(kept.stdout, /keep x-search-mcp-agents: measure\.py moved 0→1/);
+  assert.deepEqual(
+    kept.stdout.split('\n').filter((line) => line.startsWith('next: atris youtube watch tick')),
+    ['next: atris youtube watch tick']
+  );
 });
 
 test('x-search person rich --save mints the same keep/revert pack', async () => {

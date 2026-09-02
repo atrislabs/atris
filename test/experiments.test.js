@@ -371,6 +371,21 @@ function assertNoRevertKeepNext(result) {
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /next: atris experiments keep/);
 }
 
+function keepWatchTickNextLine() {
+  return 'next: atris youtube watch tick';
+}
+
+function assertKeepWatchTickNext(result) {
+  assert.deepEqual(
+    result.stdout.split('\n').filter((line) => line.startsWith('next: atris youtube watch tick')),
+    [keepWatchTickNextLine()]
+  );
+}
+
+function assertNoKeepWatchTickNext(result) {
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /next: atris youtube watch tick/);
+}
+
 function writeTokenMeasurePack(dir, slug, fixtureRel, token) {
   const packDir = path.join(dir, 'atris', 'experiments', slug);
   fs.mkdirSync(packDir, { recursive: true });
@@ -400,6 +415,7 @@ test('experiments keep without a slug fails cleanly', () => {
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /usage: atris experiments keep <slug>/);
     assertNoKeepRevertNext(result);
+    assertNoKeepWatchTickNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -413,6 +429,7 @@ test('experiments keep help is usage only', () => {
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /usage: atris experiments keep <slug>/);
     assertNoKeepRevertNext(result);
+    assertNoKeepWatchTickNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -426,6 +443,7 @@ test('experiments keep --json does not print a revert next-step', () => {
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /invalid experiment name\. use a lowercase-hyphen slug\./);
     assertNoKeepRevertNext(result);
+    assertNoKeepWatchTickNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -439,6 +457,7 @@ test('experiments keep fails cleanly on an invalid slug', () => {
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /invalid experiment name\. use a lowercase-hyphen slug\./);
     assertNoKeepRevertNext(result);
+    assertNoKeepWatchTickNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -451,6 +470,7 @@ test('experiments keep fails cleanly when atris/ is missing', () => {
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /atris\/ folder not found/);
     assertNoKeepRevertNext(result);
+    assertNoKeepWatchTickNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -464,6 +484,7 @@ test('experiments keep fails cleanly when the pack is missing', () => {
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /experiment "teach-missing-s1" not found/);
     assertNoKeepRevertNext(result);
+    assertNoKeepWatchTickNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -480,6 +501,7 @@ test('experiments keep fails cleanly when measure.py is missing', () => {
     assert.match(`${result.stdout}\n${result.stderr}`, /has no measure\.py/);
     assert.equal(fs.existsSync(packDir), true);
     assertNoKeepRevertNext(result);
+    assertNoKeepWatchTickNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -496,6 +518,7 @@ test('experiments keep refuses when measure.py stays at baseline 0', { skip: !py
     assert.equal(result.status, 1, result.stderr || result.stdout);
     assert.match(result.stderr, /revert teach-keep01-s1: measure\.py stayed 0\. refuse keep\./);
     assertKeepRevertNext(result, 'teach-keep01-s1');
+    assertNoKeepWatchTickNext(result);
     assert.equal(fs.existsSync(path.join(packDir, 'measure.py')), true);
   } finally {
     cleanupTempDir(dir);
@@ -512,6 +535,7 @@ test('experiments keep refuses when measure.py fails to print a score', { skip: 
     assert.equal(result.status, 1, result.stderr || result.stdout);
     assert.match(result.stderr, /revert teach-broken-s1: measure\.py printed no score\. refuse keep\./);
     assertKeepRevertNext(result, 'teach-broken-s1');
+    assertNoKeepWatchTickNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -529,12 +553,14 @@ test('experiments keep succeeds only after the fixture contains check tokens', {
     const refused = runCli(['experiments', 'keep', 'teach-keep01-s1'], { cwd: dir });
     assert.equal(refused.status, 1, refused.stderr || refused.stdout);
     assertKeepRevertNext(refused, 'teach-keep01-s1');
+    assertNoKeepWatchTickNext(refused);
 
     fs.appendFileSync(fixturePath, 'keep the omakase model as the default stack\n');
     const kept = runCli(['experiments', 'keep', 'teach-keep01-s1'], { cwd: dir });
     assert.equal(kept.status, 0, kept.stderr || kept.stdout);
     assert.match(kept.stdout, /keep teach-keep01-s1: measure\.py moved 0→1/);
     assertNoKeepRevertNext(kept);
+    assertKeepWatchTickNext(kept);
   } finally {
     cleanupTempDir(dir);
   }
@@ -634,6 +660,7 @@ test('experiments revert restores a baseline file after a refused keep', { skip:
     const keptDirty = runCli(['experiments', 'keep', 'teach-revert01-s1'], { cwd: dir });
     assert.equal(keptDirty.status, 0, keptDirty.stderr || keptDirty.stdout);
     assert.match(keptDirty.stdout, /keep teach-revert01-s1: measure\.py moved 0→1/);
+    assertKeepWatchTickNext(keptDirty);
 
     const reverted = runCli(['experiments', 'revert', 'teach-revert01-s1'], { cwd: dir });
     assert.equal(reverted.status, 0, reverted.stderr || reverted.stdout);
@@ -645,6 +672,7 @@ test('experiments revert restores a baseline file after a refused keep', { skip:
     assert.equal(refused.status, 1, refused.stderr || refused.stdout);
     assert.match(refused.stderr, /revert teach-revert01-s1: measure\.py stayed 0\. refuse keep\./);
     assertKeepRevertNext(refused, 'teach-revert01-s1');
+    assertNoKeepWatchTickNext(refused);
   } finally {
     cleanupTempDir(dir);
   }
