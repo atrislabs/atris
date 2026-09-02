@@ -790,6 +790,7 @@ test('experiments revert runs minted reset.py after a refused keep', async () =>
   const reverted = runExperimentsRevert(cwd, 'teach-teach01-s1');
   assert.equal(reverted.status, 0, reverted.stderr || reverted.stdout);
   assert.match(reverted.stdout, /revert teach-teach01-s1: reset\.py ran/);
+  assert.match(reverted.stdout, /^next: atris experiments keep teach-teach01-s1$/m);
   assert.equal(fs.existsSync(path.join(packDir, 'reset.py')), true);
 });
 
