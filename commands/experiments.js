@@ -183,6 +183,10 @@ function printKeepRevertNext(slug) {
   console.log(`next: atris experiments revert ${slug}`);
 }
 
+function printRevertKeepNext(slug) {
+  console.log(`next: atris experiments keep ${slug}`);
+}
+
 function experimentsKeep(name) {
   const token = String(name || '').trim();
   if (!token || token === '--help' || token === '-h' || token === 'help') {
@@ -307,11 +311,13 @@ function experimentsRevert(name) {
     const measured = runMeasureJson(measurePath, workspaceDir);
     if (measured.ok) {
       console.log(`revert ${token}: reset.py ran. measure.py ${measured.score}`);
+      printRevertKeepNext(token);
       return;
     }
   }
 
   console.log(`revert ${token}: reset.py ran`);
+  printRevertKeepNext(token);
 }
 
 function experimentsInit(name) {

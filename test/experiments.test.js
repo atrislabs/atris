@@ -356,6 +356,21 @@ function assertNoKeepRevertNext(result) {
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /next: atris experiments revert/);
 }
 
+function revertKeepNextLine(slug) {
+  return `next: atris experiments keep ${slug}`;
+}
+
+function assertRevertKeepNext(result, slug) {
+  assert.deepEqual(
+    result.stdout.split('\n').filter((line) => line.startsWith('next: atris experiments keep')),
+    [revertKeepNextLine(slug)]
+  );
+}
+
+function assertNoRevertKeepNext(result) {
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /next: atris experiments keep/);
+}
+
 function writeTokenMeasurePack(dir, slug, fixtureRel, token) {
   const packDir = path.join(dir, 'atris', 'experiments', slug);
   fs.mkdirSync(packDir, { recursive: true });
@@ -559,6 +574,7 @@ test('experiments revert without a slug fails cleanly', () => {
     const result = runCli(['experiments', 'revert'], { cwd: dir });
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /usage: atris experiments revert <slug>/);
+    assertNoRevertKeepNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -571,6 +587,7 @@ test('experiments revert fails cleanly on an invalid slug', () => {
     const result = runCli(['experiments', 'revert', 'Teach_Bad'], { cwd: dir });
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /invalid experiment name\. use a lowercase-hyphen slug\./);
+    assertNoRevertKeepNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -583,6 +600,7 @@ test('experiments revert fails cleanly when the pack is missing', () => {
     const result = runCli(['experiments', 'revert', 'teach-missing-s1'], { cwd: dir });
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /experiment "teach-missing-s1" not found/);
+    assertNoRevertKeepNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -598,6 +616,7 @@ test('experiments revert fails cleanly when reset.py is missing', () => {
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /has no reset\.py/);
     assert.equal(fs.existsSync(packDir), true);
+    assertNoRevertKeepNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -619,6 +638,7 @@ test('experiments revert restores a baseline file after a refused keep', { skip:
     const reverted = runCli(['experiments', 'revert', 'teach-revert01-s1'], { cwd: dir });
     assert.equal(reverted.status, 0, reverted.stderr || reverted.stdout);
     assert.match(reverted.stdout, /revert teach-revert01-s1: reset\.py ran/);
+    assertRevertKeepNext(reverted, 'teach-revert01-s1');
     assert.equal(fs.readFileSync(fixturePath, 'utf8'), 'change: apply atris/experiments/teach-revert01-s1\n');
 
     const refused = runCli(['experiments', 'keep', 'teach-revert01-s1'], { cwd: dir });
@@ -643,6 +663,7 @@ test('experiments revert succeeds on reset alone when measure.py is missing', { 
     assert.equal(reverted.status, 0, reverted.stderr || reverted.stdout);
     assert.match(reverted.stdout, /revert teach-nometric-s1: reset\.py ran/);
     assert.doesNotMatch(reverted.stdout, /measure\.py/);
+    assertRevertKeepNext(reverted, 'teach-nometric-s1');
     assert.equal(fs.readFileSync(fixturePath, 'utf8'), 'baseline\n');
   } finally {
     cleanupTempDir(dir);
@@ -661,6 +682,7 @@ test('experiments revert refuses when reset.py crashes', { skip: !pythonCmd }, (
     const result = runCli(['experiments', 'revert', 'teach-crash-s1'], { cwd: dir });
     assert.notEqual(result.status, 0, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /revert teach-crash-s1:.*refuse revert\./);
+    assertNoRevertKeepNext(result);
     assert.equal(fs.readFileSync(fixturePath, 'utf8'), 'dirty\n');
   } finally {
     cleanupTempDir(dir);
