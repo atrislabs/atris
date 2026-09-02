@@ -310,6 +310,10 @@ test('x-search unsave after rich --save removes brief apply and pack', async () 
   assert.equal(status, 0);
   assert.equal(apiCalls, 0);
   assert.match(out.text(), /removed atris\/wiki\/briefs\/x-search-mcp-agents\.md and atris\/wiki\/briefs\/x-search-mcp-agents\.apply\.md and atris\/experiments\/x-search-mcp-agents/);
+  assert.deepEqual(
+    out.lines.filter((line) => String(line).startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
   assert.equal(fs.existsSync(path.join(cwd, xSearchBriefRel('MCP agents'))), false);
   assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('MCP agents'))), false);
   assert.equal(fs.existsSync(path.join(cwd, xSearchExperimentRel('MCP agents'))), false);
@@ -339,6 +343,10 @@ test('x-search unsave removes leftover pack when brief and apply are already gon
   assert.equal(status, 0);
   assert.equal(apiCalls, 0);
   assert.match(out.text(), /removed atris\/experiments\/x-search-mcp-agents/);
+  assert.deepEqual(
+    out.lines.filter((line) => String(line).startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
   assert.equal(fs.existsSync(packDir), false);
   assert.equal(fs.existsSync(path.join(otherDir, 'stay.txt')), true);
 });
@@ -359,6 +367,10 @@ test('x-search unsave of a missing source stays quiet', async () => {
   assert.equal(status, 0);
   assert.equal(apiCalls, 0);
   assert.match(out.text(), /already gone: atris\/wiki\/briefs\/x-search-gone-query\.md and atris\/wiki\/briefs\/x-search-gone-query\.apply\.md/);
+  assert.deepEqual(
+    out.lines.filter((line) => String(line).startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
   assert.equal(unsaveXSearch('gone query', { cwd, output: () => {} }), 0);
 });
 
@@ -394,6 +406,10 @@ test('x-search person rich --save then unsave removes the minted pack', async ()
   assert.equal(status, 0);
   assert.equal(apiCalls, 0);
   assert.match(out.text(), /removed atris\/wiki\/briefs\/x-search-leah-bonvissuto\.md and atris\/wiki\/briefs\/x-search-leah-bonvissuto\.apply\.md and atris\/experiments\/x-search-leah-bonvissuto/);
+  assert.deepEqual(
+    out.lines.filter((line) => String(line).startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
   assert.equal(fs.existsSync(path.join(cwd, xSearchBriefRel('Leah Bonvissuto'))), false);
   assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('Leah Bonvissuto'))), false);
   assert.equal(fs.existsSync(path.join(cwd, xSearchExperimentRel('Leah Bonvissuto'))), false);

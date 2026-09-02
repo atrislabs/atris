@@ -221,7 +221,9 @@ function parseUnsaveArgs(argv = []) {
   const options = {
     mode: 'unsave',
     help: false,
+    json: false,
     source: null,
+    sources: [],
   };
 
   if (args.length === 0 || ['help', '--help', '-h'].includes(args[0])) {
@@ -236,19 +238,20 @@ function parseUnsaveArgs(argv = []) {
     const arg = args[i];
     if (arg === '--help' || arg === '-h' || arg === 'help') {
       options.help = true;
+    } else if (arg === '--json') {
+      options.json = true;
     } else if (arg === '--unsave') {
       continue;
     } else if (arg.startsWith('-')) {
       throw new Error(`Unknown option: ${arg}`);
-    } else if (!options.source) {
-      options.source = arg;
     } else {
-      throw new Error(`Unexpected argument: ${arg}`);
+      options.sources.push(arg);
+      if (!options.source) options.source = arg;
     }
   }
 
   if (options.help) return options;
-  if (!options.source) throw new Error('usage: atris x-search unsave <query-or-source>');
+  if (!options.sources.length) throw new Error('usage: atris x-search unsave <query-or-source>');
   return options;
 }
 
@@ -530,6 +533,30 @@ function unsaveXSearch(target, deps = {}) {
   return 0;
 }
 
+function unsaveTargets(options) {
+  if (Array.isArray(options?.sources) && options.sources.length) return options.sources;
+  const single = options?.source || options?.query;
+  return single ? [single] : [];
+}
+
+function runXSearchUnsave(options, deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  const targets = unsaveTargets(options);
+  if (!targets.length) {
+    output('usage: atris x-search unsave <query-or-source>');
+    return 2;
+  }
+  let code = 0;
+  for (const target of targets) {
+    const status = unsaveXSearch(target, deps);
+    if (status !== 0) code = status;
+  }
+  if (code === 0 && options.json !== true && deps.json !== true) {
+    printEmptyYoutubeSearchNext(output);
+  }
+  return code;
+}
+
 function saveRichXSearch({ cwd, source, text, now } = {}) {
   const lesson = xSearchLessonFromText(text);
   if (isThinTeachLesson(lesson)) {
@@ -620,7 +647,7 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
   }
 
   if (options.mode === 'unsave' || options.unsave) {
-    return unsaveXSearch(options.source || options.query, deps);
+    return runXSearchUnsave(options, deps);
   }
 
   let status = 0;
