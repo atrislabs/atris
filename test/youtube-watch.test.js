@@ -88,6 +88,10 @@ test('watch add/list/remove round-trip', async () => {
   assert.equal(listStatus, 0);
   assert.match(listed.text(), /1\. https:\/\/www\.youtube\.com\/@veritasium \(0 seen\)/);
   assert.match(listed.text(), /2\. https:\/\/www\.youtube\.com\/@mkbhd \(0 seen\)/);
+  assert.deepEqual(
+    listed.text().split('\n').filter((line) => line.startsWith('next: atris youtube watch tick')),
+    ['next: atris youtube watch tick'],
+  );
 
   const removed = collect();
   const removeStatus = await youtubeCommand(['watch', 'remove', '1'], {
@@ -96,7 +100,6 @@ test('watch add/list/remove round-trip', async () => {
   });
   assert.equal(removeStatus, 0);
   assert.match(removed.text(), /removed https:\/\/www\.youtube\.com\/@veritasium/);
-  assert.equal(listed.text().includes('next: atris youtube watch tick'), false);
   assert.equal(removed.text().includes('next: atris youtube watch tick'), false);
 
   const after = loadWatchState(statePathFor(cwd));
@@ -320,6 +323,15 @@ test('already watching still prints one tick next-step', async () => {
   );
 });
 
+test('empty watch list prints no tick next-step', async () => {
+  const cwd = tempCwd();
+  const empty = collect();
+  const status = await youtubeCommand(['watch', 'list'], { cwd, output: empty.output });
+  assert.equal(status, 0);
+  assert.match(empty.text(), /no channels watched/);
+  assert.equal(empty.text().includes('next: atris youtube watch tick'), false);
+});
+
 test('watch add usage and bad input print no tick next-step', async () => {
   const cwd = tempCwd();
   const missing = collect();
@@ -347,4 +359,13 @@ test('watch help says add hands off to tick', async () => {
   assert.equal(status, 0);
   assert.match(out.text(), /add hands off to tick/);
   assert.match(out.text(), /tick hands off to teach when it briefed/);
+  assert.equal(out.text().includes('next: atris youtube watch tick'), false);
+});
+
+test('unknown watch command prints no tick next-step', async () => {
+  const out = collect();
+  const status = await youtubeCommand(['watch', 'nope'], { output: out.output });
+  assert.equal(status, 2);
+  assert.match(out.text(), /unknown watch command: nope/);
+  assert.equal(out.text().includes('next: atris youtube watch tick'), false);
 });
