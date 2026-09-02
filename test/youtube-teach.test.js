@@ -17,6 +17,8 @@ const {
   extractTeachSource,
   isThinTeachLesson,
   TEACH_THIN_REFUSE,
+  TEACH_RESUME_NEXT,
+  TEACH_WATCH_TICK_NEXT,
   teachExperimentSlug,
   youtubeCommand,
 } = require('../commands/youtube');
@@ -143,6 +145,10 @@ function collect() {
   };
 }
 
+function nextLines(text, prefix) {
+  return String(text || '').split('\n').filter((line) => line.startsWith(prefix));
+}
+
 function escapeRe(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -212,6 +218,18 @@ function lexSource() {
     language: 'en',
     chapters: LEX_CHAPTERS,
     cues: parseCaptionCues(LEX_VTT),
+  };
+}
+
+function oneChapterSource() {
+  return {
+    id: 'teach01',
+    title: 'DHH on Lex Fridman',
+    url: TEACH_URL,
+    durationSeconds: 60,
+    language: 'en',
+    chapters: [TEACH_CHAPTERS[0]],
+    cues: parseCaptionCues(TEACH_VTT),
   };
 }
 
@@ -348,7 +366,8 @@ test('formatTeachLesson prints numbers, mechanisms, one check, and the recap nex
   assert.match(text, /80 people/);
   assert.match(text, /omakase/);
   assert.match(text, /check\nwhat is /);
-  assert.match(text, /next: atris youtube teach recap TEXT or atris youtube teach skip/);
+  assert.match(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), []);
   assert.doesNotMatch(text, /next: last section/);
   assert.doesNotMatch(text, /six-week|--section 2/);
 });
@@ -369,7 +388,8 @@ test('formatTeachLesson last section omits the dead last-section next line', () 
   assert.match(text, /six-week/);
   assert.match(text, /check\nwhat is /);
   assert.doesNotMatch(text, /next: last section/);
-  assert.doesNotMatch(text, /next: atris youtube teach recap TEXT or atris youtube teach skip/);
+  assert.doesNotMatch(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), []);
   assert.doesNotMatch(text, /80 people/);
 });
 
@@ -408,7 +428,8 @@ test('youtube teach prints one chapter from fixture captions and chapters', asyn
   assert.match(text, /80 people/);
   assert.match(text, /omakase/);
   assert.match(text, /check\nwhat is /);
-  assert.match(text, /next: atris youtube teach recap TEXT or atris youtube teach skip/);
+  assert.match(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), []);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
   assert.doesNotMatch(text, /six-week/);
   assert.doesNotMatch(text, /process_youtube/);
@@ -439,6 +460,8 @@ test('youtube teach prints the lex highlight as 60s install, Overton, and a real
   assert.doesNotMatch(text, /holy fuck/);
   assert.doesNotMatch(text, /^20$/m);
   assert.doesNotMatch(text, /^60$/m);
+  assert.match(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), []);
 });
 
 test('youtube teach --section 2 prints the second chapter after skip', async () => {
@@ -471,8 +494,41 @@ test('youtube teach --section 2 prints the second chapter after skip', async () 
   assert.match(text, /six-week/);
   assert.doesNotMatch(text, /80 people/);
   assert.doesNotMatch(text, /next: last section/);
-  assert.doesNotMatch(text, /next: atris youtube teach recap TEXT or atris youtube teach skip/);
+  assert.doesNotMatch(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
+});
+
+test('youtube teach last section of a one-chapter video prints watch-tick next', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-one-'));
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => oneChapterSource(),
+  });
+
+  assert.equal(status, 0);
+  const text = out.text();
+  assert.match(text, /section 1\/1  omakase/);
+  assert.doesNotMatch(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
+});
+
+test('youtube teach section past the end prints no watch-tick next', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-past-'));
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL, '--section', '3'], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+
+  assert.equal(status, 2);
+  assert.match(out.text(), /section 3 is past 2 chapters/);
+  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
 });
 
 test('youtube teach without --save writes no atris files', async () => {
@@ -506,6 +562,7 @@ test('youtube teach --save writes one pack-named apply claimable', async () => {
   assert.equal(status, 0);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.match(out.text(), /next: atris experiments keep teach-teach01-s1/);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1', 'measure.py')), true);
   const claim = assertTeachApplyClaimable(cwd, {
@@ -624,6 +681,7 @@ test('youtube teach --save refuses a thin chapter and writes no brief', async ()
   assert.match(text, /numbers\nnone/);
   assert.match(text, /mechanisms\nnone/);
   assert.match(text, new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), []);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01-s1.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01-s1.apply.md')), false);
@@ -812,6 +870,8 @@ test('youtube teach thin chapter without --save still writes no atris files', as
   assert.match(out.text(), /numbers\nnone/);
   assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
   assert.doesNotMatch(out.text(), /next: last section/);
+  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
   assert.doesNotMatch(out.text(), /^next:/m);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
@@ -852,6 +912,7 @@ test('youtube teach without captions prints no apply next-step', async () => {
 
   assert.equal(status, 2);
   assert.match(out.text(), /no english captions/);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
 });
@@ -868,7 +929,8 @@ test('youtube teach empty tmp section 1 still prints the check and writes no atr
   assert.equal(status, 0);
   assert.match(out.text(), /section 1\/2  omakase/);
   assert.match(out.text(), /check\nwhat is the omakase model\?/);
-  assert.match(out.text(), /next: atris youtube teach recap TEXT or atris youtube teach skip/);
+  assert.match(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
 });
@@ -898,6 +960,7 @@ test('youtube teach --section 2 without recap exits 2 and prints the unpaid chec
   assert.equal(out.text().trim(), 'what is the omakase model?');
   assert.doesNotMatch(out.text(), /section 2\/2/);
   assert.doesNotMatch(out.text(), /shape up/);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
 });
 
@@ -954,6 +1017,8 @@ test('youtube teach recap with check tokens unlocks the next section', async () 
   assert.match(out.text(), /section 2\/2  shape up/);
   assert.match(out.text(), /six-week/);
   assert.doesNotMatch(out.text(), /next: last section/);
+  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
 });
 
@@ -986,6 +1051,7 @@ test('youtube teach wrong recap still refuses the next section', async () => {
   assert.equal(status, 2);
   assert.equal(out.text().trim(), 'what is the omakase model?');
   assert.doesNotMatch(out.text(), /section 2\/2/);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
 });
 
 test('youtube teach --skip unlocks the next section without claiming an answer', async () => {
@@ -1018,6 +1084,8 @@ test('youtube teach --skip unlocks the next section without claiming an answer',
   });
   assert.equal(status, 0);
   assert.match(out.text(), /section 2\/2  shape up/);
+  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
 });
 
 test('youtube teach recap writes no wiki brief apply or experiment pack', async () => {
@@ -1071,6 +1139,7 @@ test('youtube teach --save path stays unchanged after a recap unlock', async () 
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.doesNotMatch(out.text(), /next: last section/);
   assert.match(out.text(), /next: atris experiments keep teach-teach01-s2/);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s2.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s2', 'measure.py')), true);
@@ -1153,9 +1222,10 @@ test('bare youtube teach with unpaid owed prints the check and one next line', a
   assert.match(out.text(), /teach01|watch\?v=teach01/);
   assert.match(out.text(), /section 1/);
   assert.match(out.text(), /what is the omakase model\?/);
-  assert.match(out.text(), /next: atris youtube teach recap TEXT or atris youtube teach skip/);
+  assert.match(out.text(), TEACH_RESUME_NEXT);
   assert.equal(out.text().includes(owedOut.text().trim()), true);
   assert.doesNotMatch(out.text(), /Usage:|section 2\/2|shape up/i);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
 });
 
 test('bare youtube teach with empty owed prints nothing owed and one start command', async () => {
@@ -1175,6 +1245,7 @@ test('bare youtube teach with empty owed prints nothing owed and one start comma
   assert.match(out.text(), /nothing owed/);
   assert.match(out.text(), /atris youtube teach <url>/);
   assert.doesNotMatch(out.text(), /Usage:|next: atris youtube teach recap/);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
   assert.equal(fs.existsSync(path.join(cwd, '.atris', 'youtube-teach-owed.json')), false);
 });
 
@@ -1224,6 +1295,8 @@ test('bare youtube teach after skip continues the next chapter without a url', a
   assert.match(out.text(), /section 2\/2  shape up/);
   assert.match(out.text(), /six-week/);
   assert.doesNotMatch(out.text(), /nothing owed|80 people/);
+  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
 });
 
@@ -1254,6 +1327,8 @@ test('bare youtube teach after recap continues the next chapter without a url', 
   assert.match(out.text(), /section 2\/2  shape up/);
   assert.match(out.text(), /six-week/);
   assert.doesNotMatch(out.text(), /nothing owed/);
+  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
 });
 
@@ -1283,6 +1358,7 @@ test('bare youtube teach --json after skip stays without human next lines', asyn
   assert.equal(status, 0);
   assert.match(out.text(), /section 2\/2  shape up/);
   assert.doesNotMatch(out.text(), /nothing owed|next: atris youtube teach/);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
 });
 
 test('bare youtube teach unpaid owed still wins over a continue-cursor', async () => {
@@ -1373,6 +1449,7 @@ test('youtube teach --help still prints real help', async () => {
   assert.match(out.text(), /Usage:/);
   assert.match(out.text(), /teach <youtube-url>/);
   assert.doesNotMatch(out.text(), /nothing owed/);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
 });
 
 test('youtube teach --skip prints the next section command', async () => {
@@ -1395,6 +1472,7 @@ test('youtube teach --skip prints the next section command', async () => {
   assert.equal(skipped, 0);
   assert.match(skipOut.text(), /next: atris youtube teach next/);
   assert.doesNotMatch(skipOut.text(), /--section 2|section 2\/2/);
+  assert.deepEqual(nextLines(skipOut.text(), TEACH_WATCH_TICK_NEXT), []);
 
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL, '--section', '2'], {
@@ -1404,6 +1482,8 @@ test('youtube teach --skip prints the next section command', async () => {
   });
   assert.equal(status, 0);
   assert.match(out.text(), /section 2\/2  shape up/);
+  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
 });
 
 test('youtube teach matching --recap prints the next section command', async () => {
@@ -1426,6 +1506,7 @@ test('youtube teach matching --recap prints the next section command', async () 
   assert.equal(recapped, 0);
   assert.match(recapOut.text(), /next: atris youtube teach next/);
   assert.doesNotMatch(recapOut.text(), /--section 2|section 2\/2/);
+  assert.deepEqual(nextLines(recapOut.text(), TEACH_WATCH_TICK_NEXT), []);
 
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL, '--section', '2'], {
@@ -1435,6 +1516,8 @@ test('youtube teach matching --recap prints the next section command', async () 
   });
   assert.equal(status, 0);
   assert.match(out.text(), /section 2\/2  shape up/);
+  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
 });
 
 test('youtube teach --json owed and unlock stay without the human next line', async () => {

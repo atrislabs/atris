@@ -1180,8 +1180,10 @@ function markSeen(state, channel, id, timestamp) {
   state.seenByChannel[channel][id] = timestamp;
 }
 
+const WATCH_TICK_NEXT = 'next: atris youtube watch tick';
+
 function printWatchTickNext(output) {
-  output('next: atris youtube watch tick');
+  output(WATCH_TICK_NEXT);
 }
 
 function addWatchChannel(channelInput, deps = {}) {
@@ -2119,6 +2121,7 @@ const TEACH_OWED_FILE = 'youtube-teach-owed.json';
 const TEACH_RECAP_MISSING = '--recap needs the unpaid check';
 const TEACH_RESUME_START = 'atris youtube teach <url>';
 const TEACH_RESUME_NEXT = 'next: atris youtube teach recap TEXT or atris youtube teach skip';
+const TEACH_WATCH_TICK_NEXT = WATCH_TICK_NEXT;
 const TEACH_CONTINUE_NEXT = 'next: atris youtube teach next';
 const TEACH_APPLY_NEXT_MESSAGE = APPLY_NEXT_MESSAGE;
 const TEACH_KEEP_RULE = 'keep only if measure.py moves 0→1. scores 1 only when the fixture contains the check tokens.';
@@ -2559,6 +2562,14 @@ function printTeachUnlockNext(parsed, entry, output) {
   const url = parsed.url || (entry && entry.url) || '';
   if (!url) return;
   output(TEACH_CONTINUE_NEXT);
+}
+
+function printTeachWatchTickNext(parsed, lesson, total, output) {
+  if (!parsed || parsed.json || parsed.save) return;
+  if (isThinTeachLesson(lesson)) return;
+  const section = Number(parsed.section) || 0;
+  if (section < Number(total)) return;
+  printWatchTickNext(output);
 }
 
 function listTeachOwedEntries(store) {
@@ -3079,6 +3090,7 @@ async function runYoutubeTeach(args = [], deps = {}) {
 
   if (!parsed.save) {
     if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'teach');
+    printTeachWatchTickNext(parsed, lesson, chapters.length, output);
     return 0;
   }
   if (isThinTeachLesson(lesson)) {
@@ -3202,6 +3214,8 @@ module.exports = {
   extractTeachSource,
   isThinTeachLesson,
   TEACH_THIN_REFUSE,
+  TEACH_RESUME_NEXT,
+  TEACH_WATCH_TICK_NEXT,
   teachExperimentSlug,
   notesExperimentSlug,
   fileTeachExperiment,
