@@ -506,7 +506,7 @@ test('youtube notes --save writes a pack-named apply and a next-line', async () 
   assert.equal(status, 0);
   assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
   assert.doesNotMatch(output.join('\n'), /next: atris youtube teach/);
-  assert.match(output.join('\n'), /next: apply atris\/experiments\/notes-apply01\. keep only if measure\.py moves 0→1/);
+  assert.match(output.join('\n'), /next: atris experiments keep notes-apply01/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-apply01.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-apply01', 'measure.py')), true);
   const stub = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-apply01.apply.md'), 'utf8');
@@ -563,7 +563,7 @@ test('youtube notes --save without wiki still exits 0 when apply is missing', as
   });
 
   assert.equal(status, 0);
-  assert.match(output.join('\n'), /next: apply atris\/experiments\/notes-apply03\. keep only if measure\.py moves 0→1/);
+  assert.match(output.join('\n'), /next: atris experiments keep notes-apply03/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-apply03', 'measure.py')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);

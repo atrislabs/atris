@@ -351,7 +351,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 - `atris experiments init [slug]` scaffolds a new bounded experiment pack
 - `atris experiments validate` runs structural checks and context-bloat validation
 - `atris experiments run <slug>` executes a pack; Endstate packs also emit JSON receipts + append `results.tsv`
-- `atris experiments keep <slug>` runs `atris/experiments/<slug>/measure.py` against the current working tree and prints a keep line only when the score is 1 (minted packs start at 0). Score 0 prints a revert/refuse line and exits 1 without deleting the pack. Missing slug, pack, or measure.py exits 2.
+- `atris experiments keep <slug>` runs `atris/experiments/<slug>/measure.py` against the current working tree and prints a keep line only when the score is 1 (minted packs start at 0). Score 0 prints a revert/refuse line and exits 1 without deleting the pack. Missing slug, pack, or measure.py exits 2. Rich notes, teach, and x-search `--save` print one `next: atris experiments keep <slug>` (folder name, not the pack path).
 - `atris experiments revert <slug>` runs `atris/experiments/<slug>/reset.py` from the workspace root with the same Python resolution as keep. Success prints a revert line and exits 0. Reset failure exits nonzero with a refuse line. Missing slug, pack, or reset.py exits 2. If measure.py exists after reset, the line also names that score.
 - `atris experiments compare endstate` reads the latest baseline + stack receipts, prints the side-by-side scorecard, and declares `stack wins` or `no winner yet` from the Level 1 rule
 - `atris experiments replay endstate` validates both packs, emits fresh dry-run receipts, then compares the latest result in one command

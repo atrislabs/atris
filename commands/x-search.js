@@ -535,14 +535,15 @@ function saveRichXSearch({ cwd, source, text, now } = {}) {
 
 function ensureXSearchApply({ cwd, source, packRel, now, output } = {}) {
   const pack = packRel || (source ? xSearchExperimentRel(source) : null);
+  const slug = pack ? path.basename(pack) : null;
   return applyGate.ensureApply({
     cwd,
     source,
     rel: source ? xSearchApplyRel(source) : null,
     now,
     output,
-    incompleteMessage: pack
-      ? `next: apply ${pack}. keep only if measure.py moves 0→1`
+    incompleteMessage: slug
+      ? `next: atris experiments keep ${slug}`
       : APPLY_NEXT_MESSAGE,
     required: false,
     change: pack ? `apply ${pack}` : undefined,
