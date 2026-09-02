@@ -1234,6 +1234,7 @@ function listWatchChannels(deps = {}) {
   const state = loadWatchState(resolveWatchStatePath(deps));
   if (!state.channels.length) {
     output('no channels watched');
+    printWatchAddNext(output);
     return 0;
   }
 

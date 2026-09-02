@@ -89,8 +89,12 @@ test('watch add/list/remove round-trip', async () => {
   assert.match(listed.text(), /1\. https:\/\/www\.youtube\.com\/@veritasium \(0 seen\)/);
   assert.match(listed.text(), /2\. https:\/\/www\.youtube\.com\/@mkbhd \(0 seen\)/);
   assert.deepEqual(
-    listed.text().split('\n').filter((line) => line.startsWith('next: atris youtube watch tick')),
+    listed.text().split('\n').filter((line) => line.startsWith('next:')),
     ['next: atris youtube watch tick'],
+  );
+  assert.equal(
+    listed.text().includes('next: atris youtube watch add <channel-url-or-@handle>'),
+    false,
   );
 
   const removed = collect();
@@ -383,12 +387,16 @@ test('already watching still prints one tick next-step', async () => {
   );
 });
 
-test('empty watch list prints no tick next-step', async () => {
+test('empty watch list prints one add next-step', async () => {
   const cwd = tempCwd();
   const empty = collect();
   const status = await youtubeCommand(['watch', 'list'], { cwd, output: empty.output });
   assert.equal(status, 0);
   assert.match(empty.text(), /no channels watched/);
+  assert.deepEqual(
+    empty.text().split('\n').filter((line) => line.startsWith('next:')),
+    ['next: atris youtube watch add <channel-url-or-@handle>'],
+  );
   assert.equal(empty.text().includes('next: atris youtube watch tick'), false);
 });
 
