@@ -618,6 +618,10 @@ test('youtube unsave removes filed brief apply and notes pack', async () => {
 
   assert.equal(status, 0);
   assert.match(output.join('\n'), /removed atris\/wiki\/briefs\/youtube-gone01\.md and atris\/wiki\/briefs\/youtube-gone01\.apply\.md and atris\/experiments\/notes-gone01/);
+  assert.deepEqual(
+    output.filter((line) => String(line).startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-gone01.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-gone01.apply.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-gone01')), false);
@@ -646,6 +650,10 @@ test('youtube unsave removes leftover packs when brief and apply are already gon
 
   assert.equal(status, 0);
   assert.match(output.join('\n'), /removed atris\/experiments\/notes-gone03 and atris\/experiments\/teach-gone03-s2/);
+  assert.deepEqual(
+    output.filter((line) => String(line).startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
   assert.equal(fs.existsSync(notesPack), false);
   assert.equal(fs.existsSync(teachPack), false);
   assert.equal(fs.existsSync(path.join(otherPack, 'stay.txt')), true);
@@ -664,7 +672,67 @@ test('youtube notes --unsave and a missing id stay quiet', async () => {
 
   assert.equal(status, 0);
   assert.match(output.join('\n'), /already gone: atris\/wiki\/briefs\/youtube-gone02\.md and atris\/wiki\/briefs\/youtube-gone02\.apply\.md/);
+  assert.deepEqual(
+    output.filter((line) => String(line).startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
   assert.equal(unsaveYoutubeNotes('gone02', { cwd, output: () => {} }), 0);
+});
+
+test('youtube unsave without a target prints usage and no next line', async () => {
+  const output = [];
+  const status = await youtubeCommand(['unsave'], {
+    output: (line) => output.push(line),
+    runner: () => {
+      throw new Error('unsave must not run notes');
+    },
+  });
+
+  assert.equal(status, 2);
+  assert.match(output.join('\n'), /usage: atris youtube unsave <url-or-id>/);
+  assert.equal(output.join('\n').includes('next:'), false);
+
+  const notesOut = [];
+  const notesStatus = await youtubeCommand(['notes', '--unsave'], {
+    output: (line) => notesOut.push(line),
+    runner: () => {
+      throw new Error('unsave must not run notes');
+    },
+  });
+  assert.equal(notesStatus, 2);
+  assert.match(notesOut.join('\n'), /usage: atris youtube unsave <url-or-id>/);
+  assert.equal(notesOut.join('\n').includes('next:'), false);
+});
+
+test('youtube unsave --json and multi-target print the search next-step once or not at all', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-unsave-json-'));
+  const jsonOut = [];
+  const jsonStatus = await youtubeCommand(['unsave', '--json', 'gone04'], {
+    cwd,
+    output: (line) => jsonOut.push(line),
+    runner: () => {
+      throw new Error('unsave must not run notes');
+    },
+  });
+  assert.equal(jsonStatus, 0);
+  assert.match(jsonOut.join('\n'), /already gone: atris\/wiki\/briefs\/youtube-gone04\.md/);
+  assert.equal(jsonOut.join('\n').includes('next:'), false);
+
+  const multiOut = [];
+  const multiStatus = await youtubeCommand(['unsave', 'gone05', 'gone06'], {
+    cwd,
+    output: (line) => multiOut.push(line),
+    runner: () => {
+      throw new Error('unsave must not run notes');
+    },
+  });
+  assert.equal(multiStatus, 0);
+  assert.match(multiOut.join('\n'), /already gone: atris\/wiki\/briefs\/youtube-gone05\.md/);
+  assert.match(multiOut.join('\n'), /already gone: atris\/wiki\/briefs\/youtube-gone06\.md/);
+  assert.deepEqual(
+    multiOut.filter((line) => String(line).startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
 });
 
 test('youtube help says notes stay ephemeral unless --save', async () => {

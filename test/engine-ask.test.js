@@ -342,11 +342,13 @@ test('silent fake engines fail or time out honestly and leave no process behind'
     const timedOut = await runAskProcess({
       bin: process.execPath,
       args: ['-e', silentScript],
-    }, { cwd: root, timeoutMs: 100 });
+    }, { cwd: root, timeoutMs: 1000 });
     assert.equal(timedOut.ok, false);
     assert.equal(timedOut.reason, 'timeout');
     assert.equal(timedOut.stdout, '');
     assert.equal(timedOut.stderr, '');
+    await waitUntil(() => fs.existsSync(pidFile), 2000)
+      .catch(() => assert.fail('silent engine must write its pid before timeout'));
     const pid = Number(fs.readFileSync(pidFile, 'utf8'));
     await wait(100);
     assert.equal(processIsAlive(pid), false);

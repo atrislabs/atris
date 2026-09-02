@@ -823,6 +823,9 @@ function runYoutubeUnsave(args = [], deps = {}) {
     const status = unsaveYoutubeNotes(target, deps);
     if (status !== 0) code = status;
   }
+  if (code === 0 && parsed.json !== true && deps.json !== true) {
+    printWatchSearchNext(output);
+  }
   return code;
 }
 
