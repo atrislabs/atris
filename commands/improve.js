@@ -530,12 +530,19 @@ function collectImproveVitals(options = {}, deps = {}) {
     const rev = collect(root, { days: 14, now: nowMs });
     const landingsPhrase = `${countWord(rev.landings)} landing${rev.landings === 1 ? '' : 's'} this fortnight`;
     const fixPhrase = `${countWord(rev.revised)} needed a human fix`;
+    const dominantSkewsRate = rev.dominant && rev.dominant.share >= 0.5 && rev.dominant.landings >= 3;
+    const guaranteeSentence = dominantSkewsRate
+      ? `${landingsPhrase}, ${fixPhrase}, but ${countWord(rev.dominant.landings)} of those trace to one human commit. without it: ${countWord(rev.revised_excluding_dominant)} needed a fix.`
+      : `${landingsPhrase}, ${fixPhrase}.`;
     guarantee = {
       days: rev.days,
       landings: rev.landings,
       revised: rev.revised,
       rate: rev.rate,
-      sentence: plainSentence(`${landingsPhrase}, ${fixPhrase}.`),
+      human_commits: rev.human_commits,
+      dominant: rev.dominant,
+      revised_excluding_dominant: rev.revised_excluding_dominant,
+      sentence: plainSentence(guaranteeSentence),
     };
   } catch {
     guarantee = null;
@@ -971,11 +978,13 @@ const REVISION_WINDOW_HOURS = 72;
 // nothing about the quality of a landing. On 2026-08-21 half the "revisions"
 // in a live reading were journal commits following journal commits. Only
 // product-file overlap counts.
+// MAP.md is a routine workspace index, so it is ignored for the same reason.
 const REVISION_IGNORED_FILES = [
   /^atris\/logs\//,
   /^atris\/runs\//,
   /^atris\/team\/[^/]+\/(?:logs|now\.md)/,
   /^atris\/(?:now|thinking|TODO)\.md$/,
+  /^atris\/MAP\.md$/,
   /^atris\/brain\//,
   /^atris\/status\//,
   /^\.atris\//,
@@ -1111,6 +1120,23 @@ function collectRevisionSignals(root, options = {}) {
     }
   }
 
+  const humanCommitLandings = new Map();
+  for (const revision of revisions) {
+    for (const human of revision.revised_by) {
+      const current = humanCommitLandings.get(human.hash) || { ...human, landings: 0 };
+      current.landings += 1;
+      humanCommitLandings.set(human.hash, current);
+    }
+  }
+  let dominant = null;
+  for (const human of humanCommitLandings.values()) {
+    if (!dominant || human.landings > dominant.landings) dominant = human;
+  }
+  if (dominant) dominant = { ...dominant, share: dominant.landings / revisions.length };
+  const revisedExcludingDominant = dominant
+    ? revisions.filter((revision) => revision.revised_by.some((human) => human.hash !== dominant.hash)).length
+    : 0;
+
   return {
     schema: REVISIONS_SCHEMA,
     generated_at: new Date(nowMs).toISOString(),
@@ -1119,6 +1145,10 @@ function collectRevisionSignals(root, options = {}) {
     landings: landings.length,
     revised: revisions.length,
     rate: landings.length ? revisions.length / landings.length : 0,
+    human_commits: humanCommitLandings.size,
+    dominant,
+    revised_excluding_dominant: revisedExcludingDominant,
+    rate_excluding_dominant: landings.length ? revisedExcludingDominant / landings.length : 0,
     revisions,
   };
 }
@@ -1138,6 +1168,9 @@ function formatRevisionsReport(summary = {}) {
   lines.push(`agent landings in the last ${plural(days, 'day')}: ${summary.landings}.`);
   lines.push(`landings a human then revised: ${summary.revised}.`);
   lines.push(`revision rate: ${Math.round((summary.rate || 0) * 100)} percent. the target is zero.`);
+  if (summary.dominant && summary.dominant.share >= 0.5 && summary.dominant.landings >= 3) {
+    lines.push(plainSentence(`${countWord(summary.dominant.landings)} of those trace to one human commit, "${summary.dominant.subject}". without it the rate is ${Math.round((summary.rate_excluding_dominant || 0) * 100)} percent.`));
+  }
   for (const item of Array.isArray(summary.revisions) ? summary.revisions : []) {
     lines.push('');
     lines.push(`an agent landed "${plainSentence(item.landing.subject)}". a human then changed ${listFilesPhrase(item.files)} within ${REVISION_WINDOW_HOURS} hours.`);

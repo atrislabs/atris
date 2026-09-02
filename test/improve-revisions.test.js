@@ -107,6 +107,40 @@ test('plain report has no hashes, no em dashes, stays lowercase', () => {
   }
 });
 
+test('one broad human commit is named instead of reading as many correction events', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 2 * 24 * HOUR;
+  try {
+    commitFile(cwd, 'src-a.js', 'v1\n', 'bot lands feature a', { bot: true, atMs: base });
+    commitFile(cwd, 'src-b.js', 'v1\n', 'bot lands feature b', { bot: true, atMs: base + HOUR });
+    commitFile(cwd, 'src-c.js', 'v1\n', 'bot lands feature c', { bot: true, atMs: base + 2 * HOUR });
+    commitFile(cwd, 'src-d.js', 'v1\n', 'bot lands feature d', { bot: true, atMs: base + 3 * HOUR });
+
+    fs.writeFileSync(path.join(cwd, 'src-a.js'), 'v2\n', 'utf8');
+    fs.writeFileSync(path.join(cwd, 'src-b.js'), 'v2\n', 'utf8');
+    fs.writeFileSync(path.join(cwd, 'src-c.js'), 'v2\n', 'utf8');
+    commitFile(cwd, 'src-d.js', 'v2\n', 'human sweeps all four features', { atMs: base + 4 * HOUR });
+    commitFile(cwd, 'src-a.js', 'v3\n', 'human tunes feature a again', { atMs: base + 5 * HOUR });
+
+    const summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.human_commits, 2);
+    assert.strictEqual(summary.dominant.landings, 4);
+    assert.strictEqual(summary.dominant.share, 1);
+    assert.strictEqual(summary.revised_excluding_dominant, 1);
+    assert.strictEqual(summary.rate_excluding_dominant, 1 / 4);
+    assert.match(formatRevisionsReport(summary), /four of those trace to one human commit/);
+
+    const vitals = collectImproveVitals({ workspace: cwd, now }, { cronInstalled: () => true });
+    assert.strictEqual(vitals.guarantee.human_commits, 2);
+    assert.strictEqual(vitals.guarantee.dominant.landings, 4);
+    assert.strictEqual(vitals.guarantee.revised_excluding_dominant, 1);
+    assert.strictEqual(vitals.guarantee.sentence, 'four landings this fortnight, four needed a human fix, but four of those trace to one human commit. without it: one needed a fix.');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
 test('--json emits the schema with hashes for machines', async () => {
   const { cwd } = buildFixture();
   const origCwd = process.cwd();
