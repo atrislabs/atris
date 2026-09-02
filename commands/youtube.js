@@ -1181,9 +1181,19 @@ function markSeen(state, channel, id, timestamp) {
 }
 
 const WATCH_TICK_NEXT = 'next: atris youtube watch tick';
+const WATCH_ADD_NEXT = 'next: atris youtube watch add <channel-url-or-@handle>';
+const WATCH_SEARCH_NEXT = 'next: atris youtube search " "';
 
 function printWatchTickNext(output) {
   output(WATCH_TICK_NEXT);
+}
+
+function printWatchAddNext(output) {
+  output(WATCH_ADD_NEXT);
+}
+
+function printWatchSearchNext(output) {
+  output(WATCH_SEARCH_NEXT);
 }
 
 function addWatchChannel(channelInput, deps = {}) {
@@ -1331,6 +1341,10 @@ async function tickWatch(deps = {}) {
   output(`total: ${totalNew} new, ${totalBriefed} briefed`);
   if (totalBriefed > 0) {
     printYoutubeTeachNext(firstBriefedUrl, {}, output);
+  } else if (!state.channels.length) {
+    printWatchAddNext(output);
+  } else {
+    printWatchSearchNext(output);
   }
   saveWatchState(statePath, state);
   return 0;
