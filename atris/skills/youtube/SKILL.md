@@ -45,7 +45,8 @@ search QUERY (free)
 watch add --> next: atris youtube watch tick
 watch tick --> briefs new videos
            --> if briefed: next: atris youtube teach <first-briefed-url>
-           --> 0 briefed: no next-step
+           --> 0 briefed, no channels: next: atris youtube watch add <channel-url-or-@handle>
+           --> 0 briefed, channels exist: next: atris youtube search " "
 
 --paid QUERY only if the user asked to buy permalinks
     |
