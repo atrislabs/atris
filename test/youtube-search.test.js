@@ -29,6 +29,7 @@ const SAMPLE_ROW = {
 const SAMPLE_LINE =
   'MCP Agents in 2026 | Dev Channel | 18:22 | 42000 | 20260820 | https://youtu.be/mcp2026a';
 const TEACH_NEXT_LINE = 'next: atris youtube teach "https://youtu.be/mcp2026a"';
+const WATCH_TICK_NEXT = 'next: atris youtube watch tick';
 
 function mockSearchFs(files = {}) {
   const store = { ...files };
@@ -134,6 +135,7 @@ test('youtube search --help prints usage without calling the runner', async () =
   assert.match(output.join('\n'), /zero credits|Does not bill credits/i);
   assert.match(output.join('\n'), /5 credits/);
   assert.match(output.join('\n'), /next: atris youtube teach/);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube watch tick/);
 });
 
 test('youtube --help lists paid search', async () => {
@@ -175,6 +177,7 @@ test('youtube search prints youtu.be links from mocked runner', async () => {
   assert.match(text, /Dev Channel/);
   assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assert.equal(output.includes(TEACH_NEXT_LINE), true);
+  assert.equal(output.includes(WATCH_TICK_NEXT), false);
 });
 
 test('youtube search --json prints parsed rows', async () => {
@@ -191,6 +194,7 @@ test('youtube search --json prints parsed rows', async () => {
   assert.equal(status, 0);
   const text = output.join('\n');
   assert.doesNotMatch(text, /next: atris youtube teach/);
+  assert.doesNotMatch(text, /next: atris youtube watch tick/);
   const parsed = JSON.parse(text);
   assert.equal(parsed.length, 1);
   assert.equal(parsed[0].url, 'https://youtu.be/one123');
@@ -205,6 +209,7 @@ test('youtube search missing query exits 2 with usage', async () => {
   });
   assert.equal(status, 2);
   assert.match(output.join('\n'), /Missing query/);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube watch tick/);
 });
 
 test('youtube search empty results exits 2', async () => {
@@ -217,8 +222,39 @@ test('youtube search empty results exits 2', async () => {
   });
   assert.equal(status, 2);
   assert.match(output.join('\n'), /no videos found/);
+  assert.equal(output.includes(WATCH_TICK_NEXT), true);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assert.doesNotMatch(output.join('\n'), /next: atris youtube teach/);
   assert.equal(fsMock.store[CACHE_PATH], undefined);
+});
+
+test('youtube search --json empty results stays json-only', async () => {
+  const output = [];
+  const status = await youtubeCommand(['search', 'nothing here', '--json'], {
+    ...cacheDeps(),
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0, stdout: '\n' }),
+  });
+  assert.equal(status, 2);
+  assert.match(output.join('\n'), /no videos found/);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube watch tick/);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube teach/);
+});
+
+test('youtube search missing binary exits 2 without a watch-tick next-step', async () => {
+  const output = [];
+  const status = await youtubeCommand(['search', 'agents'], {
+    ...cacheDeps(),
+    output: (line) => output.push(line),
+    runner: () => {
+      const err = new Error('spawn yt-dlp ENOENT');
+      err.code = 'ENOENT';
+      return { error: err };
+    },
+  });
+  assert.equal(status, 2);
+  assert.match(output.join('\n'), /ytsearch and yt-dlp not found/);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube watch tick/);
 });
 
 test('youtube search runner failure surfaces stderr', async () => {
@@ -307,6 +343,7 @@ test('youtube search persistent 429 prints one sentence and stays off paid', asy
   assert.doesNotMatch(text, /\/youtube\/search/);
   assert.doesNotMatch(text, /Sign in to confirm|not a bot/);
   assert.doesNotMatch(text, /try --paid|run --paid|search --paid/);
+  assert.equal(output.includes(WATCH_TICK_NEXT), false);
 });
 
 test('youtube search rate-limit retry still prints unrelated yt-dlp detail', async () => {
@@ -505,6 +542,7 @@ test('youtube search --paid refuses on a fresh free-cache hit and does not bill'
   assert.equal(fsMock.store[CACHE_PATH], before);
   assert.equal(output.join('\n').trim(), PAID_CACHE_REFUSE);
   assert.doesNotMatch(output.join('\n'), /credits|\/youtube\/search|token|burn|should-not/i);
+  assert.equal(output.includes(WATCH_TICK_NEXT), false);
 });
 
 test('youtube search --paid proceeds when the free cache is absent', async () => {
@@ -636,6 +674,7 @@ test('youtube search --paid posts /youtube/search and prints titles, permalinks,
   assert.doesNotMatch(text, /token-123/);
   assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assert.equal(output.includes('next: atris youtube teach "https://www.youtube.com/watch?v=mcp2026a"'), true);
+  assert.equal(output.includes(WATCH_TICK_NEXT), false);
 });
 
 test('youtube search --paid --json prints the raw payload', async () => {
@@ -657,9 +696,30 @@ test('youtube search --paid --json prints the raw payload', async () => {
   assert.equal(status, 0);
   const text = output.join('\n');
   assert.doesNotMatch(text, /next: atris youtube teach/);
+  assert.doesNotMatch(text, /next: atris youtube watch tick/);
   const parsed = JSON.parse(text);
   assert.equal(parsed.credits_used, 5);
   assert.equal(parsed.data.results[0].title, 'Hi');
+});
+
+test('youtube search --paid --json empty results stays json-only', async () => {
+  const output = [];
+  const status = await youtubeCommand(['search', '--paid', 'nothing here', '--json'], {
+    ...cacheDeps(),
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: { status: 'success', credits_used: 0, credits_remaining: 1000, data: { results: [] } },
+    }),
+  });
+  assert.equal(status, 0);
+  const text = output.join('\n');
+  assert.doesNotMatch(text, /next: atris youtube watch tick/);
+  assert.doesNotMatch(text, /next: atris youtube teach/);
+  const parsed = JSON.parse(text);
+  assert.deepEqual(parsed.data.results, []);
 });
 
 test('youtube search --paid empty results prints credits and exits 2', async () => {
@@ -678,6 +738,8 @@ test('youtube search --paid empty results prints credits and exits 2', async () 
   assert.match(output.join('\n'), /no videos found/);
   assert.match(output.join('\n'), /Credits: 0 used, 1000 remaining/);
   assert.match(output.join('\n'), /credits refunded/);
+  assert.equal(output.includes(WATCH_TICK_NEXT), true);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assert.doesNotMatch(output.join('\n'), /next: atris youtube teach/);
   assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
 });
@@ -713,6 +775,8 @@ test('empty paid youtube search surfaces a server-side refund and does not inven
   assert.match(text, /no videos found/);
   assert.match(text, /Credits: 0 used, 1000 remaining/);
   assert.match(text, /credits refunded/);
+  assert.equal(output.includes(WATCH_TICK_NEXT), true);
+  assert.doesNotMatch(text, /next: atris youtube teach/);
 });
 
 test('502 paid youtube search with refunded credits surfaces them and does not invent a refund call', async () => {
@@ -746,6 +810,7 @@ test('502 paid youtube search with refunded credits surfaces them and does not i
   assert.match(text, /502/);
   assert.match(text, /credits refunded/);
   assert.match(text, /Credits: 0 used, 1000 remaining/);
+  assert.doesNotMatch(text, /next: atris youtube watch tick/);
 });
 
 test('youtube search --paid surfaces 401 login hint', async () => {
@@ -764,6 +829,7 @@ test('youtube search --paid surfaces 401 login hint', async () => {
   assert.equal(status, 1);
   assert.match(output.join('\n'), /401/);
   assert.match(output.join('\n'), /atris login --force/);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube watch tick/);
 });
 
 test('youtube search --paid surfaces 402 credits hint', async () => {
@@ -781,6 +847,7 @@ test('youtube search --paid surfaces 402 credits hint', async () => {
   assert.equal(status, 1);
   assert.match(output.join('\n'), /402/);
   assert.match(output.join('\n'), /Check Atris credits/);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube watch tick/);
 });
 
 test('youtube search --paid mints only the youtube scope after an expired user wall and retries', async () => {
