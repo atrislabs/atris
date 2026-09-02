@@ -1525,7 +1525,7 @@ function formatNotesSummary(rows = []) {
   return lines.join('\n');
 }
 
-function runYoutubeNotesBatch({ urls, engine, save } = {}, deps = {}) {
+function runYoutubeNotesBatch({ urls, engine, save, json } = {}, deps = {}) {
   deps = { ...deps, save: save === true || deps.save === true };
   const output = deps.output || ((line = '') => console.error(line));
   const items = expandNotesTargets(urls || [], deps);
@@ -1538,7 +1538,11 @@ function runYoutubeNotesBatch({ urls, engine, save } = {}, deps = {}) {
     output(formatNotesSummary(rows));
   }
   if (!rows.length) return 2;
-  return rows.some((row) => row.ok) ? 0 : 2;
+  const firstOk = rows.find((row) => row.ok);
+  if (firstOk && !deps.save) {
+    printYoutubeTeachNext(firstOk.url, { json: json === true || deps.json === true }, output);
+  }
+  return firstOk ? 0 : 2;
 }
 
 function runSingleYoutubeNotes(url, engine, deps = {}) {

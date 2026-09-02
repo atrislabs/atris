@@ -210,6 +210,56 @@ test('youtube notes rich --save mints a measure.py that validate.py accepts', as
   assert.doesNotMatch(claim.sidecar, /omakase model/i);
 });
 
+test('two-url notes batch prints teach next for the first ok url', async () => {
+  const first = 'https://www.youtube.com/watch?v=okfirst';
+  const second = 'https://www.youtube.com/watch?v=oksecond';
+  const out = collect();
+  const status = await youtubeCommand(['notes', first, second], {
+    output: out.output,
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.deepEqual(
+    out.text().split('\n').filter((line) => line.startsWith('next: atris youtube teach')),
+    [`next: atris youtube teach "${first}"`],
+  );
+});
+
+test('notes --save batch prints keep next and no teach next', async () => {
+  const first = 'https://www.youtube.com/watch?v=notes01';
+  const second = 'https://www.youtube.com/watch?v=notes02';
+  const { cwd, workDir } = notesWorkspace('notes01', RICH_NOTES);
+  fs.writeFileSync(path.join(workDir, 'yt_notes02.md'), RICH_NOTES);
+  const out = collect();
+  const status = await youtubeCommand(['notes', first, second, '--save'], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: out.output,
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /next: atris experiments keep notes-notes01/);
+  assert.doesNotMatch(out.text(), /next: atris youtube teach/);
+});
+
+test('all-failed notes batch prints no teach next', async () => {
+  const out = collect();
+  const status = await youtubeCommand([
+    'notes',
+    'https://www.youtube.com/watch?v=bad01',
+    'https://www.youtube.com/watch?v=bad02',
+  ], {
+    output: out.output,
+    runner: () => ({ status: 1 }),
+  });
+
+  assert.equal(status, 2);
+  assert.doesNotMatch(out.text(), /next: atris youtube teach/);
+});
+
 test('experiments keep refuses a minted notes pack at 0 and keeps after check tokens', async () => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
   const { cwd, workDir } = notesWorkspace('notes01', RICH_NOTES);
