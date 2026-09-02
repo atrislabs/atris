@@ -179,6 +179,10 @@ function runMeasureJson(scriptPath, workspaceDir = process.cwd()) {
   return parsed;
 }
 
+function printKeepRevertNext(slug) {
+  console.log(`next: atris experiments revert ${slug}`);
+}
+
 function experimentsKeep(name) {
   const token = String(name || '').trim();
   if (!token || token === '--help' || token === '-h' || token === 'help') {
@@ -212,6 +216,7 @@ function experimentsKeep(name) {
   const measured = runMeasureJson(measurePath, workspaceDir);
   if (!measured.ok) {
     console.error(`revert ${token}: ${measured.error}. refuse keep.`);
+    printKeepRevertNext(token);
     process.exit(1);
   }
 
@@ -222,6 +227,7 @@ function experimentsKeep(name) {
 
   const stayed = measured.score === 0 ? '0' : String(measured.score);
   console.error(`revert ${token}: measure.py stayed ${stayed}. refuse keep.`);
+  printKeepRevertNext(token);
   process.exit(1);
 }
 

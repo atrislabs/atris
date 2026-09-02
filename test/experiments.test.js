@@ -341,6 +341,21 @@ test('experiments compare endstate summarizes the latest receipts', { skip: !pyt
   }
 });
 
+function keepRevertNextLine(slug) {
+  return `next: atris experiments revert ${slug}`;
+}
+
+function assertKeepRevertNext(result, slug) {
+  assert.deepEqual(
+    result.stdout.split('\n').filter((line) => line.startsWith('next: atris experiments revert')),
+    [keepRevertNextLine(slug)]
+  );
+}
+
+function assertNoKeepRevertNext(result) {
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /next: atris experiments revert/);
+}
+
 function writeTokenMeasurePack(dir, slug, fixtureRel, token) {
   const packDir = path.join(dir, 'atris', 'experiments', slug);
   fs.mkdirSync(packDir, { recursive: true });
@@ -369,6 +384,58 @@ test('experiments keep without a slug fails cleanly', () => {
     const result = runCli(['experiments', 'keep'], { cwd: dir });
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /usage: atris experiments keep <slug>/);
+    assertNoKeepRevertNext(result);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments keep help is usage only', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const result = runCli(['experiments', 'keep', '--help'], { cwd: dir });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /usage: atris experiments keep <slug>/);
+    assertNoKeepRevertNext(result);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments keep --json does not print a revert next-step', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const result = runCli(['experiments', 'keep', '--json'], { cwd: dir });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /invalid experiment name\. use a lowercase-hyphen slug\./);
+    assertNoKeepRevertNext(result);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments keep fails cleanly on an invalid slug', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const result = runCli(['experiments', 'keep', 'Teach_Bad'], { cwd: dir });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /invalid experiment name\. use a lowercase-hyphen slug\./);
+    assertNoKeepRevertNext(result);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments keep fails cleanly when atris/ is missing', () => {
+  const dir = makeTempDir();
+  try {
+    const result = runCli(['experiments', 'keep', 'teach-keep01-s1'], { cwd: dir });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /atris\/ folder not found/);
+    assertNoKeepRevertNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -381,6 +448,7 @@ test('experiments keep fails cleanly when the pack is missing', () => {
     const result = runCli(['experiments', 'keep', 'teach-missing-s1'], { cwd: dir });
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /experiment "teach-missing-s1" not found/);
+    assertNoKeepRevertNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -396,6 +464,7 @@ test('experiments keep fails cleanly when measure.py is missing', () => {
     assert.equal(result.status, 2, result.stderr || result.stdout);
     assert.match(`${result.stdout}\n${result.stderr}`, /has no measure\.py/);
     assert.equal(fs.existsSync(packDir), true);
+    assertNoKeepRevertNext(result);
   } finally {
     cleanupTempDir(dir);
   }
@@ -410,8 +479,24 @@ test('experiments keep refuses when measure.py stays at baseline 0', { skip: !py
     const packDir = writeTokenMeasurePack(dir, 'teach-keep01-s1', fixtureRel, 'omakase model');
     const result = runCli(['experiments', 'keep', 'teach-keep01-s1'], { cwd: dir });
     assert.equal(result.status, 1, result.stderr || result.stdout);
-    assert.match(`${result.stdout}\n${result.stderr}`, /revert teach-keep01-s1: measure\.py stayed 0\. refuse keep\./);
+    assert.match(result.stderr, /revert teach-keep01-s1: measure\.py stayed 0\. refuse keep\./);
+    assertKeepRevertNext(result, 'teach-keep01-s1');
     assert.equal(fs.existsSync(path.join(packDir, 'measure.py')), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments keep refuses when measure.py fails to print a score', { skip: !pythonCmd }, () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = path.join(dir, 'atris', 'experiments', 'teach-broken-s1');
+    fs.mkdirSync(packDir, { recursive: true });
+    fs.writeFileSync(path.join(packDir, 'measure.py'), 'print("not a score")\n');
+    const result = runCli(['experiments', 'keep', 'teach-broken-s1'], { cwd: dir });
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.match(result.stderr, /revert teach-broken-s1: measure\.py printed no score\. refuse keep\./);
+    assertKeepRevertNext(result, 'teach-broken-s1');
   } finally {
     cleanupTempDir(dir);
   }
@@ -428,11 +513,13 @@ test('experiments keep succeeds only after the fixture contains check tokens', {
 
     const refused = runCli(['experiments', 'keep', 'teach-keep01-s1'], { cwd: dir });
     assert.equal(refused.status, 1, refused.stderr || refused.stdout);
+    assertKeepRevertNext(refused, 'teach-keep01-s1');
 
     fs.appendFileSync(fixturePath, 'keep the omakase model as the default stack\n');
     const kept = runCli(['experiments', 'keep', 'teach-keep01-s1'], { cwd: dir });
     assert.equal(kept.status, 0, kept.stderr || kept.stdout);
     assert.match(kept.stdout, /keep teach-keep01-s1: measure\.py moved 0→1/);
+    assertNoKeepRevertNext(kept);
   } finally {
     cleanupTempDir(dir);
   }
@@ -536,7 +623,8 @@ test('experiments revert restores a baseline file after a refused keep', { skip:
 
     const refused = runCli(['experiments', 'keep', 'teach-revert01-s1'], { cwd: dir });
     assert.equal(refused.status, 1, refused.stderr || refused.stdout);
-    assert.match(`${refused.stdout}\n${refused.stderr}`, /revert teach-revert01-s1: measure\.py stayed 0\. refuse keep\./);
+    assert.match(refused.stderr, /revert teach-revert01-s1: measure\.py stayed 0\. refuse keep\./);
+    assertKeepRevertNext(refused, 'teach-revert01-s1');
   } finally {
     cleanupTempDir(dir);
   }
@@ -585,8 +673,10 @@ test('experiments help lists revert next to keep', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const bare = runCli(['experiments'], { cwd: dir });
     assert.match(bare.stdout, /keep <slug>[\s\S]*revert <slug>/);
+    assertNoKeepRevertNext(bare);
     const help = runCli(['experiments', '--help'], { cwd: dir });
     assert.match(help.stdout, /keep <slug>[\s\S]*revert <slug>/);
+    assertNoKeepRevertNext(help);
   } finally {
     cleanupTempDir(dir);
   }
