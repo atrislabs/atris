@@ -366,7 +366,7 @@ test('formatTeachLesson prints numbers, mechanisms, one check, and the recap nex
   assert.match(text, /80 people/);
   assert.match(text, /omakase/);
   assert.match(text, /check\nwhat is /);
-  assert.match(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_RESUME_NEXT), [TEACH_RESUME_NEXT]);
   assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), []);
   assert.doesNotMatch(text, /next: last section/);
   assert.doesNotMatch(text, /six-week|--section 2/);
@@ -388,7 +388,7 @@ test('formatTeachLesson last section omits the dead last-section next line', () 
   assert.match(text, /six-week/);
   assert.match(text, /check\nwhat is /);
   assert.doesNotMatch(text, /next: last section/);
-  assert.doesNotMatch(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_RESUME_NEXT), []);
   assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), []);
   assert.doesNotMatch(text, /80 people/);
 });
@@ -428,7 +428,7 @@ test('youtube teach prints one chapter from fixture captions and chapters', asyn
   assert.match(text, /80 people/);
   assert.match(text, /omakase/);
   assert.match(text, /check\nwhat is /);
-  assert.match(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_RESUME_NEXT), [TEACH_RESUME_NEXT]);
   assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), []);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
   assert.doesNotMatch(text, /six-week/);
@@ -460,7 +460,7 @@ test('youtube teach prints the lex highlight as 60s install, Overton, and a real
   assert.doesNotMatch(text, /holy fuck/);
   assert.doesNotMatch(text, /^20$/m);
   assert.doesNotMatch(text, /^60$/m);
-  assert.match(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_RESUME_NEXT), [TEACH_RESUME_NEXT]);
   assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), []);
 });
 
@@ -494,7 +494,7 @@ test('youtube teach --section 2 prints the second chapter after skip', async () 
   assert.match(text, /six-week/);
   assert.doesNotMatch(text, /80 people/);
   assert.doesNotMatch(text, /next: last section/);
-  assert.doesNotMatch(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_RESUME_NEXT), []);
   assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
 });
@@ -511,7 +511,7 @@ test('youtube teach last section of a one-chapter video prints watch-tick next',
   assert.equal(status, 0);
   const text = out.text();
   assert.match(text, /section 1\/1  omakase/);
-  assert.doesNotMatch(text, TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(text, TEACH_RESUME_NEXT), []);
   assert.deepEqual(nextLines(text, TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
 });
@@ -527,7 +527,7 @@ test('youtube teach section past the end prints no watch-tick next', async () =>
 
   assert.equal(status, 2);
   assert.match(out.text(), /section 3 is past 2 chapters/);
-  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), []);
   assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
 });
 
@@ -870,7 +870,7 @@ test('youtube teach thin chapter without --save still writes no atris files', as
   assert.match(out.text(), /numbers\nnone/);
   assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
   assert.doesNotMatch(out.text(), /next: last section/);
-  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), []);
   assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
   assert.doesNotMatch(out.text(), /^next:/m);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
@@ -929,7 +929,7 @@ test('youtube teach empty tmp section 1 still prints the check and writes no atr
   assert.equal(status, 0);
   assert.match(out.text(), /section 1\/2  omakase/);
   assert.match(out.text(), /check\nwhat is the omakase model\?/);
-  assert.match(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), [TEACH_RESUME_NEXT]);
   assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
@@ -1017,7 +1017,7 @@ test('youtube teach recap with check tokens unlocks the next section', async () 
   assert.match(out.text(), /section 2\/2  shape up/);
   assert.match(out.text(), /six-week/);
   assert.doesNotMatch(out.text(), /next: last section/);
-  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), []);
   assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
 });
@@ -1084,7 +1084,7 @@ test('youtube teach --skip unlocks the next section without claiming an answer',
   });
   assert.equal(status, 0);
   assert.match(out.text(), /section 2\/2  shape up/);
-  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), []);
   assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
 });
 
@@ -1222,7 +1222,7 @@ test('bare youtube teach with unpaid owed prints the check and one next line', a
   assert.match(out.text(), /teach01|watch\?v=teach01/);
   assert.match(out.text(), /section 1/);
   assert.match(out.text(), /what is the omakase model\?/);
-  assert.match(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), [TEACH_RESUME_NEXT]);
   assert.equal(out.text().includes(owedOut.text().trim()), true);
   assert.doesNotMatch(out.text(), /Usage:|section 2\/2|shape up/i);
   assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), []);
@@ -1295,7 +1295,7 @@ test('bare youtube teach after skip continues the next chapter without a url', a
   assert.match(out.text(), /section 2\/2  shape up/);
   assert.match(out.text(), /six-week/);
   assert.doesNotMatch(out.text(), /nothing owed|80 people/);
-  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), []);
   assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
 });
@@ -1327,7 +1327,7 @@ test('bare youtube teach after recap continues the next chapter without a url', 
   assert.match(out.text(), /section 2\/2  shape up/);
   assert.match(out.text(), /six-week/);
   assert.doesNotMatch(out.text(), /nothing owed/);
-  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), []);
   assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
 });
@@ -1482,7 +1482,7 @@ test('youtube teach --skip prints the next section command', async () => {
   });
   assert.equal(status, 0);
   assert.match(out.text(), /section 2\/2  shape up/);
-  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), []);
   assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
 });
 
@@ -1516,7 +1516,7 @@ test('youtube teach matching --recap prints the next section command', async () 
   });
   assert.equal(status, 0);
   assert.match(out.text(), /section 2\/2  shape up/);
-  assert.doesNotMatch(out.text(), TEACH_RESUME_NEXT);
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), []);
   assert.deepEqual(nextLines(out.text(), TEACH_WATCH_TICK_NEXT), [TEACH_WATCH_TICK_NEXT]);
 });
 
