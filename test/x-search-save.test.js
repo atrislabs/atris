@@ -176,7 +176,7 @@ test('x-search rich --save mints a measure.py that validate.py accepts', async (
   assert.equal(status, 0);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
   assert.doesNotMatch(out.text(), /next: atris youtube search/);
-  assert.match(out.text(), /next: apply atris\/experiments\/x-search-mcp-agents\. keep only if measure\.py moves 0→1/);
+  assert.match(out.text(), /next: atris experiments keep x-search-mcp-agents/);
   const packDir = path.join(cwd, 'atris', 'experiments', 'x-search-mcp-agents');
   for (const name of ['program.md', 'measure.py', 'loop.py', 'reset.py', 'results.tsv']) {
     assert.equal(fs.existsSync(path.join(packDir, name)), true, name);
@@ -271,7 +271,7 @@ test('x-search person rich --save mints the same keep/revert pack', async () => 
 
   assert.equal(status, 0);
   assert.doesNotMatch(out.text(), /next: atris youtube search/);
-  assert.match(out.text(), /next: apply atris\/experiments\/x-search-leah-bonvissuto\. keep only if measure\.py moves 0→1/);
+  assert.match(out.text(), /next: atris experiments keep x-search-leah-bonvissuto/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'x-search-leah-bonvissuto', 'measure.py')), true);
   assertXSearchApplyClaimable(cwd, {
     source: 'Leah Bonvissuto',

@@ -505,7 +505,7 @@ test('youtube teach --save writes one pack-named apply claimable', async () => {
 
   assert.equal(status, 0);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
-  assert.match(out.text(), /next: apply atris\/experiments\/teach-teach01-s1\. keep only if measure\.py moves 0→1/);
+  assert.match(out.text(), /next: atris experiments keep teach-teach01-s1/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s1', 'measure.py')), true);
   const claim = assertTeachApplyClaimable(cwd, {
@@ -589,7 +589,7 @@ test('youtube teach --save on lex highlight files the brief and a pack-named app
   assert.equal(status, 0);
   assert.match(out.text(), /60 seconds to install/);
   assert.match(out.text(), /overton window/);
-  assert.match(out.text(), /next: apply atris\/experiments\/teach-nyfgcesmika-s1\. keep only if measure\.py moves 0→1/);
+  assert.match(out.text(), /next: atris experiments keep teach-nyfgcesmika-s1/);
   assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-NYFGCESmikA-s1.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-nyfgcesmika-s1', 'measure.py')), true);
@@ -1064,7 +1064,7 @@ test('youtube teach --save path stays unchanged after a recap unlock', async () 
   assert.equal(status, 0);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 0);
   assert.doesNotMatch(out.text(), /next: last section/);
-  assert.match(out.text(), /next: apply atris\/experiments\/teach-teach01-s2\. keep only if measure\.py moves 0→1/);
+  assert.match(out.text(), /next: atris experiments keep teach-teach01-s2/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s1.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-teach01-s2.md')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'teach-teach01-s2', 'measure.py')), true);

@@ -704,14 +704,15 @@ function saveRichNotes(url, deps = {}) {
 function ensureNotesApply({ cwd, url, packRel, now, output } = {}) {
   const id = videoIdFromUrl(url);
   const pack = packRel || (id ? notesExperimentRel(id) : null);
+  const slug = pack ? path.basename(pack) : null;
   return applyGate.ensureApply({
     cwd,
     source: url,
     rel: id ? applySidecarRel(id) : null,
     now,
     output,
-    incompleteMessage: pack
-      ? `next: apply ${pack}. keep only if measure.py moves 0→1`
+    incompleteMessage: slug
+      ? `next: atris experiments keep ${slug}`
       : APPLY_NEXT_MESSAGE,
     required: false,
     change: pack ? `apply ${pack}` : undefined,
@@ -2948,14 +2949,15 @@ function fileTeachBrief({ cwd, url, section, lesson, now } = {}) {
 function ensureTeachApply({ cwd, url, section, packRel, now, output } = {}) {
   const id = videoIdFromUrl(url);
   const pack = packRel || (id ? teachExperimentRel(id, section) : null);
+  const slug = pack ? path.basename(pack) : null;
   return applyGate.ensureApply({
     cwd,
     source: url,
     rel: id ? applySidecarRel(`${id}-s${section}`) : null,
     now,
     output,
-    incompleteMessage: pack
-      ? `next: apply ${pack}. keep only if measure.py moves 0→1`
+    incompleteMessage: slug
+      ? `next: atris experiments keep ${slug}`
       : TEACH_APPLY_NEXT_MESSAGE,
     required: false,
     change: pack ? `apply ${pack}` : undefined,

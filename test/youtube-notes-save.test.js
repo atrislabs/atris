@@ -159,7 +159,7 @@ test('youtube notes rich --save mints a measure.py that validate.py accepts', as
   assert.equal(status, 0);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 0);
   assert.doesNotMatch(out.text(), /next: atris youtube teach/);
-  assert.match(out.text(), /next: apply atris\/experiments\/notes-notes01\. keep only if measure\.py moves 0→1/);
+  assert.match(out.text(), /next: atris experiments keep notes-notes01/);
   const packDir = path.join(cwd, 'atris', 'experiments', 'notes-notes01');
   for (const name of ['program.md', 'measure.py', 'loop.py', 'reset.py', 'results.tsv']) {
     assert.equal(fs.existsSync(path.join(packDir, name)), true, name);
