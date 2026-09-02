@@ -104,7 +104,14 @@ test('watch add/list/remove round-trip', async () => {
   });
   assert.equal(removeStatus, 0);
   assert.match(removed.text(), /removed https:\/\/www\.youtube\.com\/@veritasium/);
-  assert.equal(removed.text().includes('next: atris youtube watch tick'), false);
+  assert.deepEqual(
+    removed.text().split('\n').filter((line) => line.startsWith('next:')),
+    ['next: atris youtube watch tick'],
+  );
+  assert.equal(
+    removed.text().includes('next: atris youtube watch add <channel-url-or-@handle>'),
+    false,
+  );
 
   const after = loadWatchState(statePathFor(cwd));
   assert.equal(after.channels.length, 1);
@@ -436,4 +443,80 @@ test('unknown watch command prints no tick next-step', async () => {
   assert.equal(status, 2);
   assert.match(out.text(), /unknown watch command: nope/);
   assert.equal(out.text().includes('next: atris youtube watch tick'), false);
+});
+
+test('remove last remaining channel prints one add next-step', async () => {
+  const cwd = tempCwd();
+  const now = '2026-08-15T20:00:00.000Z';
+  await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
+
+  const removed = collect();
+  const status = await youtubeCommand(['watch', 'remove', '1'], {
+    cwd,
+    output: removed.output,
+  });
+  assert.equal(status, 0);
+  assert.match(removed.text(), /removed https:\/\/www\.youtube\.com\/@veritasium/);
+  assert.deepEqual(
+    removed.text().split('\n').filter((line) => line.startsWith('next:')),
+    ['next: atris youtube watch add <channel-url-or-@handle>'],
+  );
+  assert.equal(removed.text().includes('next: atris youtube watch tick'), false);
+
+  const after = loadWatchState(statePathFor(cwd));
+  assert.equal(after.channels.length, 0);
+});
+
+test('remove when others remain prints one tick next-step', async () => {
+  const cwd = tempCwd();
+  const now = '2026-08-15T20:10:00.000Z';
+  await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
+  await youtubeCommand(['watch', 'add', '@mkbhd'], { cwd, now, output: () => {} });
+
+  const removed = collect();
+  const status = await youtubeCommand(['watch', 'remove', '2'], {
+    cwd,
+    output: removed.output,
+  });
+  assert.equal(status, 0);
+  assert.match(removed.text(), /removed https:\/\/www\.youtube\.com\/@mkbhd/);
+  assert.deepEqual(
+    removed.text().split('\n').filter((line) => line.startsWith('next:')),
+    ['next: atris youtube watch tick'],
+  );
+  assert.equal(
+    removed.text().includes('next: atris youtube watch add <channel-url-or-@handle>'),
+    false,
+  );
+
+  const after = loadWatchState(statePathFor(cwd));
+  assert.equal(after.channels.length, 1);
+  assert.equal(after.channels[0].channel, 'https://www.youtube.com/@veritasium');
+});
+
+test('invalid watch remove prints usage only', async () => {
+  const cwd = tempCwd();
+  const now = '2026-08-15T20:20:00.000Z';
+  await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
+
+  const missing = collect();
+  const missingStatus = await youtubeCommand(['watch', 'remove'], {
+    cwd,
+    output: missing.output,
+  });
+  assert.equal(missingStatus, 2);
+  assert.match(missing.text(), /usage: atris youtube watch remove <number>/);
+  assert.equal(missing.text().includes('next:'), false);
+
+  const bad = collect();
+  const badStatus = await youtubeCommand(['watch', 'remove', '9'], {
+    cwd,
+    output: bad.output,
+  });
+  assert.equal(badStatus, 2);
+  assert.match(bad.text(), /usage: atris youtube watch remove <number>/);
+  assert.equal(bad.text().includes('next:'), false);
+
+  const after = loadWatchState(statePathFor(cwd));
+  assert.equal(after.channels.length, 1);
 });

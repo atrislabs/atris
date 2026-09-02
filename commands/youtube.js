@@ -1259,6 +1259,11 @@ function removeWatchChannel(rawNumber, deps = {}) {
   const [removed] = state.channels.splice(index - 1, 1);
   saveWatchState(statePath, state);
   output(`removed ${removed.channel}`);
+  if (!state.channels.length) {
+    printWatchAddNext(output);
+  } else {
+    printWatchTickNext(output);
+  }
   return 0;
 }
 
