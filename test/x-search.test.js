@@ -11,7 +11,9 @@ const {
   buildPersonPayload,
   xSearchHasResults,
   xSearchApplyRel,
+  xSearchBriefRel,
   xSearchExperimentSlug,
+  xSearchExperimentRel,
   xSearchCommand,
 } = require('../commands/x-search');
 const { TEACH_THIN_REFUSE } = require('../commands/youtube');
@@ -81,11 +83,18 @@ test('parseXSearchArgs accepts unsave subcommand and --unsave', () => {
   const sub = parseXSearchArgs(['unsave', 'MCP agents']);
   assert.equal(sub.mode, 'unsave');
   assert.equal(sub.source, 'MCP agents');
+  assert.deepEqual(sub.sources, ['MCP agents']);
+  assert.equal(sub.json, false);
   const flag = parseXSearchArgs(['MCP agents', '--unsave']);
   assert.equal(flag.mode, 'search');
   assert.equal(flag.query, 'MCP agents');
   assert.equal(flag.unsave, true);
+  const json = parseXSearchArgs(['unsave', '--json', 'MCP agents', 'other query']);
+  assert.equal(json.mode, 'unsave');
+  assert.equal(json.json, true);
+  assert.deepEqual(json.sources, ['MCP agents', 'other query']);
   assert.throws(() => parseXSearchArgs(['unsave']), /usage: atris x-search unsave/);
+  assert.throws(() => parseXSearchArgs(['unsave', '--json']), /usage: atris x-search unsave/);
   assert.throws(() => parseXSearchArgs(['--unsave']), /usage: atris x-search unsave/);
 });
 
@@ -794,4 +803,132 @@ test('502 with refunded credits surfaces them and does not invent a refund call'
   assert.doesNotMatch(text, /next: atris youtube search/);
   assert.equal(output.filter((line) => line === 'next: atris youtube search " "').length, 0);
   assertNoSaveFiles(cwd, 'agents');
+});
+
+function seedSavedXSearch(cwd, source) {
+  const briefRel = xSearchBriefRel(source);
+  const applyRel = xSearchApplyRel(source);
+  const packRel = xSearchExperimentRel(source);
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki', 'briefs'), { recursive: true });
+  fs.mkdirSync(path.join(cwd, packRel), { recursive: true });
+  fs.writeFileSync(path.join(cwd, briefRel), 'brief\n');
+  fs.writeFileSync(path.join(cwd, applyRel), 'apply\n');
+  fs.writeFileSync(path.join(cwd, packRel, 'measure.py'), 'print(0)\n');
+  return { briefRel, applyRel, packRel };
+}
+
+test('x-search unsave that removes files prints one youtube search next-step', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-unsave-'));
+  seedSavedXSearch(cwd, 'MCP agents');
+  const output = [];
+  let apiCalls = 0;
+  const status = await xSearchCommand(['unsave', 'MCP agents'], {
+    cwd,
+    output: (line) => output.push(line),
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      throw new Error('unsave must not call x-search');
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(apiCalls, 0);
+  assert.match(output.join('\n'), /removed atris\/wiki\/briefs\/x-search-mcp-agents\.md and atris\/wiki\/briefs\/x-search-mcp-agents\.apply\.md and atris\/experiments\/x-search-mcp-agents/);
+  assert.deepEqual(
+    output.filter((line) => String(line).startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
+  assert.equal(fs.existsSync(path.join(cwd, xSearchBriefRel('MCP agents'))), false);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchApplyRel('MCP agents'))), false);
+  assert.equal(fs.existsSync(path.join(cwd, xSearchExperimentRel('MCP agents'))), false);
+});
+
+test('x-search unsave of a missing source prints already gone and one youtube search next-step', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-unsave-gone-'));
+  const output = [];
+  let apiCalls = 0;
+  const status = await xSearchCommand(['unsave', 'gone query'], {
+    cwd,
+    output: (line) => output.push(line),
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      throw new Error('unsave must not call x-search');
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(apiCalls, 0);
+  assert.match(output.join('\n'), /already gone: atris\/wiki\/briefs\/x-search-gone-query\.md and atris\/wiki\/briefs\/x-search-gone-query\.apply\.md/);
+  assert.deepEqual(
+    output.filter((line) => String(line).startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
+});
+
+test('x-search unsave without a target prints usage and no next line', async () => {
+  const output = [];
+  const status = await xSearchCommand(['unsave'], {
+    output: (line) => output.push(line),
+    apiRequestJson: async () => {
+      throw new Error('unsave must not call x-search');
+    },
+  });
+
+  assert.equal(status, 2);
+  assert.match(output.join('\n'), /usage: atris x-search unsave <query-or-source>/);
+  assert.equal(output.join('\n').includes('next:'), false);
+
+  const flagOut = [];
+  const flagStatus = await xSearchCommand(['--unsave'], {
+    output: (line) => flagOut.push(line),
+    apiRequestJson: async () => {
+      throw new Error('unsave must not call x-search');
+    },
+  });
+  assert.equal(flagStatus, 2);
+  assert.match(flagOut.join('\n'), /usage: atris x-search unsave <query-or-source>/);
+  assert.equal(flagOut.join('\n').includes('next:'), false);
+});
+
+test('x-search unsave --json and multi-target print the search next-step once or not at all', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-unsave-json-'));
+  const jsonOut = [];
+  const jsonStatus = await xSearchCommand(['unsave', '--json', 'gone query'], {
+    cwd,
+    output: (line) => jsonOut.push(line),
+    apiRequestJson: async () => {
+      throw new Error('unsave must not call x-search');
+    },
+  });
+  assert.equal(jsonStatus, 0);
+  assert.match(jsonOut.join('\n'), /already gone: atris\/wiki\/briefs\/x-search-gone-query\.md/);
+  assert.equal(jsonOut.join('\n').includes('next:'), false);
+
+  const flagJsonOut = [];
+  const flagJsonStatus = await xSearchCommand(['gone query', '--unsave', '--json'], {
+    cwd,
+    output: (line) => flagJsonOut.push(line),
+    apiRequestJson: async () => {
+      throw new Error('unsave must not call x-search');
+    },
+  });
+  assert.equal(flagJsonStatus, 0);
+  assert.match(flagJsonOut.join('\n'), /already gone: atris\/wiki\/briefs\/x-search-gone-query\.md/);
+  assert.equal(flagJsonOut.join('\n').includes('next:'), false);
+
+  const multiOut = [];
+  const multiStatus = await xSearchCommand(['unsave', 'gone one', 'gone two'], {
+    cwd,
+    output: (line) => multiOut.push(line),
+    apiRequestJson: async () => {
+      throw new Error('unsave must not call x-search');
+    },
+  });
+  assert.equal(multiStatus, 0);
+  assert.match(multiOut.join('\n'), /already gone: atris\/wiki\/briefs\/x-search-gone-one\.md/);
+  assert.match(multiOut.join('\n'), /already gone: atris\/wiki\/briefs\/x-search-gone-two\.md/);
+  assert.deepEqual(
+    multiOut.filter((line) => String(line).startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
 });
