@@ -143,6 +143,7 @@ test('xSearchCommand --help prints usage without calling the API', async () => {
   assert.match(output.join('\n'), /person --name/);
   assert.match(output.join('\n'), /Rich ephemeral prints one apply next-step, then hands off to atris youtube search/);
   assert.match(output.join('\n'), /Empty or failed search refunds the credits/);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search " "/);
 });
 
 test('xSearchCommand prints content, citations, and credits', async () => {
@@ -198,6 +199,7 @@ test('xSearchCommand prints content, citations, and credits', async () => {
   assert.doesNotMatch(text, /next: apply /);
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
   assert.doesNotMatch(text, /next: atris youtube search/);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search " "').length, 0);
   assertNoSaveFiles(cwd, 'MCP agents');
 });
 
@@ -458,6 +460,7 @@ test('xSearchCommand missing query exits 2 with usage hint', async () => {
   });
   assert.equal(status, 2);
   assert.match(output.join('\n'), /Missing query/);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
 });
 
 test('xSearchHasResults is false for empty payloads', () => {
@@ -503,6 +506,7 @@ test('x-search without --save prints one apply next-step when the result is rich
   assert.equal(status, 0);
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 1);
   assert.equal(output.filter((line) => line === 'next: atris youtube search "MCP agents"').length, 1);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search " "').length, 0);
   assert.equal(
     output.indexOf('next: atris youtube search "MCP agents"'),
     output.indexOf(ephemeralApplyMessage('x-search')) + 1,
@@ -543,6 +547,7 @@ test('x-search person without --save prints one apply next-step when research is
   assert.equal(status, 0);
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 1);
   assert.equal(output.filter((line) => line === 'next: atris youtube search "Leah Bonvissuto"').length, 1);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search " "').length, 0);
   assert.doesNotMatch(output.join('\n'), /next: atris youtube search "leahbon"/);
   assert.doesNotMatch(output.join('\n'), /next: apply /);
   assertNoSaveFiles(cwd, 'Leah Bonvissuto');
@@ -609,8 +614,64 @@ test('empty x-search does not owe an apply', async () => {
   assert.equal(status, 2);
   assert.doesNotMatch(output.join('\n'), /next: apply /);
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
-  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search " "').length, 1);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assertNoSaveFiles(cwd, 'quiet topic');
+});
+
+test('empty x-search prints one youtube search next-step', async () => {
+  const cwd = applyWorkspace('quiet topic');
+  const output = [];
+  const status = await xSearchCommand(['quiet topic'], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        status: 'success',
+        credits_used: 5,
+        credits_remaining: 995,
+        data: { content: '', citations: [] },
+      },
+    }),
+  });
+
+  assert.equal(status, 2);
+  const text = output.join('\n');
+  assert.match(text, /no results/);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search " "').length, 1);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
+  assert.doesNotMatch(text, /next: atris youtube search "quiet topic"/);
+  assert.doesNotMatch(text, /next: apply /);
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assertNoSaveFiles(cwd, 'quiet topic');
+});
+
+test('empty x-search --json stays json-only', async () => {
+  const output = [];
+  const status = await xSearchCommand(['quiet topic', '--json'], {
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        status: 'success',
+        credits_used: 5,
+        credits_remaining: 995,
+        data: { content: '', citations: [] },
+      },
+    }),
+  });
+
+  assert.equal(status, 2);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
+  const parsed = JSON.parse(output.join('\n'));
+  assert.equal(parsed.credits_used, 5);
+  assert.deepEqual(parsed.data.citations, []);
 });
 
 test('empty x-search surfaces a server-side refund and does not invent a refund call', async () => {
@@ -647,6 +708,7 @@ test('empty x-search surfaces a server-side refund and does not invent a refund 
   assert.match(text, /Credits: 0 used, 1000 remaining/);
   assert.match(text, /credits refunded/);
   assert.doesNotMatch(text, /next: atris youtube search/);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search " "').length, 0);
   assertNoSaveFiles(cwd, 'quiet topic');
 });
 
@@ -670,7 +732,8 @@ test('empty citations payload is a refunded empty search', async () => {
   assert.match(text, /no results/);
   assert.match(text, /credits refunded/);
   assert.doesNotMatch(text, /next: apply /);
-  assert.doesNotMatch(text, /next: atris youtube search/);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search " "').length, 1);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assertNoSaveFiles(cwd, 'ghost cites');
 });
 
@@ -729,5 +792,6 @@ test('502 with refunded credits surfaces them and does not invent a refund call'
   assert.match(text, /credits refunded/);
   assert.match(text, /Credits: 0 used, 1000 remaining/);
   assert.doesNotMatch(text, /next: atris youtube search/);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search " "').length, 0);
   assertNoSaveFiles(cwd, 'agents');
 });

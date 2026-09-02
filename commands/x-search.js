@@ -329,6 +329,12 @@ function creditsWereRefunded(credits) {
   return typeof credits.refunded === 'number' && credits.refunded > 0;
 }
 
+function creditsRefundedExplicitly(credits) {
+  if (!credits) return false;
+  if (credits.refunded === true) return true;
+  return typeof credits.refunded === 'number' && credits.refunded > 0;
+}
+
 function formatCreditsLines(credits) {
   const lines = [];
   if (credits.used !== undefined || credits.remaining !== undefined) {
@@ -410,6 +416,12 @@ function quoteYoutubeSearchQuery(source) {
 function printYoutubeSearchNext(source, output) {
   if (!source) return;
   output(`next: atris youtube search ${quoteYoutubeSearchQuery(source)}`);
+}
+
+const EMPTY_YOUTUBE_SEARCH_NEXT = 'next: atris youtube search " "';
+
+function printEmptyYoutubeSearchNext(output) {
+  output(EMPTY_YOUTUBE_SEARCH_NEXT);
 }
 
 function xSearchApplyRel(source) {
@@ -621,6 +633,13 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
       output(hasResults ? formatXSearchResult(data) : formatEmptyXSearchResult(data));
     }
     if (!hasResults) {
+      if (
+        !options.json
+        && !options.save
+        && !creditsRefundedExplicitly(xSearchCredits(data))
+      ) {
+        printEmptyYoutubeSearchNext(output);
+      }
       status = 2;
     } else if (options.save) {
       const source = xSearchApplySource(options);
