@@ -187,6 +187,10 @@ function printRevertKeepNext(slug) {
   console.log(`next: atris experiments keep ${slug}`);
 }
 
+function printKeepWatchTickNext() {
+  console.log('next: atris youtube watch tick');
+}
+
 function experimentsKeep(name) {
   const token = String(name || '').trim();
   if (!token || token === '--help' || token === '-h' || token === 'help') {
@@ -226,6 +230,7 @@ function experimentsKeep(name) {
 
   if (measured.score === 1) {
     console.log(`keep ${token}: measure.py moved 0→1`);
+    printKeepWatchTickNext();
     return;
   }
 

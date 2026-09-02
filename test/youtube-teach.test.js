@@ -759,12 +759,17 @@ test('experiments keep refuses a minted teach pack at 0 and keeps after check to
   const refused = runExperimentsKeep(cwd, 'teach-teach01-s1');
   assert.equal(refused.status, 1, refused.stderr || refused.stdout);
   assert.match(`${refused.stdout}\n${refused.stderr}`, /revert teach-teach01-s1: measure\.py stayed 0\. refuse keep\./);
+  assert.doesNotMatch(`${refused.stdout}\n${refused.stderr}`, /next: atris youtube watch tick/);
   assert.equal(fs.existsSync(path.join(packDir, 'measure.py')), true);
 
   fs.appendFileSync(applyPath, '\nkeep the omakase model as the default stack\n');
   const kept = runExperimentsKeep(cwd, 'teach-teach01-s1');
   assert.equal(kept.status, 0, kept.stderr || kept.stdout);
   assert.match(kept.stdout, /keep teach-teach01-s1: measure\.py moved 0→1/);
+  assert.deepEqual(
+    kept.stdout.split('\n').filter((line) => line.startsWith('next: atris youtube watch tick')),
+    ['next: atris youtube watch tick']
+  );
 });
 
 test('experiments revert runs minted reset.py after a refused keep', async () => {
