@@ -1004,6 +1004,7 @@ function runYoutubeDigest(args = [], deps = {}) {
   const briefs = collectVideoBriefs({ cwd, now, days: options.days });
   if (!briefs.length) {
     output(`no video briefs in the last ${options.days} days`);
+    printWatchSearchNext(output);
     return 0;
   }
 
@@ -1031,6 +1032,7 @@ function runYoutubeDigest(args = [], deps = {}) {
   fs.writeFileSync(path.join(cwd, relDigest), `${header}\n\n${text}\n`);
   appendDigestJournal({ cwd, date, relDigest });
   output(`digest filed: ${relDigest} (${briefs.length} briefs)`);
+  printWatchTickNext(output);
   return 0;
 }
 

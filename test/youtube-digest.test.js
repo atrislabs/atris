@@ -151,6 +151,10 @@ test('digest writes the output file with sources listed', async () => {
   assert.match(prompts[0], /title: in window/);
   assert.match(prompts[0], /Ship local notes first/);
   assert.match(printed.text(), /digest filed: atris\/wiki\/briefs\/digest-2026-08-15\.md \(2 briefs\)/);
+  assert.deepEqual(
+    printed.text().split('\n').filter((line) => line.startsWith('next:')),
+    ['next: atris youtube watch tick'],
+  );
 
   const filed = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'digest-2026-08-15.md'), 'utf8');
   assert.equal(filed.split('\n').slice(0, 3).join('\n'), [
@@ -215,6 +219,11 @@ test('empty window is a no-op', async () => {
   assert.equal(status, 0);
   assert.equal(ran, 0);
   assert.match(printed.text(), /no video briefs in the last 7 days/);
+  assert.deepEqual(
+    printed.text().split('\n').filter((line) => line.startsWith('next:')),
+    ['next: atris youtube search " "'],
+  );
+  assert.equal(printed.text().includes('next: atris youtube watch tick'), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', `digest-${TODAY}.md`)), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
 });
@@ -229,4 +238,52 @@ test('digest help lists the new usage', async () => {
   });
   assert.equal(status, 0);
   assert.match(printed.text(), /atris youtube digest \[--days N\]/);
+  assert.equal(printed.text().includes('next:'), false);
+});
+
+test('digest engine failure prints no next-step', async () => {
+  const cwd = tempCwd();
+  writeBrief(cwd, 'youtube-in.md', {
+    date: TODAY,
+    source: 'https://www.youtube.com/watch?v=in11111',
+    title: 'in window',
+  });
+  const failed = collect();
+  const failStatus = await youtubeCommand(['digest'], {
+    cwd,
+    now: NOW,
+    output: failed.output,
+    runner: () => {
+      throw new Error('digest engine failed');
+    },
+  });
+  assert.equal(failStatus, 1);
+  assert.match(failed.text(), /digest engine failed/);
+  assert.equal(failed.text().includes('next:'), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', `digest-${TODAY}.md`)), false);
+
+  const empty = collect();
+  const emptyStatus = await youtubeCommand(['digest'], {
+    cwd,
+    now: NOW,
+    output: empty.output,
+    runner: () => '',
+  });
+  assert.equal(emptyStatus, 1);
+  assert.match(empty.text(), /digest engine returned no text/);
+  assert.equal(empty.text().includes('next:'), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', `digest-${TODAY}.md`)), false);
+});
+
+test('digest parse error prints no next-step', async () => {
+  const printed = collect();
+  const status = await youtubeCommand(['digest', '--days', 'nope'], {
+    output: printed.output,
+    runner: () => {
+      throw new Error('engine should not run for parse errors');
+    },
+  });
+  assert.equal(status, 2);
+  assert.match(printed.text(), /--days must be a positive integer/);
+  assert.equal(printed.text().includes('next:'), false);
 });
