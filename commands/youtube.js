@@ -1975,6 +1975,7 @@ async function runPaidYoutubeSearch(options, deps = {}) {
   const rendered = formatPaidSearchResults(data);
   if (!videos.length) {
     output(rendered ? `no videos found\n${rendered}` : 'no videos found');
+    printWatchTickNext(output);
     return 2;
   }
   output(rendered);
@@ -2135,6 +2136,7 @@ async function runYoutubeSearch(args = [], deps = {}) {
   const rows = parseSearchStdout(stdout);
   if (!rows.length) {
     output('no videos found');
+    if (!options.json) printWatchTickNext(output);
     return 2;
   }
 
