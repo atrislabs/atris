@@ -1228,6 +1228,7 @@ function listWatchChannels(deps = {}) {
     const count = Object.keys(channelSeenMap(state, row.channel)).length;
     output(`${index + 1}. ${row.channel} (${count} seen)`);
   });
+  printWatchTickNext(output);
   return 0;
 }
 
