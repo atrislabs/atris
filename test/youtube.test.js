@@ -16,6 +16,10 @@ const {
   APPLY_NEXT_MESSAGE,
   PROCESS_APPLY_MESSAGE,
   TEACH_THIN_REFUSE,
+  LEARNER_CHECK_FILL,
+  LEARNER_SCORE_ZERO,
+  learnerCheckFromLesson,
+  scoreLearnerNeedles,
   youtubeCommand,
 } = require('../commands/youtube');
 const { ephemeralApplyMessage } = require('../lib/apply-gate');
@@ -355,6 +359,24 @@ test('fileBriefFromNotes files youtu.be notes and stays silent without a wiki', 
   assert.equal(fs.existsSync(path.join(bare, 'atris', 'logs')), false);
 });
 
+test('learner check is inferred from a number or named mechanism and otherwise fill this', () => {
+  const rich = learnerCheckFromLesson({
+    numbers: ['80 people'],
+    mechanisms: ['omakase model'],
+  });
+  assert.equal(rich.inferred, true);
+  assert.equal(rich.line, 'what is the omakase model?');
+  assert.deepEqual(rich.needles, ['omakase model']);
+  assert.equal(scoreLearnerNeedles('apply the pack. keep only if measure.py moves.', rich.needles), 0);
+  assert.equal(scoreLearnerNeedles('keep the omakase model as the default stack', rich.needles), 1);
+
+  const thin = learnerCheckFromLesson({ numbers: [], mechanisms: [] });
+  assert.equal(thin.inferred, false);
+  assert.equal(thin.line, LEARNER_CHECK_FILL);
+  assert.deepEqual(thin.needles, []);
+  assert.equal(scoreLearnerNeedles('anything at all', thin.needles), 0);
+});
+
 function notesApplyWorkspace(id, notes = '# Apply Gate Video\n\nBody.\n') {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-apply-'));
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-'));
@@ -379,6 +401,8 @@ test('youtube notes without --save writes no brief or apply', async () => {
   assert.equal(status, 0);
   assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
+  assert.equal(output.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(output.includes(LEARNER_SCORE_ZERO), false);
   assert.equal(output.filter((line) => line === `next: atris youtube teach "${url}"`).length, 1);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-nosave1.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-nosave1.apply.md')), false);
@@ -401,6 +425,8 @@ test('youtube notes without --save prints one apply next-step when notes are ric
 
   assert.equal(status, 0);
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('notes')).length, 1);
+  assert.equal(output.filter((line) => line === 'check: what is the omakase model?').length, 1);
+  assert.equal(output.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
   assert.equal(output.filter((line) => line === `next: atris youtube teach "${url}"`).length, 1);
   assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   assert.doesNotMatch(output.join('\n'), /next: apply /);
@@ -426,6 +452,9 @@ test('youtube notes without --save stay ephemeral even when thin', async () => {
   assert.equal(status, 0);
   assert.equal(output.includes(TEACH_THIN_REFUSE), false);
   assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
+  assert.equal(output.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(output.includes(LEARNER_SCORE_ZERO), false);
+  assert.doesNotMatch(output.join('\n'), /what is the point of/);
   assert.equal(output.filter((line) => line === `next: atris youtube teach "${url}"`).length, 1);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
@@ -468,6 +497,8 @@ test('youtube notes --json stays quiet on the teach next-step', async () => {
 
   assert.equal(status, 0);
   assert.doesNotMatch(output.join('\n'), /next: atris youtube teach/);
+  assert.doesNotMatch(output.join('\n'), /^check:/m);
+  assert.equal(output.includes(LEARNER_SCORE_ZERO), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
@@ -489,6 +520,8 @@ test('youtube notes --json thin notes stay quiet on the teach next-step', async 
   assert.doesNotMatch(output.join('\n'), /next: atris youtube teach/);
   assert.equal(output.includes(TEACH_THIN_REFUSE), false);
   assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
+  assert.doesNotMatch(output.join('\n'), /^check:/m);
+  assert.equal(output.includes(LEARNER_SCORE_ZERO), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
@@ -589,7 +622,7 @@ test('youtube notes with an apply receipt is complete', async () => {
   assert.equal(ensureNotesApply({ cwd, url, now: '2026-08-26', output: () => {} }), 0);
 });
 
-test('youtube notes --save without wiki still exits 0 when apply is missing', async () => {
+test('youtube notes --save without wiki is incomplete when apply is missing', async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-apply-nowiki-'));
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-nowiki-'));
   fs.writeFileSync(path.join(workDir, 'yt_apply03.md'), RICH_NOTES);
@@ -603,8 +636,9 @@ test('youtube notes --save without wiki still exits 0 when apply is missing', as
     runner: () => ({ status: 0 }),
   });
 
-  assert.equal(status, 0);
-  assert.match(output.join('\n'), /next: atris experiments keep notes-apply03/);
+  assert.equal(status, 2);
+  assert.match(output.join('\n'), /incomplete: apply missing/);
+  assert.doesNotMatch(output.join('\n'), /invented success|score: 0/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-apply03', 'measure.py')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
