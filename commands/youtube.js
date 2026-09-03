@@ -1584,6 +1584,7 @@ function runSingleYoutubeNotes(url, engine, deps = {}) {
     now: deps.now,
     output: deps.output,
   });
+  if (deps.ensureApply) return applyCode;
   const id = videoIdFromUrl(url);
   const baseline = proveSavedLearnerBaseline({
     cwd,
@@ -3228,6 +3229,7 @@ async function runYoutubeTeach(args = [], deps = {}) {
     now: deps.now,
     output,
   });
+  if (deps.ensureApply) return applyCode;
   const id = videoIdFromUrl(parsed.url);
   const baseline = proveSavedLearnerBaseline({
     cwd,

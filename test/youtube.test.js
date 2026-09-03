@@ -622,7 +622,7 @@ test('youtube notes with an apply receipt is complete', async () => {
   assert.equal(ensureNotesApply({ cwd, url, now: '2026-08-26', output: () => {} }), 0);
 });
 
-test('youtube notes --save without wiki still exits 0 when apply is missing', async () => {
+test('youtube notes --save without wiki is incomplete when apply is missing', async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-apply-nowiki-'));
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-nowiki-'));
   fs.writeFileSync(path.join(workDir, 'yt_apply03.md'), RICH_NOTES);
@@ -636,8 +636,9 @@ test('youtube notes --save without wiki still exits 0 when apply is missing', as
     runner: () => ({ status: 0 }),
   });
 
-  assert.equal(status, 0);
-  assert.match(output.join('\n'), /next: atris experiments keep notes-apply03/);
+  assert.equal(status, 2);
+  assert.match(output.join('\n'), /incomplete: apply missing/);
+  assert.doesNotMatch(output.join('\n'), /invented success|score: 0/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-apply03', 'measure.py')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
