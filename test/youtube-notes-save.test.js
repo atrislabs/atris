@@ -117,7 +117,7 @@ test('youtube notes --save refuses a thin brief and writes no atris files', asyn
   assert.equal(status, 2);
   assert.match(out.text(), new RegExp(escapeRe(TEACH_THIN_REFUSE)));
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 0);
-  assert.doesNotMatch(out.text(), /next: atris youtube teach/);
+  assert.equal(out.lines.filter((line) => line === `next: atris youtube teach "${THIN_URL}"`).length, 1);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-thin01.apply.md')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
