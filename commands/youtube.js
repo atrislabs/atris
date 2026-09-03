@@ -1035,6 +1035,9 @@ function runYoutubeDigest(args = [], deps = {}) {
   fs.writeFileSync(path.join(cwd, relDigest), `${header}\n\n${text}\n`);
   appendDigestJournal({ cwd, date, relDigest });
   output(`digest filed: ${relDigest} (${briefs.length} briefs)`);
+  const lesson = notesLessonFromText(text);
+  if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'digest');
+  printLearnerCheckGate(output, lesson, { includeCheck: true });
   printWatchTickNext(output);
   return 0;
 }

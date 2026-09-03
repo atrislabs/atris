@@ -7,15 +7,18 @@ const {
   parseDigestArgs,
   collectVideoBriefs,
   buildDigestPrompt,
+  LEARNER_CHECK_FILL,
+  LEARNER_SCORE_ZERO,
   youtubeCommand,
 } = require('../commands/youtube');
+const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
 const NOW = '2026-08-15T15:00:00.000Z';
 const TODAY = '2026-08-15';
 const STUB_DIGEST = [
   '# what this week\'s videos changed',
   '',
-  'Keep the local notes path as the default. From atris/wiki/briefs/youtube-in.md the week favors transcript-first briefs over cloud process.',
+  'Keep the local notes path as the default. TSMC prints at 2nm. From atris/wiki/briefs/youtube-in.md the week favors transcript-first briefs over cloud process.',
   'Treat watch ticks as a feeder, not a decision. From atris/wiki/briefs/youtube-edge.md new channel videos should land as briefs before anyone debates them.',
   'Do not spend credits until a brief names a customer store need.',
   '',
@@ -151,10 +154,26 @@ test('digest writes the output file with sources listed', async () => {
   assert.match(prompts[0], /title: in window/);
   assert.match(prompts[0], /Ship local notes first/);
   assert.match(printed.text(), /digest filed: atris\/wiki\/briefs\/digest-2026-08-15\.md \(2 briefs\)/);
+  assert.equal(printed.lines.filter((line) => line === ephemeralApplyMessage('digest')).length, 1);
+  assert.equal(printed.lines.filter((line) => line === 'check: what is 2nm?').length, 1);
+  assert.equal(printed.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
   assert.deepEqual(
     printed.text().split('\n').filter((line) => line.startsWith('next:')),
-    ['next: atris youtube watch tick'],
+    [ephemeralApplyMessage('digest'), 'next: atris youtube watch tick'],
   );
+  assert.ok(
+    printed.lines.indexOf(ephemeralApplyMessage('digest'))
+      < printed.lines.indexOf('check: what is 2nm?'),
+  );
+  assert.ok(
+    printed.lines.indexOf('check: what is 2nm?')
+      < printed.lines.indexOf(LEARNER_SCORE_ZERO),
+  );
+  assert.ok(
+    printed.lines.indexOf(LEARNER_SCORE_ZERO)
+      < printed.lines.indexOf('next: atris youtube watch tick'),
+  );
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 
   const filed = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'digest-2026-08-15.md'), 'utf8');
   assert.equal(filed.split('\n').slice(0, 3).join('\n'), [
@@ -194,6 +213,46 @@ test('digest appends a claimable journal line', async () => {
       '',
     ].join('\n'),
   );
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('thin digest prints fill-this then watch-tick next', async () => {
+  const cwd = tempCwd();
+  writeBrief(cwd, 'youtube-in.md', {
+    date: TODAY,
+    source: 'https://www.youtube.com/watch?v=in11111',
+    title: 'in window',
+  });
+  const printed = collect();
+  const thin = [
+    '# what this week\'s videos changed',
+    '',
+    'Keep the local notes path as the default.',
+    'Treat watch ticks as a feeder, not a decision.',
+    'Do not spend credits until a brief names a customer store need.',
+  ].join('\n');
+
+  const status = await youtubeCommand(['digest'], {
+    cwd,
+    now: NOW,
+    output: printed.output,
+    runner: () => thin,
+  });
+
+  assert.equal(status, 0);
+  assert.match(printed.text(), /digest filed: atris\/wiki\/briefs\/digest-2026-08-15\.md \(1 briefs\)/);
+  assert.equal(printed.lines.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(printed.lines.includes(LEARNER_SCORE_ZERO), false);
+  assert.equal(printed.lines.includes(ephemeralApplyMessage('digest')), false);
+  assert.deepEqual(
+    printed.text().split('\n').filter((line) => line.startsWith('next:')),
+    ['next: atris youtube watch tick'],
+  );
+  assert.ok(
+    printed.lines.indexOf(`check: ${LEARNER_CHECK_FILL}`)
+      < printed.lines.indexOf('next: atris youtube watch tick'),
+  );
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
 test('empty window is a no-op', async () => {
@@ -224,6 +283,9 @@ test('empty window is a no-op', async () => {
     ['next: atris youtube search " "'],
   );
   assert.equal(printed.text().includes('next: atris youtube watch tick'), false);
+  assert.doesNotMatch(printed.text(), /^check:/m);
+  assert.equal(printed.text().includes(LEARNER_SCORE_ZERO), false);
+  assert.equal(printed.text().includes(ephemeralApplyMessage('digest')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', `digest-${TODAY}.md`)), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
 });
@@ -239,6 +301,8 @@ test('digest help lists the new usage', async () => {
   assert.equal(status, 0);
   assert.match(printed.text(), /atris youtube digest \[--days N\]/);
   assert.equal(printed.text().includes('next:'), false);
+  assert.doesNotMatch(printed.text(), /^check:/m);
+  assert.equal(printed.text().includes(LEARNER_SCORE_ZERO), false);
 });
 
 test('digest engine failure prints no next-step', async () => {
@@ -260,6 +324,8 @@ test('digest engine failure prints no next-step', async () => {
   assert.equal(failStatus, 1);
   assert.match(failed.text(), /digest engine failed/);
   assert.equal(failed.text().includes('next:'), false);
+  assert.doesNotMatch(failed.text(), /^check:/m);
+  assert.equal(failed.text().includes(LEARNER_SCORE_ZERO), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', `digest-${TODAY}.md`)), false);
 
   const empty = collect();
@@ -272,6 +338,8 @@ test('digest engine failure prints no next-step', async () => {
   assert.equal(emptyStatus, 1);
   assert.match(empty.text(), /digest engine returned no text/);
   assert.equal(empty.text().includes('next:'), false);
+  assert.doesNotMatch(empty.text(), /^check:/m);
+  assert.equal(empty.text().includes(LEARNER_SCORE_ZERO), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', `digest-${TODAY}.md`)), false);
 });
 
@@ -286,4 +354,6 @@ test('digest parse error prints no next-step', async () => {
   assert.equal(status, 2);
   assert.match(printed.text(), /--days must be a positive integer/);
   assert.equal(printed.text().includes('next:'), false);
+  assert.doesNotMatch(printed.text(), /^check:/m);
+  assert.equal(printed.text().includes(LEARNER_SCORE_ZERO), false);
 });
