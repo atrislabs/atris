@@ -3337,6 +3337,7 @@ module.exports = {
   scoreLearnerNeedles,
   LEARNER_CHECK_FILL,
   LEARNER_SCORE_ZERO,
+  printLearnerCheckGate,
   proveSavedLearnerBaseline,
   isThinTeachLesson,
   TEACH_THIN_REFUSE,
