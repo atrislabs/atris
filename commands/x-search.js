@@ -11,6 +11,8 @@ const {
   extractTeachMechanisms,
   isThinTeachLesson,
   TEACH_THIN_REFUSE,
+  printLearnerCheckGate,
+  proveSavedLearnerBaseline,
 } = require('./youtube');
 
 const DEFAULT_TIMEOUT_MS = 120000;
@@ -560,7 +562,7 @@ function runXSearchUnsave(options, deps = {}) {
 function saveRichXSearch({ cwd, source, text, now } = {}) {
   const lesson = xSearchLessonFromText(text);
   if (isThinTeachLesson(lesson)) {
-    return { thin: true, brief: null, packRel: null };
+    return { thin: true, brief: null, packRel: null, lesson };
   }
   const brief = fileXSearchBrief({ cwd, source, text, now });
   const packRel = fileTeachExperiment({
@@ -569,7 +571,7 @@ function saveRichXSearch({ cwd, source, text, now } = {}) {
     slug: source ? xSearchExperimentSlug(source) : null,
     applyRel: source ? xSearchApplyRel(source) : null,
   });
-  return { thin: false, brief, packRel };
+  return { thin: false, brief, packRel, lesson };
 }
 
 function ensureXSearchApply({ cwd, source, packRel, now, output } = {}) {
@@ -670,8 +672,9 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
       status = 2;
     } else if (options.save) {
       const source = xSearchApplySource(options);
+      const cwd = deps.cwd || process.cwd();
       const saved = saveRichXSearch({
-        cwd: deps.cwd || process.cwd(),
+        cwd,
         source,
         text: xSearchContent(data),
         now: deps.applyNow || deps.now,
@@ -681,22 +684,34 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
         status = 2;
       } else {
         const ensureApply = deps.ensureApply || ensureXSearchApply;
-        status = ensureApply({
-          cwd: deps.cwd || process.cwd(),
+        const applyCode = ensureApply({
+          cwd,
           source,
           packRel: saved.packRel,
           now: deps.applyNow || deps.now,
           output,
         });
+        if (deps.ensureApply) {
+          status = applyCode;
+        } else {
+          const baseline = proveSavedLearnerBaseline({
+            cwd,
+            applyRel: source ? xSearchApplyRel(source) : null,
+            lesson: saved.lesson,
+            output,
+            json: options.json === true,
+          });
+          status = baseline !== 0 ? baseline : applyCode;
+        }
       }
     } else {
-      if (
-        !options.json
-        && !isThinTeachLesson(xSearchLessonFromText(xSearchContent(data)))
-      ) {
+      const lesson = xSearchLessonFromText(xSearchContent(data));
+      const json = options.json === true;
+      if (!json && !isThinTeachLesson(lesson)) {
         applyGate.hintEphemeralApply(output, 'x-search');
-        printYoutubeSearchNext(xSearchApplySource(options), output);
       }
+      printLearnerCheckGate(output, lesson, { includeCheck: true, json });
+      if (!json) printYoutubeSearchNext(xSearchApplySource(options), output);
       status = 0;
     }
   } catch (err) {
