@@ -178,6 +178,37 @@ test('Fable defaults to the real model and gets a deep-reasoning timeout', () =>
   assert.ok(!invocation.args.includes('--safe-mode'));
 });
 
+test('explicit long agy asks receive the same deadline and classify its native timeout', async () => {
+  const parsed = parseEngineAskArgs(['audit 21 review items', '--engine', 'agy', '--timeout', '1800']);
+  assert.equal(parsed.timeoutMs, 30 * 60 * 1000);
+
+  const invocation = buildReadOnlyEngineInvocation('agy', 'audit 21 review items', '', {
+    timeoutMs: parsed.timeoutMs,
+  });
+  assert.equal(invocation.args[invocation.args.indexOf('--print-timeout') + 1], '1800s');
+
+  const [answer] = await runEngineAskJobs(parsed.jobs, {
+    timeoutMs: parsed.timeoutMs,
+    executeAskJob: async (_job, context) => {
+      assert.equal(context.timeoutMs, parsed.timeoutMs);
+      return {
+        ok: false,
+        reason: 'exit_1',
+        exit_code: 1,
+        signal: null,
+        timed_out: false,
+        cancelled: false,
+        stdout: '',
+        stderr: 'timeout waiting for response',
+        output_truncated: false,
+        duration_ms: 5,
+      };
+    },
+  });
+  assert.equal(answer.reason, 'timeout');
+  assert.equal(answer.timed_out, true);
+});
+
 test('ask limits cap total cost, concurrency, and timeout before any engine starts', () => {
   const tooMany = [];
   for (let index = 0; index < MAX_ASK_JOBS + 1; index += 1) tooMany.push('--engine', 'codex');
@@ -187,7 +218,7 @@ test('ask limits cap total cost, concurrency, and timeout before any engine star
     /--concurrency must be an integer/
   );
   assert.throws(
-    () => parseEngineAskArgs(['question', '--engine', 'codex', '--timeout', '601']),
+    () => parseEngineAskArgs(['question', '--engine', 'codex', '--timeout', '3601']),
     /--timeout must be an integer/
   );
   assert.throws(
@@ -231,7 +262,8 @@ test('model-capable engines receive exact model flags without weakening read-onl
   // it because agy prompts even in plan mode and a headless ask has no one to
   // answer (it denied its own `ls` and failed every ask, live 2026-08-19).
   assert.deepEqual(agy.args.slice(0, 4), ['--mode', 'plan', '--sandbox', '--dangerously-skip-permissions']);
-  assert.deepEqual(agy.args.slice(4, 6), ['--model', 'gemini-3.1-pro-high']);
+  assert.equal(agy.args[agy.args.indexOf('--print-timeout') + 1], '120s');
+  assert.deepEqual(agy.args.slice(6, 8), ['--model', 'gemini-3.1-pro-high']);
   assert.doesNotMatch(agy.args.join(' '), /accept-edits/);
   assert.ok(agy.args.includes('--sandbox'), 'skip-permissions is only acceptable inside the sandbox');
 
@@ -390,6 +422,8 @@ test('command prints labeled statuses and writes its receipt plus engine health'
     assert.match(printed, /codex \(codex\): answered/);
     assert.match(printed, /cursor \(cursor\): failed/);
     assert.match(printed, /claude \(claude\): timed out/);
+    assert.match(printed, /engine ask started: atris\/runs\/engine-ask-/);
+    assert.match(printed, /watch: atris engine watch engine-ask-/);
     const runsDir = path.join(root, 'atris', 'runs');
     const receiptFiles = fs.readdirSync(runsDir).filter((file) => file.startsWith('engine-ask-') && file.endsWith('.json'));
     assert.equal(receiptFiles.length, 1);
@@ -585,6 +619,15 @@ test('engine command routes ask help without entering the build dispatcher', asy
     const code = await engineCommand(['ask', '--help']);
     assert.equal(code, 0);
     assert.match(output.join('\n'), /atris engine ask "<question>"/);
+    assert.match(output.join('\n'), /1-3600/);
+    assert.match(output.join('\n'), /agy receives the same print deadline/);
+    assert.match(output.join('\n'), /atris engine watch latest/);
+
+    output.length = 0;
+    const generalCode = await engineCommand(['--help']);
+    assert.equal(generalCode, 0);
+    assert.match(output.join('\n'), /quick asks default to 120 seconds/);
+    assert.match(output.join('\n'), /explicit jobs allow up to 3600/);
   } finally {
     console.log = originalLog;
   }
