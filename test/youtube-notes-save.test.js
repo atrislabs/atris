@@ -219,17 +219,51 @@ test('youtube notes rich --save mints a measure.py that validate.py accepts', as
 test('two-url notes batch prints teach next for the first ok url', async () => {
   const first = 'https://www.youtube.com/watch?v=okfirst';
   const second = 'https://www.youtube.com/watch?v=oksecond';
+  const { cwd, workDir } = notesWorkspace('okfirst', RICH_NOTES);
+  fs.writeFileSync(path.join(workDir, 'yt_oksecond.md'), THIN_NOTES);
   const out = collect();
   const status = await youtubeCommand(['notes', first, second], {
+    cwd,
+    workDir,
     output: out.output,
     runner: () => ({ status: 0 }),
   });
 
   assert.equal(status, 0);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 1);
+  assert.equal(out.lines.filter((line) => line === 'check: what is the omakase model?').length, 1);
+  assert.equal(out.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
   assert.deepEqual(
     out.text().split('\n').filter((line) => line.startsWith('next: atris youtube teach')),
     [`next: atris youtube teach "${first}"`],
   );
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('failed-then-ok notes batch uses the first ok lesson only', async () => {
+  const failed = 'https://www.youtube.com/watch?v=badfirst';
+  const firstOk = 'https://www.youtube.com/watch?v=oklater';
+  const { cwd, workDir } = notesWorkspace('oklater', RICH_NOTES);
+  fs.writeFileSync(path.join(workDir, 'yt_badfirst.md'), THIN_NOTES);
+  const out = collect();
+  const status = await youtubeCommand(['notes', failed, firstOk], {
+    cwd,
+    workDir,
+    output: out.output,
+    runner: (url) => ({ status: url === failed ? 1 : 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 1);
+  assert.equal(out.lines.filter((line) => line === 'check: what is the omakase model?').length, 1);
+  assert.equal(out.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+  assert.deepEqual(
+    out.text().split('\n').filter((line) => line.startsWith('next: atris youtube teach')),
+    [`next: atris youtube teach "${firstOk}"`],
+  );
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
 test('notes --save batch prints keep next and no teach next', async () => {
@@ -249,6 +283,8 @@ test('notes --save batch prints keep next and no teach next', async () => {
   assert.equal(status, 0);
   assert.match(out.text(), /next: atris experiments keep notes-notes01/);
   assert.doesNotMatch(out.text(), /next: atris youtube teach/);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 0);
+  assert.doesNotMatch(out.text(), /^check:/m);
 });
 
 test('all-failed notes batch prints no teach next', async () => {
@@ -264,6 +300,9 @@ test('all-failed notes batch prints no teach next', async () => {
 
   assert.equal(status, 2);
   assert.doesNotMatch(out.text(), /next: atris youtube teach/);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 0);
+  assert.doesNotMatch(out.text(), /^check:/m);
+  assert.equal(out.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 0);
 });
 
 test('experiments keep refuses a minted notes pack at 0 and keeps after check tokens', async () => {

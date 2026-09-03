@@ -546,6 +546,86 @@ test('youtube notes --save --json thin notes stay quiet on the teach next-step',
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
+test('youtube notes batch without --save prints apply and check for the first ok url', async () => {
+  const first = 'https://www.youtube.com/watch?v=richb1';
+  const second = 'https://www.youtube.com/watch?v=richb2';
+  const { cwd, workDir } = notesApplyWorkspace('richb1', RICH_NOTES);
+  fs.writeFileSync(path.join(workDir, 'yt_richb2.md'), THIN_NOTES);
+  const output = [];
+
+  const status = await youtubeCommand(['notes', first, second], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.match(output.join('\n'), /url or id  seconds  result/);
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('notes')).length, 1);
+  assert.equal(output.filter((line) => line === 'check: what is the omakase model?').length, 1);
+  assert.equal(output.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+  assert.equal(output.filter((line) => line === `next: atris youtube teach "${first}"`).length, 1);
+  assert.equal(output.filter((line) => line === `next: atris youtube teach "${second}"`).length, 0);
+  assert.equal(output.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 0);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('youtube notes batch without --save prints fill-this when the first ok notes are thin', async () => {
+  const first = 'https://www.youtube.com/watch?v=thinb1';
+  const second = 'https://www.youtube.com/watch?v=richb3';
+  const { cwd, workDir } = notesApplyWorkspace('thinb1', THIN_NOTES);
+  fs.writeFileSync(path.join(workDir, 'yt_richb3.md'), RICH_NOTES);
+  const output = [];
+
+  const status = await youtubeCommand(['notes', first, second], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(output.includes(TEACH_THIN_REFUSE), false);
+  assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
+  assert.equal(output.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(output.includes(LEARNER_SCORE_ZERO), false);
+  assert.doesNotMatch(output.join('\n'), /what is the omakase model/);
+  assert.equal(output.filter((line) => line === `next: atris youtube teach "${first}"`).length, 1);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('youtube notes batch --json stays quiet on apply check and teach', async () => {
+  const first = 'https://www.youtube.com/watch?v=jsonb1';
+  const second = 'https://www.youtube.com/watch?v=jsonb2';
+  const { cwd, workDir } = notesApplyWorkspace('jsonb1', RICH_NOTES);
+  fs.writeFileSync(path.join(workDir, 'yt_jsonb2.md'), RICH_NOTES);
+  const output = [];
+
+  const status = await youtubeCommand(['notes', first, second, '--json'], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.match(output.join('\n'), /url or id  seconds  result/);
+  assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
+  assert.doesNotMatch(output.join('\n'), /^check:/m);
+  assert.equal(output.includes(LEARNER_SCORE_ZERO), false);
+  assert.doesNotMatch(output.join('\n'), /next: atris youtube teach/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
 test('youtube notes empty notes print one teach next-step', async () => {
   const url = 'https://www.youtube.com/watch?v=empty1';
   const { cwd, workDir } = notesApplyWorkspace('empty1', '');

@@ -1530,6 +1530,13 @@ function formatNotesSummary(rows = []) {
   return lines.join('\n');
 }
 
+function printEphemeralNotesLearnerGate(url, { json = false, workDir } = {}, output) {
+  const dir = workDir || path.join(process.env.TMPDIR || '/tmp', 'ytnotes');
+  const lesson = notesLessonFromText(readNotesText({ url, workDir: dir }));
+  if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'notes');
+  printLearnerCheckGate(output, lesson, { includeCheck: true, json });
+}
+
 function runYoutubeNotesBatch({ urls, engine, save, json } = {}, deps = {}) {
   deps = { ...deps, save: save === true || deps.save === true };
   const output = deps.output || ((line = '') => console.error(line));
@@ -1544,8 +1551,10 @@ function runYoutubeNotesBatch({ urls, engine, save, json } = {}, deps = {}) {
   }
   if (!rows.length) return 2;
   const firstOk = rows.find((row) => row.ok);
+  const asJson = json === true || deps.json === true;
   if (firstOk && !deps.save) {
-    printYoutubeTeachNext(firstOk.url, { json: json === true || deps.json === true }, output);
+    if (!asJson) printEphemeralNotesLearnerGate(firstOk.url, { workDir: deps.workDir }, output);
+    printYoutubeTeachNext(firstOk.url, { json: asJson }, output);
   }
   return firstOk ? 0 : 2;
 }
@@ -1561,11 +1570,8 @@ function runSingleYoutubeNotes(url, engine, deps = {}) {
   if (status !== 0) return status;
   const output = deps.output || ((line = '') => console.error(line));
   if (!deps.save) {
-    const workDir = deps.workDir || path.join(process.env.TMPDIR || '/tmp', 'ytnotes');
-    const lesson = notesLessonFromText(readNotesText({ url, workDir }));
     const json = deps.json === true;
-    if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'notes');
-    printLearnerCheckGate(output, lesson, { includeCheck: true, json });
+    printEphemeralNotesLearnerGate(url, { json, workDir: deps.workDir }, output);
     printYoutubeTeachNext(url, { json }, output);
     return 0;
   }
