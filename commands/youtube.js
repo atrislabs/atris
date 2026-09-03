@@ -1565,13 +1565,14 @@ function runSingleYoutubeNotes(url, engine, deps = {}) {
     const lesson = notesLessonFromText(readNotesText({ url, workDir }));
     if (!isThinTeachLesson(lesson)) {
       applyGate.hintEphemeralApply(output, 'notes');
-      printYoutubeTeachNext(url, { json: deps.json }, output);
     }
+    printYoutubeTeachNext(url, { json: deps.json }, output);
     return 0;
   }
   const saved = saveRichNotes(url, deps);
   if (saved.thin) {
     output(TEACH_THIN_REFUSE);
+    printYoutubeTeachNext(url, { json: deps.json }, output);
     return 2;
   }
   const ensureApply = deps.ensureApply || ensureNotesApply;
