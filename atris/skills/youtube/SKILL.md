@@ -27,13 +27,14 @@ search QUERY (free)
              do not run --paid
     |
    pick a URL --> notes URL (free, ephemeral unless --save)
-    |                 rich ephemeral prints one apply next-step, no files
+    |                 rich ephemeral prints one apply next-step and one failing check (score 0), no files
+    |                 thin ephemeral prints check: fill this instead of inventing a check
     |                 then next: atris youtube teach <same-url>
     |                 --json stays quiet
     |                 --save files brief + pack-named apply when notes have a number or named mechanism; thin --save refuses
     |            or teach URL [--section N] (one chapter: claim numbers, named mechanisms, one check; free unless --save)
     |                 a taught section that is not last prints next: recap TEXT or skip
-    |                 last section: rich ephemeral apply then next: atris youtube watch tick; save pack keep stays; no recap next
+    |                 last section: rich ephemeral apply and score 0, then next: atris youtube watch tick; save pack keep stays; no recap next
     |                 next --section refuses until recap/skip
     |                 owed prints unpaid check; successful unlock prints next section command
     |                 bare teach resumes owed, or prints a start command if nothing is owed
@@ -59,7 +60,7 @@ never paste tokens, never /auth/cli
 1. Get watch permalinks: `atris youtube search QUERY` (free). A hit prints one next teach command.
 2. If 429: wait/retry is already in the CLI. If it prints cached rows, use those. If it prints `youtube rate-limited local search. do not use --paid as a fallback; retry later.`, STOP. Do not run `--paid`.
 3. `--paid` only when the user explicitly asked to buy permalinks. The CLI hard-refuses `--paid` when the free cache still has a fresh same-query hit.
-4. `atris youtube notes URL` after a URL is picked (free). Notes is ephemeral unless `--save`. Rich ephemeral prints one apply next-step, then one `next: atris youtube teach <same-url>`, and writes no files. `--json` stays quiet. Rich `--save` files the brief and mints `atris/experiments/notes-<id>/`; thin `--save` (no number-with-units and no named mechanism) refuses with no brief and exit 2. Do not auto `--paid`.
+4. `atris youtube notes URL` after a URL is picked (free). Notes is ephemeral unless `--save`. Rich ephemeral prints one apply next-step and one failing check (`score: 0`), then one `next: atris youtube teach <same-url>`, and writes no files. Thin ephemeral prints `check: fill this` instead of inventing a check. `--json` stays quiet on the check and the teach next-step. Rich `--save` files the brief, mints `atris/experiments/notes-<id>/`, writes one Apply, and prints `score: 0` only when that Apply starts failing; thin `--save` (no number-with-units and no named mechanism) refuses with no brief and exit 2. Do not auto `--paid`.
 5. Write one Apply (change + receipt) before `atris youtube process`. Process still requires a filled Apply (so you `--save` a rich brief, fill Apply, then process).
 6. Never paste tokens. Never `/auth/cli`. Mint with `atris login --agent` from a stored login.
 

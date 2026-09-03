@@ -46,7 +46,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('search --paid = 5 credits, watch permalinks + titles from Atris; hands off to teach');
   output('notes = free local notes to stdout; ephemeral unless --save; hands off to teach');
   output('teach = one chapter from local captions; bare teach resumes unpaid checks, then the next chapter after recap or skip');
-  output('rich ephemeral notes/teach print one apply next-step (no files)');
+  output('rich ephemeral notes/teach print one apply next-step and one failing check (no files)');
   output('process = 5 credits cloud knowledge (needs a filled Apply)');
   output('digest = one decision page from this week\'s video briefs');
   output('watch = subscribed channels turn into briefs without a human; add hands off to tick; tick hands off to teach when it briefed');
@@ -687,7 +687,7 @@ function saveRichNotes(url, deps = {}) {
   const workDir = deps.workDir || path.join(process.env.TMPDIR || '/tmp', 'ytnotes');
   const lesson = notesLessonFromText(readNotesText({ url, workDir }));
   if (isThinTeachLesson(lesson)) {
-    return { thin: true, brief: null, packRel: null };
+    return { thin: true, brief: null, packRel: null, lesson };
   }
   const brief = fileNotesBrief(url, deps);
   const id = videoIdFromUrl(url);
@@ -698,7 +698,7 @@ function saveRichNotes(url, deps = {}) {
     slug: id ? notesExperimentSlug(id) : null,
     applyRel: id ? applySidecarRel(id) : null,
   });
-  return { thin: false, brief, packRel };
+  return { thin: false, brief, packRel, lesson };
 }
 
 function ensureNotesApply({ cwd, url, packRel, now, output } = {}) {
@@ -1563,10 +1563,10 @@ function runSingleYoutubeNotes(url, engine, deps = {}) {
   if (!deps.save) {
     const workDir = deps.workDir || path.join(process.env.TMPDIR || '/tmp', 'ytnotes');
     const lesson = notesLessonFromText(readNotesText({ url, workDir }));
-    if (!isThinTeachLesson(lesson)) {
-      applyGate.hintEphemeralApply(output, 'notes');
-    }
-    printYoutubeTeachNext(url, { json: deps.json }, output);
+    const json = deps.json === true;
+    if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'notes');
+    printLearnerCheckGate(output, lesson, { includeCheck: true, json });
+    printYoutubeTeachNext(url, { json }, output);
     return 0;
   }
   const saved = saveRichNotes(url, deps);
@@ -1576,13 +1576,24 @@ function runSingleYoutubeNotes(url, engine, deps = {}) {
     return 2;
   }
   const ensureApply = deps.ensureApply || ensureNotesApply;
-  return ensureApply({
-    cwd: deps.cwd || process.cwd(),
+  const cwd = deps.cwd || process.cwd();
+  const applyCode = ensureApply({
+    cwd,
     url,
     packRel: saved.packRel,
     now: deps.now,
     output: deps.output,
   });
+  const id = videoIdFromUrl(url);
+  const baseline = proveSavedLearnerBaseline({
+    cwd,
+    applyRel: id ? applySidecarRel(id) : null,
+    lesson: saved.lesson,
+    output,
+    json: deps.json === true,
+  });
+  if (baseline !== 0) return baseline;
+  return applyCode;
 }
 
 function runYoutubeNotes(args = [], deps = {}) {
@@ -2389,7 +2400,13 @@ function extractTeachMechanisms(text) {
   return found.slice(0, 8);
 }
 
-function oneTeachCheck(mechanisms, numbers, title) {
+const LEARNER_CHECK_FILL = 'fill this';
+const LEARNER_SCORE_ZERO = 'score: 0';
+const LEARNER_CHECK_INCOMPLETE = 'incomplete: no measurable check. check: fill this';
+const LEARNER_BASELINE_INCOMPLETE = 'incomplete: check already passes. refuse invented success.';
+const LEARNER_APPLY_MISSING = 'incomplete: apply missing. check cannot score.';
+
+function oneTeachCheck(mechanisms, numbers) {
   if (mechanisms[0]) {
     const name = mechanisms[0];
     const named = new RegExp(`\\b(?:${MECHANISM_HEADS})\\b`, 'i').test(name);
@@ -2397,7 +2414,63 @@ function oneTeachCheck(mechanisms, numbers, title) {
     return `what is ${name}?`;
   }
   if (numbers[0]) return `what does ${numbers[0]} measure in this chapter?`;
-  return `what is the point of ${title || 'this chapter'}?`;
+  return LEARNER_CHECK_FILL;
+}
+
+function learnerCheckFromLesson(lesson = {}) {
+  const mechanisms = Array.isArray(lesson.mechanisms) ? lesson.mechanisms : [];
+  const numbers = Array.isArray(lesson.numbers) ? lesson.numbers : [];
+  const inferred = mechanisms.length > 0 || numbers.length > 0;
+  return {
+    inferred,
+    line: inferred ? oneTeachCheck(mechanisms, numbers) : LEARNER_CHECK_FILL,
+    needles: teachCheckNeedles({ mechanisms, numbers }),
+  };
+}
+
+function scoreLearnerNeedles(text, needles) {
+  const list = Array.isArray(needles) ? needles : [];
+  if (!list.length) return 0;
+  const blob = String(text || '').toLowerCase();
+  return list.every((needle) => blob.includes(String(needle || '').toLowerCase())) ? 1 : 0;
+}
+
+function printLearnerCheckGate(output, lesson, { includeCheck = false, json = false } = {}) {
+  if (json || typeof output !== 'function') return;
+  const check = learnerCheckFromLesson(lesson);
+  if (includeCheck) output(`check: ${check.line}`);
+  if (check.inferred) output(LEARNER_SCORE_ZERO);
+}
+
+function proveSavedLearnerBaseline({ cwd, applyRel, lesson, output, json } = {}) {
+  const print = typeof output === 'function' ? output : () => {};
+  const check = learnerCheckFromLesson(lesson);
+  if (!check.inferred) {
+    if (!json) print(LEARNER_CHECK_INCOMPLETE);
+    return 2;
+  }
+  if (!cwd || !applyRel) {
+    if (!json) print(LEARNER_APPLY_MISSING);
+    return 2;
+  }
+  const abs = path.join(cwd, applyRel);
+  let text = '';
+  try {
+    if (!fs.existsSync(abs)) {
+      if (!json) print(LEARNER_APPLY_MISSING);
+      return 2;
+    }
+    text = fs.readFileSync(abs, 'utf8');
+  } catch {
+    if (!json) print(LEARNER_APPLY_MISSING);
+    return 2;
+  }
+  if (scoreLearnerNeedles(text, check.needles) !== 0) {
+    if (!json) print(LEARNER_BASELINE_INCOMPLETE);
+    return 2;
+  }
+  if (!json) print(LEARNER_SCORE_ZERO);
+  return 0;
 }
 
 function quoteYoutubeUrl(url) {
@@ -3122,6 +3195,7 @@ async function runYoutubeTeach(args = [], deps = {}) {
 
   if (!parsed.save) {
     if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'teach');
+    printLearnerCheckGate(output, lesson, { json: parsed.json === true });
     printTeachWatchTickNext(parsed, lesson, chapters.length, output);
     return 0;
   }
@@ -3131,28 +3205,39 @@ async function runYoutubeTeach(args = [], deps = {}) {
     return 2;
   }
 
+  const cwd = deps.cwd || process.cwd();
   fileTeachBrief({
-    cwd: deps.cwd || process.cwd(),
+    cwd,
     url: parsed.url,
     section: parsed.section,
     lesson: lesson.text,
     now: deps.now,
   });
   const packRel = fileTeachExperiment({
-    cwd: deps.cwd || process.cwd(),
+    cwd,
     url: parsed.url,
     section: parsed.section,
     lesson,
   });
   const ensureApply = deps.ensureApply || ensureTeachApply;
-  return ensureApply({
-    cwd: deps.cwd || process.cwd(),
+  const applyCode = ensureApply({
+    cwd,
     url: parsed.url,
     section: parsed.section,
     packRel,
     now: deps.now,
     output,
   });
+  const id = videoIdFromUrl(parsed.url);
+  const baseline = proveSavedLearnerBaseline({
+    cwd,
+    applyRel: id ? applySidecarRel(`${id}-s${parsed.section}`) : null,
+    lesson,
+    output,
+    json: parsed.json === true,
+  });
+  if (baseline !== 0) return baseline;
+  return applyCode;
 }
 
 async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
@@ -3245,6 +3330,12 @@ module.exports = {
   extractTeachNumbers,
   extractTeachMechanisms,
   extractTeachSource,
+  oneTeachCheck,
+  learnerCheckFromLesson,
+  scoreLearnerNeedles,
+  LEARNER_CHECK_FILL,
+  LEARNER_SCORE_ZERO,
+  proveSavedLearnerBaseline,
   isThinTeachLesson,
   TEACH_THIN_REFUSE,
   TEACH_RESUME_NEXT,

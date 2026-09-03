@@ -11,6 +11,8 @@ const {
   extractTeachMechanisms,
   isThinTeachLesson,
   TEACH_THIN_REFUSE,
+  LEARNER_CHECK_FILL,
+  LEARNER_SCORE_ZERO,
   notesExperimentSlug,
   youtubeCommand,
 } = require('../commands/youtube');
@@ -136,9 +138,12 @@ test('youtube notes without --save stay stdout only', async () => {
 
   assert.equal(status, 0);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 1);
+  assert.equal(out.lines.filter((line) => line === 'check: what is the omakase model?').length, 1);
+  assert.equal(out.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
   assert.equal(out.lines.filter((line) => line === `next: atris youtube teach "${RICH_URL}"`).length, 1);
   assert.doesNotMatch(out.text(), /thin: no number or named mechanism/);
   assert.doesNotMatch(out.text(), /next: apply /);
+  assert.doesNotMatch(out.text(), new RegExp(`check: ${LEARNER_CHECK_FILL}`));
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
@@ -159,6 +164,7 @@ test('youtube notes rich --save mints a measure.py that validate.py accepts', as
   assert.equal(status, 0);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 0);
   assert.doesNotMatch(out.text(), /next: atris youtube teach/);
+  assert.equal(out.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
   assert.match(out.text(), /next: atris experiments keep notes-notes01/);
   const packDir = path.join(cwd, 'atris', 'experiments', 'notes-notes01');
   for (const name of ['program.md', 'measure.py', 'loop.py', 'reset.py', 'results.tsv']) {
