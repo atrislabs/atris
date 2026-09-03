@@ -49,6 +49,11 @@ watch tick --> briefs new videos
            --> 0 briefed, no channels: next: atris youtube watch add <channel-url-or-@handle>
            --> 0 briefed, channels exist: next: atris youtube search " "
 
+digest --> files brief + claimable journal
+       --> rich: one apply next-step and one failing check (score 0)
+       --> thin: check: fill this
+       --> then next: atris youtube watch tick
+
 --paid QUERY only if the user asked to buy permalinks
     |
    rows --> next: atris youtube teach <first-url>
