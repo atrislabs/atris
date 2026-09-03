@@ -10,8 +10,10 @@ const {
   isPlaylistUrl,
   expandNotesTargets,
   runYoutubeNotesBatch,
+  LEARNER_SCORE_ZERO,
   youtubeCommand,
 } = require('../commands/youtube');
+const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
 const RICH_NOTES = '# Clip\n\nThe omakase model has 80 people.\n';
 
@@ -257,6 +259,35 @@ test('playlist expansion caps at 10 and prints a cap note', async () => {
   assert.match(log.text(), /playlist capped at 10 videos \(12 found\)/);
   assert.doesNotMatch(log.text(), /vid11/);
   assert.doesNotMatch(log.text(), /vid12/);
+});
+
+test('playlist notes batch prints apply and check for the first ok video', async () => {
+  const playlist = 'https://www.youtube.com/playlist?list=PLlearn';
+  const firstUrl = 'https://www.youtube.com/watch?v=vid01';
+  const { cwd, workDir } = richNotesWorkspace(['vid01', 'vid02']);
+  const log = collect();
+  const status = runYoutubeNotesBatch({ urls: [playlist], engine: null }, {
+    cwd,
+    workDir,
+    output: log.output,
+    expander: () => ([
+      { id: 'vid01', title: 'First' },
+      { id: 'vid02', title: 'Second' },
+    ]),
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.match(log.text(), /url or id  seconds  result/);
+  assert.equal(log.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 1);
+  assert.equal(log.lines.filter((line) => line === 'check: what is the omakase model?').length, 1);
+  assert.equal(log.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+  assert.deepEqual(
+    log.text().split('\n').filter((line) => line.startsWith('next: atris youtube teach')),
+    [`next: atris youtube teach "${firstUrl}"`],
+  );
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
 test('one failed video records FAILED and the batch continues', async () => {
