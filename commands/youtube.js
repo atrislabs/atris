@@ -47,7 +47,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('notes = free local notes to stdout; ephemeral unless --save; hands off to teach');
   output('teach = one chapter from local captions; bare teach resumes unpaid checks, then the next chapter after recap or skip');
   output('rich ephemeral notes/teach print one apply next-step and one failing check (no files)');
-  output('process = 5 credits cloud knowledge (needs a filled Apply)');
+  output('process = 5 credits cloud knowledge (needs a filled Apply); rich process prints one failing check');
   output('digest = one decision page from this week\'s video briefs');
   output('watch = subscribed channels turn into briefs without a human; add hands off to tick; tick hands off to teach when it briefed');
   output('Process a YouTube video through Atris using timestamped transcript-first analysis.');
@@ -512,6 +512,17 @@ async function processYoutube(options, deps = {}) {
   return result.data;
 }
 
+function processAnalysisText(data) {
+  return data?.video_analysis || data?.analysis || data?.result || '';
+}
+
+function printProcessLearnerGate(data, { json = false } = {}, output) {
+  printLearnerCheckGate(output, notesLessonFromText(processAnalysisText(data)), {
+    includeCheck: true,
+    json,
+  });
+}
+
 function formatYoutubeResult(data) {
   const lines = [];
   const metadata = data?.metadata || {};
@@ -531,7 +542,7 @@ function formatYoutubeResult(data) {
     const remaining = data.credits_remaining !== undefined ? data.credits_remaining : '?';
     lines.push(`Credits: ${used} used, ${remaining} remaining`);
   }
-  const analysis = data?.video_analysis || data?.analysis || data?.result;
+  const analysis = processAnalysisText(data);
   if (analysis) {
     lines.push('');
     lines.push(String(analysis).trim());
@@ -3298,7 +3309,12 @@ async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
   let status = 0;
   try {
     const data = await processYoutube(options, deps);
-    output(options.json ? JSON.stringify(data, null, 2) : formatYoutubeResult(data));
+    if (options.json) {
+      output(JSON.stringify(data, null, 2));
+    } else {
+      output(formatYoutubeResult(data));
+      printProcessLearnerGate(data, {}, output);
+    }
   } catch (err) {
     if (!err.applyRequired) output(err.message);
     status = Number.isInteger(err.exitCode) ? err.exitCode : 1;

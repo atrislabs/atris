@@ -42,6 +42,7 @@ search QUERY (free)
    write one Apply (claimable) before process
     |
    store knowledge? --> process URL (5 credits)
+                    --> rich: one failing check (score 0); thin: check: fill this; --json stays quiet
 
 watch add --> next: atris youtube watch tick
 watch tick --> briefs new videos
