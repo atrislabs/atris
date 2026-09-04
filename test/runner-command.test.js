@@ -235,9 +235,9 @@ test('agy runner profile uses Antigravity accept-edits print mode', () => {
   withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'agy' }, () => {
     assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.agy);
     assert.equal(resolveClaudeRunnerBin(), 'agy');
-    assert.equal(resolveClaudeRunnerModel({}), 'gemini-3.7-flash-high');
-    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --mode accept-edits {modelFlag} -p {prompt}');
-    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'agy --mode accept-edits --model gemini-3.7-flash-high -p "$(cat /tmp/p.tmp)"');
+    assert.equal(resolveClaudeRunnerModel({}), 'gemini-3.8-flash-high');
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" {modelFlag} -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. "{prompt}');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'agy --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" --model gemini-3.8-flash-high -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. ""$(cat /tmp/p.tmp)"');
   });
 });
 
