@@ -52,6 +52,8 @@ test('init writes FOR_AGENTS and the AGENTS adapter breadcrumb', () => {
     assert.ok(agentsContent.includes('FOR_AGENTS.md'));
     assert.match(agentsContent, /## You translate/);
     assert.match(agentsContent, /atris guide/);
+    assert.match(agentsContent, /asks you first/);
+    assert.match(agentsContent, /Never end a reply with a command/);
     assert.ok(agentsContent.includes(INTENTS[0].say[0]));
     assert.match(agentsContent, /Every created task leads with three plain fields/);
     assert.match(agentsContent, /accept\/revise gates and never skips proof/);
