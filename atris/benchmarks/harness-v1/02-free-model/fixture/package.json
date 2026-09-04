@@ -1,0 +1,8 @@
+{
+  "name": "harness-v1-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node -e \"process.exit(0)\""
+  }
+}
