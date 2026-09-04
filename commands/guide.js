@@ -2,6 +2,10 @@
 
 const { INTENTS, matchIntent } = require('../lib/intents');
 
+function plainForIntent(intent) {
+  return `${intent.plain}${intent.confirm ? ' (asks you first)' : ''}`;
+}
+
 function printAlternatives(alternatives, limit) {
   const nearest = alternatives.slice(0, limit);
   if (!nearest.length) return;
@@ -19,7 +23,7 @@ function guideCommand(args = []) {
       return 0;
     }
     INTENTS.forEach((intent) => {
-      console.log(`"${intent.say[0]}"  ->  ${intent.plain}`);
+      console.log(`"${intent.say[0]}"  ->  ${plainForIntent(intent)}`);
     });
     return 0;
   }
@@ -36,7 +40,7 @@ function guideCommand(args = []) {
     return 1;
   }
 
-  console.log(result.intent.plain);
+  console.log(plainForIntent(result.intent));
   console.log(result.intent.do);
   printAlternatives(result.alternatives, 2);
   return 0;

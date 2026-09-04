@@ -84,6 +84,14 @@ test('every command in the intent map is registered', () => {
   });
 });
 
+test('intent commands cannot skip consent', () => {
+  INTENTS.forEach((intent) => {
+    ['--yes', '--force', '-y'].forEach((flag) => {
+      assert.equal(intent.do.includes(flag), false, `${intent.id} contains ${flag}`);
+    });
+  });
+});
+
 test('matchIntent finds everyday requests by token overlap', () => {
   const cases = [
     ['what should i do next', 'next_work'],
@@ -110,6 +118,12 @@ test('guide output stays lowercase and plain', () => {
     const letters = line.replace(/[^a-zA-Z]/g, '');
     assert.ok(!letters || letters !== letters.toUpperCase(), `all caps line: ${line}`);
   });
+});
+
+test('guide marks keep-going work as asking first', () => {
+  const result = runGuide(['run overnight']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /asks you first/);
 });
 
 test('guide match prints one command and no more than two alternatives', () => {
