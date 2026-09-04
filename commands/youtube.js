@@ -1044,6 +1044,59 @@ function saveRichDigest({ cwd, date, lesson, source } = {}) {
   return { thin: false, packRel, lesson, source };
 }
 
+function watchExperimentSlug(id) {
+  return `watch-${experimentIdToken(id)}`;
+}
+
+function watchExperimentRel(id) {
+  return `atris/experiments/${watchExperimentSlug(id)}`;
+}
+
+function watchApplyRel(id) {
+  return applyGate.applySidecarRel('watch', experimentIdToken(id));
+}
+
+function ensureWatchWiki(cwd) {
+  if (!cwd) return;
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+}
+
+function ensureWatchApply({ cwd, url, packRel, now, output, source } = {}) {
+  const id = videoIdFromUrl(url);
+  const pack = packRel || (id ? watchExperimentRel(id) : null);
+  const slug = pack ? path.basename(pack) : null;
+  ensureWatchWiki(cwd);
+  return applyGate.ensureApply({
+    cwd,
+    source: source || url || (id ? `watch:${id}` : 'watch'),
+    rel: id ? watchApplyRel(id) : null,
+    now,
+    output,
+    incompleteMessage: slug
+      ? `next: atris experiments keep ${slug}`
+      : applyGate.ephemeralApplyMessage('watch'),
+    required: false,
+    change: pack ? `apply ${pack}` : undefined,
+    receipt: pack ? TEACH_KEEP_RULE : undefined,
+    journalLine: pack ? `- [claimable] apply: ${pack}. ${TEACH_KEEP_RULE}` : undefined,
+  });
+}
+
+function saveRichWatch({ cwd, url, lesson } = {}) {
+  if (isThinTeachLesson(lesson)) {
+    return { thin: true, packRel: null, lesson };
+  }
+  const id = videoIdFromUrl(url);
+  const packRel = fileTeachExperiment({
+    cwd,
+    url,
+    lesson,
+    slug: id ? watchExperimentSlug(id) : null,
+    applyRel: id ? watchApplyRel(id) : null,
+  });
+  return { thin: false, packRel, lesson, source: url };
+}
+
 function runYoutubeDigest(args = [], deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
   let options;
@@ -1430,19 +1483,41 @@ async function tickWatch(deps = {}) {
   }
 
   output(`total: ${totalNew} new, ${totalBriefed} briefed`);
+  saveWatchState(statePath, state);
   if (totalBriefed > 0) {
     if (firstBriefedUrl) {
       const lesson = notesLessonFromText(readNotesText({ url: firstBriefedUrl, workDir }));
-      if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'watch');
-      printLearnerCheckGate(output, lesson, { includeCheck: true });
+      if (isThinTeachLesson(lesson)) {
+        printLearnerCheckGate(output, lesson, { includeCheck: true });
+        printYoutubeTeachNext(firstBriefedUrl, {}, output);
+        return 0;
+      }
+      const saved = saveRichWatch({ cwd, url: firstBriefedUrl, lesson });
+      const ensureApply = deps.ensureApply || ensureWatchApply;
+      const applyCode = ensureApply({
+        cwd,
+        url: firstBriefedUrl,
+        packRel: saved.packRel,
+        now,
+        output,
+        source: firstBriefedUrl,
+      });
+      if (deps.ensureApply) return applyCode;
+      const id = videoIdFromUrl(firstBriefedUrl);
+      const baseline = proveSavedLearnerBaseline({
+        cwd,
+        applyRel: id ? watchApplyRel(id) : null,
+        lesson,
+        output,
+      });
+      if (baseline !== 0) return baseline;
+      return applyCode;
     }
     printYoutubeTeachNext(firstBriefedUrl, {}, output);
-  } else if (!state.channels.length) {
-    printWatchAddNext(output);
-  } else {
-    printWatchSearchNext(output);
+    return 0;
   }
-  saveWatchState(statePath, state);
+  if (!state.channels.length) printWatchAddNext(output);
+  else printWatchSearchNext(output);
   return 0;
 }
 
@@ -3461,6 +3536,7 @@ module.exports = {
   teachExperimentSlug,
   notesExperimentSlug,
   digestExperimentSlug,
+  watchExperimentSlug,
   fileTeachExperiment,
   youtubeCommand,
 };
