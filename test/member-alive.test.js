@@ -76,7 +76,7 @@ test('alive execute treats stop (no goal) as non-blocking idle, not failure', ()
 
 // Exercise the shipped library and dispatcher in an installed-package layout.
 // Only the final CLI work is a fixture, so no model or user credentials are used.
-function installedPackageFixture(t, { failure = null, noisy = false } = {}) {
+function installedPackageFixture(t, { failure = null, runResult = failure, writeArtifact = true, noisy = false, afterResult = null } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-installed-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const packageRoot = path.join(root, 'node_modules', 'atris');
@@ -94,17 +94,18 @@ function installedPackageFixture(t, { failure = null, noisy = false } = {}) {
     const argv = process.argv.slice(2);
     let result = { ok: true };
     if (argv[0] === 'member' && argv[1] === 'wake') {
-      result = { decision: 'run', checks: { has_mission: true, has_goal: true } };
+      result = { decision: 'run', receipt_path: 'wake-only.json', checks: { has_mission: true, has_goal: true } };
     }
     if (argv[0] === 'member' && argv[1] === 'run') {
       const receipt_path = 'dispatch-proof.json';
-      fs.writeFileSync(receipt_path, JSON.stringify({ cwd: process.cwd(), argv }));
+      if (${JSON.stringify(writeArtifact)}) fs.writeFileSync(receipt_path, JSON.stringify({ cwd: process.cwd(), argv }));
       result = { ok: true, receipt_path, summary: 'packaged dispatch completed' };
-      if (${JSON.stringify(failure)}) result = ${JSON.stringify(failure)};
+      if (${JSON.stringify(runResult)}) result = ${JSON.stringify(runResult)};
       if (${JSON.stringify(noisy)}) process.stdout.write('starting work' + String.fromCharCode(10));
     }
     process.stdout.write(JSON.stringify(result, null, 2));
     if (${JSON.stringify(noisy)} && argv[1] === 'run') process.stdout.write(String.fromCharCode(10) + JSON.stringify({ ok: true, summary: 'cleanup done' }));
+    if (${JSON.stringify(afterResult)} && argv[1] === 'run') process.stdout.write(String.fromCharCode(10) + JSON.stringify(${JSON.stringify(afterResult)}, null, 2));
   `);
   return {
     workspace,
@@ -137,6 +138,57 @@ function installedPackageFixture(t, { failure = null, noisy = false } = {}) {
     },
   };
 }
+
+test('mission creation alone is planned and never borrows a wake receipt', (t) => {
+  const fixture = installedPackageFixture(t, {
+    runResult: { ok: true, action: 'mission_started', mission: { id: 'demo-mission' } },
+    writeArtifact: false,
+  });
+  const tick = fixture.run();
+  assert.equal(tick.status, 'planned');
+  assert.equal(tick.reason, 'mission_started');
+  assert.equal(tick.operate.payload.executed, false);
+  assert.equal(tick.receipt_path, null);
+  assert.equal(fs.existsSync(path.join(fixture.workspace, 'dispatch-proof.json')), false);
+  const loop = fixture.run({ command: true });
+  assert.equal(loop.status, 'planned');
+  assert.deepEqual(loop.tick_receipts, []);
+  const logged = JSON.parse(fs.readFileSync(loop.log_path, 'utf8').trim());
+  assert.equal(logged.productive, false);
+  assert.equal(logged.executed, false);
+});
+
+test('a real execution result after mission creation still completes with its own receipt', (t) => {
+  const fixture = installedPackageFixture(t, {
+    runResult: { ok: true, action: 'mission_started', mission: { id: 'demo-mission' } },
+    afterResult: { ok: true, action: 'mission_run', ran_ticks: 1, receipt_path: 'dispatch-proof.json' },
+  });
+  const tick = fixture.run();
+  assert.equal(tick.status, 'completed');
+  assert.equal(tick.operate.payload.executed, true);
+  assert.equal(tick.receipt_path, 'dispatch-proof.json');
+});
+
+test('outer mission success with an errored work tick is a failed unproductive run', (t) => {
+  const fixture = installedPackageFixture(t, {
+    runResult: {
+      ok: true, action: 'mission_run', ran_ticks: 0,
+      mission: { last_tick_status: 'errored' },
+      receipt_path: 'failed-work.json',
+      ticks: [{ status: 'errored', reason: 'claude-error', ran: false,
+        claude: { ok: false, summary: 'API Error: 400 thinking type unsupported' } }],
+    },
+    writeArtifact: false,
+  });
+  const tick = fixture.run({ expectedOk: false });
+  assert.equal(tick.status, 'failed');
+  assert.equal(tick.operate.payload.reason, 'claude-error');
+  assert.match(tick.operate.payload.detail, /API Error: 400/);
+  const loop = fixture.run({ command: true, expectedOk: false });
+  assert.equal(loop.status, 'failed');
+  const logged = JSON.parse(fs.readFileSync(loop.log_path, 'utf8').trim());
+  assert.equal(logged.productive, false);
+});
 
 for (const noisy of [false, true]) {
   test(`packaged dispatcher reports pretty JSON failure despite zero exit${noisy ? ' and later success' : ''}`, (t) => {

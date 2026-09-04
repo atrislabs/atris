@@ -8,6 +8,7 @@
 
 - Member alive dispatcher lookup: `lib/member-alive.js:64` prefers workspace scripts, then the packaged `scripts/member-operate.mjs`; `test/member-alive.test.js` verifies installed dispatch, workspace cwd, and override precedence.
 - Member alive execution results: `scripts/member-operate.mjs:38` reads multiline JSON and preserves explicit failures despite zero process exit. Explicit `--shared-checkout` passes through `commands/member.js` and `lib/member-alive.js`; developer isolation remains the default. Regression: `test/member-alive.test.js`.
+- Member execution proof: `scripts/member-operate.mjs` treats mission creation without execution as planned and detects errored mission ticks inside an otherwise successful response. `lib/member-alive.js` never substitutes a wake receipt for work proof; `commands/member.js` preserves planned and failed outcomes in the loop summary. Regression: `test/member-alive.test.js`.
 
 **Feature maps (driving the running product, not the code):** `atris/refs/FEATURE-MAP-ax.md` — ax chat app screens, keys, slash commands, and how to verify against the live app. UI work on ax starts there, not with a grep.
 

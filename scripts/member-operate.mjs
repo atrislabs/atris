@@ -39,7 +39,7 @@ function finish(result) {
 function collectJsonSignals(text) {
   // member run / mission run print JSON payloads along the way; harvest the
   // fields the alive loop cares about without depending on exact shapes.
-  const signals = { receipt_path: null, needs_user: false, summary: null, failed: false, reason: null, detail: null };
+  const signals = { receipt_path: null, needs_user: false, summary: null, failed: false, reason: null, detail: null, mission_started: false, execution_result: false };
   let buffer = '';
   let depth = 0;
   let quoted = false;
@@ -59,11 +59,20 @@ function collectJsonSignals(text) {
     if (depth > 0) continue;
     try {
       const parsed = JSON.parse(buffer);
-      if (parsed.ok === false) {
+      const failedTick = parsed.action === 'mission_run' && Array.isArray(parsed.ticks)
+        ? parsed.ticks.find((tick) => ['errored', 'failed'].includes(tick.status)
+          || tick.claude?.ok === false || tick.atris2?.ok === false)
+        : null;
+      const missionErrored = parsed.action === 'mission_run'
+        && ['errored', 'failed'].includes(parsed.mission?.last_tick_status);
+      if (parsed.ok === false || failedTick || missionErrored) {
         signals.failed = true;
-        signals.reason ||= parsed.reason || parsed.error || 'operate_failed';
-        signals.detail ||= parsed.detail || null;
+        signals.reason ||= parsed.reason || parsed.error || failedTick?.reason || 'operate_failed';
+        signals.detail ||= parsed.detail || failedTick?.claude?.summary || failedTick?.atris2?.error || null;
       }
+      if (parsed.action === 'mission_started') signals.mission_started = true;
+      else if (parsed.action === 'mission_run') signals.execution_result ||= Number(parsed.ran_ticks) > 0;
+      else if (parsed.executed === true || parsed.result || parsed.receipt_path) signals.execution_result = true;
       if (parsed.receipt_path) signals.receipt_path = parsed.receipt_path;
       if (parsed.mission?.receipt_path) signals.receipt_path = parsed.mission.receipt_path;
       if (parsed.needs_user === true) signals.needs_user = true;
@@ -158,16 +167,18 @@ child.on('close', (code) => {
   clearTimeout(wallTimer);
   const signals = collectJsonSignals(output + '\n' + errors);
   const ok = code === 0 && !signals.failed;
+  const planned = ok && signals.mission_started && !signals.execution_result;
   finish({
     ok,
-    reason: ok ? 'operate_complete' : signals.reason || 'operate_failed',
+    reason: planned ? 'mission_started' : ok ? 'operate_complete' : signals.reason || 'operate_failed',
+    ...(planned ? { status: 'planned' } : {}),
     ...(signals.detail ? { detail: signals.detail } : {}),
     member,
-    executed: true,
+    executed: !planned,
     exit_code: code,
     max_wall_seconds: maxWall,
     needs_user: signals.needs_user,
-    receipt_path: signals.receipt_path,
+    receipt_path: planned ? null : signals.receipt_path,
     summary: signals.summary,
   });
 });

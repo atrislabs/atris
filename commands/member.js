@@ -8216,7 +8216,7 @@ function memberLoopAliveTick(name, run, index, tickStartedAt) {
     ok: alive.ok !== false,
     decision: alive.status || 'alive_tick',
     reason: alive.reason || null,
-    executed: options.execute,
+    executed: options.execute && alive.operate?.payload?.executed !== false,
     needs_user: alive.needs_user === true,
     next_command: alive.next_command || null,
     has_mission: alive.has_mission === true,
@@ -8230,6 +8230,7 @@ function memberLoopAliveTick(name, run, index, tickStartedAt) {
     alive,
   };
   state.tickResults.push(tick);
+  if (!tick.ok) state.failed = true;
   fs.appendFileSync(state.tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
 }
 
@@ -8362,13 +8363,14 @@ function memberLoopRecordResult(name, paths, lease, run) {
   const { hourly, forever, runId, ticks, intervalMs, durationMs, startedAt } = plan;
   const { tickResults, decisions, stopped, failed, earlyExit, tickLogPath } = state;
   const finishedAt = stampIso();
+  const plannedOnly = aliveMode && tickResults.length > 0 && tickResults.every((tick) => tick.decision === 'planned');
   const summary = {
     ok: !failed,
     action: aliveMode ? 'alive' : 'loop',
     schema: aliveMode ? 'atris.member_alive.v1' : 'atris.member_loop.v1',
     member: name,
     alive: aliveMode,
-    status: failed ? 'failed' : stopped ? 'stopped' : earlyExit ? (earlyExit.blocked_on_human ? 'blocked_on_human' : 'idle') : 'completed',
+    status: failed ? 'failed' : stopped ? 'stopped' : plannedOnly ? 'planned' : earlyExit ? (earlyExit.blocked_on_human ? 'blocked_on_human' : 'idle') : 'completed',
     mode: execute ? 'execute' : 'dry_run',
     cadence: hourly ? 'hourly' : 'custom',
     forever,
