@@ -15,15 +15,45 @@ const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-guide-test-'));
 
 test.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
-function runGuide(args) {
-  const result = spawnSync(process.execPath, [cliPath, 'guide', ...args], {
-    cwd: scratch,
+function makeTempDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-guide-test-'));
+}
+
+function cleanupTempDir(dir) {
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function runCli(args, { cwd = scratch } = {}) {
+  const result = spawnSync(process.execPath, [cliPath, ...args], {
+    cwd,
     encoding: 'utf8',
     env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
   });
   if (result.error) throw result.error;
   return result;
 }
+
+function runGuide(args) {
+  return runCli(['guide', ...args]);
+}
+
+test('fresh init boot offers the say row while keeping seeded backlog work', () => {
+  const dir = makeTempDir();
+  try {
+    const git = spawnSync('git', ['init'], { cwd: dir, encoding: 'utf8' });
+    assert.equal(git.status, 0, `stdout:\n${git.stdout}\nstderr:\n${git.stderr}`);
+
+    const init = runCli(['init', '--yes'], { cwd: dir });
+    assert.equal(init.status, 0, `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`);
+
+    const boot = runCli(['atris.md'], { cwd: dir });
+    assert.equal(boot.status, 0, `stdout:\n${boot.stdout}\nstderr:\n${boot.stderr}`);
+    assert.match(boot.stdout, /^  say\b.*what should i do next/m);
+    assert.match(boot.stdout, /^  next\b/m);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
 
 test('guide --json returns the shared intent map', () => {
   const result = runGuide(['--json']);

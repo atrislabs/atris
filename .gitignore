@@ -2,6 +2,7 @@
 .local/
 .atris/
 .claude/
+.codex-last-message.txt
 atris/brain/
 atris/VALHALLA.md
 
