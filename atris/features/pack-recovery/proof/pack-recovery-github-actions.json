@@ -1,0 +1,44 @@
+{
+  "agent_executable": true,
+  "blockers": [],
+  "blocks_backend_deploy": false,
+  "canonical_backend_gate": "local_verification_pinned_render_deploy_live_canary",
+  "commit": "08689f38aed97bc985608d2eafde336b6042afaa",
+  "generated_at": "2026-09-04T22:13:06.397589+00:00",
+  "label": "pack-recovery-github-actions",
+  "ok": true,
+  "operator_actions": [],
+  "owner_actions": [],
+  "repo": "atrislabs/atris",
+  "required_checks_ready": true,
+  "required_workflows": [
+    "CI"
+  ],
+  "schema": "github-actions-owner-gate-v1",
+  "secrets_read": false,
+  "side_effects_allowed": false,
+  "status": "ready",
+  "workflow_rows": [
+    {
+      "blockers": [],
+      "conclusion": "success",
+      "head_sha": "08689f38aed97bc985608d2eafde336b6042afaa",
+      "jobs": [
+        {
+          "annotation_messages": [],
+          "blockers": [],
+          "conclusion": "success",
+          "id": 101188594107,
+          "name": "test",
+          "status": "completed"
+        }
+      ],
+      "missing_reason": null,
+      "present": true,
+      "ready": true,
+      "status": "completed",
+      "url": "https://github.com/atrislabs/atris/actions/runs/33924069802",
+      "workflow": "CI"
+    }
+  ]
+}
