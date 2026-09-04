@@ -167,10 +167,10 @@ child.on('close', (code) => {
   clearTimeout(wallTimer);
   const signals = collectJsonSignals(output + '\n' + errors);
   const ok = code === 0 && !signals.failed;
-  const planned = ok && signals.mission_started && !signals.execution_result;
+  const planned = ok && !signals.execution_result;
   finish({
     ok,
-    reason: planned ? 'mission_started' : ok ? 'operate_complete' : signals.reason || 'operate_failed',
+    reason: planned ? signals.mission_started ? 'mission_started' : 'no_execution_evidence' : ok ? 'operate_complete' : signals.reason || 'operate_failed',
     ...(planned ? { status: 'planned' } : {}),
     ...(signals.detail ? { detail: signals.detail } : {}),
     member,

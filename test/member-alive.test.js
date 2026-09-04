@@ -76,7 +76,7 @@ test('alive execute treats stop (no goal) as non-blocking idle, not failure', ()
 
 // Exercise the shipped library and dispatcher in an installed-package layout.
 // Only the final CLI work is a fixture, so no model or user credentials are used.
-function installedPackageFixture(t, { failure = null, runResult = failure, writeArtifact = true, noisy = false, afterResult = null } = {}) {
+function installedPackageFixture(t, { failure = null, runResult = failure, writeArtifact = true, noisy = false, afterResult = null, noResult = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-installed-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const packageRoot = path.join(root, 'node_modules', 'atris');
@@ -103,7 +103,7 @@ function installedPackageFixture(t, { failure = null, runResult = failure, write
       if (${JSON.stringify(runResult)}) result = ${JSON.stringify(runResult)};
       if (${JSON.stringify(noisy)}) process.stdout.write('starting work' + String.fromCharCode(10));
     }
-    process.stdout.write(JSON.stringify(result, null, 2));
+    if (!${JSON.stringify(noResult)} || argv[1] !== 'run') process.stdout.write(JSON.stringify(result, null, 2));
     if (${JSON.stringify(noisy)} && argv[1] === 'run') process.stdout.write(String.fromCharCode(10) + JSON.stringify({ ok: true, summary: 'cleanup done' }));
     if (${JSON.stringify(afterResult)} && argv[1] === 'run') process.stdout.write(String.fromCharCode(10) + JSON.stringify(${JSON.stringify(afterResult)}, null, 2));
   `);
@@ -168,6 +168,27 @@ test('a real execution result after mission creation still completes with its ow
   assert.equal(tick.operate.payload.executed, true);
   assert.equal(tick.receipt_path, 'dispatch-proof.json');
 });
+
+for (const noResult of [false, true]) {
+  test(`no execution evidence stays nonproductive for ${noResult ? 'an empty successful child' : 'a zero-tick mission run'}`, (t) => {
+    const fixture = installedPackageFixture(t, {
+      runResult: { ok: true, action: 'mission_run', ran_ticks: 0, ticks: [], receipt_path: 'waiting-receipt.json' },
+      writeArtifact: false,
+      noResult,
+    });
+    const tick = fixture.run();
+    assert.equal(tick.status, 'planned');
+    assert.equal(tick.reason, 'no_execution_evidence');
+    assert.equal(tick.operate.payload.executed, false);
+    assert.equal(tick.receipt_path, null);
+    const loop = fixture.run({ command: true });
+    assert.equal(loop.status, 'planned');
+    assert.deepEqual(loop.tick_receipts, []);
+    const logged = JSON.parse(fs.readFileSync(loop.log_path, 'utf8').trim());
+    assert.equal(logged.productive, false);
+    assert.equal(logged.executed, false);
+  });
+}
 
 test('outer mission success with an errored work tick is a failed unproductive run', (t) => {
   const fixture = installedPackageFixture(t, {
