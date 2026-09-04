@@ -42,7 +42,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`       ${commandName} watch tick`);
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
-  output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links; hands off to teach');
+  output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links; rich free search prints one failing check; hands off to teach');
   output('search --paid = 5 credits, watch permalinks + titles from Atris; rich paid search prints one failing check; hands off to teach');
   output('notes = free local notes to stdout; ephemeral unless --save; hands off to teach');
   output('teach = one chapter from local captions; bare teach resumes unpaid checks, then the next chapter after recap or skip');
@@ -1668,6 +1668,7 @@ function showYoutubeSearchHelp(output = console.log, commandName = 'atris youtub
   output('Free local discovery. Uses ytsearch on PATH when present, else the');
   output('bundled scripts/det/ytsearch, else yt-dlp ytsearchN with the same print contract.');
   output('Does not bill credits. A hit prints one next: atris youtube teach <first-url>.');
+  output('A rich hit prints one failing check (score 0). A thin hit prints check: fill this.');
   output('');
   output(`--paid buys watch permalinks from Atris (${PAID_SEARCH_COST_HINT}).`);
   output('Requires login. Same auth path as atris youtube process.');
@@ -1820,7 +1821,6 @@ function printSearchRows(rows, options, output) {
     return;
   }
   output(formatSearchResults(rows));
-  printSearchTeachNext(rows, options, output);
 }
 
 function writeLocalSearchCache(query, rows, deps = {}) {
@@ -2018,20 +2018,20 @@ async function runPaidYoutubeSearch(options, deps = {}) {
     return 2;
   }
   output(rendered);
-  printPaidSearchLearnerGate(videos, options, output);
+  printSearchLearnerGate(videos, options, output);
   printSearchTeachNext(videos, options, output);
   return 0;
 }
 
-function paidSearchLessonText(videos) {
-  return (Array.isArray(videos) ? videos : [])
+function searchLessonText(rows) {
+  return (Array.isArray(rows) ? rows : [])
     .map((row) => String(row && row.title ? row.title : '').trim())
     .filter(Boolean)
     .join('\n');
 }
 
-function printPaidSearchLearnerGate(videos, options, output) {
-  printLearnerCheckGate(output, notesLessonFromText(paidSearchLessonText(videos)), {
+function printSearchLearnerGate(rows, options, output) {
+  printLearnerCheckGate(output, notesLessonFromText(searchLessonText(rows)), {
     includeCheck: true,
     json: Boolean(options && options.json),
   });
@@ -2172,6 +2172,7 @@ async function runYoutubeSearch(args = [], deps = {}) {
       if (cached) {
         const rows = cached.rows.slice(0, options.limit);
         printSearchRows(rows, options, output);
+        printSearchTeachNext(rows, options, output);
         output(LOCAL_SEARCH_CACHE_NOTE);
         return 0;
       }
@@ -2196,6 +2197,8 @@ async function runYoutubeSearch(args = [], deps = {}) {
 
   writeLocalSearchCache(options.query, rows, deps);
   printSearchRows(rows, options, output);
+  printSearchLearnerGate(rows, options, output);
+  printSearchTeachNext(rows, options, output);
   return 0;
 }
 

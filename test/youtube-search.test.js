@@ -150,6 +150,7 @@ test('youtube --help lists paid search', async () => {
   const text = output.join('\n');
   assert.match(text, /search --paid/);
   assert.match(text, /5 credits, watch permalinks/);
+  assert.match(text, /rich free search prints one failing check/);
   assert.match(text, /rich paid search prints one failing check/);
   assert.match(text, /hands off to teach/);
 });
@@ -179,9 +180,45 @@ test('youtube search prints youtu.be links from mocked runner', async () => {
   assert.match(text, /https:\/\/youtu\.be\/mcp2026b/);
   assert.match(text, /MCP Agents in 2026/);
   assert.match(text, /Dev Channel/);
+  assert.equal(output.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(output.filter((line) => line === LEARNER_SCORE_ZERO).length, 0);
+  assert.doesNotMatch(text, /what is the point of|invented/);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assert.equal(output.includes(TEACH_NEXT_LINE), true);
+  assert.ok(
+    output.indexOf(`check: ${LEARNER_CHECK_FILL}`)
+      < output.indexOf(TEACH_NEXT_LINE),
+  );
   assert.equal(output.includes(WATCH_TICK_NEXT), false);
+});
+
+test('youtube search prints a failing check from a rich title', async () => {
+  const output = [];
+  const status = await youtubeCommand(['search', 'omakase'], {
+    ...cacheDeps(),
+    output: (line) => output.push(line),
+    runner: () => ({
+      status: 0,
+      stdout: '37signals uses the omakase model | Basecamp | 12:00 | 100 | 20260801 | https://youtu.be/omakase1\n',
+    }),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(output.filter((line) => line === 'check: what is the omakase model?').length, 1);
+  assert.equal(output.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+  assert.ok(
+    output.indexOf('check: what is the omakase model?')
+      < output.indexOf(LEARNER_SCORE_ZERO),
+  );
+  assert.equal(output.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 0);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
+  assert.equal(output.includes('next: atris youtube teach "https://youtu.be/omakase1"'), true);
+  assert.ok(
+    output.indexOf(LEARNER_SCORE_ZERO)
+      < output.indexOf('next: atris youtube teach "https://youtu.be/omakase1"'),
+  );
 });
 
 test('youtube search --json prints parsed rows', async () => {
@@ -199,6 +236,8 @@ test('youtube search --json prints parsed rows', async () => {
   const text = output.join('\n');
   assert.doesNotMatch(text, /next: atris youtube teach/);
   assert.doesNotMatch(text, /next: atris youtube watch tick/);
+  assert.doesNotMatch(text, /^check:/m);
+  assert.doesNotMatch(text, /score: 0/);
   const parsed = JSON.parse(text);
   assert.equal(parsed.length, 1);
   assert.equal(parsed[0].url, 'https://youtu.be/one123');
@@ -229,6 +268,8 @@ test('youtube search empty results exits 2', async () => {
   assert.equal(output.includes(WATCH_TICK_NEXT), true);
   assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assert.doesNotMatch(output.join('\n'), /next: atris youtube teach/);
+  assert.doesNotMatch(output.join('\n'), /^check:/m);
+  assert.doesNotMatch(output.join('\n'), /score: 0/);
   assert.equal(fsMock.store[CACHE_PATH], undefined);
 });
 
@@ -347,6 +388,8 @@ test('youtube search persistent 429 prints one sentence and stays off paid', asy
   assert.doesNotMatch(text, /\/youtube\/search/);
   assert.doesNotMatch(text, /Sign in to confirm|not a bot/);
   assert.doesNotMatch(text, /try --paid|run --paid|search --paid/);
+  assert.doesNotMatch(text, /^check:/m);
+  assert.doesNotMatch(text, /score: 0/);
   assert.equal(output.includes(WATCH_TICK_NEXT), false);
 });
 
@@ -369,6 +412,8 @@ test('youtube search rate-limit retry still prints unrelated yt-dlp detail', asy
   assert.equal(runnerCalls, 2);
   assert.match(output.join('\n'), /yt-dlp exploded/);
   assert.doesNotMatch(output.join('\n'), /rate-limited|--paid|\/youtube\/search/);
+  assert.doesNotMatch(output.join('\n'), /^check:/m);
+  assert.doesNotMatch(output.join('\n'), /score: 0/);
 });
 
 test('youtube search writes free local rows to cache', async () => {
@@ -430,6 +475,8 @@ test('youtube search persistent 429 serves fresh same-query cache and stays off 
   assert.match(text, new RegExp(CACHE_NOTE));
   assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assert.equal(output.includes(TEACH_NEXT_LINE), true);
+  assert.doesNotMatch(text, /^check:/m);
+  assert.doesNotMatch(text, /score: 0/);
   assert.doesNotMatch(text, /\/youtube\/search|--paid|token/);
 });
 
