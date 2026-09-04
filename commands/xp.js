@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { hasFlag: hasExactFlag } = require('../lib/arg-parser');
+const { treeHashFor } = require('../lib/tree-hash');
 
 const DEFAULT_GRAPH_DAYS = 365;
 const MAX_SYNC_GRAPH_DAYS = 370;
@@ -908,7 +909,7 @@ function readTaskEpisodeTail(episodePath, cursorPath, options = {}) {
   }
 }
 
-function receiptFromTaskEpisode(episode) {
+function receiptFromTaskEpisode(episode, treeHash) {
   const episodeId = episode?.episode_id;
   const label = episode?.rl?.label;
   const rejected = label === 'rework_requested' || label === 'rejected';
@@ -924,6 +925,7 @@ function receiptFromTaskEpisode(episode) {
 
   return {
     schema: 'atris.career_xp_receipt.v1',
+    tree_hash: treeHash,
     receipt_id: `task_review:${episodeId}${rejected ? ':rejected' : ''}`,
     source: 'atris-cli',
     source_type: 'task_review',
@@ -1071,10 +1073,11 @@ function collectLocalXpProjectionState(args = [], { write = true } = {}) {
     && fileSize(episodePath) > 0
     && fileSize(receiptsPath) === 0;
   const tail = readTaskEpisodeTail(episodePath, cursorPath, { forceReset: replayFromStart });
+  const treeHash = write && tail.episodes.length ? treeHashFor(workspace) : null;
   const seen = new Set(existingChain.receipts.map(receipt => receipt.receipt_id).filter(Boolean));
   let previousHash = existingChain.integrity.head_hash || null;
   const newReceipts = tail.episodes
-    .map(receiptFromTaskEpisode)
+    .map((episode) => receiptFromTaskEpisode(episode, treeHash))
     .filter(Boolean)
     .filter((receipt) => {
       if (seen.has(receipt.receipt_id)) return false;

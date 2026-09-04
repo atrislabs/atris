@@ -171,6 +171,7 @@ test('tampered integrity zeroes the projection instead of trusting receipts', ()
 test('xp --local --json projects seeded episodes and writes the ledger triplet', () => {
   const workspace = makeTempDir();
   try {
+    fs.writeFileSync(path.join(workspace, 'atris.md'), '# xp tree\n', 'utf8');
     writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
       taskEpisode(workspace, { episode_id: 'smoke-1', task_id: 'SMOKE-1', xp: 4, proof: 'smoke proof one' }),
       taskEpisode(workspace, { episode_id: 'smoke-2', task_id: 'SMOKE-2', xp: 6, proof: 'smoke proof two' }),
@@ -188,6 +189,9 @@ test('xp --local --json projects seeded episodes and writes the ledger triplet',
 
     const stateDir = path.join(workspace, '.atris', 'state');
     assert.ok(fs.existsSync(path.join(stateDir, 'career_xp_receipts.jsonl')));
+    const receipts = fs.readFileSync(path.join(stateDir, 'career_xp_receipts.jsonl'), 'utf8')
+      .trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    assert.ok(receipts.every((receiptRow) => typeof receiptRow.tree_hash === 'string'));
     assert.ok(fs.existsSync(path.join(stateDir, 'career_xp.projection.json')));
     assert.ok(fs.existsSync(path.join(stateDir, 'career_xp.cursor.json')));
   } finally {

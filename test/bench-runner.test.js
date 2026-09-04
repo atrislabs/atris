@@ -184,6 +184,7 @@ test('runner appends results, writes baseline pointer, and preserves JSON contra
   const dir = makeTempDir();
   const tasksDir = path.join(dir, 'tasks');
   try {
+    fs.writeFileSync(path.join(dir, 'atris.md'), '# bench tree\n', 'utf8');
     writeTask(tasksDir, '01-pass.js', `
       module.exports = {
         id: 'contract-pass',
@@ -202,6 +203,7 @@ test('runner appends results, writes baseline pointer, and preserves JSON contra
     assert.equal(exitCode, 0);
     assert.deepEqual(Object.keys(record), [
       'schema',
+      'tree_hash',
       'pack',
       'engine',
       'model',
@@ -224,6 +226,7 @@ test('runner appends results, writes baseline pointer, and preserves JSON contra
       'retried',
     ]);
     assert.equal(record.schema, 'atris.bench.run.v1');
+    assert.equal(typeof record.tree_hash, 'string');
     assert.equal(record.label, 'baseline');
     assert.equal(record.experiment, 'exp-1');
     assert.equal(record.summary, '1/1 gate cases passed');

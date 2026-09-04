@@ -29,6 +29,7 @@ const { cronInstalled } = require('./pulse');
 const close = require('./close');
 const { readUsage } = require('../lib/usage');
 const { knownCommands } = require('../lib/known-commands');
+const { treeHashFor } = require('../lib/tree-hash');
 
 /**
  * Expand a leading `~` to the real home directory for LOCAL filesystem
@@ -227,10 +228,11 @@ function buildScorecardRow(summary = {}, meta = {}) {
 }
 
 function appendScorecardRow(workspace, row) {
-  const dir = path.join(expandHome(workspace), '.atris', 'state');
+  const workspaceRoot = expandHome(workspace);
+  const dir = path.join(workspaceRoot, '.atris', 'state');
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, 'scorecards.jsonl');
-  fs.appendFileSync(file, `${JSON.stringify(row)}\n`, 'utf8');
+  fs.appendFileSync(file, `${JSON.stringify({ ...row, tree_hash: treeHashFor(workspaceRoot) })}\n`, 'utf8');
   return file;
 }
 

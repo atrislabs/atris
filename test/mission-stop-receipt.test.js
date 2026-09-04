@@ -45,6 +45,7 @@ function initWorkspace(dir) {
   runGit(['config', 'user.email', 'test@example.com'], dir);
   runGit(['config', 'user.name', 'Test User'], dir);
   fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris.md'), '# mission tree\n');
   fs.writeFileSync(path.join(dir, 'base.txt'), 'committed\n');
   runGit(['add', '.'], dir);
   runGit(['commit', '-m', 'clean baseline'], dir);
@@ -89,6 +90,7 @@ test('mission stop writes a stop receipt with worktree-vs-baseline evidence', ()
     assert.equal(payload.mission.receipt_path, payload.receipt_path);
 
     const receipt = JSON.parse(fs.readFileSync(path.join(dir, payload.receipt_path), 'utf8'));
+    assert.equal(typeof receipt.tree_hash, 'string');
     assert.equal(receipt.mission_id, mission.id);
     assert.equal(receipt.result.kind, 'mission_stop');
     assert.equal(receipt.result.reason, 'priorities changed');

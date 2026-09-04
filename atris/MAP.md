@@ -1629,6 +1629,8 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 **Pattern:** Modular commands (commands/\*.js) + monolithic bin/atris.js
 
+- `commands/tree.js:9` - `atris tree hash [--json]` command handler
+
 **Search:** `rg "else if \(command ===" bin/atris.js`
 
 ### Concern: File System Operations
@@ -1638,6 +1640,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - `lib/file-ops.js` (289 lines) — File/folder utilities
 - `lib/journal.js` (172 lines) — Journal-specific operations
 - `lib/todo.js` (182 lines) — TODO.md parser + team journal reader
+- `lib/tree-hash.js:35` - deterministic agent text tree manifest and hash
 
 **Operations:**
 

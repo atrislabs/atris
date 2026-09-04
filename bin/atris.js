@@ -585,6 +585,7 @@ function showHelpAll() {
   console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');
   console.log('  revisions  - show possible human revisions after atris-assisted landings');
+  console.log('  tree hash  - hash the live agent text tree (--json for manifest)');
   console.log('  search     - Search workspace memory (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
   console.log('  close      - keep ten active loops and park the rest with their history');
@@ -3177,6 +3178,11 @@ if (command === 'guide') {
   Promise.resolve(require('../commands/reel').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'tree') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  const code = require('../commands/tree').treeCommand(subcommand, ...args);
+  process.exit(code || 0);
 } else if (command === 'receipt' || command === 'proof' || command === 'openclaw') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
