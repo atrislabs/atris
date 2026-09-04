@@ -8,9 +8,11 @@ const {
   packMetadata,
   readResultRecords,
   runBench,
+  runBenchPair,
   taskMetadata,
 } = require('../lib/bench/runner');
 const { buildBenchReport, renderBenchReportText } = require('../lib/bench/report');
+const { materializeCandidate } = require('../lib/bench/tree-render');
 const { hasFlag } = require('../lib/arg-parser');
 
 function isAtrisCliRepo(cwd = process.cwd()) {
@@ -52,6 +54,7 @@ function readRepeatedFlag(args, name) {
 
 function printHelp() {
   console.log('Usage: atris bench run [--pack <id>] [--engine <name>] [--model <id>] [--task <id> ...] [--label baseline|candidate] [--experiment <id>] [--update-baseline] [--json]');
+  console.log('Usage: atris bench pair --candidate <dir|git-ref> [--pack <id>] [--engine <name>] [--model <id>] [--task <id> ...] [--min-win-margin <n>] [--repeats <n>] [--current <dir>] [--json]');
   console.log('Usage: atris bench results [--last N] [--json]');
   console.log('Usage: atris bench tasks [--pack <id>] [--json]');
   console.log('Usage: atris bench packs [--json]');
@@ -59,6 +62,20 @@ function printHelp() {
   console.log('');
   console.log('Bench runs product gates and only belongs in the atris CLI repo.');
   console.log('Pass --here to allow running outside that repo.');
+}
+
+function pairScoreText(score) {
+  if (score === null) return 'could-not-run';
+  return score === 1 ? 'pass' : 'fail';
+}
+
+function printPairText(record) {
+  const width = Math.max(0, ...record.tasks.map((task) => task.id.length)) + 3;
+  for (const task of record.tasks) {
+    console.log(`${task.id.padEnd(width)}current ${pairScoreText(task.current)}   candidate ${pairScoreText(task.candidate)}   ${task.outcome}`);
+  }
+  console.log(`wins ${record.wins}  losses ${record.losses}  ties ${record.ties}`);
+  console.log(`verdict: ${record.verdict}, ${record.reason}`);
 }
 
 function printRunText(record) {
@@ -100,6 +117,48 @@ async function runCommand(args) {
       console.error(`atris bench: ${message}`);
     }
     return err instanceof BenchInfraError || err.exitCode === 2 ? 2 : 2;
+  }
+}
+
+async function pairCommand(args) {
+  const asJson = hasFlag(args, '--json');
+  const candidateSource = readInlineFirstFlag(args, '--candidate');
+  let candidateRoot = null;
+  let removeCandidate = false;
+  try {
+    if (!candidateSource) throw new BenchInfraError('candidate is required');
+    try {
+      removeCandidate = !fs.statSync(path.resolve(candidateSource)).isDirectory();
+    } catch {
+      removeCandidate = true;
+    }
+    candidateRoot = materializeCandidate(candidateSource, process.cwd());
+    const result = await runBenchPair({
+      pack: readInlineFirstFlag(args, '--pack') || undefined,
+      engine: readInlineFirstFlag(args, '--engine') || undefined,
+      model: readInlineFirstFlag(args, '--model') || undefined,
+      taskIds: readRepeatedFlag(args, '--task'),
+      minWinMargin: readInlineFirstFlag(args, '--min-win-margin') || undefined,
+      repeats: readInlineFirstFlag(args, '--repeats') || undefined,
+      currentRoot: readInlineFirstFlag(args, '--current') || undefined,
+      candidateRoot,
+      stateRoot: process.cwd(),
+    });
+    if (asJson) console.log(JSON.stringify(result.record));
+    else printPairText(result.record);
+    return result.exitCode;
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    if (asJson) {
+      console.log(JSON.stringify({ schema: 'atris.bench.error.v1', error: message }));
+    } else {
+      console.error(`atris bench: ${message}`);
+    }
+    return 2;
+  } finally {
+    if (removeCandidate && candidateRoot) {
+      fs.rmSync(candidateRoot, { recursive: true, force: true });
+    }
   }
 }
 
@@ -201,6 +260,7 @@ async function benchCommand(args = []) {
     return 2;
   }
   if (subcommand === 'run') return runCommand(rest);
+  if (subcommand === 'pair') return pairCommand(rest);
   if (subcommand === 'tasks') return tasksCommand(rest);
   if (subcommand === 'packs') return packsCommand(rest);
   if (subcommand === 'results') return resultsCommand(rest);

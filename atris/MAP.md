@@ -323,23 +323,25 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 ### Feature: Bench (`atris bench`)
 
-**Purpose:** Run fixed benchmark packs serially in hermetic temp workspaces, append benchmark receipts, expose task metadata for the daily keep/revert gate, measure coding agents through directory task packs, and report per-engine scores from the accumulated results.
+**Purpose:** Run fixed benchmark packs serially in hermetic temp workspaces, compare current and candidate agent text trees task by task, append benchmark receipts, expose task metadata for the daily keep/revert gate, measure coding agents through directory task packs, and report per-engine scores from the accumulated results.
 
 - **Entry point:** `bin/atris.js` command routing for `bench`
-- **Handler:** `commands/bench.js` (`runCommand`, `tasksCommand`, `packsCommand`, `resultsCommand`, `reportCommand:145`, `benchCommand`)
-- **Runner:** `lib/bench/runner.js` (`discoverPacks`, `loadTaskSpecs`, `runTaskSpec`, `runBench`, `taskMetadata`, `packMetadata`)
+- **Handler:** `commands/bench.js` (`runCommand:90`, `pairCommand:123`, `tasksCommand`, `packsCommand`, `resultsCommand`, `reportCommand`, `benchCommand`)
+- **Runner:** `lib/bench/runner.js` (`discoverPacks`, `loadTaskSpecs`, `runTaskSpec`, `runBench:466`, `runBenchPair:572`, `taskMetadata`, `packMetadata`)
+- **Tree renderer:** `lib/bench/tree-render.js` (`renderTreeInto:20` copies the hashed text tree into each fixture; `materializeCandidate:42` accepts a directory or extracts a git ref)
 - **Engine adapters:** `lib/bench/engines.js` (`codex`, `cursor`, `claude`, `atris-fast`, `null`, `solution`)
 - **Hermetic context:** `lib/bench/context.js` (`hermeticEnv`, `createBenchContext`, `withBenchContext`)
 - **Report builder:** `lib/bench/report.js` (`buildBenchReport:44` groups `results.jsonl` by engine, keeps each engine's latest full run and merges partial runs only when no full run exists; `renderBenchReportText:116` renders the human view; schema `atris.bench.report.v1`)
 - **Task packs:** `atris/benchmarks/core-v1/` (legacy `.js` specs), `atris/benchmarks/agents-v1/` (directory task specs, see its `README.md` for what the pack measures and how to run a sweep)
 - **How it works:**
 - `atris bench run [--pack <id>] [--engine <name>] [--task <id> ...] [--label baseline|candidate] [--experiment <id>] [--update-baseline] [--json]` runs serial task specs and appends `.atris/state/bench/results.jsonl`
+- `atris bench pair --candidate <dir|git-ref> [--pack <id>] [--engine <name>] [--task <id> ...] [--min-win-margin <n>] [--repeats <n>] [--current <dir>] [--json]` interleaves current and candidate tree runs for every selected task, records both scores and hashes, and selects only when the candidate clears the requested win margin
 - `atris bench packs [--json]` lists benchmark packs under `atris/benchmarks/`
 - `atris bench results [--last N] [--json]` reads persisted run receipts
 - `atris bench tasks [--pack <id>] [--json]` lists pack metadata from the task specs
 - `atris bench report [--pack agents-v1] [--json]` reads `.atris/state/bench/results.jsonl`, groups by engine (latest full run wins), and prints N/25 passed, per-category counts, mean task duration, failed task ids, and skipped count; empty results print `no runs recorded for pack <pack>` and exit 0
-- **Regression:** `test/bench-core-gate.test.js`, `test/bench-runner.test.js`, `test/bench-tasks.test.js`, `test/bench-agents.test.js`, `test/bench-agents-harness.test.js`, `test/bench-report.test.js`, `test/mission-tick-prompt.test.js`
-- **Search:** `rg "benchCommand|runBench|taskMetadata|withBenchContext|ENGINE_NAMES|buildBenchReport" commands/bench.js lib/bench/runner.js lib/bench/context.js lib/bench/engines.js lib/bench/report.js`
+- **Regression:** `test/bench-pair.test.js`, `test/bench-core-gate.test.js`, `test/bench-runner.test.js`, `test/bench-tasks.test.js`, `test/bench-agents.test.js`, `test/bench-agents-harness.test.js`, `test/bench-report.test.js`, `test/mission-tick-prompt.test.js`
+- **Search:** `rg "benchCommand|runBenchPair|renderTreeInto|taskMetadata|withBenchContext|ENGINE_NAMES|buildBenchReport" commands/bench.js lib/bench/runner.js lib/bench/tree-render.js lib/bench/context.js lib/bench/engines.js lib/bench/report.js`
 
 ### Feature: Experiments (`atris experiments`)
 

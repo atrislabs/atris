@@ -643,7 +643,7 @@ function showHelpAll() {
   console.log('  experiments keep <slug>     - Keep a pack only when measure.py moves 0 to 1');
   console.log('  experiments revert <slug>   - Run a pack reset.py after a refused keep');
   console.log('  experiments benchmark [m]   - Run validate/runtime experiment benchmarks');
-  console.log('  bench      - run core benchmark gates');
+  console.log('  bench      - run benchmark gates or compare trees with bench pair');
   console.log('');
   console.log('Compile loop (learn like AI, run like code):');
   console.log('  compile record <name>       - Append an execution record (--input/--output)');
