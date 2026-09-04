@@ -15,6 +15,7 @@ const {
   unsaveYoutubeNotes,
   APPLY_NEXT_MESSAGE,
   PROCESS_APPLY_MESSAGE,
+  youtubeNotesSaveNext,
   TEACH_THIN_REFUSE,
   LEARNER_CHECK_FILL,
   LEARNER_SCORE_ZERO,
@@ -906,6 +907,7 @@ test('youtube help says notes stay ephemeral unless --save', async () => {
   assert.match(text, /unsave <url-or-id>/);
   assert.match(text, /matching notes\/teach experiment packs/);
   assert.match(text, /needs a filled Apply/);
+  assert.match(text, /missing Apply hands off to notes --save/);
 });
 
 test('youtube process without apply exits 2 and never calls the api', async () => {
@@ -939,6 +941,10 @@ test('youtube process without apply exits 2 and never calls the api', async () =
   assert.equal(extractCalls, 0);
   assert.equal(authCalls, 0);
   assert.equal(output.includes(PROCESS_APPLY_MESSAGE), true);
+  assert.deepEqual(
+    output.filter((line) => String(line).startsWith('next:')),
+    [youtubeNotesSaveNext('https://youtu.be/proc01')],
+  );
   const stub = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-proc01.apply.md'), 'utf8');
   assert.match(stub, /^change: fill this$/m);
   assert.match(stub, /^receipt: fill this$/m);
@@ -974,8 +980,65 @@ test('youtube process with a stub-only apply refuses without rewriting it', asyn
   assert.equal(status, 2);
   assert.equal(apiCalls, 0);
   assert.equal(output.includes(PROCESS_APPLY_MESSAGE), true);
+  assert.deepEqual(
+    output.filter((line) => String(line).startsWith('next:')),
+    [youtubeNotesSaveNext('https://youtu.be/proc02')],
+  );
   assert.equal(fs.readFileSync(applyPath, 'utf8'), stub);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
+});
+
+test('youtube process --json without apply stays quiet on the notes --save next', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-json-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const output = [];
+  let apiCalls = 0;
+
+  const status = await youtubeCommand(['process', 'https://youtu.be/procjson', '--json'], {
+    cwd,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    extractLocalTranscript: async () => null,
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      return { ok: true, status: 200, data: {} };
+    },
+  });
+
+  assert.equal(status, 2);
+  assert.equal(apiCalls, 0);
+  assert.equal(output.includes(PROCESS_APPLY_MESSAGE), true);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 0);
+});
+
+test('youtube process with a filled apply does not print notes --save next', async () => {
+  const url = 'https://youtu.be/proc03';
+  const cwd = filledApplyWorkspace('proc03', url);
+  const output = [];
+
+  const status = await youtubeCommand(['process', url], {
+    cwd,
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    extractLocalTranscript: async () => null,
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        status: 'success',
+        message: 'YouTube video processed successfully',
+        video_analysis: 'Main insight.',
+        credits_used: 5,
+        credits_remaining: 42,
+      },
+    }),
+  });
+
+  assert.equal(status, 0);
+  assert.match(output.join('\n'), /Main insight/);
+  assert.equal(output.includes(PROCESS_APPLY_MESSAGE), false);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 0);
 });
 
 test('youtube process mints only the youtube scope after an expired user wall and retries', async () => {

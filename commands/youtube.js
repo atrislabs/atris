@@ -47,7 +47,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('notes = free local notes to stdout; ephemeral unless --save; hands off to teach');
   output('teach = one chapter from local captions; bare teach resumes unpaid checks, then the next chapter after recap or skip');
   output('rich ephemeral notes/teach print one apply next-step and one failing check (no files)');
-  output('process = 5 credits cloud knowledge (needs a filled Apply)');
+  output('process = 5 credits cloud knowledge (needs a filled Apply); missing Apply hands off to notes --save');
   output('digest = one decision page from this week\'s video briefs');
   output('watch = subscribed channels turn into briefs without a human; add hands off to tick; tick hands off to teach when it briefed');
   output('Process a YouTube video through Atris using timestamped transcript-first analysis.');
@@ -442,6 +442,7 @@ async function processYoutube(options, deps = {}) {
     url: options.youtubeUrl,
     now: deps.now,
     output: deps.output,
+    json: options.json === true,
   });
   if (applyStatus !== 0) {
     const err = new Error(PROCESS_APPLY_MESSAGE);
@@ -829,17 +830,30 @@ function runYoutubeUnsave(args = [], deps = {}) {
   return code;
 }
 
-function ensureProcessApply({ cwd, url, now, output } = {}) {
+function youtubeNotesSaveNext(url) {
+  return `next: atris youtube notes ${quoteYoutubeUrl(url)} --save`;
+}
+
+function printYoutubeNotesSaveNext(url, options, output) {
+  if (options && options.json) return;
+  if (!url || typeof output !== 'function') return;
+  output(youtubeNotesSaveNext(url));
+}
+
+function ensureProcessApply({ cwd, url, now, output, json } = {}) {
+  const print = typeof output === 'function' ? output : (line = '') => console.error(line);
   const id = videoIdFromUrl(url);
-  return applyGate.ensureApply({
+  const code = applyGate.ensureApply({
     cwd,
     source: url,
     rel: id ? applySidecarRel(id) : null,
     now,
-    output,
+    output: print,
     incompleteMessage: PROCESS_APPLY_MESSAGE,
     required: true,
   });
+  if (code !== 0) printYoutubeNotesSaveNext(url, { json }, print);
+  return code;
 }
 
 const DIGEST_ENGINE_TIMEOUT_MS = 240000;
@@ -3323,6 +3337,7 @@ module.exports = {
   unsaveYoutubeNotes,
   APPLY_NEXT_MESSAGE,
   PROCESS_APPLY_MESSAGE,
+  youtubeNotesSaveNext,
   isPlaylistUrl,
   parseNotesArgs,
   expandNotesTargets,

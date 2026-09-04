@@ -40,6 +40,7 @@ search QUERY (free)
     |                 bare teach resumes owed, or prints a start command if nothing is owed
     |
    write one Apply (claimable) before process
+        process without Apply --> next: atris youtube notes <url> --save
     |
    store knowledge? --> process URL (5 credits)
 
