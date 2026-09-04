@@ -81,7 +81,7 @@ test('legacy string asks list and answer through the mission ping path', (t) => 
   assert.ok(mission.human_asks[0].answered_at);
   assert.equal(mission.human_asks[0].note, 'proof is green');
   assert.equal(mission.pings[0].from, 'decide');
-  assert.equal(mission.pings[0].text, 'Decision on "Ship the result?": YES — proof is green');
+  assert.equal(mission.pings[0].text, 'Decision on "Ship the result?": YES, proof is green');
 
   const none = run(root, ['decide']);
   assert.equal(none.status, 0, none.stderr || none.stdout);

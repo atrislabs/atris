@@ -612,7 +612,7 @@ async function planAtris(userInput = null) {
 
   if (showFactory) {
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ Atris Plan: Navigator Agent Activated                      │');
+  console.log('│ Atris Plan - Navigator Agent Activated                     │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 
@@ -1423,7 +1423,7 @@ async function reviewAtris() {
   if (showFull) {
     console.log('');
     console.log('┌─────────────────────────────────────────────────────────────┐');
-    console.log('│ Atris Review: Validator Agent Activated                    │');
+    console.log('│ Atris Review - Validator Agent Activated                   │');
     console.log('└─────────────────────────────────────────────────────────────┘');
     console.log('');
 

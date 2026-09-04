@@ -985,7 +985,7 @@ test('do prints first-minute only by default', () => {
     assert.doesNotMatch(res.stdout, /PROMPT ONLY|executor\.md not found|Run "atris init"/);
     assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT/);
     assert.doesNotMatch(res.stdout, /You are the Executor/);
-    assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
+    assert.doesNotMatch(res.stdout, /Atris Do - Executor Agent Activated/);
     assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
     assert.doesNotMatch(res.stdout, /EXECUTOR SPEC — How to Build/);
   } finally {

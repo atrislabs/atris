@@ -245,7 +245,7 @@ test('plan after init --yes --minimal does not send you back to init', () => {
   assert.equal(spokenLineCount(spokenDoBody(res.stdout)), 2);
   assert.match(res.stdout, /^next: /m);
   assert.doesNotMatch(res.stdout, /PROMPT ONLY/);
-  assert.doesNotMatch(res.stdout, /Atris Plan — Navigator Agent Activated/);
+  assert.doesNotMatch(res.stdout, /Atris Plan - Navigator Agent Activated/);
   assert.doesNotMatch(res.stdout, /Navigator spec: atris\/team\/navigator\/MEMBER\.md \(missing\)/);
   assert.doesNotMatch(combined, /navigator\.md not found|Run "atris init"/);
   assert.doesNotMatch(combined, /What do you want to build|Describe the desired outcome/);
@@ -287,7 +287,7 @@ test('do after init --yes --minimal does not send you back to init', () => {
   assert.equal(spokenLineCount(spokenDoBody(res.stdout)), 2);
   assert.match(res.stdout, /^next: /m);
   assert.doesNotMatch(res.stdout, /PROMPT ONLY/);
-  assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
+  assert.doesNotMatch(res.stdout, /Atris Do - Executor Agent Activated/);
   assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
   assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT|You are the Executor\./);
   assert.doesNotMatch(res.stdout, /Executor spec: atris\/team\/executor\/MEMBER\.md \(missing\)/);
@@ -355,12 +355,12 @@ test('plan on an initialized workspace prints the navigator prompt shape', () =>
   assert.equal(brief.stdout.trim(), minute.stdout.trim());
   assert.match(brief.stdout, /^next: /m);
   assert.doesNotMatch(brief.stdout, /PROMPT ONLY/);
-  assert.doesNotMatch(brief.stdout, /Atris Plan — Navigator Agent Activated/);
+  assert.doesNotMatch(brief.stdout, /Atris Plan - Navigator Agent Activated/);
   assert.doesNotMatch(brief.stdout, /COPY\/PASTE PROMPT|You are the Navigator\./);
 
   const res = runCli(['plan', '--verbose'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /Atris Plan — Navigator Agent Activated/);
+  assert.match(res.stdout, /Atris Plan - Navigator Agent Activated/);
   assert.match(res.stdout, /CONTEXT FILES \(agent should read\):/);
   assert.match(res.stdout, /COPY\/PASTE PROMPT FOR YOUR CODING AGENT:/);
   assert.match(res.stdout, /You are the Navigator\./);
@@ -392,7 +392,7 @@ test('plan flags a placeholder MAP.md so agents generate it before writing tasks
   );
   const res = runCli(['plan', '--verbose'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /placeholder — generate first/);
+  assert.match(res.stdout, /placeholder, generate first/);
   assert.match(res.stdout, /missing or placeholder, generate it/);
 });
 
@@ -426,7 +426,7 @@ test('do prints the first-minute head; executor paste stays on --verbose', () =>
   assert.equal(res.stdout.trim(), minute.stdout.trim());
   assert.match(res.stdout, /^next: /m);
   assert.doesNotMatch(res.stdout, /PROMPT ONLY/);
-  assert.doesNotMatch(res.stdout, /Atris Do — Executor Agent Activated/);
+  assert.doesNotMatch(res.stdout, /Atris Do - Executor Agent Activated/);
   assert.doesNotMatch(res.stdout, /Context: UNKNOWN/);
   assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT|You are the Executor\./);
   assert.doesNotMatch(res.stdout, /claim next unclaimed Backlog task/);
@@ -455,7 +455,7 @@ test('plan names a claimed task the same way first-minute does', () => {
   assert.equal(nextLine(plan.stdout), nextLine(minute.stdout));
   assert.equal(nextLine(plan.stdout), 'atris task ready CLI-9 --verify "git diff --check"');
   assert.doesNotMatch(plan.stdout, /PROMPT ONLY/);
-  assert.doesNotMatch(plan.stdout, /Atris Plan — Navigator Agent Activated/);
+  assert.doesNotMatch(plan.stdout, /Atris Plan - Navigator Agent Activated/);
   assert.doesNotMatch(plan.stdout, /CONTEXT FILES \(agent should read\)/);
   assert.doesNotMatch(plan.stdout, /COPY\/PASTE PROMPT|You are the Navigator\./);
   assert.doesNotMatch(plan.stdout, /navigator\.md not found|Run "atris init"/);
@@ -485,7 +485,7 @@ test('do names a claimed task the same way first-minute does', () => {
   assert.equal(nextLine(doit.stdout), 'atris task ready CLI-9 --verify "git diff --check"');
   assert.equal(spokenLineCount(spokenDoBody(doit.stdout)), 2);
   assert.doesNotMatch(doit.stdout, /PROMPT ONLY/);
-  assert.doesNotMatch(doit.stdout, /Atris Do — Executor Agent Activated/);
+  assert.doesNotMatch(doit.stdout, /Atris Do - Executor Agent Activated/);
   assert.doesNotMatch(doit.stdout, /Context: UNKNOWN/);
   assert.doesNotMatch(doit.stdout, /Backlog tasks: 0/);
   assert.doesNotMatch(doit.stdout, /CONTEXT FILES \(agent should read\)/);
@@ -658,7 +658,7 @@ test('review --verbose keeps the old validator explainer', () => {
   );
   const res = runCli(['review', '--verbose'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /Atris Review — Validator Agent Activated/);
+  assert.match(res.stdout, /Atris Review - Validator Agent Activated/);
   assert.match(res.stdout, /You are the Validator\./);
   assert.match(res.stdout, /Run the project test suite/);
   assert.match(res.stdout, /atris task render --out atris\/TODO\.md/);
