@@ -3027,7 +3027,7 @@ function collectAutoImproverLogSignals(root) {
   ].filter((candidate) => fs.existsSync(candidate));
   const passLessonText = safeReadText(path.join(root, 'atris', 'lessons.md'), 500000)
     .split(/\r?\n/)
-    .filter((line) => /\s+pass[:,]/.test(line))
+    .filter((line) => /\s+pass\s*[-\u2014:,]/.test(line))
     .join('\n');
   const failureRegex = /\b(error|failed|failure|blocked|timeout|regression|crash|missing proof|naraka|suffering)\b/i;
   const unclearRegex = /\b(tbd|unclear|unknown|needs user|needs owner|needs proof|no next|blocked)\b/i;
