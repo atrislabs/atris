@@ -144,6 +144,9 @@ test('youtubeCommand calls the process_youtube endpoint without curl', async () 
   assert.equal(extractorCalls, 1);
   assert.match(output.join('\n'), /Video title/);
   assert.match(output.join('\n'), /Main insight/);
+  assert.equal(output.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(output.filter((line) => line === LEARNER_SCORE_ZERO).length, 0);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 0);
 });
 
 test('youtubeCommand sends local transcript first without caching it', async () => {
@@ -906,6 +909,7 @@ test('youtube help says notes stay ephemeral unless --save', async () => {
   assert.match(text, /unsave <url-or-id>/);
   assert.match(text, /matching notes\/teach experiment packs/);
   assert.match(text, /needs a filled Apply/);
+  assert.match(text, /rich process prints one failing check/);
 });
 
 test('youtube process without apply exits 2 and never calls the api', async () => {
@@ -1098,6 +1102,89 @@ test('youtube process with no stored JWT fails in one sentence and stays off the
   assert.equal(apiCalls, 0);
   assert.equal(output.join('\n').trim(), 'not signed in. run atris login first.');
   assert.doesNotMatch(output.join('\n'), /\/auth\/cli|Choose login method|Opening browser|https:\/\//);
+});
+
+test('youtube process prints a failing check from rich analysis and no next-step', async () => {
+  const url = 'https://youtu.be/procrich';
+  const cwd = filledApplyWorkspace('procrich', url);
+  const output = [];
+
+  const status = await youtubeCommand(['process', url], {
+    cwd,
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    extractLocalTranscript: async () => null,
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        status: 'success',
+        message: 'YouTube video processed successfully',
+        video_analysis: RICH_NOTES,
+        credits_used: 5,
+        credits_remaining: 42,
+      },
+    }),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(output.filter((line) => line === 'check: what is the omakase model?').length, 1);
+  assert.equal(output.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+  assert.ok(
+    output.indexOf('check: what is the omakase model?')
+      < output.indexOf(LEARNER_SCORE_ZERO),
+  );
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 0);
+  assert.equal(output.includes(PROCESS_APPLY_MESSAGE), false);
+});
+
+test('youtube process --json stays quiet on the learner check', async () => {
+  const url = 'https://youtu.be/procjson';
+  const cwd = filledApplyWorkspace('procjson', url);
+  const output = [];
+
+  const status = await youtubeCommand(['process', url, '--json'], {
+    cwd,
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    extractLocalTranscript: async () => null,
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        status: 'success',
+        video_analysis: RICH_NOTES,
+        credits_used: 5,
+      },
+    }),
+  });
+
+  assert.equal(status, 0);
+  const parsed = JSON.parse(output.join('\n'));
+  assert.equal(parsed.video_analysis, RICH_NOTES);
+  assert.doesNotMatch(output.join('\n'), /^check:/m);
+  assert.doesNotMatch(output.join('\n'), /score: 0/);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 0);
+});
+
+test('youtube process without apply prints no learner check', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-nocheck-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  const output = [];
+
+  const status = await youtubeCommand(['process', 'https://youtu.be/procnone'], {
+    cwd,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    extractLocalTranscript: async () => null,
+    apiRequestJson: async () => ({ ok: true, status: 200, data: {} }),
+  });
+
+  assert.equal(status, 2);
+  assert.equal(output.includes(PROCESS_APPLY_MESSAGE), true);
+  assert.doesNotMatch(output.join('\n'), /^check:/m);
+  assert.doesNotMatch(output.join('\n'), /score: 0/);
 });
 
 test('formatYoutubeResult includes metadata, credits, and analysis', () => {
