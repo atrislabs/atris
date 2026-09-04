@@ -3,7 +3,7 @@
 //
 // Contract (lib/member-alive.js runMemberOperateScript):
 //   node scripts/member-operate.mjs <member> --json --max-wall <60..1800>
-//     --execute --confirm-autonomy-policy [--agent claude] [--model X] [--no-prime]
+//     --execute --confirm-autonomy-policy [--agent claude] [--model X] [--shared-checkout]
 // stdout: final JSON only (last line wins). stderr: live progress, prefixed
 // with ATRIS_MEMBER_OPERATE_PROGRESS\t so the alive loop can stream phases.
 //
@@ -39,12 +39,31 @@ function finish(result) {
 function collectJsonSignals(text) {
   // member run / mission run print JSON payloads along the way; harvest the
   // fields the alive loop cares about without depending on exact shapes.
-  const signals = { receipt_path: null, needs_user: false, summary: null };
+  const signals = { receipt_path: null, needs_user: false, summary: null, failed: false, reason: null, detail: null };
+  let buffer = '';
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
   for (const line of String(text || '').split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('{')) continue;
+    if (!buffer && !line.trimStart().startsWith('{')) continue;
+    buffer += line + '\n';
+    for (const character of line) {
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === '"') quoted = false;
+      } else if (character === '"') quoted = true;
+      else if (character === '{') depth++;
+      else if (character === '}') depth--;
+    }
+    if (depth > 0) continue;
     try {
-      const parsed = JSON.parse(trimmed);
+      const parsed = JSON.parse(buffer);
+      if (parsed.ok === false) {
+        signals.failed = true;
+        signals.reason ||= parsed.reason || parsed.error || 'operate_failed';
+        signals.detail ||= parsed.detail || null;
+      }
       if (parsed.receipt_path) signals.receipt_path = parsed.receipt_path;
       if (parsed.mission?.receipt_path) signals.receipt_path = parsed.mission.receipt_path;
       if (parsed.needs_user === true) signals.needs_user = true;
@@ -52,8 +71,12 @@ function collectJsonSignals(text) {
       if (landing?.changed) signals.summary = landing.changed;
       else if (parsed.summary) signals.summary = parsed.summary;
     } catch {
-      // Partial or non-JSON line; keep streaming.
+      // A log line that resembles JSON is not a result.
     }
+    buffer = '';
+    depth = 0;
+    quoted = false;
+    escaped = false;
   }
   return signals;
 }
@@ -103,6 +126,7 @@ if (!atrisBin) {
 const runArgs = [atrisBin, 'member', 'run', member, '--json', '--max-wall', String(maxWall)];
 if (agent === 'claude') runArgs.push('--runner', 'claude');
 if (model) runArgs.push('--model', model);
+if (args.includes('--shared-checkout')) runArgs.push('--shared-checkout');
 
 progress({ kind: 'phase', text: `Dispatching one bounded ${member} slice (wall cap ${maxWall}s).` });
 
@@ -113,14 +137,16 @@ const child = spawn(process.execPath, runArgs, {
 });
 
 let output = '';
-const forward = (chunk) => {
+let errors = '';
+const forward = (chunk, isError = false) => {
   const text = chunk.toString();
-  output += text;
+  if (isError) errors += text;
+  else output += text;
   // Keep stdout clean for the final JSON; the human-visible stream is stderr.
   process.stderr.write(text);
 };
 child.stdout.on('data', forward);
-child.stderr.on('data', forward);
+child.stderr.on('data', (chunk) => forward(chunk, true));
 
 const wallTimer = setTimeout(() => {
   progress({ kind: 'phase', text: `Wall cap ${maxWall}s reached; stopping the slice.` });
@@ -130,11 +156,12 @@ const wallTimer = setTimeout(() => {
 
 child.on('close', (code) => {
   clearTimeout(wallTimer);
-  const signals = collectJsonSignals(output);
-  const ok = code === 0;
+  const signals = collectJsonSignals(output + '\n' + errors);
+  const ok = code === 0 && !signals.failed;
   finish({
     ok,
-    reason: ok ? 'operate_complete' : 'operate_failed',
+    reason: ok ? 'operate_complete' : signals.reason || 'operate_failed',
+    ...(signals.detail ? { detail: signals.detail } : {}),
     member,
     executed: true,
     exit_code: code,

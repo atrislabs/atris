@@ -2665,6 +2665,7 @@ function buildMemberAliveCronScript(name, args = [], paths = memberLoopPaths(nam
     '--json',
     ...(hasFlag(args, '--execute') ? ['--execute'] : []),
     ...(hasFlag(args, '--confirm-autonomy-policy') ? ['--confirm-autonomy-policy'] : []),
+    ...(hasFlag(args, '--shared-checkout') ? ['--shared-checkout'] : []),
   ];
   const agent = String(readFlag(args, '--agent', '') || '').trim();
   const model = String(readFlag(args, '--model', '') || '').trim();
@@ -8204,6 +8205,7 @@ function memberLoopAliveTick(name, run, index, tickStartedAt) {
     maxWallSeconds: options.operateMaxWall,
     autoAcceptLimit: options.autoAcceptLimit,
     noPrime: index > 0,
+    sharedCheckout: options.sharedCheckout,
   });
   const key = `${alive.status || 'alive'}:${alive.reason || 'tick'}`;
   state.decisions[key] = (state.decisions[key] || 0) + 1;
@@ -8426,7 +8428,8 @@ async function memberLoop(name, ...args) {
   const model = String(readFlag(args, '--model', '') || '').trim() || undefined;
   const operateMaxWall = Math.max(60, Math.min(1800, Number(readNumberFlag(args, '--operate-max-wall', readNumberFlag(args, '--max-wall', 900)))));
   const autoAcceptLimit = Math.max(1, Math.floor(Number(readNumberFlag(args, '--auto-accept-limit', 8))));
-  const options = { asJson, aliveMode, execute, confirmed, force, agent, model, operateMaxWall, autoAcceptLimit };
+  const sharedCheckout = hasFlag(args, '--shared-checkout');
+  const options = { asJson, aliveMode, execute, confirmed, force, agent, model, operateMaxWall, autoAcceptLimit, sharedCheckout };
   const paths = memberLoopPaths(name);
   fs.mkdirSync(paths.stateDir, { recursive: true });
 

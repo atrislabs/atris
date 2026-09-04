@@ -76,7 +76,7 @@ test('alive execute treats stop (no goal) as non-blocking idle, not failure', ()
 
 // Exercise the shipped library and dispatcher in an installed-package layout.
 // Only the final CLI work is a fixture, so no model or user credentials are used.
-function installedPackageFixture(t) {
+function installedPackageFixture(t, { failure = null, noisy = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-installed-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const packageRoot = path.join(root, 'node_modules', 'atris');
@@ -100,27 +100,71 @@ function installedPackageFixture(t) {
       const receipt_path = 'dispatch-proof.json';
       fs.writeFileSync(receipt_path, JSON.stringify({ cwd: process.cwd(), argv }));
       result = { ok: true, receipt_path, summary: 'packaged dispatch completed' };
+      if (${JSON.stringify(failure)}) result = ${JSON.stringify(failure)};
+      if (${JSON.stringify(noisy)}) process.stdout.write('starting work' + String.fromCharCode(10));
     }
-    process.stdout.write(JSON.stringify(result));
+    process.stdout.write(JSON.stringify(result, null, 2));
+    if (${JSON.stringify(noisy)} && argv[1] === 'run') process.stdout.write(String.fromCharCode(10) + JSON.stringify({ ok: true, summary: 'cleanup done' }));
   `);
   return {
     workspace,
-    run() {
+    run({ sharedCheckout = false, command = false, expectedOk = true } = {}) {
       const env = { ...process.env };
       delete env.ATRIS_BIN;
-      const result = spawnSync(process.execPath, ['-e', `
+      let args = ['-e', `
         const { runAliveTick } = require(${JSON.stringify(path.join(packageRoot, 'lib/member-alive.js'))});
         console.log(JSON.stringify(runAliveTick('demo', {
           cwd: ${JSON.stringify(workspace)}, execute: true, confirmed: true, noPrime: true,
+          sharedCheckout: ${JSON.stringify(sharedCheckout)},
         })));
-      `], { cwd: root, env, encoding: 'utf8', timeout: 10000 });
+      `];
+      if (command) {
+        const home = path.join(workspace, 'atris', 'team', 'demo');
+        fs.mkdirSync(home, { recursive: true });
+        fs.writeFileSync(path.join(home, 'MEMBER.md'), '# Demo\n');
+        env.ATRIS_BIN = bin;
+        env.HOME = root;
+        env.ATRIS_SKIP_UPDATE_CHECK = '1';
+        args = [path.join(__dirname, '..', 'bin', 'atris.js'), 'member', 'alive', 'demo',
+          '--ticks', '1', '--execute', '--confirm-autonomy-policy', '--json',
+          ...(sharedCheckout ? ['--shared-checkout'] : [])];
+      }
+      const result = spawnSync(process.execPath, args, { cwd: command ? workspace : root, env, encoding: 'utf8', timeout: 10000 });
       assert.equal(result.status, 0, result.stderr);
       const tick = JSON.parse(result.stdout);
-      assert.equal(tick.ok, true, JSON.stringify(tick));
+      assert.equal(tick.ok, expectedOk, JSON.stringify(tick));
       return tick;
     },
   };
 }
+
+for (const noisy of [false, true]) {
+  test(`packaged dispatcher reports pretty JSON failure despite zero exit${noisy ? ' and later success' : ''}`, (t) => {
+    const failure = { ok: false, reason: 'mission_error', detail: 'cannot create "/.agent-worktrees/workspace" {ENOENT}' };
+    const fixture = installedPackageFixture(t, { failure, noisy });
+    const tick = fixture.run({ expectedOk: false });
+    assert.equal(tick.status, 'failed');
+    assert.equal(tick.operate.status, 1);
+    assert.equal(tick.operate.payload.exit_code, 0);
+    assert.equal(tick.operate.payload.reason, failure.reason);
+    assert.equal(tick.operate.payload.detail, failure.detail);
+  });
+}
+
+test('member alive forwards explicit shared checkout through the packaged dispatcher', (t) => {
+  const fixture = installedPackageFixture(t);
+  fixture.run({ command: true, sharedCheckout: true });
+  const receipt = JSON.parse(fs.readFileSync(path.join(fixture.workspace, 'dispatch-proof.json'), 'utf8'));
+  assert.equal(receipt.argv.at(-1), '--shared-checkout');
+  assert.equal(fs.realpathSync(receipt.cwd), fs.realpathSync(fixture.workspace));
+});
+
+test('member alive leaves checkout isolation unchanged by default', (t) => {
+  const fixture = installedPackageFixture(t);
+  fixture.run({ command: true });
+  const receipt = JSON.parse(fs.readFileSync(path.join(fixture.workspace, 'dispatch-proof.json'), 'utf8'));
+  assert.equal(receipt.argv.includes('--shared-checkout'), false);
+});
 
 test('installed alive dispatches its packaged script with the workspace cwd', (t) => {
   const fixture = installedPackageFixture(t);
