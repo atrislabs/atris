@@ -1,5 +1,5 @@
 /**
- * Atris Compile — learn like AI, run like code.
+ * Atris Compile: learn like AI, run like code.
  *
  * The compile loop: execution records → compile-to-deterministic-code →
  * statistical backtest → gated promote. The LLM is only in the build path;
@@ -328,7 +328,7 @@ function deepEqual(a, b) {
 function loadRunner(root, name) {
   const p = runnerPath(root, name);
   if (!fs.existsSync(p)) {
-    throw new Error(`no compiled artifact at ${path.relative(root, p)} — run "atris compile build ${name}" first`);
+    throw new Error(`no compiled artifact at ${path.relative(root, p)}, run "atris compile build ${name}" first`);
   }
   const resolved = require.resolve(p);
   delete require.cache[resolved]; // always load the latest compiled version
@@ -344,7 +344,7 @@ function loadRunner(root, name) {
 async function runBacktest(root, name, options = {}) {
   const records = readRecords(root, name);
   if (records.length === 0) {
-    throw new Error(`no execution records for "${name}" — add some with "atris compile record ${name} --input ... --output ..."`);
+    throw new Error(`no execution records for "${name}", add some with "atris compile record ${name} --input ... --output ..."`);
   }
   const runner = loadRunner(root, name);
   const manifest = readManifest(root, name) || defaultManifest(name);
@@ -395,7 +395,7 @@ async function runBacktest(root, name, options = {}) {
 function promoteProcess(root, name, options = {}) {
   const manifest = readManifest(root, name);
   if (!manifest) {
-    throw new Error(`no manifest for "${name}" — compile and backtest it first`);
+    throw new Error(`no manifest for "${name}", compile and backtest it first`);
   }
   if (options.threshold !== undefined) {
     // the only way to change the standing gate: deliberate, at promote time
@@ -403,13 +403,13 @@ function promoteProcess(root, name, options = {}) {
   }
   const bt = manifest.backtest;
   if (!bt) {
-    throw new Error(`"${name}" has no backtest — run "atris compile backtest ${name}" first`);
+    throw new Error(`"${name}" has no backtest, run "atris compile backtest ${name}" first`);
   }
   if (bt.version !== manifest.version) {
-    throw new Error(`backtest is for version ${bt.version} but current version is ${manifest.version} — re-run the backtest`);
+    throw new Error(`backtest is for version ${bt.version} but current version is ${manifest.version}, re-run the backtest`);
   }
   if (bt.accuracy < manifest.threshold) {
-    throw new Error(`backtest accuracy ${(bt.accuracy * 100).toFixed(2)}% is below the ${(manifest.threshold * 100).toFixed(2)}% gate (${bt.passed}/${bt.total}) — not promoting`);
+    throw new Error(`backtest accuracy ${(bt.accuracy * 100).toFixed(2)}% is below the ${(manifest.threshold * 100).toFixed(2)}% gate (${bt.passed}/${bt.total}), not promoting`);
   }
   manifest.status = 'active';
   manifest.promotedAt = new Date().toISOString();
@@ -436,10 +436,10 @@ Write the compiled artifact to ${runRel} with this exact contract:
 - CommonJS module exporting { run }: \`module.exports = { run };\`
 - \`run(input)\` takes one input value and returns the output (sync return or promise both fine)
 - deterministic: no network calls, no Date.now()/new Date() in outputs, no randomness, no environment reads
-- Node.js built-ins only — zero npm dependencies
+- Node.js built-ins only, zero npm dependencies
 - handle malformed input by throwing a clear Error, never by guessing
 
-The artifact will be verified by replaying every execution record through run() and requiring near-perfect accuracy, so generalize the rules — do not hardcode a lookup table of the sample records.
+The artifact will be verified by replaying every execution record through run() and requiring near-perfect accuracy, so generalize the rules, do not hardcode a lookup table of the sample records.
 
 Reply [COMPILE_COMPLETE] when ${runRel} is written.`;
 }
@@ -448,7 +448,7 @@ function executeBuild(root, name, options = {}) {
   const { verbose = false, timeout = 600000, notes = '', cmdOverride } = options;
   const records = readRecords(root, name);
   if (records.length === 0) {
-    throw new Error(`no execution records for "${name}" — record real runs first, then compile`);
+    throw new Error(`no execution records for "${name}", record real runs first, then compile`);
   }
 
   if (!cmdOverride) {
@@ -526,7 +526,7 @@ function formatAccuracy(accuracy) {
 function printBacktest(name, result, failureCount, manifest) {
   console.log(`backtest ${name} v${result.version}: ${result.passed}/${result.total} passed (${formatAccuracy(result.accuracy)}), gate ${formatAccuracy(result.threshold)}`);
   if (result.total < LOW_RECORD_WARNING) {
-    console.log(`note: only ${result.total} record${result.total === 1 ? '' : 's'} — accuracy means more with ${LOW_RECORD_WARNING}+`);
+    console.log(`note: only ${result.total} record${result.total === 1 ? '' : 's'}, accuracy means more with ${LOW_RECORD_WARNING}+`);
   }
   if (failureCount > 0) {
     console.log(`${failureCount} mismatch${failureCount === 1 ? '' : 'es'}. first ${Math.min(failureCount, 3)}:`);
@@ -675,7 +675,7 @@ function showCompileHelp() {
   console.log('Server commands require --agent <id> and Atris auth from atris login or ATRIS_TOKEN.');
   console.log('Loop: record real runs -> build -> backtest -> promote -> exec --record');
   console.log('When backtest accuracy drops below the gate, the process is marked drifted');
-  console.log('and a recompile is suggested — self-healing against process drift.');
+  console.log('and a recompile is suggested, self-healing against process drift.');
   console.log('');
 }
 
@@ -830,7 +830,7 @@ async function compileCommand(subcommand, ...rawArgs) {
     }
     const manifest = readManifest(root, name);
     if (manifest && manifest.status === 'drifted') {
-      console.error(`warning: ${name} is marked drifted — outputs may be stale. recompile with "atris compile build ${name}"`);
+      console.error(`warning: ${name} is marked drifted, outputs may be stale. recompile with "atris compile build ${name}"`);
     }
     const runner = loadRunner(root, name);
     const output = await runner.run(input);

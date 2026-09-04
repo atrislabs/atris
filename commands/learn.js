@@ -36,7 +36,7 @@ function showRecent(limit = 20) {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log(`│ Learnings — ${learnings.length} active${' '.repeat(Math.max(0, 44 - String(learnings.length).length))}│`);
+  console.log(`│ Learnings: ${learnings.length} active${' '.repeat(Math.max(0, 44 - String(learnings.length).length))}│`);
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 
@@ -46,7 +46,7 @@ function showRecent(limit = 20) {
       const conf = e._effectiveConfidence;
       const bar = conf >= 7 ? '●' : conf >= 4 ? '◐' : '○';
       const date = (e.ts || '').split('T')[0];
-      console.log(`  ${bar} [${conf}/10] ${e.key} — ${e.insight}`);
+      console.log(`  ${bar} [${conf}/10] ${e.key}: ${e.insight}`);
       if (e.files && e.files.length > 0) {
         console.log(`         files: ${e.files.join(', ')}`);
       }
@@ -68,12 +68,12 @@ function showSearch(query) {
   }
 
   console.log('');
-  console.log(`  Search: "${query}" — ${results.length} ${results.length === 1 ? 'result' : 'results'}`);
+  console.log(`  Search: "${query}", ${results.length} ${results.length === 1 ? 'result' : 'results'}`);
   console.log('');
   for (const e of results) {
     const conf = e._effectiveConfidence;
     const bar = conf >= 7 ? '●' : conf >= 4 ? '◐' : '○';
-    console.log(`  ${bar} [${conf}/10] ${e.type}/${e.key} — ${e.insight}`);
+    console.log(`  ${bar} [${conf}/10] ${e.type}/${e.key}: ${e.insight}`);
   }
   console.log('');
 }
@@ -114,7 +114,7 @@ function showExport() {
   const md = exportMarkdown();
   console.log('');
   console.log(md);
-  console.log('  — Copy the above into CLAUDE.md or save to a file.');
+  console.log('  Copy the above into CLAUDE.md or save to a file.');
   console.log('');
 }
 
@@ -130,15 +130,15 @@ function showPrune() {
 
   console.log('');
   if (stale.length > 0) {
-    console.log(`  STALE (${stale.length} — referenced files deleted):`);
+    console.log(`  STALE (${stale.length}, referenced files deleted):`);
     for (const { entry, missingFiles } of stale) {
-      console.log(`  ⚠ ${entry.key} — missing: ${missingFiles.join(', ')}`);
+      console.log(`  ⚠ ${entry.key}, missing: ${missingFiles.join(', ')}`);
     }
     console.log('');
   }
 
   if (contradictions.length > 0) {
-    console.log(`  CONFLICTS (${contradictions.length} — same key, different insight):`);
+    console.log(`  CONFLICTS (${contradictions.length}, same key, different insight):`);
     for (const { a, b } of contradictions) {
       console.log(`  ⚠ ${a.key}: "${a.insight}" vs "${b.insight}"`);
     }
@@ -209,7 +209,7 @@ function interactiveAdd() {
       // Quality gate
       const worth = (await ask('\n  Would this save time in a future session? (y/n): ')).trim().toLowerCase();
       if (worth !== 'y' && worth !== 'yes') {
-        console.log('  Skipped — only save learnings that compound.');
+        console.log('  Skipped, only save learnings that compound.');
         rl.close();
         return;
       }
@@ -241,7 +241,7 @@ function printLearnLogSchema(stream = console.error) {
 
 /**
  * Non-interactive log: `atris learn log '{"type":"pattern","key":"...","insight":"...","confidence":8,"source":"observed"}'`
- * For agents and scripts — no prompts, no quality gate.
+ * For agents and scripts, no prompts, no quality gate.
  * Aliases: title→key, detail→insight.
  */
 function logDirect(jsonStr) {
@@ -309,7 +309,7 @@ function harvestFromJournals() {
       const lines = notesMatch[1].trim().split('\n').filter(l => l.startsWith('- '));
       for (const line of lines) {
         // Strip bullet and optional timestamp prefix
-        const insight = line.replace(/^- (\d{2}:\d{2} — )?/, '').trim();
+        const insight = line.replace(/^- (\d{2}:\d{2} \u2014 )?/, '').trim();
         if (insight.length > 10) {
           candidates.push({ insight, source: path.basename(logPath) });
         }
@@ -332,7 +332,7 @@ function harvestFromJournals() {
 
   if (fresh.length === 0) {
     console.log('');
-    console.log(`  Scanned ${candidates.length} journal notes — all already captured.`);
+    console.log(`  Scanned ${candidates.length} journal notes, all already captured.`);
     console.log('');
     return;
   }

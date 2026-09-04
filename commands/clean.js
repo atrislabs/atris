@@ -122,7 +122,7 @@ function cleanAtris(options = {}) {
   if (unhealable.length > 0) {
     console.log(`⚠ ${unhealable.length} MAP.md ${unhealable.length === 1 ? 'ref' : 'refs'} couldn't be healed:`);
     unhealable.slice(0, 3).forEach(ref => {
-      console.log(`   • ${ref.file}:${ref.line} — ${ref.reason}`);
+      console.log(`   • ${ref.file}:${ref.line}: ${ref.reason}`);
     });
     if (unhealable.length > 3) {
       console.log(`   ... and ${unhealable.length - 3} more`);
@@ -156,7 +156,7 @@ function cleanAtris(options = {}) {
   if (stalePages.length > 0) {
     console.log(`⚠ ${stalePages.length} stale ${stalePages.length === 1 ? 'page' : 'pages'} (source changed since last compiled):`);
     stalePages.forEach(sp => {
-      console.log(`   • ${path.relative(cwd, sp.page)} — stale source: ${sp.staleSource}`);
+      console.log(`   • ${path.relative(cwd, sp.page)}: stale source: ${sp.staleSource}`);
     });
     console.log('');
   } else {
@@ -165,7 +165,7 @@ function cleanAtris(options = {}) {
 
   // Dead code
   if ((results.deadFiles || []).length > 0) {
-    console.log(`⚠ ${results.deadFiles.length} dead ${results.deadFiles.length === 1 ? 'file' : 'files'} (unreachable and unreferenced — atris slop dead for detail):`);
+    console.log(`⚠ ${results.deadFiles.length} dead ${results.deadFiles.length === 1 ? 'file' : 'files'} (unreachable and unreferenced, atris slop dead for detail):`);
     results.deadFiles.slice(0, 5).forEach((f) => console.log(`   • ${f}`));
     if (results.deadFiles.length > 5) console.log(`   ... and ${results.deadFiles.length - 5} more`);
     console.log('');
@@ -252,8 +252,8 @@ function firstLine(text) {
 function mapScriptLine(step) {
   const script = MAP_SCRIPTS.find(s => step.script.endsWith(s.file));
   if (step.status === 'would_run') return `✓ ${script.dryLabel} (${step.script})`;
-  if (step.status === 'skipped') return `○ Skipped ${step.script} — ${step.detail}`;
-  if (step.status === 'failed') return `✗ ${script.failLabel} — ${step.detail}`;
+  if (step.status === 'skipped') return `○ Skipped ${step.script}: ${step.detail}`;
+  if (step.status === 'failed') return `✗ ${script.failLabel}: ${step.detail}`;
   return `✓ ${script.ranLabel}`;
 }
 
@@ -368,8 +368,8 @@ function healBrokenMapRefs(cwd, atrisDir, dryRun = false, homeDir = os.homedir()
 
   // Match both `file.js:123` and `file.js:123-456` with surrounding context
   // [^\S\n] = horizontal whitespace only (no newlines)
-  // Required delimiter [(,[,—,-] prevents bleeding into adjacent refs on same line
-  const refPattern = /(`?)([a-zA-Z0-9_~\-./\\]+\.(js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(?:-(\d+))?(`?)([^\S\n]*[\(\[—\-][^\S\n]*([^)\]\n]+))?/g;
+  // Required delimiter set, including the u2014 escape, prevents bleeding into adjacent refs on same line
+  const refPattern = /(`?)([a-zA-Z0-9_~\-./\\]+\.(js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(?:-(\d+))?(`?)([^\S\n]*[\(\[\u2014\-][^\S\n]*([^)\]\n]+))?/g;
 
   // Function Inventory form: `symbolName()` → `file:line[-line]`
   // Pre-scan to build a (file:line) → symbol map so refs with the symbol BEFORE them still verify.
@@ -518,7 +518,7 @@ function findFunctionEnd(lines, startLine) {
 }
 
 /**
- * Extract a symbol name from context like "(interactiveEntry function)" or "— Main entry"
+ * Extract a symbol name from context like "(interactiveEntry function)" or "Main entry" after punctuation
  */
 function extractSymbol(context) {
   if (!context) return null;
@@ -529,7 +529,7 @@ function extractSymbol(context) {
   const unquoted = context.trim().replace(/`/g, '');
   const wrapper = unquoted.match(/^([\(\[])/)?.[1];
   let cleaned = unquoted
-    .replace(/^[\(\[—\-:]+\s*/, '')
+    .replace(/^[\(\[\u2014\-:]+\s*/, '')
     .trim();
   if (wrapper === '(') cleaned = cleaned.replace(/\)$/, '').trim();
   if (wrapper === '[') cleaned = cleaned.replace(/\]$/, '').trim();
@@ -553,13 +553,13 @@ function extractSymbol(context) {
 
 /**
  * Find the line number where a symbol is defined (strict patterns only)
- * Returns null if only loose matches found — prevents healing to wrong locations
+ * Returns null if only loose matches found, prevents healing to wrong locations
  */
 function findSymbolLine(fileContent, symbol) {
   const lines = fileContent.split('\n');
   const esc = escapeRegExp(symbol);
 
-  // Strict definition patterns only — no loose fallback
+  // Strict definition patterns only, no loose fallback
   const patterns = [
     new RegExp(`^\\s*(async\\s+)?function\\s+${esc}\\s*\\(`),  // function name(
     new RegExp(`^\\s*(const|let|var)\\s+${esc}\\s*=`),          // const/let/var name =
@@ -652,7 +652,7 @@ function checkPageStaleness(cwd, filePath) {
 
   // Check each source's mtime against last_compiled.
   // Source entries can include a line range and/or a parenthesized annotation,
-  // e.g. "bin/atris.js:199-340 (showHelp function)" — strip both before stat.
+  // e.g. "bin/atris.js:199-340 (showHelp function)". Strip both before stat.
   for (const source of sources) {
     const filePart = source
       .replace(/\s*\([^)]*\)\s*$/, '')   // drop trailing "(annotation)"
@@ -670,7 +670,7 @@ function checkPageStaleness(cwd, filePath) {
         };
       }
     } catch {
-      // Source file doesn't exist — that's also a staleness signal
+      // Source file doesn't exist, that's also a staleness signal
       return {
         page: filePath,
         staleSource: source + ' (missing)',
