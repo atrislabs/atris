@@ -565,7 +565,7 @@ async function switchAccount() {
       const profile = loadProfile(name);
       const email = profile?.email || 'unknown';
       const marker = name === currentName ? '  ← active' : '';
-      console.log(`  ${i + 1}. ${name} — ${email}${marker}`);
+      console.log(`  ${i + 1}. ${name}, ${email}${marker}`);
     });
     console.log(`  ${profiles.length + 1}. Add new account`);
     console.log(`  ${profiles.length + 2}. Cancel`);
@@ -620,13 +620,13 @@ function activateProfile(name, currentName, { global = false } = {}) {
   }
 
   if (global || !getTerminalSessionId()) {
-    // Global switch — write to credentials.json (affects all terminals)
+    // Global switch, write to credentials.json (affects all terminals)
     const credentialsPath = getCredentialsPath();
     fs.writeFileSync(credentialsPath, JSON.stringify(profile, null, 2));
     try { fs.chmodSync(credentialsPath, 0o600); } catch {}
-    console.log(`Switched to ${profile.email || name} (global — all terminals)`);
+    console.log(`Switched to ${profile.email || name} (global, all terminals)`);
   } else {
-    // Per-terminal switch — write session file (only this terminal)
+    // Per-terminal switch, write session file (only this terminal)
     setSessionProfile(name);
     console.log(`Switched to ${profile.email || name}`);
   }
@@ -682,7 +682,7 @@ function useAccount() {
   if (!process.stdout.isTTY) {
     process.stdout.write(`export ATRIS_PROFILE=${match}\n`);
   } else {
-    // Interactive — print instructions
+    // Interactive, print instructions
     console.log(`export ATRIS_PROFILE=${match}`);
     console.log(`\n# Run this to activate ${email} in this terminal:`);
     console.log(`#   eval "$(atris use ${targetName})"`);
@@ -893,7 +893,7 @@ function switchSession() {
     if (termId) {
       setSessionProfile(name);
     } else {
-      // No terminal ID — global fallback
+      // No terminal ID, global fallback
       const credentialsPath = getCredentialsPath();
       fs.writeFileSync(credentialsPath, JSON.stringify(profile, null, 2));
       try { fs.chmodSync(credentialsPath, 0o600); } catch {}
@@ -910,7 +910,7 @@ function shellInit() {
     '# Atris per-terminal account switching',
     '# Added by: eval "$(atris shell-init)"',
     '_atris_session_id() {',
-    '  # Detect terminal session ID — same priority as the Node.js code',
+    '  # Detect terminal session ID, same priority as the Node.js code',
     '  local _sid="${TERM_SESSION_ID:-${ITERM_SESSION_ID:-${TMUX_PANE:-${WT_SESSION:-${WEZTERM_PANE:-}}}}}"',
     '  if [[ -n "$_sid" ]]; then echo "$_sid"; return; fi',
     '  # Fallback: TTY device (unique per macOS/Linux terminal tab)',

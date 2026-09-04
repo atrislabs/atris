@@ -1,4 +1,4 @@
-// atris reel — one line of text into a short, on-brand video (an animated card).
+// atris reel, one line of text into a short, on-brand video (an animated card).
 //
 //   atris reel "Ship faster" --theme brand --size square
 //   atris reel "It just works." --kind quote --by "a founder" --seconds 3
@@ -72,7 +72,7 @@ async function renderFrames(chrome, ts, spec, dir, w, h, onDone) {
 async function run(argv) {
   const { flags, pos } = parseFlags(argv);
   if (pos[0] === 'help' || flags.help) {
-    console.log(`\n  atris reel — one line of text into a short on-brand video\n
+    console.log(`\n  atris reel, one line of text into a short on-brand video\n
   atris reel "Your headline" [--kind statement|quote|stat] [--theme <name>] [--size square|og|wide|story] [--seconds 2.6]
   flags: --sub --kicker --by --number --label --brand --version --out <file.mp4>\n`);
     return 0;

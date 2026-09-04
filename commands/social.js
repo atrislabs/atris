@@ -1,5 +1,5 @@
 /**
- * Social commands for Atris CLI — find people, add friends, send messages.
+ * Social commands for Atris CLI, find people, add friends, send messages.
  *
  * Usage:
  *   atris social                       My social overview (stats, unread, suggestions)
@@ -413,7 +413,7 @@ async function join(code, rest = []) {
   console.log('');
   if (!inv.can_claim) fail('This invite has no claims left.');
 
-  // No account yet? Create one right here — signup is browser-free
+  // No account yet? Create one right here, signup is browser-free
   // (commands/signup.js), so a headless terminal can claim in one run.
   const creds = loadCredentials();
   if (!creds || !creds.token) {
@@ -488,7 +488,7 @@ async function join(code, rest = []) {
 }
 
 function printHelp() {
-  console.log(`atris social — people, friends, and messages on Atris
+  console.log(`atris social, people, friends, and messages on Atris
 
   atris social                 Your overview
   atris people <query>         Find people

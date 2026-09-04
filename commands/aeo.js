@@ -1,5 +1,5 @@
 /**
- * atris aeo — AI Engine Optimization commands
+ * atris aeo, AI Engine Optimization commands
  *
  * Backend-routed (require EC2):
  *   atris aeo init                          # create entity-graph skeleton
@@ -213,7 +213,7 @@ async function aeoScan(args) {
   }
   if (asJson) { console.log(JSON.stringify(data, null, 2)); return; }
   console.log(`\n  ${data.name || target}`);
-  console.log(`  Score: ${data.score}/100 (${data.grade}) — ${data.status}`);
+  console.log(`  Score: ${data.score}/100 (${data.grade}), ${data.status}`);
   if (data.gap_statement) console.log(`\n  ${data.gap_statement}`);
   const gaps = data.gaps || [];
   if (gaps.length) {
@@ -226,7 +226,7 @@ async function aeoScan(args) {
     for (const c of comp) console.log(`   ${pad(String(c.score ?? '?'), 4)} ${c.url || c.name}`);
   }
   if (data.draft_llms_txt) {
-    console.log('\n  Draft llms.txt included — save it with:');
+    console.log('\n  Draft llms.txt included, save it with:');
     console.log(`   atris aeo scan ${url} --json | jq -r .draft_llms_txt > llms.txt`);
   }
   console.log('');
@@ -511,7 +511,7 @@ async function aeoPacket(args) {
   const onlyObjects = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
   const friction = onlyObjects(u.baseline_friction_points);
   const fixes = onlyObjects(u.fix_backlog);
-  console.log(`AEO buyer packet — ${slug}`);
+  console.log(`AEO buyer packet, ${slug}`);
   console.log(`  surface:        ${data.surface || ''}`);
   console.log(`  target url:     ${data.target_url || ''}`);
   console.log(`  claim status:   ${data.claim_status || ''}`);

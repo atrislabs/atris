@@ -1,6 +1,6 @@
 // atris autopilot: point it at the workspace and it keeps going.
-// Each leg picks the most logical work — a moving mission first, then a
-// member choosing useful work, then a self-chosen mission — and drives it
+// Each leg picks the most logical work, a moving mission first, then a
+// member choosing useful work, then a self-chosen mission, and drives it
 // through the mission runtime. It loops until stopped:
 //   atris autopilot stop   (from any terminal)  or Ctrl-C here.
 // The old suggest→justify→execute loop lives on behind `atris autopilot --legacy`.
@@ -57,7 +57,7 @@ function positiveNumber(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-// `--iterations=N` or `--iterations N` — the leg cap legacy callers pass.
+// `--iterations=N` or `--iterations N`, the leg cap legacy callers pass.
 function maxLegsFlag(args) {
   const eq = args.find((a) => typeof a === 'string' && a.startsWith('--iterations='));
   if (eq) return positiveNumber(eq.split('=')[1]);
@@ -187,7 +187,7 @@ function autopilotStatus(root = process.cwd()) {
   const state = readState(root);
   if (!state) { console.log('Autopilot is not running.'); return 0; }
   const alive = pidAlive(state.pid);
-  console.log(`Autopilot ${alive ? 'running' : 'not running (stale state)'} — pid ${state.pid}, started ${state.started_at}, legs ${state.legs || 0}`);
+  console.log(`Autopilot ${alive ? 'running' : 'not running (stale state)'}, pid ${state.pid}, started ${state.started_at}, legs ${state.legs || 0}`);
   if (state.current_leg) console.log(`Current leg: ${state.current_leg}`);
   if (!alive) clearState(root);
   return 0;
@@ -276,7 +276,7 @@ async function autopilotFront(args = []) {
 
   const current = { child: null };
   // `autopilot stop` SIGTERMs this pid directly, so the farewell must print
-  // here — the signal always beats the loop's own stop-file check.
+  // here, the signal always beats the loop's own stop-file check.
   const onSignal = () => {
     if (current.child) { try { current.child.kill('SIGTERM'); } catch {} }
     const reason = stopRequested(root) ? 'stop requested' : 'interrupted';
@@ -314,7 +314,7 @@ async function autopilotFront(args = []) {
     if (maxLegs && state.legs >= maxLegs) { stopReason = `leg cap reached (--iterations=${maxLegs})`; break; }
     if (stopRequested(root)) { stopReason = 'stop requested'; break; }
 
-    // A leg that finishes in seconds means no real work happened — a crash,
+    // A leg that finishes in seconds means no real work happened, a crash,
     // or a degenerate mission whose ticks record instantly (exit 0). Either
     // way, back off and stop instead of hot-looping on it.
     const legSeconds = (Date.now() - legStarted) / 1000;

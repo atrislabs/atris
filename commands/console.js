@@ -15,7 +15,7 @@ const { resolveClaudeRunnerBin } = require('../lib/runner-command');
 //
 //   packet:    <dir>/{pack.json,skills,team,docs,...}
 //     A packet built in root mode (pack.js exports with prefix '' when the
-//     source dir has pack.json at its root — this is how the shipped packs are
+//     source dir has pack.json at its root, this is how the shipped packs are
 //     built and what the web /packs/<slug>/download route serves). `pack
 //     install` preserves that flat layout, so the packet folder IS the atris
 //     root; there is no nested atris/ to find.
@@ -50,7 +50,7 @@ function gatherAtrisContext(workspaceDir) {
 
   if (!ctx.hasAtris) return ctx;
 
-  // Skills — scan atris/skills/ and .claude/skills/
+  // Skills, scan atris/skills/ and .claude/skills/
   for (const skillsRoot of [
     path.join(atrisDir, 'skills'),
     path.join(workspaceDir, '.claude', 'skills'),
@@ -92,7 +92,7 @@ function gatherAtrisContext(workspaceDir) {
     return true;
   });
 
-  // Team members — scan atris/team/
+  // Team members, scan atris/team/
   const teamDir = path.join(atrisDir, 'team');
   if (fs.existsSync(teamDir)) {
     for (const name of fs.readdirSync(teamDir)) {
@@ -137,7 +137,7 @@ function buildSystemPrompt(ctx) {
   const lines = [];
 
   lines.push('# Atris Console');
-  lines.push('You are running inside the Atris Console — an AI workspace operating system.');
+  lines.push('You are running inside the Atris Console, an AI workspace operating system.');
   lines.push('');
 
   if (ctx.persona) {
@@ -293,7 +293,7 @@ function offerInstall(target, callback) {
 
 function checkAuth(backend) {
   if (backend === 'claude') {
-    // Claude handles its own auth interactively — always allow
+    // Claude handles its own auth interactively, always allow
     return true;
   }
   if (backend === 'codex') {

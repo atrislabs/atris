@@ -939,7 +939,7 @@ function guard(args) {
     return 2;
   }
   // Conductor plumbing (worktree metadata, the fleet prompt written for this very
-  // engine, runtime scratch, the brief ledger) must not count as dirt — otherwise the
+  // engine, runtime scratch, the brief ledger) must not count as dirt, otherwise the
   // harness blocks the engine with the harness's own files.
   const counts = statusCounts(root, { ignoreUntracked: isConductorArtifact });
   if (counts && (counts.staged || counts.unstaged || counts.untracked) && !hasFlag(args, '--allow-dirty')) {

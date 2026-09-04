@@ -62,7 +62,7 @@ function publisherSupportsStoryline(script) {
 
 function clean(value, fallback = '') {
   const text = String(value == null ? '' : value)
-    .replace(/[—–]/g, '-')
+    .replace(/[\u2014\u2013]/g, '-')
     .replace(/\s+/g, ' ')
     .trim();
   return text || fallback;

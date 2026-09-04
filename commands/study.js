@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * atris study — on-demand learning feed + tutor-loop routing + waiting-room cards.
+ * atris study, on-demand learning feed + tutor-loop routing + waiting-room cards.
  *
  *   atris study <topic…> [--personal]
  *   atris study --while "<cmd>" [topic…] [--personal]
@@ -33,7 +33,7 @@ const LANGUAGE_TOPICS = new Set([
 ]);
 
 function showHelp() {
-  console.log(`\n  atris study — learn a topic on demand (learning feed + tutor loop)\n
+  console.log(`\n  atris study, learn a topic on demand (learning feed + tutor loop)\n
   Usage:
     atris study <topic…> [--personal]
     atris study --while "<cmd>" [topic…] [--personal]
@@ -48,7 +48,7 @@ function showHelp() {
                     Space advances. q stops cards and live-streams build output.
                     Ctrl+C kills the child and replays output so far (exit 130).
                     Non-TTY stdin = plain passthrough (no cards). If the feed
-                    server is down, the command still runs — cards are skipped.
+                    server is down, the command still runs, cards are skipped.
 
   --personal   also scan workspace briefs for personal-edge cards
 
@@ -146,7 +146,7 @@ function printTutorLoopBlock(backendRoot, language) {
   console.log('    venv/bin/python experiments/tutor-loop/tutor.py scan');
 
   if (language !== 'spanish') {
-    console.log('\n  curriculum not yet built — spanish ships today');
+    console.log('\n  curriculum not yet built, spanish ships today');
   }
   console.log('');
 }

@@ -11,7 +11,7 @@ function plural(count, word) {
 
 function plainSubject(subject) {
   return String(subject || 'untitled landing')
-    .replace(/—/g, ',')
+    .replace(/\u2014/g, ',')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
