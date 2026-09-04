@@ -311,11 +311,13 @@ test('buildScorecardRow: stable schema + fields', () => {
 test('appendScorecardRow: writes JSONL row to .atris/state/scorecards.jsonl', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-'));
   try {
+    fs.writeFileSync(path.join(dir, 'atris.md'), '# improve tree\n', 'utf8');
     const row = buildScorecardRow({ reward: 2, verify: true }, { source: 'api', ts: '2026-06-08T00:00:00.000Z' });
     const file = appendScorecardRow(dir, row);
     assert.ok(fs.existsSync(file));
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8').trim());
     assert.equal(parsed.schema, SCORECARD_SCHEMA);
+    assert.equal(typeof parsed.tree_hash, 'string');
     assert.equal(parsed.reward, 2);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

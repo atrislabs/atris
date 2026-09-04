@@ -9212,6 +9212,7 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris.md'), '# task tree\n', 'utf8');
 
     const add = runCli(['task', 'add', 'Close RSI task loop', '--tag', 'rsi', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
@@ -9241,6 +9242,7 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
     assert.equal(episodes.length, 2);
     const episode = episodes.at(-1);
     assert.equal(episode.schema, 'atris.task_episode.v1');
+    assert.equal(typeof episode.tree_hash, 'string');
     assert.equal(episode.task_id, id);
     assert.equal(episode.reward.value, 1);
     assert.equal(episode.action.actor, 'codex');

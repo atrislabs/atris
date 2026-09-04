@@ -90,6 +90,7 @@ const {
 const { resolveWorkspaceRoot, redirectToWorkspaceRoot } = require('../lib/mission-root');
 const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
 const { readJson, writeJson } = require('../lib/json-file');
+const { treeHashFor } = require('../lib/tree-hash');
 const {
   normalizeHumanAsks,
   openHumanAsks,
@@ -6107,6 +6108,7 @@ function writeReceipt(mission, result, root = process.cwd()) {
   const finalResult = normalizeMissionReceiptResult(mission, result, relativeReceiptPath);
   const receipt = {
     schema: 'atris.mission_receipt.v1',
+    tree_hash: treeHashFor(root),
     mission_id: mission.id,
     objective: mission.objective,
     owner: mission.owner,
