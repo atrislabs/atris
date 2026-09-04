@@ -1821,8 +1821,7 @@ function showWelcomeVisualization() {
     console.log(row('goal', endgameState.horizon || endgameState.slug));
   }
 
-  const hasNoTasks = glance.backlog === 0
-    && glance.active === 0
+  const hasNoTasks = glance.active === 0
     && glance.review === 0
     && glance.reviewCertified === 0;
   if (hasNoTasks) {

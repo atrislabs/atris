@@ -1,5 +1,0 @@
-The read-only ask lane is implemented in [engine-ask.js](/Users/keshavrao/arena/.agent-worktrees/atris-cli/claude-dispatch-cli-1257-20260812-051401/lib/engine-ask.js), routed through [engine.js](/Users/keshavrao/arena/.agent-worktrees/atris-cli/claude-dispatch-cli-1257-20260812-051401/commands/engine.js), tested, and mapped.
-
-`node --test test/engine-ask.test.js` exited 0; `node --test test/commands.test.js` exited 0; `npm test` exited 1 with 3,505 passing and 6 failing.
-
-Five failures were unrelated acceptance and isolated-run tests; one was our unused-export hygiene check. Per instruction, I stopped without staging, committing, shipping, or merging.
