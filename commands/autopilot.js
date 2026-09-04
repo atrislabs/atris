@@ -1,5 +1,5 @@
 /**
- * Atris Autopilot — Suggest, justify, execute. One task at a time.
+ * Atris Autopilot, Suggest, justify, execute. One task at a time.
  *
  * Scans the workspace for signals (stale pages, broken refs, abandoned tasks,
  * inbox items, backlog) and suggests the most important thing to do next.
@@ -117,7 +117,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
   const atrisDir = path.join(cwd, 'atris');
   const suggestions = [];
 
-  // --- Endgame tasks (highest priority — pursue the current horizon to completion) ---
+  // --- Endgame tasks (highest priority, pursue the current horizon to completion) ---
   const todoPath = path.join(atrisDir, 'TODO.md');
   const todo = parseTodo(todoPath);
 
@@ -172,7 +172,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
     if (skipped.has(key)) continue;
     suggestions.push({
       task: `Finish or remove stale task: ${st.title}`,
-      why: `Claimed ${st.daysSinceClaim} days ago and never completed. Either finish it or delete it — stale tasks add noise.`,
+      why: `Claimed ${st.daysSinceClaim} days ago and never completed. Either finish it or delete it, stale tasks add noise.`,
       kind: 'cleanup',
       priority: 3,
       skipKey: key
@@ -187,7 +187,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
     const sample = unhealable.slice(0, 3).map(r => `${r.file}:${r.line}`).join(', ');
     suggestions.push({
       task: `Fix ${unhealable.length} broken reference${unhealable.length > 1 ? 's' : ''} in MAP.md`,
-      why: `These file:line references point to code that moved or was deleted: ${sample}. MAP.md is the navigation — it needs to be accurate.`,
+      why: `These file:line references point to code that moved or was deleted: ${sample}. MAP.md is the navigation, it needs to be accurate.`,
       kind: 'docs',
       priority: 4
     });
@@ -277,7 +277,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
           const key = `feature:${dir.name}`;
           if (!skipped.has(key)) {
             suggestions.push({
-              task: `Complete feature spec for "${dir.name}" — missing ${missing.join(' and ')}`,
+              task: `Complete feature spec for "${dir.name}", missing ${missing.join(' and ')}`,
               why: `idea.md exists but the feature is incomplete. Navigator needs to create ${missing.join(' and ')} so executor can build it.`,
               kind: 'feature',
               priority: 6.5
@@ -297,7 +297,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
       const daysSinceMapUpdate = (Date.now() - mapStat.mtime.getTime()) / (1000 * 60 * 60 * 24);
       if (daysSinceMapUpdate > 7) {
         suggestions.push({
-          task: 'Review and refresh MAP.md — it hasn\'t been updated in over a week',
+          task: 'Review and refresh MAP.md, it hasn\'t been updated in over a week',
           why: `Last modified ${Math.floor(daysSinceMapUpdate)} days ago. Code may have drifted from the map. A quick review keeps navigation accurate.`,
           kind: 'review',
           priority: 7
@@ -385,8 +385,8 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
       const { logFile } = getLogPath();
       const now = new Date();
       const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const lines = staleSkipped.map(s => `- ${s.task} (${s.status})${s.reasoning ? ` — ${s.reasoning}` : ''}`);
-      const note = `\n### Staleness skip — ${hhmm}\n${lines.join('\n')}\n`;
+      const lines = staleSkipped.map(s => `- ${s.task} (${s.status})${s.reasoning ? `, ${s.reasoning}` : ''}`);
+      const note = `\n### Staleness skip, ${hhmm}\n${lines.join('\n')}\n`;
       if (fs.existsSync(logFile)) {
         const content = fs.readFileSync(logFile, 'utf8');
         const notesIdx = content.indexOf('## Notes');
@@ -422,7 +422,7 @@ function askApproval() {
 
 /**
  * Ask the human whether an unverified task is still relevant.
- * Interactive mode only — in auto mode, caller skips silently.
+ * Interactive mode only, in auto mode, caller skips silently.
  * Returns { fresh: boolean }.
  */
 function askHuman(taskTitle) {
@@ -438,7 +438,7 @@ function askHuman(taskTitle) {
 
 /**
  * Type-check a child_process error as a real wall-clock timeout. Node's
- * execSync attaches `code: 'ETIMEDOUT'` (plus `signal`) on timeout — it does
+ * execSync attaches `code: 'ETIMEDOUT'` (plus `signal`) on timeout, it does
  * NOT set `killed`, so a `killed`-only guard is dead code on the exact error
  * it was written for (lesson: etimedout-error-shape, 2026-06-10). A bare
  * `signal` without ETIMEDOUT is NOT a timeout: it's an OOM SIGKILL or an
@@ -449,7 +449,7 @@ function isPhaseTimeoutError(err) {
 }
 
 /**
- * Any abnormal child death — timeout or signal kill. The group sweep in
+ * Any abnormal child death, timeout or signal kill. The group sweep in
  * execPhaseCommandSync uses this wider net (orphans need sweeping either
  * way); the thrown message uses the narrow predicate to name the cause.
  */
@@ -459,12 +459,12 @@ function isPhaseKillError(err) {
 
 /**
  * execSync with the phase-timeout orphan fix. Node's sync-exec timeout signals
- * only the direct child pid — the `/bin/sh -c` wrapper — so the `claude` it
+ * only the direct child pid, the `/bin/sh -c` wrapper, so the `claude` it
  * spawned kept committing 160–296s past the 600s wall (lesson:
  * etimedout-error-shape, 2026-06-10). `detached: true` makes the wrapper a
  * process-group leader; on timeout we sweep the whole group via
  * `process.kill(-pid, 'SIGKILL')`. ESRCH on the sweep means the group already
- * died — fine. The original error is rethrown untouched so every call site
+ * died, fine. The original error is rethrown untouched so every call site
  * keeps its existing catch contract (err.stdout passthrough included).
  */
 function execPhaseCommandSync(cmd, opts = {}) {
@@ -511,10 +511,10 @@ function executePhaseDetailed(phase, context, options = {}) {
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
     if (isPhaseTimeoutError(err)) {
-      throw new Error(`${phase} phase timed out after ${timeout / 1000}s (configured runner hit the wall; any work it committed survives — reconcile from pre-tick HEADs)`);
+      throw new Error(`${phase} phase timed out after ${timeout / 1000}s (configured runner hit the wall; any work it committed survives, reconcile from pre-tick HEADs)`);
     }
     if (isPhaseKillError(err)) {
-      throw new Error(`${phase} phase killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall — not a timeout; check memory pressure or an external supervisor`);
+      throw new Error(`${phase} phase killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall, not a timeout; check memory pressure or an external supervisor`);
     }
     if (err.stdout) {
       return { prompt, output: err.stdout };
@@ -638,10 +638,10 @@ function getContextFiles(phase, options = {}) {
 // uncommitted work. Sibling-repo edits ride per-tick worktrees (the same
 // ../repo siblings snapshotRepoHeads tracks); destructive git on the shared
 // checkout is forbidden (COORDINATION.md Rule 4). Interpolated into the
-// default and self-heal do prompts — never the benchmark prompt (it never
+// default and self-heal do prompts, never the benchmark prompt (it never
 // commits).
-const SHARED_CHECKOUT_GIT_CONTRACT = `- Shared-checkout git safety (COORDINATION.md Rule 4): edits to any repo OTHER than this tick's cwd (../atrisos-backend-style sibling repos) go through a per-tick worktree — start with \`atris worktree start --member <member> --task "<task>"\`, land with \`atris worktree ship --message "<msg>" --verify "<cmd>"\`. Never edit a sibling repo's shared checkout directly.
-- On a shared checkout, \`git reset\`, \`git checkout --\`, \`git clean\`, and stashing other agents' work are FORBIDDEN — concurrent ticks' uncommitted work lives there.`;
+const SHARED_CHECKOUT_GIT_CONTRACT = `- Shared-checkout git safety (COORDINATION.md Rule 4): edits to any repo OTHER than this tick's cwd (../atrisos-backend-style sibling repos) go through a per-tick worktree, start with \`atris worktree start --member <member> --task "<task>"\`, land with \`atris worktree ship --message "<msg>" --verify "<cmd>"\`. Never edit a sibling repo's shared checkout directly.
+- On a shared checkout, \`git reset\`, \`git checkout --\`, \`git clean\`, and stashing other agents' work are FORBIDDEN, concurrent ticks' uncommitted work lives there.`;
 
 /**
  * Target files of experiment-queue entries that have not run yet. The gated
@@ -796,7 +796,7 @@ When done, reply: done.`;
 Task: ${task}
 
 Read today's journal completions and the git log from the past few days.
-Extract patterns worth remembering — things that surprised you, approaches that worked,
+Extract patterns worth remembering, things that surprised you, approaches that worked,
 mistakes that were caught. Append to atris/lessons.md. One line per lesson. Be specific.
 
 When done, reply: done.`;
@@ -809,7 +809,7 @@ When done, reply: done.`;
 Self-heal task: ${task}
 
 This is an unresolved \`fail\` lesson from atris/lessons.md. grep confirms the bug pattern
-is still present in-repo — the fix has NOT been shipped yet.
+is still present in-repo, the fix has NOT been shipped yet.
 
 Plan the smallest fix:
 1. Parse the lesson for file:line references and the described bug pattern.
@@ -818,7 +818,7 @@ Plan the smallest fix:
    - **Exit:** the specific behavior that proves the fix
    - **Verify:** a command that fails now and will pass after the fix${lessonSlug ? ` (include "${lessonSlug}" in the task title so the lesson auto-resolves)` : ''}
    - **Rollback:** how to revert if the fix misses
-4. Do NOT fix it in this phase — planner only. The executor will do the work.
+4. Do NOT fix it in this phase, planner only. The executor will do the work.
 
 When done, reply: done.`;
     }
@@ -827,7 +827,7 @@ When done, reply: done.`;
 
 Task: ${task}
 
-Understand the scope — what files need to change? Break into sub-tasks if needed.
+Understand the scope, what files need to change? Break into sub-tasks if needed.
 Add tasks to atris/TODO.md under ## Backlog.
 
 When done, reply: done.`;
@@ -867,7 +867,7 @@ Rules:
 - You CAN read and write code. You CANNOT plan or create new tasks.
 - Execute ONE step at a time. Verify each step before moving on.
 - Check MAP.md for file locations before grepping.
-- Stay in scope. Only fix the bug described in the lesson — no side quests.
+- Stay in scope. Only fix the bug described in the lesson, no side quests.
 ${SHARED_CHECKOUT_GIT_CONTRACT}
 
 Read these files first:
@@ -887,7 +887,7 @@ When done, reply: done.`;
 
     const pendingTargets = pendingExperimentTargets();
     const experimentGuard = pendingTargets.length
-      ? `\n- Do NOT edit these files this tick — the gated experiment loop owns pending patches to them: ${pendingTargets.join(', ')}. If the task requires changing them, stop and flag instead.`
+      ? `\n- Do NOT edit these files this tick, the gated experiment loop owns pending patches to them: ${pendingTargets.join(', ')}. If the task requires changing them, stop and flag instead.`
       : '';
     return `You are the executor. Read your MEMBER.md spec first if available.
 
@@ -936,7 +936,7 @@ Task: ${task}
 2. Name any tests or checks you ran and whether they passed.
 3. Call out bugs, edge cases, or drift.
 4. Reply \`done\` if this run passes the review bar.
-5. Reply \`failed — [reason]\` if it does not.`;
+5. Reply \`failed, [reason]\` if it does not.`;
     }
 
     return `You are the validator. Read your MEMBER.md spec first if available.
@@ -946,8 +946,8 @@ Rules:
 - Ultrathink: spec match, scope check, edge cases, integration.
 - Run tests if they exist. Check MAP.md is still accurate.
 - If you halted, were surprised, or learned a non-obvious lesson, append ONE line to atris/lessons.md in this exact format:
-  - **[YYYY-MM-DD] short-slug** — pass|fail — One sentence on what surprised you or what to remember.
-  Skip if the tick taught nothing non-obvious. Lessons compound — future /endgame runs read this file before picking horizons.
+  - **[YYYY-MM-DD] short-slug**, pass|fail, One sentence on what surprised you or what to remember.
+  Skip if the tick taught nothing non-obvious. Lessons compound, future /endgame runs read this file before picking horizons.
 
 Read these files first:
 ${readFiles}
@@ -965,7 +965,7 @@ Task: ${task}
 6. If something is wrong, fix it before signing off.
 
 When done, reply: done.
-If broken beyond quick fix, reply: failed — [reason].`;
+If broken beyond quick fix, reply: failed, [reason].`;
   }
 
   return '';
@@ -975,7 +975,7 @@ If broken beyond quick fix, reply: failed — [reason].`;
  * Build a clean kebab-case lesson slug from free text. Strips non-alphanumerics
  * (em-dashes were leaking into slugs verbatim) and truncates at a word boundary
  * instead of mid-word (e.g. the old `.slice(0, 40)` produced
- * `verify-fail-per-member-model-selection-—-the-member-`).
+ * `verify-fail-per-member-model-selection-the-member-`).
  */
 function lessonSlug(text, maxLen = 40) {
   const base = String(text || 'unknown')
@@ -986,7 +986,7 @@ function lessonSlug(text, maxLen = 40) {
   if (base.length <= maxLen) return base;
   const cut = base.slice(0, maxLen);
   const lastDash = cut.lastIndexOf('-');
-  // base[maxLen] continues a word — back up to the last full word.
+  // base[maxLen] continues a word, back up to the last full word.
   const atBoundary = base[maxLen] === '-';
   const trimmed = atBoundary ? cut : (lastDash > 0 ? cut.slice(0, lastDash) : cut);
   return trimmed.replace(/-+$/g, '') || 'unknown';
@@ -994,22 +994,22 @@ function lessonSlug(text, maxLen = 40) {
 
 /**
  * Write a lesson to atris/lessons.md
- * Appends a line in format: - **[YYYY-MM-DD] slug** — pass/fail — explanation
+ * Appends a line in format: - **[YYYY-MM-DD] slug** - pass/fail - explanation
  */
 function writeLesson(cwd, slug, status, explanation) {
   const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
   const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-  const lessonLine = `- **[${today}] ${slug}** — ${status} — ${explanation}`;
+  const lessonLine = `- **[${today}] ${slug}** - ${status} - ${explanation}`;
 
   if (!fs.existsSync(lessonsPath)) {
-    fs.writeFileSync(lessonsPath, `# lessons.md — What We Learned\n\n> Append-only. One line per lesson.\n\n---\n\n${lessonLine}\n`);
+    fs.writeFileSync(lessonsPath, `# lessons.md, What We Learned\n\n> Append-only. One line per lesson.\n\n---\n\n${lessonLine}\n`);
     return;
   }
 
   let content = fs.readFileSync(lessonsPath, 'utf8');
   // Same-day dedup: if an identical line already exists, skip the write. A
   // cron firing every 13min produced 5 identical no-verify-field lessons in
-  // one day (2026-05-08) before the picker-side fix landed — pure noise. The
+  // one day (2026-05-08) before the picker-side fix landed, pure noise. The
   // append-only contract still holds across days because today's date is in
   // the line.
   if (content.includes(lessonLine)) return;
@@ -1094,7 +1094,7 @@ function regressionCheck(cwd) {
  * Get the verify command for a task from TODO.md
  * Reads TODO.md, finds the task by title across active/completed sections,
  * and extracts the verify field.
- * Returns { cmd, explicit } — explicit is true only if the task has an explicit Verify field.
+ * Returns { cmd, explicit }, explicit is true only if the task has an explicit Verify field.
  */
 function getVerifyCommand(cwd, taskTitle) {
   const todoPath = path.join(cwd, 'atris', 'TODO.md');
@@ -1137,7 +1137,7 @@ function shouldAdoptPlannedVerify(kind) {
 // Task-plane status vocabulary lint. `atris task list/queue/current --status <s>`
 // only matches raw stored statuses (commands/task.js); `ready` is a TRANSITION
 // (`atris task ready` moves a task to review), so `--status ready` always
-// returns "(no tasks)" — a verify built on it is an unreachable gate; the
+// returns "(no tasks)", a verify built on it is an unreachable gate; the
 // matching listable form is --status review (lessons.md
 // verify-status-vocabulary, 3rd occurrence 2026-06-10).
 const LISTABLE_TASK_STATUSES = ['open', 'claimed', 'review', 'done', 'failed'];
@@ -1160,7 +1160,7 @@ function lintVerifyTaskStatusVocabulary(text) {
       : `use one of --status ${vocabulary}`;
     return {
       ok: false,
-      reason: `Verify uses unlistable task status "--status ${status}" — the listable vocabulary is ${vocabulary}; ${suggestion}`,
+      reason: `Verify uses unlistable task status "--status ${status}", the listable vocabulary is ${vocabulary}; ${suggestion}`,
     };
   }
   return null;
@@ -1197,7 +1197,7 @@ function haltInvalidVerify(cwd, context, verifyCmd, reason, startedAt, phaseResu
 /**
  * Infer a default verify command from the repo shape. Order matters:
  * package.json with a non-stub test script → `npm test`; then pytest/python;
- * then rust/go; otherwise null (no default — skip verify).
+ * then rust/go; otherwise null (no default, skip verify).
  */
 function detectDefaultVerify(cwd) {
   const pkg = path.join(cwd, 'package.json');
@@ -1246,14 +1246,14 @@ function verifyJudgeIntegrity() {
 }
 
 /**
- * Build the validator's plan-review prompt. Fresh context — the validator
+ * Build the validator's plan-review prompt. Fresh context, the validator
  * reads the plan output and the contract fields as if it has never seen them.
  */
 function buildPlanReviewPrompt(context, planOutput) {
   const files = Array.isArray(context.files) && context.files.length
     ? context.files.join(', ')
     : 'none declared in context';
-  return `You are the validator in plan-review mode. You have NOT seen the planning context — read everything fresh.
+  return `You are the validator in plan-review mode. You have NOT seen the planning context, read everything fresh.
 
 Task: "${context.task}"
 Kind: ${context.kind || 'unknown'}
@@ -1265,9 +1265,9 @@ ${planOutput || '(no plan output captured)'}
 ---
 
 Read from disk:
-- atris/atris.md (the workspace protocol — operating rules and task shape)
+- atris/atris.md (the workspace protocol, operating rules and task shape)
 - atris/TODO.md (find this task; inspect Files, Exit, Verify, After, Rollback)
-- atris/lessons.md (recent failures — last 20 lines)
+- atris/lessons.md (recent failures, last 20 lines)
 
 Decide if the plan is safe to execute. Check:
 1. Verify points at a falsifiable raw shell command or rubric (not \`true\`, \`echo ok\`, Markdown backticks, or English like "returns 1" / "shows today's date").
@@ -1305,7 +1305,7 @@ function parseVerdict(output) {
   const text = String(output || '');
   const rawLines = text.split('\n');
   const lines = rawLines.map((l) => l.trim()).filter(Boolean);
-  // Scan from the end backwards — the verdict is supposed to be LAST.
+  // Scan from the end backwards, the verdict is supposed to be LAST.
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
     if (/^SIGNOFF\s*:/i.test(line)) {
@@ -1398,7 +1398,7 @@ function defaultCodexExecutor(prompt, { cwd, timeout = 180000 } = {}) {
     maxBuffer: 10 * 1024 * 1024,
     detached: true,
   });
-  // No sh wrapper here, but codex spawns its own children — sweep the group
+  // No sh wrapper here, but codex spawns its own children, sweep the group
   // on timeout so they cannot outlive the wall (same orphan class as the
   // claude sites; ESRCH means the tree is already dead).
   if (proc.pid && ((proc.error && proc.error.code === 'ETIMEDOUT') || proc.signal)) {
@@ -1508,7 +1508,7 @@ function runPlanReview({ cwd, context, planOutput, options = {} }) {
 
 /**
  * Append a plan-review rejection to today's journal under ## Notes.
- * Intentionally does NOT write to lessons.md — rejections only become lessons
+ * Intentionally does NOT write to lessons.md, rejections only become lessons
  * if a human spots a reusable failure pattern.
  */
 function appendPlanRejection(cwd, context, review) {
@@ -1532,7 +1532,7 @@ function appendPlanRejection(cwd, context, review) {
         (review.proposed.rollback ? `- Rollback: ${review.proposed.rollback}\n` : '')
       : '';
     const block =
-      `\n### Plan rejected — ${now}\n\n` +
+      `\n### Plan rejected, ${now}\n\n` +
       `**Task:** ${context.task}\n` +
       `**Signers:** ${signers}\n` +
       `**Reason:** ${review.reason}\n` +
@@ -1606,7 +1606,7 @@ function gitHeadAt(dir) {
 
 /**
  * Snapshot HEAD of the workspace repo plus any sibling repos named in the
- * task text — both explicit `../atris-cli`-style refs (the journal convention)
+ * task text, both explicit `../atris-cli`-style refs (the journal convention)
  * and bare sibling-directory names like `atris-cli` that resolve to a git
  * repo next to cwd. Returns [{ label, dir, head }].
  */
@@ -1645,7 +1645,7 @@ function diffAdvancedRepoHeads(snapshot) {
 
 /**
  * The T31-typed do-phase timeout message thrown by executePhaseDetailed.
- * Plan/review timeouts stay human halts — only the do phase commits work
+ * Plan/review timeouts stay human halts, only the do phase commits work
  * worth reconciling.
  */
 function isDoPhaseTimeoutMessage(message) {
@@ -1728,7 +1728,7 @@ function appendTimeoutReconciliation(cwd, { task, advanced }) {
     .map((r) => `- ${r.label}: ${String(r.before).slice(0, 7)} → ${String(r.after).slice(0, 7)}`)
     .join('\n');
   const block =
-    `\n### Timeout reconciliation — ${now} — work-landed-receipt-died\n\n` +
+    `\n### Timeout reconciliation, ${now}, work-landed-receipt-died\n\n` +
     `**Task:** ${task}\n` +
     `**What happened:** the do-phase wall killed the reporter, but commits landed:\n` +
     `${repoLines}\n` +
@@ -1739,9 +1739,9 @@ function appendTimeoutReconciliation(cwd, { task, advanced }) {
 function appendCheckAndAdvance(cwd, task, receiptLine) {
   const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
   const block =
-    `\n### Check-and-advance — ${now} — advanced-already-done\n\n` +
+    `\n### Check-and-advance, ${now}, advanced-already-done\n\n` +
     `**Task:** ${task}\n` +
-    `**What happened:** verify passed before work started AND today's journal already carries a completion receipt — the work shipped on a prior tick whose reporter died before bookkeeping. Bullet marked, picker advanced.\n` +
+    `**What happened:** verify passed before work started AND today's journal already carries a completion receipt, the work shipped on a prior tick whose reporter died before bookkeeping. Bullet marked, picker advanced.\n` +
     `**Receipt:** ${receiptLine}\n`;
   return appendUnderNotes(cwd, block);
 }
@@ -1781,7 +1781,7 @@ function reconcileTimedOutTick(cwd, snapshot, taskTitle) {
 function runTaskOnce(context, options = {}) {
   const { verbose = false, cwd = process.cwd() } = options;
 
-  // Judge integrity check — halt if computeTickReward was tampered with
+  // Judge integrity check, halt if computeTickReward was tampered with
   const integrity = verifyJudgeIntegrity();
   if (!integrity.ok) {
     writeLesson(cwd, 'judge-corruption', 'fail',
@@ -1812,7 +1812,7 @@ function runTaskOnce(context, options = {}) {
   // Reactive signals (inbox, staleness, imagined) use npm test as default.
   if (!verifyResult.explicit && context.kind === 'endgame') {
     writeLesson(cwd, 'no-verify-field', 'fail',
-      `Task "${context.task}" has no explicit **Verify:** field in TODO.md. Tick halted — every endgame task must declare how to verify it.`);
+      `Task "${context.task}" has no explicit **Verify:** field in TODO.md. Tick halted, every endgame task must declare how to verify it.`);
     return {
       outcome: 'halted',
       reason: 'no-verify-field',
@@ -1825,7 +1825,7 @@ function runTaskOnce(context, options = {}) {
 
   // Falsifiability gate (endgame + explicit Verify only).
   // Run Verify BEFORE the work. If it passes, the rubric is trivial or the
-  // task is already done — either way, halt. This is the keystone that makes
+  // task is already done, either way, halt. This is the keystone that makes
   // Verify load-bearing. The cmd is captured here and reused post-execute so
   // an agent cannot swap the rubric mid-tick.
   //
@@ -1868,7 +1868,7 @@ function runTaskOnce(context, options = {}) {
         verifyPass: false,
       };
     } catch {
-      // Pre-verify failed — good, the rubric is falsifiable. Proceed.
+      // Pre-verify failed, good, the rubric is falsifiable. Proceed.
     }
   }
 
@@ -1883,7 +1883,7 @@ function runTaskOnce(context, options = {}) {
     };
   }
 
-  // Phase: plan-review — validator reads the plan fresh and signs off or rejects.
+  // Phase: plan-review, validator reads the plan fresh and signs off or rejects.
   // Can be skipped via options.skipPlanReview (tests only). Codex is optional,
   // opt-in via env var / tags. On REJECT, the tick halts and the rejection is
   // journaled; lessons.md is NOT touched (only promoted lessons go there).
@@ -2074,7 +2074,7 @@ function computeTickReward(execution, tickOutcome, verifyCmd) {
  *   - idle:     when true, block must contain literal "0 tasks in 0s"
  *               so getIdleTickCount still works.
  *   - reward:   optional tick reward score (from computeTickReward)
- * Safe to call inside a try/catch — a write failure must never crash a tick.
+ * Safe to call inside a try/catch, a write failure must never crash a tick.
  */
 function appendTickSummary(cwd, { time, outcome, horizon, nextStep, idle, reward } = {}) {
   const now = new Date();
@@ -2257,7 +2257,7 @@ function printPlainBlock(text) {
 function getTickStatus(cwd) {
   const atrisDir = path.join(cwd, 'atris');
 
-  let identity = '(no identity set — see atris/PERSONA.md)';
+  let identity = '(no identity set, see atris/PERSONA.md)';
   const personaPath = path.join(atrisDir, 'PERSONA.md');
   if (fs.existsSync(personaPath)) {
     const lines = fs.readFileSync(personaPath, 'utf8').split('\n');
@@ -2271,7 +2271,7 @@ function getTickStatus(cwd) {
   }
 
   const endgame = readEndgameState(cwd);
-  const slug = endgame.slug === 'unset' ? '(no endgame active — feed inbox or /endgame)' : endgame.slug;
+  const slug = endgame.slug === 'unset' ? '(no endgame active, feed inbox or /endgame)' : endgame.slug;
   const horizon = endgame.horizon;
   const remaining = endgame.remaining;
   const completedEndgame = endgame.completed;
@@ -2318,7 +2318,7 @@ function renderHumanSuggestion(suggestion, step, maxIterations) {
 /**
  * Print the visual ASCII tick status block. Shows identity (forward / flow),
  * current endgame slug + horizon (backward / endgame), and progress through
- * endgame steps. Two halves of the same engine — flow and endgame — meeting
+ * endgame steps. Two halves of the same engine, flow and endgame, meeting
  * at the next tick. Called at the start of each autopilot run.
  */
 function printTickStatus(cwd, options = {}) {
@@ -2362,7 +2362,7 @@ function printTickStatus(cwd, options = {}) {
  * Idle marker is the literal substring `0 tasks in 0s` (case-insensitive). Scans
  * the Notes section bottom-up; the first non-marker, non-blank line breaks the
  * streak. Returns 0 when the journal is missing or has no `## Notes` section.
- * Pure read-only — no side effects, no callers yet.
+ * Pure read-only, no side effects, no callers yet.
  */
 function getIdleTickCount(cwd) {
   const now = new Date();
@@ -2397,7 +2397,7 @@ function getIdleTickCount(cwd) {
  *   - recentCommits: string[] from `git log --oneline -20` (empty on failure)
  *   - wikiHealth: string of `atris/wiki/STATUS.md` contents, or null if missing
  *   - recentLessons: string[] of last 10 non-empty lines from `atris/lessons.md`
- * Pure read-only — try/catch each source, safe defaults on failure. No callers yet.
+ * Pure read-only, try/catch each source, safe defaults on failure. No callers yet.
  */
 function getRecentSignals(cwd) {
   let recentCommits = [];
@@ -2557,7 +2557,7 @@ function scoreEndgameCandidates(cwd, candidates) {
 }
 
 /**
- * Proactive "surprise me" scanner — surfaces things the user didn't ask about.
+ * Proactive "surprise me" scanner, surfaces things the user didn't ask about.
  * Returns an array of suggestion objects in the same shape as the reactive
  * signals in suggestNextTask. Three orthogonal checks, none requiring
  * cross-session state:
@@ -2583,7 +2583,7 @@ function scanAnomalies(cwd) {
         const sample = untracked.slice(0, 3).map(t => `${t.file}:${t.line}`).join(', ');
         const firstText = first.text.slice(0, 60);
         results.push({
-          task: `Track the ${untracked.length} orphan TODO${untracked.length > 1 ? 's' : ''} in source — first: "${firstText}"`,
+          task: `Track the ${untracked.length} orphan TODO${untracked.length > 1 ? 's' : ''} in source, first: "${firstText}"`,
           why: `Code has ${untracked.length} \`// TODO\`/\`// FIXME\` comment${untracked.length > 1 ? 's' : ''} never written to TODO.md. First: "${firstText}" (${sample}). Either convert to real tasks or delete if obsolete.`,
           kind: 'orphan-todo',
           priority: 6,
@@ -2619,7 +2619,7 @@ function scanAnomalies(cwd) {
     const hotspot = findHotspot(cwd);
     if (hotspot) {
       results.push({
-        task: `Pause and review ${hotspot.file} — ${hotspot.commits} commits in the last 24h`,
+        task: `Pause and review ${hotspot.file}, ${hotspot.commits} commits in the last 24h`,
         why: `That file has churned more than any other file today. Could be genuine progress or a sign the change isn't sticking. Worth reading the diff before continuing.`,
         kind: 'hotspot',
         priority: 6.5,
@@ -2635,7 +2635,7 @@ function scanAnomalies(cwd) {
  * Grep source code for TODO/FIXME comments. Skips test/, node_modules/,
  * atris/, and .md files. Returns [{file, line, text}].
  *
- * Uses a loose grep then filters to real comment prefixes in JS — git grep's
+ * Uses a loose grep then filters to real comment prefixes in JS, git grep's
  * -E flag doesn't support `\s` on macOS, so we keep the pattern simple and
  * refine post-hoc.
  */
@@ -2798,7 +2798,7 @@ function parseLessons(cwd) {
   for (const rawLine of content.split('\n')) {
     const line = rawLine;
     if (!line.trim().startsWith('- **[')) continue;
-    const m = line.match(/\*\*\[(\d{4}-\d{2}-\d{2})\]\s+([\w-]+)\*\*\s*[—-]\s*(pass|fail)?\s*[—-]?\s*(.*)$/);
+    const m = line.match(/\*\*\[(\d{4}-\d{2}-\d{2})\]\s+([\w-]+)\*\*\s*[-\u2014]\s*(pass|fail)?\s*[-\u2014]?\s*(.*)$/);
     if (!m) continue;
     const [, date, id, verdict, rest] = m;
     const resolvedTag = /\[resolved\]/.test(rest);
@@ -2911,7 +2911,7 @@ function legacyLessonFileRefs(lessonLine) {
 }
 
 /**
- * The pre-v3.8 resolver — kept as an internal fallback for prose-only lessons
+ * The pre-v3.8 resolver, kept as an internal fallback for prose-only lessons
  * that don't have detector metadata yet. Never auto-promotes a prose lesson to
  * resolved in the typed system (callers can still use the `resolvedTag` field
  * from parseLessons for hand-tagged entries).
@@ -2959,13 +2959,13 @@ function isLessonResolvedLegacy(lessonLine, cwd) {
  *
  * Self-healing seed: instead of imagining new horizons via LLM, use what the
  * system already wrote down about itself. A `fail` lesson with `isLessonResolved
- * === false` means grep confirms the bug pattern is still present — actionable.
+ * === false` means grep confirms the bug pattern is still present, actionable.
  */
 /**
  * Returns true if a recent (within `windowDays`) `verify-not-falsifiable`
  * lesson references this exact task title. The falsifiability gate halts the
  * tick when the Verify clause already passes before work starts (task is
- * already shipped or rubric is trivial), but nothing in TODO.md changes —
+ * already shipped or rubric is trivial), but nothing in TODO.md changes,
  * so the next tick re-picks the same task and burns another 90s+ halting in
  * the same place. Reading the lesson log breaks the loop without requiring
  * a TODO.md hand-edit (which is the structurally-broken file we route around
@@ -3009,7 +3009,7 @@ function pickUnresolvedFailLesson(cwd) {
     if (lesson.id === 'no-verify-field') continue;
     if (lesson.id === 'verify-failed' && lesson.legacy) continue;
     if (lesson.resolvedTag) continue;
-    // Typed lesson with explicit status wins — respect the sidecar.
+    // Typed lesson with explicit status wins, respect the sidecar.
     // `resolved` = done. `observed` = process rule, not a fixable code state.
     // `attempted` with attempts >= MAX_ATTEMPTS = needs human re-scoping, skip.
     // Only `open` and `attempted` (under the cap) flow to self-heal execution.
@@ -3034,13 +3034,13 @@ function pickUnresolvedFailLesson(cwd) {
 
   if (candidates.length === 0) return null;
 
-  // Oldest first — longest-standing fails get priority
+  // Oldest first, longest-standing fails get priority
   candidates.sort((a, b) => a.date.localeCompare(b.date));
   return candidates[0];
 }
 
 function getLessonVerdict(lessonLine) {
-  const match = lessonLine.match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+[\w-]+\*\*\s*[—-]\s*(pass|fail)\b/i);
+  const match = lessonLine.match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+[\w-]+\*\*\s*[-\u2014]\s*(pass|fail)\b/i);
   return match ? match[1].toLowerCase() : null;
 }
 
@@ -3087,7 +3087,7 @@ Based on these signals, propose exactly 3 candidate next horizons for the loop t
 - Distinct from the other two candidates.
 - Not a restatement of a \`pass\` lesson; pass lessons are shipped constraints, not open work.
 
-Output STRICT JSON ONLY — no prose, no markdown code fences, no commentary. The output must be a single JSON array with exactly 3 objects, each shaped:
+Output STRICT JSON ONLY, no prose, no markdown code fences, no commentary. The output must be a single JSON array with exactly 3 objects, each shaped:
 
 [
   { "title": "one-line horizon title", "confidence": 0.0-1.0, "rationale": "one sentence why this is worth pursuing now" },
@@ -3118,7 +3118,7 @@ Reply with the JSON array and nothing else.`;
       throw new Error(`horizon-proposal phase timed out after ${PHASE_TIMEOUT / 1000}s`);
     }
     if (isPhaseKillError(err)) {
-      throw new Error(`horizon-proposal phase killed by ${err.signal || 'a signal'} before the ${PHASE_TIMEOUT / 1000}s wall — not a timeout`);
+      throw new Error(`horizon-proposal phase killed by ${err.signal || 'a signal'} before the ${PHASE_TIMEOUT / 1000}s wall, not a timeout`);
     }
     throw err;
   } finally {
@@ -3136,7 +3136,7 @@ Reply with the JSON array and nothing else.`;
   try {
     parsed = JSON.parse(jsonText);
   } catch (err) {
-    throw new Error(`proposeCandidateHorizons: JSON parse failed — ${err.message}`);
+    throw new Error(`proposeCandidateHorizons: JSON parse failed, ${err.message}`);
   }
 
   if (!Array.isArray(parsed)) {
@@ -3180,7 +3180,7 @@ Reply with the JSON array and nothing else.`;
         droppedByLesson = true;
         break;
       }
-      // Candidate matches this lesson — check if the lesson is resolved
+      // Candidate matches this lesson, check if the lesson is resolved
       if (isLessonResolved(lessonLine, cwd)) {
         // Tag lesson [resolved] in lessons.md
         try {
@@ -3336,7 +3336,7 @@ async function autopilotAtris(description, options = {}) {
 
     if (dryRun) {
       if (verbose) {
-        console.log('  (dry run — would execute this)');
+        console.log('  (dry run, would execute this)');
         console.log('');
       } else {
         printPlainBlock([
@@ -3434,7 +3434,7 @@ async function autopilotAtris(description, options = {}) {
       lastExecution = execution;
       lastVerifyCmd = execution.verifyCmd;
 
-      // Early halt — judge corruption or no verify field
+      // Early halt, judge corruption or no verify field
       if (execution.outcome === 'halted') {
         tickOutcome = 'halted';
         tickOutcomeText = `I halted before running "${lastTaskTitle}": ${execution.reason}.`;
@@ -3452,18 +3452,18 @@ async function autopilotAtris(description, options = {}) {
         break;
       }
 
-      // T33b: the falsifiability gate found a completion receipt — the work
+      // T33b: the falsifiability gate found a completion receipt, the work
       // already shipped, the bullet is checked, move straight to the next pick.
       if (execution.outcome === 'advanced-already-done') {
         completed++;
         tickOutcome = 'built';
-        tickOutcomeText = `"${lastTaskTitle}" was already done — verify passed pre-work and today's journal carries its completion receipt, so I checked the bullet and advanced.`;
+        tickOutcomeText = `"${lastTaskTitle}" was already done, verify passed pre-work and today's journal carries its completion receipt, so I checked the bullet and advanced.`;
         tickNextStep = 'pick the next endgame task';
         if (verbose) {
           console.log('  already done (journal receipt found). bullet checked, advancing.');
         } else {
           printPlainBlock([
-            'That task was already done — verify passed before work and a completion receipt exists in today\'s journal.',
+            'That task was already done, verify passed before work and a completion receipt exists in today\'s journal.',
             'I checked the bullet and advanced.',
             '',
             'Next I will look for the next task.'
@@ -3581,7 +3581,7 @@ async function autopilotAtris(description, options = {}) {
 
     } catch (err) {
       // T33a: a do-phase timeout with commits landed is a dead reporter, not
-      // dead work — write the reconciliation receipt, mark the bullet, and
+      // dead work, write the reconciliation receipt, mark the bullet, and
       // record work-landed-receipt-died instead of halting for a human.
       let reconciliation = null;
       if (isDoPhaseTimeoutMessage(err.message)) {
@@ -3595,10 +3595,10 @@ async function autopilotAtris(description, options = {}) {
           .map((r) => `${r.label} ${String(r.before).slice(0, 7)} → ${String(r.after).slice(0, 7)}`)
           .join(', ');
         tickOutcome = 'work-landed-receipt-died';
-        tickOutcomeText = `"${lastTaskTitle}" hit the do-phase wall but commits landed (${landed}). I wrote the reconciliation receipt and marked the bullet — work-landed-receipt-died, no human halt.`;
+        tickOutcomeText = `"${lastTaskTitle}" hit the do-phase wall but commits landed (${landed}). I wrote the reconciliation receipt and marked the bullet, work-landed-receipt-died, no human halt.`;
         tickNextStep = 'pick the next task';
         if (verbose) {
-          console.log(`  do phase timed out, but work landed (${landed}). reconciled — no human halt.`);
+          console.log(`  do phase timed out, but work landed (${landed}). reconciled, no human halt.`);
         } else {
           printPlainBlock([
             'The do phase timed out, but commits landed before the wall.',
@@ -3630,7 +3630,7 @@ async function autopilotAtris(description, options = {}) {
   const elapsed = Math.round((Date.now() - startTime) / 1000);
 
   // Heartbeat: plain-language tick summary into today's journal `## Notes`.
-  // Guarded — a journal write failure must never crash the tick.
+  // Guarded, a journal write failure must never crash the tick.
   try {
     const horizonSlug = readHorizonSlug(cwd);
     const time = new Date().toLocaleTimeString('en-US', {
@@ -3738,7 +3738,7 @@ function isStillTrue(fact, cwd) {
       });
       grepHits++;
     } catch {
-      // grep returns non-zero when no match — that's fine
+      // grep returns non-zero when no match, that's fine
     }
   }
 
@@ -3762,13 +3762,13 @@ function isStillTrue(fact, cwd) {
   // Strong mechanical evidence: grep found terms AND recent git activity
   if (gitHits > 0) return 'actionable';
 
-  // Grep found terms but no recent git activity — can't fully verify
+  // Grep found terms but no recent git activity, can't fully verify
   return 'unverified';
 }
 
 /**
  * Ask a local model whether a task/fact is still relevant.
- * Called when isStillTrue returns 'unverified' — the mechanical check
+ * Called when isStillTrue returns 'unverified', the mechanical check
  * couldn't confirm or deny, so we ask the configured runner to inspect the codebase.
  *
  * @param {{ title: string, age: number, source?: string }} fact
@@ -3812,7 +3812,7 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
     return { fresh, reasoning };
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
-    // On timeout or crash, treat as unverifiable — conservative default
+    // On timeout or crash, treat as unverifiable, conservative default
     return { fresh: false, reasoning: `Model check failed: ${(err.message || '').slice(0, 100)}` };
   }
 }
