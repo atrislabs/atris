@@ -43,7 +43,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
   output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links; hands off to teach');
-  output('search --paid = 5 credits, watch permalinks + titles from Atris; hands off to teach');
+  output('search --paid = 5 credits, watch permalinks + titles from Atris; rich paid search prints one failing check; hands off to teach');
   output('notes = free local notes to stdout; ephemeral unless --save; hands off to teach');
   output('teach = one chapter from local captions; bare teach resumes unpaid checks, then the next chapter after recap or skip');
   output('rich ephemeral notes/teach print one apply next-step and one failing check (no files)');
@@ -1672,6 +1672,7 @@ function showYoutubeSearchHelp(output = console.log, commandName = 'atris youtub
   output(`--paid buys watch permalinks from Atris (${PAID_SEARCH_COST_HINT}).`);
   output('Requires login. Same auth path as atris youtube process.');
   output('A hit also prints one next: atris youtube teach <first-url>.');
+  output('A rich hit prints one failing check (score 0). A thin hit prints check: fill this.');
   output('Empty or failed paid search refunds the credits.');
   output('');
   output('Options:');
@@ -2017,8 +2018,23 @@ async function runPaidYoutubeSearch(options, deps = {}) {
     return 2;
   }
   output(rendered);
+  printPaidSearchLearnerGate(videos, options, output);
   printSearchTeachNext(videos, options, output);
   return 0;
+}
+
+function paidSearchLessonText(videos) {
+  return (Array.isArray(videos) ? videos : [])
+    .map((row) => String(row && row.title ? row.title : '').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function printPaidSearchLearnerGate(videos, options, output) {
+  printLearnerCheckGate(output, notesLessonFromText(paidSearchLessonText(videos)), {
+    includeCheck: true,
+    json: Boolean(options && options.json),
+  });
 }
 
 function commandOnPath(name, deps = {}) {
