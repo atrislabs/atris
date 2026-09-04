@@ -204,6 +204,7 @@ test('runner appends results, writes baseline pointer, and preserves JSON contra
       'schema',
       'pack',
       'engine',
+      'model',
       'label',
       'experiment',
       'started',
