@@ -3381,7 +3381,7 @@ async function runYoutubeTeach(args = [], deps = {}) {
 
   if (!parsed.save) {
     if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'teach');
-    printLearnerCheckGate(output, lesson, { json: parsed.json === true });
+    printLearnerCheckGate(output, lesson, { includeCheck: true, json: parsed.json === true });
     printTeachWatchTickNext(parsed, lesson, chapters.length, output);
     return 0;
   }
