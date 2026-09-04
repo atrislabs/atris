@@ -1,4 +1,4 @@
-// atris strings — a content design system built from live codebase content (no LLM).
+// atris strings, a content design system built from live codebase content (no LLM).
 //
 // The missing pillar next to `atris slop`: slop catches HOW copy is written (tells,
 // hype, em-dashes); strings governs WHAT words you ship. It scans the repo for
@@ -7,7 +7,7 @@
 // enforces preferred terms at the commit/PR gate so you rename "live" -> "active"
 // once and it holds everywhere.
 //
-// Zero external deps (Node built-ins only) — repo contract. Deterministic: a finding
+// Zero external deps (Node built-ins only), repo contract. Deterministic: a finding
 // is a fact (file:line + term), not a taste opinion, so it drops into CI + the gate.
 //
 // Usage:
@@ -21,7 +21,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { gitChangedLines } = require('./slop'); // reuse the diff parser — DRY
+const { gitChangedLines } = require('./slop'); // reuse the diff parser, DRY
 const escapeRegExp = require('../lib/escape-regexp');
 
 const CODE_EXTS = new Set(['.tsx', '.jsx', '.ts', '.js', '.mjs', '.vue', '.svelte', '.astro', '.html']);
@@ -160,7 +160,7 @@ function scan(argv) {
   }
   console.log(`\n  scanned ${files.length} file${files.length === 1 ? '' : 's'} -> ${reg.strings.length} unique string${reg.strings.length === 1 ? '' : 's'}`);
   console.log(`  registry: ${path.relative(process.cwd(), file)}`);
-  if (clusters.length) console.log(`\n  ⚠ ${clusters.length} variant cluster${clusters.length === 1 ? '' : 's'} (same string, different casing/punctuation) — run: atris strings variants`);
+  if (clusters.length) console.log(`\n  ⚠ ${clusters.length} variant cluster${clusters.length === 1 ? '' : 's'} (same string, different casing/punctuation), run: atris strings variants`);
   else console.log(`\n  ✓ no inconsistent variants`);
   console.log('');
   return 0;
@@ -169,11 +169,11 @@ function scan(argv) {
 function variants(argv) {
   const json = argv.includes('--json');
   const reg = loadRegistry();
-  if (!reg.strings.length) { console.error('  no registry yet — run: atris strings scan'); return 2; }
+  if (!reg.strings.length) { console.error('  no registry yet, run: atris strings scan'); return 2; }
   const clusters = variantClusters(reg.strings);
   if (json) { console.log(JSON.stringify({ ok: clusters.length === 0, clusters }, null, 2)); return clusters.length ? 1 : 0; }
-  if (!clusters.length) { console.log(`\n  ✓ clean — every string is written one way\n`); return 0; }
-  console.log(`\n  ${clusters.length} variant cluster${clusters.length === 1 ? '' : 's'} — same string, inconsistent surface form:\n`);
+  if (!clusters.length) { console.log(`\n  ✓ clean, every string is written one way\n`); return 0; }
+  console.log(`\n  ${clusters.length} variant cluster${clusters.length === 1 ? '' : 's'}, same string, inconsistent surface form:\n`);
   for (const c of clusters) {
     console.log(`  ⚠ ${c.surfaces.map((s) => JSON.stringify(s)).join('  vs  ')}   (${c.count}×)`);
   }
@@ -188,7 +188,7 @@ function term(argv) {
   const why = get('--why') || '';
   if (argv.includes('--list') || (!ban && !argv.includes('--remove'))) {
     const reg = loadRegistry();
-    if (!reg.terms.length) { console.log('\n  no terms yet — add one: atris strings term --ban "live" --prefer "active"\n'); return 0; }
+    if (!reg.terms.length) { console.log('\n  no terms yet, add one: atris strings term --ban "live" --prefer "active"\n'); return 0; }
     console.log('\n  preferred terms (enforced by: atris strings check):\n');
     for (const t of reg.terms) console.log(`  ✗ "${t.ban}" → "${t.prefer}"${t.why ? `   (${t.why})` : ''}`);
     console.log('');
@@ -219,7 +219,7 @@ function check(argv) {
   const reg = loadRegistry();
   if (!reg.terms.length) {
     if (json) { console.log(JSON.stringify({ ok: true, terms: 0, findings: [] }, null, 2)); }
-    else if (!quiet) console.log('\n  no terms to enforce — add one: atris strings term --ban "live" --prefer "active"\n');
+    else if (!quiet) console.log('\n  no terms to enforce, add one: atris strings term --ban "live" --prefer "active"\n');
     return 0;
   }
 
@@ -248,7 +248,7 @@ function check(argv) {
   }
 
   if (json) { console.log(JSON.stringify({ ok: findings.length === 0, scanned: files.length, terms: reg.terms.length, findings }, null, 2)); return findings.length ? 1 : 0; }
-  if (!findings.length) { if (!quiet) console.log(`\n  ✓ clean — no banned terms in ${files.length} file${files.length === 1 ? '' : 's'}\n`); else console.log('  ✓ clean · exit 0'); return 0; }
+  if (!findings.length) { if (!quiet) console.log(`\n  ✓ clean, no banned terms in ${files.length} file${files.length === 1 ? '' : 's'}\n`); else console.log('  ✓ clean · exit 0'); return 0; }
   if (!quiet) {
     console.log('');
     const w = Math.max(...findings.map((f) => `${f.file}:${f.line}`.length));
@@ -262,7 +262,7 @@ function list(argv) {
   const json = argv.includes('--json');
   const reg = loadRegistry();
   if (json) { console.log(JSON.stringify(reg, null, 2)); return 0; }
-  if (!reg.strings.length) { console.error('  no registry yet — run: atris strings scan'); return 2; }
+  if (!reg.strings.length) { console.error('  no registry yet, run: atris strings scan'); return 2; }
   const top = Number((argv[argv.indexOf('--top') + 1]) || 30);
   console.log(`\n  ${reg.strings.length} strings (scanned ${reg.scannedAt || '?'}), top ${Math.min(top, reg.strings.length)} by use:\n`);
   for (const s of reg.strings.slice(0, top)) console.log(`  ${String(s.count).padStart(3)}×  ${JSON.stringify(s.text)}`);
@@ -279,7 +279,7 @@ function stringsCommand(argv) {
   if (sub === 'check' || sub === 'gate') return check(rest);
   if (sub === 'list' || sub === 'ls') return list(rest);
   console.log(`
-  atris strings — a content design system from your live codebase (no LLM)
+  atris strings, a content design system from your live codebase (no LLM)
 
     atris strings scan [path]      extract user-facing strings -> .atris/strings.json
     atris strings variants         the same string written N different ways (pick one)
@@ -289,7 +289,7 @@ function stringsCommand(argv) {
     atris strings list [--top N]   the registry, most-used first
     add --json to scan/variants/check/list for machine output
 
-  Pairs with 'atris slop' (how copy reads) — strings governs what words you ship.
+  Pairs with 'atris slop' (how copy reads), strings governs what words you ship.
   The registry lives in .atris/strings.json. Wire 'check --staged' into the pre-commit gate.
 `);
   return 0;

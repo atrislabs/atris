@@ -1,13 +1,13 @@
 /**
- * Atris Soul — The persona as a living artifact
+ * Atris Soul, The persona as a living artifact
  *
  * Every atris project has a soul: persona + policies + learnings + context.
  * This command lets you see it, evolve it, fork it.
  *
- *   atris soul              — Show your project's soul state
- *   atris soul snapshot      — Export full soul to JSON
- *   atris soul distill       — Compress learnings into persona
- *   atris soul fork <target> — Copy soul to another project
+ *   atris soul             , Show your project's soul state
+ *   atris soul snapshot     , Export full soul to JSON
+ *   atris soul distill      , Compress learnings into persona
+ *   atris soul fork <target>, Copy soul to another project
  */
 
 const fs = require('fs');
@@ -59,7 +59,7 @@ function snapshotSoul(atrisDir) {
     soul.identity.team = members;
   }
 
-  // Knowledge — features
+  // Knowledge, features
   const featuresDir = path.join(atrisDir, 'features');
   if (fs.existsSync(featuresDir)) {
     const features = fs.readdirSync(featuresDir).filter(f => {
@@ -69,31 +69,31 @@ function snapshotSoul(atrisDir) {
     soul.knowledge.feature_count = features.length;
   }
 
-  // Knowledge — research
+  // Knowledge, research
   const researchDir = path.join(atrisDir, 'research');
   if (fs.existsSync(researchDir)) {
     soul.knowledge.research_files = countFiles(researchDir);
   }
 
-  // Knowledge — refs
+  // Knowledge, refs
   const refsDir = path.join(atrisDir, 'refs');
   if (fs.existsSync(refsDir)) {
     soul.knowledge.refs = fs.readdirSync(refsDir).filter(f => f.endsWith('.md'));
   }
 
-  // Learned — policies
+  // Learned, policies
   const policiesDir = path.join(atrisDir, 'policies');
   if (fs.existsSync(policiesDir)) {
     soul.learned.policies = fs.readdirSync(policiesDir).filter(f => f.endsWith('.md'));
   }
 
-  // Learned — logs (journal depth)
+  // Learned, logs (journal depth)
   const logsDir = path.join(atrisDir, 'logs');
   if (fs.existsSync(logsDir)) {
     soul.learned.journal_entries = countFiles(logsDir);
   }
 
-  // Learned — lessons
+  // Learned, lessons
   const lessons = readFile(path.join(atrisDir, 'lessons.md'));
   if (lessons) {
     const lessonCount = (lessons.match(/^-/gm) || []).length;
@@ -298,7 +298,7 @@ function distillSoul(atrisDir) {
 
 function showSoulHelp() {
   console.log('');
-  console.log('  atris soul — see what your project has learned');
+  console.log('  atris soul, see what your project has learned');
   console.log('');
   console.log('  soul              show identity, knowledge, learnings');
   console.log('  soul snapshot     export full soul to JSON (auto-gitignored)');
@@ -338,11 +338,11 @@ async function soul(args = []) {
       try {
         const existing = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf8') : '';
         if (!existing.includes('soul-snapshot.json')) {
-          fs.appendFileSync(gitignorePath, '\n# Atris soul — private, never commit\natris/soul-snapshot.json\n');
+          fs.appendFileSync(gitignorePath, '\n# Atris soul, private, never commit\natris/soul-snapshot.json\n');
         }
       } catch {}
       console.log(`✓ Soul snapshot saved to ${outPath}`);
-      console.log(`  (auto-added to .gitignore — this stays private)`);
+      console.log(`  (auto-added to .gitignore, this stays private)`);
       break;
     }
     case 'fork': {

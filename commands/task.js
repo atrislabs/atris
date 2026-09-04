@@ -5346,7 +5346,7 @@ function evaluateReviewAutoAccept(task, root) {
   if (!protectedGate.ok) return { eligible: false, ref, reason: protectedGate.reason };
   const sizeGate = reviewAutoAcceptSizeGate(task, root);
   if (!sizeGate.ok) return { eligible: false, ref, reason: sizeGate.reason, size: sizeGate.stats };
-  // executeVerify: false — this is a READ path. The verdict comes from
+  // executeVerify: false, this is a READ path. The verdict comes from
   // metadata.verify_cache, stamped by the two lanes allowed to spawn
   // checks (certify-verified, autoland landing re-check). Spawning here is
   // what turned `atris task reviews` into a fork-bomb multiplier.
@@ -5853,7 +5853,7 @@ function stampAcceptGroupMetadata(taskDb, db, taskId, { actor, group, verified, 
 }
 
 // Accept a whole certified cluster honestly: the human spot-checks K rows (real career XP), the rest
-// are accepted-by-sampling (cleared from the backlog, provenance recorded, NO career XP — never fake XP).
+// are accepted-by-sampling (cleared from the backlog, provenance recorded, NO career XP, never fake XP).
 function cmdAcceptGroup(args) {
   const pos = positional(args);
   const spec = pos[0];
@@ -5904,7 +5904,7 @@ function cmdAcceptGroup(args) {
       });
       return;
     }
-    console.log(`accept-group DRY RUN — ${key}=${value}: ${group.length} certified task(s)`);
+    console.log(`accept-group DRY RUN, ${key}=${value}: ${group.length} certified task(s)`);
     console.log(`Spot-check these ${need} (weakest evidence first; open + verify), then accept the whole cluster:`);
     sample.forEach((task) => {
       console.log(`  ${taskRef(task)}  ${task.title}`);
@@ -5921,7 +5921,7 @@ function cmdAcceptGroup(args) {
       }
     });
     console.log('');
-    console.log(`If they hold up — accept all ${group.length} (career XP only on the ${need} you verified):`);
+    console.log(`If they hold up, accept all ${group.length} (career XP only on the ${need} you verified):`);
     console.log(`  atris task accept-group ${key}=${JSON.stringify(value)} --spot-check ${spotCheck} --confirm-human-accept --as <you> --verified ${sample.map(task => task.id).join(',')}`);
     return;
   }
@@ -6228,7 +6228,7 @@ function cmdAdd(args) {
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
   const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title);
-  // Generation throttle — the named root cause is generation > human-review rate. An AGENT cannot keep
+  // Generation throttle, the named root cause is generation > human-review rate. An AGENT cannot keep
   // minting tasks while a wall of certified-but-unaccepted work waits; that treadmill is what accept-group
   // only drains. Humans and --force bypass. Closes the tap instead of just enlarging the bucket.
   if (agentProofOnlyMode() && !hasFlag(args, '--force')) {
@@ -6400,7 +6400,7 @@ function taskDayTextGroups(groups, { full = false } = {}) {
 }
 
 function taskDayTitle(title, maxLength = 120) {
-  const text = String(title || '').replace(/\s*[—–]\s*/g, ' - ').replace(/\s+/g, ' ').trim();
+  const text = String(title || '').replace(/\s*[\u2014\u2013]\s*/g, ' - ').replace(/\s+/g, ' ').trim();
   if (text.length <= maxLength) return text;
   const sentence = text.slice(0, maxLength + 1).match(/^(.{48,}?[.!?])(?:\s|$)/);
   if (sentence) return sentence[1];
@@ -9791,7 +9791,7 @@ function cmdReapMissionBlockers(args) {
 // 'failed' (no distinct archived status existed yet). This relabels exactly
 // the rows that carry that reset's metadata marker, using the same
 // UPDATE+appendTaskEvent write path as every other status transition in
-// lib/task-db.js — never a raw projection-JSON edit.
+// lib/task-db.js, never a raw projection-JSON edit.
 function cmdRelabelArchived(args) {
   const apply = hasFlag(args, '--apply');
   const taskDb = getTaskDb();
@@ -9905,7 +9905,7 @@ function cmdReady(args) {
       const { classifyVerifier } = require('../lib/verifier-quality');
       const quality = classifyVerifier(verifyFlag);
       if (!quality.ok) {
-        console.error(`atris task ready: weak verifier — ${quality.reason}`);
+        console.error(`atris task ready: weak verifier, ${quality.reason}`);
         console.error(`  command: ${verifyFlag}`);
         console.error('  allowlisted examples: node --test, npm test, git diff --check, node --check, rg <symbol>');
         console.error('  or pass --no-falsify-check to accept anyway.');
@@ -9913,7 +9913,7 @@ function cmdReady(args) {
       }
       const probe = probeVerifierCanFail({ command: verifyFlag });
       if (probe.probed && probe.canFail === false) {
-        console.error(`atris task ready: this check cannot fail — ${probe.reason}`);
+        console.error(`atris task ready: this check cannot fail, ${probe.reason}`);
         console.error(`  command: ${verifyFlag}`);
         console.error('  give a check that fails when the work is missing, or pass --no-falsify-check to accept anyway.');
         process.exit(1);
@@ -9921,7 +9921,7 @@ function cmdReady(args) {
       if (!probe.probed && !wantsJson(args)) console.log(`  ${probe.reason}`);
     }
     const base = proof.trim();
-    proof = `[verified] \`${verifyFlag}\` passed (exit 0)${base ? ` — ${base}` : ''}${receipt.output ? `\n${receipt.output}` : ''}\nReceipt: ${receipt.receiptPath}`;
+    proof = `[verified] \`${verifyFlag}\` passed (exit 0)${base ? `, ${base}` : ''}${receipt.output ? `\n${receipt.output}` : ''}\nReceipt: ${receipt.receiptPath}`;
     if (!wantsJson(args)) console.log(`✓ verified: \`${verifyFlag}\` exited 0 (receipt ${receipt.receiptPath})`);
   }
   if (!proof) {
@@ -10319,7 +10319,7 @@ function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '
 
 // Second-actor certification for proof-backed Review rows whose proof names a
 // runnable, allowlisted check. Re-running that check as a distinct actor IS
-// the independent verification the certification gate asks for — the row
+// the independent verification the certification gate asks for, the row
 // becomes certified and autoland can land it on the same heartbeat. Rows in
 // denied lanes, without a runnable check, or already certified keep their
 // existing paths (review chats, human accept).
@@ -10368,8 +10368,8 @@ function currentHeadSha(workspaceRoot) {
 
 // metadata.verify_cache is the read path's only verify verdict: `reviews`
 // must never spawn a check (that read-side execution fork-bombed the fleet
-// on 2026-07-29), so the two lanes that legitimately execute verifies —
-// certify-verified and the autoland landing re-check — persist the outcome
+// on 2026-07-29), so the two lanes that legitimately execute verifies,
+// certify-verified and the autoland landing re-check, persist the outcome
 // here for the read path to consult.
 function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot }) {
   const row = taskDb.getTask(db, taskId);
@@ -10427,8 +10427,8 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
   const verify = certifyVerifyCandidate(task);
   if (!verify) {
     // No runnable check on record. Landing anyway converts "never verified"
-    // into "accepted with XP" — the exact signal poisoning this gate exists
-    // to prevent — so bounce the task back for a recorded verify instead.
+    // into "accepted with XP", the exact signal poisoning this gate exists
+    // to prevent, so bounce the task back for a recorded verify instead.
     const note = 'Autoland refused to land without a runnable verify command: record one with `atris task ready --verify "<cmd>" --result "<sentence>"`.';
     const revised = taskDb.reviseTask(db, { id: task.id, actor, note });
     return {
@@ -10507,11 +10507,11 @@ function cmdCertifyVerified(args, options = {}) {
     }
     // Skip only rows the accept lane can already land, or rows blocked by
     // something an executed second-actor check cannot cure. A row with two
-    // passes from ONE actor is exactly what this command exists to cure —
+    // passes from ONE actor is exactly what this command exists to cure,
     // "certified" alone is not landable.
     // strictVerify stays off in this eligibility probe: certify-verified runs
     // the check itself right below, and strict mode here would execute it a
-    // second time per row before the real run. executeVerify: false as well —
+    // second time per row before the real run. executeVerify: false as well,
     // an untrusted trust tier re-enables the strict block internally even
     // with strictVerify off, which is how this probe spawned a verify per row.
     const evaluation = evaluateAutoAccept(task, { strictVerify: false, executeVerify: false });
@@ -10639,7 +10639,7 @@ function cmdAutoAcceptCertified(args) {
   const hasExplicitLimit = Boolean(limitRaw) && limitRaw !== true;
   // --all means sweep the full certified backlog, not just the first page of
   // it. Before this fix `max` was hard-capped at 12 even under --all, so a
-  // real backlog (78 certified rows observed live) only ever drained 12/run —
+  // real backlog (78 certified rows observed live) only ever drained 12/run,
   // an invisible undercount the autoland heartbeat repeated every hour.
   // AUTO_ACCEPT_ALL_SWEEP_CAP is a safety ceiling, not a target: a well-formed
   // --all run should always scan fewer rows than this.
@@ -10672,7 +10672,7 @@ function cmdAutoAcceptCertified(args) {
   // anyway. Without this exception `atris autoland tick` was blind whenever
   // invoked from an agent session (CLAUDECODE etc. in env): the spawned
   // sweep failTask'd with no summary and the tick receipt showed nulls.
-  // A per-run --confirm-human-accept claim from an agent is still refused —
+  // A per-run --confirm-human-accept claim from an agent is still refused,
   // policyAuth is only consulted when no per-run confirmation is passed.
   if (agentProofOnlyMode() && !dryRun && !policyAuth.ok) {
     failAgentProofOnly(
@@ -10805,7 +10805,7 @@ function cmdAutoAcceptCertified(args) {
     return { ...summary, results, certification, projection_path: finalPath, queue };
   }
   console.log(`AUTO-ACCEPT CERTIFIED (${dryRun ? 'dry-run' : 'execute'})`);
-  console.log(`${summary.certified} certified, ${summary.scanned} scanned, ${summary.accepted || summary.would_accept} accepted, ${summary.skipped} skipped${summary.revised ? `, ${summary.revised} revised` : ''}${summary.failed ? `, ${summary.failed} failed` : ''}${summary.undercounted ? ' (UNDERCOUNTED — raise --limit or the sweep cap)' : ''}`);
+  console.log(`${summary.certified} certified, ${summary.scanned} scanned, ${summary.accepted || summary.would_accept} accepted, ${summary.skipped} skipped${summary.revised ? `, ${summary.revised} revised` : ''}${summary.failed ? `, ${summary.failed} failed` : ''}${summary.undercounted ? ' (UNDERCOUNTED, raise --limit or the sweep cap)' : ''}`);
   for (const row of results) {
     const nextAction = row.next_action ? ` next_action=${row.next_action}` : '';
     const reviewChat = row.review_chat_command ? ` review_chat=${row.review_chat_command}` : '';
@@ -12016,7 +12016,7 @@ function taskBoardTemplate(model) {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    /* aesthetic: machine-room telemetry — warm-tinted dark, mono data, calm signals (no neon) */
+    /* aesthetic: machine-room telemetry, warm-tinted dark, mono data, calm signals (no neon) */
     :root {
       color-scheme: dark;
       --bg: oklch(18% 0.012 160);
@@ -12227,7 +12227,7 @@ function taskBoardTemplate(model) {
 
     function renderActivity(events) {
       const el = $('activity');
-      if (!events.length) { el.innerHTML = '<h2>Live Stream</h2><div class="empty">no activity yet — fire a tick: atris pulse tick</div>'; return; }
+      if (!events.length) { el.innerHTML = '<h2>Live Stream</h2><div class="empty">no activity yet, fire a tick: atris pulse tick</div>'; return; }
       let html = '<h2>Live Stream · ' + events.length + ' events</h2>';
       for (const e of events) {
         const rwCls = e.reward == null ? '' : (e.reward > 0 ? 'pos' : (e.reward < 0 ? 'neg' : ''));

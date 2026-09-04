@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * atris improve — run one paid RL improvement tick on the workspace.
+ * atris improve, run one paid RL improvement tick on the workspace.
  *
  * Calls POST /api/improve on the backend, which plans one task, builds it,
  * runs the verify command, scores it, and deducts Atris credits per
@@ -32,8 +32,8 @@ const { knownCommands } = require('../lib/known-commands');
 
 /**
  * Expand a leading `~` to the real home directory for LOCAL filesystem
- * writes. The path sent to the backend is left untouched — a remote tick
- * may target a server-side `~/...` workspace the server expands itself — but
+ * writes. The path sent to the backend is left untouched, a remote tick
+ * may target a server-side `~/...` workspace the server expands itself, but
  * local scorecard/journal writes must never create a literal `~` directory.
  * (Surfaced by a live plan tick whose `~/arena/...` arg wrote junk locally.)
  */
@@ -128,7 +128,7 @@ function buildImprovePayload(opts = {}) {
  * Normalize the /api/improve response into a stable summary, reading every
  * field defensively. The full-mode ImproveResponse omits credits_deducted
  * (credits are still billed server-side), so credits may be null even on a
- * successful, charged tick — callers must not assume it is present.
+ * successful, charged tick, callers must not assume it is present.
  */
 function summarizeImproveResponse(data = {}) {
   const d = data && typeof data === 'object' ? data : {};
@@ -150,7 +150,7 @@ function summarizeImproveResponse(data = {}) {
     model: d.model_used || d.model || null,
     taskId: d.task_id || d.taskId || null,
     // The backend returns both of these; a failing tick is unteachable without
-    // them — "verify_passed: false" says nothing about WHICH task or WHY.
+    // them, "verify_passed: false" says nothing about WHICH task or WHY.
     taskDescription: d.task_description || d.task_title || null,
     verifyOutput: typeof d.verify_output === 'string' ? d.verify_output : null,
     elapsedMs: typeof d.elapsed_ms === 'number' ? d.elapsed_ms : null,
@@ -163,7 +163,7 @@ function summarizeImproveResponse(data = {}) {
  * Decide whether to fall back to one local mission tick. Fallback only when
  * the backend is genuinely unavailable: no auth, or unreachable (status 0).
  * A real HTTP error (insufficient credits 402, server error 5xx) is reported
- * honestly — we never silently run local work and bill nothing on what was a
+ * honestly, we never silently run local work and bill nothing on what was a
  * real, answerable failure.
  */
 function shouldFallbackLocal({ creds, apiResult } = {}) {
@@ -173,7 +173,7 @@ function shouldFallbackLocal({ creds, apiResult } = {}) {
   if (apiResult.status === 0) return { fallback: true, reason: 'unreachable' };
   // The hosted backend validates workspace_path against its own filesystem,
   // so a local-only folder 403s even for an authed, funded user. That is an
-  // unreachable-workspace condition — run the same tick locally instead of
+  // unreachable-workspace condition, run the same tick locally instead of
   // dying on it. Other 403s (real permission failures) are still reported.
   if (apiResult.status === 403 && isWorkspaceNotAllowedError(apiResult)) {
     return { fallback: true, reason: 'workspace_not_on_backend' };
@@ -284,7 +284,7 @@ function summarizeTickHistory(rows = []) {
 
 function formatTickHistory(summary = {}) {
   const lines = [];
-  lines.push('improve loop — tick history');
+  lines.push('improve loop, tick history');
   lines.push('');
   lines.push(`  ticks:    ${summary.ticks}`);
   lines.push(`  shipped:  ${summary.shipped}/${summary.ticks} (verify pass ${Math.round((summary.passRate || 0) * 100)}%)`);
@@ -293,11 +293,11 @@ function formatTickHistory(summary = {}) {
   if (summary.rewardTrend && summary.rewardTrend.length) {
     lines.push(`  trend:    ${summary.rewardTrend.map((r) => (r == null ? '·' : r)).join(' → ')}`);
   }
-  if (!summary.ticks) lines.push('  (no ticks yet — run `atris improve`)');
+  if (!summary.ticks) lines.push('  (no ticks yet, run `atris improve`)');
   return lines.join('\n');
 }
 
-// Local calendar day — journal receipts are local workspace files, never UTC
+// Local calendar day, journal receipts are local workspace files, never UTC
 // (see lessons.md: now-front-door-uses-local-date).
 function localDateKey(d = new Date()) {
   const y = d.getFullYear();
@@ -599,7 +599,7 @@ function appendTickToJournal(workspace, summary = {}, opts = {}) {
   const credits = summary.credits != null ? summary.credits : 'server-side';
   const owner = opts.member ? ` · member: ${opts.member}` : '';
   const block = [
-    `### Improve Tick — ${time}`,
+    `### Improve Tick, ${time}`,
     `- shipped: ${summary.shipped || '(no description)'}`,
     `- verify: ${verify} · reward: ${summary.reward != null ? summary.reward : '?'} · credits: ${credits} · source: ${source}${owner}`,
     '',
@@ -846,7 +846,7 @@ async function runImprove(opts = {}, deps = {}) {
         startedAt, finishedAt: now(),
       };
     }
-    log('not logged in — falling back to one local mission tick');
+    log('not logged in, falling back to one local mission tick');
     return finishLocalFallback('no_auth');
   }
 
@@ -874,7 +874,7 @@ async function runImprove(opts = {}, deps = {}) {
     const finishedAt = now();
     // Only a real, shipping tick earns a receipt. Plan/delegate/dry-run ship
     // nothing, and an error inside an ok envelope (e.g. "workspace not found")
-    // is not a shipped change — none of these should write a scorecard/journal.
+    // is not a shipped change, none of these should write a scorecard/journal.
     const shipped = shippingTick && !summary.error;
     if (!shipped) {
       return { ok: true, source: 'api', summary, scorecardPath: null, journalPath: null, receipt: 'skipped', startedAt, finishedAt };
@@ -897,7 +897,7 @@ async function runImprove(opts = {}, deps = {}) {
 
   const decide = shouldFallbackLocal({ creds, apiResult });
   if (decide.fallback && localFallbackEligible) {
-    log(`backend ${decide.reason} — falling back to one local mission tick`);
+    log(`backend ${decide.reason}, falling back to one local mission tick`);
     return finishLocalFallback(decide.reason, apiResult);
   }
 
@@ -930,7 +930,7 @@ function formatImproveReport(result = {}) {
   }
   if (result.source === 'local') {
     lines.push(result.ok ? 'improved (local fallback).' : 'local fallback tick failed.');
-    lines.push(`  reason:  backend ${result.reason} — ran one local mission tick instead`);
+    lines.push(`  reason:  backend ${result.reason}, ran one local mission tick instead`);
     if (result.ok) {
       const s = result.summary || {};
       lines.push(`  task:    ${s.shipped || '(no description returned)'}`);

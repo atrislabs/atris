@@ -383,14 +383,14 @@ test('appendTickToJournal: writes an Improve Tick block under ## Notes (local da
     assert.ok(file.endsWith(path.join('atris', 'logs', '2026', '2026-06-08.md')));
     const text = fs.readFileSync(file, 'utf8');
     assert.match(text, /## Notes/);
-    assert.match(text, /### Improve Tick — 14:30/);
+    assert.match(text, /### Improve Tick, 14:30/);
     assert.match(text, /shipped: add --history/);
     assert.match(text, /verify: pass · reward: 4 · credits: 0 · source: local/);
     // a second tick prepends under Notes (newest first), file stays valid
     appendTickToJournal(dir, { shipped: 'second', verify: false, reward: 0 }, { source: 'local', dateKey: '2026-06-08', time: '15:00' });
     const text2 = fs.readFileSync(file, 'utf8');
-    assert.match(text2, /### Improve Tick — 15:00/);
-    assert.match(text2, /### Improve Tick — 14:30/);
+    assert.match(text2, /### Improve Tick, 15:00/);
+    assert.match(text2, /### Improve Tick, 14:30/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Catch-all for uncaught async errors — prevents silent crashes
+// Catch-all for uncaught async errors, prevents silent crashes
 process.on('unhandledRejection', (err) => {
   console.error(`\n✗ Unexpected error: ${err?.message || err}`);
   process.exit(1);
@@ -77,7 +77,7 @@ const {
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/file-ops');
 const { getConfigPath, loadConfig, saveConfig, loadLogSyncState, saveLogSyncState } = require('../utils/config');
 
-// Auth & API (canonical modules — eliminates duplicate inline code)
+// Auth & API (canonical modules, eliminates duplicate inline code)
 const {
   decodeJwtClaims, getTokenExpiryEpochSeconds, shouldRefreshToken,
   getCredentialsPath, saveCredentials, loadCredentials, deleteCredentials,
@@ -316,7 +316,7 @@ if (!helpRequested && !dryRunRequested && (
  *
  * Each mission: { id, owner, objective, status, verifier, verifier_passed, next_action, lane }.
  *
- * Returns [] if file missing or malformed — never throws.
+ * Returns [] if file missing or malformed, never throws.
  */
 function loadActiveMissions(workspaceDir) {
   try {
@@ -350,7 +350,7 @@ function loadActiveMissions(workspaceDir) {
         runner: m.runner || null,
       });
     }
-    // Most recently started first (rough — relies on insertion order from reversed walk)
+    // Most recently started first (rough, relies on insertion order from reversed walk)
     return live;
   } catch {
     return [];
@@ -1116,7 +1116,7 @@ if (command === 'help' || command === '--help' || command === '-h') {
   process.exit(0);
 }
 
-// Core command handlers — loaded eagerly (used by interactiveEntry default path)
+// Core command handlers, loaded eagerly (used by interactiveEntry default path)
 const { initAtris: initCmd } = require('../commands/init');
 const { syncAtris: syncCmd, syncAtrisAll: syncAllCmd } = require('../commands/sync');
 const { logAtris: logCmd } = require('../commands/log');
@@ -1158,7 +1158,7 @@ if (command === '--version' || command === '-v' || process.argv.includes('--vers
 }
 
 // If no command OR command is not recognized, treat as natural language
-// Voice-friendly aliases — natural language → command mapping
+// Voice-friendly aliases, natural language → command mapping
 // Solves speech-to-text issues (inspired by gstack v0.14.6 voice-triggers)
 // One-word voice aliases like start/go/audit/deploy must not spawn runners.
 // Unmatched single verbs exit 2 with did-you-mean (see below). Keep phrases
@@ -1201,11 +1201,11 @@ if (!command || !knownCommands.includes(command)) {
   const triggered = voiceTriggers[fullInput] || voiceTriggers[fullInputWithoutFlags];
   if (triggered) {
     command = triggered;
-    // Re-check — if it's now a known command, fall through to dispatch
+    // Re-check, if it's now a known command, fall through to dispatch
     if (knownCommands.includes(command)) {
       // Rewrite argv so dispatch works
       process.argv[2] = command;
-      // Don't return — let it fall through to the command dispatch below
+      // Don't return, let it fall through to the command dispatch below
     }
   }
 }
@@ -1458,7 +1458,7 @@ async function interactiveEntry(userInput, options = {}) {
     ? context.inProgressFeaturesCount
     : (context.inProgressFeatures || []).length;
 
-  // Pull active missions (durable goals) — these outrank dev-pipeline state
+  // Pull active missions (durable goals), these outrank dev-pipeline state
   // because a mission with an unverified verifier is a Keshav-attributable
   // commitment that hasn't been closed yet.
   const activeMissions = loadActiveMissions(workspaceDir);
@@ -1558,7 +1558,7 @@ async function interactiveEntry(userInput, options = {}) {
       console.log('Got it. I saved your first direction.');
       console.log(`Focus: ${profile.first_answer}`);
       if (starter && starter.display_id) {
-        console.log(`First task: ${starter.display_id} — ${starter.title}`);
+        console.log(`First task: ${starter.display_id}, ${starter.title}`);
       } else if (starter && starter.title) {
         console.log(`First task: ${starter.title}`);
       }
@@ -1585,7 +1585,7 @@ async function interactiveEntry(userInput, options = {}) {
     console.log('Got it. I saved your first direction.');
     console.log(`Focus: ${profile.first_answer}`);
     if (starter && starter.display_id) {
-      console.log(`First task: ${starter.display_id} — ${starter.title}`);
+      console.log(`First task: ${starter.display_id}, ${starter.title}`);
     } else if (starter && starter.title) {
       console.log(`First task: ${starter.title}`);
     }
@@ -1903,7 +1903,7 @@ if (command === 'guide') {
 } else if (command === 'decide') {
   // process.exit() can outrun a piped stdout: writes beyond the 64KB pipe
   // buffer are async, so large --json payloads truncate at 64KB multiples.
-  // Queue an empty write and exit from its callback — it fires only after
+  // Queue an empty write and exit from its callback, it fires only after
   // every earlier buffered write has drained (BCK-1306).
   const exitAfterStdoutDrain = (code) => {
     if (process.stdout.writableLength === 0) process.exit(code);
@@ -1931,7 +1931,7 @@ if (command === 'guide') {
 } else if (command === 'mission') {
   // process.exit() can outrun a piped stdout: writes beyond the 64KB pipe
   // buffer are async, so large --json payloads truncate at 64KB multiples.
-  // Queue an empty write and exit from its callback — it fires only after
+  // Queue an empty write and exit from its callback, it fires only after
   // every earlier buffered write has drained (BCK-1306).
   const exitAfterStdoutDrain = (code) => {
     if (process.stdout.writableLength === 0) process.exit(code);
@@ -1994,7 +1994,7 @@ if (command === 'guide') {
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'drive') {
-  // Drive: one self-driving tick — mission doctor -> auto-fix safe findings -> count disengagements.
+  // Drive: one self-driving tick, mission doctor -> auto-fix safe findings -> count disengagements.
   Promise.resolve(require('../commands/drive').driveCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
@@ -2021,7 +2021,7 @@ if (command === 'guide') {
     .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'aeo') {
-  // AEO: AI Engine Optimization — credit-metered citation drafting against the customer workspace.
+  // AEO: AI Engine Optimization, credit-metered citation drafting against the customer workspace.
   Promise.resolve(require('../commands/aeo').run(process.argv.slice(3)))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
@@ -2215,7 +2215,7 @@ if (command === 'guide') {
 } else if (command === 'console') {
   consoleCmd();
 } else if (command === 'serve') {
-  // Start the local AI Computer bridge — make this directory addressable
+  // Start the local AI Computer bridge, make this directory addressable
   // by cloud agents via the Atris API
   const serveArgs = process.argv.slice(3);
   if (serveArgs.includes('--help') || serveArgs.includes('-h') || serveArgs[0] === 'help') {
@@ -2317,7 +2317,7 @@ if (command === 'guide') {
   // Hidden: copy profile to credentials.json (global switch, legacy)
   require('../commands/auth').activateGlobal();
 } else if (command === '_switch-session') {
-  // Hidden: per-terminal switch — writes session file so each tab keeps its own account
+  // Hidden: per-terminal switch, writes session file so each tab keeps its own account
   require('../commands/auth').switchSession();
 } else if (command === 'shell-init') {
   require('../commands/auth').shellInit();
@@ -3088,7 +3088,7 @@ if (command === 'guide') {
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'write') {
-  // Write: guided writing sessions — human types every word, atris structures + reviews (plan-do-review for prose).
+  // Write: guided writing sessions, human types every word, atris structures + reviews (plan-do-review for prose).
   Promise.resolve(require('../commands/write').writeCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
@@ -3110,7 +3110,7 @@ if (command === 'guide') {
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'moves') {
-  // Moves: your 3 next moves — approve one into the loop, kill, or skip.
+  // Moves: your 3 next moves, approve one into the loop, kill, or skip.
   Promise.resolve(require('../commands/moves').movesCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
@@ -3120,7 +3120,7 @@ if (command === 'guide') {
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'feed') {
-  // Feed: read and post the business group feed — receipts and state changes only.
+  // Feed: read and post the business group feed, receipts and state changes only.
   // Sets exitCode instead of process.exit() so large --json output flushes fully.
   Promise.resolve(require('../commands/feed').feedCommand(process.argv.slice(3)))
     .then((code) => { process.exitCode = typeof code === 'number' ? code : 0; })
@@ -3131,7 +3131,7 @@ if (command === 'guide') {
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'interview') {
-  // Interview: the interlinked 1-on-1 — live interview that extracts judgment into a member file.
+  // Interview: the interlinked 1-on-1, live interview that extracts judgment into a member file.
   Promise.resolve(require('../commands/interview').interviewCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
@@ -3722,7 +3722,7 @@ async function chatInteractive(config, credentials) {
     const conversationId = `cli-${Date.now()}`;
 
     console.log('┌────────────────────────────────────────────────────────────┐');
-    console.log(`│ Atris Chat — ${agentName.padEnd(44)} │`);
+    console.log(`│ Atris Chat, ${agentName.padEnd(44)} │`);
     console.log('├────────────────────────────────────────────────────────────┤');
     console.log('│ Type your message and press Enter                          │');
     console.log('│ Type "exit" to quit                                        │');
@@ -3913,7 +3913,7 @@ async function atrisFastChat() {
   // One routing brain: `atris fast` defers to ax's AX Context Standard. A
   // workspace-shaped question asked from inside a workspace needs local tools
   // (this lane is a tool-less cloud one-shot and confabulates on repo
-  // questions — SwapBench 2026-07-02), so delegate the whole turn to ax.
+  // questions, SwapBench 2026-07-02), so delegate the whole turn to ax.
   try {
     const axModule = require('../ax');
     if (axModule.resolveRoute(message) === 'local') {
