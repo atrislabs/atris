@@ -1354,6 +1354,11 @@ async function tickWatch(deps = {}) {
 
   output(`total: ${totalNew} new, ${totalBriefed} briefed`);
   if (totalBriefed > 0) {
+    if (firstBriefedUrl) {
+      const lesson = notesLessonFromText(readNotesText({ url: firstBriefedUrl, workDir }));
+      if (!isThinTeachLesson(lesson)) applyGate.hintEphemeralApply(output, 'watch');
+      printLearnerCheckGate(output, lesson, { includeCheck: true });
+    }
     printYoutubeTeachNext(firstBriefedUrl, {}, output);
   } else if (!state.channels.length) {
     printWatchAddNext(output);

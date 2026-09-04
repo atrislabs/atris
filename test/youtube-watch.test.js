@@ -8,8 +8,11 @@ const {
   channelVideosUrl,
   parseFlatPlaylist,
   loadWatchState,
+  LEARNER_CHECK_FILL,
+  LEARNER_SCORE_ZERO,
   youtubeCommand,
 } = require('../commands/youtube');
+const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
 function tempCwd() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-'));
@@ -120,6 +123,7 @@ test('watch add/list/remove round-trip', async () => {
 
 test('tick briefs only unseen videos', async () => {
   const cwd = tempCwd();
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
   const now = '2026-08-15T19:10:00.000Z';
   await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
 
@@ -128,6 +132,7 @@ test('tick briefs only unseen videos', async () => {
   const first = collect();
   const firstStatus = await youtubeCommand(['watch', 'tick'], {
     cwd,
+    workDir,
     now,
     output: first.output,
     fetcher: () => [
@@ -143,6 +148,9 @@ test('tick briefs only unseen videos', async () => {
   });
   assert.equal(firstStatus, 0);
   assert.deepEqual(ran, ['https://www.youtube.com/watch?v=new1']);
+  assert.equal(first.lines.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(first.lines.includes(LEARNER_SCORE_ZERO), false);
+  assert.equal(first.lines.includes(ephemeralApplyMessage('watch')), false);
   assert.deepEqual(
     first.text().split('\n').filter((line) => line.startsWith('next:')),
     ['next: atris youtube teach "https://www.youtube.com/watch?v=new1"'],
@@ -155,6 +163,7 @@ test('tick briefs only unseen videos', async () => {
   const second = collect();
   const secondStatus = await youtubeCommand(['watch', 'tick'], {
     cwd,
+    workDir,
     now,
     output: second.output,
     fetcher: () => [
@@ -173,6 +182,9 @@ test('tick briefs only unseen videos', async () => {
   assert.deepEqual(briefed, ['https://www.youtube.com/watch?v=new2']);
   assert.match(second.text(), /channel https:\/\/www\.youtube\.com\/@veritasium: 1 new, 1 briefed/);
   assert.match(second.text(), /total: 1 new, 1 briefed/);
+  assert.equal(second.lines.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(second.lines.includes(LEARNER_SCORE_ZERO), false);
+  assert.equal(second.lines.includes(ephemeralApplyMessage('watch')), false);
   assert.deepEqual(
     second.text().split('\n').filter((line) => line.startsWith('next:')),
     ['next: atris youtube teach "https://www.youtube.com/watch?v=new2"'],
@@ -189,6 +201,7 @@ test('tick briefs only unseen videos', async () => {
 
 test('fresh-channel seeding briefs only newest', async () => {
   const cwd = tempCwd();
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
   const now = '2026-08-15T19:20:00.000Z';
   await youtubeCommand(['watch', 'add', 'https://www.youtube.com/@mkbhd'], {
     cwd,
@@ -202,6 +215,7 @@ test('fresh-channel seeding briefs only newest', async () => {
   const out = collect();
   const status = await youtubeCommand(['watch', 'tick'], {
     cwd,
+    workDir,
     now,
     output: out.output,
     fetcher: (url) => {
@@ -224,6 +238,9 @@ test('fresh-channel seeding briefs only newest', async () => {
   assert.deepEqual(ran, ['https://www.youtube.com/watch?v=aaa']);
   assert.deepEqual(briefed, ['https://www.youtube.com/watch?v=aaa']);
   assert.match(out.text(), /channel https:\/\/www\.youtube\.com\/@mkbhd: 1 new, 1 briefed/);
+  assert.equal(out.lines.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(out.lines.includes(LEARNER_SCORE_ZERO), false);
+  assert.equal(out.lines.includes(ephemeralApplyMessage('watch')), false);
   assert.deepEqual(
     out.text().split('\n').filter((line) => line.startsWith('next:')),
     ['next: atris youtube teach "https://www.youtube.com/watch?v=aaa"'],
@@ -244,6 +261,7 @@ test('fresh-channel seeding briefs only newest', async () => {
 
 test('failed fetch skips channel and continues', async () => {
   const cwd = tempCwd();
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
   const now = '2026-08-15T19:30:00.000Z';
   await youtubeCommand(['watch', 'add', '@broken'], { cwd, now, output: () => {} });
   await youtubeCommand(['watch', 'add', '@ok'], { cwd, now, output: () => {} });
@@ -252,6 +270,7 @@ test('failed fetch skips channel and continues', async () => {
   const out = collect();
   const status = await youtubeCommand(['watch', 'tick'], {
     cwd,
+    workDir,
     now,
     output: out.output,
     fetcher: (url) => {
@@ -270,6 +289,9 @@ test('failed fetch skips channel and continues', async () => {
   assert.match(out.text(), /channel https:\/\/www\.youtube\.com\/@ok: 1 new, 1 briefed/);
   assert.match(out.text(), /total: 1 new, 1 briefed/);
   assert.deepEqual(ran, ['https://www.youtube.com/watch?v=ok1']);
+  assert.equal(out.lines.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(out.lines.includes(LEARNER_SCORE_ZERO), false);
+  assert.equal(out.lines.includes(ephemeralApplyMessage('watch')), false);
   assert.deepEqual(
     out.text().split('\n').filter((line) => line.startsWith('next:')),
     ['next: atris youtube teach "https://www.youtube.com/watch?v=ok1"'],
@@ -280,6 +302,78 @@ test('failed fetch skips channel and continues', async () => {
   const state = loadWatchState(statePathFor(cwd));
   assert.equal(state.seeded['https://www.youtube.com/@broken'], undefined);
   assert.equal(state.seen.ok1, now);
+});
+
+test('tick that briefed a rich lesson prints apply check then teach next', async () => {
+  const cwd = tempCwd();
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const now = '2026-08-15T19:32:00.000Z';
+  await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
+  fs.writeFileSync(path.join(workDir, 'yt_new1.md'), 'TSMC prints at 2nm\n');
+
+  const out = collect();
+  const status = await youtubeCommand(['watch', 'tick'], {
+    cwd,
+    workDir,
+    now,
+    output: out.output,
+    fetcher: () => [{ id: 'new1', title: 'Newest' }],
+    runner: () => ({ status: 0 }),
+    briefFiler: () => {},
+  });
+
+  const apply = ephemeralApplyMessage('watch');
+  const check = 'check: what is 2nm?';
+  const teachNext = 'next: atris youtube teach "https://www.youtube.com/watch?v=new1"';
+  assert.equal(status, 0);
+  assert.match(out.text(), /total: 1 new, 1 briefed/);
+  assert.equal(out.lines.filter((line) => line === apply).length, 1);
+  assert.equal(out.lines.filter((line) => line === check).length, 1);
+  assert.equal(out.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+  assert.ok(out.lines.indexOf('total: 1 new, 1 briefed') < out.lines.indexOf(apply));
+  assert.ok(out.lines.indexOf(apply) < out.lines.indexOf(check));
+  assert.ok(out.lines.indexOf(check) < out.lines.indexOf(LEARNER_SCORE_ZERO));
+  assert.ok(out.lines.indexOf(LEARNER_SCORE_ZERO) < out.lines.indexOf(teachNext));
+  assert.deepEqual(
+    out.text().split('\n').filter((line) => line.startsWith('next:')),
+    [apply, teachNext],
+  );
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+});
+
+test('tick that briefed a thin lesson prints fill-this then teach next', async () => {
+  const cwd = tempCwd();
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const now = '2026-08-15T19:33:00.000Z';
+  await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
+  fs.writeFileSync(path.join(workDir, 'yt_thin1.md'), '# Chat\n\nwelcome back friends this is just a chat\n');
+
+  const out = collect();
+  const status = await youtubeCommand(['watch', 'tick'], {
+    cwd,
+    workDir,
+    now,
+    output: out.output,
+    fetcher: () => [{ id: 'thin1', title: 'Chat' }],
+    runner: () => ({ status: 0 }),
+    briefFiler: () => {},
+  });
+
+  const teachNext = 'next: atris youtube teach "https://www.youtube.com/watch?v=thin1"';
+  assert.equal(status, 0);
+  assert.match(out.text(), /total: 1 new, 1 briefed/);
+  assert.equal(out.lines.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(out.lines.includes(LEARNER_SCORE_ZERO), false);
+  assert.equal(out.lines.includes(ephemeralApplyMessage('watch')), false);
+  assert.ok(
+    out.lines.indexOf(`check: ${LEARNER_CHECK_FILL}`)
+      < out.lines.indexOf(teachNext),
+  );
+  assert.deepEqual(
+    out.text().split('\n').filter((line) => line.startsWith('next:')),
+    [teachNext],
+  );
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
 test('tick with no channels prints one watch add next-step', async () => {
@@ -308,6 +402,9 @@ test('tick with no channels prints one watch add next-step', async () => {
     ['next: atris youtube watch add <channel-url-or-@handle>'],
   );
   assert.equal(empty.text().includes('next: atris youtube teach'), false);
+  assert.doesNotMatch(empty.text(), /^check:/m);
+  assert.equal(empty.lines.includes(LEARNER_SCORE_ZERO), false);
+  assert.equal(empty.lines.includes(ephemeralApplyMessage('watch')), false);
 });
 
 test('tick with channels and zero briefed prints one search next-step', async () => {
@@ -337,6 +434,9 @@ test('tick with channels and zero briefed prints one search next-step', async ()
     ['next: atris youtube search " "'],
   );
   assert.equal(failed.text().includes('next: atris youtube teach'), false);
+  assert.doesNotMatch(failed.text(), /^check:/m);
+  assert.equal(failed.lines.includes(LEARNER_SCORE_ZERO), false);
+  assert.equal(failed.lines.includes(ephemeralApplyMessage('watch')), false);
 
   await youtubeCommand(['watch', 'add', '@ok'], { cwd, now, output: () => {} });
   await youtubeCommand(['watch', 'tick'], {
@@ -373,6 +473,9 @@ test('tick with channels and zero briefed prints one search next-step', async ()
     ['next: atris youtube search " "'],
   );
   assert.equal(nonew.text().includes('next: atris youtube teach'), false);
+  assert.doesNotMatch(nonew.text(), /^check:/m);
+  assert.equal(nonew.lines.includes(LEARNER_SCORE_ZERO), false);
+  assert.equal(nonew.lines.includes(ephemeralApplyMessage('watch')), false);
 });
 
 test('already watching still prints one tick next-step', async () => {
