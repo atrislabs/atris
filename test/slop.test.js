@@ -259,7 +259,7 @@ test('slop --help and -h print usage and exit 0 instead of scanning', () => {
     try { code = slopCommand([flag]); } finally { console.log = orig; }
     const out = lines.join('\n');
     assert.equal(code, 0, `${flag} exits 0`);
-    assert.match(out, /atris slop — deterministic slop detector/, `${flag} prints usage`);
+    assert.match(out, /atris slop, deterministic slop detector/, `${flag} prints usage`);
     assert.doesNotMatch(out, /em-dash|⚠/, `${flag} does not run a scan`);
   }
 });

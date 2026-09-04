@@ -453,7 +453,7 @@ function exitMissionError(message, code = 1, asJson = false) {
 }
 
 // Write-time warnings judge only what a machine can truly judge: identifiers,
-// flags, and task ids. Whether a why is present is a judgment call — the tick
+// flags, and task ids. Whether a why is present is a judgment call, the tick
 // prompt demands it, the review pass judges it. A warning that cries wolf on
 // plain sentences teaches agents to ignore it (golden-path papercut). The
 // strict operatorReady bar stays at the digest surface, where under-showing
@@ -1203,7 +1203,7 @@ function listWorktreeRollupMissions(root = process.cwd()) {
 // run/tick/show. This is the same local+rollup, deduped-by-id, list-sorted
 // set `mission status`/`list` renders, so id/slug/suffix lookups search
 // exactly what list showed. n stays exactly as each mission's home workspace
-// assigned it (loadMissionMap owns that) — this index does NOT renumber,
+// assigned it (loadMissionMap owns that), this index does NOT renumber,
 // because n must stay a stable, durable handle across saves (see
 // mission-number-stability.test.js); numeric-n resolution stays scoped to
 // the local root, where n is guaranteed unique.
@@ -1266,7 +1266,7 @@ function missionNumberDisplayIndex(missions, canonicalMissions = missions) {
 const MISSION_REF_SUFFIX_MIN_LENGTH = 6;
 
 // A ref that "looks like" an id/suffix/number is a single token with no
-// whitespace matching a hex/id/numeric shape. Those must resolve or error —
+// whitespace matching a hex/id/numeric shape. Those must resolve or error,
 // never silently fall through to starting a new mission (a mistyped id/n
 // creating a junk mission is the worst failure mode here).
 function missionRefLooksLikeHandle(ref) {
@@ -1402,10 +1402,10 @@ function exitMissingMission(ref, code = 1, asJson = false, root = process.cwd())
     } else if (candidates.length) {
       console.error('Nearest candidates:');
       for (const candidate of candidates) {
-        console.error(`  #${candidate.n} ${candidate.id} (${candidate.status}) — ${candidate.objective}`);
+        console.error(`  #${candidate.n} ${candidate.id} (${candidate.status}), ${candidate.objective}`);
       }
     } else {
-      console.error('Mission ids are workspace-local — run this from the workspace that created the mission.');
+      console.error('Mission ids are workspace-local, run this from the workspace that created the mission.');
     }
   }
   process.exit(code);
@@ -1435,7 +1435,7 @@ function resolveMission(ref, root = process.cwd()) {
       return chosen;
     }
     if (matches.length) return matches[0];
-    // No mission has this n. An all-digit ref can still be a hash suffix —
+    // No mission has this n. An all-digit ref can still be a hash suffix,
     // missionId()'s 8-hex-char suffix is purely numeric ~2.4% of the time
     // ((10/16)^8), and returning null here made those missions unresolvable
     // by suffix. Fall through to slug/suffix resolution instead.
@@ -1500,7 +1500,7 @@ function saveMission(mission, root = process.cwd(), eventType = 'mission_updated
   });
   appendJsonLine(paths.missionsJsonl, next);
   // Self-maintenance: once history outweighs live missions 4:1 the ledger is
-  // rewritten to one row per mission (latest state, first display number —
+  // rewritten to one row per mission (latest state, first display number,
   // exactly what loadMissionMap reconstructs). Every status/tick path parses
   // this file several times, so unbounded snapshot history taxes everything.
   try { compactMissionLedger(paths.missionsJsonl); } catch {}
@@ -1780,7 +1780,7 @@ function missionLandingStepSummary(summary) {
   const withoutProofTail = withoutInternalId.replace(/;\s+(?=(?:PR\s+\d+|(?:node|npm|git)\b)).*$/i, '').trim();
   const plainVerified = missionPlainVerifiedSummary(withoutProofTail);
   if (plainVerified) return plainVerified;
-  const beforeInlineProof = withoutProofTail.split(/\s+(?:—|-)\s+verified by\b/i)[0] || withoutProofTail;
+  const beforeInlineProof = withoutProofTail.split(/\s+(?:\u2014|-)\s+verified by\b/i)[0] || withoutProofTail;
   const beforeChecks = (beforeInlineProof.split(/\s+(?:checks?|verified|proof):\s+/i)[0] || beforeInlineProof)
     .replace(/,\s*(?:verifier|proof|checks?)\s+(?:still|pending)[.!]?$/i, '')
     .trim();
@@ -4027,7 +4027,7 @@ function inheritedWorktreeBase(cwd) {
 // Dedup gate: the same objective + owner already active anywhere in the
 // workspace family (this store or any worktree's) is reused, never cloned.
 // Born 2026-07-02: an hourly alive loop spawned six identical auto-improver
-// missions in six fresh worktrees in one day — pure token burn. --duplicate
+// missions in six fresh worktrees in one day, pure token burn. --duplicate
 // is the explicit escape hatch.
 const TWIN_ACTIVE_STATUSES = new Set(['planning', 'ready', 'running']);
 
@@ -4074,7 +4074,7 @@ function startMission(args, options = {}) {
       printJsonOrText(
         { ok: true, action: 'mission_recovered', recovered: true, mission: existing, note: 'objective looked like a mission id; recovered the existing mission instead of creating a new one' },
         [
-          `That's a mission id, not an objective — recovered ${existing.id} (${existing.status}).`,
+          `That's a mission id, not an objective, recovered ${existing.id} (${existing.status}).`,
           `Resume: atris mission run ${existing.id}`,
         ],
         asJson,
@@ -4124,7 +4124,7 @@ function startMission(args, options = {}) {
         { ok: true, action: 'mission_reused', reused: true, mission: twin, note: 'an active mission with this objective and owner already exists; resumed instead of cloning (pass --duplicate to force a second one)' },
         [
           `Already active: ${twin.id} (${twin.status})`,
-          `Same objective, same owner — reusing it instead of starting a clone.`,
+          `Same objective, same owner, reusing it instead of starting a clone.`,
           `Resume: atris mission run ${twin.id}`,
           `Really want a second one: re-run with --duplicate`,
         ],
@@ -4145,7 +4145,7 @@ function startMission(args, options = {}) {
   }
   // --worktree: bind the mission to its own isolated checkout. We chdir before
   // any state writes so the mission record, baseline sidecar, receipts, and
-  // member files all land inside the worktree — ticks run there, and the main
+  // member files all land inside the worktree, ticks run there, and the main
   // checkout's dirt never reaches the mission baseline.
   if (hasFlag(args, '--worktree')) {
     let created;
@@ -5089,7 +5089,7 @@ function missionRunsReceiptIndex(root = process.cwd()) {
 }
 
 // Roll every ran tick for a mission into a verification-debt tally. `unchecked`
-// counts ran ticks that recorded no verifier result at all — the "tick recorded
+// counts ran ticks that recorded no verifier result at all, the "tick recorded
 // but nothing was checked" red the report and now.md rollup surface and count
 // against the mission.
 function missionVerificationDebt(mission, root = process.cwd()) {
@@ -5117,7 +5117,7 @@ function missionVerificationDebt(mission, root = process.cwd()) {
 // when every ran tick was checked, so clean missions stay quiet.
 function missionVerificationDebtLine(debt) {
   if (!debt || !debt.unchecked) return '';
-  return `unverified ticks: ${debt.unchecked} of ${debt.ran} ran no check ⚠ — treat those increments as unproven`;
+  return `unverified ticks: ${debt.unchecked} of ${debt.ran} ran no check ⚠, treat those increments as unproven`;
 }
 
 function missionReportTimeline(mission, root = process.cwd(), limit = 6) {
@@ -6032,7 +6032,7 @@ function doctorMission(args) {
   if (findings.length) process.exitCode = 1;
 }
 
-// `atris mission watch [id]` — read-only live heartbeat. Prints a line per tick as it
+// `atris mission watch [id]`, read-only live heartbeat. Prints a line per tick as it
 // lands so a human (or any terminal) can see the loop is alive without rerunning status.
 function watchMission(args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
@@ -6058,7 +6058,7 @@ function watchMission(args) {
   const fingerprint = (mission) => [mission.status, mission.last_tick_at, mission.last_tick_index, mission.receipt_path].join('|');
   const tickNote = (mission) => {
     const heartbeat = missionHeartbeatLines(mission).map((line) => line.trim()).join(', ');
-    return `${heartbeat || `state: ${mission.status}`}${mission.receipt_path ? ` — proof: ${mission.receipt_path}` : ''}`;
+    return `${heartbeat || `state: ${mission.status}`}${mission.receipt_path ? `, proof: ${mission.receipt_path}` : ''}`;
   };
   const seen = new Map();
   let lastIdleAt = Date.now();
@@ -6066,7 +6066,7 @@ function watchMission(args) {
   const poll = () => {
     const targets = loadTargets();
     if (!targets.length && !seen.size) {
-      emitOnce('no active missions yet — waiting');
+      emitOnce('no active missions yet, waiting');
     }
     let changed = false;
     for (const mission of targets) {
@@ -6355,7 +6355,7 @@ function loadMissionWorktreeBaseline(missionId, root = process.cwd()) {
 // Closed missions no longer tick, so the sidecar is dead weight; prune it and
 // fold a compact audit summary into the mission record (full path lists stay
 // out of missions.jsonl, which re-appends the whole record on every save).
-// Paused missions keep their sidecar — resume ticks still subtract it.
+// Paused missions keep their sidecar, resume ticks still subtract it.
 function pruneMissionWorktreeBaseline(mission, root = process.cwd()) {
   const baseline = loadMissionWorktreeBaseline(mission.id, root);
   try { fs.rmSync(missionBaselinePath(mission.id, root), { force: true }); } catch {}
@@ -6386,7 +6386,7 @@ function worktreeReceipt(before, after, { verifier = '', baseline = null } = {})
   // tick-start snapshot for legacy missions). Only paths dirtied beyond that
   // baseline count toward the unverified signal. Loop exhaust the mission
   // writes about itself (state plane, receipts, rendered status) is not work
-  // product, so it never counts — otherwise every multi-tick mission in a repo
+  // product, so it never counts, otherwise every multi-tick mission in a repo
   // that doesn't gitignore those dirs would flag its own bookkeeping.
   const baselinePaths = baseline
     ? new Set(baseline.paths)
@@ -6415,7 +6415,7 @@ function worktreeReceipt(before, after, { verifier = '', baseline = null } = {})
 }
 
 // ---------------------------------------------------------------------------
-// `atris mission run <id>` — bounded local headless loop. v0.1.
+// `atris mission run <id>`, bounded local headless loop. v0.1.
 // Spawns `claude -p --resume <session>` per tick. Honors cadence, active-hours,
 // rate-limit info, and a flock per mission. `max-ticks` bounds total attempts;
 // `ran_ticks` separately reports ticks that actually made progress.
@@ -7817,19 +7817,19 @@ function consecutiveVerifierFails(ticks) {
 }
 
 // BCK-1324: a "holding tick" is a tick that reports status=ran/reason=tick-ok
-// (so it never trips the error-streak breakers) but left no structural trace —
+// (so it never trips the error-streak breakers) but left no structural trace,
 // no new or cleared dirty files beyond whatever was already dirty at tick
 // start, and no fresh verifier pass. Claude's own summary text ("holding
 // tick, no drift") is not the signal: agents self-label busywork as progress
 // constantly. The worktree diff and verifier result are ground truth.
 function tickMadeProgress(tick) {
-  if (!tick || tick.status !== 'ran') return true; // errors/skips aren't "idle" — other breakers own those
+  if (!tick || tick.status !== 'ran') return true; // errors/skips aren't "idle", other breakers own those
   const wt = tick.worktree;
   if (wt && wt.available) {
     if ((wt.new_dirty_count || 0) > 0) return true;
     if ((wt.cleared_dirty_count || 0) > 0) return true;
   } else {
-    // No worktree signal available (e.g. git unavailable) — don't punish a
+    // No worktree signal available (e.g. git unavailable), don't punish a
     // tick we have no evidence against.
     return true;
   }
@@ -7839,7 +7839,7 @@ function tickMadeProgress(tick) {
 
 // Count the trailing run of ticks (most recent first) that made no progress
 // per tickMadeProgress. A single progressing tick anywhere in the run resets
-// this to 0 — only the tail streak matters.
+// this to 0, only the tail streak matters.
 function consecutiveNoProgressTicks(ticks) {
   let n = 0;
   for (let i = ticks.length - 1; i >= 0; i--) {
@@ -7860,7 +7860,7 @@ function missionJudgmentPlainText(value) {
     .replace(/\b[0-9A-HJKMNP-TV-Z]{26}\b/gi, ' ')
     .replace(/\b[0-9a-f]{12,40}\b/gi, ' ')
     .replace(/\b[A-Z][A-Z0-9]{1,9}-\d+\b/g, ' ')
-    .replace(/[—–]/g, ' ')
+    .replace(/[\u2014–]/g, ' ')
     .replace(/[*_~#>]+/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/^[\s:;,.-]+|[\s:;,.-]+$/g, '')
@@ -8208,7 +8208,7 @@ function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
         const holderKnown = Number.isInteger(holderPid) && holderPid > 0;
         // A lock is created empty (openSync 'wx') and its pid record is written a
         // moment later. A racing waiter that reads the file inside that window sees
-        // no pid — do NOT treat that as a dead owner, or two processes both "own"
+        // no pid, do NOT treat that as a dead owner, or two processes both "own"
         // the lock and clobber each other's writes. Only steal when the holder pid
         // is known-dead, or when a pidless lock has sat abandoned past the tiny
         // creation window (guards against a crash between openSync and writeSync).
@@ -8440,7 +8440,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
     `**Lane:** ${frozen.lane}`,
     `**Cadence:** ${mission.cadence}`,
     `**Stop condition:** ${mission.stop_condition || 'human marks complete'}`,
-    `**Verifier (frozen):** ${frozen.verifier || '(none — receipt only)'}`,
+    `**Verifier (frozen):** ${frozen.verifier || '(none, receipt only)'}`,
     `**Last status:** ${mission.status}`,
     `**Last tick:** ${mission.last_tick_at || 'never'}`,
     ...missionBudgetPromptLines(mission),
@@ -8448,7 +8448,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
     ``,
     `## Your task`,
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
-    `- You are the member "${mission.owner}". Read atris/team/${mission.owner}/MEMBER.md (and SOUL.md if present) before acting — work in that identity, inside its scope and stop rules. After your work, append what you did and what you learned to atris/team/${mission.owner}/logs/<today's date>.md.`,
+    `- You are the member "${mission.owner}". Read atris/team/${mission.owner}/MEMBER.md (and SOUL.md if present) before acting, work in that identity, inside its scope and stop rules. After your work, append what you did and what you learned to atris/team/${mission.owner}/logs/<today's date>.md.`,
     `- FIRST: inspect current mission/task state before acting. Read the relevant files, run \`atris mission status ${mission.id}\`, \`git status\`, or \`atris task list\` as needed so you know what's already done.`,
     `- Pick the smallest concrete action that moves the mission forward.`,
     `- Before acting, state your single next move in one sentence.`,
@@ -8479,14 +8479,14 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
     `- Do NOT start new missions, modify other missions, or expand scope.`,
     `- Do NOT run destructive commands without strong evidence they're correct.`,
     ``,
-    `When done, output a short receipt. The summary's first line must name what changed and how it was verified. Then include: (1) the exact files edited / commands run / artifacts produced — name them, (1b) one verify command a reviewer can rerun to check the work, (2) the metric of progress, (3) what the next tick should pick up. End the receipt with one line naming the layer this tick touched: \`layer: identity|beliefs|capabilities|behaviors|environment\` (final line — the harness parses it).`,
+    `When done, output a short receipt. The summary's first line must name what changed and how it was verified. Then include: (1) the exact files edited / commands run / artifacts produced, name them, (1b) one verify command a reviewer can rerun to check the work, (2) the metric of progress, (3) what the next tick should pick up. End the receipt with one line naming the layer this tick touched: \`layer: identity|beliefs|capabilities|behaviors|environment\` (final line, the harness parses it).`,
   ];
   if (mission.task_ids?.length) {
     lines.push('', `## Task ids`, mission.task_ids.map((t) => `- ${t}`).join('\n'));
   }
   const humanAsks = openHumanAsks(mission.human_asks);
   if (humanAsks.length) {
-    lines.push('', `## Human asks (don't act on these — surface them)`, humanAsks.map((ask) => `- ${ask.text}`).join('\n'));
+    lines.push('', `## Human asks (don't act on these, surface them)`, humanAsks.map((ask) => `- ${ask.text}`).join('\n'));
   }
   return lines.join('\n');
 }
@@ -8521,16 +8521,16 @@ function missionPauseNextAction(pauseReason, missionId, deadModel = null, lastEr
     return 'stopped: the worker kept reporting the same thing 3 times in a row';
   }
   if (pauseReason === 'model-unavailable' && deadModel) {
-    return `model "${deadModel}" is unavailable — set a live model (mission.model, ATRIS_RUNNER_MODEL, or legacy ATRIS_CLAUDE_MODEL), then: atris mission run ${missionId}`;
+    return `model "${deadModel}" is unavailable, set a live model (mission.model, ATRIS_RUNNER_MODEL, or legacy ATRIS_CLAUDE_MODEL), then: atris mission run ${missionId}`;
   }
   if (typeof pauseReason === 'string' && pauseReason.startsWith('repeated-error:')) {
     const reason = pauseReason.slice('repeated-error:'.length);
-    return `tick kept failing with "${reason}" — inspect the last receipt, fix the cause, then: atris mission run ${missionId}`;
+    return `tick kept failing with "${reason}", inspect the last receipt, fix the cause, then: atris mission run ${missionId}`;
   }
   // Single-tick cron runs pause via max-ticks-reached on the very first errored tick.
   // A bare "resume" there just re-errors; point the operator at the cause instead.
   if (pauseReason === 'max-ticks-reached' && lastErrorReason) {
-    return `hit the tick budget while erroring ("${lastErrorReason}") — inspect the last receipt before resuming: atris mission run ${missionId}`;
+    return `hit the tick budget while erroring ("${lastErrorReason}"), inspect the last receipt before resuming: atris mission run ${missionId}`;
   }
   return `resume with: atris mission run ${missionId}`;
 }
@@ -9087,7 +9087,7 @@ async function parseAndValidateMissionRunPhase(args) {
   }
   // --fleet: staff every idle capable engine on the board's claimable
   // safe-lane tasks, build in parallel worktrees, land serially. Humble flag,
-  // full loop — see lib/fleet.js. --dry-run previews the staffing only.
+  // full loop, see lib/fleet.js. --dry-run previews the staffing only.
   if (hasFlag(args, '--fleet')) {
     const { runFleetFlight } = require('../lib/fleet');
     const slots = Math.max(1, Number(readFlag(args, '--slots', '')) || 3);
@@ -9208,7 +9208,7 @@ async function resolveMissionRunPhase(context) {
   // BCK-1319: a bare single token that looks like an id/suffix/number (no
   // whitespace, hex/id/numeric shape) is a mistyped or stale mission handle,
   // not a new objective. Silently starting a fresh mission from it is the
-  // worst failure mode — it buries the mission the operator meant to run.
+  // worst failure mode, it buries the mission the operator meant to run.
   // Only a genuine multi-word (or non-handle-shaped) ref keeps the
   // start-a-new-mission shortcut.
   if (!mission && ref && missionRefLooksLikeHandle(ref)) {
@@ -9389,7 +9389,7 @@ async function executeMissionRunTicksPhase(context) {
     const effectiveMaxTicks = (cadenceSeconds === 0 && !hasExplicitTickBudget) ? 1 : maxTicks;
 
     // Session setup: only Claude-backed workers need a persisted session id.
-    // atris2 turns are stateless per tick — continuity lives on disk (logs, receipts, now.md).
+    // atris2 turns are stateless per tick, continuity lives on disk (logs, receipts, now.md).
     if (!skipWorker && !atris2Runner && !drillRunner && !sessionId && !pendingSessionId) {
       pendingSessionId = crypto.randomUUID();
       mission = saveMission({ ...mission, pending_session_id: pendingSessionId }, cwd, 'mission_session_pending', { session_id: pendingSessionId }).mission;
@@ -9470,7 +9470,7 @@ async function executeMissionRunTicksPhase(context) {
       // the auto runner has already resolved this tick to a *different* ready engine
       // (the walled one is now credit_out and excluded from resolution), the run-wide
       // cooldown no longer applies. Clear it so the fresh engine runs now instead of
-      // the loop sleeping through — or pausing on `rate-limit-exceeded-wall` for — a
+      // the loop sleeping through, or pausing on `rate-limit-exceeded-wall` for, a
       // wall this engine never hit.
       if (lastRateLimit && rateLimitedEngineId && tickEngineId && tickEngineId !== rateLimitedEngineId) {
         result.engine_swapped_from = rateLimitedEngineId;
@@ -9669,8 +9669,8 @@ async function executeMissionRunTicksPhase(context) {
           // held, so the next resume fails with "already in use". A session
           // that was cleaned up between ticks fails the resume the other way,
           // with "No conversation found with session ID". Both mean the stored
-          // id is dead. Session continuity is disposable — mission state lives
-          // on disk (receipts, logs, now.md) — so rotate to a fresh id instead
+          // id is dead. Session continuity is disposable, mission state lives
+          // on disk (receipts, logs, now.md), so rotate to a fresh id instead
           // of grinding the repeated-error breaker on a stale session.
           const staleSession = /session id .* is already in use/i.test(claudeResult.stderr || '')
             || /no conversation found with session id/i.test(claudeResult.stderr || '');
@@ -9698,7 +9698,7 @@ async function executeMissionRunTicksPhase(context) {
               break;
             }
           } else if (sessionId && claudeResult.sessionIds.length > 0 && !claudeResult.sessionIds.includes(sessionId)) {
-            // session_id mismatch on a resumed session — abort run
+            // session_id mismatch on a resumed session, abort run
             pauseReason = 'session-id-mismatch';
             break;
           }
@@ -9747,7 +9747,7 @@ async function executeMissionRunTicksPhase(context) {
         || worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier, baseline: runWorktreeBaseline });
 
       // Layer classification needs the receipt text AND the worktree receipt, so it
-      // runs here — after both exist — covering the claude and atris2 branches alike.
+      // runs here, after both exist, covering the claude and atris2 branches alike.
       if (!(cachedStep && cachedStep.tick && cachedStep.tick.layer)) {
         const tickReceiptText = result.atris2?.receipt_text || result.claude?.receipt_text || result.drill?.receipt_text || '';
         const layerInfo = extractLayerFromReceiptText(tickReceiptText, tickWorktree?.new_since_baseline_sample);
@@ -9776,7 +9776,7 @@ async function executeMissionRunTicksPhase(context) {
       const fullBudgetMode = budgetRemainingSeconds > 0;
       // Worker may call `mission complete` mid-tick. Re-read disk so we do not
       // demote terminal status back to ready (always-on + verifier-pass used to
-      // reopen closed rooms — mission 32 complete@19:23:33 → ready@19:23:48).
+      // reopen closed rooms, mission 32 complete@19:23:33 → ready@19:23:48).
       const latestOnDisk = loadMissionMap(cwd).get(mission.id) || mission;
       const alreadyTerminal = TERMINAL_STATUSES.has(String(latestOnDisk.status || ''));
       let newStatus = (verifierResult?.passed && mission.always_on) ? 'ready' :
@@ -9869,7 +9869,7 @@ async function executeMissionRunTicksPhase(context) {
         ranTicks++;
         backoffAttempt = 0;
       } else if (result.status === 'errored' && result.reason !== 'claude-session-busy') {
-        // A rotated session is already healed — the next tick starts on a
+        // A rotated session is already healed, the next tick starts on a
         // fresh id, so backing off just burns wall clock. If rotation itself
         // keeps failing, the repeated-error breaker below still stops the run.
         backoffAttempt++;
@@ -9893,7 +9893,7 @@ async function executeMissionRunTicksPhase(context) {
       if (consecutiveIdenticalSummaryTicks(ticks) >= 3) { pauseReason = 'stuck-repeating'; break; }
       // A retired/inaccessible model is deterministic: the id is fixed for the run, so
       // every remaining tick (and every future cron firing) fails identically. Backoff
-      // only slows the bleeding. Stop on first detection and surface the dead id —
+      // only slows the bleeding. Stop on first detection and surface the dead id,
       // CLI-245 named this failure; this stops the loop from grinding on it forever.
       if (result.status === 'errored' && result.reason === 'model-unavailable') { pauseReason = 'model-unavailable'; break; }
       // Any OTHER error that recurs identically (claude-timeout, atris2-error, claude-error)
@@ -10060,12 +10060,12 @@ function completeMissionRunPhase(context) {
     }
     if (context.handled) return;
 
-    // BCK-1324: no-progress is a clean, honest stop — the run did what it
+    // BCK-1324: no-progress is a clean, honest stop, the run did what it
     // could and correctly recognized there was nothing left to do. It is NOT
     // a failure/blocker: pausing it (resumable, retried by cron/self-drive)
     // or dispatching handleMissionBlocker (files a fleet task, dispatches an
     // engine) would recreate the exact busywork loop this guard exists to
-    // stop. Give it its own branch, shaped like stopMission()'s stop path —
+    // stop. Give it its own branch, shaped like stopMission()'s stop path,
     // status=stopped, a receipt, no escalation, no blocker.
     if (pauseReason === 'no-progress') {
       const stoppedAt = stampIso();
@@ -10083,7 +10083,7 @@ function completeMissionRunPhase(context) {
         stop_reason: noProgressReason,
         receipt_path: noProgressReceipt || mission.receipt_path || null,
         worktree_baseline: baselineSummary || mission.worktree_baseline || null,
-        next_action: 'mission stopped: no progress — inspect the last few receipts, then start a fresh mission or resume with new context',
+        next_action: 'mission stopped: no progress, inspect the last few receipts, then start a fresh mission or resume with new context',
       }, cwd, 'mission_run_stopped_no_progress', {
         reason: noProgressReason,
         idle_ticks: idleCount,
@@ -10112,7 +10112,7 @@ function completeMissionRunPhase(context) {
       }).mission;
     }
 
-    // 'no-progress' is a clean stop the run diagnosed itself — never route it
+    // 'no-progress' is a clean stop the run diagnosed itself, never route it
     // through handleMissionBlocker (that would file a blocker task and
     // dispatch an engine to "fix" a mission that correctly stopped itself).
     const blockerReason = ['no-progress', 'budget-exhausted'].includes(pauseReason)
@@ -10232,7 +10232,7 @@ function tickMission(args) {
   }
 
   try {
-    // Re-read inside the lock — the initial resolveMission ran before we held it.
+    // Re-read inside the lock, the initial resolveMission ran before we held it.
     mission = resolveMission(mission.id) || mission;
 
     if (['complete', 'stopped'].includes(mission.status)) {
@@ -10247,7 +10247,7 @@ function tickMission(args) {
       // budget window from now BEFORE the budget check below reads it. Without this,
       // a spend-full-budget mission whose original window already elapsed, resumed
       // via `mission tick` rather than `mission run`, would compute zero remaining
-      // budget on this very tick and land immediately — the footgun `mission run`
+      // budget on this very tick and land immediately, the footgun `mission run`
       // already closes. Stamping resumed_at here makes both resume paths agree.
       mission = saveMission({
         ...mission,
@@ -10492,7 +10492,7 @@ function receiptShowsPass(receipt) {
     || result?.tick?.verifier_passed === true;
 }
 
-// Terminal gate: a verifier mission may only complete on real evidence — a
+// Terminal gate: a verifier mission may only complete on real evidence, a
 // passing receipt belonging to this mission, or durable state showing the
 // verifier passed. Mirrors the task plane's proof-only accept guard so the
 // final transition consumes the receipts instead of trusting free text.
@@ -10664,7 +10664,7 @@ function stopMission(args) {
 }
 
 // A mission parked in paused/planning/ready and untouched for a week is
-// abandoned in practice — nobody resumes it, and each one is a line the
+// abandoned in practice, nobody resumes it, and each one is a line the
 // operator re-reads forever. The daily autoland tick expires them to
 // stopped with a revive hint; running missions and anything touched
 // recently are never aged out, and a tick on an expired id revives it.
@@ -10706,7 +10706,7 @@ function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXP
   for (const mission of listMissions(root)) {
     const status = String(mission.status || '').toLowerCase();
     if (!statuses.has(status)) continue;
-    // updated_at and paused_at are machine-polluted — status renders and
+    // updated_at and paused_at are machine-polluted, status renders and
     // goal controllers re-save parked missions daily, so a mission nobody
     // has run since May reads as "touched today". Real activity is the
     // last tick (or creation, for missions that never ran).
@@ -10743,7 +10743,7 @@ function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXP
 }
 
 // Zombie-mission reap: a mission left paused past a short leash (48h default)
-// is dead in practice long before the 7-day general idle expiry ever fires —
+// is dead in practice long before the 7-day general idle expiry ever fires,
 // nobody is coming back to it inside a session, and it just sits on
 // `mission list` as noise. Narrower than expireStaleMissions on purpose: only
 // `paused`, never planning/ready, so the weekly cadence for those is unchanged.
@@ -11196,7 +11196,7 @@ function classifyPathsByLayer(paths) {
   return winnerLayer ? { layer: winnerLayer, source: 'fallback' } : { layer: null, source: 'unknown' };
 }
 
-// `atris mission layers` — per-layer growth curve across tick receipts. The member
+// `atris mission layers`, per-layer growth curve across tick receipts. The member
 // proof standard says: if every tick is one layer and none touch the others, the
 // loop is doing work but not getting smarter. This makes that check one command.
 function layersMission(args) {
@@ -11257,7 +11257,7 @@ function layersMission(args) {
     ...LAYERS.map((l) => `  ${l.padEnd(12)} ${String(byLayer[l]).padStart(3)}${byLayer[l] ? ' ' + '█'.repeat(Math.min(byLayer[l], 40)) : ''}`),
     ...(untagged ? [`  untagged     ${String(untagged).padStart(3)} (pre-layer receipts or missing tag)`] : []),
     `  provenance: explicit ${bySource.explicit}, explicit-inline ${bySource['explicit-inline']}, fallback ${bySource.fallback}`,
-    ...(skewed ? [`  rebalance: ${Math.round((byLayer[dominant] / tagged) * 100)}% of tagged ticks are "${dominant}" — the proof standard wants the other layers moving too`] : []),
+    ...(skewed ? [`  rebalance: ${Math.round((byLayer[dominant] / tagged) * 100)}% of tagged ticks are "${dominant}", the proof standard wants the other layers moving too`] : []),
   ];
   printJsonOrText({ ok: true, since: sinceRaw || null, total, tagged, untagged, by_layer: byLayer, by_source: bySource, dominant: tagged ? dominant : null, skewed }, lines, asJson);
 }
@@ -11346,7 +11346,7 @@ function findMissionAcrossWorktrees(ref, root = process.cwd()) {
   return null;
 }
 
-// atris mission ping <id> "<message>" — leave a note the mission's next tick
+// atris mission ping <id> "<message>", leave a note the mission's next tick
 // reads (and consumes) as operator direction. This is how you talk to an
 // always-on member mid-run without stopping it.
 function inspectMission(args) {
@@ -11425,7 +11425,7 @@ function pingMission(args, opts = {}) {
     if (asJson) {
       console.log(JSON.stringify({ ok: true, action: 'mission_ping', mission_id: saved.id, pending_pings: pending, ping }));
     } else {
-      console.log(`pinged ${saved.id} — the next tick reads it (${pending} unread).`);
+      console.log(`pinged ${saved.id}, the next tick reads it (${pending} unread).`);
     }
   }
   return saved;
@@ -11575,7 +11575,7 @@ function missionCommand(args) {
       if (first && !first.startsWith('-')) {
         // Shortcut forms: a mission id, or an objective (quoted or spread
         // across argv: `atris mission fix the issue`). Two shapes are
-        // mistyped verbs, not objectives — a later arg naming a mission id
+        // mistyped verbs, not objectives, a later arg naming a mission id
         // (`mission say <id> ...`), and a single bare word with no objective
         // after it. Creating a mission from those silently is worse than erroring.
         const positionals = args.filter((value) => !String(value).startsWith('-'));

@@ -1,12 +1,12 @@
-// atris slop — deterministic frontend-slop detector (no LLM).
+// atris slop, deterministic frontend-slop detector (no LLM).
 //
 // Steal-from-Impeccable, the Atris way: makes "looks AI-generated" concrete and
-// CHECKABLE. A failure is a fact (file:line + rule), not a taste opinion — so it
+// CHECKABLE. A failure is a fact (file:line + rule), not a taste opinion, so it
 // drops straight into the autopilot/review verification gate and CI. Each finding
 // is the seed of a typed lesson; the ruleset is meant to GROW from lessons.md
 // rather than be hand-curated forever.
 //
-// Zero external deps (Node built-ins only) — repo contract.
+// Zero external deps (Node built-ins only), repo contract.
 //
 // Usage:
 //   atris slop detect [path...]      # scan one or more files or dirs (default: .)
@@ -25,7 +25,7 @@ const SCAN_EXTS = new Set(['.css', '.scss', '.sass', '.less', '.tsx', '.jsx', '.
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.astro', 'coverage', '.cache', 'out', 'vendor']);
 
 // Each rule is deterministic: a regex + a one-line why. severity drives the icon.
-// Kept high-precision on purpose — a noisy gate gets muted, and a muted gate is dead.
+// Kept high-precision on purpose, a noisy gate gets muted, and a muted gate is dead.
 const RULES = [
   { id: 'ai-gradient-text', sev: 'error',
     re: /(text-transparent[^"'`]{0,40}bg-clip-text|bg-clip-text[^"'`]{0,40}text-transparent|-webkit-text-fill-color:\s*transparent|background-clip:\s*text)/i,
@@ -79,8 +79,8 @@ const RULES = [
     re: /[✨\u{1F680}\u{1F4A1}\u{1F525}\u{1F389}⚡\u{1F31F}\u{1FA84}\u{1F4AB}\u{1F44B}]/u,
     why: 'decorative emoji in UI copy' },
   { id: 'em-dash', sev: 'warn',
-    re: /—/,
-    fix: (s) => s.replace(/\s*—\s*/g, ', '), // safe deterministic repair (prose)
+    re: /\u2014/,
+    fix: (s) => s.replace(/\s*\u2014\s*/g, ', '), // safe deterministic repair (prose)
     why: 'em dash: a top AI-writing tell; use a comma, colon, or period' },
   { id: 'hype-copy', sev: 'error',
     re: /\b(boost your productivity|supercharge|unleash|game[- ]?chang(?:er|ing)|seamlessly|effortlessly|revolutioniz(?:e|ing)|take your .{1,30} to the next level|elevate your|cutting[- ]edge|powered by ai|next[- ]generation)\b/i,
@@ -321,7 +321,7 @@ function detect(argv) {
   const rel = (f) => path.relative(process.cwd(), f);
   if (!quiet) {
     if (!findings.length) {
-      console.log(`\n  ✓ clean — no slop tells in ${files.length} file${files.length === 1 ? '' : 's'}`);
+      console.log(`\n  ✓ clean, no slop tells in ${files.length} file${files.length === 1 ? '' : 's'}`);
     } else {
       console.log('');
       const w = Math.max(...findings.map((f) => `${rel(f.file)}:${f.line}`.length));
@@ -440,8 +440,8 @@ function findDeadCode(root = process.cwd(), opts = {}) {
 
   // 3) string-mention safety net: basename (sans ext) named as a string literal
   //    outside itself. Split by scope: a mention in a NON-test file (prod code, a
-  //    bin entry like `ax`) means the file is dynamically dispatched — e.g.
-  //    require(path.join(__dirname, 'lib', 'permission-grants.js')) — and is
+  //    bin entry like `ax`) means the file is dynamically dispatched, e.g.
+  //    require(path.join(__dirname, 'lib', 'permission-grants.js')), and is
   //    genuinely reachable even though the static edge parser and the test BFS
   //    can't see the edge. That must outrank the test-only classification, or a
   //    live feature imported by both `ax` and a test reads as "feature gone".
@@ -462,9 +462,9 @@ function findDeadCode(root = process.cwd(), opts = {}) {
   const dead = [], testOnly = [];
   for (const c of candidates) {
     if (reached.has(c)) continue;
-    if (mentionedInProd(c)) continue; // dynamically dispatched from prod (e.g. the `ax` bin) — reachable
+    if (mentionedInProd(c)) continue; // dynamically dispatched from prod (e.g. the `ax` bin), reachable
     if (testReached.has(c)) { testOnly.push(c); continue; }
-    if (mentioned(c)) continue; // docs-driven / other dynamic dispatch — not provably dead
+    if (mentioned(c)) continue; // docs-driven / other dynamic dispatch, not provably dead
     dead.push(c);
   }
   return { root, candidates: candidates.length, dead: dead.sort(), testOnly: testOnly.sort() };
@@ -476,7 +476,7 @@ function findDeadCode(root = process.cwd(), opts = {}) {
 function exportedNames(file) {
   let text; try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
   const names = new Set();
-  // module.exports = { a, b: c, ... }  — shorthand entries and keys
+  // module.exports = { a, b: c, ... }, shorthand entries and keys
   const block = text.match(/module\.exports\s*=\s*\{([\s\S]*?)\n\}/);
   if (block) {
     for (const line of block[1].split('\n')) {
@@ -543,13 +543,13 @@ function deadCommand(argv) {
     return bad ? 1 : 0;
   }
   if (!bad && !res.testOnly.length) {
-    console.log(`\n  ✓ no dead code — all ${res.candidates} files reachable from the entrypoints\n`);
+    console.log(`\n  ✓ no dead code, all ${res.candidates} files reachable from the entrypoints\n`);
     return 0;
   }
   console.log('');
-  for (const f of res.dead) console.log(`  ✗ ${rel(f).padEnd(40)} unreachable and unreferenced — delete it`);
-  for (const f of res.testOnly) console.log(`  ⚠ ${rel(f).padEnd(40)} only tests import it — feature gone, test lingers?`);
-  if (orphans) for (const o of orphans) console.log(`  ⚠ ${`${rel(o.file)} → ${o.name}`.padEnd(40)} exported but nothing anywhere names it — drop the export entry`);
+  for (const f of res.dead) console.log(`  ✗ ${rel(f).padEnd(40)} unreachable and unreferenced, delete it`);
+  for (const f of res.testOnly) console.log(`  ⚠ ${rel(f).padEnd(40)} only tests import it, feature gone, test lingers?`);
+  if (orphans) for (const o of orphans) console.log(`  ⚠ ${`${rel(o.file)} → ${o.name}`.padEnd(40)} exported but nothing anywhere names it, drop the export entry`);
   const parts = [`${res.dead.length} dead`, `${res.testOnly.length} test-only`];
   if (orphans) parts.push(`${orphans.length} orphaned export${orphans.length === 1 ? '' : 's'}`);
   console.log(`\n  ${parts.join(', ')} of ${res.candidates} files · exit ${bad ? 1 : 0}\n`);
@@ -588,7 +588,7 @@ function slopCommand(argv) {
       return 0;
     }
     const project = loadProjectRules();
-    console.log('\n  atris slop — deterministic rules:\n');
+    console.log('\n  atris slop, deterministic rules:\n');
     for (const r of RULES) console.log(`  ${ICON[r.sev]} ${r.id.padEnd(20)} ${r.why}`);
     for (const r of project) console.log(`  ${ICON[r.sev]} ${r.id.padEnd(20)} ${r.why}  (project)`);
     console.log(`\n  ${RULES.length} built-in${project.length ? ` + ${project.length} project` : ''} rule${RULES.length + project.length === 1 ? '' : 's'}\n`);
@@ -596,7 +596,7 @@ function slopCommand(argv) {
   }
   // help
   console.log(`
-  atris slop — deterministic slop detector + repairer (no LLM)
+  atris slop, deterministic slop detector + repairer (no LLM)
 
     atris slop detect [path...]   scan one or more files or dirs (default: .)
     atris slop detect --diff      scan only changed lines (commit/PR gate)
