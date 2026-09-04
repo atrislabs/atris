@@ -9,6 +9,8 @@ const {
   formatSearchResults,
   youtubeCommand,
   APPLY_NEXT_MESSAGE,
+  LEARNER_CHECK_FILL,
+  LEARNER_SCORE_ZERO,
 } = require('../commands/youtube');
 
 const CACHE_HOME = '/tmp/atris-yt-search-cache-home';
@@ -135,6 +137,7 @@ test('youtube search --help prints usage without calling the runner', async () =
   assert.match(output.join('\n'), /zero credits|Does not bill credits/i);
   assert.match(output.join('\n'), /5 credits/);
   assert.match(output.join('\n'), /next: atris youtube teach/);
+  assert.match(output.join('\n'), /check: fill this/);
   assert.doesNotMatch(output.join('\n'), /next: atris youtube watch tick/);
 });
 
@@ -147,6 +150,7 @@ test('youtube --help lists paid search', async () => {
   const text = output.join('\n');
   assert.match(text, /search --paid/);
   assert.match(text, /5 credits, watch permalinks/);
+  assert.match(text, /rich paid search prints one failing check/);
   assert.match(text, /hands off to teach/);
 });
 
@@ -672,9 +676,94 @@ test('youtube search --paid posts /youtube/search and prints titles, permalinks,
   assert.match(text, /Agent Stack Tour \| https:\/\/www\.youtube\.com\/watch\?v=mcp2026b/);
   assert.match(text, /Credits: 5 used, 995 remaining/);
   assert.doesNotMatch(text, /token-123/);
+  assert.equal(output.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 1);
+  assert.equal(output.filter((line) => line === LEARNER_SCORE_ZERO).length, 0);
+  assert.doesNotMatch(text, /what is the point of|invented/);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
   assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assert.equal(output.includes('next: atris youtube teach "https://www.youtube.com/watch?v=mcp2026a"'), true);
+  assert.ok(
+    output.indexOf(`check: ${LEARNER_CHECK_FILL}`)
+      < output.indexOf('next: atris youtube teach "https://www.youtube.com/watch?v=mcp2026a"'),
+  );
   assert.equal(output.includes(WATCH_TICK_NEXT), false);
+});
+
+test('youtube search --paid prints a failing check from a rich title', async () => {
+  const output = [];
+  const status = await youtubeCommand(['search', '--paid', 'omakase'], {
+    ...cacheDeps(),
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        status: 'success',
+        credits_used: 5,
+        credits_remaining: 990,
+        data: {
+          results: [
+            {
+              title: '37signals uses the omakase model',
+              url: 'https://www.youtube.com/watch?v=omakase1',
+            },
+          ],
+        },
+      },
+    }),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(output.filter((line) => line === 'check: what is the omakase model?').length, 1);
+  assert.equal(output.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+  assert.ok(
+    output.indexOf('check: what is the omakase model?')
+      < output.indexOf(LEARNER_SCORE_ZERO),
+  );
+  assert.equal(output.filter((line) => line === `check: ${LEARNER_CHECK_FILL}`).length, 0);
+  assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
+  assert.equal(
+    output.includes('next: atris youtube teach "https://www.youtube.com/watch?v=omakase1"'),
+    true,
+  );
+  assert.ok(
+    output.indexOf(LEARNER_SCORE_ZERO)
+      < output.indexOf('next: atris youtube teach "https://www.youtube.com/watch?v=omakase1"'),
+  );
+});
+
+test('youtube search --paid --json stays quiet on the learner check', async () => {
+  const output = [];
+  const status = await youtubeCommand(['search', '--paid', 'omakase', '--json'], {
+    ...cacheDeps(),
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        status: 'success',
+        credits_used: 5,
+        data: {
+          results: [
+            {
+              title: '37signals uses the omakase model',
+              url: 'https://www.youtube.com/watch?v=omakase2',
+            },
+          ],
+        },
+      },
+    }),
+  });
+  assert.equal(status, 0);
+  const text = output.join('\n');
+  const parsed = JSON.parse(text);
+  assert.equal(parsed.data.results[0].title, '37signals uses the omakase model');
+  assert.doesNotMatch(text, /^check:/m);
+  assert.doesNotMatch(text, /score: 0/);
+  assert.doesNotMatch(text, /next: atris youtube teach/);
 });
 
 test('youtube search --paid --json prints the raw payload', async () => {
@@ -697,6 +786,8 @@ test('youtube search --paid --json prints the raw payload', async () => {
   const text = output.join('\n');
   assert.doesNotMatch(text, /next: atris youtube teach/);
   assert.doesNotMatch(text, /next: atris youtube watch tick/);
+  assert.doesNotMatch(text, /^check:/m);
+  assert.doesNotMatch(text, /score: 0/);
   const parsed = JSON.parse(text);
   assert.equal(parsed.credits_used, 5);
   assert.equal(parsed.data.results[0].title, 'Hi');
@@ -741,6 +832,8 @@ test('youtube search --paid empty results prints credits and exits 2', async () 
   assert.equal(output.includes(WATCH_TICK_NEXT), true);
   assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assert.doesNotMatch(output.join('\n'), /next: atris youtube teach/);
+  assert.doesNotMatch(output.join('\n'), /^check:/m);
+  assert.doesNotMatch(output.join('\n'), /score: 0/);
   assert.equal(output.includes(APPLY_NEXT_MESSAGE), false);
 });
 
