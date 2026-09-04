@@ -32,7 +32,7 @@ async function browseAtris() {
   const result = await apiRequestJson(endpoint, { method: 'GET', token: creds.token });
 
   if (!result.ok) {
-    // API failed — try local templates
+    // API failed, try local templates
     console.log('  API unavailable, checking local templates...');
     const localDir = path.join(os.homedir(), '.atris', 'templates');
     if (!fs.existsSync(localDir)) {
@@ -61,7 +61,7 @@ async function browseAtris() {
           desc = meta.description || '';
         } catch {}
       }
-      console.log(`  ${name}${desc ? '  —  ' + desc : ''}`);
+      console.log(`  ${name}${desc ? ': ' + desc : ''}`);
     }
     console.log('');
     return;

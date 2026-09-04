@@ -11,7 +11,7 @@
  *   atris feedback close <id>                   Close as wontfix (admin)
  *   atris feedback delete <id>                  Delete feedback (admin)
  *
- * IDs may be the first 8 chars of the UUID — the CLI resolves the prefix
+ * IDs may be the first 8 chars of the UUID. the CLI resolves the prefix
  * against the live list before making the write request.
  */
 
@@ -87,7 +87,7 @@ async function submitFeedback(message, opts = {}) {
     }
     if (result.text && !result.data) parts.push(result.text.trim());
     if (!parts.length) parts.push('Failed to submit feedback (no feedback_id returned)');
-    console.error(`Error: ${parts.join(' — ')}`);
+    console.error(`Error: ${parts.join(', ')}`);
     process.exit(1);
   }
 
@@ -153,7 +153,7 @@ async function resolveIdPrefix(prefix, { token, businessId }) {
   if (matches.length === 0) return { error: `No feedback matches id prefix "${prefix}"` };
   if (matches.length > 1) {
     return {
-      error: `Ambiguous id "${prefix}" — matches ${matches.length} items. Use a longer prefix.`,
+      error: `Ambiguous id "${prefix}", matches ${matches.length} items. Use a longer prefix.`,
     };
   }
   return { id: matches[0].id, item: matches[0] };
@@ -294,7 +294,7 @@ function printHelp(write = console.log) {
 
 function resolveBusinessArg(value) {
   if (!value) return null;
-  // Full UUID — trust it
+  // Full UUID, trust it
   if (/^[0-9a-f-]{32,}$/i.test(value)) return value;
   // Otherwise treat as slug and look up in ~/.atris/businesses.json
   const home = require('os').homedir();

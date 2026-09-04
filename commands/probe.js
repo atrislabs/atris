@@ -1,6 +1,6 @@
-// atris probe — chat-lane probe (TRR-22): one REAL /atris2/turn over the full
+// atris probe: chat-lane probe (TRR-22): one REAL /atris2/turn over the full
 // tool relay, exactly as the surfaces run it. Port of terrace's
-// atris/bin/relay-probe and atris/bin/calendar-probe — keep the op tables in
+// atris/bin/relay-probe and atris/bin/calendar-probe, so keep the op tables in
 // lockstep across iOS (votd/GMModeAPI.swift Atris2ToolRelay), web
 // (atrisos-web orbToolRelay.ts), Obelisk (atris2LocalFileOp.cjs), and the
 // terrace probes.
@@ -14,7 +14,7 @@
 //
 // PASS = >=1 relayed op (with --calendar: >=1 calendar cli op) AND a non-empty
 // final answer with no dead-end marker; otherwise prints the marker in the
-// receipt line and exits 1 — a FAIL naming the dead-end is the instrument
+// receipt line and exits 1. a FAIL naming the dead-end is the instrument
 // working. The receipt line is journal-ready.
 //
 // Usage:
@@ -32,7 +32,7 @@ const { loadCredentials } = require('../utils/auth');
 const { buildToolResultBody } = require('../lib/tool-result-encode');
 
 // G2's honest blocked message (tool_policy_bench.MAX_TURNS_EXHAUSTED_MESSAGE)
-// starts with this — an answer that is only this marker is a dead-end.
+// starts with this. an answer that is only this marker is a dead-end.
 const MAX_TURNS_MARKER = 'i ran out of tool budget for this turn';
 
 function workspaceLabel(businessId) {
@@ -61,7 +61,7 @@ function normalizeBash(cmd, label) {
 
 // No write/edit file ops, and the `..` guard only covers args.path. The
 // `bash` op still executes whatever command the model sends, verbatim, on
-// the remote ai-computer — that is the production relay contract and the
+// the remote ai-computer, that is the production relay contract and the
 // table must stay in lockstep with it, so this probe is NOT read-only.
 function fileOpCommand(args, label) {
   const op = String(args.type || '').toLowerCase();
@@ -78,7 +78,7 @@ function fileOpCommand(args, label) {
   return null;
 }
 
-// Port of Atris2ToolRelay.atrisCLICommand (GMModeAPI.swift) — op → `atris …`.
+// Port of Atris2ToolRelay.atrisCLICommand (GMModeAPI.swift): op → `atris …`.
 const SIMPLE_CLI_OPS = {
   status: ['atris.md'],
   integrations_status: ['integrations'],
@@ -122,7 +122,7 @@ function atrisCliCommand(args) {
 
 function atrisCliResult(command, term) {
   // a terminal response without a numeric exit_code is a broken endpoint,
-  // not a success — never let it masquerade as ok with empty stdout
+  // not a success. never let it masquerade as ok with empty stdout
   const code = typeof term.exit_code === 'number' ? term.exit_code : -1;
   const out = {
     schema: 'atris.local_cli_result.v1',
@@ -227,7 +227,7 @@ function parseArgs(argv) {
 
 // Core /atris2/turn client: one streamed turn over the full local tool relay.
 // Shared by `atris probe` (the instrument) and `atris mission run --runner atris2`
-// (the worker). Transport-level outcome only — callers apply their own
+// (the worker). Transport-level outcome only. callers apply their own
 // pass/fail policy on top of the returned fields.
 async function runAtris2Turn(opts = {}) {
   const {
@@ -454,7 +454,7 @@ async function probeCommand(argv) {
   const detail = ok
     ? `answer: ${resultText.slice(0, 80).replace(/\n/g, ' ')}`
     : `dead-end: ${deadEnd}`;
-  const line = `- **atris-probe** \`${stamp}\` — ${where} · ${a.model}`
+  const line = `- **atris-probe** \`${stamp}\` \u2014 ${where} · ${a.model}`
     + (member ? ` · member=${member}` : '')
     + (engine ? ` · engine=${engine}` : '')
     + ` · ${ok ? 'PASS' : 'FAIL'} · ${secs}s · tools=${toolsRun}`

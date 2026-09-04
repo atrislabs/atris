@@ -1,10 +1,10 @@
 /**
- * Atris Review — Run code review with specialist agents
+ * Atris Review: run code review with specialist agents
  *
- *   atris review                   — Review staged changes
- *   atris review <file>            — Review a specific file
- *   atris review --diff HEAD~1     — Review last commit
- *   atris review --all             — Audit all Python services
+ *   atris review                   : review staged changes
+ *   atris review <file>            : review a specific file
+ *   atris review --diff HEAD~1     : review last commit
+ *   atris review --all             : audit all Python services
  */
 
 const fs = require('fs');

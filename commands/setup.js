@@ -117,7 +117,7 @@ async function setupAtris() {
     return;
   }
 
-  // Resolve selection — try number first, then slug match
+  // Resolve selection: try number first, then slug match
   let selected = null;
   const num = parseInt(answer, 10);
   if (!isNaN(num) && num >= 1 && num <= businesses.length) {

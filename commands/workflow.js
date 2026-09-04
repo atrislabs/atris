@@ -612,7 +612,7 @@ async function planAtris(userInput = null) {
 
   if (showFactory) {
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ Atris Plan — Navigator Agent Activated                      │');
+  console.log('│ Atris Plan: Navigator Agent Activated                      │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 
@@ -641,7 +641,7 @@ async function planAtris(userInput = null) {
   console.log(`- Navigator spec: ${navigatorPath || 'atris/team/navigator/MEMBER.md (missing)'}`);
   console.log(`- Persona: ${personaFileRef || 'atris/PERSONA.md (missing)'}`);
   const mapDisplay = mapFileRef
-    ? `${mapFileRef}${mapIsPlaceholder ? ' (placeholder — generate first)' : ''}`
+    ? `${mapFileRef}${mapIsPlaceholder ? ' (placeholder, generate first)' : ''}`
     : 'atris/MAP.md (missing)';
   console.log(`- MAP: ${mapDisplay}`);
   console.log(`- TODO: ${taskSourcePath || 'atris/TODO.md (missing)'}`);
@@ -799,7 +799,7 @@ async function planAtris(userInput = null) {
     userPrompt += `STEP 5: Log to your journal\n`;
     userPrompt += `   - Write to atris/team/navigator/logs/YYYY-MM-DD.md\n`;
     userPrompt += `   - Include: Task, Delivered, User reaction, Pattern\n`;
-    userPrompt += `   - Your journal is how you learn — record what worked\n\n`;
+    userPrompt += `   - Your journal is how you learn, so record what worked\n\n`;
     userPrompt += `Start planning now. Read MAP.md for file references.`;
 
     console.log('');
@@ -1044,7 +1044,7 @@ async function doAtris() {
     console.log(`- Executor spec: ${executorPath || 'atris/team/executor/MEMBER.md (missing)'}`);
     console.log(`- Persona: ${personaFileRef || 'atris/PERSONA.md (missing)'}`);
     const mapDisplay = mapPath
-      ? `${mapPath}${mapIsPlaceholder ? ' (placeholder — generate first)' : ''}`
+      ? `${mapPath}${mapIsPlaceholder ? ' (placeholder, generate first)' : ''}`
       : 'atris/MAP.md (missing)';
     console.log(`- MAP: ${mapDisplay}`);
     console.log(`- TODO: ${taskSourcePath || 'atris/TODO.md (missing)'}`);
@@ -1097,7 +1097,7 @@ async function doAtris() {
       console.log('');
     }
     console.log('Workflow:');
-    console.log('1) Read atris/TODO.md — claim next unclaimed Backlog task');
+    console.log('1) Read atris/TODO.md, then claim next unclaimed Backlog task');
     console.log('   Move to ## In Progress: add "Claimed by: executor at YYYY-MM-DD HH:MM"');
     console.log('2) Run the Confidence Gate against the task before editing');
     printConfidenceGate('   ');
@@ -1107,7 +1107,7 @@ async function doAtris() {
     console.log('6) Log to atris/team/executor/logs/YYYY-MM-DD.md');
     console.log('   (Task, Delivered, Errors hit, Learned)');
     console.log('');
-    console.log('⛔ Do NOT plan — just execute what\'s written.');
+    console.log('⛔ Do NOT plan, just execute what\'s written.');
     console.log('');
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -1417,13 +1417,13 @@ async function reviewAtris() {
   }
 
   const mapDisplay = mapPath
-    ? `${mapPath}${mapIsPlaceholder ? ' (placeholder — generate first)' : ''}`
+    ? `${mapPath}${mapIsPlaceholder ? ' (placeholder, generate first)' : ''}`
     : 'atris/MAP.md (missing)';
 
   if (showFull) {
     console.log('');
     console.log('┌─────────────────────────────────────────────────────────────┐');
-    console.log('│ Atris Review — Validator Agent Activated                    │');
+    console.log('│ Atris Review: Validator Agent Activated                    │');
     console.log('└─────────────────────────────────────────────────────────────┘');
     console.log('');
 
@@ -1594,7 +1594,7 @@ async function reviewAtris() {
     userPrompt += `  • Verify everything works\n`;
     userPrompt += `  • Find all plausible loopholes; patch them or name residual risk\n`;
     userPrompt += `  • Test thoroughly (unless user says no)\n`;
-    userPrompt += `  • Confirm active task state is clean — no unresolved Backlog/In Progress/Blocked rows for reviewed work.\n`;
+    userPrompt += `  • Confirm active task state is clean, with no unresolved Backlog/In Progress/Blocked rows for reviewed work.\n`;
     userPrompt += `    If durable task state changed, regenerate the readable view with \`atris task render --out atris/TODO.md\`.\n`;
     userPrompt += `    Do not hand-delete rendered completed history; if a task fails, move or mark it blocked with a note.\n`;
     userPrompt += `  • Log to atris/team/validator/logs/YYYY-MM-DD.md\n`;
@@ -1718,7 +1718,7 @@ async function reviewAtris() {
         if (fs.existsSync(logFile)) {
           let journalContent = fs.readFileSync(logFile, 'utf8');
           const timestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-          const learning = `- ${timestamp} — ${answer.trim()}`;
+          const learning = `- ${timestamp} \u2014 ${answer.trim()}`;
 
           // Find or create ## Notes section
           if (journalContent.includes('## Notes')) {
@@ -1742,7 +1742,7 @@ async function reviewAtris() {
           addLearning({ type, key, insight, confidence: 7, source: 'review', files: [] });
           console.log(`✓ Saved to learnings: [7/10] ${type}/${key}`);
         } catch {
-          // learnings module not available — skip silently
+          // learnings module not available, so skip silently
         }
       }
 

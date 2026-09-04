@@ -44,7 +44,7 @@ function generateManifest(skills, projectDir) {
   return {
     name: 'atris-workspace',
     version: pkg.version || '1.0.0',
-    description: `Atris workspace skills for Cowork — ${skills.length} integrations (email, calendar, slack, drive, notion, and more)`,
+    description: `Atris workspace skills for Cowork: ${skills.length} integrations (email, calendar, slack, drive, notion, and more)`,
     author: {
       name: typeof pkg.author === 'string' ? pkg.author : (pkg.author?.name || 'Atris')
     },
@@ -89,7 +89,7 @@ If not logged in, run:
 atris login
 \`\`\`
 
-This is interactive — the user will need to complete OAuth in their browser and paste the CLI code. Guide them through it.
+This is interactive, the user will need to complete OAuth in their browser and paste the CLI code. Guide them through it.
 
 ## Step 3: Check integration status
 
@@ -149,7 +149,7 @@ Brings Atris CLI skills into the Cowork desktop app.
 
 1. Install this plugin in Cowork
 2. Run \`/atris-setup\` to authenticate and connect integrations
-3. Start using skills — they trigger automatically based on your requests
+3. Start using skills: they trigger automatically based on your requests
 
 ## Included Skills (${skills.length})
 
@@ -279,7 +279,7 @@ function buildPlugin(...args) {
     console.log('');
 
   } finally {
-    // Clean up temp dir (only if ZIP succeeded — we skip cleanup on error above)
+    // Clean up temp dir (only if ZIP succeeded, we skip cleanup on error above)
     if (fs.existsSync(tempDir)) {
       try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
     }
@@ -346,7 +346,7 @@ function publishPlugin(...args) {
     process.exit(1);
   }
 
-  // Find the marketplace repo — check sibling dir or --repo flag
+  // Find the marketplace repo: check sibling dir or --repo flag
   let marketplaceDir = null;
   for (const arg of args) {
     if (typeof arg === 'string' && arg.startsWith('--repo=')) {
@@ -432,7 +432,7 @@ function publishPlugin(...args) {
     execSync('git add -A', { cwd: marketplaceDir, stdio: 'pipe' });
     const status = execSync('git status --porcelain', { cwd: marketplaceDir, encoding: 'utf8' }).trim();
     if (!status) {
-      console.log('✓ No changes — marketplace already up to date.');
+      console.log('✓ No changes, marketplace already up to date.');
       return;
     }
     execSync(`git commit -m "chore: Update atris-workspace plugin to v${version}"`, {

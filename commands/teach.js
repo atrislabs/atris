@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * atris teach — local cases under ./atris/teach only.
+ * atris teach: local cases under ./atris/teach only.
  *
  *   atris teach                 list cases in atris/teach
  *   atris teach <id>            show one case file
@@ -16,7 +16,7 @@ const path = require('path');
 const TEACH_DIR = path.join('atris', 'teach');
 
 function usage() {
-  console.log('atris teach — local cases under ./atris/teach');
+  console.log('atris teach: local cases under ./atris/teach');
   console.log('');
   console.log('  atris teach              list case files in atris/teach');
   console.log('  atris teach <id>         show atris/teach/<id>.md (or .json)');

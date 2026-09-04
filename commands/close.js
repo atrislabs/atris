@@ -472,7 +472,7 @@ function commandAdd(args, context = {}) {
   return 0;
 }
 
-// atris close check [id] — run the live probes on open incidents. This is the
+// atris close check [id]: run the live probes on open incidents. This is the
 // first move for any session entering an area: if a probe still fails, the
 // recorded theory is still live; do not diagnose fresh. After
 // PROBE_STOP_AFTER_FAILED_CHECKS failing re-checks the verdict is automatic:
@@ -893,7 +893,7 @@ function pulseLivenessState(cwd, now) {
 // decommissioned or intermittent loop leaves stale receipts frozen; without a
 // guard the last N finished ticks stay net-negative forever and the flag can
 // never clear (no fresh positive receipt arrives). It also must not treat a
-// scattered set — e.g. one tick today plus five from days ago — as a "run":
+// scattered set, e.g. one tick today plus five from days ago, as a "run":
 // summing rewards across a multi-day gap is meaningless. So we only consider
 // finished ticks from the last few days and require a full window of them; a
 // silent or sparse loop is the pulse-liveness sensor's concern, and here it
@@ -1524,7 +1524,7 @@ function run(args = [], context = {}) {
       printHelp();
       return 0;
     }
-    // `close <sub> --help` is a help request, not a run — sweep and scan mutate
+    // `close <sub> --help` is a help request, not a run, sweep and scan mutate
     // the ledger (escalations, auto-closes), so never execute a subcommand just
     // to show usage.
     if (rest.includes('--help') || rest.includes('-h')) {

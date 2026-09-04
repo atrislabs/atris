@@ -141,10 +141,10 @@ test('renderRecap speaks plain English with checks and no internal jargon', () =
     const data = buildRecapData(dir, { days: 7 });
     const out = renderRecap(data);
     assert.match(out, /Plain English: what changed, how it was checked, and what still needs you/);
-    assert.match(out, /DONE — 1/);
+    assert.match(out, /DONE: 1/);
     assert.match(out, /Fix the login crash/);
     assert.match(out, /checked: tests passed/);
-    assert.match(out, /NEEDS YOU — 1/);
+    assert.match(out, /NEEDS YOU: 1/);
     assert.match(out, /checked: measured improvement/);
     assert.match(out, new RegExp(`next: atris task accept ${data.waiting[0].id}`));
     assert.doesNotMatch(out, /task reviews/);
@@ -285,10 +285,10 @@ test('recap treats only certified review as needs you, same as first-minute', ()
     assert.match(out, /1 needs you/);
     assert.match(out, /2 still being checked/);
     assert.match(out, /1 still working/);
-    assert.match(out, /NEEDS YOU — 1/);
+    assert.match(out, /NEEDS YOU: 1/);
     assert.match(out, /UNW-2/);
     assert.match(out, /^ {2}next: atris task accept UNW-2$/m);
-    assert.match(out, /STILL BEING CHECKED — 2/);
+    assert.match(out, /STILL BEING CHECKED: 2/);
     assert.match(out, /UNW-3/);
     assert.match(out, /UNW-4/);
     assert.doesNotMatch(out, /3 needs you/);

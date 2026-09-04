@@ -160,14 +160,14 @@ function buildRecapData(root = process.cwd(), { days = DEFAULT_DAYS } = {}) {
 function renderRecap(data) {
   if (data.empty) {
     return [
-      `RECAP — ${data.workspace}`,
+      `RECAP: ${data.workspace}`,
       '',
       'No task history yet.',
       'Run "atris init", then let Atris do one small job. Finished work will show up here with the checks that passed.',
     ].join('\n');
   }
   const lines = [];
-  lines.push(`RECAP — ${data.workspace} — last ${data.days} day${data.days === 1 ? '' : 's'}`);
+  lines.push(`RECAP: ${data.workspace}, last ${data.days} day${data.days === 1 ? '' : 's'}`);
   lines.push('');
   lines.push('Plain English: what changed, how it was checked, and what still needs you.');
   const headline = [];
@@ -179,7 +179,7 @@ function renderRecap(data) {
 
   if (data.shipped.length) {
     lines.push('');
-    lines.push(`DONE — ${data.shipped.length}`);
+    lines.push(`DONE: ${data.shipped.length}`);
     for (const t of data.shipped.slice(0, 12)) {
       lines.push(`  ${t.id}  ${shortTitle(t.title)}`);
       const check = plainCheck(t.proof);
@@ -190,7 +190,7 @@ function renderRecap(data) {
 
   if (data.waiting.length) {
     lines.push('');
-    lines.push(`NEEDS YOU — ${data.waiting.length}`);
+    lines.push(`NEEDS YOU: ${data.waiting.length}`);
     for (const t of data.waiting.slice(0, 10)) {
       lines.push(`  ${t.id}  ${shortTitle(t.title)}`);
       const check = plainCheck(t.proof);
@@ -202,7 +202,7 @@ function renderRecap(data) {
 
   if (data.checking.length) {
     lines.push('');
-    lines.push(`STILL BEING CHECKED — ${data.checking.length}`);
+    lines.push(`STILL BEING CHECKED: ${data.checking.length}`);
     for (const t of data.checking.slice(0, 10)) {
       lines.push(`  ${t.id}  ${shortTitle(t.title)}`);
     }
@@ -211,7 +211,7 @@ function renderRecap(data) {
 
   if (data.inProgress.length) {
     lines.push('');
-    lines.push(`STILL WORKING — ${data.inProgress.length}`);
+    lines.push(`STILL WORKING: ${data.inProgress.length}`);
     for (const t of data.inProgress) {
       lines.push(`  ${t.id}  ${shortTitle(t.title)}${t.owner ? `  @${t.owner}` : ''}`);
     }
@@ -224,7 +224,7 @@ function renderRecap(data) {
 }
 
 function renderShare(data) {
-  if (data.empty) return `Nothing to share yet on ${data.workspace} — no finished tasks on record.`;
+  if (data.empty) return `Nothing to share yet on ${data.workspace}, no finished tasks on record.`;
   const lines = [];
   lines.push(`What got done on ${data.workspace} in the last ${data.days} day${data.days === 1 ? '' : 's'}:`);
   lines.push('');

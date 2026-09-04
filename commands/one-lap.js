@@ -664,7 +664,7 @@ async function runOneLap(ask, options = {}) {
       ownCli: runCli,
       log: (line) => {
         const clean = String(line || '')
-          .replace(/[—–]/g, '-')
+          .replace(/[\u2014\u2013]/g, '-')
           .replace(/[✓✔]/g, 'passed')
           .replace(/[✗✖]/g, 'failed')
           .replace(/[⏸·→]/g, '-')
