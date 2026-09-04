@@ -6,6 +6,8 @@
 
 ## Quick Reference Index
 
+**Explicit Pack recovery:** `commands/pack.js:2699` handles `pack run <existing-dir> --recover <receipt.json>`; `lib/pack-capabilities.js:890` validates the authoritative journal and prior failed exit, and `lib/pack-capabilities.js:488` prevents writes to completed files during recovery. `test/pack-run.test.js:2091` covers corrupt history and `test/pack-run.test.js:2232` exercises process exit and empty arguments. Contract and limits: `atris/features/pack-recovery/plan.md`.
+
 **Feature maps (driving the running product, not the code):** `atris/refs/FEATURE-MAP-ax.md` — ax chat app screens, keys, slash commands, and how to verify against the live app. UI work on ax starts there, not with a grep.
 
 ## Product Model: Owners Have Computers

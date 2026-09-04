@@ -1,0 +1,5 @@
+# Third review finding and owner correction
+
+The independent reviewer reported that removing completed intent and used events while preserving the saved summary was accepted with zero protected files. It reproduced this in /tmp/pack-recovery-independent-round3.cjs. The review service then returned an automated content-risk error before producing a final receipt. This note records the finding, not an approval.
+
+The owner corrected lib/pack-capabilities.js to compare summary.fileEffects directly against effects recomputed from authoritative events, and summary.recovery.protectedFiles directly against the merged inherited and confirmed journal identities. The former implementation incorrectly used one summary field to justify another. A permanent regression covers lost completed events, lost pending evidence, an emptied saved protection list, and removal of events plus an emptied file-effects summary. Every case refuses before claiming or launching. The full four-file check passed 188 tests, exit 0. A new independent reviewer must approve the final diff.

@@ -25,6 +25,9 @@ const {
   finalizePackRunReceipt,
   receiptDirectory,
   classifyPackRunLifecycle,
+  assessPackRecoveryJournal,
+  claimPackRecoveryParent,
+  confirmPackRecoveryClaim,
 } = require('../lib/pack-capabilities');
 
 const REGISTRY_TIMEOUT_MS = 60000;
@@ -160,7 +163,7 @@ function showHelp() {
   console.log('       atris pack seal <dir> [--type <t>] [--entrypoint <file>]');
   console.log('       atris pack publish [--dir atris] [--slug <slug>] [--author "<name>"] [--notes "..."] [--visibility public|unlisted|private] [--minor|--major] [--out <file.zip>] [--push] [--dry-run] [--allow-secrets]');
   console.log('       atris pack install <file.zip|url|slug> [--dir <target>] [--force]');
-  console.log('       atris pack run <slug|dir> [--dir <target>] [--input <file>] [--cloud] [--force] [--trust] [--grant <capability>]');
+  console.log('       atris pack run <slug|dir> [--dir <target>] [--input <file>] [--cloud] [--force] [--trust] [--grant <capability>] [--recover <receipt.json>]');
   console.log('       atris pack runs [--dir <receipt-dir>] [--limit <n>] [--json]');
   console.log('       atris pack share <slug> --for "<Name>" [--days 30]');
   console.log('       atris pack share <slug> --list');
@@ -2530,7 +2533,13 @@ function startPackLocal(packDir, deps = {}, options = {}) {
       ? process.stdin.isTTY !== true
       : deps.nonInteractive === true);
   const start = deps.computerLocal || require('./computer').computerLocal;
-  const wrappedOpeningPrompt = packOpeningInstruction(openingPrompt, operatorInput);
+  const recovery = options.recovery || null;
+  let wrappedOpeningPrompt = packOpeningInstruction(openingPrompt, operatorInput);
+  if (recovery && Array.isArray(recovery.protectedFiles) && recovery.protectedFiles.length) {
+    const names = recovery.protectedFiles.map((entry) => entry.target).join(', ');
+    const note = `This is a recovered run. These completed files are protected and must not be rewritten: ${names}. Continue with other files.`;
+    wrappedOpeningPrompt = wrappedOpeningPrompt ? `${wrappedOpeningPrompt}\n\n${note}` : note;
+  }
   const runnerArgs = [];
   let pluginDir = null;
   let receipt = null;
@@ -2556,6 +2565,7 @@ function startPackLocal(packDir, deps = {}, options = {}) {
       packSkillsPluginLoaded: Boolean(pluginDir),
       nonInteractive,
       operatorInput: operatorInput ? { bytes: operatorInput.bytes, sha256: operatorInput.sha256 } : null,
+      recovery,
     });
     runnerArgs.push(...buildClaudeCapabilityArgs(capabilityPolicy, { trust, userDenyRules, nonInteractive }));
     runnerOptions.runnerEnv = {
@@ -2563,11 +2573,13 @@ function startPackLocal(packDir, deps = {}, options = {}) {
       ATRIS_PACK_RECEIPT: receipt.receiptPath,
       ATRIS_PACK_RECEIPT_EVENTS: receipt.eventsPath,
       ATRIS_PACK_GRANTED_CAPABILITIES: JSON.stringify(capabilityPolicy.grantedCapabilities),
+      ATRIS_PACK_PROTECTED_FILES: JSON.stringify(recovery && recovery.protectedFiles ? recovery.protectedFiles : []),
       CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
       CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
       CLAUDE_CODE_SKIP_PROMPT_HISTORY: '1',
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1',
     };
+    if (typeof options.onReceipt === 'function') options.onReceipt(receipt);
     runnerOptions.cleanupPaths = pluginDir ? [pluginDir] : [];
     runnerOptions.onRunnerExit = ({ status, signal }) => {
       appendReceiptEvent(receipt.eventsPath, {
@@ -2579,6 +2591,10 @@ function startPackLocal(packDir, deps = {}, options = {}) {
       nonInteractive,
       operatorInput,
     });
+    if (recovery) {
+      const names = (recovery.protectedFiles || []).map((entry) => entry.target).join(', ');
+      console.log(`recovery: continuing from ${recovery.parentRunId} with ${(recovery.protectedFiles || []).length} protected file(s): ${names}.`);
+    }
   } else {
     const skillsDir = path.join(packDir, 'skills');
     const hasShippedSkill = fs.existsSync(skillsDir)
@@ -2693,6 +2709,10 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
   const force = takeFlag(args, '--force');
   const trust = takeFlag(args, '--trust');
   const grants = takeValues(args, '--grant');
+  const recoverArg = takeValue(args, '--recover');
+  if (recoverArg !== null && (!recoverArg || !String(recoverArg).trim())) {
+    throw new Error('pack run --recover needs a receipt path; explicit empty values never fall through to a fresh run');
+  }
   if (args.length) throw new Error(`unknown pack run argument: ${args.join(' ')}`);
 
   const operatorInput = inputArg ? readPackRunInput(inputArg, cwd) : null;
@@ -2710,6 +2730,7 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
     packDir = path.resolve(cwd, source);
     manifest = assertPacketDir(packDir, cwd);
   } else {
+    if (recoverArg !== null) throw new Error('pack run --recover needs an existing pack directory, not a slug to install');
     packDir = path.resolve(cwd, targetArg || slugify(source));
     const alreadyThere = !force && fs.existsSync(path.join(packDir, 'pack.json'));
     if (alreadyThere) {
@@ -2735,6 +2756,36 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
     );
   }
   if (capabilityPolicy.status === 'enforced') assertPackExecutionTree(packDir);
+  let recovery = null;
+  let claimPath = null;
+  let childReceiptPath = null;
+  if (recoverArg !== null) {
+    if (cloud) throw new Error('pack run --recover is local-only; cloud recovery is not supported');
+    if (capabilityPolicy.status !== 'enforced') {
+      throw new Error('pack run --recover needs a declared capability ceiling; legacy packs cannot be recovered');
+    }
+    if (capabilityPolicy.grantedCapabilities.includes('host.shell')) {
+      throw new Error('pack run --recover cannot grant host.shell; shell effects cannot be reasoned about');
+    }
+    const parentReceiptPath = path.resolve(cwd, recoverArg);
+    const childReceiptDir = receiptDirectory({ receiptDir: deps.packRunReceiptDir });
+    const assessment = assessPackRecoveryJournal({
+      packDir,
+      manifest,
+      policy: capabilityPolicy,
+      parentReceiptPath,
+      operatorInput,
+      childReceiptDir,
+    });
+    // Claimed before launch so a parent backs at most one child. A crash
+    // from here on leaves a pending claim that needs manual review.
+    claimPath = claimPackRecoveryParent(parentReceiptPath, assessment.parentRunId);
+    recovery = {
+      parentRunId: assessment.parentRunId,
+      parentReceipt: parentReceiptPath,
+      protectedFiles: assessment.protectedFiles,
+    };
+  }
   if (cloud) return startPackCloud(packDir, displayTarget, deps, { capabilityPolicy });
   if (trust && capabilityPolicy.status === 'legacy') {
     throw new Error(
@@ -2755,13 +2806,28 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
     console.log('permission prompts are on because this legacy pack has no capability ceiling.');
     console.log('for a bounded read-only run, add --grant pack.read; add --trust only to pre-approve that ceiling.');
   }
-  return startPackLocal(packDir, deps, {
+  const code = startPackLocal(packDir, deps, {
     trust,
     openingPrompt,
     operatorInput,
     capabilityPolicy,
     manifest,
+    recovery,
+    onReceipt: (receipt) => {
+      childReceiptPath = receipt.receiptPath;
+      if (claimPath) confirmPackRecoveryClaim(claimPath, receipt.receiptPath);
+    },
   });
+  if (claimPath && childReceiptPath) {
+    try {
+      confirmPackRecoveryClaim(claimPath, childReceiptPath);
+    } catch {
+      // Already confirmed in onReceipt before the runner ran; the real
+      // console exits the process there, so this is only a backstop for
+      // injected runners that return normally.
+    }
+  }
+  return code;
 }
 
 async function updatePack(rawArgs, cwd = process.cwd(), options = {}) {
