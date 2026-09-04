@@ -1,6 +1,6 @@
 'use strict';
 
-// Feed: the business group feed from the terminal — read receipts, post receipts.
+// Feed: the business group feed from the terminal, read receipts, post receipts.
 // Auth: existing atris login. Business: nearest .atris/business.json above cwd.
 
 const fs = require('fs');
@@ -181,7 +181,7 @@ async function feedCommand(args = []) {
     const when = String(p.created_at || '').slice(0, 16).replace('T', ' ');
     const who = authorLabel(p, aliases, selfId, selfEmail);
     if (full) {
-      console.log(`─── ${who} — ${when}`);
+      console.log(`─── ${who}, ${when}`);
       console.log(String(p.content || '').trim());
       console.log('');
     } else {

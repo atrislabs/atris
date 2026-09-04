@@ -1,14 +1,14 @@
-// atris write — guided writing sessions (plan-do-review for prose).
+// atris write: guided writing sessions (plan-do-review for prose).
 //
 // The contract: the human types every word of the draft. Atris structures the
 // session (outline beats with states), tracks progress against the plan, and
 // reviews against the taste gate (writing policy + slop detector). It NEVER
-// writes or rewrites prose — review output is suggestions, not edits.
+// writes or rewrites prose. Review output is suggestions, not edits.
 //
 // Session = a folder of plain markdown, so the same files open in the web and
 // desktop editors with no extra format:
 //   atris/writing/<slug>/plan.md    outline beats: [ ] empty, [~] drafted, [x] passed
-//   atris/writing/<slug>/draft.md   the piece — human-only territory
+//   atris/writing/<slug>/draft.md   the piece, human-only territory
 //
 // Usage:
 //   atris write start "<topic>" [--dump "raw ideas"] [--beats "a | b | c"]
@@ -17,7 +17,7 @@
 //   atris write pass <n> [slug]   mark beat n passed (human calls it, not the AI)
 //   atris write list              list sessions
 //
-// Zero external deps (Node built-ins only) — repo contract.
+// Zero external deps (Node built-ins only). Repo contract.
 
 const fs = require('fs');
 const path = require('path');
@@ -212,7 +212,7 @@ function review(argv, root = process.cwd()) {
     console.log(`  ⚠ ${empty.length} beat${empty.length === 1 ? '' : 's'} still empty: ${empty.map((b) => b.title).join(', ')}`);
   }
   if (findings.length) {
-    console.log(`\n  slop tells (fix them yourself — atris never edits your draft):`);
+    console.log(`\n  slop tells (fix them yourself, atris never edits your draft):`);
     for (const f of findings) console.log(`  ✗ draft.md:${f.line}  ${f.rule.padEnd(16)} ${f.why}`);
   } else {
     console.log(`  ✓ slop scan clean`);
@@ -235,7 +235,7 @@ function pass(argv, root = process.cwd()) {
   const beat = plan.beats.find((b) => b.n === n);
   if (!beat) { console.error(`  no beat ${n} in ${slug}`); return 2; }
   const counts = draftWordCounts(slug, plan.beats, root);
-  if ((counts.get(n) || 0) === 0) { console.error(`  beat ${n} "${beat.title}" has no words yet — write it first`); return 2; }
+  if ((counts.get(n) || 0) === 0) { console.error(`  beat ${n} "${beat.title}" has no words yet, write it first`); return 2; }
   beat.state = 'x';
   writePlanStates(slug, plan.beats, root);
   console.log(`  ● passed: ${n}. ${beat.title}`);
@@ -370,17 +370,17 @@ function coach(argv, root = process.cwd()) {
 
 function help() {
   console.log(`
-  atris write — guided writing sessions (you write every word; atris structures + reviews)
+  atris write: guided writing sessions (you write every word; atris structures + reviews)
 
     atris write                   the coach: knows where you are, gets you going
     atris write start "<topic>" [--dump "..."] [--beats "a | b | c"]
     atris write coach [slug]      the coach: cheers your best line, asks the next question (--offline for no-LLM)
     atris write status [slug]     progress against the outline (beats landed)
     atris write review [slug]     taste gate: slop scan + writing-policy passes (read-only)
-    atris write pass <n> [slug]   mark beat n passed — the human calls it
+    atris write pass <n> [slug]   mark beat n passed, the human calls it
     atris write list              all sessions
 
-  sessions are plain markdown in atris/writing/<slug>/ — the same files open
+  sessions are plain markdown in atris/writing/<slug>/, the same files open
   in the web and desktop editors. atris never writes or edits your draft.
 `);
   return 0;

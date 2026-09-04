@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * atris spaceship — bounded, self-reporting overnight runner.
+ * atris spaceship, bounded, self-reporting overnight runner.
  *
  * Thin wrapper over scripts/spaceship.sh. The script is the implementation
  * (a supervised loop that survives bad ticks and emails Keshav on every

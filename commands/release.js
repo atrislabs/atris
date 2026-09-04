@@ -48,7 +48,7 @@ async function releaseAtris({ dryRun = false } = {}) {
   // 3. Build changelog
   const changelog = commitLines.map(l => `- ${l}`).join('\n');
 
-  // 4. Determine bump type — minor if any scorecard has reward >= 5, else patch
+  // 4. Determine bump type: minor if any scorecard has reward >= 5, else patch
   const bumpType = determineBumpType(cwd);
   console.log(`bump type: ${bumpType}`);
 
@@ -104,7 +104,7 @@ async function releaseAtris({ dryRun = false } = {}) {
     execFileSync('git', ['push', '--tags'], { cwd });
     console.log('pushed');
   } catch (err) {
-    console.log('push failed — you may need to push manually');
+    console.log('push failed, you may need to push manually');
   }
 
   // 11. Create GitHub release via gh
@@ -115,7 +115,7 @@ async function releaseAtris({ dryRun = false } = {}) {
     ], { cwd });
     console.log(`github release created: v${nextVersion}`);
   } catch (err) {
-    console.log('gh release create failed — install gh or create release manually');
+    console.log('gh release create failed, install gh or create release manually');
   }
 
   // 12. Draft launch post

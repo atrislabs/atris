@@ -3,7 +3,7 @@ const path = require('path');
 
 // atris sign: co-author trailer on every commit in an atris workspace.
 // Installs a prepare-commit-msg hook that appends "Co-authored-by: Atris"
-// when the repo has an atris/ folder — same credit line Claude and Cursor use.
+// when the repo has an atris/ folder, same credit line Claude and Cursor use.
 // Idempotent and non-destructive: appends a marked block, removes only its own block.
 
 const MARKER = '# atris co-author';
@@ -66,18 +66,18 @@ function signCommand(sub) {
     const { hookPath, removed } = removeSignHook();
     console.log(removed
       ? `\n  ✓ atris co-author removed: ${rel(hookPath)}\n`
-      : `\n  nothing to remove — atris co-author is not installed\n`);
+      : `\n  nothing to remove, atris co-author is not installed\n`);
     return 0;
   }
   if (sub === 'status') {
     const { hookPath, installed } = signStatus();
     console.log(installed
       ? `\n  ✓ atris co-author is on: ${rel(hookPath)}\n    every commit gets: ${TRAILER}\n`
-      : `\n  atris co-author is off — run 'atris sign' to turn it on\n`);
+      : `\n  atris co-author is off, run 'atris sign' to turn it on\n`);
     return 0;
   }
   if (sub && sub !== 'on' && sub !== 'install') {
-    console.log(`\n  atris sign — co-author trailer on every commit\n\n  atris sign          install the prepare-commit-msg hook\n  atris sign off      remove it\n  atris sign status   check whether it's installed\n\n  While installed, any commit in a repo with an atris/ folder gets:\n    ${TRAILER}\n`);
+    console.log(`\n  atris sign: co-author trailer on every commit\n\n  atris sign          install the prepare-commit-msg hook\n  atris sign off      remove it\n  atris sign status   check whether it's installed\n\n  While installed, any commit in a repo with an atris/ folder gets:\n    ${TRAILER}\n`);
     return 2;
   }
   const { hookPath, already } = installSignHook();

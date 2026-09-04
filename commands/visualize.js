@@ -41,7 +41,7 @@ function legacyVisualizeInbox() {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ Atris Visualize — Break Down & Approval Gate                │');
+  console.log('│ Atris Visualize:  Break Down & Approval Gate                │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 
@@ -368,7 +368,7 @@ async function generateVisual(prompt, options = {}) {
 }
 
 async function visualizeAtris(args = process.argv.slice(3)) {
-  // Bare-word `help` should not be treated as a prompt — it would trigger a
+  // Bare-word `help` should not be treated as a prompt, it would trigger a
   // paid image-generation call ("draw me a picture of help"). Promote it to
   // the help intent.
   if (args[0] === 'help') {

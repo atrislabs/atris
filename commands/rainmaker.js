@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * atris rainmaker — passthrough to atrisos-backend/scripts/rainmaker.py
+ * atris rainmaker, passthrough to atrisos-backend/scripts/rainmaker.py
  *
  *   atris rainmaker              # ASCII status dashboard
  *   atris rainmaker instinct     # one morning opinion

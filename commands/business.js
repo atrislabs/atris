@@ -58,14 +58,14 @@ function validateBusinessCreateName(name) {
     return {
       ok: false,
       usage: BUSINESS_CREATE_USAGE,
-      detail: `Refusing to create a business named "${name}" — looks like a flag, not a name.`,
+      detail: `Refusing to create a business named "${name}", looks like a flag, not a name.`,
     };
   }
   if (isAccidentalHelpBusiness(name)) {
     return {
       ok: false,
       usage: BUSINESS_CREATE_USAGE,
-      detail: `Refusing to create a business named "${name}" — looks like accidental help output, not a real business.`,
+      detail: `Refusing to create a business named "${name}", looks like accidental help output, not a real business.`,
     };
   }
   return { ok: true };
@@ -883,7 +883,7 @@ function collectBusinessOperatingState(cwd = process.cwd(), nowMs = Date.now()) 
 }
 
 function seedBusinessStarterTask(cwd, todoPath, starterAction) {
-  const title = `${starterAction.title} — ${starterAction.action}`;
+  const title = `${starterAction.title}: ${starterAction.action}`;
   try {
     const taskDb = require('../lib/task-db');
     const db = taskDb.open();
@@ -1626,12 +1626,12 @@ ${stagedSources.length > 0 ? `- Local evidence files: ${stagedSources.length}` :
     '- Before sharing the workspace, run `atris business share --write` and send the handoff.',
   ].filter(Boolean).join('\n') + '\n';
   fs.writeFileSync(cheatSheetPath, operatorSummary, 'utf8');
-  fs.writeFileSync(onePagerPath, operatorSummary.replace('# ', '# One Pager — '), 'utf8');
+  fs.writeFileSync(onePagerPath, operatorSummary.replace('# ', '# One Pager: '), 'utf8');
 
   const todoPath = path.join(cwd, 'atris', 'TODO.md');
   if (fs.existsSync(todoPath)) {
     let todoContent = fs.readFileSync(todoPath, 'utf8');
-    const taskLine = `- **Onboard:** ${starterAction.title} — ${starterAction.action} [execute]\n`;
+    const taskLine = `- **Onboard:** ${starterAction.title}: ${starterAction.action} [execute]\n`;
     const backlogMatch = todoContent.match(/^## Backlog\s*$/m);
     if (backlogMatch) {
       const insertAt = backlogMatch.index + backlogMatch[0].length;
@@ -1761,7 +1761,7 @@ function detectBusinessSlug(explicitSlug) {
 async function findExistingBusinessBySlug(slug, token) {
   if (!slug) return null;
 
-  // Local cache first — no network round-trip needed.
+  // Local cache first, no network round-trip needed.
   const local = loadBusinesses();
   if (local[slug]) {
     return { id: local[slug].business_id, name: local[slug].name, slug, source: 'local' };
@@ -1774,7 +1774,7 @@ async function findExistingBusinessBySlug(slug, token) {
 
   if (!token) return null;
 
-  // Cloud lookup — covers businesses the user is a member of but hasn't added.
+  // Cloud lookup, covers businesses the user is a member of but hasn't added.
   const direct = await apiRequestJson(`/business/by-slug/${encodeURIComponent(slug)}`, {
     method: 'GET',
     token,
@@ -1878,7 +1878,7 @@ async function listBusinesses(opts = {}) {
 
 /**
  * Walk ~/arena/atris-business/ and print a fleet status table for every
- * customer workspace. Pure local — no API calls, no rate-limit risk.
+ * customer workspace. Pure local, no API calls, no rate-limit risk.
  *
  * Classifies each dir as: ready, flat, unbound, nested, bare, or superseded.
  *
@@ -1986,7 +1986,7 @@ function listBusinessesLocal(opts = {}) {
   }
 
   console.log('');
-  console.log(`Atris Fleet — ${rootDir}`);
+  console.log(`Atris Fleet: ${rootDir}`);
   console.log('═'.repeat(86));
   console.log('  CUSTOMER              STATE         FILES   BIZ.JSON  ATRIS/  ACTION');
   console.log('  ' + '─'.repeat(83));
@@ -2016,7 +2016,7 @@ function listBusinessesLocal(opts = {}) {
   const counts = {};
   for (const c of customers) counts[c.state] = (counts[c.state] || 0) + 1;
   const summary = order.filter((s) => counts[s]).map((s) => `${counts[s]} ${s}`).join(', ');
-  console.log(`  ${customers.length} customers — ${summary}`);
+  console.log(`  ${customers.length} customers: ${summary}`);
   console.log('');
 
   const needsWork = customers.filter((c) => ['flat', 'unbound', 'flat-unbound', 'nested'].includes(c.state));
@@ -3086,7 +3086,7 @@ async function connectService(connector, ...flags) {
     for (const s of integrations) {
       console.log(`  ${s}`);
     }
-    if (integrations.length === 0) console.log('  (none found — install skills first)');
+    if (integrations.length === 0) console.log('  (none found, install skills first)');
     return;
   }
 
@@ -3540,7 +3540,7 @@ function printBusinessHelp() {
 }
 
 async function businessCommand(subcommand, ...args) {
-  // Help intercept — without this, `atris business init --help` would treat
+  // Help intercept, without this, `atris business init --help` would treat
   // `--help` as a business name and create one. Same for any subcommand that
   // takes a positional name/slug.
   if (!subcommand || isHelpToken(subcommand)) {

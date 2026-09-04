@@ -132,7 +132,7 @@ function decideCommand(args = []) {
   const decision = decisions[number - 1];
   if (!decision) return fail(`decision ${number} is not open`, asJson, 1);
 
-  const message = `Decision on "${decision.text}": ${answer.toUpperCase()}${note ? ` — ${note}` : ''}`;
+  const message = `Decision on "${decision.text}": ${answer.toUpperCase()}${note ? `, ${note}` : ''}`;
   pingMission([decision.mission_id, message, '--from', 'decide'], { silent: true });
   const mission = answerMissionHumanAsk(decision.mission_id, decision.ask_index, answer, note);
   const remainingOpenAsks = openHumanAsks(mission.human_asks).length;

@@ -1,9 +1,9 @@
-// atris truth — one table of what is actually proven, blocked, or stale.
+// atris truth: one table of what is actually proven, blocked, or stale.
 // Rolls up sources that already exist; writes nothing. SQL/state is truth, this is the render.
-//   1. .atris/state/missions.jsonl        — mission states (dedupe by id, latest wins)
-//   2. ~/.atris/tasks.db                  — task counts by status, scoped to this workspace unless --all is passed
-//   3. atris/features/*/                  — validate.md frontmatter + newest proof/ receipt age
-//   4. atris/loops/*.md                   — workspace loops by default; pass --global for ~/.atris/heartbeat
+//   1. .atris/state/missions.jsonl        : mission states (dedupe by id, latest wins)
+//   2. ~/.atris/tasks.db                  : task counts by status, scoped to this workspace unless --all is passed
+//   3. atris/features/*/                  : validate.md frontmatter + newest proof/ receipt age
+//   4. atris/loops/*.md                   : workspace loops by default; pass --global for ~/.atris/heartbeat
 
 const fs = require('fs');
 const path = require('path');
@@ -116,7 +116,7 @@ const PARKED_DAYS = 30;
 
 // One git call: every feature dir touched in the last PARKED_DAYS.
 // An unproven feature nobody has edited in a month is a parked idea
-// packet, not work-in-progress — counting it as "unproven" buries the
+// packet, not work-in-progress. Counting it as "unproven" buries the
 // handful of live lanes that actually need a proof receipt.
 function recentlyTouchedFeatureDirs(cwd) {
   try {
@@ -275,7 +275,7 @@ function truthCommand(args = []) {
     return 0;
   }
 
-  line('ATRIS TRUTH — live state, not belief\n');
+  line('ATRIS TRUTH: live state, not belief\n');
   line(`Scope: ${taskScopeLine(scope)}`);
 
   line(`Missions active: ${missions.length}`);

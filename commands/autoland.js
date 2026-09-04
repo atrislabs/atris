@@ -752,7 +752,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // the landing gate reuse the live certification verifier result without
   // persisting trust across heartbeats. Denied lanes and check-less proofs wait.
   // No hardcoded --limit here: a fixed low cap (this used to be 12) silently
-  // undercounts a real backlog every single tick — 12/hour forever even with
+  // undercounts a real backlog every single tick: 12/hour forever even with
   // 78 certified rows waiting. Let `atris task auto-accept-certified` apply
   // its own default (12 without --all, a high safety cap under --all) so a
   // policy with accept_all:true actually drains the full certified set.
@@ -763,7 +763,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   try {
     const parsed = JSON.parse(accept.stdout);
     const results = Array.isArray(parsed.results) ? parsed.results : [];
-    // A refused sweep (ok:false — a guard tripped, policy race) carries no
+    // A refused sweep (ok:false, a guard tripped, policy race) carries no
     // summary fields. Name the reason instead of leaving nulls that read as
     // "no work": a blind heartbeat must say WHY it is blind.
     if (parsed.ok === false) {
@@ -841,7 +841,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   }
 
   // 3b. janitor, every tick: a mission left paused past 48h and a worktree
-  // already merged into base are the same rot pattern as an unlanded branch —
+  // already merged into base are the same rot pattern as an unlanded branch,
   // left alone they accumulate until a human runs `mission stop` and
   // `worktree cleanup --apply` by hand, which is exactly the chore autoland
   // exists to remove. Off switch: policy.janitor === false (default on, the
@@ -976,7 +976,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     }
   }
 
-  // 5b. daily keep/revert experiment — self-gated inside experiments daily;
+  // 5b. daily keep/revert experiment, self-gated inside experiments daily;
   // hourly ticks are harmless no-ops after the first run each day.
   if (policy.daily_experiment !== false) {
     const daily = runOwnCli(root, ['experiments', 'daily', '--json']);
@@ -1045,7 +1045,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     // Deltas alone ("0 certified, 0 landed") are true and useless: they read
     // as "nothing to do" whether the queue is empty or 19-deep and wedged.
     // Always print the standing backlog, and name work that cleared every
-    // gate and still did not land — that is the shape of a stuck loop.
+    // gate and still did not land. That is the shape of a stuck loop.
     const stuckNote = stuckBacklogNote(receipt);
     const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${receiptNote}`;
     const validationLine = engineAnswerValidationLine(receipt);
