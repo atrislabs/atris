@@ -59,6 +59,7 @@ function printHelp() {
   console.log('Usage: atris bench tasks [--pack <id>] [--json]');
   console.log('Usage: atris bench packs [--json]');
   console.log('Usage: atris bench report [--pack agents-v1] [--json]');
+  console.log('packs: core-v1, agents-v1, harness-v1');
   console.log('');
   console.log('Bench runs product gates and only belongs in the atris CLI repo.');
   console.log('Pass --here to allow running outside that repo.');
