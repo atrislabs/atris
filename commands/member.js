@@ -215,7 +215,7 @@ function memberPaths(name) {
   // Steering signals live in the workspace's single .atris/state store. Resolve
   // the shared workspace root (spine -> git -> cwd) so a member run from a
   // subdirectory reads steering from the real store instead of a nonexistent
-  // nested .atris — the same resolver the mission/task/usage/autopilot state
+  // nested .atris, the same resolver the mission/task/usage/autopilot state
   // uses. (teamDir markdown discovery is a separate cwd concern, filed.)
   const workspaceRoot = require('../lib/mission-root').resolveWorkspaceRoot(process.cwd());
   return {
@@ -482,7 +482,7 @@ function memberRunRunnableMissionId(candidateId, missionMap) {
 
 function memberRunOwnedActiveMissionId(name, missionMap) {
   // Discovery fallback when the member's own pointers are stale: resume the
-  // member's newest moving mission. ready is excluded — it waits for review.
+  // member's newest moving mission. ready is excluded, it waits for review.
   const owner = String(name || '').trim().toLowerCase();
   const candidates = Array.from(missionMap.values())
     .filter((mission) => String(mission?.owner || '').trim().toLowerCase() === owner)
@@ -833,7 +833,7 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   pushFlagValue(startArgs, args, '--hours');
   pushFlagValue(startArgs, args, '--base');
   // A member-run mission is driven immediately by its runner, not parked on
-  // the queue — so the mission-start verifier gate (built for parked planning
+  // the queue, so the mission-start verifier gate (built for parked planning
   // wishes) would only kill autonomous legs like autopilot's "member chooses
   // useful work". When the caller named no verifier, opt out explicitly.
   if (hasFlag(args, '--no-verify') || !readFlag(args, '--verify', '')) {
@@ -847,7 +847,7 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   pushFlagWhenPresent(startArgs, args, '--stop-when-done');
   // Default to an isolated worktree only when there is a git repo to cut it
   // from. A plain (non-git) workspace would fail every mission start with
-  // "fatal: not a git repository" — degrade to the shared checkout instead.
+  // "fatal: not a git repository", degrade to the shared checkout instead.
   if (!hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree') && insideGitRepo(cwd)) {
     startArgs.push('--worktree');
   }
@@ -881,7 +881,7 @@ function startMemberRunMission(name, missionText, args = []) {
   }
 }
 
-// atris member ping <name> "<message>" — talk to a busy member mid-run.
+// atris member ping <name> "<message>": talk to a busy member mid-run.
 // Two delivery lanes: the member's most recently touched live mission
 // (including --worktree missions in sibling checkouts), whose next tick
 // consumes the note, and the member's claimed task dialogue, which task-loop
@@ -958,8 +958,8 @@ function memberPing(name, ...args) {
       task_id: taskNote ? taskNote.task_id : null,
     }));
   } else {
-    if (mission) console.log(`pinged ${mission.id} — the next tick reads it (${pendingPings} unread).`);
-    if (taskNote) console.log(`pinged task ${taskNote.task_id} dialogue — ${name} reads it on the next step.`);
+    if (mission) console.log(`pinged ${mission.id}, the next tick reads it (${pendingPings} unread).`);
+    if (taskNote) console.log(`pinged task ${taskNote.task_id} dialogue, ${name} reads it on the next step.`);
   }
   return { mission, task_note: taskNote };
 }
@@ -3027,7 +3027,7 @@ function collectAutoImproverLogSignals(root) {
   ].filter((candidate) => fs.existsSync(candidate));
   const passLessonText = safeReadText(path.join(root, 'atris', 'lessons.md'), 500000)
     .split(/\r?\n/)
-    .filter((line) => /\s+pass\s+—/.test(line))
+    .filter((line) => /\s+pass[:,]/.test(line))
     .join('\n');
   const failureRegex = /\b(error|failed|failure|blocked|timeout|regression|crash|missing proof|naraka|suffering)\b/i;
   const unclearRegex = /\b(tbd|unclear|unknown|needs user|needs owner|needs proof|no next|blocked)\b/i;
@@ -3428,7 +3428,7 @@ function collectAutoImproverScan(root = process.cwd()) {
 }
 
 // Lifecycle filter for wake dedupe: a task that already crossed the review boundary
-// (done/failed/archived, or human-accepted) must never be re-selected as the wake target —
+// (done/failed/archived, or human-accepted) must never be re-selected as the wake target,
 // that loop produced an endless "existing_task_found OBL-1433" no-op spiral (OBL-1469).
 const AUTO_IMPROVER_INACTIVE_STATUSES = new Set(['done', 'failed', 'archived']);
 
@@ -3613,7 +3613,7 @@ async function runAutoImproverWake(name, paths, { execute = false, confirmed = f
   };
   const previousLatest = readJson(path.join(process.cwd(), '.atris', 'state', 'auto-improver-dogfood-latest.json'));
   const finalWrite = writeAutoImproverReceipt(name, payload, plannedReceiptPath);
-  // A no-op scan identical to the previous tick earns a receipt but not a journal entry —
+  // A no-op scan identical to the previous tick earns a receipt but not a journal entry,
   // the cadence loop was appending the same "found: N, prevented: 0" row every ~4 minutes
   // and flooding the daily log (2026-06-10 had 100+ identical entries).
   const createdNewTask = Boolean(payload.created_task) && payload.created_task.existing === false;
@@ -3810,7 +3810,7 @@ function appendProjectLog(title, fields = {}) {
 function parseFrontmatter(content) {
   // \r?\n so a CRLF-line-ending MEMBER.md (Windows-edited) still parses; otherwise
   // the delimiter never matched (and trailing \r broke the per-line key matchers),
-  // silently dropping the member's entire frontmatter — role, skills, permissions, tools.
+  // silently dropping the member's entire frontmatter: role, skills, permissions, tools.
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
 
@@ -4706,7 +4706,7 @@ function memberGoalFromMission(name, ...args) {
     );
     return;
   }
-  // The title IS the mission focus — no boilerplate prefix; the acceptance list already
+  // The title IS the mission focus, no boilerplate prefix; the acceptance list already
   // says "one bounded step" and the why carries the full sentence.
   const title = compactSentence(runtimeFocus, 96);
   const existing = state.goals.find((goal) => (
@@ -4764,7 +4764,7 @@ function memberGoalFromMission(name, ...args) {
     mission_status: runtime.status || null,
   };
   // Collapse repeated no-op reuse ticks (same mission state) instead of recording an identical entry
-  // every cadence — that grew one member's goals.json to 2,200+ duplicate entries / 13K lines. Real
+  // every cadence, that grew one member's goals.json to 2,200+ duplicate entries / 13K lines. Real
   // transitions (created, changed mission id/status) are still kept; only consecutive dupes are dropped.
   const lastEntry = goal.history[goal.history.length - 1];
   const isDuplicateReuse = existing && lastEntry
@@ -4946,7 +4946,7 @@ function fallbackProposalForGoal(goal, context = {}) {
   const drill = scoreEvidence?.drill || null;
   const fileEvidence = context?.evidence?.goal_files || context?.goal_files || null;
   const primaryFile = (fileEvidence?.files || []).find((file) => file.exists && file.excerpt) || null;
-  // Don't restate the goal title inside the experiment — the experiment lives under the goal.
+  // Don't restate the goal title inside the experiment, the experiment lives under the goal.
   const title = drill && target
     ? `Run ${target.label || target.slug} drill: ${compactSentence(drill, 96)}`
     : drill
@@ -7270,13 +7270,13 @@ function readMemberScope(name, paths) {
           if (typeof p === 'string' && p.trim()) scope.push(p.trim());
         }
       }
-    } catch { /* ignore — fall through with default scope */ }
+    } catch { /* ignore, fall through with default scope */ }
   }
   return scope;
 }
 
 // Auto-generated artifacts that wake/tick produce as side-effects. Dirty here is expected
-// and must not gate the next wake — otherwise the loop deadlocks on its own log writes.
+// and must not gate the next wake, otherwise the loop deadlocks on its own log writes.
 function isAutoGeneratedArtifact(filePath, name) {
   const memberLogs = `atris/team/${name}/logs/`;
   if (filePath.startsWith(memberLogs)) return true;
@@ -7441,7 +7441,7 @@ function wakeRuleAutonomousErrorTask(ctx) {
   };
 }
 
-// Rule: no active goal — adopt a discovered problem as the objective, else stop.
+// Rule: no active goal, adopt a discovered problem as the objective, else stop.
 function wakeRuleNeedsGoal(ctx) {
   if (ctx.goal) return null;
   const discoveredProblem = ctx.evidence.problem_discovery?.selected || null;
@@ -7515,7 +7515,7 @@ function wakeRuleDirtyMemberScope(ctx) {
   return {
     decision: 'wait',
     reason: 'workspace_dirty_in_member_scope',
-    next_command: `commit/stash files in atris/team/${ctx.name}/ (or member scope) — or rerun: atris member wake ${ctx.name} --force`,
+    next_command: `commit/stash files in atris/team/${ctx.name}/ (or member scope), or rerun: atris member wake ${ctx.name} --force`,
     goal: ctx.goal,
     current_experiment: null,
   };
@@ -7804,7 +7804,7 @@ const WAKE_REASON_TEXT = {
   mission_missing_or_placeholder: "it has no North Star yet, and it won't guess at important work",
   no_active_goal: 'it has no active goal to push on yet',
   execute_requires_confirm_autonomy_policy: 'autonomous execution waits for your explicit go-ahead',
-  workspace_dirty_in_member_scope: "there are uncommitted changes in its own lane — it won't build on a dirty floor",
+  workspace_dirty_in_member_scope: "there are uncommitted changes in its own lane, it won't build on a dirty floor",
   blocked_experiment: 'its current experiment is blocked on a human answer',
   tick_executed_experiment_proposed: 'it proposed one bounded experiment and queued it for your review',
   safe_next_bounded_step: 'it found a safe bounded next step',
@@ -8952,7 +8952,7 @@ function memberScopeQuery(flags) {
   return q;
 }
 
-// atris member live — what the iPhone app and web see: GET /api/members projection.
+// atris member live, what the iPhone app and web see: GET /api/members projection.
 async function memberLive(...args) {
   const { flags } = parseLiveFlags(args);
   const creds = loadCredentials();
@@ -8971,7 +8971,7 @@ async function memberLive(...args) {
     return;
   }
   console.log('');
-  console.log(`live members (${flags.scope}${flags.scopeId ? `:${flags.scopeId}` : ''}) — same projection the app renders`);
+  console.log(`live members (${flags.scope}${flags.scopeId ? `:${flags.scopeId}` : ''}), same projection the app renders`);
   console.log('');
   for (const m of members) {
     const loop = m.loop_status || {};
@@ -8985,7 +8985,7 @@ async function memberLive(...args) {
   console.log('');
 }
 
-// atris member heartbeat — tell the backend this member is running/done, so
+// atris member heartbeat, tell the backend this member is running/done, so
 // every surface (iOS, web) shows it live. POST /api/members/{name}/heartbeat.
 async function memberHeartbeat(name, ...args) {
   if (!name) {
@@ -9016,10 +9016,10 @@ async function memberHeartbeat(name, ...args) {
     return;
   }
   const d = result.data || {};
-  console.log(`${d.running ? '●' : '○'} ${d.member || name} → ${d.state}${d.working_on ? ` — ${d.working_on}` : ''} (visible on every surface)`);
+  console.log(`${d.running ? '●' : '○'} ${d.member || name} → ${d.state}${d.working_on ? `, ${d.working_on}` : ''} (visible on every surface)`);
 }
 
-// atris member improvements — what the business computer improved, day by day.
+// atris member improvements, what the business computer improved, day by day.
 // GET /api/business/{id}/improvements/daily.
 async function memberImprovements(businessId, ...args) {
   if (!businessId) {
@@ -9044,15 +9044,15 @@ async function memberImprovements(businessId, ...args) {
   }
   const history = result.data?.history || [];
   console.log('');
-  console.log(`daily improvements — business ${businessId}`);
+  console.log(`daily improvements: business ${businessId}`);
   console.log('');
   if (history.length === 0) {
-    console.log('  (no improvement history yet — first entry lands after the next nightly self-improve run)');
+    console.log('  (no improvement history yet, first entry lands after the next nightly self-improve run)');
   }
   for (const day of history) {
     console.log(`  ${day.date}: ${day.agents_improved}/${day.agents_total} agents improved`);
     for (const agent of day.agents || []) {
-      const note = agent.note ? ` — ${agent.note}` : '';
+      const note = agent.note ? `, ${agent.note}` : '';
       console.log(`    ${agent.kept_count > 0 ? '+' : ' '} ${agent.name} (kept ${agent.kept_count}, score ${agent.best_score})${note}`);
     }
   }
@@ -9083,7 +9083,7 @@ async function memberChat(name, ...rest) {
 async function memberCommand(subcommand, ...args) {
   // Subcommands that take a member name as args[0] otherwise treat `--help` as
   // a name and error with "Member '--help' not found". `create`/`new` handle
-  // help themselves (with subcommand-specific usage) — leave those alone.
+  // help themselves (with subcommand-specific usage), leave those alone.
   const HELP_AWARE_SUBCOMMANDS = new Set(['create', 'new', 'run', 'install']);
   if (!HELP_AWARE_SUBCOMMANDS.has(subcommand) && (args[0] === '-h' || args[0] === '--help')) {
     subcommand = undefined;

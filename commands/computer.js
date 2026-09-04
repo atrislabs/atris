@@ -1,20 +1,20 @@
 /**
- * Atris Computer — interact with your EC2 AI Computer
+ * Atris Computer: interact with your EC2 AI Computer
  *
- *   atris computer                  — Open SMART mode (cloud in business workspace, local elsewhere)
- *   atris computer setup            — Connect coding accounts to a computer
- *   atris computer --cloud          — Open CLOUD workspace mode
- *   atris computer create <name>    — Create and wake a business computer
- *   atris computer wake             — Start the computer
- *   atris computer sleep            — Stop (files persist)
- *   atris computer delete           — Sleep, confirm, and delete a business computer
- *   atris computer card             — Show the local computer card
- *   atris computer run <command>    — Run bash on EC2 (no LLM)
- *   atris computer grep <pattern>   — Search files on EC2
- *   atris computer ls [path]        — List files
- *   atris computer cat <path>       — Read a file
- *   atris computer exec <prompt>    — Run with LLM (Claude Code)
- *   atris computer recruiting       — Open the recruiting workflow shortcut
+ *   atris computer                 : Open SMART mode (cloud in business workspace, local elsewhere)
+ *   atris computer setup           : Connect coding accounts to a computer
+ *   atris computer --cloud         : Open CLOUD workspace mode
+ *   atris computer create <name>   : Create and wake a business computer
+ *   atris computer wake            : Start the computer
+ *   atris computer sleep           : Stop (files persist)
+ *   atris computer delete          : Sleep, confirm, and delete a business computer
+ *   atris computer card            : Show the local computer card
+ *   atris computer run <command>   : Run bash on EC2 (no LLM)
+ *   atris computer grep <pattern>  : Search files on EC2
+ *   atris computer ls [path]       : List files
+ *   atris computer cat <path>      : Read a file
+ *   atris computer exec <prompt>   : Run with LLM (Claude Code)
+ *   atris computer recruiting      : Open the recruiting workflow shortcut
  */
 
 const fs = require('fs');
@@ -2862,12 +2862,12 @@ async function computerDiff(token, remotePath, ctx = null) {
   for (const f of remoteFiles) {
     const localPath = path.join(localDir, f.name);
     if (!fs.existsSync(localPath)) {
-      console.log(`  + ${f.name} (${f.size}b) — new on EC2`);
+      console.log(`  + ${f.name} (${f.size}b), new on EC2`);
       added++;
     } else {
       const localSize = fs.statSync(localPath).size;
       if (Math.abs(localSize - (f.size || 0)) > 10) {
-        console.log(`  ~ ${f.name} (local: ${localSize}b, EC2: ${f.size}b) — changed`);
+        console.log(`  ~ ${f.name} (local: ${localSize}b, EC2: ${f.size}b), changed`);
         modified++;
       } else {
         same++;
@@ -2880,7 +2880,7 @@ async function computerDiff(token, remotePath, ctx = null) {
     const remoteNames = new Set(remoteFiles.map(f => f.name));
     for (const localFile of fs.readdirSync(localDir)) {
       if (!remoteNames.has(localFile) && localFile.endsWith('.md')) {
-        console.log(`  - ${localFile} — deleted on EC2`);
+        console.log(`  - ${localFile}, deleted on EC2`);
         deleted++;
       }
     }
@@ -2947,7 +2947,7 @@ async function computerOnboard(token, businessSlug) {
 
   // Step 1: Push soul template
   console.log('\n  1. Pushing soul template...');
-  const soulTemplate = `# Soul — ${businessSlug}\n\n## Identity\nBusiness computer for ${businessSlug}. Self-improving context system.\n\n## Goals\n- Learn the business overnight\n- Accumulate context that makes the agent smarter\n- Track what works and what doesn't\n\n## Rules\n- No emails without approval\n- No destructive actions\n- Save everything to soul/\n`;
+  const soulTemplate = `# Soul: ${businessSlug}\n\n## Identity\nBusiness computer for ${businessSlug}. Self-improving context system.\n\n## Goals\n- Learn the business overnight\n- Accumulate context that makes the agent smarter\n- Track what works and what doesn't\n\n## Rules\n- No emails without approval\n- No destructive actions\n- Save everything to soul/\n`;
 
   const templateResult = await apiRequestJson('/ai-computer/terminal', {
     method: 'POST', token,
@@ -2972,7 +2972,7 @@ async function computerOnboard(token, businessSlug) {
       '  NAME=$(basename $f .md)',
       '  FIRST_LINE=$(head -1 $f | sed "s/^# //")',
       '  SIZE=$(wc -c < $f | tr -d " ")',
-      '  echo "- [$NAME]($NAME.md) — $FIRST_LINE ($SIZE bytes)" >> soul/INDEX.md',
+      '  echo "- [$NAME]($NAME.md), $FIRST_LINE ($SIZE bytes)" >> soul/INDEX.md',
       '  COUNT=$((COUNT + 1)); TOTAL_SIZE=$((TOTAL_SIZE + SIZE))',
       'done',
       'echo "" >> soul/INDEX.md',
