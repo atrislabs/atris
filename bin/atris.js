@@ -499,6 +499,7 @@ function showHelpShort() {
   console.log('');
   console.log('  atris "what do you want here?"   empty folder');
   console.log('  atris later "..."                remember without a room');
+  console.log('  atris guide "..."                translate your words');
   console.log('  atris do                         work already here');
   console.log('  atris spaceship                  Keep working for a few hours');
   console.log('  atris autopilot                  Keep working until you stop');
@@ -510,6 +511,7 @@ function showHelpShort() {
 function helpCatalog() {
   return [
     { name: 'init', summary: 'scaffold atris/ in this project', json: false, interactive_risk: 'medium' },
+    { name: 'guide', summary: 'translate plain english into the right atris move', json: true, interactive_risk: 'none' },
     { name: 'task', summary: 'local task plane: new, claim, ready, accept', json: true, interactive_risk: 'low' },
     { name: 'review', summary: 'validate work and capture learnings', json: false, interactive_risk: 'low' },
     { name: 'recap', summary: 'spoken recap of what your team did', json: true, interactive_risk: 'low' },
@@ -528,6 +530,7 @@ function showHelpAll() {
   console.log('you say what you want. already won. one next step.');
   console.log('');
   console.log('  atris later "..."                remember without a room');
+  console.log('  atris guide "..."                translate your words');
   console.log('  atris do                         work already here');
   console.log('  atris spaceship                  Keep working for a few hours');
   console.log('  atris autopilot                  Keep working until you stop');
@@ -559,6 +562,7 @@ function showHelpAll() {
   console.log('  spaceship  - Bounded overnight runner that survives bad ticks and emails updates');
   console.log('');
   console.log('Context & tracking:');
+  console.log('  guide      - Translate plain english into the right Atris move');
   console.log('  log        - Add ideas to inbox (`atris log "note"`; `log --repl` for the editor; see also `wish`)');
   console.log('  wish       - Say one plain sentence, then Atris asks only for gaps or delegates it');
   console.log('  now        - Show atris/now.md, the current operating truth');
@@ -1609,6 +1613,7 @@ async function askContextGatherer(workspaceDir) {
 // this output it stays compact so it costs almost nothing in context.
 function showWelcomeVisualization() {
   const { getTaskGlance } = require('../lib/state-detection');
+  const { INTENTS } = require('../lib/intents');
   const { readEndgameState } = require('../commands/autopilot');
   const cwd = process.cwd();
   const atrisDir = path.join(cwd, 'atris');
@@ -1816,6 +1821,18 @@ function showWelcomeVisualization() {
     console.log(row('goal', endgameState.horizon || endgameState.slug));
   }
 
+  const hasNoTasks = glance.backlog === 0
+    && glance.active === 0
+    && glance.review === 0
+    && glance.reviewCertified === 0;
+  if (hasNoTasks) {
+    const phrases = INTENTS
+      .filter((intent) => intent.offer === 'boot_empty')
+      .map((intent) => intent.say[0])
+      .slice(0, 2);
+    console.log(row('say', `"${phrases[0]}" or "${phrases[1]}"  (your agent translates)`));
+  }
+
   // The next command always carries a plain-english gloss: a newcomer should
   // know what typing it will do before they type it.
   let next;
@@ -1833,7 +1850,10 @@ function showWelcomeVisualization() {
   console.log('');
 }
 
-if (command === 'init') {
+if (command === 'guide') {
+  const code = require('../commands/guide').guideCommand(process.argv.slice(3));
+  process.exit(typeof code === 'number' ? code : 0);
+} else if (command === 'init') {
   // Help flag must short-circuit before initCmd() (which scaffolds files)
   // and before interactiveEntry (which loads workspace context).
   const initArg = process.argv[3];

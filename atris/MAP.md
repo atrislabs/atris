@@ -58,6 +58,10 @@ rg "gmState|AgentXP General Manager|renderGameDashboard|parseGameArgs|loadGameSt
 
 # Modular commands
 rg "hasFlag|readFlag|readIntFlag|readNumberFlag" lib/arg-parser.js commands test/arg-parser.test.js test/repo-hygiene.test.js  # Shared CLI flag parsing, explicit per-command quirk wrappers, focused behavior tests, and dead-export ratchet
+
+- **Plain-English concierge:** `lib/intents.js:3` owns the intent map and `lib/intents.js:148` scores normalized token overlap; `commands/guide.js:12` prints the list, match, and JSON forms; `bin/atris.js:497` exposes help, `bin/atris.js:1824` adds the empty-project suggestion, and `bin/atris.js:1853` dispatches the command; `commands/init.js:15` renders the shared table and `commands/init.js:661` adds the generated `## You translate` rules.
+  **Search:** `rg "INTENTS|matchIntent|guideCommand|## You translate|your agent translates" lib/intents.js commands/guide.js commands/init.js bin/atris.js test/guide.test.js test/init-for-agents.test.js`
+
 rg "initAtris|upsertAtrisClaudeBootBlock|upsertClaudeVoiceHook|upsertCursorVoiceCard|upsertAgentVoiceCard|--minimal|--with-adapters|--with-skills" commands/init.js lib/claude-boot-block.js lib/voice-card.js test/claude-boot-block.test.js test/voice-card.test.js test/dogfood-papercuts.test.js test/init-non-interactive.test.js  # Init command, voice-card doors, and --minimal/--with-adapters/--with-skills gates; --minimal writes lessons.md and does not create INTUITION.md
 rg "syncAtris|upsertAtrisClaudeBootBlock|upsertClaudeVoiceHook|upsertCursorVoiceCard|upsertAgentVoiceCard" commands/sync.js lib/claude-boot-block.js lib/voice-card.js test/claude-boot-block.test.js test/voice-card.test.js  # Update/sync command, shared root CLAUDE.md block updater, and idempotent voice-card refresh that preserves user settings and marker-external text
 rg "compactErrorPayload|printCliJson|wantsFull|cli-json|withMissionFullJson|stripKnownFlags" lib/cli-json.js commands/mission.js commands/member.js test/helpers/mission-json.js test/dogfood-pass2.test.js  # Compact --json errors/success for current-step/tick/ready; --full dumps the rest and is never a mission id

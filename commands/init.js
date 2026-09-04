@@ -4,12 +4,25 @@ const { ensureMemberBundle } = require('../lib/member-scaffold');
 const { ensureExperimentsFramework } = require('./experiments');
 const { ensureWorkspaceBrain } = require('../lib/workspace-scaffold');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
+const { INTENTS } = require('../lib/intents');
 const {
   upsertAgentVoiceCard,
   upsertClaudeVoiceHook,
   upsertCursorVoiceCard,
   voiceCardForRoot,
 } = require('../lib/voice-card');
+
+function renderIntentTable() {
+  const rows = INTENTS.map((intent) => {
+    const phrases = intent.say.map((phrase) => `"${phrase}"`).join('<br>');
+    return `| ${phrases} | ${intent.plain} \`${intent.do}\` |`;
+  });
+  return [
+    '| when they say | what you do |',
+    '|---|---|',
+    ...rows,
+  ].join('\n');
+}
 
 /**
  * Detect project context by scanning project structure
@@ -626,6 +639,7 @@ tools: []
 
   // Create agent instruction files for different tools
   if (withAdapters) {
+  const intentTable = renderIntentTable();
   const agentInstructions = `# AGENTS.md — Universal Agent Instructions
 
 > Works with: Claude Code, Cursor, Codex, OpenClaw, Windsurf, and any AI coding agent.
@@ -643,6 +657,20 @@ atris atris.md
 \`\`\`
 
 This is the Atris boot sequence. Show the output to the user, then respond naturally.
+
+## You translate
+
+The person you work for does not know atris words and never has to learn them. Never tell them to run an atris command or learn a term.
+
+When their words match a move below, run it and report what happened in plain words.
+
+When unsure, run \`atris guide "<their words>"\` and follow its answer.
+
+After anything lands, offer one next move in plain words, never a command name.
+
+In a project with nothing on the list yet, speak first: three things you noticed about the codebase, one question, then start on the most useful one.
+
+${intentTable}
 
 ## The way of talking (every reply, no exceptions)
 
@@ -1081,6 +1109,7 @@ Read atris/MAP.md. Begin iteration 1.`;
     markReady('workspace', 'atris.md', '✓ Copied atris.md to atris/ folder');
     printReadyCounts();
     console.log('\natris initialized.');
+    console.log('no commands to learn. tell your agent what you want in plain words.');
   } else {
     console.error('✗ Error: atris.md not found in package');
     process.exit(1);
