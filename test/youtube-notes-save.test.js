@@ -285,6 +285,7 @@ test('notes --save batch prints keep next and no teach next', async () => {
   assert.doesNotMatch(out.text(), /next: atris youtube teach/);
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 0);
   assert.doesNotMatch(out.text(), /^check:/m);
+  assert.equal(out.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
 });
 
 test('all-failed notes batch prints no teach next', async () => {
