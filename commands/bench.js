@@ -51,7 +51,7 @@ function readRepeatedFlag(args, name) {
 }
 
 function printHelp() {
-  console.log('Usage: atris bench run [--pack <id>] [--engine <name>] [--task <id> ...] [--label baseline|candidate] [--experiment <id>] [--update-baseline] [--json]');
+  console.log('Usage: atris bench run [--pack <id>] [--engine <name>] [--model <id>] [--task <id> ...] [--label baseline|candidate] [--experiment <id>] [--update-baseline] [--json]');
   console.log('Usage: atris bench results [--last N] [--json]');
   console.log('Usage: atris bench tasks [--pack <id>] [--json]');
   console.log('Usage: atris bench packs [--json]');
@@ -76,6 +76,7 @@ async function runCommand(args) {
     const result = await runBench({
       pack: readInlineFirstFlag(args, '--pack') || undefined,
       engine: readInlineFirstFlag(args, '--engine') || undefined,
+      model: readInlineFirstFlag(args, '--model') || undefined,
       taskIds: readRepeatedFlag(args, '--task'),
       label: readInlineFirstFlag(args, '--label'),
       experiment: readInlineFirstFlag(args, '--experiment'),

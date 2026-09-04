@@ -16,10 +16,14 @@ test('bench engine adapters expose the frozen roster', () => {
     'cursor',
     'claude',
     'atris-fast',
+    'agy',
+    'opencode',
+    'devin',
     'null',
     'solution',
   ]);
   assert.equal(normalizeEngineName('codex'), 'codex');
+  assert.equal(normalizeEngineName('opencode'), 'opencode');
   assert.equal(getEngineAdapter('null').run('ignored', process.cwd(), 1).status, 0);
   assert.throws(() => normalizeEngineName('missing'), /unknown bench engine/);
 });
