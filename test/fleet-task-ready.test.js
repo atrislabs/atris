@@ -77,6 +77,7 @@ for (const mode of ['fleet', 'dispatch']) {
           },
           lander: () => {
             git(['merge', '--ff-only', 'worker']);
+            git(['update-ref', 'refs/remotes/origin/master', 'HEAD']);
             const verified = spawnSync(process.execPath, ['--test', 'check.test.cjs'], { cwd: root, env, encoding: 'utf8' });
             assert.equal(verified.status, 0, verified.stderr);
             const output = rejectProof ? `${verified.stdout}\nnode --test check.test.cjs passed` : verified.stdout;
