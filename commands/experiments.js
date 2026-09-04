@@ -508,7 +508,7 @@ function buildBenchmarkArtifact(name, packDir, options) {
 
   let execution = null;
   let reviewStatus = options.dryRun ? 'draft' : 'fail';
-  let reviewSummary = options.dryRun ? 'dry run — benchmark task not executed' : 'benchmark run failed before review';
+  let reviewSummary = options.dryRun ? 'dry run, benchmark task not executed' : 'benchmark run failed before review';
   let tests = [{
     command: options.dryRun ? 'benchmark dry-run' : '(no explicit test command captured)',
     status: 'not_run',

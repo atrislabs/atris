@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Booking availability — read/update the windows that power /book/{username}.
+ * Booking availability: read/update the windows that power /book/{username}.
  *
  *   atris avail                         # show current settings
  *   atris avail set --wake 2:30pm --sleep 9pm --where Ibiza --days all --apply
@@ -172,13 +172,13 @@ function summarizeHours(availableHours) {
 }
 
 // The booking link is the funnel: an operator shares /book/{username} so a
-// stranger can pick a slot. With no claimed handle there is no link — say so and
+// stranger can pick a slot. With no claimed handle there is no link, say so and
 // name the fix instead of silently dropping the line.
 function formatBookingLink(username, appBase) {
   const handle = String(username || '').trim();
   const base = String(appBase || '').replace(/\/+$/, '');
   if (!handle) {
-    return '  link: none yet — claim a handle with `atris signup` to get your /book link';
+    return '  link: none yet, claim a handle with `atris signup` to get your /book link';
   }
   return `  link: ${base}/book/${handle}`;
 }
@@ -263,7 +263,7 @@ async function setAvail(argv) {
   console.log(summarizeHours(payload.available_hours));
 
   if (!opts.apply) {
-    console.log('\n  Dry run — add --apply to push to your profile.');
+    console.log('\n  Dry run, add --apply to push to your profile.');
     return 0;
   }
 
@@ -308,7 +308,7 @@ async function slotsAvail(argv) {
   if (!username) {
     const identity = await apiRequestJson('/identity/me', { method: 'GET', token });
     if (!identity.ok || !identity.data?.username) {
-      console.error('Could not resolve username — pass --user keshav');
+      console.error('Could not resolve username, pass --user keshav');
       return 1;
     }
     username = identity.data.username;

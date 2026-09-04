@@ -145,7 +145,7 @@ function memberFocus(rawNow, { awake, alwaysOn }) {
 }
 
 function memberIsActive({ frontmatterEngine, awake }) {
-  // A stale focus line in now.md does not make a member active — only an
+  // A stale focus line in now.md does not make a member active, only an
   // assigned engine or live presence does.
   return Boolean(frontmatterEngine) || awake;
 }

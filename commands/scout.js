@@ -1,4 +1,4 @@
-// atris scout — dispatch cheap Haiku subagents for search/context questions.
+// atris scout: dispatch cheap Haiku subagents for search/context questions.
 // Mirrors Claude Code's built-in subagent pattern: read-only, bounded report,
 // main session never pays for the exploration.
 //
@@ -44,7 +44,7 @@ const ENGINES = {
       try {
         const j = JSON.parse(out);
         if (j && typeof j.output === 'string') return j.ok === false ? `fast lane error: ${j.error || j.output}` : j.output.trim();
-      } catch (_) { /* not JSON — fall through to raw */ }
+      } catch (_) { /* not JSON, fall through to raw */ }
       return out.trim();
     },
   },
@@ -138,7 +138,7 @@ async function scoutCommand(argv) {
 
 function showHelp() {
   console.log(`
-  atris scout — cheap read-only subagents for search & context questions
+  atris scout: cheap read-only subagents for search & context questions
 
   usage:
     atris scout "<question>" ["<question>" ...]     parallel scouts, one per question

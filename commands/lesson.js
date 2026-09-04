@@ -26,7 +26,7 @@ function tagLessonResolvedInMd(cwd, slug) {
     if (!m || m[1] !== slug) continue;
     if (/\[resolved\]/i.test(lines[i])) continue; // already tagged
     lines[i] = lines[i].replace(
-      /(\*\*\[\d{4}-\d{2}-\d{2}\]\s+[\w-]+\*\*\s*[—-]\s*(?:pass|fail)?\s*[—-]?\s*)/,
+      /(\*\*\[\d{4}-\d{2}-\d{2}\]\s+[\w-]+\*\*\s*[\u2014-]\s*(?:pass|fail)?\s*[\u2014-]?\s*)/,
       '$1[resolved] '
     );
     changed = true;
@@ -46,7 +46,7 @@ function tagLessonResolvedInMd(cwd, slug) {
  * and trustworthy.
  *
  * Only detector-backed `fail` lessons self-retire. Prose-only lessons (no
- * detector) and `observed` process rules are never auto-resolved — they have
+ * detector) and `observed` process rules are never auto-resolved, they have
  * no falsifiable pass state.
  *
  * @param {string} cwd

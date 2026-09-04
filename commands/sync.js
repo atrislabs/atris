@@ -372,7 +372,7 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
 
   // Skills: sync the canonical skill set from atris-cli package into the
   // customer workspace. Business-starter template ships skill infra (README,
-  // folders) but skill files live in atris-cli/atris/skills/ — single source
+  // folders) but skill files live in atris-cli/atris/skills/, single source
   // of truth. Any new skill (e.g. AEO) auto-propagates to every customer.
   const skillsUpdated = syncPackageSkills(targetAtrisDir, { verbose: false, dryRun });
 
@@ -730,8 +730,8 @@ function syncRecursiveCount(src, dest, label, silent) {
 
 /**
  * Lightweight skill-only sync. Syncs skills from the npm package to:
- *   1. Global skill dirs (~/.claude/skills/, ~/.codex/skills/) — always, if they exist
- *   2. Project-level (atris/skills/ + .claude/skills/ symlinks) — if in a project
+ *   1. Global skill dirs (~/.claude/skills/, ~/.codex/skills/), always, if they exist
+ *   2. Project-level (atris/skills/ + .claude/skills/ symlinks), if in a project
  *
  * Global = baseline truth. Project = optional override.
  * Returns number of files updated (0 = already current).
@@ -776,7 +776,7 @@ function syncSkills({ silent = false } = {}) {
   // contain ONLY business-specific custom skills in atris/skills/.
   const businessJson = path.join(process.cwd(), '.atris', 'business.json');
   if (fs.existsSync(businessJson)) {
-    // We're inside a business workspace — skip project-level skill sync.
+    // We're inside a business workspace, skip project-level skill sync.
     return updated;
   }
 
@@ -867,7 +867,7 @@ const SYNC_ALL_FILES = [
  * No console output, no writes. Returns { projects, plan } for inspection.
  * Plan entries: { projectRoot, isBusiness, isCustomized, changes }.
  *
- * Exported for tests — the production syncAtrisAll wraps this.
+ * Exported for tests, the production syncAtrisAll wraps this.
  */
 function buildSyncAllPlan({ root, pkgRoot, filesToSync = SYNC_ALL_FILES } = {}) {
   const projects = _findAtrisProjects(root);
@@ -935,16 +935,16 @@ function syncAtrisAll({ dryRun = false, force = false, yes = false } = {}) {
   for (const p of plan) {
     const rel = path.relative(root, p.projectRoot) || '.';
     if (p.isBusiness) {
-      console.log(`  ⏭  ${rel} (business workspace — run "atris update" in that dir)`);
+      console.log(`  ⏭  ${rel} (business workspace, run "atris update" in that dir)`);
       skipped++;
     } else if (p.isCustomized) {
-      console.log(`  ⏭  ${rel} (customized atris.md — review manually)`);
+      console.log(`  ⏭  ${rel} (customized atris.md, review manually)`);
       skipped++;
     } else if (p.changes.length === 0) {
       console.log(`  ·  ${rel} (up to date)`);
       unchanged++;
     } else {
-      console.log(`  →  ${rel} — ${p.changes.length} ${p.changes.length === 1 ? 'file' : 'files'}: ${p.changes.join(', ')}`);
+      console.log(`  →  ${rel}: ${p.changes.length} ${p.changes.length === 1 ? 'file' : 'files'}: ${p.changes.join(', ')}`);
       wouldUpdate++;
     }
   }

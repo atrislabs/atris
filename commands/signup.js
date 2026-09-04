@@ -7,7 +7,7 @@
 // seam: `npm i -g atris && atris signup x && atris play`.
 //
 // The account is born inert by design (0 credits, no executing agent, external
-// mail paid-gated) — identity is free, capability is earned via AgentXP.
+// mail paid-gated), identity is free, capability is earned via AgentXP.
 // Backend: backend/routers/agent_auth_router.py (POST /auth/agent/signup).
 
 const crypto = require('crypto');
@@ -19,7 +19,7 @@ const { argsWantHelp, isHelpToken } = require('../lib/noninteractive');
 // before spending a network round trip / a rate-limit slot.
 const HANDLE_RE = /^[a-z0-9]{3,30}$/;
 
-// Proof-of-work — mirror the server (agent_auth_router.py). The signup endpoint
+// Proof-of-work: mirror the server (agent_auth_router.py). The signup endpoint
 // requires a nonce whose sha256(prefix:handle:bucket:nonce) has DIFFICULTY_BITS
 // leading zero bits. Bucket = current 5-min window. Solved locally (~1s) so
 // signup stays a single call; this is the cost that makes mass-minting expensive.
@@ -79,7 +79,7 @@ async function signupCommand(args = []) {
     const { token, email, user_id: userId } = res.data;
     const identity = email || `${handle}@atrismail.com`;
     saveCredentials(token, null, identity, userId || null, 'atrisos');
-    console.log(`\n✓ You're in — ${identity}`);
+    console.log(`\n✓ You're in: ${identity}`);
     console.log('  Inert starter account (0 credits): identity is free, capability is earned.');
     console.log('  Saved to your active profile.');
     console.log('\nNext:');
@@ -88,7 +88,7 @@ async function signupCommand(args = []) {
     return 0;
   }
 
-  // Friendly, actionable errors — no stack traces for expected cases.
+  // Friendly, actionable errors, no stack traces for expected cases.
   if (res.status === 409) {
     console.error(`✗ "${handle}" is already taken or reserved. Try a different handle.`);
     return 1;

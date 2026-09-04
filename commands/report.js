@@ -39,7 +39,7 @@ function timestampMs(value) {
 }
 
 function inlineText(value, fallback = 'untitled') {
-  const text = String(value || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim();
+  const text = String(value || '').replace(/[\u2014\u2013]/g, '-').replace(/\s+/g, ' ').trim();
   return text || fallback;
 }
 

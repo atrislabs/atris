@@ -1,16 +1,16 @@
 /**
- * Atris Fleet — Manage the agent swarm via Swarlo
+ * Atris Fleet: Manage the agent swarm via Swarlo
  *
  * Commands:
- *   atris fleet                  — Show fleet status
- *   atris fleet status           — Same as above
- *   atris fleet post <message>   — Post to the board
- *   atris fleet task <prompt>    — Post a task for agents to claim
- *   atris fleet claim <task_key> — Claim a task
- *   atris fleet done <task_key>  — Report task complete
- *   atris fleet members          — List members
- *   atris fleet prune            — Remove stale members
- *   atris fleet join             — Register this session
+ *   atris fleet                  : Show fleet status
+ *   atris fleet status           : Same as above
+ *   atris fleet post <message>   : Post to the board
+ *   atris fleet task <prompt>    : Post a task for agents to claim
+ *   atris fleet claim <task_key> : Claim a task
+ *   atris fleet done <task_key>  : Report task complete
+ *   atris fleet members          : List members
+ *   atris fleet prune            : Remove stale members
+ *   atris fleet join             : Register this session
  */
 
 const http = require('http');
@@ -264,7 +264,7 @@ async function fleetMembers(state) {
     console.log(`\n  Members (${res.data.count}):`);
     for (const m of res.data.members) {
       const seen = m.last_seen ? m.last_seen.slice(0, 16) : 'never';
-      console.log(`    ${m.member_type === 'human' ? '👤' : '🤖'} ${m.member_name} (${m.member_id}) — seen: ${seen}`);
+      console.log(`    ${m.member_type === 'human' ? '👤' : '🤖'} ${m.member_name} (${m.member_id}), seen: ${seen}`);
     }
     console.log();
   }
@@ -388,7 +388,7 @@ async function fleet(args = []) {
 
   if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
     console.log('');
-    console.log('  atris fleet — coordinate agent swarm via Swarlo');
+    console.log('  atris fleet: coordinate agent swarm via Swarlo');
     console.log('');
     console.log('  fleet              show workspace fleet (default)');
     console.log('  fleet --global     query the machine Swarlo hub');
