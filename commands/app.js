@@ -1,5 +1,5 @@
 /**
- * atris app — manage APP.md manifests in the current workspace.
+ * atris app, manage APP.md manifests in the current workspace.
  *
  * Subcommands:
  *   atris app init <slug> [--runtime ec2|local|webhook|external|web|ios|template]
@@ -181,9 +181,9 @@ function readmeFor(slug) {
     '',
     '## Files',
     '',
-    '- `APP.md` — app manifest (frontmatter + instructions). Source of truth.',
-    '- `data/` — per-run outputs.',
-    '- `logs/` — stdout/stderr per trigger.',
+    '- `APP.md`, app manifest (frontmatter + instructions). Source of truth.',
+    '- `data/`, per-run outputs.',
+    '- `logs/`, stdout/stderr per trigger.',
     '',
     '## Secrets',
     '',
@@ -271,7 +271,7 @@ async function show(slug) {
 }
 
 async function help() {
-  console.log('atris app — manage APP.md manifests');
+  console.log('atris app, manage APP.md manifests');
   console.log('');
   console.log('Subcommands:');
   console.log('  init <slug> [--runtime <kind>]  Scaffold a new app folder');

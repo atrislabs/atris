@@ -1,4 +1,4 @@
-// atris card — one line of text -> a beautiful, on-brand image (your theme).
+// atris card, one line of text -> a beautiful, on-brand image (your theme).
 //
 //   atris card "Ship faster" --kind statement --theme brand --size og
 //   atris card "It just works" --kind quote --by "a happy user"
@@ -64,7 +64,7 @@ function run(argv) {
   const { flags, pos } = parseFlags(argv);
 
   if (pos[0] === 'help' || flags.help) {
-    console.log(`\n  atris card — one line of text into an on-brand image\n
+    console.log(`\n  atris card, one line of text into an on-brand image\n
   atris card "Your headline" [--kind statement|quote|stat] [--theme <name>] [--size og|wide|square|story]
   flags: --sub --kicker --by --number --label --brand --version --out <file.png> --html-only\n
   examples:

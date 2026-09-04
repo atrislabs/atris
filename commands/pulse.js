@@ -748,7 +748,7 @@ function pulseCommand(argv = []) {
   const sub = argv[0];
   const rest = argv.slice(1);
   if (sub === '--help' || sub === '-h' || sub === 'help') return showHelp();
-  // `pulse <sub> --help` is a help request, not a run — never execute the
+  // `pulse <sub> --help` is a help request, not a run, never execute the
   // subcommand (tick/status/etc. have real side effects) just to show usage.
   if (rest.includes('--help') || rest.includes('-h')) return showHelp();
   switch (sub) {

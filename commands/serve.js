@@ -1,5 +1,5 @@
 /**
- * Atris Serve — make this directory a live AI Computer.
+ * Atris Serve, make this directory a live AI Computer.
  *
  *   atris serve                       Start the bridge in current directory
  *   atris serve --agent <agent_id>    Bind to a specific agent
@@ -33,7 +33,7 @@ const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
 const HEARTBEAT_INTERVAL_MS = 30000;
 const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_DELAY_MS = 30000;
-// Bash commands are bounded to 10s — long batches won't lock the CLI for hours
+// Bash commands are bounded to 10s, long batches won't lock the CLI for hours
 const BASH_TIMEOUT_MS = 10000;
 // Hard size limits to prevent OOM on large payloads
 const MAX_WRITE_BYTES = 10 * 1024 * 1024;  // 10 MB
@@ -138,7 +138,7 @@ async function applyOp(workingDir, op) {
 
     if (type === 'bash') {
       // Execute bash in the working directory with a timeout.
-      // Note: This is a powerful op — only the session owner can dispatch it,
+      // Note: This is a powerful op, only the session owner can dispatch it,
       // AND the session must have been created with allow_bash=true.
       try {
         const stdout = execSync(op.command, {
@@ -206,10 +206,10 @@ function streamSession(token, sessionId, workingDir) {
         return;
       }
 
-      console.log(`● Bridge active — listening for ops on session ${sessionId.slice(0, 8)}...`);
+      console.log(`● Bridge active, listening for ops on session ${sessionId.slice(0, 8)}...`);
 
       // Ping watchdog: the server pings every ~30s. Silence past 3 intervals
-      // means the socket died without a FIN (server redeploy, NAT drop) —
+      // means the socket died without a FIN (server redeploy, NAT drop),
       // kill it so the outer loop reconnects/re-registers instead of zombieing.
       let lastSeen = Date.now();
       const watchdog = setInterval(() => {
@@ -222,7 +222,7 @@ function streamSession(token, sessionId, workingDir) {
 
       // Registry check: a rolling deploy can leave this stream alive on an
       // old instance while new instances answer API calls from an empty
-      // in-memory session store — pings keep flowing so the silence watchdog
+      // in-memory session store, pings keep flowing so the silence watchdog
       // never fires, but dispatchers can't find us. Ask the registry
       // directly; if it forgot this session, reconnect and re-register.
       const registryCheck = setInterval(async () => {
@@ -311,7 +311,7 @@ async function serveAtris(options = {}) {
 
   console.log('');
   console.log('╭──────────────────────────────────────────╮');
-  console.log('│   ATRIS SERVE — Local AI Computer Bridge │');
+  console.log('│   ATRIS SERVE, Local AI Computer Bridge │');
   console.log('╰──────────────────────────────────────────╯');
   console.log('');
   console.log(`  📁 Directory: ${workingDir}`);
@@ -376,7 +376,7 @@ async function serveAtris(options = {}) {
       reconnectDelay = RECONNECT_DELAY_MS; // reset on clean disconnect
     } catch (err) {
       if (shuttingDown) break;
-      // Server restarts wipe the in-memory session store — a dead session id
+      // Server restarts wipe the in-memory session store, a dead session id
       // 404s forever, so re-register instead of retrying the corpse.
       if (/session not found|404/i.test(err.message || '')) {
         try {
@@ -391,7 +391,7 @@ async function serveAtris(options = {}) {
           });
           if (result.ok && result.data && result.data.session_id) {
             session = result.data;
-            console.log(`  ✓ Session expired server-side — re-registered as ${session.session_id}`);
+            console.log(`  ✓ Session expired server-side, re-registered as ${session.session_id}`);
             reconnectDelay = RECONNECT_DELAY_MS;
             continue;
           }

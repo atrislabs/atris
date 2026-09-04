@@ -1,5 +1,5 @@
 /**
- * Errors command for Atris CLI — admin dashboard over atris_error_events.
+ * Errors command for Atris CLI, admin dashboard over atris_error_events.
  *
  * Usage:
  *   atris errors                      Local-only by default (no cloud dump)
@@ -121,7 +121,7 @@ async function listErrors(args) {
   }
 
   console.log(
-    `Errors — last ${data.window_hours}h — ` +
+    `Errors, last ${data.window_hours}h, ` +
       `${data.total_events} events across ${data.unique_signatures} signatures\n`,
   );
 
@@ -146,7 +146,7 @@ async function listErrors(args) {
 async function showError(errorId) {
   if (!errorId) {
     console.error('Usage: atris errors show <id>');
-    console.error('(id must be a full UUID — get one from `atris errors` output)');
+    console.error('(id must be a full UUID, get one from `atris errors` output)');
     process.exit(1);
   }
 

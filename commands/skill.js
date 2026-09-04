@@ -33,7 +33,7 @@ function parseFrontmatter(content) {
       currentKey = kvMatch[1];
       const val = kvMatch[2].trim();
       if (val === '') {
-        // Could be start of a list or nested object — leave empty, next lines fill it
+        // Could be start of a list or nested object, leave empty, next lines fill it
         result[currentKey] = {};
       } else if (val.startsWith('[') && val.endsWith(']')) {
         // Inline array: [a, b, "c d"]
@@ -317,7 +317,7 @@ function autoFix(skill, dryRun) {
 
   let newFmLines = rawFm.split('\n');
 
-  // Fix 1: name mismatch — replace name value with folder name
+  // Fix 1: name mismatch, replace name value with folder name
   if (fm.name && fm.name !== skill.leafFolder) {
     const idx = newFmLines.findIndex(l => l.match(/^name:\s/));
     if (idx !== -1) {
@@ -718,7 +718,7 @@ function skillCreate(nameArg, ...flags) {
   const descFlag = flags.find(f => f.startsWith('--description='));
   const description = descFlag ? descFlag.split('=').slice(1).join('=').replace(/^["']|["']$/g, '') : '';
 
-  // Parse name — supports "customer/skill-name" format
+  // Parse name, supports "customer/skill-name" format
   let skillDir, skillName, customerName;
   if (nameArg.includes('/')) {
     const parts = nameArg.split('/');
@@ -798,7 +798,7 @@ function skillCreate(nameArg, ...flags) {
       }
     }
     if (linked.length > 0) {
-      console.log(`✓ Linked to ${linked.join(', ')} (system-level — all tools)`);
+      console.log(`✓ Linked to ${linked.join(', ')} (system-level, all tools)`);
     }
   }
 
@@ -923,7 +923,7 @@ function skillDelete(name) {
     }
   }
 
-  // Remove symlinks — use unlinkSync for symlinks, rmSync for directories
+  // Remove symlinks, use unlinkSync for symlinks, rmSync for directories
   function removeLink(linkPath, label) {
     try {
       const stat = fs.lstatSync(linkPath);
@@ -939,7 +939,7 @@ function skillDelete(name) {
   // Project-level
   removeLink(path.join(process.cwd(), '.claude', 'skills', name), `.claude/skills/${name}`);
 
-  // System-level — all tool directories
+  // System-level, all tool directories
   const toolDirs = [
     { dir: path.join(home, '.claude', 'skills', name), label: '~/.claude' },
     { dir: path.join(home, '.codex', 'skills', name), label: '~/.codex' },

@@ -1,4 +1,4 @@
-// atris theme — brand themes for the whole design system. Define your colors and
+// atris theme, brand themes for the whole design system. Define your colors and
 // fonts once in .atris/theme.json; every deck, HTML page, and site uses them.
 //
 //   atris theme create        guided interview -> your own theme (alias: new)
@@ -79,7 +79,7 @@ async function interview(defaults = {}) {
       ans.mode = mp.startsWith('l') ? 'light' : mp.startsWith('d') ? 'dark' : dmode;
     }
 
-    console.log('\n  4/5  your accent — the one color that is unmistakably yours:');
+    console.log('\n  4/5  your accent, the one color that is unmistakably yours:');
     mood.swatches.forEach((s, i) => console.log(`     ${i + 1}. ${sw(s)} ${s}`));
     const dac = normHex(defaults.accent) || mood.swatches[0];
     const ap = (await ask(`     pick 1-${mood.swatches.length}, or paste a hex [${dac}]: `)).trim();

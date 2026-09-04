@@ -1,4 +1,4 @@
-// atris security-review — deterministic secrets / PII / privacy scan (no LLM).
+// atris security-review, deterministic secrets / PII / privacy scan (no LLM).
 //
 // "Is this workspace safe to commit, publish, or hand to an autonomous loop?"
 // Answers it with facts: file:line + rule + severity. Exit 1 on a HIGH finding,
@@ -200,7 +200,7 @@ function securityReviewCommand(argv = []) {
   if (!opts.quiet) {
     console.log('\n  ◉ atris security review');
     if (!findings.length) {
-      console.log(`\n  ✓ clean — no active secrets, PII, or sensitive files in ${raw.scanned} tracked file${raw.scanned === 1 ? '' : 's'}`);
+      console.log(`\n  ✓ clean, no active secrets, PII, or sensitive files in ${raw.scanned} tracked file${raw.scanned === 1 ? '' : 's'}`);
       if (result.suppressed) console.log(`  ${result.suppressed} accepted finding${result.suppressed === 1 ? '' : 's'} suppressed by ${result.baseline.path}`);
       console.log('');
       return 0;
@@ -225,10 +225,10 @@ function securityReviewCommand(argv = []) {
 }
 
 // The landing: short, true, decision-ready. What you read after the overnight
-// loop — the opposite of a finding dump.
+// loop, the opposite of a finding dump.
 function renderLanding(landing, threshold) {
   const date = new Date().toISOString().slice(0, 10);
-  const L = ['', `  ✈ security landing — ${date}`, ''];
+  const L = ['', `  ✈ security landing, ${date}`, ''];
   if (landing.cleared) {
     L.push(`  CLEARED TO SHIP    no unresolved findings at the ${threshold.toUpperCase()} line`);
   } else {
@@ -248,7 +248,7 @@ function renderLanding(landing, threshold) {
   if (landing.open.length) {
     L.push('  needs you:');
     for (const f of landing.open.slice(0, 10)) {
-      L.push(`    ${f.sev.toUpperCase().padEnd(8)} ${f.file}${f.line ? ':' + f.line : ''} — ${f.why}`);
+      L.push(`    ${f.sev.toUpperCase().padEnd(8)} ${f.file}${f.line ? ':' + f.line : ''}, ${f.why}`);
     }
     if (landing.open.length > 10) L.push(`    … and ${landing.open.length - 10} more`);
   } else {
@@ -268,7 +268,7 @@ function renderLanding(landing, threshold) {
 }
 
 function printRules() {
-  console.log('\n  atris security-review — deterministic rules:\n');
+  console.log('\n  atris security-review, deterministic rules:\n');
   for (const sev of SEVERITIES) {
     for (const r of RULES.filter((rule) => rule.sev === sev)) {
       console.log(`  ${r.sev.toUpperCase().padEnd(8)} ${r.cat.padEnd(8)} ${r.id.padEnd(22)} ${r.why}`);
@@ -396,7 +396,7 @@ function installHook() {
 
 function printHelp() {
   console.log(`
-  atris security-review — deterministic secrets / PII / privacy scan (no LLM)
+  atris security-review, deterministic secrets / PII / privacy scan (no LLM)
 
     atris security-review            scan git-tracked files (default)
     atris security-review <path>     scan a file or dir

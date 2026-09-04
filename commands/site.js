@@ -1,4 +1,4 @@
-// atris site — turn a folder of markdown (docs, your wiki, memory) into a
+// atris site, turn a folder of markdown (docs, your wiki, memory) into a
 // beautiful, navigable static site in the design system. Built on lib/site.js.
 //
 //   atris site <dir|doc.md> [--out dist] [--theme atris|terminal|paper] [--title T] [--serve]

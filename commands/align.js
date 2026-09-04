@@ -100,7 +100,7 @@ function walkLocal(rootDir) {
  * Why this instead of recursive /files walk: the recursive walk is rate-limited
  * (60/min) and hangs on workspaces with many subdirs. The /snapshot endpoint
  * returns the full file tree in one call. Trade-off: snapshot can be incomplete
- * for very deep hierarchies (server-side bug we've seen) — but it's vastly faster
+ * for very deep hierarchies (server-side bug we've seen), but it's vastly faster
  * and we accept that risk in exchange for not hanging.
  */
 async function walkCloud(token, businessId, workspaceId) {
@@ -126,14 +126,14 @@ async function walkCloud(token, businessId, workspaceId) {
       out[p] = { hash: f.hash || null, size: f.size || 0 };
     }
     // CRITICAL: only return if snapshot actually had files. Empty snapshot is
-    // a known server-side bug — fall back to recursive walk in that case so
+    // a known server-side bug, fall back to recursive walk in that case so
     // we don't report every local file as "only on local" against a phantom empty cloud.
     if (Object.keys(out).length > 0) {
       return { files: out, errors };
     }
     errors.push({ path: '<snapshot>', status: 'empty', fallback: 'recursive walk' });
   } else {
-    // Snapshot failed entirely — fall back to recursive walk
+    // Snapshot failed entirely, fall back to recursive walk
     errors.push({ path: '<snapshot>', status: snapshotResult.status, fallback: 'recursive walk' });
   }
 
@@ -288,7 +288,7 @@ async function alignHardLocalToCloud(token, biz, localDir) {
   const { buildManifest, saveManifest, computeLocalHashes } = require('../lib/manifest');
 
   // 1. List top-level entries on cloud via /files (1 fast API call).
-  //    We deliberately AVOID /snapshot here — its hangs/timeouts on bloated
+  //    We deliberately AVOID /snapshot here, its hangs/timeouts on bloated
   //    workspaces are the whole reason --hard exists. /files at depth 0 is
   //    a single dir-listing call that returns reliably.
   //
@@ -319,12 +319,12 @@ async function alignHardLocalToCloud(token, biz, localDir) {
   const cloudTopEntries = (topResult.data && topResult.data.files) || [];
   console.log(`${cloudTopEntries.length} entries`);
 
-  // The `workspace` top-level entry is the workspace root itself — it's
+  // The `workspace` top-level entry is the workspace root itself, it's
   // protected server-side (DELETE returns 400) and is NEVER cruft. Don't
   // try to delete it; pretend it isn't there for the diff.
   const PROTECTED_TOP = new Set(['workspace']);
 
-  // 2. Top-level local entries — track names AND types so we can detect
+  // 2. Top-level local entries, track names AND types so we can detect
   //    type-mismatch (cloud has file `foo`, local has dir `foo/`).
   const localTopByName = new Map(); // name -> 'dir' | 'file'
   for (const e of fs.readdirSync(localDir, { withFileTypes: true })) {
@@ -341,7 +341,7 @@ async function alignHardLocalToCloud(token, biz, localDir) {
   //
   // NOTE: --hard intentionally does NOT respect SKIP_DIRS/SKIP_FILES here.
   // Those skip lists exist for the diff/walk path so we don't enumerate
-  // node_modules/venv/__pycache__ locally — they are NOT protections that
+  // node_modules/venv/__pycache__ locally, they are NOT protections that
   // mean "don't delete on cloud." A bloated cloud workspace might genuinely
   // contain stale `default/`, `venv/`, `__pycache__/` etc that the user
   // wants nuked. --hard means "make cloud match local"; if local doesn't
@@ -354,7 +354,7 @@ async function alignHardLocalToCloud(token, biz, localDir) {
     if (PROTECTED_TOP.has(name)) return false;
     const localType = localTopByName.get(name);
     if (!localType) return true; // not in local at all
-    if (localType !== entry.type) return true; // type mismatch — must clear
+    if (localType !== entry.type) return true; // type mismatch, must clear
     return false;
   });
 
@@ -413,7 +413,7 @@ async function alignHardLocalToCloud(token, biz, localDir) {
     const r = await pushFiles(token, businessId, workspaceId, batch, 180000);
     if (r.ok) {
       // The server returns SyncResponse{written, unchanged, errors, results}
-      // inside a 200. A successful HTTP doesn't mean every file landed —
+      // inside a 200. A successful HTTP doesn't mean every file landed,
       // results can include status="error" entries (path-traversal attempts,
       // permission errors, full disk, etc). Trust the server's count and
       // record any per-file errors against batchFailures so we don't write
@@ -446,7 +446,7 @@ async function alignHardLocalToCloud(token, biz, localDir) {
     if (failedPaths.length > 8) console.log(`      ... +${failedPaths.length - 8} more`);
   }
 
-  // 5. Save manifest so subsequent push/pull diffs work — but ONLY if every
+  // 5. Save manifest so subsequent push/pull diffs work, but ONLY if every
   //    batch, every per-file write, AND every cloud delete succeeded. If
   //    anything failed, leaving the manifest stale is safer than recording
   //    a mirror that doesn't actually exist on cloud (the manifest would
@@ -553,7 +553,7 @@ async function alignAtris() {
   // --hard: skip the slow file-by-file walk. Nuke top-level cloud entries
   // not present locally (1 DELETE per top-level dir, recursive on the server),
   // then bulk-push every local file via /sync. Designed for "cloud is bloated,
-  // local is canonical, just make them match" — the force-push escape hatch.
+  // local is canonical, just make them match", the force-push escape hatch.
   if (hard && fix) {
     console.log(`  Local:  ${localDir}`);
     console.log(`  Cloud:  ${endpoint}`);
@@ -635,7 +635,7 @@ async function alignAtris() {
   }
 
   // FIX MODE
-  console.log(`  Fixing — ${fromSide} is canonical:`);
+  console.log(`  Fixing, ${fromSide} is canonical:`);
 
   if (fromSide === 'local') {
     // Delete cloud-only files (they're cruft)

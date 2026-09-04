@@ -308,7 +308,7 @@ function auditLoops(cwd = process.cwd()) {
     console.log('No atris/loops directory found.');
     console.log('Run: atris loops init');
     console.log('');
-    console.log('SELF-IMPROVING: NOT YET — 1 open');
+    console.log('SELF-IMPROVING: NOT YET, 1 open');
     return 1;
   }
 
@@ -320,7 +320,7 @@ function auditLoops(cwd = process.cwd()) {
     console.log('No loop files found in atris/loops.');
     console.log('Run: atris loops init');
     console.log('');
-    console.log('SELF-IMPROVING: NOT YET — 1 open');
+    console.log('SELF-IMPROVING: NOT YET, 1 open');
     return 1;
   }
 
@@ -352,7 +352,7 @@ function auditLoops(cwd = process.cwd()) {
     console.log('SELF-IMPROVING: YES');
     return 0;
   }
-  console.log(`SELF-IMPROVING: NOT YET — ${open} open`);
+  console.log(`SELF-IMPROVING: NOT YET, ${open} open`);
   return 1;
 }
 
@@ -382,7 +382,7 @@ function showLoopsHelp() {
 }
 
 function loopsCommand(subcommand, ...args) {
-  // `loops <sub> --help` is a help request, not a run — tick/start/stop/init
+  // `loops <sub> --help` is a help request, not a run, tick/start/stop/init
   // mutate loop state, so never execute a subcommand just to show usage.
   if (subcommand === '--help' || subcommand === '-h' || subcommand === 'help'
       || args.includes('--help') || args.includes('-h')) {

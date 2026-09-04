@@ -1,6 +1,6 @@
 'use strict';
 
-// atris agents — one glanceable view of every member's state.
+// atris agents, one glanceable view of every member's state.
 // Reads .atris/state/missions.jsonl (schema atris.mission.v1) plus the
 // directories in atris/team/, and prints who is stuck, waiting on you,
 // working, or resting. Built from a dream card: "validator cannot plan
