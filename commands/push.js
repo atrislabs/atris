@@ -491,7 +491,7 @@ async function pushAtris() {
   // Push the whole business workspace by default. Brain-only sync must be
   // explicit with --only atris/ so root workspace files cannot be missed.
 
-  // Resolve business — always refresh from API
+  // Resolve business, always refresh from API
   let businessId, workspaceId, businessName, resolvedSlug;
   const businesses = loadBusinesses();
   const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
@@ -516,7 +516,7 @@ async function pushAtris() {
 
   if (!workspaceId) { console.error(`Business "${slug}" has no workspace.`); process.exit(1); }
 
-  // Telemetry helper — emits one event with the elapsed wall-clock time.
+  // Telemetry helper, emits one event with the elapsed wall-clock time.
   // Awaited (not fire-and-forget) because process.exit kills in-flight requests.
   const emit = (outcome, extras = {}) =>
     emitSyncEvent(creds.token, businessId, workspaceId, 'push', outcome, elapsedMs(), extras);
@@ -590,12 +590,12 @@ async function pushAtris() {
   console.log(`Pushing to ${businessName}...`);
 
   // ───────────────────────────────────────────────────────────────────
-  // FRESHNESS CHECK — pull-before-push enforcement.
+  // FRESHNESS CHECK, pull-before-push enforcement.
   // ───────────────────────────────────────────────────────────────────
   // Compare cloud's current state to our local manifest. If cloud has any
   // file the manifest doesn't know about, OR a file with a different hash
   // than what we last pulled, the user is out of date and MUST pull first.
-  // This prevents stale local state from clobbering fresh cloud changes —
+  // This prevents stale local state from clobbering fresh cloud changes, 
   // the "lagging version push" footgun. Use --force to bypass (e.g., for
   // genuine local-canonical pushes like align --hard).
   if (!force) {
@@ -624,7 +624,7 @@ async function pushAtris() {
       // files on the next push, undoing the deletion.
       //
       // CAVEAT: the warm runner's snapshot endpoint deliberately hides certain
-      // basenames (CLAUDE.md, .* dotfiles, node_modules, __pycache__, .git) —
+      // basenames (CLAUDE.md, .* dotfiles, node_modules, __pycache__, .git), 
       // see ecs_warm_runner.py _snapshot_dir. They CAN exist on cloud but
       // never appear in cloudHashes. Skip them in the missing-side check or
       // every CLAUDE.md push will be flagged as drift forever.
@@ -646,7 +646,7 @@ async function pushAtris() {
       }
       console.log('fresh');
     } else {
-      // Snapshot fetch failed — fail closed. The whole point of the freshness
+      // Snapshot fetch failed, fail closed. The whole point of the freshness
       // check is to prevent accidental stale pushes; if we can't verify cloud
       // state, we don't push. Use --force to bypass when you know what you're
       // doing (e.g., the workspace is genuinely unhealthy and you have a clean
@@ -661,7 +661,7 @@ async function pushAtris() {
     }
   }
 
-  // Compare local hashes to manifest — NO server call needed
+  // Compare local hashes to manifest, NO server call needed
   // Files where local hash differs from manifest = changed locally
   if (parsed.changed && Array.isArray(onlyPrefixes) && onlyPrefixes.length === 0 && (!parsed.pathArgs || parsed.pathArgs.length === 0) && !parsed.onlyRaw) {
     console.log('\n  Already up to date.\n');
@@ -699,7 +699,7 @@ async function pushAtris() {
     process.exit(1);
   }
 
-  // Dry run — show what would be pushed without pushing
+  // Dry run, show what would be pushed without pushing
   if (dryRun) {
     console.log('');
     for (const f of filesToPush) {
@@ -765,7 +765,7 @@ async function pushAtris() {
   // The /sync endpoint can silently drop files (role-based filters on the
   // business workspace route, path-rejection inside the warm runner, etc.)
   // and still return HTTP 200. If we don't cross-check per-file results,
-  // the CLI prints "Pushed" for files that never actually landed — and
+  // the CLI prints "Pushed" for files that never actually landed, and
   // the manifest records a hash that makes the next push skip them too,
   // losing them permanently. `failedToLand` collects those casualties so
   // we can warn the user AND keep them out of the manifest update.
@@ -818,7 +818,7 @@ async function pushAtris() {
         }
       }
     } else {
-      // No results array in response — old server. Best-effort: assume
+      // No results array in response, old server. Best-effort: assume
       // everything sent landed. This preserves existing behavior when
       // talking to a server that doesn't return per-file status.
       for (const f of sentFiles) {
@@ -835,7 +835,7 @@ async function pushAtris() {
   };
 
   if (filesToPush.length > 0) {
-    // Push files to server (strip leading slash — server requires workspace-relative paths)
+    // Push files to server (strip leading slash, server requires workspace-relative paths)
     const uploadBatches = buildPushUploadBatches(filesToPush);
     for (const batch of uploadBatches) {
       result = await syncFiles(batch);
@@ -848,7 +848,7 @@ async function pushAtris() {
             await emit('access_denied', { error_detail: detail });
             process.exit(1);
           }
-          // Permission denied — retry with only team/ and journal/ files
+          // Permission denied, retry with only team/ and journal/ files
           const allowed = filesToPush.filter(f => f.path.startsWith('/team/') || f.path.startsWith('/journal/'));
           skipped = filesToPush.filter(f => !f.path.startsWith('/team/') && !f.path.startsWith('/journal/'));
 
@@ -901,7 +901,7 @@ async function pushAtris() {
     }
   }
 
-  // Delete loop — throttled, 429-aware, tracks per-file success/failure.
+  // Delete loop, throttled, 429-aware, tracks per-file success/failure.
   // Earlier bug: bulk deletes hit rate limit (60/min default) at request 60,
   // then process.exit'd, leaving partial state and a manifest that thought
   // everything was deleted. New behavior:
@@ -924,7 +924,7 @@ async function pushAtris() {
       { method: 'DELETE', token: creds.token }
     );
     if (deleteResult.status === 429) {
-      // Rate limit — wait 20s, retry once
+      // Rate limit, wait 20s, retry once
       _rateLimitedDeletes++;
       await new Promise((r) => setTimeout(r, 20000));
       deleteResult = await apiRequestJson(
@@ -950,7 +950,7 @@ async function pushAtris() {
     if (deleteFailed.length > 10) console.log(`    ... +${deleteFailed.length - 10} more`);
   }
 
-  // Display results — only for files the server confirmed as landed.
+  // Display results, only for files the server confirmed as landed.
   // A non-technical user seeing "+ atris/ideas/foo.md new file" naturally
   // assumes foo.md is on cloud. So we only print that line when the server
   // actually confirmed it via per-file status. Anything else goes into the
@@ -965,12 +965,12 @@ async function pushAtris() {
   for (const f of skipped) {
     console.log(`  - ${f.path.replace(/^\//, '')}  skipped (no permission)`);
   }
-  // Only print confirmed deletes (not failed ones — they were reported above)
+  // Only print confirmed deletes (not failed ones, they were reported above)
   for (const filePath of deletedConfirmed) {
     console.log(`  x ${filePath.replace(/^\//, '')}  deleted`);
   }
 
-  // Loud failure block — files the server silently dropped or rejected.
+  // Loud failure block, files the server silently dropped or rejected.
   // These did NOT land on cloud even though the HTTP call returned 200.
   if (failedToLand.length > 0) {
     console.log('');
@@ -978,7 +978,7 @@ async function pushAtris() {
     console.log(`     dropped or rejected these files):`);
     const shown = failedToLand.slice(0, 15);
     for (const f of shown) {
-      const detail = f.error ? ` — ${f.error}` : ` (${f.status})`;
+      const detail = f.error ? `, ${f.error}` : ` (${f.status})`;
       console.log(`    ✗ ${f.path.replace(/^\//, '')}${detail}`);
     }
     if (failedToLand.length > shown.length) {
@@ -1000,13 +1000,13 @@ async function pushAtris() {
   if (skipped.length > 0) parts.push(`${skipped.length} skipped`);
   console.log(`  ${parts.join(', ')}.`);
 
-  // Update manifest — mark pushed files with their new hash, drop ONLY confirmed deletes.
+  // Update manifest, mark pushed files with their new hash, drop ONLY confirmed deletes.
   // Failed deletes stay in the manifest so the next push will retry them.
   //
   // CRITICAL: only record manifest entries for files the server confirmed as
   // landed (landedPaths). If we recorded the local hash for a file that the
   // server silently dropped, the next push would compare local==manifest and
-  // skip it — the file would never land. Keeping it OUT of the manifest means
+  // skip it, the file would never land. Keeping it OUT of the manifest means
   // the next push sees it as new/changed and retries automatically.
   const updatedFiles = { ...baseFiles };
   for (const f of filesToPush) {
@@ -1019,7 +1019,7 @@ async function pushAtris() {
   }
   saveManifest(resolvedSlug || slug, buildManifest(updatedFiles, null, { workspaceRoot: sourceDir }));
 
-  // Telemetry — outcome reflects actual run quality, not just exit-code-zero.
+  // Telemetry, outcome reflects actual run quality, not just exit-code-zero.
   // Partial delete failures or rate-limit retries mean the run was NOT a clean win;
   // labeling them success would poison the RL signal.
   const bytesChanged = filesToPush.reduce((acc, f) => acc + (f.content ? Buffer.byteLength(f.content, 'utf8') : 0), 0);

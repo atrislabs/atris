@@ -259,14 +259,14 @@ async function pullBusiness(slug) {
   // Determine output directory.
   //
   // We only reuse the current working directory when we can prove it's the
-  // correct workspace for THIS business — i.e. it has a `.atris/business.json`
+  // correct workspace for THIS business, i.e. it has a `.atris/business.json`
   // whose slug matches `slug`. Any other signal (a stray `atris/` folder, a
   // business.json for a different business, etc.) is NOT enough: pulling
   // one business on top of another business workspace would mix two businesses into
   // one directory and write one manifest over the other (or vice
   // versa), causing the next sync to do strange things.
   //
-  // Fallback: create a fresh ./{slug}/ subdir. Always safe — even if cwd is
+  // Fallback: create a fresh ./{slug}/ subdir. Always safe, even if cwd is
   // $HOME or /tmp, we land in a dedicated subfolder.
   const intoIdx = process.argv.indexOf('--into');
   let outputDir;
@@ -281,7 +281,7 @@ async function pullBusiness(slug) {
         const cwdSlug = biz.slug || biz.name;
         cwdMatchesSlug = cwdSlug === slug;
       } catch {
-        // Corrupt business.json — ignore, treat as no match.
+        // Corrupt business.json, ignore, treat as no match.
       }
     }
     outputDir = cwdMatchesSlug ? process.cwd() : path.join(process.cwd(), slug);
@@ -289,7 +289,7 @@ async function pullBusiness(slug) {
 
   // Auto-relocate if the resolved outputDir is dangerous ($HOME, /, /Users,
   // system dirs, reserved home folders). Non-technical users shouldn't have
-  // to know about mkdir/cd — atris picks a safe subdir and tells them.
+  // to know about mkdir/cd, atris picks a safe subdir and tells them.
   // Paired with the manifest-scoped sweep below, this makes it impossible
   // for a stray cwd to cause atris to delete user files.
   ({ dir: outputDir } = resolveSafeOutputDir(outputDir, { slug, op: 'pull into' }));
@@ -298,7 +298,7 @@ async function pullBusiness(slug) {
   // narrowed bound workspace pulls to atris/, which made staging snapshots and
   // the real workspace diverge while both reported "synced".
 
-  // Resolve business ID — always refresh from API to avoid stale workspace_id
+  // Resolve business ID, always refresh from API to avoid stale workspace_id
   let businessId, workspaceId, businessName, resolvedSlug;
   let localSlug = slug;
   const businesses = loadBusinesses();
@@ -347,14 +347,14 @@ async function pullBusiness(slug) {
     process.exit(1);
   }
 
-  // Telemetry helper — captures wall-clock time including wake.
+  // Telemetry helper, captures wall-clock time including wake.
   let _coldWake = false;
   const emit = (outcome, extras = {}) =>
     emitSyncEvent(creds.token, businessId, workspaceId, 'pull', outcome, elapsedMs(), extras);
 
   // Auto-wake the EC2 computer if --auto-wake is set.
   // Without this, pull silently serves stale data from agent_files cache when
-  // the computer is asleep — the bug that confused us all night.
+  // the computer is asleep, the bug that confused us all night.
   const autoWake = process.argv.includes('--auto-wake');
   if (autoWake) {
     const statusResult = await apiRequestJson(`/business/${businessId}/ai-computer/status`, { method: 'GET', token: creds.token });
@@ -415,7 +415,7 @@ async function pullBusiness(slug) {
   const pathsParam = onlyPrefixes ? `&paths=${encodeURIComponent(onlyPrefixes.map(p => p.replace(/\/$/, '')).join(','))}` : '';
 
   if (hasManifest) {
-    // Phase 1: fetch hashes only (fast — no file content transferred)
+    // Phase 1: fetch hashes only (fast, no file content transferred)
     const hashUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=false${pathsParam}`;
     const hashResult = await apiRequestJson(hashUrl, { method: 'GET', token: creds.token, timeoutMs });
 
@@ -438,13 +438,13 @@ async function pullBusiness(slug) {
       if (changedPaths.length === 0) {
         clearInterval(loading);
         process.stdout.write(`\r  Checked ${Object.keys(remoteHashes).length} files in ${Math.floor((Date.now() - startTime) / 1000)}s.${' '.repeat(10)}\n`);
-        // Still need full result for diff logic below — build it from hash-only data
+        // Still need full result for diff logic below, build it from hash-only data
         result = { ok: true, data: { files: hashResult.data.files } };
       } else {
         // Phase 2: fetch ONLY changed files via batch endpoint (not full snapshot)
         clearInterval(loading);
         const checkSec = Math.floor((Date.now() - startTime) / 1000);
-        console.log(`\r  Checked in ${checkSec}s — ${changedPaths.length} changed, ${Object.keys(remoteHashes).length - changedPaths.length} unchanged.${' '.repeat(10)}`);
+        console.log(`\r  Checked in ${checkSec}s, ${changedPaths.length} changed, ${Object.keys(remoteHashes).length - changedPaths.length} unchanged.${' '.repeat(10)}`);
 
         const startPhase2 = Date.now();
         const loading2 = setInterval(() => {
@@ -452,7 +452,7 @@ async function pullBusiness(slug) {
           process.stdout.write(`\r  Fetching ${changedPaths.length} changed files... ${spinner[spinIdx++ % 4]} ${elapsed}s`);
         }, 250);
 
-        // Try batch file read first (fast — only changed files)
+        // Try batch file read first (fast, only changed files)
         const batchUrl = `/business/${businessId}/workspaces/${workspaceId}/files/batch`;
         const batchResult = await apiRequestJson(batchUrl, {
           method: 'POST',
@@ -477,7 +477,7 @@ async function pullBusiness(slug) {
             process.stdout.write(`\r  Fetched in ${fullSec}s.${' '.repeat(20)}\n`);
           }
         } else {
-          // Batch not available — fall back to full snapshot
+          // Batch not available, fall back to full snapshot
           process.stdout.write(`\r  Batch unavailable, fetching full snapshot...${' '.repeat(10)}\n`);
           const contentUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true${pathsParam}`;
           result = await apiRequestJson(contentUrl, { method: 'GET', token: creds.token, timeoutMs });
@@ -486,14 +486,14 @@ async function pullBusiness(slug) {
         }
       }
     } else {
-      // Hash-only fetch failed — fall back to full snapshot
+      // Hash-only fetch failed, fall back to full snapshot
       const fullUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true${pathsParam}`;
       result = await apiRequestJson(fullUrl, { method: 'GET', token: creds.token, timeoutMs });
       clearInterval(loading);
       process.stdout.write(`\r  Fetched in ${Math.floor((Date.now() - startTime) / 1000)}s.${' '.repeat(20)}\n`);
     }
   } else {
-    // First sync or --force — full snapshot with content
+    // First sync or --force, full snapshot with content
     const snapshotUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true${pathsParam}`;
     result = await apiRequestJson(snapshotUrl, { method: 'GET', token: creds.token, timeoutMs });
     clearInterval(loading);
@@ -570,7 +570,7 @@ async function pullBusiness(slug) {
       // Don't early-return: we still need to update the manifest so paths
       // that USED to be in the scoped subtree but were deleted on cloud
       // get evicted from the manifest. Without this, the next push freshness
-      // check would forever flag those paths as drift and demand a pull —
+      // check would forever flag those paths as drift and demand a pull, 
       // but the pull would early-return again, creating a deadlock.
     } else {
       console.log(`  Filtered to ${files.length} files matching: ${onlyPrefixes.join(', ')}`);
@@ -580,7 +580,7 @@ async function pullBusiness(slug) {
   // Build remote file map {path: {hash, size}} and content map {path: content}.
   //
   // CRITICAL: smart-pull (hash-only fetch) returns files with `path`+`hash`+`size`
-  // but no `content`. Phase-2 batch fetch only adds content for CHANGED files —
+  // but no `content`. Phase-2 batch fetch only adds content for CHANGED files, 
   // unchanged files stay hash-only. We must include hash-only entries in remoteFiles
   // so threeWayCompare doesn't see them as missing-from-remote (deletedRemote).
   // The previous version skipped any file without content, which caused every
@@ -598,16 +598,16 @@ async function pullBusiness(slug) {
     // empty files masquerade as hash-only entries; they'd then be recorded in
     // the manifest (with the empty-string hash) but never written to disk.
     // A subsequent push would compare local (file missing) to manifest (file
-    // present) and try to delete the file from cloud — silently undoing the
+    // present) and try to delete the file from cloud, silently undoing the
     // very thing the user just pulled.
     const hasContent = file.content !== null && file.content !== undefined && typeof file.content === 'string';
     if (hasContent) {
-      // Full content available — hash from raw bytes (matches computeLocalHashes)
+      // Full content available, hash from raw bytes (matches computeLocalHashes)
       const rawBytes = Buffer.from(file.content, 'utf-8');
       remoteFiles[normalizedPath] = { hash: crypto.createHash('sha256').update(rawBytes).digest('hex'), size: rawBytes.length };
       remoteContent[normalizedPath] = file.content;
     } else if (file.hash) {
-      // Hash-only entry from smart pull — trust the cloud-reported hash
+      // Hash-only entry from smart pull, trust the cloud-reported hash
       remoteFiles[normalizedPath] = { hash: file.hash, size: file.size || 0 };
     }
   }
@@ -636,7 +636,7 @@ async function pullBusiness(slug) {
     };
   }
 
-  // If output dir is empty (fresh clone) or --force, treat as first sync — pull everything
+  // If output dir is empty (fresh clone) or --force, treat as first sync, pull everything
   const scopedLocalFiles = filterFilesToPullScope(localFiles);
   const scopedRemoteFiles = filterFilesToPullScope(remoteFiles);
   const scopedManifest = filterManifestToPullScope(manifest);
@@ -750,20 +750,20 @@ async function pullBusiness(slug) {
     }
   }
 
-  // FORCE MIRROR SWEEP — local must EXACTLY match cloud after a force pull.
+  // FORCE MIRROR SWEEP, local must EXACTLY match cloud after a force pull.
   // The threeWayCompare path with effectiveManifest=null only computes
   // newLocal/conflicts/newRemote and never marks files as deletedRemote, so
   // local-only files (created locally, never on cloud) survive a force pull.
   // That breaks the "cloud is the source of truth" promise. Sweep them now.
   //
-  // SAFETY GUARDS — without these the sweep can wipe an entire local copy:
+  // SAFETY GUARDS, without these the sweep can wipe an entire local copy:
   //   • Scope the sweep: when --only is set, only sweep paths INSIDE the
-  //     prefix(es). Out-of-scope local files must be left alone — the user
+  //     prefix(es). Out-of-scope local files must be left alone, the user
   //     asked for a partial pull, not a workspace-wide reset.
   //   • Skip when remoteFiles is empty AND local has in-scope content: the
   //     snapshot endpoint has a known server-side bug where it returns 0
   //     files for healthy workspaces. If cloud reports empty but local has
-  //     in-scope content we refuse to sweep — the user can re-run with
+  //     in-scope content we refuse to sweep, the user can re-run with
   //     --keep-local and investigate, or run `atris align --hard` for an
   //     explicit nuke.
   //   • Skip files the server's snapshot filter hides. The warm runner's
@@ -786,11 +786,11 @@ async function pullBusiness(slug) {
 
     // SAFETY: only sweep files atris previously wrote (recorded in the
     // manifest). Local-only files that were never on cloud are the user's
-    // own — atris didn't put them there, atris doesn't delete them. This
+    // own, atris didn't put them there, atris doesn't delete them. This
     // makes it impossible for a stray cwd (e.g. $HOME) to cause atris to
     // wipe ~/Library, ~/Downloads, etc.
     //
-    // If there's no prior manifest (first pull), there's nothing to sweep —
+    // If there's no prior manifest (first pull), there's nothing to sweep, 
     // threeWayCompare already handled newRemote/conflicts/newLocal, and we
     // have no basis for claiming ownership of any local-only file.
     const managedPaths = manifest && manifest.files
@@ -815,7 +815,7 @@ async function pullBusiness(slug) {
           console.log(`  - ${p.replace(/^\//, '')}  not on cloud, removed locally`);
           deleted++;
         } catch {
-          // ignore — file might already be gone
+          // ignore, file might already be gone
         }
       }
     }
@@ -846,7 +846,7 @@ async function pullBusiness(slug) {
       commitHash = headResult.data.commit;
     }
   } catch {
-    // Git might not be initialized yet — that's fine
+    // Git might not be initialized yet, that's fine
   }
 
   if (failOnConflict && conflictCount > 0) {
@@ -878,7 +878,7 @@ async function pullBusiness(slug) {
   // ANTI-WIPE GUARD: if cloud reported zero in-scope files but local still
   // has in-scope content (i.e. the sweep refused), don't overwrite the
   // manifest with empty data for the scoped subtree. The manifest is the
-  // authoritative record of what we last knew was on cloud — wiping it
+  // authoritative record of what we last knew was on cloud, wiping it
   // because of a transient empty snapshot would force every subsequent
   // push to flag every file as drift. Better to leave the manifest stale
   // than to record a never-actually-true "cloud is empty" state.
@@ -893,7 +893,7 @@ async function pullBusiness(slug) {
     }
   }
 
-  // Save manifest — when using --only, merge into existing manifest so paths
+  // Save manifest, when using --only, merge into existing manifest so paths
   // OUTSIDE the scoped prefix don't get dropped. Inside the scoped prefix,
   // however, we must replace (not merge) so that files deleted on cloud
   // since the last sync get evicted from the manifest. Without this, the
@@ -939,7 +939,7 @@ async function pullBusiness(slug) {
 
         const skillFile = path.join(fullPath, 'SKILL.md');
         if (fs.existsSync(skillFile)) {
-          // This is a leaf skill — wire it
+          // This is a leaf skill, wire it
           const skillName = relPrefix ? `${relPrefix}-${entry}` : entry;
           const symlinkPath = path.join(claudeSkillsDir, skillName);
           const relativePath = path.relative(path.dirname(symlinkPath), fullPath);
@@ -982,7 +982,7 @@ async function pullBusiness(slug) {
     }
   }
 
-  // Telemetry — only count files where content actually came over the wire
+  // Telemetry, only count files where content actually came over the wire
   // (smart-pull skips unchanged files and just sends a hash). Counting all
   // remoteFiles here would dwarf the real signal once smart-pull steady-state
   // is normal (< 1% of files transferred per pull).
@@ -1048,12 +1048,12 @@ async function pullGeneralJournal(token, agentId) {
     if (localContent.trim() === remoteContent.trim()) continue;
 
     if (!localContent || localContent.trim() === '') {
-      // No local — just write remote
+      // No local, just write remote
       fs.writeFileSync(logFile, remoteContent);
       console.log(`  Journal ${date} pulled`);
       synced++;
     } else {
-      // Both exist and differ — merge
+      // Both exist and differ, merge
       try {
         const localSections = parseJournalSections(localContent);
         const remoteSections = parseJournalSections(remoteContent);
@@ -1065,7 +1065,7 @@ async function pullGeneralJournal(token, agentId) {
           console.log(`  Journal ${date} merged`);
           synced++;
         } else {
-          // Conflicts — keep local, warn
+          // Conflicts, keep local, warn
           console.log(`  Journal ${date} has conflicts (kept local, run "atris log sync" to resolve)`);
         }
       } catch {

@@ -90,7 +90,7 @@ function aheadCount(root, base, ref) {
   return Number(result.stdout.trim()) || 0;
 }
 
-// The subject lines of the commits a ref carries beyond base, oldest last —
+// The subject lines of the commits a ref carries beyond base, oldest last, 
 // what a stranded worktree is actually holding, so surfacing it names the work.
 function commitSubjects(cwd, base, ref, limit = 6) {
   const result = runGit(['log', '--format=%s', `${base}..${ref}`], { cwd, check: false });
@@ -111,9 +111,9 @@ function cherryStats(root, base, ref) {
 }
 
 // Board: every branch and worktree with unlanded state, classified.
-//   landed — no commits ahead of base; the branch pointer is residue
-//   active — has unlanded commits, younger than TTL
-//   due    — has unlanded commits, older than TTL; --reap collects it
+//   landed, no commits ahead of base; the branch pointer is residue
+//   active, has unlanded commits, younger than TTL
+//   due, has unlanded commits, older than TTL; --reap collects it
 function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', now = Date.now(), light = false } = {}) {
   const base = baseBranch(root, baseOverride);
   if (!base) {
@@ -152,12 +152,12 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
   const all = listWorktrees(root);
   for (const wt of all.slice(1)) {
     const branch = (wt.branch || '').replace(/^refs\/heads\//, '');
-    // light mode skips the full `git status` per worktree — the banner summary
+    // light mode skips the full `git status` per worktree, the banner summary
     // never reads dirty counts, only worktree mtimes for staleness.
     const counts = (light ? null : statusCounts(wt.path)) || { staged: 0, unstaged: 0, untracked: 0 };
     const dirty = counts.staged + counts.unstaged + counts.untracked;
     const entry = branches.find((b) => b.name === branch) || null;
-    // Committed-but-unlanded work is invisible in the dirty count — a clean
+    // Committed-but-unlanded work is invisible in the dirty count, a clean
     // worktree can still hold commits ahead of base that silently never land.
     // Carry the ahead/unique counts (and, off the light path, the subjects)
     // so a stranded worktree is surfaced by what it is actually holding.
@@ -166,7 +166,7 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
     let ageDaysVal = entry ? entry.ageDays : null;
     let subjects = [];
     if (!branch) {
-      // Detached HEAD has no row in the branch table — ask the worktree itself.
+      // Detached HEAD has no row in the branch table, ask the worktree itself.
       const cnt = runGit(['rev-list', '--count', `${base}..HEAD`], { cwd: wt.path, check: false });
       ahead = cnt.status === 0 ? Number(cnt.stdout.trim()) || 0 : 0;
       if (ahead > 0) {
@@ -275,7 +275,7 @@ function remoteHeads(root) {
 
 // Everything a force-remove would destroy: staged + unstaged tracked changes
 // (git diff HEAD) and untracked files (copied verbatim). Returns false if any
-// piece could not be saved — the caller then keeps the worktree.
+// piece could not be saved, the caller then keeps the worktree.
 function salvageWorktree(w, dir, receipt) {
   try {
     // git writes the patch file itself: routing the diff through spawnSync
@@ -310,9 +310,9 @@ function salvageWorktree(w, dir, receipt) {
 // Reap: salvage then delete everything landed (residue) or past TTL.
 // Salvage first, always: unlanded commits go into a git bundle, dirty
 // worktrees into patch files + untracked-file copies, so a reap is never
-// a loss of work — and when a backup cannot be written, the work stays.
+// a loss of work, and when a backup cannot be written, the work stays.
 // includeDetached: detached-HEAD worktrees have no branch, so the salvage
-// bundle cannot cover their commits — unattended reaps (autoland) pass false
+// bundle cannot cover their commits, unattended reaps (autoland) pass false
 // and leave them for a human reap.
 function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true, protectCurrent = true, force = false, now = Date.now() } = {}) {
   const board = collectBoard(root, { ttlDays, staleHours, base: baseOverride, now });
@@ -342,7 +342,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     // force-remove: a detached worktree's commits ride no branch, and an active
     // branch worktree is not a reap target so its commits are never bundled.
     // Keep the worktree (and name what it holds) unless the operator forces it.
-    // A due/landed branch worktree still reaps normally — its commits ride the
+    // A due/landed branch worktree still reaps normally, its commits ride the
     // branch bundle, so removal is loss-free.
     const bundleCovered = w.branch && targetNames.has(w.branch);
     if (w.unlandedCommits > 0 && !force && !bundleCovered) {
@@ -410,7 +410,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     // copies bank everything force-remove would destroy. The fresh-worktree
     // grace was already applied when candidates were selected.
     if (w.dirty > 0 && !salvageWorktree(w, dir, receipt)) {
-      // could not fully back up what force-remove would destroy — keep it,
+      // could not fully back up what force-remove would destroy, keep it,
       // and say why: a bare path in the receipt reads as an unexplained
       // no-op (the exact silence BCK-1232 was about).
       receipt.keptWorktrees.push(`${w.path} (salvage incomplete: patch/copy failed, kept to avoid losing work)`);
@@ -433,7 +433,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
   for (const name of targetNames) {
     const entry = board.branches.find((b) => b.name === name);
     // the board is a snapshot; an agent may have committed since it was
-    // taken. A branch that moved is left alone — the next reap sees the
+    // taken. A branch that moved is left alone, the next reap sees the
     // new truth and bundles it before touching it.
     if (!entry || aheadCount(root, board.base, name) !== entry.ahead) {
       receipt.keptMovedBranches.push(name);
@@ -490,7 +490,7 @@ function collectStory(root, name, { base: baseOverride = '' } = {}) {
     });
 
   // git cherry marks a change '-' when an equivalent patch already exists
-  // in base — the honest "it landed some other way" signal.
+  // in base, the honest "it landed some other way" signal.
   const cherry = runGit(['cherry', base, name], { cwd: root, check: false });
   const landedHashes = new Set();
   for (const line of cherry.stdout.split(/\r?\n/).filter(Boolean)) {
@@ -619,7 +619,7 @@ function printReceipt(receipt) {
     if (receipt.bundleError) console.log(`  backup failed: unlanded work left in place: ${receipt.bundleError}`);
     for (const p of receipt.patches) console.log(`  unsaved edits saved: ${p}`);
     for (const u of receipt.untracked || []) console.log(`  new files saved: ${u}`);
-    // fresh-grace keeps are healthy active work, not a call to action —
+    // fresh-grace keeps are healthy active work, not a call to action, 
     // "needs a human" on those trained readers to ignore the real ones.
     for (const k of receipt.keptWorktrees || []) {
       // The receipt keeps the raw codes; the human line speaks in sentences.
