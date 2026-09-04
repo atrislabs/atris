@@ -11,11 +11,14 @@ const {
   expandNotesTargets,
   runYoutubeNotesBatch,
   LEARNER_SCORE_ZERO,
+  TEACH_THIN_REFUSE,
   youtubeCommand,
 } = require('../commands/youtube');
 const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
 const RICH_NOTES = '# Clip\n\nThe omakase model has 80 people.\n';
+const THIN_NOTES = '# Chat\n\nwelcome back friends this is just a chat about feelings and vibes\n';
+const LEARNER_BASELINE_INCOMPLETE = 'incomplete: check already passes. refuse invented success.';
 
 function richNotesWorkspace(ids) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-'));
@@ -226,6 +229,121 @@ test('multi-url notes --save files briefs', async () => {
   assert.equal(status, 0);
   assert.match(log.text(), /aaa111  1s  atris\/wiki\/briefs\/youtube-aaa111.md/);
   assert.match(log.text(), /bbb222  1s  atris\/wiki\/briefs\/youtube-bbb222.md/);
+  assert.equal(log.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 0);
+});
+
+test('rich multi-url notes --save proves failing learner baseline for the first saved item', async () => {
+  const first = 'https://www.youtube.com/watch?v=aaa111';
+  const second = 'https://www.youtube.com/watch?v=bbb222';
+  const { cwd, workDir } = richNotesWorkspace(['aaa111', 'bbb222']);
+  const log = collect();
+  const status = await youtubeCommand([
+    'notes',
+    '--save',
+    first,
+    second,
+  ], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: log.output,
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.match(log.text(), /aaa111  \d+s  atris\/wiki\/briefs\/youtube-aaa111.md/);
+  assert.match(log.text(), /bbb222  \d+s  atris\/wiki\/briefs\/youtube-bbb222.md/);
+  assert.match(log.text(), /next: atris experiments keep notes-aaa111/);
+  assert.equal(log.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+  assert.ok(log.text().indexOf('next: atris experiments keep notes-aaa111') < log.text().indexOf(LEARNER_SCORE_ZERO));
+  assert.doesNotMatch(log.text(), /^check:/m);
+  assert.equal(log.lines.filter((line) => line === ephemeralApplyMessage('notes')).length, 0);
+  assert.doesNotMatch(log.text(), /next: atris youtube teach/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-aaa111')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-bbb222')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-aaa111.apply.md')), true);
+});
+
+test('rich notes --save batch --json stays quiet on the learner score', async () => {
+  const { cwd, workDir } = richNotesWorkspace(['jsons1', 'jsons2']);
+  const log = collect();
+  const status = await youtubeCommand([
+    'notes',
+    '--save',
+    '--json',
+    'https://www.youtube.com/watch?v=jsons1',
+    'https://www.youtube.com/watch?v=jsons2',
+  ], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: log.output,
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 0);
+  assert.match(log.text(), /url or id  seconds  result/);
+  assert.equal(log.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 0);
+  assert.doesNotMatch(log.text(), /^check:/m);
+  assert.doesNotMatch(log.text(), /next: atris youtube teach/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-jsons1')), true);
+});
+
+test('rich notes --save batch returns nonzero when the first apply already passes', async () => {
+  const first = 'https://www.youtube.com/watch?v=pass01';
+  const { cwd, workDir } = richNotesWorkspace(['pass01', 'pass02']);
+  const applyRel = path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-pass01.apply.md');
+  fs.mkdirSync(path.dirname(applyRel), { recursive: true });
+  fs.writeFileSync(applyRel, [
+    'source: https://www.youtube.com/watch?v=pass01',
+    'change: keep the omakase model as the default stack',
+    'receipt: measure already contains the check tokens',
+  ].join('\n') + '\n');
+  const log = collect();
+  const status = await youtubeCommand([
+    'notes',
+    '--save',
+    first,
+    'https://www.youtube.com/watch?v=pass02',
+  ], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: log.output,
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 2);
+  assert.equal(log.lines.filter((line) => line === LEARNER_BASELINE_INCOMPLETE).length, 1);
+  assert.equal(log.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 0);
+});
+
+test('thin notes --save batch stays a refuse and does not prove a learner baseline', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-'));
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-notes-'));
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  fs.writeFileSync(path.join(workDir, 'yt_thin01.md'), THIN_NOTES);
+  fs.writeFileSync(path.join(workDir, 'yt_thin02.md'), THIN_NOTES);
+  const log = collect();
+  const status = await youtubeCommand([
+    'notes',
+    '--save',
+    'https://www.youtube.com/watch?v=thin01',
+    'https://www.youtube.com/watch?v=thin02',
+  ], {
+    cwd,
+    workDir,
+    now: '2026-08-26',
+    output: log.output,
+    runner: () => ({ status: 0 }),
+  });
+
+  assert.equal(status, 2);
+  assert.equal(log.lines.filter((line) => line === TEACH_THIN_REFUSE).length, 2);
+  assert.equal(log.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 0);
+  assert.doesNotMatch(log.text(), /^check:/m);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
 test('playlist expansion caps at 10 and prints a cap note', async () => {

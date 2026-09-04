@@ -1654,6 +1654,7 @@ function runOneNotesItem(item, engine, deps = {}) {
     status = 1;
   }
   let brief = null;
+  let lesson = null;
   let ok = status === 0;
   if (ok && deps.save) {
     const saved = saveRichNotes(item.url, deps);
@@ -1662,6 +1663,7 @@ function runOneNotesItem(item, engine, deps = {}) {
       ok = false;
     } else {
       brief = saved.brief;
+      lesson = saved.lesson;
       const ensureApply = deps.ensureApply || ensureNotesApply;
       try {
         ensureApply({
@@ -1678,7 +1680,7 @@ function runOneNotesItem(item, engine, deps = {}) {
   }
   const seconds = Math.max(0, Math.round((readNowMs(deps) - started) / 1000));
   output(`${label}  ${seconds}s  ${ok ? (brief || 'ok') : 'FAILED'}`);
-  return { url: item.url, id: item.id, seconds, ok, brief };
+  return { url: item.url, id: item.id, seconds, ok, brief, lesson };
 }
 
 function formatNotesSummary(rows = []) {
@@ -1715,6 +1717,23 @@ function runYoutubeNotesBatch({ urls, engine, save, json } = {}, deps = {}) {
   if (firstOk && !deps.save) {
     if (!asJson) printEphemeralNotesLearnerGate(firstOk.url, { workDir: deps.workDir }, output);
     printYoutubeTeachNext(firstOk.url, { json: asJson }, output);
+  }
+  if (firstOk && deps.save) {
+    if (deps.ensureApply) return 0;
+    const id = firstOk.id || videoIdFromUrl(firstOk.url);
+    const workDir = deps.workDir || path.join(process.env.TMPDIR || '/tmp', 'ytnotes');
+    const lesson = firstOk.lesson || notesLessonFromText(readNotesText({
+      url: firstOk.url,
+      workDir,
+    }));
+    const baseline = proveSavedLearnerBaseline({
+      cwd: deps.cwd || process.cwd(),
+      applyRel: id ? applySidecarRel(id) : null,
+      lesson,
+      output,
+      json: asJson,
+    });
+    if (baseline !== 0) return baseline;
   }
   return firstOk ? 0 : 2;
 }
