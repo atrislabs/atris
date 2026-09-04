@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('node:child_process');
 const { runAliveTick } = require('../lib/member-alive');
 
 test('alive dry-run plans without execute', () => {
@@ -72,3 +73,81 @@ test('alive execute treats stop (no goal) as non-blocking idle, not failure', ()
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Exercise the shipped library and dispatcher in an installed-package layout.
+// Only the final CLI work is a fixture, so no model or user credentials are used.
+function installedPackageFixture(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-installed-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const packageRoot = path.join(root, 'node_modules', 'atris');
+  const workspace = path.join(root, 'workspace');
+  fs.mkdirSync(workspace);
+  for (const relative of ['lib/member-alive.js', 'scripts/member-operate.mjs']) {
+    const destination = path.join(packageRoot, relative);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.copyFileSync(path.join(__dirname, '..', relative), destination);
+  }
+  const bin = path.join(packageRoot, 'bin', 'atris.js');
+  fs.mkdirSync(path.dirname(bin));
+  fs.writeFileSync(bin, `
+    const fs = require('node:fs');
+    const argv = process.argv.slice(2);
+    let result = { ok: true };
+    if (argv[0] === 'member' && argv[1] === 'wake') {
+      result = { decision: 'run', checks: { has_mission: true, has_goal: true } };
+    }
+    if (argv[0] === 'member' && argv[1] === 'run') {
+      const receipt_path = 'dispatch-proof.json';
+      fs.writeFileSync(receipt_path, JSON.stringify({ cwd: process.cwd(), argv }));
+      result = { ok: true, receipt_path, summary: 'packaged dispatch completed' };
+    }
+    process.stdout.write(JSON.stringify(result));
+  `);
+  return {
+    workspace,
+    run() {
+      const env = { ...process.env };
+      delete env.ATRIS_BIN;
+      const result = spawnSync(process.execPath, ['-e', `
+        const { runAliveTick } = require(${JSON.stringify(path.join(packageRoot, 'lib/member-alive.js'))});
+        console.log(JSON.stringify(runAliveTick('demo', {
+          cwd: ${JSON.stringify(workspace)}, execute: true, confirmed: true, noPrime: true,
+        })));
+      `], { cwd: root, env, encoding: 'utf8', timeout: 10000 });
+      assert.equal(result.status, 0, result.stderr);
+      const tick = JSON.parse(result.stdout);
+      assert.equal(tick.ok, true, JSON.stringify(tick));
+      return tick;
+    },
+  };
+}
+
+test('installed alive dispatches its packaged script with the workspace cwd', (t) => {
+  const fixture = installedPackageFixture(t);
+  assert.equal(fs.existsSync(path.join(fixture.workspace, 'scripts')), false);
+  const tick = fixture.run();
+  assert.equal(tick.operate.payload.executed, true);
+  assert.equal(tick.operate.payload.summary, 'packaged dispatch completed');
+  assert.equal(tick.receipt_path, 'dispatch-proof.json');
+  const receipt = JSON.parse(fs.readFileSync(path.join(fixture.workspace, tick.receipt_path), 'utf8'));
+  assert.equal(fs.realpathSync(receipt.cwd), fs.realpathSync(fixture.workspace));
+  assert.deepEqual(receipt.argv, ['member', 'run', 'demo', '--json', '--max-wall', '900']);
+});
+
+for (const extension of ['mjs', 'js']) {
+  test(`workspace ${extension} dispatcher takes precedence over the installed package`, (t) => {
+    const fixture = installedPackageFixture(t);
+    const scripts = path.join(fixture.workspace, 'scripts');
+    fs.mkdirSync(scripts);
+    fs.writeFileSync(path.join(scripts, `member-operate.${extension}`), `
+      console.log(JSON.stringify({ ok: true, summary: 'workspace ${extension}', cwd: process.cwd() }));
+    `);
+    if (extension === 'mjs') {
+      fs.writeFileSync(path.join(scripts, 'member-operate.js'), "throw new Error('mjs must win');");
+    }
+    const tick = fixture.run();
+    assert.equal(tick.operate.payload.summary, `workspace ${extension}`);
+    assert.equal(fs.realpathSync(tick.operate.payload.cwd), fs.realpathSync(fixture.workspace));
+    assert.equal(fs.existsSync(path.join(fixture.workspace, 'dispatch-proof.json')), false);
+  });
+}

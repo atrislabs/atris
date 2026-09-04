@@ -6,6 +6,8 @@
 
 ## Quick Reference Index
 
+- Member alive dispatcher lookup: `lib/member-alive.js:64` prefers workspace scripts, then the packaged `scripts/member-operate.mjs`; `test/member-alive.test.js` verifies installed dispatch, workspace cwd, and override precedence.
+
 **Feature maps (driving the running product, not the code):** `atris/refs/FEATURE-MAP-ax.md` — ax chat app screens, keys, slash commands, and how to verify against the live app. UI work on ax starts there, not with a grep.
 
 ## Product Model: Owners Have Computers
