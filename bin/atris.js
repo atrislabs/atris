@@ -1613,6 +1613,7 @@ async function askContextGatherer(workspaceDir) {
 // this output it stays compact so it costs almost nothing in context.
 function showWelcomeVisualization() {
   const { getTaskGlance } = require('../lib/state-detection');
+  const { INTENTS } = require('../lib/intents');
   const { readEndgameState } = require('../commands/autopilot');
   const cwd = process.cwd();
   const atrisDir = path.join(cwd, 'atris');
@@ -1818,6 +1819,18 @@ function showWelcomeVisualization() {
     // Repeated impression: the horizon sentence renders verbatim every boot
     // so agents keep the target in mind (test/boot-impression.test.js).
     console.log(row('goal', endgameState.horizon || endgameState.slug));
+  }
+
+  const hasNoTasks = glance.backlog === 0
+    && glance.active === 0
+    && glance.review === 0
+    && glance.reviewCertified === 0;
+  if (hasNoTasks) {
+    const phrases = INTENTS
+      .filter((intent) => intent.offer === 'boot_empty')
+      .map((intent) => intent.say[0])
+      .slice(0, 2);
+    console.log(row('say', `"${phrases[0]}" or "${phrases[1]}"  (your agent translates)`));
   }
 
   // The next command always carries a plain-english gloss: a newcomer should

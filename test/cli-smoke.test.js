@@ -150,6 +150,7 @@ test('atris.md boot visualization does not create an empty daily journal', () =>
     const res = runCli(['atris.md'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /atris v\d+\.\d+\.\d+/);
+    assert.match(res.stdout, /say\s+"what should i do next" or "keep going while i'm away"\s+\(your agent translates\)/);
     assert.match(res.stdout, /next\s+atris/);
     assert.equal(fs.existsSync(path.join(atrisDir, 'logs')), false);
   } finally {

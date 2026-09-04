@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const { INTENTS } = require('../lib/intents');
 
 const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
 
@@ -49,8 +50,16 @@ test('init writes FOR_AGENTS and the AGENTS adapter breadcrumb', () => {
     const agentsPath = path.join(tempDir, 'AGENTS.md');
     const agentsContent = fs.readFileSync(agentsPath, 'utf8');
     assert.ok(agentsContent.includes('FOR_AGENTS.md'));
+    assert.match(agentsContent, /## You translate/);
+    assert.match(agentsContent, /atris guide/);
+    assert.ok(agentsContent.includes(INTENTS[0].say[0]));
     assert.match(agentsContent, /Every created task leads with three plain fields/);
     assert.match(agentsContent, /accept\/revise gates and never skips proof/);
+
+    const claudeContent = fs.readFileSync(path.join(tempDir, 'CLAUDE.md'), 'utf8');
+    assert.match(claudeContent, /The person does not know atris words\./);
+    assert.match(claudeContent, /atris guide "<their words>"/);
+    assert.match(result.stdout, /no commands to learn\. tell your agent what you want in plain words\./);
 
     const policyContent = fs.readFileSync(path.join(tempDir, 'atris', 'atris.md'), 'utf8');
     assert.match(policyContent, /The three plain fields are the default face on every task view/);
