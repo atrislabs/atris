@@ -623,6 +623,31 @@ test('youtube teach without --save writes no atris files', async () => {
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
 });
 
+test('youtube teach without --save prints a failing learner check', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-ephemeral-check-'));
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    output: out.output,
+    extractTeachSource: async () => fixtureSource(),
+  });
+
+  assert.equal(status, 0);
+  assert.equal(out.lines.filter((line) => line === 'check: what is the omakase model?').length, 1);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('teach')).length, 1);
+  assert.equal(out.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+  assert.ok(
+    out.lines.indexOf(ephemeralApplyMessage('teach'))
+      < out.lines.indexOf('check: what is the omakase model?'),
+  );
+  assert.ok(
+    out.lines.indexOf('check: what is the omakase model?')
+      < out.lines.indexOf(LEARNER_SCORE_ZERO),
+  );
+  assert.deepEqual(nextLines(out.text(), TEACH_RESUME_NEXT), [TEACH_RESUME_NEXT]);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
+});
+
 test('youtube teach --save writes one pack-named apply claimable', async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-save-'));
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
