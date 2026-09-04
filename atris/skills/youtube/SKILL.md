@@ -47,7 +47,8 @@ search QUERY (free)
 
 watch add --> next: atris youtube watch tick
 watch tick --> briefs new videos
-           --> if briefed: rich apply + failing check (score 0), or thin check: fill this, then next: atris youtube teach <first-briefed-url>
+           --> if briefed: rich pack-named apply + failing measure.py (score 0), then next: experiments keep
+           -->            thin: check: fill this, then next: atris youtube teach <first-briefed-url>
            --> 0 briefed, no channels: next: atris youtube watch add <channel-url-or-@handle>
            --> 0 briefed, channels exist: next: atris youtube search " "
 
