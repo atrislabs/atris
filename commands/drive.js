@@ -1,4 +1,4 @@
-// atris drive — self-driving tick over the mission plane.
+// atris drive: self-driving tick over the mission plane.
 // One tick: run mission doctor, auto-execute the fixes it prescribes that are
 // safe to run (stale ready receipts -> verify tick), and log everything that
 // still needs a human as an explicit disengagement. The metric that matters:
@@ -66,7 +66,7 @@ async function driveCommand(argv) {
     const history = loadHistory(cwd);
     if (!history.length) { console.log('No drive ticks yet. Run: atris drive'); return 0; }
     if (json) { console.log(JSON.stringify({ ok: true, ticks: history }, null, 2)); return 0; }
-    console.log('drive — disengagements per tick (goal: 0)\n');
+    console.log('drive: disengagements per tick (goal: 0)\n');
     for (const t of history) {
       console.log(`  ${t.at}  fixed ${t.fixed}/${t.findings}  disengagements ${t.disengagements}`);
     }
@@ -86,7 +86,7 @@ async function driveCommand(argv) {
 
   // Missions the doctor says have no verifier. A verify-tick physically cannot
   // pass without one, so promising to verify-tick such a mission is a phantom
-  // fix that never sticks — count it as a wheel-grab instead.
+  // fix that never sticks, count it as a wheel-grab instead.
   const noVerifier = new Set(
     report.findings.filter((f) => f.code === 'missing_verifier' && f.mission_id).map((f) => f.mission_id),
   );
@@ -169,7 +169,7 @@ async function driveCommand(argv) {
 
   if (json) { console.log(JSON.stringify({ ok: true, ...record }, null, 2)); return 0; }
 
-  console.log(`drive tick — ${report.checked_count} missions checked, ${report.findings.length} findings`);
+  console.log(`drive tick: ${report.checked_count} missions checked, ${report.findings.length} findings`);
   console.log(`  auto-fixed:      ${fixed.length}`);
   for (const x of fixed) console.log(`    ✓ ${x.action} ${x.mission_id}`);
   console.log(`  disengagements:  ${disengagements.length}  (a human has to grab the wheel)`);

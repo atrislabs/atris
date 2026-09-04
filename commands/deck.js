@@ -1,4 +1,4 @@
-// atris deck — generate a premium, on-brand Google Slides deck from a plain
+// atris deck: generate a premium, on-brand Google Slides deck from a plain
 // content spec, using the Atris deck engine (lib/slides-deck.js). The pitch:
 // describe the deck, get the design system for free. No Arial-on-white slop.
 //
@@ -171,7 +171,7 @@ function printLint(findings) {
 async function runReviewFlow({ presentationId, spec, specPath, json, auto = false }) {
   const tok = token();
   if (!tok) {
-    console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.');
+    console.error('  no credentials at ~/.atris/credentials.json. run `atris login` and connect Google Drive.');
     return 1;
   }
   const { packet, manifestPath, outDir } = await reviewDeck({
@@ -278,7 +278,7 @@ async function videoToDeck({ analysisText, title, theme, style, url, api: apiFn,
 async function runBatch(specPaths, { themeOverride }) {
   const tok = token();
   if (!tok) {
-    console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.');
+    console.error('  no credentials at ~/.atris/credentials.json. run `atris login` and connect Google Drive.');
     return 1;
   }
   let failures = 0;
@@ -456,7 +456,7 @@ async function run(argv) {
     }
     const tok = token();
     if (!tok) {
-      console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.');
+      console.error('  no credentials at ~/.atris/credentials.json. run `atris login` and connect Google Drive.');
       return 1;
     }
     let analysisText;
@@ -484,7 +484,7 @@ async function run(argv) {
       token: tok,
     });
     if (!result.ok) {
-      console.error('\n  ✗ composed spec failed lint — not building:');
+      console.error('\n  ✗ composed spec failed lint, not building:');
       printLint(result.findings);
       return 1;
     }
@@ -521,7 +521,7 @@ async function run(argv) {
     const schemaFindings = validateSpec(spec);
     if (hasErrors(schemaFindings)) {
       printLint(schemaFindings);
-      console.error('\n  ✗ spec invalid — fix the errors above before building\n');
+      console.error('\n  ✗ spec invalid, fix the errors above before building\n');
       return 2;
     }
     const title = flag(argv, '--title') || `${(spec.brand && spec.brand.name) || 'Atris'} deck`;
@@ -532,14 +532,14 @@ async function run(argv) {
       const findings = lintSpec(spec);
       printLint(findings);
       if (findings.some((f) => f.severity === 'error')) {
-        console.error('\n  ✗ lint failed — fix spec before building\n');
+        console.error('\n  ✗ lint failed, fix spec before building\n');
         return 1;
       }
     }
 
     const tok = token();
     if (!tok) {
-      console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.');
+      console.error('  no credentials at ~/.atris/credentials.json. run `atris login` and connect Google Drive.');
       return 1;
     }
 
@@ -556,7 +556,7 @@ async function run(argv) {
   }
 
   console.log(`
-  atris deck — premium Google Slides from a plain content spec
+  atris deck: premium Google Slides from a plain content spec
 
     atris deck sample [--theme paper] > my.json
     atris deck compose --md notes.md --out my.json [--style narrative]

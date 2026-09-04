@@ -1492,8 +1492,8 @@ function runEngineTest(targets, { json, root } = {}) {
     for (const r of results) {
       const mark = r.pass ? '✓' : '✗';
       const line = r.pass
-        ? `  ${mark} ${r.engine.padEnd(12)} pass — ${r.message} (${r.durationMs}ms)`
-        : `  ${mark} ${r.engine.padEnd(12)} FAIL — ${r.message}`;
+        ? `  ${mark} ${r.engine.padEnd(12)} pass, ${r.message} (${r.durationMs}ms)`
+        : `  ${mark} ${r.engine.padEnd(12)} FAIL, ${r.message}`;
       if (r.pass) console.log(line);
       else console.error(line);
     }
@@ -1502,7 +1502,7 @@ function runEngineTest(targets, { json, root } = {}) {
       console.error(`  ${failures.length} engine${failures.length === 1 ? '' : 's'} failed: ${failures.map((f) => f.engine).join(', ')}`);
       console.error(`  fix the login/binary, then re-run: atris engine test${targets && targets.length ? ' ' + targets.join(' ') : ''}`);
     } else {
-      console.log(`  all engines responded — clear for flight`);
+      console.log(`  all engines responded, clear for flight`);
     }
     console.log('');
   }
@@ -1722,12 +1722,12 @@ function engineCommand(args = [], deps = {}) {
   if (sub === 'reset' || sub === 'off') {
     const removed = resetEngine(root);
     console.log(removed
-      ? `\n  default engine reset — back to ${resolveDefaultEngine(root).name}\n`
-      : `\n  nothing to reset — no engine was set here\n`);
+      ? `\n  default engine reset, back to ${resolveDefaultEngine(root).name}\n`
+      : `\n  nothing to reset, no engine was set here\n`);
     return 0;
   }
 
-  // atris engine <name> — flip the default. An unknown name is a plain user
+  // atris engine <name>: flip the default. An unknown name is a plain user
   // typo, not a crash: report it cleanly (and as JSON on demand) instead of
   // letting setEngine throw a raw stack trace at a new person.
   if (!canonicalEngineName(sub)) {

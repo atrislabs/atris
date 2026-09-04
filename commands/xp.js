@@ -22,7 +22,7 @@ const CODEX_STATE_FILE = path.join(os.homedir(), '.codex', 'state_5.sqlite');
 
 // Default single-workspace XP root. Local XP reads task_episodes.jsonl (written
 // by task-db at the resolved workspace root) and writes its projection beside
-// it, so the `--workspace` default must resolve the same shared root — otherwise
+// it, so the `--workspace` default must resolve the same shared root, otherwise
 // `xp --local` from a subdir (e.g. backend/) read the wrong/empty episodes and
 // split the projection into a nested .atris. Explicit --workspace still wins;
 // the multi-root roster path (discoverCareerXpWorkspaces) is untouched. Falls

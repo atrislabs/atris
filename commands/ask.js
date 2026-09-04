@@ -1,5 +1,5 @@
 /**
- * atris ask — chat with your personal Atris computer.
+ * atris ask: chat with your personal Atris computer.
  *
  * Same brain as texting: your memory, calendar, email, and tools.
  * One-shot:    atris ask what should I do today
@@ -116,7 +116,7 @@ async function askAtris(args) {
   if (oneShot === '-h' || oneShot === '--help' || oneShot === 'help') {
     console.log('Usage: atris ask ["message"]');
     console.log('');
-    console.log('  Chat with your personal Atris computer — memory, calendar, email, tools.');
+    console.log('  Chat with your personal Atris computer: memory, calendar, email, tools.');
     console.log('');
     console.log('  atris ask                      Interactive chat');
     console.log('  atris ask what is on today     One-shot question');

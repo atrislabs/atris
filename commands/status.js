@@ -234,7 +234,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   const teamActivity = getTeamActivity(targetDir);
   const checkoutWarning = checkoutBehindMessage(process.cwd());
 
-  // JSON mode — structured output for scripting
+  // JSON mode: structured output for scripting
   if (jsonMode) {
     const output = {
       date: dateFormatted,
@@ -324,7 +324,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
 
   o('');
   o(`┌─${'─'.repeat(W)}─┐`);
-  o(`│ ${pad(`TASK BOARD — ${dateFormatted}`)} │`);
+  o(`│ ${pad(`TASK BOARD, ${dateFormatted}`)} │`);
   o(`├─${'─'.repeat(W)}─┤`);
 
   // Backlog

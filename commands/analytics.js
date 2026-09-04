@@ -68,8 +68,8 @@ function analyticsAtris() {
     }
 
     // Parse timestamps for productivity hours. Match the journal heading
-    // format `### Title — HH:MM` and the legacy `**HH:MM:SS**` form.
-    const timestampMatches = content.match(/(?:—|--)\s*(\d{2}):\d{2}(?::\d{2})?\b|\*\*(\d{2}):\d{2}(?::\d{2})?\*\*/g);
+    // format `### Title -- HH:MM` (the dashed form) and the legacy `**HH:MM:SS**` form.
+    const timestampMatches = content.match(/(?:\u2014|--)\s*(\d{2}):\d{2}(?::\d{2})?\b|\*\*(\d{2}):\d{2}(?::\d{2})?\*\*/g);
     if (timestampMatches) {
       timestampMatches.forEach(ts => {
         const m = ts.match(/(\d{2}):/);
@@ -110,7 +110,7 @@ function analyticsAtris() {
   const dateFormatted = `${year}-${month}-${day}`;
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log(`│ Atris Analytics — ${dateFormatted}${' '.repeat(34 - dateFormatted.length)}│`);
+  console.log(`│ Atris Analytics, ${dateFormatted}${' '.repeat(35 - dateFormatted.length)}│`);
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 

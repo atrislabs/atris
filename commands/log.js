@@ -119,7 +119,7 @@ function logAtris() {
   }
 
   console.log(`┌─────────────────────────────────────────────────────────┐`);
-  console.log(`│ Daily Log — ${dateFormatted}              [type "exit" to quit] │`);
+  console.log(`│ Daily Log, ${dateFormatted}              [type "exit" to quit] │`);
   console.log(`└─────────────────────────────────────────────────────────┘`);
   console.log('');
 

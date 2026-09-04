@@ -381,7 +381,7 @@ async function runAtris(options = {}) {
     process.exit(1);
   }
 
-  // Check configured runner CLI is available. Dry runs preview context only —
+  // Check configured runner CLI is available. Dry runs preview context only,
   // they must work on machines (and CI) without the runner installed.
   if (!dryRun) {
     try {

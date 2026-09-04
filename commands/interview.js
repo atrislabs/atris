@@ -118,10 +118,10 @@ async function runPlainInterview({ args = [], fields = [], input = process.stdin
 
 function composePrompt(mode, subject, contextPaths, root) {
   const ctx = contextPaths.length
-    ? `Read these first (this is what the system already knows — open with an observation from them, never a blank question):\n${contextPaths.map((p) => `- ${p}`).join('\n')}`
-    : 'No system data exists for this subject — this is a cold start.';
+    ? `Read these first (this is what the system already knows, open with an observation from them, never a blank question):\n${contextPaths.map((p) => `- ${p}`).join('\n')}`
+    : 'No system data exists for this subject, this is a cold start.';
 
-  const laws = `Rules of conduct (the six laws — non-negotiable):
+  const laws = `Rules of conduct (the six laws, non-negotiable):
 1. Never render a form. ONE question per turn; the next question comes from the answer.
 2. Never ask what the system already knows. Open with an observation, not a blank ask.
 3. The verify question is the whole game: "how do you know it worked?" Prefer countable process receipts.
@@ -133,13 +133,13 @@ Warmth without glazing: claims that cannot survive a follow-up die politely and 
 Full skill (read if present): .claude/skills/interview/SKILL.md · spec: atris/features/md-builder/idea.md`;
 
   const modes = {
-    operator: `Mode: OPERATOR WARM START. Interview the human at the keyboard. Open with the sharpest observed behavior in their recent journal/logs — especially repeated manual actions (unextracted members) and policies their own behavior contradicts. Output: a new member, an amendment, or a policy change.`,
-    member: `Mode: MEMBER RE-INTERVIEW (performance review). Subject: the team member "${subject}". Read its folder (MEMBER.md, logs/, now.md, proofs) and interview the human ABOUT it — where it failed, what it should defend, what taste is missing from its file. Honest failure → document the lesson, no penalty. A false "done" is the one unforgivable act. Output: amend atris/team/${subject}/MEMBER.md.`,
+    operator: `Mode: OPERATOR WARM START. Interview the human at the keyboard. Open with the sharpest observed behavior in their recent journal/logs, especially repeated manual actions (unextracted members) and policies their own behavior contradicts. Output: a new member, an amendment, or a policy change.`,
+    member: `Mode: MEMBER RE-INTERVIEW (performance review). Subject: the team member "${subject}". Read its folder (MEMBER.md, logs/, now.md, proofs) and interview the human ABOUT it: where it failed, what it should defend, what taste is missing from its file. Honest failure → document the lesson, no penalty. A false "done" is the one unforgivable act. Output: amend atris/team/${subject}/MEMBER.md.`,
     expert: `Mode: COLD START. Subject: a new expert called "${subject}". No system data. Opener: "when someone is stuck, what's the problem where they say 'just ask you'?" (civilian variant: "what are you the designated one for?"). Then last real instance → live method demo → quality bar → verify question. Output: create atris/team/<slug>/MEMBER.md.`,
   };
 
   return [
-    `You are running /interview — the interlinked 1-on-1 (workspace: ${root}).`,
+    `You are running /interview, the interlinked 1-on-1 (workspace: ${root}).`,
     modes[mode],
     ctx,
     laws,
@@ -198,7 +198,7 @@ async function interviewCommand(args = [], root = process.cwd()) {
   const prompt = composePrompt(mode, mode === 'member' ? slug : subjectRaw, contextPaths, ws);
 
   console.log('');
-  console.log(`◈ interview — ${mode === 'operator' ? 'you, from your logs' : mode === 'member' ? `1-on-1 about ${slug}` : `cold start: ${subjectRaw}`}`);
+  console.log(`◈ interview: ${mode === 'operator' ? 'you, from your logs' : mode === 'member' ? `1-on-1 about ${slug}` : `cold start: ${subjectRaw}`}`);
   if (contextPaths.length) console.log(`  context: ${contextPaths.length} source${contextPaths.length > 1 ? 's' : ''} loaded`);
   console.log('');
 

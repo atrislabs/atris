@@ -101,7 +101,7 @@ const PACKET = {
 
   // ── definitions, not state ────────────────────────────────────────────────
   // A packet carries what a thing IS, never what it is currently DOING. The
-  // definition files travel — MEMBER.md, MISSION.md, SKILL.md, SOUL.md,
+  // definition files travel: MEMBER.md, MISSION.md, SKILL.md, SOUL.md,
   // README.md, wiki pages, policies. The running state a live workspace keeps
   // beside them stays home: a stranger cannot use someone else's standup notes,
   // and project-management exhaust is most of the file count.
@@ -1508,7 +1508,7 @@ function formatBytes(value) {
 }
 
 // What a stranger actually receives, in one glance. The tree below is the
-// detail; this is the shape — enough to see that the wiki, the skills, the
+// detail; this is the shape, enough to see that the wiki, the skills, the
 // members and the policies are all still in the box.
 function printPacketComposition(entries) {
   const byTop = new Map();
@@ -2254,7 +2254,7 @@ async function installPack(rawArgs, cwd = process.cwd(), options = {}) {
 
 // ── pack run ────────────────────────────────────────────────────────────────
 // Install is half a product: it leaves a folder and a suggestion. `pack run`
-// is the other half — packet in, running workspace out.
+// is the other half: packet in, running workspace out.
 //
 // It defaults to LOCAL on purpose. The cloud path is gated: activating a
 // business workspace needs auth, an existing business record, and a paid plan
@@ -2450,7 +2450,7 @@ function printCapabilityTrustCard(policy, trust, receiptPath, userDenyRuleCount 
   if (options.operatorInput) {
     console.log(`  operator input: ${options.operatorInput.bytes} bytes injected; source path withheld from the pack and receipt`);
   }
-  console.log(`  host shell: ${policy.grantedCapabilities.includes('host.shell') ? 'GRANTED — Bash can reach host files and network' : 'denied'}`);
+  console.log(`  host shell: ${policy.grantedCapabilities.includes('host.shell') ? 'GRANTED \u2014 Bash can reach host files and network' : 'denied'}`);
   console.log('  receipt coverage: Atris hook tool events; direct slash-skill invocations and later Claude or policy denials may not appear');
   console.log(`  receipt: ${receiptPath}`);
 }
@@ -2749,7 +2749,7 @@ async function runPack(rawArgs, cwd = process.cwd(), options = {}) {
   }
   console.log(`starting local computer in ${displayTarget}`);
   if (capabilityPolicy.status === 'legacy') {
-    console.log('capabilities: LEGACY — this pack declares no enforceable capability ceiling.');
+    console.log('capabilities: LEGACY, this pack declares no enforceable capability ceiling.');
   }
   if (!trust && capabilityPolicy.status === 'legacy') {
     console.log('permission prompts are on because this legacy pack has no capability ceiling.');
