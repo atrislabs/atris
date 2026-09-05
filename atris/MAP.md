@@ -6,6 +6,11 @@
 
 ## Quick Reference Index
 
+- Member alive dispatcher lookup: `lib/member-alive.js:64` prefers workspace scripts, then the packaged `scripts/member-operate.mjs`; `test/member-alive.test.js` verifies installed dispatch, workspace cwd, and override precedence.
+- Member alive execution results: `scripts/member-operate.mjs:38` reads multiline JSON and preserves explicit failures despite zero process exit. Explicit `--shared-checkout` passes through `commands/member.js` and `lib/member-alive.js`; developer isolation remains the default. Regression: `test/member-alive.test.js`.
+- Member execution proof: `scripts/member-operate.mjs` treats mission creation without execution as planned and detects errored mission ticks inside an otherwise successful response. `lib/member-alive.js` never substitutes a wake receipt for work proof; `commands/member.js` preserves planned and failed outcomes in the loop summary. Regression: `test/member-alive.test.js`.
+- Empty member execution: `scripts/member-operate.mjs` requires positive execution evidence before reporting completion; a zero-tick mission result or zero-exit child without JSON remains planned and nonproductive. Regression: `test/member-alive.test.js`.
+
 **Explicit Pack recovery:** `commands/pack.js:2699` handles `pack run <existing-dir> --recover <receipt.json>`; `lib/pack-capabilities.js:890` validates the authoritative journal and prior failed exit, and `lib/pack-capabilities.js:488` prevents writes to completed files during recovery. `test/pack-run.test.js:2091` covers corrupt history and `test/pack-run.test.js:2232` exercises process exit and empty arguments. Contract and limits: `atris/features/pack-recovery/plan.md`.
 
 **Feature maps (driving the running product, not the code):** `atris/refs/FEATURE-MAP-ax.md` — ax chat app screens, keys, slash commands, and how to verify against the live app. UI work on ax starts there, not with a grep.
