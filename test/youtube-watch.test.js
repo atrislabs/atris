@@ -3,16 +3,32 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const {
   normalizeWatchChannel,
   channelVideosUrl,
   parseFlatPlaylist,
   loadWatchState,
+  watchExperimentSlug,
   LEARNER_CHECK_FILL,
   LEARNER_SCORE_ZERO,
   youtubeCommand,
 } = require('../commands/youtube');
 const { ephemeralApplyMessage } = require('../lib/apply-gate');
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
+const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
+
+function findPython() {
+  for (const candidate of ['python3', 'python']) {
+    const result = spawnSync(candidate, ['--version'], { encoding: 'utf8' });
+    if (!result.error && result.status === 0) return candidate;
+  }
+  return null;
+}
+
+const pythonCmd = findPython();
 
 function tempCwd() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-'));
@@ -29,6 +45,40 @@ function collect() {
     output: (line = '') => lines.push(String(line)),
     text: () => lines.join('\n'),
   };
+}
+
+function escapeRe(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function runExperimentsKeep(cwd, slug) {
+  return spawnSync(process.execPath, [CLI_PATH, 'experiments', 'keep', slug], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...(pythonCmd ? { ATRIS_EXPERIMENTS_PYTHON: pythonCmd } : {}),
+    },
+  });
+}
+
+function assertWatchApplyClaimable(cwd, { id = 'new1', date = '2026-08-15', tokens = [] } = {}) {
+  const packRel = `atris/experiments/${watchExperimentSlug(id)}`;
+  const applyRel = `atris/wiki/briefs/watch-${id}.apply.md`;
+  const sidecar = fs.readFileSync(path.join(cwd, applyRel), 'utf8');
+  assert.match(sidecar, new RegExp(escapeRe(packRel)));
+  assert.match(sidecar, /keep only if measure\.py moves 0→1/);
+  assert.match(sidecar, /scores 1 only when the fixture contains the check tokens/);
+  for (const token of tokens) {
+    assert.doesNotMatch(sidecar, new RegExp(escapeRe(token), 'i'));
+  }
+  const journal = fs.readFileSync(path.join(cwd, 'atris', 'logs', date.slice(0, 4), `${date}.md`), 'utf8');
+  assert.match(journal, /\[claimable\] apply: /);
+  assert.match(journal, new RegExp(escapeRe(packRel)));
+  assert.match(journal, /keep only if measure\.py moves 0→1/);
+  return { packRel, applyRel, sidecar, journal };
 }
 
 test('normalizeWatchChannel turns @handle and /videos urls into a channel key', () => {
@@ -322,23 +372,21 @@ test('tick that briefed a rich lesson prints apply check then teach next', async
     briefFiler: () => {},
   });
 
-  const apply = ephemeralApplyMessage('watch');
-  const check = 'check: what is 2nm?';
-  const teachNext = 'next: atris youtube teach "https://www.youtube.com/watch?v=new1"';
+  const keepNext = 'next: atris experiments keep watch-new1';
   assert.equal(status, 0);
   assert.match(out.text(), /total: 1 new, 1 briefed/);
-  assert.equal(out.lines.filter((line) => line === apply).length, 1);
-  assert.equal(out.lines.filter((line) => line === check).length, 1);
+  assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('watch')).length, 0);
+  assert.doesNotMatch(out.text(), /^check:/m);
   assert.equal(out.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
-  assert.ok(out.lines.indexOf('total: 1 new, 1 briefed') < out.lines.indexOf(apply));
-  assert.ok(out.lines.indexOf(apply) < out.lines.indexOf(check));
-  assert.ok(out.lines.indexOf(check) < out.lines.indexOf(LEARNER_SCORE_ZERO));
-  assert.ok(out.lines.indexOf(LEARNER_SCORE_ZERO) < out.lines.indexOf(teachNext));
   assert.deepEqual(
     out.text().split('\n').filter((line) => line.startsWith('next:')),
-    [apply, teachNext],
+    [keepNext],
   );
-  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+  assert.ok(out.lines.indexOf('total: 1 new, 1 briefed') < out.lines.indexOf(keepNext));
+  assert.ok(out.lines.indexOf(keepNext) < out.lines.indexOf(LEARNER_SCORE_ZERO));
+  assert.doesNotMatch(out.text(), /next: atris youtube teach/);
+  const claim = assertWatchApplyClaimable(cwd, { tokens: ['2nm', 'what is 2nm?'] });
+  assert.equal(fs.existsSync(path.join(cwd, claim.packRel, 'measure.py')), true);
 });
 
 test('tick that briefed a thin lesson prints fill-this then teach next', async () => {
@@ -374,6 +422,117 @@ test('tick that briefed a thin lesson prints fill-this then teach next', async (
     [teachNext],
   );
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'watch-thin1.apply.md')), false);
+});
+
+test('watchExperimentSlug uses the first briefed video id', () => {
+  assert.equal(watchExperimentSlug('new1'), 'watch-new1');
+  assert.equal(watchExperimentSlug('NyfgCesmika'), 'watch-nyfgcesmika');
+});
+
+test('rich watch tick mints a measure.py that validate.py accepts and scores 0 or 1 honestly', async () => {
+  assert.ok(pythonCmd, 'python3 is required to score the minted pack');
+  const cwd = tempCwd();
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const now = '2026-08-15T19:32:00.000Z';
+  await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
+  fs.writeFileSync(path.join(workDir, 'yt_new1.md'), 'TSMC prints at 2nm\n');
+  const printed = collect();
+  const status = await youtubeCommand(['watch', 'tick'], {
+    cwd,
+    workDir,
+    now,
+    output: printed.output,
+    fetcher: () => [{ id: 'new1', title: 'Newest' }],
+    runner: () => ({ status: 0 }),
+    briefFiler: () => {},
+  });
+
+  assert.equal(status, 0);
+  assert.equal(printed.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+  assert.match(printed.text(), /next: atris experiments keep watch-new1/);
+  const packDir = path.join(cwd, 'atris', 'experiments', 'watch-new1');
+  for (const name of ['program.md', 'measure.py', 'loop.py', 'reset.py', 'results.tsv']) {
+    assert.equal(fs.existsSync(path.join(packDir, name)), true, name);
+  }
+  const program = fs.readFileSync(path.join(packDir, 'program.md'), 'utf8');
+  assert.ok(program.length < 1200);
+  assert.match(program, /2nm/);
+  const measureSrc = fs.readFileSync(path.join(packDir, 'measure.py'), 'utf8');
+  assert.match(measureSrc, /2nm/);
+
+  const validated = spawnSync(pythonCmd, [VALIDATE_PY, packDir], { encoding: 'utf8' });
+  assert.equal(validated.status, 0, validated.stderr || validated.stdout);
+  assert.match(validated.stdout, /PASS/);
+
+  function scoreFixture(text) {
+    const fixture = path.join(cwd, 'fixture.md');
+    fs.writeFileSync(fixture, text);
+    const measured = spawnSync(pythonCmd, [path.join(packDir, 'measure.py')], {
+      cwd: packDir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ATRIS_REPO_ROOT: cwd,
+        ATRIS_TEACH_MEASURE_FIXTURE: fixture,
+      },
+    });
+    assert.equal(measured.status, 0, measured.stderr || measured.stdout);
+    return JSON.parse(measured.stdout.trim().split('\n').pop());
+  }
+
+  const miss = scoreFixture('feelings and vibes and a chat about nothing');
+  assert.equal(miss.score, 0);
+  const hit = scoreFixture('keep the 2nm node as the default print');
+  assert.equal(hit.score, 1);
+
+  const claim = assertWatchApplyClaimable(cwd, { tokens: ['2nm', 'what is 2nm?'] });
+  const stub = spawnSync(pythonCmd, [path.join(packDir, 'measure.py')], {
+    cwd: packDir,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_REPO_ROOT: cwd },
+  });
+  assert.equal(stub.status, 0, stub.stderr || stub.stdout);
+  const stubPayload = JSON.parse(stub.stdout.trim().split('\n').pop());
+  assert.equal(stubPayload.score, 0);
+  assert.doesNotMatch(claim.sidecar, /2nm/i);
+});
+
+test('experiments keep refuses a minted watch pack at 0 and keeps after check tokens', async () => {
+  assert.ok(pythonCmd, 'python3 is required to score the minted pack');
+  const cwd = tempCwd();
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const now = '2026-08-15T19:32:00.000Z';
+  await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
+  fs.writeFileSync(path.join(workDir, 'yt_new1.md'), 'TSMC prints at 2nm\n');
+  const status = await youtubeCommand(['watch', 'tick'], {
+    cwd,
+    workDir,
+    now,
+    output: () => {},
+    fetcher: () => [{ id: 'new1', title: 'Newest' }],
+    runner: () => ({ status: 0 }),
+    briefFiler: () => {},
+  });
+
+  assert.equal(status, 0);
+  const packDir = path.join(cwd, 'atris', 'experiments', 'watch-new1');
+  const applyPath = path.join(cwd, 'atris', 'wiki', 'briefs', 'watch-new1.apply.md');
+
+  const refused = runExperimentsKeep(cwd, 'watch-new1');
+  assert.equal(refused.status, 1, refused.stderr || refused.stdout);
+  assert.match(`${refused.stdout}\n${refused.stderr}`, /revert watch-new1: measure\.py stayed 0\. refuse keep\./);
+  assert.doesNotMatch(`${refused.stdout}\n${refused.stderr}`, /next: atris youtube watch tick/);
+  assert.equal(fs.existsSync(path.join(packDir, 'measure.py')), true);
+
+  fs.appendFileSync(applyPath, '\nkeep the 2nm node as the default print\n');
+  const kept = runExperimentsKeep(cwd, 'watch-new1');
+  assert.equal(kept.status, 0, kept.stderr || kept.stdout);
+  assert.match(kept.stdout, /keep watch-new1: measure\.py moved 0→1/);
+  assert.deepEqual(
+    kept.stdout.split('\n').filter((line) => line.startsWith('next: atris youtube watch tick')),
+    ['next: atris youtube watch tick']
+  );
 });
 
 test('tick with no channels prints one watch add next-step', async () => {

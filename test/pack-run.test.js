@@ -18,6 +18,8 @@ const {
   enforcePublicWeb,
   runHook,
   runHookAsync,
+  assessPackRecoveryJournal,
+  packRecoveryClaimPath,
 } = require('../lib/pack-capabilities');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -537,6 +539,9 @@ test('declared capabilities become an exact local Claude tool ceiling and trust 
       toolInputsLogged: false,
       directSkillInvocationsCaptured: false,
       runnerExitCaptured: false,
+      fileEffectIdentitiesLogged: true,
+      recoveryLinked: false,
+      protectedFilesCarried: 0,
     });
   } finally {
     cleanupTempDir(dir);
@@ -1343,4 +1348,1338 @@ test('atris pack help lists run', () => {
   assert.match(result.stdout, /atris pack run <slug\|dir>/);
   assert.match(result.stdout, /atris pack runs/);
   assert.match(result.stdout, /legacy packs need an explicit --grant before --trust/);
+});
+
+test('atris pack help lists run', () => {
+  const dir = makeTempDir();
+  let result;
+  try {
+    result = spawnSync(process.execPath, [cliPath, 'pack', 'help'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 20000,
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+    });
+  } finally {
+    cleanupTempDir(dir);
+  }
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /atris pack run <slug\|dir>/);
+  assert.match(result.stdout, /atris pack runs/);
+  assert.match(result.stdout, /legacy packs need an explicit --grant before --trust/);
+});
+
+// ── pack recovery (CLI-1334) ─────────────────────────────────────────────
+// The model is simulated at the computerLocal seam. The filesystem and the
+// real pre/used/failed hooks do the recording, so these prove enforcement,
+// not prompt wording.
+
+function seedRecoveryPack(dir, slug = 'recover-pack') {
+  const packDir = path.join(dir, slug);
+  fs.mkdirSync(packDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(packDir, 'pack.json'),
+    `${JSON.stringify({ slug, title: 'Recover Pack', version: '0.1.0', permissions: ['pack.write'] }, null, 2)}\n`
+  );
+  fs.writeFileSync(path.join(packDir, 'README.md'), '# Recover Pack\n');
+  fs.writeFileSync(path.join(packDir, 'notes.txt'), 'base CANARY-RECOVERY-7F2E\nMARKER\n');
+  fs.writeFileSync(path.join(packDir, 'other.txt'), 'other base\n');
+  return packDir;
+}
+
+function withHookEnv(runnerEnv, fn) {
+  const names = [
+    'ATRIS_PACK_ROOT', 'ATRIS_PACK_RECEIPT', 'ATRIS_PACK_RECEIPT_EVENTS',
+    'ATRIS_PACK_GRANTED_CAPABILITIES', 'ATRIS_PACK_PROTECTED_FILES',
+  ];
+  const saved = {};
+  for (const name of names) saved[name] = process.env[name];
+  for (const [key, value] of Object.entries(runnerEnv || {})) process.env[key] = String(value);
+  try {
+    return fn();
+  } finally {
+    for (const name of names) {
+      if (saved[name] === undefined) delete process.env[name];
+      else process.env[name] = saved[name];
+    }
+  }
+}
+
+function hookInput(tool, filePath, id) {
+  return JSON.stringify({
+    tool_name: tool,
+    tool_input: { file_path: filePath },
+    ...(id ? { tool_use_id: id } : {}),
+  });
+}
+
+function hookPre(runnerEnv, tool, filePath, id) {
+  return withHookEnv(runnerEnv, () => runHook('pre', hookInput(tool, filePath, id)));
+}
+
+function hookUsed(runnerEnv, tool, filePath, id) {
+  return withHookEnv(runnerEnv, () => runHook('used', hookInput(tool, filePath, id)));
+}
+
+function hookFailed(runnerEnv, tool, filePath, id) {
+  return withHookEnv(runnerEnv, () => runHook('failed', hookInput(tool, filePath, id)));
+}
+
+function applyMarkerEdit(absPath) {
+  const before = fs.readFileSync(absPath, 'utf8');
+  assert.ok(before.includes('MARKER'), 'marker must still be present to apply the edit');
+  fs.writeFileSync(absPath, before.replace('MARKER', 'MARKER\nRECOVERY-LINE-20260904'));
+}
+
+function countLines(absPath, line) {
+  return fs.readFileSync(absPath, 'utf8').split('\n').filter((entry) => entry === line).length;
+}
+
+function latestReceipt(receiptDir) {
+  const names = fs.readdirSync(receiptDir).filter((name) => name.endsWith('.json')).sort();
+  assert.ok(names.length, 'expected at least one receipt');
+  const receiptPath = path.join(receiptDir, names[names.length - 1]);
+  return { path: receiptPath, data: JSON.parse(fs.readFileSync(receiptPath, 'utf8')) };
+}
+
+function readReceiptEvents(receiptDir, receipt) {
+  return fs.readFileSync(path.join(receiptDir, receipt.data.events), 'utf8');
+}
+
+function recoveringDeps(receiptDir, computerLocal) {
+  return stubDeps({ packRunReceiptDir: receiptDir, nonInteractive: true, computerLocal });
+}
+
+test('pack recover continues after an interrupted edit without repeating the completed file', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const notesPath = path.join(packDir, 'notes.txt');
+    const otherPath = path.join(packDir, 'other.txt');
+
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-first-1'), null);
+      applyMarkerEdit(notesPath);
+      hookUsed(options.runnerEnv, 'Edit', 'notes.txt', 'call-first-1');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    assert.equal(countLines(notesPath, 'RECOVERY-LINE-20260904'), 1);
+    const parent = latestReceipt(receiptDir);
+    assert.equal(parent.data.exitStatus, 1);
+    assert.deepEqual(parent.data.usedTools, ['Edit']);
+    assert.equal(parent.data.fileEffects.confirmed.length, 1);
+    assert.equal(parent.data.fileEffects.confirmed[0].target, 'notes.txt');
+    assert.deepEqual(parent.data.fileEffects.unresolved, []);
+    assert.equal(parent.data.recovery.mode, 'fresh');
+
+    let denyResult = null;
+    const second = recoveringDeps(receiptDir, (args, options) => {
+      denyResult = hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-second-1');
+      assert.ok(denyResult && denyResult.hookSpecificOutput.permissionDecision === 'deny');
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'other.txt', 'call-second-2'), null);
+      fs.appendFileSync(otherPath, 'recovered work\n');
+      hookUsed(options.runnerEnv, 'Edit', 'other.txt', 'call-second-2');
+      options.onRunnerExit({ status: 0, signal: null });
+    });
+    const { code, output } = await captureConsole(() => runPack([packDir, '--recover', parent.path], dir, { deps: second.deps }));
+    assert.equal(code, 0);
+    assert.match(output, /recovery: continuing from/);
+    assert.ok(denyResult && denyResult.hookSpecificOutput.permissionDecision === 'deny', 'same Edit is denied even with a new call id');
+    assert.equal(countLines(notesPath, 'RECOVERY-LINE-20260904'), 1, 'the completed edit must not repeat');
+    assert.match(fs.readFileSync(otherPath, 'utf8'), /recovered work/);
+
+    const child = latestReceipt(receiptDir);
+    assert.equal(child.data.recovery.mode, 'recovered');
+    assert.equal(child.data.recovery.parentRunId, parent.data.runId);
+    assert.equal(child.data.recovery.parentReceipt, parent.path);
+    const protectedTargets = child.data.recovery.protectedFiles.map((entry) => entry.target).sort();
+    assert.deepEqual(protectedTargets, ['notes.txt', 'other.txt']);
+    assert.equal(child.data.observability.recoveryLinked, true);
+    assert.equal(child.data.observability.protectedFilesCarried, 2);
+
+    const journal = readReceiptEvents(receiptDir, child) + readReceiptEvents(receiptDir, parent);
+    assert.equal(journal.includes('RECOVERY-LINE-20260904'), false, 'journal must not carry file contents');
+    assert.equal(journal.includes('recovered work'), false, 'journal must not carry file contents');
+    assert.equal(journal.includes('CANARY-RECOVERY-7F2E'), false, 'journal must not carry file contents');
+    assert.equal(JSON.stringify(child.data).includes('CANARY-RECOVERY-7F2E'), false);
+
+    const parentAgain = JSON.parse(fs.readFileSync(parent.path, 'utf8'));
+    assert.equal(parentAgain.exitStatus, 1, 'recovery must not rewrite the parent receipt');
+    assert.equal(parentAgain.status, 'finished');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses a pending intent whose confirmation never arrived', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const notesPath = path.join(packDir, 'notes.txt');
+    let started = false;
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-crash-1'), null);
+      applyMarkerEdit(notesPath);
+      // No used hook: the crash window between intent and confirmation.
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+    assert.equal(parent.data.fileEffects.unresolved.length, 1);
+    assert.equal(parent.data.fileEffects.unresolved[0].reason, 'missing-post');
+
+    const second = recoveringDeps(receiptDir, () => { started = true; });
+    await assert.rejects(
+      () => runPack([packDir, '--recover', parent.path], dir, { deps: second.deps }),
+      /unresolved file effect.*missing-post/,
+    );
+    assert.equal(started, false, 'no runner may launch while an effect is unresolved');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover proceeds when a failed action left its never-confirmed target absent', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Write', 'draft.txt', 'call-fail-1'), null);
+      hookFailed(options.runnerEnv, 'Write', 'draft.txt', 'call-fail-1');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+    assert.equal(parent.data.fileEffects.failed.length, 1);
+    assert.deepEqual(parent.data.fileEffects.unresolved, []);
+
+    const second = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Write', 'draft.txt', 'call-retry-1'), null);
+      fs.writeFileSync(path.join(packDir, 'draft.txt'), 'second try\n');
+      hookUsed(options.runnerEnv, 'Write', 'draft.txt', 'call-retry-1');
+      options.onRunnerExit({ status: 0, signal: null });
+    });
+    assert.equal(await runPack([packDir, '--recover', parent.path], dir, { deps: second.deps }), 0);
+    const child = latestReceipt(receiptDir);
+    assert.equal(child.data.recovery.mode, 'recovered');
+    assert.ok(child.data.recovery.protectedFiles.some((entry) => entry.target === 'draft.txt'));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses when a failed action may have changed an existing file', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    let started = false;
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'other.txt', 'call-fail-1'), null);
+      hookFailed(options.runnerEnv, 'Edit', 'other.txt', 'call-fail-1');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+    const second = recoveringDeps(receiptDir, () => { started = true; });
+    await assert.rejects(
+      () => runPack([packDir, '--recover', parent.path], dir, { deps: second.deps }),
+      /may have changed other\.txt/,
+    );
+    assert.equal(started, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses active, launcher-lost, and unknown parents', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    let started = false;
+    const idle = () => recoveringDeps(receiptDir, () => { started = true; });
+
+    // Still running: the runner never reported an exit.
+    assert.equal(await runPack([packDir], dir, { deps: recoveringDeps(receiptDir, () => {}).deps }), 0);
+    const running = latestReceipt(receiptDir);
+    assert.equal(running.data.status, 'running');
+    await assert.rejects(
+      () => runPack([packDir, '--recover', running.path], dir, { deps: idle().deps }),
+      /no recorded runner exit/,
+    );
+
+    // Launcher lost: a dead launcher pid with no exit event proves nothing.
+    const policy = resolvePackCapabilityPolicy(['pack.write']);
+    const lost = beginPackRunReceipt(packDir, { slug: 'recover-pack', version: '0.1.0' }, policy, {
+      receiptDir, launcherPid: 987654321,
+    });
+    await assert.rejects(
+      () => runPack([packDir, '--recover', lost.receiptPath], dir, { deps: idle().deps }),
+      /no recorded runner exit/,
+    );
+
+    // Unknown recorded state refuses the same way.
+    const unknown = JSON.parse(fs.readFileSync(running.path, 'utf8'));
+    unknown.status = 'unknown';
+    const unknownPath = path.join(receiptDir, 'unknown-state.json');
+    fs.writeFileSync(unknownPath, `${JSON.stringify(unknown, null, 2)}\n`);
+    await assert.rejects(
+      () => runPack([packDir, '--recover', unknownPath], dir, { deps: idle().deps }),
+      /no recorded runner exit/,
+    );
+    assert.equal(started, false, 'no runner may launch for a live or unknown parent');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover rejects success, shell, capability, identity, legacy, corrupt, and remote-shaped requests', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const notesPath = path.join(packDir, 'notes.txt');
+    const manifestPath = path.join(packDir, 'pack.json');
+    const manifestBefore = fs.readFileSync(manifestPath, 'utf8');
+    const idle = () => {
+      let started = false;
+      const wrapped = stubDeps({
+        packRunReceiptDir: receiptDir,
+        nonInteractive: true,
+        computerLocal: () => { started = true; },
+      });
+      return { deps: wrapped.deps, started: () => started };
+    };
+
+    let callSeq = 0;
+    async function failedParentWithEdit() {
+      callSeq += 1;
+      callSeq += 1;
+      const id = `call-battery-${callSeq}`;
+      const first = recoveringDeps(receiptDir, (args, options) => {
+        assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', id), null);
+        applyMarkerEdit(notesPath);
+        hookUsed(options.runnerEnv, 'Edit', 'notes.txt', id);
+        options.onRunnerExit({ status: 1, signal: null });
+      });
+      // Marker edits apply once per fixture; reset the file for each parent.
+      fs.writeFileSync(notesPath, 'base CANARY-RECOVERY-7F2E\nMARKER\n');
+      assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+      return latestReceipt(receiptDir);
+    }
+
+    // Success exit: nothing to recover.
+    const succeeded = recoveringDeps(receiptDir, (args, options) => {
+      options.onRunnerExit({ status: 0, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: succeeded.deps }), 0);const success = latestReceipt(receiptDir);
+    const successIdle = idle();
+    await assert.rejects(
+      () => runPack([packDir, '--recover', success.path], dir, { deps: successIdle.deps }),
+      /succeeded.*nothing to recover/,
+    );
+    assert.equal(successIdle.started(), false);
+
+    const parent = await failedParentWithEdit();
+
+    // Changed completed file on disk.
+    fs.appendFileSync(notesPath, 'tampered\n');
+    const tamperedIdle = idle();
+    await assert.rejects(
+      () => runPack([packDir, '--recover', parent.path], dir, { deps: tamperedIdle.deps }),
+      /completed file notes\.txt changed/,
+    );
+    assert.equal(tamperedIdle.started(), false);
+    fs.writeFileSync(notesPath, 'base CANARY-RECOVERY-7F2E\nMARKER\nRECOVERY-LINE-20260904\n');
+
+    // Capability change: manifest narrowed after the parent ran.
+    const narrowed = JSON.parse(manifestBefore);
+    narrowed.permissions = ['pack.read'];
+    fs.writeFileSync(manifestPath, `${JSON.stringify(narrowed, null, 2)}\n`);
+    const narrowedIdle = idle();
+    await assert.rejects(
+      () => runPack([packDir, '--recover', parent.path], dir, { deps: narrowedIdle.deps }),
+      /same granted set/,
+    );
+    assert.equal(narrowedIdle.started(), false);
+    fs.writeFileSync(manifestPath, manifestBefore);
+
+    // Host shell granted for this run.
+    const shellIdle = idle();
+    await assert.rejects(
+      () => runPack([packDir, '--recover', parent.path, '--grant', 'host.shell'], dir, { deps: shellIdle.deps }),
+      /cannot grant host\.shell/,
+    );
+    assert.equal(shellIdle.started(), false);
+
+    // Root mismatch: same slug and version in a different folder.
+    const sibling = seedRecoveryPack(dir, 'recover-pack-sibling');
+    fs.writeFileSync(
+      path.join(sibling, 'pack.json'),
+      `${JSON.stringify({ slug: 'recover-pack', title: 'Recover Pack', version: '0.1.0', permissions: ['pack.write'] }, null, 2)}\n`
+    );
+    const siblingIdle = idle();
+    await assert.rejects(
+      () => runPack([sibling, '--recover', parent.path], dir, { deps: siblingIdle.deps }),
+      /different pack, folder, or version/,
+    );
+    assert.equal(siblingIdle.started(), false);
+
+    // Legacy manifest cannot back recovery.
+    const legacyManifest = JSON.parse(manifestBefore);
+    delete legacyManifest.permissions;
+    fs.writeFileSync(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
+    const legacyIdle = idle();
+    await assert.rejects(
+      () => runPack([packDir, '--recover', parent.path], dir, { deps: legacyIdle.deps }),
+      /legacy packs cannot be recovered/,
+    );
+    assert.equal(legacyIdle.started(), false);
+    fs.writeFileSync(manifestPath, manifestBefore);
+
+    // Corrupt receipt.
+    const corruptPath = path.join(receiptDir, 'corrupt.json');
+    fs.writeFileSync(corruptPath, '{ broken\n');
+    const corruptIdle = idle();
+    await assert.rejects(
+      () => runPack([packDir, '--recover', corruptPath], dir, { deps: corruptIdle.deps }),
+      /corrupt or unreadable/,
+    );
+    assert.equal(corruptIdle.started(), false);
+
+    // Slug source must not install during recovery.
+    const slugIdle = idle();
+    await assert.rejects(
+      () => runPack(['no-such-pack', '--recover', parent.path], dir, { deps: slugIdle.deps }),
+      /existing pack directory/,
+    );
+    assert.equal(slugIdle.started(), false);
+
+    // Cloud recovery is not supported.
+    const cloudIdle = idle();
+    await assert.rejects(
+      () => runPack([packDir, '--cloud', '--recover', parent.path], dir, { deps: cloudIdle.deps }),
+      /local-only/,
+    );
+    assert.equal(cloudIdle.started(), false);
+
+    // Missing receipt path.
+    const missingIdle = idle();
+    await assert.rejects(
+      () => runPack([packDir, '--recover', path.join(receiptDir, 'nope.json')], dir, { deps: missingIdle.deps }),
+      /receipt not found/,
+    );
+    assert.equal(missingIdle.started(), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses a host.shell parent and a run without action identities', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const idle = () => {
+      let started = false;
+      const wrapped = stubDeps({
+        packRunReceiptDir: receiptDir,
+        nonInteractive: true,
+        computerLocal: () => { started = true; },
+      });
+      return { deps: wrapped.deps, started: () => started };
+    };
+
+    const shellDir = path.join(dir, 'shell-pack');
+    fs.mkdirSync(shellDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(shellDir, 'pack.json'),
+      `${JSON.stringify({ slug: 'shell-pack', title: 'Shell', version: '0.1.0', permissions: ['host.shell'] }, null, 2)}\n`
+    );
+    const shellFirst = recoveringDeps(receiptDir, (args, options) => {
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([shellDir], dir, { deps: shellFirst.deps }), 0);
+    const shellParent = latestReceipt(receiptDir);
+    const shellIdle = idle();
+    await assert.rejects(
+      () => runPack([shellDir, '--recover', shellParent.path], dir, { deps: shellIdle.deps }),
+      /host\.shell/,
+    );
+    assert.equal(shellIdle.started(), false);
+
+    // A run without tool_use_id stays compatible but can never be a parent.
+    const packDir2 = seedRecoveryPack(dir, 'recover-pack-noid');
+    const noidFirst = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt'), null);
+      applyMarkerEdit(path.join(packDir2, 'notes.txt'));
+      hookUsed(options.runnerEnv, 'Edit', 'notes.txt');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir2], dir, { deps: noidFirst.deps }), 0);
+    const noid = latestReceipt(receiptDir);
+    assert.equal(noid.data.recovery.hasMissingIdentity, true);
+    const noidIdle = idle();
+    await assert.rejects(
+      () => runPack([packDir2, '--recover', noid.path], dir, { deps: noidIdle.deps }),
+      /missing.*identit|unresolved file effect/,
+    );
+    assert.equal(noidIdle.started(), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses a journal that escapes the pack root', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    fs.mkdirSync(receiptDir, { recursive: true });
+    const policy = resolvePackCapabilityPolicy(['pack.write']);
+    const receipt = beginPackRunReceipt(packDir, { slug: 'recover-pack', version: '0.1.0' }, policy, { receiptDir });
+    appendReceiptEvent(receipt.eventsPath, {
+      event: 'intent', at: new Date().toISOString(), tool: 'Edit', tool_use_id: 'call-evil-1', target: '../evil.md',
+    });
+    appendReceiptEvent(receipt.eventsPath, { event: 'exit', at: new Date().toISOString(), status: 1, signal: null });
+    finalizePackRunReceipt(receipt.receiptPath, receipt.eventsPath);
+    let started = false;
+    const deps = stubDeps({
+      packRunReceiptDir: receiptDir,
+      nonInteractive: true,
+      computerLocal: () => { started = true; },
+    }).deps;
+    await assert.rejects(
+      () => runPack([packDir, '--recover', receipt.receiptPath], dir, { deps }),
+      /outside the pack root|unsafe file target/,
+    );
+    assert.equal(started, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('denied pack-root mutations leave no pending intent', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    let denied = null;
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      denied = hookPre(options.runnerEnv, 'Read', '../outside.md', 'call-deny-1')
+        || hookPre(options.runnerEnv, 'Edit', '../outside.md', 'call-deny-2');
+      assert.ok(denied && denied.hookSpecificOutput.permissionDecision === 'deny');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+    assert.deepEqual(parent.data.deniedUses.map(({ tool }) => tool), ['Read']);
+    assert.deepEqual(parent.data.fileEffects.unresolved, []);
+    assert.deepEqual(parent.data.fileEffects.confirmed, []);
+    assert.equal(parent.data.recovery.hasMissingIdentity, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover protects transitively and claims a parent exactly once', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const notesPath = path.join(packDir, 'notes.txt');
+    const otherPath = path.join(packDir, 'other.txt');
+
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-t1'), null);
+      applyMarkerEdit(notesPath);
+      hookUsed(options.runnerEnv, 'Edit', 'notes.txt', 'call-t1');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+
+    const childOne = recoveringDeps(receiptDir, (args, options) => {
+      const denied = hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-t2');
+      assert.ok(denied && denied.hookSpecificOutput.permissionDecision === 'deny');
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'other.txt', 'call-t3'), null);
+      fs.appendFileSync(otherPath, 'child one work\n');
+      hookUsed(options.runnerEnv, 'Edit', 'other.txt', 'call-t3');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir, '--recover', parent.path], dir, { deps: childOne.deps }), 0);
+    const child = latestReceipt(receiptDir);
+    assert.equal(child.data.recovery.parentRunId, parent.data.runId);
+
+    // The parent is consumed: a second recovery from it points at its child.
+    let started = false;
+    const again = stubDeps({
+      packRunReceiptDir: receiptDir,
+      nonInteractive: true,
+      computerLocal: () => { started = true; },
+    }).deps;
+    await assert.rejects(
+      () => runPack([packDir, '--recover', parent.path], dir, { deps: again }),
+      new RegExp(`already recovered as .*${child.data.runId.slice(0, 8)}|already recovered as`),
+    );
+    assert.equal(started, false);
+
+    // Further recovery comes from the failed child and keeps every protection.
+    const childTwo = recoveringDeps(receiptDir, (args, options) => {
+      for (const [tool, target, id] of [['Edit', 'notes.txt', 'call-t4'], ['Edit', 'other.txt', 'call-t5']]) {
+        const denied = hookPre(options.runnerEnv, tool, target, id);
+        assert.ok(denied && denied.hookSpecificOutput.permissionDecision === 'deny', `${target} stays protected`);
+      }
+      assert.equal(hookPre(options.runnerEnv, 'Write', 'third.txt', 'call-t6'), null);
+      fs.writeFileSync(path.join(packDir, 'third.txt'), 'third file\n');
+      hookUsed(options.runnerEnv, 'Write', 'third.txt', 'call-t6');
+      options.onRunnerExit({ status: 0, signal: null });
+    });
+    assert.equal(await runPack([packDir, '--recover', child.path], dir, { deps: childTwo.deps }), 0);
+    const grandchild = latestReceipt(receiptDir);
+    assert.equal(grandchild.data.recovery.parentRunId, child.data.runId);
+    assert.deepEqual(
+      grandchild.data.recovery.protectedFiles.map((entry) => entry.target).sort(),
+      ['notes.txt', 'other.txt', 'third.txt'],
+    );
+    assert.equal(countLines(notesPath, 'RECOVERY-LINE-20260904'), 1);
+    assert.equal(countLines(otherPath, 'child one work'), 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses a crash-pending claim instead of replaying it', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-c1'), null);
+      applyMarkerEdit(path.join(packDir, 'notes.txt'));
+      hookUsed(options.runnerEnv, 'Edit', 'notes.txt', 'call-c1');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+    const claimPath = path.join(receiptDir, `${path.basename(parent.path, '.json')}.claim.json`);
+    fs.writeFileSync(claimPath, JSON.stringify({
+      version: 1,
+      parentReceipt: parent.path,
+      parentRunId: parent.data.runId,
+      claimedAt: new Date().toISOString(),
+      childReceipt: null,
+    }, null, 2));
+    let started = false;
+    const deps = stubDeps({
+      packRunReceiptDir: receiptDir,
+      nonInteractive: true,
+      computerLocal: () => { started = true; },
+    }).deps;
+    await assert.rejects(
+      () => runPack([packDir, '--recover', parent.path], dir, { deps }),
+      /already in progress.*manual review/,
+    );
+    assert.equal(started, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses hardlinked completed files and denies inode aliases in the child', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const notesPath = path.join(packDir, 'notes.txt');
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-h1'), null);
+      applyMarkerEdit(notesPath);
+      hookUsed(options.runnerEnv, 'Edit', 'notes.txt', 'call-h1');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+
+    const aliasPath = path.join(packDir, 'notes-alias.txt');
+    let linked = true;
+    try {
+      fs.linkSync(notesPath, aliasPath);
+    } catch {
+      linked = false;
+    }
+    if (linked) {
+      let started = false;
+      const deps = stubDeps({
+        packRunReceiptDir: receiptDir,
+        nonInteractive: true,
+        computerLocal: () => { started = true; },
+      }).deps;
+      await assert.rejects(
+        () => runPack([packDir, '--recover', parent.path], dir, { deps }),
+        /multiple hard links/,
+      );
+      assert.equal(started, false);
+      fs.unlinkSync(aliasPath);
+    }
+
+    // After the link is gone recovery launches; a fresh alias created inside
+    // the child still cannot reach the protected bytes by another name.
+    const second = recoveringDeps(receiptDir, (args, options) => {
+      fs.linkSync(notesPath, aliasPath);
+      const denied = hookPre(options.runnerEnv, 'Edit', 'notes-alias.txt', 'call-h2');
+      assert.ok(denied && denied.hookSpecificOutput.permissionDecision === 'deny', 'inode alias stays denied');
+      assert.equal(hookPre(options.runnerEnv, 'Read', 'notes-alias.txt', 'call-h3'), null, 'reads stay allowed');
+      fs.unlinkSync(aliasPath);
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'other.txt', 'call-h4'), null);
+      fs.appendFileSync(path.join(packDir, 'other.txt'), 'alias test work\n');
+      hookUsed(options.runnerEnv, 'Edit', 'other.txt', 'call-h4');
+      options.onRunnerExit({ status: 0, signal: null });
+    });
+    assert.equal(await runPack([packDir, '--recover', parent.path], dir, { deps: second.deps }), 0);
+    const child = latestReceipt(receiptDir);
+    assert.equal(child.data.recovery.mode, 'recovered');
+    assert.equal(countLines(notesPath, 'RECOVERY-LINE-20260904'), 1);
+    const events = readReceiptEvents(receiptDir, child);
+    assert.equal(events.split('\n').some((line) => line.includes('"intent"') && line.includes('notes-alias.txt')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack pre-hook subprocess exits 2 when the journal cannot be written', () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    fs.mkdirSync(receiptDir, { recursive: true });
+    const policy = resolvePackCapabilityPolicy(['pack.write']);
+    const receipt = beginPackRunReceipt(packDir, { slug: 'recover-pack', version: '0.1.0' }, policy, { receiptDir });
+    const blocker = path.join(dir, 'blocker');
+    fs.writeFileSync(blocker, 'not a directory');
+    const result = spawnSync(process.execPath, [path.join(repoRoot, 'lib', 'pack-capabilities.js'), 'pre'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 20000,
+      input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'notes.txt' }, tool_use_id: 'call-sub-1' }),
+      env: {
+        ...process.env,
+        ATRIS_PACK_ROOT: packDir,
+        ATRIS_PACK_RECEIPT: receipt.receiptPath,
+        ATRIS_PACK_RECEIPT_EVENTS: path.join(blocker, 'events.jsonl'),
+        ATRIS_PACK_GRANTED_CAPABILITIES: JSON.stringify(['pack.write']),
+      },
+    });
+    assert.equal(result.status, 2, `${result.stdout}${result.stderr}`);
+    assert.match(result.stderr, /capability hook failed/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack run help documents explicit recovery', async () => {
+  const { code, output } = await captureConsole(() => runPack(['--help']));
+  assert.equal(code, 0);
+  assert.match(output, /--recover <receipt\.json>/);
+});
+
+test('pack recover trusts journal events over stale summaries', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const manifest = { slug: 'recover-pack', version: '0.1.0', permissions: ['pack.write'] };
+    const policy = resolvePackCapabilityPolicy(manifest.permissions);
+    async function failedParent() {
+      const first = recoveringDeps(receiptDir, (args, options) => {
+        assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', `call-auth-${Math.random()}`), null);
+        applyMarkerEdit(path.join(packDir, 'notes.txt'));
+        const env = options.runnerEnv;
+        withHookEnv(env, () => {
+          const events = fs.readFileSync(env.ATRIS_PACK_RECEIPT_EVENTS, 'utf8').trim().split('\n').map(JSON.parse);
+          const intent = events.find((e) => e.event === 'intent');
+          fs.appendFileSync(path.join(packDir, 'notes.txt'), '');
+          runHook('used', JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'notes.txt' }, tool_use_id: intent.tool_use_id }));
+        });
+        options.onRunnerExit({ status: 1, signal: null });
+      });
+      fs.writeFileSync(path.join(packDir, 'notes.txt'), 'base CANARY-RECOVERY-7F2E\nMARKER\n');
+      assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+      return latestReceipt(receiptDir);
+    }
+    const parent = await failedParent();
+    const idle = () => stubDeps({ packRunReceiptDir: receiptDir, nonInteractive: true, computerLocal: () => {} }).deps;
+
+    const tamperedExit = JSON.parse(fs.readFileSync(parent.path, 'utf8'));
+    tamperedExit.status = 'finished';
+    tamperedExit.exitStatus = 1;
+    const tamperedPath = path.join(receiptDir, 'tampered-exit.json');
+    const tamperedEvents = path.join(receiptDir, 'tampered-exit.events.jsonl');
+    fs.writeFileSync(tamperedPath, JSON.stringify({ ...tamperedExit, events: path.basename(tamperedEvents) }));
+    const parentEvents = fs.readFileSync(path.join(receiptDir, parent.data.events), 'utf8').split('\n').filter(Boolean).filter((l) => !l.includes('"exit"')).join('\n') + '\n';
+    fs.writeFileSync(tamperedEvents, parentEvents);
+    await assert.rejects(() => runPack([packDir, '--recover', tamperedPath], dir, { deps: idle() }), /no recorded runner exit|terminal exit|conflicts/);
+
+    const shellEvents = fs.readFileSync(path.join(receiptDir, parent.data.events), 'utf8').trim().split('\n').map(JSON.parse);
+    shellEvents[0].grantedCapabilities.push('host.shell');
+    const shellPath = path.join(receiptDir, 'shell-hide.json');
+    const shellEventsPath = path.join(receiptDir, 'shell-hide.events.jsonl');
+    fs.writeFileSync(shellEventsPath, shellEvents.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    const shellSummary = JSON.parse(fs.readFileSync(parent.path, 'utf8'));
+    fs.writeFileSync(shellPath, JSON.stringify({ ...shellSummary, events: path.basename(shellEventsPath) }));
+    await assert.rejects(() => runPack([packDir, '--recover', shellPath], dir, { deps: idle() }), /host\.shell|tool ceiling|conflicts/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses duplicate, unknown, mismatched, and out-of-order pairings', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    fs.mkdirSync(receiptDir, { recursive: true });
+    const policy = resolvePackCapabilityPolicy(['pack.write']);
+    const manifest = { slug: 'recover-pack', version: '0.1.0' };
+    function journaledParent(mutate) {
+      const receipt = beginPackRunReceipt(packDir, manifest, policy, { receiptDir });
+      const events = fs.readFileSync(receipt.eventsPath, 'utf8').trim().split('\n').map(JSON.parse);
+      const launch = events[0];
+      const built = [launch, ...mutate(launch), { event: 'exit', at: new Date().toISOString(), status: 1, signal: null }];
+      fs.writeFileSync(receipt.eventsPath, built.map((e) => JSON.stringify(e)).join('\n') + '\n');
+      finalizePackRunReceipt(receipt.receiptPath, receipt.eventsPath);
+      return receipt;
+    }
+    const cases = [
+      ['duplicate-intent', () => [
+        { event: 'intent', at: new Date().toISOString(), tool: 'Write', tool_use_id: 'dup', target: 'a.txt' },
+        { event: 'intent', at: new Date().toISOString(), tool: 'Write', tool_use_id: 'dup', target: 'a.txt' },
+      ]],
+      ['unknown-tool', () => [
+        { event: 'intent', at: new Date().toISOString(), tool: 'Writ', tool_use_id: 'u1', target: 'a.txt' },
+      ]],
+      ['mismatched-tool', () => [
+        { event: 'intent', at: new Date().toISOString(), tool: 'Write', tool_use_id: 'm1', target: 'a.txt' },
+        { event: 'used', at: new Date().toISOString(), tool: 'Edit', tool_use_id: 'm1', target: 'a.txt', fileSha256: '0'.repeat(64) },
+      ]],
+      ['out-of-order', () => [
+        { event: 'used', at: new Date().toISOString(), tool: 'Write', tool_use_id: 'o1', target: 'a.txt', fileSha256: '0'.repeat(64) },
+        { event: 'intent', at: new Date().toISOString(), tool: 'Write', tool_use_id: 'o1', target: 'a.txt' },
+      ]],
+    ];
+    for (const [name, mutate] of cases) {
+      const receipt = journaledParent(mutate);
+      let started = false;
+      const deps = stubDeps({ packRunReceiptDir: receiptDir, nonInteractive: true, computerLocal: () => { started = true; } }).deps;
+      await assert.rejects(() => runPack([packDir, '--recover', receipt.receiptPath], dir, { deps }), /unresolved|duplicate|unknown|mismatch|out-of-order|corrupt|manual review/, `${name} must refuse`);
+      assert.equal(started, false, `${name} must not launch`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover keeps journals and claims outside model reach', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-place-1'), null);
+      applyMarkerEdit(path.join(packDir, 'notes.txt'));
+      hookUsed(options.runnerEnv, 'Edit', 'notes.txt', 'call-place-1');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+    const idle = () => stubDeps({ packRunReceiptDir: receiptDir, nonInteractive: true, computerLocal: () => {} }).deps;
+
+    const insideDir = path.join(packDir, 'receipts');
+    fs.mkdirSync(insideDir, { recursive: true });
+    const insideReceipt = beginPackRunReceipt(packDir, { slug: 'recover-pack', version: '0.1.0' }, resolvePackCapabilityPolicy(['pack.write']), { receiptDir: insideDir });
+    appendReceiptEvent(insideReceipt.eventsPath, { event: 'exit', at: new Date().toISOString(), status: 1, signal: null });
+    finalizePackRunReceipt(insideReceipt.receiptPath, insideReceipt.eventsPath);
+    await assert.rejects(() => runPack([packDir, '--recover', insideReceipt.receiptPath], dir, { deps: idle() }), /outside the pack root/);
+
+    const childInside = stubDeps({ packRunReceiptDir: insideDir, nonInteractive: true, computerLocal: () => {} }).deps;
+    await assert.rejects(() => runPack([packDir, '--recover', parent.path], dir, { deps: childInside }), /outside the pack root/);
+
+    const withEnv = (env, fn) => withHookEnv(env, fn);
+    const child = recoveringDeps(receiptDir, (args, options) => {
+      const deniedJournal = withEnv(options.runnerEnv, () => runHook('pre', JSON.stringify({ tool_name: 'Write', tool_input: { file_path: options.runnerEnv.ATRIS_PACK_RECEIPT_EVENTS, content: 'tamper' }, tool_use_id: 'tamper-1' })));
+      assert.ok(deniedJournal && deniedJournal.hookSpecificOutput.permissionDecision === 'deny', 'journal writes stay denied');
+      const malformed = { ...options.runnerEnv, ATRIS_PACK_PROTECTED_FILES: '{' };
+      const deniedMalformed = withEnv(malformed, () => runHook('pre', JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'other.txt' }, tool_use_id: 'mal-1' })));
+      assert.ok(!deniedMalformed || deniedMalformed.hookSpecificOutput.permissionDecision === 'deny' || deniedMalformed === null, 'malformed protection fails closed or denies protected only');
+      const protectedDenied = withEnv({ ...options.runnerEnv, ATRIS_PACK_PROTECTED_FILES: '{' }, () => runHook('pre', JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'notes.txt' }, tool_use_id: 'mal-2' })));
+      assert.ok(protectedDenied && protectedDenied.hookSpecificOutput.permissionDecision === 'deny', 'malformed env still denies protected files');
+      assert.equal(withEnv(options.runnerEnv, () => runHook('pre', JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'other.txt' }, tool_use_id: 'place-other-1' }))), null);
+      fs.appendFileSync(path.join(packDir, 'other.txt'), 'placement work\n');
+      withEnv(options.runnerEnv, () => runHook('used', JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'other.txt' }, tool_use_id: 'place-other-1' })));
+      options.onRunnerExit({ status: 0, signal: null });
+    });
+    assert.equal(await runPack([packDir, '--recover', parent.path], dir, { deps: child.deps }), 0);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover survives real process exit, rejects empty flag, and guides manual review', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-exit-1'), null);
+      applyMarkerEdit(path.join(packDir, 'notes.txt'));
+      hookUsed(options.runnerEnv, 'Edit', 'notes.txt', 'call-exit-1');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+
+    const childSource = `const {runPack}=require(${JSON.stringify(path.join(repoRoot, 'commands/pack.js'))});runPack([${JSON.stringify(packDir)},'--recover',${JSON.stringify(parent.path)}],${JSON.stringify(dir)},{deps:{readUserDenyRules:()=>[],nonInteractive:true,packRunReceiptDir:${JSON.stringify(receiptDir)},computerLocal:(a,o)=>{o.onRunnerExit({status:1,signal:null});process.exit(1);}}}).catch(e=>{console.error(e.message);process.exit(2);});`;
+    const child = spawnSync(process.execPath, ['-e', childSource], { encoding: 'utf8' });
+    assert.equal(child.status, 1, `exiting runner must exit 1: ${child.stdout}${child.stderr}`);
+    const claim = JSON.parse(fs.readFileSync(packRecoveryClaimPath(parent.path), 'utf8'));
+    assert.ok(claim.childReceipt && claim.childReceipt.endsWith('.json'), 'claim names the real child before exit');
+    const childReceipt = JSON.parse(fs.readFileSync(claim.childReceipt, 'utf8'));
+    assert.equal(childReceipt.recovery.parentRunId, parent.data.runId);
+    assert.ok(childReceipt.recovery.protectedFiles.some((e) => e.target === 'notes.txt'), 'child retains inherited protection');
+
+    await assert.rejects(() => runPack([packDir, '--recover=', parent.path], dir, { deps: stubDeps({ packRunReceiptDir: receiptDir }).deps }), /needs a receipt path/);
+    await assert.rejects(() => runPack([packDir, '--recover', ''], dir, { deps: stubDeps({ packRunReceiptDir: receiptDir }).deps }), /needs a receipt path/);
+
+    const errors = [];
+    try { assessPackRecoveryJournal({ packDir, manifest: { slug: 'recover-pack', version: '0.1.0' }, policy: resolvePackCapabilityPolicy(['pack.write']), parentReceiptPath: parent.path, operatorInput: { bytes: 1, sha256: 'x' } }); } catch (e) { errors.push(e.message); }
+    const runningReceipt = beginPackRunReceipt(packDir, { slug: 'recover-pack', version: '0.1.0' }, resolvePackCapabilityPolicy(['pack.write']), { receiptDir });
+    try {
+      assessPackRecoveryJournal({ packDir, manifest: { slug: 'recover-pack', version: '0.1.0' }, policy: resolvePackCapabilityPolicy(['pack.write']), parentReceiptPath: runningReceipt.receiptPath });
+    } catch (e) { errors.push(e.message); }
+    for (const message of errors) assert.doesNotMatch(message, /rerun the pack fresh/);
+    assert.ok(errors.some((m) => /manual review|inspect the prior run/.test(m)), 'guidance points at manual review');
+    assert.equal(childReceipt.observability.fileEffectIdentitiesLogged, true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses malformed or missing inherited protection, including transitively', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const manifest = { slug: 'recover-pack', version: '0.1.0' };
+    const policy = resolvePackCapabilityPolicy(['pack.write']);
+    const notesPath = path.join(packDir, 'notes.txt');
+    const otherPath = path.join(packDir, 'other.txt');
+
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-inherit-1'), null);
+      applyMarkerEdit(notesPath);
+      hookUsed(options.runnerEnv, 'Edit', 'notes.txt', 'call-inherit-1');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+
+    // Transitive chain: the child is itself a recovered run carrying
+    // inherited protection for notes.txt.
+    const second = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'other.txt', 'call-inherit-2'), null);
+      fs.appendFileSync(otherPath, 'inherited chain work\n');
+      hookUsed(options.runnerEnv, 'Edit', 'other.txt', 'call-inherit-2');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir, '--recover', parent.path], dir, { deps: second.deps }), 0);
+    const child = latestReceipt(receiptDir);
+    assert.equal(child.data.recovery.mode, 'recovered');
+    assert.ok(child.data.recovery.protectedFiles.some((entry) => entry.target === 'notes.txt'));
+
+    const childEventsPath = path.join(receiptDir, child.data.events);
+    const original = fs.readFileSync(childEventsPath, 'utf8');
+    const idle = () => {
+      let started = false;
+      const wrapped = stubDeps({
+        packRunReceiptDir: receiptDir,
+        nonInteractive: true,
+        computerLocal: () => { started = true; },
+      });
+      return { deps: wrapped.deps, started: () => started };
+    };
+    async function refusesAfterDamage(label, mutateLaunch, pattern) {
+      const events = original.trim().split('\n').map(JSON.parse);
+      const damaged = events.map((event) => (event.event === 'launch' ? mutateLaunch(event) : event));
+      fs.writeFileSync(childEventsPath, damaged.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+      try {
+        const attempt = idle();
+        await assert.rejects(
+          () => runPack([packDir, '--recover', child.path], dir, { deps: attempt.deps }),
+          pattern,
+          `${label} must refuse`,
+        );
+        assert.equal(attempt.started(), false, `${label} must not launch`);
+      } finally {
+        fs.writeFileSync(childEventsPath, original);
+      }
+    }
+
+    await refusesAfterDamage(
+      'malformed inherited protection',
+      (launch) => ({ ...launch, recovery: { ...launch.recovery, protectedFiles: {} } }),
+      /malformed recovered protection|corrupt/,
+    );
+    await refusesAfterDamage(
+      'missing recovered protection',
+      (launch) => ({ ...launch, recovery: { mode: 'recovered', parentRunId: launch.recovery.parentRunId, parentReceipt: launch.recovery.parentReceipt } }),
+      /malformed recovered protection|malformed recovered parent identity|corrupt/,
+    );
+    await refusesAfterDamage(
+      'malformed inherited entry',
+      (launch) => ({
+        ...launch,
+        recovery: { ...launch.recovery, protectedFiles: [{ target: 'notes.txt', sha256: 'not-a-hash' }] },
+      }),
+      /malformed protected entry|corrupt/,
+    );
+    await refusesAfterDamage(
+      'missing recovered parent identity',
+      (launch) => ({ ...launch, recovery: { ...launch.recovery, parentRunId: null } }),
+      /malformed recovered parent identity|corrupt/,
+    );
+
+    // A stale summary claiming fresh while the journal is recovered refuses
+    // on recovery-identity conflict (events copied alongside so the journal
+    // binding itself stays valid).
+    const summary = JSON.parse(fs.readFileSync(child.path, 'utf8'));
+    const stalePath = path.join(receiptDir, 'stale-recovery-identity.json');
+    fs.copyFileSync(childEventsPath, path.join(receiptDir, 'stale-recovery-identity.events.jsonl'));
+    fs.writeFileSync(stalePath, JSON.stringify({ ...summary, events: 'stale-recovery-identity.events.jsonl', recovery: { mode: 'fresh', protectedFiles: [], journalVersion: 1, hasMissingIdentity: false } }));
+    const stale = idle();
+    await assert.rejects(
+      () => runPack([packDir, '--recover', stalePath], dir, { deps: stale.deps }),
+      /recovery identity/,
+    );
+    assert.equal(stale.started(), false);
+
+    // Damaged history never reaches the runner, so the completed file cannot
+    // be permitted again through the real pre-hook.
+    const damagedEvents = original.trim().split('\n').map(JSON.parse)
+      .map((event) => (event.event === 'launch'
+        ? { ...event, recovery: { ...event.recovery, protectedFiles: {} } }
+        : event));
+    fs.writeFileSync(childEventsPath, damagedEvents.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+    try {
+      const bypass = idle();
+      await assert.rejects(
+        () => runPack([packDir, '--recover', child.path], dir, { deps: bypass.deps }),
+        /malformed recovered protection|corrupt/,
+      );
+      assert.equal(bypass.started(), false, 'damaged history must not launch to re-permit completed work');
+    } finally {
+      fs.writeFileSync(childEventsPath, original);
+    }
+
+    // Restored history still recovers: the damage was the journal edit, not
+    // the underlying completed work.
+    const healthy = recoveringDeps(receiptDir, (args, options) => {
+      const denied = hookPre(options.runnerEnv, 'Write', 'notes.txt', 'call-inherit-3');
+      assert.ok(denied && denied.hookSpecificOutput.permissionDecision === 'deny', 'inherited completed file stays denied');
+      options.onRunnerExit({ status: 0, signal: null });
+    });
+    assert.equal(await runPack([packDir, '--recover', child.path], dir, { deps: healthy.deps }), 0);
+    assert.equal(countLines(notesPath, 'RECOVERY-LINE-20260904'), 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover validates the recorded tool ceiling exactly', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const manifest = { slug: 'recover-pack', version: '0.1.0' };
+    const policy = resolvePackCapabilityPolicy(['pack.write']);
+
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-ceiling-1'), null);
+      applyMarkerEdit(path.join(packDir, 'notes.txt'));
+      hookUsed(options.runnerEnv, 'Edit', 'notes.txt', 'call-ceiling-1');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+    assert.deepEqual(
+      assessPackRecoveryJournal({ packDir, manifest, policy, parentReceiptPath: parent.path }).protectedFiles.map((entry) => entry.target),
+      ['notes.txt'],
+    );
+
+    const eventsPath = path.join(receiptDir, parent.data.events);
+    const original = fs.readFileSync(eventsPath, 'utf8');
+    const idle = () => {
+      let started = false;
+      const wrapped = stubDeps({
+        packRunReceiptDir: receiptDir,
+        nonInteractive: true,
+        computerLocal: () => { started = true; },
+      });
+      return { deps: wrapped.deps, started: () => started };
+    };
+    async function refusesAfterDamage(label, mutateLaunch, pattern) {
+      const events = original.trim().split('\n').map(JSON.parse);
+      const damaged = events.map((event) => (event.event === 'launch' ? mutateLaunch(event) : event));
+      fs.writeFileSync(eventsPath, damaged.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+      try {
+        const attempt = idle();
+        await assert.rejects(
+          () => runPack([packDir, '--recover', parent.path], dir, { deps: attempt.deps }),
+          pattern,
+          `${label} must refuse`,
+        );
+        assert.equal(attempt.started(), false, `${label} must not launch`);
+      } finally {
+        fs.writeFileSync(eventsPath, original);
+      }
+    }
+
+    const genuineTools = ['Read', 'Glob', 'Grep', 'Skill', 'Edit', 'Write'];
+    await refusesAfterDamage(
+      'extra shell tool',
+      (launch) => ({ ...launch, grantedTools: [...launch.grantedTools, 'Bash'] }),
+      /tool ceiling/,
+    );
+    await refusesAfterDamage(
+      'duplicate tool',
+      (launch) => ({ ...launch, grantedTools: [...launch.grantedTools, 'Read'] }),
+      /tool ceiling/,
+    );
+    await refusesAfterDamage(
+      'unknown tool',
+      (launch) => ({ ...launch, grantedTools: [...launch.grantedTools.slice(0, -1), 'Frobnicate'] }),
+      /tool ceiling/,
+    );
+    await refusesAfterDamage(
+      'reordered tools',
+      (launch) => ({ ...launch, grantedTools: [...genuineTools].reverse() }),
+      /tool ceiling/,
+    );
+    await refusesAfterDamage(
+      'unknown requested capability',
+      (launch) => ({ ...launch, requestedCapabilities: [...launch.requestedCapabilities, 'database.admin'] }),
+      /capability/,
+    );
+    await refusesAfterDamage(
+      'requested outside granted set',
+      (launch) => ({ ...launch, requestedCapabilities: [...launch.requestedCapabilities, 'web.read'] }),
+      /outside granted set|tool ceiling|capability/,
+    );
+
+    // Conflicting stable summary evidence refuses even with a valid journal
+    // (events copied alongside so the journal binding itself stays valid).
+    const summary = JSON.parse(fs.readFileSync(parent.path, 'utf8'));
+    const conflictPath = path.join(receiptDir, 'conflict-tool-ceiling.json');
+    fs.copyFileSync(eventsPath, path.join(receiptDir, 'conflict-tool-ceiling.events.jsonl'));
+    fs.writeFileSync(conflictPath, JSON.stringify({ ...summary, events: 'conflict-tool-ceiling.events.jsonl', grantedTools: genuineTools.slice(0, -1) }));
+    const conflict = idle();
+    await assert.rejects(
+      () => runPack([packDir, '--recover', conflictPath], dir, { deps: conflict.deps }),
+      /tool ceiling/,
+    );
+    assert.equal(conflict.started(), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses emptied inherited protection but allows genuinely empty agreement', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const manifest = { slug: 'recover-pack', version: '0.1.0' };
+    const policy = resolvePackCapabilityPolicy(['pack.write']);
+    const notesPath = path.join(packDir, 'notes.txt');
+    const idle = () => {
+      let started = false;
+      const wrapped = stubDeps({
+        packRunReceiptDir: receiptDir,
+        nonInteractive: true,
+        computerLocal: () => { started = true; },
+      });
+      return { deps: wrapped.deps, started: () => started };
+    };
+
+    // Transitive chain with a genuinely completed inherited file: the child
+    // itself records no edits, so its only protection is inherited.
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'call-empty-1'), null);
+      applyMarkerEdit(notesPath);
+      hookUsed(options.runnerEnv, 'Edit', 'notes.txt', 'call-empty-1');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: first.deps }), 0);
+    const parent = latestReceipt(receiptDir);
+    const second = recoveringDeps(receiptDir, (args, options) => {
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir, '--recover', parent.path], dir, { deps: second.deps }), 0);
+    const child = latestReceipt(receiptDir);
+    assert.equal(child.data.recovery.mode, 'recovered');
+    assert.deepEqual(child.data.recovery.protectedFiles.map((entry) => entry.target), ['notes.txt']);
+
+    // Baseline agreement between stable summary and journal accepts.
+    assert.deepEqual(
+      assessPackRecoveryJournal({ packDir, manifest, policy, parentReceiptPath: child.path }).protectedFiles.map((entry) => entry.target),
+      ['notes.txt'],
+    );
+
+    // Emptying only the launch side while the stable summary still records
+    // the completed file must refuse, never silently drop protection.
+    const childEventsPath = path.join(receiptDir, child.data.events);
+    const original = fs.readFileSync(childEventsPath, 'utf8');
+    const emptied = original.trim().split('\n').map(JSON.parse)
+      .map((event) => (event.event === 'launch' ? { ...event, recovery: { ...event.recovery, protectedFiles: [] } } : event));
+    fs.writeFileSync(childEventsPath, emptied.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+    try {
+      const attempt = idle();
+      await assert.rejects(
+        () => runPack([packDir, '--recover', child.path], dir, { deps: attempt.deps }),
+        /summary protection conflicts/,
+        'emptied inherited protection must refuse',
+      );
+      assert.equal(attempt.started(), false, 'emptied history must not launch');
+    } finally {
+      fs.writeFileSync(childEventsPath, original);
+    }
+
+    // Genuinely empty recovered protection stays allowed when both records
+    // agree: a no-op parent fails with no file effects, and its no-op child
+    // carries an honestly empty protection set on both sides.
+    const noopParent = recoveringDeps(receiptDir, (args, options) => {
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir], dir, { deps: noopParent.deps }), 0);
+    const parent2 = latestReceipt(receiptDir);
+    assert.deepEqual(parent2.data.fileEffects.confirmed, []);
+    const noopChild = recoveringDeps(receiptDir, (args, options) => {
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    assert.equal(await runPack([packDir, '--recover', parent2.path], dir, { deps: noopChild.deps }), 0);
+    const child2 = latestReceipt(receiptDir);
+    assert.deepEqual(child2.data.recovery.protectedFiles, []);
+    assert.deepEqual(
+      assessPackRecoveryJournal({ packDir, manifest, policy, parentReceiptPath: child2.path }).protectedFiles,
+      [],
+    );
+
+    const metaSummary = JSON.parse(fs.readFileSync(child.path, 'utf8'));
+    delete metaSummary.recovery;
+    const metaPath = path.join(receiptDir, 'missing-recovery-meta.json');
+    // Copied last so the extra receipt file cannot disturb the lookups above.
+    fs.copyFileSync(childEventsPath, path.join(receiptDir, 'missing-recovery-meta.events.jsonl'));
+    fs.writeFileSync(metaPath, JSON.stringify({ ...metaSummary, events: 'missing-recovery-meta.events.jsonl' }));
+    const meta = idle();
+    await assert.rejects(
+      () => runPack([packDir, '--recover', metaPath], dir, { deps: meta.deps }),
+      /missing stable recovery metadata/,
+    );
+    assert.equal(meta.started(), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses lost file events or contradictory saved effect views before launch', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    const first = recoveringDeps(receiptDir, (args, options) => {
+      assert.equal(hookPre(options.runnerEnv, 'Edit', 'notes.txt', 'saved-completion'), null);
+      applyMarkerEdit(path.join(packDir, 'notes.txt'));
+      hookUsed(options.runnerEnv, 'Edit', 'notes.txt', 'saved-completion');
+      options.onRunnerExit({ status: 1, signal: null });
+    });
+    await runPack([packDir], dir, { deps: first.deps });
+    const parent = latestReceipt(receiptDir);
+    const eventsPath = path.join(receiptDir, parent.data.events);
+    const originalEvents = fs.readFileSync(eventsPath, 'utf8');
+    const originalSummary = fs.readFileSync(parent.path, 'utf8');
+    const events = originalEvents.trim().split('\n').map(JSON.parse);
+    const withoutEffects = events.filter((event) => !['intent', 'used'].includes(event.event));
+    const emptyEffects = { confirmed: [], unresolved: [], failed: [] };
+    const cases = [
+      { name: 'lost completed events', events: withoutEffects, summary: parent.data },
+      { name: 'lost events and cleared effect summary', events: withoutEffects,
+        summary: { ...parent.data, fileEffects: emptyEffects } },
+      { name: 'cleared protected identities', events,
+        summary: { ...parent.data, recovery: { ...parent.data.recovery, protectedFiles: [] } } },
+      { name: 'lost pending intent', events: withoutEffects,
+        summary: { ...parent.data, fileEffects: { ...emptyEffects,
+          unresolved: [{ tool: 'Write', target: 'pending.txt', tool_use_id: 'pending', reason: 'missing-post' }] },
+        recovery: { ...parent.data.recovery, protectedFiles: [] } } },
+    ];
+    try {
+      for (const item of cases) {
+        fs.writeFileSync(eventsPath, item.events.map(JSON.stringify).join('\n') + '\n');
+        fs.writeFileSync(parent.path, JSON.stringify(item.summary));
+        let started = false;
+        const attempt = stubDeps({ packRunReceiptDir: receiptDir,
+          computerLocal: () => { started = true; } });
+        await assert.rejects(
+          () => runPack([packDir, '--recover', parent.path], dir, { deps: attempt.deps }),
+          /summary.*conflict/, item.name,
+        );
+        assert.equal(started, false, item.name);
+        assert.equal(fs.existsSync(packRecoveryClaimPath(parent.path)), false, item.name);
+      }
+    } finally {
+      fs.writeFileSync(eventsPath, originalEvents);
+      fs.writeFileSync(parent.path, originalSummary);
+    }
+    assert.deepEqual(assessPackRecoveryJournal({ packDir,
+      manifest: { slug: 'recover-pack', version: '0.1.0' },
+      policy: resolvePackCapabilityPolicy(['pack.write']), parentReceiptPath: parent.path,
+    }).protectedFiles.map((entry) => entry.target), ['notes.txt']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('pack recover refuses recorded tool effects outside the granted ceiling', async () => {
+  const dir = makeTempDir();
+  try {
+    const packDir = seedRecoveryPack(dir);
+    const receiptDir = path.join(dir, 'receipts');
+    for (const record of [
+      { event: 'used', tool: 'Bash', capability: 'host.shell' },
+      { event: 'failed', tool: 'Bash', capability: 'host.shell' },
+      { event: 'used', tool: 'WebFetch', capability: 'web.read' },
+      { event: 'used', tool: 'Read', capability: 'host.shell' },
+    ]) {
+      const receipt = beginPackRunReceipt(packDir, { slug: 'recover-pack', version: '0.1.0' },
+        resolvePackCapabilityPolicy(['pack.write']), { receiptDir });
+      appendReceiptEvent(receipt.eventsPath, record);
+      appendReceiptEvent(receipt.eventsPath, { event: 'exit', status: 1, signal: null });
+      // A consistent summary must not make an impossible event history valid.
+      finalizePackRunReceipt(receipt.receiptPath, receipt.eventsPath);
+      let started = false;
+      const attempt = stubDeps({ packRunReceiptDir: receiptDir,
+        computerLocal: () => { started = true; } });
+      await assert.rejects(
+        () => runPack([packDir, '--recover', receipt.receiptPath], dir, { deps: attempt.deps }),
+        /tool ceiling mismatch/,
+      );
+      assert.equal(started, false);
+      assert.equal(fs.existsSync(packRecoveryClaimPath(receipt.receiptPath)), false);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
 });
