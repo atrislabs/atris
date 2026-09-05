@@ -137,7 +137,8 @@ test('x-search --save refuses a thin brief and writes no atris files', async () 
   assert.equal(status, 2);
   assert.match(out.text(), new RegExp(escapeRe(TEACH_THIN_REFUSE)));
   assert.equal(out.lines.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
-  assert.doesNotMatch(out.text(), /next: atris youtube search/);
+  assert.equal(out.lines.filter((line) => line === 'next: atris youtube search "quiet chat"').length, 1);
+  assert.equal(out.lines.filter((line) => String(line).startsWith('next:')).length, 1);
   assert.doesNotMatch(out.text(), /^check:/m);
   assert.doesNotMatch(out.text(), /score: 0/);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'x-search-quiet-chat.md')), false);

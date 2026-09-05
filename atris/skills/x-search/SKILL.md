@@ -27,14 +27,14 @@ login
        thin ephemeral --> check: fill this, then one youtube-search next-step, no files
        empty successful pull --> one next: atris youtube search " "
        --save + rich --> brief + pack + one Apply, prove baseline score 0
-       --save + thin --> refuse, no files, exit 2
+       --save + thin --> refuse, one youtube-search next-step, no files, exit 2
     |
    stop
 ```
 
 1. Login: stored login, then `atris login --agent` if needed. Never paste tokens. Never `/auth/cli`.
 2. Search: `atris x-search "QUERY"`. Always billed (5 credits). Prints to stdout. Rich ephemeral prints one apply next-step, one inferred check plus `score: 0`, then one `next: atris youtube search "<query>"` (person mode uses `--name`), and writes nothing. Thin ephemeral prints `check: fill this` then that youtube-search next, and writes nothing. Empty successful pull (no tweets) prints one `next: atris youtube search " "`. Explicit refund or failed search writes nothing extra.
-3. `--save` only when you want a brief. Rich results (a number-with-units or a named mechanism) file the brief, mint `atris/experiments/x-search-<slug>/`, write one Apply that names that pack and the keep rule, and prove that fixture starts at score 0. Thin `--save` prints `thin: no number or named mechanism. no brief.` and writes nothing. `--save` does not print a youtube-search next-step.
+3. `--save` only when you want a brief. Rich results (a number-with-units or a named mechanism) file the brief, mint `atris/experiments/x-search-<slug>/`, write one Apply that names that pack and the keep rule, and prove that fixture starts at score 0. Thin `--save` prints `thin: no number or named mechanism. no brief.` then one `next: atris youtube search "<query-or-name>"` (person mode uses `--name`) and writes nothing. `--json` stays quiet on that next-step. Rich `--save` still does not print a youtube-search next-step.
 4. Stop. `--json`, explicit refund, or failed search does not print apply, check, score, or youtube-search next-step.
 
 ## Customer path (preferred)

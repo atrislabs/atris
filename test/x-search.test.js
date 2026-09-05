@@ -472,7 +472,8 @@ test('x-search person --save refuses thin research text', async () => {
   assert.match(output.join('\n'), /just a chat about vibes/);
   assert.match(output.join('\n'), new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
-  assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search "Leah Bonvissuto"').length, 1);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
   assertNoSaveFiles(cwd, 'Leah Bonvissuto');
 });
 
@@ -676,7 +677,30 @@ test('x-search --save refuses a thin result and writes no atris files', async ()
   assert.match(output.join('\n'), /feelings and vibes/);
   assert.match(output.join('\n'), new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
+  assert.equal(output.filter((line) => line === 'next: atris youtube search "quiet chat"').length, 1);
+  assert.equal(output.filter((line) => String(line).startsWith('next:')).length, 1);
+  assertNoSaveFiles(cwd, 'quiet chat');
+});
+
+test('x-search --save --json thin stays quiet on the youtube search next-step', async () => {
+  const cwd = applyWorkspace('quiet chat');
+  const output = [];
+  const status = await xSearchCommand(['quiet chat', '--save', '--json'], {
+    cwd,
+    applyNow: '2026-08-26',
+    output: (line) => output.push(line),
+    ensureValidCredentials: async () => ({ credentials: { token: 't' } }),
+    apiRequestJson: async () => successSearchData(
+      'welcome back friends this is just a chat about feelings and vibes',
+    ),
+  });
+
+  assert.equal(status, 2);
+  const parsed = JSON.parse(output[0]);
+  assert.match(parsed.data.content, /feelings and vibes/);
+  assert.match(output.join('\n'), new RegExp(TEACH_THIN_REFUSE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(output.join('\n'), /next: atris youtube search/);
+  assert.equal(output.filter((line) => line === ephemeralApplyMessage('x-search')).length, 0);
   assertNoSaveFiles(cwd, 'quiet chat');
 });
 

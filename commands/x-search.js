@@ -681,6 +681,7 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
       });
       if (saved.thin) {
         output(TEACH_THIN_REFUSE);
+        if (!options.json) printYoutubeSearchNext(source, output);
         status = 2;
       } else {
         const ensureApply = deps.ensureApply || ensureXSearchApply;
