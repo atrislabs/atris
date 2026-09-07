@@ -123,8 +123,8 @@ int main(int argc, char **argv)
     double cap = argc > 1 ? atof(argv[1]) : 0;
     if (cap > 0)
         t_deadline = cap;
-    if (scanf("%d %d %d %d", &n, &k, &m, &T) != 4)
-        return 2;
+    { char _ln[64]; if (!fgets(_ln, sizeof(_ln), stdin) || sscanf(_ln, "%d %d %d %d", &n, &k, &m, &T) != 4) return 2; }
+    if (n <= 0 || n > MAXN || k <= 0 || m <= 0 || m > MAXM || T <= 0 || T > MAXT) return 2;
     sroot = (int)llround(sqrt((double)k));
     for (int i = 0; i < m; i++)
         scanf("%d", &sizes[i]);
