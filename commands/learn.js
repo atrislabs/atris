@@ -450,7 +450,7 @@ function harvestFromJournals(deps = {}) {
   // Scan last 7 journals for Notes section entries
   const candidates = [];
   for (const logPath of allLogs.slice(0, 7)) {
-    const content = fs.readFileSync(logPath, 'utf8');
+    const content = fs.readFileSync(logPath, 'utf8').replace(/\r\n/g, '\n');
     const notesMatch = content.match(/## Notes\n([\s\S]*?)(?=\n## |$)/);
     if (notesMatch && notesMatch[1].trim()) {
       const lines = notesMatch[1].trim().split('\n').filter(l => l.startsWith('- '));
