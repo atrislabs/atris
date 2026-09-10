@@ -21,6 +21,15 @@ const { loadContext } = require('../lib/state-detection');
 const { buildToolResultBody } = require('../lib/tool-result-encode');
 const { commitReviewLearning } = require('./learn');
 
+function appendReviewLearningToJournal(journalContent, learning) {
+  const text = String(journalContent || '');
+  const note = String(learning || '');
+  if (text.includes('## Notes')) {
+    return text.replace(/## Notes\n/, `## Notes\n${note}\n`);
+  }
+  return `${text}\n## Notes\n${note}\n`;
+}
+
 function wrapWorkflowText(text, width = 76) {
   const normalized = String(text || '').replace(/\s+/g, ' ').trim();
   if (!normalized) return [''];
@@ -1775,12 +1784,7 @@ async function reviewAtris() {
           const timestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
           const learning = `- ${timestamp} \u2014 ${answer.trim()}`;
 
-          // Find or create ## Notes section
-          if (journalContent.includes('## Notes')) {
-            journalContent = journalContent.replace(/## Notes\n/, `## Notes\n${learning}\n`);
-          } else {
-            journalContent += `\n## Notes\n${learning}\n`;
-          }
+          journalContent = appendReviewLearningToJournal(journalContent, learning);
 
           fs.writeFileSync(logFile, journalContent);
           console.log('');
@@ -1893,6 +1897,7 @@ module.exports = {
   planAtris,
   doAtris,
   reviewAtris,
+  appendReviewLearningToJournal,
   renderReviewMinute,
   executorAgentPrompt,
   executorDispatchForTask,

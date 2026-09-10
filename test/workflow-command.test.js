@@ -24,7 +24,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawnSync } = require('node:child_process');
 const { spokenLineCount } = require('../lib/first-minute');
-const { renderReviewMinute } = require('../commands/workflow');
+const { appendReviewLearningToJournal, renderReviewMinute } = require('../commands/workflow');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -584,6 +584,23 @@ test('review headless never prompts', () => {
   const verbose = runCli(['review', '--verbose'], { cwd: dir, env, input: '' });
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
   assert.doesNotMatch(verbose.stdout + verbose.stderr, /any learnings\?/);
+});
+
+test('review journal write keeps a learning under LF Notes', () => {
+  const learning = '- 13:44 — 37signals has 80 people and uses the omakase model';
+  const before = ['# Log 2026-09-10', '', '## Notes', '', '## Inbox', ''].join('\n');
+  const after = appendReviewLearningToJournal(before, learning);
+  assert.match(after, /## Notes\n- 13:44 — 37signals has 80 people and uses the omakase model\n/);
+  assert.match(after, /## Inbox/);
+});
+
+test('review journal write keeps a learning under CRLF Notes', () => {
+  const learning = '- 13:44 — 37signals has 80 people and uses the omakase model';
+  const before = ['# Log 2026-09-10', '', '## Notes', '', '## Inbox', ''].join('\r\n');
+  const after = appendReviewLearningToJournal(before, learning);
+  const normalized = after.replace(/\r\n/g, '\n');
+  assert.match(normalized, /## Notes\n- 13:44 — 37signals has 80 people and uses the omakase model\n/);
+  assert.match(normalized, /## Inbox/);
 });
 
 test('renderReviewMinute leads with certified accept and keeps uncertified checking', () => {
