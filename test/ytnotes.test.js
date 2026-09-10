@@ -472,6 +472,91 @@ test('ytnotes keeps a written vtt for a nocookie embed url when print is empty',
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
+test('ytnotes keeps leftover clean.txt when captions are gone', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-clean-txt-'));
+  const bin = path.join(tmp, 'bin');
+  const work = path.join(tmp, 'work');
+  const notesWork = path.join(work, 'ytnotes');
+  fs.mkdirSync(bin);
+  fs.mkdirSync(notesWork, { recursive: true });
+  fs.writeFileSync(path.join(notesWork, 'yt_ntclean1.clean.txt'), [
+    '[00:00]',
+    'The omakase model has 80 people.',
+    '',
+  ].join('\n'));
+
+  writeExec(path.join(bin, 'yt-dlp'), [
+    '#!/bin/sh',
+    'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
+    'exit 1',
+    '',
+  ].join('\n'));
+
+  writeExec(path.join(bin, 'claude'), [
+    '#!/bin/sh',
+    'printf "%s\\n" "# Omakase Clip" "" "The omakase model has 80 people."',
+    '',
+  ].join('\n'));
+
+  const result = spawnSync(YTNOTES, ['https://www.youtube.com/watch?v=ntclean1'], {
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH || '/usr/bin'}`,
+      TMPDIR: work,
+    },
+  });
+
+  const notesPath = path.join(work, 'ytnotes', 'yt_ntclean1.md');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(fs.existsSync(notesPath), true);
+  assert.match(fs.readFileSync(notesPath, 'utf8'), /omakase model/);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
+});
+
+test('ytnotes does not invent-keep another video leftover clean.txt', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-clean-other-'));
+  const bin = path.join(tmp, 'bin');
+  const work = path.join(tmp, 'work');
+  const notesWork = path.join(work, 'ytnotes');
+  fs.mkdirSync(bin);
+  fs.mkdirSync(notesWork, { recursive: true });
+  fs.writeFileSync(path.join(notesWork, 'yt_otherid.clean.txt'), [
+    '[00:00]',
+    'The omakase model has 80 people.',
+    '',
+  ].join('\n'));
+
+  writeExec(path.join(bin, 'yt-dlp'), [
+    '#!/bin/sh',
+    'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
+    'exit 1',
+    '',
+  ].join('\n'));
+
+  writeExec(path.join(bin, 'claude'), [
+    '#!/bin/sh',
+    'echo "claude should not run" >&2',
+    'exit 1',
+    '',
+  ].join('\n'));
+
+  const result = spawnSync(YTNOTES, ['https://www.youtube.com/watch?v=ntclean2'], {
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH || '/usr/bin'}`,
+      TMPDIR: work,
+    },
+  });
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr || '', /No English captions/);
+  assert.equal(fs.existsSync(path.join(work, 'ytnotes', 'yt_ntclean2.md')), false);
+});
+
 test('ytnotes still fails a 429 when no captions were written', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-empty429-'));
   const bin = path.join(tmp, 'bin');
