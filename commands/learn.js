@@ -420,6 +420,10 @@ function logDirect(jsonStr, deps = {}) {
   }
 }
 
+function leftoverClaimableInsight(insight) {
+  return /^\[claimable\]\s+apply:/i.test(String(insight || '').trim());
+}
+
 /**
  * Harvest learnings from journal Notes sections.
  * Scans recent journals for lines that look like insights.
@@ -457,6 +461,7 @@ function harvestFromJournals(deps = {}) {
       for (const line of lines) {
         // Strip bullet and optional timestamp prefix
         const insight = line.replace(/^- (\d{2}:\d{2} \u2014 )?/, '').trim();
+        if (leftoverClaimableInsight(insight)) continue;
         if (insight.length > 10) {
           candidates.push({ insight, source: path.basename(logPath) });
         }

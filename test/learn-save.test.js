@@ -580,3 +580,59 @@ test('thin review learning prints check fill this and does not invent a question
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
   assert.equal(fs.existsSync(path.join(cwd, learnApplyRel(reviewLearningKey(THIN_INSIGHT)))), false);
 });
+
+function writeNotesLastJournal(cwd, notes, date = '2026-09-10') {
+  const dir = path.join(cwd, 'atris', 'logs', date.slice(0, 4));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${date}.md`), [
+    `# Log ${date}`,
+    '',
+    '## Notes',
+    ...notes.map((note) => `- ${note}`),
+    '',
+  ].join('\n'));
+}
+
+function harvestOnce(cwd, date = '2026-09-10') {
+  const out = collect();
+  const origCwd = process.cwd();
+  process.chdir(cwd);
+  try {
+    harvestFromJournals({
+      cwd,
+      now: date,
+      output: out.output,
+    });
+  } finally {
+    process.chdir(origCwd);
+  }
+  return out;
+}
+
+test('learn harvest does not invent-keep a leftover claimable apply line', () => {
+  assert.ok(pythonCmd, 'python3 is required to score the minted pack');
+  const cwd = learnWorkspace();
+  writeNotesLastJournal(cwd, [RICH_INSIGHT]);
+  const first = harvestOnce(cwd);
+  const key = harvestKey(RICH_INSIGHT);
+  assert.match(first.text(), new RegExp(`next: atris experiments keep learn-${key}`));
+  assert.equal(first.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+
+  const second = harvestOnce(cwd);
+  assert.match(second.text(), /all already captured/);
+  assert.doesNotMatch(second.text(), /\[claimable\] apply:/);
+  assert.doesNotMatch(second.text(), /learn-claimable-apply/);
+  assert.doesNotMatch(second.text(), /check: fill this/);
+  assert.doesNotMatch(second.text(), /score: 0/);
+  assert.doesNotMatch(second.text(), /incomplete: check already passes/);
+
+  const learnings = fs.readFileSync(path.join(cwd, 'atris', 'learnings.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  assert.equal(learnings.length, 1);
+  assert.equal(learnings[0].insight, RICH_INSIGHT);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', `learn-${key}`, 'measure.py')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', `learn-${harvestKey('[claimable] apply: leftover')}`)), false);
+});
