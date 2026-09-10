@@ -242,7 +242,7 @@ function resolveProfileOverride(profileOverride) {
 }
 
 function loadLeftoverProfileAgentToken(envToken) {
-  const name = resolveProfileOverride(process.env.ATRIS_PROFILE);
+  const name = resolveProfileOverride(process.env.ATRIS_PROFILE) || getSessionProfile();
   if (!envToken || !name) return null;
   return leftoverStoredAgentToken(loadProfile(name), envToken);
 }
@@ -485,8 +485,8 @@ function readCredentials() {
     }
     const leftoverProfile = loadLeftoverProfileAgentToken(normalizedEnvToken);
     if (leftoverProfile && isUnexpiredCredential(leftoverProfile)) {
-      // Env repeating leftover profile agent_token keeps leftover scopes
-      // and expiry so billed auth does not remint.
+      // Env repeating leftover profile or session-profile agent_token keeps
+      // leftover scopes and expiry so billed auth does not remint.
       return leftoverProfile;
     }
     return { token: normalizedEnvToken, provider: null, source: 'env' };
