@@ -12,7 +12,7 @@ const agent = jwt({ type: 'agent_access', scopes: ['youtube'], exp });
 function sandbox(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-login-storage-'));
   t.mock.method(os, 'homedir', () => dir);
-  for (const name of ['ATRIS_TOKEN', 'ATRIS_PROFILE', 'ATRIS_AGENT_TOKEN_FILE']) {
+  for (const name of ['ATRIS_TOKEN', 'ATRIS_PROFILE', 'ATRIS_AGENT_TOKEN_FILE', 'TERM_SESSION_ID']) {
     const before = process.env[name];
     delete process.env[name];
     t.after(() => { if (before === undefined) delete process.env[name]; else process.env[name] = before; });
@@ -271,6 +271,70 @@ test('billed auth uses leftover profile agent_token scopes when env repeats that
   assert.equal(result.ok, true);
   assert.equal(result.minted, false);
   assert.equal(result.token, leftover);
+  assert.equal(minted, 0);
+});
+
+test('billed auth uses leftover session-profile agent_token scopes when env repeats that leftover', async t => {
+  sandbox(t);
+  const leftover = 'fresh-session-profile-agent-token';
+  const expiresAt = new Date(Date.now() + 60_000).toISOString();
+  auth.saveProfile('owner', {
+    token: 'stored-user-jwt',
+    agent_token: leftover,
+    agent_token_scopes: ['youtube'],
+    agent_token_expires_at: expiresAt,
+  });
+  process.env.TERM_SESSION_ID = 'cursor-session-ae48';
+  assert.equal(auth.setSessionProfile('owner'), true);
+  process.env.ATRIS_TOKEN = leftover;
+
+  let minted = 0;
+  const result = await ensureBilledCommandAuth('youtube', {
+    mintScopedAgentToken: async () => {
+      minted += 1;
+      return { ok: true, token: 'new-agent' };
+    },
+    persistMintedAgentToken: () => {
+      throw new Error('should not persist');
+    },
+    apiRequestJson: async () => {
+      throw new Error('env-repeated session-profile leftover must not remint');
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.minted, false);
+  assert.equal(result.token, leftover);
+  assert.equal(minted, 0);
+});
+
+test('billed auth does not remint youtube from an env-repeated x-search-only session-profile leftover', async t => {
+  sandbox(t);
+  const leftover = 'fresh-session-profile-agent-token';
+  auth.saveProfile('owner', {
+    token: 'stored-user-jwt',
+    agent_token: leftover,
+    agent_token_scopes: ['x-search'],
+    agent_token_expires_at: new Date(Date.now() + 60_000).toISOString(),
+  });
+  process.env.TERM_SESSION_ID = 'cursor-session-ae48';
+  assert.equal(auth.setSessionProfile('owner'), true);
+  process.env.ATRIS_TOKEN = leftover;
+
+  let minted = 0;
+  const result = await ensureBilledCommandAuth('youtube', {
+    persistMintedAgentToken: () => {
+      throw new Error('should not persist');
+    },
+    mintScopedAgentToken: async () => {
+      minted += 1;
+      return { ok: true, token: 'new-agent' };
+    },
+    apiRequestJson: async () => {
+      throw new Error('env-repeated session-profile leftover must not remint');
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'not signed in. run atris login first.');
   assert.equal(minted, 0);
 });
 
