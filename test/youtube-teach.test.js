@@ -61,6 +61,18 @@ const TEACH_VTT = [
   '',
 ].join('\n');
 
+const TEACH_CLEAN_TXT = [
+  '[00:00]',
+  '37signals has 80 people and uses the omakase model',
+  '',
+  '[00:20]',
+  'Basecamp ships once a week',
+  '',
+  '[10:00]',
+  'Shape Up is a six-week cycle with a cooldown',
+  '',
+].join('\n');
+
 const TEACH_CHAPTERS = [
   { start_time: 0, title: 'Omakase', end_time: 60 },
   { start_time: 600, title: 'Shape Up', end_time: 900 },
@@ -383,6 +395,18 @@ test('parseCaptionCues and sliceCuesForChapter keep one chapter from fixture VTT
   assert.doesNotMatch(first.map((cue) => cue.text).join(' '), /Shape Up/);
   assert.equal(second.length, 1);
   assert.match(second[0].text, /six-week cycle/);
+});
+
+test('parseCaptionCues keeps leftover clean.txt stamps', () => {
+  const cues = parseCaptionCues(TEACH_CLEAN_TXT);
+  assert.equal(cues.length, 3);
+  assert.equal(cues[0].startMs, 0);
+  assert.match(cues[0].text, /80 people/);
+  assert.equal(cues[1].startMs, 20 * 1000);
+  assert.match(cues[1].text, /once a week/);
+  assert.equal(cues[2].startMs, 10 * 60 * 1000);
+  assert.match(cues[2].text, /six-week cycle/);
+  assert.deepEqual(parseCaptionCues('feelings and vibes and a chat about nothing'), []);
 });
 
 test('lex highlight fixture keeps claim-bearing numbers and named mechanisms', () => {
@@ -1180,6 +1204,48 @@ test('extractTeachSource keeps a written vtt when caption fetch fails after 429 
   assert.match(readLocalCaptionText({ url: TEACH_URL, workDir }), /80 people/);
 });
 
+test('extractTeachSource keeps leftover clean.txt when captions are gone', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-clean-txt-'));
+  fs.writeFileSync(path.join(workDir, 'yt_teach01.clean.txt'), TEACH_CLEAN_TXT);
+
+  const source = await extractTeachSource(TEACH_URL, {
+    workDir,
+    spawnSync: () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'ERROR: [youtube] HTTP Error 429: Too Many Requests',
+    }),
+    fetchCaptionText: async () => {
+      throw new Error('gone captions must not fetch a caption url');
+    },
+  });
+
+  assert.equal(source.id, 'teach01');
+  assert.equal(source.cues.length, 3);
+  assert.match(source.cues[0].text, /80 people/);
+  assert.match(readLocalCaptionText({ url: TEACH_URL, workDir }), /80 people/);
+});
+
+test('extractTeachSource does not invent-keep another video leftover clean.txt', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-clean-other-'));
+  fs.writeFileSync(path.join(workDir, 'yt_otherid.clean.txt'), TEACH_CLEAN_TXT);
+
+  const source = await extractTeachSource(TEACH_URL, {
+    workDir,
+    spawnSync: () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'ERROR: [youtube] HTTP Error 429: Too Many Requests',
+    }),
+    fetchCaptionText: async () => {
+      throw new Error('other leftover must not fetch a caption url');
+    },
+  });
+
+  assert.equal(source, null);
+  assert.equal(readLocalCaptionText({ url: TEACH_URL, workDir }), '');
+});
+
 test('extractTeachSource still fails when caption fetch fails and no vtt was written', async () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-novtt-'));
   const source = await extractTeachSource(TEACH_URL, {
@@ -1384,6 +1450,38 @@ test('youtube teach keeps the lesson from a written vtt when caption fetch fails
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-keepvtt-'));
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-keepvtt-notes-'));
   fs.writeFileSync(path.join(workDir, 'yt_teach01.en.vtt'), TEACH_VTT);
+  const out = collect();
+  const status = await youtubeCommand(['teach', TEACH_URL], {
+    cwd,
+    workDir,
+    output: out.output,
+    spawnSync: () => ({
+      status: 1,
+      stdout: JSON.stringify({
+        id: 'teach01',
+        title: 'DHH on Lex Fridman',
+        duration: 900,
+        chapters: TEACH_CHAPTERS,
+        automatic_captions: {
+          en: [{ ext: 'vtt', url: 'https://www.youtube.com/api/timedtext?v=teach01' }],
+        },
+      }),
+      stderr: 'ERROR: [youtube] HTTP Error 429: Too Many Requests',
+    }),
+    fetchCaptionText: async () => null,
+  });
+
+  assert.equal(status, 0);
+  assert.match(out.text(), /section 1\/2  omakase/);
+  assert.match(out.text(), /check\nwhat is the omakase model\?/);
+  assert.doesNotMatch(out.text(), /no english captions|429|Too Many Requests/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
+});
+
+test('youtube teach keeps the lesson from leftover clean.txt when captions are gone', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-keepclean-'));
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-keepclean-notes-'));
+  fs.writeFileSync(path.join(workDir, 'yt_teach01.clean.txt'), TEACH_CLEAN_TXT);
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL], {
     cwd,

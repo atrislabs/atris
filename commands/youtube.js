@@ -283,6 +283,51 @@ function parseVttTimestampMs(value) {
   return ((hours * 3600) + (minutes * 60) + seconds) * 1000 + millis;
 }
 
+function parseCleanTimestampMs(value) {
+  const match = String(value || '').trim().match(/^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1] || 0);
+  const minutes = Number(match[2] || 0);
+  const seconds = Number(match[3] || 0);
+  if (![hours, minutes, seconds].every(Number.isFinite)) return null;
+  if (minutes > 59 || seconds > 59) return null;
+  return ((hours * 3600) + (minutes * 60) + seconds) * 1000;
+}
+
+function parseCleanTranscriptCues(raw) {
+  const cues = [];
+  let startMs = 0;
+  let sawStamp = false;
+  const pending = [];
+  const flush = () => {
+    const text = pending.join(' ').replace(/\s+/g, ' ').trim();
+    pending.length = 0;
+    if (!text) return;
+    const cue = { startMs, text };
+    if (cues.length && cues[cues.length - 1].text === cue.text && cues[cues.length - 1].startMs === cue.startMs) {
+      return;
+    }
+    cues.push(cue);
+  };
+  for (const line of String(raw).split(/\r?\n/)) {
+    const stripped = line.trim();
+    if (!stripped) continue;
+    const stamp = stripped.match(/^\[(\d{1,2}:\d{2}(?::\d{2})?)\]$/);
+    if (stamp) {
+      flush();
+      const parsed = parseCleanTimestampMs(stamp[1]);
+      if (parsed != null) {
+        startMs = parsed;
+        sawStamp = true;
+      }
+      continue;
+    }
+    pending.push(stripped.replace(/<[^>]+>/g, ''));
+  }
+  flush();
+  return sawStamp && cues.length ? cues : [];
+}
+
 function fetchCaptionText(urlString, redirects = 0) {
   if (!captionHostAllowed(urlString)) {
     return Promise.resolve(null);
@@ -380,7 +425,7 @@ function parseCaptionCues(raw) {
     return cues;
   }
 
-  return [];
+  return parseCleanTranscriptCues(raw);
 }
 
 function parseCaptionText(raw) {
@@ -433,7 +478,7 @@ function parseYtDlpInfoJson(result) {
 }
 
 function localCaptionNames(id) {
-  // scripts/det/ytnotes keeps the same VTT names (not clean.txt).
+  // scripts/det/ytnotes keeps these VTT names plus leftover yt_<id>.clean.txt.
   return [
     `yt_${id}.en.vtt`,
     `yt_${id}.en-orig.vtt`,
