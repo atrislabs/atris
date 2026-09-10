@@ -1851,6 +1851,9 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - `policies/ANTISLOP.md` — Anti-slop checklist (language kill list, complexity matching)
 - `atris/policies/ANTISLOP.md` — Template copy for user projects
 - `atris/policies/LESSONS.md` — Short lessons after REVIEW misses
+- `atris/policies/genesis.md` — Governing philosophy for standing, agency, power, dissent, plurality, and correction
+- `atris/policies/product-design-principles.md` — Product standard for calm technology, memory, proactivity, spirituality, and beauty
+- `atris/policies/engineering-principles.md` — Better, faster, stronger engineering decisions with explicit cost and evidence
 - `atris/policies/atris-design.md` — Frontend aesthetics policy
 - `atris/policies/atris-backend.md` — Backend architecture policy
 - `atris/policies/writing.md` — Essay writing skill
