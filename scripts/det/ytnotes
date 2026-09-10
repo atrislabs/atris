@@ -23,7 +23,7 @@ cd "$WORK"
 # Printed metadata and a written English VTT are a hit even when yt-dlp exits 429.
 # A leaked WARNING|ERROR print line is not the video id.
 # Manual English is --write-subs. Auto English is often en-orig / en-US / en-GB.
-# Teach reads the same list on disk, plus leftover yt_<id>.clean.txt.
+# Teach parses leftover yt_<id>.clean.txt stamps as cues.
 # Empty --print still keeps a VTT written in this run (id from the watch /
 # shorts / embed / live / e / nocookie embed URL or the new filename). A copied
 # #t= timestamp is stripped so leftover yt_<id> files still match. When VTT is
