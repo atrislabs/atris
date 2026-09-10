@@ -93,6 +93,116 @@ test('task accept autologs to project log and associated member log', () => {
   }
 });
 
+test('task claim writes the member daily log without touching the master log', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = {
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    NODE_NO_WARNINGS: '1',
+    ATRIS_AGENT_PROOF_ONLY: '0',
+  };
+  try {
+    setupWorkspace(dir);
+    const created = runCli(['task', 'new', 'Autolog claim task', '--tag', 'logs', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    const claim = runCli(['task', 'claim', task.display_id, '--as', 'auto-improver'], { cwd: dir, env });
+    assert.equal(claim.status, 0, claim.stderr || claim.stdout);
+
+    const logName = todayLogName();
+    const memberLog = fs.readFileSync(path.join(dir, 'atris', 'team', 'auto-improver', 'logs', logName), 'utf8');
+    assert.match(memberLog, /Task claimed/);
+    assert.match(memberLog, /- title: Autolog claim task/);
+    assert.match(memberLog, /- actor: auto-improver/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'logs', logName.slice(0, 4), logName)), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task note lands on the member log and stays off the master log', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = {
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    NODE_NO_WARNINGS: '1',
+    ATRIS_AGENT_PROOF_ONLY: '0',
+  };
+  try {
+    setupWorkspace(dir);
+    const created = runCli(['task', 'new', 'Autolog note task', '--tag', 'logs', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'auto-improver'], { cwd: dir, env }).status, 0);
+    const noted = runCli(['task', 'note', task.display_id, 'working through the edge case now', '--as', 'auto-improver'], { cwd: dir, env });
+    assert.equal(noted.status, 0, noted.stderr || noted.stdout);
+
+    const logName = todayLogName();
+    const memberLog = fs.readFileSync(path.join(dir, 'atris', 'team', 'auto-improver', 'logs', logName), 'utf8');
+    assert.match(memberLog, /Task note/);
+    assert.match(memberLog, /- note: working through the edge case now/);
+    const masterLog = path.join(dir, 'atris', 'logs', logName.slice(0, 4), logName);
+    assert.equal(fs.existsSync(masterLog), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('a decision note is promoted to the master daily log', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = {
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    NODE_NO_WARNINGS: '1',
+    ATRIS_AGENT_PROOF_ONLY: '0',
+  };
+  try {
+    setupWorkspace(dir);
+    const created = runCli(['task', 'new', 'Autolog decision task', '--tag', 'logs', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'auto-improver'], { cwd: dir, env }).status, 0);
+    const noted = runCli(['task', 'note', task.display_id, 'decision: keep the member log as the detailed record', '--as', 'auto-improver'], { cwd: dir, env });
+    assert.equal(noted.status, 0, noted.stderr || noted.stdout);
+
+    const logName = todayLogName();
+    const memberLog = fs.readFileSync(path.join(dir, 'atris', 'team', 'auto-improver', 'logs', logName), 'utf8');
+    assert.match(memberLog, /Task note/);
+    const masterLog = fs.readFileSync(path.join(dir, 'atris', 'logs', logName.slice(0, 4), logName), 'utf8');
+    assert.match(masterLog, /Task decision/);
+    assert.match(masterLog, /- member: auto-improver/);
+    assert.match(masterLog, /- note: decision: keep the member log as the detailed record/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('a structured trace note does not double-log on the member log', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = {
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    NODE_NO_WARNINGS: '1',
+    ATRIS_AGENT_PROOF_ONLY: '0',
+  };
+  try {
+    setupWorkspace(dir);
+    const created = runCli(['task', 'new', 'Autolog trace dedupe task', '--tag', 'logs', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'auto-improver'], { cwd: dir, env }).status, 0);
+    const noted = runCli(['task', 'note', task.display_id, 'TASK_RESULT_TRACE {"changed":"x"}', '--as', 'auto-improver'], { cwd: dir, env });
+    assert.equal(noted.status, 0, noted.stderr || noted.stdout);
+
+    const logName = todayLogName();
+    const memberLog = fs.readFileSync(path.join(dir, 'atris', 'team', 'auto-improver', 'logs', logName), 'utf8');
+    assert.doesNotMatch(memberLog, /TASK_RESULT_TRACE/);
+    assert.equal((memberLog.match(/Task note/g) || []).length, 0);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task done autologs to an associated member claimed on the task', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
