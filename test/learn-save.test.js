@@ -452,6 +452,45 @@ test('thin learn harvest prints check fill this and does not invent a question',
   assert.equal(fs.existsSync(path.join(cwd, learnApplyRel(harvestKey(THIN_INSIGHT)))), false);
 });
 
+test('rich learn harvest mints from a CRLF journal Notes section', () => {
+  assert.ok(pythonCmd, 'python3 is required to score the minted pack');
+  const cwd = learnWorkspace();
+  const date = '2026-09-08';
+  const dir = path.join(cwd, 'atris', 'logs', date.slice(0, 4));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${date}.md`), [
+    `# Log ${date}`,
+    '',
+    '## Notes',
+    `- ${RICH_INSIGHT}`,
+    '',
+    '## Inbox',
+    '',
+  ].join('\r\n'));
+  const origCwd = process.cwd();
+  const out = collect();
+  process.chdir(cwd);
+  try {
+    harvestFromJournals({
+      cwd,
+      now: '2026-09-08',
+      output: out.output,
+    });
+  } finally {
+    process.chdir(origCwd);
+  }
+
+  const key = harvestKey(RICH_INSIGHT);
+  assert.equal(out.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+  assert.match(out.text(), new RegExp(`next: atris experiments keep learn-${key}`));
+  assert.doesNotMatch(out.text(), /No harvestable notes found/);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', `learn-${key}`, 'measure.py')), true);
+  assertLearnApplyClaimable(cwd, {
+    key,
+    tokens: ['omakase model', 'what is the omakase model?'],
+  });
+});
+
 test('rich learn harvest through the live cli mints the pack', () => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
   const cwd = learnWorkspace();
