@@ -636,3 +636,38 @@ test('learn harvest does not invent-keep a leftover claimable apply line', () =>
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', `learn-${key}`, 'measure.py')), true);
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', `learn-${harvestKey('[claimable] apply: leftover')}`)), false);
 });
+
+test('learn harvest does not invent-keep a leftover claimable watched line', () => {
+  assert.ok(pythonCmd, 'python3 is required to score the minted pack');
+  const cwd = learnWorkspace();
+  writeNotesLastJournal(cwd, [RICH_INSIGHT]);
+  const first = harvestOnce(cwd);
+  const key = harvestKey(RICH_INSIGHT);
+  assert.match(first.text(), new RegExp(`next: atris experiments keep learn-${key}`));
+  assert.equal(first.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 1);
+
+  const journalPath = path.join(cwd, 'atris', 'logs', '2026', '2026-09-10.md');
+  fs.appendFileSync(
+    journalPath,
+    `- [claimable] watched: ${RICH_INSIGHT} -> atris/wiki/briefs/youtube-watch01.md\n`,
+  );
+
+  const second = harvestOnce(cwd);
+  assert.match(second.text(), /all already captured/);
+  assert.doesNotMatch(second.text(), /\[claimable\] watched:/);
+  assert.doesNotMatch(second.text(), /learn-claimable-watched/);
+  assert.doesNotMatch(second.text(), /check: fill this/);
+  assert.doesNotMatch(second.text(), /score: 0/);
+  assert.doesNotMatch(second.text(), /incomplete: check already passes/);
+  assert.doesNotMatch(second.text(), /next: atris experiments keep/);
+
+  const learnings = fs.readFileSync(path.join(cwd, 'atris', 'learnings.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  assert.equal(learnings.length, 1);
+  assert.equal(learnings[0].insight, RICH_INSIGHT);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', `learn-${key}`, 'measure.py')), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', `learn-${harvestKey('[claimable] watched leftover')}`)), false);
+});

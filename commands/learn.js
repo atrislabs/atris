@@ -421,7 +421,7 @@ function logDirect(jsonStr, deps = {}) {
 }
 
 function leftoverClaimableInsight(insight) {
-  return /^\[claimable\]\s+apply:/i.test(String(insight || '').trim());
+  return /^\[claimable\]/i.test(String(insight || '').trim());
 }
 
 /**
