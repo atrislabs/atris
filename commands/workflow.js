@@ -22,7 +22,7 @@ const { buildToolResultBody } = require('../lib/tool-result-encode');
 const { commitReviewLearning } = require('./learn');
 
 function appendReviewLearningToJournal(journalContent, learning) {
-  const text = String(journalContent || '');
+  const text = String(journalContent || '').replace(/\r\n/g, '\n');
   const note = String(learning || '');
   if (text.includes('## Notes')) {
     return text.replace(/## Notes\n/, `## Notes\n${note}\n`);

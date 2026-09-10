@@ -587,19 +587,19 @@ test('review headless never prompts', () => {
 });
 
 test('review journal write keeps a learning under LF Notes', () => {
-  const learning = '- 13:44 — 37signals has 80 people and uses the omakase model';
+  const learning = '- 13:44 \u2014 37signals has 80 people and uses the omakase model';
   const before = ['# Log 2026-09-10', '', '## Notes', '', '## Inbox', ''].join('\n');
   const after = appendReviewLearningToJournal(before, learning);
-  assert.match(after, /## Notes\n- 13:44 — 37signals has 80 people and uses the omakase model\n/);
+  assert.match(after, /## Notes\n- 13:44 \u2014 37signals has 80 people and uses the omakase model\n/);
   assert.match(after, /## Inbox/);
 });
 
 test('review journal write keeps a learning under CRLF Notes', () => {
-  const learning = '- 13:44 — 37signals has 80 people and uses the omakase model';
+  const learning = '- 13:44 \u2014 37signals has 80 people and uses the omakase model';
   const before = ['# Log 2026-09-10', '', '## Notes', '', '## Inbox', ''].join('\r\n');
   const after = appendReviewLearningToJournal(before, learning);
   const normalized = after.replace(/\r\n/g, '\n');
-  assert.match(normalized, /## Notes\n- 13:44 — 37signals has 80 people and uses the omakase model\n/);
+  assert.match(normalized, /## Notes\n- 13:44 \u2014 37signals has 80 people and uses the omakase model\n/);
   assert.match(normalized, /## Inbox/);
 });
 
