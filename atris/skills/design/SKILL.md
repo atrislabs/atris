@@ -1,7 +1,7 @@
 ---
 name: design
 description: Frontend aesthetics policy. Use when building UI, components, landing pages, dashboards, or any frontend work. Prevents generic ai-generated look.
-version: 3.2.16
+version: 3.2.17
 allowed-tools: Read, Write, Edit, Bash, Glob
 tags:
   - design
@@ -135,6 +135,8 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D30 | a floating rounded composer inherits the page canvas; never paint a full-width contrast band behind it unless that band is intentional chrome | judgment | active |
 | D31 | developer-only overlays stay off the product surface by default; any temporary visible launcher must have an immediate dismiss control | judgment | active |
 | D32 | before changing repeated UI copy, verify the operator's exact executable and surface; matching labels do not prove the installed app, dev app, header, and composer share one live path | judgment | active |
+
+| D33 | engine settings show only the selected engine’s effective model and supported controls; preserve saved choices missing from the option list instead of displaying another engine | `node scripts/test-engine-settings.mjs` in project-obelisk | graduated (engine settings regression) |
 
 Measured recipes live in the mimic studies: `~/arena/mimic-beautiful-ui/LESSONS.md` (18 AI-interface components with exact tokens) and its `remix.css` :root block (the portable Atris token sheet, coffee + paper themes). Start there before designing an agent surface.
 

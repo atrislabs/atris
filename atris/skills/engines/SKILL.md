@@ -1,7 +1,7 @@
 ---
 name: engines
 description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, Antigravity (agy), and opencode. Triggers on: use codex, use cursor, use devin, use grok, use agy, use antigravity, use gemini, gemini session, use fable, use claude, use opencode, use atris, engine, dispatch to, worker agent, second opinion build."
-version: 1.5.1
+version: 1.5.2
 tags:
   - engines
   - claude
@@ -68,7 +68,7 @@ Raw spawns are not the default because they skip Atris receipts, watch, and coac
 | Fable | `atris engine fable "<question>"` | Canonical read-only FABLE ask with guards, live log, receipt, and health tracking. Scale `--timeout` to the work when needed. |
 | Composer | `atris run "<objective>" --engine composer` | Fast navigator/executor profile routed through the installed `ax` binary. |
 | Haiku | `claude -p "<prompt>" --model claude-haiku-4-5` | Fast validation and bounded read-only checks. |
-| Devin | `devin -p --permission-mode dangerous -- "<prompt>"` (run from the target repo) | Default permission mode is read-only for writes — build work NEEDS `--permission-mode dangerous`, so only run it in an isolated worktree. Also `devin cloud` for sessions that outlive this machine. Supports `--model swe-1.7` |
+| Devin | `devin -p --permission-mode dangerous -- "<prompt>"` (run from the target repo) | Default permission mode is read-only for writes — build work NEEDS `--permission-mode dangerous`, so only run it in an isolated worktree. Also `devin cloud` for sessions that outlive this machine. Supports `--model swe-2-max`; `devin models list` verifies availability and price. |
 | Grok | `grok --always-approve -p "<prompt>"` (run from the target repo) | Headless single-turn via `-p`; default model grok-4.6. Very fast on lookups (~5-10s, reads MAP first). Great for quick second opinions; use `--best-of-n <N>` for tricky bounded builds. Uses grok.com login |
 | Antigravity | `agy --mode accept-edits --add-dir "$PWD" -p "<prompt>"` (run from the target repo) | `agy` executor profile; also answers to "gemini". **`--add-dir` is mandatory for writes** — without it agy edits its own scratch folder (`~/.gemini/antigravity-cli/scratch/`) and the project never changes, which looks like a silent failure (verified live 2026-08-28). Use `--mode plan --sandbox` for read-only review, `--model <id>` to pin a model, and `--dangerously-skip-permissions` if a build still stalls on an approval prompt. |
 | opencode | `opencode run "<prompt>"` (read-only ask: `opencode run --agent plan "<prompt>"`) | Headless print mode; exits when done. Pin a model with `-m provider/model`. Build work needs `--auto` to auto-approve permissions (dangerous: run in an isolated worktree). Verified live 2026-08-21, ~7s per plan-mode lookup. |
@@ -96,7 +96,7 @@ Each engine CLI can pin a specific model. Current best picks:
 | Engine | Flag | Best models today |
 |--------|------|-------------------|
 | Claude / Fable | `--model opus` | `opus` currently resolves to Opus 5; use the explicit Opus 4.8 identifier only for reproducibility |
-| Devin | `--model swe-1.7` | `swe-1.7` (free right now: use it as the volume executor for parallel bounded slices), `swe-1.7-lightning` for speed |
+| Devin | `--model swe-2-max` | `swe-2-max`, `swe-2-high`, `swe-2-medium` verified Free in the live CLI on 2026-09-10. Use Max for Keshav’s team; recheck with `devin models list` before unattended work. |
 | Cursor | `--model cursor-grok-4.6-xhigh` | `cursor-grok-4.6-xhigh` for second-opinion builds, `cursor-grok-4.6-high-fast` for quick pinned asks (answered in ~12s live 2026-08-12), `composer-2.5` for fast edits; parameterized Claude via `'claude-opus-4-8[effort=high]'`; `--list-models` shows the full menu |
 | Composer | `--engine composer` | `composer 2.5` through the Atris profile |
 | Haiku | `--model claude-haiku-4-5` | `haiku` for fast validation |
