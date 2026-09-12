@@ -2987,16 +2987,21 @@ test('wiki-miner wake builds wiki graph and wiki graph queries read it', () => {
     fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'SECURITY.md'), [
       '# Security Readiness',
       '',
-      'It uses Electron and IPC for release checks. They depend on canonical-root.',
+      'It uses Electron and IPC for release checks. They depend on canonical-root. What changed Here, and Everything points back to Security Readiness.',
       '',
     ].join('\n'), 'utf8');
     const heuristicWake = runCli(['member', 'wake', 'wiki-miner', '--execute', '--json'], { cwd: dir });
     assert.equal(heuristicWake.status, 0, heuristicWake.stderr || heuristicWake.stdout);
     const heuristicGraph = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'wiki', '.graph.json'), 'utf8'));
     const pronouns = new Set(['it', 'they']);
-    assert.equal(heuristicGraph.entities.some((entity) => pronouns.has(entity.name.toLowerCase())), false);
+    const stopwords = new Set(['here', 'there', 'what', 'who', 'which', 'everything', 'nothing', 'something', 'anything', 'anyone', 'someone']);
+    assert.equal(heuristicGraph.entities.some((entity) => pronouns.has(entity.name.toLowerCase()) || stopwords.has(entity.name.toLowerCase())), false);
     assert.equal(heuristicGraph.relationships.some((relationship) => (
       pronouns.has(relationship.from.toLowerCase()) || pronouns.has(relationship.to.toLowerCase())
+    )), false);
+    assert.equal(heuristicGraph.relationships.some((relationship) => (
+      stopwords.has(relationship.from.toLowerCase()) || stopwords.has(relationship.to.toLowerCase())
+      || relationship.from.toLowerCase() === relationship.to.toLowerCase()
     )), false);
     assert.ok(heuristicGraph.relationships.some((relationship) => (
       relationship.from === 'Security Readiness' && relationship.to === 'Electron'

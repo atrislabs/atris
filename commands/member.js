@@ -5186,7 +5186,12 @@ function isWikiMinerNoiseName(value) {
   const name = compactSentence(value || '', 120);
   if (!name) return true;
   if (/^[A-Z]{2,}$/.test(name)) return false;
-  return /^(?:i|me|my|mine|myself|we|us|our|ours|ourselves|you|your|yours|yourself|yourselves|he|him|his|himself|she|her|hers|herself|it|its|itself|they|them|their|theirs|themselves|this|that|these|those|the|wiki|mission)$/i.test(name);
+  return /^(?:i|me|my|mine|myself|we|us|our|ours|ourselves|you|your|yours|yourself|yourselves|he|him|his|himself|she|her|hers|herself|it|its|itself|they|them|their|theirs|themselves|this|that|these|those|here|there|where|when|what|who|whom|which|why|how|everything|nothing|something|anything|everyone|anyone|someone|nobody|everybody|anybody|somebody|none|the|wiki|mission)$/i.test(name);
+}
+
+function isWikiMinerSelfLoop(relationship) {
+  const from = lowerCompact(relationship?.from);
+  return from !== '' && from === lowerCompact(relationship?.to);
 }
 
 function normalizeWikiMinerExtraction(raw) {
@@ -5205,7 +5210,7 @@ function normalizeWikiMinerExtraction(raw) {
       to: compactSentence(relationship?.to || '', 120),
       type: allowedRelationTypes.has(String(relationship?.type || '').toLowerCase()) ? String(relationship.type).toLowerCase() : 'uses',
     }))
-    .filter((relationship) => !isWikiMinerNoiseName(relationship.from) && !isWikiMinerNoiseName(relationship.to));
+    .filter((relationship) => !isWikiMinerNoiseName(relationship.from) && !isWikiMinerNoiseName(relationship.to) && !isWikiMinerSelfLoop(relationship));
   return { entities, relationships };
 }
 
@@ -5227,7 +5232,9 @@ function heuristicWikiMinerExtraction(pagePath, pageContent) {
   }
   const entities = [{ type: 'concept', name: title }];
   for (const name of [...candidates].slice(0, 12)) entities.push({ type: /agent|api|sdk|cli|hub|system/i.test(name) ? 'system' : 'concept', name });
-  const relationships = [...candidates].slice(0, 12).map((name) => ({ from: title, to: name, type: 'uses' }));
+  const relationships = [...candidates].slice(0, 12)
+    .map((name) => ({ from: title, to: name, type: 'uses' }))
+    .filter((relationship) => !isWikiMinerSelfLoop(relationship));
   return { entities, relationships };
 }
 
@@ -5281,11 +5288,12 @@ function mergeWikiGraph(graph, extraction, sourcePath) {
 
   const relationshipMap = new Map();
   for (const relationship of graph.relationships || []) {
-    if (isWikiMinerNoiseName(relationship.from) || isWikiMinerNoiseName(relationship.to)) continue;
+    if (isWikiMinerNoiseName(relationship.from) || isWikiMinerNoiseName(relationship.to) || isWikiMinerSelfLoop(relationship)) continue;
     const key = `${lowerCompact(relationship.from)}|${String(relationship.type || 'uses').toLowerCase()}|${lowerCompact(relationship.to)}`;
     relationshipMap.set(key, { ...relationship, sources: Array.isArray(relationship.sources) ? relationship.sources : [] });
   }
   for (const relationship of extraction.relationships || []) {
+    if (isWikiMinerNoiseName(relationship.from) || isWikiMinerNoiseName(relationship.to) || isWikiMinerSelfLoop(relationship)) continue;
     const key = `${lowerCompact(relationship.from)}|${relationship.type}|${lowerCompact(relationship.to)}`;
     const existing = relationshipMap.get(key) || { from: relationship.from, to: relationship.to, type: relationship.type, sources: [] };
     if (sourcePath && !existing.sources.includes(sourcePath)) existing.sources.push(sourcePath);
