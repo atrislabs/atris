@@ -2781,7 +2781,9 @@ test('auto-improver wake skips journal append on identical no-op repeat', () => 
     // (todayLogName in commands/member.js): UTC-yesterday equals local-today
     // for hours each evening behind UTC, which made the fixture share the
     // journal's filename and get filtered out of the scan below.
-    const fixtureDate = new Date(Date.now() - 864e5);
+    const fixtureDate = new Date();
+    // A local day can be 25 hours when daylight saving time ends.
+    fixtureDate.setDate(fixtureDate.getDate() - 1);
     const fixtureLogName = `${formatLocalDate(fixtureDate)}.md`;
     const fixtureLogRel = path.join(String(fixtureDate.getFullYear()), fixtureLogName);
     const logsDir = path.join(dir, 'atris', 'logs', String(fixtureDate.getFullYear()));
