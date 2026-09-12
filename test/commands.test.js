@@ -2777,12 +2777,21 @@ test('auto-improver wake skips journal append on identical no-op repeat', () => 
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
 
-    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
+    // Fixture named on the same local clock the wake journal uses
+    // (todayLogName in commands/member.js): UTC-yesterday equals local-today
+    // for hours each evening behind UTC, which made the fixture share the
+    // journal's filename and get filtered out of the scan below.
+    const fixtureDate = new Date();
+    // A local day can be 25 hours when daylight saving time ends.
+    fixtureDate.setDate(fixtureDate.getDate() - 1);
+    const fixtureLogName = `${formatLocalDate(fixtureDate)}.md`;
+    const fixtureLogRel = path.join(String(fixtureDate.getFullYear()), fixtureLogName);
+    const logsDir = path.join(dir, 'atris', 'logs', String(fixtureDate.getFullYear()));
     fs.mkdirSync(logsDir, { recursive: true });
     const pattern = 'ERROR rsi client expected /api/rsi/improve but backend exposed /api/rsi/tick';
     // Yesterday's date: inside the scanner's 7-day recency window, but distinct
     // from today's journal file where wake appends dogfood-scan entries.
-    fs.writeFileSync(path.join(logsDir, `${recentLogDate(1)}.md`), [
+    fs.writeFileSync(path.join(logsDir, fixtureLogName), [
       '# test log',
       `- ${pattern}`,
       `- ${pattern}`,
@@ -2805,10 +2814,20 @@ test('auto-improver wake skips journal append on identical no-op repeat', () => 
     assert.equal(third.log_path, null);
     assert.ok(fs.existsSync(third.receipt_path), 'receipt must still be written on skipped journal');
 
-    const fixtureLogName = `${recentLogDate(1)}.md`;
-    const projectLogs = fs.readdirSync(logsDir).filter((f) => f.endsWith('.md') && f !== fixtureLogName);
+    // Scan every year dir: at the year boundary the journal lands in the new
+    // year's dir while yesterday's fixture stays in the old one.
+    const logsRoot = path.join(dir, 'atris', 'logs');
+    const projectLogs = fs.readdirSync(logsRoot).flatMap((entry) => {
+      const entryPath = path.join(logsRoot, entry);
+      if (!fs.statSync(entryPath).isDirectory()) {
+        return entry.endsWith('.md') ? [entryPath] : [];
+      }
+      return fs.readdirSync(entryPath)
+        .filter((f) => f.endsWith('.md') && path.join(entry, f) !== fixtureLogRel)
+        .map((f) => path.join(entryPath, f));
+    });
     const journalText = projectLogs
-      .map((f) => fs.readFileSync(path.join(logsDir, f), 'utf8'))
+      .map((f) => fs.readFileSync(f, 'utf8'))
       .join('\n');
     const entryCount = (journalText.match(/## .* · Auto-improver dogfood scan/g) || []).length;
     assert.equal(entryCount, 2, `expected 2 journal entries (got ${entryCount}):\n${journalText}`);
