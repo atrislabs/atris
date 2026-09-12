@@ -2342,6 +2342,44 @@ test('auto-improver wake ignores archived log failures', () => {
   }
 });
 
+test('auto-improver wake ignores zero-count tick metric lines (OBL-2099)', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
+    fs.mkdirSync(logsDir, { recursive: true });
+    // The clean tick shape that scored 40 on 2026-09-11: every digit
+    // normalizes to '#', so '0 failed' and '3 failed' lines collapse into one
+    // pattern. The zero-count lines must be skipped before they count.
+    const cleanTick = '- tick (live): 6 gathered / 0 skipped / 0 failed -> briefs/alpha.md';
+    const realFailure = '- tick (live): 6 gathered / 0 skipped / 3 failed -> briefs/alpha.md';
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
+      '# test log',
+      cleanTick,
+      cleanTick,
+      cleanTick,
+      realFailure,
+      realFailure,
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const repeated = payload.auto_improver.scan.log_signals.repeated_failures || [];
+    assert.equal(repeated.length, 1);
+    assert.equal(repeated[0].count, 2, 'only the two nonzero failed lines may count');
+    for (const evidence of repeated[0].evidence) {
+      assert.match(evidence.text, /\b3 failed\b/, 'zero-count tick lines must not feed the recurring-failure scanner');
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('auto-improver wake selector skips done/accepted tasks (OBL-1469)', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
