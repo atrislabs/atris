@@ -5761,6 +5761,7 @@ function emptyObjectiveGeneratorProposal(extra = {}) {
     updated_at: stampIso(),
     status: extra.status || 'empty',
     advisory_only: true,
+    auto_task_eligible: extra.auto_task_eligible !== false,
     world_model_used: false,
     llm_source: extra.llm_source || null,
     llm_error: extra.llm_error || null,
@@ -5893,8 +5894,8 @@ function fallbackObjectiveGeneratorProposal(graph, recommendations, transferPatt
     ),
     suggested_member: member,
     suggested_patterns: objectivePatternMatches(transferPatterns, proposedObjective),
-  }, { status: 'ok', llm_error: 'llm_not_configured', world_model_used: true });
-  return proposal || emptyObjectiveGeneratorProposal({ status: 'llm_not_configured', llm_error: 'llm_not_configured' });
+  }, { status: 'ok', llm_error: 'llm_not_configured', world_model_used: true, auto_task_eligible: false });
+  return proposal || emptyObjectiveGeneratorProposal({ status: 'llm_not_configured', llm_error: 'llm_not_configured', auto_task_eligible: false });
 }
 
 function objectiveGeneratorPrompt(graph, recommendations, transferPatterns = []) {
@@ -6056,7 +6057,7 @@ async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) 
       proposal = emptyObjectiveGeneratorProposal({ status: llm.error === 'invalid_json' ? 'parse_error' : 'llm_error', llm_source: llm.source, llm_error: llm.error });
       proposal.world_model_used = true;
     } else {
-      reason = 'heuristic_objective_proposal_written';
+      reason = execute ? 'heuristic_objective_proposal_written' : 'heuristic_objective_proposal_dry_run';
       proposal = fallbackObjectiveGeneratorProposal(graph, recommendations, transferPatterns);
     }
   }
@@ -6065,7 +6066,7 @@ async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) 
     proposal.suggested_patterns = objectivePatternMatches(transferPatterns, proposal.proposed_objective);
   }
 
-  if (execute && proposal?.status === 'ok' && Number(proposal.overall_score) > 7) {
+  if (execute && proposal?.status === 'ok' && proposal.auto_task_eligible !== false && Number(proposal.overall_score) > 7) {
     createdTask = createAutoObjectiveTask(proposal);
     proposal.created_task = createdTask.ok ? {
       id: createdTask.task_id || null,
@@ -6081,7 +6082,8 @@ async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) 
   }
 
   const proposalsPath = objectiveGeneratorProposalsPath(root);
-  if (execute) {
+  const proposalsWritten = Boolean(execute);
+  if (proposalsWritten) {
     fs.mkdirSync(path.dirname(proposalsPath), { recursive: true });
     fs.writeFileSync(proposalsPath, JSON.stringify(proposal, null, 2) + '\n', 'utf8');
   }
@@ -6111,6 +6113,7 @@ async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) 
     llm_successful: Boolean(llm?.source && llm?.proposal && proposal.status === 'ok'),
     llm_error: llm?.error || proposal.llm_error || null,
     proposals_path: path.relative(root, proposalsPath),
+    proposals_written: proposalsWritten,
     task_creation_threshold: 7,
     task_created: Boolean(createdTask?.ok),
     created_task: proposal.created_task,
@@ -6128,7 +6131,7 @@ async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) 
     score: proposal.overall_score || '',
     task: proposal.created_task?.ref || '',
     receipt: path.relative(root, receiptPath),
-    output: path.relative(root, proposalsPath),
+    output: proposalsWritten ? path.relative(root, proposalsPath) : '',
   });
 
   return {
@@ -7817,6 +7820,7 @@ const WAKE_REASON_TEXT = {
   auto_improver_task_create_failed: 'it found an improvement but could not put the task on the board',
   heuristic_cross_domain_proof_written: 'it wrote a cross-domain proof using its built-in heuristics',
   heuristic_objective_proposal_written: 'it drafted an objective proposal using its built-in heuristics',
+  heuristic_objective_proposal_dry_run: 'it previewed an objective proposal using its built-in heuristics, without writing it',
   install_requires_clean_git: 'installing needs a clean git tree first',
   insufficient_world_model_data: 'its world model is too thin to act on yet',
   llm_json_parse_failed: 'the model reply did not parse, so it stopped rather than act on garbage',
