@@ -309,6 +309,75 @@ console.log(JSON.stringify({ type: 'result', session_id: sessionId, result: 'fre
   }
 });
 
+test('a logged-out claude on stdout pauses the mission with auth-required on tick 1', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const runner = path.join(dir, 'logged-out-claude.js');
+    fs.writeFileSync(runner, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args.includes('--help')) {
+  console.log('--output-format --permission-mode --resume --session-id --include-partial-messages');
+  process.exit(0);
+}
+const index = args.includes('--session-id') ? args.indexOf('--session-id') : args.indexOf('--resume');
+const sessionId = args[index + 1];
+console.log(JSON.stringify({ type: 'result', session_id: sessionId, result: 'Invalid API key · Please run /login', is_error: true, num_turns: 0 }));
+process.exit(1);
+`, 'utf8');
+    fs.chmodSync(runner, 0o755);
+    const mission = startMission(dir, 'stop on a logged out claude', ['--runner', 'claude']);
+
+    const result = runCli([
+      'mission', 'run', mission.id,
+      '--max-ticks', '1', '--no-verify', '--json',
+    ], dir, { ATRIS_RUNNER_BIN: runner });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.pause_reason, 'auth-required');
+    assert.equal(payload.mission.status, 'paused');
+    assert.equal(payload.mission.stop_reason, 'auth-required');
+    assert.equal(payload.tick_count, 0);
+    assert.match(payload.mission.human_blocking_pause_escalation.warning, /paused for auth-required/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('successful login troubleshooting text does not pause a healthy mission', () => {
+  const dir = makeTempDir();
+  try {
+    prepareWorkspace(dir);
+    const runner = path.join(dir, 'logged-out-claude.js');
+    fs.writeFileSync(runner, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args.includes('--help')) {
+  console.log('--output-format --permission-mode --resume --session-id --include-partial-messages');
+  process.exit(0);
+}
+const index = args.includes('--session-id') ? args.indexOf('--session-id') : args.indexOf('--resume');
+const sessionId = args[index + 1];
+console.log(JSON.stringify({ type: 'result', session_id: sessionId, result: 'Fixed the Invalid API key message and documented Please run /login.', is_error: false, num_turns: 0 }));
+process.exit(0);
+`, 'utf8');
+    fs.chmodSync(runner, 0o755);
+    const mission = startMission(dir, 'stop on a logged out claude', ['--runner', 'claude']);
+
+    const result = runCli([
+      'mission', 'run', mission.id,
+      '--max-ticks', '1', '--no-verify', '--json',
+    ], dir, { ATRIS_RUNNER_BIN: runner });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.notEqual(payload.pause_reason, 'auth-required');
+    assert.equal(payload.mission.status, 'running');
+    assert.notEqual(payload.mission.stop_reason, 'auth-required');
+    assert.equal(payload.tick_count, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('explicit max-wall wins over a deep tier in mission state and runtime receipts', () => {
   const dir = makeTempDir();
   try {
