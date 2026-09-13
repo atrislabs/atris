@@ -111,6 +111,15 @@ const CODEX_NATIVE_GOAL_CLOSED_STATUSES = new Set(['complete', 'completed', 'ach
 const DEFAULT_LONG_RUN_VERIFIER = 'git diff --check';
 const SLEEP_LENGTH_BUDGET_SECONDS = 3600;
 const HUMAN_BLOCKING_PAUSE_REASONS = new Set(['auth-required', 'model-unavailable', 'rate-limit-exceeded-wall']);
+// Claude prints its logged-out message on stdout ("Invalid API key · Please
+// run /login"), not stderr, so the check has to read the captured result text
+// too or a dead login masquerades as a generic claude-error.
+const MISSION_RUNNER_AUTH_EXPIRED_RE = /not authenticated|please log in|login required|auth(?:entication)? expired|invalid (?:api|connection) key|run \/login/i;
+
+function missionRunnerAuthExpired(...texts) {
+  return texts.some((text) => Boolean(text) && MISSION_RUNNER_AUTH_EXPIRED_RE.test(String(text)));
+}
+
 const MISSION_BUDGET_TIERS = Object.freeze({
   quick: Object.freeze({ max_ticks: 4, requested_seconds: 15 * 60 }),
   long: Object.freeze({ max_ticks: 12, requested_seconds: 60 * 60 }),
@@ -8765,7 +8774,7 @@ function spawnGenericRunnerTick(mission, opts) {
       const finalText = String(stdout || '').trim();
       const errStr = String(stderr || '').slice(-2000);
       const ok = code === 0 && !timedOut && !aborted;
-      const authExpired = /not authenticated|please log in|login required|auth(?:entication)? expired/i.test(errStr);
+      const authExpired = !ok && missionRunnerAuthExpired(errStr, finalText);
       resolve({
         ok,
         brief_id: briefId,
@@ -8940,7 +8949,7 @@ function spawnClaudeTick(mission, opts) {
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       const ok = code === 0 && !isError && !timedOut && !aborted;
       const errStr = stderr.slice(-2000);
-      const authExpired = /not authenticated|please log in|login required|auth(?:entication)? expired/i.test(errStr);
+      const authExpired = !ok && missionRunnerAuthExpired(errStr, finalText, stdoutBuf);
       resolve({
         ok,
         timedOut,
