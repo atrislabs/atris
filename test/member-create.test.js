@@ -51,7 +51,10 @@ test('member create writes the complete Atris identity bundle', () => withTempWo
   assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   const memberDir = path.join(workspace, 'atris', 'team', 'customer-guide');
   assertCompleteBundle(memberDir, 'customer-guide');
-  assert.match(fs.readFileSync(path.join(memberDir, 'MEMBER.md'), 'utf8'), /role: Customer Guide/);
+  const memberMd = fs.readFileSync(path.join(memberDir, 'MEMBER.md'), 'utf8');
+  assert.match(memberMd, /role: Customer Guide/);
+  assert.match(memberMd, /can-execute: false/);
+  assert.match(memberMd, /approval-required:\s*\n\s*- grant-autonomy\s*\n\s*- change-member-scope/);
   assert.match(fs.readFileSync(path.join(memberDir, 'logs', fs.readdirSync(path.join(memberDir, 'logs'))[0]), 'utf8'), /source: cli/);
 }));
 

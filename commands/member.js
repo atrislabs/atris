@@ -4067,10 +4067,12 @@ skills: []
 
 permissions:
   can-read: true
-  can-execute: true
+  can-execute: false
   can-approve: false
   can-accept-task: false
-  approval-required: []
+  approval-required:
+    - grant-autonomy
+    - change-member-scope
 
 tools: []
 ---
