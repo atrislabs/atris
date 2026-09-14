@@ -9822,6 +9822,14 @@ async function executeMissionRunTicksPhase(context) {
       const claudeRanTick = Boolean(result.claude) && result.status === 'ran';
       const claudeSessionTicks = claudeRanTick ? Number(mission.claude_session_ticks || 0) + 1 : Number(mission.claude_session_ticks || 0);
       const rotateSessionForContext = claudeRanTick && claudeSessionTicks >= CLAUDE_SESSION_CONTEXT_ROTATE_TICKS;
+      // Heartbeat missions run one tick per invocation, so the in-run ticks
+      // array alone can never see two identical errors. Persist the trailing
+      // same-reason errored count so the breaker below trips across runs.
+      const errorStreakCount = result.status === 'errored' && result.reason
+        ? (latestOnDisk.last_tick_status === 'errored' && latestOnDisk.last_tick_reason === result.reason
+          ? Number(latestOnDisk.error_streak_count || 0) + 1
+          : 1)
+        : 0;
       // Base on latestOnDisk so mid-tick complete proof/completed_at survive.
       mission = saveMission({
         ...latestOnDisk,
@@ -9834,6 +9842,7 @@ async function executeMissionRunTicksPhase(context) {
         last_tick_index: tickIdx,
         last_tick_layer: result.layer,
         last_tick_layer_source: result.layer_source,
+        error_streak_count: errorStreakCount,
         verifier_result: verifierResult || (verifyEach && result.protected_lane_guard && result.protected_lane_guard.allowed === false ? null : latestOnDisk.verifier_result) || null,
         last_check_feedback: verifierResult
           ? extractCheckFeedback(verifierResult)
@@ -9911,9 +9920,12 @@ async function executeMissionRunTicksPhase(context) {
       // is the same trap one step less deterministic: keep retrying and the loop burns every
       // tick + cron firing on it. Halt at two-in-a-row and surface the reason for a human.
       const errStreak = consecutiveSameReasonErrors(ticks);
+      // The in-run ticks array only sees this invocation; the persisted streak
+      // carries identical errors across heartbeat runs of one tick each.
+      const errStreakCount = Math.max(errStreak.count, errStreak.reason ? Number(mission.error_streak_count || 0) : 0);
       // Sleeping Atris2 backends are different: leave the mission running so the
       // next tick or heartbeat can catch the backend after it wakes.
-      if (errStreak.count >= 2 && !missionRunKeepsRetryingError(errStreak.reason)) { pauseReason = `repeated-error:${errStreak.reason}`; break; }
+      if (errStreakCount >= 2 && !missionRunKeepsRetryingError(errStreak.reason)) { pauseReason = `repeated-error:${errStreak.reason}`; break; }
 
       // Sleep until next tick
       let sleepMs = 0;
