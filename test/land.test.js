@@ -348,6 +348,113 @@ test('reap leaves a branch alone when it moved after the scan', () => {
   }
 });
 
+test('reap keeps a worktree and branch created a minute ago at zero commits ahead', () => {
+  // The 2026-09-14 incident shape: `git worktree add -b swe/<job>` ran a
+  // minute ago, the branch is 0 commits ahead of base, so it classifies as
+  // landed residue. The grace window must cover both the worktree and the
+  // branch name, in dry run and for real.
+  const { base, repo } = makeTempRepo();
+  try {
+    const wt = path.join(base, 'wt-fresh');
+    runGit(['worktree', 'add', '-b', 'swe/job-20260914', wt, 'master'], repo);
+
+    const { reap } = require('../commands/land');
+    const dry = reap(repo, { dryRun: true, remote: false });
+    assert.deepEqual(dry.removedWorktrees, [], JSON.stringify(dry));
+    assert.ok(!dry.deletedBranches.includes('swe/job-20260914'), JSON.stringify(dry));
+
+    const receipt = reap(repo, { remote: false });
+    assert.ok(fs.existsSync(wt), JSON.stringify(receipt));
+    runGit(['rev-parse', '--verify', 'swe/job-20260914'], repo);
+    assert.ok(
+      receipt.keptWorktrees.some((k) => k.includes('fresh_worktree_grace')),
+      JSON.stringify(receipt.keptWorktrees)
+    );
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('reap never deletes a branch still checked out in a worktree the scan missed', () => {
+  // `git worktree add -b` creates the branch ref before it finishes wiring
+  // .git/worktrees/<id>/gitdir — in that gap `git worktree list` is blind to
+  // the directory, the board misses the worktree while board.branches still
+  // marks the branch landed, and `git branch -D` has no checkout guard to
+  // fall back on (it only reads fully wired registrations). Reproduced by
+  // dropping the gitdir link after the add completes.
+  const { base, repo } = makeTempRepo();
+  try {
+    const wt = path.join(base, 'wt-mid-add');
+    runGit(['worktree', 'add', '-b', 'swe/mid-add-20260914', wt, 'master'], repo);
+    fs.rmSync(path.join(repo, '.git', 'worktrees', 'wt-mid-add', 'gitdir'));
+    const listed = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout;
+    assert.ok(!listed.includes('wt-mid-add'), 'fixture must put the worktree off the board');
+
+    const { reap } = require('../commands/land');
+    const dry = reap(repo, { dryRun: true, remote: false });
+    assert.ok(!dry.deletedBranches.includes('swe/mid-add-20260914'), JSON.stringify(dry));
+
+    const receipt = reap(repo, { remote: false });
+    runGit(['rev-parse', '--verify', 'swe/mid-add-20260914'], repo);
+    assert.ok(fs.existsSync(wt), 'worktree dir must still exist');
+    assert.ok(
+      receipt.keptWorktrees.some((k) => k.includes('swe/mid-add-20260914')),
+      JSON.stringify(receipt.keptWorktrees)
+    );
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('reap removes a zero-ahead worktree once it is past the grace window', () => {
+  // The grace is a window, not a blanket: same fixture as above but backdated
+  // two hours, the worktree is reaped and its residue branch deleted.
+  const { base, repo } = makeTempRepo();
+  try {
+    const wt = path.join(base, 'wt-old');
+    runGit(['worktree', 'add', '-b', 'swe/old-20260914', wt, 'master'], repo);
+    const staleStamp = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    fs.utimesSync(wt, staleStamp, staleStamp);
+
+    const { reap } = require('../commands/land');
+    const receipt = reap(repo, { remote: false });
+    const normalize = (p) => p.replace(/^\/private\//, '/');
+    assert.ok(
+      receipt.removedWorktrees.map(normalize).includes(normalize(wt)),
+      JSON.stringify(receipt)
+    );
+    assert.ok(receipt.deletedBranches.includes('swe/old-20260914'), JSON.stringify(receipt));
+    assert.ok(!fs.existsSync(wt));
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('reap keeps a detached worktree holding commits no branch bundle can cover', () => {
+  // A detached-HEAD worktree's commits ride no branch, so the salvage bundle
+  // cannot cover them — board must count them or force-remove orphans them.
+  const { base, repo } = makeTempRepo();
+  try {
+    const wt = path.join(base, 'wt-detached');
+    runGit(['worktree', 'add', '--detach', wt, 'master'], repo);
+    fs.writeFileSync(path.join(wt, 'detached-work.md'), 'only here\n');
+    runGit(['add', '.'], wt);
+    runGit(['commit', '-m', 'detached work'], wt);
+    const staleStamp = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    fs.utimesSync(wt, staleStamp, staleStamp);
+
+    const { reap } = require('../commands/land');
+    const receipt = reap(repo, { remote: false, includeDetached: true });
+    assert.ok(fs.existsSync(wt), JSON.stringify(receipt));
+    assert.ok(
+      receipt.keptWorktrees.some((k) => k.includes('unlanded commits')),
+      JSON.stringify(receipt.keptWorktrees)
+    );
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('reap salvages a worktree whose dirty diff exceeds the 1MB spawn buffer', () => {
   const { base, repo } = makeTempRepo();
   try {

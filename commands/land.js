@@ -58,6 +58,102 @@ function worktreeWithinReapGrace(worktreePath, now = Date.now()) {
   return typeof mtime === 'number' && now - mtime < WORKTREE_REAP_GRACE_MS;
 }
 
+function canonicalPath(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+function gitCommonDir(root) {
+  for (const args of [['rev-parse', '--path-format=absolute', '--git-common-dir'], ['rev-parse', '--git-common-dir']]) {
+    const res = runGit(args, { cwd: root, check: false });
+    if (res.status === 0 && res.stdout.trim()) return path.resolve(root, res.stdout.trim());
+  }
+  return '';
+}
+
+function headRefName(headFile) {
+  try {
+    const m = /^ref: refs\/heads\/(.+)$/.exec(fs.readFileSync(headFile, 'utf8').trim());
+    return m ? m[1] : '';
+  } catch {
+    return '';
+  }
+}
+
+// Branch checkouts straight from .git/worktrees/<id>/HEAD plus the main
+// checkout's HEAD — the live truth, not the board snapshot. A `worktree add`
+// still in flight (or a half-registered entry) can leave a branch checked out
+// in a directory the snapshot never saw, and git's own `branch -D` refusal
+// only consults registrations whose gitdir link is already written.
+// pendingFresh marks a fresh registration whose HEAD file does not exist yet:
+// an add mid-flight that has not named its branch.
+function liveCheckouts(root, now = Date.now()) {
+  const bound = new Map();
+  let pendingFresh = false;
+  const common = gitCommonDir(root);
+  if (!common) return { bound, pendingFresh };
+  if (path.basename(common) === '.git') {
+    const name = headRefName(path.join(common, 'HEAD'));
+    const mainPath = path.dirname(common);
+    if (name && fs.existsSync(mainPath)) bound.set(name, { path: mainPath, adminDir: common });
+  }
+  let ids = [];
+  try {
+    ids = fs.readdirSync(path.join(common, 'worktrees'));
+  } catch {
+    return { bound, pendingFresh };
+  }
+  for (const id of ids) {
+    const adminDir = path.join(common, 'worktrees', id);
+    let stat;
+    try {
+      stat = fs.statSync(adminDir);
+    } catch {
+      continue;
+    }
+    if (!stat.isDirectory()) continue;
+    const headFile = path.join(adminDir, 'HEAD');
+    const name = headRefName(headFile);
+    if (!name) {
+      if (!fs.existsSync(headFile) && now - stat.mtimeMs < WORKTREE_REAP_GRACE_MS) pendingFresh = true;
+      continue;
+    }
+    let wtPath = null;
+    try {
+      wtPath = path.dirname(fs.readFileSync(path.join(adminDir, 'gitdir'), 'utf8').trim());
+    } catch {
+      // gitdir unwritten or lost: cannot prove which directory is the
+      // checkout, so the branch stays claimed — fail safe, prune's job.
+    }
+    if (wtPath && !fs.existsSync(wtPath)) continue;
+    bound.set(name, { path: wtPath, adminDir });
+  }
+  return { bound, pendingFresh };
+}
+
+// The branch's own reflog records when `worktree add -b` (or `git branch`)
+// created it. While an add is in flight a just-created target branch is very
+// likely the checkout being wired up right now — keep it for this pass.
+function branchCreatedWithinGrace(root, name, now = Date.now()) {
+  const res = runGit(['reflog', 'show', '--date=unix', name], { cwd: root, check: false });
+  if (res.status !== 0) return false;
+  const lines = res.stdout.split(/\r?\n/).filter(Boolean);
+  const m = /@\{(\d+)\}/.exec(lines[lines.length - 1] || '');
+  return Boolean(m) && now - Number(m[1]) * 1000 < WORKTREE_REAP_GRACE_MS;
+}
+
+// One receipt line for a branch kept because a live checkout claims it:
+// fresh checkouts name the grace, older ones name where the branch is in use.
+function checkoutKeepLine(name, bound, now) {
+  if (worktreeWithinReapGrace(bound.path || bound.adminDir, now)) {
+    return bound.path ? `${bound.path} (fresh_worktree_grace)` : `branch ${name} (fresh_worktree_grace)`;
+  }
+  return `branch ${name} (checked out in ${bound.path || 'a worktree'})`;
+}
+
 function listBranches(root, base = '') {
   // With a base, ask git for ahead counts in the same single spawn
   // (%(ahead-behind:) needs git >= 2.41; on failure we retry without it and
@@ -151,7 +247,12 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
   const worktrees = [];
   const all = listWorktrees(root);
   for (const wt of all.slice(1)) {
-    const branch = (wt.branch || '').replace(/^refs\/heads\//, '');
+    const rawBranch = (wt.branch || '').replace(/^refs\/heads\//, '');
+    // 'detached' is a marker, not a name: left as-is it reads as a real branch
+    // name (hiding the worktree's own commits and, in reap, pushing the word
+    // "detached" into the delete list). Treat it as no branch so the worktree
+    // is asked directly what it holds.
+    const branch = rawBranch === 'detached' ? '' : rawBranch;
     // light mode skips the full `git status` per worktree, the banner summary
     // never reads dirty counts, only worktree mtimes for staleness.
     const counts = (light ? null : statusCounts(wt.path)) || { staged: 0, unstaged: 0, untracked: 0 };
@@ -376,8 +477,25 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
   };
   if (targetNames.size === 0 && worktreeTargets.length === 0) return receipt;
   if (dryRun) {
+    // The preview must match the real pass: a branch still checked out in a
+    // worktree the board missed is kept, not listed as deleted. A checkout
+    // that is itself a removal target would be gone first, so it still reads
+    // as deletable here.
+    const live = liveCheckouts(root, now);
+    const targetPaths = new Set(worktreeTargets.map((w) => canonicalPath(w.path)));
     receipt.removedWorktrees = worktreeTargets.map((w) => w.path);
-    receipt.deletedBranches = [...targetNames];
+    receipt.deletedBranches = [...targetNames].filter((name) => {
+      const bound = live.bound.get(name);
+      if (bound && !(bound.path && targetPaths.has(canonicalPath(bound.path)))) {
+        receipt.keptWorktrees.push(checkoutKeepLine(name, bound, now));
+        return false;
+      }
+      if (!bound && live.pendingFresh && branchCreatedWithinGrace(root, name, now)) {
+        receipt.keptWorktrees.push(`branch ${name} (fresh_worktree_grace)`);
+        return false;
+      }
+      return true;
+    });
     return receipt;
   }
 
@@ -406,9 +524,17 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached')
   );
   for (const w of survivingWorktreeTargets) {
+    // The grace check ran at scan time, and a bundle build can sit between it
+    // and removal — an engine that booted mid-sweep refreshes the directory
+    // mtime in that gap. Stat once more at removal time, the cheapest place
+    // to never be wrong about freshness.
+    if (worktreeWithinReapGrace(w.path)) {
+      receipt.keptWorktrees.push(`${w.path} (fresh_worktree_grace)`);
+      if (w.branch) targetNames.delete(w.branch);
+      continue;
+    }
     // Salvage-then-remove, never keep-because-dirty: patches + untracked
-    // copies bank everything force-remove would destroy. The fresh-worktree
-    // grace was already applied when candidates were selected.
+    // copies bank everything force-remove would destroy.
     if (w.dirty > 0 && !salvageWorktree(w, dir, receipt)) {
       // could not fully back up what force-remove would destroy, keep it,
       // and say why: a bare path in the receipt reads as an unexplained
@@ -430,7 +556,21 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     }
   }
 
+  // Re-scan after removals: worktrees just removed freed their branches, and
+  // anything still bound is checked out in a directory that exists — the
+  // board snapshot may have missed it entirely (a `worktree add` mid-flight),
+  // and git's own -D refusal only reads fully wired registrations.
+  const live = liveCheckouts(root, now);
   for (const name of targetNames) {
+    const bound = live.bound.get(name);
+    if (bound) {
+      receipt.keptWorktrees.push(checkoutKeepLine(name, bound, now));
+      continue;
+    }
+    if (live.pendingFresh && branchCreatedWithinGrace(root, name, now)) {
+      receipt.keptWorktrees.push(`branch ${name} (fresh_worktree_grace)`);
+      continue;
+    }
     const entry = board.branches.find((b) => b.name === name);
     // the board is a snapshot; an agent may have committed since it was
     // taken. A branch that moved is left alone, the next reap sees the
