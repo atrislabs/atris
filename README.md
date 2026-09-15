@@ -246,7 +246,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 
 ### Document health
 
-`atris doc-health [--json] [--questions <path>]` scores document size, map coverage, lookup hops, and feature/member freshness from 0 to 100, and lists similar feature names. Tokens are estimated as characters divided by four. Questions default to `atris/doc-health/questions.jsonl`, one `{"q":"where is the CLI router","expect":"bin/atris.js"}` per line. Custom paths are relative to the workspace root. Missing questions skip lookup scoring and contribute zero of its 30 points. Member age uses the newest log file's modification time.
+`atris doc-health [--json] [--questions <path>]` scores document size, map coverage, lookup hops, and feature/member freshness from 0 to 100, and lists similar feature names. Tokens are estimated as characters divided by four. Boot load earns all 20 points at or below 80,000 characters, falls linearly to zero at 200,000, and stays at zero above that. Questions default to `atris/doc-health/questions.jsonl`, one `{"q":"where is the CLI router","expect":"bin/atris.js"}` per line. Custom paths are relative to the workspace root. Missing questions skip lookup scoring and contribute zero of its 30 points. Member age uses the newest log file's modification time.
 
 ## Built-In Systems
 

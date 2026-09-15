@@ -239,9 +239,9 @@ test('near duplicate feature groups require at least five shared prefix characte
   assert.deepEqual(payload.near_duplicates, [{ prefix: 'alpha', names: ['alpha', 'alpha-api', 'alpha-env'] }]);
 });
 
-test('boot scoring is linear between 60,000 and 200,000 chars and clamps outside', t => {
+test('boot scoring is linear between 80,000 and 200,000 chars and clamps outside', t => {
   const root = workspace(t);
-  for (const [chars, points] of [[60000, 20], [130000, 10], [200000, 0], [210000, 0]]) {
+  for (const [chars, points] of [[0, 20], [60000, 20], [80000, 20], [140000, 10], [200000, 0], [210000, 0]]) {
     write(root, 'atris/atris.md', 'x'.repeat(chars));
     const result = run(root, ['--json']);
     assert.equal(result.status, 0, result.stderr);

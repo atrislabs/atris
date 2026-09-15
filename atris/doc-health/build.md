@@ -24,7 +24,7 @@ Four. **Staleness.** Features: for each `atris/features/<name>/idea.md`, read th
 
 Five. **Near duplicates.** Feature folder names that share a prefix of 5 or more chars with another (for example `aeo` and `aeo-anyone`, `rl-api` and `rl-environment`). List the groups. No judgement, just the list.
 
-Six. **Overall score** 0 to 100: 30 points for lookup hops (share resolved in one hop), 25 for map coverage (paths that exist), 20 for boot load (full points at or under 60,000 chars total, zero at 200,000, linear between), 15 for feature freshness (share not flagged), 10 for member freshness (share not flagged). Show each part and the sum.
+Six. **Overall score** 0 to 100: 30 points for lookup hops (share resolved in one hop), 25 for map coverage (paths that exist), 20 for boot load (full points at or under 80,000 chars total, zero at 200,000, linear between), 15 for feature freshness (share not flagged), 10 for member freshness (share not flagged). Show each part and the sum.
 
 ## Files
 

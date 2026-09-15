@@ -207,7 +207,7 @@ function overallScore(boot, map, lookups, staleness) {
   const part = (score, max) => ({ points: round((score ?? 0) * max), max });
   const parts = {
     lookup_hops: part(lookups.score, 30), map_coverage: part(map.score, 25),
-    boot_load: part(Math.min(1, Math.max(0, (200000 - boot.total_chars) / 140000)), 20),
+    boot_load: part(Math.min(1, Math.max(0, (200000 - boot.total_chars) / 120000)), 20),
     feature_freshness: part(staleness.features.score, 15), member_freshness: part(staleness.members.score, 10),
   };
   return {
