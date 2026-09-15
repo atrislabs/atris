@@ -341,3 +341,59 @@ test('startup score matches the detailed report while skipping unneeded document
   assert.equal(logStats, 2, 'one fresh log settles activity; stale logs are still inspected');
   assert.equal(summary.staleness, undefined, 'partial newest timestamps are not reported');
 });
+
+for (const status of ['retired', 'parked', 'archived']) {
+  test(`member freshness excludes ${status} frontmatter from its denominator`, t => {
+    const root = workspace(t);
+    write(root, 'atris/atris.md', '');
+    write(root, 'atris/team/active/MEMBER.md', '---\nstatus: active\n---\n');
+    for (const [name, value] of [['plain', status], ['quoted', `"${status.toUpperCase()}" # inactive`], ['single', `'${status}'`]]) {
+      write(root, `atris/team/${name}/MEMBER.md`, `---\r\nstatus: ${value}\r\n---\r\n# member\r\n`);
+    }
+    const payload = collectDocHealth({ cwd: root });
+    assert.deepEqual(payload.staleness.members.items.map(item => item.name), ['active']);
+    assert.equal(payload.staleness.members.total, 1);
+    assert.equal(payload.staleness.members.flagged, 1);
+    assert.equal(payload.overall.parts.member_freshness.points, 0);
+    assert.equal(require('../commands/doc-health').computeDocHealth(root).overall.total, payload.overall.total);
+  });
+}
+
+test('member exclusions read only an exact top-level frontmatter status', t => {
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  write(root, 'atris/team/body/MEMBER.md', '# member\nstatus: retired\n');
+  write(root, 'atris/team/active/MEMBER.md', '---\nstatus: active\n---\nstatus: archived\n');
+  write(root, 'atris/team/nested/MEMBER.md', '---\nprevious:\n  status: retired\n---\n');
+  write(root, 'atris/team/not-exact/MEMBER.md', '---\nstatus: retired-soon\n---\n');
+  write(root, 'atris/team/unclosed/MEMBER.md', '---\nstatus: retired\n');
+  assert.equal(collectDocHealth({ cwd: root }).staleness.members.flagged, 5);
+});
+
+for (const status of ['parked', 'retired', 'superseded']) {
+  test(`old features with ${status} in their status are not stale`, t => {
+    const root = workspace(t);
+    write(root, 'atris/atris.md', '');
+    write(root, 'atris/features/exempt/idea.md', `Created: 2000-01-01\n**Status:** ${status.toUpperCase()} after review\n`);
+    write(root, 'atris/features/active/idea.md', `Created: 2000-01-01\nStatus: active\nNotes: ${status}\n`);
+    const payload = collectDocHealth({ cwd: root });
+    assert.equal(payload.staleness.features.total, 2);
+    assert.deepEqual(payload.staleness.features.oldest.map(item => item.name), ['active']);
+    assert.equal(payload.overall.parts.feature_freshness.points, 7.5);
+  });
+}
+
+for (const folder of ['_archive', '_templates']) {
+  test(`${folder} and its children never count as features`, t => {
+    const root = workspace(t);
+    write(root, 'atris/atris.md', '');
+    for (const name of [folder, `${folder}/alpha-old`, `${folder}/alpha-new`, `${folder}-active`]) {
+      write(root, `atris/features/${name}/idea.md`, 'Created: 2000-01-01\nStatus: active\n');
+    }
+    const payload = collectDocHealth({ cwd: root });
+    assert.deepEqual(payload.staleness.features.items.map(item => item.name), [`${folder}-active`]);
+    assert.equal(payload.staleness.features.flagged, 1);
+    assert.deepEqual(payload.map_coverage.features, { total: 1, mentioned: 0, missing: [`${folder}-active`] });
+    assert.deepEqual(payload.near_duplicates, []);
+  });
+}

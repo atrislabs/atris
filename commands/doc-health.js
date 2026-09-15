@@ -159,6 +159,11 @@ function freshness(items, thresholdDays) {
   };
 }
 
+function inactiveMember(text) {
+  const frontmatter = text.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  return Boolean(frontmatter && /^status:[ \t]*(['"]?)(?:retired|parked|archived)\1[ \t]*(?:#.*)?$/im.test(frontmatter[1]));
+}
+
 function collectStaleness(root, featureNames, memberNames, now, scoreOnly = false) {
   const features = featureNames.filter(name => stat(path.join(root, 'atris/features', name, 'idea.md'))?.isFile())
     .map(name => {
@@ -168,10 +173,11 @@ function collectStaleness(root, featureNames, memberNames, now, scoreOnly = fals
       const timestamp = date ? Date.parse(date) : NaN;
       const age = Number.isFinite(timestamp) ? (now - timestamp) / DAY : null;
       const status = field(text, 'Status');
-      const exempt = /complete|shipped|live|archived|parked/i.test(status);
+      const exempt = /complete|shipped|live|archived|parked|retired|superseded/i.test(status);
       return { name, path: file, date: date || null, status, age_days: age === null ? null : Math.floor(age), stale: age !== null && age > 60 && !exempt };
     });
   const members = memberNames.filter(name => stat(path.join(root, 'atris/team', name, 'MEMBER.md'))?.isFile())
+    .filter(name => !inactiveMember(readText(path.join(root, 'atris/team', name, 'MEMBER.md'))))
     .map(name => {
       const newest = newestLog(path.join(root, 'atris/team', name, 'logs'), scoreOnly ? now - 30 * DAY : Infinity);
       const age = newest ? (now - newest.mtime) / DAY : null;
@@ -242,7 +248,7 @@ function measureDocHealth(root, { questions = DEFAULT_QUESTIONS, now = Date.now(
   const total_chars = files.reduce((sum, file) => sum + file.chars, 0);
   const boot_load = { files, total_chars, approximate_tokens: total_chars / 4, token_estimate: 'chars divided by 4' };
   const mapText = readText(path.join(root, 'atris', 'MAP.md'));
-  const featureNames = folders(root, 'atris/features');
+  const featureNames = folders(root, 'atris/features').filter(name => !['_archive', '_templates'].includes(name));
   const memberNames = folders(root, 'atris/team');
   const map_coverage = collectMap(root, mapText, featureNames, memberNames);
   const lookup_hops = collectLookups(root, mapText, questions);

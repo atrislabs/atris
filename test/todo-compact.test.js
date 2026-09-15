@@ -79,3 +79,32 @@ test('real generated TODO feeds markdown task parsing, context and startup glanc
   assert.deepEqual(loadContext(root).backlogTasks, ['Task 0 · exact title']);
   assert.equal(fs.existsSync(path.join(root, 'missing.db')), false);
 });
+
+test('compact boards resolve full commands from real task state without the database opt-in', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-todo-canonical-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const taskDb = require('../lib/task-db');
+  const dbPath = path.join(root, 'tasks.db');
+  const db = taskDb.open(dbPath);
+  t.after(() => taskDb.close(db));
+  fs.mkdirSync(path.join(root, 'atris'));
+  fs.writeFileSync(path.join(root, 'atris/atris.md'), '');
+  const title = 'Check the [saved] command';
+  const verify = 'node --test test/a-long-test-name-that-must-not-be-clipped-or-replaced.test.js';
+  taskDb.addTask(db, { title, workspaceRoot: taskDb.workspaceRoot(root), tag: 'docs', metadata: { verify, todo_tags: ['endgame', 'execute'] } });
+  setEnv(t, 'ATRIS_TODO_RENDER', 'compact');
+  fs.writeFileSync(path.join(root, 'atris/TODO.md'), renderTodoMarkdown(taskDb.listTasks(db, { workspaceRoot: taskDb.workspaceRoot(root) })));
+  const { spawnSync } = require('node:child_process');
+  const result = spawnSync(process.execPath, ['-e', `
+    const assert = require('node:assert/strict');
+    const todo = require(${JSON.stringify(require.resolve('../lib/todo'))}).parseTodo(${JSON.stringify(path.join(root, 'atris/TODO.md'))});
+    assert.equal(todo.backlog.length, 1);
+    assert.equal(todo.backlog[0].title, ${JSON.stringify(title)});
+    assert.equal(todo.backlog[0].verify, ${JSON.stringify(verify)});
+    assert.equal(todo.backlog[0].tag, 'endgame');
+    assert.ok(todo.backlog[0].tags.includes('execute'));
+    const command = require(${JSON.stringify(require.resolve('../commands/autopilot'))}).getVerifyCommand(${JSON.stringify(root)}, ${JSON.stringify(title)});
+    assert.deepEqual(command, { cmd: ${JSON.stringify(verify)}, explicit: true });
+  `], { encoding: 'utf8', timeout: 15000, env: { ...process.env, ATRIS_TASKS_DB: dbPath, ATRIS_TASK_DB: '0' } });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+});
