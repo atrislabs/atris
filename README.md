@@ -240,6 +240,14 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris slop` | Deterministic slop detector: frontend/prose tells, plus `slop dead --exports` for dead code |
 | `atris clean` | Housekeeping: heal MAP refs, archive journals, report stale pages and dead code |
 
+### Doctor
+
+`atris doctor [--json]` checks Node, task support, authentication, and workspace readiness.
+
+### Document health
+
+`atris doc-health [--json] [--questions <path>]` scores document size, map coverage, lookup hops, and feature/member freshness from 0 to 100, and lists similar feature names. Tokens are estimated as characters divided by four. Questions default to `atris/doc-health/questions.jsonl`, one `{"q":"where is the CLI router","expect":"bin/atris.js"}` per line. Custom paths are relative to the workspace root. Missing questions skip lookup scoring and contribute zero of its 30 points. Member age uses the newest log file's modification time.
+
 ## Built-In Systems
 
 - `atris learn` stores structured project memory in `atris/learnings.jsonl`

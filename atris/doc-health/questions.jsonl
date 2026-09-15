@@ -1,0 +1,10 @@
+{"q":"where is the CLI command router","expect":"bin/atris.js"}
+{"q":"where is workspace readiness checked by doctor","expect":"commands/doctor.js"}
+{"q":"where are brain artifacts compiled","expect":"commands/brain.js"}
+{"q":"where is the workspace root resolved","expect":"lib/mission-root.js"}
+{"q":"where are task claims and proof handled","expect":"commands/task.js"}
+{"q":"where is the SQLite task store","expect":"lib/task-db.js"}
+{"q":"where are local credentials loaded","expect":"utils/auth.js"}
+{"q":"where are command names and typo suggestions defined","expect":"lib/known-commands.js"}
+{"q":"where is project initialization implemented","expect":"commands/init.js"}
+{"q":"where are document health measurements calculated","expect":"commands/doc-health.js"}

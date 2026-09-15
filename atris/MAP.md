@@ -6,6 +6,10 @@
 
 ## Quick Reference Index
 
+| Route | Paths | Purpose |
+| --- | --- | --- |
+| Document health | `commands/doc-health.js`, `test/doc-health.test.js`, `atris/doc-health/questions.jsonl`, `atris/doc-health/build.md` | Boot size, map coverage, lookup hops, stale features and members, near duplicates, and weighted score. Uses `commands/brain.js:140` readText and `lib/mission-root.js:24` resolveWorkspaceRoot; registered beside doctor in `bin/atris.js` and `lib/known-commands.js`. |
+
 - Login token isolation: `utils/auth.js:379` refuses scoped tokens in the login field; `loadCredentials(apiRequestJson)` repairs legacy files through refresh for authenticated callers while synchronous local reads stay offline. `commands/auth.js:88` `isAgentAccessToken` / `scopedTokenCandidate` / `canMintFromLogin` treat a leftover login-field `agent_access` key as a billed candidate when the scope matches, and refuse remint when there is no real session JWT. A leftover placed file (`source: 'agent_token_file'`) uses its leftover `scopes` and `expires_at` the same way and never remints, including when `ATRIS_TOKEN` repeats that leftover (`utils/auth.js:474`). A leftover `credentials.json` `agent_token` keeps `agent_token_scopes` and `agent_token_expires_at` the same way when `ATRIS_TOKEN` repeats that leftover (`utils/auth.js:224`). A leftover profile `agent_token` selected by `ATRIS_PROFILE` or by the per-terminal session profile when `ATRIS_PROFILE` is unset keeps those leftover fields the same way when `ATRIS_TOKEN` repeats that leftover (`utils/auth.js:244`). `persistMintedAgentToken` will not write a scoped key back into `token`. Regression: `test/auth-login-storage.test.js`, `test/auth-agent-token.test.js`, `test/auth-placed-token.test.js`, `test/billed-command-auth.test.js`.
 
 - Member alive dispatcher lookup: `lib/member-alive.js:64` prefers workspace scripts, then the packaged `scripts/member-operate.mjs`; `test/member-alive.test.js` verifies installed dispatch, workspace cwd, and override precedence.
