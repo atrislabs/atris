@@ -45,9 +45,26 @@ function folderCoverage(text, base, names) {
 function collectMap(root, text, featureNames, memberNames) {
   let rows = 0;
   const paths = new Set();
-  for (const line of text.split(/\r?\n/)) {
-    const cells = line.trim().split(/(?<!\\)\|/);
-    if (cells.length < 2) continue;
+  const lines = text.split(/\r?\n/);
+  let inTable = false;
+  let fence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const marker = line.match(/^(`{3,}|~{3,})/);
+    if (marker) {
+      if (!fence) fence = marker[1][0];
+      else if (fence === marker[1][0]) fence = null;
+      inTable = false;
+      continue;
+    }
+    if (fence) continue;
+    const cells = line.split(/(?<!\\)\|/);
+    const nextIsSeparator = /^\s*\|?\s*:?-{3,}:?\s*\|(?:\s*:?-{3,}:?\s*\|?)+\s*$/.test(lines[i + 1] || '');
+    if (cells.length < 2 || !(line.startsWith('|') || inTable || nextIsSeparator)) {
+      inTable = false;
+      continue;
+    }
+    inTable = true;
     if (cells[0] === '') cells.shift();
     const found = backtickedPaths(cells[1] || '');
     if (!found.length) continue;

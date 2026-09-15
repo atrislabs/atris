@@ -71,10 +71,12 @@ test('map coverage counts routing rows, unique paths, line references, and exact
   write(root, 'atris/team/alice/MEMBER.md', '');
   write(root, 'atris/team/bob/MEMBER.md', '');
   write(root, 'atris/MAP.md', [
-    '| route | paths | note |', '| --- | --- | --- |',
+    'route | paths | note', '--- | --- | ---',
     '| tasks | `commands/task.js:12-20`, `atris/wiki/guide.md:5#intro` | use them |',
     'repeats | `commands/task.js:99` and `missing.js` | missing path',
     '| `ignored.md` | no path | `also-ignored.md` |',
+    '', 'a prose `id|title` example with `not-a-routing-path.md`',
+    '```md', '| example | `also-not-a-routing-path.md` |', '```',
     'feature: atris/features/alpha-more/idea.md', 'member: `atris/team/alice/MEMBER.md`',
   ].join('\n'));
   const result = run(root, ['--json']);
