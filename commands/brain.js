@@ -1774,6 +1774,7 @@ function brainCommand(args = process.argv.slice(3)) {
 }
 
 module.exports = {
+  readText,
   brainCommand,
   collectState,
   renderStatus,

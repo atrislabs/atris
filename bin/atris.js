@@ -577,6 +577,7 @@ function showHelpAll() {
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  doctor     - Node/task/auth/workspace readiness (--json for agents)');
+  console.log('  doc-health - workspace document size, navigation, and freshness (--json)');
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
   console.log('  brief      - Show the one-glance operator brief');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
@@ -2698,6 +2699,10 @@ if (command === 'guide') {
   Promise.resolve(require('../commands/doctor').doctorCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'doc-health') {
+  Promise.resolve(require('../commands/doc-health').docHealthCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(err.message || err); process.exit(1); });
 } else if (command === 'verify') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
