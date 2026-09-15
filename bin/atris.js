@@ -1740,6 +1740,18 @@ function showWelcomeVisualization() {
     console.log(row('now', 'nothing on the list yet'));
   }
 
+  try {
+    const health = require('../commands/doc-health').computeDocHealth(cwd);
+    if (health.ok) {
+      const detail = health.lookup_hops.missing
+        ? 'add atris/doc-health/questions.jsonl'
+        : `${Math.round((health.lookup_hops.score || 0) * 100)}% one hop · boot ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens`;
+      console.log(row('docs', `${health.overall.total}/100 · ${detail}`));
+    }
+  } catch {
+    // Document health is advisory and must never prevent startup.
+  }
+
   // landSummary is expensive (git board classification) - compute once per boot.
   let landInfo = null;
   try { landInfo = require('../commands/land').landSummary(cwd); } catch (err) { landInfo = null; }

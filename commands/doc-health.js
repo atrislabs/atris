@@ -92,10 +92,19 @@ function collectLookups(root, mapText, questionsPath) {
     return result;
   }
   const mapLines = mapText.split(/\r?\n/);
-  // Cache pointed-to documents so every question shares the same reads.
-  const docs = [...new Set(backtickedPaths(mapText).filter(file => file.endsWith('.md')))]
-    .filter(file => path.resolve(root, file) !== path.join(root, 'atris', 'MAP.md'))
-    .map(file => ({ path: file, text: readText(path.resolve(root, file)) }));
+  // Most healthy workspaces resolve every question in the map. Read second-hop
+  // documents only when needed, sharing each read across unresolved questions.
+  let docs;
+  const viaDocument = expected => {
+    if (!docs) docs = [...new Set(backtickedPaths(mapText).filter(file => file.endsWith('.md')))]
+      .filter(file => path.resolve(root, file) !== path.join(root, 'atris', 'MAP.md'))
+      .map(file => ({ path: file }));
+    for (const doc of docs) {
+      if (doc.text === undefined) doc.text = readText(path.resolve(root, doc.path));
+      if (doc.text.includes(expected)) return doc.path;
+    }
+    return null;
+  };
   readText(filename).split(/\r?\n/).forEach((line, index) => {
     if (!line.trim()) return;
     let question;
@@ -109,7 +118,7 @@ function collectLookups(root, mapText, questionsPath) {
       .filter(word => word.length >= 3 && !STOP_WORDS.has(word));
     const oneHop = mapLines.some(row => row.includes(question.expect)
       && keywords.some(word => row.toLowerCase().includes(word)));
-    const via = oneHop ? null : docs.find(doc => doc.text.includes(question.expect))?.path || null;
+    const via = oneHop ? null : viaDocument(question.expect);
     const hops = oneHop ? 1 : via ? 2 : null;
     result.questions.push({ q: question.q, expect: question.expect, hops, via });
   });
@@ -122,19 +131,19 @@ function collectLookups(root, mapText, questionsPath) {
 
 function field(text, label) {
   // Accept both plain and bold metadata labels used in feature idea files.
-  const line = text.split(/\r?\n/).map(row => row.replace(/\*\*/g, '').trim())
-    .find(row => new RegExp(`^(?:[-*] )?${label}\\s*:`, 'i').test(row));
-  return line ? line.slice(line.indexOf(':') + 1).trim() : '';
+  const match = text.match(new RegExp(`^[ \\t]*(?:[-*] )?(?:\\*\\*)?${label}[ \\t]*(?:\\*\\*)?:[ \\t]*(?:\\*\\*)?([^\\r\\n]*)`, 'im'));
+  return match ? match[1].replace(/\*\*/g, '').trim() : '';
 }
 
-function newestLog(dir) {
+function newestLog(dir, freshAfter = Infinity) {
   let newest = null;
   for (const entry of entries(dir)) {
     const file = path.join(dir, entry.name);
     // Do not follow symlinks into another tree or a recursive loop.
-    const candidate = entry.isDirectory() ? newestLog(file)
+    const candidate = entry.isDirectory() ? newestLog(file, freshAfter)
       : entry.isFile() ? { file, mtime: stat(file)?.mtimeMs } : null;
     if (candidate && Number.isFinite(candidate.mtime) && (!newest || candidate.mtime > newest.mtime)) newest = candidate;
+    if (newest && newest.mtime >= freshAfter) return newest;
   }
   return newest;
 }
@@ -150,7 +159,7 @@ function freshness(items, thresholdDays) {
   };
 }
 
-function collectStaleness(root, featureNames, memberNames, now) {
+function collectStaleness(root, featureNames, memberNames, now, scoreOnly = false) {
   const features = featureNames.filter(name => stat(path.join(root, 'atris/features', name, 'idea.md'))?.isFile())
     .map(name => {
       const file = `atris/features/${name}/idea.md`;
@@ -164,7 +173,7 @@ function collectStaleness(root, featureNames, memberNames, now) {
     });
   const members = memberNames.filter(name => stat(path.join(root, 'atris/team', name, 'MEMBER.md'))?.isFile())
     .map(name => {
-      const newest = newestLog(path.join(root, 'atris/team', name, 'logs'));
+      const newest = newestLog(path.join(root, 'atris/team', name, 'logs'), scoreOnly ? now - 30 * DAY : Infinity);
       const age = newest ? (now - newest.mtime) / DAY : null;
       return {
         name, path: `atris/team/${name}`, newest_log: newest ? path.relative(root, newest.file) : null,
@@ -208,7 +217,20 @@ function overallScore(boot, map, lookups, staleness) {
 }
 
 function collectDocHealth({ cwd = process.cwd(), questions = DEFAULT_QUESTIONS, now = Date.now() } = {}) {
-  const root = resolveWorkspaceRoot(cwd);
+  return measureDocHealth(resolveWorkspaceRoot(cwd), { questions, now });
+}
+
+// Boot already knows its root. Keep this path in-process, without asking git
+// to resolve the workspace or launching another CLI. A recent log is enough
+// for the score; only the detailed report needs its exact newest timestamp.
+function computeDocHealth(root) {
+  const payload = measureDocHealth(root, { scoreOnly: true });
+  if (!payload.ok) return payload;
+  const { ok, boot_load, lookup_hops, overall } = payload;
+  return { ok, boot_load, lookup_hops, overall };
+}
+
+function measureDocHealth(root, { questions = DEFAULT_QUESTIONS, now = Date.now(), scoreOnly = false } = {}) {
   if (!stat(path.join(root, 'atris'))?.isDirectory()) {
     return { ok: false, action: 'doc-health', root, message: 'no atris/ folder in this workspace.' };
   }
@@ -224,7 +246,7 @@ function collectDocHealth({ cwd = process.cwd(), questions = DEFAULT_QUESTIONS, 
   const memberNames = folders(root, 'atris/team');
   const map_coverage = collectMap(root, mapText, featureNames, memberNames);
   const lookup_hops = collectLookups(root, mapText, questions);
-  const staleness = collectStaleness(root, featureNames, memberNames, now);
+  const staleness = collectStaleness(root, featureNames, memberNames, now, scoreOnly);
   return {
     ok: true, action: 'doc-health', root, boot_load, map_coverage, lookup_hops, staleness,
     near_duplicates: nearDuplicates(featureNames),
@@ -292,4 +314,4 @@ function docHealthCommand(args = [], options = {}) {
   return payload.ok ? 0 : 1;
 }
 
-module.exports = { collectDocHealth, docHealthCommand };
+module.exports = { collectDocHealth, computeDocHealth, docHealthCommand };

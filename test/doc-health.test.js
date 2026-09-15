@@ -265,3 +265,79 @@ test('help works outside a workspace and the repository ships ten questions with
     assert.ok(fs.statSync(path.join(repo, question.expect)).isFile(), question.expect);
   }
 });
+
+test('startup shows the direct document score after current work, with a missing-questions nudge', t => {
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  write(root, 'atris/TODO.md', '# TODO\n\n## Backlog\n- Read the guide\n');
+  write(root, 'atris/MAP.md', '| guide | `atris/atris.md` | workspace guide |\n');
+  const boot = () => spawnSync(process.execPath, [cli, 'atris.md'], {
+    cwd: root, encoding: 'utf8', timeout: 15000,
+    env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_TASKS_DB: path.join(root, 'missing.db') },
+  });
+  const missing = boot();
+  assert.equal(missing.status, 0, missing.stderr);
+  assert.match(missing.stdout, /docs\s+70\/100 · add atris\/doc-health\/questions\.jsonl/);
+  write(root, 'atris/doc-health/questions.jsonl', JSON.stringify({ q: 'where is the guide', expect: 'atris/atris.md' }));
+  const result = boot();
+  assert.equal(result.status, 0, result.stderr);
+  const health = require('../commands/doc-health').computeDocHealth(root);
+  const expected = `${health.overall.total}/100 · 100% one hop · boot ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens`;
+  assert.ok(result.stdout.includes(expected), result.stdout);
+  assert.ok(result.stdout.indexOf('Read the guide') < result.stdout.indexOf('docs '));
+  assert.equal(fs.existsSync(path.join(root, 'missing.db')), false);
+});
+
+test('startup survives an exception from document health', t => {
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const modulePath = require.resolve('../commands/doc-health');
+  write(root, 'fail-health.cjs', `require(${JSON.stringify(modulePath)}).computeDocHealth = () => { throw new Error('unreadable docs'); };\n`);
+  const result = spawnSync(process.execPath, ['--require', path.join(root, 'fail-health.cjs'), cli, 'atris.md'], {
+    cwd: root, encoding: 'utf8', timeout: 15000,
+    env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_TASKS_DB: path.join(root, 'missing.db') },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /next\s+atris plan/);
+  assert.doesNotMatch(result.stdout + result.stderr, /unreadable docs/);
+});
+
+test('direct document health does not launch a child process', t => {
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const childProcess = require('node:child_process');
+  for (const method of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) {
+    t.mock.method(childProcess, method, () => { throw new Error(`unexpected ${method}`); });
+  }
+  const { computeDocHealth } = require('../commands/doc-health');
+  assert.equal(computeDocHealth(root).ok, true);
+});
+
+test('startup score matches the detailed report while skipping unneeded documents and log stats', t => {
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  write(root, 'atris/MAP.md', '| guide | `atris/atris.md` | guide |\nSee `atris/wiki/large.md`.\n');
+  write(root, 'atris/wiki/large.md', 'details');
+  write(root, 'atris/doc-health/questions.jsonl', '{"q":"guide","expect":"atris/atris.md"}\n');
+  write(root, 'atris/team/active/MEMBER.md', '# active\n');
+  for (let i = 0; i < 100; i++) write(root, `atris/team/active/logs/log-${i}.md`, 'recent\n');
+  write(root, 'atris/team/stale/MEMBER.md', '# stale\n');
+  write(root, 'atris/team/stale/logs/old.md', 'old\n');
+  fs.utimesSync(path.join(root, 'atris/team/stale/logs/old.md'), new Date('2000-01-01'), new Date('2000-01-01'));
+  const detailed = collectDocHealth({ cwd: root });
+  const read = fs.readFileSync;
+  const stat = fs.statSync;
+  let logStats = 0;
+  t.mock.method(fs, 'readFileSync', function(file, ...args) {
+    assert.notEqual(String(file), path.join(root, 'atris/wiki/large.md'));
+    return read.call(this, file, ...args);
+  });
+  t.mock.method(fs, 'statSync', function(file, ...args) {
+    if (String(file).includes(`${path.sep}logs${path.sep}`)) logStats++;
+    return stat.call(this, file, ...args);
+  });
+  const summary = require('../commands/doc-health').computeDocHealth(root);
+  assert.deepEqual(summary.overall, detailed.overall);
+  assert.equal(logStats, 2, 'one fresh log settles activity; stale logs are still inspected');
+  assert.equal(summary.staleness, undefined, 'partial newest timestamps are not reported');
+});
