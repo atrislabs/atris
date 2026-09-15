@@ -20,6 +20,13 @@ function workspace(t) {
 function write(root, file, content) {
   fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
   fs.writeFileSync(path.join(root, file), content);
+  // Feature activity is the newer of the written date and the file's own time, so a
+  // seeded idea file must not look freshly touched: pin its time to its written date.
+  if (/atris\/features\/.*idea\.md$/.test(file)) {
+    const dates = [...String(content).matchAll(/(?:Created|Last Updated)\*{0,2}:\*{0,2}\s*([^\r\n]+)/g)]
+      .map(m => Date.parse(m[1].replace(/\*\*/g, '').trim())).filter(Number.isFinite);
+    if (dates.length) { const when = new Date(Math.max(...dates)); fs.utimesSync(path.join(root, file), when, when); }
+  }
 }
 
 function run(root, args = []) {

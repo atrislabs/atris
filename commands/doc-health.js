@@ -131,7 +131,7 @@ function collectLookups(root, mapText, questionsPath) {
 
 function field(text, label) {
   // Accept both plain and bold metadata labels used in feature idea files.
-  const match = text.match(new RegExp(`^[ \\t]*(?:[-*] )?(?:\\*\\*)?${label}[ \\t]*(?:\\*\\*)?:[ \\t]*(?:\\*\\*)?([^\\r\\n]*)`, 'im'));
+  const match = text.match(new RegExp(`^[ \\t]*(?:>[ \\t]*)?(?:[-*] )?(?:\\*\\*)?${label}[ \\t]*(?:\\*\\*)?:[ \\t]*(?:\\*\\*)?([^\\r\\n]*)`, 'im'));
   return match ? match[1].replace(/\*\*/g, '').trim() : '';
 }
 
@@ -170,7 +170,11 @@ function collectStaleness(root, featureNames, memberNames, now, scoreOnly = fals
       const file = `atris/features/${name}/idea.md`;
       const text = readText(path.join(root, file));
       const date = field(text, 'Last Updated') || field(text, 'Created');
-      const timestamp = date ? Date.parse(date) : NaN;
+      const written = date ? Date.parse(date) : NaN;
+      // Real activity counts: the newer of the written date and the newest file in the folder.
+      const newest = newestLog(path.join(root, 'atris/features', name));
+      const activity = newest && Number.isFinite(newest.mtime) ? newest.mtime : NaN;
+      const timestamp = Number.isFinite(written) && Number.isFinite(activity) ? Math.max(written, activity) : (Number.isFinite(written) ? written : activity);
       const age = Number.isFinite(timestamp) ? (now - timestamp) / DAY : null;
       const status = field(text, 'Status');
       const exempt = /complete|shipped|live|archived|parked|retired|superseded/i.test(status);
