@@ -34,14 +34,15 @@ test('compact TODO keeps lanes, owners, tags, approval detail and eight complete
   for (const [section, count] of [['Backlog', 1], ['In Progress', 1], ['Review', 1], ['Blocked', 1], ['Completed', 8]]) {
     const parsed = parseSection(markdown, section);
     assert.equal(parsed.length, count, section);
-    assert.equal(parsed[0].tag, 'endgame');
+    assert.equal(parsed[0].tag, ['Backlog', 'Blocked'].includes(section) ? 'endgame' : null);
     assert.match(parsed[0].title, /^Task \d+ · exact title$/);
     assert.equal(parsed[0].verify, null, 'previews cannot be executed as commands');
-    assert.equal(parsed[0].verify_preview, rows()[0].metadata.verify.slice(0, 60));
+    assert.equal(parsed[0].verify_preview || null, ['In Progress', 'Blocked'].includes(section)
+      ? rows()[0].metadata.verify.slice(0, section === 'Blocked' ? 60 : 40) : null);
   }
   assert.equal(parseSection(markdown, 'In Progress')[0].claimed, 'builder');
   assert.equal(parseSection(markdown, 'Review')[0].claimed, 'architect');
-  assert.equal((markdown.match(/Done looks like:/g) || []).length, 2);
+  assert.equal((markdown.match(/Done looks like:/g) || []).length, 1);
   assert.doesNotMatch(markdown, /Why it matters:|Technical details:|Approve or change:|Claimed by:/);
   assert.match(markdown, /2 older completed tasks archived/);
 });
@@ -50,7 +51,7 @@ test('missing owners and verification commands stay compact and full mode preser
   const row = { id: 'a', title: 'Read the guide', status: 'open', metadata: {} };
   setEnv(t, 'ATRIS_TODO_RENDER', 'compact');
   const compact = renderTodoMarkdown([row]);
-  assert.match(compact, /Read the guide · unassigned\n/);
+  assert.match(compact, /Read the guide\n/);
   assert.doesNotMatch(compact, /verify:/);
   assert.equal(parseSection(compact, 'Backlog')[0].claimed, null);
   process.env.ATRIS_TODO_RENDER = 'full';
@@ -107,4 +108,23 @@ test('compact boards resolve full commands from real task state without the data
     assert.deepEqual(command, { cmd: ${JSON.stringify(verify)}, explicit: true });
   `], { encoding: 'utf8', timeout: 15000, env: { ...process.env, ATRIS_TASKS_DB: dbPath, ATRIS_TASK_DB: '0' } });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
+});
+
+test('compact lane limits shorten display text without changing task data', t => {
+  setEnv(t, 'ATRIS_TODO_RENDER', 'compact');
+  const tasks = rows().map(row => ({ ...row, title: 'x'.repeat(200),
+    metadata: { ...row.metadata, done_looks_like: 'y'.repeat(240) } }));
+  const before = JSON.stringify(tasks);
+  const markdown = renderTodoMarkdown(tasks);
+  for (const section of ['Backlog', 'In Progress', 'Review', 'Completed']) {
+    const task = parseSection(markdown, section)[0];
+    const limit = section === 'Completed' ? 100 : 140;
+    assert.equal(task.title, 'x'.repeat(limit - 1) + '…');
+  }
+  assert.match(markdown, new RegExp('  \\*\\*Done looks like:\\*\\* ' + 'y'.repeat(159) + '…\\n'));
+  assert.doesNotMatch(markdown.split('## In Progress')[0], /architect|verify:/);
+  assert.equal(JSON.stringify(tasks), before);
+  process.env.ATRIS_TODO_RENDER = 'full';
+  assert.ok(renderTodoMarkdown(tasks).includes('x'.repeat(200)));
+  assert.ok(renderTodoMarkdown(tasks).includes('y'.repeat(240)));
 });

@@ -404,3 +404,26 @@ for (const folder of ['_archive', '_templates']) {
     assert.deepEqual(payload.near_duplicates, []);
   });
 }
+
+test('large document health JSON drains completely through a pipe', t => {
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  for (let i = 0; i < 40; i++) {
+    write(root, `atris/team/member-${i}/MEMBER.md`, '# Active member\n');
+  }
+  const questions = Array.from({ length: 400 }, (_, i) => ({
+    q: `Where is the documented workflow for member ${i % 40} and responsibility ${i}?`,
+    expect: `atris/team/member-${i % 40}/MEMBER.md`,
+  }));
+  write(root, 'atris/doc-health/questions.jsonl', questions.map(q => JSON.stringify(q)).join('\n'));
+  const result = spawnSync(process.execPath, [cli, 'doc-health', '--json'], {
+    cwd: root, encoding: 'utf8', stdio: 'pipe', maxBuffer: 10 * 1024 * 1024, timeout: 15000,
+    env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.stdout.length > 70000, `expected large JSON, got ${result.stdout.length} chars`);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.staleness.members.total, 40);
+  assert.equal(payload.lookup_hops.questions.length, 400);
+});

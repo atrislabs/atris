@@ -131,7 +131,8 @@ test('rendered summaries cannot replace the dispatched raw task handoff', () => 
     metadata: { assigned_to: 'mission-lead', what_changes: 'Edit lib/runner-command.js with --check' },
   };
   const rendered = renderTodoMarkdown([row]);
-  assert.match(rendered, / · mission-lead/);
+  assert.match(rendered, /Keep the runner precise \[capture\]\n/);
+  assert.doesNotMatch(rendered, /mission-lead/);
   assert.doesNotMatch(rendered, /lib\/runner-command\.js/);
   const prompt = executorAgentPrompt({ filteredTasks: rendered, taskId: row.id });
   const load = `atris task show ${row.id} --json`;

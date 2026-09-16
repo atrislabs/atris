@@ -2709,12 +2709,12 @@ if (command === 'guide') {
     });
 } else if (command === 'doctor') {
   Promise.resolve(require('../commands/doctor').doctorCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+    .then((code) => { process.exitCode = typeof code === 'number' ? code : 0; })
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exitCode = 1; });
 } else if (command === 'doc-health') {
   Promise.resolve(require('../commands/doc-health').docHealthCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
-    .catch((err) => { console.error(err.message || err); process.exit(1); });
+    .then((code) => { process.exitCode = typeof code === 'number' ? code : 0; })
+    .catch((err) => { console.error(err.message || err); process.exitCode = 1; });
 } else if (command === 'verify') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {

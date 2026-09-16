@@ -7522,7 +7522,7 @@ test('task render drops stale generated markdown rows for DB-backed tasks', () =
     assert.match(generated, /## Backlog\n\n\(Empty\)/);
     assert.doesNotMatch(generated, /Legacy migration row/);
     assert.equal((generated.match(new RegExp(`\\*\\*\\[${ref}\\]\\*\\* Move review work forward`, 'g')) || []).length, 1);
-    assert.match(generated, new RegExp(`## Review\\n\\n- \\*\\*\\[${ref}\\]\\*\\* Move review work forward \\[task-plane\\]`));
+    assert.match(generated, new RegExp(`## Review\\n\\n- \\*\\*\\[${ref}\\]\\*\\* Move review work forward ·`));
     assert.match(generated, /\*\*Done looks like:\*\*/);
   } finally {
     cleanupTempDir(dir);
