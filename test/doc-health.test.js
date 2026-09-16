@@ -427,3 +427,15 @@ test('large document health JSON drains completely through a pipe', t => {
   assert.equal(payload.staleness.members.total, 40);
   assert.equal(payload.lookup_hops.questions.length, 400);
 });
+
+test('underscore folders under team and features are scaffolding, not members or work', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-health-underscore-'));
+  write(root, 'atris/MAP.md', '| Task | Path | Notes |\n|---|---|---|\n');
+  write(root, 'atris/team/_template/MEMBER.md', '---\nname: _template\n---\n');
+  write(root, 'atris/team/alice/MEMBER.md', '---\nname: alice\n---\n');
+  write(root, 'atris/features/_drafts/idea.md', 'Created: 2000-01-01\nStatus: active\n');
+  write(root, 'atris/features/real/idea.md', 'Created: 2000-01-01\nStatus: complete\n');
+  const json = JSON.parse(run(root, ['--json']).stdout);
+  assert.deepEqual(json.staleness.members.items.map(item => item.name), ['alice']);
+  assert.deepEqual(json.staleness.features.items.map(item => item.name), ['real']);
+});

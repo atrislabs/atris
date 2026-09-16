@@ -12,6 +12,7 @@ const BOOT_FILES = [
   'atris/wiki/index.md', 'atris/skills/atris/SKILL.md',
 ];
 const DAY = 86400000;
+const SCAFFOLD_FOLDERS = new Set(['_archive', '_archived', '_templates', '_template', '_drafts']);
 const STOP_WORDS = new Set('the and for are was were where what which who how does did can could should would this that these those with from into about find have has had there here when why'.split(' '));
 const DEFAULT_QUESTIONS = 'atris/doc-health/questions.jsonl';
 
@@ -252,8 +253,9 @@ function measureDocHealth(root, { questions = DEFAULT_QUESTIONS, now = Date.now(
   const total_chars = files.reduce((sum, file) => sum + file.chars, 0);
   const boot_load = { files, total_chars, approximate_tokens: total_chars / 4, token_estimate: 'chars divided by 4' };
   const mapText = readText(path.join(root, 'atris', 'MAP.md'));
-  const featureNames = folders(root, 'atris/features').filter(name => !['_archive', '_templates'].includes(name));
-  const memberNames = folders(root, 'atris/team');
+  // Exact scaffolding folder names are skipped. A sibling like _archive-active is still real work.
+  const featureNames = folders(root, 'atris/features').filter(name => !SCAFFOLD_FOLDERS.has(name));
+  const memberNames = folders(root, 'atris/team').filter(name => !SCAFFOLD_FOLDERS.has(name));
   const map_coverage = collectMap(root, mapText, featureNames, memberNames);
   const lookup_hops = collectLookups(root, mapText, questions);
   const staleness = collectStaleness(root, featureNames, memberNames, now, scoreOnly);
