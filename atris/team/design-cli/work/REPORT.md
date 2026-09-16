@@ -77,3 +77,39 @@ $ node bin/atris.js design extract https://stripe.com
 ```
 
 Cache hit, so it billed 2 credits instead of 10.
+
+## Review fixes
+
+- `atris mcp` forwards SIGTERM and SIGINT to the server child and exits with
+  the child's code, so a killed parent can no longer orphan the server.
+- MCP polling tolerates three consecutive failures, matching the CLI path.
+  The final tool error names the job id and the poll path so the caller can
+  recover, and an empty POST body now fails with a plain message instead of
+  a TypeError.
+- Key resolution order corrected to `ATRIS_API_KEY`, then the `atris login`
+  token, then `~/.atris/design-api-key`. The no-key hint now says to set
+  `ATRIS_API_KEY` or run `atris login`, with the key file as optional.
+  `docs/MCP.md` matches.
+- `--sections` is sent on the POST body as well as the poll url, so the
+  filter also applies when the POST returns a completed job.
+- Tests now cover 401 and 402 message passthrough, the poll timeout (via
+  `ATRIS_DESIGN_TIMEOUT_MS`), a failed job, a `tools/call` round trip over
+  stdio with HTTP mocked, transient poll failure recovery, and the error
+  text naming the job id and poll path. The stdio test now rejects any
+  stdout line that is not valid JSON-RPC.
+
+Verify: `node --test test/design.test.js test/mcp.test.js`
+
+```
+ℹ tests 15
+ℹ pass 15
+ℹ fail 0
+```
+
+Verify: `npm run test:fast`
+
+```
+ℹ tests 1717
+ℹ pass 1717
+ℹ fail 0
+```

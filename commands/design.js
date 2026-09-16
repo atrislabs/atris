@@ -8,7 +8,8 @@
  *   atris design search "<words>" [--limit n] [--json]
  *
  * Auth: developer key as `Authorization: Bearer atris_...`, resolved by
- * lib/design-api.js (ATRIS_API_KEY, then ~/.atris/design-api-key, then login).
+ * lib/design-api.js (ATRIS_API_KEY, then the atris login token, then
+ * ~/.atris/design-api-key).
  */
 
 const {
@@ -19,7 +20,7 @@ const {
   creditLine,
 } = require('../lib/design-api');
 
-const NO_KEY = 'no api key found. set ATRIS_API_KEY or run: atris api-key create';
+const NO_KEY = 'no api key found. set ATRIS_API_KEY or run: atris login (or save a key in ~/.atris/design-api-key)';
 
 function showDesignHelp() {
   console.log('usage: atris design extract <url> [--json] [--sections colors,typography]');
@@ -185,7 +186,9 @@ async function designExtract(args, ctx) {
   if (!url) { ctx.err('usage: atris design extract <url> [--json] [--sections colors,typography]'); return 1; }
   const target = normalizeUrl(url);
 
-  const first = await ctx.request('/design/extractions', { method: 'POST', body: { url: target }, key: ctx.key });
+  const body = { url: target };
+  if (sections.value) body.sections = sections.value;
+  const first = await ctx.request('/design/extractions', { method: 'POST', body, key: ctx.key });
   if (!first.ok) {
     ctx.err(`design extract failed (${first.status}): ${first.error}`);
     return 1;
@@ -329,7 +332,9 @@ async function run(args = [], deps = {}) {
     pollMs: deps.pollMs != null
       ? deps.pollMs
       : Number(process.env.ATRIS_DESIGN_POLL_MS) || undefined,
-    maxWaitMs: deps.maxWaitMs != null ? deps.maxWaitMs : 3 * 60 * 1000,
+    maxWaitMs: deps.maxWaitMs != null
+      ? deps.maxWaitMs
+      : Number(process.env.ATRIS_DESIGN_TIMEOUT_MS) || 3 * 60 * 1000,
   };
 
   if (!['extract', 'check', 'search'].includes(sub)) {

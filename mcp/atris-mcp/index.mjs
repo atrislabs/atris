@@ -2,7 +2,7 @@
 // atris mcp, a stdio Model Context Protocol server exposing the design API.
 // Tools: design_extract, design_check, design_search.
 // Auth resolves the same way as the CLI: ATRIS_API_KEY, then
-// ~/.atris/design-api-key, then the logged-in atris token.
+// the logged-in atris token, then ~/.atris/design-api-key.
 
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -80,11 +80,31 @@ async function callApi(pathname, options, key) {
 }
 
 async function runJob(first, pollPath, key) {
-  if (terminal(first) || !first.id) return first;
-  const polled = await pollDesignJob(() => callApi(pollPath, {}, key));
-  if (polled.timedOut) throw new Error(`still running after 3 minutes. job id: ${first.id}`);
-  const job = polled.job || first;
-  if (job.status !== 'completed') throw new Error(`job did not finish: ${job.error || job.status || 'unknown'}`);
+  if (!first || typeof first !== 'object') {
+    throw new Error('the design api returned an empty response');
+  }
+  let job = first;
+  if (!terminal(job) && job.id) {
+    let failures = 0;
+    const polled = await pollDesignJob(async () => {
+      try {
+        const out = await callApi(pollPath, {}, key);
+        failures = 0;
+        return out;
+      } catch (error) {
+        failures += 1;
+        if (failures >= 3) return { status: 'failed', error: (error && error.message) || String(error) };
+        return { status: 'polling' };
+      }
+    });
+    if (polled.timedOut) {
+      throw new Error(`still running after 3 minutes. job id: ${job.id}, poll: ${pollPath}`);
+    }
+    job = polled.job || job;
+  }
+  if (job.status !== 'completed') {
+    throw new Error(`job ${job.id || 'unknown'} did not finish: ${job.error || job.status || 'unknown'} (poll: ${pollPath})`);
+  }
   return job;
 }
 
@@ -126,7 +146,7 @@ export function createServer() {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const key = resolveDesignKey();
     if (!key) {
-      return fail('no api key found. set ATRIS_API_KEY or run: atris api-key create');
+      return fail('no api key found. set ATRIS_API_KEY or run: atris login (or save a key in ~/.atris/design-api-key)');
     }
     try {
       return await handleTool(request.params.name, request.params.arguments || {}, key);

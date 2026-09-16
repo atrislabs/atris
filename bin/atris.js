@@ -2038,8 +2038,11 @@ if (command === 'guide') {
   {
     const serverPath = require('path').join(__dirname, '..', 'mcp', 'atris-mcp', 'index.mjs');
     const child = require('child_process').spawn(process.execPath, [serverPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+    for (const signal of ['SIGTERM', 'SIGINT']) {
+      process.on(signal, () => { try { child.kill(signal); } catch { /* child already gone */ } });
+    }
     child.on('error', (err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
-    child.on('exit', (code) => process.exit(code || 0));
+    child.on('exit', (code) => process.exit(code == null ? 1 : code));
   }
 } else if (command === 'improve') {
   // Improve: one paid RL tick via POST /api/improve (deducts credits), local autopilot fallback.

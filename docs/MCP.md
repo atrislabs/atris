@@ -14,7 +14,7 @@ Each tool returns the JSON result plus `credits_charged` and `balance_remaining_
 
 ## Auth
 
-The server resolves the key the same way the CLI does: `ATRIS_API_KEY` env var, then `~/.atris/design-api-key`, then the logged-in `atris login` token. Get a key with `atris api-key create`.
+The server resolves the key the same way the CLI does: `ATRIS_API_KEY` env var, then the logged-in `atris login` token, then `~/.atris/design-api-key`. Nothing writes the key file for you; it is an optional place to save a key by hand on machines where env vars and login are awkward. To get set up, set `ATRIS_API_KEY` or run `atris login`.
 
 ## Claude Desktop
 

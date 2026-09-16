@@ -195,11 +195,12 @@ test('atris design extract --json prints the raw job', async () => {
   }
 });
 
-test('atris design extract sends sections on the poll url', async () => {
+test('atris design extract sends sections on the post and the poll url', async () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
   const mock = await startHttpMock((request) => {
     if (request.url === '/api/design/extractions' && request.method === 'POST') {
+      assert.deepEqual(request.body, { url: 'https://stripe.com', sections: 'colors,typography' });
       return { status: 202, body: { id: 'job-7', status: 'accepted' } };
     }
     if (request.url.startsWith('/api/design/extractions/job-7')) {
@@ -314,6 +315,109 @@ test('atris design search posts the query with limit and prints results', async 
   }
 });
 
+test('atris design extract passes the api 401 message through', async () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  const mock = await startHttpMock((request) => {
+    if (request.url === '/api/design/extractions' && request.method === 'POST') {
+      return { status: 401, body: { detail: 'invalid api key' } };
+    }
+    return { status: 404, body: { error: `unexpected ${request.url}` } };
+  });
+
+  try {
+    const res = await runCliAsync(['design', 'extract', 'https://stripe.com'], {
+      cwd: dir,
+      env: { HOME: home, ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api` },
+    });
+    assert.equal(res.status, 1, `${res.stdout}\n${res.stderr}`);
+    assert.match(res.stderr, /design extract failed \(401\): invalid api key/);
+  } finally {
+    await closeServer(mock.server);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('atris design search passes the api 402 message through', async () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  const mock = await startHttpMock((request) => {
+    if (request.url === '/api/design/search' && request.method === 'POST') {
+      return { status: 402, body: { detail: 'out of credits. top up at atris.ai' } };
+    }
+    return { status: 404, body: { error: `unexpected ${request.url}` } };
+  });
+
+  try {
+    const res = await runCliAsync(['design', 'search', 'developer tools'], {
+      cwd: dir,
+      env: { HOME: home, ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api` },
+    });
+    assert.equal(res.status, 1, `${res.stdout}\n${res.stderr}`);
+    assert.match(res.stderr, /design search failed \(402\): out of credits\. top up at atris\.ai/);
+  } finally {
+    await closeServer(mock.server);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('atris design extract gives up after the poll window and keeps the job id', async () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  const mock = await startHttpMock((request) => {
+    if (request.url === '/api/design/extractions' && request.method === 'POST') {
+      return { status: 202, body: { id: 'job-4', status: 'accepted' } };
+    }
+    if (request.url === '/api/design/extractions/job-4') {
+      return { status: 200, body: { id: 'job-4', status: 'running' } };
+    }
+    return { status: 404, body: { error: `unexpected ${request.url}` } };
+  });
+
+  try {
+    const res = await runCliAsync(['design', 'extract', 'https://stripe.com'], {
+      cwd: dir,
+      env: {
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api`,
+        ATRIS_DESIGN_TIMEOUT_MS: '900',
+        ATRIS_DESIGN_POLL_MS: '50',
+      },
+    });
+    assert.equal(res.status, 1, `${res.stdout}\n${res.stderr}`);
+    assert.match(res.stderr, /still running after \d+s\. job id: job-4/);
+  } finally {
+    await closeServer(mock.server);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('atris design extract reports a failed job', async () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  const mock = await startHttpMock((request) => {
+    if (request.url === '/api/design/extractions' && request.method === 'POST') {
+      return { status: 202, body: { id: 'job-5', status: 'accepted' } };
+    }
+    if (request.url === '/api/design/extractions/job-5') {
+      return { status: 200, body: { id: 'job-5', status: 'failed', error: 'extractor crashed' } };
+    }
+    return { status: 404, body: { error: `unexpected ${request.url}` } };
+  });
+
+  try {
+    const res = await runCliAsync(['design', 'extract', 'https://stripe.com'], {
+      cwd: dir,
+      env: { HOME: home, ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api` },
+    });
+    assert.equal(res.status, 1, `${res.stdout}\n${res.stderr}`);
+    assert.match(res.stderr, /extraction did not finish: extractor crashed/);
+  } finally {
+    await closeServer(mock.server);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('atris design extract with no key prints one plain sentence', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');
@@ -324,7 +428,8 @@ test('atris design extract with no key prints one plain sentence', () => {
     });
     assert.equal(res.status, 1, res.stderr);
     const text = `${res.stdout}\n${res.stderr}`;
-    assert.match(text, /no api key found\. set ATRIS_API_KEY or run: atris api-key create/);
+    assert.match(text, /no api key found\. set ATRIS_API_KEY or run: atris login/);
+    assert.match(text, /~\/\.atris\/design-api-key/);
     assert.doesNotMatch(text, /test-design-key/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
