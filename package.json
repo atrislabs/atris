@@ -5,7 +5,8 @@
   "main": "bin/atris.js",
   "bin": {
     "atris": "bin/atris",
-    "ax": "ax"
+    "ax": "ax",
+    "atris-mcp": "mcp/atris-mcp/index.mjs"
   },
   "files": [
     "ax",
@@ -19,6 +20,7 @@
     "scripts/det/",
     "utils/",
     "lib/",
+    "mcp/",
     "templates/",
     "README.md",
     "AGENTS.md",
@@ -99,5 +101,8 @@
   "bugs": {
     "url": "https://github.com/atrislabs/atris/issues"
   },
-  "homepage": "https://github.com/atrislabs/atris#readme"
+  "homepage": "https://github.com/atrislabs/atris#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0"
+  }
 }
