@@ -1351,6 +1351,80 @@ test('member goal-from-mission stops when active mission is blocked', () => {
   }
 });
 
+test('member goal-from-mission stops when active mission is complete and --force cannot bypass', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
+    assert.equal(runCli([
+      'mission', 'start', '--no-verify', 'Make Missions change the world with self-generated goals',
+      '--owner', 'mission-lead',
+      '--json',
+    ], { cwd: dir }).status, 0);
+
+    const nowPath = path.join(dir, 'atris', 'team', 'mission-lead', 'now.md');
+    const nowText = fs.readFileSync(nowPath, 'utf8');
+    fs.writeFileSync(nowPath, nowText.replace(/^- status: .+$/m, '- status: complete'), 'utf8');
+
+    for (const extra of [[], ['--force']]) {
+      const res = runCli(['member', 'goal-from-mission', 'mission-lead', ...extra, '--json'], { cwd: dir });
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+      const payload = JSON.parse(res.stdout);
+      assert.equal(payload.action, 'needs_user');
+      assert.equal(payload.needs_user, true);
+      assert.match(payload.ask, /complete/i);
+      assert.deepEqual(payload.stale_goals, []);
+    }
+
+    const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
+    if (fs.existsSync(goalsPath)) {
+      const state = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+      assert.equal(state.goals.length, 0);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member goal-from-mission names stale goals when the mission turns stopped', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
+    assert.equal(runCli([
+      'mission', 'start', '--no-verify', 'Make Missions change the world with self-generated goals',
+      '--owner', 'mission-lead',
+      '--json',
+    ], { cwd: dir }).status, 0);
+
+    const created = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const createdGoal = JSON.parse(created.stdout).goal;
+    assert.equal(createdGoal.status, 'active');
+
+    const nowPath = path.join(dir, 'atris', 'team', 'mission-lead', 'now.md');
+    const nowText = fs.readFileSync(nowPath, 'utf8');
+    fs.writeFileSync(nowPath, nowText.replace(/^- status: .+$/m, '- status: stopped'), 'utf8');
+
+    const res = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.action, 'needs_user');
+    assert.equal(payload.needs_user, true);
+    assert.match(payload.ask, /stopped/i);
+    assert.match(payload.ask, new RegExp(createdGoal.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').slice(0, 40)));
+    assert.equal(payload.stale_goals.length, 1);
+    assert.equal(payload.stale_goals[0].id, createdGoal.id);
+
+    const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
+    const state = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    assert.equal(state.goals.length, 1, 'guard must not mutate or drop the stale goal, the human retires it');
+    assert.equal(state.goals[0].status, 'active');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member goal-from-mission preserves completed same-day proof history', () => {
   const dir = makeTempDir();
   try {
