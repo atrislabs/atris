@@ -76,6 +76,9 @@ function fail(message) {
 async function callApi(pathname, options, key) {
   const res = await designRequest(pathname, { ...options, key });
   if (!res.ok) throw new Error(`http ${res.status}: ${res.error || 'request failed'}`);
+  if (!res.data || typeof res.data !== 'object') {
+    throw new Error('the design api returned an empty response');
+  }
   return res.data;
 }
 
@@ -84,6 +87,9 @@ async function runJob(first, pollPath, key) {
     throw new Error('the design api returned an empty response');
   }
   let job = first;
+  if (!terminal(job) && !job.id) {
+    throw new Error('the design api returned no job id');
+  }
   if (!terminal(job) && job.id) {
     let failures = 0;
     const polled = await pollDesignJob(async () => {
@@ -93,7 +99,7 @@ async function runJob(first, pollPath, key) {
         return out;
       } catch (error) {
         failures += 1;
-        if (failures >= 3) return { status: 'failed', error: (error && error.message) || String(error) };
+        if (failures >= 3) return { status: 'failed', id: job.id, error: (error && error.message) || String(error) };
         return { status: 'polling' };
       }
     });

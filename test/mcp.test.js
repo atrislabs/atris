@@ -35,7 +35,7 @@ function startHttpMock(handler) {
         .then((response) => {
           res.statusCode = response?.status || 200;
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify(response?.body || {}));
+          res.end(response?.body === null ? '' : JSON.stringify(response?.body || {}));
         });
     });
   });
@@ -250,6 +250,34 @@ test('atris mcp tools/call error names the job id and poll path', async () => {
     const text = call.result.content[0].text;
     assert.match(text, /job-8/);
     assert.match(text, /\/design\/extractions\/job-8/);
+  } finally {
+    await closeServer(mock.server);
+  }
+});
+
+test('atris mcp tools/call gives a plain message on an empty api body', async () => {
+  const mock = await startHttpMock((request) => {
+    if (request.url === '/api/design/extractions' && request.method === 'POST') {
+      return { status: 200, body: null };
+    }
+    return { status: 404, body: { error: `unexpected ${request.url}` } };
+  });
+
+  try {
+    const { messages, stderr } = await mcpSession(
+      [{
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'tools/call',
+        params: { name: 'design_extract', arguments: { url: 'https://stripe.com' } },
+      }],
+      { closeAfterId: 6, extraEnv: { ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api` }, timeout: 30000 },
+    );
+    const call = messages.find((m) => m.id === 6);
+    assert.ok(call && call.result, `no tools/call response. stderr: ${stderr}`);
+    assert.equal(call.result.isError, true);
+    assert.match(call.result.content[0].text, /empty response/);
+    assert.doesNotMatch(call.result.content[0].text, /Cannot read properties/);
   } finally {
     await closeServer(mock.server);
   }
