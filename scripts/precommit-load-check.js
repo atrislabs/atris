@@ -77,8 +77,9 @@ function main() {
       const abs = path.join(stage, file);
       if (!fs.existsSync(abs)) continue;
       // bin/ and scripts/ are entrypoints that execute on require; check their
-      // imports statically but do not load them.
-      const entrypoint = file.startsWith('bin/') || file.startsWith('scripts/');
+      // imports statically but do not load them. ES modules (.mjs) cannot be
+      // required either, so they get the same static treatment.
+      const entrypoint = file.startsWith('bin/') || file.startsWith('scripts/') || file.endsWith('.mjs');
       if (!entrypoint) {
         try {
           require(abs);
