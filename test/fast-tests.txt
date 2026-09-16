@@ -51,6 +51,7 @@ test/deck-layout.test.js
 test/deck-review.test.js
 test/deck-schema.test.js
 test/deck-video.test.js
+test/design.test.js
 test/dogfood-hours-lingo.test.js
 test/engine-dispatch.test.js
 test/escape-regexp.test.js
@@ -74,6 +75,7 @@ test/member-fleet.test.js
 test/member-frontmatter.test.js
 test/member-history.test.js
 test/memory-view.test.js
+test/mcp.test.js
 test/mission-atris2-runner.test.js
 test/mission-budget-tier.test.js
 test/mission-dedup.test.js
