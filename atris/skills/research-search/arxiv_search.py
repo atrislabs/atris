@@ -15,8 +15,8 @@ import argparse
 import json
 import sys
 import urllib.parse
-import urllib.request
-import xml.etree.ElementTree as ET
+import requests
+import defusedxml.ElementTree as ET
 from datetime import datetime
 
 
@@ -60,9 +60,9 @@ def search_arxiv(
     url = f"{ARXIV_API}?{urllib.parse.urlencode(params)}"
 
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "AtrisResearch/1.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            xml_data = resp.read().decode("utf-8")
+        resp = requests.get(url, headers={"User-Agent": "AtrisResearch/1.0"}, timeout=30)
+        resp.raise_for_status()
+        xml_data = resp.text
     except Exception as e:
         print(json.dumps({"error": str(e), "papers": []}))
         sys.exit(1)
