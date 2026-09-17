@@ -10,6 +10,7 @@ const { defaultObjectiveRunner } = require('../lib/default-runner');
 const { readJson, writeJson } = require('../lib/json-file');
 const { hasFlag, readFlag, readNumberFlag } = require('../lib/arg-parser');
 const { ensureMemberBundle, memberBundlePresent } = require('../lib/member-scaffold');
+const { memberProcessPrompt, MEMBER_PROCESS_PATH } = require('../lib/member-context');
 
 function findWorkspaceBusinessId(startDir = process.cwd()) {
   let dir = path.resolve(startDir);
@@ -4216,6 +4217,7 @@ function memberActivate(name) {
 
   const content = fs.readFileSync(activePath, 'utf8');
   const fm = parseFrontmatter(content) || {};
+  const sharedProcess = memberProcessPrompt(process.cwd());
 
   console.log('');
   console.log(`Activating: ${fm.name || name} (${fm.role || 'no role'})`);
@@ -4298,7 +4300,8 @@ function memberActivate(name) {
 
   console.log('');
   console.log(`Member "${fm.name || name}" activated.`);
-  console.log(`Tell your agent: "You are the ${fm.role || name}. Read team/${name}/MEMBER.md."`);
+  const identityPath = path.relative(process.cwd(), activePath);
+  console.log(`Tell your agent: "You are the ${fm.role || name}. Read ${sharedProcess ? `${MEMBER_PROCESS_PATH}, then ` : ''}${identityPath}. Stay inside this member's permissions."`);
 }
 
 // --- UPGRADE subcommand ---
@@ -4977,7 +4980,8 @@ function fallbackProposalForGoal(goal, context = {}) {
   };
 }
 
-function proposalPromptForGoal(goal, context = {}) {
+function proposalPromptForGoal(goal, context = {}, cwd = process.cwd()) {
+  const sharedProcess = memberProcessPrompt(cwd);
   const files = (context?.evidence?.goal_files?.files || [])
     .filter((file) => file.exists && file.excerpt)
     .slice(0, 4)
@@ -5005,6 +5009,7 @@ function proposalPromptForGoal(goal, context = {}) {
     },
   };
   return [
+    ...(sharedProcess ? [sharedProcess, ''] : []),
     'You generate the next bounded Atris member experiment.',
     'Read the JSON context and return only JSON with keys: title, proof_target, next_step, verifier, stop_rule.',
     'The next_step must be adaptive to the goal/evidence, concrete, receipt-backed, and safe for one bounded tick.',
@@ -5058,10 +5063,11 @@ async function callAtris2ProposalLlm(goal, context = {}) {
   const injected = injectedLlmProposal();
   if (injected) return injected;
   if (process.env.ATRIS_MEMBER_PROPOSAL_LLM !== '1') return null;
+  const prompt = proposalPromptForGoal(goal, context, process.cwd());
   try {
     const { postTurn } = require('../ax');
     const output = { isTTY: false, write() { return true; } };
-    const result = await postTurn(proposalPromptForGoal(goal, context), {
+    const result = await postTurn(prompt, {
       mode: process.env.ATRIS_MEMBER_PROPOSAL_LLM_MODE || 'fast',
       route: 'local',
       cwd: process.cwd(),
@@ -9232,6 +9238,7 @@ async function memberCommand(subcommand, ...args) {
 }
 
 module.exports = {
+  proposalPromptForGoal,
   memberCommand,
   findAllMembers,
   findWorkspaceBusinessId,
