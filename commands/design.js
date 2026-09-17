@@ -359,8 +359,4 @@ async function run(args = [], deps = {}) {
 
 module.exports = {
   run,
-  showDesignHelp,
-  extractionCard,
-  adherenceCard,
-  searchCard,
 };

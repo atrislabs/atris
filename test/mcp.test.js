@@ -61,6 +61,7 @@ function mcpSession(requests, { extraEnv = {}, closeAfterId, timeout = 20000 } =
   return new Promise((resolve, reject) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mcp-'));
     const child = spawn(process.execPath, [cliPath, 'mcp'], {
+      cwd: home,
       env: {
         ...process.env,
         HOME: home,
