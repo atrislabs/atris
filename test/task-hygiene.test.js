@@ -170,3 +170,66 @@ test('task reaper closes blocker rows for complete and stopped missions only', (
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('task reap-stale-claims previews stale atris claims, --apply releases them, person-held rows stay claimed', () => {
+  const root = makeWorkspace();
+  const dbPath = path.join(root, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_PROOF_ONLY: '0', ATRIS_AGENT_ID: 'reaper-test' };
+  try {
+    const db = taskStore.open(dbPath);
+    const mkClaimed = (title, claimedBy, idleDays) => {
+      const id = taskStore.addTask(db, { title, workspaceRoot: root }).id;
+      const staleTs = Date.now() - idleDays * 86400000;
+      db.prepare(`UPDATE tasks SET status = 'claimed', claimed_by = ?, claimed_at = ?, updated_at = ? WHERE id = ?`)
+        .run(claimedBy, staleTs, staleTs, id);
+      return id;
+    };
+    const staleAtris = mkClaimed('dead atris loop claim', 'atris', 20);
+    const freshAtris = mkClaimed('fresh atris claim', 'atris', 1);
+    const stalePerson = mkClaimed('person held stale claim', 'keshavrao', 30);
+    taskStore.close();
+
+    const dry = runCli(['task', 'reap-stale-claims', '--older-than', '14', '--json'], { cwd: root, env });
+    assert.equal(dry.status, 0, dry.stderr);
+    const dryPayload = JSON.parse(dry.stdout);
+    assert.equal(dryPayload.dry_run, true);
+    assert.equal(dryPayload.count, 1);
+    assert.equal(dryPayload.sample[0].id, staleAtris);
+    assert.equal(dryPayload.skipped_person_count, 1);
+
+    let check = taskStore.open(dbPath);
+    assert.equal(taskStore.getTask(check, staleAtris).status, 'claimed');
+    taskStore.close();
+
+    const apply = runCli(['task', 'reap-stale-claims', '--older-than', '14', '--apply', '--as', 'reaper-test', '--json'], { cwd: root, env });
+    assert.equal(apply.status, 0, apply.stderr);
+    const applyPayload = JSON.parse(apply.stdout);
+    assert.equal(applyPayload.dry_run, false);
+    assert.equal(applyPayload.count, 1);
+    assert.deepEqual(applyPayload.ids, [staleAtris]);
+
+    check = taskStore.open(dbPath);
+    const reaped = taskStore.getTask(check, staleAtris);
+    assert.equal(reaped.status, 'open');
+    assert.equal(reaped.claimed_by, null);
+    assert.equal(taskStore.getTask(check, freshAtris).status, 'claimed');
+    assert.equal(taskStore.getTask(check, stalePerson).status, 'claimed');
+    const events = taskStore.listTaskEvents(check, { taskId: staleAtris });
+    assert.ok(events.some(e => e.event_type === 'claim_reaped'));
+    assert.ok(events.some(e => e.event_type === 'message' && /stale claim reaped: held by atris/.test((e.payload && e.payload.content) || '')));
+    taskStore.close();
+
+    const applyPersons = runCli(['task', 'reap-stale-claims', '--older-than', '14', '--apply', '--include-persons', '--json'], { cwd: root, env });
+    assert.equal(applyPersons.status, 0, applyPersons.stderr);
+    assert.equal(JSON.parse(applyPersons.stdout).count, 1);
+    check = taskStore.open(dbPath);
+    assert.equal(taskStore.getTask(check, stalePerson).status, 'open');
+    taskStore.close();
+
+    const again = runCli(['task', 'reap-stale-claims', '--older-than', '14', '--json'], { cwd: root, env });
+    assert.equal(JSON.parse(again.stdout).count, 0);
+  } finally {
+    taskStore.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
