@@ -3510,6 +3510,61 @@ test('generalist wake solves a restaurant domain without project-specific world 
   }
 });
 
+test('generalist dry-run wake receipt does not name a proof file that was never written', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'generalist'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'generalist', 'MEMBER.md'), [
+      '---',
+      'name: generalist',
+      'role: Cross-Domain Problem Solver',
+      'description: Applies AGI capabilities to any domain',
+      '---',
+      '',
+      '# Generalist',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'generalist', 'MISSION.md'), [
+      '# Mission',
+      '',
+      '## North Star',
+      '',
+      'Prove cross-domain generalization.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'restaurant-domain.md'), [
+      '# Restaurant Operations',
+      '',
+      'A 90-seat neighborhood restaurant has slow seating during Friday dinner.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli([
+      'member', 'wake', 'generalist',
+      '--domain-file', 'restaurant-domain.md',
+      '--domain-name', 'restaurant operations',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'cross_domain_generalize');
+    assert.equal(payload.executed, false);
+    assert.ok(fs.existsSync(payload.receipt_path));
+
+    const receipt = JSON.parse(fs.readFileSync(payload.receipt_path, 'utf8'));
+    assert.equal(receipt.schema, 'atris.generalist_tick.v1');
+    assert.equal(receipt.proof_path, null);
+    assert.equal(receipt.cross_domain_learning.run.proof_path, null);
+    assert.match(receipt.cross_domain_learning.run.receipt_path, /^atris\/runs\/generalist-tick-.+\.json$/);
+
+    const proofsDir = path.join(dir, 'atris', 'team', 'generalist', 'proofs');
+    const writtenProofs = fs.existsSync(proofsDir) ? fs.readdirSync(proofsDir) : [];
+    assert.deepEqual(writtenProofs, []);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('generalist wake scans domain files before existing task evidence', () => {
   const dir = makeTempDir();
   try {

@@ -7143,7 +7143,7 @@ async function runGeneralistWake(name, paths, { execute = false, domainInput = {
     record: domain.ok && proof.status === 'ok',
     libraryBefore: crossDomainLibraryBefore,
     receiptPath,
-    proofPath,
+    proofPath: execute ? proofPath : null,
   });
   proof.learning = {
     library_path: path.relative(root, learning.library_path),
