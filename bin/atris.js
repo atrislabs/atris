@@ -627,6 +627,7 @@ function showHelpAll() {
   console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
   console.log('  caretaker  - Classify open pull requests on origin (scan only; no fix, comment, or merge)');
   console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
+  console.log('  rsi        - Read the Dream-RSI attempt ledger (trees, attempts, policy, dreams)');
   console.log(`  autoland   - Approve the policy once; ${require('../lib/autoland').certifiedWorkLandsPhrase(process.cwd())}, you keep irreversible calls`);
   console.log('  engine     - engine registry, answer validation, dispatch flights, and live progress');
   console.log('  ci         - run github actions jobs locally with runs-on: atris');
@@ -2000,6 +2001,11 @@ if (command === 'guide') {
   // Drive: one self-driving tick, mission doctor -> auto-fix safe findings -> count disengagements.
   Promise.resolve(require('../commands/drive').driveCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'rsi') {
+  // RSI: read the Dream-RSI attempt ledger (trees, attempts, policy, dreams).
+  Promise.resolve(require('../commands/rsi').run(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'orb') {
   Promise.resolve(orbCmd(process.argv.slice(3)))
