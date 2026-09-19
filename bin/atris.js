@@ -120,7 +120,7 @@ const helpRequested = updateCommand === 'help'
 const jsonRequested = process.argv.slice(2).includes('--json');
 const dryRunRequested = updateArgs.includes('--dry-run');
 const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested || jsonRequested);
-if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update'].includes(updateCommand)))) {
+if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp'].includes(updateCommand)))) {
   updateCheckPromise = checkForUpdates()
     .then((updateInfo) => {
       if (updateInfo) {
@@ -628,6 +628,7 @@ function showHelpAll() {
   console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
   console.log('  caretaker  - Classify open pull requests on origin (scan only; no fix, comment, or merge)');
   console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
+  console.log('  rsi        - Read the Dream-RSI attempt ledger (trees, attempts, policy, dreams)');
   console.log(`  autoland   - Approve the policy once; ${require('../lib/autoland').certifiedWorkLandsPhrase(process.cwd())}, you keep irreversible calls`);
   console.log('  engine     - engine registry, answer validation, dispatch flights, and live progress');
   console.log('  ci         - run github actions jobs locally with runs-on: atris');
@@ -715,6 +716,8 @@ function showHelpAll() {
   console.log('  usage      - Show developer API usage');
   console.log('  api-key    - Create, list, rotate, or revoke a developer API key');
   console.log('  topup      - Buy credits and print a Stripe checkout URL');
+  console.log('  design     - Extract a site design system, check brand adherence, search brands');
+  console.log('  mcp        - Run the atris MCP server (stdio) for Claude Desktop and Cursor');
   console.log('');
   console.log('Integrations:');
   console.log('  github    - github cli wrapper (doctor, auth, pr list/create/checks/view)');
@@ -2012,6 +2015,11 @@ if (command === 'guide') {
   Promise.resolve(require('../commands/drive').driveCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'rsi') {
+  // RSI: read the Dream-RSI attempt ledger (trees, attempts, policy, dreams).
+  Promise.resolve(require('../commands/rsi').run(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'orb') {
   Promise.resolve(orbCmd(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
@@ -2039,6 +2047,22 @@ if (command === 'guide') {
   Promise.resolve(require('../commands/aeo').run(process.argv.slice(3)))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'design') {
+  // Design: extract a site's design system, check brand adherence, search brands.
+  Promise.resolve(require('../commands/design').run(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'mcp') {
+  // MCP: stdio Model Context Protocol server exposing the design tools.
+  {
+    const serverPath = require('path').join(__dirname, '..', 'mcp', 'atris-mcp', 'index.mjs');
+    const child = require('child_process').spawn(process.execPath, [serverPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+    for (const signal of ['SIGTERM', 'SIGINT']) {
+      process.on(signal, () => { try { child.kill(signal); } catch { /* child already gone */ } });
+    }
+    child.on('error', (err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+    child.on('exit', (code) => process.exit(code == null ? 1 : code));
+  }
 } else if (command === 'improve') {
   // Improve: one paid RL tick via POST /api/improve (deducts credits), local autopilot fallback.
   Promise.resolve(require('../commands/improve').run(process.argv.slice(3)))

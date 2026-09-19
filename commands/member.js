@@ -10,6 +10,7 @@ const { defaultObjectiveRunner } = require('../lib/default-runner');
 const { readJson, writeJson } = require('../lib/json-file');
 const { hasFlag, readFlag, readNumberFlag } = require('../lib/arg-parser');
 const { ensureMemberBundle, memberBundlePresent } = require('../lib/member-scaffold');
+const { memberProcessPrompt, MEMBER_PROCESS_PATH } = require('../lib/member-context');
 
 function findWorkspaceBusinessId(startDir = process.cwd()) {
   let dir = path.resolve(startDir);
@@ -462,6 +463,7 @@ function missionPurpose(paths) {
 }
 
 const MEMBER_RUN_RUNNABLE_STATUSES = new Set(['planning', 'running', 'ready']);
+const MISSION_TERMINAL_STATUSES = new Set(['complete', 'stopped', 'failed']);
 
 function memberRunMissionMap() {
   try {
@@ -928,12 +930,11 @@ function memberPing(name, ...args) {
     process.exit(2);
   }
   const missionMod = require('./mission');
-  const terminal = new Set(['complete', 'stopped', 'failed']);
   const candidates = [
     ...missionMod.listMissions(process.cwd()),
     ...missionMod.listWorktreeRollupMissions(process.cwd()),
   ]
-    .filter((m) => m && m.owner === name && !terminal.has(m.status))
+    .filter((m) => m && m.owner === name && !MISSION_TERMINAL_STATUSES.has(m.status))
     .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
 
   const taskNote = pingClaimedTaskDialogue(name, text, from);
@@ -4216,6 +4217,7 @@ function memberActivate(name) {
 
   const content = fs.readFileSync(activePath, 'utf8');
   const fm = parseFrontmatter(content) || {};
+  const sharedProcess = memberProcessPrompt(process.cwd());
 
   console.log('');
   console.log(`Activating: ${fm.name || name} (${fm.role || 'no role'})`);
@@ -4298,7 +4300,8 @@ function memberActivate(name) {
 
   console.log('');
   console.log(`Member "${fm.name || name}" activated.`);
-  console.log(`Tell your agent: "You are the ${fm.role || name}. Read team/${name}/MEMBER.md."`);
+  const identityPath = path.relative(process.cwd(), activePath);
+  console.log(`Tell your agent: "You are the ${fm.role || name}. Read ${sharedProcess ? `${MEMBER_PROCESS_PATH}, then ` : ''}${identityPath}. Stay inside this member's permissions."`);
 }
 
 // --- UPGRADE subcommand ---
@@ -4707,6 +4710,49 @@ function memberGoalFromMission(name, ...args) {
     );
     return;
   }
+  if (MISSION_TERMINAL_STATUSES.has(lowerCompact(runtime.status || ''))) {
+    // A finished mission must not mint or re-point an active goal; that recreated the
+    // stale-goal defect class (OBL-1961, OBL-2212, OBL-2232) after every retire. --force
+    // cannot bypass this, it only widens the existing-goal match on a living mission.
+    const staleGoals = state.goals.filter((goal) => (
+      goal.source === 'mission' && goal.status === 'active'
+      && runtime.id && goal.mission_id === runtime.id
+    ));
+    const staleList = staleGoals.map((goal) => goal.title || goal.id).join('; ');
+    const ask = staleGoals.length
+      ? `Mission ${runtime.id || compactSentence(runtimeFocus, 88)} is ${runtime.status}, so its active goal is stale. Retire ${compactSentence(staleList, 140)} by setting its status in goals.json, or start a living mission and run: atris member goal-from-mission ${name} --force`
+      : `Mission ${runtime.id || compactSentence(runtimeFocus, 88)} is ${runtime.status}. Start a living mission, then run: atris member goal-from-mission ${name} --force`;
+    const logPath = appendMemberGoalLog(paths.memberDir, name, 'Member goal-from-mission blocked', {
+      ask,
+      mission_id: runtime.id || '',
+      mission_status: runtime.status || '',
+      stale_goals: staleGoals.map((goal) => goal.id),
+    });
+    printJsonOrText(
+      {
+        ok: true,
+        action: 'needs_user',
+        member: name,
+        needs_user: true,
+        ask,
+        stale_goals: staleGoals,
+        mission: {
+          north_star: purpose.northStar,
+          runtime_id: runtime.id || null,
+          runtime_status: runtime.status || null,
+          runtime_next: runtime.next || null,
+        },
+        mission_file: paths.missionFile,
+        log_path: logPath,
+      },
+      [
+        `Blocked for ${name}: mission ${runtime.id || 'in now.md'} is ${runtime.status}, a finished mission cannot drive an active goal.`,
+        `Ask: ${ask}`,
+      ],
+      asJson,
+    );
+    return;
+  }
   // The title IS the mission focus, no boilerplate prefix; the acceptance list already
   // says "one bounded step" and the why carries the full sentence.
   const title = compactSentence(runtimeFocus, 96);
@@ -4977,7 +5023,8 @@ function fallbackProposalForGoal(goal, context = {}) {
   };
 }
 
-function proposalPromptForGoal(goal, context = {}) {
+function proposalPromptForGoal(goal, context = {}, cwd = process.cwd()) {
+  const sharedProcess = memberProcessPrompt(cwd);
   const files = (context?.evidence?.goal_files?.files || [])
     .filter((file) => file.exists && file.excerpt)
     .slice(0, 4)
@@ -5005,6 +5052,7 @@ function proposalPromptForGoal(goal, context = {}) {
     },
   };
   return [
+    ...(sharedProcess ? [sharedProcess, ''] : []),
     'You generate the next bounded Atris member experiment.',
     'Read the JSON context and return only JSON with keys: title, proof_target, next_step, verifier, stop_rule.',
     'The next_step must be adaptive to the goal/evidence, concrete, receipt-backed, and safe for one bounded tick.',
@@ -5058,10 +5106,11 @@ async function callAtris2ProposalLlm(goal, context = {}) {
   const injected = injectedLlmProposal();
   if (injected) return injected;
   if (process.env.ATRIS_MEMBER_PROPOSAL_LLM !== '1') return null;
+  const prompt = proposalPromptForGoal(goal, context, process.cwd());
   try {
     const { postTurn } = require('../ax');
     const output = { isTTY: false, write() { return true; } };
-    const result = await postTurn(proposalPromptForGoal(goal, context), {
+    const result = await postTurn(prompt, {
       mode: process.env.ATRIS_MEMBER_PROPOSAL_LLM_MODE || 'fast',
       route: 'local',
       cwd: process.cwd(),
@@ -5761,6 +5810,7 @@ function emptyObjectiveGeneratorProposal(extra = {}) {
     updated_at: stampIso(),
     status: extra.status || 'empty',
     advisory_only: true,
+    auto_task_eligible: extra.auto_task_eligible !== false,
     world_model_used: false,
     llm_source: extra.llm_source || null,
     llm_error: extra.llm_error || null,
@@ -5893,8 +5943,8 @@ function fallbackObjectiveGeneratorProposal(graph, recommendations, transferPatt
     ),
     suggested_member: member,
     suggested_patterns: objectivePatternMatches(transferPatterns, proposedObjective),
-  }, { status: 'ok', llm_error: 'llm_not_configured', world_model_used: true });
-  return proposal || emptyObjectiveGeneratorProposal({ status: 'llm_not_configured', llm_error: 'llm_not_configured' });
+  }, { status: 'ok', llm_error: 'llm_not_configured', world_model_used: true, auto_task_eligible: false });
+  return proposal || emptyObjectiveGeneratorProposal({ status: 'llm_not_configured', llm_error: 'llm_not_configured', auto_task_eligible: false });
 }
 
 function objectiveGeneratorPrompt(graph, recommendations, transferPatterns = []) {
@@ -6056,7 +6106,7 @@ async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) 
       proposal = emptyObjectiveGeneratorProposal({ status: llm.error === 'invalid_json' ? 'parse_error' : 'llm_error', llm_source: llm.source, llm_error: llm.error });
       proposal.world_model_used = true;
     } else {
-      reason = 'heuristic_objective_proposal_written';
+      reason = execute ? 'heuristic_objective_proposal_written' : 'heuristic_objective_proposal_dry_run';
       proposal = fallbackObjectiveGeneratorProposal(graph, recommendations, transferPatterns);
     }
   }
@@ -6065,7 +6115,7 @@ async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) 
     proposal.suggested_patterns = objectivePatternMatches(transferPatterns, proposal.proposed_objective);
   }
 
-  if (execute && proposal?.status === 'ok' && Number(proposal.overall_score) > 7) {
+  if (execute && proposal?.status === 'ok' && proposal.auto_task_eligible !== false && Number(proposal.overall_score) > 7) {
     createdTask = createAutoObjectiveTask(proposal);
     proposal.created_task = createdTask.ok ? {
       id: createdTask.task_id || null,
@@ -6081,7 +6131,8 @@ async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) 
   }
 
   const proposalsPath = objectiveGeneratorProposalsPath(root);
-  if (execute) {
+  const proposalsWritten = Boolean(execute);
+  if (proposalsWritten) {
     fs.mkdirSync(path.dirname(proposalsPath), { recursive: true });
     fs.writeFileSync(proposalsPath, JSON.stringify(proposal, null, 2) + '\n', 'utf8');
   }
@@ -6111,6 +6162,7 @@ async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) 
     llm_successful: Boolean(llm?.source && llm?.proposal && proposal.status === 'ok'),
     llm_error: llm?.error || proposal.llm_error || null,
     proposals_path: path.relative(root, proposalsPath),
+    proposals_written: proposalsWritten,
     task_creation_threshold: 7,
     task_created: Boolean(createdTask?.ok),
     created_task: proposal.created_task,
@@ -6128,7 +6180,7 @@ async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) 
     score: proposal.overall_score || '',
     task: proposal.created_task?.ref || '',
     receipt: path.relative(root, receiptPath),
-    output: path.relative(root, proposalsPath),
+    output: proposalsWritten ? path.relative(root, proposalsPath) : '',
   });
 
   return {
@@ -7817,6 +7869,7 @@ const WAKE_REASON_TEXT = {
   auto_improver_task_create_failed: 'it found an improvement but could not put the task on the board',
   heuristic_cross_domain_proof_written: 'it wrote a cross-domain proof using its built-in heuristics',
   heuristic_objective_proposal_written: 'it drafted an objective proposal using its built-in heuristics',
+  heuristic_objective_proposal_dry_run: 'it previewed an objective proposal using its built-in heuristics, without writing it',
   install_requires_clean_git: 'installing needs a clean git tree first',
   insufficient_world_model_data: 'its world model is too thin to act on yet',
   llm_json_parse_failed: 'the model reply did not parse, so it stopped rather than act on garbage',
@@ -9232,6 +9285,7 @@ async function memberCommand(subcommand, ...args) {
 }
 
 module.exports = {
+  proposalPromptForGoal,
   memberCommand,
   findAllMembers,
   findWorkspaceBusinessId,

@@ -20,6 +20,60 @@ sources:
 
 > **Status:** implemented and re-verified (local-first member runtime)
 
+## Shared process inheritance, September 16, 2026
+
+The owner wants the behavior learned from their Instinct conversation to be
+the default for local Atris members, with improvement serving the person's
+chosen goals. The behavioral contract belongs to each workspace's
+`atris/team/MEMBER_PROCESS.md`. The sanitized source study and human-outcome
+principles live in the companion backend's
+`atris/features/local-self-improvement/build.md`, which identifies the owner's
+current request and a prior local-only product draft. No private transcript is
+included here, and that draft is not a runtime dependency.
+
+Previously, a member run read its individual identity but omitted the common
+process. `lib/member-context.js` now reads that optional file from the explicit
+execution directory, at most 32 KiB. It supplies `buildTickPrompt` for both
+mission worker paths and `proposalPromptForGoal` for optional model-generated
+wake proposals. `member activate` validates the file and names it before the
+identity in its manual activation instruction. New members inherit the same
+file through these paths without copied policy in each MEMBER.md.
+
+This reader owns one missing responsibility: optional shared context assembly.
+Its input is the executing workspace directory; its output is a delimited
+prompt section or an empty string when the file is absent/blank. A non-file,
+unreadable, or oversized file raises a named error. It does not search ancestors,
+read the launcher or an installed default, change permissions, or write state.
+Existing private readers swallow errors or belong to unrelated subsystems;
+using this one reader at three callers keeps file behavior consistent.
+
+Scope: local member runs, optional wake proposals, and manual activation.
+Rule-based wake proposals still use their existing deterministic path. Caller-
+session runners rely on the workspace activation instructions. The historical
+backend `cli/team_runner.py` and tenant-owned cloud/voice prompts are separate
+paths and are not changed or claimed as covered.
+
+Acceptance: inheritance for existing/new names; refreshed context on the next
+prompt; isolated workspace selection; absent-file compatibility; actionable
+size/type failures; intact role, frozen-verifier, operator-ping, and proposal
+output constraints. `test/member-context.test.js` also invokes the real CLI
+activation and mission-run commands with a local capture runner, without a
+model call or network. Prompt delivery is proven; behavior quality, model cost,
+end-to-end latency, and human progress require later outcome comparisons.
+
+Alternative: copying the contract into every member creates drift. A new
+runtime or learning service is unnecessary. The bounded file read is the
+smallest integration of the workspace's existing process. Rollback removes
+the reader and its three uses; there is no migration or stored-state change.
+
+Local checks: 56 tests passed across member context/create/wake/ping, mission prompt,
+check feedback, idle-stop, Atris runner, and runner reliability. Policy reads
+precede operator-message consumption in both worker paths and guard allocation
+in the Atris path. A real-command retry regression preserves and delivers a
+queued instruction after an initial oversized-policy failure. Independent
+review, landing, and local installation are recorded separately in the backend
+team receipts. A local install is not an npm publication or backend deployment.
+
 ## Files Touched
 
 | File | What |

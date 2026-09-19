@@ -30,6 +30,7 @@ const close = require('./close');
 const { readUsage } = require('../lib/usage');
 const { knownCommands } = require('../lib/known-commands');
 const { treeHashFor } = require('../lib/tree-hash');
+const rsi = require('../lib/rsi-record');
 
 /**
  * Expand a leading `~` to the real home directory for LOCAL filesystem
@@ -735,6 +736,68 @@ function runLocalFallback(opts = {}) {
   };
 }
 
+// --- Dream-RSI attempt recording -----------------------------------------
+// A shipping tick (mode full, not dry-run) is one bounded attempt at
+// improving the workspace. When the workspace has the recorder
+// (backend/scripts/rsi/record.py), wrap the tick in open -> finish so the
+// attempt lands in .atris/state/rsi/attempts.jsonl. Recording never changes
+// the tick's result or exit code.
+
+function improveAttemptOutcome(result, { workspace, before, elapsedMs }) {
+  const s = (result && result.summary) || {};
+  const delta = rsi.gitDelta(workspace, before);
+  const files = [...new Set([...(Array.isArray(s.files) ? s.files : []), ...delta.files])].slice(0, 200);
+  const landed = files.length > 0 || delta.commits > 0 || Boolean(s.shipped);
+  const verify = s.verify === true ? 'pass' : s.verify === false ? 'fail' : 'skipped';
+  let status;
+  if (!result || !result.ok || s.error || verify === 'fail') status = 'failed';
+  else if (landed) status = 'shipped';
+  else status = 'nothing';
+  const reason = status === 'failed'
+    ? String(result.error || s.error || 'tick failed').slice(-200)
+    : String(s.shipped || result.reason || 'nothing to do').slice(0, 200);
+  return {
+    status,
+    verify,
+    commits: delta.commits,
+    files,
+    elapsed_s: Math.round(elapsedMs / 100) / 10,
+    engine_calls: 1,
+    reason,
+  };
+}
+
+async function runImprove(opts = {}, deps = {}) {
+  const workspace = opts.workspace || process.cwd();
+  const log = deps.log || (() => {});
+  // Local receipt writes expand a leading ~; the recorder check must too, or
+  // a `~/...` workspace would never see its own backend/scripts/rsi/record.py.
+  const rsiRoot = expandHome(workspace);
+  const shippingTick = (opts.mode || 'full') === 'full' && !opts.dryRun;
+  const attempt = shippingTick
+    ? rsi.beginAttempt(rsiRoot, { lane: rsi.IMPROVE_LANE, engine: rsi.engineFromModel(opts.model) || 'claude', log })
+    : null;
+  if (!attempt) return runImproveCore(opts, deps);
+  const startedMs = Date.now();
+  const before = rsi.gitSnapshot(rsiRoot);
+  try {
+    const result = await runImproveCore(opts, deps);
+    rsi.finishAttempt(rsiRoot, attempt, improveAttemptOutcome(result, { workspace: rsiRoot, before, elapsedMs: Date.now() - startedMs }), { log });
+    return result;
+  } catch (err) {
+    rsi.finishAttempt(rsiRoot, attempt, {
+      status: 'failed',
+      verify: 'skipped',
+      commits: 0,
+      files: [],
+      elapsed_s: Math.round((Date.now() - startedMs) / 100) / 10,
+      engine_calls: 1,
+      reason: String(err && err.message || err).slice(-200),
+    }, { log });
+    throw err;
+  }
+}
+
 /**
  * Run one improvement tick. Dependency-injected so tests can fake the
  * network (apiRequestJson), auth (loadCredentials), the local fallback,
@@ -743,7 +806,7 @@ function runLocalFallback(opts = {}) {
  * Returns a structured result:
  *   { ok, source: 'api'|'local'|'none', reason, summary?, scorecardPath?, local?, apiResult?, error? }
  */
-async function runImprove(opts = {}, deps = {}) {
+async function runImproveCore(opts = {}, deps = {}) {
   const apiFn = deps.apiRequestJson || apiRequestJson;
   const loadCreds = deps.loadCredentials || loadCredentials;
   const localFn = deps.runLocalFallback || runLocalFallback;
@@ -1406,6 +1469,7 @@ async function run(argv = [], deps = {}) {
 module.exports = {
   run,
   runImprove,
+  runImproveCore,
   parseImproveArgs,
   buildImprovePayload,
   summarizeImproveResponse,

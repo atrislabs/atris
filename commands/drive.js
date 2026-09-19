@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const rsi = require('../lib/rsi-record');
 
 const BIN = path.join(__dirname, '..', 'bin', 'atris.js');
 
@@ -73,9 +74,31 @@ async function driveCommand(argv) {
     return 0;
   }
 
+  // Dream-RSI: one drive run is one bounded improvement attempt. Recorded
+  // only when the workspace has the recorder; a recording failure never
+  // changes the run or its exit code.
+  const rsiLog = (m) => process.stderr.write(`rsi: ${m}\n`);
+  const rsiAttempt = dryRun ? null : rsi.beginAttempt(cwd, { lane: rsi.IMPROVE_LANE, engine: 'claude', log: rsiLog });
+  const rsiBefore = rsiAttempt ? rsi.gitSnapshot(cwd) : null;
+  const rsiT0 = Date.now();
+  const rsiFinish = (outcome) => {
+    if (!rsiAttempt) return;
+    const delta = rsi.gitDelta(cwd, rsiBefore);
+    rsi.finishAttempt(cwd, rsiAttempt, {
+      commits: delta.commits,
+      files: delta.files,
+      elapsed_s: Math.round((Date.now() - rsiT0) / 100) / 10,
+      engine_calls: 1,
+      verify: 'skipped',
+      ...outcome,
+    }, { log: rsiLog });
+  };
+
+  try {
   const doctor = runAtris(['mission', 'doctor', '--json'], cwd);
   const report = parseJsonLoose(doctor.stdout);
   if (!report || !Array.isArray(report.findings)) {
+    rsiFinish({ status: 'failed', reason: 'mission doctor returned no parseable findings' });
     console.error('drive: mission doctor returned no parseable findings.');
     if (doctor.stderr) console.error(doctor.stderr.slice(0, 500));
     return 1;
@@ -167,6 +190,11 @@ async function driveCommand(argv) {
   };
   if (!dryRun) appendState(cwd, record);
 
+  rsiFinish({
+    status: fixed.length ? 'shipped' : 'nothing',
+    reason: `${fixed.length} auto-fixed, ${disengagements.length} still need a human`.slice(0, 200),
+  });
+
   if (json) { console.log(JSON.stringify({ ok: true, ...record }, null, 2)); return 0; }
 
   console.log(`drive tick: ${report.checked_count} missions checked, ${report.findings.length} findings`);
@@ -182,6 +210,10 @@ async function driveCommand(argv) {
   }
   console.log(`  next: atris drive status · fix the ✋ list · re-run atris drive`);
   return disengagements.length > 0 ? 0 : 0;
+  } catch (err) {
+    rsiFinish({ status: 'failed', reason: String(err && err.message ? err.message : err).slice(0, 200) });
+    throw err;
+  }
 }
 
 module.exports = { driveCommand };

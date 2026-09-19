@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
+const { memberProcessPrompt } = require('../lib/member-context');
 const {
   compactErrorPayload,
   compactSuccessPayload,
@@ -8415,8 +8416,12 @@ function probeClaudeBinary() {
 // Pull unread operator pings off the mission and mark them consumed, so the
 // next tick's prompt carries them exactly once. Pings are how a human talks to
 // an always-on member mid-run: atris member ping <name> "<msg>".
+function pendingMissionPings(mission) {
+  return (Array.isArray(mission.pings) ? mission.pings : []).filter((p) => p && !p.consumed_at);
+}
+
 function consumeMissionPings(mission, cwd) {
-  const pending = (Array.isArray(mission.pings) ? mission.pings : []).filter((p) => p && !p.consumed_at);
+  const pending = pendingMissionPings(mission);
   if (!pending.length) return { mission, pings: [] };
   const consumedAt = stampIso();
   const pings = (mission.pings || []).map((p) => (p && !p.consumed_at ? { ...p, consumed_at: consumedAt } : p));
@@ -8424,7 +8429,8 @@ function consumeMissionPings(mission, cwd) {
   return { mission: saved, pings: pending };
 }
 
-function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
+function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd = process.cwd()) {
+  const sharedProcess = memberProcessPrompt(cwd);
   const pingLines = pings.length
     ? [
       ``,
@@ -8456,6 +8462,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
     `**Last tick:** ${mission.last_tick_at || 'never'}`,
     ...missionBudgetPromptLines(mission),
     ...checkFeedbackLines,
+    ...(sharedProcess ? ['', sharedProcess] : []),
     ``,
     `## Your task`,
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
@@ -9530,6 +9537,9 @@ async function executeMissionRunTicksPhase(context) {
           drill: drillResult,
         };
       } else if (tickAtris2Runner) {
+        // Build before consuming direction or allocating the guard: a shared
+        // process read error must leave operator pings available for retry.
+        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pendingMissionPings(mission), cwd);
         let atris2GitGuard = null;
         try {
           atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
@@ -9550,7 +9560,6 @@ async function executeMissionRunTicksPhase(context) {
           const pingDrain = consumeMissionPings(mission, cwd);
           mission = pingDrain.mission;
           runtimeMission = runtimeView(mission);
-          const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
           const { runAtris2Turn } = require('./probe');
           const businessId = businessIdForAtris2Mission(tickRuntimeMission, cwd);
           const tickController = new AbortController();
@@ -9602,12 +9611,12 @@ async function executeMissionRunTicksPhase(context) {
           }
         }
       } else {
+        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pendingMissionPings(mission), cwd);
         let sessionMode = sessionId ? 'resume' : 'set';
         let useId = sessionId || pendingSessionId;
         const pingDrain = consumeMissionPings(mission, cwd);
         mission = pingDrain.mission;
         runtimeMission = runtimeView(mission);
-        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
         const restoreTickRunnerProfile = tickEngineId ? applyMissionRunnerProfile(tickEngineId) : () => {};
         let claudeResult;
         let sessionBusyRetried = false;
