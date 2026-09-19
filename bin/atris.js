@@ -577,6 +577,7 @@ function showHelpAll() {
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  doctor     - Node/task/auth/workspace readiness (--json for agents)');
+  console.log('  doc-health - workspace document size, navigation, and freshness (--json)');
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
   console.log('  brief      - Show the one-glance operator brief');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
@@ -1742,6 +1743,18 @@ function showWelcomeVisualization() {
     console.log(row('now', 'nothing on the list yet'));
   }
 
+  try {
+    const health = require('../commands/doc-health').computeDocHealth(cwd);
+    if (health.ok) {
+      const detail = health.lookup_hops.missing
+        ? 'add atris/doc-health/questions.jsonl'
+        : `${Math.round((health.lookup_hops.score || 0) * 100)}% one hop · boot ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens`;
+      console.log(row('docs', `${health.overall.total}/100 · ${detail}`));
+    }
+  } catch {
+    // Document health is advisory and must never prevent startup.
+  }
+
   // landSummary is expensive (git board classification) - compute once per boot.
   let landInfo = null;
   try { landInfo = require('../commands/land').landSummary(cwd); } catch (err) { landInfo = null; }
@@ -2720,8 +2733,12 @@ if (command === 'guide') {
     });
 } else if (command === 'doctor') {
   Promise.resolve(require('../commands/doctor').doctorCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+    .then((code) => { process.exitCode = typeof code === 'number' ? code : 0; })
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exitCode = 1; });
+} else if (command === 'doc-health') {
+  Promise.resolve(require('../commands/doc-health').docHealthCommand(process.argv.slice(3)))
+    .then((code) => { process.exitCode = typeof code === 'number' ? code : 0; })
+    .catch((err) => { console.error(err.message || err); process.exitCode = 1; });
 } else if (command === 'verify') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {

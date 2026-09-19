@@ -140,7 +140,15 @@ test('central task creation stores a plain face without changing full-fidelity t
     assert.ok(cloud.indexOf('Technical details:') < cloud.indexOf('Local task:'));
     assert.match(cloud, new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 
-    const markdown = taskDb.renderTodoMarkdown([stored], { refRows: [stored] });
+    const previousRender = process.env.ATRIS_TODO_RENDER;
+    let markdown;
+    try {
+      process.env.ATRIS_TODO_RENDER = 'full';
+      markdown = taskDb.renderTodoMarkdown([stored], { refRows: [stored] });
+    } finally {
+      if (previousRender === undefined) delete process.env.ATRIS_TODO_RENDER;
+      else process.env.ATRIS_TODO_RENDER = previousRender;
+    }
     const todoPath = path.join(root, 'atris', 'TODO.md');
     fs.writeFileSync(todoPath, markdown);
     assert.ok(markdown.indexOf('People get a clear task summary') < markdown.indexOf('Technical details:'));
