@@ -18,6 +18,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const pulse = require('../lib/pulse');
+const rsi = require('../lib/rsi-record');
 const { DEFAULT_CLAUDE_RUNNER_MODEL } = require('../lib/runner-command');
 const { hasFlag } = require('../lib/arg-parser');
 
@@ -267,6 +268,14 @@ function tickCommand(args, root = process.cwd()) {
     orbIngestError,
   }));
 
+  // Dream-RSI: record this tick as one attempt when the workspace has the
+  // recorder. Best-effort; a missing or failing recorder never changes the
+  // tick's outcome. The engine spawns claude-backed runners by default.
+  const rsiLog = (m) => { if (!asJson) process.stderr.write(`rsi: ${m}\n`); };
+  const rsiAttempt = rsi.beginAttempt(root, { lane: rsi.IMPROVE_LANE, engine: 'claude', log: rsiLog });
+  const rsiBefore = rsiAttempt ? rsi.gitSnapshot(root) : null;
+  let rsiOutcome = null;
+
   let engine;
   let verify = { passed: null, cmd: verifyCmd };
   try {
@@ -311,6 +320,14 @@ function tickCommand(args, root = process.cwd()) {
       : engine.reason === 'no_due_mission'
         ? 'no due mission; heartbeat alive (no-op)'
         : `mission ${engine.reason}${changedTail}`;
+
+    rsiOutcome = {
+      status: !engine.ok || verify.passed === false ? 'failed' : producedWork ? 'shipped' : 'nothing',
+      verify: verify.passed === true ? 'pass' : verify.passed === false ? 'fail' : 'skipped',
+      elapsed_s: Math.round(elapsedMs / 100) / 10,
+      engine_calls: 1,
+      reason: String(what || '').slice(0, 200),
+    };
 
     const receipt = pulse.buildPulseReceipt({
       tickIndex,
@@ -426,11 +443,32 @@ function tickCommand(args, root = process.cwd()) {
       orb_policy_lesson: orbPolicy,
     };
     if (orbIngestError) out.orb_ingest_error = orbIngestError;
+    rsiOutcome = {
+      status: 'failed',
+      verify: 'skipped',
+      elapsed_s: Math.round((Date.now() - startedAt) / 100) / 10,
+      engine_calls: 1,
+      reason: String(err && err.message ? err.message : err).slice(-200),
+    };
     if (!asJson) process.stdout.write(`pulse tick #${tickIndex} crashed: ${out.error}\n`);
     return emit(out, asJson);
   } finally {
     process.removeListener('SIGINT', finishInterrupted);
     process.removeListener('SIGTERM', finishInterrupted);
+    if (rsiAttempt) {
+      const delta = rsi.gitDelta(root, rsiBefore);
+      rsi.finishAttempt(root, rsiAttempt, {
+        commits: delta.commits,
+        files: delta.files,
+        ...(rsiOutcome || {
+          status: 'failed',
+          verify: 'skipped',
+          elapsed_s: Math.round((Date.now() - startedAt) / 100) / 10,
+          engine_calls: 1,
+          reason: 'tick ended without an outcome',
+        }),
+      }, { log: rsiLog });
+    }
     pulse.releaseLock(root);
   }
 }
