@@ -1686,6 +1686,45 @@ test('member wake returns one finite decision and refuses to pile onto open work
   }
 });
 
+test('member wake asks instead of ticking a goal pinned to a terminal mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions wake up safely"'], { cwd: dir }).status, 0);
+    const startedMission = runCli([
+      'mission', 'start', '--no-verify', 'Make Missions wake up safely',
+      '--owner', 'mission-lead',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(startedMission.status, 0, startedMission.stderr || startedMission.stdout);
+    const mission = JSON.parse(startedMission.stdout).mission;
+
+    const goal = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalId = JSON.parse(goal.stdout).goal.id;
+
+    const stopped = runCli(['mission', 'stop', mission.id, '--json'], { cwd: dir });
+    assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
+
+    const wake = runCli(['member', 'wake', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'ask');
+    assert.equal(payload.reason, 'goal_mission_terminal:stopped');
+    assert.equal(payload.needs_user, true);
+    assert.match(payload.ask, new RegExp(mission.id));
+    assert.doesNotMatch(String(payload.next_command || ''), /member tick/);
+    assert.equal(payload.goals?.[0]?.id, goalId);
+
+    // A dry wake mutates nothing: the goal stays active, no experiment is proposed.
+    const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json'), 'utf8'));
+    assert.equal(state.goals[0].status, 'active');
+    assert.equal(state.goals[0].experiments.length, 0);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member wake treats member-generated goals and logs as non-blocking bookkeeping', () => {
   const dir = makeTempDir();
   try {

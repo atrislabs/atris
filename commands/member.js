@@ -7574,6 +7574,24 @@ function wakeRuleDirtyMemberScope(ctx) {
   };
 }
 
+// Rule: a goal pinned to a terminal mission must not mint another doomed tick.
+// The goal stays active until a human retires it or revives the mission, so the
+// wake surfaces that decision instead of proposing `member tick --goal` on a
+// dead spine. Unknown mission ids pass through: they may live in a worktree.
+function wakeRuleTerminalMissionGoal(ctx) {
+  const mission = ctx.goalTerminalMission;
+  if (!ctx.goal || !mission) return null;
+  return {
+    decision: 'ask',
+    reason: `goal_mission_terminal:${mission.status}`,
+    needs_user: true,
+    ask: `Goal "${ctx.goal.title}" is pinned to mission ${mission.id} (${mission.status}). Retire the goal or revive the mission, then wake again.`,
+    next_command: `atris member goal-from-mission ${ctx.name}`,
+    goal: ctx.goal,
+    current_experiment: ctx.current || null,
+  };
+}
+
 // Rule: nothing blocks the member, so take the safe next bounded step.
 function wakeRuleSafeBoundedTick(ctx) {
   return {
@@ -7594,6 +7612,7 @@ const WAKE_DECISION_RULES = [
   wakeRuleOpenReviewableProposal,
   wakeRuleScoredNonTickCandidate,
   wakeRuleDirtyMemberScope,
+  wakeRuleTerminalMissionGoal,
   wakeRuleSafeBoundedTick,
 ];
 
@@ -7607,6 +7626,8 @@ function wakeDecision(name, paths, { force = false, runtimeKind = memberRuntimeK
   const steering = readSteeringMemory(paths, name);
   const state = loadMemberGoals(name, paths);
   const goal = activeGoal(state);
+  const pinnedMission = goal?.mission_id ? memberRunMissionMap().get(String(goal.mission_id).trim()) || null : null;
+  const goalTerminalMission = pinnedMission && MISSION_TERMINAL_STATUSES.has(lowerCompact(pinnedMission.status || '')) ? pinnedMission : null;
   const current = memberOpenExperiment(state);
   const generalistDecision = wakeRuleGeneralistDomainFile(name, { purpose, steering, state, goal, current });
   if (generalistDecision) return generalistDecision;
@@ -7652,7 +7673,7 @@ function wakeDecision(name, paths, { force = false, runtimeKind = memberRuntimeK
     next_command: wakeScores.selected.next_command,
   } : null;
 
-  const ctx = { name, force, purpose, nowFile, steering, state, goal, current, blocked, evidence, workspace, checks, wakeScores };
+  const ctx = { name, force, purpose, nowFile, steering, state, goal, goalTerminalMission, current, blocked, evidence, workspace, checks, wakeScores };
   for (const rule of WAKE_DECISION_RULES) {
     const verdict = rule(ctx);
     if (verdict) return composeWakeDecision(ctx, verdict);
