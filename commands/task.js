@@ -10415,6 +10415,13 @@ function stampReadyVerifyMetadata(taskDb, db, taskId, verify) {
   if (!row) return;
   const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
   metadata.verify = verify;
+  // A real verify stamped at ready means the creation-time degraded flag is
+  // stale: clear it so `task show` stops warning about a missing check. A
+  // diff-only verify keeps the flag; it still cannot fail on real breakage.
+  if (verify.toLowerCase() !== 'git diff --check') {
+    delete metadata.verification_status;
+    delete metadata.verification_degraded_reason;
+  }
   db.prepare(`
     UPDATE tasks
        SET metadata = ?,

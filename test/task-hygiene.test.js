@@ -123,6 +123,46 @@ test('task add exposes degraded verification and accepts a runnable verifier', (
   }
 });
 
+test('task ready --verify clears the creation-time degraded flag', () => {
+  const root = makeWorkspace();
+  const env = { ATRIS_TASKS_DB: path.join(root, 'tasks.db'), ATRIS_AGENT_PROOF_ONLY: '0' };
+  try {
+    fs.mkdirSync(path.join(root, 'test'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'test', 'ok.test.js'), "const t = require('node:test'); t('ok', () => {});\n", 'utf8');
+
+    const added = runCli(['task', 'add', 'task without a check', '--json'], { cwd: root, env });
+    assert.equal(added.status, 0, added.stderr);
+    const addedTask = JSON.parse(added.stdout).task;
+    const shownBeforeJson = runCli(['task', 'show', addedTask.display_id, '--json'], { cwd: root, env });
+    assert.equal(shownBeforeJson.status, 0, shownBeforeJson.stderr);
+    assert.equal(JSON.parse(shownBeforeJson.stdout).metadata.verification_status, 'degraded');
+    const shownBefore = runCli(['task', 'show', addedTask.display_id], { cwd: root, env });
+    assert.equal(shownBefore.status, 0, shownBefore.stderr);
+    assert.match(shownBefore.stdout, /verification: degraded \(missing verify command\)/);
+
+    const ready = runCli([
+      'task', 'ready', addedTask.display_id,
+      '--verify', 'node --test test/ok.test.js',
+      '--result', 'the task now shows a real check instead of a stale warning.',
+      '--json',
+    ], { cwd: root, env });
+    assert.equal(ready.status, 0, ready.stderr);
+
+    const shownAfter = runCli(['task', 'show', addedTask.display_id, '--json'], { cwd: root, env });
+    assert.equal(shownAfter.status, 0, shownAfter.stderr);
+    const shownTask = JSON.parse(shownAfter.stdout);
+    assert.equal(shownTask.metadata.verify, 'node --test test/ok.test.js');
+    assert.equal(shownTask.metadata.verification_status, undefined);
+    assert.equal(shownTask.metadata.verification_degraded_reason, undefined);
+    const shownText = runCli(['task', 'show', addedTask.display_id], { cwd: root, env });
+    assert.equal(shownText.status, 0, shownText.stderr);
+    assert.doesNotMatch(shownText.stdout, /verification: degraded/);
+  } finally {
+    taskStore.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('task reaper closes blocker rows for complete and stopped missions only', () => {
   const root = makeWorkspace();
   const dbPath = path.join(root, 'tasks.db');
