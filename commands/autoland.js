@@ -130,13 +130,38 @@ function flag(args, name, fallback = '') {
   return args[idx + 1] || fallback;
 }
 
-function runOwnCli(root, cliArgs) {
+function runOwnCli(root, cliArgs, timeoutMs = 300000) {
   // Always spawn the bin this module shipped with. Resolving through the
   // target root or a global `atris` breaks whenever the tick runs a project
   // that isn't the CLI repo on a machine without a global install (CI, cron).
   const bin = path.resolve(__dirname, '..', 'bin', 'atris.js');
-  const result = spawnSync(process.execPath, [bin, ...cliArgs], { cwd: root, encoding: 'utf8', timeout: 300000 });
-  return { status: result.status, stdout: String(result.stdout || ''), stderr: String(result.stderr || '') };
+  const result = spawnSync(process.execPath, [bin, ...cliArgs], { cwd: root, encoding: 'utf8', timeout: timeoutMs });
+  return {
+    status: result.status,
+    stdout: String(result.stdout || ''),
+    stderr: String(result.stderr || ''),
+    error_code: result.error && result.error.code ? result.error.code : null,
+    signal: result.signal || null,
+    timeout_ms: timeoutMs,
+  };
+}
+
+// The accept sweep walks every pending-review row under --all, so a fixed
+// 300s child timeout kills a real backlog mid-accept. Size the window from
+// the queue: roughly 8s a row on top of a 60s floor, never under the old
+// 300s default, capped at 25min.
+function acceptSweepTimeoutMs(pendingRows) {
+  return Math.min(1500000, Math.max(300000, 60000 + pendingRows * 8000));
+}
+
+// A killed child truncates stdout and often leaves stderr empty, so the
+// spawn failure itself is the first thing to name. Without this a timed-out
+// sweep reports "output unreadable" forever.
+function describeAcceptKillCause(accept) {
+  if (accept.error_code === 'ETIMEDOUT') return `auto-accept timed out at ${accept.timeout_ms}ms`;
+  if (accept.error_code) return `auto-accept spawn failed: ${accept.error_code}`;
+  if (accept.signal) return `auto-accept killed by ${accept.signal}`;
+  return null;
 }
 
 function readProjection(root) {
@@ -759,7 +784,11 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   const cliArgs = ['task', 'auto-accept-certified', '--json', '--certify-first'];
   if (policy.accept_all) cliArgs.push('--all');
   else if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
-  const accept = runOwnCli(root, cliArgs);
+  const pendingReviewRows = readProjection(root)
+    .filter((task) => task && task.status === 'review')
+    .filter((task) => String(task.review?.approval_status || task.metadata?.approval_status || 'pending') === 'pending')
+    .length;
+  const accept = runOwnCli(root, cliArgs, acceptSweepTimeoutMs(pendingReviewRows));
   try {
     const parsed = JSON.parse(accept.stdout);
     const results = Array.isArray(parsed.results) ? parsed.results : [];
@@ -801,7 +830,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     receipt.skipped = parsed.skipped ?? null;
     receipt.undercounted = Boolean(parsed.undercounted);
   } catch (err) {
-    receipt.accept_error = accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
+    receipt.accept_error = describeAcceptKillCause(accept) || accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
   }
 
   // 2b. tell the operator the moment something lands: one text, one landing
@@ -1108,6 +1137,8 @@ function autolandCommand(args = []) {
 module.exports = {
   autolandCommand,
   digestNextMoves,
+  acceptSweepTimeoutMs,
+  describeAcceptKillCause,
   digestStoryRows,
   digestTickStatus,
   engineAnswerValidationLine,
