@@ -253,6 +253,7 @@ atris task - durable local task state (SQLite, gitignored)
                                            Sweep off-roadmap/duplicate work as archived (not failed);
                                            --from-failed opts in to relabel a fail-closed row (never done)
   atris task clear-done [--before <days>] [--dry-run] [--json]  Archive completed rows, oldest first
+  atris task keep [--json]                 Put away finished and untouched work, then refresh the list
   atris task reap-mission-blockers [--json] Close blocker rows whose missions are complete or stopped
   atris task relabel-archived [--dry-run|--apply]
                                            One-time OBL-1622 migration: relabel June-10 backlog-reset rows failed -> archived
@@ -6416,7 +6417,7 @@ function compactTechnicalDetails(task, formatTitle = value => value) {
 }
 
 function taskDayGroups(tasks, { now = Date.now() } = {}) {
-  const active = tasks.filter(task => task.status !== 'done');
+  const active = tasks.filter(task => task.status !== 'done' && task.status !== 'archived');
   const staleFailed = [];
   const visible = [];
   for (const task of active) {
@@ -6446,7 +6447,43 @@ function taskDayGroups(tasks, { now = Date.now() } = {}) {
   return { groups: grouped, staleFailed };
 }
 
+function refreshKeptTaskList(cwd = process.cwd()) {
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  writeDefaultProjection(taskDb, db);
+  autoRenderTodoFromDb(cwd);
+}
+
+function keptCount(result) {
+  return (result && result.put_away ? result.put_away.length : 0)
+    + (result && result.reaped ? result.reaped.length : 0);
+}
+
+function cmdKeep(args) {
+  const result = require('../lib/task-list-keeper').keepWorkspaceTaskList(process.cwd());
+  if (keptCount(result)) refreshKeptTaskList(process.cwd());
+  const count = keptCount(result);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'keep',
+      count,
+      put_away: result.put_away,
+      reaped: result.reaped,
+    });
+    return;
+  }
+  if (!count) {
+    console.log('task list is current. nothing to put away.');
+    return;
+  }
+  const noun = count === 1 ? 'item' : 'items';
+  console.log(`put away ${count} ${noun} that were finished or sitting still.`);
+}
+
 function cmdDay(args) {
+  const kept = require('../lib/task-list-keeper').keepWorkspaceTaskList(process.cwd());
+  if (keptCount(kept)) autoRenderTodoFromDb(process.cwd());
   const all = hasFlag(args, '--all');
   const full = hasFlag(args, '--full');
   const everywhere = taskScopeEverywhere(args);
@@ -13321,6 +13358,7 @@ async function runTaskCommand(args) {
     case 'fail':   return cmdDone([...rest, '--failed']);
     case 'archive': return cmdArchive(rest);
     case 'clear-done': return cmdClearDone(rest);
+    case 'keep': return cmdKeep(rest);
     case 'reap-mission-blockers':
     case 'reap-blockers':
       return cmdReapMissionBlockers(rest);
@@ -13425,6 +13463,8 @@ module.exports = {
   delegateTask,
   AGENT_ENV_MARKERS,
   autoRenderTodoFromDb,
+  refreshKeptTaskList,
+  keptCount,
   projectionMissions,
   projectionWishes,
   taskBoardViewModel,

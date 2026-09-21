@@ -59,6 +59,16 @@ function fakeTask(overrides = {}) {
   };
 }
 
+test('taskDayGroups leaves archived work off the day list', () => {
+  const { groups, staleFailed } = taskDayGroups([
+    fakeTask({ id: 'live', status: 'open', title: 'Live task' }),
+    fakeTask({ id: 'old', status: 'archived', title: 'Archived task' }),
+  ]);
+  const visibleIds = groups.flatMap((group) => group.tasks.map((task) => task.id));
+  assert.deepEqual(visibleIds, ['live']);
+  assert.equal(staleFailed.length, 0);
+});
+
 test('taskDayGroups hides failed tasks older than 7 days behind staleFailed', () => {
   const now = Date.now();
   const { groups, staleFailed } = taskDayGroups([
