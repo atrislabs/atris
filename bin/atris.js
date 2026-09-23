@@ -47,7 +47,7 @@ const {
   requireAccountBound,
   refuseAccountGlobal,
 } = require('../lib/account-bound');
-const { isHelpToken, argsWantHelp, hasYesFlag } = require('../lib/noninteractive');
+const { isHelpToken, argsWantHelp, hasYesFlag, envForcesNonInteractive } = require('../lib/noninteractive');
 
 // State detection for smart default
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
@@ -1299,8 +1299,7 @@ function useInteractiveAtrisUi() {
   return Boolean(
     process.stdin.isTTY
     && process.stdout.isTTY
-    && !process.env.ATRIS_NO_INTERACTIVE
-    && process.env.ATRIS_NONINTERACTIVE !== '1'
+    && !envForcesNonInteractive()
   );
 }
 
