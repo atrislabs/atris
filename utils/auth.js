@@ -156,6 +156,20 @@ function mkPrivateDir(dir) {
   return dir;
 }
 
+// Credential files hold login tokens. If they cannot be limited to the owner,
+// say so once per file instead of leaving them readable in silence.
+const permissionWarned = new Set();
+function restrictToOwner(filePath) {
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch (err) {
+    if (permissionWarned.has(filePath)) return;
+    permissionWarned.add(filePath);
+    const reason = err && err.code ? ` (${err.code})` : '';
+    console.error(`atris: could not limit ${filePath} to your user${reason}. other users on this machine may be able to read it.`);
+  }
+}
+
 function getAtrisDir() {
   const homeDir = os.homedir();
   return mkPrivateDir(path.join(homeDir, '.atris'));
@@ -357,7 +371,7 @@ function profileNameFromEmail(email) {
 function saveProfile(name, credentials) {
   const profilePath = path.join(getProfilesDir(), `${name}.json`);
   fs.writeFileSync(profilePath, JSON.stringify(credentials, null, 2));
-  try { fs.chmodSync(profilePath, 0o600); } catch {}
+  restrictToOwner(profilePath);
 }
 
 function loadProfile(name) {
@@ -413,11 +427,7 @@ function saveCredentials(token, refreshToken, email, userId, provider, extras = 
   };
 
   fs.writeFileSync(credentialsPath, JSON.stringify(credentials, null, 2));
-  try {
-    fs.chmodSync(credentialsPath, 0o600);
-  } catch {
-    // Best effort: permissions may be unsupported on this platform.
-  }
+  restrictToOwner(credentialsPath);
 
   // Auto-save as named profile
   autoSaveProfile(credentials);

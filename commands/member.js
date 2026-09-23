@@ -8,6 +8,7 @@ const { apiRequestJson } = require('../utils/api');
 const { runAliveTick } = require('../lib/member-alive');
 const { defaultObjectiveRunner } = require('../lib/default-runner');
 const { readJson, writeJson } = require('../lib/json-file');
+const { sleepSync } = require('../lib/sleep-sync');
 const { hasFlag, readFlag, readNumberFlag } = require('../lib/arg-parser');
 const { ensureMemberBundle, memberBundlePresent } = require('../lib/member-scaffold');
 const { memberProcessPrompt, MEMBER_PROCESS_PATH } = require('../lib/member-context');
@@ -4592,12 +4593,6 @@ function printJsonOrText(payload, lines, asJson) {
     return;
   }
   for (const line of lines) console.log(line);
-}
-
-function sleepSync(ms) {
-  const duration = Math.max(0, Number(ms) || 0);
-  if (duration <= 0) return;
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, duration);
 }
 
 function memberGoal(name, ...args) {

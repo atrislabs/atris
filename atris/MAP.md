@@ -1604,6 +1604,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Functions:**
 - `detectWorkspaceState()` (lines 4-80): Detect state (uninit/active/stale)
 - `loadContext()` (lines 82-138): Load relevant context
+- `hasBlockedTasks()` (`lib/state-detection.js:280`): blocked means a failed task in the task DB; when this workspace has no rows there, only the TODO.md Blocked section counts (`test/state-detection-blocked.test.js`)
 - **States:**
 - Uninitialized: No atris/ folder
 - Active: Recent journal entries

@@ -13,6 +13,7 @@ const {
   printCliJson,
 } = require('../lib/cli-json');
 const escapeRegExp = require('../lib/escape-regexp');
+const { sleepSync } = require('../lib/sleep-sync');
 const {
   appendBriefRecord,
   stampBriefOutcome,
@@ -8047,12 +8048,6 @@ function isWithinActiveHours(activeHours, now = new Date()) {
   if (start === end) return false;
   if (end > start) return cur >= start && cur < end;
   return cur >= start || cur < end;
-}
-
-function sleepSync(ms) {
-  const waitMs = Math.max(0, Number(ms) || 0);
-  if (!waitMs) return;
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
 }
 
 function missionLockOwnerIsAlive(pid) {

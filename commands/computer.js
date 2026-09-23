@@ -37,6 +37,7 @@ const {
 const { consoleCommand, gatherAtrisContext, buildSystemPrompt } = require('./console');
 const { streamSession } = require('./serve');
 const { buildRemoteAtrisBootstrapCommand } = require('../lib/runtime-bootstrap');
+const { envForcesNonInteractive } = require('../lib/noninteractive');
 
 function getToken() {
   const creds = loadCredentials();
@@ -270,11 +271,11 @@ const ui = {
 };
 
 function useInteractiveCloudUi() {
-  return Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.ATRIS_NO_INTERACTIVE);
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY && !envForcesNonInteractive());
 }
 
 function useInteractiveTerminalUi() {
-  return Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.ATRIS_NO_INTERACTIVE);
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY && !envForcesNonInteractive());
 }
 
 async function readPipedStdin() {
@@ -4470,6 +4471,8 @@ module.exports = {
   extractAttachedWorkspaceMismatch,
   contextForAttachedWorkspaceMismatch,
   printRecruitingLocalSyncOutcome,
+  useInteractiveCloudUi,
+  useInteractiveTerminalUi,
   // Hermetic parsing/formatting layer, exported for test/computer.test.js.
   parseComputerOptions,
   parseComputerCreateArgs,

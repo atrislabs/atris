@@ -634,6 +634,12 @@ function goldenPathMissionXpTask(task) {
     && /\b(?:golden[- ]path|zero[- ]knowledge|zero[- ]papercuts?|fresh[- ](?:laptop|environment|install|home)|self[- ]landed)\b/i.test(text);
 }
 
+// A receipt that cannot be read drops out of review evidence; name it under
+// ATRIS_DEBUG so the gap is findable, matching lib/todo.js.
+function debugUnreadableReceipt(rel, err) {
+  if (process.env.ATRIS_DEBUG) console.error(`[task] receipt unreadable, skipped: ${rel}: ${err && err.message}`);
+}
+
 function receiptTextForProof(proof, root = process.cwd()) {
   const chunks = [];
   const pattern = new RegExp(RECEIPT_PATH_PATTERN.source, 'g');
@@ -652,7 +658,9 @@ function receiptTextForProof(proof, root = process.cwd()) {
         last_landing: parsed.last_landing || null,
         summary: parsed.summary || null,
       }).slice(0, 12000));
-    } catch {}
+    } catch (err) {
+      debugUnreadableReceipt(rel, err);
+    }
   }
   return chunks.join(' ');
 }
@@ -672,7 +680,10 @@ function missionReceiptResultForProof(task, proof, root = process.cwd()) {
     try {
       const parsed = JSON.parse(fs.readFileSync(path.resolve(root, rel), 'utf8'));
       landing = parsed?.result?.landing || parsed?.landing || parsed?.last_landing || null;
-    } catch { continue; }
+    } catch (err) {
+      debugUnreadableReceipt(rel, err);
+      continue;
+    }
     const changed = String(landing?.changed || landing?.happened || '').replace(/\s+/g, ' ').trim();
     if (!changed) continue;
     if (/\brecorded tick \d+\.?$/i.test(changed) || /^recorded a proof heartbeat\b/i.test(changed)) continue;

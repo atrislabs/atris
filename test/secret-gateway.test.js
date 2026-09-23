@@ -22,6 +22,12 @@ const {
 const { reviewOnlyEngineEnvironment, runInReapedProcessGroup } = require('../lib/fleet');
 
 const SECRET = 'Bearer real-secret-value-do-not-leak';
+// test/secret-gateway-no-hang.test.js sets this to force one failure path on
+// purpose and check the process still exits: child-timeout or gateway-start.
+const FAULT = process.env.ATRIS_SECRET_GATEWAY_TEST_FAULT || '';
+// The supervised child run took 17s on a loaded machine, so 15s flaked.
+const CHILD_TIMEOUT_MS = FAULT === 'child-timeout' ? 1 : 60000;
+const GATEWAY_SECRET = FAULT === 'gateway-start' ? '' : SECRET;
 const GRANT_HOST = 'api.test.local';
 
 function makeTlsFixture() {
@@ -63,7 +69,11 @@ function startUpstream(fixture, handler) {
       resolve({
         port: server.address().port,
         hits,
-        close: () => new Promise((done, fail) => server.close((err) => (err ? fail(err) : done()))),
+        close: () => new Promise((done, fail) => {
+          if (!server.listening) { done(); return; }
+          server.close((err) => (err ? fail(err) : done()));
+          server.closeAllConnections();
+        }),
       });
     });
   });
@@ -114,16 +124,21 @@ function assertNoSecret(text) {
   assert.equal(blob.includes('real-secret-value'), false, 'secret fragment must not appear in output');
 }
 
-test('supervised child gets placeholder only and allowed GET reaches tls upstream with real secret', async () => {
+// Cleanup runs in t.after so a failed assertion still closes every server.
+// An open https server keeps the test process alive forever.
+test('supervised child gets placeholder only and allowed GET reaches tls upstream with real secret', async (t) => {
   const fixture = makeTlsFixture();
+  t.after(() => fixture.cleanup());
   const upstream = await startUpstream(fixture, (_req, res) => {
     res.statusCode = 200;
     res.setHeader('set-cookie', 'session=nope');
     res.setHeader('x-ok', '1');
     res.end('ok');
   });
+  t.after(() => upstream.close());
 
   const controlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'secret-gateway-sup-'));
+  t.after(() => fs.rmSync(controlDir, { recursive: true, force: true }));
   const dumpFile = path.join(controlDir, 'child-env.json');
   const receiptFile = path.join(controlDir, 'receipt.json');
   const childScript = path.join(controlDir, 'child.js');
@@ -173,7 +188,7 @@ http.get(process.env.FIXTURE_BASE_URL + '/v1/items', {
     result = await runInReapedProcessGroup(
       process.execPath,
       [childScript],
-      { cwd: controlDir, env, encoding: 'utf8', timeout: 15000 },
+      { cwd: controlDir, env, encoding: 'utf8', timeout: CHILD_TIMEOUT_MS },
       controlDir,
       path.join(controlDir, 'sandbox-status'),
     );
@@ -182,7 +197,7 @@ http.get(process.env.FIXTURE_BASE_URL + '/v1/items', {
     else process.env.FIXTURE_SECRET = previous;
   }
 
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(result.status, 0, `${result.error ? result.error.message : ''}\n${result.stdout}\n${result.stderr}`);
   const childEnv = JSON.parse(fs.readFileSync(dumpFile, 'utf8'));
   assert.equal(childEnv.FIXTURE_API_KEY, placeholder);
   assert.match(childEnv.FIXTURE_BASE_URL, /^http:\/\/127\.0\.0\.1:\d+$/);
@@ -205,27 +220,26 @@ http.get(process.env.FIXTURE_BASE_URL + '/v1/items', {
   assertNoSecret(result.stdout);
   assertNoSecret(result.stderr);
   assertNoSecret(fs.readFileSync(receiptFile, 'utf8'));
-
-  await upstream.close();
-  fixture.cleanup();
-  fs.rmSync(controlDir, { recursive: true, force: true });
 });
 
-test('secret gateway denies wrong placeholder method path absolute-form and host override before upstream', async () => {
+test('secret gateway denies wrong placeholder method path absolute-form and host override before upstream', async (t) => {
   const fixture = makeTlsFixture();
+  t.after(() => fixture.cleanup());
   const upstream = await startUpstream(fixture, (_req, res) => {
     res.statusCode = 200;
     res.end('should-not-run');
   });
+  t.after(() => upstream.close());
   const placeholder = createPlaceholder();
   const gateway = await startSecretGateway({
     grant: sampleGrant(),
-    secret: SECRET,
+    secret: GATEWAY_SECRET,
     placeholder,
     upstreamPort: upstream.port,
     upstreamAddress: '127.0.0.1',
     rejectUnauthorized: false,
   });
+  t.after(() => gateway.close());
 
   const cases = [
     {
@@ -264,28 +278,27 @@ test('secret gateway denies wrong placeholder method path absolute-form and host
   assert.equal(upstream.hits.length, 0, 'upstream must see no denied requests');
   assert.ok(gateway.receipts.every((entry) => entry.decision === 'deny'));
   assertNoSecret(JSON.stringify(gateway.receipts));
-
-  await gateway.close();
-  await upstream.close();
-  fixture.cleanup();
 });
 
-test('secret gateway fails closed on upstream redirects', async () => {
+test('secret gateway fails closed on upstream redirects', async (t) => {
   const fixture = makeTlsFixture();
+  t.after(() => fixture.cleanup());
   const upstream = await startUpstream(fixture, (_req, res) => {
     res.statusCode = 302;
     res.setHeader('location', 'https://evil.example/steal');
     res.end('redirect');
   });
+  t.after(() => upstream.close());
   const placeholder = createPlaceholder();
   const gateway = await startSecretGateway({
     grant: sampleGrant(),
-    secret: SECRET,
+    secret: GATEWAY_SECRET,
     placeholder,
     upstreamPort: upstream.port,
     upstreamAddress: '127.0.0.1',
     rejectUnauthorized: false,
   });
+  t.after(() => gateway.close());
 
   const response = await gatewayRequest(gateway.baseUrl, {
     headers: { authorization: placeholder, host: `127.0.0.1:${gateway.port}` },
@@ -297,10 +310,6 @@ test('secret gateway fails closed on upstream redirects', async () => {
   assert.ok(gateway.receipts.some((entry) => entry.reason === 'redirect'));
   assertNoSecret(response.body);
   assertNoSecret(JSON.stringify(gateway.receipts));
-
-  await gateway.close();
-  await upstream.close();
-  fixture.cleanup();
 });
 
 test('review-only environment injects placeholder and never the real secret', {
