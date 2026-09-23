@@ -13,13 +13,17 @@ if (process.platform !== 'darwin' || !fs.existsSync('/usr/bin/sandbox-exec')) te
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const ASK = 'fix the auth bug';
+// a lap runs dozens of git and node steps; on a busy mac one step alone can take
+// most of a minute, so the bound only needs to catch a real hang.
+const LAP_STEP_TIMEOUT_MS = 180000;
+const LAP_TEST_TIMEOUT_MS = LAP_STEP_TIMEOUT_MS * 4;
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     env: options.env,
     encoding: 'utf8',
-    timeout: options.timeout || 45000,
+    timeout: options.timeout || LAP_STEP_TIMEOUT_MS,
   });
   if (result.error) throw result.error;
   return result;
@@ -31,11 +35,11 @@ function git(args, cwd, env) {
   return result.stdout.trim();
 }
 
-function cli(args, setup, timeout = 45000) {
+function cli(args, setup, timeout = LAP_STEP_TIMEOUT_MS) {
   return run(process.execPath, [cliPath, ...args], { cwd: setup.workspace, env: setup.env, timeout });
 }
 
-function cliAsync(args, setup, timeout = 45000) {
+function cliAsync(args, setup, timeout = LAP_STEP_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
       cwd: setup.workspace,
@@ -61,7 +65,7 @@ function cliAsync(args, setup, timeout = 45000) {
   });
 }
 
-async function waitForFile(file, timeout = 10000) {
+async function waitForFile(file, timeout = LAP_STEP_TIMEOUT_MS) {
   const started = Date.now();
   while (!fs.existsSync(file) || fs.statSync(file).size === 0) {
     if (Date.now() - started > timeout) throw new Error(`timed out waiting for ${file}`);
@@ -360,7 +364,7 @@ function assertMasterUnchanged(setup) {
   assert.notEqual(marker.status, 0, 'default one lap must not change origin/master');
 }
 
-test('one natural sentence runs one real isolated lap to verified Review without merging master', { timeout: 60000 }, () => {
+test('one natural sentence runs one real isolated lap to verified Review without merging master', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('pass');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -467,7 +471,7 @@ test('one natural sentence runs one real isolated lap to verified Review without
   }
 });
 
-test('one lap honors trusted operator Git URL rewrites for protected remote access', { timeout: 60000 }, () => {
+test('one lap honors trusted operator Git URL rewrites for protected remote access', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('pass');
   try {
     git(['config', '--global', `url.${setup.origin}.insteadOf`, 'one-lap://protected/'], setup.workspace, setup.env);
@@ -483,7 +487,7 @@ test('one lap honors trusted operator Git URL rewrites for protected remote acce
   }
 });
 
-test('one lap keeps the worktree and proof receipt when the real verifier fails', { timeout: 60000 }, () => {
+test('one lap keeps the worktree and proof receipt when the real verifier fails', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('fail');
   try {
     const worktreesBefore = git(['worktree', 'list', '--porcelain'], setup.workspace, setup.env)
@@ -538,7 +542,7 @@ test('one lap keeps the worktree and proof receipt when the real verifier fails'
   }
 });
 
-test('one lap freezes the repo default verifier before dispatch', { timeout: 60000 }, () => {
+test('one lap freezes the repo default verifier before dispatch', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('pass');
   try {
     fs.rmSync(path.join(setup.workspace, 'test'), { recursive: true, force: true });
@@ -569,7 +573,7 @@ test('one lap freezes the repo default verifier before dispatch', { timeout: 600
   }
 });
 
-test('identical asks in separate processes run one atomic lap', { timeout: 60000 }, async () => {
+test('identical asks in separate processes run one atomic lap', { timeout: LAP_TEST_TIMEOUT_MS }, async () => {
   const setup = setupRuntime('pass');
   try {
     setup.env.ATRIS_ENGINE_DELAY = '5';
@@ -605,7 +609,7 @@ test('identical asks in separate processes run one atomic lap', { timeout: 60000
   }
 });
 
-test('one lap blocks an engine git push before recording Review', { timeout: 60000 }, () => {
+test('one lap blocks an engine git push before recording Review', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('push');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -629,7 +633,7 @@ test('one lap blocks an engine git push before recording Review', { timeout: 600
   }
 });
 
-test('one lap ignores a worker-forged quarantine deletion sidecar', { timeout: 60000 }, () => {
+test('one lap ignores a worker-forged quarantine deletion sidecar', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('forge-sidecar');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -646,7 +650,7 @@ test('one lap ignores a worker-forged quarantine deletion sidecar', { timeout: 6
   }
 });
 
-test('one lap omits protected repository locators from the executor boundary', { timeout: 60000 }, () => {
+test('one lap omits protected repository locators from the executor boundary', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('inspect-boundary');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -664,7 +668,7 @@ test('one lap omits protected repository locators from the executor boundary', {
   }
 });
 
-test('one lap OS boundary blocks an executor that knows the protected checkout path', { timeout: 60000 }, () => {
+test('one lap OS boundary blocks an executor that knows the protected checkout path', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('escape-primary');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -678,7 +682,7 @@ test('one lap OS boundary blocks an executor that knows the protected checkout p
   }
 });
 
-test('one lap OS boundary blocks a passing verifier from pushing protected master', { timeout: 60000 }, () => {
+test('one lap OS boundary blocks a passing verifier from pushing protected master', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('verifier-escape');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -692,7 +696,7 @@ test('one lap OS boundary blocks a passing verifier from pushing protected maste
   }
 });
 
-test('one lap raw tree import never executes worker-controlled Git filters', { timeout: 60000 }, () => {
+test('one lap raw tree import never executes worker-controlled Git filters', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('smudge-filter');
   try {
     git(['config', 'filter.escape.clean', "sed 's/one/escaped/g'"], setup.workspace, setup.env);
@@ -717,7 +721,7 @@ test('one lap raw tree import never executes worker-controlled Git filters', { t
   }
 });
 
-test('one lap proof binding blocks a partially materialized landing from ship', { timeout: 60000 }, () => {
+test('one lap proof binding blocks a partially materialized landing from ship', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('pass');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -740,7 +744,7 @@ test('one lap proof binding blocks a partially materialized landing from ship', 
   }
 });
 
-test('one lap gives engines an ephemeral home and cannot persist agent config', { timeout: 60000 }, () => {
+test('one lap gives engines an ephemeral home and cannot persist agent config', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('persist-home');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -756,7 +760,7 @@ test('one lap gives engines an ephemeral home and cannot persist agent config', 
   }
 });
 
-test('one lap rejects case-variant reserved metadata symlinks', { timeout: 60000 }, () => {
+test('one lap rejects case-variant reserved metadata symlinks', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('reserved-symlink');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -770,7 +774,7 @@ test('one lap rejects case-variant reserved metadata symlinks', { timeout: 60000
   }
 });
 
-test('one lap rejects Unicode paths that alias reserved metadata on APFS', { timeout: 60000 }, () => {
+test('one lap rejects Unicode paths that alias reserved metadata on APFS', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('unicode-reserved-symlink');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -782,7 +786,7 @@ test('one lap rejects Unicode paths that alias reserved metadata on APFS', { tim
   }
 });
 
-test('one lap reaps detached engine children before proof advances', { timeout: 60000 }, () => {
+test('one lap reaps detached engine children before proof advances', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('late-mutate');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -797,7 +801,7 @@ test('one lap reaps detached engine children before proof advances', { timeout: 
   }
 });
 
-test('one lap reaps a detached child that creates a new session', { timeout: 60000 }, () => {
+test('one lap reaps a detached child that creates a new session', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('session-escape');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -812,7 +816,7 @@ test('one lap reaps a detached child that creates a new session', { timeout: 600
   }
 });
 
-test('one lap cleanup survives an engine killing its sandbox group leader', { timeout: 60000 }, () => {
+test('one lap cleanup survives an engine killing its sandbox group leader', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('kill-lifecycle');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -827,7 +831,7 @@ test('one lap cleanup survives an engine killing its sandbox group leader', { ti
   }
 });
 
-test('one lap reports the engine that actually completed a restaffed build', { timeout: 60000 }, () => {
+test('one lap reports the engine that actually completed a restaffed build', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('restaff');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -854,7 +858,7 @@ test('one lap reports the engine that actually completed a restaffed build', { t
   }
 });
 
-test('one lap keeps proof out of Review when the independent validator rejects', { timeout: 60000 }, () => {
+test('one lap keeps proof out of Review when the independent validator rejects', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('validator-reject');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
@@ -882,7 +886,7 @@ test('one lap keeps proof out of Review when the independent validator rejects',
   }
 });
 
-test('one lap blocks validator git metadata mutations before Review', { timeout: 60000 }, () => {
+test('one lap blocks validator git metadata mutations before Review', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
   const setup = setupRuntime('validator-mutate');
   try {
     const result = cli([ASK, '--engine', 'codex', '--json'], setup);
