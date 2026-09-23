@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  earnedUsd,
   renderCard,
   renderPageSection,
   renderEmailLine,
@@ -60,10 +61,10 @@ test('receipt block renders all four surfaces deterministically', () => {
 
   assert.deepEqual(renderCard(receipt), {
     kind: 'statement',
-    headline: 'receipt block renders the proof once',
-    text: 'receipt block renders the proof once',
-    kicker: 'proof_ready mission receipt',
-    sub: '4 changed files; behavior checks passed',
+    headline: 'Receipt block renders the proof once.',
+    text: 'Receipt block renders the proof once.',
+    kicker: 'mission receipt',
+    sub: 'Check it: behavior checks passed',
     brand: 'atris',
     size: 'og',
     theme: 'atris',
@@ -71,20 +72,19 @@ test('receipt block renders all four surfaces deterministically', () => {
   assert.equal(renderPageSection(receipt), [
     '## mission receipt',
     '',
-    '- what: receipt block renders the proof once',
-    '- how big: 4 changed files',
-    '- how we know: behavior checks passed',
-    '- status: proof_ready',
-    '- mission: mission-receipt-block',
-    '- next: ship the receipt block',
+    'Receipt block renders the proof once.',
+    'Check it: behavior checks passed.',
+    'Next: Ship the receipt block.',
+    '',
+    'details: 4 changed files; status proof_ready; mission mission-receipt-block',
   ].join('\n'));
   assert.equal(
     renderEmailLine(receipt),
-    'receipt block renders the proof once; 4 changed files; we know because behavior checks passed.',
+    'Receipt block renders the proof once. Check it: behavior checks passed.',
   );
   assert.equal(
     renderMorningCardRow(receipt),
-    '- mission: receipt block renders the proof once; 4 changed files; we know because behavior checks passed',
+    '- Receipt block renders the proof once. Check it: behavior checks passed',
   );
 });
 
@@ -108,9 +108,42 @@ test('mission proof renders as a direct passed fact instead of first-person proc
 
   assert.equal(
     renderEmailLine(receipt),
-    'receipt block renders the proof once; 4 changed files; we know because the behavior checks passed.',
+    'Receipt block renders the proof once. Check it: the behavior checks passed.',
   );
   assert.doesNotMatch(renderMorningCardRow(receipt), /\bi ran\b/i);
+});
+
+test('a link wins the check line and stays bare so it copies clean', () => {
+  const receipt = fixtureReceipt();
+  receipt.result.landing.checked = 'Live at https://github.com/atris/atrisos-web/pull/412 now.';
+  assert.equal(
+    renderEmailLine(receipt),
+    'Receipt block renders the proof once. Check it: https://github.com/atris/atrisos-web/pull/412',
+  );
+
+  const explicit = fixtureReceipt();
+  explicit.result.landing.link = 'https://snowpine.atris.ai/book';
+  assert.match(renderPageSection(explicit), /^Check it: https:\/\/snowpine\.atris\.ai\/book$/m);
+  assert.equal(renderCard(explicit).sub, 'Check it: https://snowpine.atris.ai/book');
+});
+
+test('receipt surface never leads with machinery words', () => {
+  const receipt = fixtureReceipt();
+  delete receipt.result.landing.checked;
+  delete receipt.result.landing.tested;
+  const surfaces = [renderEmailLine(receipt), renderMorningCardRow(receipt), renderCard(receipt).sub];
+  for (const line of surfaces) {
+    assert.doesNotMatch(line, /verifier|receipt says|receipt is present|we know because|task_id|tick\b/i);
+  }
+  // With only a verifier result, the check names the command that passed, in plain words.
+  assert.equal(
+    renderEmailLine(receipt),
+    'Receipt block renders the proof once. Check it: node --test test/receipt-block.test.js passed.',
+  );
+
+  const bare = { objective: 'Login now blocks anyone without an invite', result: { passed: true } };
+  assert.equal(renderEmailLine(bare), 'Login now blocks anyone without an invite. Check it: the checks passed.');
+  assert.equal(renderEmailLine({ objective: 'Nothing checked', result: {} }), 'Nothing checked.');
 });
 
 test('morning card shows mission receipt rows through the receipt block renderer', () => {
@@ -129,10 +162,89 @@ test('morning card shows mission receipt rows through the receipt block renderer
 
     assert.match(
       content,
-      /- mission: receipt block renders the proof once; 4 changed files; we know because behavior checks passed/,
+      /- Receipt block renders the proof once\. Check it: behavior checks passed/,
     );
     assert.match(content, /Completed receipts today: 1/);
   } finally {
     cleanup(dir);
   }
+});
+
+test('a receipt can carry the dollars it made, and the details line shows it', () => {
+  const receipt = fixtureReceipt();
+  assert.equal(earnedUsd(receipt), 0);
+  assert.doesNotMatch(renderPageSection(receipt), /earned/);
+
+  receipt.result.landing.earned_usd = '12000';
+  assert.equal(earnedUsd(receipt), 12000);
+  assert.match(renderPageSection(receipt), /^details: .*; earned \$12,000; mission mission-receipt-block$/m);
+
+  receipt.result.landing.earned_usd = 4500.5;
+  assert.match(renderPageSection(receipt), /earned \$4,500\.50/);
+
+  // Junk and negatives never move the number, and never reach the surface.
+  for (const junk of ['lots', -40, null, '']) {
+    receipt.result.landing.earned_usd = junk;
+    assert.equal(earnedUsd(receipt), 0);
+    assert.doesNotMatch(renderEmailLine(receipt), /earned|\$/);
+  }
+
+  // result.earned_usd works when the landing has none.
+  delete receipt.result.landing.earned_usd;
+  receipt.result.earned_usd = 250;
+  assert.equal(earnedUsd(receipt), 250);
+});
+
+test('earned_usd counts only real numbers and plain decimal strings', () => {
+  const receipt = fixtureReceipt();
+  // Number() alone would read each of these as dollars; none may count.
+  for (const junk of [true, [5], '0x10', '1e3', NaN, -40]) {
+    receipt.result.landing.earned_usd = junk;
+    assert.equal(earnedUsd(receipt), 0);
+    assert.doesNotMatch(renderPageSection(receipt), /earned|\$/);
+  }
+
+  receipt.result.landing.earned_usd = '12.50';
+  assert.equal(earnedUsd(receipt), 12.5);
+  assert.match(renderPageSection(receipt), /earned \$12\.50/);
+
+  receipt.result.landing.earned_usd = ' 42 ';
+  assert.equal(earnedUsd(receipt), 42);
+});
+
+test('a link only this machine can open never becomes the check line', () => {
+  for (const local of [
+    'http://localhost:3000/health',
+    'http://127.0.0.1:8080/status',
+    'http://[::1]:3000/',
+    'http://0.0.0.0:9090/',
+    'http://printer.local/status',
+  ]) {
+    const receipt = fixtureReceipt();
+    receipt.result.landing.link = local;
+    const line = renderEmailLine(receipt);
+    assert.match(line, /Check it: behavior checks passed\./);
+    assert.doesNotMatch(line, /localhost|127\.0\.0\.1|::1|0\.0\.0\.0|\.local/);
+  }
+
+  // A local URL inside checked text reads as a plain sentence, not a bare link.
+  const prose = fixtureReceipt();
+  prose.result.landing.checked = 'Health probe at http://localhost:3000/health returned ok';
+  assert.match(
+    renderEmailLine(prose),
+    /Check it: health probe at http:\/\/localhost:3000\/health returned ok\./,
+  );
+  assert.doesNotMatch(renderEmailLine(prose), /Check it: http:\/\/localhost/);
+
+  // When the whole checked note is a local URL, the verifier line speaks.
+  const bareLocal = fixtureReceipt();
+  bareLocal.result.landing.checked = 'http://localhost:3000/health';
+  const bareLine = renderEmailLine(bareLocal);
+  assert.match(bareLine, /Check it: node --test test\/receipt-block\.test\.js passed\./);
+  assert.doesNotMatch(bareLine, /localhost/);
+
+  // A public URL later in the same text still wins over a local one.
+  const mixed = fixtureReceipt();
+  mixed.result.landing.checked = 'Probe ran on http://localhost:3000 then shipped to https://atris.ai/proof';
+  assert.match(renderEmailLine(mixed), /Check it: https:\/\/atris\.ai\/proof$/);
 });
