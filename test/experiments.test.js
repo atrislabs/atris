@@ -45,6 +45,7 @@ function runCli(args, { cwd, input } = {}) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_BACKEND_ROOT: cwd,
       ...(pythonCmd ? { ATRIS_EXPERIMENTS_PYTHON: pythonCmd } : {}),
     },
   });

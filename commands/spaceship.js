@@ -4,7 +4,7 @@
  * atris spaceship, bounded, self-reporting overnight runner.
  *
  * Thin wrapper over scripts/spaceship.sh. The script is the implementation
- * (a supervised loop that survives bad ticks and emails Keshav on every
+ * (a supervised loop that survives bad ticks and emails the operator on every
  * meaningful state change); this module just makes it reachable as
  * `atris spaceship ...` and integrates with the CLI's command dispatch.
  *

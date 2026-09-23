@@ -3569,8 +3569,8 @@ function readTasteReviewHistory(root, limit = 4) {
 
 function missionTasteMemorySignals(text) {
   const definitions = [
-    ['plain_language', 'Keshav asks for plain English', /\b(plain|jargon|feynman|understand|simple|clarify|clarity)\b/i],
-    ['proof_gate', 'Keshav wants proof before accept', /\b(proof|receipt|verify|verified|checked|tested|accept|approval)\b/i],
+    ['plain_language', 'the operator asks for plain English', /\b(plain|jargon|feynman|understand|simple|clarify|clarity)\b/i],
+    ['proof_gate', 'the operator wants proof before accept', /\b(proof|receipt|verify|verified|checked|tested|accept|approval)\b/i],
     ['runway_revenue', 'runway pushes user or revenue work', /\b(runway|revenue|cash|user|users|customer|demo|adoption|retention)\b/i],
     ['technical_ambition', 'technical advancement still matters', /\b(technical|homerun|research|runtime|architecture|model|benchmark|agent)\b/i],
     ['trust_boundary', 'trust and approval boundaries matter', /\b(security|safe|safety|trust|privacy|approval|permission|gmail|email|connector)\b/i],
@@ -3669,9 +3669,9 @@ function missionPlainTaskPreview(title) {
 function missionTasteMemoryReason(tasteMemory, signals) {
   const candidateIds = new Set((signals || []).map((signal) => signal.id));
   const memoryIds = new Set((tasteMemory?.signals || []).map((signal) => signal.id));
-  if (memoryIds.has('runway_revenue') && candidateIds.has('users_revenue')) return 'Keshav has been steering toward user/revenue proof because runway is tight.';
-  if (memoryIds.has('plain_language') && candidateIds.has('usability')) return 'Keshav keeps asking for plain-English, understandable work.';
-  if (memoryIds.has('proof_gate') && (candidateIds.has('trust') || candidateIds.has('technical'))) return 'Keshav wants proof and receipts before serious work is accepted.';
+  if (memoryIds.has('runway_revenue') && candidateIds.has('users_revenue')) return 'the operator has been steering toward user/revenue proof because runway is tight.';
+  if (memoryIds.has('plain_language') && candidateIds.has('usability')) return 'the operator keeps asking for plain-English, understandable work.';
+  if (memoryIds.has('proof_gate') && (candidateIds.has('trust') || candidateIds.has('technical'))) return 'the operator wants proof and receipts before serious work is accepted.';
   if (memoryIds.has('working_memory')) return 'Recent logs are being used as working memory for what matters now.';
   if (memoryIds.has('technical_ambition') && candidateIds.has('technical')) return 'The member memory still values technical advancement when it has proof.';
   return '';

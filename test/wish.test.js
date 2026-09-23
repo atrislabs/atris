@@ -725,9 +725,11 @@ test('wish --metric wires a metric verifier into the mission', () => {
   try {
     prepareWorkspace(dir);
     const fakeBin = makeFakeEngines(dir);
+    const backend = path.join(dir, 'backend');
+    fs.mkdirSync(backend);
     const res = runCli(['wish', 'make the boot screen friendlier', '--metric', 'stripe.active_subs>=10', '--json'], {
       cwd: dir,
-      env: { PATH: `${fakeBin}:${systemPath}` },
+      env: { PATH: `${fakeBin}:${systemPath}`, ATRIS_BACKEND_ROOT: backend },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
@@ -742,7 +744,7 @@ test('wish --metric wires a metric verifier into the mission', () => {
     const mission = missions.find((row) => row.id === payload.mission_id);
     assert.equal(
       mission.verifier,
-      'cd /Users/keshavrao/arena/atrisos-backend && venv/bin/python backend/scripts/metric_verify.py stripe.active_subs --gte 10',
+      `cd '${backend}' && venv/bin/python backend/scripts/metric_verify.py stripe.active_subs --gte 10`,
     );
     assert.equal(mission.stop_condition, 'verifier green (metric target hit)');
     assert.equal(mission.metadata.metric, 'stripe.active_subs>=10');

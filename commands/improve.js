@@ -37,7 +37,7 @@ const rsi = require('../lib/rsi-record');
  * writes. The path sent to the backend is left untouched, a remote tick
  * may target a server-side `~/...` workspace the server expands itself, but
  * local scorecard/journal writes must never create a literal `~` directory.
- * (Surfaced by a live plan tick whose `~/arena/...` arg wrote junk locally.)
+ * (Surfaced by a live plan tick whose home-relative path wrote junk locally.)
  */
 function expandHome(p) {
   if (typeof p === 'string' && (p === '~' || p.startsWith('~/'))) {

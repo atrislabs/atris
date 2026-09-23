@@ -4129,7 +4129,7 @@ test('mission room turns messy input into a shareable receipt', () => {
     assert.equal(payload.room.proactive_next_mission.context_paths.includes('atris/team/mission-lead/MEMBER.md'), true);
     assert.equal(payload.room.proactive_next_mission.context_paths.includes('atris/logs/2026/2026-06-30.md'), true);
     assert.equal(payload.room.thinking_memory.path, 'atris/thinking.md');
-    assert.match(payload.room.thinking_memory.purpose, /how Keshav thinks/);
+    assert.match(payload.room.thinking_memory.purpose, /how the operator thinks/);
     assert.match(payload.room.first_proof_step, /smallest artifact or change/);
     assert.match(payload.room.verifier, /Receipt must include mission name/);
     assert.match(payload.room.share_line, /chaos to proof/);
@@ -4143,7 +4143,7 @@ test('mission room turns messy input into a shareable receipt', () => {
     const thinking = fs.readFileSync(thinkingPath, 'utf8');
     assert.match(thinking, /# thinking\.md/);
     assert.match(thinking, /Team logs say what happened\./);
-    assert.match(thinking, /This file says how Keshav thinks\./);
+    assert.match(thinking, /This file says how the operator thinks\./);
     assert.match(thinking, new RegExp(payload.room.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
     assert.equal(receipt.schema, 'atris.mission_room_receipt.v1');

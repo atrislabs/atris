@@ -15,6 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const { spawn, spawnSync } = require('child_process');
+const { resolveBackendRoot } = require('../utils/backend-root');
 
 const FEED_URL = 'http://localhost:8777';
 const FEED_STATS_URL = `${FEED_URL}/api/stats`;
@@ -91,15 +92,19 @@ function parseArgs(argv = []) {
 }
 
 function resolveStudyRoot(cwd = process.cwd()) {
-  const candidates = [
-    process.env.ATRIS_STUDY_ROOT,
-    process.env.ATRIS_BACKEND_ROOT,
-    path.join(path.resolve(cwd), 'atris', 'study'),
-  ].filter(Boolean);
-  for (const root of candidates) {
-    const resolved = path.resolve(String(root));
-    if (fs.existsSync(resolved)) return resolved;
+  if (process.env.ATRIS_STUDY_ROOT) {
+    const explicit = path.resolve(process.env.ATRIS_STUDY_ROOT);
+    if (fs.existsSync(explicit) && fs.statSync(explicit).isDirectory()) return explicit;
   }
+  // Same order as before: an explicitly set backend root wins over the local folder.
+  if (process.env.ATRIS_BACKEND_ROOT) {
+    const envBackend = path.resolve(process.env.ATRIS_BACKEND_ROOT);
+    if (fs.existsSync(envBackend)) return envBackend;
+  }
+  const local = path.join(path.resolve(cwd), 'atris', 'study');
+  if (fs.existsSync(local) && fs.statSync(local).isDirectory()) return local;
+  const backend = resolveBackendRoot(cwd);
+  if (backend) return backend;
   return null;
 }
 
@@ -697,6 +702,7 @@ async function run(argv = []) {
 
 module.exports = {
   run,
+  resolveStudyRoot,
   parseArgs,
   showHelp,
   wrapText,

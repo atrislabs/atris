@@ -937,7 +937,7 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     assert.match(res.stdout, /Start here:/);
     assert.match(res.stdout, /atris computer --business acme --workspace ws-new/);
     assert.match(res.stdout, /Org workspace:/);
-    assert.match(res.stdout, /cd ~\/arena\/atris-business\/acme/);
+    assert.ok(res.stdout.includes(`cd ${path.join(home, 'arena', 'atris-business', 'acme')}`));
     assert.match(res.stdout, /atris member activate operator/);
     assert.match(res.stdout, /atris member activate validator/);
     assert.match(res.stdout, /Runtime: install=installed_latest/);

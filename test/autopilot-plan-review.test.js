@@ -412,7 +412,7 @@ test('auto picker skips owner-gated in-progress tasks', async () => {
 ## In Progress
 
 - **BCK-427:** Confirm customer destination before AEO owner approval
-  **Claimed by:** keshavrao at 2026-05-22T07:15:00Z
+  **Claimed by:** operator at 2026-05-22T07:15:00Z
 
 ## Completed
 `);
@@ -468,7 +468,7 @@ print("Total broken references: 0")
 test('auto human-gate classifier keeps normal agent work runnable', () => {
   assert.equal(shouldSkipAutoHumanGate({
     title: 'Confirm customer destination before AEO owner approval',
-    claimed: 'keshavrao at 2026-05-22T07:15:00Z',
+    claimed: 'operator at 2026-05-22T07:15:00Z',
   }), true);
   assert.equal(shouldSkipAutoHumanGate({
     title: 'Fix mission selector regression',

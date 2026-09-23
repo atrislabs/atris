@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { refreshNowFile } = require('./now');
+const { ownerIdentity } = require('../utils/owner-identity');
 const escapeRegExp = require('../lib/escape-regexp');
 const { hasRenderedSections, isOpenSection, isDoneSection } = require('../lib/todo-sections');
 const { isNonInteractive } = require('../lib/noninteractive');
@@ -794,7 +795,8 @@ function memberNextMove(member, state = null) {
   if (member.slug === 'justin' || /justin/i.test(member.name || '')) {
     return `${name}: run one customer-moving GTM rep, update the relevant workspace state within 10 minutes, and leave a scorecard.`;
   }
-  if (member.slug === 'keshav' || /keshav/i.test(member.name || '')) {
+  const ownerNames = ownerIdentity().names;
+  if (ownerNames.includes(String(member.slug || '').toLowerCase()) || ownerNames.includes(String(member.name || '').toLowerCase())) {
     return `${name}: act as Customer 0: choose one allocation, narrative, system, or talent leverage move; leave proof and route the next owner.`;
   }
   if (/opus|overnight/i.test(identity)) {

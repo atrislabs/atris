@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { BACKEND_ROOT_HINT, resolveBackendRoot } = require('../utils/backend-root');
 const { runTaskOnce } = require('./autopilot');
 const {
   appendResultsRow,
@@ -391,7 +392,7 @@ function parseRunOptions(args) {
   const options = {
     dryRun: false,
     verbose: false,
-    backendPath: path.resolve(process.cwd(), '../atrisos-backend'),
+    backendPath: null,
     interventions: [],
   };
 
@@ -527,8 +528,10 @@ function buildBenchmarkArtifact(name, packDir, options) {
             'atris/features/endstate/contract.md',
             'atris/features/endstate/artifact-schema.json',
             path.relative(cwd, path.join(packDir, 'program.md')),
-            '../atrisos-backend/atris/MAP.md',
-            '../atrisos-backend/atris/TODO.md',
+            ...(backendPath ? [
+              path.relative(cwd, path.join(backendPath, 'atris', 'MAP.md')),
+              path.relative(cwd, path.join(backendPath, 'atris', 'TODO.md')),
+            ] : []),
           ],
           contextNote: [
             `Project Endstate track: ${track}`,
@@ -555,7 +558,7 @@ function buildBenchmarkArtifact(name, packDir, options) {
     ? []
     : [
         ...collectChangedFiles(cwd, beforeCli, afterCli),
-        ...collectChangedFiles(backendPath, beforeBackend, afterBackend, '../atrisos-backend/'),
+        ...(backendPath ? collectChangedFiles(backendPath, beforeBackend, afterBackend, `${path.relative(cwd, backendPath)}/`) : []),
       ];
   const wikiAfter = readTextIfExists(path.join(cwd, 'atris', 'wiki', 'STATUS.md'));
 
@@ -635,6 +638,12 @@ function experimentsRun(name, ...args) {
     runPython(loopPath, [], packDir);
     recordExperimentRun(name);
     return;
+  }
+
+  if (!options.backendPath) options.backendPath = resolveBackendRoot();
+  if (!options.backendPath) {
+    console.error(BACKEND_ROOT_HINT);
+    process.exit(1);
   }
 
   const schemaPath = path.join(process.cwd(), 'atris', 'features', 'endstate', 'artifact-schema.json');
