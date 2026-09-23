@@ -131,7 +131,7 @@ test('console claude launcher uses the configured runner binary', () => {
 test('default heartbeat spawn carries pinned Opus 4.8', () => {
   withRunnerEnv({}, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
-    assert.match(cmd, /--model claude-opus-4-8\b/);
+    assert.match(cmd, /--model claude-opus-5-5\b/);
   });
 });
 

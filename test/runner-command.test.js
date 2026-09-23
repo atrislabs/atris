@@ -63,7 +63,7 @@ function withTemplateEnv(value, fn) {
 
 test('resolveClaudeRunnerModel honors explicit model first', () => {
   withEnv('sonnet', () => {
-    assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-4-8' }), 'claude-opus-4-8');
+    assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-5-5' }), 'claude-opus-5-5');
   });
 });
 
@@ -82,7 +82,7 @@ test('resolveClaudeRunnerModel prefers ATRIS_RUNNER_MODEL over legacy env', () =
 
 test('resolveClaudeRunnerModel defaults to pinned Opus 4.8', () => {
   withEnv(undefined, () => {
-    assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-4-8');
+    assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
     assert.equal(resolveClaudeRunnerModel({}), DEFAULT_CLAUDE_RUNNER_MODEL);
   });
 });
@@ -292,7 +292,7 @@ test('runnerAvailabilityFailureMessage reports unknown profiles without rethrowi
 // Regression guard for local-alias-drift: the default must be pinned so `opus`
 // does not resolve differently across Claude Code versions or account rollouts.
 test('default model is pinned to Opus 4.8', () => {
-  assert.equal(DEFAULT_CLAUDE_RUNNER_MODEL, 'claude-opus-4-8');
+  assert.equal(DEFAULT_CLAUDE_RUNNER_MODEL, 'claude-opus-5-5');
   assert.equal(DEFAULT_FABLE_RUNNER_MODEL, 'claude-fable-5');
 });
 
@@ -302,7 +302,7 @@ test('buildRunnerCommand always emits --model', () => {
   withTemplateEnv(undefined, () => {
     withEnv(undefined, () => {
       const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
-      assert.match(cmd, /--model claude-opus-4-8\b/);
+      assert.match(cmd, /--model claude-opus-5-5\b/);
       assert.match(cmd, /claude -p "\$\(cat '\/tmp\/p\.tmp'\)"/);
       assert.match(cmd, /--allowedTools 'Bash,Read'/);
     });
