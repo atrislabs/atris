@@ -2077,7 +2077,7 @@ npm link              # Local testing
 npm run publish:release
 ```
 
-**Flow:** Development → test with `npm link` → bump version → `.github/workflows/publish.yml` or local `npm run publish:release`; trusted publishing requires npm package settings to name workflow filename `publish.yml`
+**Flow:** Development → test with `npm link` → bump version → `.github/workflows/publish.yml` or local `npm run publish:release`; trusted publishing requires npm package settings to name workflow filename `publish.yml`. After publish, `scripts/publish-atris-release.js` waits up to 10 minutes for npm latest (`verifyPublishedVersionWithRetry`) and succeeds early when the exact version is already on the registry.
 
 ---
 
