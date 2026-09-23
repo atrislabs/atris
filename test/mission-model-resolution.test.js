@@ -45,7 +45,7 @@ function withRunnerEnv(values, fn) {
 
 test('resolveClaudeRunnerModel honors explicit mission.model first', () => {
   withRunnerEnv({ ATRIS_CLAUDE_MODEL: 'sonnet' }, () => {
-    assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-4-8' }), 'claude-opus-4-8');
+    assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-5-5' }), 'claude-opus-5-5');
   });
 });
 
@@ -64,9 +64,9 @@ test('resolveClaudeRunnerModel prefers ATRIS_RUNNER_MODEL over legacy env', () =
 
 test('resolveClaudeRunnerModel defaults to pinned Opus 4.8', () => {
   withRunnerEnv({}, () => {
-    assert.equal(resolveClaudeRunnerModel({ model: null }), 'claude-opus-4-8');
-    assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-4-8');
-    assert.equal(resolveClaudeRunnerModel({ model: '   ' }), 'claude-opus-4-8');
+    assert.equal(resolveClaudeRunnerModel({ model: null }), 'claude-opus-5-5');
+    assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
+    assert.equal(resolveClaudeRunnerModel({ model: '   ' }), 'claude-opus-5-5');
   });
 });
 
