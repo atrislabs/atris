@@ -22,6 +22,10 @@ const {
 const { reviewOnlyEngineEnvironment, runInReapedProcessGroup } = require('../lib/fleet');
 
 const SECRET = 'Bearer real-secret-value-do-not-leak';
+// The supervised child run took 17s on a loaded machine, so 15s flaked into a
+// failure. The env knob lets test/secret-gateway-no-hang.test.js force that
+// failure path on purpose.
+const CHILD_TIMEOUT_MS = Number(process.env.ATRIS_SECRET_GATEWAY_TEST_CHILD_TIMEOUT_MS) || 60000;
 const GRANT_HOST = 'api.test.local';
 
 function makeTlsFixture() {
@@ -63,7 +67,11 @@ function startUpstream(fixture, handler) {
       resolve({
         port: server.address().port,
         hits,
-        close: () => new Promise((done, fail) => server.close((err) => (err ? fail(err) : done()))),
+        close: () => new Promise((done, fail) => {
+          if (!server.listening) { done(); return; }
+          server.close((err) => (err ? fail(err) : done()));
+          server.closeAllConnections();
+        }),
       });
     });
   });
@@ -114,16 +122,21 @@ function assertNoSecret(text) {
   assert.equal(blob.includes('real-secret-value'), false, 'secret fragment must not appear in output');
 }
 
-test('supervised child gets placeholder only and allowed GET reaches tls upstream with real secret', async () => {
+// Cleanup runs in t.after so a failed assertion still closes every server.
+// An open https server keeps the test process alive forever.
+test('supervised child gets placeholder only and allowed GET reaches tls upstream with real secret', async (t) => {
   const fixture = makeTlsFixture();
+  t.after(() => fixture.cleanup());
   const upstream = await startUpstream(fixture, (_req, res) => {
     res.statusCode = 200;
     res.setHeader('set-cookie', 'session=nope');
     res.setHeader('x-ok', '1');
     res.end('ok');
   });
+  t.after(() => upstream.close());
 
   const controlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'secret-gateway-sup-'));
+  t.after(() => fs.rmSync(controlDir, { recursive: true, force: true }));
   const dumpFile = path.join(controlDir, 'child-env.json');
   const receiptFile = path.join(controlDir, 'receipt.json');
   const childScript = path.join(controlDir, 'child.js');
@@ -173,7 +186,7 @@ http.get(process.env.FIXTURE_BASE_URL + '/v1/items', {
     result = await runInReapedProcessGroup(
       process.execPath,
       [childScript],
-      { cwd: controlDir, env, encoding: 'utf8', timeout: 15000 },
+      { cwd: controlDir, env, encoding: 'utf8', timeout: CHILD_TIMEOUT_MS },
       controlDir,
       path.join(controlDir, 'sandbox-status'),
     );
@@ -205,14 +218,11 @@ http.get(process.env.FIXTURE_BASE_URL + '/v1/items', {
   assertNoSecret(result.stdout);
   assertNoSecret(result.stderr);
   assertNoSecret(fs.readFileSync(receiptFile, 'utf8'));
-
-  await upstream.close();
-  fixture.cleanup();
-  fs.rmSync(controlDir, { recursive: true, force: true });
 });
 
-test('secret gateway denies wrong placeholder method path absolute-form and host override before upstream', async () => {
+test('secret gateway denies wrong placeholder method path absolute-form and host override before upstream', async (t) => {
   const fixture = makeTlsFixture();
+  t.after(() => fixture.cleanup());
   const upstream = await startUpstream(fixture, (_req, res) => {
     res.statusCode = 200;
     res.end('should-not-run');
@@ -225,6 +235,10 @@ test('secret gateway denies wrong placeholder method path absolute-form and host
     upstreamPort: upstream.port,
     upstreamAddress: '127.0.0.1',
     rejectUnauthorized: false,
+  });
+  t.after(async () => {
+    await gateway.close();
+    await upstream.close();
   });
 
   const cases = [
@@ -264,14 +278,11 @@ test('secret gateway denies wrong placeholder method path absolute-form and host
   assert.equal(upstream.hits.length, 0, 'upstream must see no denied requests');
   assert.ok(gateway.receipts.every((entry) => entry.decision === 'deny'));
   assertNoSecret(JSON.stringify(gateway.receipts));
-
-  await gateway.close();
-  await upstream.close();
-  fixture.cleanup();
 });
 
-test('secret gateway fails closed on upstream redirects', async () => {
+test('secret gateway fails closed on upstream redirects', async (t) => {
   const fixture = makeTlsFixture();
+  t.after(() => fixture.cleanup());
   const upstream = await startUpstream(fixture, (_req, res) => {
     res.statusCode = 302;
     res.setHeader('location', 'https://evil.example/steal');
@@ -286,6 +297,10 @@ test('secret gateway fails closed on upstream redirects', async () => {
     upstreamAddress: '127.0.0.1',
     rejectUnauthorized: false,
   });
+  t.after(async () => {
+    await gateway.close();
+    await upstream.close();
+  });
 
   const response = await gatewayRequest(gateway.baseUrl, {
     headers: { authorization: placeholder, host: `127.0.0.1:${gateway.port}` },
@@ -297,10 +312,6 @@ test('secret gateway fails closed on upstream redirects', async () => {
   assert.ok(gateway.receipts.some((entry) => entry.reason === 'redirect'));
   assertNoSecret(response.body);
   assertNoSecret(JSON.stringify(gateway.receipts));
-
-  await gateway.close();
-  await upstream.close();
-  fixture.cleanup();
 });
 
 test('review-only environment injects placeholder and never the real secret', {
