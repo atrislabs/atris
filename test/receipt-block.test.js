@@ -194,3 +194,57 @@ test('a receipt can carry the dollars it made, and the details line shows it', (
   receipt.result.earned_usd = 250;
   assert.equal(earnedUsd(receipt), 250);
 });
+
+test('earned_usd counts only real numbers and plain decimal strings', () => {
+  const receipt = fixtureReceipt();
+  // Number() alone would read each of these as dollars; none may count.
+  for (const junk of [true, [5], '0x10', '1e3', NaN, -40]) {
+    receipt.result.landing.earned_usd = junk;
+    assert.equal(earnedUsd(receipt), 0);
+    assert.doesNotMatch(renderPageSection(receipt), /earned|\$/);
+  }
+
+  receipt.result.landing.earned_usd = '12.50';
+  assert.equal(earnedUsd(receipt), 12.5);
+  assert.match(renderPageSection(receipt), /earned \$12\.50/);
+
+  receipt.result.landing.earned_usd = ' 42 ';
+  assert.equal(earnedUsd(receipt), 42);
+});
+
+test('a link only this machine can open never becomes the check line', () => {
+  for (const local of [
+    'http://localhost:3000/health',
+    'http://127.0.0.1:8080/status',
+    'http://[::1]:3000/',
+    'http://0.0.0.0:9090/',
+    'http://printer.local/status',
+  ]) {
+    const receipt = fixtureReceipt();
+    receipt.result.landing.link = local;
+    const line = renderEmailLine(receipt);
+    assert.match(line, /Check it: behavior checks passed\./);
+    assert.doesNotMatch(line, /localhost|127\.0\.0\.1|::1|0\.0\.0\.0|\.local/);
+  }
+
+  // A local URL inside checked text reads as a plain sentence, not a bare link.
+  const prose = fixtureReceipt();
+  prose.result.landing.checked = 'Health probe at http://localhost:3000/health returned ok';
+  assert.match(
+    renderEmailLine(prose),
+    /Check it: health probe at http:\/\/localhost:3000\/health returned ok\./,
+  );
+  assert.doesNotMatch(renderEmailLine(prose), /Check it: http:\/\/localhost/);
+
+  // When the whole checked note is a local URL, the verifier line speaks.
+  const bareLocal = fixtureReceipt();
+  bareLocal.result.landing.checked = 'http://localhost:3000/health';
+  const bareLine = renderEmailLine(bareLocal);
+  assert.match(bareLine, /Check it: node --test test\/receipt-block\.test\.js passed\./);
+  assert.doesNotMatch(bareLine, /localhost/);
+
+  // A public URL later in the same text still wins over a local one.
+  const mixed = fixtureReceipt();
+  mixed.result.landing.checked = 'Probe ran on http://localhost:3000 then shipped to https://atris.ai/proof';
+  assert.match(renderEmailLine(mixed), /Check it: https:\/\/atris\.ai\/proof$/);
+});
