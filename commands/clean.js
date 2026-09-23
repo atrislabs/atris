@@ -358,9 +358,26 @@ function findStaleTasks(atrisDir) {
  * Detects both out-of-bounds AND drift (symbol moved to different line)
  * Returns { healed: number, unhealable: array }
  */
+// The boot map routes; atris/refs/MAP-NOTES.md holds the deep file:line refs.
+// Heal both. Entries from the notes file carry `map` so reports can say where.
+const MAP_NOTES_FILE = path.join('refs', 'MAP-NOTES.md');
+
 function healBrokenMapRefs(cwd, atrisDir, dryRun = false, homeDir = os.homedir()) {
   const mapFile = path.join(atrisDir, 'MAP.md');
   if (!fs.existsSync(mapFile)) return { healed: 0, unhealable: [] };
+  const result = healMapFileRefs(cwd, mapFile, dryRun, homeDir);
+  const notesFile = path.join(atrisDir, MAP_NOTES_FILE);
+  if (!fs.existsSync(notesFile)) return result;
+  const notes = healMapFileRefs(cwd, notesFile, dryRun, homeDir);
+  const map = path.relative(cwd, notesFile).split(path.sep).join('/');
+  return {
+    healed: result.healed + notes.healed,
+    unhealable: [...result.unhealable, ...notes.unhealable.map((entry) => ({ ...entry, map }))],
+    replacements: [...result.replacements, ...notes.replacements.map((entry) => ({ ...entry, map }))],
+  };
+}
+
+function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {
 
   let mapContent = fs.readFileSync(mapFile, 'utf8');
   const unhealable = [];

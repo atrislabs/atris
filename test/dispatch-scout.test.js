@@ -306,3 +306,33 @@ test('dispatch scout uses one fake ask response and never calls a real model', a
     fs.rmSync(fixture.root, { recursive: true, force: true });
   }
 });
+
+test('a map line that lives only in atris/refs/MAP-NOTES.md seeds, verifies, and renders with its file', () => {
+  const fixture = makeFixtureRepo();
+  try {
+    const notes = 'atris/refs/MAP-NOTES.md';
+    fs.mkdirSync(path.join(fixture.root, 'atris', 'refs'), { recursive: true });
+    fs.writeFileSync(path.join(fixture.root, notes), fixture.mapLines.join('\n'));
+    fs.writeFileSync(path.join(fixture.root, 'atris', 'MAP.md'), '# short map\n');
+    runGit(fixture.root, ['add', '.']);
+    runGit(fixture.root, ['commit', '-qm', 'move deep refs to notes']);
+    const commit = checkoutCommit(fixture.root);
+
+    const seed = seedScoutContext({ task: TASK, worktreePath: fixture.root });
+    assert.deepEqual(seed.gotchaCandidates[0], { file: notes, line: 2, text: fixture.mapLines[1] });
+
+    const verified = verifyScoutPack(rawPack({ ...fixture, commit }, [alphaHit(fixture), betaHit(fixture)], {
+      map_gotchas: [
+        { file: notes, line: 9, text: fixture.mapLines[1] },
+        { line: 2, text: fixture.mapLines[1] },
+      ],
+    }), { task: TASK, worktreePath: fixture.root, allowedFiles: seed.allowedFiles, expectedCommit: commit });
+    assert.ok(verified);
+    // The notes line is found in the notes file; the same text cited in MAP.md is not there, so it drops.
+    assert.deepEqual(verified.map_gotchas, [{ file: notes, line: 2, text: fixture.mapLines[1] }]);
+    const brief = appendVerifiedScoutPack('Build it.', verified, { worktreePath: fixture.root });
+    assert.match(brief, /- atris\/refs\/MAP-NOTES\.md line 2: /);
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});

@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { existingMapDocs } = require('../lib/map-refs');
 
 const MEMORY_LAYERS = [
   { key: 'features', dir: path.join('atris', 'features') },
@@ -226,10 +227,11 @@ function scanLayer(root, layer, terms) {
   return scanFiles(root, layer.key, layer.dir.split(path.sep).join('/'), listMarkdownFiles(dir), terms);
 }
 
+// The map layer covers the boot map and the notes file that holds its deep refs.
 function scanMap(root, terms) {
-  const mapPath = path.join(root, 'atris', 'MAP.md');
-  if (!fs.existsSync(mapPath)) return emptyLayerResult('map', 'atris/MAP.md');
-  return scanFiles(root, 'map', 'atris/MAP.md', [mapPath], terms);
+  const files = existingMapDocs(root).map((doc) => path.join(root, doc));
+  if (!files.length) return emptyLayerResult('map', 'atris/MAP.md');
+  return scanFiles(root, 'map', 'atris/MAP.md', files, terms);
 }
 
 function scanSource(root, terms) {
