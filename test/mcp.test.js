@@ -58,7 +58,8 @@ function closeServer(server) {
 // every parsed response message. Rejects on any stdout line that is not valid
 // JSON-RPC, since a clean stream is the contract this test guards.
 function mcpSession(requests, {
-  extraEnv = {}, closeAfterId, timeout = 20000, protocolVersion = '2025-03-26', rawLines = [],
+  extraEnv = {}, closeAfterId, closeStdinAfterSend = false,
+  timeout = 20000, protocolVersion = '2025-03-26', rawLines = [],
 } = {}) {
   return new Promise((resolve, reject) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mcp-'));
@@ -106,13 +107,14 @@ function mcpSession(requests, {
     send({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} });
     for (const line of rawLines) child.stdin.write(`${line}\n`);
     for (const request of requests) send(request);
+    if (closeStdinAfterSend) finish();
 
     child.on('error', (error) => {
       clearTimeout(timer);
       fs.rmSync(home, { recursive: true, force: true });
       reject(error);
     });
-    child.on('close', () => {
+    child.on('close', (exitCode) => {
       clearTimeout(timer);
       fs.rmSync(home, { recursive: true, force: true });
       const messages = [];
@@ -124,7 +126,7 @@ function mcpSession(requests, {
           return;
         }
       }
-      resolve({ messages, stdout, stderr });
+      resolve({ messages, stdout, stderr, exitCode });
     });
   });
 }
@@ -173,6 +175,14 @@ test('atris mcp returns parse error for malformed input', async () => {
   assert.deepEqual(messages.find((m) => m.error?.code === -32700), {
     jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' },
   });
+});
+
+test('atris mcp skips blank lines without a parse error', async () => {
+  const { messages } = await mcpSession(
+    [{ jsonrpc: '2.0', id: 2, method: 'ping' }],
+    { closeAfterId: 2, rawLines: ['', '  ', '\t'] },
+  );
+  assert.deepEqual(messages.map((message) => message.id), [1, 2]);
 });
 
 test('atris mcp does not respond to notifications', async () => {
@@ -251,6 +261,72 @@ test('atris mcp tools/call runs design_search against the mocked api', async () 
     assert.match(text, /Supabase/);
     assert.match(text, /"credits_charged": 1/);
     assert.match(text, /"balance_remaining_usd": 42\.49/);
+  } finally {
+    await closeServer(mock.server);
+  }
+});
+
+test('atris mcp answers ping while a design call is pending', async () => {
+  const mock = await startHttpMock(async (request) => {
+    assert.equal(request.url, '/api/design/search');
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    return { body: { results: [{ brand_name: 'Delayed' }] } };
+  });
+  try {
+    const { messages } = await mcpSession([
+      { jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'design_search', arguments: { query: 'delayed' } } },
+      { jsonrpc: '2.0', id: 4, method: 'ping' },
+    ], {
+      closeAfterId: 4,
+      extraEnv: { ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api` },
+    });
+    assert.deepEqual(messages.map((message) => message.id), [1, 4, 3]);
+    assert.match(messages[2].result.content[0].text, /Delayed/);
+  } finally {
+    await closeServer(mock.server);
+  }
+});
+
+test('atris mcp writes a pending call response after stdin closes', async () => {
+  const mock = await startHttpMock(async (request) => {
+    assert.equal(request.url, '/api/design/search');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return { body: { results: [{ brand_name: 'After close' }] } };
+  });
+  try {
+    const { messages, exitCode } = await mcpSession([
+      { jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'design_search', arguments: { query: 'after close' } } },
+    ], {
+      closeStdinAfterSend: true,
+      extraEnv: { ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api` },
+    });
+    assert.deepEqual(messages.map((message) => message.id), [1, 3]);
+    assert.match(messages[1].result.content[0].text, /After close/);
+    assert.equal(exitCode, 0);
+  } finally {
+    await closeServer(mock.server);
+  }
+});
+
+test('atris mcp drops a cancelled call response', async () => {
+  const mock = await startHttpMock(async (request) => {
+    assert.equal(request.url, '/api/design/search');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return { body: { results: [{ brand_name: 'Cancelled' }] } };
+  });
+  try {
+    const { messages } = await mcpSession([
+      { jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'design_search', arguments: { query: 'cancelled' } } },
+      { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 3 } },
+      { jsonrpc: '2.0', id: 4, method: 'ping' },
+    ], {
+      closeAfterId: 4,
+      extraEnv: { ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api` },
+    });
+    assert.deepEqual(messages.map((message) => message.id), [1, 4]);
   } finally {
     await closeServer(mock.server);
   }

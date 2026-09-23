@@ -142,10 +142,13 @@ export async function handleTool(name, args = {}, key) {
 async function serveStdio() {
   const { name, version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
   const knownVersions = new Set(['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25']);
-  const send = (message) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
+  const send = (message, onWritten) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`, onWritten);
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  const inFlight = new Set();
+  const pendingById = new Map();
 
   for await (const line of input) {
+    if (!line.trim()) continue;
     let request;
     try {
       request = JSON.parse(line);
@@ -156,6 +159,11 @@ async function serveStdio() {
     if (!request || typeof request !== 'object' || Array.isArray(request)
       || request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
       send({ id: request?.id ?? null, error: { code: -32600, message: 'invalid request' } });
+      continue;
+    }
+    if (request.method === 'notifications/cancelled') {
+      const pending = pendingById.get(request.params?.requestId);
+      if (pending) pending.cancelled = true;
       continue;
     }
     if (!Object.hasOwn(request, 'id')) continue;
@@ -174,22 +182,41 @@ async function serveStdio() {
     } else if (request.method === 'tools/list') {
       result = { tools: TOOLS };
     } else if (request.method === 'tools/call') {
-      const key = resolveDesignKey();
-      if (!key) {
-        result = fail('no api key found. set ATRIS_API_KEY or run: atris login (or save a key in ~/.atris/design-api-key)');
-      } else {
+      const pending = { cancelled: false };
+      const work = (async () => {
         try {
-          result = await handleTool(request.params?.name, request.params?.arguments || {}, key);
+          const key = resolveDesignKey();
+          result = key
+            ? await handleTool(request.params?.name, request.params?.arguments || {}, key)
+            : fail('no api key found. set ATRIS_API_KEY or run: atris login (or save a key in ~/.atris/design-api-key)');
         } catch (error) {
           result = fail(`design call failed: ${(error && error.message) || error}`);
         }
-      }
+        if (!pending.cancelled) {
+          await new Promise((resolve, reject) => {
+            send({ id, result }, (error) => (error ? reject(error) : resolve()));
+          });
+        }
+      })();
+      inFlight.add(work);
+      pendingById.set(id, pending);
+      const done = () => {
+        inFlight.delete(work);
+        if (pendingById.get(id) === pending) pendingById.delete(id);
+      };
+      work.then(done, (error) => {
+        done();
+        process.stderr.write(`mcp response write failed: ${(error && error.message) || error}\n`);
+        process.exitCode = 1;
+      });
+      continue;
     } else {
       send({ id, error: { code: -32601, message: 'method not found' } });
       continue;
     }
     send({ id, result });
   }
+  await Promise.allSettled(inFlight);
 }
 
 // Auto-start only when run directly (`atris mcp`, `npx atris-mcp`,
