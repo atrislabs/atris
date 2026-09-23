@@ -53,7 +53,7 @@ const ENGINES = {
 function scoutPrompt(question, dir) {
   return [
     `You are a read-only scout in ${dir}. You NEVER write, edit, or run mutating commands.`,
-    `Search order: index files first (atris/MAP.md, atris/TODO.md, README) via targeted reads, then grep. Cheap reads only.`,
+    `Search order: index files first (atris/MAP.md, atris/refs/MAP-NOTES.md if present for exact file:line refs, atris/TODO.md, README) via targeted reads, then grep. Cheap reads only.`,
     ``,
     `Question: ${question}`,
     ``,

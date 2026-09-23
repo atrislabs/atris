@@ -1248,6 +1248,7 @@ if (!command || !knownCommands.includes(command)) {
       error: command ? `unknown command: ${command}` : 'unknown command',
       command: command || null,
       input: rawNaturalArgs.join(' '),
+      suggestions: suggestCommands(command),
       usage: 'atris help',
     }, null, 2));
     process.exit(2);

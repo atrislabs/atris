@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { mapNotesPath } = require('../lib/map-refs');
 const { spawnSync } = require('child_process');
 const taskDb = require('../lib/task-db');
 const {
@@ -167,6 +168,8 @@ function formatTaskEvents(rows) {
 
 function gatherTerritoryContext(root, db) {
   const map = readFileBestEffort(path.join(root, 'atris', 'MAP.md'), { lines: 100 });
+  const notesPath = mapNotesPath(root);
+  const notes = notesPath ? readFileBestEffort(path.join(root, notesPath), { lines: 100 }) : '';
   const lessonsMd = readFileBestEffort(path.join(root, 'atris', 'lessons.md'), { maxChars: READ_LIMIT });
   const lessonsJson = readFileBestEffort(path.join(root, 'atris', 'lessons.json'), { maxChars: READ_LIMIT });
   const journals = readRecentJournals(root);
@@ -176,6 +179,7 @@ function gatherTerritoryContext(root, db) {
   return [
     section('workspace_root', root),
     section('atris/MAP.md first 100 lines', map),
+    ...(notesPath ? [section(`${notesPath} first 100 lines`, notes)] : []),
     section('atris/lessons.md', lessonsMd),
     section('atris/lessons.json', lessonsJson),
     section('last 3 daily journals', journals),
@@ -614,4 +618,5 @@ module.exports = {
   unknownsCommand,
   showHelp,
   fallbackPayload,
+  gatherTerritoryContext,
 };

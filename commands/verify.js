@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const escapeRegExp = require('../lib/escape-regexp');
+const { existingMapDocs } = require('../lib/map-refs');
 
 /**
  * atris verify [task] - Validate work is actually done
@@ -397,13 +398,13 @@ function checkDocsVsChanges(cwd, atrisDir) {
     return result;
   }
 
-  // Check if significant files are in MAP.md
+  // Check if significant files are in MAP.md or the notes file it points to
   const mapFile = path.join(atrisDir, 'MAP.md');
   if (!fs.existsSync(mapFile)) {
     return result;
   }
 
-  const mapContent = fs.readFileSync(mapFile, 'utf8');
+  const mapContent = mapDocsText(atrisDir);
 
   const significantExtensions = ['.js', '.ts', '.py', '.go', '.rs', '.rb', '.java'];
   const significantChanges = changedFiles.filter(f =>
@@ -547,6 +548,12 @@ function verifyChange(cwd, change) {
   };
 }
 
+// A file counts as documented when the boot map or atris/refs/MAP-NOTES.md names it.
+function mapDocsText(atrisDir) {
+  const root = path.dirname(atrisDir);
+  return existingMapDocs(root).map((doc) => fs.readFileSync(path.join(root, doc), 'utf8')).join('\n');
+}
+
 /**
  * Check if MAP.md documents the expected files
  */
@@ -556,7 +563,7 @@ function checkMapForFiles(atrisDir, changes) {
     return { documented: false };
   }
 
-  const content = fs.readFileSync(mapFile, 'utf8');
+  const content = mapDocsText(atrisDir);
   const fileChanges = changes.filter(c => c.type === 'file');
 
   if (fileChanges.length === 0) {
@@ -725,5 +732,6 @@ module.exports = {
   escapeRegExp,
   mapCoverage,
   isPathCovered,
-  normalizeMapPath
+  normalizeMapPath,
+  checkMapForFiles,
 };

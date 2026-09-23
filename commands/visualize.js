@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { mapNotesPath } = require('../lib/map-refs');
 const { spawnSync } = require('child_process');
 const { getLogPath } = require('../lib/journal');
 const { ensureValidCredentials } = require('../utils/auth');
@@ -153,14 +154,16 @@ function readBusinessMeta(cwd = process.cwd()) {
   }
 }
 
+function promptWords(prompt) {
+  return new Set(String(prompt || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4));
+}
+
 function findRelevantContextFiles(cwd, prompt) {
   const roots = [
     path.join(cwd, 'atris', 'context'),
     path.join(cwd, 'atris', 'wiki'),
   ];
-  const words = new Set(
-    prompt.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4)
-  );
+  const words = promptWords(prompt);
   const files = [];
 
   function walk(dir) {
@@ -192,6 +195,17 @@ function findRelevantContextFiles(cwd, prompt) {
     .slice(0, 4);
 }
 
+// The deep map is large: keep only the lines that share a word with the prompt.
+function mapNotesExcerpt(cwd, prompt, maxChars) {
+  const notesPath = mapNotesPath(cwd);
+  if (!notesPath) return '';
+  const words = promptWords(prompt);
+  if (!words.size) return '';
+  const lines = fs.readFileSync(path.join(cwd, notesPath), 'utf8').split(/\r?\n/)
+    .filter(line => [...words].some(word => line.toLowerCase().includes(word)));
+  return lines.join('\n').slice(0, maxChars);
+}
+
 function collectWorkspaceContext(prompt, cwd = process.cwd()) {
   const business = readBusinessMeta(cwd);
   const chunks = [];
@@ -201,6 +215,8 @@ function collectWorkspaceContext(prompt, cwd = process.cwd()) {
 
   const mapSnippet = readTextIfExists(path.join(cwd, 'atris', 'MAP.md'), 1400);
   if (mapSnippet) chunks.push(`MAP excerpt:\n${mapSnippet}`);
+  const notesSnippet = mapNotesExcerpt(cwd, prompt, 1400);
+  if (notesSnippet) chunks.push(`MAP notes excerpt:\n${notesSnippet}`);
 
   const todoSnippet = readTextIfExists(path.join(cwd, 'atris', 'TODO.md'), 1000);
   if (todoSnippet) chunks.push(`TODO excerpt:\n${todoSnippet}`);
@@ -389,4 +405,5 @@ async function visualizeAtris(args = process.argv.slice(3)) {
 
 module.exports = {
   visualizeAtris,
+  collectWorkspaceContext,
 };
