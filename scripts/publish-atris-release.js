@@ -158,11 +158,16 @@ function sleepMs(ms) {
 }
 
 function verifyPublishedVersionWithRetry(version, runner = spawnSync, options = {}) {
-  // npm's `latest` dist-tag is eventually consistent: the read CDN can lag the
-  // publish by well over a minute. Give it a realistic window (~60s) before we
-  // fall back to confirming the exact version landed.
-  const attempts = Math.max(1, Number(options.attempts || 12));
-  const delayMs = Math.max(0, Number(options.delayMs ?? 5000));
+  // npm latest can lag the registry for several minutes after a publish that
+  // already succeeded. Poll for about 10 minutes. On each try, a matching
+  // latest tag wins. If latest is still old but the exact version is already
+  // on the registry, stop and let the caller treat the release as successful.
+  const attempts = Math.max(1, Number(options.attempts || 40));
+  const delayMs = Math.max(0, Number(options.delayMs ?? 15000));
+  const sleep = typeof options.sleep === 'function' ? options.sleep : sleepMs;
+  const totalMinutes = Math.max(1, Math.round((attempts * delayMs) / 60000));
+  let elapsedMs = 0;
+  let reportedMinute = 0;
   let verification = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     verification = {
@@ -171,7 +176,19 @@ function verifyPublishedVersionWithRetry(version, runner = spawnSync, options = 
       attempts,
     };
     if (verification.ok) return verification;
-    if (attempt < attempts) sleepMs(delayMs);
+    const availability = checkVersionAvailability(version, runner);
+    if (availability.reason === 'version_exists') {
+      return { ...verification, landed: true };
+    }
+    if (attempt < attempts) {
+      elapsedMs += delayMs;
+      const minute = Math.floor(elapsedMs / 60000);
+      while (reportedMinute < minute) {
+        reportedMinute += 1;
+        process.stderr.write(`waiting for npm to show atris@${version}, ${reportedMinute} of ${totalMinutes} minutes\n`);
+      }
+      sleep(delayMs);
+    }
   }
   return verification;
 }
@@ -224,16 +241,13 @@ function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync, o
     const verification = verifyPublishedVersionWithRetry(version, runner, {
       attempts: options.verificationAttempts,
       delayMs: options.verificationDelayMs,
+      sleep: options.verificationSleep,
     });
     if (verification.ok) {
       process.stdout.write(renderPublishVerification(verification));
       return 0;
     }
-    // npm publish already succeeded; the latest read-back just lagged. Confirm the
-    // exact version actually landed before failing the job — a red CI for a release
-    // that is live on the registry is a false negative, and you cannot un-publish.
-    const landed = checkVersionAvailability(version, runner);
-    if (landed.reason === 'version_exists') {
+    if (verification.landed) {
       process.stdout.write(renderPublishLatestLag(version, verification));
       return 0;
     }
