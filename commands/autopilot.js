@@ -18,6 +18,7 @@ const {
   runnerAvailabilityFailureMessage,
 } = require('../lib/runner-command');
 const { findStalePages, findStaleTasks, healBrokenMapRefs } = require('./clean');
+const { mapNotesPath } = require('../lib/map-refs');
 const {
   buildScorecardData,
   readScorecards,
@@ -625,6 +626,8 @@ function getContextFiles(phase, options = {}) {
     agentSpec && fs.existsSync(path.join(cwd, agentSpec)) ? agentSpec : null,
     'atris/PERSONA.md',
     'atris/MAP.md',
+    // Exact file:line refs live beside the short routing map.
+    mapNotesPath(cwd),
     'atris/TODO.md',
     fs.existsSync(path.join(cwd, 'atris/lessons.md')) ? 'atris/lessons.md' : null,
     (() => { const { logFile } = getLogPath(); return fs.existsSync(logFile) ? path.relative(cwd, logFile) : null; })(),

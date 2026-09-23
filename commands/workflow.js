@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { mapNotesPath } = require('../lib/map-refs');
 const { getLogPath } = require('../lib/journal');
 const {
   buildFirstMinute,
@@ -491,6 +492,19 @@ async function runAtris2Local(userInput, atris2Mode) {
   }
 }
 
+// Where the agent finds code. When the short routing map has a notes file,
+// point line lookups there so the agent does not hunt for refs the map lacks.
+function mapPromptSection(targetDir, cwd = process.cwd()) {
+  const mapFile = path.join(targetDir, 'MAP.md');
+  if (!fs.existsSync(mapFile)) return '';
+  const mapRef = path.relative(cwd, mapFile);
+  const notes = mapNotesPath(path.dirname(targetDir));
+  if (!notes) return `## MAP.md\nRead this file for file:line references: ${mapRef}\n\n`;
+  const notesRef = path.relative(cwd, path.join(path.dirname(targetDir), notes));
+  return `## MAP.md\nRead this file to find where work lives: ${mapRef}\n\n`
+    + `## MAP-NOTES.md\nRead this file for exact file:line references: ${notesRef}\n\n`;
+}
+
 async function planAtris(userInput = null) {
   const { loadConfig } = require('../utils/config');
   const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
@@ -773,9 +787,7 @@ async function planAtris(userInput = null) {
       systemPrompt += '## PERSONA.md\n' + fs.readFileSync(personaPath, 'utf8') + '\n\n';
     }
 
-    if (mapFileRef) {
-      systemPrompt += `## MAP.md\nRead this file for file:line references: ${mapFileRef}\n\n`;
-    }
+    systemPrompt += mapPromptSection(targetDir);
 
     // Build user prompt with context
     let userPrompt = `You are the Navigator. Take ideas from Inbox → break them down into perfect, manageable tasks.\n\n`;
@@ -1253,9 +1265,7 @@ async function doAtris() {
     if (persona) {
       systemPrompt += '## PERSONA.md\n' + persona + '\n\n';
     }
-    if (mapPath) {
-      systemPrompt += `## MAP.md\nRead this file for file:line references: ${mapPath}\n\n`;
-    }
+    systemPrompt += mapPromptSection(targetDir);
     if (profile) {
       systemPrompt += `## PROJECT CONTEXT\nType: ${context}\nProfile: ${JSON.stringify(profile, null, 2)}\n\n`;
     }
@@ -1898,6 +1908,7 @@ async function executeAgentSDKFast(userInput) {
 }
 
 module.exports = {
+  mapPromptSection,
   planAtris,
   doAtris,
   reviewAtris,

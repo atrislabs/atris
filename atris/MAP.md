@@ -77,8 +77,8 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 
 ## Load order
 
-1. `atris/now.md` then `atris/brain/STATUS.md` (both local, made by `atris brain activate`)
+1. `atris/now.md` then `atris/brain/STATUS.md`, if present (local files made by `atris brain activate`; a fresh checkout has neither)
 2. `atris/PERSONA.md` for voice, `atris/atris.md` for protocol
 3. `atris/MAP.md` to route work, `atris/TODO.md` for the queue
-4. `atris/wiki/index.md` (local) and `atris/skills/atris/SKILL.md` as needed
+4. `atris/wiki/index.md` if present (local), and `atris/skills/atris/SKILL.md` as needed
 5. Exact lines and search shortcuts: `atris/refs/MAP-NOTES.md`

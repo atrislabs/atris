@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { mapNotesPath } = require('../lib/map-refs');
 const { execSync, spawnSync } = require('child_process');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
@@ -118,11 +119,12 @@ function execPhaseCommandSync(cmd, opts = {}) {
  * what the validator found - closing the try → notice → adjust loop.
  */
 function buildRunPrompt(phase, context, priorCycleReview) {
-  const { mapPath, todoPath, personaPath, lessonsPath, journalPath } = context;
+  const { mapPath, notesPath, todoPath, personaPath, lessonsPath, journalPath } = context;
 
   const readFiles = [
     personaPath && `- ${personaPath}`,
     mapPath && `- ${mapPath}`,
+    notesPath && `- ${notesPath}`,
     todoPath && `- ${todoPath}`,
     lessonsPath && `- ${lessonsPath}`,
     journalPath && `- ${journalPath}`,
@@ -413,6 +415,7 @@ async function runAtris(options = {}) {
   // Build context paths
   const context = {
     mapPath: fs.existsSync(path.join(atrisDir, 'MAP.md')) ? 'atris/MAP.md' : null,
+    notesPath: mapNotesPath(path.dirname(atrisDir)),
     todoPath: fs.existsSync(path.join(atrisDir, 'TODO.md')) ? 'atris/TODO.md' : null,
     personaPath: fs.existsSync(path.join(atrisDir, 'PERSONA.md')) ? 'atris/PERSONA.md' : null,
     lessonsPath: fs.existsSync(path.join(atrisDir, 'lessons.md')) ? 'atris/lessons.md' : null,
