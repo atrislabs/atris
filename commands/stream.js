@@ -293,6 +293,31 @@ function pushEvent(events, input) {
   if (event) events.push({ ...event, key: eventKey(event) });
 }
 
+// When timestamps match, state snapshots precede receipts, then landing summaries.
+const STREAM_SOURCE_RANK = {
+  task: 20,
+  task_episode: 30,
+  scorecard: 40,
+  mission_event: 50,
+  mission_state: 60,
+  mission_receipt: 70,
+  mission_landing: 80,
+  worktree: 85,
+  landing: 90,
+  state: 10,
+};
+
+function compareStreamEvents(a, b) {
+  const byMs = a.ms - b.ms;
+  if (byMs) return byMs;
+  const rankA = STREAM_SOURCE_RANK[a.source] ?? 55;
+  const rankB = STREAM_SOURCE_RANK[b.source] ?? 55;
+  if (rankA !== rankB) return rankA - rankB;
+  const byKey = String(a.key || '').localeCompare(String(b.key || ''));
+  if (byKey) return byKey;
+  return String(a.event || '').localeCompare(String(b.event || ''));
+}
+
 function statePaths(root) {
   const stateDir = path.join(root, '.atris', 'state');
   return {
@@ -455,7 +480,6 @@ function collectRunReceiptEvents(root, deps, events) {
 
 function candidateWorktreeDirs(root, deps) {
   const dirs = new Set([
-    path.resolve(root, '..', '.agent-worktrees'),
     path.join(path.dirname(root), '.agent-worktrees', path.basename(root)),
   ]);
   const sidecar = readJson(statePaths(root).sidecar, deps, null);
@@ -606,7 +630,7 @@ function collectStreamEvents({ root = process.cwd(), sinceMs = 0, agent = '', no
     if (wantedAgent && event.agent.toLowerCase() !== wantedAgent) continue;
     byKey.set(event.key, event);
   }
-  return [...byKey.values()].sort((a, b) => (a.ms - b.ms) || a.event.localeCompare(b.event));
+  return [...byKey.values()].sort(compareStreamEvents);
 }
 
 function waitingOnOperator(tasks) {
@@ -841,6 +865,7 @@ function streamCommand(args = [], deps = defaultDeps()) {
 module.exports = {
   collectSnapshot,
   collectStreamEvents,
+  compareStreamEvents,
   createStreamState,
   parseArgs,
   parseSince,

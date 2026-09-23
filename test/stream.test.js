@@ -8,6 +8,7 @@ const path = require('node:path');
 
 const {
   collectStreamEvents,
+  compareStreamEvents,
   createStreamState,
   parseSince,
   pollStreamOnce,
@@ -146,6 +147,44 @@ test('collectStreamEvents merges sources in chronological order', () => {
   assert.deepEqual(events.map((event) => event.ms), events.map((event) => event.ms).sort((a, b) => a - b));
   assert.match(events[0].summary, /started stream command/);
   assert.match(events.at(-1).summary, /tests green/);
+});
+
+test('collectStreamEvents breaks same-ms ties with stable source order', () => {
+  const ms = Date.parse('2026-07-06T08:06:00.000Z');
+  const base = {
+    ms,
+    ts: new Date(ms).toISOString(),
+    agent: 'codex',
+    root: '/tmp/isolated',
+  };
+  const state = {
+    ...base,
+    source: 'mission_state',
+    event: 'mission_running',
+    summary: 'is working on watch team work live.',
+    key: 'state|1',
+    raw: { id: 'm1' },
+  };
+  const receipt = {
+    ...base,
+    source: 'mission_receipt',
+    event: 'mission_run_tick',
+    summary: 'finished building stream; tests green.',
+    key: 'receipt|1',
+    raw: { file: '/tmp/r1.json' },
+  };
+  const landing = {
+    ...base,
+    source: 'mission_landing',
+    event: 'mission_run_tick',
+    summary: 'finished the bounded task.',
+    key: 'landing|1',
+    raw: { file: '/tmp/r1.json' },
+  };
+  const forward = [state, receipt, landing].sort(compareStreamEvents);
+  const reverse = [landing, receipt, state].sort(compareStreamEvents);
+  assert.deepEqual(forward, reverse);
+  assert.deepEqual(forward.map((event) => event.source), ['mission_state', 'mission_receipt', 'mission_landing']);
 });
 
 test('agent filter keeps one agent stream', () => {
