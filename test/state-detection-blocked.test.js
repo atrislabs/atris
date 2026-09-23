@@ -80,3 +80,35 @@ test('without a database only the Blocked section of TODO.md counts', t => {
   assert.equal(detectWorkspaceState(root).state, 'blocked');
   assert.equal(fs.existsSync(path.join(root, 'missing.db')), false);
 });
+
+const STALE_BLOCKED_TODO = [
+  '# TODO.md', '',
+  '## Blocked', '',
+  '- **T9:** waiting on the bank login', '',
+].join('\n');
+
+test('once this workspace has tasks in the database, a stale Blocked section in TODO.md is ignored', t => {
+  const root = workspace(t);
+  const db = withDb(t, root);
+  taskDb.addTask(db, { title: 'ship the invoice export', workspaceRoot: taskDb.workspaceRoot(root) });
+  fs.writeFileSync(path.join(root, 'atris/TODO.md'), STALE_BLOCKED_TODO);
+
+  assert.equal(detectWorkspaceState(root).state, 'ready');
+});
+
+// The task database is one file shared by every workspace on the machine
+// (~/.atris/tasks.db). Its existence says nothing about this folder, so a
+// workspace with no rows there still reads its own TODO.md.
+test('another workspace in the shared database neither blocks nor hides this workspace', t => {
+  const root = workspace(t);
+  const db = withDb(t, root);
+  const other = taskDb.addTask(db, { title: 'other project task', workspaceRoot: path.join(root, 'elsewhere') });
+  taskDb.doneTask(db, { id: other.id, status: 'failed', actor: 'test' });
+  const todo = path.join(root, 'atris/TODO.md');
+
+  fs.writeFileSync(todo, '# TODO.md\n\n## Blocked\n\n(Empty)\n');
+  assert.equal(detectWorkspaceState(root).state, 'ready');
+
+  fs.writeFileSync(todo, STALE_BLOCKED_TODO);
+  assert.equal(detectWorkspaceState(root).state, 'blocked');
+});
