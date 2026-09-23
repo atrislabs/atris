@@ -9,10 +9,24 @@ const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const { withMissionFullJson } = require('./helpers/mission-json');
 
-function runCli(args, cwd) {
-  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
+function runCli(args, cwd, extraEnv = {}) {
+  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ...extraEnv };
   delete env.ATRIS_RUNNER_PROFILE;
   return spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], { cwd, encoding: 'utf8', env });
+}
+
+function fakeClaude(base) {
+  const bin = path.join(base, 'bin');
+  fs.mkdirSync(bin);
+  const executable = path.join(bin, 'claude');
+  fs.writeFileSync(executable, [
+    '#!/bin/sh',
+    'if [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; exit 0; fi',
+    'echo \'{"type":"result","is_error":false,"result":"finished bounded work"}\'',
+    '',
+  ].join('\n'));
+  fs.chmodSync(executable, 0o755);
+  return { PATH: `${bin}${path.delimiter}${process.env.PATH || ''}` };
 }
 
 function makeRepo() {
@@ -37,9 +51,9 @@ function makeRepo() {
 test('run-objective without a live codex session defaults to the claude runner', () => {
   const { base, repo } = makeRepo();
   try {
-    const res = runCli(['member', 'run', 'growth', 'improve onboarding proof', '--minutes', '10', '--no-verify', '--json'], repo);
-    assert.notEqual(res.status, 0);
-    assert.equal(JSON.parse(res.stdout).started, false);
+    const res = runCli(['member', 'run', 'growth', 'improve onboarding proof', '--minutes', '10', '--max-ticks', '1', '--no-verify', '--json'], repo, fakeClaude(base));
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.equal(JSON.parse(res.stdout).started, true);
     assert.equal(JSON.parse(res.stdout).mission.runner, 'claude', res.stdout);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
@@ -53,10 +67,10 @@ test('run-objective with a live codex session keeps the codex_goal runner', () =
   try {
     const res = runCli([
       'member', 'run', 'growth', 'improve onboarding proof', '--minutes', '10', '--no-verify',
-      '--native-goal-status', 'active', '--native-goal-objective', 'improve onboarding proof', '--json',
+      '--max-ticks', '1', '--native-goal-status', 'active', '--native-goal-objective', 'improve onboarding proof', '--json',
     ], repo);
-    assert.notEqual(res.status, 0);
-    assert.equal(JSON.parse(res.stdout).started, false);
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.equal(JSON.parse(res.stdout).started, true);
     assert.equal(JSON.parse(res.stdout).mission.runner, 'codex_goal', res.stdout);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
@@ -67,7 +81,7 @@ test('run-objective with a live codex session keeps the codex_goal runner', () =
 test('explicit --runner overrides the default', () => {
   const { base, repo } = makeRepo();
   try {
-    const res = runCli(['member', 'run', 'growth', 'improve onboarding proof', '--minutes', '10', '--no-verify', '--runner', 'codex_goal', '--json'], repo);
+    const res = runCli(['member', 'run', 'growth', 'improve onboarding proof', '--minutes', '10', '--max-ticks', '1', '--no-verify', '--runner', 'codex_goal', '--json'], repo);
     assert.notEqual(res.status, 0);
     assert.equal(JSON.parse(res.stdout).started, false);
     assert.equal(JSON.parse(res.stdout).mission.runner, 'codex_goal', res.stdout);

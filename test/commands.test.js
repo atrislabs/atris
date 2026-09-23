@@ -169,6 +169,20 @@ function runCli(args, { cwd, input, env, timeout = 15000 } = {}) {
   return result;
 }
 
+function fakeMemberRunClaude(dir) {
+  const bin = path.join(dir, 'fake-bin');
+  fs.mkdirSync(bin, { recursive: true });
+  const executable = path.join(bin, 'claude');
+  fs.writeFileSync(executable, [
+    '#!/bin/sh',
+    'if [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; exit 0; fi',
+    'echo \'{"type":"result","is_error":false,"result":"finished bounded work"}\'',
+    '',
+  ].join('\n'));
+  fs.chmodSync(executable, 0o755);
+  return { PATH: `${bin}${path.delimiter}${process.env.PATH || ''}` };
+}
+
 test('member create initializes MEMBER.md and dated logs', () => {
   const dir = makeTempDir();
   try {
@@ -193,7 +207,7 @@ test('member create initializes MEMBER.md and dated logs', () => {
   }
 });
 
-test('member run can save an unchecked mission without starting it', () => {
+test('member run allows an unchecked mission start', () => {
   const { buildMemberRunStartArgs } = require('../commands/member');
   const bare = buildMemberRunStartArgs('maze', 'choose useful work', ['--runner', 'atris2', '--minutes', '5']);
   assert.ok(bare.includes('--no-verify'), 'no verifier named → explicit --no-verify');
@@ -249,6 +263,7 @@ test('member run starts a budgeted isolated mission from plain text', () => {
     git(['add', '.']);
     git(['commit', '-qm', 'baseline']);
     fs.writeFileSync(path.join(dir, 'main-dirt.txt'), 'noise that must stay out of the member mission\n');
+    const env = fakeMemberRunClaude(dir);
 
     const res = runCli([
       'member',
@@ -257,15 +272,17 @@ test('member run starts a budgeted isolated mission from plain text', () => {
       'Improve onboarding proof',
       '--minutes',
       '10',
+      '--max-ticks',
+      '1',
       '--no-verify',
       '--json',
-    ], { cwd: dir });
-    assert.notEqual(res.status, 0);
+    ], { cwd: dir, env, timeout: 60000 });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
     const mission = payload.mission;
 
-    assert.equal(payload.started, false);
-    assert.equal(payload.state, 'planning');
+    assert.equal(payload.started, true);
+    assert.equal(payload.ran_ticks, 1);
     assert.equal(mission.owner, 'growth');
     assert.equal(mission.objective, 'Improve onboarding proof');
     // No live codex session drove this run, so the runner defaults to claude
@@ -273,7 +290,6 @@ test('member run starts a budgeted isolated mission from plain text', () => {
     // waiting for a native goal start that never comes).
     assert.equal(mission.runner, 'claude');
     assert.equal(mission.budget_contract.requested_seconds, 600);
-    assert.equal(mission.budget_contract.policy, 'spend_full_budget');
     assert.equal(mission.max_wall_seconds, 600);
     assert.match(mission.stop_condition, /use the whole time unless blocked or unsafe/);
     assert.ok(mission.worktree?.path, 'member mission should have an isolated worktree by default');
@@ -305,6 +321,7 @@ test('member run chooses useful work from params when no mission text exists', (
     assert.equal(created.status, 0, created.stderr || created.stdout);
     git(['add', '.']);
     git(['commit', '-qm', 'baseline']);
+    const env = fakeMemberRunClaude(dir);
 
     const res = runCli([
       'member',
@@ -316,14 +333,17 @@ test('member run chooses useful work from params when no mission text exists', (
       'logistics',
       '--value',
       'reduce support time',
+      '--max-ticks',
+      '1',
       '--no-verify',
       '--json',
-    ], { cwd: dir });
-    assert.notEqual(res.status, 0);
+    ], { cwd: dir, env, timeout: 60000 });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
     const mission = payload.mission;
 
-    assert.equal(payload.started, false);
+    assert.equal(payload.started, true);
+    assert.equal(payload.ran_ticks, 1);
     assert.equal(mission.owner, 'growth');
     assert.match(mission.objective, /meaningful work for logistics/);
     assert.match(mission.objective, /reduce support time/);

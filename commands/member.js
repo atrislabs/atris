@@ -687,6 +687,15 @@ const MEMBER_RUN_START_VALUE_FLAGS = [
   '--mission-id',
   '--owner',
   '--runner',
+  '--engine',
+  '--budget',
+  '--repo',
+  '--native-goal-status',
+  '--native-goal-objective',
+  '--visible-goal-status',
+  '--visible-goal-objective',
+  '--max-idle-ticks',
+  '--slots',
   '--lane',
   '--cadence',
   '--verify',
@@ -718,10 +727,49 @@ const MEMBER_RUN_START_BOOLEAN_FLAGS = [
   '--stop-when-done',
   '--choose-work',
   '--auto',
+  '--headless',
+  '--self-drive',
+  '--no-claude',
+  '--complete-on-pass',
+  '--no-drain',
+  '--create-next',
+  '--preflight',
+  '--no-preflight',
+  '--room-preflight',
+  '--no-room-preflight',
+  '--room-auto-run',
+  '--no-room-auto-run',
+  '--manual-ack',
+  '--allow-native-goal-supersede',
+  '--supersede-paused-native-goal',
+  '--take-goal-slot',
+  '--due',
+  '--detach',
+  '--fleet',
+  '--dry-run',
+  '--land',
+  '--cloud',
 ];
 
+function memberRunMissionWordIndices(args = []) {
+  const values = new Set(MEMBER_RUN_START_VALUE_FLAGS);
+  const booleans = new Set(['--full', '--verbose', ...MEMBER_RUN_START_BOOLEAN_FLAGS]);
+  const indices = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i]);
+    const key = arg.includes('=') ? arg.slice(0, arg.indexOf('=')) : arg;
+    if (booleans.has(key)) continue;
+    if (values.has(key)) {
+      if (!arg.includes('=') && args[i + 1] && !String(args[i + 1]).startsWith('--')) i += 1;
+      continue;
+    }
+    indices.push(i);
+  }
+  return indices;
+}
+
 function memberRunMissionText(args = []) {
-  return stripKnownFlags(args, MEMBER_RUN_START_VALUE_FLAGS, MEMBER_RUN_START_BOOLEAN_FLAGS).join(' ').trim();
+  return memberRunMissionWordIndices(args).map((index) => args[index]).join(' ').trim();
 }
 
 function cleanMemberRunPhrase(value) {
@@ -835,8 +883,8 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   pushFlagValue(startArgs, args, '--minutes');
   pushFlagValue(startArgs, args, '--hours');
   pushFlagValue(startArgs, args, '--base');
-  // Keep the created mission inspectable when no check was supplied. member run
-  // reports that it was not started and exits nonzero after creation.
+  // Member runs choose and drive work immediately, so an absent check must not
+  // leave autonomous callers with a mission that never ran.
   if (hasFlag(args, '--no-verify') || !readFlag(args, '--verify', '')) {
     startArgs.push('--no-verify');
   }
@@ -873,15 +921,25 @@ function startMemberRunMission(name, missionText, args = []) {
   return memberRunCli(startArgs, process.cwd());
 }
 
-function memberRunCli(args, cwd) {
+function memberRunCli(args, cwd, { live = false, missionId = '' } = {}) {
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
+  const runsDir = path.join(cwd, 'atris', 'runs');
+  const previousReceipts = live && fs.existsSync(runsDir) ? new Set(fs.readdirSync(runsDir)) : new Set();
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: live ? 'inherit' : ['ignore', 'pipe', 'pipe'],
   });
   if (result.error) throw result.error;
+  if (live) {
+    const receiptName = fs.existsSync(runsDir)
+      ? fs.readdirSync(runsDir).filter((name) => !previousReceipts.has(name) && name.startsWith(`mission-${missionId}-`) && name.endsWith('.json')).sort().at(-1)
+      : null;
+    const receipt = receiptName ? readJson(path.join(runsDir, receiptName), null) : null;
+    return { status: result.status, payload: receipt?.result?.kind === 'mission_run_summary'
+      ? { ran_ticks: receipt.result.ran_ticks } : null, stderr: '', errorReported: result.status !== 0 };
+  }
   let payload = null;
   try {
     payload = JSON.parse(result.stdout);
@@ -905,7 +963,7 @@ function printMemberRunResult(result, asJson) {
     console.log(`started ${result.mission_id} (${result.state})`);
   }
   if (!result.started) {
-    console.error(result.error);
+    if (!result.errorReported) console.error(result.error);
     process.exitCode = 1;
   }
 }
@@ -994,14 +1052,14 @@ function memberPing(name, ...args) {
 
 function memberRun(name, ...args) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log('usage: atris member run <name> ["mission text"] --verify "<cmd>" [--minutes N|--hours N] [--json]');
+    console.log('usage: atris member run <name> ["mission text"] [--verify "<cmd>"] [--minutes N|--hours N] [--json]');
     console.log('new mission: atris member run growth "improve onboarding proof" --verify "npm test" --minutes 30 --json');
     console.log('choose work: atris member run growth --verify "npm test" --industry logistics --minutes 30 --json');
     console.log('existing mission: atris member run growth --mission <mission-id> --max-ticks 1 --json');
     console.log('meaning: if mission text is omitted, the member chooses one useful bounded task from atris state.');
     console.log('truth: useful work must improve revenue, reliability, speed, security, clarity, or trust, then show plain proof.');
     console.log('isolation: new missions use --worktree by default; add --shared-checkout to stay here.');
-    console.log('check: --verify or a verify field in the member file is required to start work.');
+    console.log('check: --verify or a verify field in the member file adds a mission check.');
     return;
   }
 
@@ -1017,7 +1075,7 @@ function memberRun(name, ...args) {
     const start = startMemberRunMission(name, missionText, requestedVerifier ? [...args, '--verify', requestedVerifier] : args);
     if (start.status !== 0 || !start.payload?.mission) {
       printMemberRunResult({ started: false, state: null, mission_id: start.payload?.mission?.id || null,
-        error: start.payload?.error || start.stderr || 'mission creation failed' }, asJson);
+        error: start.payload?.detail || start.payload?.error || start.stderr || 'mission creation failed' }, asJson);
       return;
     }
     mission = start.payload.mission;
@@ -1029,7 +1087,7 @@ function memberRun(name, ...args) {
       const start = startMemberRunMission(name, memberRunAutoMissionText(name, args), requestedVerifier ? [...args, '--verify', requestedVerifier] : args);
       if (start.status !== 0 || !start.payload?.mission) {
         printMemberRunResult({ started: false, state: null, mission_id: start.payload?.mission?.id || null,
-          error: start.payload?.error || start.stderr || 'mission creation failed' }, asJson);
+          error: start.payload?.detail || start.payload?.error || start.stderr || 'mission creation failed' }, asJson);
         return;
       }
       mission = start.payload.mission;
@@ -1046,36 +1104,35 @@ function memberRun(name, ...args) {
 
   const cwd = mission.worktree?.path || process.cwd();
   const verifier = readFlag(args, '--verify', '') || mission.verifier || requestedVerifier;
-  if (!verifier) {
-    printMemberRunResult({ started: false, state: mission.status, mission_id: mission.id, mission,
-      error: 'created, not started: add a check with --verify "<cmd>"' }, asJson);
-    return;
-  }
-  if (verifier !== mission.verifier) {
+  if (verifier && verifier !== mission.verifier) {
     const changed = memberRunCli(['mission', 'set-verifier', mission.id, verifier, '--json'], cwd);
     if (changed.status !== 0) {
       printMemberRunResult({ started: false, state: mission.status, mission_id: mission.id, mission,
-        error: changed.payload?.error || changed.stderr || 'could not set mission check' }, asJson);
+        error: changed.payload?.detail || changed.payload?.error || changed.stderr || 'could not set mission check' }, asJson);
       return;
     }
     mission.verifier = verifier;
   }
 
+  const missionWordIndices = missionText && !hasMissionOverride ? new Set(memberRunMissionWordIndices(args)) : new Set();
+  const executionArgs = args.filter((_, index) => !missionWordIndices.has(index));
+  const runArgs = stripKnownFlags(executionArgs,
+    ['--mission', '--mission-id', '--minutes', '--hours', '--industry', '--domain', '--value', '--outcome', '--truth', '--proof', '--base'],
+    ['--worktree', '--shared-checkout', '--no-worktree', '--choose-work', '--auto']);
   const budgetSeconds = memberRunBudgetSeconds(args);
-  const requestedWall = Number(readFlag(args, '--max-wall', '')) || budgetSeconds || 900;
-  const maxWall = budgetSeconds ? Math.min(requestedWall, budgetSeconds) : requestedWall;
-  const maxTicks = readFlag(args, '--max-ticks', '') || (budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
-  const run = memberRunCli([
-    'mission', 'run', mission.id,
-    '--max-ticks', String(maxTicks), '--max-wall', String(maxWall),
-    '--headless', '--self-drive', '--complete-on-pass', '--json',
-  ], cwd);
+  if (!readFlag(runArgs, '--max-ticks', '')) {
+    runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
+  }
+  if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || 900));
+  if (!verifier && !hasFlag(runArgs, '--no-verify')) runArgs.push('--no-verify');
+  const run = memberRunCli(['mission', 'run', mission.id, ...runArgs], cwd, { live: !asJson, missionId: mission.id });
   const payload = run.payload || {};
   const finalMission = payload.mission || require('./mission').resolveMission(mission.id, cwd) || mission;
-  const started = run.status === 0 && Number(payload.ran_ticks) > 0;
+  const started = run.status === 0 && payload.ok !== false && Number(payload.ran_ticks) > 0;
   printMemberRunResult({ ...payload, started, state: finalMission.status, mission_id: mission.id,
     mission: finalMission, node_modules_linked: nodeModulesLinked, node_modules_source: nodeModulesSource,
-    ...(!started ? { error: payload.error || run.stderr || 'mission did not run a work step' } : {}) }, asJson);
+    errorReported: run.errorReported,
+    ...(!started ? { error: payload.detail || payload.error || payload.reason || run.stderr || 'mission did not run a work step' } : {}) }, asJson);
 }
 
 function loadTeamScoreEvidence(scoreJsonPath) {
