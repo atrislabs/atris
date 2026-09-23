@@ -1278,7 +1278,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 3. **`atris review`** - Human checkpoint, first-minute voice
 
-- Entry: `commands/workflow.js:1323` `reviewAtris` / `renderReviewMinute` (`commands/workflow.js:111`)
+- Entry: `commands/workflow.js:1327` `reviewAtris` / `renderReviewMinute` (`commands/workflow.js:115`)
 - Empty folder: `lib/first-minute.js` `isFreshWorkspace` + `speakFirstMinute` (same two spoken lines and `--json` next as bare `atris`), including `--verbose`. No `validator.md` bounce and no lone `nothing is waiting on you.`
 - After init: stay in the room. If first-minute next is `atris task claim|ready|accept`, review prints those same two spoken lines. Certified leads with the win and `atris task accept <id>`. Uncertified stays "still being checked", not needs-you. `nothing is waiting on you.` only when there is no claim/ready/accept next.
 - `--all` / `--limit` / `--group-by`: certified queue via `task reviews`. After init, `--json` also keeps that queue.
