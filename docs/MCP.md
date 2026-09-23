@@ -1,6 +1,6 @@
 # Atris MCP server
 
-`atris mcp` runs a stdio Model Context Protocol server that gives any MCP client the three design tools. The server lives at `mcp/atris-mcp/` and also ships as the `atris-mcp` bin, so `npx atris-mcp` works after the package is installed.
+`atris mcp` runs a stdio Model Context Protocol server that gives any MCP client the three design tools. It uses Node's built-in stdin and stdout support for newline-delimited JSON-RPC, with no npm dependencies. The server lives at `mcp/atris-mcp/` and also ships as the `atris-mcp` bin, so `npx atris-mcp` works after the package is installed.
 
 ## Tools
 

@@ -4,11 +4,9 @@
 // Auth resolves the same way as the CLI: ATRIS_API_KEY, then
 // the logged-in atris token, then ~/.atris/design-api-key.
 
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import designApi from '../../lib/design-api.js';
 
 const { resolveDesignKey, designRequest, pollDesignJob, billingOf } = designApi;
@@ -141,34 +139,89 @@ export async function handleTool(name, args = {}, key) {
   return fail(`unknown tool: ${name}`);
 }
 
-export function createServer() {
-  const server = new Server(
-    { name: 'atris', version: '1.0.0' },
-    { capabilities: { tools: {} } },
-  );
+async function serveStdio() {
+  const { name, version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+  const knownVersions = new Set(['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25']);
+  const send = (message, onWritten) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`, onWritten);
+  const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  const inFlight = new Set();
+  const pendingById = new Map();
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const key = resolveDesignKey();
-    if (!key) {
-      return fail('no api key found. set ATRIS_API_KEY or run: atris login (or save a key in ~/.atris/design-api-key)');
-    }
+  for await (const line of input) {
+    if (!line.trim()) continue;
+    let request;
     try {
-      return await handleTool(request.params.name, request.params.arguments || {}, key);
-    } catch (error) {
-      return fail(`design call failed: ${(error && error.message) || error}`);
+      request = JSON.parse(line);
+    } catch {
+      send({ id: null, error: { code: -32700, message: 'parse error' } });
+      continue;
     }
-  });
+    if (!request || typeof request !== 'object' || Array.isArray(request)
+      || request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
+      send({ id: request?.id ?? null, error: { code: -32600, message: 'invalid request' } });
+      continue;
+    }
+    if (request.method === 'notifications/cancelled') {
+      const pending = pendingById.get(request.params?.requestId);
+      if (pending) pending.cancelled = true;
+      continue;
+    }
+    if (!Object.hasOwn(request, 'id')) continue;
 
-  return server;
+    const id = request.id;
+    let result;
+    if (request.method === 'initialize') {
+      result = {
+        protocolVersion: knownVersions.has(request.params?.protocolVersion)
+          ? request.params.protocolVersion : '2025-06-18',
+        capabilities: { tools: {} },
+        serverInfo: { name, version },
+      };
+    } else if (request.method === 'ping') {
+      result = {};
+    } else if (request.method === 'tools/list') {
+      result = { tools: TOOLS };
+    } else if (request.method === 'tools/call') {
+      const pending = { cancelled: false };
+      const work = (async () => {
+        try {
+          const key = resolveDesignKey();
+          result = key
+            ? await handleTool(request.params?.name, request.params?.arguments || {}, key)
+            : fail('no api key found. set ATRIS_API_KEY or run: atris login (or save a key in ~/.atris/design-api-key)');
+        } catch (error) {
+          result = fail(`design call failed: ${(error && error.message) || error}`);
+        }
+        if (!pending.cancelled) {
+          await new Promise((resolve, reject) => {
+            send({ id, result }, (error) => (error ? reject(error) : resolve()));
+          });
+        }
+      })();
+      inFlight.add(work);
+      pendingById.set(id, pending);
+      const done = () => {
+        inFlight.delete(work);
+        if (pendingById.get(id) === pending) pendingById.delete(id);
+      };
+      work.then(done, (error) => {
+        done();
+        process.stderr.write(`mcp response write failed: ${(error && error.message) || error}\n`);
+        process.exitCode = 1;
+      });
+      continue;
+    } else {
+      send({ id, error: { code: -32601, message: 'method not found' } });
+      continue;
+    }
+    send({ id, result });
+  }
+  await Promise.allSettled(inFlight);
 }
 
 // Auto-start only when run directly (`atris mcp`, `npx atris-mcp`,
 // node index.mjs); realpathSync resolves the npm bin symlink.
 const invokedPath = process.argv[1] ? realpathSync(process.argv[1]) : '';
 if (invokedPath && invokedPath === fileURLToPath(import.meta.url)) {
-  const server = createServer();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  await serveStdio();
 }
