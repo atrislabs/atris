@@ -19806,6 +19806,7 @@ test('unknown top-level command with --json returns JSON error', () => {
       error: 'unknown command: foobarxyz',
       command: 'foobarxyz',
       input: 'foobarxyz --json',
+      suggestions: [],
       usage: 'atris help',
     });
   } finally {
