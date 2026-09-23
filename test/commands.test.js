@@ -152,13 +152,13 @@ function withFixtureReadyResult(args) {
   return next;
 }
 
-function runCli(args, { cwd, input, env } = {}) {
+function runCli(args, { cwd, input, env, timeout = 15000 } = {}) {
   const cliArgs = withFixtureReadyResult(args);
   const result = spawnSync(process.execPath, [cliPath, ...cliArgs], {
     cwd,
     input,
     encoding: 'utf8',
-    timeout: 15000,
+    timeout,
     env: {
       ...scrubAgentEnv(),
       ATRIS_SKIP_UPDATE_CHECK: '1',
@@ -193,11 +193,7 @@ test('member create initializes MEMBER.md and dated logs', () => {
   }
 });
 
-test('member run opts out of the verifier gate when no verifier is named', () => {
-  // A member-run mission is driven immediately by its runner — it is not a
-  // parked planning wish, which is what the mission-start verifier gate was
-  // built to refuse. Without an explicit opt-out, autonomous legs (autopilot's
-  // "member chooses useful work") die on "mission start refused: no verifier".
+test('member run can save an unchecked mission without starting it', () => {
   const { buildMemberRunStartArgs } = require('../commands/member');
   const bare = buildMemberRunStartArgs('maze', 'choose useful work', ['--runner', 'atris2', '--minutes', '5']);
   assert.ok(bare.includes('--no-verify'), 'no verifier named → explicit --no-verify');
@@ -264,11 +260,12 @@ test('member run starts a budgeted isolated mission from plain text', () => {
       '--no-verify',
       '--json',
     ], { cwd: dir });
-    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.notEqual(res.status, 0);
     const payload = JSON.parse(res.stdout);
     const mission = payload.mission;
 
-    assert.equal(payload.action, 'mission_started');
+    assert.equal(payload.started, false);
+    assert.equal(payload.state, 'planning');
     assert.equal(mission.owner, 'growth');
     assert.equal(mission.objective, 'Improve onboarding proof');
     // No live codex session drove this run, so the runner defaults to claude
@@ -322,11 +319,11 @@ test('member run chooses useful work from params when no mission text exists', (
       '--no-verify',
       '--json',
     ], { cwd: dir });
-    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.notEqual(res.status, 0);
     const payload = JSON.parse(res.stdout);
     const mission = payload.mission;
 
-    assert.equal(payload.action, 'mission_started');
+    assert.equal(payload.started, false);
     assert.equal(mission.owner, 'growth');
     assert.match(mission.objective, /meaningful work for logistics/);
     assert.match(mission.objective, /reduce support time/);
@@ -4330,7 +4327,7 @@ test('member run --minutes scales max-ticks past a single tick, untimed stays at
     assert.equal(untimedPayload.ran_ticks, 1);
 
     const timed = startMission('timed member run loops for the budget');
-    const timedRun = runCli(['member', 'run', 'mission-lead', '--mission-id', timed.id, '--minutes', '10', '--json'], { cwd: dir, env });
+    const timedRun = runCli(['member', 'run', 'mission-lead', '--mission-id', timed.id, '--minutes', '10', '--json'], { cwd: dir, env, timeout: 60000 });
     assert.equal(timedRun.status, 0, timedRun.stderr || timedRun.stdout);
     const timedPayload = JSON.parse(timedRun.stdout);
     // max(4, ceil(600/300)) = 4 > 1, so it ticks past one before the breaker trips.

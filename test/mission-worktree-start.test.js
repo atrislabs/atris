@@ -87,6 +87,27 @@ test('mission start --worktree creates an isolated checkout holding the mission 
   }
 });
 
+test('mission worktree links existing dependencies from the source checkout', () => {
+  const { base, repo } = makeTempDir();
+  try {
+    initWorkspace(repo);
+    fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ dependencies: { example: '1.0.0' } }));
+    runGit(['add', 'package.json'], repo);
+    runGit(['commit', '-m', 'add package manifest'], repo);
+    fs.mkdirSync(path.join(repo, 'node_modules', 'example'), { recursive: true });
+
+    const res = runCli(['mission', 'start', '--no-verify', 'linked dependency mission', '--owner', 'mission-lead', '--worktree', '--json'], { cwd: repo });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    const link = path.join(payload.mission.worktree.path, 'node_modules');
+    assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
+    assert.equal(fs.realpathSync(link), fs.realpathSync(path.join(repo, 'node_modules')));
+    assert.equal(payload.node_modules_linked, true);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('ticks inside the mission worktree run against a clean mission_start baseline', () => {
   const { base, repo } = makeTempDir();
   try {

@@ -835,10 +835,8 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   pushFlagValue(startArgs, args, '--minutes');
   pushFlagValue(startArgs, args, '--hours');
   pushFlagValue(startArgs, args, '--base');
-  // A member-run mission is driven immediately by its runner, not parked on
-  // the queue, so the mission-start verifier gate (built for parked planning
-  // wishes) would only kill autonomous legs like autopilot's "member chooses
-  // useful work". When the caller named no verifier, opt out explicitly.
+  // Keep the created mission inspectable when no check was supplied. member run
+  // reports that it was not started and exits nonzero after creation.
   if (hasFlag(args, '--no-verify') || !readFlag(args, '--verify', '')) {
     startArgs.push('--no-verify');
   }
@@ -854,7 +852,7 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   if (!hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree') && insideGitRepo(cwd)) {
     startArgs.push('--worktree');
   }
-  if (hasFlag(args, '--json')) startArgs.push('--json');
+  startArgs.push('--json');
   return startArgs;
 }
 
@@ -872,15 +870,43 @@ function startMemberRunMission(name, missionText, args = []) {
   const paths = requireMemberDir(name);
   const owner = paths.storageName || name;
   const startArgs = buildMemberRunStartArgs(owner, missionText, args);
+  return memberRunCli(startArgs, process.cwd());
+}
 
+function memberRunCli(args, cwd) {
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
+  const result = spawnSync(process.execPath, [cliPath, ...args], {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.error) throw result.error;
+  let payload = null;
   try {
-    execFileSync(process.execPath, [cliPath, ...startArgs], {
-      cwd: process.cwd(),
-      stdio: 'inherit',
-    });
+    payload = JSON.parse(result.stdout);
   } catch (error) {
-    process.exitCode = Number(error?.status) || 1;
+    if (result.status === 0) throw new Error(`member run: mission command returned invalid json: ${error.message}`);
+  }
+  return { status: result.status, payload, stderr: String(result.stderr || '').trim() };
+}
+
+function memberRunConfiguredVerifier(paths) {
+  const frontmatter = parseFrontmatter(fs.readFileSync(paths.memberFile, 'utf8')) || {};
+  const check = frontmatter.verify || frontmatter.verifier;
+  return typeof check === 'string' ? check.trim() : '';
+}
+
+function printMemberRunResult(result, asJson) {
+  if (asJson) {
+    console.log(JSON.stringify(result));
+  } else if (result.started) {
+    if (result.node_modules_linked) console.log(`linked node_modules from ${result.node_modules_source}`);
+    console.log(`started ${result.mission_id} (${result.state})`);
+  }
+  if (!result.started) {
+    console.error(result.error);
+    process.exitCode = 1;
   }
 }
 
@@ -968,48 +994,88 @@ function memberPing(name, ...args) {
 
 function memberRun(name, ...args) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log('Usage: atris member run <name> ["mission text"] [--minutes N|--hours N] [--json]');
-    console.log('New mission: atris member run growth "Improve onboarding proof" --minutes 30 --json');
-    console.log('Choose work: atris member run growth --industry logistics --value "reduce support time" --minutes 30 --json');
-    console.log('Existing mission: atris member run growth --mission <mission-id> --max-ticks 1 --json');
-    console.log('Meaning: if mission text is omitted, the member chooses one useful bounded task from Atris state.');
-    console.log('Truth: useful work must improve revenue, reliability, speed, security, clarity, or trust, then show plain proof.');
-    console.log('Isolation: new missions use --worktree by default; add --shared-checkout to stay here.');
+    console.log('usage: atris member run <name> ["mission text"] --verify "<cmd>" [--minutes N|--hours N] [--json]');
+    console.log('new mission: atris member run growth "improve onboarding proof" --verify "npm test" --minutes 30 --json');
+    console.log('choose work: atris member run growth --verify "npm test" --industry logistics --minutes 30 --json');
+    console.log('existing mission: atris member run growth --mission <mission-id> --max-ticks 1 --json');
+    console.log('meaning: if mission text is omitted, the member chooses one useful bounded task from atris state.');
+    console.log('truth: useful work must improve revenue, reliability, speed, security, clarity, or trust, then show plain proof.');
+    console.log('isolation: new missions use --worktree by default; add --shared-checkout to stay here.');
+    console.log('check: --verify or a verify field in the member file is required to start work.');
     return;
   }
 
+  const asJson = hasFlag(args, '--json');
+  const paths = requireMemberDir(name);
+  const requestedVerifier = readFlag(args, '--verify', '') || memberRunConfiguredVerifier(paths);
   const missionText = memberRunMissionText(args);
   const hasMissionOverride = Boolean(readFlag(args, '--mission', '') || readFlag(args, '--mission-id', ''));
+  let mission = null;
+  let nodeModulesLinked = false;
+  let nodeModulesSource = null;
   if (missionText && !hasMissionOverride) {
-    startMemberRunMission(name, missionText, args);
-    return;
+    const start = startMemberRunMission(name, missionText, requestedVerifier ? [...args, '--verify', requestedVerifier] : args);
+    if (start.status !== 0 || !start.payload?.mission) {
+      printMemberRunResult({ started: false, state: null, mission_id: start.payload?.mission?.id || null,
+        error: start.payload?.error || start.stderr || 'mission creation failed' }, asJson);
+      return;
+    }
+    mission = start.payload.mission;
+    nodeModulesLinked = Boolean(start.payload.node_modules_linked);
+    nodeModulesSource = start.payload.node_modules_source || null;
+  } else {
+    const missionId = resolveMemberRunMissionId(name, args);
+    if (!missionId) {
+      const start = startMemberRunMission(name, memberRunAutoMissionText(name, args), requestedVerifier ? [...args, '--verify', requestedVerifier] : args);
+      if (start.status !== 0 || !start.payload?.mission) {
+        printMemberRunResult({ started: false, state: null, mission_id: start.payload?.mission?.id || null,
+          error: start.payload?.error || start.stderr || 'mission creation failed' }, asJson);
+        return;
+      }
+      mission = start.payload.mission;
+      nodeModulesLinked = Boolean(start.payload.node_modules_linked);
+      nodeModulesSource = start.payload.node_modules_source || null;
+    } else {
+      mission = require('./mission').resolveMission(missionId);
+      if (!mission) {
+        printMemberRunResult({ started: false, state: null, mission_id: missionId, error: `mission ${missionId} was not found` }, asJson);
+        return;
+      }
+    }
   }
 
-  const missionId = resolveMemberRunMissionId(name, args);
-  if (!missionId) {
-    startMemberRunMission(name, memberRunAutoMissionText(name, args), args);
+  const cwd = mission.worktree?.path || process.cwd();
+  const verifier = readFlag(args, '--verify', '') || mission.verifier || requestedVerifier;
+  if (!verifier) {
+    printMemberRunResult({ started: false, state: mission.status, mission_id: mission.id, mission,
+      error: 'created, not started: add a check with --verify "<cmd>"' }, asJson);
     return;
   }
+  if (verifier !== mission.verifier) {
+    const changed = memberRunCli(['mission', 'set-verifier', mission.id, verifier, '--json'], cwd);
+    if (changed.status !== 0) {
+      printMemberRunResult({ started: false, state: mission.status, mission_id: mission.id, mission,
+        error: changed.payload?.error || changed.stderr || 'could not set mission check' }, asJson);
+      return;
+    }
+    mission.verifier = verifier;
+  }
 
-  const runArgs = stripKnownFlags(args, ['--mission', '--mission-id', '--minutes', '--hours'], ['--worktree', '--shared-checkout', '--no-worktree']);
   const budgetSeconds = memberRunBudgetSeconds(args);
-  // A timed run is a loop contract, not one tick: keep picking the next useful
-  // move until the wall clock (--max-wall) spends the budget. Only untimed runs
-  // default to a single tick.
-  if (!readFlag(runArgs, '--max-ticks', '')) {
-    runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
-  }
-  if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || 900));
-
-  const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
-  try {
-    execFileSync(process.execPath, [cliPath, 'mission', 'run', missionId, ...runArgs], {
-      cwd: process.cwd(),
-      stdio: 'inherit',
-    });
-  } catch (error) {
-    process.exitCode = Number(error?.status) || 1;
-  }
+  const requestedWall = Number(readFlag(args, '--max-wall', '')) || budgetSeconds || 900;
+  const maxWall = budgetSeconds ? Math.min(requestedWall, budgetSeconds) : requestedWall;
+  const maxTicks = readFlag(args, '--max-ticks', '') || (budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
+  const run = memberRunCli([
+    'mission', 'run', mission.id,
+    '--max-ticks', String(maxTicks), '--max-wall', String(maxWall),
+    '--headless', '--self-drive', '--complete-on-pass', '--json',
+  ], cwd);
+  const payload = run.payload || {};
+  const finalMission = payload.mission || require('./mission').resolveMission(mission.id, cwd) || mission;
+  const started = run.status === 0 && Number(payload.ran_ticks) > 0;
+  printMemberRunResult({ ...payload, started, state: finalMission.status, mission_id: mission.id,
+    mission: finalMission, node_modules_linked: nodeModulesLinked, node_modules_source: nodeModulesSource,
+    ...(!started ? { error: payload.error || run.stderr || 'mission did not run a work step' } : {}) }, asJson);
 }
 
 function loadTeamScoreEvidence(scoreJsonPath) {
@@ -9256,7 +9322,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  atris member goal-from-mission growth --json');
       console.log('  atris member goal-from-score growth --score-json team-score.json --json');
       console.log('  atris member wake growth --json');
-      console.log('  atris member run growth "Improve onboarding proof" --minutes 30 --json');
+      console.log('  atris member run growth "improve onboarding proof" --verify "npm test" --minutes 30 --json');
       console.log('  atris member run growth --mission <mission-id> --max-ticks 1 --json');
       console.log('  atris member wake growth --execute --confirm-autonomy-policy');
       console.log('  atris member supervisor recommendations --json');

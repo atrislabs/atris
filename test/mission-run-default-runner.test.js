@@ -38,7 +38,8 @@ test('run-objective without a live codex session defaults to the claude runner',
   const { base, repo } = makeRepo();
   try {
     const res = runCli(['member', 'run', 'growth', 'improve onboarding proof', '--minutes', '10', '--no-verify', '--json'], repo);
-    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.notEqual(res.status, 0);
+    assert.equal(JSON.parse(res.stdout).started, false);
     assert.equal(JSON.parse(res.stdout).mission.runner, 'claude', res.stdout);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
@@ -54,7 +55,8 @@ test('run-objective with a live codex session keeps the codex_goal runner', () =
       'member', 'run', 'growth', 'improve onboarding proof', '--minutes', '10', '--no-verify',
       '--native-goal-status', 'active', '--native-goal-objective', 'improve onboarding proof', '--json',
     ], repo);
-    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.notEqual(res.status, 0);
+    assert.equal(JSON.parse(res.stdout).started, false);
     assert.equal(JSON.parse(res.stdout).mission.runner, 'codex_goal', res.stdout);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
@@ -66,7 +68,8 @@ test('explicit --runner overrides the default', () => {
   const { base, repo } = makeRepo();
   try {
     const res = runCli(['member', 'run', 'growth', 'improve onboarding proof', '--minutes', '10', '--no-verify', '--runner', 'codex_goal', '--json'], repo);
-    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.notEqual(res.status, 0);
+    assert.equal(JSON.parse(res.stdout).started, false);
     assert.equal(JSON.parse(res.stdout).mission.runner, 'codex_goal', res.stdout);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });

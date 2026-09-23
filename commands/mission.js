@@ -4161,14 +4161,30 @@ function startMission(args, options = {}) {
   // checkout's dirt never reaches the mission baseline.
   if (hasFlag(args, '--worktree')) {
     let created;
+    const sourceTop = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: process.cwd(), encoding: 'utf8' });
+    const sourceCheckout = sourceTop.status === 0 ? String(sourceTop.stdout).trim() : process.cwd();
+    let nodeModulesSource = null;
     try {
       const { createAgentWorktree } = require('./worktree');
       const base = readFlag(args, '--base', '') || inheritedWorktreeBase(process.cwd());
       created = createAgentWorktree({ member: mission.owner, task: mission.objective, ...(base ? { base } : {}) });
+      const packageFile = path.join(sourceCheckout, 'package.json');
+      const sourceModules = path.join(sourceCheckout, 'node_modules');
+      const targetModules = path.join(created.path, 'node_modules');
+      if (fs.existsSync(packageFile) && fs.existsSync(sourceModules) && !fs.existsSync(targetModules)) {
+        const manifest = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
+        const hasDependencies = ['dependencies', 'devDependencies', 'optionalDependencies']
+          .some((field) => manifest[field] && Object.keys(manifest[field]).length > 0);
+        if (hasDependencies) {
+          fs.symlinkSync(sourceModules, targetModules, 'dir');
+          nodeModulesSource = sourceModules;
+        }
+      }
     } catch (e) {
       exitMissionError(`[mission start] worktree creation failed: ${e.message}`, 2, asJson);
     }
     mission.worktree = { path: created.path, branch: created.branch, base: created.base };
+    if (nodeModulesSource) mission.node_modules_source = nodeModulesSource;
     process.chdir(created.path);
   }
   if (mission.xp_task_enabled) {
@@ -4226,6 +4242,8 @@ function startMission(args, options = {}) {
       dirty_count: worktreeBaseline.dirty_count,
       dirty_hash: worktreeBaseline.dirty_hash,
     } : null,
+    node_modules_linked: Boolean(saved.node_modules_source),
+    node_modules_source: saved.node_modules_source || null,
     ...(saved.remap_reason ? { remap_reason: saved.remap_reason } : {}),
   };
   if (!options.silent) {
@@ -4237,6 +4255,7 @@ function startMission(args, options = {}) {
         `State: ${saved.status}`,
         ...(saved.remap_reason ? [`Remap: ${saved.remap_reason}`] : []),
         ...(saved.worktree ? [`Worktree: ${saved.worktree.path}`, `Branch: ${saved.worktree.branch}`] : []),
+        ...(saved.node_modules_source ? [`linked node_modules from ${saved.node_modules_source}`] : []),
         ...warnings.map((warning) => `Warning: ${warning.message}`),
         ...(saved.xp_task ? [`AgentXP task: ${saved.xp_task.ref}`] : []),
         ...(saved.worktree ? [`Next: cd ${saved.worktree.path} && ${nextTickCommand}`] : [`Next: ${nextTickCommand}`]),
@@ -11624,6 +11643,7 @@ module.exports = {
   missionProtectedLaneHold,
   missionCommand,
   startMission,
+  resolveMission,
   spawnMissionDriver,
   missionRunnerNeedsLiveSession,
   completeMission,
