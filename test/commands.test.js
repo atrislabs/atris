@@ -4044,6 +4044,24 @@ test('member alive install blocks execute on dirty git', () => {
   }
 });
 
+test('member alive install without confirmation keeps its existing exit status', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
+
+    const install = runCli([
+      'member', 'alive', 'mission-lead', '--install', '--execute', '--json',
+    ], { cwd: dir });
+    assert.equal(install.status, 0, install.stderr || install.stdout);
+    const payload = JSON.parse(install.stdout);
+    assert.equal(payload.status, 'blocked');
+    assert.equal(payload.reason, 'execute_requires_confirm_autonomy_policy');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member status exposes blocked asks before more loop work', () => {
   const dir = makeTempDir();
   try {
