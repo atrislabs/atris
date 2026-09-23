@@ -1,7 +1,7 @@
 ---
 name: engines
 description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, Antigravity (agy), and opencode. Triggers on: use codex, use cursor, use devin, use grok, use agy, use antigravity, use gemini, gemini session, use fable, use claude, use opencode, use atris, engine, dispatch to, worker agent, second opinion build."
-version: 1.5.2
+version: 1.7.0
 tags:
   - engines
   - claude
@@ -59,54 +59,46 @@ substitute raw Claude or another engine and call the result FABLE.
 
 Raw spawns are not the default because they skip Atris receipts, watch, and coaching.
 
-| Engine | Command | Notes |
-|--------|---------|-------|
-| Atris Fast | `atris chat --print "<prompt>"` (equivalently `ax --fast --print`) | Local tool runtime over the api.atris.ai fast lane. Best for bounded lookups and small verified edits. |
-| Claude | `claude -p "<prompt>"` | Uses the local Claude configuration. Add `--model opus` for maximum-depth review or `--model sonnet` for speed. |
-| Codex | `codex exec --dangerously-bypass-approvals-and-sandbox -o <result-file> "<prompt>" </dev/null` (run from the target repo/worktree; read-only research: `--sandbox read-only`) | Keep the `</dev/null`: a background codex with stdin open prints "Reading additional input from stdin..." and waits forever (observed 2026-09-23). Headless, exits when done. Run it as a tracked background Bash task like the other engines and completion auto-wakes the session. Final answer lands in the `-o` file. Verified live 2026-08-11. Outside a git repo add `--skip-git-repo-check` or it exits 1. ONE-SHOT SESSIONS (`claude -p` workers): run codex in the FOREGROUND and wait. A one-shot session never wakes again, so backgrounding strands the result (observed 2026-08-11). The old plugin path (`codex-companion.mjs task --background`) is deprecated for dispatch: its job store never notifies the session (a finished result sat unread overnight, 2026-08-10) |
-| Cursor | `cursor-agent --trust -p "<prompt>"` (run from the target repo) | Headless print mode; `--trust` required for non-interactive |
-| Fable | `atris engine fable "<question>"` | Canonical read-only FABLE ask with guards, live log, receipt, and health tracking. Scale `--timeout` to the work when needed. |
-| Composer | `atris run "<objective>" --engine composer` | Fast navigator/executor profile routed through the installed `ax` binary. |
-| Haiku | `claude -p "<prompt>" --model claude-haiku-4-5` | Fast validation and bounded read-only checks. |
-| Devin | `devin -p --permission-mode dangerous -- "<prompt>"` (run from the target repo) | In `-p` mode the default permission mode rejects shell commands too, so even a read-only audit dies after one step with "rejected a tool call that requires confirmation" (observed 2026-09-23). Use `--permission-mode dangerous` for any real work and only run it in an isolated worktree; `--prompt-file <f>` beats inlining long prompts. Also `devin cloud` for sessions that outlive this machine. Supports `--model swe-2-max`; `devin models list` verifies availability and price. |
-| Grok | `grok --always-approve -p "<prompt>"` (run from the target repo) | Headless single-turn via `-p`; default model grok-4.6. Very fast on lookups (~5-10s, reads MAP first). Great for quick second opinions; use `--best-of-n <N>` for tricky bounded builds. Uses grok.com login |
-| Antigravity | `agy --mode accept-edits --add-dir "$PWD" -p "<prompt>"` (run from the target repo) | `agy` executor profile; also answers to "gemini". **`--add-dir` is mandatory for writes**. Without it agy edits its own scratch folder (`~/.gemini/antigravity-cli/scratch/`) and the project never changes, which looks like a silent failure (verified live 2026-08-28). Use `--mode plan --sandbox` for read-only review, `--model <id>` to pin a model, and `--dangerously-skip-permissions` if a build still stalls on an approval prompt. |
-| opencode | `opencode run "<prompt>"` (read-only ask: `opencode run --agent plan "<prompt>"`) | Headless print mode; exits when done. Pin a model with `-m provider/model`. Build work needs `--auto` to auto-approve permissions (dangerous: run in an isolated worktree). Verified live 2026-08-21, ~7s per plan-mode lookup. |
+Smoke: `reply with the word OK`, run from `$HOME`, 120s cap, one at a time on a loaded Mac (2026-09-23). Seconds are wall time under that load.
+
+| Engine | Exact command | Pinned model | Verified | Seconds | Notes |
+|--------|---------------|--------------|----------|--------:|-------|
+| Atris Fast | `atris chat --print "<prompt>"` | `atris:fast` | 2026-09-23 | 3.2 | Needs an initialized `atris/` workspace; see runtime requirements below. |
+| Claude | `claude -p "<prompt>" --model claude-opus-5-5 --output-format json --no-session-persistence` | `claude-opus-5-5` | 2026-09-23 | 20.3 | `--model opus` also resolves to `claude-opus-5-5` today; pin the id for reproducibility. |
+| Codex | `codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral -m gpt-6-sol -c model_reasoning_effort=high -o <result-file> "<prompt>" </dev/null` (run from the target repo/worktree; read-only: swap the bypass flag for `--sandbox read-only`) | `gpt-6-sol`, high | 2026-09-23 | 13.8 | Keep the `</dev/null`: with stdin open codex prints "Reading additional input from stdin..." and waits forever (observed 2026-09-23). Outside a git repo add `--skip-git-repo-check` or it exits 1 (re-checked 2026-09-23). Final answer lands in the `-o` file. Run as a tracked background Bash task; in one-shot `claude -p` workers run it in the FOREGROUND, a one-shot session never wakes again (2026-08-11). `codex-companion.mjs task --background` is deprecated: its job store never notifies the session (2026-08-10). |
+| Cursor | `cursor-agent --trust --model composer-2.5 -p "<prompt>"` (run from the target repo) | `composer-2.5` | 2026-09-23 | 37.5 | `--trust` required for non-interactive. |
+| Fable | `atris engine fable --timeout 120 --json "<question>"` | `claude-fable-5` | 2026-09-23 | 21.4 | Canonical read-only FABLE ask with receipt; scale `--timeout` to the work. |
+| Composer | `cursor-agent --trust --model composer-2.5 -p "<prompt>"` | `composer-2.5` via Cursor | 2026-09-23 | 37.5 | Same binary as Cursor. |
+| Haiku | `claude -p "<prompt>" --model claude-haiku-4-5 --output-format json --no-session-persistence` | `claude-haiku-4-5` | 2026-09-23 | 19.0 | Fast validation and bounded read-only checks. |
+| Devin (build) | `devin -p --permission-mode dangerous --model swe-2-max --prompt-file <brief>` (run from an isolated worktree) | `swe-2-max` (Free tag in `devin models list`, 2026-09-23) | 2026-09-23 | 14.0 | In `-p` mode the default permission mode rejects shell commands too, so even a read-only audit dies after one step (2026-09-23). Keep the brief outside the worktree. Long runs (5+ min) can print nothing even on success: judge by the worktree diff. `devin cloud` outlives this machine. |
+| Devin (search) | `devin -p --permission-mode dangerous --model swe-1.7-lightning -- "<prompt>"` | `swe-1.7-lightning` (paid, no Free tag on 2026-09-23) | 2026-09-23 | 13.9 | |
+| Grok | `grok --always-approve --model grok-4.7 -p "<prompt>"` (run from the target repo) | `grok-4.7` | 2026-09-23 | 11.7 | Unpinned default is now `grok-4.7-build-fast`; `grok models` lists the menu. Uses grok.com login. `--best-of-n <N>` for tricky bounded builds. |
+| Antigravity (agy) | `agy --mode accept-edits --add-dir "$PWD" --model gemini-3.8-flash-high --output-format json -p "<prompt>"` (run from the target repo) | `gemini-3.8-flash-high` | 2026-09-23 | 15.9 | **`--add-dir` is mandatory for writes**: without it agy edits `~/.gemini/antigravity-cli/scratch/` and the project never changes (2026-08-28). `--mode plan --sandbox` for read-only review. Also answers to "gemini". |
+| opencode | `opencode run -m opencode/muse-spark-1.3-contributor-free "<prompt>"` (read-only: add `--agent plan`) | `opencode/muse-spark-1.3-contributor-free` | 2026-09-23 | 41.1 | Build work needs `--auto` (isolated worktree only). `opencode models` lists the live menu. |
 
 Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `cursor-agent` are allowlisted in `~/.claude/settings.json` so fresh and one-shot sessions can dispatch without a human approval click. A cold session that gets "requires approval" on an engine command means that allowlist regressed.
 
 ## Picking an engine
 
-- **Atris Fast**: cheap bounded lookups, single-file facts, small verified edits, and high-volume fan-out.
-- **FABLE**: strongest judgment lane. Use the canonical Atris profile for deep review, synthesis, validation, and complex builds.
-- **Claude**: direct Claude profile when the operator names Claude rather than FABLE.
-- **Codex**: deep root-cause work, long autonomous builds, second-opinion diagnosis. Slowest; runs sandboxed.
-- **Cursor**: fast bounded edits and refactors in a single repo.
-- **Composer / Haiku**: fast, bounded navigation, edits, and validation where a max-tier model would be wasteful.
-- **Devin**: multi-step feature work; use `cloud` when the run should survive laptop sleep.
-- **Grok** - fastest frontier lookups and quick second opinions (grok-4.6, ~5-10s; reads MAP first); use `--best-of-n` for tricky bounded builds. Uses grok.com login.
-- **Antigravity / agy**: flexible executor work across Gemini, Claude, and GPT-OSS models; use `agy` as the canonical short name.
-- **opencode**: multi-provider executor in one CLI (Claude, GPT, Gemini, DeepSeek menus via `opencode models`); plan agent for read-only asks, `--auto` builds only inside an isolated worktree.
+- **Multi-file or long build**: Devin `swe-2-max` while its Free tag holds (check `devin models list`); Codex `gpt-6-sol` if the tag is gone.
+- **Judgment-heavy build**: Opus 5.5 subagent (Claude row).
+- **Review / deep judgment**: FABLE profile; Codex `gpt-6-sol` or Opus 5.5 as second validator.
+- **Quick fix**: Cursor.
+- **Search / bounded lookup**: Atris Fast; Haiku or Devin `swe-1.7-lightning` for read-only sweeps; Grok for quick second opinions.
+- **agy / opencode**: extra executors when you want a different model family.
 - Parallel builds across repos: one engine job per repo, never two engines writing the same checkout.
 
-## Models worth pinning (verified live 2026-08-15)
+## Models worth pinning (verified live 2026-09-23)
 
-Each engine CLI can pin a specific model. Current best picks:
+| Engine | Flag | Alternates on the live menu |
+|--------|------|-----------------------------|
+| Claude | `--model <id>` | `claude-opus-5-5`, `claude-haiku-4-5` |
+| Devin | `--model <id>` | `swe-2-max`, `swe-2-high`, `swe-2-medium` (Free); `claude-opus-5-5-high`, `gpt-6-sol` (paid) |
+| Cursor | `--model <id>` | `composer-2.5`, `grok-4.7-xhigh`, `claude-opus-5-thinking-high`; `--list-models` |
+| Grok | `--model <id>` | `grok-4.7`, `grok-4.7-build-fast` (default), `grok-4.6`, `grok-4.5`; `grok models` |
+| Codex | `-m <id>` | `gpt-6-sol` is the `~/.codex/config.toml` default |
 
-| Engine | Flag | Best models today |
-|--------|------|-------------------|
-| Claude / Fable | `--model opus` | `opus` currently resolves to Opus 5; use the explicit Opus 4.8 identifier only for reproducibility |
-| Devin | `--model swe-2-max` | `swe-2-max`, `swe-2-high`, `swe-2-medium` verified Free in the live CLI on 2026-09-10. Use Max for Keshav’s team; recheck with `devin models list` before unattended work. |
-| Cursor | `--model cursor-grok-4.6-xhigh` | `cursor-grok-4.6-xhigh` for second-opinion builds, `cursor-grok-4.6-high-fast` for quick pinned asks (answered in ~12s live 2026-08-12), `composer-2.5` for fast edits; parameterized Claude via `'claude-opus-4-8[effort=high]'`; `--list-models` shows the full menu |
-| Composer | `--engine composer` | `composer 2.5` through the Atris profile |
-| Haiku | `--model claude-haiku-4-5` | `haiku` for fast validation |
-| Grok | (default) | `grok-4.6` default (confirmed live 2026-08-12, ~5s lookup), `grok-4.5` still available via `-m` |
-| Codex | `-m <model>` | CLI default rides `~/.codex/config.toml`; pin with `-m` only when the task needs it |
-| Antigravity / agy | `--model <id>` | `gemini-3.7-flash-high` for speed, `gemini-3.1-pro-high` for depth, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, or `gpt-oss-120b-medium` |
-| opencode | `-m <provider/model>` | `opencode/big-pickle`, `opencode/gpt-5.2`, `opencode/claude-opus-4-8`; `opencode models` lists the live menu |
-| Atris Fast | (fixed) | api.atris.ai fast lane |
-
-Re-verify this table when a lab ships a new model: run each CLI's model-list command, smoke one lookup, and update the row. Free-tier windows (like swe-1.7 now) are the moment to fan out volume work.
+Pins expire 30 days after their verified date. Re-verify on a new model: run the CLI's model list, smoke one prompt, update the row.
 
 ## Keep the local roster current
 
