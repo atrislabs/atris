@@ -74,3 +74,34 @@ test('boot files remain present and stable', () => {
     assert.ok(fs.statSync(p).size > 0, `boot file ${rel} must not be empty when present`);
   }
 });
+
+test('PERSONA.md keeps the task-truth doctrine in both copies', () => {
+  // Regression: a doc sync once overwrote the root copy with wording that
+  // called TODO.md "current work" and routed code TODOs into TODO.md.
+  // init.js and sync.js ship both copies to user projects, so the doctrine
+  // (atris task is truth, TODO.md is the rendered view) must survive in each.
+  const root = path.join(__dirname, '..');
+  for (const rel of ['PERSONA.md', 'atris/PERSONA.md']) {
+    const persona = fs.readFileSync(path.join(root, rel), 'utf8');
+    assert.match(persona, /`atris task` is the source of truth for work/,
+      `${rel} must name \`atris task\` as the source of truth for work`);
+    assert.match(persona, /`TODO\.md` is the rendered view/,
+      `${rel} must describe TODO.md as the rendered view`);
+    assert.match(persona, /put them in `atris task`/,
+      `${rel} must route code TODOs to \`atris task\``);
+    assert.doesNotMatch(persona, /TODO\.md is current work/,
+      `${rel} must not call TODO.md current work`);
+  }
+});
+
+test('package doc sources and their atris/ copies stay byte-identical', () => {
+  // init.js and sync.js copy root PERSONA.md and GETTING_STARTED.md into each
+  // project's atris/ folder. The atris/ copies here are this repo's own landed
+  // copies; if the pairs drift, user projects and this repo disagree on doctrine.
+  const root = path.join(__dirname, '..');
+  for (const name of ['PERSONA.md', 'GETTING_STARTED.md']) {
+    const pkgSource = fs.readFileSync(path.join(root, name), 'utf8');
+    const landed = fs.readFileSync(path.join(ATRIS, name), 'utf8');
+    assert.strictEqual(landed, pkgSource, `${name} and atris/${name} must be byte-identical`);
+  }
+});

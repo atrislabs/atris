@@ -29,7 +29,7 @@ Commands: plan → do → review
 
 Key behaviors:
 - Mission-shaped intent wins: run `atris mission run ...` before normal task selection when the user invokes it or asks for a loop.
-- Read PERSONA.md (3-4 sentences, ASCII visuals)
+- Read PERSONA.md (MAP.md first, plain words, lead with the outcome)
 - Check MAP.md for file:line refs
 - Use `atris task` for claims, proof, ready, and accept
 - Give every task a plain first layer: what changes, why it matters, and what

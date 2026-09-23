@@ -615,7 +615,7 @@ Detect: Project has \`atris/\` folder with MAP.md, TODO.md, PERSONA.md
 Commands: plan → do → review
 
 Key behaviors:
-- Read PERSONA.md (3-4 sentences, ASCII visuals)
+- Read PERSONA.md (MAP.md first, plain words, lead with the outcome)
 - Check MAP.md for file:line refs
 - Use \`atris task\` for claims, proof, ready, and accept
 - Give every task a plain first layer: what changes, why it matters, and what

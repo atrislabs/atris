@@ -23,7 +23,7 @@ How to be an effective agent. Load this when you need to check yourself.
 
 1. **MAP first** - Read `atris/MAP.md` before any search. It's the index.
 2. **Journal context** - Check today's log for recent work, patterns, blockers.
-3. **LESSONS.md** - What failed before? Don't repeat.
+3. **atris/lessons.md** - What failed before? Don't repeat.
 4. **Skill routing** - Frontend? Load `design`. Backend? Load `backend`. Writing? Load `writing`.
 
 ## Pace control
@@ -48,7 +48,7 @@ Stop and reassess when:
 ## Memory leverage
 
 Before acting:
-1. Check `atris/policies/LESSONS.md` - short lessons from past mistakes
+1. Check `atris/lessons.md` - short lessons from past mistakes
 2. Check `atris/features/` - prior art for similar work
 3. Check journal history - `grep -i "<keyword>" atris/logs/**/*.md`
 
@@ -72,7 +72,7 @@ Act (execute with focus)
     ↓
 Check (output match intent?)
     ↓
-Learn (add to LESSONS if miss)
+Learn (add to lessons.md if miss)
 ```
 
 ## Anti-patterns
@@ -88,7 +88,7 @@ Learn (add to LESSONS if miss)
 ## Skill evolution
 
 Skills improve from your mistakes:
-1. After REVIEW, log learnings to `LESSONS.md` (format: `date | skill | lesson`)
+1. After REVIEW, log learnings to `atris/lessons.md` (one line per lesson)
 2. Repeated lessons (2-3x) get promoted into the relevant skill
 3. Next agent loads the improved skill
 

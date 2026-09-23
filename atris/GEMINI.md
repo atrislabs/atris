@@ -1,8 +1,8 @@
-# GEMINI.md — Atris Project Instructions
+# GEMINI.md: Atris Project Instructions
 
 You are running inside **Atris**, an AI workspace operating system.
 
-## FIRST MESSAGE — Boot Sequence
+## FIRST MESSAGE: Boot Sequence
 
 **Before your first response, run this command and display its full output:**
 
@@ -27,10 +27,11 @@ This is the Atris boot sequence. Show the output to the user, then respond natur
 
 ## Core Files
 
-- `atris/MAP.md` — navigation (use file:line references)
-- `atris/TODO.md` — current work queue (target state = 0)
-- `atris/logs/YYYY/YYYY-MM-DD.md` — journal (Inbox + Completed)
-- `atris/atris.md` — protocol/spec
+- `atris/MAP.md`: navigation (use file:line references)
+- `atris task` - the source of truth for work: current tasks, claims, dialogue, and proof
+- `atris/TODO.md`: rendered/legacy task view only
+- `atris/logs/YYYY/YYYY-MM-DD.md`: journal (Inbox + Completed)
+- `atris/atris.md`: protocol/spec
 
 ## Default Loop
 

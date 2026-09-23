@@ -1,5 +1,7 @@
 # cloud sync simplicity
 
+> **Status:** shipped. S1 push safety (`commands/push.js:349`), S2 `atris sync --review` (`commands/business-sync.js:355`), S3 `atris cloud clean` (`commands/cloud.js:22`) are live.
+
 **One-liner:** sync is powerful but the happy path hides behind force flags. Make `sync --review` the default conflict handler, `--changed`/positional paths the default push path, and one command to see and clean cloud orphans.
 
 **Source:** live operator feedback (Derrick, 2026-07-09). Wish: `wish-2026-07-09-make-cloud-sync-safe-and-simple-sync-a7d24b4b`.
@@ -10,8 +12,8 @@
 
 | Surface | Where |
 |---------|-------|
-| push entry + safety | commands/push.js — analyzePushSafety lines 136-184, renderPushSafetyBlock 186-218 ("Refusing unsafe workspace push"), drift gate 468-481 ("Cloud has changed since your last pull"), --only parsing 298-313, sync POST 620, DELETE file 749-760 |
-| pull | commands/pull.js — --keep-local 216-223 (writes `.remote` files at 718), smart hash-then-batch pull 414-484, force mirror sweep 750-819 |
+| push entry + safety | commands/push.js: analyzePushSafety lines 136-184, renderPushSafetyBlock 186-218 ("Refusing unsafe workspace push"), drift gate 468-481 ("Cloud has changed since your last pull"), --only parsing 298-313, sync POST 620, DELETE file 749-760 |
+| pull | commands/pull.js: --keep-local 216-223 (writes `.remote` files at 718), smart hash-then-batch pull 414-484, force mirror sweep 750-819 |
 | sync | commands/sync.js syncAtris 424-670; commands/business-sync.js (--status, --watch) |
 | live loop | commands/live.js |
 | local manifest | lib/manifest.js load/save/build 18-57 |
