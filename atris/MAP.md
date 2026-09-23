@@ -695,7 +695,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 **Purpose:** Provide durable local task state for agents while keeping `atris/TODO.md` as the human-readable regenerated project board.
 
 - **Entry point:** command routing in `bin/atris.js:1904`
-- **Handler:** `commands/task.js:13410` (`run` dispatch); default `atris task` is `cmdFirstMinute` at `commands/task.js:6555`; full desk is `cmdHome` at `commands/task.js:6574`
+- **Handler:** `commands/task.js:13421` (`run` dispatch); default `atris task` is `cmdFirstMinute` at `commands/task.js:6555`; full desk is `cmdHome` at `commands/task.js:6574`
 - **Store:** `lib/task-db.js:402` (`addTask`), `lib/task-db.js:450` (`listTasks`), `lib/task-db.js:486` (`claimTask`), `lib/task-db.js:622` (`doneTask`)
 - **TODO shim:** `lib/todo.js:19` (`dbToShimRow`) preserves imported `Verify:` metadata when `ATRIS_TASK_DB=1`
 - **How it works:**
@@ -1312,9 +1312,9 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
   1. Browser OAuth: opens `{APP_BASE}/auth/cli`, user pastes code, CLI exchanges via `POST /auth/cli/exchange`
   2. Manual token: user pastes raw token, saved + validated
   3. Non-interactive: `--token <t>` flag for CI/scripts
-- **Token refresh:** `utils/auth.js:613` (`performTokenRefresh`) saves new access token, optionally rotates refresh token, re-validates, updates user metadata. Profile-sourced creds write back to the profile file. `refreshAccessToken` (`:525`) sends `refresh_token` and omits `provider=google` unless the token is a Google OAuth refresh (`1//...`); that hint makes `/auth/refresh` skip app-JWT refresh and return `google_refresh_failed`.
-- **Credential guard:** `utils/auth.js:700` (`ensureValidCredentials`) checks selected-source and agent-JWT expiry, proactively refreshes within the 5-minute buffer, validates, then falls back to refresh
-- **Wake auth abort:** `utils/auth.js:595` (`isAuthFailure` / `abortOnAuthFailure`) stops status/wake polling on 401/403 and prints login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `commands/computer.js:2259`, `commands/aeo.js:98`, `commands/pull.js:361`, `commands/push.js:530`, `commands/align.js:180`.
+- **Token refresh:** `utils/auth.js:623` (`performTokenRefresh`) saves new access token, optionally rotates refresh token, re-validates, updates user metadata. Profile-sourced creds write back to the profile file. `refreshAccessToken` (`:525`) sends `refresh_token` and omits `provider=google` unless the token is a Google OAuth refresh (`1//...`); that hint makes `/auth/refresh` skip app-JWT refresh and return `google_refresh_failed`.
+- **Credential guard:** `utils/auth.js:710` (`ensureValidCredentials`) checks selected-source and agent-JWT expiry, proactively refreshes within the 5-minute buffer, validates, then falls back to refresh
+- **Wake auth abort:** `utils/auth.js:605` (`isAuthFailure` / `abortOnAuthFailure`) stops status/wake polling on 401/403 and prints login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `commands/computer.js:2259`, `commands/aeo.js:98`, `commands/pull.js:361`, `commands/push.js:530`, `commands/align.js:180`.
 - **Dependencies:** `utils/auth.js` for token management, `utils/api.js` for HTTP
 - **Consumers:**
   - `commands/auth.js` (login/logout/whoami) — uses modular `utils/auth.js`
