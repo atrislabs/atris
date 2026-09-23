@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { resolveWorkspaceRoot } = require('../lib/mission-root');
 const { readText } = require('./brain');
+const { checkMapRefs, fixMapRefs } = require('../lib/map-refs');
 
 const BOOT_FILES = [
   'CLAUDE.md', 'AGENTS.md', 'atris/atris.md', 'atris/MAP.md',
@@ -74,9 +75,17 @@ function collectMap(root, text, featureNames, memberNames) {
   }
   const files = [...paths].map(file => ({ path: file, exists: fs.existsSync(path.resolve(root, file)) }));
   const existing = files.filter(file => file.exists).length;
+  const pathScore = files.length ? existing / files.length : 0;
+  const { refs: all, ...refs } = checkMapRefs(root, text);
+  refs.flagged = all.filter(ref => ref.status !== 'ok').map(ref => ({
+    map_line: ref.map_line, ref: ref.raw, symbol: ref.symbol, status: ref.status,
+    ...(ref.line ? { line: ref.line } : {}), ...(ref.lines ? { lines: ref.lines } : {}),
+    ...(ref.reason ? { reason: ref.reason } : {}),
+  }));
   return {
     rows, paths: files.length, existing, files,
-    score: files.length ? existing / files.length : 0,
+    // A path that exists but a line ref that points at the wrong code is still a wrong map.
+    path_score: pathScore, refs, score: pathScore * refs.score,
     features: folderCoverage(text, 'atris/features', featureNames),
     members: folderCoverage(text, 'atris/team', memberNames),
   };
@@ -272,6 +281,34 @@ function table(headers, rows) {
   return cells.map(row => row.map((cell, i) => cell.padEnd(widths[i])).join('  ').trimEnd());
 }
 
+function refsLine(refs) {
+  const gone = refs.missing + refs.missing_file;
+  return `map refs: ${refs.ok} right, ${refs.moved} moved, ${refs.ambiguous} unclear, ${gone} gone`;
+}
+
+function describeLeft(ref) {
+  const where = `MAP line ${ref.map_line}: ${ref.raw}${ref.symbol ? ` (${ref.symbol})` : ''}`;
+  if (ref.status === 'ambiguous') return `${where} found on lines ${ref.lines.join(', ')}`;
+  if (ref.status === 'missing-file') return `${where} file is gone`;
+  return `${where} ${ref.reason}`;
+}
+
+function fixRefsCommand(root, asJson) {
+  const { changes, left } = fixMapRefs(root);
+  if (asJson) {
+    console.log(JSON.stringify({ ok: true, action: 'doc-health fix-refs', changes, left }, null, 2));
+    return 0;
+  }
+  const lines = [changes.length ? `map refs: moved ${changes.length}` : 'map refs: nothing to move.'];
+  for (const change of changes) lines.push(`  MAP line ${change.map_line}: ${change.from} -> ${change.to} (${change.symbol})`);
+  if (left.length) {
+    lines.push(`left for a human: ${left.length}`);
+    for (const ref of left) lines.push(`  ${describeLeft(ref)}`);
+  }
+  console.log(lines.join('\n'));
+  return 0;
+}
+
 function renderDocHealth(payload) {
   if (!payload.ok) return payload.message;
   const { boot_load: boot, map_coverage: map, lookup_hops: lookup, staleness, overall } = payload;
@@ -286,6 +323,8 @@ function renderDocHealth(payload) {
       ['routing rows', map.rows, map.rows], ['existing paths', map.existing, map.paths],
       ['features mentioned', map.features.mentioned, map.features.total], ['members mentioned', map.members.mentioned, map.members.total],
     ]),
+    refsLine(map.refs),
+    ...(map.refs.moved ? ['run atris doc-health --fix-refs to update the moved ones.'] : []),
     '', 'lookup hops',
   ];
   if (lookup.missing) {
@@ -315,8 +354,17 @@ function renderDocHealth(payload) {
 
 function docHealthCommand(args = [], options = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    console.log('usage: atris doc-health [--json] [--questions <path>]');
+    console.log('usage: atris doc-health [--json] [--questions <path>] [--fix-refs]');
+    console.log('  --fix-refs  rewrite map line refs whose code moved; list the ones a human must fix');
     return 0;
+  }
+  if (args.includes('--fix-refs')) {
+    const root = resolveWorkspaceRoot(options.cwd || process.cwd());
+    if (!stat(path.join(root, 'atris', 'MAP.md'))?.isFile()) {
+      console.log('no atris/MAP.md in this workspace.');
+      return 1;
+    }
+    return fixRefsCommand(root, args.includes('--json'));
   }
   const index = args.indexOf('--questions');
   const questions = index >= 0 && args[index + 1] && !args[index + 1].startsWith('--') ? args[index + 1]

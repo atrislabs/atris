@@ -577,7 +577,7 @@ function showHelpAll() {
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  doctor     - Node/task/auth/workspace readiness (--json for agents)');
-  console.log('  doc-health - workspace document size, navigation, and freshness (--json)');
+  console.log('  doc-health - workspace document size, navigation, freshness, and map line refs (--json, --fix-refs)');
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
   console.log('  brief      - Show the one-glance operator brief');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
