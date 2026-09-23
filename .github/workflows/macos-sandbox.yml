@@ -1,0 +1,37 @@
+name: Mac sandbox tests
+
+# The sandbox boundary tests need macOS sandbox-exec, so the Linux CI job
+# skips them. This runs them on a Mac once a day and on demand.
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/macos-sandbox.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - run: npm ci
+
+      - name: Configure git for test repos
+        run: |
+          git config --global user.name "atris-ci"
+          git config --global user.email "ci@atris.invalid"
+          git config --global init.defaultBranch master
+
+      - name: Sandbox tests
+        run: node --test test/one-lap-runtime.test.js test/secret-gateway.test.js test/fleet-subscription-only.test.js test/engine-ask.test.js
