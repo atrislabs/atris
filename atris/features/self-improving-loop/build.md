@@ -17,8 +17,8 @@ Wire up lessons.md as the feedback loop between validate.md outputs and idea.md 
 
 **Modified:**
 - `atris/atris.md` — Add lessons.md to the spec (Phase 1 artifacts + agent behaviors)
-- `atris/team/navigator.md` — Add "read lessons.md" to pre-flight checklist
-- `atris/team/validator.md` — Add "harvest lessons" to post-validate step
+- `atris/team/navigator/MEMBER.md` — Add "read lessons.md" to pre-flight checklist
+- `atris/team/validator/MEMBER.md` — Add "harvest lessons" to post-validate step
 - `atris/features/README.md` — Reference the loop in workflow section
 - `atris/MAP.md` — Add lessons.md entry
 
@@ -42,7 +42,7 @@ Wire up lessons.md as the feedback loop between validate.md outputs and idea.md 
 
 ### Step 2: Update navigator spec
 
-**File:** `atris/team/navigator.md`
+**File:** `atris/team/navigator/MEMBER.md`
 
 **What to do:**
 - Add to the navigator's pre-flight: "Read atris/lessons.md for relevant patterns before writing idea.md"
@@ -55,7 +55,7 @@ Wire up lessons.md as the feedback loop between validate.md outputs and idea.md 
 
 ### Step 3: Update validator spec
 
-**File:** `atris/team/validator.md`
+**File:** `atris/team/validator/MEMBER.md`
 
 **What to do:**
 - After filling validate.md, add a step: "Extract 1-2 lessons and append to atris/lessons.md"
@@ -125,7 +125,7 @@ Wire up lessons.md as the feedback loop between validate.md outputs and idea.md 
 ## Rollback Plan
 
 1. Delete atris/lessons.md
-2. Revert changes to navigator.md, validator.md, atris.md
+2. Revert changes to navigator/MEMBER.md, validator/MEMBER.md, atris.md
 3. System works exactly as before — no dependencies broken
 
 ---

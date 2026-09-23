@@ -1,6 +1,6 @@
 # Self-driving mission
 
-> **Status:** planning
+> **Status:** shipped. `atris mission run` self-driving is live with `--due`, `--max-ticks`, and `--complete-on-pass` (`commands/mission.js:581-641`)
 > **Created:** 2026-07-10
 > **Last Updated:** 2026-07-10
 > **Owner:** Orb

@@ -13,7 +13,8 @@ atris/features/
 ├── _templates/               # Templates for new features
 │   ├── idea.md.template      # Problem, solution, visualization
 │   ├── build.md.template     # Step-by-step build instructions
-│   └── validate.md.template  # Proof it works (or didn't)
+│   ├── validate.md.template  # Proof it works (or didn't)
+│   └── changelog.md.template # Release notes entry
 ├── feature-name-1/
 │   ├── idea.md               # Why we're building this
 │   ├── build.md              # How to build it
@@ -150,6 +151,76 @@ Simplified CLI surface around the core workflow and aligned internal artifacts.
 - **What:** Clarified help output and behavior so `plan`, `do`, and `review` are the primary loop, with `TODO.md` + features + logs as the underlying structure.
 - **Why:** Makes it easier for humans and agents to understand and consistently use the CLI without memorizing many commands.
 - **Completed:** 2025-11-16
+
+#### cloud-sync-simplicity
+Make cloud sync's safe path the default: per-conflict review, orphan cleanup, scoped push
+- **Files:** commands/business-sync.js, commands/cloud.js, commands/push.js, commands/sync.js
+- **Status:** complete
+- **Keywords:** sync, cloud, conflicts, orphans, push
+- **What:** `atris sync --review` picks local/cloud/merge per conflicting file (`commands/business-sync.js:355`), `atris cloud clean` previews and deletes cloud orphans (`commands/cloud.js:22`), and push leads with the safe path on drift (`commands/push.js:349`)
+
+#### codex-goal-replacement
+Bridge Atris mission selection into the Codex visible goal
+- **Files:** commands/codex-goal.js, commands/mission.js, bin/atris.js
+- **Status:** complete
+- **Keywords:** codex, goal, mission, bridge
+- **What:** `atris codex-goal` writes `.atris/state/codex_goal.json` (schema `atris.codex_goal.v1`) so the Codex runtime can mirror `goal.visible_goal` into the native goal UI
+
+#### company-brain-sync
+Sync the atris/ brain surface of a business workspace instead of raw file mirroring
+- **Files:** lib/company-brain-sync.js, commands/business-sync.js, commands/sync.js
+- **Status:** complete
+- **Keywords:** sync, business, company-brain, workspace
+- **What:** `atris sync --status` renders business, brain file count, conflict packets, and watcher heartbeat without credentials
+
+#### pack-recovery
+Recover recorded pack file work after an interrupted run
+- **Files:** commands/pack.js
+- **Status:** complete
+- **Keywords:** pack, recover, recovery, protected-files
+- **What:** `atris pack run --recover <receipt.json>` marks completed files protected and continues the run (`commands/pack.js:166`, `:2536`)
+
+#### plan-review-by-validator
+Validator gate between plan and do so half-specified plans never execute
+- **Files:** commands/autopilot.js, test/autopilot-plan-review.test.js
+- **Status:** complete
+- **Keywords:** plan, review, validator, signoff
+- **What:** the validator reads each plan fresh and returns a machine-parseable SIGNOFF/REJECT verdict before execution (`commands/autopilot.js:1249-1510`)
+
+#### self-driving-mission
+Give Atris a destination once; it owns route, staffing, recovery, and the arrival receipt
+- **Files:** commands/mission.js, lib/runner-command.js, lib/fleet.js
+- **Status:** complete
+- **Keywords:** mission, self-driving, route, engine, autoland
+- **What:** `atris mission run` drives a durable objective with `--due`, `--max-ticks`, and `--complete-on-pass` (`commands/mission.js:581-641`)
+
+#### spaceship
+Bounded, self-reporting overnight runner
+- **Files:** commands/spaceship.js, scripts/spaceship.sh
+- **Status:** complete
+- **Keywords:** spaceship, overnight, runner, supervised-loop
+- **What:** `atris spaceship` wraps the supervised loop script that survives bad ticks and reports each state change
+
+#### team-member-standard
+MEMBER.md directory format for team members
+- **Files:** atris/team/*/MEMBER.md
+- **Status:** complete
+- **Keywords:** member, MEMBER.md, team, standard
+- **What:** every team member lives in `atris/team/<name>/MEMBER.md`; init and sync ship them into user projects (`commands/sync.js:526-531`)
+
+#### verify-falsifiability
+The Verify field must be a real rubric that fails before work and passes after
+- **Files:** commands/verify.js, commands/autopilot.js
+- **Status:** complete
+- **Keywords:** verify, falsifiable, rubric, reward
+- **What:** `atris verify` runs the task's rubric against the tree; a rubric that already passes halts the tick instead of counting a fake success
+
+---
+
+### Parked Features
+
+#### customer-skill-zones
+- **Status:** parked, partially shipped; private publish parked per `atris/features/customer-skill-zones/idea.md`
 
 ---
 

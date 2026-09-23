@@ -1,6 +1,6 @@
 # Getting Started with Atris
 
-Atris turns any folder into a workspace that gets better over time. Integrates with any agent.
+Atris turns any folder into a workspace that gets better over time. It works with any coding agent.
 
 ## Install
 
@@ -71,7 +71,7 @@ In your coding agent, say `/endgame` or describe where you want to end up. The s
 atris autopilot --auto --iterations=5
 ```
 
-Or in your coding agent, say `/loop` to schedule it to run every ~15 minutes.
+Or in your coding agent, say `/loop` to schedule it every 13 minutes.
 
 The loop runs until the goal is done, then picks the next one from scorecards + inbox.
 

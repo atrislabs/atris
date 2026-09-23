@@ -90,7 +90,7 @@ atris write aeo "<topic>" --workspace <name>
 atris aeo init --workspace <name>
 
 # View current drafts
-atris ls workspace/atris/aeo/drafts --workspace <name>
+ls workspace/atris/aeo/drafts
 ```
 
 ## Credits

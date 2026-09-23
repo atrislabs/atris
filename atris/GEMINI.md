@@ -28,7 +28,8 @@ This is the Atris boot sequence. Show the output to the user, then respond natur
 ## Core Files
 
 - `atris/MAP.md` — navigation (use file:line references)
-- `atris/TODO.md` — current work queue (target state = 0)
+- `atris task` - the source of truth for work: current tasks, claims, dialogue, and proof
+- `atris/TODO.md` — rendered/legacy task view only
 - `atris/logs/YYYY/YYYY-MM-DD.md` — journal (Inbox + Completed)
 - `atris/atris.md` — protocol/spec
 

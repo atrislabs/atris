@@ -1,5 +1,7 @@
 # cloud sync simplicity
 
+> **Status:** shipped. S1 push safety (`commands/push.js:349`), S2 `atris sync --review` (`commands/business-sync.js:355`), S3 `atris cloud clean` (`commands/cloud.js:22`) are live.
+
 **One-liner:** sync is powerful but the happy path hides behind force flags. Make `sync --review` the default conflict handler, `--changed`/positional paths the default push path, and one command to see and clean cloud orphans.
 
 **Source:** live operator feedback (Derrick, 2026-07-09). Wish: `wish-2026-07-09-make-cloud-sync-safe-and-simple-sync-a7d24b4b`.

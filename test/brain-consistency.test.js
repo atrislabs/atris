@@ -74,3 +74,15 @@ test('boot files remain present and stable', () => {
     assert.ok(fs.statSync(p).size > 0, `boot file ${rel} must not be empty when present`);
   }
 });
+
+test('package doc sources and their atris/ copies stay byte-identical', () => {
+  // init.js and sync.js copy root PERSONA.md and GETTING_STARTED.md into each
+  // project's atris/ folder. The atris/ copies here are this repo's own landed
+  // copies; if the pairs drift, user projects and this repo disagree on doctrine.
+  const root = path.join(__dirname, '..');
+  for (const name of ['PERSONA.md', 'GETTING_STARTED.md']) {
+    const pkgSource = fs.readFileSync(path.join(root, name), 'utf8');
+    const landed = fs.readFileSync(path.join(ATRIS, name), 'utf8');
+    assert.strictEqual(landed, pkgSource, `${name} and atris/${name} must be byte-identical`);
+  }
+});

@@ -1,6 +1,6 @@
 # Test tiers
 
-Measured on 2026-07-06 in the CLI worktree with `node --test <file>` for every `test/*.test.js` file. The fast tier uses `test/fast-tests.txt`: every measured file in that list ran in about 2s or less, plus `test/smoke.fast.test.js` and `test/coverage.fast.test.js`.
+Measured on 2026-07-06 in the CLI worktree with `node --test <file>` for every `test/*.test.js` file. Timings are a snapshot, not a current measurement. The fast tier uses `test/fast-tests.txt`: every measured file in that list ran in about 2s or less, plus `test/smoke.fast.test.js` and `test/coverage.fast.test.js`.
 
 `npm test` remains the full trusted suite (`node --test`). Recommended agent flight verify is:
 
