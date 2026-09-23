@@ -25,6 +25,10 @@ const {
 } = require('../lib/engine-registry');
 const { engineCommand } = require('../commands/engine');
 
+// a fresh node child can take seconds to boot on a busy machine; a shorter ask
+// deadline kills it before it runs a line, and the test checks nothing real.
+const ASK_CHILD_BOOT_MS = 3000;
+
 function tempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-engine-ask-'));
 }
@@ -342,7 +346,7 @@ test('timeout kills only the process group launched for that ask', async () => {
     const result = await runAskProcess({
       bin: process.execPath,
       args: ['-e', childScript],
-    }, { timeoutMs: 3000 });
+    }, { timeoutMs: ASK_CHILD_BOOT_MS });
     assert.equal(result.reason, 'timeout');
     assert.equal(result.timed_out, true);
     // an empty stdout means node never booted before the deadline; Number('') is 0,
@@ -359,7 +363,7 @@ test('timeout kills only the process group launched for that ask', async () => {
 });
 
 test('silent fake engines fail or time out honestly and leave no process behind', async () => {
-  const empty = await runAskProcess(fakeReplyInvocation(), { timeoutMs: 1000 });
+  const empty = await runAskProcess(fakeReplyInvocation(), { timeoutMs: ASK_CHILD_BOOT_MS });
   assert.equal(empty.ok, false);
   assert.equal(empty.reason, 'no_output');
   assert.equal(empty.exit_code, 0);
@@ -377,16 +381,20 @@ test('silent fake engines fail or time out honestly and leave no process behind'
     const timedOut = await runAskProcess({
       bin: process.execPath,
       args: ['-e', silentScript],
-    }, { cwd: root, timeoutMs: 1000 });
+    }, { cwd: root, timeoutMs: ASK_CHILD_BOOT_MS });
     assert.equal(timedOut.ok, false);
     assert.equal(timedOut.reason, 'timeout');
     assert.equal(timedOut.stdout, '');
     assert.equal(timedOut.stderr, '');
-    await waitUntil(() => fs.existsSync(pidFile), 2000)
+    await waitUntil(() => fs.existsSync(pidFile), ASK_CHILD_BOOT_MS)
       .catch(() => assert.fail('silent engine must write its pid before timeout'));
-    const pid = Number(fs.readFileSync(pidFile, 'utf8'));
-    await wait(100);
-    assert.equal(processIsAlive(pid), false);
+    // an empty file reads as pid 0, and kill(0, 0) probes our own group.
+    const pidText = fs.readFileSync(pidFile, 'utf8');
+    const pid = Number(pidText.trim());
+    assert.ok(Number.isInteger(pid) && pid > 0,
+      `silent engine must write a real pid before timeout, got ${JSON.stringify(pidText)}`);
+    await waitUntil(() => !processIsAlive(pid), ASK_CHILD_BOOT_MS)
+      .catch(() => assert.fail('the silent engine must be gone after its timeout'));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
