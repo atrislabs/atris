@@ -1052,6 +1052,8 @@ function isRevisionSignalFile(file) {
 const REVISION_WINDOW_MS = REVISION_WINDOW_HOURS * 60 * 60 * 1000;
 const AGENT_TRAILER_MARKERS = [
   'atris-builder[bot]',
+  'night@atris.ai',
+  'devin',
   'claude',
   'cursor',
   'codex',

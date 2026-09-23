@@ -30,6 +30,8 @@ test('agent landings are co-author trailers only, case-insensitive across known 
   assert.strictEqual(isAgentCommitBody('fix\n\nCo-authored-by: Codex <codex@openai.com>\n'), true);
   assert.strictEqual(isAgentCommitBody('fix\n\nCO-AUTHORED-BY: ChatGPT <noreply@openai.com>\n'), true);
   assert.strictEqual(isAgentCommitBody('fix\n\nCo-authored-by: OpenAI <openai@users.noreply.github.com>\n'), true);
+  assert.strictEqual(isAgentCommitBody('fix\n\nCo-authored-by: Keshav <keshav@atrislabs.com>\nCo-authored-by: Atris Night Shift <night@atris.ai>\n'), true);
+  assert.strictEqual(isAgentCommitBody('fix\n\nCo-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>\n'), true);
   assert.strictEqual(isAgentCommitBody('used claude and cursor in the body\natris-builder[bot] mentioned\n'), false);
   assert.strictEqual(isAgentCommitBody('human fix with no trailer\n'), false);
   assert.strictEqual(isAgentCommitBody('fix\n\nCo-authored-by: Jane Doe <jane@example.com>\n'), false);
