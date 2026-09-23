@@ -71,8 +71,8 @@ test('boot load reports all files, missing files, and oversized files', t => {
 test('map coverage counts routing rows, unique paths, line references, and exact folder mentions', t => {
   const root = workspace(t);
   write(root, 'atris/atris.md', '');
-  write(root, 'commands/task.js', '');
-  write(root, 'atris/wiki/guide.md', '');
+  write(root, 'commands/task.js', 'x\n'.repeat(20));
+  write(root, 'atris/wiki/guide.md', 'x\n'.repeat(5));
   write(root, 'atris/features/alpha/idea.md', '');
   write(root, 'atris/features/alpha-more/idea.md', '');
   write(root, 'atris/team/alice/MEMBER.md', '');
@@ -92,7 +92,10 @@ test('map coverage counts routing rows, unique paths, line references, and exact
   assert.equal(map.rows, 2);
   assert.equal(map.paths, 3);
   assert.equal(map.existing, 2);
-  assert.equal(map.score, 2 / 3);
+  assert.equal(map.path_score, 2 / 3);
+  // commands/task.js:99 is past the end of a 20-line file, so one of three line refs is wrong.
+  assert.deepEqual({ ok: map.refs.ok, missing: map.refs.missing, total: map.refs.total }, { ok: 2, missing: 1, total: 3 });
+  assert.equal(map.score, (2 / 3) * (2 / 3));
   assert.deepEqual(map.features, { total: 2, mentioned: 1, missing: ['alpha'] });
   assert.deepEqual(map.members, { total: 2, mentioned: 1, missing: ['bob'] });
 });
@@ -100,7 +103,7 @@ test('map coverage counts routing rows, unique paths, line references, and exact
 test('real CLI reports one-hop, two-hop, and unresolved questions with JSON score parts', t => {
   const root = workspace(t);
   write(root, 'atris/atris.md', '');
-  write(root, 'atris/MAP.md', '| tasks | `commands/task.js` | task ownership |\nSee `atris/wiki/guide.md:5`.\n');
+  write(root, 'atris/MAP.md', '| tasks | `commands/task.js` | task ownership |\nSee `atris/wiki/guide.md:1`.\n');
   write(root, 'commands/task.js', '');
   write(root, 'atris/wiki/guide.md', 'Mission state is in lib/mission-root.js.\n');
   const questions = [
@@ -438,4 +441,113 @@ test('underscore folders under team and features are scaffolding, not members or
   const json = JSON.parse(run(root, ['--json']).stdout);
   assert.deepEqual(json.staleness.members.items.map(item => item.name), ['alice']);
   assert.deepEqual(json.staleness.features.items.map(item => item.name), ['real']);
+});
+
+function refsWorkspace(t) {
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const code = Array.from({ length: 30 }, () => '');
+  code[2] = 'function alpha() {}';
+  code[9] = 'function beta() {';
+  code[19] = 'function gamma() {}';
+  code[23] = 'function dup() {}';
+  code[25] = 'function dup() {}';
+  write(root, 'lib/sample.js', code.join('\n'));
+  const map = [
+    '| area | path | note |', '| --- | --- | --- |', '| sample | `lib/sample.js` | code |', '',
+    '- ok: `lib/sample.js:3` `alpha` sets things up.',
+    '- moved: `lib/sample.js:15` `beta` grew downward.',
+    '- gone symbol: `lib/sample.js:2` `nowhere` was deleted.',
+    '- gone file: `lib/gone.js:4` `alpha` lived elsewhere.',
+    '- range: `alpha` (`lib/sample.js:14-16`) and `gamma` (`lib/sample.js:14-16`) both drifted.',
+    '- unclear: `lib/sample.js:2` `dup` has two homes.',
+    '- prose word is not a symbol: `lib/sample.js:3` prints `watching` and moves on.',
+  ].join('\n');
+  write(root, 'atris/MAP.md', map);
+  return { root, map };
+}
+
+test('map refs classify ok, moved, missing, missing file, ambiguous, and ranges, and lower the map score', t => {
+  const { root } = refsWorkspace(t);
+  const payload = JSON.parse(run(root, ['--json']).stdout);
+  const refs = payload.map_coverage.refs;
+  assert.deepEqual(
+    { ok: refs.ok, moved: refs.moved, ambiguous: refs.ambiguous, missing: refs.missing, missing_file: refs.missing_file, total: refs.total },
+    { ok: 2, moved: 3, ambiguous: 1, missing: 1, missing_file: 1, total: 8 },
+  );
+  const byLine = line => refs.flagged.filter(ref => ref.map_line === line);
+  assert.deepEqual(byLine(6).map(ref => [ref.status, ref.symbol, ref.line]), [['moved', 'beta', 10]]);
+  assert.deepEqual(byLine(7).map(ref => ref.status), ['missing']);
+  assert.deepEqual(byLine(8).map(ref => ref.status), ['missing-file']);
+  assert.deepEqual(byLine(9).map(ref => [ref.status, ref.symbol, ref.line]), [['moved', 'alpha', 3], ['moved', 'gamma', 20]]);
+  assert.deepEqual(byLine(10).map(ref => [ref.status, ref.lines]), [['ambiguous', [24, 26]]]);
+  assert.equal(payload.map_coverage.path_score, 1);
+  assert.equal(payload.map_coverage.score, 2 / 8);
+  assert.equal(payload.overall.parts.map_coverage.points, 6.25);
+  const text = run(root);
+  assert.match(text.stdout, /map refs: 2 right, 3 moved, 1 unclear, 2 gone/);
+  assert.match(text.stdout, /--fix-refs/);
+});
+
+test('fix-refs rewrites only moved refs, keeps range width, lists the rest, and is idempotent', t => {
+  const { root, map } = refsWorkspace(t);
+  const first = run(root, ['--fix-refs']);
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, /map refs: moved 3/);
+  assert.match(first.stdout, /MAP line 6: lib\/sample\.js:15 -> lib\/sample\.js:10 \(beta\)/);
+  assert.match(first.stdout, /left for a human: 3/);
+  assert.match(first.stdout, /MAP line 7: lib\/sample\.js:2 \(nowhere\) nowhere is not in the file/);
+  assert.match(first.stdout, /MAP line 8: lib\/gone\.js:4 \(alpha\) file is gone/);
+  assert.match(first.stdout, /MAP line 10: lib\/sample\.js:2 \(dup\) found on lines 24, 26/);
+  const fixed = fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8');
+  const expected = map
+    .replace('`lib/sample.js:15` `beta`', '`lib/sample.js:10` `beta`')
+    .replace('`alpha` (`lib/sample.js:14-16`)', '`alpha` (`lib/sample.js:3-5`)')
+    .replace('`gamma` (`lib/sample.js:14-16`)', '`gamma` (`lib/sample.js:20-22`)');
+  assert.equal(fixed, expected);
+  const after = JSON.parse(run(root, ['--json']).stdout).map_coverage.refs;
+  assert.equal(after.moved, 0);
+  assert.equal(after.ok, 5);
+  const second = run(root, ['--fix-refs']);
+  assert.equal(second.status, 0, second.stderr);
+  assert.match(second.stdout, /map refs: nothing to move\./);
+  assert.equal(fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8'), fixed);
+});
+
+test('a range ref whose end runs past the file is not right, and fix-refs clamps its end', t => {
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const code = Array.from({ length: 10 }, () => '');
+  code[7] = 'function tail() {';
+  write(root, 'lib/short.js', code.join('\n'));
+  write(root, 'atris/MAP.md', [
+    '| area | path | note |', '| --- | --- | --- |', '| short | `lib/short.js` | code |', '',
+    '- named: `lib/short.js:8-20` `tail` runs past the end.',
+    '- unnamed: `lib/short.js:8-20` runs past the end too.',
+    '- gone name: `lib/short.js:8-20` `absent` is not in the file.',
+  ].join('\n'));
+  const refs = JSON.parse(run(root, ['--json']).stdout).map_coverage.refs;
+  assert.deepEqual(refs.flagged.map(ref => [ref.map_line, ref.status]), [[5, 'moved'], [6, 'missing'], [7, 'missing']]);
+  assert.equal(refs.ok, 0);
+  const first = run(root, ['--fix-refs']);
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, /MAP line 5: lib\/short\.js:8-20 -> lib\/short\.js:8-10 \(tail\)/);
+  const fixed = fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8');
+  assert.match(fixed, /`lib\/short\.js:8-10` `tail`/);
+  assert.match(run(root, ['--fix-refs']).stdout, /map refs: nothing to move\./);
+  assert.equal(fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8'), fixed);
+});
+
+test('limit: a name elsewhere in the sentence does not bind, so only the line bound is checked', t => {
+  // Binding the sentence's one defined name was tried on the real map and moved
+  // refs to the wrong place: "through the `fileTeachExperiment` helper (..., slug
+  // at `path:N`)" names a helper the ref does not point at. So this stays unbound.
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const code = Array.from({ length: 60 }, () => '');
+  code[13] = 'function escape(text) {';
+  write(root, 'lib/sample.js', code.join('\n'));
+  write(root, 'atris/MAP.md', 'See `lib/sample.js:50` for the `escape` function.\n');
+  const refs = JSON.parse(run(root, ['--json']).stdout).map_coverage.refs;
+  assert.deepEqual({ ok: refs.ok, total: refs.total, flagged: refs.flagged }, { ok: 1, total: 1, flagged: [] });
 });
