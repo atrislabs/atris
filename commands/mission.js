@@ -4161,14 +4161,61 @@ function startMission(args, options = {}) {
   // checkout's dirt never reaches the mission baseline.
   if (hasFlag(args, '--worktree')) {
     let created;
+    const sourceTop = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: process.cwd(), encoding: 'utf8' });
+    const sourceCheckout = sourceTop.status === 0 ? String(sourceTop.stdout).trim() : process.cwd();
+    let nodeModulesSource = null;
     try {
       const { createAgentWorktree } = require('./worktree');
       const base = readFlag(args, '--base', '') || inheritedWorktreeBase(process.cwd());
       created = createAgentWorktree({ member: mission.owner, task: mission.objective, ...(base ? { base } : {}) });
+      const packageFile = path.join(sourceCheckout, 'package.json');
+      const sourceModules = path.join(sourceCheckout, 'node_modules');
+      const targetModules = path.join(created.path, 'node_modules');
+      try {
+        let targetExists = false;
+        try {
+          fs.lstatSync(targetModules);
+          targetExists = true;
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error;
+        }
+        if (fs.existsSync(packageFile) && fs.existsSync(sourceModules) && !targetExists) {
+          const manifest = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
+          const hasDependencies = ['dependencies', 'devDependencies', 'optionalDependencies']
+            .some((field) => manifest[field] && Object.keys(manifest[field]).length > 0);
+          if (hasDependencies) {
+            const checkIgnored = () => {
+              const result = spawnSync('git', ['check-ignore', '-q', 'node_modules'], { cwd: created.path, encoding: 'utf8' });
+              if (result.error || (result.status !== 0 && result.status !== 1)) {
+                throw new Error(result.error?.message || String(result.stderr || 'git check-ignore failed').trim());
+              }
+              return result.status === 0;
+            };
+            if (!checkIgnored()) {
+              const commonDir = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd: created.path, encoding: 'utf8' });
+              if (commonDir.error || commonDir.status !== 0) {
+                throw new Error(commonDir.error?.message || String(commonDir.stderr || 'could not find shared git directory').trim());
+              }
+              const excludeFile = path.resolve(created.path, String(commonDir.stdout).trim(), 'info', 'exclude');
+              fs.mkdirSync(path.dirname(excludeFile), { recursive: true });
+              const exclude = fs.existsSync(excludeFile) ? fs.readFileSync(excludeFile, 'utf8') : '';
+              if (!exclude.split(/\r?\n/).includes('/node_modules')) {
+                fs.appendFileSync(excludeFile, `${exclude && !exclude.endsWith('\n') ? '\n' : ''}/node_modules\n`);
+              }
+            }
+            if (!checkIgnored()) throw new Error('git still tracks node_modules after updating the shared exclude file');
+            fs.symlinkSync(sourceModules, targetModules, 'dir');
+            nodeModulesSource = sourceModules;
+          }
+        }
+      } catch (error) {
+        console.warn(`warning: could not link node_modules: ${String(error.message).split(/\r?\n/)[0]}`);
+      }
     } catch (e) {
       exitMissionError(`[mission start] worktree creation failed: ${e.message}`, 2, asJson);
     }
     mission.worktree = { path: created.path, branch: created.branch, base: created.base };
+    if (nodeModulesSource) mission.node_modules_source = nodeModulesSource;
     process.chdir(created.path);
   }
   if (mission.xp_task_enabled) {
@@ -4226,6 +4273,8 @@ function startMission(args, options = {}) {
       dirty_count: worktreeBaseline.dirty_count,
       dirty_hash: worktreeBaseline.dirty_hash,
     } : null,
+    node_modules_linked: Boolean(saved.node_modules_source),
+    node_modules_source: saved.node_modules_source || null,
     ...(saved.remap_reason ? { remap_reason: saved.remap_reason } : {}),
   };
   if (!options.silent) {
@@ -4237,6 +4286,7 @@ function startMission(args, options = {}) {
         `State: ${saved.status}`,
         ...(saved.remap_reason ? [`Remap: ${saved.remap_reason}`] : []),
         ...(saved.worktree ? [`Worktree: ${saved.worktree.path}`, `Branch: ${saved.worktree.branch}`] : []),
+        ...(saved.node_modules_source ? [`linked node_modules from ${saved.node_modules_source}`] : []),
         ...warnings.map((warning) => `Warning: ${warning.message}`),
         ...(saved.xp_task ? [`AgentXP task: ${saved.xp_task.ref}`] : []),
         ...(saved.worktree ? [`Next: cd ${saved.worktree.path} && ${nextTickCommand}`] : [`Next: ${nextTickCommand}`]),
@@ -11624,6 +11674,7 @@ module.exports = {
   missionProtectedLaneHold,
   missionCommand,
   startMission,
+  resolveMission,
   spawnMissionDriver,
   missionRunnerNeedsLiveSession,
   completeMission,
