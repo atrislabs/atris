@@ -22,10 +22,12 @@ const {
 const { reviewOnlyEngineEnvironment, runInReapedProcessGroup } = require('../lib/fleet');
 
 const SECRET = 'Bearer real-secret-value-do-not-leak';
-// The supervised child run took 17s on a loaded machine, so 15s flaked into a
-// failure. The env knob lets test/secret-gateway-no-hang.test.js force that
-// failure path on purpose.
-const CHILD_TIMEOUT_MS = Number(process.env.ATRIS_SECRET_GATEWAY_TEST_CHILD_TIMEOUT_MS) || 60000;
+// test/secret-gateway-no-hang.test.js sets this to force one failure path on
+// purpose and check the process still exits: child-timeout or gateway-start.
+const FAULT = process.env.ATRIS_SECRET_GATEWAY_TEST_FAULT || '';
+// The supervised child run took 17s on a loaded machine, so 15s flaked.
+const CHILD_TIMEOUT_MS = FAULT === 'child-timeout' ? 1 : 60000;
+const GATEWAY_SECRET = FAULT === 'gateway-start' ? '' : SECRET;
 const GRANT_HOST = 'api.test.local';
 
 function makeTlsFixture() {
@@ -195,7 +197,7 @@ http.get(process.env.FIXTURE_BASE_URL + '/v1/items', {
     else process.env.FIXTURE_SECRET = previous;
   }
 
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(result.status, 0, `${result.error ? result.error.message : ''}\n${result.stdout}\n${result.stderr}`);
   const childEnv = JSON.parse(fs.readFileSync(dumpFile, 'utf8'));
   assert.equal(childEnv.FIXTURE_API_KEY, placeholder);
   assert.match(childEnv.FIXTURE_BASE_URL, /^http:\/\/127\.0\.0\.1:\d+$/);
@@ -227,19 +229,17 @@ test('secret gateway denies wrong placeholder method path absolute-form and host
     res.statusCode = 200;
     res.end('should-not-run');
   });
+  t.after(() => upstream.close());
   const placeholder = createPlaceholder();
   const gateway = await startSecretGateway({
     grant: sampleGrant(),
-    secret: SECRET,
+    secret: GATEWAY_SECRET,
     placeholder,
     upstreamPort: upstream.port,
     upstreamAddress: '127.0.0.1',
     rejectUnauthorized: false,
   });
-  t.after(async () => {
-    await gateway.close();
-    await upstream.close();
-  });
+  t.after(() => gateway.close());
 
   const cases = [
     {
@@ -288,19 +288,17 @@ test('secret gateway fails closed on upstream redirects', async (t) => {
     res.setHeader('location', 'https://evil.example/steal');
     res.end('redirect');
   });
+  t.after(() => upstream.close());
   const placeholder = createPlaceholder();
   const gateway = await startSecretGateway({
     grant: sampleGrant(),
-    secret: SECRET,
+    secret: GATEWAY_SECRET,
     placeholder,
     upstreamPort: upstream.port,
     upstreamAddress: '127.0.0.1',
     rejectUnauthorized: false,
   });
-  t.after(async () => {
-    await gateway.close();
-    await upstream.close();
-  });
+  t.after(() => gateway.close());
 
   const response = await gatewayRequest(gateway.baseUrl, {
     headers: { authorization: placeholder, host: `127.0.0.1:${gateway.port}` },
