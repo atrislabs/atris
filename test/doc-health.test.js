@@ -513,3 +513,41 @@ test('fix-refs rewrites only moved refs, keeps range width, lists the rest, and 
   assert.match(second.stdout, /map refs: nothing to move\./);
   assert.equal(fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8'), fixed);
 });
+
+test('a range ref whose end runs past the file is not right, and fix-refs clamps its end', t => {
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const code = Array.from({ length: 10 }, () => '');
+  code[7] = 'function tail() {';
+  write(root, 'lib/short.js', code.join('\n'));
+  write(root, 'atris/MAP.md', [
+    '| area | path | note |', '| --- | --- | --- |', '| short | `lib/short.js` | code |', '',
+    '- named: `lib/short.js:8-20` `tail` runs past the end.',
+    '- unnamed: `lib/short.js:8-20` runs past the end too.',
+    '- gone name: `lib/short.js:8-20` `absent` is not in the file.',
+  ].join('\n'));
+  const refs = JSON.parse(run(root, ['--json']).stdout).map_coverage.refs;
+  assert.deepEqual(refs.flagged.map(ref => [ref.map_line, ref.status]), [[5, 'moved'], [6, 'missing'], [7, 'missing']]);
+  assert.equal(refs.ok, 0);
+  const first = run(root, ['--fix-refs']);
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, /MAP line 5: lib\/short\.js:8-20 -> lib\/short\.js:8-10 \(tail\)/);
+  const fixed = fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8');
+  assert.match(fixed, /`lib\/short\.js:8-10` `tail`/);
+  assert.match(run(root, ['--fix-refs']).stdout, /map refs: nothing to move\./);
+  assert.equal(fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8'), fixed);
+});
+
+test('limit: a name elsewhere in the sentence does not bind, so only the line bound is checked', t => {
+  // Binding the sentence's one defined name was tried on the real map and moved
+  // refs to the wrong place: "through the `fileTeachExperiment` helper (..., slug
+  // at `path:N`)" names a helper the ref does not point at. So this stays unbound.
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const code = Array.from({ length: 60 }, () => '');
+  code[13] = 'function escape(text) {';
+  write(root, 'lib/sample.js', code.join('\n'));
+  write(root, 'atris/MAP.md', 'See `lib/sample.js:50` for the `escape` function.\n');
+  const refs = JSON.parse(run(root, ['--json']).stdout).map_coverage.refs;
+  assert.deepEqual({ ok: refs.ok, total: refs.total, flagged: refs.flagged }, { ok: 1, total: 1, flagged: [] });
+});
