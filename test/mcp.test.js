@@ -57,7 +57,9 @@ function closeServer(server) {
 // stdio, and closes stdin once the response for `closeAfterId` lands. Resolves
 // every parsed response message. Rejects on any stdout line that is not valid
 // JSON-RPC, since a clean stream is the contract this test guards.
-function mcpSession(requests, { extraEnv = {}, closeAfterId, timeout = 20000 } = {}) {
+function mcpSession(requests, {
+  extraEnv = {}, closeAfterId, timeout = 20000, protocolVersion = '2025-03-26', rawLines = [],
+} = {}) {
   return new Promise((resolve, reject) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mcp-'));
     const child = spawn(process.execPath, [cliPath, 'mcp'], {
@@ -96,12 +98,13 @@ function mcpSession(requests, { extraEnv = {}, closeAfterId, timeout = 20000 } =
       id: 1,
       method: 'initialize',
       params: {
-        protocolVersion: '2025-03-26',
+        protocolVersion,
         capabilities: {},
         clientInfo: { name: 'atris-test', version: '0.0.0' },
       },
     });
     send({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} });
+    for (const line of rawLines) child.stdin.write(`${line}\n`);
     for (const request of requests) send(request);
 
     child.on('error', (error) => {
@@ -125,6 +128,79 @@ function mcpSession(requests, { extraEnv = {}, closeAfterId, timeout = 20000 } =
     });
   });
 }
+
+test('atris mcp initialize echoes a known version and reports the package version', async () => {
+  const { messages } = await mcpSession(
+    [{ jsonrpc: '2.0', id: 2, method: 'ping' }],
+    { closeAfterId: 2 },
+  );
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  assert.deepEqual(messages.find((m) => m.id === 1), {
+    jsonrpc: '2.0',
+    id: 1,
+    result: {
+      protocolVersion: '2025-03-26',
+      capabilities: { tools: {} },
+      serverInfo: { name: pkg.name, version: pkg.version },
+    },
+  });
+  assert.deepEqual(messages.find((m) => m.id === 2)?.result, {});
+});
+
+test('atris mcp initialize falls back for an unknown version', async () => {
+  const { messages } = await mcpSession(
+    [{ jsonrpc: '2.0', id: 2, method: 'ping' }],
+    { closeAfterId: 2, protocolVersion: 'unknown' },
+  );
+  assert.equal(messages.find((m) => m.id === 1)?.result?.protocolVersion, '2025-06-18');
+});
+
+test('atris mcp returns method not found for an unknown request', async () => {
+  const { messages } = await mcpSession(
+    [{ jsonrpc: '2.0', id: 2, method: 'not/a/method' }],
+    { closeAfterId: 2 },
+  );
+  assert.deepEqual(messages.find((m) => m.id === 2), {
+    jsonrpc: '2.0', id: 2, error: { code: -32601, message: 'method not found' },
+  });
+});
+
+test('atris mcp returns parse error for malformed input', async () => {
+  const { messages } = await mcpSession(
+    [{ jsonrpc: '2.0', id: 2, method: 'ping' }],
+    { closeAfterId: 2, rawLines: ['{"jsonrpc":'] },
+  );
+  assert.deepEqual(messages.find((m) => m.error?.code === -32700), {
+    jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' },
+  });
+});
+
+test('atris mcp does not respond to notifications', async () => {
+  const { messages } = await mcpSession(
+    [
+      { jsonrpc: '2.0', method: 'notifications/custom', params: {} },
+      { jsonrpc: '2.0', id: 2, method: 'ping' },
+    ],
+    { closeAfterId: 2 },
+  );
+  assert.deepEqual(messages.map((m) => m.id), [1, 2]);
+});
+
+test('atris mcp returns a tool error for a missing required argument', async () => {
+  const { messages } = await mcpSession(
+    [{ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'design_search', arguments: {} } }],
+    { closeAfterId: 2 },
+  );
+  assert.deepEqual(messages.find((m) => m.id === 2)?.result, {
+    content: [{ type: 'text', text: 'design_search needs a query' }],
+    isError: true,
+  });
+});
+
+test('atris package keeps its zero-dependency promise', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  assert.equal(Object.hasOwn(pkg, 'dependencies') ? Object.keys(pkg.dependencies).length : 0, 0);
+});
 
 test('atris mcp lists the three design tools over stdio', async () => {
   const { messages, stderr } = await mcpSession(
