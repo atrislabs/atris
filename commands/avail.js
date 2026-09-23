@@ -308,7 +308,7 @@ async function slotsAvail(argv) {
   if (!username) {
     const identity = await apiRequestJson('/identity/me', { method: 'GET', token });
     if (!identity.ok || !identity.data?.username) {
-      console.error('Could not resolve username, pass --user keshav');
+      console.error('could not resolve username; pass --user <username>.');
       return 1;
     }
     username = identity.data.username;

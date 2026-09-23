@@ -15,32 +15,29 @@
  *   atris aeo discover <source> [...]       # discovery audit
  *   atris aeo audit <source> [...]          # agent-usability audit
  *
- * Local workspace resolution: $ATRIS_AEO_ROOT or legacy $ATRIS_BACKEND_ROOT.
+ * Local workspace resolution: $ATRIS_AEO_ROOT or the configured backend root.
  */
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { BACKEND_ROOT_HINT, resolveBackendRoot: resolveConfiguredBackendRoot } = require('../utils/backend-root');
 const { loadCredentials, abortOnAuthFailure } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
 
-function resolveBackendRoot() {
-  const candidates = [
-    process.env.ATRIS_AEO_ROOT,
-    process.env.ATRIS_BACKEND_ROOT,
-  ].filter(Boolean);
-  for (const root of candidates) {
-    if (fs.existsSync(path.join(root, 'atris', 'features', 'aeo'))) return root;
-  }
-  return null;
+function resolveAeoRoot() {
+  const explicit = process.env.ATRIS_AEO_ROOT;
+  if (explicit && fs.existsSync(path.join(explicit, 'atris', 'features', 'aeo'))) return explicit;
+  const backend = resolveConfiguredBackendRoot();
+  return backend && fs.existsSync(path.join(backend, 'atris', 'features', 'aeo')) ? backend : null;
 }
 
 function requireBackendRoot() {
-  const root = resolveBackendRoot();
+  const root = resolveAeoRoot();
   if (!root) {
-    console.error('Cannot find local AEO workspace. Set ATRIS_AEO_ROOT to a workspace containing atris/features/aeo.');
+    console.error(`cannot find local aeo workspace; ${BACKEND_ROOT_HINT}`);
     process.exit(1);
   }
   return root;

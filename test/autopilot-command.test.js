@@ -35,6 +35,7 @@ const {
   lessonSlug,
 } = require('../commands/autopilot');
 const { REWARD_CONFIG } = require('../lib/reward-config');
+const { resetOwnerIdentityCache } = require('../utils/owner-identity');
 
 const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
 
@@ -154,7 +155,10 @@ test('suggestNextTask never surfaces an endgame task missing a Verify field — 
 
 test('suggestNextTask in auto mode skips owner-claimed in-progress work; interactive mode resumes it', async () => {
   const dir = makeWorkspace();
+  const previous = process.env.ATRIS_OPERATOR;
   try {
+    process.env.ATRIS_OPERATOR = 'fixtureowner';
+    resetOwnerIdentityCache();
     writeTodo(dir, [
       '# TODO',
       '',
@@ -165,7 +169,7 @@ test('suggestNextTask in auto mode skips owner-claimed in-progress work; interac
       '## In Progress',
       '',
       '- **T3:** Draft the customer email',
-      `  - **Claimed by:** keshav ${isoDaysAgo(1)}`,
+      `  - **Claimed by:** fixtureowner ${isoDaysAgo(1)}`,
       '',
     ].join('\n'));
     const auto = await inWorkspace(dir, () => suggestNextTask(dir, new Set(), { auto: true }));
@@ -176,6 +180,8 @@ test('suggestNextTask in auto mode skips owner-claimed in-progress work; interac
     assert.equal(interactive.kind, 'resume');
     assert.equal(interactive.task, 'Draft the customer email');
   } finally {
+    if (previous === undefined) delete process.env.ATRIS_OPERATOR; else process.env.ATRIS_OPERATOR = previous;
+    resetOwnerIdentityCache();
     cleanup(dir);
   }
 });
@@ -208,11 +214,22 @@ test('suggestNextTask turns the first raw inbox idea into a break-down task, str
 // ---------------------------------------------------------------------------
 
 test('shouldSkipAutoHumanGate flags owner-claimed tasks and owner-gated titles only', () => {
-  assert.equal(shouldSkipAutoHumanGate({ title: 'Fix parser', claimed: 'keshav 2026-08-01' }), true);
-  assert.equal(shouldSkipAutoHumanGate({ title: 'Approve and manually send the invoice' }), true);
-  assert.equal(shouldSkipAutoHumanGate({ title: 'Needs human approval before rollout' }), true);
-  assert.equal(shouldSkipAutoHumanGate({ title: 'Fix parser', claimed: 'builder 2026-08-01' }), false);
-  assert.equal(shouldSkipAutoHumanGate(null), false);
+  const previous = process.env.ATRIS_OPERATOR;
+  try {
+    process.env.ATRIS_OPERATOR = 'fixtureowner';
+    resetOwnerIdentityCache();
+    assert.equal(shouldSkipAutoHumanGate({ title: 'Fix parser', claimed: 'fixtureowner 2026-08-01' }), true);
+    for (const claim of ['owner', 'human', 'operator']) {
+      assert.equal(shouldSkipAutoHumanGate({ title: 'Fix parser', claimed: `${claim} 2026-08-01` }), true);
+    }
+    assert.equal(shouldSkipAutoHumanGate({ title: 'Approve and manually send the invoice' }), true);
+    assert.equal(shouldSkipAutoHumanGate({ title: 'Needs human approval before rollout' }), true);
+    assert.equal(shouldSkipAutoHumanGate({ title: 'Fix parser', claimed: 'builder 2026-08-01' }), false);
+    assert.equal(shouldSkipAutoHumanGate(null), false);
+  } finally {
+    if (previous === undefined) delete process.env.ATRIS_OPERATOR; else process.env.ATRIS_OPERATOR = previous;
+    resetOwnerIdentityCache();
+  }
 });
 
 // ---------------------------------------------------------------------------

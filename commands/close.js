@@ -5,6 +5,7 @@ const { spawnSync } = require('child_process');
 const { knownCommands } = require('../lib/known-commands');
 const { readUsage, usagePath } = require('../lib/usage');
 const pulse = require('../lib/pulse');
+const { isOwner } = require('../utils/owner-identity');
 const { parseLessons } = require('./autopilot');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -240,7 +241,7 @@ function parkedFlags(cwd = process.cwd(), options = {}) {
 }
 
 function ownerWaitRank(flag) {
-  return /^(you|me|operator|human|keshav)$/.test(String(flag.owner || '').toLowerCase()) ? 0 : 1;
+  return isOwner(flag.owner) ? 0 : 1;
 }
 
 function compareOpenFlags(a, b) {

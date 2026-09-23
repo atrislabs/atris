@@ -1463,7 +1463,7 @@ async function interactiveEntry(userInput, options = {}) {
     : (context.inProgressFeatures || []).length;
 
   // Pull active missions (durable goals), these outrank dev-pipeline state
-  // because a mission with an unverified verifier is a Keshav-attributable
+  // because a mission with an unverified verifier is an owner commitment
   // commitment that hasn't been closed yet.
   const activeMissions = loadActiveMissions(workspaceDir);
   const liveMissionsCount = activeMissions.length;

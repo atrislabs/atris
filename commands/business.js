@@ -13,6 +13,10 @@ const {
   renderDryRun,
 } = require('../lib/business-simulate');
 
+function businessWorkspaceBase() {
+  return process.env.ATRIS_BUSINESS_ROOT || path.join(os.homedir(), 'arena', 'atris-business');
+}
+
 function getBusinessConfigPath() {
   const home = require('os').homedir();
   const dir = path.join(home, '.atris');
@@ -179,7 +183,7 @@ function buildBusinessCacheEntry(business, localSlug, existing = {}) {
   return entry;
 }
 
-function readBusinessFolderBindings(rootDir = path.join(os.homedir(), 'arena', 'atris-business')) {
+function readBusinessFolderBindings(rootDir = businessWorkspaceBase()) {
   const skip = new Set([
     '.git', '.DS_Store', 'archive', 'archives', '_archive', 'bench', 'deals',
     'node_modules', 'shelf', '_shelf', 'templates',
@@ -510,7 +514,7 @@ function resolveWorkspaceRoot(slug, options = {}) {
   if (options.noLocal) return null;
   if (options.here) return options.cwd || process.cwd();
   if (options.root) return path.join(options.root, slug);
-  return path.join(os.homedir(), 'arena', 'atris-business', slug);
+  return path.join(businessWorkspaceBase(), slug);
 }
 
 function createCanonicalBusinessWorkspace(targetRoot, bizMeta, options = {}) {
@@ -1851,7 +1855,7 @@ async function addBusiness(slug) {
 }
 
 async function listBusinesses(opts = {}) {
-  // --local mode: walk ~/arena/atris-business/ and show fleet status table
+  // --local mode: walk the configured business workspace folder
   // (no API calls, rate-limit safe). Different from API-mode below which lists
   // businesses cached from the API.
   if (opts.local) {
@@ -1877,7 +1881,7 @@ async function listBusinesses(opts = {}) {
 }
 
 /**
- * Walk ~/arena/atris-business/ and print a fleet status table for every
+ * Walk the configured business folder and print a fleet status table for every
  * customer workspace. Pure local, no API calls, no rate-limit risk.
  *
  * Classifies each dir as: ready, flat, unbound, nested, bare, or superseded.
@@ -1891,7 +1895,7 @@ function listBusinessesLocal(opts = {}) {
   const SKIP_DIRS = new Set(['deals', 'archive', 'archives', '_archive', 'templates', 'node_modules', '.git']);
   const SKIP_FILES = new Set(['.DS_Store', 'Thumbs.db']);
 
-  const rootDir = opts.root || path.join(os.homedir(), 'arena', 'atris-business');
+  const rootDir = opts.root || businessWorkspaceBase();
   const jsonMode = opts.json === true;
 
   if (!fs.existsSync(rootDir)) {
@@ -2609,7 +2613,7 @@ function parseBusinessDoctorOptions(args = []) {
   const options = {
     fix: args.includes('--fix'),
     json: args.includes('--json'),
-    root: path.join(os.homedir(), 'arena', 'atris-business'),
+    root: businessWorkspaceBase(),
   };
   const rootIdx = args.indexOf('--root');
   if (rootIdx !== -1 && args[rootIdx + 1]) {
@@ -2623,7 +2627,7 @@ function printBusinessDoctorHelp() {
   console.log('');
   console.log('Checks cloud-active businesses against:');
   console.log('  - ~/.atris/businesses.json');
-  console.log('  - ~/arena/atris-business/*/.atris/business.json');
+  console.log(`  - ${businessWorkspaceBase()}/*/.atris/business.json`);
   console.log('  - canonical slug + alias bindings');
   console.log('');
   console.log('--fix rewrites only safe local cache entries. It does not rename folders or touch cloud data.');
@@ -3454,7 +3458,7 @@ async function quickstart() {
      atris business init "My Company" --template saas
 
   2. Open the local workspace:
-     cd ~/arena/atris-business/my-company
+     cd ${businessWorkspaceBase()}/my-company
 
   3. See what Atris knows:
      atris
@@ -3675,6 +3679,7 @@ async function businessCommand(subcommand, ...args) {
 
 module.exports = {
   businessCommand,
+  businessWorkspaceBase,
   loadBusinesses,
   saveBusinesses,
   businessMatchesSlug,

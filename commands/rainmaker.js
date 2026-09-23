@@ -9,22 +9,9 @@
  */
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-
-function resolveBackendRoot() {
-  const candidates = [
-    process.env.ATRIS_BACKEND_DIR,
-    path.resolve(__dirname, '..', '..', 'atrisos-backend'),
-    path.resolve(process.cwd(), '..', 'atrisos-backend'),
-    path.join(os.homedir(), 'arena', 'atrisos-backend'),
-  ].filter(Boolean);
-  for (const root of candidates) {
-    if (fs.existsSync(path.join(root, 'scripts', 'rainmaker.py'))) return root;
-  }
-  return null;
-}
+const { BACKEND_ROOT_HINT, resolveBackendRoot } = require('../utils/backend-root');
 
 function rainmakerCommand(args = []) {
   if (args[0] === '--help' || args[0] === '-h') {
@@ -32,8 +19,8 @@ function rainmakerCommand(args = []) {
     return 0;
   }
   const root = resolveBackendRoot();
-  if (!root) {
-    console.error('Cannot find scripts/rainmaker.py. Set ATRIS_BACKEND_DIR to atrisos-backend.');
+  if (!root || !fs.existsSync(path.join(root, 'scripts', 'rainmaker.py'))) {
+    console.error(BACKEND_ROOT_HINT);
     return 1;
   }
   const script = path.join(root, 'scripts', 'rainmaker.py');

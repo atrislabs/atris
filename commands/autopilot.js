@@ -25,14 +25,15 @@ const {
   detectEndgameCompletion
 } = require('../lib/scorecard');
 const { REWARD_CONFIG, REWARD_CHECKSUM } = require('../lib/reward-config');
+const { ownerIdentity } = require('../utils/owner-identity');
 
 const pkg = require('../package.json');
 
 const PHASE_TIMEOUT = 600000; // 10 min per phase
 
 function looksOwnerClaimed(claimed) {
-  const text = String(claimed || '').toLowerCase();
-  return /\bkeshav(?:rao)?\b/.test(text) || /\b(owner|human|operator)\b/.test(text);
+  const text = String(claimed || '').trim().toLowerCase();
+  return /\b(owner|human|operator)\b/.test(text) || ownerIdentity().names.includes(text.split(/\s+/)[0]);
 }
 
 function looksOwnerGatedTitle(title) {
@@ -640,7 +641,7 @@ function getContextFiles(phase, options = {}) {
 // checkout is forbidden (COORDINATION.md Rule 4). Interpolated into the
 // default and self-heal do prompts, never the benchmark prompt (it never
 // commits).
-const SHARED_CHECKOUT_GIT_CONTRACT = `- Shared-checkout git safety (COORDINATION.md Rule 4): edits to any repo OTHER than this tick's cwd (../atrisos-backend-style sibling repos) go through a per-tick worktree, start with \`atris worktree start --member <member> --task "<task>"\`, land with \`atris worktree ship --message "<msg>" --verify "<cmd>"\`. Never edit a sibling repo's shared checkout directly.
+const SHARED_CHECKOUT_GIT_CONTRACT = `- Shared-checkout git safety (COORDINATION.md Rule 4): edits to any repo OTHER than this tick's cwd (including sibling repos) go through a per-tick worktree, start with \`atris worktree start --member <member> --task "<task>"\`, land with \`atris worktree ship --message "<msg>" --verify "<cmd>"\`. Never edit a sibling repo's shared checkout directly.
 - On a shared checkout, \`git reset\`, \`git checkout --\`, \`git clean\`, and stashing other agents' work are FORBIDDEN, concurrent ticks' uncommitted work lives there.`;
 
 /**

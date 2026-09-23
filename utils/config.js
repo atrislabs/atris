@@ -5,17 +5,18 @@ const path = require('path');
  * Get the path to atris/.config in the current project.
  * @returns {string} Config file path
  */
-function getConfigPath() {
-  const targetDir = path.join(process.cwd(), 'atris');
+function getConfigPath(root = process.cwd()) {
+  const targetDir = path.join(root, 'atris');
   return path.join(targetDir, '.config');
 }
 
 /**
  * Load config from atris/.config, returning empty object if missing/invalid.
+ * backend_root may name a backend folder relative to the workspace root.
  * @returns {Object} Config object
  */
-function loadConfig() {
-  const configPath = getConfigPath();
+function loadConfig(root = process.cwd()) {
+  const configPath = getConfigPath(root);
 
   if (!fs.existsSync(configPath)) {
     return {};

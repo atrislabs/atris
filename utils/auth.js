@@ -363,7 +363,7 @@ function getProfilesDir() {
 
 function profileNameFromEmail(email) {
   if (!email) return null;
-  // "keshav@atrislabs.com" → "keshav"
+  // "alex@example.com" becomes "alex".
   const name = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '-');
   return name || null; // Guard against emails like "@domain.com"
 }

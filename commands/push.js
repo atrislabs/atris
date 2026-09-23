@@ -985,7 +985,7 @@ async function pushAtris() {
       console.log(`    ... +${failedToLand.length - shown.length} more`);
     }
     console.log('');
-    console.log('  Common causes: path is outside the workspace (e.g. absolute /Users/... path),');
+    console.log('  common causes: path is outside the workspace (for example, an absolute home path),');
     console.log('  your role lacks write permission for that folder, or warm runner returned an error.');
     console.log('  These files will appear as drift on your next push so you can retry.');
   }

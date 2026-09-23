@@ -5,9 +5,53 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'spaceship.sh');
+
+test('spaceship names the backend setting when its email helper is unavailable', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'spaceship-backend-'));
+  try {
+    const result = spawnSync('bash', [SCRIPT, '--repo', repo, '--hours', '0'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ATRIS_BACKEND_ROOT: '',
+        ATRIS_BACKEND_DIR: '',
+        SPACESHIP_BACKEND: '',
+        SPACESHIP_EMAIL_CMD: '',
+      },
+    });
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr.trim(), 'set ATRIS_BACKEND_ROOT to the backend workspace.');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('spaceship runs the default email helper from a path with spaces', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'spaceship-email-'));
+  const backend = path.join(repo, 'backend with spaces');
+  const python = path.join(backend, 'venv', 'bin', 'python');
+  const script = path.join(backend, 'backend', 'scripts', 'spaceship_update.py');
+  const calls = path.join(repo, 'email-calls.txt');
+  try {
+    fs.mkdirSync(path.dirname(python), { recursive: true });
+    fs.mkdirSync(path.dirname(script), { recursive: true });
+    fs.writeFileSync(python, `#!/bin/sh\nprintf '%s\\n' "$1" >> "${calls}"\ncat >/dev/null\n`);
+    fs.chmodSync(python, 0o755);
+    fs.writeFileSync(script, '');
+    const result = spawnSync('bash', [SCRIPT, '--repo', repo, '--hours', '0'], {
+      encoding: 'utf8',
+      env: { ...process.env, ATRIS_BACKEND_ROOT: '', SPACESHIP_BACKEND: backend, SPACESHIP_EMAIL_CMD: '' },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /EMAIL sent/);
+    assert.deepEqual(fs.readFileSync(calls, 'utf8').trim().split('\n'), [script, script]);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
 
 // The supervisor's whole reason to exist: it must NOT die on a bad tick the way
 // the bare `atris autopilot --duration` loop does, and every meaningful state

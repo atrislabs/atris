@@ -7,7 +7,7 @@
 # atris pulse) writes only to local log files and journals. When a tick halts or
 # the loop goes idle for hours, nobody finds out. The HVAC loop went dark for 11
 # hours that way. This runner makes the loop FAIL LOUD: it survives bad ticks
-# instead of dying on the first one, watches for no-op streaks, and emails Keshav
+# instead of dying on the first one, watches for no-op streaks, and emails the operator
 # on every meaningful state change plus a final summary.
 #
 # It does NOT reimplement the tick — it shells out to the real one
@@ -44,9 +44,6 @@ if [ ! -t 1 ]; then
 fi
 
 # Default email channel: the verified SES helper in atrisos-backend.
-BACKEND_DEFAULT="${SPACESHIP_BACKEND:-$HOME/arena/atrisos-backend}"
-DEFAULT_EMAIL_CMD="${BACKEND_DEFAULT}/venv/bin/python ${BACKEND_DEFAULT}/backend/scripts/spaceship_update.py"
-EMAIL_CMD="${SPACESHIP_EMAIL_CMD:-$DEFAULT_EMAIL_CMD}"
 
 usage() {
   cat <<'EOF'
@@ -77,6 +74,13 @@ while [ $# -gt 0 ]; do
 done
 
 REPO="$(cd "$REPO" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_ROOT_OVERRIDE="${ATRIS_BACKEND_ROOT:-${SPACESHIP_BACKEND:-}}"
+BACKEND_DEFAULT="$(ATRIS_BACKEND_ROOT="$BACKEND_ROOT_OVERRIDE" node -e 'process.stdout.write(require(process.argv[1]).resolveBackendRoot(process.argv[2]) || "")' "$SCRIPT_DIR/../utils/backend-root.js" "$REPO")"
+if [ "$EMAIL" -eq 1 ] && [ -z "${SPACESHIP_EMAIL_CMD:-}" ] && [ -z "$BACKEND_DEFAULT" ]; then
+  echo 'set ATRIS_BACKEND_ROOT to the backend workspace.' >&2
+  exit 1
+fi
 STATE_DIR="$REPO/atris/.spaceship"
 mkdir -p "$STATE_DIR"
 LOG_FILE="$STATE_DIR/run.log"
@@ -89,6 +93,14 @@ elapsed_min() { echo $(( ( $(date +%s) - START_EPOCH ) / 60 )); }
 
 logline() { printf '[%s] %s\n' "$(now)" "$1" | tee -a "$LOG_FILE"; }
 
+email_command() {
+  if [ -n "${SPACESHIP_EMAIL_CMD:-}" ]; then
+    $SPACESHIP_EMAIL_CMD "$@"
+  else
+    "$BACKEND_DEFAULT/venv/bin/python" "$BACKEND_DEFAULT/backend/scripts/spaceship_update.py" "$@"
+  fi
+}
+
 # send_email <subject> <body>
 send_email() {
   local subject="$1" body="$2"
@@ -96,7 +108,7 @@ send_email() {
     logline "EMAIL(skipped): $subject"
     return 0
   fi
-  if printf '%s\n' "$body" | $EMAIL_CMD --subject "$subject" >>"$LOG_FILE" 2>&1; then
+  if printf '%s\n' "$body" | email_command --subject "$subject" >>"$LOG_FILE" 2>&1; then
     logline "EMAIL sent: $subject"
   else
     logline "EMAIL FAILED: $subject (channel down, check $LOG_FILE)"

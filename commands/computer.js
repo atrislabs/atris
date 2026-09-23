@@ -23,8 +23,9 @@ const path = require('path');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
 const { loadCredentials, decodeJwtClaims, promptUser, abortOnAuthFailure } = require('../utils/auth');
+const { resolveBackendRoot } = require('../utils/backend-root');
 const { apiRequestJson, getApiBaseUrl, getAppBaseUrl } = require('../utils/api');
-const { loadBusinesses, saveBusinesses } = require('./business');
+const { businessWorkspaceBase, loadBusinesses, saveBusinesses } = require('./business');
 const {
   engineLoginSeatError,
   formatEngineSeats,
@@ -518,7 +519,7 @@ function displayHomeRelativePath(targetPath) {
 }
 
 function recruitingBusinessWorkspacePath(slug = RECRUITING_BUSINESS_SLUG) {
-  const root = process.env.ATRIS_BUSINESS_ROOT || path.join(os.homedir(), 'arena', 'atris-business');
+  const root = businessWorkspaceBase();
   return path.join(root, slug);
 }
 
@@ -1372,11 +1373,12 @@ function printModeBanner(mode, root, lines = []) {
 
 function findAtrisCodeTerminal() {
   const envPath = process.env.ATRIS_CODE_PY;
+  const backend = resolveBackendRoot();
   const candidates = [
     envPath,
     path.join(__dirname, '..', 'cli', 'atris_code.py'),
     path.join(process.cwd(), 'cli', 'atris_code.py'),
-    path.join(os.homedir(), 'arena', 'atrisos-backend', 'cli', 'atris_code.py'),
+    ...(backend ? [path.join(backend, 'cli', 'atris_code.py')] : []),
   ].filter(Boolean);
 
   let dir = process.cwd();
@@ -2535,7 +2537,7 @@ async function computerCreate(token, args = [], defaults = {}) {
   console.log(`  atris computer --business ${owner} --workspace ${workspaceId}`);
   console.log('');
   console.log('Org workspace:');
-  console.log(`  cd ~/arena/atris-business/${owner}`);
+  console.log(`  cd ${businessWorkspaceBase()}/${owner}`);
   console.log('  atris member activate operator');
   console.log('  atris member activate validator');
   console.log('');
@@ -3501,7 +3503,7 @@ async function sendBusinessChat(token, ctx, message, sessionId, resetContext = f
 async function computerChat(token, ctx, initialOptions = {}) {
   if (!ctx) {
     console.error('Cloud computer mode requires a bound business workspace.');
-    console.error('Run this inside ~/arena/atris-business/<slug>/, or use `atris computer --local` for local mode.');
+    console.error('run this inside a bound business workspace, or use `atris computer --local` for local mode.');
     return;
   }
 
@@ -3742,7 +3744,7 @@ async function computerChat(token, ctx, initialOptions = {}) {
 async function computerLocalAtris(token, ctx, initialOptions = {}) {
   if (!ctx) {
     console.error('Atris local mode needs a bound business workspace for the cloud brain.');
-    console.error('Run inside ~/arena/atris-business/<slug>/, or use `atris computer local-byo`.');
+    console.error('run inside a bound business workspace, or use `atris computer local-byo`.');
     return;
   }
 
@@ -3977,7 +3979,7 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
 async function computerProof(token, ctx, initialOptions = {}) {
   if (!ctx) {
     console.error('Atris computer proof needs a bound business workspace.');
-    console.error('Run inside ~/arena/atris-business/<slug>/ first.');
+    console.error('run inside a bound business workspace first.');
     process.exitCode = 1;
     return;
   }
@@ -4291,7 +4293,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     console.log('A business can be a company, lab, collective, community, artist, team, or project.');
     console.log('');
     console.log('First use:');
-    console.log('  cd ~/arena/atris-business/<business>');
+    console.log(`  cd ${businessWorkspaceBase()}/<business>`);
     console.log('  atris computer');
     console.log('  Choose Cloud workspace or Local folder, then type the outcome in plain English.');
     console.log('');

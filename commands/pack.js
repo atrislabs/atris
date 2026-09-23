@@ -1622,7 +1622,7 @@ async function publishPack(rawArgs, cwd = process.cwd(), options = {}) {
   }
 
   // pack.json belongs to the pack, not to whatever repo happens to contain it
-  // (2026-07-27: publishing ~/arena/atrisos-backend/atris wrote a pack.json
+  // (2026-07-27: publishing a backend workspace's atris folder wrote a pack.json
   // into atrisos-backend/ and polluted the source repo).
   const manifestPath = path.join(sourceDir, 'pack.json');
   const existing = readJson(manifestPath);

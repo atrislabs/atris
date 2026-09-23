@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 const { loadCredentials } = require('../utils/auth');
+const { resolveBackendRoot } = require('../utils/backend-root');
 const { apiRequestJson } = require('../utils/api');
 const { runAliveTick } = require('../lib/member-alive');
 const { defaultObjectiveRunner } = require('../lib/default-runner');
@@ -1963,8 +1964,8 @@ function problemSignalSources(root = process.cwd()) {
     sources.push(source);
   }
   for (const source of problemSignalFilesForStateDir(path.join(root, '.atris', 'state'))) push(source);
-  const siblingBackend = path.resolve(root, '..', 'atrisos-backend');
-  if (fs.existsSync(siblingBackend)) {
+  const siblingBackend = resolveBackendRoot(root);
+  if (siblingBackend) {
     for (const source of problemSignalFilesForStateDir(path.join(siblingBackend, '.atris', 'state'), 'backend')) push(source);
   }
   for (const source of configuredProblemSignalSources(root)) push(source);

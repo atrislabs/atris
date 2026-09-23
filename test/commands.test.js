@@ -7056,7 +7056,7 @@ test('brain gallery previews activation cards for every team member', () => {
   const dir = makeTempDir();
   try {
     seedBrainWorkspace(dir);
-    const res = runCli(['brain', 'gallery', '--yes', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'gallery', '--yes', '--root', dir, '--verify'], { cwd: dir, env: { ATRIS_OPERATOR: 'keshav' } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /OPERATOR: Justin McDonald/);
     assert.match(res.stdout, /OPERATOR: Keshav Rao/);
@@ -7064,6 +7064,25 @@ test('brain gallery previews activation cards for every team member', () => {
     assert.match(res.stdout, /Keshav Rao: act as Customer 0/);
     assert.match(res.stdout, /---/);
     assert.match(res.stdout, /VERIFY: brain artifacts and member readiness present/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activation does not treat a generic operator member as the owner', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const memberDir = path.join(dir, 'atris', 'team', 'operator');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Operator\n\nBusiness operator\n');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), '# Start Here\n\nRun the business loop.\n');
+    const result = runCli(['brain', 'activate', '--yes', '--member', 'operator', '--root', dir], {
+      cwd: dir,
+      env: { ATRIS_OPERATOR: 'alex' },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /Operator: act as Customer 0/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -7078,7 +7097,7 @@ test('brain gallery does not overwrite the remembered operator', () => {
     assert.equal(activate.status, 0, activate.stderr);
     assert.equal(JSON.parse(fs.readFileSync(operatorPath, 'utf8')).member, 'justin');
 
-    const res = runCli(['brain', 'gallery', '--yes', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'gallery', '--yes', '--root', dir, '--verify'], { cwd: dir, env: { ATRIS_OPERATOR: 'keshav' } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /OPERATOR: Keshav Rao/);
     assert.equal(JSON.parse(fs.readFileSync(operatorPath, 'utf8')).member, 'justin');
@@ -7150,7 +7169,7 @@ next_rep: log one receipt with evidence and next owner
 proof_needed: leave a receipt in contribution-score
 \`\`\`
 `, 'utf8');
-    const res = runCli(['brain', 'activate', '--yes', '--member', 'keshav', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--yes', '--member', 'keshav', '--root', dir, '--verify'], { cwd: dir, env: { ATRIS_OPERATOR: 'keshav' } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /OPERATOR: Keshav Rao/);
     assert.match(res.stdout, /NEXT MOVE: Keshav Rao: act as Customer 0/);
