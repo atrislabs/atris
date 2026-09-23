@@ -211,7 +211,7 @@ check(
     { path: 'scripts/det/b.js', status: 'M', added: 2, deleted: 1 },
     { path: 'test/x.test.js', status: 'A', added: 5, deleted: 0 },
   ]),
-  ['- **scripts** — 1 added, 1 changed (+12/-1)', '- **test** — 1 added (+5/-0)']
+  ['- **scripts**: 1 added, 1 changed (+12/-1)', '- **test**: 1 added (+5/-0)']
 );
 // test plan lists touched test files, then a check per non-test area
 check(
@@ -267,7 +267,7 @@ check('det.git.json', JSON.parse(catalogJson()).git['commit-msg'].usage.includes
 // stdin catalog stays separate from the git list (routing must not mix them)
 check('det.git.notRoutable', CATALOG['commit-msg'], undefined);
 
-console.log(`ok — ${passed} checks passed`);
+console.log(`ok: ${passed} checks passed`);
 
 // hunk-filter: keeps only matching hunks, drops non-matching files entirely
 {

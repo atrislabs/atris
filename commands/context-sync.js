@@ -64,7 +64,7 @@ async function businessStatus(slug) {
   const timeSince = manifest ? _timeSince(manifest.last_sync) : null;
 
   console.log('');
-  console.log(`${biz.name}` + (timeSince ? ` \u2014 last synced ${timeSince}` : ' \u2014 never synced'));
+  console.log(`${biz.name}` + (timeSince ? `: last synced ${timeSince}` : ': never synced'));
 
   // Determine local directory
   let localDir = null;
@@ -254,11 +254,11 @@ async function businessLog(slug) {
 
   const commits = result.data.commits || [];
   if (commits.length === 0) {
-    console.log(`\n  ${biz.name} \u2014 no history yet.\n`);
+    console.log(`\n  ${biz.name}: no history yet.\n`);
     return;
   }
 
-  console.log(`\n  ${biz.name} \u2014 history\n`);
+  console.log(`\n  ${biz.name}: history\n`);
 
   for (const commit of commits) {
     const date = _timeSince(commit.date) || commit.date;

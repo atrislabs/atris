@@ -722,7 +722,7 @@ async function pullBusiness(slug) {
         fs.mkdirSync(path.dirname(localPath), { recursive: true });
         fs.writeFileSync(localPath, content);
       }
-      console.log(`  \u26A0 ${p.replace(/^\//, '')}  CONFLICT \u2014 both you and the computer changed this`);
+      console.log(`  \u26A0 ${p.replace(/^\//, '')}: conflict, both you and the computer changed this`);
       console.log(`    \u2192 Remote version saved as ${p.replace(/^\//, '')}.remote`);
       conflictCount++;
     }

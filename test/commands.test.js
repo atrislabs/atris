@@ -16922,7 +16922,7 @@ test('TODO fallback parser handles nested groups and modern task ids', () => {
     const { parseTodoFile } = require('../lib/todo-fallback');
     const parsed = parseTodoFile(todoPath);
     assert.equal(parsed.backlog.length, 2);
-    assert.equal(parsed.backlog[0].title, 'Fast idea dump — capture rough thoughts before running agents.');
+    assert.equal(parsed.backlog[0].title, 'Fast idea dump - capture rough thoughts before running agents.');
     assert.equal(parsed.backlog[1].id, 'windows-public-release-T1');
     assert.equal(parsed.backlog[1].verify, 'npm run release:gate:win');
     assert.equal(parsed.inProgress[0].id, 'prod-first-install-hotfix-T1');

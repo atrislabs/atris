@@ -78,7 +78,7 @@ function areaBullets(files) {
     if (counts.A) parts.push(`${counts.A} added`);
     if (counts.M) parts.push(`${counts.M} changed`);
     if (counts.D) parts.push(`${counts.D} removed`);
-    bullets.push(`- **${area}** — ${parts.join(', ')} (+${added}/-${deleted})`);
+    bullets.push(`- **${area}**: ${parts.join(', ')} (+${added}/-${deleted})`);
   }
   return bullets;
 }
@@ -108,7 +108,7 @@ function build(input) {
   const commits = (input && input.commits) || [];
   const files = (input && input.files) || [];
   if (!commits.length && !files.length) {
-    return { error: 'no commits or files vs base — is the branch ahead of it?' };
+    return { error: 'no commits or files vs base: is the branch ahead of it?' };
   }
   const totals = files.reduce(
     (a, f) => ({ added: a.added + (f.added || 0), deleted: a.deleted + (f.deleted || 0) }),

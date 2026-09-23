@@ -84,7 +84,7 @@ function main() {
         try {
           require(abs);
         } catch (err) {
-          problems.push(`${file}: fails to load — ${err.message.split('\n')[0]}`);
+          problems.push(`${file}: fails to load, ${err.message.split('\n')[0]}`);
           continue;
         }
       }

@@ -68,8 +68,8 @@ function analyticsAtris() {
     }
 
     // Parse timestamps for productivity hours. Match the journal heading
-    // format `### Title -- HH:MM` (the dashed form) and the legacy `**HH:MM:SS**` form.
-    const timestampMatches = content.match(/(?:\u2014|--)\s*(\d{2}):\d{2}(?::\d{2})?\b|\*\*(\d{2}):\d{2}(?::\d{2})?\*\*/g);
+    // formats `### Title -- HH:MM`, `### Title - HH:MM`, and legacy `**HH:MM:SS**`.
+    const timestampMatches = content.match(/(?:\u2014|--| - )\s*(\d{2}):\d{2}(?::\d{2})?\b|\*\*(\d{2}):\d{2}(?::\d{2})?\*\*/g);
     if (timestampMatches) {
       timestampMatches.forEach(ts => {
         const m = ts.match(/(\d{2}):/);
