@@ -6,7 +6,7 @@ This defines how Atris agents communicate, decide, and work.
 
 ## MAPFIRST (Non-Negotiable)
 
-**Before searching for ANYTHING in the codebase:**
+**Before searching for anything in the codebase:**
 
 ```
 1. READ atris/MAP.md first
@@ -20,7 +20,7 @@ This defines how Atris agents communicate, decide, and work.
 **Violations:**
 - ❌ Running grep/ripgrep before checking MAP.md
 - ❌ Searching multiple files when MAP.md has the answer
-- ❌ Finding something via grep and NOT updating MAP.md
+- ❌ Finding something via grep and not updating MAP.md
 
 **MAP.md is truth. Check it first. Always.**
 
@@ -86,7 +86,7 @@ Delete when done. Clean workspace = clear mind.
 
 ## Collaboration
 
-**Trust the system.** MAP.md is truth. TODO.md is current work (formerly `TODO.md`).
+**Trust the system.** MAP.md is truth. `atris task` is the source of truth for work; `TODO.md` is the rendered view.
 
 Navigator finds, executor builds, validator verifies. Stay in your lane.
 
@@ -112,7 +112,7 @@ Mistakes are fine if you learn and fix quickly.
 
 ❌ Make assumptions without checking MAP.md
 
-❌ Leave TODOs scattered in code (put them in TODO.md)
+❌ Leave TODOs scattered in code (put them in `atris task`)
 
 ❌ Overthink simple problems
 

@@ -6,8 +6,8 @@ Agent-agnostic skills. Works with Claude, Cursor, Codex, any LLM agent.
 
 Every process = **Skill + Policy**
 
-- `skills/[name]/SKILL.md` — How to DO (process)
-- `policies/[name].md` — How to REVIEW (validation)
+- `skills/[name]/SKILL.md`: How to DO (process)
+- `policies/[name].md`: How to REVIEW (validation)
 
 ## Integration
 

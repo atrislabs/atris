@@ -12,8 +12,8 @@
 
 | Surface | Where |
 |---------|-------|
-| push entry + safety | commands/push.js — analyzePushSafety lines 136-184, renderPushSafetyBlock 186-218 ("Refusing unsafe workspace push"), drift gate 468-481 ("Cloud has changed since your last pull"), --only parsing 298-313, sync POST 620, DELETE file 749-760 |
-| pull | commands/pull.js — --keep-local 216-223 (writes `.remote` files at 718), smart hash-then-batch pull 414-484, force mirror sweep 750-819 |
+| push entry + safety | commands/push.js: analyzePushSafety lines 136-184, renderPushSafetyBlock 186-218 ("Refusing unsafe workspace push"), drift gate 468-481 ("Cloud has changed since your last pull"), --only parsing 298-313, sync POST 620, DELETE file 749-760 |
+| pull | commands/pull.js: --keep-local 216-223 (writes `.remote` files at 718), smart hash-then-batch pull 414-484, force mirror sweep 750-819 |
 | sync | commands/sync.js syncAtris 424-670; commands/business-sync.js (--status, --watch) |
 | live loop | commands/live.js |
 | local manifest | lib/manifest.js load/save/build 18-57 |

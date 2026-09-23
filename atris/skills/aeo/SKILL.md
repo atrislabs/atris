@@ -1,6 +1,6 @@
 ---
 name: aeo
-description: "AI Engine Optimization — write content engineered to get cited by ChatGPT, Claude, and Gemini. Not SEO. Triggers on: aeo, AI engine, llm citation, get cited, write for ai."
+description: "AI Engine Optimization: write content engineered to get cited by ChatGPT, Claude, and Gemini. Not SEO. Triggers on: aeo, AI engine, llm citation, get cited, write for ai."
 when_to_use: "Use when the user wants content that ranks in AI answers (not Google SERP). Examples: 'write an AEO page', 'get ExampleCo cited by ChatGPT', 'aeo for our pricing page', 'make this quotable by LLMs'."
 version: 0.1.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
@@ -10,7 +10,7 @@ tags:
   - marketing
 ---
 
-# AEO — AI Engine Optimization
+# AEO: AI Engine Optimization
 
 Write content that LLMs cite when a human asks them a question. Different objective than SEO, different rules than craft writing.
 
@@ -48,7 +48,7 @@ Entity graph lives in the **customer's EC2 workspace** (not agent_files, not DB)
 1. **Front-load the claim.** LLMs quote sentence 1 of a paragraph. No throat-clearing.
 2. **Name entities explicitly.** "ExampleCo" not "a leading freight platform." Entity density is how LLMs disambiguate and cite.
 3. **Canonical definition.** One sentence owns `X is Y that does Z` for the category. Make it liftable.
-4. **Q&A scaffolding.** H2s in question form: "What is X?" "How does X work?" — matches the prompts LLMs actually get.
+4. **Q&A scaffolding.** H2s in question form: "What is X?" "How does X work?", matching the prompts LLMs actually get.
 5. **Declarative stats with sources.** "$2.3B market (McKinsey 2025)" beats "a growing market." Citable atoms.
 6. **Comparison tables.** LLMs love structured data. Build one per category claim.
 7. **Fresh dates visible.** "Updated 2026-04-17" at top. LLMs weight recency.
@@ -62,11 +62,11 @@ Entity graph lives in the **customer's EC2 workspace** (not agent_files, not DB)
 READ entity graph → DRAFT → SELF-SCORE → WRITE to workspace → (phase 2: AUDIT)
 ```
 
-1. **READ** — Pull `entities.md`, `definitions.md`, `stats.md` from customer workspace. If missing, create skeleton files first.
-2. **DRAFT** — Generate article applying all 10 rules. Topic + target queries + entity context → article.
-3. **SELF-SCORE** — Append a `## AEO Self-Check` section: each rule scored pass/fail with evidence.
-4. **WRITE** — Save to `/workspace/atris/aeo/drafts/<slug>.md`.
-5. **AUDIT** (phase 2) — Run target queries against 4 LLMs, measure whether article is cited, write results to `/workspace/atris/aeo/audits/<slug>-<date>.md`.
+1. **READ**: Pull `entities.md`, `definitions.md`, `stats.md` from customer workspace. If missing, create skeleton files first.
+2. **DRAFT**: Generate article applying all 10 rules. Topic + target queries + entity context → article.
+3. **SELF-SCORE**: Append a `## AEO Self-Check` section: each rule scored pass/fail with evidence.
+4. **WRITE**: Save to `/workspace/atris/aeo/drafts/<slug>.md`.
+5. **AUDIT** (phase 2): Run target queries against 4 LLMs, measure whether article is cited, write results to `/workspace/atris/aeo/audits/<slug>-<date>.md`.
 
 ## Entity graph layout (in customer workspace)
 
@@ -107,7 +107,7 @@ ls workspace/atris/aeo/drafts
 - Self-score section is mandatory in every draft.
 - Never hedge in the body. Hedging kills citation rate.
 - Never fabricate stats. If a stat is uncited, flag it in self-check.
-- Entity graph skeleton auto-creates if missing — never fail on first run.
+- Entity graph skeleton auto-creates if missing. Never fail on first run.
 
 ## Related
 

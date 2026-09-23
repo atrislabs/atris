@@ -50,7 +50,7 @@ cp atris/features/_templates/validate.md.template atris/features/your-feature-na
 # Fill in the templates
 # Edit idea.md (problem, solution, visualization)
 # Edit build.md (step-by-step implementation)
-# Edit validate.md (proof it works — filled by validator)
+# Edit validate.md (proof it works, filled by validator)
 ```
 
 ---
@@ -69,7 +69,7 @@ cp atris/features/_templates/validate.md.template atris/features/your-feature-na
 3. Updates status as work progresses
 
 **Validator Agent (validate.md):**
-1. Fills in `validate.md` — runs every check, records pass/fail
+1. Fills in `validate.md`: runs every check, records pass/fail
 2. If all pass → status "complete", lessons learned to journal
 3. If any fail → status stays "in-progress", lessons learned to journal
 4. Updates MAP.md if needed
@@ -119,7 +119,7 @@ Local-first project wiki with cloud opt-in
 - **Completed:** 2026-04-07
 
 #### self-improving-loop
-Make Atris recursive — validate.md lessons feed back into the next idea.md
+Make Atris recursive: validate.md lessons feed back into the next idea.md
 - **Files:** atris/lessons.md (new), atris.md, atris/team/navigator/MEMBER.md, atris/team/validator/MEMBER.md, atris/MAP.md
 - **Status:** complete
 - **Keywords:** recursion, lessons, feedback-loop, self-improving, lessons.md
@@ -134,7 +134,7 @@ Connect lessons.md and validate.md to every CLI command and doc that references 
 - **What:** 8 surgical edits to wire lessons.md and validate.md into init, plan, review, status, docs, and spec
 - **Completed:** 2026-02-09
 
-#### brainstorm — v2.0.0
+#### brainstorm: v2.0.0
 Conversational exploration mode for uncertain ideas
 - **Files:** bin/atris.js, atris/atris.md, atris/PERSONA.md, GETTING_STARTED.md, README.md, atris/MAP.md
 - **Status:** complete
@@ -143,7 +143,7 @@ Conversational exploration mode for uncertain ideas
 - **Why:** Users need supportive thinking partner when uncertain about requirements
 - **Completed:** 2025-11-11 (shipped in v2.0.0)
 
-#### cli-ux-simplification — v2.0.0
+#### cli-ux-simplification: v2.0.0
 Simplified CLI surface around the core workflow and aligned internal artifacts.
 - **Files:** bin/atris.js, commands/init.js, commands/workflow.js, commands/status.js, commands/brainstorm.js, lib/state-detection.js, atris.md, atris/atris.md, GETTING_STARTED.md, atris/GETTING_STARTED.md, AGENT.md, CLAUDE.md, atris/PERSONA.md, PERSONA.md
 - **Status:** complete
