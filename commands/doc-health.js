@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { resolveWorkspaceRoot } = require('../lib/mission-root');
 const { readText } = require('./brain');
-const { checkMapRefs, fixMapRefs } = require('../lib/map-refs');
+const { checkMapDocs, fixMapDocs } = require('../lib/map-refs');
 
 const BOOT_FILES = [
   'CLAUDE.md', 'AGENTS.md', 'atris/atris.md', 'atris/MAP.md',
@@ -76,9 +76,10 @@ function collectMap(root, text, featureNames, memberNames) {
   const files = [...paths].map(file => ({ path: file, exists: fs.existsSync(path.resolve(root, file)) }));
   const existing = files.filter(file => file.exists).length;
   const pathScore = files.length ? existing / files.length : 0;
-  const { refs: all, ...refs } = checkMapRefs(root, text);
+  // Line refs are checked in the boot map and in the notes file it points to.
+  const { refs: all, ...refs } = checkMapDocs(root, text);
   refs.flagged = all.filter(ref => ref.status !== 'ok').map(ref => ({
-    map_line: ref.map_line, ref: ref.raw, symbol: ref.symbol, status: ref.status,
+    doc: ref.doc, map_line: ref.map_line, ref: ref.raw, symbol: ref.symbol, status: ref.status,
     ...(ref.line ? { line: ref.line } : {}), ...(ref.lines ? { lines: ref.lines } : {}),
     ...(ref.reason ? { reason: ref.reason } : {}),
   }));
@@ -286,21 +287,25 @@ function refsLine(refs) {
   return `map refs: ${refs.ok} right, ${refs.moved} moved, ${refs.ambiguous} unclear, ${gone} gone`;
 }
 
+function docLine(ref) {
+  return `${ref.doc === 'atris/MAP.md' ? 'MAP' : ref.doc} line ${ref.map_line}`;
+}
+
 function describeLeft(ref) {
-  const where = `MAP line ${ref.map_line}: ${ref.raw}${ref.symbol ? ` (${ref.symbol})` : ''}`;
+  const where = `${docLine(ref)}: ${ref.raw}${ref.symbol ? ` (${ref.symbol})` : ''}`;
   if (ref.status === 'ambiguous') return `${where} found on lines ${ref.lines.join(', ')}`;
   if (ref.status === 'missing-file') return `${where} file is gone`;
   return `${where} ${ref.reason}`;
 }
 
 function fixRefsCommand(root, asJson) {
-  const { changes, left } = fixMapRefs(root);
+  const { changes, left } = fixMapDocs(root);
   if (asJson) {
     console.log(JSON.stringify({ ok: true, action: 'doc-health fix-refs', changes, left }, null, 2));
     return 0;
   }
   const lines = [changes.length ? `map refs: moved ${changes.length}` : 'map refs: nothing to move.'];
-  for (const change of changes) lines.push(`  MAP line ${change.map_line}: ${change.from} -> ${change.to} (${change.symbol})`);
+  for (const change of changes) lines.push(`  ${docLine(change)}: ${change.from} -> ${change.to} (${change.symbol})`);
   if (left.length) {
     lines.push(`left for a human: ${left.length}`);
     for (const ref of left) lines.push(`  ${describeLeft(ref)}`);

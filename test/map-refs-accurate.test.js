@@ -18,7 +18,7 @@ test("atris/MAP.md has no broken file:line references", () => {
   const { unhealable } = healBrokenMapRefs(cwd, atrisDir, true); // dry-run, never writes
 
   const detail = unhealable
-    .map((r) => `  ${r.file}:${r.line} — ${r.reason}`)
+    .map((r) => `  ${r.file}:${r.line}: ${r.reason}`)
     .join('\n');
 
   assert.strictEqual(
@@ -27,5 +27,21 @@ test("atris/MAP.md has no broken file:line references", () => {
     `MAP.md points at code that moved or was deleted (${unhealable.length} broken ref` +
       `${unhealable.length === 1 ? '' : 's'}). Run \`atris clean\` to auto-heal drift, ` +
       `then fix the rest by hand:\n${detail}`
+  );
+});
+
+// The deep refs moved to atris/refs/MAP-NOTES.md so boot reads a short map.
+// Keep the same guard on them: a ref whose code is gone fails the suite.
+test('map line refs in the boot map and the notes file still find their code', () => {
+  const { checkMapDocs } = require('../lib/map-refs');
+  const cwd = path.join(__dirname, '..');
+  const { refs, total } = checkMapDocs(cwd);
+  assert.ok(total > 0, 'expected the map files to carry file:line refs');
+  const gone = refs.filter((ref) => ref.status === 'missing' || ref.status === 'missing-file');
+  assert.strictEqual(
+    gone.length,
+    0,
+    `map refs point at code that is gone (${gone.length}). Run \`atris doc-health --fix-refs\`, ` +
+      `then fix the rest by hand:\n${gone.map((ref) => `  ${ref.doc} line ${ref.map_line}: ${ref.raw}`).join('\n')}`
   );
 });

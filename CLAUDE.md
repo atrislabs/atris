@@ -20,7 +20,7 @@ Guidance for working on the **Atris CLI itself** (this repo builds the `atris` p
 
 **`npm link` after edits** or the `atris` binary on your PATH runs stale code.
 
-**Adding a command** touches three places in `bin/atris.js` (the `knownCommands` list, the dispatch chain, `showHelp()`) plus a handler in `commands/<name>.js`. Then update `atris/MAP.md` with real file:line refs; stale refs are a failure smell the sweep flags.
+**Adding a command** touches three places in `bin/atris.js` (the `knownCommands` list, the dispatch chain, `showHelp()`) plus a handler in `commands/<name>.js`. Then add a routing row to `atris/MAP.md` and real file:line refs to `atris/refs/MAP-NOTES.md`; stale refs are a failure smell `atris doc-health` flags.
 
 **Task truth is the DB, not markdown.** `atris task` + `.atris/state/tasks.projection.json` are canonical; `atris/TODO.md` is a rendered view (`atris task render --out atris/TODO.md` to rebuild, never hand-recover ownership from it).
 
@@ -36,7 +36,8 @@ Guidance for working on the **Atris CLI itself** (this repo builds the `atris` p
 
 ## Where things live
 
-- `atris/MAP.md` - file:line navigation for the whole codebase (keep it current when you move code)
+- `atris/MAP.md` - short routing table read at boot: task to file
+- `atris/refs/MAP-NOTES.md` - file:line refs and rg shortcuts (keep them current when you move code; `atris doc-health --fix-refs` moves drifted ones)
 - `atris/atris.md` - operating protocol: tasks, plan/do/review, taste + voice doctrine
 - `atris/PERSONA.md` - communication style
 - `atris worktree guide` - isolated checkouts when parallel agents may touch this repo

@@ -171,8 +171,9 @@ named none. These rules are the difference, in priority order:
 7. **Final report = files changed + verify command + its exact exit/output.**
    Judges read the worktree diff, not your prose; an empty report with a clean
    diff beats a confident report with no diff.
-8. **Update `atris/MAP.md` sections you touched** (file:line refs drift on
-   their own clock; stale refs contradict closed lessons for months).
+8. **Update the map sections you touched:** routing rows in `atris/MAP.md`,
+   file:line refs in `atris/refs/MAP-NOTES.md` (refs drift on their own clock;
+   stale refs contradict closed lessons for months).
 9. **Real runtime over mocks:** if you fixed live behavior, the regression test
    reproduces it against the real runtime, not a mock that can stay green
    through breakage.

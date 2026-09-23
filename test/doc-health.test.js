@@ -551,3 +551,42 @@ test('limit: a name elsewhere in the sentence does not bind, so only the line bo
   const refs = JSON.parse(run(root, ['--json']).stdout).map_coverage.refs;
   assert.deepEqual({ ok: refs.ok, total: refs.total, flagged: refs.flagged }, { ok: 1, total: 1, flagged: [] });
 });
+
+test('line refs in the notes file are checked and fixed while boot load counts only the short map', t => {
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const code = Array.from({ length: 30 }, () => '');
+  code[2] = 'function alpha() {}';
+  code[9] = 'function beta() {';
+  write(root, 'lib/sample.js', code.join('\n'));
+  write(root, 'atris/MAP.md', [
+    '| area | path | note |', '| --- | --- | --- |', '| sample | `lib/sample.js` | code |',
+    '| notes | `atris/refs/MAP-NOTES.md` | line refs |', '',
+  ].join('\n'));
+  const notes = [
+    '# notes', '',
+    '- ok: `lib/sample.js:3` `alpha` sets things up.',
+    '- moved: `lib/sample.js:15` `beta` grew downward.',
+    '- gone: `lib/sample.js:2` `nowhere` was deleted.',
+  ].join('\n');
+  write(root, 'atris/refs/MAP-NOTES.md', notes);
+
+  const payload = JSON.parse(run(root, ['--json']).stdout);
+  const refs = payload.map_coverage.refs;
+  assert.deepEqual({ ok: refs.ok, moved: refs.moved, missing: refs.missing, total: refs.total }, { ok: 1, moved: 1, missing: 1, total: 3 });
+  assert.deepEqual(refs.flagged.map(ref => [ref.doc, ref.map_line, ref.status]), [
+    ['atris/refs/MAP-NOTES.md', 4, 'moved'], ['atris/refs/MAP-NOTES.md', 5, 'missing'],
+  ]);
+  assert.equal(payload.map_coverage.score, 1 / 3);
+  assert.ok(payload.boot_load.files.every(file => file.path !== 'atris/refs/MAP-NOTES.md'));
+  const mapChars = payload.boot_load.files.find(file => file.path === 'atris/MAP.md').chars;
+  assert.equal(mapChars, fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8').length);
+
+  const fix = run(root, ['--fix-refs']);
+  assert.equal(fix.status, 0, fix.stderr);
+  assert.match(fix.stdout, /atris\/refs\/MAP-NOTES\.md line 4: lib\/sample\.js:15 -> lib\/sample\.js:10 \(beta\)/);
+  assert.match(fix.stdout, /atris\/refs\/MAP-NOTES\.md line 5: lib\/sample\.js:2 \(nowhere\) nowhere is not in the file/);
+  assert.equal(fs.readFileSync(path.join(root, 'atris/refs/MAP-NOTES.md'), 'utf8'),
+    notes.replace('`lib/sample.js:15` `beta`', '`lib/sample.js:10` `beta`'));
+  assert.match(run(root, ['--fix-refs']).stdout, /map refs: nothing to move\./);
+});

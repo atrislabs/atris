@@ -4,12 +4,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // Standing lesson (burned us twice): stale MAP.md file:line refs.
-// atris/MAP.md is the navigation brain — agents jump straight to file:line.
+// atris/MAP.md routes and atris/refs/MAP-NOTES.md holds the exact lines, so
+// agents jump straight to file:line.
 // When code moves and a ref is not updated, the agent lands on the wrong line
 // or a deleted file, silently. This turns that drift into a loud test failure.
 
+const { MAP_REF_DOCS } = require('../lib/map-refs');
+
 const repoRoot = path.join(__dirname, '..');
 const mapPath = path.join(repoRoot, 'atris', 'MAP.md');
+// The boot map routes; exact file:line refs live in the notes file it points to.
+const refText = () => MAP_REF_DOCS
+  .filter(doc => fs.existsSync(path.join(repoRoot, doc)))
+  .map(doc => fs.readFileSync(path.join(repoRoot, doc), 'utf8'))
+  .join('\n');
 
 // Only validate refs into source dirs that live in this repo. This avoids
 // treating prose like "3.18.2" or external paths as code refs.
@@ -28,10 +36,10 @@ test('atris/MAP.md exists', () => {
   assert.ok(fs.existsSync(mapPath), 'atris/MAP.md must exist as the navigation brain');
 });
 
-test('every file:line ref in atris/MAP.md points to a real file', () => {
-  const text = fs.readFileSync(mapPath, 'utf8');
+test('every file:line ref in the map files points to a real file', () => {
+  const text = refText();
   const refs = collectRefs(text);
-  assert.ok(refs.length > 0, 'expected MAP.md to contain file:line navigation refs');
+  assert.ok(refs.length > 0, 'expected the map files to contain file:line navigation refs');
 
   const missing = [];
   for (const ref of refs) {
@@ -44,8 +52,8 @@ test('every file:line ref in atris/MAP.md points to a real file', () => {
   );
 });
 
-test('every file:line ref in atris/MAP.md points to an in-range line', () => {
-  const text = fs.readFileSync(mapPath, 'utf8');
+test('every file:line ref in the map files points to an in-range line', () => {
+  const text = refText();
   const refs = collectRefs(text);
 
   const lineCounts = new Map();
