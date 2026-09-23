@@ -86,6 +86,31 @@ test('analytics counts the legacy **HH:MM:SS** timestamp form', () => {
   }
 });
 
+test('analytics counts plain hyphen timestamp headings', () => {
+  const dir = makeWorkspace();
+  try {
+    writeLog(dir, 0, ['## Notes', '', '### Morning - 09:15', '### Again - 09:42', ''].join('\n'));
+    const out = runCli(['analytics'], dir);
+    assert.equal(out.status, 0, out.stderr || out.stdout);
+    assert.match(out.stdout, /Activity count: 2 timestamps/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('analytics ignores time ranges in prose and titles with times in them', () => {
+  const dir = makeWorkspace();
+  try {
+    writeLog(dir, 0, ['## Notes', '', 'call ran 10:00 - 12:30 with the team', '### Fixed the 10:30 cron - 14:05', ''].join('\n'));
+    const out = runCli(['analytics'], dir);
+    assert.equal(out.status, 0, out.stderr || out.stdout);
+    assert.match(out.stdout, /Activity count: 1 timestamps/);
+    assert.match(out.stdout, /14:00/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('analytics wraps the most-active hour label past midnight (23 -> 0)', () => {
   const dir = makeWorkspace();
   try {

@@ -454,18 +454,24 @@ async function probeCommand(argv) {
   const detail = ok
     ? `answer: ${resultText.slice(0, 80).replace(/\n/g, ' ')}`
     : `dead-end: ${deadEnd}`;
-  const line = `- **atris-probe** \`${stamp}\` \u2014 ${where} · ${a.model}`
-    + (member ? ` · member=${member}` : '')
-    + (engine ? ` · engine=${engine}` : '')
-    + ` · ${ok ? 'PASS' : 'FAIL'} · ${secs}s · tools=${toolsRun}`
-    + (a.calendar ? ` cal_cli=${cliCalendarOps}` : '')
-    + ` · ${detail}`;
+  const line = buildProbeLine({ stamp, where, model: a.model, member, engine, ok, secs, toolsRun, calendar: a.calendar, cliCalendarOps, detail });
   console.log(line);
   return ok ? 0 : 1;
 }
 
+function buildProbeLine({ stamp, where, model, member, engine, ok, secs, toolsRun, calendar, cliCalendarOps, detail }) {
+  const line = `- **atris-probe** \`${stamp}\` - ${where} · ${model}`
+    + (member ? ` · member=${member}` : '')
+    + (engine ? ` · engine=${engine}` : '')
+    + ` · ${ok ? 'pass' : 'fail'} · ${secs}s · tools=${toolsRun}`
+    + (calendar ? ` cal_cli=${cliCalendarOps}` : '')
+    + ` · ${detail}`;
+  return line.replace(/\s*\u2014\s*/g, ', ');
+}
+
 module.exports = {
   probeCommand,
+  buildProbeLine,
   runAtris2Turn,
   // exported for tests
   normalizePath,

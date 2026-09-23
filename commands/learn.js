@@ -460,7 +460,7 @@ function harvestFromJournals(deps = {}) {
       const lines = notesMatch[1].trim().split('\n').filter(l => l.startsWith('- '));
       for (const line of lines) {
         // Strip bullet and optional timestamp prefix
-        const insight = line.replace(/^- (\d{2}:\d{2} \u2014 )?/, '').trim();
+        const insight = line.replace(/^- (\d{2}:\d{2} [-\u2014] )?/, '').trim();
         if (leftoverClaimableInsight(insight)) continue;
         if (insight.length > 10) {
           candidates.push({ insight, source: path.basename(logPath) });

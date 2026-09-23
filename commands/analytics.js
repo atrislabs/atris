@@ -68,17 +68,14 @@ function analyticsAtris() {
     }
 
     // Parse timestamps for productivity hours. Match the journal heading
-    // format `### Title -- HH:MM` (the dashed form) and the legacy `**HH:MM:SS**` form.
-    const timestampMatches = content.match(/(?:\u2014|--)\s*(\d{2}):\d{2}(?::\d{2})?\b|\*\*(\d{2}):\d{2}(?::\d{2})?\*\*/g);
-    if (timestampMatches) {
-      timestampMatches.forEach(ts => {
-        const m = ts.match(/(\d{2}):/);
-        if (!m) return;
-        const hour = parseInt(m[1], 10);
-        if (Number.isFinite(hour) && hour >= 0 && hour < 24) {
-          hourCounts[hour] = (hourCounts[hour] || 0) + 1;
-        }
-      });
+    // formats `### Title -- HH:MM`, `### Title - HH:MM`, and legacy `**HH:MM:SS**`.
+    // Only heading lines count, so a prose range like "10:00 - 12:30" is not a timestamp.
+    const timestampPattern = /^#{2,4} .*(?:\u2014|--| - )\s*(\d{2}):\d{2}(?::\d{2})?\s*$|\*\*(\d{2}):\d{2}(?::\d{2})?\*\*/gm;
+    for (const match of content.matchAll(timestampPattern)) {
+      const hour = parseInt(match[1] || match[2], 10);
+      if (Number.isFinite(hour) && hour >= 0 && hour < 24) {
+        hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+      }
     }
   });
 

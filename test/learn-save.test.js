@@ -609,6 +609,15 @@ function harvestOnce(cwd, date = '2026-09-10') {
   return out;
 }
 
+test('learn harvest strips both old and plain timestamp separators', () => {
+  for (const separator of ['\u2014', '-']) {
+    const cwd = learnWorkspace();
+    writeNotesLastJournal(cwd, [`13:44 ${separator} ${RICH_INSIGHT}`]);
+    const out = harvestOnce(cwd);
+    assert.match(out.text(), new RegExp(`next: atris experiments keep learn-${harvestKey(RICH_INSIGHT)}`));
+  }
+});
+
 test('learn harvest does not invent-keep a leftover claimable apply line', () => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
   const cwd = learnWorkspace();

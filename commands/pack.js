@@ -2453,7 +2453,7 @@ function printCapabilityTrustCard(policy, trust, receiptPath, userDenyRuleCount 
   if (options.operatorInput) {
     console.log(`  operator input: ${options.operatorInput.bytes} bytes injected; source path withheld from the pack and receipt`);
   }
-  console.log(`  host shell: ${policy.grantedCapabilities.includes('host.shell') ? 'GRANTED \u2014 Bash can reach host files and network' : 'denied'}`);
+  console.log(`  host shell: ${policy.grantedCapabilities.includes('host.shell') ? 'granted, bash can reach host files and network' : 'denied'}`);
   console.log('  receipt coverage: Atris hook tool events; direct slash-skill invocations and later Claude or policy denials may not appear');
   console.log(`  receipt: ${receiptPath}`);
 }

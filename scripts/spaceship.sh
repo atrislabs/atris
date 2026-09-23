@@ -99,7 +99,7 @@ send_email() {
   if printf '%s\n' "$body" | $EMAIL_CMD --subject "$subject" >>"$LOG_FILE" 2>&1; then
     logline "EMAIL sent: $subject"
   else
-    logline "EMAIL FAILED: $subject (channel down — check $LOG_FILE)"
+    logline "EMAIL FAILED: $subject (channel down, check $LOG_FILE)"
   fi
 }
 
@@ -134,7 +134,7 @@ send_email "${LABEL}: started a ${HOURS}h run" \
 Budget: ${HOURS} hours, one tick about every $(( INTERVAL/60 )) min.
 I'll email you when something ships, when a tick halts, or if I go idle for ${IDLE_ALERT} ticks in a row. A final summary lands when the run ends.
 
-If you get nothing for over an hour, the supervisor itself died — that's the signal."
+If you get nothing for over an hour, the supervisor itself died. That's the signal."
 
 while true; do
   remaining=$(( BUDGET_SECONDS - ( $(date +%s) - START_EPOCH ) ))
@@ -165,7 +165,7 @@ while true; do
     if [ "$head_moved" -eq 1 ]; then subj="$(git_last_subject)"; else subj="$(git_last_subject_any)"; fi
     shipped_subjects+=("$subj")
     logline "tick $ticks SHIPPED: $subj"
-    send_email "${LABEL}: shipped — $subj" \
+    send_email "${LABEL}: shipped, $subj" \
 "Tick $ticks landed a real change.
 
 Commit: ${head_after:0:9}  ${subj}
@@ -178,7 +178,7 @@ Next tick in ~$(( INTERVAL/60 ))m."
     logline "tick $ticks TIMEOUT (exit $code), halt_streak=$halt_streak"
     if [ "$halt_streak" -ge "$HALT_ALERT" ]; then
       send_email "${LABEL}: ${halt_streak} ticks timed out in a row" \
-"Heads up — the last ${halt_streak} ticks hit the ${TICK_TIMEOUT}s wall without landing work.
+"Heads up, the last ${halt_streak} ticks hit the ${TICK_TIMEOUT}s wall without landing work.
 
 Last tick tail:
 ${tail_out}
@@ -196,7 +196,7 @@ I'm still running and will keep trying, but a tick this slow usually means a stu
 Last tick tail:
 ${tail_out}
 
-The supervisor is still alive and will keep picking new work — it does not die on a bad tick. But repeated halts mean the top of the backlog needs a human. Flagging now instead of going dark."
+The supervisor is still alive and will keep picking new work. It does not die on a bad tick. But repeated halts mean the top of the backlog needs a human. Flagging now instead of going dark."
     fi
   else
     # clean exit, no commit, no error markers -> nothing to pick up
@@ -204,10 +204,10 @@ The supervisor is still alive and will keep picking new work — it does not die
     logline "tick $ticks IDLE, idle_streak=$idle_streak"
     if [ "$idle_streak" -ge "$IDLE_ALERT" ] && [ "$idle_alerted" -eq 0 ]; then
       idle_alerted=1
-      send_email "${LABEL}: idle ${idle_streak} ticks — backlog looks empty" \
+      send_email "${LABEL}: idle ${idle_streak} ticks, backlog looks empty" \
 "I've checked the repo ${idle_streak} ticks in a row and found nothing to pick up. The workspace looks clean.
 
-I'll keep checking (in case new signals appear), but this usually means the backlog needs a fresh horizon from you. Not dead — just out of well-defined work."
+I'll keep checking (in case new signals appear), but this usually means the backlog needs a fresh horizon from you. Not dead, just out of well-defined work."
     fi
   fi
 
@@ -227,7 +227,7 @@ done
 [ -z "$summary_list" ] && summary_list="(nothing shipped this run)"$'\n'
 
 logline "spaceship done: ${ticks} ticks, ${shipped} shipped, ${halted} halted, ${idle} idle, ${mins}m"
-send_email "${LABEL}: run finished — ${shipped} shipped in ${mins}m" \
+send_email "${LABEL}: run finished, ${shipped} shipped in ${mins}m" \
 "The ${HOURS}h run is done.
 
 Ticks: ${ticks}   Shipped: ${shipped}   Halted: ${halted}   Idle: ${idle}   Elapsed: ${mins}m

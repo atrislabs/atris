@@ -747,7 +747,7 @@ test('host.shell is explicit in both the tool grant and high-risk trust card', a
     const { output } = await captureConsole(() => runPack(['g-brain'], dir, { deps }));
     const call = calls.local[0];
     assert.equal(call.args[call.args.indexOf('--tools') + 1], 'Bash');
-    assert.match(output, /host shell: GRANTED — Bash can reach host files and network/);
+    assert.match(output, /host shell: granted, bash can reach host files and network/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -767,7 +767,7 @@ test('--grant is an explicit per-run escalation recorded separately from pack re
     assert.equal(call.args[call.args.indexOf('--tools') + 1], 'Read,Glob,Grep,Skill,Bash');
     assert.match(output, /requested by pack: pack\.read/);
     assert.match(output, /granted for this run: pack\.read, host\.shell/);
-    assert.match(output, /host shell: GRANTED — Bash can reach host files and network/);
+    assert.match(output, /host shell: granted, bash can reach host files and network/);
     const receiptName = fs.readdirSync(receiptDir).find((name) => name.endsWith('.json'));
     const receipt = JSON.parse(fs.readFileSync(path.join(receiptDir, receiptName), 'utf8'));
     assert.deepEqual(receipt.requestedCapabilities, ['pack.read']);

@@ -97,7 +97,7 @@ function httpRequest(urlString, options) {
     // Socket idle timeout (fires if no data received for this duration)
     if (timeoutMs > 0) {
       req.setTimeout(timeoutMs, () => {
-        req.destroy(new Error(`Request timeout after ${Math.round(timeoutMs / 1000)}s — try --timeout=300`));
+        req.destroy(new Error(`request timeout after ${Math.round(timeoutMs / 1000)}s, try --timeout=300`));
       });
     }
     // Hard deadline — kill request after 2x the timeout regardless of activity

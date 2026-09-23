@@ -84,7 +84,7 @@ function catalogText() {
   );
   const gitRows = GIT_SCRIPTS.map((g) => `  ${g.name.padEnd(15)} ${g.usage}\n    ${g.ask}`);
   return (
-    'deterministic task scripts — run: node det.js <script> <mode> < input\n\n' +
+    'deterministic task scripts: run node det.js <script> <mode> < input\n\n' +
     rows.join('\n\n') +
     '\n\ngit-facing (read the repo, run the script directly; not via det.js):\n\n' +
     gitRows.join('\n\n') +
@@ -121,7 +121,7 @@ async function main() {
   }
   const git = GIT_SCRIPTS.find((g) => g.name === script);
   if (git) {
-    process.stdout.write(`${git.name} reads the repo, not stdin — run it directly:\n  ${git.usage}\n`);
+    process.stdout.write(`${git.name} reads the repo, not stdin; run it directly:\n  ${git.usage}\n`);
     return;
   }
   const entry = CATALOG[script];

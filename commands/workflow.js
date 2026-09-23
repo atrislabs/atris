@@ -21,6 +21,10 @@ const { loadContext } = require('../lib/state-detection');
 const { buildToolResultBody } = require('../lib/tool-result-encode');
 const { commitReviewLearning } = require('./learn');
 
+function reviewLearningLine(timestamp, answer) {
+  return `- ${timestamp} - ${String(answer).trim().replace(/\s*\u2014\s*/g, ', ')}`;
+}
+
 function appendReviewLearningToJournal(journalContent, learning) {
   const text = String(journalContent || '').replace(/\r\n/g, '\n');
   const note = String(learning || '');
@@ -1782,7 +1786,7 @@ async function reviewAtris() {
         if (fs.existsSync(logFile)) {
           let journalContent = fs.readFileSync(logFile, 'utf8');
           const timestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-          const learning = `- ${timestamp} \u2014 ${answer.trim()}`;
+          const learning = reviewLearningLine(timestamp, answer);
 
           journalContent = appendReviewLearningToJournal(journalContent, learning);
 
@@ -1898,6 +1902,7 @@ module.exports = {
   doAtris,
   reviewAtris,
   appendReviewLearningToJournal,
+  reviewLearningLine,
   renderReviewMinute,
   executorAgentPrompt,
   executorDispatchForTask,
