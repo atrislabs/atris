@@ -1421,7 +1421,7 @@ function taskReviewSummary(task) {
   const reviewPassCount = Number(metadata.agent_review_pass_count || payload.review_pass_count || 0);
   const agentCertified = metadata.agent_certified === true
     || payload.agent_certified === true
-    || reviewPassCount >= AGENT_CERTIFICATION_REVIEW_PASSES;
+    || (reviewPassCount >= AGENT_CERTIFICATION_REVIEW_PASSES && reviewIntegrity.hasIndependentReview(task));
   const reviewedEventHas = (key) => reviewed && reviewed.event_type === 'reviewed'
     && Object.prototype.hasOwnProperty.call(payload, key);
   const clearedReviewFields = new Set(Array.isArray(payload.cleared_review_fields) ? payload.cleared_review_fields : []);
@@ -8836,7 +8836,7 @@ function taskAllowsReviewChat(task, { allowCertified = false } = {}) {
   if (allowCertified) return true;
   if (review.agent_certified === true || metadata.agent_certified === true) return false;
   const reviewPassCount = Number(review.agent_review_pass_count || metadata.agent_review_pass_count || 0);
-  if (reviewPassCount >= AGENT_CERTIFICATION_REVIEW_PASSES) return false;
+  if (reviewPassCount >= AGENT_CERTIFICATION_REVIEW_PASSES && reviewIntegrity.hasIndependentReview(task)) return false;
   const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
   return !(handoff && (handoff.next_action === 'continue_work' || handoff.next_action === 'human_accept_waiting'));
 }
