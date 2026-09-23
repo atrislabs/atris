@@ -35,6 +35,7 @@ const os = require('os');
 const path = require('path');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
+const { sleepSync } = require('../lib/sleep-sync');
 
 const CALENDAR_CACHE_PATH = path.join(os.homedir(), '.atris', 'calendar-events-cache.json');
 const GMAIL_CONNECT_POLL_MS = 3000;
@@ -1812,10 +1813,6 @@ function writeImessageLookupCache(cache) {
   return cachePath;
 }
 
-function sleepMs(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
 function readLatestOutgoingImessage(handle, sinceMs) {
   const chatDb = path.join(os.homedir(), 'Library', 'Messages', 'chat.db');
   const sinceUnix = Math.max(0, Math.floor(Number(sinceMs || Date.now()) / 1000) - 5);
@@ -1873,7 +1870,7 @@ function imessageVerifyLatestOutgoing(handle, sinceMs, options = {}) {
     && !(latest.is_sent || latest.is_delivered || latest.is_finished)
     && Date.now() - startedAt < timeoutMs
   ) {
-    sleepMs(intervalMs);
+    sleepSync(intervalMs);
     latest = readLatestOutgoingImessage(handle, sinceMs);
   }
   return {
