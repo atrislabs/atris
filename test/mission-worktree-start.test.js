@@ -22,7 +22,7 @@ function cleanupTempDir(base) {
   fs.rmSync(base, { recursive: true, force: true });
 }
 
-function runCli(args, { cwd } = {}) {
+function runCli(args, { cwd, env = {} } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
@@ -30,6 +30,7 @@ function runCli(args, { cwd } = {}) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...env,
     },
   });
   if (result.error) throw result.error;
@@ -92,7 +93,8 @@ test('mission worktree links existing dependencies from the source checkout', ()
   try {
     initWorkspace(repo);
     fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ dependencies: { example: '1.0.0' } }));
-    runGit(['add', 'package.json'], repo);
+    fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n.atris/\natris/status/\n');
+    runGit(['add', 'package.json', '.gitignore'], repo);
     runGit(['commit', '-m', 'add package manifest'], repo);
     fs.mkdirSync(path.join(repo, 'node_modules', 'example'), { recursive: true });
 
@@ -103,6 +105,91 @@ test('mission worktree links existing dependencies from the source checkout', ()
     assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
     assert.equal(fs.realpathSync(link), fs.realpathSync(path.join(repo, 'node_modules')));
     assert.equal(payload.node_modules_linked, true);
+    assert.equal(runGit(['status', '--porcelain'], payload.mission.worktree.path).stdout, '');
+    const commonDir = runGit(['rev-parse', '--git-common-dir'], repo).stdout.trim();
+    const exclude = fs.readFileSync(path.join(repo, commonDir, 'info', 'exclude'), 'utf8');
+    assert.equal(exclude.split(/\r?\n/).filter((line) => line === '/node_modules').length, 1);
+
+    const second = runCli(['mission', 'start', '--no-verify', 'second linked mission', '--owner', 'mission-lead', '--worktree', '--json'], { cwd: repo });
+    assert.equal(second.status, 0, second.stderr || second.stdout);
+    const secondWorktree = JSON.parse(second.stdout).mission.worktree.path;
+    assert.equal(runGit(['status', '--porcelain'], secondWorktree).stdout, '');
+    const updatedExclude = fs.readFileSync(path.join(repo, commonDir, 'info', 'exclude'), 'utf8');
+    assert.equal(updatedExclude.split(/\r?\n/).filter((line) => line === '/node_modules').length, 1);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('mission start continues when creating the dependency link fails', () => {
+  const { base, repo } = makeTempDir();
+  try {
+    initWorkspace(repo);
+    fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ dependencies: { example: '1.0.0' } }));
+    fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n');
+    runGit(['add', 'package.json', '.gitignore'], repo);
+    runGit(['commit', '-m', 'add package manifest'], repo);
+    fs.mkdirSync(path.join(repo, 'node_modules'));
+    const hook = path.join(base, 'fail-link.cjs');
+    fs.writeFileSync(hook, [
+      "const fs = require('node:fs');",
+      'const original = fs.symlinkSync;',
+      "fs.symlinkSync = function(source, target, type) { if (target.endsWith('/node_modules')) throw new Error('link refused'); return original(source, target, type); };",
+      '',
+    ].join('\n'));
+
+    const res = runCli(['mission', 'start', '--no-verify', 'link error mission', '--owner', 'mission-lead', '--worktree', '--json'],
+      { cwd: repo, env: { NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require=${hook}`.trim() } });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.ok(fs.existsSync(payload.mission.worktree.path));
+    assert.equal(payload.node_modules_linked, false);
+    assert.equal(res.stderr.trim().split(/\r?\n/).filter((line) => line.includes('node_modules')).length, 1);
+    assert.match(res.stderr, /warning: could not link node_modules: link refused/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('mission start keeps its worktree when the source package manifest is invalid', () => {
+  const { base, repo } = makeTempDir();
+  try {
+    initWorkspace(repo);
+    fs.writeFileSync(path.join(repo, 'package.json'), '{broken');
+    fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n');
+    runGit(['add', 'package.json', '.gitignore'], repo);
+    runGit(['commit', '-m', 'add invalid manifest'], repo);
+    fs.mkdirSync(path.join(repo, 'node_modules'));
+
+    const res = runCli(['mission', 'start', '--no-verify', 'invalid manifest mission', '--owner', 'mission-lead', '--worktree', '--json'], { cwd: repo });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.ok(fs.existsSync(payload.mission.worktree.path));
+    assert.equal(payload.node_modules_linked, false);
+    assert.match(res.stderr, /warning:.*node_modules/i);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('mission start leaves an existing dead node_modules link alone', () => {
+  const { base, repo } = makeTempDir();
+  try {
+    initWorkspace(repo);
+    fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ dependencies: { example: '1.0.0' } }));
+    fs.symlinkSync('missing-modules', path.join(repo, 'node_modules'));
+    runGit(['add', 'package.json', 'node_modules'], repo);
+    runGit(['commit', '-m', 'add existing link'], repo);
+    const source = path.join(base, 'source-modules');
+    fs.mkdirSync(source);
+    fs.unlinkSync(path.join(repo, 'node_modules'));
+    fs.symlinkSync(source, path.join(repo, 'node_modules'));
+
+    const res = runCli(['mission', 'start', '--no-verify', 'existing link mission', '--owner', 'mission-lead', '--worktree', '--json'], { cwd: repo });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(fs.readlinkSync(path.join(payload.mission.worktree.path, 'node_modules')), 'missing-modules');
+    assert.equal(payload.node_modules_linked, false);
   } finally {
     cleanupTempDir(base);
   }

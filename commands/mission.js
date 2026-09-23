@@ -4171,14 +4171,45 @@ function startMission(args, options = {}) {
       const packageFile = path.join(sourceCheckout, 'package.json');
       const sourceModules = path.join(sourceCheckout, 'node_modules');
       const targetModules = path.join(created.path, 'node_modules');
-      if (fs.existsSync(packageFile) && fs.existsSync(sourceModules) && !fs.existsSync(targetModules)) {
-        const manifest = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
-        const hasDependencies = ['dependencies', 'devDependencies', 'optionalDependencies']
-          .some((field) => manifest[field] && Object.keys(manifest[field]).length > 0);
-        if (hasDependencies) {
-          fs.symlinkSync(sourceModules, targetModules, 'dir');
-          nodeModulesSource = sourceModules;
+      try {
+        let targetExists = false;
+        try {
+          fs.lstatSync(targetModules);
+          targetExists = true;
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error;
         }
+        if (fs.existsSync(packageFile) && fs.existsSync(sourceModules) && !targetExists) {
+          const manifest = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
+          const hasDependencies = ['dependencies', 'devDependencies', 'optionalDependencies']
+            .some((field) => manifest[field] && Object.keys(manifest[field]).length > 0);
+          if (hasDependencies) {
+            const checkIgnored = () => {
+              const result = spawnSync('git', ['check-ignore', '-q', 'node_modules'], { cwd: created.path, encoding: 'utf8' });
+              if (result.error || (result.status !== 0 && result.status !== 1)) {
+                throw new Error(result.error?.message || String(result.stderr || 'git check-ignore failed').trim());
+              }
+              return result.status === 0;
+            };
+            if (!checkIgnored()) {
+              const commonDir = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd: created.path, encoding: 'utf8' });
+              if (commonDir.error || commonDir.status !== 0) {
+                throw new Error(commonDir.error?.message || String(commonDir.stderr || 'could not find shared git directory').trim());
+              }
+              const excludeFile = path.resolve(created.path, String(commonDir.stdout).trim(), 'info', 'exclude');
+              fs.mkdirSync(path.dirname(excludeFile), { recursive: true });
+              const exclude = fs.existsSync(excludeFile) ? fs.readFileSync(excludeFile, 'utf8') : '';
+              if (!exclude.split(/\r?\n/).includes('/node_modules')) {
+                fs.appendFileSync(excludeFile, `${exclude && !exclude.endsWith('\n') ? '\n' : ''}/node_modules\n`);
+              }
+            }
+            if (!checkIgnored()) throw new Error('git still tracks node_modules after updating the shared exclude file');
+            fs.symlinkSync(sourceModules, targetModules, 'dir');
+            nodeModulesSource = sourceModules;
+          }
+        }
+      } catch (error) {
+        console.warn(`warning: could not link node_modules: ${String(error.message).split(/\r?\n/)[0]}`);
       }
     } catch (e) {
       exitMissionError(`[mission start] worktree creation failed: ${e.message}`, 2, asJson);

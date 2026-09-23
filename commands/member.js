@@ -959,10 +959,9 @@ function printMemberRunResult(result, asJson) {
   if (asJson) {
     console.log(JSON.stringify(result));
   } else if (result.started) {
-    if (result.node_modules_linked) console.log(`linked node_modules from ${result.node_modules_source}`);
     console.log(`started ${result.mission_id} (${result.state})`);
   }
-  if (!result.started) {
+  if (result.ok === false || (!result.started && result.ok !== true)) {
     if (!result.errorReported) console.error(result.error);
     process.exitCode = 1;
   }
@@ -1069,6 +1068,7 @@ function memberRun(name, ...args) {
   const missionText = memberRunMissionText(args);
   const hasMissionOverride = Boolean(readFlag(args, '--mission', '') || readFlag(args, '--mission-id', ''));
   let mission = null;
+  let startedNewMission = false;
   let nodeModulesLinked = false;
   let nodeModulesSource = null;
   if (missionText && !hasMissionOverride) {
@@ -1079,6 +1079,7 @@ function memberRun(name, ...args) {
       return;
     }
     mission = start.payload.mission;
+    startedNewMission = true;
     nodeModulesLinked = Boolean(start.payload.node_modules_linked);
     nodeModulesSource = start.payload.node_modules_source || null;
   } else {
@@ -1091,6 +1092,7 @@ function memberRun(name, ...args) {
         return;
       }
       mission = start.payload.mission;
+      startedNewMission = true;
       nodeModulesLinked = Boolean(start.payload.node_modules_linked);
       nodeModulesSource = start.payload.node_modules_source || null;
     } else {
@@ -1100,6 +1102,11 @@ function memberRun(name, ...args) {
         return;
       }
     }
+  }
+
+  if (startedNewMission && !asJson) {
+    if (mission.worktree?.path) console.log(`worktree: ${mission.worktree.path}`);
+    if (nodeModulesLinked) console.log(`linked node_modules from ${nodeModulesSource}`);
   }
 
   const cwd = mission.worktree?.path || process.cwd();
@@ -1124,15 +1131,16 @@ function memberRun(name, ...args) {
     runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
   }
   if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || 900));
-  if (!verifier && !hasFlag(runArgs, '--no-verify')) runArgs.push('--no-verify');
   const run = memberRunCli(['mission', 'run', mission.id, ...runArgs], cwd, { live: !asJson, missionId: mission.id });
   const payload = run.payload || {};
   const finalMission = payload.mission || require('./mission').resolveMission(mission.id, cwd) || mission;
   const started = run.status === 0 && payload.ok !== false && Number(payload.ran_ticks) > 0;
-  printMemberRunResult({ ...payload, started, state: finalMission.status, mission_id: mission.id,
+  const noWorkStepExpected = hasFlag(runArgs, '--detach') || hasFlag(runArgs, '--dry-run');
+  const ok = run.status === 0 && payload.ok !== false && (started || noWorkStepExpected);
+  printMemberRunResult({ ...payload, ok, started, state: finalMission.status, mission_id: mission.id,
     mission: finalMission, node_modules_linked: nodeModulesLinked, node_modules_source: nodeModulesSource,
     errorReported: run.errorReported,
-    ...(!started ? { error: payload.detail || payload.error || payload.reason || run.stderr || 'mission did not run a work step' } : {}) }, asJson);
+    ...(!ok ? { error: payload.detail || payload.error || payload.reason || run.stderr || 'mission did not run a work step' } : {}) }, asJson);
 }
 
 function loadTeamScoreEvidence(scoreJsonPath) {

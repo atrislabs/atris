@@ -62,6 +62,19 @@ test('member run without a check creates and runs a mission', (t) => {
   assert.equal(payload.mission.verifier, '');
 });
 
+test('member run without a check still runs the mission default check', (t) => {
+  const root = workspace(t);
+  const bin = fakeClaude(root);
+  const init = spawnSync('git', ['init', '-q'], { cwd: root, encoding: 'utf8' });
+  assert.equal(init.status, 0, init.stderr);
+  const result = run(root, ['bounded work', '--runner', 'claude', '--shared-checkout', '--max-ticks', '1', '--minutes', '1', '--json'], bin);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.started, true);
+  assert.equal(payload.ticks[0].verifier_passed, true);
+  assert.equal(payload.mission.verifier_result.command, 'git diff --check');
+});
+
 test('member run with text passes the chosen runner and engine to the run', (t) => {
   const root = workspace(t);
   const bin = fakeClaude(root);
@@ -90,6 +103,7 @@ test('member run with text passes the chosen runner and engine to the run', (t) 
   assert.deepEqual(runArgs.slice(runArgs.indexOf('--engine'), runArgs.indexOf('--engine') + 2), ['--engine', 'claude']);
   assert.deepEqual(runArgs.slice(runArgs.indexOf('--max-wall'), runArgs.indexOf('--max-wall') + 2), ['--max-wall', '60']);
   for (const flag of ['--headless', '--self-drive', '--complete-on-pass']) assert.equal(runArgs.includes(flag), false);
+  assert.equal(runArgs.includes('--no-verify'), true);
 });
 
 test('member run keeps flag values when mission text follows the flags', (t) => {
@@ -128,6 +142,7 @@ test('member run reports no start when the mission runs zero work steps', (t) =>
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.started, false);
   assert.equal(payload.ran_ticks, 0);
+  assert.equal(payload.ok, false);
 });
 
 test('member run streams human progress before the work finishes', async (t) => {
@@ -162,6 +177,59 @@ test('member run streams human progress before the work finishes', async (t) => 
   });
   assert.equal(status, 0, stderr);
   assert.equal(liveProgress, true, stderr);
+});
+
+test('member run prints checkout and dependency link before work finishes', async (t) => {
+  const root = workspace(t);
+  const bin = fakeClaude(root);
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { example: '1.0.0' } }));
+  fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n');
+  fs.mkdirSync(path.join(root, 'node_modules'));
+  for (const args of [['init', '-q'], ['config', 'user.email', 'test@example.com'],
+    ['config', 'user.name', 'Test User'], ['add', 'atris', 'package.json', '.gitignore'], ['commit', '-qm', 'baseline']]) {
+    const git = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+    assert.equal(git.status, 0, git.stderr || git.stdout);
+  }
+  const finishedFile = path.join(root, 'runner-finished');
+  fs.writeFileSync(path.join(bin, 'claude'), [
+    '#!/bin/sh',
+    'if [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; exit 0; fi',
+    'sleep 1',
+    'touch "$ATRIS_TEST_RUNNER_FINISHED"',
+    'echo \'{"type":"result","is_error":false,"result":"finished the bounded task"}\'',
+    '',
+  ].join('\n'));
+  let stdout = '';
+  let printedEarly = false;
+  const child = spawn(process.execPath, [cli, 'member', 'run', 'demo', 'bounded work',
+    '--runner', 'claude', '--max-ticks', '1', '--no-verify'], {
+    cwd: root,
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_TEST_RUNNER_FINISHED: finishedFile,
+      PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk;
+    if (stdout.includes('worktree:') && stdout.includes('linked node_modules') && !fs.existsSync(finishedFile)) printedEarly = true;
+  });
+  const status = await new Promise((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', resolve);
+  });
+  assert.equal(status, 0, stdout);
+  assert.equal(printedEarly, true, stdout);
+});
+
+test('member run detach and dry-run do not require a completed work step', (t) => {
+  const root = workspace(t);
+  const bin = fakeClaude(root);
+  const detached = run(root, ['bounded work', '--runner', 'claude', '--no-verify', '--detach'], bin);
+  assert.equal(detached.status, 0, detached.stderr || detached.stdout);
+  assert.doesNotMatch(detached.stderr, /mission did not run a work step/);
+
+  const preview = run(root, ['preview work', '--runner', 'claude', '--no-verify', '--fleet', '--dry-run'], bin);
+  assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+  assert.doesNotMatch(preview.stderr, /mission did not run a work step/);
 });
 
 test('member run with a check starts a headless run and reports its real state', (t) => {
