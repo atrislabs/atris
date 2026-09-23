@@ -342,11 +342,14 @@ test('timeout kills only the process group launched for that ask', async () => {
     const result = await runAskProcess({
       bin: process.execPath,
       args: ['-e', childScript],
-    }, { timeoutMs: 100 });
+    }, { timeoutMs: 3000 });
     assert.equal(result.reason, 'timeout');
     assert.equal(result.timed_out, true);
+    // an empty stdout means node never booted before the deadline; Number('') is 0,
+    // and kill(0, 0) probes our own group, so a 0 pid would look alive forever.
     const launchedGrandchild = Number(result.stdout.trim());
-    assert.ok(Number.isInteger(launchedGrandchild));
+    assert.ok(Number.isInteger(launchedGrandchild) && launchedGrandchild > 0,
+      `the child must report its grandchild pid before the timeout, got ${JSON.stringify(result.stdout)}`);
     await waitUntil(() => !processIsAlive(launchedGrandchild), 5000)
       .catch(() => assert.fail('the ask process tree must be gone'));
     assert.equal(processIsAlive(unrelated.pid), true, 'an unrelated process must stay alive');
