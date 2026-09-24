@@ -1,4 +1,6 @@
 # MAP notes: the deep map with rg shortcuts and file:line refs
+
+- Project job roster: `lib/engine-registry.js:300` saves role picks in `engines.json`; `lib/engine-registry.js:333` renews dates; `lib/engine-registry.js:364` routes to a ready pick, backup, or the existing router. `commands/engine.js:969` builds the three-job view; `commands/engine.js:1007` prints or renews it; `commands/engine.js:1020` assigns or clears picks. `commands/mission.js:388` carries a build model pin into automatic mission runs, and `commands/one-lap.js:170` applies a review pick. Regression: `test/engine-roster.test.js`.
 Moved from atris/MAP.md on 2026-09-23 so boot reads a short routing table. `atris doc-health` still checks every line ref here; `atris doc-health --fix-refs` moves the ones that drift.
 # MAP.md — atris\_team Navigation Guide
 

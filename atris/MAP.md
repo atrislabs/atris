@@ -28,6 +28,10 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | engine dispatch runner command | `lib/runner-command.js` | builds runner argv, model precedence |
 | engine profiles defined | `lib/engine-registry.js` | profile-name list |
 | engine command | `commands/engine.js` | atris engine |
+| project job roster storage and routing | `lib/engine-registry.js:300`, `lib/engine-registry.js:333`, `lib/engine-registry.js:364` | assign, confirm, resolve search, build, and review picks |
+| project job roster commands and view | `commands/engine.js:969`, `commands/engine.js:1007`, `commands/engine.js:1020` | view, confirm, assign, and clear picks |
+| automatic runner model pin | `commands/mission.js:388` | carries the build pick's model into mission runs |
+| one lap reviewer pick | `commands/one-lap.js:170` | honors the review pick when no reviewer was named |
 | read-only engine asks | `lib/engine-ask.js` | per-engine headless ask argv |
 | fleet flights | `lib/fleet.js` | parallel engine builds, ship gate, landed proof handoff |
 | autopilot | `commands/autopilot.js` | one tick plan, do, review |
