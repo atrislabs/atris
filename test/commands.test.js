@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
 const { acceptedInLastDay, writePolicy } = require('../lib/autoland');
@@ -3210,6 +3211,141 @@ test('supervisor wake writes recommendations and query reads them', () => {
     assert.equal(queryPayload.ok, true);
     assert.equal(queryPayload.recommendations.recommendations[0].reason, 'Let signal-scout preflight proof packets before validation.');
   } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+function seedSupervisorWakeFixture(dir) {
+  fs.mkdirSync(path.join(dir, 'atris', 'team', 'supervisor'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'team', 'supervisor', 'MEMBER.md'), [
+    '---',
+    'name: supervisor',
+    'role: Meta-cognition Layer',
+    'description: Monitors member performance and adjusts coordination',
+    'skills: []',
+    'permissions:',
+    '  can-read: true',
+    '  can-execute: true',
+    '  can-approve: false',
+    '---',
+    '',
+    '# Supervisor',
+    '',
+    'Monitor all member performance, identify patterns, suggest coordination adjustments.',
+    '',
+  ].join('\n'), 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'team', 'supervisor', 'MISSION.md'), [
+    '# Mission',
+    '',
+    '## North Star',
+    '',
+    'Optimize member coordination through data-driven meta-cognition.',
+    '',
+  ].join('\n'), 'utf8');
+  fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'runs', 'member-wake-signal-scout-2026-06-04T09-00-00-000Z.json'), JSON.stringify({
+    schema: 'atris.member_wake.v1',
+    created_at: new Date().toISOString(),
+    member: 'signal-scout',
+    ok: true,
+    decision: 'wait',
+    reason: 'tick_executed_experiment_proposed',
+    duration_ms: 1200,
+  }, null, 2), 'utf8');
+}
+
+test('supervisor wake keeps fallback recommendations when the llm call fails', () => {
+  const dir = makeTempDir();
+  try {
+    seedSupervisorWakeFixture(dir);
+
+    const wake = runCli(['member', 'wake', 'supervisor', '--execute', '--json'], {
+      cwd: dir,
+      env: {
+        ATRIS_SUPERVISOR_LLM_JSON: '{not valid json',
+      },
+    });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.supervisor.llm_successful, false);
+    assert.equal(payload.supervisor.llm_error, 'invalid_json');
+
+    const recommendations = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'supervisor', 'recommendations.json'), 'utf8'));
+    assert.equal(recommendations.status, 'parse_error');
+    assert.equal(recommendations.llm_source, 'env_json');
+    assert.equal(recommendations.llm_error, 'invalid_json');
+    assert.ok(recommendations.top_performers.length > 0, 'fallback analysis should keep heuristic content');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('supervisor llm call downgrades to the cloud endpoint when no local backend runs', async () => {
+  // The supervisor postTurn used to pin route:'local', which made
+  // pinLocalCheckout return true and skipped the local->cloud downgrade, so
+  // any machine without a local backend died ECONNREFUSED. This stub stands
+  // in for the cloud endpoint; the wake only reaches it if the downgrade fires.
+  const dir = makeTempDir();
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      requests.push({ method: req.method, url: req.url });
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.end('data: ' + JSON.stringify({
+        type: 'result',
+        result: JSON.stringify({
+          top_performers: [{ member: 'signal-scout', reason: 'stub cloud analysis' }],
+          bottlenecks: [],
+          recommendations: [{ type: 'priority', from: 'supervisor', to: 'signal-scout', reason: 'stub recommendation' }],
+        }),
+      }) + '\n\n');
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const cloudPort = server.address().port;
+  // Bind then close a port so the local health probe has a guaranteed dead target.
+  const deadPort = await new Promise((resolve) => {
+    const probe = http.createServer();
+    probe.listen(0, '127.0.0.1', () => {
+      const port = probe.address().port;
+      probe.close(() => resolve(port));
+    });
+  });
+  try {
+    seedSupervisorWakeFixture(dir);
+
+    const child = spawn(process.execPath, [cliPath, 'member', 'wake', 'supervisor', '--execute', '--json'], {
+      cwd: dir,
+      env: {
+        ...scrubAgentEnv(),
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+        ATRIS_SUPERVISOR_LLM: '1',
+        OBELISK_LOCAL_ATRIS2_BACKEND_URL: `http://127.0.0.1:${deadPort}`,
+        OBELISK_ATRIS2_BACKEND_URL: `http://127.0.0.1:${cloudPort}`,
+      },
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const code = await new Promise((resolve) => child.on('close', resolve));
+    assert.equal(code, 0, stderr || stdout);
+    assert.ok(
+      requests.some((entry) => entry.method === 'POST' && entry.url === '/api/atris2/turn'),
+      'expected the supervisor turn to reach the cloud stub via the downgrade',
+    );
+
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.supervisor.llm_source, 'atris2_backend');
+    assert.equal(payload.supervisor.llm_successful, true);
+
+    const recommendations = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'supervisor', 'recommendations.json'), 'utf8'));
+    assert.equal(recommendations.status, 'ok');
+    assert.equal(recommendations.top_performers[0].member, 'signal-scout');
+  } finally {
+    server.close();
     cleanupTempDir(dir);
   }
 });
