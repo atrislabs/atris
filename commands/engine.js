@@ -971,12 +971,18 @@ function registryPayload(root, { scope = 'workspace', includeHidden = false } = 
   };
 }
 
+// A hand-edited file can hold a string or a list where a pick belongs. Only
+// an object naming an engine counts; anything else shows as no pick.
+function rosterPickEntry(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) && value.engine ? value : null;
+}
+
 function jobRosterView(root = process.cwd(), now = new Date()) {
   const registry = readEngineRegistry(root);
   const machine = readMachineRoster();
   return Object.entries(ENGINE_JOBS).map(([job, role]) => {
-    const projectPick = registry.roster && registry.roster[role] || null;
-    const machinePick = machine[role] || null;
+    const projectPick = rosterPickEntry(registry.roster && registry.roster[role]);
+    const machinePick = rosterPickEntry(machine[role]);
     const resolved = resolveEngineForRoleRanked(role, root, { now, machineRosterPicks: machine });
     // Show the layer that decided; when none did, show the first one set.
     const source = resolved.source === 'project' || resolved.source === 'machine'
