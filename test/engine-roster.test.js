@@ -337,3 +337,102 @@ test('a registry saved before claude learned search still lets search be assigne
   assert.equal(command(root, ['assign', 'search', 'claude']).exit, 0);
   assert.equal(resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine.id, 'claude');
 }));
+
+test('every model name the claude cli takes is accepted, and garbage is still refused', () => withRoom((root) => {
+  ready(root, 'claude', 'fable', 'haiku');
+  const cases = [
+    ['claude', 'fable', 'fable'],
+    ['claude', 'opusplan', 'opusplan'],
+    ['claude', 'default', 'default'],
+    ['claude', 'Opus[1m]', 'opus[1m]'],
+    ['claude', 'sonnet[1m]', 'sonnet[1m]'],
+    ['claude', 'opus 5.5[1m]', 'claude-opus-5-5[1m]'],
+    ['fable', 'fable', 'fable'],
+  ];
+  for (const [engine, typed, saved] of cases) {
+    assert.equal(normalizeRosterModel(engine, typed), saved, typed);
+    const result = command(root, ['assign', 'review', engine, '--model', typed]);
+    assert.equal(result.exit, 0, `${typed}: ${result.err}`);
+    assert.equal(readEngineRegistry(root).roster.validator.model, saved, typed);
+  }
+  for (const typed of ['gpt-9', 'gpt-9[1m]', '[1m]']) {
+    assert.throws(() => normalizeRosterModel('claude', typed), /claude does not know the model/, typed);
+  }
+  const refused = command(root, ['assign', 'review', 'claude', '--model', 'gpt-9']);
+  assert.equal(refused.exit, 2);
+  assert.match(refused.err, /claude does not know the model "gpt-9"/);
+}));
+
+test('saved picks are normalized when read, from this project and from all projects', () => withRoom((root, machineFile) => {
+  ready(root, 'codex', 'claude', 'cursor');
+  const registry = readEngineRegistry(root);
+  registry.roster = { executor: { engine: 'claude', model: 'opus 5.5', backup: '', until: '2026-10-24' } };
+  fs.writeFileSync(engineRegistryFile(root), `${JSON.stringify(registry)}\n`);
+  fs.mkdirSync(path.dirname(machineFile), { recursive: true });
+  fs.writeFileSync(machineFile, `${JSON.stringify({ roster: { validator: { engine: 'claude', model: 'opus-5.5', backup: '', until: '2026-10-24' } } })}\n`);
+  const build = resolveEngineForRoleRanked('executor', root, { now: NOW });
+  assert.equal(build.engine.id, 'claude');
+  assert.equal(build.engine.roster_model, 'claude-opus-5-5');
+  const review = resolveEngineForRoleRanked('validator', root, { now: NOW });
+  assert.equal(review.engine.id, 'claude');
+  assert.equal(review.source, 'machine');
+  assert.equal(review.engine.roster_model, 'claude-opus-5-5');
+  const mission = resolveMissionTickRunner({ runner: 'auto' }, root, { now: NOW }).mission;
+  assert.equal(mission.model, 'claude-opus-5-5');
+}));
+
+test('a saved claude model that cannot be normalized skips to the backup, then the next layer', () => withRoom((root, machineFile) => {
+  ready(root, 'codex', 'claude', 'cursor');
+  const registry = readEngineRegistry(root);
+  registry.roster = { executor: { engine: 'claude', model: 'gpt-9', backup: 'cursor', until: '2026-10-24' } };
+  fs.writeFileSync(engineRegistryFile(root), `${JSON.stringify(registry)}\n`);
+  const backup = resolveEngineForRoleRanked('executor', root, { now: NOW });
+  assert.equal(backup.engine.id, 'cursor');
+  assert.equal(backup.engine.roster_model, undefined);
+  assert.match(backup.reason, /names a model claude cannot run, using backup: cursor/);
+  registry.roster.executor.backup = '';
+  fs.writeFileSync(engineRegistryFile(root), `${JSON.stringify(registry)}\n`);
+  fs.mkdirSync(path.dirname(machineFile), { recursive: true });
+  fs.writeFileSync(machineFile, `${JSON.stringify({ roster: { executor: { engine: 'codex', model: '', backup: '', until: '2026-10-24' } } })}\n`);
+  const next = resolveEngineForRoleRanked('executor', root, { now: NOW });
+  assert.equal(next.engine.id, 'codex');
+  assert.equal(next.source, 'machine');
+}));
+
+test('with no roster and atris-fast not ready, search goes to composer, fresh or saved', () => withRoom((root) => {
+  ready(root, 'composer', 'claude', 'haiku');
+  setEngineHealth('atris-fast', 'credit_out', root);
+  const fresh = resolveEngineForRoleRanked('navigator', root, { now: NOW });
+  assert.equal(fresh.engine.id, 'composer');
+  assert.deepEqual(fresh.ranked.map((engine) => engine.id), ['composer']);
+  const file = engineRegistryFile(root);
+  for (const shape of [['validator', 'executor', 'navigator'], ['validator', 'executor']]) {
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    saved.engines.find((entry) => entry.id === 'claude').roles = shape;
+    saved.engines.find((entry) => entry.id === 'haiku').roles = shape.filter((role) => role !== 'executor');
+    fs.writeFileSync(file, `${JSON.stringify(saved)}\n`);
+    const chosen = resolveEngineForRoleRanked('navigator', root, { now: NOW });
+    assert.deepEqual(chosen.ranked.map((engine) => engine.id), ['composer'], shape.join(','));
+  }
+  assert.equal(command(root, ['assign', 'search', 'haiku']).exit, 0);
+  assert.equal(resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine.id, 'haiku');
+}));
+
+test('a pick saved as a string or a list shows as no pick', () => withRoom((root, machineFile) => {
+  ready(root, 'codex', 'claude');
+  const registry = readEngineRegistry(root);
+  registry.roster = { executor: 'claude' };
+  fs.writeFileSync(engineRegistryFile(root), `${JSON.stringify(registry)}\n`);
+  fs.mkdirSync(path.dirname(machineFile), { recursive: true });
+  fs.writeFileSync(machineFile, `${JSON.stringify({ roster: { validator: ['claude'], navigator: 'haiku' } })}\n`);
+  const view = command(root, ['roster']);
+  assert.equal(view.exit, 0, view.err);
+  assert.doesNotMatch(view.out, /undefined/);
+  for (const job of ['search', 'build', 'review']) assert.match(view.out, new RegExp(`${job}\\s+no pick, router decides`));
+  const json = JSON.parse(command(root, ['roster', '--json']).out);
+  for (const row of json.jobs) {
+    assert.equal(row.pick, null);
+    assert.equal(row.project_pick, null);
+    assert.equal(row.machine_pick, null);
+  }
+}));
