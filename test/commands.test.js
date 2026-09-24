@@ -2441,6 +2441,83 @@ test('auto-improver wake ignores archived log failures', () => {
   }
 });
 
+test('auto-improver wake ignores zero-count tick metric lines (OBL-2099)', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
+    fs.mkdirSync(logsDir, { recursive: true });
+    // A zero-count failure report describes a clean run, not a failure. The
+    // guard must skip it before it feeds repeated_failures, while a real
+    // repeated error line still clusters.
+    const cleanRun = '- night sweep finished: 12 checked / 0 failed';
+    const realFailure = 'ERROR worker spawn failed for mission runner';
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
+      '# test log',
+      cleanRun,
+      cleanRun,
+      cleanRun,
+      realFailure,
+      realFailure,
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const repeated = payload.auto_improver.scan.log_signals.repeated_failures || [];
+    assert.equal(repeated.length, 1);
+    assert.equal(repeated[0].count, 2, 'only the two real failure lines may count');
+    for (const evidence of repeated[0].evidence) {
+      assert.match(evidence.text, /worker spawn failed/, 'zero-count lines must not feed the recurring-failure scanner');
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('auto-improver wake ignores nonzero-count tick summary lines (OBL-2335)', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
+    fs.mkdirSync(logsDir, { recursive: true });
+    // Alpha-scout tick summaries are run metrics, not errors. Every digit
+    // normalizes to '#', so '3 failed' and '0 failed' tick lines collapsed
+    // into one recurring-failure cluster (count 66 on 2026-09-23).
+    const tickLine = '- tick (live): 3 gathered / 0 skipped / 3 failed -> briefs/alpha-2026-06-27.md';
+    const realFailure = 'ERROR worker spawn failed for mission runner';
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
+      '# test log',
+      tickLine,
+      tickLine,
+      tickLine,
+      realFailure,
+      realFailure,
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const repeated = payload.auto_improver.scan.log_signals.repeated_failures || [];
+    assert.equal(repeated.length, 1, 'tick summary lines must not cluster as failures');
+    assert.equal(repeated[0].count, 2);
+    assert.doesNotMatch(repeated[0].pattern, /gathered|skipped/, 'tick summary pattern must not appear in repeated_failures');
+    for (const evidence of repeated[0].evidence) {
+      assert.match(evidence.text, /worker spawn failed/);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('auto-improver wake selector skips done/accepted tasks (OBL-1469)', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };

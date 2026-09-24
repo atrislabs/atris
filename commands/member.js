@@ -3207,6 +3207,18 @@ function collectAutoImproverLogSignals(root) {
         // (CLI-199 came from 13 such lines in atris/wiki/log.md).
         if (/^\s*[-*]?\s*check:\s/i.test(line)) continue;
         if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
+        // Tick metric summaries ("3 gathered / 0 skipped / 3 failed ->")
+        // report run counts, not errors: "failed" trips failureRegex and
+        // every digit normalizes to '#', so all alpha-scout tick lines
+        // collapse into one recurring-failure cluster no matter the counts
+        // (66 lines became the top candidate on 2026-09-23, OBL-2335).
+        if (/\d+\s+gathered\s*\/\s*\d+\s+skipped\s*\/\s*\d+\s+failed\b/i.test(line)) continue;
+        // Numeric-prefix tick metrics ("6 gathered / 0 skipped / 0 failed ->")
+        // report a clean run, but "0 failed" still trips failureRegex. Skip
+        // zero counts in either order so healthy ticks cannot feed
+        // repeated_failures (64 clean alpha-scout lines scored 40 on
+        // 2026-09-11 and buried real signal).
+        if (/\b0\s+(errors?|fail(?:ed|ures?)|blocked|timeouts?)\b/i.test(line)) continue;
         if (/\bblocked\s*(?:->|→|to)\s*ready\b/i.test(line)) continue;
         if (failureCoveredByPassLesson(line, passLessonText)) continue;
         if (unclearRegex.test(line)) {
