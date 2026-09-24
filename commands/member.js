@@ -5738,7 +5738,6 @@ async function callSupervisorLlm(receipts, logs) {
     const output = { isTTY: false, write() { return true; } };
     const result = await postTurn(supervisorPrompt(receipts, logs), {
       mode: process.env.ATRIS_SUPERVISOR_LLM_MODE || 'fast',
-      route: 'local',
       cwd: process.cwd(),
       output,
       color: false,
@@ -5824,11 +5823,21 @@ async function runSupervisorWake(name, paths, { execute = false } = {}) {
       analysis = normalizeSupervisorAnalysis(llm.analysis, { status: 'ok', llm_source: llm.source });
       if (!analysis) {
         reason = 'llm_json_parse_failed';
-        analysis = emptySupervisorRecommendations({ status: 'parse_error', llm_source: llm.source, llm_error: 'invalid_analysis_shape' });
+        analysis = {
+          ...fallbackSupervisorAnalysis(receipts),
+          status: 'parse_error',
+          llm_source: llm.source,
+          llm_error: 'invalid_analysis_shape',
+        };
       }
     } else if (llm?.error) {
       reason = llm.error === 'invalid_json' ? 'llm_json_parse_failed' : 'llm_analysis_failed';
-      analysis = emptySupervisorRecommendations({ status: llm.error === 'invalid_json' ? 'parse_error' : 'llm_error', llm_source: llm.source, llm_error: llm.error });
+      analysis = {
+        ...fallbackSupervisorAnalysis(receipts),
+        status: llm.error === 'invalid_json' ? 'parse_error' : 'llm_error',
+        llm_source: llm.source,
+        llm_error: llm.error,
+      };
     } else {
       reason = 'llm_not_configured';
       analysis = fallbackSupervisorAnalysis(receipts);
