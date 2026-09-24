@@ -11,6 +11,7 @@ const {
   resolveEngineForRole,
   resolveEngineForRoleRanked,
   resolveRegisteredEngine,
+  rosterModelFor,
 } = require('../lib/engine-registry');
 const { parseVerifyCommand } = require('../lib/auto-accept-certified');
 const fleet = require('../lib/fleet');
@@ -156,7 +157,8 @@ function readyExecutor(root, preferred = '') {
     if (!selected.roles.includes('executor')) throw new Error(`engine ${selected.id} is not an executor`);
     if (!selected.health || selected.health.status !== 'ready') throw new Error(`engine ${selected.id} is not ready`);
     if (!fleet.FLEET_CAPABLE.includes(selected.id)) throw new Error(`engine ${selected.id} cannot build headlessly`);
-    return selected;
+    const model = rosterModelFor('executor', selected.id, root);
+    return model ? { ...selected, roster_model: model } : selected;
   }
   const routed = resolveEngineForRole('executor', root);
   if (routed && fleet.FLEET_CAPABLE.includes(routed.id)) return routed;
@@ -169,10 +171,12 @@ function readyExecutor(root, preferred = '') {
 
 function readyValidators(root, preferred = '', exclude = '') {
   const blocked = String(exclude || '').trim();
-  const rosterRanked = preferred ? null : resolveEngineForRoleRanked('validator', root);
-  const rosterOrder = rosterRanked && rosterRanked.reason.startsWith('roster pick')
+  const rosterRanked = resolveEngineForRoleRanked('validator', root);
+  const fromRoster = rosterRanked.source === 'project' || rosterRanked.source === 'machine';
+  const rosterOrder = !preferred && fromRoster
     ? rosterRanked.ranked.map((engine) => engine.id)
     : [];
+  const pinned = fromRoster && rosterRanked.engine && rosterRanked.engine.roster_model ? rosterRanked.engine : null;
   const candidates = engineRegistryView(root)
     .filter((engine) => engine.roles.includes('validator'))
     .filter((engine) => engine.id !== blocked)
@@ -183,7 +187,8 @@ function readyValidators(root, preferred = '', exclude = '') {
         || (rosterOrder.length ? (rosterOrder.indexOf(a.id) - rosterOrder.indexOf(b.id)) : 0)
         || Number(a.fallback_order) - Number(b.fallback_order)
         || String(a.id).localeCompare(String(b.id));
-    });
+    })
+    .map((engine) => (pinned && engine.id === pinned.id ? { ...engine, roster_model: pinned.roster_model } : engine));
   const ready = candidates.filter((engine) => engine.health && engine.health.status === 'ready');
   // Route-time determinism: which validator binaries exist on this machine
   // must not change the lap's route. When none are ready, dispatch with the
@@ -191,6 +196,19 @@ function readyValidators(root, preferred = '', exclude = '') {
   // worker and fails honestly at the validation stage if the engine is
   // missing when validation actually runs.
   return ready.length ? ready : candidates;
+}
+
+// The roster's pinned models ride into the flight: the builder's model for
+// the builder, and each reviewer's model for that reviewer only.
+function lapModelPins(executor, validators = []) {
+  const validatorModels = {};
+  for (const engine of validators) {
+    if (engine && engine.roster_model) validatorModels[engine.id] = engine.roster_model;
+  }
+  return {
+    model: executor && executor.roster_model || '',
+    validatorModels: Object.keys(validatorModels).length ? validatorModels : null,
+  };
 }
 
 function taskById(runCli, taskId) {
@@ -662,6 +680,7 @@ async function runOneLap(ask, options = {}) {
       reviewOnly: true,
       verifierCommand: verifier,
       validatorEngines: validators.map((entry) => entry.id),
+      ...lapModelPins(executor, validators),
       actor: mission.owner || 'mission-lead',
       installedEngines: engineRegistryView(root)
         .filter((entry) => entry.health && entry.health.status === 'ready')
@@ -779,4 +798,7 @@ async function runOneLap(ask, options = {}) {
 module.exports = {
   oneLapSafetyIssue,
   runOneLap,
+  readyExecutor,
+  readyValidators,
+  lapModelPins,
 };

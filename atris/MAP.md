@@ -28,10 +28,11 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | engine dispatch runner command | `lib/runner-command.js` | builds runner argv, model precedence |
 | engine profiles defined | `lib/engine-registry.js` | profile-name list |
 | engine command | `commands/engine.js` | atris engine |
-| project job roster storage and routing | `lib/engine-registry.js:300`, `lib/engine-registry.js:333`, `lib/engine-registry.js:364` | assign, confirm, resolve search, build, and review picks |
-| project job roster commands and view | `commands/engine.js:969`, `commands/engine.js:1007`, `commands/engine.js:1020` | view, confirm, assign, and clear picks |
-| automatic runner model pin | `commands/mission.js:388` | carries the build pick's model into mission runs |
-| one lap reviewer pick | `commands/one-lap.js:170` | honors the review pick when no reviewer was named |
+| project job roster storage and routing | `lib/engine-registry.js:404`, `lib/engine-registry.js:449`, `lib/engine-registry.js:484`, `lib/engine-registry.js:516` | assign, confirm, and resolve search, build, and review picks: project pick, backup, all-projects pick, backup, router |
+| roster model names and dates | `lib/engine-registry.js:337`, `lib/engine-registry.js:324` | saves the claude model id the cli accepts; invalid until dates count as expired |
+| all-projects roster | `lib/engine-registry.js:384` | `~/.atris/roster.json`, written by `assign --everywhere` |
+| project job roster commands and view | `commands/engine.js:974`, `commands/engine.js:1026`, `commands/engine.js:1039` | view, confirm, assign, and clear picks, with where each pick came from |
+| roster model reaches runs | `lib/engine-registry.js:562`, `commands/mission.js:388`, `commands/one-lap.js:203`, `lib/fleet.js:2812` | carries the pinned model into missions, one-lap builds and reviews, and fleet spawns |
 | read-only engine asks | `lib/engine-ask.js` | per-engine headless ask argv |
 | fleet flights | `lib/fleet.js` | parallel engine builds, ship gate, landed proof handoff |
 | autopilot | `commands/autopilot.js` | one tick plan, do, review |

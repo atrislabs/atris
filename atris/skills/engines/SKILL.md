@@ -26,7 +26,7 @@ One contract, eleven live profiles. The orchestrator writes a bounded task promp
 
 ## Pick the job owner first
 
-Before choosing an engine for search, build, or review, run `atris engine roster` and use that job's pick. Only deviate when the user names an engine. The roster is project policy and does not depend on team member files.
+Before choosing an engine for search, build, or review, run `atris engine roster` and use that job's pick. Only deviate when the user names an engine. The roster is project policy and does not depend on team member files. Add `--everywhere` to `atris engine assign` to set a pick once for every project on this machine; a project's own pick still wins where one is set.
 
 ## three verbs
 
