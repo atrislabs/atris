@@ -2441,6 +2441,98 @@ test('auto-improver wake ignores archived log failures', () => {
   }
 });
 
+test('auto-improver wake ignores zero-count tick metric lines (OBL-2099)', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
+    fs.mkdirSync(logsDir, { recursive: true });
+    // A zero-count failure report describes a clean run, not a failure. The
+    // guard must skip it before it feeds repeated_failures, while a real
+    // repeated error line still clusters.
+    const cleanRun = '- night sweep finished: 12 checked / 0 failed';
+    const realFailure = 'ERROR worker spawn failed for mission runner';
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
+      '# test log',
+      cleanRun,
+      cleanRun,
+      cleanRun,
+      realFailure,
+      realFailure,
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const repeated = payload.auto_improver.scan.log_signals.repeated_failures || [];
+    assert.equal(repeated.length, 1);
+    assert.equal(repeated[0].count, 2, 'only the two real failure lines may count');
+    for (const evidence of repeated[0].evidence) {
+      assert.match(evidence.text, /worker spawn failed/, 'zero-count lines must not feed the recurring-failure scanner');
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('auto-improver wake skips only healthy tick summaries, never failed counts (OBL-2335)', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', recentLogYear());
+    fs.mkdirSync(logsDir, { recursive: true });
+    // A clean tick summary is a run metric, not an error. A summary with a
+    // nonzero failed count, or a line that only contains "0 failed" inside a
+    // real error, is still a failure and must cluster.
+    const healthyTick = '- tick (live): 6 gathered / 0 skipped / 0 failed -> briefs/alpha-2026-06-27.md';
+    const failedTick = '- tick (live): 0 gathered / 0 skipped / 3 failed -> briefs/alpha-2026-06-28.md';
+    const workerError = 'ERROR worker 0 failed to start';
+    const mixedCounts = '- sweep: 0 timeouts / 3 failed';
+    const crashCount = '- scan: 1 crash / 0 failed';
+    const failingLabel = '- missing proof: 6 checked / 0 failed';
+    fs.writeFileSync(path.join(logsDir, `${recentLogDate()}.md`), [
+      '# test log',
+      healthyTick,
+      healthyTick,
+      healthyTick,
+      failedTick,
+      failedTick,
+      failedTick,
+      workerError,
+      workerError,
+      mixedCounts,
+      mixedCounts,
+      crashCount,
+      crashCount,
+      crashCount,
+      failingLabel,
+      failingLabel,
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const repeated = payload.auto_improver.scan.log_signals.repeated_failures || [];
+    const texts = repeated.flatMap((item) => item.evidence.map((evidence) => evidence.text));
+    assert.equal(texts.some((text) => text.includes('6 gathered')), false, 'healthy tick summaries must not cluster');
+    assert.equal(texts.filter((text) => text.includes('3 failed -> briefs')).length, 3, 'failed tick summaries must still cluster');
+    assert.equal(texts.filter((text) => text === workerError).length, 2, 'an error that mentions "0 failed" must still cluster');
+    assert.equal(texts.filter((text) => text.includes('0 timeouts / 3 failed')).length, 2, 'a summary with any nonzero failure count must still cluster');
+    assert.equal(texts.filter((text) => text === crashCount).length, 3, 'a nonzero count outside the benign keys must still cluster');
+    assert.equal(texts.filter((text) => text === failingLabel).length, 2, 'a summary whose label names a failure must still cluster');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('auto-improver wake selector skips done/accepted tasks (OBL-1469)', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };

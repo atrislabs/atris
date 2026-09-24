@@ -3197,6 +3197,24 @@ function failureCoveredByPassLesson(line, passLessonText = '') {
   return false;
 }
 
+const COUNT_SUMMARY_BENIGN_KEYS = new Set(['gathered', 'checked', 'skipped', 'passed', 'scanned']);
+
+// A count summary is "<label>: N word / N word ... [-> target]". It is a
+// healthy run report only when every count is zero or one of the benign
+// keys above, and neither the label nor the target matches failureRegex.
+// Anything else, like "1 crash / 0 failed" or "ERROR worker 0 failed to
+// start", stays in the failure scan.
+function isHealthyCountSummaryLine(line, failureRegex) {
+  const match = String(line || '').match(/^\s*(?:[-*]\s*)?([^:]*:)?\s*(\d+\s+[a-z]+(?:\s*\/\s*\d+\s+[a-z]+)+)\s*(?:(?:->|→)(.*))?$/i);
+  if (!match) return false;
+  const [, label = '', counts, target = ''] = match;
+  if (failureRegex.test(`${label} ${target}`)) return false;
+  return counts.split('/').every((segment) => {
+    const [, number, key] = segment.trim().match(/^(\d+)\s+([a-z]+)$/i);
+    return Number(number) === 0 || COUNT_SUMMARY_BENIGN_KEYS.has(key.toLowerCase());
+  });
+}
+
 function collectAutoImproverLogSignals(root) {
   const roots = [
     path.join(root, 'atris', 'logs'),
@@ -3250,6 +3268,12 @@ function collectAutoImproverLogSignals(root) {
         // (CLI-199 came from 13 such lines in atris/wiki/log.md).
         if (/^\s*[-*]?\s*check:\s/i.test(line)) continue;
         if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
+        // Healthy count summaries ("6 gathered / 0 skipped / 0 failed ->")
+        // report a clean run, but "failed" still trips failureRegex and every
+        // digit normalizes to '#', so clean alpha-scout ticks piled into one
+        // recurring-failure cluster (OBL-2335). Any nonzero count outside the
+        // benign keys keeps the line in the scan.
+        if (isHealthyCountSummaryLine(line, failureRegex)) continue;
         if (/\bblocked\s*(?:->|→|to)\s*ready\b/i.test(line)) continue;
         if (failureCoveredByPassLesson(line, passLessonText)) continue;
         if (unclearRegex.test(line)) {
