@@ -385,13 +385,18 @@ function resolveMissionRunnerSelection(value, options = {}) {
   exitMissionError(`Unknown ${noun} "${raw}". ${knownMissionRunnerText()}.`, 2, asJson);
 }
 
-function resolveMissionTickRunner(mission, root = process.cwd()) {
+function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
   if (String(mission && mission.runner || '').trim().toLowerCase() !== MISSION_AUTO_RUNNER) {
     return { mission, engine_id: null, requested_engine: null, engine_fallback_reason: null };
   }
-  const resolved = resolveEngineForRoleWithPreference('executor', root, mission.preferred_engine);
+  const resolved = resolveEngineForRoleWithPreference('executor', root, mission.preferred_engine, options);
   return {
-    mission: resolved.engine ? { ...mission, runner: resolved.engine.id, runner_kind: 'engine' } : mission,
+    mission: resolved.engine ? {
+      ...mission,
+      runner: resolved.engine.id,
+      runner_kind: 'engine',
+      ...(!mission.model && resolved.engine.roster_model ? { model: resolved.engine.roster_model } : {}),
+    } : mission,
     engine_id: resolved.engine ? resolved.engine.id : null,
     requested_engine: resolved.requested_engine,
     engine_fallback_reason: resolved.engine_fallback_reason,

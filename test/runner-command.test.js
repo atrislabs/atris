@@ -80,7 +80,7 @@ test('resolveClaudeRunnerModel prefers ATRIS_RUNNER_MODEL over legacy env', () =
   });
 });
 
-test('resolveClaudeRunnerModel defaults to pinned Opus 4.8', () => {
+test('resolveClaudeRunnerModel defaults to pinned Opus 5.5', () => {
   withEnv(undefined, () => {
     assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
     assert.equal(resolveClaudeRunnerModel({}), DEFAULT_CLAUDE_RUNNER_MODEL);
@@ -291,7 +291,7 @@ test('runnerAvailabilityFailureMessage reports unknown profiles without rethrowi
 
 // Regression guard for local-alias-drift: the default must be pinned so `opus`
 // does not resolve differently across Claude Code versions or account rollouts.
-test('default model is pinned to Opus 4.8', () => {
+test('default model is pinned to Opus 5.5', () => {
   assert.equal(DEFAULT_CLAUDE_RUNNER_MODEL, 'claude-opus-5-5');
   assert.equal(DEFAULT_FABLE_RUNNER_MODEL, 'claude-fable-5');
 });

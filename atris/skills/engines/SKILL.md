@@ -24,6 +24,10 @@ tags:
 
 One contract, eleven live profiles. The orchestrator writes a bounded task prompt, dispatches it to an engine, then **independently verifies, lands, and pushes** the result. Engines never self-certify.
 
+## Pick the job owner first
+
+Before choosing an engine for search, build, or review, run `atris engine roster` and use that job's pick. Only deviate when the user names an engine. The roster is project policy and does not depend on team member files.
+
 ## three verbs
 
 - ask: `atris engine <name> "<question>"`; pin a model with `atris engine <name> --model <model> "<question>"`
@@ -80,7 +84,8 @@ Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `
 
 ## Picking an engine
 
-- **Multi-file or long build**: Devin `swe-2-max` while its Free tag holds (check `devin models list`); Codex `gpt-6-sol` if the tag is gone.
+- **Cheap bounded errands**: Devin `swe-2-max` while its Free tag holds (check `devin models list`).
+- **Multi-file or long build**: Use the project's build pick. If there is no pick, use the router's choice.
 - **Judgment-heavy build**: Opus 5.5 subagent (Claude row).
 - **Review / deep judgment**: FABLE profile; Codex `gpt-6-sol` or Opus 5.5 as second validator.
 - **Quick fix**: Cursor.

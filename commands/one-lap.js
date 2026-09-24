@@ -9,6 +9,7 @@ const { readWishes } = require('../lib/wish-store');
 const {
   engineRegistryView,
   resolveEngineForRole,
+  resolveEngineForRoleRanked,
   resolveRegisteredEngine,
 } = require('../lib/engine-registry');
 const { parseVerifyCommand } = require('../lib/auto-accept-certified');
@@ -168,6 +169,10 @@ function readyExecutor(root, preferred = '') {
 
 function readyValidators(root, preferred = '', exclude = '') {
   const blocked = String(exclude || '').trim();
+  const rosterRanked = preferred ? null : resolveEngineForRoleRanked('validator', root);
+  const rosterOrder = rosterRanked && rosterRanked.reason.startsWith('roster pick')
+    ? rosterRanked.ranked.map((engine) => engine.id)
+    : [];
   const candidates = engineRegistryView(root)
     .filter((engine) => engine.roles.includes('validator'))
     .filter((engine) => engine.id !== blocked)
@@ -175,6 +180,7 @@ function readyValidators(root, preferred = '', exclude = '') {
       const aPreferred = preferred && a.id === preferred ? 0 : 1;
       const bPreferred = preferred && b.id === preferred ? 0 : 1;
       return aPreferred - bPreferred
+        || (rosterOrder.length ? (rosterOrder.indexOf(a.id) - rosterOrder.indexOf(b.id)) : 0)
         || Number(a.fallback_order) - Number(b.fallback_order)
         || String(a.id).localeCompare(String(b.id));
     });

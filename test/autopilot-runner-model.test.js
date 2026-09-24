@@ -128,7 +128,7 @@ test('console claude launcher uses the configured runner binary', () => {
 
 // --- T3: every spawn injects a resolved --model by default ---
 
-test('default heartbeat spawn carries pinned Opus 4.8', () => {
+test('default heartbeat spawn carries pinned Opus 5.5', () => {
   withRunnerEnv({}, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
     assert.match(cmd, /--model claude-opus-5-5\b/);
