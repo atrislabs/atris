@@ -861,6 +861,22 @@ function pushFlagWhenPresent(out, args, name) {
   if (hasFlag(args, name)) out.push(name);
 }
 
+// The runner a new member mission starts with. An explicit --runner or
+// --engine wins. With neither, a member the roster names runs on "auto", so
+// every tick picks the member's engine from ROSTER.md (edits apply on the next
+// tick). Otherwise the old default holds.
+function memberRunRunner(owner, args = [], cwd = process.cwd()) {
+  const explicit = readFlag(args, '--runner', '');
+  if (explicit) return explicit;
+  // codex_goal stalls unattended (no live codex session drives its native goal
+  // slot). Default to claude unless a live codex session is signalled; explicit
+  // --runner still wins. Proven footgun 2026-07-16. See lib/default-runner.js.
+  const fallback = defaultObjectiveRunner(args);
+  if (fallback !== 'claude' || readFlag(args, '--engine', '')) return fallback;
+  const { memberRosterEngine } = require('../lib/member-engine');
+  return memberRosterEngine(owner, cwd) ? 'auto' : fallback;
+}
+
 function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cwd()) {
   const startArgs = [
     'mission',
@@ -868,11 +884,8 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
     missionText,
     '--owner',
     owner,
-    // codex_goal stalls unattended (no live codex session drives its native goal
-    // slot). Default to claude unless a live codex session is signalled; explicit
-    // --runner still wins. Proven footgun 2026-07-16. See lib/default-runner.js.
     '--runner',
-    readFlag(args, '--runner', defaultObjectiveRunner(args)),
+    memberRunRunner(owner, args, cwd),
     '--lane',
     readFlag(args, '--lane', 'workspace'),
   ];
@@ -7787,6 +7800,24 @@ function wakeDecision(name, paths, { force = false, runtimeKind = memberRuntimeK
   return null;
 }
 
+// The engine this member's work runs on, from the roster: its own team line,
+// else its job's pick, else the router. Never throws.
+function wakeMemberEngine(name, root = process.cwd()) {
+  try {
+    const { resolveEngineForMember } = require('../lib/member-engine');
+    const picked = resolveEngineForMember(name, root);
+    return {
+      id: picked.engine ? picked.engine.id : null,
+      model: picked.model || null,
+      job: picked.job,
+      source: picked.source,
+      reason: picked.reason,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function runMemberWake(name, { execute = false, confirmed = false, force = false, domainInput = {} } = {}) {
   const paths = requireMemberDir(name);
   const runtimeKind = paths.runtimeKind || memberRuntimeKind(name);
@@ -7951,6 +7982,7 @@ async function runMemberWake(name, { execute = false, confirmed = false, force =
     ok: true,
     action: 'wake',
     member: name,
+    engine: wakeMemberEngine(name),
     mode,
     decision,
     reason,
@@ -8073,6 +8105,7 @@ function wakeBootLines(name, result) {
     `  goal      ${goal ? clipText(goal, 70) : s.dim('none yet')}`,
     ...(experiment ? [`  working   ${clipText(experiment, 70)}`] : []),
     ...(laneCandidates !== null ? [`  lane      ${laneCandidates} task${laneCandidates === 1 ? '' : 's'} waiting in ${name}'s lane`] : []),
+    ...(result.engine && result.engine.id ? [`  engine    ${clipText(String(result.engine.reason || '').replace(`${name} does `, ''), 70)}`] : []),
     '',
     `  ${s.bold(name)} looked around and ${s.bold(decisionText)}.`,
     `  ${s.dim(`Why: ${wakeReasonText(result.reason)}.`)}`,

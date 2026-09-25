@@ -80,7 +80,7 @@ test('resolveClaudeRunnerModel prefers ATRIS_RUNNER_MODEL over legacy env', () =
   });
 });
 
-test('resolveClaudeRunnerModel defaults to pinned Opus 4.8', () => {
+test('resolveClaudeRunnerModel defaults to pinned Opus 5.5', () => {
   withEnv(undefined, () => {
     assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
     assert.equal(resolveClaudeRunnerModel({}), DEFAULT_CLAUDE_RUNNER_MODEL);
@@ -221,23 +221,31 @@ test('compat runner profiles resolve to concrete runner configs', () => {
   }
 });
 
-test('grok runner profile uses grok --always-approve and pins grok-4.6', () => {
+test('grok runner profile uses grok --always-approve and rides the grok cli default model', () => {
   withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'grok' }, () => {
     assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.grok);
     assert.equal(resolveClaudeRunnerBin(), 'grok');
-    assert.equal(resolveClaudeRunnerModel({}), 'grok-4.6');
-    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --always-approve -p {prompt}');
+    assert.equal(RUNNER_PROFILE_DEFS.grok.model, '');
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --always-approve {pinnedModelFlag} {pinnedEffortFlag} -p {prompt}');
     assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'grok --always-approve -p "$(cat /tmp/p.tmp)"');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'grok-4.7-build-fast' }), 'grok --always-approve --model grok-4.7-build-fast -p "$(cat /tmp/p.tmp)"');
   });
 });
 
-test('agy runner profile uses Antigravity accept-edits print mode', () => {
+test('devin runner profile takes --model only when a model is pinned', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'devin', ATRIS_RUNNER_MODEL: 'claude-opus-5-5' }, () => {
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'devin -p -- "$(cat /tmp/p.tmp)"');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'swe-2-max' }), 'devin -p --model swe-2-max -- "$(cat /tmp/p.tmp)"');
+  });
+});
+
+test('agy runner profile uses Antigravity accept-edits print mode and rides its own model unless one is pinned', () => {
   withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'agy' }, () => {
     assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.agy);
     assert.equal(resolveClaudeRunnerBin(), 'agy');
-    assert.equal(resolveClaudeRunnerModel({}), 'gemini-3.8-flash-high');
-    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" {modelFlag} -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. "{prompt}');
-    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'agy --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" --model gemini-3.8-flash-high -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. ""$(cat /tmp/p.tmp)"');
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" {pinnedModelFlag} {pinnedEffortFlag} -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. "{prompt}');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'agy --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. ""$(cat /tmp/p.tmp)"');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'gemini-3.8-flash-high' }), 'agy --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" --model gemini-3.8-flash-high -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. ""$(cat /tmp/p.tmp)"');
   });
 });
 
@@ -291,7 +299,7 @@ test('runnerAvailabilityFailureMessage reports unknown profiles without rethrowi
 
 // Regression guard for local-alias-drift: the default must be pinned so `opus`
 // does not resolve differently across Claude Code versions or account rollouts.
-test('default model is pinned to Opus 4.8', () => {
+test('default model is pinned to Opus 5.5', () => {
   assert.equal(DEFAULT_CLAUDE_RUNNER_MODEL, 'claude-opus-5-5');
   assert.equal(DEFAULT_FABLE_RUNNER_MODEL, 'claude-fable-5');
 });

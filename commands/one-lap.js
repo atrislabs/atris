@@ -9,7 +9,10 @@ const { readWishes } = require('../lib/wish-store');
 const {
   engineRegistryView,
   resolveEngineForRole,
+  resolveEngineForRoleRanked,
   resolveRegisteredEngine,
+  rosterPinFor,
+  rosterDecided,
 } = require('../lib/engine-registry');
 const { parseVerifyCommand } = require('../lib/auto-accept-certified');
 const fleet = require('../lib/fleet');
@@ -155,7 +158,8 @@ function readyExecutor(root, preferred = '') {
     if (!selected.roles.includes('executor')) throw new Error(`engine ${selected.id} is not an executor`);
     if (!selected.health || selected.health.status !== 'ready') throw new Error(`engine ${selected.id} is not ready`);
     if (!fleet.FLEET_CAPABLE.includes(selected.id)) throw new Error(`engine ${selected.id} cannot build headlessly`);
-    return selected;
+    const pin = rosterPinFor('executor', selected.id, root);
+    return Object.keys(pin).length ? { ...selected, ...pin } : selected;
   }
   const routed = resolveEngineForRole('executor', root);
   if (routed && fleet.FLEET_CAPABLE.includes(routed.id)) return routed;
@@ -168,16 +172,30 @@ function readyExecutor(root, preferred = '') {
 
 function readyValidators(root, preferred = '', exclude = '') {
   const blocked = String(exclude || '').trim();
+  const rosterRanked = resolveEngineForRoleRanked('validator', root);
+  const fromRoster = rosterDecided(rosterRanked.source);
+  const rosterOrder = !preferred && fromRoster
+    ? rosterRanked.ranked.map((engine) => engine.id)
+    : [];
+  const pinned = fromRoster && rosterRanked.engine
+    && (rosterRanked.engine.roster_model || rosterRanked.engine.roster_effort || rosterRanked.engine.roster_max_seconds)
+    ? rosterRanked.engine
+    : null;
+  // A roster pick can name an engine that reviews only when picked (codex),
+  // so the roster's list joins even when an engine lacks the role.
+  const rosterPicked = new Set(fromRoster ? rosterRanked.ranked.map((engine) => engine.id) : []);
   const candidates = engineRegistryView(root)
-    .filter((engine) => engine.roles.includes('validator'))
+    .filter((engine) => engine.roles.includes('validator') || rosterPicked.has(engine.id))
     .filter((engine) => engine.id !== blocked)
     .sort((a, b) => {
       const aPreferred = preferred && a.id === preferred ? 0 : 1;
       const bPreferred = preferred && b.id === preferred ? 0 : 1;
       return aPreferred - bPreferred
+        || (rosterOrder.length ? (rosterOrder.indexOf(a.id) - rosterOrder.indexOf(b.id)) : 0)
         || Number(a.fallback_order) - Number(b.fallback_order)
         || String(a.id).localeCompare(String(b.id));
-    });
+    })
+    .map((engine) => (pinned && engine.id === pinned.id ? { ...engine, ...pinFields(pinned) } : engine));
   const ready = candidates.filter((engine) => engine.health && engine.health.status === 'ready');
   // Route-time determinism: which validator binaries exist on this machine
   // must not change the lap's route. When none are ready, dispatch with the
@@ -185,6 +203,39 @@ function readyValidators(root, preferred = '', exclude = '') {
   // worker and fails honestly at the validation stage if the engine is
   // missing when validation actually runs.
   return ready.length ? ready : candidates;
+}
+
+function pinFields(engine) {
+  const pin = {};
+  for (const field of ['roster_model', 'roster_effort', 'roster_max_seconds']) {
+    if (engine && engine[field]) pin[field] = engine[field];
+  }
+  return pin;
+}
+
+// The roster's pins ride into the flight: the builder's model, effort, and
+// time cap for the builder, and each reviewer's for that reviewer only. A
+// reviewer with only a model keeps the plain model string.
+function lapModelPins(executor, validators = []) {
+  const validatorModels = {};
+  for (const engine of validators) {
+    if (!engine) continue;
+    if (engine.roster_effort || engine.roster_max_seconds) {
+      validatorModels[engine.id] = {
+        model: engine.roster_model || '',
+        effort: engine.roster_effort || '',
+        max_seconds: engine.roster_max_seconds || 0,
+      };
+    } else if (engine.roster_model) {
+      validatorModels[engine.id] = engine.roster_model;
+    }
+  }
+  return {
+    model: executor && executor.roster_model || '',
+    ...(executor && executor.roster_effort ? { effort: executor.roster_effort } : {}),
+    ...(executor && executor.roster_max_seconds ? { maxSeconds: executor.roster_max_seconds } : {}),
+    validatorModels: Object.keys(validatorModels).length ? validatorModels : null,
+  };
 }
 
 function taskById(runCli, taskId) {
@@ -656,6 +707,7 @@ async function runOneLap(ask, options = {}) {
       reviewOnly: true,
       verifierCommand: verifier,
       validatorEngines: validators.map((entry) => entry.id),
+      ...lapModelPins(executor, validators),
       actor: mission.owner || 'mission-lead',
       installedEngines: engineRegistryView(root)
         .filter((entry) => entry.health && entry.health.status === 'ready')
@@ -773,4 +825,7 @@ async function runOneLap(ask, options = {}) {
 module.exports = {
   oneLapSafetyIssue,
   runOneLap,
+  readyExecutor,
+  readyValidators,
+  lapModelPins,
 };

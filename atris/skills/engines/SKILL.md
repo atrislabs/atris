@@ -24,6 +24,32 @@ tags:
 
 One contract, eleven live profiles. The orchestrator writes a bounded task prompt, dispatches it to an engine, then **independently verifies, lands, and pushes** the result. Engines never self-certify.
 
+## Pick the job owner first
+
+Before choosing an engine for search, build, or review, run `atris engine roster` and use that job's lead worker. Only deviate when the user names an engine.
+
+The roster is a markdown file the owner can edit any time: `atris/ROSTER.md` for this project, `~/.atris/ROSTER.md` for every project on this machine. A project job wins over the machine job with the same name. Each `## job` heading lists its workers in order, one per line, naming the tool and the model:
+
+```
+## review
+- codex, model: gpt-6-astra, effort: medium, max: 20 min
+- claude code, model: opus 5.5
+
+## small build
+- devin, model: swe-2-max, until 2026-10-24
+- grok, model: grok 4.7 fast
+```
+
+The first worker that is ready and not expired leads; the rest are its backups, in order. Tools take engine ids or `claude code`, `atris fast`, and `gemini`. The older one-line shape (`build: claude opus 5.5, backup codex`) still reads the same, and the first `atris engine assign` rewrites the file into sections. `assign <job> <tool>` sets the lead and keeps the rest; `--add` puts a worker at the end, `--remove <tool>` drops one, `--clear` drops the job, and `--everywhere` writes the machine file. `atris engine roster --available` lists the tools and models on this machine.
+
+A job's list is also its team. When a task splits into parallel parts, give the parts to that job's workers in order, first worker first, instead of piling them all on the lead. Heavy models like astra and fable should only judge: have the search lead write them a trimmed brief first.
+
+Changes for one shell only go in a session file above both rosters. Set `ATRIS_ROSTER_SESSION=<name>` (agent shells have no terminal, so they must), then `atris engine assign <job> <tool> --session`. A session job replaces that job's whole list for this shell; `atris engine roster session` shows the changes and `atris engine roster session clear` drops them. A session nobody used for a day is dropped on its own.
+
+Jobs are open-ended: besides search, build, and review, the owner can add a job like `## small build`, or `## quick fixes (like build)` when the name does not say its kind. For a small, tightly specified build slice, use the small build lead when `atris engine roster` shows one; bigger builds use build.
+
+Team members pick automatically. Navigators, researchers, and scouts do search; validators, reviewers, judges, critics, and verifiers do review; everyone else builds. A line under `## team` overrides that, with a job (`- researcher: search`) or a tool and model (`- judge: claude code, model: opus 5.5`). `member run`, missions with an owner, and autopilot's plan, do, and review use the member's pick; `--engine` still wins. `atris engine roster` lists the team and warns about any line it could not use.
+
 ## three verbs
 
 - ask: `atris engine <name> "<question>"`; pin a model with `atris engine <name> --model <model> "<question>"`
@@ -80,7 +106,8 @@ Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `
 
 ## Picking an engine
 
-- **Multi-file or long build**: Devin `swe-2-max` while its Free tag holds (check `devin models list`); Codex `gpt-6-sol` if the tag is gone.
+- **Cheap bounded errands**: Devin `swe-2-max` while its Free tag holds (check `devin models list`).
+- **Multi-file or long build**: Use the project's build pick. If there is no pick, use the router's choice.
 - **Judgment-heavy build**: Opus 5.5 subagent (Claude row).
 - **Review / deep judgment**: FABLE profile; Codex `gpt-6-sol` or Opus 5.5 as second validator.
 - **Quick fix**: Cursor.

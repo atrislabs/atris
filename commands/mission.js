@@ -21,6 +21,7 @@ const {
 } = require('../lib/brief-ledger');
 const {
   resolveClaudeRunnerModel,
+  resolvePinnedRunnerModel,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
   buildRunnerCommand,
@@ -385,13 +386,59 @@ function resolveMissionRunnerSelection(value, options = {}) {
   exitMissionError(`Unknown ${noun} "${raw}". ${knownMissionRunnerText()}.`, 2, asJson);
 }
 
-function resolveMissionTickRunner(mission, root = process.cwd()) {
+// The roster line's effort and time cap for this tick, when it sets them.
+function rosterTickPins(engine) {
+  return {
+    ...(engine && engine.roster_effort ? { roster_effort: engine.roster_effort } : {}),
+    ...(engine && engine.roster_max_seconds ? { roster_max_seconds: engine.roster_max_seconds } : {}),
+  };
+}
+
+// A tick's time limit: the time left on the mission, capped by the roster
+// line's "max 20 min" when it sets one, else by the default tick cap.
+function missionTickTimeoutMs(mission, remainingMs) {
+  const cap = Number(mission && mission.roster_max_seconds) > 0
+    ? Number(mission.roster_max_seconds) * 1000
+    : MISSION_RUN_DEFAULTS.claudeTimeoutMs;
+  return clampTimeoutMs(remainingMs, cap);
+}
+
+function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
   if (String(mission && mission.runner || '').trim().toLowerCase() !== MISSION_AUTO_RUNNER) {
     return { mission, engine_id: null, requested_engine: null, engine_fallback_reason: null };
   }
-  const resolved = resolveEngineForRoleWithPreference('executor', root, mission.preferred_engine);
+  // A mission owned by a team member runs on that member's roster pick. An
+  // explicit preferred engine (or a run's --engine) still wins, and with no
+  // roster line behind the member, routing stays exactly as it was.
+  if (!String(mission.preferred_engine || '').trim() && mission.owner) {
+    const { memberRosterEngine } = require('../lib/member-engine');
+    const member = memberRosterEngine(mission.owner, root, options);
+    if (member) {
+      if (process.env.ATRIS_ROUTER_EXPLAIN !== '0') console.error(member.reason);
+      return {
+        mission: {
+          ...mission,
+          runner: member.engine.id,
+          runner_kind: 'engine',
+          ...(!mission.model && member.model ? { model: member.model } : {}),
+          ...rosterTickPins(member.engine),
+        },
+        engine_id: member.engine.id,
+        requested_engine: null,
+        engine_fallback_reason: null,
+        member_engine_reason: member.reason,
+      };
+    }
+  }
+  const resolved = resolveEngineForRoleWithPreference('executor', root, mission.preferred_engine, options);
   return {
-    mission: resolved.engine ? { ...mission, runner: resolved.engine.id, runner_kind: 'engine' } : mission,
+    mission: resolved.engine ? {
+      ...mission,
+      runner: resolved.engine.id,
+      runner_kind: 'engine',
+      ...(!mission.model && resolved.engine.roster_model ? { model: resolved.engine.roster_model } : {}),
+      ...rosterTickPins(resolved.engine),
+    } : mission,
     engine_id: resolved.engine ? resolved.engine.id : null,
     requested_engine: resolved.requested_engine,
     engine_fallback_reason: resolved.engine_fallback_reason,
@@ -442,6 +489,20 @@ function applyMissionRunnerProfile(runner) {
     if (previous === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
     else process.env.ATRIS_RUNNER_PROFILE = previous;
   };
+}
+
+// Claude-family engines share the claude CLI, so they keep the resolved
+// default model pin. Every other engine's CLI rejects a claude model name, so
+// it only ever takes an explicit pin (the mission's model or the roster
+// line's); '' lets the engine ride its own default.
+const CLAUDE_FAMILY_RUNNER_ENGINES = new Set(['claude', 'fable', 'haiku']);
+
+function resolveMissionTickRunnerModel(mission) {
+  const engine = canonicalEngineName(mission && mission.runner);
+  if (!engine || CLAUDE_FAMILY_RUNNER_ENGINES.has(engine)) {
+    return resolveClaudeRunnerModel(mission);
+  }
+  return resolvePinnedRunnerModel(mission);
 }
 
 function exitMissionError(message, code = 1, asJson = false) {
@@ -8745,7 +8806,7 @@ function spawnGenericRunnerTick(mission, opts) {
     let briefId = null;
     try {
       promptFile = writeRunnerPromptFile(cwd, mission.id, prompt);
-      cmd = buildRunnerCommand({ promptFile, model });
+      cmd = buildRunnerCommand({ promptFile, model, ...(mission.roster_effort ? { effort: mission.roster_effort } : {}) });
       const engine = canonicalEngineName(mission.runner);
       if (engine) {
         const record = appendBriefRecord(cwd, {
@@ -8922,6 +8983,7 @@ function spawnClaudeTick(mission, opts) {
       '--include-partial-messages',
     ];
     if (model) args.push('--model', model);
+    if (mission.roster_effort) args.push('--effort', mission.roster_effort);
     if (sessionMode === 'set') args.push('--session-id', sessionId);
     else if (sessionMode === 'resume') args.push('--resume', sessionId);
 
@@ -9088,7 +9150,7 @@ async function runEngineVerifier(mission, options = {}) {
       signal: options.signal,
       timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
       prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1),
-      model: resolveClaudeRunnerModel(verifyMission),
+      model: resolveMissionTickRunnerModel(verifyMission),
     });
   } catch (error) {
     engineResult = { ok: false, error: error.message };
@@ -9668,12 +9730,12 @@ async function executeMissionRunTicksPhase(context) {
         const runClaudeSession = () => spawnClaudeTick(tickRuntimeMission, {
           sessionMode, sessionId: useId, cwd, signal: controller.signal,
           missionLock: lock,
-          timeoutMs: clampTimeoutMs(
+          timeoutMs: missionTickTimeoutMs(
+            tickRuntimeMission,
             (maxWallSeconds - ((Date.now() - startedAt) / 1000)) * 1000,
-            MISSION_RUN_DEFAULTS.claudeTimeoutMs,
           ),
           prompt,
-          model: resolveClaudeRunnerModel(tickRuntimeMission),
+          model: resolveMissionTickRunnerModel(tickRuntimeMission),
         });
         try {
           claudeResult = await runClaudeSession();
@@ -11726,6 +11788,8 @@ module.exports = {
   missionHumanStatusText,
   resolveMissionRunnerSelection,
   resolveMissionTickRunner,
+  resolveMissionTickRunnerModel,
+  missionTickTimeoutMs,
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
   tickMadeProgress,

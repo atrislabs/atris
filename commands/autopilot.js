@@ -484,19 +484,73 @@ function execPhaseCommandSync(cmd, opts = {}) {
   }
 }
 
+// plan, do, and review run as the navigator, executor, and validator. When
+// the roster names an engine for that member, the phase spawns it. A runner
+// set in the environment still wins, and with no roster line behind the
+// member the configured runner runs exactly as before.
+const AUTOPILOT_PHASE_MEMBERS = Object.freeze({ plan: 'navigator', do: 'executor', review: 'validator' });
+const RUNNER_ENV_OVERRIDES = Object.freeze([
+  'ATRIS_RUNNER_PROFILE',
+  'ATRIS_RUNNER_COMMAND_TEMPLATE',
+  'ATRIS_RUNNER_BIN',
+  'ATRIS_CLAUDE_COMMAND_TEMPLATE',
+  'ATRIS_CLAUDE_BIN',
+]);
+
+function autopilotPhaseEngine(phase, cwd = process.cwd()) {
+  const member = AUTOPILOT_PHASE_MEMBERS[phase];
+  if (!member) return null;
+  if (RUNNER_ENV_OVERRIDES.some((name) => String(process.env[name] || '').trim())) return null;
+  const { memberRosterEngine } = require('../lib/member-engine');
+  return memberRosterEngine(member, cwd, { requireMember: false });
+}
+
+// The phase's launch command and, when its roster line sets "max 20 min",
+// the time cap in ms (null means the caller's own timeout stands).
+function buildPhaseRunner(phase, promptFile, cwd = process.cwd(), allowedTools = 'Bash,Read,Write,Edit,Glob,Grep') {
+  const picked = autopilotPhaseEngine(phase, cwd);
+  if (!picked) return { command: buildRunnerCommand({ promptFile, allowedTools }), timeoutMs: null };
+  if (process.env.ATRIS_ROUTER_EXPLAIN !== '0') console.error(picked.reason);
+  const previous = process.env.ATRIS_RUNNER_PROFILE;
+  process.env.ATRIS_RUNNER_PROFILE = picked.engine.id;
+  try {
+    const command = buildRunnerCommand({
+      promptFile,
+      allowedTools,
+      ...(picked.model ? { model: picked.model } : {}),
+      ...(picked.engine.roster_effort ? { effort: picked.engine.roster_effort } : {}),
+    });
+    const maxSeconds = Number(picked.engine.roster_max_seconds) || 0;
+    return { command, timeoutMs: maxSeconds > 0 ? maxSeconds * 1000 : null };
+  } finally {
+    if (previous === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
+    else process.env.ATRIS_RUNNER_PROFILE = previous;
+  }
+}
+
+function buildPhaseRunnerCommand(phase, promptFile, cwd = process.cwd()) {
+  return buildPhaseRunner(phase, promptFile, cwd).command;
+}
+
 /**
  * Run a phase via the configured runner subprocess.
  */
 function executePhaseDetailed(phase, context, options = {}) {
-  const { verbose = false, timeout = PHASE_TIMEOUT } = options;
+  const { verbose = false } = options;
+  let timeout = options.timeout || PHASE_TIMEOUT;
 
   const prompt = buildPrompt(phase, context, options);
   const tmpFile = path.join(process.cwd(), '.autopilot-prompt.tmp');
   fs.writeFileSync(tmpFile, prompt);
 
   try {
-    const cmd = options.cmdOverride
-      || buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Write,Edit,Glob,Grep' });
+    let cmd = options.cmdOverride;
+    if (!cmd) {
+      const runner = buildPhaseRunner(phase, tmpFile);
+      cmd = runner.command;
+      // A roster time cap stops the phase at that time.
+      if (runner.timeoutMs) timeout = runner.timeoutMs;
+    }
     const env = { ...process.env };
     delete env.CLAUDECODE;
     const output = execPhaseCommandSync(cmd, {
@@ -1360,15 +1414,25 @@ function parseProposedBlock(lines) {
   return Object.keys(proposed).length ? proposed : null;
 }
 
+// Plan review is review work, so it runs on the review pick like the review
+// phase, with that line's model, effort, and time cap. With no roster line
+// behind it, the configured runner runs exactly as before.
+function buildPlanReviewRunner(promptFile, cwd = process.cwd(), timeout = 180000) {
+  const runner = buildPhaseRunner('review', promptFile, cwd, 'Bash,Read,Grep,Glob');
+  return { command: runner.command, timeoutMs: runner.timeoutMs || timeout };
+}
+
 /**
- * Default executor for plan-review: spawn a fresh configured runner call.
+ * Default executor for plan-review: spawn a fresh runner call on the review pick.
  * Kept thin so tests can inject a stub via options.planReviewExec.
  */
 function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
   const tmpFile = path.join(cwd, '.autopilot-plan-review.tmp');
   fs.writeFileSync(tmpFile, prompt);
   try {
-    const cmd = buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Grep,Glob' });
+    const runner = buildPlanReviewRunner(tmpFile, cwd, timeout);
+    const cmd = runner.command;
+    timeout = runner.timeoutMs;
     const env = { ...process.env };
     delete env.CLAUDECODE;
     const output = execPhaseCommandSync(cmd, {
@@ -3875,6 +3939,9 @@ module.exports = {
   isPhaseKillError,
   execPhaseCommandSync,
   executePhaseDetailed,
+  buildPhaseRunnerCommand,
+  buildPhaseRunner,
+  buildPlanReviewRunner,
   buildAutopilotGlassLog,
   writeAutopilotGlassLog,
   lessonSlug
