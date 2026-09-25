@@ -100,7 +100,7 @@ test('clear restores router behavior and invalid jobs or wrong-role engines fail
   assert.equal(cleared.exit, 0, cleared.err);
   assert.equal(readEngineRegistry(root).roster.executor, undefined);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW }).engine.id, 'codex');
-  assert.match(command(root, ['assign', 'fishing', 'codex']).err, /unknown job.*search, build, review/);
+  assert.match(command(root, ['assign', 'fishing', 'codex']).err, /say what kind of job "fishing" is: add --like search, --like build, or --like review/);
   assert.match(command(root, ['assign', 'search', 'codex']).err, /codex cannot do search/);
   assert.match(command(root, ['assign', 'build', 'unknown']).err, /unknown engine/);
 }));

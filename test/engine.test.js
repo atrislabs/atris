@@ -41,7 +41,7 @@ test('engine roster lists every profile with detection state', () => {
     assert.deepEqual(parsed.engines.find((e) => e.id === 'fable').models, ['opus 5.5', 'opus 5', 'opus 4.8', 'fable', 'haiku']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'cursor').models, ['composer 2.5', 'grok 4.6', 'kimi 3']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'composer').models, ['composer 2.5']);
-    assert.deepEqual(parsed.engines.find((e) => e.id === 'grok').models, ['grok 4.6', 'grok 4.5']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'grok').models, ['grok 4.7 fast', 'grok 4.7']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'devin').models, ['built-in router']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'agy').models, [
       'gemini-3.8-flash-high',
@@ -152,8 +152,8 @@ test('house default is atris-fast and profile templates stay engine-shaped', () 
   const { RUNNER_PROFILES } = require('../lib/runner-command');
   assert.match(RUNNER_PROFILES['atris-fast'].commandTemplate, /--fast/);
   assert.match(RUNNER_PROFILES.cursor.commandTemplate, /--trust -p/);
-  assert.match(RUNNER_PROFILES.devin.commandTemplate, /-p --/);
-  assert.match(RUNNER_PROFILES.grok.commandTemplate, /--always-approve -p/);
+  assert.match(RUNNER_PROFILES.devin.commandTemplate, /-p \{pinnedModelFlag\} --/);
+  assert.match(RUNNER_PROFILES.grok.commandTemplate, /--always-approve \{pinnedModelFlag\} -p/);
   assert.match(RUNNER_PROFILES.agy.commandTemplate, /--mode accept-edits .* -p/);
   // claude rides the default claude-shaped spawn, no template needed
   assert.equal(RUNNER_PROFILES.claude.commandTemplate, '');
