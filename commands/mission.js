@@ -21,6 +21,7 @@ const {
 } = require('../lib/brief-ledger');
 const {
   resolveClaudeRunnerModel,
+  resolvePinnedRunnerModel,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
   buildRunnerCommand,
@@ -488,6 +489,20 @@ function applyMissionRunnerProfile(runner) {
     if (previous === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
     else process.env.ATRIS_RUNNER_PROFILE = previous;
   };
+}
+
+// Claude-family engines share the claude CLI, so they keep the resolved
+// default model pin. Every other engine's CLI rejects a claude model name, so
+// it only ever takes an explicit pin (the mission's model or the roster
+// line's); '' lets the engine ride its own default.
+const CLAUDE_FAMILY_RUNNER_ENGINES = new Set(['claude', 'fable', 'haiku']);
+
+function resolveMissionTickRunnerModel(mission) {
+  const engine = canonicalEngineName(mission && mission.runner);
+  if (!engine || CLAUDE_FAMILY_RUNNER_ENGINES.has(engine)) {
+    return resolveClaudeRunnerModel(mission);
+  }
+  return resolvePinnedRunnerModel(mission);
 }
 
 function exitMissionError(message, code = 1, asJson = false) {
@@ -9135,7 +9150,7 @@ async function runEngineVerifier(mission, options = {}) {
       signal: options.signal,
       timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
       prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1),
-      model: resolveClaudeRunnerModel(verifyMission),
+      model: resolveMissionTickRunnerModel(verifyMission),
     });
   } catch (error) {
     engineResult = { ok: false, error: error.message };
@@ -9720,7 +9735,7 @@ async function executeMissionRunTicksPhase(context) {
             (maxWallSeconds - ((Date.now() - startedAt) / 1000)) * 1000,
           ),
           prompt,
-          model: resolveClaudeRunnerModel(tickRuntimeMission),
+          model: resolveMissionTickRunnerModel(tickRuntimeMission),
         });
         try {
           claudeResult = await runClaudeSession();
@@ -11773,6 +11788,7 @@ module.exports = {
   missionHumanStatusText,
   resolveMissionRunnerSelection,
   resolveMissionTickRunner,
+  resolveMissionTickRunnerModel,
   missionTickTimeoutMs,
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
