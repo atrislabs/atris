@@ -385,6 +385,23 @@ function resolveMissionRunnerSelection(value, options = {}) {
   exitMissionError(`Unknown ${noun} "${raw}". ${knownMissionRunnerText()}.`, 2, asJson);
 }
 
+// The roster line's effort and time cap for this tick, when it sets them.
+function rosterTickPins(engine) {
+  return {
+    ...(engine && engine.roster_effort ? { roster_effort: engine.roster_effort } : {}),
+    ...(engine && engine.roster_max_seconds ? { roster_max_seconds: engine.roster_max_seconds } : {}),
+  };
+}
+
+// A tick's time limit: the time left on the mission, capped by the roster
+// line's "max 20 min" when it sets one, else by the default tick cap.
+function missionTickTimeoutMs(mission, remainingMs) {
+  const cap = Number(mission && mission.roster_max_seconds) > 0
+    ? Number(mission.roster_max_seconds) * 1000
+    : MISSION_RUN_DEFAULTS.claudeTimeoutMs;
+  return clampTimeoutMs(remainingMs, cap);
+}
+
 function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
   if (String(mission && mission.runner || '').trim().toLowerCase() !== MISSION_AUTO_RUNNER) {
     return { mission, engine_id: null, requested_engine: null, engine_fallback_reason: null };
@@ -403,6 +420,7 @@ function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
           runner: member.engine.id,
           runner_kind: 'engine',
           ...(!mission.model && member.model ? { model: member.model } : {}),
+          ...rosterTickPins(member.engine),
         },
         engine_id: member.engine.id,
         requested_engine: null,
@@ -418,6 +436,7 @@ function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
       runner: resolved.engine.id,
       runner_kind: 'engine',
       ...(!mission.model && resolved.engine.roster_model ? { model: resolved.engine.roster_model } : {}),
+      ...rosterTickPins(resolved.engine),
     } : mission,
     engine_id: resolved.engine ? resolved.engine.id : null,
     requested_engine: resolved.requested_engine,
@@ -8772,7 +8791,7 @@ function spawnGenericRunnerTick(mission, opts) {
     let briefId = null;
     try {
       promptFile = writeRunnerPromptFile(cwd, mission.id, prompt);
-      cmd = buildRunnerCommand({ promptFile, model });
+      cmd = buildRunnerCommand({ promptFile, model, ...(mission.roster_effort ? { effort: mission.roster_effort } : {}) });
       const engine = canonicalEngineName(mission.runner);
       if (engine) {
         const record = appendBriefRecord(cwd, {
@@ -8949,6 +8968,7 @@ function spawnClaudeTick(mission, opts) {
       '--include-partial-messages',
     ];
     if (model) args.push('--model', model);
+    if (mission.roster_effort) args.push('--effort', mission.roster_effort);
     if (sessionMode === 'set') args.push('--session-id', sessionId);
     else if (sessionMode === 'resume') args.push('--resume', sessionId);
 
@@ -9695,9 +9715,9 @@ async function executeMissionRunTicksPhase(context) {
         const runClaudeSession = () => spawnClaudeTick(tickRuntimeMission, {
           sessionMode, sessionId: useId, cwd, signal: controller.signal,
           missionLock: lock,
-          timeoutMs: clampTimeoutMs(
+          timeoutMs: missionTickTimeoutMs(
+            tickRuntimeMission,
             (maxWallSeconds - ((Date.now() - startedAt) / 1000)) * 1000,
-            MISSION_RUN_DEFAULTS.claudeTimeoutMs,
           ),
           prompt,
           model: resolveClaudeRunnerModel(tickRuntimeMission),
@@ -11753,6 +11773,7 @@ module.exports = {
   missionHumanStatusText,
   resolveMissionRunnerSelection,
   resolveMissionTickRunner,
+  missionTickTimeoutMs,
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
   tickMadeProgress,

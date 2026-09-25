@@ -151,9 +151,9 @@ test('house default is atris-fast and profile templates stay engine-shaped', () 
   assert.equal(engine.HOUSE_ENGINE, 'atris-fast');
   const { RUNNER_PROFILES } = require('../lib/runner-command');
   assert.match(RUNNER_PROFILES['atris-fast'].commandTemplate, /--fast/);
-  assert.match(RUNNER_PROFILES.cursor.commandTemplate, /--trust -p/);
+  assert.match(RUNNER_PROFILES.cursor.commandTemplate, /--trust \{pinnedModelFlag\} -p/);
   assert.match(RUNNER_PROFILES.devin.commandTemplate, /-p \{pinnedModelFlag\} --/);
-  assert.match(RUNNER_PROFILES.grok.commandTemplate, /--always-approve \{pinnedModelFlag\} -p/);
+  assert.match(RUNNER_PROFILES.grok.commandTemplate, /--always-approve \{pinnedModelFlag\} \{pinnedEffortFlag\} -p/);
   assert.match(RUNNER_PROFILES.agy.commandTemplate, /--mode accept-edits .* -p/);
   // claude rides the default claude-shaped spawn, no template needed
   assert.equal(RUNNER_PROFILES.claude.commandTemplate, '');

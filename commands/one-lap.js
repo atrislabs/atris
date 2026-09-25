@@ -11,7 +11,7 @@ const {
   resolveEngineForRole,
   resolveEngineForRoleRanked,
   resolveRegisteredEngine,
-  rosterModelFor,
+  rosterPinFor,
 } = require('../lib/engine-registry');
 const { parseVerifyCommand } = require('../lib/auto-accept-certified');
 const fleet = require('../lib/fleet');
@@ -157,8 +157,8 @@ function readyExecutor(root, preferred = '') {
     if (!selected.roles.includes('executor')) throw new Error(`engine ${selected.id} is not an executor`);
     if (!selected.health || selected.health.status !== 'ready') throw new Error(`engine ${selected.id} is not ready`);
     if (!fleet.FLEET_CAPABLE.includes(selected.id)) throw new Error(`engine ${selected.id} cannot build headlessly`);
-    const model = rosterModelFor('executor', selected.id, root);
-    return model ? { ...selected, roster_model: model } : selected;
+    const pin = rosterPinFor('executor', selected.id, root);
+    return Object.keys(pin).length ? { ...selected, ...pin } : selected;
   }
   const routed = resolveEngineForRole('executor', root);
   if (routed && fleet.FLEET_CAPABLE.includes(routed.id)) return routed;
@@ -176,7 +176,10 @@ function readyValidators(root, preferred = '', exclude = '') {
   const rosterOrder = !preferred && fromRoster
     ? rosterRanked.ranked.map((engine) => engine.id)
     : [];
-  const pinned = fromRoster && rosterRanked.engine && rosterRanked.engine.roster_model ? rosterRanked.engine : null;
+  const pinned = fromRoster && rosterRanked.engine
+    && (rosterRanked.engine.roster_model || rosterRanked.engine.roster_effort || rosterRanked.engine.roster_max_seconds)
+    ? rosterRanked.engine
+    : null;
   // A roster pick can name an engine that reviews only when picked (codex),
   // so the roster's list joins even when an engine lacks the role.
   const rosterPicked = new Set(fromRoster ? rosterRanked.ranked.map((engine) => engine.id) : []);
@@ -191,7 +194,7 @@ function readyValidators(root, preferred = '', exclude = '') {
         || Number(a.fallback_order) - Number(b.fallback_order)
         || String(a.id).localeCompare(String(b.id));
     })
-    .map((engine) => (pinned && engine.id === pinned.id ? { ...engine, roster_model: pinned.roster_model } : engine));
+    .map((engine) => (pinned && engine.id === pinned.id ? { ...engine, ...pinFields(pinned) } : engine));
   const ready = candidates.filter((engine) => engine.health && engine.health.status === 'ready');
   // Route-time determinism: which validator binaries exist on this machine
   // must not change the lap's route. When none are ready, dispatch with the
@@ -201,15 +204,35 @@ function readyValidators(root, preferred = '', exclude = '') {
   return ready.length ? ready : candidates;
 }
 
-// The roster's pinned models ride into the flight: the builder's model for
-// the builder, and each reviewer's model for that reviewer only.
+function pinFields(engine) {
+  const pin = {};
+  for (const field of ['roster_model', 'roster_effort', 'roster_max_seconds']) {
+    if (engine && engine[field]) pin[field] = engine[field];
+  }
+  return pin;
+}
+
+// The roster's pins ride into the flight: the builder's model, effort, and
+// time cap for the builder, and each reviewer's for that reviewer only. A
+// reviewer with only a model keeps the plain model string.
 function lapModelPins(executor, validators = []) {
   const validatorModels = {};
   for (const engine of validators) {
-    if (engine && engine.roster_model) validatorModels[engine.id] = engine.roster_model;
+    if (!engine) continue;
+    if (engine.roster_effort || engine.roster_max_seconds) {
+      validatorModels[engine.id] = {
+        model: engine.roster_model || '',
+        effort: engine.roster_effort || '',
+        max_seconds: engine.roster_max_seconds || 0,
+      };
+    } else if (engine.roster_model) {
+      validatorModels[engine.id] = engine.roster_model;
+    }
   }
   return {
     model: executor && executor.roster_model || '',
+    ...(executor && executor.roster_effort ? { effort: executor.roster_effort } : {}),
+    ...(executor && executor.roster_max_seconds ? { maxSeconds: executor.roster_max_seconds } : {}),
     validatorModels: Object.keys(validatorModels).length ? validatorModels : null,
   };
 }

@@ -226,7 +226,7 @@ test('grok runner profile uses grok --always-approve and rides the grok cli defa
     assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.grok);
     assert.equal(resolveClaudeRunnerBin(), 'grok');
     assert.equal(RUNNER_PROFILE_DEFS.grok.model, '');
-    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --always-approve {pinnedModelFlag} -p {prompt}');
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --always-approve {pinnedModelFlag} {pinnedEffortFlag} -p {prompt}');
     assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'grok --always-approve -p "$(cat /tmp/p.tmp)"');
     assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'grok-4.7-build-fast' }), 'grok --always-approve --model grok-4.7-build-fast -p "$(cat /tmp/p.tmp)"');
   });
@@ -239,13 +239,13 @@ test('devin runner profile takes --model only when a model is pinned', () => {
   });
 });
 
-test('agy runner profile uses Antigravity accept-edits print mode', () => {
+test('agy runner profile uses Antigravity accept-edits print mode and rides its own model unless one is pinned', () => {
   withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'agy' }, () => {
     assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.agy);
     assert.equal(resolveClaudeRunnerBin(), 'agy');
-    assert.equal(resolveClaudeRunnerModel({}), 'gemini-3.8-flash-high');
-    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" {modelFlag} -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. "{prompt}');
-    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'agy --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" --model gemini-3.8-flash-high -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. ""$(cat /tmp/p.tmp)"');
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" {pinnedModelFlag} {pinnedEffortFlag} -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. "{prompt}');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'agy --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. ""$(cat /tmp/p.tmp)"');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'gemini-3.8-flash-high' }), 'agy --mode accept-edits --dangerously-skip-permissions --add-dir "$PWD" --model gemini-3.8-flash-high -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation. ""$(cat /tmp/p.tmp)"');
   });
 });
 
