@@ -7,6 +7,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -96,6 +97,11 @@ function writeRoster(root, text) {
 
 function readRoster(root) {
   return fs.readFileSync(path.join(root, 'atris', 'ROSTER.md'), 'utf8');
+}
+
+// A session file name: a readable part of the key plus a hash of the key.
+function sessionName(readable, key) {
+  return `roster-${readable}-${crypto.createHash('sha256').update(key).digest('hex').slice(0, 12)}.md`;
 }
 
 function write(file, text) {
@@ -404,7 +410,7 @@ test('a session change beats this project and all projects for that job only', (
   process.env.ATRIS_ROSTER_SESSION = 'agent one';
   const assigned = command(root, ['assign', 'build', 'codex', '--model', 'gpt-6-sol', '--session']);
   assert.equal(assigned.exit, 0, assigned.err);
-  const file = path.join(paths.sessions, 'roster-agent-one.md');
+  const file = path.join(paths.sessions, sessionName('agent-one', 'agent one'));
   assert.match(fs.readFileSync(file, 'utf8'), /^## build\n- codex, model: gpt-6-sol$/m);
   // The shared roster did not change.
   assert.equal(readRoster(root), EXAMPLE);
@@ -442,7 +448,7 @@ test('ATRIS_ROSTER_SESSION keys the session file, so two agent shells keep their
   setRosterPick('build', 'codex', { session: true, now: NOW }, root);
   process.env.ATRIS_ROSTER_SESSION = 'shell/b';
   setRosterPick('build', 'cursor', { session: true, now: NOW }, root);
-  assert.deepEqual(fs.readdirSync(paths.sessions).sort(), ['roster-shell-a.md', 'roster-shell-b.md']);
+  assert.deepEqual(fs.readdirSync(paths.sessions).sort(), [sessionName('shell-a', 'shell-a'), sessionName('shell-b', 'shell/b')]);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW }).engine.id, 'cursor');
   process.env.ATRIS_ROSTER_SESSION = 'shell-a';
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW }).engine.id, 'codex');
@@ -452,7 +458,7 @@ test('ATRIS_ROSTER_SESSION keys the session file, so two agent shells keep their
   addMember(root, 'judge', 'Architect');
   writeRoster(root, '# roster\n\n## team\n- judge: codex\n');
   process.env.ATRIS_ROSTER_SESSION = 'shell-a';
-  write(path.join(paths.sessions, 'roster-shell-a.md'), '# roster\n\n## team\n- judge: claude code, model: opus 5.5\n');
+  write(path.join(paths.sessions, sessionName('shell-a', 'shell-a')), '# roster\n\n## team\n- judge: claude code, model: opus 5.5\n');
   const judge = resolveEngineForMember('judge', root, { now: NOW });
   assert.deepEqual([judge.engine.id, judge.model], ['claude', 'claude-opus-5-5']);
 }));
@@ -460,7 +466,7 @@ test('ATRIS_ROSTER_SESSION keys the session file, so two agent shells keep their
 test('a session file nobody read for a day is ignored and removed on the next read', () => withRoom((root, paths) => {
   ready(root, 'codex', 'claude');
   process.env.ATRIS_ROSTER_SESSION = 'old';
-  const file = path.join(paths.sessions, 'roster-old.md');
+  const file = path.join(paths.sessions, sessionName('old', 'old'));
   write(file, '# roster\n\n## build\n- codex\n');
   const fresh = new Date(Date.now() - 23 * 3600 * 1000);
   fs.utimesSync(file, fresh, fresh);
