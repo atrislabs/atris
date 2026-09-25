@@ -61,6 +61,11 @@ function ready(root, ...names) {
   for (const name of names) setEngineHealth(name, 'ready', root);
 }
 
+// The job and team lines of a roster view, without the closing hint.
+function viewLines(out) {
+  return out.trim().split('\n').filter((line) => !line.startsWith('see which tools') && line.trim());
+}
+
 function command(root, args, now = NOW) {
   const logs = [];
   const errors = [];
@@ -87,7 +92,7 @@ test('assign pins the selected engine and threads its model into an automatic mi
   assert.equal(saved.model, 'claude-opus-5-5');
   assert.equal(saved.backup, 'codex');
   assert.equal(saved.until, '');
-  assert.match(projectRosterText(root), /^build: opus 5\.5, backup codex$/m);
+  assert.match(projectRosterText(root), /^## build\n- claude code, model: opus 5\.5\n- codex$/m);
   assert.equal(readEngineRegistry(root).roster, undefined);
   const chosen = resolveEngineForRoleRanked('executor', root, { now: NOW });
   assert.equal(chosen.engine.id, 'claude');
@@ -148,7 +153,7 @@ test('confirm renews all picks for thirty days and roster views show three jobs'
   setRosterPick('review', 'haiku', { backup: 'claude', days: 1, now: NOW }, root);
   const before = command(root, ['roster']);
   assert.equal(before.exit, 0, before.err);
-  assert.equal(before.out.trim().split('\n').length, 3);
+  assert.equal(viewLines(before.out).length, 3);
   assert.match(before.out, /search\s+no pick, router decides: atris-fast \(atris:fast, atris default\)/);
   assert.match(before.out, /build\s+claude \(opus 5\.5\).*backup codex.*until sep 25, this project/);
   const json = command(root, ['roster', '--json']);
@@ -197,7 +202,7 @@ test('a claude model the cli would reject is refused at assign, other engines sa
   const codex = command(root, ['assign', 'build', 'codex', '--model', 'gpt-6-sol']);
   assert.equal(codex.exit, 0, codex.err);
   assert.equal(projectPicks(root).executor.model, 'gpt-6-sol');
-  assert.match(projectRosterText(root), /^build: codex gpt-6-sol$/m);
+  assert.match(projectRosterText(root), /^## build\n- codex, model: gpt-6-sol$/m);
 }));
 
 test('an until date that is not a real YYYY-MM-DD day counts as expired; the until day itself still holds', () => withRoom((root) => {
@@ -222,7 +227,7 @@ test('an all-projects pick applies where the project has none', () => withRoom((
   assert.equal(assigned.exit, 0, assigned.err);
   assert.equal(fs.existsSync(path.join(root, 'atris', 'ROSTER.md')), false);
   assert.equal(fs.existsSync(machineFile), false);
-  assert.match(fs.readFileSync(path.join(path.dirname(machineFile), 'ROSTER.md'), 'utf8'), /^build: opus 5\.5, backup cursor$/m);
+  assert.match(fs.readFileSync(path.join(path.dirname(machineFile), 'ROSTER.md'), 'utf8'), /^## build\n- claude code, model: opus 5\.5\n- cursor$/m);
   assert.equal(machinePicks(root).executor.model, 'claude-opus-5-5');
   assert.equal(machinePicks(root).executor.until, '');
   const chosen = resolveEngineForRoleRanked('executor', root, { now: NOW });
@@ -509,7 +514,7 @@ test('any job name can be assigned: the name says its kind or --like does, and c
   const quick = command(root, ['assign', 'Quick Fixes', 'codex', '--like', 'build']);
   assert.equal(quick.exit, 0, quick.err);
   assert.equal(projectPicks(root)['quick-fixes'].like, 'build');
-  assert.match(projectRosterText(root), /^quick fixes \(like build\): codex$/m);
+  assert.match(projectRosterText(root), /^## quick fixes \(like build\)\n- codex$/m);
   // A later assign of the same job keeps its saved kind without --like.
   assert.equal(command(root, ['assign', 'quick fixes', 'claude']).exit, 0);
   assert.equal(projectPicks(root)['quick-fixes'].engine, 'claude');
@@ -528,7 +533,7 @@ test('any job name can be assigned: the name says its kind or --like does, and c
 
   const view = command(root, ['roster']);
   assert.equal(view.exit, 0, view.err);
-  const lines = view.out.trim().split('\n');
+  const lines = viewLines(view.out);
   const order = ['search', 'build', 'review', 'quick fixes', 'deep search', 'small build'];
   assert.equal(lines.length, order.length);
   order.forEach((label, index) => assert.ok(lines[index].startsWith(`${label} `), lines[index]));
@@ -555,7 +560,7 @@ test('any job name can be assigned: the name says its kind or --like does, and c
   assert.equal(machinePicks(root)['small-build'], undefined);
   assert.equal(command(root, ['assign', 'quick fixes', '--clear']).exit, 0);
   assert.equal(projectPicks(root)['quick-fixes'], undefined);
-  assert.equal(command(root, ['roster']).out.trim().split('\n').length, 4);
+  assert.equal(viewLines(command(root, ['roster']).out).length, 4);
 }));
 
 test('the job option asks for a job by name, then falls back to its kind, then the router', () => withRoom((root) => {
@@ -641,7 +646,7 @@ test('grok friendly names save as grok ids, devin names save as typed, and names
   const assigned = command(root, ['assign', 'small build', 'grok', '--model', 'grok 4.7 fast']);
   assert.equal(assigned.exit, 0, assigned.err);
   assert.equal(projectPicks(root)['small-build'].model, 'grok-4.7-build-fast');
-  assert.match(projectRosterText(root), /^small build: grok 4\.7 fast$/m);
+  assert.match(projectRosterText(root), /^## small build\n- grok, model: grok 4\.7 fast$/m);
   assert.match(assigned.out, /small build\s+grok \(grok 4\.7 fast\)/);
   const refused = command(root, ['assign', 'build', 'grok', '--model', 'sonnet 5']);
   assert.equal(refused.exit, 2);
@@ -666,7 +671,7 @@ test('a roster saved before custom jobs reads, routes, and renders the same', ()
   assert.equal(build.reason, 'roster pick for build: claude');
   assert.equal(resolveEngineForRoleRanked('validator', root, { now: NOW }).engine.id, 'haiku');
   const view = command(root, ['roster']);
-  assert.equal(view.out.trim().split('\n').length, 3);
+  assert.equal(viewLines(view.out).length, 3);
   assert.match(view.out, /build\s+claude \(opus 5\.5\)\s+backup codex \(its own default\)\s+until oct 24, this project/);
   // A normal build and a low-stakes build with no small build pick match.
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW, lowStakes: true }).engine.id, 'claude');

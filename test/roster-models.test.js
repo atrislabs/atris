@@ -235,7 +235,7 @@ test('the owner\'s roster shows the real model and its source on every line, in 
   assert.match(view.out, /^researcher\s+search\s+claude \(opus 5\.5\)\s+from atris\/ROSTER\.md$/m);
   assert.match(view.out, /^codex-executor\s+build\s+codex \(gpt-6-sol, xhigh, from codex settings\)\s+from atris\/ROSTER\.md$/m);
   // Never a bare engine name and never an empty model.
-  for (const line of view.out.split('\n').filter((text) => text && text !== 'team' && !text.startsWith('warning'))) {
+  for (const line of view.out.split('\n').filter((text) => text && text !== 'team' && !text.startsWith('warning') && !text.startsWith('see which tools'))) {
     assert.match(line, /\b[a-z-]+ \([^)]+\)/, line);
     assert.doesNotMatch(line, /\(\)/, line);
   }
@@ -367,8 +367,8 @@ test('assign writes effort, time cap, and a backup with its own model, and keeps
   writeRoster(root, '# roster\n\nreview: claude <!-- keep this note -->\nbuild: claude\n');
   const assigned = command(root, ['assign', 'review', 'codex', '--model', 'gpt-6-astra', '--effort', 'medium', '--max', '20 min', '--backup', 'claude opus 5.5']);
   assert.equal(assigned.exit, 0, assigned.err);
-  assert.match(readRoster(root), /^review: codex gpt-6-astra medium, backup opus 5\.5, max 20 min <!-- keep this note -->$/m);
-  assert.match(readRoster(root), /^build: claude$/m);
+  assert.match(readRoster(root), /^## review <!-- keep this note -->\n- codex, model: gpt-6-astra, effort: medium, max: 20 min\n- claude code, model: opus 5\.5, max: 20 min$/m);
+  assert.match(readRoster(root), /^## build\n- claude code$/m);
   const pick = readRosterState(root, { now: NOW }).project.picks.validator;
   assert.deepEqual(
     [pick.engine, pick.model, pick.effort, pick.backup, pick.backup_model, pick.max_seconds],
@@ -399,7 +399,7 @@ test('until needs a year: a year-less date is a bad line that suggests the full 
   assert.equal(resolveEngineForMember('judge', root, { now: NOW }).pick_source, 'project');
   // An unrelated edit much later never revives it.
   assert.equal(command(root, ['assign', 'search', 'claude'], new Date('2027-09-01T12:00:00Z')).exit, 0);
-  assert.match(readRoster(root), /^build: codex, backup claude opus 5\.5, until oct 24$/m);
+  assert.match(readRoster(root), /^## build\n- codex, until oct 24\n- claude code, model: opus 5\.5$/m);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW }).engine.id, 'claude');
 }));
 
