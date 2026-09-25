@@ -107,3 +107,16 @@ test('assign --like on an existing job changes its kind, and the new worker reso
   setRosterPick('quick fixes', null, { remove: 'haiku', now: NOW }, root);
   assert.match(readRoster(root), /\n## quick fixes \(like search\)\n- atris fast\n/);
 }));
+
+// 3. A lead plus a backup keeps every other worker, in its old order.
+test('assign with --backup keeps the other workers after the lead and backup', () => withRoom((root) => {
+  ready(root, 'codex', 'claude', 'devin', 'cursor', 'grok');
+  writeRoster(root, '# roster\n\n## build\n- codex, effort: high <!-- old lead -->\n- claude code, model: opus 5.5\n- devin, model: swe-2-max, until 2026-10-24\n');
+  setRosterPick('build', 'claude', { backup: 'cursor', now: NOW }, root);
+  assert.equal(readRoster(root), '# roster\n\n## build\n- claude code\n- cursor\n- codex, effort: high <!-- old lead -->\n- devin, model: swe-2-max, until 2026-10-24\n');
+  assert.deepEqual(project(root).picks.executor.workers.map((worker) => worker.engine), ['claude', 'cursor', 'codex', 'devin']);
+  // A lead that already sits lower loses only that one line.
+  writeRoster(root, '# roster\n\n## build\n- codex\n- devin\n- claude code\n- grok\n');
+  setRosterPick('build', 'devin', { backup: 'cursor', now: NOW }, root);
+  assert.equal(readRoster(root), '# roster\n\n## build\n- devin\n- cursor\n- codex\n- claude code\n- grok\n');
+}));
