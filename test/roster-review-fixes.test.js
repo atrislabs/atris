@@ -143,3 +143,150 @@ test('clear and removing the last worker take out every section for that job', (
   setRosterPick('build', null, { remove: 'codex', now: NOW }, root);
   assert.equal(readRoster(root), '# roster\n\n## build\n- claude code\n\n## build\n- cursor\n');
 }));
+
+function waitUntil(predicate, timeoutMs = 5000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const poll = () => {
+      if (predicate()) return resolve();
+      if (Date.now() - started >= timeoutMs) return reject(new Error('timed out waiting for condition'));
+      setTimeout(poll, 10);
+    };
+    poll();
+  });
+}
+
+// 5. A handler registered with process.once removes itself before its async
+// cleanup runs; the dispatch guard must not re-raise and cut that cleanup short.
+test('ctrl-c during a dispatch lets another once handler finish its async cleanup, and still kills the engine', async (t) => {
+  if (process.platform === 'win32') {
+    t.skip('process groups are posix-only');
+    return;
+  }
+  const repoRoot = path.join(__dirname, '..');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-sigint-once-'));
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-sigint-once-wt-'));
+  const binDir = path.join(root, 'bin');
+  const pidFile = path.join(root, 'grandchild.pid');
+  const doneFile = path.join(root, 'cleanup.done');
+  const parentScript = path.join(root, 'parent.js');
+  fs.mkdirSync(binDir, { recursive: true });
+  const fakeCursor = path.join(binDir, 'cursor-agent');
+  fs.writeFileSync(fakeCursor, ['#!/bin/sh', 'sleep 30 &', `echo $! > "${pidFile}"`, 'wait', ''].join('\n'));
+  fs.chmodSync(fakeCursor, 0o755);
+  fs.writeFileSync(parentScript, [
+    'const fs = require("fs");',
+    'const path = require("path");',
+    'const fleet = require(process.argv[2]);',
+    'const [binDir, wt, liveLog, doneFile] = process.argv.slice(3);',
+    'process.once("SIGINT", () => {',
+    '  setTimeout(() => { fs.writeFileSync(doneFile, "done"); process.exit(0); }, 200);',
+    '});',
+    'fleet.dispatchToEngine({',
+    '  task: { display_id: "CLI-SIGINT-ONCE", status: "open", title: "x Done: x. Check: y." },',
+    '  engine: "cursor",',
+    '  worktreePath: wt,',
+    '  skipBriefCapture: true,',
+    '  liveLogPath: liveLog,',
+    '  environment: { PATH: binDir + path.delimiter + process.env.PATH },',
+    '});',
+    '',
+  ].join('\n'));
+  const parent = spawn(process.execPath, [
+    parentScript,
+    path.join(repoRoot, 'lib', 'fleet.js'),
+    binDir,
+    wt,
+    path.join(root, 'dispatch.live.log'),
+    doneFile,
+  ], { cwd: repoRoot, stdio: 'inherit' });
+  try {
+    await waitUntil(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim());
+    const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+    assert.ok(pid > 0, 'the engine should have written its grandchild pid');
+    parent.kill('SIGINT');
+    const closed = await new Promise((resolve) => {
+      const bail = setTimeout(() => resolve(null), 10000);
+      parent.once('close', (code, sig) => {
+        clearTimeout(bail);
+        resolve({ code, sig });
+      });
+    });
+    assert.ok(closed, 'the parent should exit');
+    assert.deepEqual(closed, { code: 0, sig: null }, 'the once handler should own the exit');
+    assert.equal(fs.existsSync(doneFile), true, 'the async cleanup should have finished');
+    await waitUntil(() => {
+      try { process.kill(pid, 0); return false; } catch { return true; }
+    });
+    assert.throws(() => process.kill(pid, 0));
+  } finally {
+    if (parent.exitCode === null && parent.signalCode === null) {
+      try { parent.kill('SIGKILL'); } catch {}
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(wt, { recursive: true, force: true });
+  }
+});
+
+// With two dispatches running and nothing else listening, the last guard to
+// run still re-raises, so a process that would otherwise stay up dies on
+// Ctrl-C and both engines go with it.
+test('ctrl-c during two dispatches at once still ends the parent by SIGINT', async (t) => {
+  if (process.platform === 'win32') {
+    t.skip('process groups are posix-only');
+    return;
+  }
+  const repoRoot = path.join(__dirname, '..');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-sigint-two-'));
+  const binDir = path.join(root, 'bin');
+  const pidFile = path.join(root, 'grandchild.pids');
+  const parentScript = path.join(root, 'parent.js');
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.mkdirSync(path.join(root, 'wt1'));
+  fs.mkdirSync(path.join(root, 'wt2'));
+  const fakeCursor = path.join(binDir, 'cursor-agent');
+  fs.writeFileSync(fakeCursor, ['#!/bin/sh', 'sleep 30 &', `echo $! >> "${pidFile}"`, 'wait', ''].join('\n'));
+  fs.chmodSync(fakeCursor, 0o755);
+  fs.writeFileSync(parentScript, [
+    'const path = require("path");',
+    'const fleet = require(process.argv[2]);',
+    'const [binDir, root] = process.argv.slice(3);',
+    'setInterval(() => {}, 1000);',
+    'for (const name of ["wt1", "wt2"]) {',
+    '  fleet.dispatchToEngine({',
+    '    task: { display_id: "CLI-SIGINT-TWO", status: "open", title: "x Done: x. Check: y." },',
+    '    engine: "cursor",',
+    '    worktreePath: path.join(root, name),',
+    '    skipBriefCapture: true,',
+    '    liveLogPath: path.join(root, name + ".live.log"),',
+    '    environment: { PATH: binDir + path.delimiter + process.env.PATH },',
+    '  });',
+    '}',
+    '',
+  ].join('\n'));
+  const parent = spawn(process.execPath, [parentScript, path.join(repoRoot, 'lib', 'fleet.js'), binDir, root], { cwd: repoRoot, stdio: 'inherit' });
+  const pids = () => (fs.existsSync(pidFile) ? fs.readFileSync(pidFile, 'utf8').split('\n').map(Number).filter((pid) => pid > 0) : []);
+  try {
+    await waitUntil(() => pids().length === 2);
+    parent.kill('SIGINT');
+    const closed = await new Promise((resolve) => {
+      const bail = setTimeout(() => resolve(null), 10000);
+      parent.once('close', (code, sig) => {
+        clearTimeout(bail);
+        resolve({ code, sig });
+      });
+    });
+    assert.deepEqual(closed, { code: null, sig: 'SIGINT' });
+    for (const pid of pids()) {
+      await waitUntil(() => {
+        try { process.kill(pid, 0); return false; } catch { return true; }
+      });
+    }
+  } finally {
+    if (parent.exitCode === null && parent.signalCode === null) {
+      try { parent.kill('SIGKILL'); } catch {}
+    }
+    for (const pid of pids()) { try { process.kill(pid, 'SIGKILL'); } catch {} }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
