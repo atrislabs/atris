@@ -68,11 +68,6 @@ function writeRoster(root, text) {
   fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), text);
 }
 
-// Year-less dates count from when the file was written; pin that moment.
-function writtenAt(file, when = NOW) {
-  fs.utimesSync(file, when, when);
-}
-
 function readRoster(root) {
   return fs.readFileSync(path.join(root, 'atris', 'ROSTER.md'), 'utf8');
 }
@@ -150,18 +145,19 @@ test('model words alone pick the engine by family, and an engine word takes the 
   assert.deepEqual([picks['long-build'].engine, picks['long-build'].model], ['claude', 'opus[1m]']);
 }));
 
-test('backup and until: dates in either spelling, the nearest one not past, and the backup keeps its own model', () => withRoom((root) => {
+test('backup and until: full dates in either spelling, and the backup keeps its own model', () => withRoom((root) => {
   ready(root, 'codex', 'claude', 'cursor');
   writeRoster(root, [
     '# roster',
-    'build: codex, backup opus 5.5, until oct 24',
+    'build: codex, backup opus 5.5, until oct 24 2026',
     'review: claude, until 2026-10-01',
-    'deep build: cursor, until sep 1',
+    'deep build: cursor, until 1 sep 2027',
     'wide build: cursor, until oct 24, 2027',
     '',
   ].join('\n'));
-  writtenAt(path.join(root, 'atris', 'ROSTER.md'));
-  const picks = state(root).project.picks;
+  const read = state(root).project;
+  assert.deepEqual(read.warnings, []);
+  const picks = read.picks;
   assert.equal(picks.executor.until, '2026-10-24');
   assert.equal(picks.validator.until, '2026-10-01');
   assert.equal(picks['deep-build'].until, '2027-09-01');
@@ -172,11 +168,9 @@ test('backup and until: dates in either spelling, the nearest one not past, and 
   assert.equal(later.engine.id, 'claude');
   assert.equal(later.engine.roster_model, 'claude-opus-5-5');
   assert.match(later.reason, /roster pick for build expired, using backup: claude/);
-  // A rewrite by atris pins "oct 24" to the date it meant, so a passed date
-  // stays passed instead of rolling into next year.
+  // A rewrite by atris leaves every other line as written.
   assert.equal(command(root, ['assign', 'search', 'claude'], '2026-10-25T12:00:00Z').exit, 0);
-  assert.match(readRoster(root), /^build: codex, backup opus 5\.5, until 2026-10-24$/m);
-  assert.match(readRoster(root), /^deep build: cursor, until 2027-09-01$/m);
+  assert.match(readRoster(root), /^build: codex, backup opus 5\.5, until oct 24 2026$/m);
   assert.match(readRoster(root), /^wide build: cursor, until oct 24, 2027$/m);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: '2026-10-25T12:00:00Z' }).engine.id, 'claude');
 }));
@@ -320,8 +314,8 @@ test('a project line beats the all-projects line per job, and the view names eac
   assert.equal(review.engine.id, 'codex');
   assert.equal(review.source, 'machine');
   const view = command(root, ['roster']);
-  assert.match(view.out, /build\s+cursor\s+no backup\s+no end date, this project \(atris\/ROSTER\.md\)/);
-  assert.match(view.out, /review\s+codex\s+no backup\s+no end date, all projects \(.*ROSTER\.md\)/);
+  assert.match(view.out, /build\s+cursor \(its own default\)\s+no backup\s+no end date, this project \(atris\/ROSTER\.md\)/);
+  assert.match(view.out, /review\s+codex \(its own default\)\s+no backup\s+no end date, all projects \(.*ROSTER\.md\)/);
   const json = JSON.parse(command(root, ['roster', '--json']).out);
   assert.equal(json.files.project, path.join('atris', 'ROSTER.md'));
   assert.equal(json.files.machine.endsWith('ROSTER.md'), true);
@@ -421,7 +415,7 @@ test('each member resolves to its job pick automatically, and the view shows the
   assert.match(view.out, /^judge\s+review\s+claude \(opus 5\.5\)\s+from atris\/ROSTER\.md$/m);
   const json = JSON.parse(command(root, ['roster', '--json']).out);
   assert.deepEqual(json.team.find((row) => row.member === 'closer'), {
-    member: 'closer', job: 'build', engine: 'claude', model: 'claude-opus-5-5', source: 'auto', file: null, reason: 'closer does build: claude opus 5.5',
+    member: 'closer', job: 'build', engine: 'claude', model: 'claude-opus-5-5', effort: null, max_seconds: null, source: 'auto', file: null, reason: 'closer does build: claude opus 5.5',
   });
 }));
 
@@ -527,5 +521,5 @@ test('with no roster anywhere, member runs, owned missions, and autopilot route 
   for (const phase of ['plan', 'do', 'review']) assert.equal(buildPhaseRunnerCommand(phase, prompt, root), base, phase);
   assert.equal(fs.existsSync(path.join(root, 'atris', 'ROSTER.md')), false);
   const view = command(root, ['roster']);
-  assert.match(view.out, /^researcher\s+search\s+atris-fast\s+automatic$/m);
+  assert.match(view.out, /^researcher\s+search\s+atris-fast \(atris:fast, atris default\)\s+automatic$/m);
 }));

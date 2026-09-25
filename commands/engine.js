@@ -33,6 +33,7 @@ const {
 const { parseScopeFlag } = require('../lib/cli-scope');
 const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
 const { teamRosterView } = require('../lib/member-engine');
+const { engineRunsView } = require('../lib/roster-models');
 const {
   ENGINE_ROLES,
   ENGINE_JOBS,
@@ -45,7 +46,7 @@ const {
   customRosterJobKeys,
   setRosterPick,
   confirmRoster,
-  rosterModelLabel,
+  rosterMaxText,
   parseRosterUntil,
   rosterPickExpired,
   ENGINE_DUTIES,
@@ -1005,6 +1006,17 @@ function jobRosterRow(job, role, root, state, registry, now, key = role) {
       : decided && resolved.source === source && resolved.engine && resolved.engine.id === pick.engine ? 'picked'
         : 'not ready';
   const kind = Object.keys(ENGINE_JOBS).find((name) => ENGINE_JOBS[name] === role);
+  // What the line really runs: the pick and its backup, each with its own
+  // model and effort, or the router's engine when no line decides.
+  const runs = pick
+    ? engineRunsView(pick.engine, { model: pick.model || '', effort: pick.effort || '' })
+    : null;
+  const nowRuns = resolved.engine
+    ? engineRunsView(resolved.engine.id, { model: resolved.engine.roster_model || '', effort: resolved.engine.roster_effort || '' })
+    : null;
+  const backupRuns = pick && pick.backup
+    ? engineRunsView(pick.backup, { model: pick.backup_model || '', effort: pick.backup_effort || '' })
+    : null;
   return {
     job,
     role,
@@ -1016,6 +1028,11 @@ function jobRosterRow(job, role, root, state, registry, now, key = role) {
     machine_pick: machinePick,
     engine: resolved.engine ? resolved.engine.id : null,
     model: resolved.engine && resolved.engine.roster_model ? resolved.engine.roster_model : null,
+    effort: resolved.engine && resolved.engine.roster_effort ? resolved.engine.roster_effort : null,
+    max_seconds: pick && Number(pick.max_seconds) > 0 ? Number(pick.max_seconds) : null,
+    runs: runs || nowRuns,
+    backup_runs: backupRuns,
+    now_runs: nowRuns,
     status,
     reason: resolved.reason,
   };
@@ -1054,13 +1071,16 @@ function rosterReport(root = process.cwd(), now = new Date()) {
 
 function renderJobRoster(rows) {
   const width = Math.max(7, ...rows.map((row) => row.job.length));
+  const ownerWidth = Math.max(24, ...rows.filter((row) => row.pick && row.runs).map((row) => row.runs.text.length));
+  const backupWidth = Math.max(16, ...rows.filter((row) => row.backup_runs).map((row) => row.backup_runs.text.length + 7));
   return rows.map((row) => {
     const label = row.job.padEnd(width);
-    const fallsTo = row.like ? `falls back to ${row.like} (${row.engine || 'none'})` : `router decides (${row.engine || 'none'})`;
-    if (!row.pick) return `${label} no pick, ${row.like ? fallsTo : `router decides (${row.engine || 'none'})`}`;
-    const model = row.pick.model ? ` (${rosterModelLabel(row.pick.model)})` : '';
-    const owner = `${row.pick.engine}${model}`.padEnd(24);
-    const backup = row.pick.backup ? `backup ${row.pick.backup}` : 'no backup';
+    const nowText = row.now_runs ? row.now_runs.text : 'no ready engine';
+    const fallsTo = `${row.like ? `falls back to ${row.like}` : 'router decides'}: ${nowText}`;
+    if (!row.pick) return `${label} no pick, ${fallsTo}`;
+    const owner = row.runs.text.padEnd(ownerWidth);
+    const backup = row.backup_runs ? `backup ${row.backup_runs.text}` : 'no backup';
+    const cap = row.max_seconds ? `${rosterMaxText(row.max_seconds)}, ` : '';
     const until = parseRosterUntil(row.pick.until);
     const date = until ? `until ${until.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase()}`
       : row.pick.never_expires ? 'no end date' : 'until no valid date';
@@ -1069,7 +1089,7 @@ function renderJobRoster(rows) {
       : row.status === 'not ready' ? `not ready, ${fallback}`
         : date;
     const where = row.file ? `${row.from} (${row.file})` : row.from;
-    return `${label} ${owner} ${backup.padEnd(16)} ${status}, ${where}`.trimEnd();
+    return `${label} ${owner} ${backup.padEnd(backupWidth)} ${cap}${status}, ${where}`.trimEnd();
   }).join('\n');
 }
 
@@ -1078,7 +1098,7 @@ function renderTeamRoster(rows) {
   const width = Math.max(6, ...rows.map((row) => row.member.length));
   const jobWidth = Math.max(6, ...rows.map((row) => String(row.job || '').length));
   const lines = rows.map((row) => {
-    const engine = row.engine ? `${row.engine}${row.model ? ` (${rosterModelLabel(row.model)})` : ''}` : 'no ready engine';
+    const engine = row.engine ? engineRunsView(row.engine, { model: row.model || '', effort: row.effort || '' }).text : 'no ready engine';
     const how = row.source === 'file' ? `from ${row.file}` : 'automatic';
     return `${row.member.padEnd(width)} ${String(row.job || '').padEnd(jobWidth)} ${engine.padEnd(24)} ${how}`.trimEnd();
   });

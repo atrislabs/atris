@@ -149,7 +149,7 @@ test('confirm renews all picks for thirty days and roster views show three jobs'
   const before = command(root, ['roster']);
   assert.equal(before.exit, 0, before.err);
   assert.equal(before.out.trim().split('\n').length, 3);
-  assert.match(before.out, /search\s+no pick, router decides \(atris-fast\)/);
+  assert.match(before.out, /search\s+no pick, router decides: atris-fast \(atris:fast, atris default\)/);
   assert.match(before.out, /build\s+claude \(opus 5\.5\).*backup codex.*until sep 25, this project/);
   const json = command(root, ['roster', '--json']);
   assert.equal(json.exit, 0, json.err);
@@ -213,7 +213,7 @@ test('an until date that is not a real YYYY-MM-DD day counts as expired; the unt
   assert.equal(rosterPickExpired({ until: '2026-09-24' }, new Date(2026, 8, 24, 23, 59)), false);
   assert.equal(rosterPickExpired({ until: '2026-09-24' }, new Date(2026, 8, 25, 0, 1)), true);
   const roster = command(root, ['roster']);
-  assert.match(roster.out, /build\s+claude.*expired, router decides \(codex\), this project/);
+  assert.match(roster.out, /build\s+claude.*expired, router decides: codex \(its own default\), this project/);
 }));
 
 test('an all-projects pick applies where the project has none', () => withRoom((root, machineFile) => {
@@ -532,8 +532,8 @@ test('any job name can be assigned: the name says its kind or --like does, and c
   const order = ['search', 'build', 'review', 'quick fixes', 'deep search', 'small build'];
   assert.equal(lines.length, order.length);
   order.forEach((label, index) => assert.ok(lines[index].startsWith(`${label} `), lines[index]));
-  assert.match(view.out, /small build\s+devin \(swe-2-max\)\s+backup grok\s+until oct 24, all projects/);
-  assert.match(view.out, /quick fixes\s+claude\s+no backup\s+no end date, this project/);
+  assert.match(view.out, /small build\s+devin \(swe-2-max\)\s+backup grok \(its own default\)\s+until oct 24, all projects/);
+  assert.match(view.out, /quick fixes\s+claude \(opus 5\.5, atris default\)\s+no backup\s+no end date, this project/);
   const json = JSON.parse(command(root, ['roster', '--json']).out).jobs;
   assert.equal(json.length, 6);
   const row = json.find((entry) => entry.job === 'small build');
@@ -585,7 +585,7 @@ test('the job option asks for a job by name, then falls back to its kind, then t
   assert.equal(kind.reason, 'roster pick for build: claude');
   const view = JSON.parse(command(root, ['roster', '--json']).out).jobs.find((entry) => entry.job === 'small build');
   assert.equal(view.status, 'not ready');
-  assert.match(command(root, ['roster']).out, /small build\s+devin \(swe-2-max\).*not ready, falls back to build \(claude\), this project/);
+  assert.match(command(root, ['roster']).out, /small build\s+devin \(swe-2-max\).*not ready, falls back to build: claude \(opus 5\.5\), this project/);
 
   assert.equal(command(root, ['assign', 'build', '--clear']).exit, 0);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW, job: 'small build' }).source, 'router');
@@ -667,7 +667,7 @@ test('a roster saved before custom jobs reads, routes, and renders the same', ()
   assert.equal(resolveEngineForRoleRanked('validator', root, { now: NOW }).engine.id, 'haiku');
   const view = command(root, ['roster']);
   assert.equal(view.out.trim().split('\n').length, 3);
-  assert.match(view.out, /build\s+claude \(opus 5\.5\)\s+backup codex\s+until oct 24, this project/);
+  assert.match(view.out, /build\s+claude \(opus 5\.5\)\s+backup codex \(its own default\)\s+until oct 24, this project/);
   // A normal build and a low-stakes build with no small build pick match.
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW, lowStakes: true }).engine.id, 'claude');
   assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z').exit, 0);
