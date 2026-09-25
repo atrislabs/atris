@@ -120,3 +120,26 @@ test('assign with --backup keeps the other workers after the lead and backup', (
   setRosterPick('build', 'devin', { backup: 'cursor', now: NOW }, root);
   assert.equal(readRoster(root), '# roster\n\n## build\n- devin\n- cursor\n- codex\n- claude code\n- grok\n');
 }));
+
+// 4. Clearing a job, or removing its last worker, removes every section for
+// it, so an ignored second section cannot take over.
+test('clear and removing the last worker take out every section for that job', () => withRoom((root) => {
+  ready(root, 'codex', 'claude', 'cursor');
+  const twice = '# roster\n\n## build\n- codex\n\n## review\n- claude code\n\n## build\n- cursor\n';
+  writeRoster(root, twice);
+  const warnings = project(root).warnings.filter((warning) => /second time/.test(warning.message));
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0].line, 9);
+  assert.equal(project(root).picks.executor.engine, 'codex');
+  setRosterPick('build', null, { clear: true, now: NOW }, root);
+  assert.equal(readRoster(root), '# roster\n\n## review\n- claude code\n');
+  assert.equal(project(root).picks.executor, undefined);
+  writeRoster(root, twice);
+  setRosterPick('build', null, { remove: 'codex', now: NOW }, root);
+  assert.equal(readRoster(root), '# roster\n\n## review\n- claude code\n');
+  assert.equal(project(root).picks.executor, undefined);
+  // Removing a worker that leaves the first section with others keeps both.
+  writeRoster(root, '# roster\n\n## build\n- codex\n- claude code\n\n## build\n- cursor\n');
+  setRosterPick('build', null, { remove: 'codex', now: NOW }, root);
+  assert.equal(readRoster(root), '# roster\n\n## build\n- claude code\n\n## build\n- cursor\n');
+}));
