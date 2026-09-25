@@ -372,7 +372,9 @@ test('assign sets the lead and keeps the rest; --add, --remove, --backup, and --
   // --backup replaces the second worker, the way it replaced a one-line backup.
   assert.equal(command(root, ['assign', 'search', 'haiku', '--add']).exit, 0);
   assert.equal(command(root, ['assign', 'search', 'atris', 'fast', '--backup', 'claude haiku']).exit, 0);
-  assert.match(readRoster(root), /^## search\n- atris fast\n- claude code, model: haiku\n- haiku\n\n/m);
+  // claude on "haiku" and claude on "haiku 4.5" are written as different
+  // models, so both stay; only an exact tool and model repeat is dropped.
+  assert.match(readRoster(root), /^## search\n- atris fast\n- claude code, model: haiku\n- haiku\n- claude code, model: haiku 4\.5\n\n/m);
   // Setting the lead to a worker already further down does not repeat it.
   assert.equal(command(root, ['assign', 'review', 'claude', '--model', 'opus 5.5', '--effort', 'high', '--max', '30 min', '--days', '3']).exit, 0);
   assert.match(readRoster(root), /^## review\n- claude code, model: opus 5\.5, effort: high, max: 30 min, until 2026-09-27\n\n/m);

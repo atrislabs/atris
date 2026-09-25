@@ -113,12 +113,42 @@ test('assign with --backup keeps the other workers after the lead and backup', (
   ready(root, 'codex', 'claude', 'devin', 'cursor', 'grok');
   writeRoster(root, '# roster\n\n## build\n- codex, effort: high <!-- old lead -->\n- claude code, model: opus 5.5\n- devin, model: swe-2-max, until 2026-10-24\n');
   setRosterPick('build', 'claude', { backup: 'cursor', now: NOW }, root);
-  assert.equal(readRoster(root), '# roster\n\n## build\n- claude code\n- cursor\n- codex, effort: high <!-- old lead -->\n- devin, model: swe-2-max, until 2026-10-24\n');
-  assert.deepEqual(project(root).picks.executor.workers.map((worker) => worker.engine), ['claude', 'cursor', 'codex', 'devin']);
+  // claude with no model and claude on opus 5.5 are two workers, the same
+  // rule assign already uses without --backup.
+  assert.equal(readRoster(root), '# roster\n\n## build\n- claude code\n- cursor\n- codex, effort: high <!-- old lead -->\n- claude code, model: opus 5.5\n- devin, model: swe-2-max, until 2026-10-24\n');
+  assert.deepEqual(project(root).picks.executor.workers.map((worker) => worker.engine), ['claude', 'cursor', 'codex', 'claude', 'devin']);
   // A lead that already sits lower loses only that one line.
   writeRoster(root, '# roster\n\n## build\n- codex\n- devin\n- claude code\n- grok\n');
   setRosterPick('build', 'devin', { backup: 'cursor', now: NOW }, root);
   assert.equal(readRoster(root), '# roster\n\n## build\n- devin\n- cursor\n- codex\n- claude code\n- grok\n');
+}));
+
+// 3b. Workers on the same tool with different models are different workers,
+// so a lead plus a backup never drops one of them, and an old lead keeps its
+// own model when the backup is the same tool on another model.
+test('assign with --backup keeps same-tool workers that run other models', () => withRoom((root) => {
+  ready(root, 'codex', 'claude', 'devin', 'cursor', 'grok');
+  writeRoster(root, '# roster\n\n## build\n- codex\n- claude code, model: opus 5.5\n- claude code, model: haiku 4.5\n- devin\n');
+  setRosterPick('build', 'cursor', { backup: 'grok', now: NOW }, root);
+  assert.equal(readRoster(root), '# roster\n\n## build\n- cursor\n- grok\n- codex\n- claude code, model: opus 5.5\n- claude code, model: haiku 4.5\n- devin\n');
+  writeRoster(root, '# roster\n\n## build\n- devin\n- claude code, model: haiku 4.5\n');
+  setRosterPick('build', 'claude', { model: 'opus 5.5', backup: 'cursor', now: NOW }, root);
+  assert.equal(readRoster(root), '# roster\n\n## build\n- claude code, model: opus 5.5\n- cursor\n- devin\n- claude code, model: haiku 4.5\n');
+  writeRoster(root, '# roster\n\n## build\n- cursor, model: kimi 3 <!-- keep kimi -->\n- codex\n');
+  setRosterPick('build', 'claude', { backup: 'cursor', now: NOW }, root);
+  assert.equal(readRoster(root), '# roster\n\n## build\n- claude code\n- cursor\n- cursor, model: kimi 3 <!-- keep kimi -->\n- codex\n');
+}));
+
+// 2b. An assign that does not change a job's kind leaves its heading exactly
+// as the person wrote it.
+test('assign keeps a heading as written when the kind does not change', () => withRoom((root) => {
+  ready(root, 'codex', 'claude');
+  writeRoster(root, '# roster\n\n## executor\n- codex\n\n## Deep Review (like review)\n- codex\n');
+  setRosterPick('build', 'claude', { now: NOW }, root);
+  setRosterPick('deep review', 'claude', { now: NOW }, root);
+  const text = readRoster(root);
+  assert.match(text, /\n## executor\n- claude code\n/);
+  assert.match(text, /\n## Deep Review \(like review\)\n- claude code\n/);
 }));
 
 // 4. Clearing a job, or removing its last worker, removes every section for
