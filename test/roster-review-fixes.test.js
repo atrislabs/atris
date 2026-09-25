@@ -91,3 +91,19 @@ test('session keys that sanitize the same still get their own files', () => with
   assert.deepEqual(fs.readdirSync(path.dirname(paths.sessions)).sort(), ['sessions']);
   for (const name of fs.readdirSync(paths.sessions)) assert.match(name, /^roster-[A-Za-z0-9_][A-Za-z0-9_.-]*\.md$/);
 }));
+
+// 2. Assign with --like on a job that already has a section writes the new kind.
+test('assign --like on an existing job changes its kind, and the new worker resolves', () => withRoom((root) => {
+  ready(root, 'codex', 'atris-fast', 'haiku');
+  writeRoster(root, '# roster\n\n## quick fixes (like build)\n- codex\n\n## team\n');
+  setRosterPick('quick fixes', 'atris-fast', { like: 'search', now: NOW }, root);
+  assert.match(readRoster(root), /\n## quick fixes \(like search\)\n- atris fast\n/);
+  const pick = project(root).picks['quick-fixes'];
+  assert.equal(pick.like, 'search');
+  assert.equal(pick.engine, 'atris-fast');
+  assert.equal(resolveEngineForRoleRanked('navigator', root, { now: NOW, job: 'quick fixes' }).engine.id, 'atris-fast');
+  // Removing a worker keeps the kind the section already has.
+  setRosterPick('quick fixes', 'haiku', { add: true, now: NOW }, root);
+  setRosterPick('quick fixes', null, { remove: 'haiku', now: NOW }, root);
+  assert.match(readRoster(root), /\n## quick fixes \(like search\)\n- atris fast\n/);
+}));
