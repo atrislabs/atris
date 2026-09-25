@@ -483,6 +483,22 @@ test('member run and a mission with an owner run on the member pick; an explicit
   assert.equal(noOwner.mission.runner, 'codex');
 }));
 
+test('a git worktree with no ROSTER.md of its own reads the main checkout file', () => withRoom((root) => {
+  ready(root, 'codex', 'claude');
+  writeRoster(root, '# roster\nbuild: codex\n');
+  fs.mkdirSync(path.join(root, '.git', 'worktrees', 'lane-1'), { recursive: true });
+  const lane = path.join(root, '.agent-worktrees', 'lane-1');
+  fs.mkdirSync(path.join(lane, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(lane, '.git'), `gitdir: ${path.join(root, '.git', 'worktrees', 'lane-1')}\n`);
+  ready(lane, 'codex', 'claude');
+  const chosen = resolveEngineForRoleRanked('executor', lane, { now: NOW });
+  assert.equal(chosen.engine.id, 'codex');
+  assert.equal(chosen.source, 'project');
+  // Its own file, once it has one, wins.
+  writeRoster(lane, '# roster\nbuild: claude\n');
+  assert.equal(resolveEngineForRoleRanked('executor', lane, { now: NOW }).engine.id, 'claude');
+}));
+
 test('autopilot plan, do, and review run on their member picks; a runner in the environment still wins', () => withRoom((root) => {
   ready(root, 'atris-fast', 'codex', 'claude', 'haiku');
   const prompt = path.join(root, 'prompt.md');
