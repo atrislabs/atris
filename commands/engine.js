@@ -7,10 +7,11 @@
 // same names ride --engine on mission run / autopilot / run.
 //
 //   atris engine            roster + current default
-//   atris engine roster     show the search, build, and review picks
+//   atris engine roster     show every job's pick, built-in jobs first
 //   atris engine roster confirm  renew every pick for 30 days
-//   atris engine assign <job> <engine> [--model <m>] [--backup <engine>] [--days <n>] [--everywhere]
+//   atris engine assign <job> <engine> [--like <kind>] [--model <m>] [--backup <engine>] [--days <n>] [--everywhere]
 //   atris engine assign <job> --clear [--everywhere]
+//   jobs are open-ended: search, build, review, or your own ("small build")
 //   atris engine cursor     make cursor the default engine here
 //   atris engine reset      back to the house default (atris-fast)
 //
@@ -35,7 +36,10 @@ const {
   ENGINE_ROLES,
   ENGINE_JOBS,
   ROSTER_SOURCES,
-  rosterJob,
+  rosterJobKey,
+  rosterJobLabel,
+  rosterJobRole,
+  customRosterJobKeys,
   setRosterPick,
   confirmRoster,
   rosterModelLabel,
@@ -977,47 +981,63 @@ function rosterPickEntry(value) {
   return value && typeof value === 'object' && !Array.isArray(value) && value.engine ? value : null;
 }
 
+function jobRosterRow(job, role, root, machine, registry, now, key = role) {
+  const custom = key !== role || !ENGINE_ROLES.includes(key);
+  const projectPick = rosterPickEntry(registry.roster && registry.roster[key]);
+  const machinePick = rosterPickEntry(machine[key]);
+  const resolved = resolveEngineForRoleRanked(role, root, { now, machineRosterPicks: machine, ...(custom ? { job: key } : {}) });
+  // Show the layer that decided; when none did, show the first one set. A
+  // custom job that fell back to its kind's pick did not decide on its own.
+  const decided = (resolved.source === 'project' || resolved.source === 'machine') && (!custom || resolved.job === job);
+  const source = decided ? resolved.source : projectPick ? 'project' : machinePick ? 'machine' : null;
+  const pick = source === 'project' ? projectPick : source === 'machine' ? machinePick : null;
+  const status = !pick ? 'router'
+    : rosterPickExpired(pick, now) ? 'expired'
+      : decided && resolved.source === source && resolved.engine && resolved.engine.id === pick.engine ? 'picked'
+        : 'not ready';
+  const kind = Object.keys(ENGINE_JOBS).find((name) => ENGINE_JOBS[name] === role);
+  return {
+    job,
+    role,
+    ...(custom ? { key, like: kind } : {}),
+    pick,
+    from: source ? ROSTER_SOURCES[source] : null,
+    project_pick: projectPick,
+    machine_pick: machinePick,
+    engine: resolved.engine ? resolved.engine.id : null,
+    model: resolved.engine && resolved.engine.roster_model ? resolved.engine.roster_model : null,
+    status,
+    reason: resolved.reason,
+  };
+}
+
+// The three built-in jobs first, then the owner's own jobs from this
+// project and from the all-projects roster.
 function jobRosterView(root = process.cwd(), now = new Date()) {
   const registry = readEngineRegistry(root);
   const machine = readMachineRoster();
-  return Object.entries(ENGINE_JOBS).map(([job, role]) => {
-    const projectPick = rosterPickEntry(registry.roster && registry.roster[role]);
-    const machinePick = rosterPickEntry(machine[role]);
-    const resolved = resolveEngineForRoleRanked(role, root, { now, machineRosterPicks: machine });
-    // Show the layer that decided; when none did, show the first one set.
-    const source = resolved.source === 'project' || resolved.source === 'machine'
-      ? resolved.source
-      : projectPick ? 'project' : machinePick ? 'machine' : null;
-    const pick = source === 'project' ? projectPick : source === 'machine' ? machinePick : null;
-    const status = !pick ? 'router'
-      : rosterPickExpired(pick, now) ? 'expired'
-        : resolved.source === source && resolved.engine && resolved.engine.id === pick.engine ? 'picked'
-          : 'not ready';
-    return {
-      job,
-      role,
-      pick,
-      from: source ? ROSTER_SOURCES[source] : null,
-      project_pick: projectPick,
-      machine_pick: machinePick,
-      engine: resolved.engine ? resolved.engine.id : null,
-      model: resolved.engine && resolved.engine.roster_model ? resolved.engine.roster_model : null,
-      status,
-      reason: resolved.reason,
-    };
-  });
+  const rows = Object.entries(ENGINE_JOBS).map(([job, role]) => jobRosterRow(job, role, root, machine, registry, now));
+  const customKeys = [...new Set([...customRosterJobKeys(registry.roster), ...customRosterJobKeys(machine)])];
+  for (const key of customKeys) {
+    const role = rosterJobRole(key, root, { machineRosterPicks: machine });
+    if (!role) continue;
+    rows.push(jobRosterRow(rosterJobLabel(key), role, root, machine, registry, now, key));
+  }
+  return rows;
 }
 
 function renderJobRoster(rows) {
+  const width = Math.max(7, ...rows.map((row) => row.job.length));
   return rows.map((row) => {
-    const label = row.job.padEnd(7);
-    if (!row.pick) return `${label} no pick, router decides (${row.engine || 'none'})`;
+    const label = row.job.padEnd(width);
+    const fallsTo = row.like ? `falls back to ${row.like} (${row.engine || 'none'})` : `router decides (${row.engine || 'none'})`;
+    if (!row.pick) return `${label} no pick, ${row.like ? fallsTo : `router decides (${row.engine || 'none'})`}`;
     const model = row.pick.model ? ` (${rosterModelLabel(row.pick.model)})` : '';
     const owner = `${row.pick.engine}${model}`.padEnd(24);
     const backup = row.pick.backup ? `backup ${row.pick.backup}` : 'no backup';
     const until = parseRosterUntil(row.pick.until);
     const date = until ? until.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase() : 'no valid date';
-    const fallback = row.engine === row.pick.backup ? 'using backup' : `router decides (${row.engine || 'none'})`;
+    const fallback = row.engine === row.pick.backup ? 'using backup' : fallsTo;
     const status = row.status === 'expired' ? `expired, ${fallback}`
       : row.status === 'not ready' ? `not ready, ${fallback}`
         : `until ${date}`;
@@ -1043,9 +1063,9 @@ function runRosterCommand(args, root, now = new Date()) {
 }
 
 function runAssignCommand(args, root, now = new Date()) {
-  const job = rosterJob(args[0]);
-  if (!job) {
-    console.error(`unknown job "${args[0] || ''}". known jobs: search, build, review`);
+  const job = args[0] && !String(args[0]).startsWith('--') ? args[0] : '';
+  if (!job || !rosterJobKey(job)) {
+    console.error('name the job first: atris engine assign <job> <engine>. jobs: search, build, review, or your own, like "small build"');
     return 2;
   }
   const everywhere = args.includes('--everywhere');
@@ -1057,13 +1077,13 @@ function runAssignCommand(args, root, now = new Date()) {
     return 2;
   }
   if (!clear && (!engine || engine.startsWith('--'))) {
-    console.error('usage: atris engine assign <job> <engine> [--model <m>] [--backup <engine>] [--days <n>] [--everywhere]');
+    console.error('usage: atris engine assign <job> <engine> [--like search|build|review] [--model <m>] [--backup <engine>] [--days <n>] [--everywhere]');
     return 2;
   }
   const flags = {};
   for (let i = 1; i < rest.length; i += 1) {
     const arg = rest[i];
-    if (!['--model', '--backup', '--days'].includes(arg) || !rest[i + 1] || rest[i + 1].startsWith('--')) {
+    if (!['--model', '--backup', '--days', '--like'].includes(arg) || !rest[i + 1] || rest[i + 1].startsWith('--')) {
       console.error(`invalid assign option "${arg}"`);
       return 2;
     }
@@ -1227,14 +1247,22 @@ function runResolveCommand(args, root) {
   const json = args.includes('--json');
   const role = args.filter((a) => !String(a).startsWith('--'))[0] || '';
   if (!role) {
-    const message = `usage: atris engine resolve <role>; roles: ${ENGINE_ROLES.join(', ')}`;
+    const message = `usage: atris engine resolve <role> or <job>; roles: ${ENGINE_ROLES.join(', ')}; jobs: search, build, review, or your own`;
     if (json) console.log(JSON.stringify({ ok: false, error: message }, null, 2));
     else console.error(message);
     return 2;
   }
   let picked;
   try {
-    picked = resolveEngineForRoleRanked(role, root);
+    // A role (navigator, executor, validator) resolves as before; any job
+    // name, built-in or the owner's own, resolves through its roster pick.
+    const jobRole = ENGINE_ROLES.includes(String(role).trim().toLowerCase()) ? '' : rosterJobRole(role, root);
+    if (!ENGINE_ROLES.includes(String(role).trim().toLowerCase()) && !jobRole) {
+      throw new Error(`Unknown role "${role}". Known roles: ${ENGINE_ROLES.join(', ')}; jobs: search, build, review, or one set with atris engine assign`);
+    }
+    picked = jobRole
+      ? resolveEngineForRoleRanked(jobRole, root, { job: role })
+      : resolveEngineForRoleRanked(role, root);
   } catch (err) {
     if (json) console.log(JSON.stringify({ ok: false, error: err.message }, null, 2));
     else console.error(err.message);
@@ -1831,7 +1859,7 @@ function engineCommand(args = [], deps = {}) {
     if (sub === 'help' || args.includes('--help') || args.includes('-h')) {
       console.log('\n  atris engine watch [<id>|latest] [--no-follow]\n                           follow one live transcript or list running engine work');
       console.log('\n  long read-only asks: atris engine ask "..." --engine agy --timeout <seconds>\n                           quick asks default to 120 seconds; explicit jobs allow up to 3600\n                           follow live work with atris engine watch latest');
-      console.log('\n  atris engine            roster + current default\n  atris engine roster [--json] show search, build, and review picks\n  atris engine roster confirm renew every pick for 30 days\n  atris engine assign <job> <engine> [--model <m>] [--backup <engine>] [--days <n>] [--everywhere]\n  atris engine assign <job> --clear [--everywhere]\n                           jobs: search, build, review; --everywhere sets the pick for all projects on this machine\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json [--all] full registry: default + engines with tier, roles, fallback, health (--all includes hidden engines)\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> [--json]\n                           choose the best ready engine for navigator|executor|validator\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine bench [names...] [--runs N]\n                           ranked latency scoreboard of engine passes\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine validate <receipt-path|latest> [--engine <name>]\n                           check ask answers with a different read-only referee\n  atris engine validate scoreboard\n                           show pass rates by worker engine\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+      console.log('\n  atris engine            roster + current default\n  atris engine roster [--json] show the pick for every job: search, build, review, and your own\n  atris engine roster confirm renew every pick for 30 days\n  atris engine assign <job> <engine> [--like <kind>] [--model <m>] [--backup <engine>] [--days <n>] [--everywhere]\n  atris engine assign <job> --clear [--everywhere]\n                           jobs: search, build, review, or your own like "small build" (--like search|build|review\n                           when the name does not say); --everywhere sets the pick for all projects on this machine\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json [--all] full registry: default + engines with tier, roles, fallback, health (--all includes hidden engines)\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> or <job> [--json]\n                           choose the best ready engine for navigator|executor|validator or a roster job\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine bench [names...] [--runs N]\n                           ranked latency scoreboard of engine passes\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine validate <receipt-path|latest> [--engine <name>]\n                           check ask answers with a different read-only referee\n  atris engine validate scoreboard\n                           show pass rates by worker engine\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
       return 0;
     }
     if (isFreshWorkspace(root)) {

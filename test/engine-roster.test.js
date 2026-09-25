@@ -20,7 +20,9 @@ const {
   setEngineHealth,
   setRosterPick,
   confirmRoster,
+  resolveEngineForRoleWithPreference,
 } = require('../lib/engine-registry');
+const { auditWish, inferBudgetTier } = require('../lib/wish-audit');
 
 const NOW = new Date('2026-09-24T12:00:00.000Z');
 
@@ -100,7 +102,7 @@ test('clear restores router behavior and invalid jobs or wrong-role engines fail
   assert.equal(cleared.exit, 0, cleared.err);
   assert.equal(readEngineRegistry(root).roster.executor, undefined);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW }).engine.id, 'codex');
-  assert.match(command(root, ['assign', 'fishing', 'codex']).err, /unknown job.*search, build, review/);
+  assert.match(command(root, ['assign', 'fishing', 'codex']).err, /say what kind of job "fishing" is: add --like search, --like build, or --like review/);
   assert.match(command(root, ['assign', 'search', 'codex']).err, /codex cannot do search/);
   assert.match(command(root, ['assign', 'build', 'unknown']).err, /unknown engine/);
 }));
@@ -475,4 +477,192 @@ test('with no roster, review routing is unchanged and codex stays out, fresh or 
   assert.equal(command(root, ['assign', 'review', 'codex']).exit, 0);
   assert.equal(resolveEngineForRoleRanked('validator', root, { now: NOW }).engine.id, 'codex');
   assert.equal(readyValidators(root, '', 'cursor')[0].id, 'codex');
+}));
+
+test('any job name can be assigned: the name says its kind or --like does, and clear, view, json, and confirm cover it', () => withRoom((root, machineFile) => {
+  ready(root, 'codex', 'claude', 'devin', 'grok', 'haiku');
+  const small = command(root, ['assign', 'small build', 'devin', '--model', 'swe-2-max', '--backup', 'grok', '--everywhere']);
+  assert.equal(small.exit, 0, small.err);
+  assert.deepEqual(JSON.parse(fs.readFileSync(machineFile, 'utf8')).roster['small-build'], {
+    engine: 'devin', model: 'swe-2-max', backup: 'grok', until: '2026-10-24', set_at: NOW.toISOString(), like: 'build',
+  });
+  const quick = command(root, ['assign', 'Quick Fixes', 'codex', '--like', 'build']);
+  assert.equal(quick.exit, 0, quick.err);
+  assert.equal(readEngineRegistry(root).roster['quick-fixes'].like, 'build');
+  // A later assign of the same job keeps its saved kind without --like.
+  assert.equal(command(root, ['assign', 'quick fixes', 'claude']).exit, 0);
+  assert.equal(readEngineRegistry(root).roster['quick-fixes'].engine, 'claude');
+
+  const vague = command(root, ['assign', 'hotfix', 'codex']);
+  assert.equal(vague.exit, 2);
+  assert.match(vague.err, /say what kind of job "hotfix" is: add --like search, --like build, or --like review/);
+  const badKind = command(root, ['assign', 'hotfix', 'codex', '--like', 'painting']);
+  assert.equal(badKind.exit, 2);
+  assert.match(badKind.err, /unknown kind "painting"\. use --like search, build, or review/);
+  assert.match(command(root, ['assign', 'deep search', 'codex']).err, /codex cannot do search work, so it cannot take deep search/);
+  // roster-only jobs follow the kind: claude takes search only by pick.
+  assert.equal(command(root, ['assign', 'deep search', 'claude', '--model', 'haiku']).exit, 0);
+  assert.equal(readEngineRegistry(root).roster['deep-search'].like, 'search');
+  assert.equal(readEngineRegistry(root).roster['deep-search'].model, 'haiku');
+
+  const view = command(root, ['roster']);
+  assert.equal(view.exit, 0, view.err);
+  const lines = view.out.trim().split('\n');
+  const order = ['search', 'build', 'review', 'quick fixes', 'deep search', 'small build'];
+  assert.equal(lines.length, order.length);
+  order.forEach((label, index) => assert.ok(lines[index].startsWith(`${label} `), lines[index]));
+  assert.match(view.out, /small build\s+devin \(swe-2-max\)\s+backup grok\s+until oct 24, all projects/);
+  assert.match(view.out, /quick fixes\s+claude\s+no backup\s+until oct 24, this project/);
+  const json = JSON.parse(command(root, ['roster', '--json']).out).jobs;
+  assert.equal(json.length, 6);
+  const row = json.find((entry) => entry.job === 'small build');
+  assert.equal(row.key, 'small-build');
+  assert.equal(row.like, 'build');
+  assert.equal(row.role, 'executor');
+  assert.equal(row.engine, 'devin');
+  assert.equal(row.model, 'swe-2-max');
+  assert.equal(row.status, 'picked');
+  assert.equal(row.from, 'all projects');
+  assert.equal(json.find((entry) => entry.job === 'build').like, undefined);
+
+  assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z').exit, 0);
+  assert.equal(JSON.parse(fs.readFileSync(machineFile, 'utf8')).roster['small-build'].until, '2026-10-27');
+  assert.equal(readEngineRegistry(root).roster['quick-fixes'].until, '2026-10-27');
+
+  assert.equal(command(root, ['assign', 'small build', '--clear', '--everywhere']).exit, 0);
+  assert.equal(JSON.parse(fs.readFileSync(machineFile, 'utf8')).roster['small-build'], undefined);
+  assert.equal(command(root, ['assign', 'quick fixes', '--clear']).exit, 0);
+  assert.equal(readEngineRegistry(root).roster['quick-fixes'], undefined);
+  assert.equal(command(root, ['roster']).out.trim().split('\n').length, 4);
+}));
+
+test('the job option asks for a job by name, then falls back to its kind, then the router', () => withRoom((root) => {
+  ready(root, 'codex', 'claude', 'devin', 'haiku');
+  setRosterPick('build', 'claude', { model: 'opus 5.5', now: NOW }, root);
+  setRosterPick('small build', 'devin', { model: 'swe-2-max', now: NOW }, root);
+  setRosterPick('deep review', 'haiku', { now: NOW }, root);
+  const picked = resolveEngineForRoleRanked('executor', root, { now: NOW, job: 'small build' });
+  assert.equal(picked.engine.id, 'devin');
+  assert.equal(picked.engine.roster_model, 'swe-2-max');
+  assert.equal(picked.job, 'small build');
+  assert.equal(picked.reason, 'roster pick for small build: devin');
+  assert.equal(picked.ranked[0].id, 'devin');
+  // A review job never answers a build question.
+  assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW, job: 'deep review' }).engine.id, 'claude');
+  assert.equal(resolveEngineForRoleRanked('validator', root, { now: NOW, job: 'deep review' }).engine.id, 'haiku');
+  const resolved = command(root, ['resolve', 'small build']);
+  assert.equal(resolved.exit, 0, resolved.err);
+  assert.equal(resolved.out.trim(), 'devin');
+  assert.equal(command(root, ['resolve', 'build']).out.trim(), 'claude');
+  assert.equal(command(root, ['resolve', 'poet']).exit, 2);
+
+  setEngineHealth('devin', 'credit_out', root);
+  const kind = resolveEngineForRoleRanked('executor', root, { now: NOW, job: 'small build' });
+  assert.equal(kind.engine.id, 'claude');
+  assert.equal(kind.engine.roster_model, 'claude-opus-5-5');
+  assert.equal(kind.reason, 'roster pick for build: claude');
+  const view = JSON.parse(command(root, ['roster', '--json']).out).jobs.find((entry) => entry.job === 'small build');
+  assert.equal(view.status, 'not ready');
+  assert.match(command(root, ['roster']).out, /small build\s+devin \(swe-2-max\).*not ready, falls back to build \(claude\), this project/);
+
+  assert.equal(command(root, ['assign', 'build', '--clear']).exit, 0);
+  assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW, job: 'small build' }).source, 'router');
+}));
+
+test('a low-stakes build prefers the small build pick and a normal build ignores it', () => withRoom((root) => {
+  ready(root, 'codex', 'claude', 'devin', 'grok');
+  setRosterPick('build', 'claude', { model: 'opus 5.5', now: NOW }, root);
+  setRosterPick('small build', 'devin', { model: 'swe-2-max', backup: 'grok', now: NOW, everywhere: true }, root);
+  const small = resolveEngineForRoleRanked('executor', root, { now: NOW, lowStakes: true });
+  assert.equal(small.engine.id, 'devin');
+  assert.equal(small.engine.roster_model, 'swe-2-max');
+  assert.equal(small.reason, 'roster pick for small build (all projects): devin');
+  const big = resolveEngineForRoleRanked('executor', root, { now: NOW });
+  assert.equal(big.engine.id, 'claude');
+  assert.equal(big.engine.roster_model, 'claude-opus-5-5');
+  // Only builds read the small build pick.
+  assert.notEqual(resolveEngineForRoleRanked('validator', root, { now: NOW, lowStakes: true }).engine.id, 'devin');
+  // A caller that already named devin still gets the small build model.
+  assert.equal(resolveEngineForRoleWithPreference('executor', root, 'devin', { now: NOW, lowStakes: true }).engine.roster_model, 'swe-2-max');
+  assert.equal(resolveEngineForRoleWithPreference('executor', root, 'devin', { now: NOW }).engine.roster_model, undefined);
+  // A quick wish asks for the small build pick; a bigger one does not.
+  assert.equal(inferBudgetTier('quick fix the typo in the readme'), 'quick');
+  assert.equal(auditWish('quick fix the typo in the readme', root).executor.id, 'devin');
+  assert.equal(auditWish('quick fix the typo in the readme', root).executor.roster_model, 'swe-2-max');
+  assert.notEqual(inferBudgetTier('rewrite the whole router architecture'), 'quick');
+  assert.equal(auditWish('rewrite the whole router architecture', root).executor.id, 'claude');
+  // The backup never inherits the pick's model.
+  setEngineHealth('devin', 'credit_out', root);
+  const backup = resolveEngineForRoleRanked('executor', root, { now: NOW, lowStakes: true });
+  assert.equal(backup.engine.id, 'grok');
+  assert.equal(backup.engine.roster_model, undefined);
+  assert.match(backup.reason, /small build \(all projects\) is not ready, using backup: grok/);
+}));
+
+test('devin and grok launch with the pinned model, and without --model when nothing is pinned', () => {
+  assert.match(buildEngineCommand('devin', '/tmp/prompt.md', { model: 'swe-2-max' }), /^devin -p --permission-mode dangerous --model swe-2-max -- /);
+  assert.match(buildEngineCommand('devin', '/tmp/prompt.md', { sealed: true, model: 'swe-2-max' }), /^devin -p --sandbox --permission-mode accept-edits --model swe-2-max -- /);
+  assert.doesNotMatch(buildEngineCommand('devin', '/tmp/prompt.md'), /--model/);
+  assert.match(buildEngineCommand('grok', '/tmp/prompt.md', { model: 'grok-4.7-build-fast' }), /^grok --always-approve --model grok-4\.7-build-fast -p /);
+  assert.match(buildEngineCommand('grok', '/tmp/prompt.md', { sealed: true, model: 'grok-4.7' }), /^grok --model grok-4\.7 -p .*--sandbox enabled/);
+  assert.doesNotMatch(buildEngineCommand('grok', '/tmp/prompt.md'), /--model|grok-4\.6/);
+});
+
+test('grok friendly names save as grok ids, devin names save as typed, and names an engine cannot take are refused', () => withRoom((root) => {
+  ready(root, 'codex', 'devin', 'grok');
+  assert.equal(normalizeRosterModel('grok', 'grok 4.7 fast'), 'grok-4.7-build-fast');
+  assert.equal(normalizeRosterModel('grok', 'Grok 4.7'), 'grok-4.7');
+  assert.equal(normalizeRosterModel('grok', 'grok-4.7-build-fast'), 'grok-4.7-build-fast');
+  assert.equal(normalizeRosterModel('grok', 'grok-4.5-xhigh'), 'grok-4.5-xhigh');
+  assert.equal(normalizeRosterModel('devin', 'SWE-2 max'), 'SWE-2 max');
+  assert.throws(() => normalizeRosterModel('grok', 'opus 5.5'), /grok does not know the model "opus 5\.5"\. use grok 4\.7 fast, grok 4\.7, or a full grok- id/);
+  const assigned = command(root, ['assign', 'small build', 'grok', '--model', 'grok 4.7 fast']);
+  assert.equal(assigned.exit, 0, assigned.err);
+  assert.equal(readEngineRegistry(root).roster['small-build'].model, 'grok-4.7-build-fast');
+  assert.match(assigned.out, /small build\s+grok \(grok 4\.7 fast\)/);
+  const refused = command(root, ['assign', 'build', 'grok', '--model', 'sonnet 5']);
+  assert.equal(refused.exit, 2);
+  assert.match(refused.err, /grok does not know the model "sonnet 5"/);
+  assert.equal(readEngineRegistry(root).roster.executor, undefined);
+  const engines = JSON.parse(command(root, ['list', '--json']).out).engines;
+  assert.deepEqual(engines.find((engine) => engine.id === 'grok').models, ['grok 4.7 fast', 'grok 4.7']);
+}));
+
+test('a roster saved before custom jobs reads, routes, and renders the same', () => withRoom((root) => {
+  ready(root, 'codex', 'claude', 'haiku');
+  const registry = readEngineRegistry(root);
+  registry.roster = {
+    executor: { engine: 'claude', model: 'claude-opus-5-5', backup: 'codex', until: '2026-10-24', set_at: NOW.toISOString() },
+    validator: { engine: 'haiku', model: '', backup: '', until: '2026-10-24', set_at: NOW.toISOString() },
+    notes: 'kept by hand',
+    'odd-job': { engine: 'codex', model: '', backup: '', until: '2026-10-24', like: 'painting' },
+  };
+  fs.writeFileSync(engineRegistryFile(root), `${JSON.stringify(registry)}\n`);
+  const build = resolveEngineForRoleRanked('executor', root, { now: NOW });
+  assert.equal(build.engine.id, 'claude');
+  assert.equal(build.reason, 'roster pick for build: claude');
+  assert.equal(resolveEngineForRoleRanked('validator', root, { now: NOW }).engine.id, 'haiku');
+  const view = command(root, ['roster']);
+  assert.equal(view.out.trim().split('\n').length, 3);
+  assert.match(view.out, /build\s+claude \(opus 5\.5\)\s+backup codex\s+until oct 24, this project/);
+  // A normal build and a low-stakes build with no small build pick match.
+  assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW, lowStakes: true }).engine.id, 'claude');
+  assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z').exit, 0);
+  const renewed = readEngineRegistry(root).roster;
+  assert.equal(renewed.executor.until, '2026-10-27');
+  assert.equal(renewed.notes, 'kept by hand');
+  assert.equal(renewed.executor.like, undefined);
+}));
+
+test('with no roster, a job or low-stakes build routes exactly like a plain build', () => withRoom((root) => {
+  ready(root, 'codex', 'claude', 'devin', 'grok');
+  const plain = resolveEngineForRoleRanked('executor', root, { now: NOW, lowStakes: true });
+  const job = resolveEngineForRoleRanked('executor', root, { now: NOW, lowStakes: true, job: 'small build' });
+  assert.equal(plain.source, 'router');
+  assert.equal(job.source, 'router');
+  assert.deepEqual(job.ranked.map((engine) => engine.id), plain.ranked.map((engine) => engine.id));
+  const normal = resolveEngineForRoleRanked('executor', root, { now: NOW });
+  const normalJob = resolveEngineForRoleRanked('executor', root, { now: NOW, job: 'small build' });
+  assert.deepEqual(normalJob.ranked.map((engine) => engine.id), normal.ranked.map((engine) => engine.id));
+  assert.equal(readEngineRegistry(root).roster, undefined);
 }));

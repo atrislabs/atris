@@ -221,13 +221,21 @@ test('compat runner profiles resolve to concrete runner configs', () => {
   }
 });
 
-test('grok runner profile uses grok --always-approve and pins grok-4.6', () => {
+test('grok runner profile uses grok --always-approve and rides the grok cli default model', () => {
   withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'grok' }, () => {
     assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.grok);
     assert.equal(resolveClaudeRunnerBin(), 'grok');
-    assert.equal(resolveClaudeRunnerModel({}), 'grok-4.6');
-    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --always-approve -p {prompt}');
+    assert.equal(RUNNER_PROFILE_DEFS.grok.model, '');
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --always-approve {pinnedModelFlag} -p {prompt}');
     assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'grok --always-approve -p "$(cat /tmp/p.tmp)"');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'grok-4.7-build-fast' }), 'grok --always-approve --model grok-4.7-build-fast -p "$(cat /tmp/p.tmp)"');
+  });
+});
+
+test('devin runner profile takes --model only when a model is pinned', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'devin', ATRIS_RUNNER_MODEL: 'claude-opus-5-5' }, () => {
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'devin -p -- "$(cat /tmp/p.tmp)"');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'swe-2-max' }), 'devin -p --model swe-2-max -- "$(cat /tmp/p.tmp)"');
   });
 });
 

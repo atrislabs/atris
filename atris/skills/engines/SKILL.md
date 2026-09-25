@@ -28,6 +28,8 @@ One contract, eleven live profiles. The orchestrator writes a bounded task promp
 
 Before choosing an engine for search, build, or review, run `atris engine roster` and use that job's pick. Only deviate when the user names an engine. The roster is project policy and does not depend on team member files. Add `--everywhere` to `atris engine assign` to set a pick once for every project on this machine; a project's own pick still wins where one is set.
 
+Jobs are open-ended: besides search, build, and review, the owner can add a job like `atris engine assign "small build" devin --model swe-2-max --backup grok`. For a small, tightly specified build slice, use the "small build" pick when `atris engine roster` shows one; bigger builds use the build pick.
+
 ## three verbs
 
 - ask: `atris engine <name> "<question>"`; pin a model with `atris engine <name> --model <model> "<question>"`
