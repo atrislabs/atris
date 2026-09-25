@@ -389,6 +389,28 @@ function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
   if (String(mission && mission.runner || '').trim().toLowerCase() !== MISSION_AUTO_RUNNER) {
     return { mission, engine_id: null, requested_engine: null, engine_fallback_reason: null };
   }
+  // A mission owned by a team member runs on that member's roster pick. An
+  // explicit preferred engine (or a run's --engine) still wins, and with no
+  // roster line behind the member, routing stays exactly as it was.
+  if (!String(mission.preferred_engine || '').trim() && mission.owner) {
+    const { memberRosterEngine } = require('../lib/member-engine');
+    const member = memberRosterEngine(mission.owner, root, options);
+    if (member) {
+      if (process.env.ATRIS_ROUTER_EXPLAIN !== '0') console.error(member.reason);
+      return {
+        mission: {
+          ...mission,
+          runner: member.engine.id,
+          runner_kind: 'engine',
+          ...(!mission.model && member.model ? { model: member.model } : {}),
+        },
+        engine_id: member.engine.id,
+        requested_engine: null,
+        engine_fallback_reason: null,
+        member_engine_reason: member.reason,
+      };
+    }
+  }
   const resolved = resolveEngineForRoleWithPreference('executor', root, mission.preferred_engine, options);
   return {
     mission: resolved.engine ? {

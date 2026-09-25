@@ -484,6 +484,42 @@ function execPhaseCommandSync(cmd, opts = {}) {
   }
 }
 
+// plan, do, and review run as the navigator, executor, and validator. When
+// the roster names an engine for that member, the phase spawns it. A runner
+// set in the environment still wins, and with no roster line behind the
+// member the configured runner runs exactly as before.
+const AUTOPILOT_PHASE_MEMBERS = Object.freeze({ plan: 'navigator', do: 'executor', review: 'validator' });
+const RUNNER_ENV_OVERRIDES = Object.freeze([
+  'ATRIS_RUNNER_PROFILE',
+  'ATRIS_RUNNER_COMMAND_TEMPLATE',
+  'ATRIS_RUNNER_BIN',
+  'ATRIS_CLAUDE_COMMAND_TEMPLATE',
+  'ATRIS_CLAUDE_BIN',
+]);
+
+function autopilotPhaseEngine(phase, cwd = process.cwd()) {
+  const member = AUTOPILOT_PHASE_MEMBERS[phase];
+  if (!member) return null;
+  if (RUNNER_ENV_OVERRIDES.some((name) => String(process.env[name] || '').trim())) return null;
+  const { memberRosterEngine } = require('../lib/member-engine');
+  return memberRosterEngine(member, cwd, { requireMember: false });
+}
+
+function buildPhaseRunnerCommand(phase, promptFile, cwd = process.cwd()) {
+  const allowedTools = 'Bash,Read,Write,Edit,Glob,Grep';
+  const picked = autopilotPhaseEngine(phase, cwd);
+  if (!picked) return buildRunnerCommand({ promptFile, allowedTools });
+  if (process.env.ATRIS_ROUTER_EXPLAIN !== '0') console.error(picked.reason);
+  const previous = process.env.ATRIS_RUNNER_PROFILE;
+  process.env.ATRIS_RUNNER_PROFILE = picked.engine.id;
+  try {
+    return buildRunnerCommand({ promptFile, allowedTools, ...(picked.model ? { model: picked.model } : {}) });
+  } finally {
+    if (previous === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
+    else process.env.ATRIS_RUNNER_PROFILE = previous;
+  }
+}
+
 /**
  * Run a phase via the configured runner subprocess.
  */
@@ -495,8 +531,7 @@ function executePhaseDetailed(phase, context, options = {}) {
   fs.writeFileSync(tmpFile, prompt);
 
   try {
-    const cmd = options.cmdOverride
-      || buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Write,Edit,Glob,Grep' });
+    const cmd = options.cmdOverride || buildPhaseRunnerCommand(phase, tmpFile);
     const env = { ...process.env };
     delete env.CLAUDECODE;
     const output = execPhaseCommandSync(cmd, {
@@ -3875,6 +3910,7 @@ module.exports = {
   isPhaseKillError,
   execPhaseCommandSync,
   executePhaseDetailed,
+  buildPhaseRunnerCommand,
   buildAutopilotGlassLog,
   writeAutopilotGlassLog,
   lessonSlug
