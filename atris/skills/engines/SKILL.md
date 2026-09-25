@@ -26,9 +26,13 @@ One contract, eleven live profiles. The orchestrator writes a bounded task promp
 
 ## Pick the job owner first
 
-Before choosing an engine for search, build, or review, run `atris engine roster` and use that job's pick. Only deviate when the user names an engine. The roster is project policy and does not depend on team member files. Add `--everywhere` to `atris engine assign` to set a pick once for every project on this machine; a project's own pick still wins where one is set.
+Before choosing an engine for search, build, or review, run `atris engine roster` and use that job's pick. Only deviate when the user names an engine.
 
-Jobs are open-ended: besides search, build, and review, the owner can add a job like `atris engine assign "small build" devin --model swe-2-max --backup grok`. For a small, tightly specified build slice, use the "small build" pick when `atris engine roster` shows one; bigger builds use the build pick.
+The roster is a markdown file the owner can edit any time: `atris/ROSTER.md` for this project, `~/.atris/ROSTER.md` for every project on this machine. A project line wins over the machine line for the same job. Each line reads `job: engine or model, backup <engine>, until <date>`, for example `build: opus 5.5` or `small build: devin swe-2-max, backup grok`. `atris engine assign` edits one line and keeps the rest of the file; add `--everywhere` for the machine file. With no ROSTER.md, the older JSON picks still work, and the first assign copies them into the file.
+
+Jobs are open-ended: besides search, build, and review, the owner can add a job like `small build`. For a small, tightly specified build slice, use the "small build" pick when `atris engine roster` shows one; bigger builds use the build pick.
+
+Team members pick automatically. Navigators, researchers, and scouts do search; validators, reviewers, judges, critics, and verifiers do review; everyone else builds. A line under `## team` in ROSTER.md overrides that, with a job (`researcher: search`) or an engine or model (`judge: opus 5.5`). `member run`, missions with an owner, and autopilot's plan, do, and review use the member's pick; `--engine` still wins. `atris engine roster` lists the team and warns about any line it could not use.
 
 ## three verbs
 
