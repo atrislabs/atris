@@ -168,10 +168,10 @@ test('backup and until: full dates in either spelling, and the backup keeps its 
   assert.equal(later.engine.id, 'claude');
   assert.equal(later.engine.roster_model, 'claude-opus-5-5');
   assert.match(later.reason, /roster pick for build expired, using backup: claude/);
-  // A rewrite by atris leaves every other line as written.
+  // The first assign rewrites the file into sections with the same meaning.
   assert.equal(command(root, ['assign', 'search', 'claude'], '2026-10-25T12:00:00Z').exit, 0);
-  assert.match(readRoster(root), /^build: codex, backup opus 5\.5, until oct 24 2026$/m);
-  assert.match(readRoster(root), /^wide build: cursor, until oct 24, 2027$/m);
+  assert.match(readRoster(root), /^## build\n- codex, until 2026-10-24\n- claude code, model: opus 5\.5$/m);
+  assert.match(readRoster(root), /^## wide build\n- cursor, until 2027-10-24$/m);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: '2026-10-25T12:00:00Z' }).engine.id, 'claude');
 }));
 
@@ -242,7 +242,7 @@ test('each kind of bad line gives one plain warning with its file and line, and 
   assert.equal(resolveEngineForMember('judge', root, { now: NOW }).source, 'auto');
 }));
 
-test('assign edits only its own line and keeps comments, order, and notes; clear removes only that line', () => withRoom((root) => {
+test('the first assign turns one-line jobs into sections and keeps comments, order, and notes; clear removes only that job', () => withRoom((root) => {
   ready(root, 'codex', 'claude', 'haiku', 'cursor');
   const original = [
     '# roster',
@@ -262,16 +262,37 @@ test('assign edits only its own line and keeps comments, order, and notes; clear
   ].join('\n');
   writeRoster(root, original);
   assert.equal(command(root, ['assign', 'build', 'cursor']).exit, 0);
-  assert.equal(readRoster(root), original.replace('build: opus 5.5', 'build: cursor'));
+  assert.equal(readRoster(root), [
+    '# roster',
+    '',
+    '> my picks, edited by hand',
+    '',
+    '## search',
+    '- haiku',
+    '',
+    '<!-- build was codex last week -->',
+    '## build',
+    '- cursor',
+    '',
+    '## review',
+    '- codex',
+    '',
+    '## notes',
+    'keep this: exactly as written',
+    '',
+    '## team',
+    '- researcher: search',
+    '',
+  ].join('\n'));
   assert.equal(command(root, ['assign', 'small build', 'codex', '--days', '3']).exit, 0);
-  const lines = readRoster(root).split('\n');
-  assert.equal(lines[lines.indexOf('review: codex') + 1], 'small build: codex, until 2026-09-27');
+  assert.match(readRoster(root), /keep this: exactly as written\n\n## small build\n- codex, until 2026-09-27\n\n## team\n/);
   assert.equal(command(root, ['assign', 'review', '--clear']).exit, 0);
   const cleared = readRoster(root);
-  assert.doesNotMatch(cleared, /^review:/m);
-  assert.match(cleared, /<!-- build was codex last week -->\nbuild: cursor\nsmall build: codex, until 2026-09-27\n/);
-  assert.match(cleared, /## notes\nkeep this: exactly as written\n\n## team\nresearcher: search\n$/);
+  assert.doesNotMatch(cleared, /^## review/m);
+  assert.match(cleared, /<!-- build was codex last week -->\n## build\n- cursor\n\n## notes\nkeep this: exactly as written\n/);
+  assert.match(cleared, /\n## team\n- researcher: search\n$/);
   assert.equal(state(root).project.picks.validator, undefined);
+  assert.deepEqual(state(root).project.warnings, []);
 }));
 
 test('a job name that only looks like a built-in job is refused, and the real build pick stays', () => withRoom((root) => {
@@ -359,16 +380,20 @@ test('the first assign writes ROSTER.md with the JSON picks carried over and lea
   fs.writeFileSync(machine.json, machineJson);
 
   assert.equal(command(root, ['assign', 'search', 'haiku']).exit, 0);
-  assert.equal(readRoster(root).split('\n').filter((line) => /^[a-z ]+(\(like [a-z]+\))?:/.test(line)).join('\n'), [
-    'build: opus 5.5, backup codex, until 2026-10-24',
-    'quick fixes (like build): cursor, until 2026-10-20',
-    'search: haiku',
+  assert.equal(readRoster(root).split('\n').filter((line) => /^(## |- )/.test(line)).join('\n'), [
+    '## build',
+    '- claude code, model: opus 5.5, until 2026-10-24',
+    '- codex',
+    '## quick fixes (like build)',
+    '- cursor, until 2026-10-20',
+    '## search',
+    '- haiku',
   ].join('\n'));
   assert.equal(fs.readFileSync(engineRegistryFile(root), 'utf8'), jsonBefore);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW }).engine.id, 'claude');
 
   assert.equal(command(root, ['assign', 'build', 'cursor', '--everywhere']).exit, 0);
-  assert.match(fs.readFileSync(machine.md, 'utf8'), /^review: haiku, until 2026-10-22\nbuild: cursor$/m);
+  assert.match(fs.readFileSync(machine.md, 'utf8'), /^## review\n- haiku, until 2026-10-22\n\n## build\n- cursor$/m);
   assert.equal(fs.readFileSync(machine.json, 'utf8'), machineJson);
 }));
 

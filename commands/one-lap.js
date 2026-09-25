@@ -12,6 +12,7 @@ const {
   resolveEngineForRoleRanked,
   resolveRegisteredEngine,
   rosterPinFor,
+  rosterDecided,
 } = require('../lib/engine-registry');
 const { parseVerifyCommand } = require('../lib/auto-accept-certified');
 const fleet = require('../lib/fleet');
@@ -172,7 +173,7 @@ function readyExecutor(root, preferred = '') {
 function readyValidators(root, preferred = '', exclude = '') {
   const blocked = String(exclude || '').trim();
   const rosterRanked = resolveEngineForRoleRanked('validator', root);
-  const fromRoster = rosterRanked.source === 'project' || rosterRanked.source === 'machine';
+  const fromRoster = rosterDecided(rosterRanked.source);
   const rosterOrder = !preferred && fromRoster
     ? rosterRanked.ranked.map((engine) => engine.id)
     : [];
