@@ -32,20 +32,22 @@ const {
 } = require('../lib/runner-command');
 const { parseScopeFlag } = require('../lib/cli-scope');
 const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
+const { teamRosterView } = require('../lib/member-engine');
 const {
   ENGINE_ROLES,
   ENGINE_JOBS,
   ROSTER_SOURCES,
   rosterJobKey,
   rosterJobLabel,
+  rosterJobNameError,
   rosterJobRole,
+  readRosterState,
   customRosterJobKeys,
   setRosterPick,
   confirmRoster,
   rosterModelLabel,
   parseRosterUntil,
   rosterPickExpired,
-  readMachineRoster,
   ENGINE_DUTIES,
   ENGINE_HEALTH_STATUSES,
   binInstalled,
@@ -981,11 +983,18 @@ function rosterPickEntry(value) {
   return value && typeof value === 'object' && !Array.isArray(value) && value.engine ? value : null;
 }
 
-function jobRosterRow(job, role, root, machine, registry, now, key = role) {
+function jobRosterRow(job, role, root, state, registry, now, key = role) {
   const custom = key !== role || !ENGINE_ROLES.includes(key);
-  const projectPick = rosterPickEntry(registry.roster && registry.roster[key]);
+  const projectPicks = state.project.picks || {};
+  const machine = state.machine.picks || {};
+  const projectPick = rosterPickEntry(projectPicks[key]);
   const machinePick = rosterPickEntry(machine[key]);
-  const resolved = resolveEngineForRoleRanked(role, root, { now, machineRosterPicks: machine, ...(custom ? { job: key } : {}) });
+  const resolved = resolveEngineForRoleRanked(role, root, {
+    now,
+    projectRosterPicks: projectPicks,
+    machineRosterPicks: machine,
+    ...(custom ? { job: key } : {}),
+  });
   // Show the layer that decided; when none did, show the first one set. A
   // custom job that fell back to its kind's pick did not decide on its own.
   const decided = (resolved.source === 'project' || resolved.source === 'machine') && (!custom || resolved.job === job);
@@ -1002,6 +1011,7 @@ function jobRosterRow(job, role, root, machine, registry, now, key = role) {
     ...(custom ? { key, like: kind } : {}),
     pick,
     from: source ? ROSTER_SOURCES[source] : null,
+    file: source ? state[source].file : null,
     project_pick: projectPick,
     machine_pick: machinePick,
     engine: resolved.engine ? resolved.engine.id : null,
@@ -1013,17 +1023,33 @@ function jobRosterRow(job, role, root, machine, registry, now, key = role) {
 
 // The three built-in jobs first, then the owner's own jobs from this
 // project and from the all-projects roster.
-function jobRosterView(root = process.cwd(), now = new Date()) {
+function jobRosterView(root = process.cwd(), now = new Date(), state = null) {
   const registry = readEngineRegistry(root);
-  const machine = readMachineRoster();
-  const rows = Object.entries(ENGINE_JOBS).map(([job, role]) => jobRosterRow(job, role, root, machine, registry, now));
-  const customKeys = [...new Set([...customRosterJobKeys(registry.roster), ...customRosterJobKeys(machine)])];
+  const layers = state || readRosterState(root, { now });
+  const rows = Object.entries(ENGINE_JOBS).map(([job, role]) => jobRosterRow(job, role, root, layers, registry, now));
+  const customKeys = [...new Set([...customRosterJobKeys(layers.project.picks), ...customRosterJobKeys(layers.machine.picks)])];
   for (const key of customKeys) {
-    const role = rosterJobRole(key, root, { machineRosterPicks: machine });
+    const role = rosterJobRole(key, root, { now, projectRosterPicks: layers.project.picks, machineRosterPicks: layers.machine.picks });
     if (!role) continue;
-    rows.push(jobRosterRow(rosterJobLabel(key), role, root, machine, registry, now, key));
+    rows.push(jobRosterRow(rosterJobLabel(key), role, root, layers, registry, now, key));
   }
   return rows;
+}
+
+// Jobs, the team, and one warning per roster line that could not be used.
+function rosterReport(root = process.cwd(), now = new Date()) {
+  const state = readRosterState(root, { now });
+  const jobs = jobRosterView(root, now, state);
+  const team = teamRosterView(root, { now, rosterState: state });
+  return {
+    jobs,
+    team: team.rows,
+    warnings: [...state.project.warnings, ...state.machine.warnings, ...team.warnings],
+    files: {
+      project: state.project.format === 'none' ? null : state.project.file,
+      machine: state.machine.format === 'none' ? null : state.machine.file,
+    },
+  };
 }
 
 function renderJobRoster(rows) {
@@ -1036,17 +1062,41 @@ function renderJobRoster(rows) {
     const owner = `${row.pick.engine}${model}`.padEnd(24);
     const backup = row.pick.backup ? `backup ${row.pick.backup}` : 'no backup';
     const until = parseRosterUntil(row.pick.until);
-    const date = until ? until.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase() : 'no valid date';
+    const date = until ? `until ${until.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase()}`
+      : row.pick.never_expires ? 'no end date' : 'until no valid date';
     const fallback = row.engine === row.pick.backup ? 'using backup' : fallsTo;
     const status = row.status === 'expired' ? `expired, ${fallback}`
       : row.status === 'not ready' ? `not ready, ${fallback}`
-        : `until ${date}`;
-    return `${label} ${owner} ${backup.padEnd(16)} ${status}, ${row.from}`.trimEnd();
+        : date;
+    const where = row.file ? `${row.from} (${row.file})` : row.from;
+    return `${label} ${owner} ${backup.padEnd(16)} ${status}, ${where}`.trimEnd();
   }).join('\n');
 }
 
+function renderTeamRoster(rows) {
+  if (!rows.length) return '';
+  const width = Math.max(6, ...rows.map((row) => row.member.length));
+  const jobWidth = Math.max(6, ...rows.map((row) => String(row.job || '').length));
+  const lines = rows.map((row) => {
+    const engine = row.engine ? `${row.engine}${row.model ? ` (${rosterModelLabel(row.model)})` : ''}` : 'no ready engine';
+    const how = row.source === 'file' ? `from ${row.file}` : 'automatic';
+    return `${row.member.padEnd(width)} ${String(row.job || '').padEnd(jobWidth)} ${engine.padEnd(24)} ${how}`.trimEnd();
+  });
+  return ['team', ...lines].join('\n');
+}
+
+function renderRosterWarnings(warnings) {
+  return warnings.map((warning) => `warning: ${warning.file} line ${warning.line} "${warning.text}" ${warning.message}.`).join('\n');
+}
+
+function renderRosterReport(report) {
+  return [renderJobRoster(report.jobs), renderTeamRoster(report.team), renderRosterWarnings(report.warnings)]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 function printJobRoster(root, now = new Date()) {
-  console.log(renderJobRoster(jobRosterView(root, now)));
+  console.log(renderRosterReport(rosterReport(root, now)));
 }
 
 function runRosterCommand(args, root, now = new Date()) {
@@ -1056,16 +1106,20 @@ function runRosterCommand(args, root, now = new Date()) {
     return 2;
   }
   if (rest[0] === 'confirm') confirmRoster(root, now);
-  const rows = jobRosterView(root, now);
-  if (args.includes('--json')) console.log(JSON.stringify({ jobs: rows }, null, 2));
-  else console.log(renderJobRoster(rows));
+  const report = rosterReport(root, now);
+  if (args.includes('--json')) console.log(JSON.stringify(report, null, 2));
+  else console.log(renderRosterReport(report));
   return 0;
 }
 
 function runAssignCommand(args, root, now = new Date()) {
   const job = args[0] && !String(args[0]).startsWith('--') ? args[0] : '';
-  if (!job || !rosterJobKey(job)) {
+  if (!job) {
     console.error('name the job first: atris engine assign <job> <engine>. jobs: search, build, review, or your own, like "small build"');
+    return 2;
+  }
+  if (!rosterJobKey(job)) {
+    console.error(rosterJobNameError(job));
     return 2;
   }
   const everywhere = args.includes('--everywhere');
@@ -1077,7 +1131,7 @@ function runAssignCommand(args, root, now = new Date()) {
     return 2;
   }
   if (!clear && (!engine || engine.startsWith('--'))) {
-    console.error('usage: atris engine assign <job> <engine> [--like search|build|review] [--model <m>] [--backup <engine>] [--days <n>] [--everywhere]');
+    console.error('usage: atris engine assign <job> <engine> [--like search|build|review] [--model <m>] [--backup <engine>] [--days <n>] [--everywhere]. picks live in atris/ROSTER.md (or ~/.atris/ROSTER.md with --everywhere) and you can edit that file any time');
     return 2;
   }
   const flags = {};

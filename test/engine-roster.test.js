@@ -21,6 +21,7 @@ const {
   setRosterPick,
   confirmRoster,
   resolveEngineForRoleWithPreference,
+  readRosterState,
 } = require('../lib/engine-registry');
 const { auditWish, inferBudgetTier } = require('../lib/wish-audit');
 
@@ -40,6 +41,19 @@ function withRoom(fn) {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   }
+}
+
+// Picks now live in ROSTER.md; these read them the way routing does.
+function projectPicks(root) {
+  return readRosterState(root, { now: NOW }).project.picks;
+}
+
+function machinePicks(root) {
+  return readRosterState(root, { now: NOW }).machine.picks;
+}
+
+function projectRosterText(root) {
+  return fs.readFileSync(path.join(root, 'atris', 'ROSTER.md'), 'utf8');
 }
 
 function ready(root, ...names) {
@@ -68,8 +82,13 @@ test('assign pins the selected engine and threads its model into an automatic mi
   ready(root, 'codex', 'claude');
   const assigned = command(root, ['assign', 'builder', 'claude', '--model', 'claude-opus-5-5', '--backup', 'codex']);
   assert.equal(assigned.exit, 0, assigned.err);
-  const saved = readEngineRegistry(root).roster.executor;
-  assert.deepEqual(saved, { engine: 'claude', model: 'claude-opus-5-5', backup: 'codex', until: '2026-10-24', set_at: NOW.toISOString() });
+  const saved = projectPicks(root).executor;
+  assert.equal(saved.engine, 'claude');
+  assert.equal(saved.model, 'claude-opus-5-5');
+  assert.equal(saved.backup, 'codex');
+  assert.equal(saved.until, '');
+  assert.match(projectRosterText(root), /^build: opus 5\.5, backup codex$/m);
+  assert.equal(readEngineRegistry(root).roster, undefined);
   const chosen = resolveEngineForRoleRanked('executor', root, { now: NOW });
   assert.equal(chosen.engine.id, 'claude');
   assert.equal(chosen.engine.roster_model, 'claude-opus-5-5');
@@ -100,7 +119,7 @@ test('clear restores router behavior and invalid jobs or wrong-role engines fail
   setRosterPick('build', 'claude', { now: NOW }, root);
   const cleared = command(root, ['assign', 'executor', '--clear']);
   assert.equal(cleared.exit, 0, cleared.err);
-  assert.equal(readEngineRegistry(root).roster.executor, undefined);
+  assert.equal(projectPicks(root).executor, undefined);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW }).engine.id, 'codex');
   assert.match(command(root, ['assign', 'fishing', 'codex']).err, /say what kind of job "fishing" is: add --like search, --like build, or --like review/);
   assert.match(command(root, ['assign', 'search', 'codex']).err, /codex cannot do search/);
@@ -109,9 +128,9 @@ test('clear restores router behavior and invalid jobs or wrong-role engines fail
 
 test('a registry normalization rewrite preserves roster, unknown keys, and engine entries', () => withRoom((root) => {
   ready(root, 'codex');
-  setRosterPick('build', 'codex', { now: NOW }, root);
   const file = engineRegistryFile(root);
   const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  saved.roster = { executor: { engine: 'codex', model: '', backup: '', until: '2026-10-24' } };
   saved.other_policy = { keep: true };
   saved.engines.find((entry) => entry.id === 'codex').custom_field = 'keep';
   saved.engines.pop();
@@ -137,12 +156,12 @@ test('confirm renews all picks for thirty days and roster views show three jobs'
   assert.equal(JSON.parse(json.out).jobs.length, 3);
   const confirmed = command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z');
   assert.equal(confirmed.exit, 0, confirmed.err);
-  assert.equal(readEngineRegistry(root).roster.executor.until, '2026-10-27');
-  assert.equal(readEngineRegistry(root).roster.validator.until, '2026-10-27');
+  assert.equal(projectPicks(root).executor.until, '2026-10-27');
+  assert.equal(projectPicks(root).validator.until, '2026-10-27');
   const bare = command(root, []);
   assert.ok(bare.out.indexOf('search') < bare.out.indexOf('engines:'));
   confirmRoster(root, '2026-10-01T12:00:00Z');
-  assert.equal(readEngineRegistry(root).roster.executor.until, '2026-10-31');
+  assert.equal(projectPicks(root).executor.until, '2026-10-31');
 }));
 
 test('assign saves the model id the claude cli accepts, whatever the spelling', () => withRoom((root) => {
@@ -163,7 +182,7 @@ test('assign saves the model id the claude cli accepts, whatever the spelling', 
   for (const [engine, typed, saved, shown] of cases) {
     const result = command(root, ['assign', 'review', engine, '--model', typed]);
     assert.equal(result.exit, 0, `${typed}: ${result.err}`);
-    assert.equal(readEngineRegistry(root).roster.validator.model, saved, typed);
+    assert.equal(projectPicks(root).validator.model, saved, typed);
     assert.ok(result.out.includes(`${engine} (${shown})`), `${typed}: ${result.out}`);
   }
 }));
@@ -173,11 +192,12 @@ test('a claude model the cli would reject is refused at assign, other engines sa
   const refused = command(root, ['assign', 'build', 'claude', '--model', 'gpt-6-sol']);
   assert.equal(refused.exit, 2);
   assert.match(refused.err, /claude does not know the model "gpt-6-sol"\. use opus, sonnet, haiku/);
-  assert.equal(readEngineRegistry(root).roster, undefined);
+  assert.equal(fs.existsSync(path.join(root, 'atris', 'ROSTER.md')), false);
   assert.throws(() => normalizeRosterModel('fable', 'opus five'), /fable does not know the model/);
   const codex = command(root, ['assign', 'build', 'codex', '--model', 'gpt-6-sol']);
   assert.equal(codex.exit, 0, codex.err);
-  assert.equal(readEngineRegistry(root).roster.executor.model, 'gpt-6-sol');
+  assert.equal(projectPicks(root).executor.model, 'gpt-6-sol');
+  assert.match(projectRosterText(root), /^build: codex gpt-6-sol$/m);
 }));
 
 test('an until date that is not a real YYYY-MM-DD day counts as expired; the until day itself still holds', () => withRoom((root) => {
@@ -200,16 +220,17 @@ test('an all-projects pick applies where the project has none', () => withRoom((
   ready(root, 'codex', 'claude', 'cursor');
   const assigned = command(root, ['assign', 'build', 'claude', '--model', 'opus 5.5', '--backup', 'cursor', '--everywhere']);
   assert.equal(assigned.exit, 0, assigned.err);
-  assert.equal(readEngineRegistry(root).roster, undefined);
-  const machine = JSON.parse(fs.readFileSync(machineFile, 'utf8'));
-  assert.equal(machine.roster.executor.model, 'claude-opus-5-5');
-  assert.equal(machine.roster.executor.until, '2026-10-24');
+  assert.equal(fs.existsSync(path.join(root, 'atris', 'ROSTER.md')), false);
+  assert.equal(fs.existsSync(machineFile), false);
+  assert.match(fs.readFileSync(path.join(path.dirname(machineFile), 'ROSTER.md'), 'utf8'), /^build: opus 5\.5, backup cursor$/m);
+  assert.equal(machinePicks(root).executor.model, 'claude-opus-5-5');
+  assert.equal(machinePicks(root).executor.until, '');
   const chosen = resolveEngineForRoleRanked('executor', root, { now: NOW });
   assert.equal(chosen.engine.id, 'claude');
   assert.equal(chosen.engine.roster_model, 'claude-opus-5-5');
   assert.equal(chosen.source, 'machine');
   assert.equal(chosen.reason, 'roster pick for build (all projects): claude');
-  assert.match(assigned.out, /build\s+claude \(opus 5\.5\).*backup cursor.*until oct 24, all projects/);
+  assert.match(assigned.out, /build\s+claude \(opus 5\.5\).*backup cursor.*no end date, all projects/);
   // A second project on this machine gets the same pick with no extra step.
   withRoom((other) => {
     process.env.ATRIS_MACHINE_ROSTER_PATH = machineFile;
@@ -235,8 +256,8 @@ test('a project pick beats the all-projects pick, and clear --everywhere only cl
   assert.equal(build.machine_pick.engine, 'claude');
   const cleared = command(root, ['assign', 'build', '--clear', '--everywhere']);
   assert.equal(cleared.exit, 0, cleared.err);
-  assert.equal(JSON.parse(fs.readFileSync(machineFile, 'utf8')).roster.executor, undefined);
-  assert.equal(readEngineRegistry(root).roster.executor.engine, 'cursor');
+  assert.equal(machinePicks(root).executor, undefined);
+  assert.equal(projectPicks(root).executor.engine, 'cursor');
   assert.equal(command(root, ['assign', 'build', '--clear']).exit, 0);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW }).source, 'router');
 }));
@@ -246,8 +267,8 @@ test('roster confirm renews this project and the all-projects picks', () => with
   setRosterPick('build', 'claude', { days: 1, now: NOW }, root);
   setRosterPick('review', 'haiku', { days: 1, now: NOW, everywhere: true }, root);
   assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z').exit, 0);
-  assert.equal(readEngineRegistry(root).roster.executor.until, '2026-10-27');
-  assert.equal(JSON.parse(fs.readFileSync(machineFile, 'utf8')).roster.validator.until, '2026-10-27');
+  assert.equal(projectPicks(root).executor.until, '2026-10-27');
+  assert.equal(machinePicks(root).validator.until, '2026-10-27');
 }));
 
 test('the pinned model reaches one-lap builds and reviews and missions that already named the engine', () => withRoom((root) => {
@@ -355,7 +376,7 @@ test('every model name the claude cli takes is accepted, and garbage is still re
     assert.equal(normalizeRosterModel(engine, typed), saved, typed);
     const result = command(root, ['assign', 'review', engine, '--model', typed]);
     assert.equal(result.exit, 0, `${typed}: ${result.err}`);
-    assert.equal(readEngineRegistry(root).roster.validator.model, saved, typed);
+    assert.equal(projectPicks(root).validator.model, saved, typed);
   }
   for (const typed of ['gpt-9', 'gpt-9[1m]', '[1m]']) {
     assert.throws(() => normalizeRosterModel('claude', typed), /claude does not know the model/, typed);
@@ -443,7 +464,7 @@ test('codex can be picked as the reviewer here or everywhere, and one-lap review
   ready(root, 'codex', 'claude', 'haiku');
   const everywhere = command(root, ['assign', 'review', 'codex', '--everywhere']);
   assert.equal(everywhere.exit, 0, everywhere.err);
-  assert.equal(JSON.parse(fs.readFileSync(machineFile, 'utf8')).roster.validator.engine, 'codex');
+  assert.equal(machinePicks(root).validator.engine, 'codex');
   const machine = resolveEngineForRoleRanked('validator', root, { now: NOW });
   assert.equal(machine.engine.id, 'codex');
   assert.equal(machine.source, 'machine');
@@ -481,17 +502,17 @@ test('with no roster, review routing is unchanged and codex stays out, fresh or 
 
 test('any job name can be assigned: the name says its kind or --like does, and clear, view, json, and confirm cover it', () => withRoom((root, machineFile) => {
   ready(root, 'codex', 'claude', 'devin', 'grok', 'haiku');
-  const small = command(root, ['assign', 'small build', 'devin', '--model', 'swe-2-max', '--backup', 'grok', '--everywhere']);
+  const small = command(root, ['assign', 'small build', 'devin', '--model', 'swe-2-max', '--backup', 'grok', '--days', '30', '--everywhere']);
   assert.equal(small.exit, 0, small.err);
-  assert.deepEqual(JSON.parse(fs.readFileSync(machineFile, 'utf8')).roster['small-build'], {
-    engine: 'devin', model: 'swe-2-max', backup: 'grok', until: '2026-10-24', set_at: NOW.toISOString(), like: 'build',
-  });
+  const smallPick = machinePicks(root)['small-build'];
+  assert.deepEqual([smallPick.engine, smallPick.model, smallPick.backup, smallPick.until, smallPick.like], ['devin', 'swe-2-max', 'grok', '2026-10-24', 'build']);
   const quick = command(root, ['assign', 'Quick Fixes', 'codex', '--like', 'build']);
   assert.equal(quick.exit, 0, quick.err);
-  assert.equal(readEngineRegistry(root).roster['quick-fixes'].like, 'build');
+  assert.equal(projectPicks(root)['quick-fixes'].like, 'build');
+  assert.match(projectRosterText(root), /^quick fixes \(like build\): codex$/m);
   // A later assign of the same job keeps its saved kind without --like.
   assert.equal(command(root, ['assign', 'quick fixes', 'claude']).exit, 0);
-  assert.equal(readEngineRegistry(root).roster['quick-fixes'].engine, 'claude');
+  assert.equal(projectPicks(root)['quick-fixes'].engine, 'claude');
 
   const vague = command(root, ['assign', 'hotfix', 'codex']);
   assert.equal(vague.exit, 2);
@@ -502,8 +523,8 @@ test('any job name can be assigned: the name says its kind or --like does, and c
   assert.match(command(root, ['assign', 'deep search', 'codex']).err, /codex cannot do search work, so it cannot take deep search/);
   // roster-only jobs follow the kind: claude takes search only by pick.
   assert.equal(command(root, ['assign', 'deep search', 'claude', '--model', 'haiku']).exit, 0);
-  assert.equal(readEngineRegistry(root).roster['deep-search'].like, 'search');
-  assert.equal(readEngineRegistry(root).roster['deep-search'].model, 'haiku');
+  assert.equal(projectPicks(root)['deep-search'].like, 'search');
+  assert.equal(projectPicks(root)['deep-search'].model, 'haiku');
 
   const view = command(root, ['roster']);
   assert.equal(view.exit, 0, view.err);
@@ -512,7 +533,7 @@ test('any job name can be assigned: the name says its kind or --like does, and c
   assert.equal(lines.length, order.length);
   order.forEach((label, index) => assert.ok(lines[index].startsWith(`${label} `), lines[index]));
   assert.match(view.out, /small build\s+devin \(swe-2-max\)\s+backup grok\s+until oct 24, all projects/);
-  assert.match(view.out, /quick fixes\s+claude\s+no backup\s+until oct 24, this project/);
+  assert.match(view.out, /quick fixes\s+claude\s+no backup\s+no end date, this project/);
   const json = JSON.parse(command(root, ['roster', '--json']).out).jobs;
   assert.equal(json.length, 6);
   const row = json.find((entry) => entry.job === 'small build');
@@ -525,14 +546,15 @@ test('any job name can be assigned: the name says its kind or --like does, and c
   assert.equal(row.from, 'all projects');
   assert.equal(json.find((entry) => entry.job === 'build').like, undefined);
 
+  // Confirm renews dated lines only; a line with no until never expires.
   assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z').exit, 0);
-  assert.equal(JSON.parse(fs.readFileSync(machineFile, 'utf8')).roster['small-build'].until, '2026-10-27');
-  assert.equal(readEngineRegistry(root).roster['quick-fixes'].until, '2026-10-27');
+  assert.equal(machinePicks(root)['small-build'].until, '2026-10-27');
+  assert.equal(projectPicks(root)['quick-fixes'].until, '');
 
   assert.equal(command(root, ['assign', 'small build', '--clear', '--everywhere']).exit, 0);
-  assert.equal(JSON.parse(fs.readFileSync(machineFile, 'utf8')).roster['small-build'], undefined);
+  assert.equal(machinePicks(root)['small-build'], undefined);
   assert.equal(command(root, ['assign', 'quick fixes', '--clear']).exit, 0);
-  assert.equal(readEngineRegistry(root).roster['quick-fixes'], undefined);
+  assert.equal(projectPicks(root)['quick-fixes'], undefined);
   assert.equal(command(root, ['roster']).out.trim().split('\n').length, 4);
 }));
 
@@ -618,12 +640,13 @@ test('grok friendly names save as grok ids, devin names save as typed, and names
   assert.throws(() => normalizeRosterModel('grok', 'opus 5.5'), /grok does not know the model "opus 5\.5"\. use grok 4\.7 fast, grok 4\.7, or a full grok- id/);
   const assigned = command(root, ['assign', 'small build', 'grok', '--model', 'grok 4.7 fast']);
   assert.equal(assigned.exit, 0, assigned.err);
-  assert.equal(readEngineRegistry(root).roster['small-build'].model, 'grok-4.7-build-fast');
+  assert.equal(projectPicks(root)['small-build'].model, 'grok-4.7-build-fast');
+  assert.match(projectRosterText(root), /^small build: grok 4\.7 fast$/m);
   assert.match(assigned.out, /small build\s+grok \(grok 4\.7 fast\)/);
   const refused = command(root, ['assign', 'build', 'grok', '--model', 'sonnet 5']);
   assert.equal(refused.exit, 2);
   assert.match(refused.err, /grok does not know the model "sonnet 5"/);
-  assert.equal(readEngineRegistry(root).roster.executor, undefined);
+  assert.equal(projectPicks(root).executor, undefined);
   const engines = JSON.parse(command(root, ['list', '--json']).out).engines;
   assert.deepEqual(engines.find((engine) => engine.id === 'grok').models, ['grok 4.7 fast', 'grok 4.7']);
 }));
