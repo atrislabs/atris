@@ -28,7 +28,9 @@ One contract, eleven live profiles. The orchestrator writes a bounded task promp
 
 Before choosing an engine for search, build, or review, run `atris engine roster` and use that job's pick. Only deviate when the user names an engine.
 
-The roster is a markdown file the owner can edit any time: `atris/ROSTER.md` for this project, `~/.atris/ROSTER.md` for every project on this machine. A project line wins over the machine line for the same job. Each line reads `job: engine or model, backup <engine>, until <date>`, for example `build: opus 5.5` or `small build: devin swe-2-max, backup grok`. `atris engine assign` edits one line and keeps the rest of the file; add `--everywhere` for the machine file. With no ROSTER.md, the older JSON picks still work, and the first assign copies them into the file.
+The roster is a markdown file the owner can edit any time: `atris/ROSTER.md` for this project, `~/.atris/ROSTER.md` for every project on this machine. A project line wins over the machine line for the same job. Each line reads `job: engine and model, backup <engine and model>, until <date with year>`, for example `build: claude opus 5.5` or `small build: devin swe-2-max, backup grok, until 2026-10-24`. `atris engine assign` edits one line and keeps the rest of the file; add `--everywhere` for the machine file. With no ROSTER.md, the older JSON picks still work, and the first assign copies them into the file.
+
+A line can also set effort after the model and a time cap, like `review: codex gpt-6-astra medium, max 20 min`; the run is stopped at the cap, and an engine that cannot take the effort gets a warning instead. Heavy models like astra and fable should only judge: have the search pick write them a trimmed brief first.
 
 Jobs are open-ended: besides search, build, and review, the owner can add a job like `small build`. For a small, tightly specified build slice, use the "small build" pick when `atris engine roster` shows one; bigger builds use the build pick.
 
