@@ -177,8 +177,11 @@ function readyValidators(root, preferred = '', exclude = '') {
     ? rosterRanked.ranked.map((engine) => engine.id)
     : [];
   const pinned = fromRoster && rosterRanked.engine && rosterRanked.engine.roster_model ? rosterRanked.engine : null;
+  // A roster pick can name an engine that reviews only when picked (codex),
+  // so the roster's list joins even when an engine lacks the role.
+  const rosterPicked = new Set(fromRoster ? rosterRanked.ranked.map((engine) => engine.id) : []);
   const candidates = engineRegistryView(root)
-    .filter((engine) => engine.roles.includes('validator'))
+    .filter((engine) => engine.roles.includes('validator') || rosterPicked.has(engine.id))
     .filter((engine) => engine.id !== blocked)
     .sort((a, b) => {
       const aPreferred = preferred && a.id === preferred ? 0 : 1;

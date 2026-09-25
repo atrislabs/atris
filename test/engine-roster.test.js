@@ -436,3 +436,43 @@ test('a pick saved as a string or a list shows as no pick', () => withRoom((root
     assert.equal(row.machine_pick, null);
   }
 }));
+
+test('codex can be picked as the reviewer here or everywhere, and one-lap reviews with it', () => withRoom((root, machineFile) => {
+  ready(root, 'codex', 'claude', 'haiku');
+  const everywhere = command(root, ['assign', 'review', 'codex', '--everywhere']);
+  assert.equal(everywhere.exit, 0, everywhere.err);
+  assert.equal(JSON.parse(fs.readFileSync(machineFile, 'utf8')).roster.validator.engine, 'codex');
+  const machine = resolveEngineForRoleRanked('validator', root, { now: NOW });
+  assert.equal(machine.engine.id, 'codex');
+  assert.equal(machine.source, 'machine');
+  const assigned = command(root, ['assign', 'review', 'codex', '--backup', 'claude']);
+  assert.equal(assigned.exit, 0, assigned.err);
+  const chosen = resolveEngineForRoleRanked('validator', root, { now: NOW });
+  assert.equal(chosen.engine.id, 'codex');
+  assert.equal(chosen.reason, 'roster pick for review: codex');
+  assert.deepEqual(chosen.ranked.map((engine) => engine.id), ['codex', 'claude', 'fable', 'haiku', 'commandcode']);
+  const validators = readyValidators(root, '', 'claude');
+  assert.equal(validators[0].id, 'codex');
+  assert.match(buildEngineCommand('codex', '/tmp/prompt.md', { sealed: true }), /codex exec --sandbox workspace-write /);
+  // The builder is never its own reviewer: a codex build skips the codex pick.
+  assert.equal(readyValidators(root, '', 'codex')[0].id, 'claude');
+}));
+
+test('with no roster, review routing is unchanged and codex stays out, fresh or saved', () => withRoom((root) => {
+  ready(root, 'codex', 'claude', 'haiku');
+  const before = ['claude', 'fable', 'haiku', 'commandcode'];
+  const fresh = resolveEngineForRoleRanked('validator', root, { now: NOW });
+  assert.equal(fresh.source, 'router');
+  assert.deepEqual(fresh.ranked.map((engine) => engine.id), before);
+  assert.deepEqual(readyValidators(root, '', 'cursor').map((engine) => engine.id), before);
+  const file = engineRegistryFile(root);
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  saved.engines.find((entry) => entry.id === 'codex').roles = ['executor'];
+  fs.writeFileSync(file, `${JSON.stringify(saved)}\n`);
+  const reread = resolveEngineForRoleRanked('validator', root, { now: NOW });
+  assert.deepEqual(reread.ranked.map((engine) => engine.id), before);
+  assert.deepEqual(readyValidators(root, '', 'cursor').map((engine) => engine.id), before);
+  assert.equal(command(root, ['assign', 'review', 'codex']).exit, 0);
+  assert.equal(resolveEngineForRoleRanked('validator', root, { now: NOW }).engine.id, 'codex');
+  assert.equal(readyValidators(root, '', 'cursor')[0].id, 'codex');
+}));
