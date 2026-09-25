@@ -28,11 +28,12 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | engine dispatch runner command | `lib/runner-command.js` | builds runner argv, model precedence |
 | engine profiles defined | `lib/engine-registry.js` | profile-name list |
 | engine command | `commands/engine.js` | atris engine |
-| project job roster storage and routing | `lib/engine-registry.js:404`, `lib/engine-registry.js:449`, `lib/engine-registry.js:484`, `lib/engine-registry.js:516` | assign, confirm, and resolve search, build, and review picks: project pick, backup, all-projects pick, backup, router |
-| roster model names and dates | `lib/engine-registry.js:337`, `lib/engine-registry.js:324` | saves the claude model id the cli accepts; invalid until dates count as expired |
-| all-projects roster | `lib/engine-registry.js:384` | `~/.atris/roster.json`, written by `assign --everywhere` |
-| project job roster commands and view | `commands/engine.js:974`, `commands/engine.js:1026`, `commands/engine.js:1039` | view, confirm, assign, and clear picks, with where each pick came from |
-| roster model reaches runs | `lib/engine-registry.js:562`, `commands/mission.js:388`, `commands/one-lap.js:203`, `lib/fleet.js:2812` | carries the pinned model into missions, one-lap builds and reviews, and fleet spawns |
+| project job roster storage and routing | `lib/engine-registry.js:306`, `lib/engine-registry.js:521`, `lib/engine-registry.js:576`, `lib/engine-registry.js:612`, `lib/engine-registry.js:664` | job names to roster keys, assign, confirm, and resolve any job: the three built-in jobs plus the owner's own (saved by slug with a like field naming search, build, or review); project pick, backup, all-projects pick, backup, then the job's kind, then the router |
+| roster model names and dates | `lib/engine-registry.js:425`, `lib/engine-registry.js:418`, `lib/engine-registry.js:390` | saves the claude model id the cli accepts and the grok id for friendly grok names; invalid until dates count as expired |
+| all-projects roster | `lib/engine-registry.js:482` | `~/.atris/roster.json`, written by `assign --everywhere` |
+| project job roster commands and view | `commands/engine.js:1016`, `commands/engine.js:1052`, `commands/engine.js:1065`, `commands/engine.js:1246` | view (built-in jobs first, then custom), confirm, assign with `--like`, clear, and `resolve <job>` |
+| roster model reaches runs | `lib/engine-registry.js:712`, `commands/mission.js:388`, `commands/one-lap.js:206`, `lib/fleet.js:2812`, `lib/runner-command.js:182` | carries the pinned model into missions, one-lap builds and reviews, and fleet spawns; devin and grok get `--model` only when pinned |
+| small build pick | `lib/engine-registry.js:649`, `lib/wish-audit.js:436` | a low-stakes build or the job option checks the "small build" pick first; quick wishes ask for it |
 | read-only engine asks | `lib/engine-ask.js` | per-engine headless ask argv |
 | fleet flights | `lib/fleet.js` | parallel engine builds, ship gate, landed proof handoff |
 | autopilot | `commands/autopilot.js` | one tick plan, do, review |
