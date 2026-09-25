@@ -123,7 +123,9 @@ test('a dispatch time cap kills the whole engine process group', async (t) => {
       worktreePath: wt,
       skipBriefCapture: true,
       liveLogPath: path.join(root, 'dispatch.live.log'),
-      timeoutMs: 300,
+      // long enough for the fake engine to start its grandchild on a busy
+      // machine; at 300ms the cap sometimes fired before the pid was written.
+      timeoutMs: 3000,
       environment: { PATH: `${binDir}${path.delimiter}${process.env.PATH}` },
     });
     assert.equal(result.timed_out, true);
