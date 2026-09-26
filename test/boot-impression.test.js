@@ -129,3 +129,105 @@ test('boot panel shows only the newest wiki brief and stays silent without brief
     cleanupTempDir(dir);
   }
 });
+
+// --- the team line: which tool and model does each job ----------------------
+
+// A scratch home so the real ~/.atris roster and sessions are never read.
+function lineupEnv(dir) {
+  return {
+    ATRIS_MACHINE_ROSTER_PATH: path.join(dir, 'home', '.atris', 'roster.json'),
+    ATRIS_ROSTER_SESSION: '',
+    ATRIS_CODEX_CONFIG_PATH: path.join(dir, 'home', 'no-codex-config.toml'),
+    ATRIS_RUNNER_MODEL: '',
+    ATRIS_ROUTER_EXPLAIN: '0',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    NODE_NO_WARNINGS: '1',
+  };
+}
+
+function seedRosterRoom(dir, rosterText) {
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+  if (rosterText) fs.writeFileSync(path.join(dir, 'atris', 'ROSTER.md'), rosterText, 'utf8');
+  const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
+  readEngineRegistry(dir);
+  for (const name of ['claude', 'codex', 'grok']) setEngineHealth(name, 'ready', dir);
+}
+
+function teamLines(stdout) {
+  return stdout.split('\n').filter((line) => /^  team /.test(line));
+}
+
+const BOOT_ROSTER = [
+  '# roster',
+  '## build',
+  '- claude code, model: opus 5.5',
+  '## review',
+  '- codex, model: gpt-6-astra, effort: medium',
+  '## search',
+  '- claude code, model: haiku 4.5',
+  '',
+].join('\n');
+
+test('boot shows which tool and model leads each built-in job', () => {
+  const dir = makeTempDir();
+  try {
+    seedRosterRoom(dir, `${BOOT_ROSTER}## small build\n- grok, model: grok 4.7 fast, max: 20 min\n`);
+    const boot = runCli(['atris.md'], { cwd: dir, env: lineupEnv(dir) });
+    assert.equal(boot.status, 0, boot.stderr);
+    // The custom job does not fit on the line, so it stops at the built-ins.
+    assert.deepEqual(teamLines(boot.stdout), ['  team     build opus 5.5 · review codex gpt-6-astra · search haiku 4.5']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('boot adds custom jobs when they still fit on one line', () => {
+  const dir = makeTempDir();
+  try {
+    seedRosterRoom(dir, [
+      '# roster', '## build', '- codex', '## review', '- claude code, model: opus 5.5', '## search', '- claude code, model: haiku 4.5',
+      '## quick build', '- grok', '',
+    ].join('\n'));
+    const boot = runCli(['atris.md'], { cwd: dir, env: lineupEnv(dir) });
+    assert.equal(boot.status, 0, boot.stderr);
+    const [line] = teamLines(boot.stdout);
+    assert.equal(line, '  team     build codex · review opus 5.5 · search haiku 4.5 · quick build grok');
+    assert.ok(line.length <= 80);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('boot with no roster shows the router picks in the same shape or nothing, and never crashes', () => {
+  const dir = makeTempDir();
+  try {
+    seedRosterRoom(dir, '');
+    const boot = runCli(['atris.md'], { cwd: dir, env: lineupEnv(dir) });
+    assert.equal(boot.status, 0, boot.stderr);
+    const lines = teamLines(boot.stdout);
+    assert.ok(lines.length <= 1);
+    if (lines.length) assert.match(lines[0], /^  team     build \S/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('a roster reader that throws drops the team line and the boot still finishes', () => {
+  const dir = makeTempDir();
+  try {
+    seedRosterRoom(dir, BOOT_ROSTER);
+    const preload = path.join(dir, 'break-roster.js');
+    fs.writeFileSync(preload, `const engine = require(${JSON.stringify(path.join(repoRoot, 'commands', 'engine.js'))});\nengine.jobRosterView = () => { throw new Error('roster exploded'); };\n`, 'utf8');
+    const result = spawnSync(process.execPath, ['-r', preload, cliPath, 'atris.md'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 20000,
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ...lineupEnv(dir) },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(teamLines(result.stdout), []);
+    assert.match(result.stdout, /^  next\b/m);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
