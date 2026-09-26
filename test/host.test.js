@@ -351,7 +351,7 @@ test('one nudge per person can request a time and booking closes the schedule re
   const nudges = hostAction(root, 'outbox', { now: intro.nudge_at }).filter((message) => message.kind === 'nudge');
   assert.equal(nudges.length, 2);
   assert.equal(hostAction(root, 'outbox', { now: intro.nudge_at }).filter((message) => message.kind === 'nudge').length, 2);
-  assert.equal(nudges.find((message) => message.to === ada).text, 'Did you and Cora find a time for a fifteen minute tasting yet? If not, want me to find one for you both? Reply yes or no.');
+  assert.equal(nudges.find((message) => message.to === ada).text, 'Want me to find a time for you and Cora to do a fifteen minute tasting? Reply yes or no (no if you already have one).');
   assert.equal(hostAction(root, 'receive', { eventId: 'nudge-no', from: cora, text: 'Maybe later', decision: 'no', replyTo: nudges.find((message) => message.to === cora).id, now: intro.nudge_at }).kind, 'nudge');
   assert.equal(hostAction(root, 'schedule', { now: intro.nudge_at }).length, 0);
   assert.equal(hostAction(root, 'receive', { eventId: 'nudge-yes', from: ada, text: 'yes', now: intro.nudge_at }).kind, 'nudge');
