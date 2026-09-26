@@ -33,6 +33,10 @@ function privateData(root, id) {
 }
 function outbox(root) { return hostAction(root, 'outbox'); }
 function introFiles(root) { return fs.readdirSync(path.join(root, 'atris', 'team', 'host', 'private', 'intros')).filter((name) => name.endsWith('.md')); }
+function introFile(root) { return path.join(root, 'atris', 'team', 'host', 'private', 'intros', introFiles(root)[0]); }
+function introData(root) {
+  return Object.fromEntries(fs.readFileSync(introFile(root), 'utf8').split('\n---\n')[0].slice(4).split('\n').map((line) => { const i = line.indexOf(': '); return [line.slice(0, i), JSON.parse(line.slice(i + 2))]; }));
+}
 function future(iso, days) { return new Date(Date.parse(iso) + days * 86400000).toISOString(); }
 function propose(root, a, b) { return hostAction(root, 'propose', { a, b, reason: 'Ada has a new coffee event and Cora wants a welcoming place for her poetry group.', activity: 'a fifteen minute tasting', text: 'Ada, meet Cora. Try a tasting together.' }); }
 
@@ -86,16 +90,92 @@ test('an unclear intro reply is saved as a question answer or a note', (t) => {
   assert.equal(outbox(root).filter((message) => message.to === ben && message.kind === 'clarify').length, 1);
 });
 
-test('a late bare yes or no stays a note while the question remains open', (t) => {
+test('without reply-to a pending question takes a bare yes or no when no intro is open', (t) => {
   const root = workspace(t);
   const [ada, ben] = people(root);
   for (const [id, reply] of [[ada, 'yes'], [ben, 'no']]) {
     hostAction(root, 'ask', { id, question: 'What made you smile?' });
     const pending = privateData(root, id).pending_question_id;
-    assert.equal(hostAction(root, 'receive', { eventId: `late-${reply}`, from: id, text: reply }).kind, 'note');
-    assert.equal(privateData(root, id).pending_question_id, pending);
+    assert.equal(hostAction(root, 'receive', { eventId: `late-${reply}`, from: id, text: reply }).kind, 'answer');
+    assert.notEqual(privateData(root, id).pending_question_id, pending);
+    assert.equal(privateData(root, id).pending_question_id, null);
     assert.match(fs.readFileSync(privateFile(root, id), 'utf8'), new RegExp(`Note: ${reply}`));
   }
+});
+
+test('reply-to routes a fun answer to its question while an intro ask is open', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  const asked = hostAction(root, 'ask', { id: ada, question: 'What made you smile?' });
+  propose(root, ada, cora);
+  const reply = JSON.parse(run(root, 'host', 'receive', '--event-id', 'threaded-answer', '--from', ada, '--text', 'A tiny concert.', '--reply-to', asked.message_id, '--json'));
+  assert.equal(reply.kind, 'answer');
+  assert.equal(privateData(root, ada).pending_question_id, null);
+  assert.equal(introData(root).a_said, null);
+  assert.match(fs.readFileSync(privateFile(root, ada), 'utf8'), /Note: A tiny concert\./);
+});
+
+test('an unknown reply-to stays a note instead of answering another open prompt', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  hostAction(root, 'ask', { id: ada, question: 'What made you smile?' });
+  propose(root, ada, cora);
+  assert.equal(hostAction(root, 'receive', { eventId: 'unknown-thread', from: ada, text: 'Yes!', replyTo: 'missing-message' }).kind, 'note');
+  assert.ok(privateData(root, ada).pending_question_id);
+  assert.equal(introData(root).a_said, null);
+});
+
+test('first-word consent accepts a friendly yes and keeps the full note', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  propose(root, ada, cora);
+  const ask = outbox(root).find((message) => message.to === ada && message.kind === 'intro_ask');
+  assert.equal(hostAction(root, 'receive', { eventId: 'friendly-yes', from: ada, text: 'Yes! who is it?', replyTo: ask.id }).kind, 'intro_yes');
+  assert.equal(introData(root).a_said, 'yes');
+  assert.match(fs.readFileSync(privateFile(root, ada), 'utf8'), /Note: Yes! who is it\?/);
+});
+
+test('without reply-to a first-word yes goes to the open intro before the question', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  hostAction(root, 'ask', { id: ada, question: 'What made you smile?' });
+  propose(root, ada, cora);
+  assert.equal(hostAction(root, 'receive', { eventId: 'bare-intro-yes', from: ada, text: '🤝 Yep, sounds good.' }).kind, 'intro_yes');
+  assert.ok(privateData(root, ada).pending_question_id);
+  assert.equal(introData(root).a_said, 'yes');
+});
+
+test('unclear consent gets a private restatement of the specific offer', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  propose(root, ada, cora);
+  assert.equal(hostAction(root, 'receive', { eventId: 'unclear-offer', from: ada, text: 'Tell me more.' }).kind, 'clarify');
+  const clarify = outbox(root).find((message) => message.to === ada && message.kind === 'clarify');
+  assert.equal(clarify.text, 'Quick check on the intro with Cora (a fifteen minute tasting): would you like it? Reply yes or no.');
+  assert.equal(hostAction(root, 'receive', { eventId: 'clarified-yes', from: ada, text: 'Absolutely, sounds great.', replyTo: clarify.id }).kind, 'intro_yes');
+});
+
+test('due skips people awaiting an intro answer', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  propose(root, ada, cora);
+  const due = hostAction(root, 'due');
+  assert.equal(due.some((entry) => entry.id === ada || entry.id === cora), false);
+});
+
+test('people exposes only published cards and introduction availability', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  hostAction(root, 'receive', { eventId: 'private-note', from: ada, text: 'My secret answer.' });
+  propose(root, ada, cora);
+  const roster = JSON.parse(run(root, 'host', 'people', '--json'));
+  assert.equal(roster.length, 10);
+  assert.equal(roster.find((entry) => entry.id === ada).can_be_introduced, false);
+  assert.equal(roster.find((entry) => entry.id === cora).can_be_introduced, false);
+  assert.equal(roster.find((entry) => entry.name === 'Eli').can_be_introduced, true);
+  assert.deepEqual(Object.keys(roster[0]).sort(), ['id', 'name', 'team', 'manager_id', 'status', 'can_be_introduced', 'into_lately', 'going_for', 'great_at', 'wants_to_meet', 'worth_celebrating'].sort());
+  assert.doesNotMatch(JSON.stringify(roster), /secret answer|declin|response_rate/i);
+  assert.match(run(root, 'host', 'people'), /can be introduced: no/);
 });
 
 test('cards reject operations and stale model work; views hide other answers', (t) => {
@@ -150,6 +230,58 @@ test('an introduced pair gets a confirmed link and cannot be proposed again', (t
   assert.ok(Number.isFinite(Date.parse(links[0].at)));
   assert.throws(() => hostAction(root, 'propose', { a: ada, b: cora, reason: 'Meet again', activity: 'coffee', text: 'Hello', now: future(links[0].at, 31) }), /already linked/);
   assert.equal(hostAction(root, 'link', { a: ben, b: dev, source: 'intro', evidence: 'Introduced before tracking started.' }).linked, true);
+});
+
+test('followups queue once and two confirmations create one met link', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  const settingsFile = path.join(root, 'atris', 'team', 'host', 'private', 'config.json');
+  const oldSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  delete oldSettings.followup_days;
+  fs.writeFileSync(settingsFile, JSON.stringify(oldSettings));
+  propose(root, ada, cora);
+  hostAction(root, 'receive', { eventId: 'followup-intro-a', from: ada, text: 'Yes!' });
+  hostAction(root, 'receive', { eventId: 'followup-intro-b', from: cora, text: 'Yep.' });
+  const introduced = introData(root);
+  assert.equal(introduced.followup_at, future(introduced.introduced_at, 14));
+  const when = introduced.followup_at;
+  const first = hostAction(root, 'outbox', { now: when }).filter((message) => message.kind === 'followup');
+  assert.equal(first.length, 2);
+  assert.equal(hostAction(root, 'outbox', { now: when }).filter((message) => message.kind === 'followup').length, 2);
+  assert.match(first.find((message) => message.to === ada).text, /Did you and Cora end up doing a fifteen minute tasting\? Worth doing again\? Reply yes or no\./);
+  assert.equal(hostAction(root, 'receive', { eventId: 'met-a', from: ada, text: 'Yes, and it was lovely.', replyTo: first.find((message) => message.to === ada).id, now: when }).kind, 'followup');
+  assert.equal(hostAction(root, 'receive', { eventId: 'met-b', from: cora, text: 'Absolutely!', replyTo: first.find((message) => message.to === cora).id, now: when }).kind, 'followup');
+  assert.equal(introData(root).a_met, 'yes');
+  assert.equal(introData(root).b_met, 'yes');
+  const links = fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'links.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(links.filter((link) => link.source === 'met').length, 1);
+  assert.match(hostAction(root, 'room', { now: when }).text, /## Introductions that happened\n\n1/);
+});
+
+test('an introduction saved before followup fields existed still loads and gains them on write', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  propose(root, ada, cora);
+  const file = introFile(root);
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/^(introduced_at|followup_at|followup_sent|a_met|b_met): .*\n/gm, ''));
+  assert.equal(hostAction(root, 'receive', { eventId: 'old-intro-yes', from: ada, text: 'Yes.' }).kind, 'intro_yes');
+  assert.equal(introData(root).a_met, null);
+  assert.equal(introData(root).followup_at, null);
+  assert.ok(fs.readFileSync(file, 'utf8').includes('followup_sent: null'));
+});
+
+test('room suppresses new-person coverage below ten and counts met links at ten', (t) => {
+  const root = workspace(t);
+  const ids = people(root);
+  hostAction(root, 'leave', { id: ids[9] });
+  const small = hostAction(root, 'room').text.split('## New people finding their people\n\n')[1].split('\n\n##')[0];
+  assert.equal(small, 'Not enough new people yet to report this (need 10).');
+  hostAction(root, 'resume', { id: ids[9] });
+  hostAction(root, 'link', { a: ids[0], b: ids[2], source: 'met', evidence: 'Both confirmed coffee.' });
+  hostAction(root, 'link', { a: ids[0], b: ids[3], source: 'met', evidence: 'Both confirmed a walk.' });
+  const coverage = hostAction(root, 'room').text.split('## New people finding their people\n\n')[1].split('\n\n##')[0];
+  assert.equal(coverage, '1 of 10 new people have at least two confirmed connections.');
+  assert.doesNotMatch(coverage, /Ada|Cora|Dev/);
 });
 
 test('expired introductions disappear from the outbox and sent messages stay recorded', (t) => {
