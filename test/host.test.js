@@ -132,6 +132,44 @@ test('reply-to routes a fun answer to its question while an intro ask is open', 
   assert.match(fs.readFileSync(privateFile(root, ada), 'utf8'), /A: A tiny concert\./);
 });
 
+test('sent stores an optional provider reference and validates its size', (t) => {
+  const root = workspace(t);
+  const [ada, ben] = people(root);
+  const adaMessage = outbox(root).find((message) => message.to === ada);
+  const benMessage = outbox(root).find((message) => message.to === ben);
+  const ref = 'x'.repeat(200);
+  assert.deepEqual(JSON.parse(run(root, 'host', 'sent', adaMessage.id, '--ref', ref, '--json')), { id: adaMessage.id, state: 'sent' });
+  const saved = JSON.parse(fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'outbox', `${adaMessage.id}.json`), 'utf8'));
+  assert.equal(saved.ref, ref);
+  assert.equal(saved.state, 'sent');
+  run(root, 'host', 'sent', benMessage.id, '--json');
+  const withoutRef = JSON.parse(fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'outbox', `${benMessage.id}.json`), 'utf8'));
+  assert.equal(Object.hasOwn(withoutRef, 'ref'), false);
+  assert.throws(() => hostAction(root, 'sent', { id: benMessage.id, ref: 'x\ny' }), /ref must be one line/);
+  assert.throws(() => hostAction(root, 'sent', { id: benMessage.id, ref: 'x'.repeat(201) }), /ref must be at most 200 characters/);
+});
+
+test('reply-to-ref routes by provider reference and sender, with unknown refs unthreaded', (t) => {
+  const root = workspace(t);
+  const [ada, ben, cora] = people(root);
+  const ref = '1712345678.123456';
+  const benQuestion = hostAction(root, 'ask', { id: ben, question: 'What made you smile?' });
+  hostAction(root, 'sent', { id: benQuestion.message_id, ref });
+  const adaQuestion = hostAction(root, 'ask', { id: ada, question: 'What made you smile?' });
+  hostAction(root, 'sent', { id: adaQuestion.message_id, ref });
+  propose(root, ada, cora);
+  const reply = JSON.parse(run(root, 'host', 'receive', '--event-id', 'provider-answer', '--from', ada, '--text', 'A tiny concert.', '--reply-to-ref', ref, '--json'));
+  assert.equal(reply.kind, 'answer');
+  assert.equal(privateData(root, ada).pending_question_id, null);
+  assert.ok(privateData(root, ben).pending_question_id);
+  assert.equal(introData(root).a_said, null);
+  const unknown = JSON.parse(run(root, 'host', 'receive', '--event-id', 'unknown-provider-ref', '--from', ada, '--text', 'Yes!', '--reply-to-ref', 'missing', '--json'));
+  assert.equal(unknown.kind, 'intro_yes');
+  const conflict = spawnSync(process.execPath, [cli, 'host', 'receive', '--event-id', 'conflicting-refs', '--from', ada, '--text', 'Yes!', '--reply-to', adaQuestion.message_id, '--reply-to-ref', ref, '--json'], { cwd: root, encoding: 'utf8', env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' } });
+  assert.equal(conflict.status, 1);
+  assert.match(conflict.stderr, /choose --reply-to or --reply-to-ref/);
+});
+
 test('an unknown reply-to stays a note instead of answering another open prompt', (t) => {
   const root = workspace(t);
   const [ada, , cora] = people(root);
