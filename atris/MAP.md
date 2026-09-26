@@ -16,6 +16,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 |------|--------------|-------|
 | cli entrypoint and command router | `bin/atris.js` | dispatch chain, knownCommands, help |
 | known commands list | `lib/known-commands.js` | command names and typo suggestions; the plain and JSON unknown-command errors both use suggestCommands |
+| Host member install and people introductions | `templates/members/host/`, `commands/member.js`, `commands/host.js`, `lib/host.js` | packaged member copy, private records, published cards, consent and outbox; `test/host.test.js` |
 | plain english to a command | `lib/intents.js` `commands/guide.js` | atris guide; agents translate, users never learn verbs |
 | project initialization | `commands/init.js` | init and update scaffold user projects |
 | task database and TODO markdown renderer | `lib/task-db.js` | SQLite task store, renderTodoMarkdown |
