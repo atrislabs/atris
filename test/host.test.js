@@ -71,6 +71,33 @@ test('questions, event dedupe, expiry, and a quiet pause', (t) => {
   assert.equal(outbox(root).filter((message) => message.to === ben).length, 0);
 });
 
+test('an unclear intro reply is saved as a question answer or a note', (t) => {
+  const root = workspace(t);
+  const [ada, ben, cora, dev] = people(root);
+  propose(root, ada, cora);
+  hostAction(root, 'ask', { id: ada, question: 'What made you smile?' });
+  assert.equal(hostAction(root, 'receive', { eventId: 'unclear-answer', from: ada, text: 'A coffee walk.' }).kind, 'answer');
+  assert.match(fs.readFileSync(privateFile(root, ada), 'utf8'), /Q: What made you smile\?\n\nA: A coffee walk\./);
+  assert.equal(privateData(root, ada).pending_question_id, null);
+  assert.equal(outbox(root).filter((message) => message.to === ada && message.kind === 'clarify').length, 0);
+  propose(root, ben, dev);
+  assert.equal(hostAction(root, 'receive', { eventId: 'unclear-note', from: ben, text: 'The team picnic.' }).kind, 'clarify');
+  assert.match(fs.readFileSync(privateFile(root, ben), 'utf8'), /Note: The team picnic\./);
+  assert.equal(outbox(root).filter((message) => message.to === ben && message.kind === 'clarify').length, 1);
+});
+
+test('a late bare yes or no stays a note while the question remains open', (t) => {
+  const root = workspace(t);
+  const [ada, ben] = people(root);
+  for (const [id, reply] of [[ada, 'yes'], [ben, 'no']]) {
+    hostAction(root, 'ask', { id, question: 'What made you smile?' });
+    const pending = privateData(root, id).pending_question_id;
+    assert.equal(hostAction(root, 'receive', { eventId: `late-${reply}`, from: id, text: reply }).kind, 'note');
+    assert.equal(privateData(root, id).pending_question_id, pending);
+    assert.match(fs.readFileSync(privateFile(root, id), 'utf8'), new RegExp(`Note: ${reply}`));
+  }
+});
+
 test('cards reject operations and stale model work; views hide other answers', (t) => {
   const root = workspace(t);
   const [ada, , cora] = people(root);
@@ -110,6 +137,19 @@ test('links, manager relationship, two yeses, and one private no', (t) => {
   assert.equal(outbox(root).filter((message) => message.to === ids[5] && message.kind === 'intro').length, 0);
   assert.throws(() => propose(root, ids[4], ids[5]), /declined before/);
   assert.doesNotMatch(hostAction(root, 'room').text, /declin|pass|intro-no/i);
+});
+
+test('an introduced pair gets a confirmed link and cannot be proposed again', (t) => {
+  const root = workspace(t);
+  const [ada, ben, cora, dev] = people(root);
+  propose(root, ada, cora);
+  hostAction(root, 'receive', { eventId: 'link-yes-1', from: ada, text: 'yes' });
+  assert.equal(hostAction(root, 'receive', { eventId: 'link-yes-2', from: cora, text: 'yes' }).kind, 'introduced');
+  const links = fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'links.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(links.map(({ a, b, source, evidence }) => ({ a, b, source, evidence })), [{ a: ada, b: cora, source: 'intro', evidence: 'introduced by the Host' }]);
+  assert.ok(Number.isFinite(Date.parse(links[0].at)));
+  assert.throws(() => hostAction(root, 'propose', { a: ada, b: cora, reason: 'Meet again', activity: 'coffee', text: 'Hello', now: future(links[0].at, 31) }), /already linked/);
+  assert.equal(hostAction(root, 'link', { a: ben, b: dev, source: 'intro', evidence: 'Introduced before tracking started.' }).linked, true);
 });
 
 test('expired introductions disappear from the outbox and sent messages stay recorded', (t) => {
@@ -156,6 +196,47 @@ test('forget removes records, links, introductions, and messages; room stays kin
   assert.ok(outbox(root).every((message) => message.to !== ids[0] && !message.text.includes('Ada')));
   assert.equal(fs.existsSync(path.join(root, 'atris', 'team', 'host', 'private', 'room.md')), false);
   assert.throws(() => hostAction(root, 'join', { id: ids[0], name: 'Ada' }), /forgotten/);
+});
+
+test('forget clears the forgotten manager from other people', (t) => {
+  const root = workspace(t);
+  const [ada, ben] = people(root);
+  const revision = privateData(root, ben).revision;
+  assert.equal(privateData(root, ben).manager_id, ada);
+  hostAction(root, 'forget', { id: ada });
+  assert.equal(privateData(root, ben).manager_id, null);
+  assert.equal(privateData(root, ben).revision, revision + 1);
+});
+
+test('resume clears the unanswered question count', (t) => {
+  const root = workspace(t);
+  const [ada] = people(root);
+  const joined = privateData(root, ada).joined_at;
+  hostAction(root, 'ask', { id: ada, question: 'What made you smile?', now: joined });
+  hostAction(root, 'due', { now: future(joined, 8) });
+  assert.equal(privateData(root, ada).unanswered_count, 1);
+  hostAction(root, 'pause', { id: ada, now: future(joined, 8) });
+  hostAction(root, 'resume', { id: ada, now: future(joined, 9) });
+  assert.equal(privateData(root, ada).status, 'active');
+  assert.equal(privateData(root, ada).unanswered_count, 0);
+});
+
+test('left people are absent from card views and room celebrations', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  const patch = path.join(root, 'patch.json');
+  fs.writeFileSync(patch, JSON.stringify({ worth_celebrating: 'Opened a new cafe' }));
+  hostAction(root, 'card', { id: ada, patch, expectedRevision: privateData(root, ada).revision });
+  hostAction(root, 'leave', { id: ada });
+  assert.equal(hostAction(root, 'view', { as: cora }).cards.some((card) => card.id === ada), false);
+  assert.equal(hostAction(root, 'view', { team: 'Northwind Coffee' }).cards.some((card) => card.id === ada), false);
+  assert.doesNotMatch(hostAction(root, 'room').text, /Opened a new cafe/);
+});
+
+test('the host skill limits links and intro reasons to published facts', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'templates', 'members', 'host', 'skills', 'host', 'SKILL.md'), 'utf8');
+  assert.match(skill, /Record a link only when two people already know each other\. "Wants to meet" belongs on the card, not in links\./);
+  assert.match(skill, /An introduction reason may use only what is already on both published cards, never private answers\./);
 });
 
 test('two child processes can receive at once without losing either reply', async (t) => {
