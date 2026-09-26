@@ -6,6 +6,7 @@ const path = require('path');
 const { canonicalEngineName } = require('../lib/engine-registry');
 const taskDb = require('../lib/task-db');
 const { buildTeamPresence, DEFAULT_FRESHNESS_WINDOW_MS, renderTeamPresence } = require('../lib/team-presence');
+const { LINEUP_UNREADABLE, memberLineup, readLineupSafe, renderLineup } = require('../lib/team-lineup');
 const { readEngineRegistry } = require('./engine');
 const { listMissions, listWorktreeRollupMissions } = require('./mission');
 const { collectSnapshot, collectStreamEvents, repoRoot } = require('./stream');
@@ -262,6 +263,16 @@ function renderTeamRoster(rosterRows, deps = {}) {
   return lines.join('\n');
 }
 
+// The lineup (who does each job, who is on each job) above today's active
+// and rest lists.
+function renderTeamWithLineup(rosterRows, lineup, deps = {}) {
+  const width = Math.min(deps.termWidth || process.stdout.columns || 80, 100);
+  const today = renderTeamRoster(rosterRows, deps);
+  if (!lineup || !lineup.ok) return `${today}\n\n${LINEUP_UNREADABLE}`;
+  const block = renderLineup(lineup, { width });
+  return block ? `${block}\n\n${today}` : today;
+}
+
 function renderTeamRosterHtml(rosterRows, meta = {}) {
   const activeRows = rosterRows.filter((entry) => entry.active);
   const restRows = rosterRows.filter((entry) => !entry.active);
@@ -485,7 +496,7 @@ function renderTeamPrune(report, days = DEFAULT_PRUNE_DAYS) {
 
 function helpText() {
   return [
-    'atris team - active members and the rest of the roster',
+    'atris team - who does each job, with its tool and model, then active members and the rest',
     'atris team presence - show who is awake and what they are doing',
     'atris team prune - flag members with no recent activity; deletes nothing',
     '',
@@ -535,9 +546,15 @@ function teamCommand(args = [], deps = {}) {
       (deps.write || process.stdout.write.bind(process.stdout))(`${outPath}\n`);
       return 0;
     }
+    // Which job, tool, and model each member runs, from the same resolver
+    // as `atris engine roster`. A roster that cannot be read never hides the
+    // team; it costs one plain line.
+    const lineup = deps.lineup !== undefined
+      ? deps.lineup
+      : readLineupSafe(deps.root || repoRoot(deps.cwd || process.cwd()), deps.lineupNow || new Date());
     const output = json
-      ? JSON.stringify(roster, null, 2)
-      : renderTeamRoster(roster, deps);
+      ? JSON.stringify(roster.map((entry) => ({ ...entry, lineup: memberLineup(lineup, entry.name) })), null, 2)
+      : renderTeamWithLineup(roster, lineup, deps);
     (deps.write || process.stdout.write.bind(process.stdout))(`${output}\n`);
     return 0;
   }
@@ -558,5 +575,6 @@ module.exports = {
   collectTeamRoster,
   renderTeamPrune,
   renderTeamRoster,
+  renderTeamWithLineup,
   teamCommand,
 };
