@@ -575,6 +575,5 @@ module.exports = {
   collectTeamRoster,
   renderTeamPrune,
   renderTeamRoster,
-  renderTeamWithLineup,
   teamCommand,
 };
