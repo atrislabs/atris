@@ -529,3 +529,13 @@ test('two child processes can receive at once without losing either reply', asyn
   assert.equal(privateData(root, ada).processed_events.includes('concurrent-1'), true);
   assert.equal(privateData(root, ben).processed_events.includes('concurrent-2'), true);
 });
+
+test('host activity reads naturally mid-sentence', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'host-activity-'));
+  fs.mkdirSync(path.join(root, 'atris'));
+  hostAction(root, 'join', { id: 'A1', name: 'Ann', now: '2026-10-01T00:00:00.000Z' });
+  hostAction(root, 'join', { id: 'B1', name: 'Bo', now: '2026-10-01T00:00:00.000Z' });
+  hostAction(root, 'propose', { a: 'A1', b: 'B1', reason: 'Both want it.', activity: 'A 30-minute coffee on the roof.', text: 'Meet!', now: '2026-10-01T00:00:00.000Z' });
+  const ask = hostAction(root, 'outbox', { now: '2026-10-01T00:00:00.000Z' }).find((message) => message.kind === 'intro_ask');
+  assert.match(ask.text, /enjoy a 30-minute coffee on the roof\. Both want it\./);
+});
