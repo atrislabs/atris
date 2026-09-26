@@ -233,12 +233,13 @@ test('people exposes only published cards and introduction availability', (t) =>
   assert.match(run(root, 'host', 'people'), /can be introduced: no/);
 });
 
-test('newcomers can have three sequential introductions while older people keep one', (t) => {
+test('newcomers can have three sequential introductions while older people honor a saved cap of one', (t) => {
   const root = workspace(t);
   const [ada, , cora, dev, eli, fern, gio] = people(root);
   const settingsFile = path.join(root, 'atris', 'team', 'host', 'private', 'config.json');
   const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
   delete settings.newcomer_intros_first_30d;
+  settings.intros_per_person_per_30d = 1;
   fs.writeFileSync(settingsFile, JSON.stringify(settings));
   const available = (id) => hostAction(root, 'people').find((entry) => entry.id === id).can_be_introduced;
   const finish = (a, b, label) => {
@@ -269,6 +270,23 @@ test('newcomers can have three sequential introductions while older people keep 
   finish(older, fern, 'older-1');
   assert.equal(available(older), false);
   assert.throws(() => propose(root, older, gio), /cadence reached/);
+});
+
+test('older people get two introductions by default', (t) => {
+  const root = workspace(t);
+  const [, , cora, dev, eli] = people(root);
+  const older = 'slack:older';
+  hostAction(root, 'join', { id: older, name: 'Older', now: future(privateData(root, cora).joined_at, -31) });
+  const finish = (other, label) => {
+    propose(root, older, other);
+    hostAction(root, 'receive', { eventId: `${label}-older`, from: older, text: 'yes' });
+    hostAction(root, 'receive', { eventId: `${label}-other`, from: other, text: 'yes' });
+  };
+  finish(cora, 'first');
+  assert.equal(hostAction(root, 'people').find((entry) => entry.id === older).can_be_introduced, true);
+  finish(dev, 'second');
+  assert.equal(hostAction(root, 'people').find((entry) => entry.id === older).can_be_introduced, false);
+  assert.throws(() => propose(root, older, eli), /cadence reached/);
 });
 
 test('cards reject operations and stale model work; views hide other answers', (t) => {
@@ -351,6 +369,30 @@ test('followups queue once and two confirmations create one met link', (t) => {
   assert.match(hostAction(root, 'room', { now: when }).text, /## Introductions that happened\n\n1/);
 });
 
+test('a booked calendar time moves an unsent followup until after the meeting', (t) => {
+  const root = workspace(t);
+  const [ada, , cora, dev, eli] = people(root);
+  const attempt = propose(root, ada, cora).attempt_id;
+  hostAction(root, 'receive', { eventId: 'calendar-yes-a', from: ada, text: 'yes' });
+  hostAction(root, 'receive', { eventId: 'calendar-yes-b', from: cora, text: 'yes' });
+  const introduced = introData(root).introduced_at;
+  const bookingAt = future(introduced, 20);
+  const meetingAt = future(introduced, 21);
+  const booked = JSON.parse(run(root, 'host', 'scheduled', attempt, '--when', 'Tuesday at 2 pm', '--at', meetingAt, '--now', bookingAt, '--json'));
+  assert.equal(booked.scheduled_for, 'Tuesday at 2 pm');
+  assert.equal(introData(root).scheduled_at, meetingAt);
+  assert.equal(introData(root).followup_at, future(meetingAt, 1));
+  assert.equal(introData(root).followup_sent, null);
+  assert.equal(hostAction(root, 'outbox', { now: meetingAt }).filter((message) => message.kind === 'followup').length, 0);
+  assert.equal(hostAction(root, 'outbox', { now: future(meetingAt, 1) }).filter((message) => message.kind === 'followup').length, 2);
+  const second = propose(root, dev, eli).attempt_id;
+  hostAction(root, 'receive', { eventId: 'calendar-yes-dev', from: dev, text: 'yes' });
+  hostAction(root, 'receive', { eventId: 'calendar-yes-eli', from: eli, text: 'yes' });
+  hostAction(root, 'scheduled', { id: second, when: 'Already met', at: future(introduced, 18), now: bookingAt });
+  const secondFile = path.join(root, 'atris', 'team', 'host', 'private', 'intros', introFiles(root).find((name) => name.includes(second)));
+  assert.equal(JSON.parse(fs.readFileSync(secondFile, 'utf8').match(/^followup_at: (.+)$/m)[1]), bookingAt);
+});
+
 test('a model decision overrides the first word for routed intro, clarify, and followup replies', (t) => {
   const root = workspace(t);
   const [ada, , cora] = people(root);
@@ -398,6 +440,8 @@ test('one nudge per person can request a time and booking closes the schedule re
   assert.match(run(root, 'host', 'schedule'), /Ada .* Cora/);
   const booked = JSON.parse(run(root, 'host', 'scheduled', attempt, '--when', 'Friday at 2 pm', '--json'));
   assert.equal(booked.scheduled_for, 'Friday at 2 pm');
+  assert.equal(introData(root).scheduled_at, null);
+  assert.equal(introData(root).followup_at, intro.followup_at);
   assert.equal(introData(root).schedule_requested, false);
   assert.equal(hostAction(root, 'schedule').length, 0);
   assert.equal(outbox(root).filter((message) => message.kind === 'booked').length, 2);
@@ -441,25 +485,34 @@ test('an introduction saved before followup fields existed still loads and gains
   const [ada, , cora] = people(root);
   propose(root, ada, cora);
   const file = introFile(root);
-  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/^(introduced_at|followup_at|followup_sent|a_met|b_met): .*\n/gm, ''));
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/^(introduced_at|followup_at|followup_sent|a_met|b_met|scheduled_at): .*\n/gm, ''));
   assert.equal(hostAction(root, 'receive', { eventId: 'old-intro-yes', from: ada, text: 'Yes.' }).kind, 'intro_yes');
   assert.equal(introData(root).a_met, null);
   assert.equal(introData(root).followup_at, null);
+  assert.equal(introData(root).scheduled_at, null);
   assert.ok(fs.readFileSync(file, 'utf8').includes('followup_sent: null'));
 });
 
-test('room suppresses new-person coverage below ten and counts met links at ten', (t) => {
+test('room reports first-month connections for a completed cohort', (t) => {
   const root = workspace(t);
   const ids = people(root);
+  const joined = privateData(root, ids[0]).joined_at;
+  const reportAt = future(joined, 60);
   hostAction(root, 'leave', { id: ids[9] });
-  const small = hostAction(root, 'room').text.split('## New people finding their people\n\n')[1].split('\n\n##')[0];
-  assert.equal(small, 'Not enough new people yet to report this (need 10).');
+  const small = hostAction(root, 'room', { now: reportAt }).text.split('## New people finding their people\n\n')[1].split('\n\n##')[0];
+  assert.equal(small, 'Not enough people have finished their first month yet to report this (need 10).\nIn their first month now: 0');
   hostAction(root, 'resume', { id: ids[9] });
-  hostAction(root, 'link', { a: ids[0], b: ids[2], source: 'met', evidence: 'Both confirmed coffee.' });
-  hostAction(root, 'link', { a: ids[0], b: ids[3], source: 'met', evidence: 'Both confirmed a walk.' });
-  const coverage = hostAction(root, 'room').text.split('## New people finding their people\n\n')[1].split('\n\n##')[0];
-  assert.equal(coverage, '1 of 10 new people have at least two confirmed connections.');
-  assert.doesNotMatch(coverage, /Ada|Cora|Dev/);
+  hostAction(root, 'link', { a: ids[0], b: ids[2], source: 'met', evidence: 'Both confirmed coffee.', now: future(joined, 20) });
+  hostAction(root, 'link', { a: ids[0], b: ids[2], source: 'met', evidence: 'Both confirmed lunch.', now: future(joined, 21) });
+  hostAction(root, 'link', { a: ids[0], b: ids[3], source: 'met', evidence: 'Both confirmed a walk.', now: future(joined, 31) });
+  hostAction(root, 'link', { a: ids[0], b: ids[4], source: 'answer', evidence: 'They know each other.', now: future(joined, 10) });
+  const before = hostAction(root, 'room', { now: reportAt }).text;
+  assert.match(before, /0 of 10 people who joined in the last few months found at least two people in their first 30 days\./);
+  hostAction(root, 'link', { a: ids[0], b: ids[5], source: 'met', evidence: 'Both confirmed a tasting.', now: future(joined, 30) });
+  hostAction(root, 'join', { id: 'slack:new', name: 'New', now: future(joined, 45) });
+  const coverage = hostAction(root, 'room', { now: reportAt }).text.split('## New people finding their people\n\n')[1].split('\n\n##')[0];
+  assert.equal(coverage, '1 of 10 people who joined in the last few months found at least two people in their first 30 days.\nIn their first month now: 1');
+  assert.doesNotMatch(coverage, /Ada|Cora|Dev|New/);
 });
 
 test('expired introductions disappear from the outbox and sent messages stay recorded', (t) => {
