@@ -313,6 +313,91 @@ test('followups queue once and two confirmations create one met link', (t) => {
   assert.match(hostAction(root, 'room', { now: when }).text, /## Introductions that happened\n\n1/);
 });
 
+test('a model decision overrides the first word for routed intro, clarify, and followup replies', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  propose(root, ada, cora);
+  const ask = outbox(root).find((message) => message.to === ada && message.kind === 'intro_ask');
+  const invalid = spawnSync(process.execPath, [cli, 'host', 'receive', '--event-id', 'bad-decision', '--from', ada, '--text', 'Maybe', '--decision', 'maybe'], { cwd: root, encoding: 'utf8', env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' } });
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /decision must be yes or no/);
+  assert.equal(introData(root).a_said, null);
+  assert.equal(JSON.parse(run(root, 'host', 'receive', '--event-id', 'model-intro', '--from', ada, '--text', 'No, wait, I would love to', '--reply-to', ask.id, '--decision', 'yes', '--json')).kind, 'intro_yes');
+  assert.equal(introData(root).a_said, 'yes');
+  assert.equal(hostAction(root, 'receive', { eventId: 'need-clarity', from: cora, text: 'Tell me more.' }).kind, 'clarify');
+  const clarify = outbox(root).find((message) => message.to === cora && message.kind === 'clarify');
+  assert.equal(JSON.parse(run(root, 'host', 'receive', '--event-id', 'model-clarify', '--from', cora, '--text', 'Sounds like a plan', '--reply-to', clarify.id, '--decision', 'yes', '--json')).kind, 'introduced');
+  const when = introData(root).followup_at;
+  const followup = hostAction(root, 'outbox', { now: when }).find((message) => message.to === ada && message.kind === 'followup');
+  assert.equal(hostAction(root, 'receive', { eventId: 'model-followup', from: ada, text: 'Honestly, we did a quick coffee', replyTo: followup.id, decision: 'yes', now: when }).kind, 'followup');
+  assert.equal(introData(root).a_met, 'yes');
+});
+
+test('one nudge per person can request a time and booking closes the schedule request', (t) => {
+  const root = workspace(t);
+  const [ada, , cora] = people(root);
+  const settingsFile = path.join(root, 'atris', 'team', 'host', 'private', 'config.json');
+  const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  delete settings.nudge_days;
+  fs.writeFileSync(settingsFile, JSON.stringify(settings));
+  const attempt = propose(root, ada, cora).attempt_id;
+  const file = introFile(root);
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/^(nudge_at|nudge_sent|schedule_requested|scheduled_for): .*\n/gm, ''));
+  hostAction(root, 'receive', { eventId: 'nudge-intro-a', from: ada, text: 'yes' });
+  hostAction(root, 'receive', { eventId: 'nudge-intro-b', from: cora, text: 'yes' });
+  const intro = introData(root);
+  assert.equal(intro.nudge_at, future(intro.introduced_at, 3));
+  assert.equal(hostAction(root, 'outbox', { now: future(intro.introduced_at, 2) }).filter((message) => message.kind === 'nudge').length, 0);
+  const nudges = hostAction(root, 'outbox', { now: intro.nudge_at }).filter((message) => message.kind === 'nudge');
+  assert.equal(nudges.length, 2);
+  assert.equal(hostAction(root, 'outbox', { now: intro.nudge_at }).filter((message) => message.kind === 'nudge').length, 2);
+  assert.equal(nudges.find((message) => message.to === ada).text, 'Did you and Cora find a time for a fifteen minute tasting yet? If not, want me to find one for you both? Reply yes or no.');
+  assert.equal(hostAction(root, 'receive', { eventId: 'nudge-no', from: cora, text: 'Maybe later', decision: 'no', replyTo: nudges.find((message) => message.to === cora).id, now: intro.nudge_at }).kind, 'nudge');
+  assert.equal(hostAction(root, 'schedule', { now: intro.nudge_at }).length, 0);
+  assert.equal(hostAction(root, 'receive', { eventId: 'nudge-yes', from: ada, text: 'yes', now: intro.nudge_at }).kind, 'nudge');
+  const requested = JSON.parse(run(root, 'host', 'schedule', '--json'));
+  assert.deepEqual(requested, [{ attempt_id: attempt, a: ada, b: cora, names: { a: 'Ada', b: 'Cora' }, activity: 'a fifteen minute tasting' }]);
+  assert.match(run(root, 'host', 'schedule'), /Ada .* Cora/);
+  const booked = JSON.parse(run(root, 'host', 'scheduled', attempt, '--when', 'Friday at 2 pm', '--json'));
+  assert.equal(booked.scheduled_for, 'Friday at 2 pm');
+  assert.equal(introData(root).schedule_requested, false);
+  assert.equal(hostAction(root, 'schedule').length, 0);
+  assert.equal(outbox(root).filter((message) => message.kind === 'booked').length, 2);
+  assert.equal(outbox(root).find((message) => message.kind === 'booked' && message.to === ada).text, 'Booked: a fifteen minute tasting with Cora, Friday at 2 pm. Have fun.');
+  assert.throws(() => hostAction(root, 'scheduled', { id: attempt, when: 'Saturday' }), /already scheduled/);
+});
+
+test('unanswered questions cause a timed rest while an explicit pause stays paused', (t) => {
+  const root = workspace(t);
+  const [ada] = people(root);
+  const file = privateFile(root, ada);
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/^rest_until: .*\n/m, ''));
+  const settingsFile = path.join(root, 'atris', 'team', 'host', 'private', 'config.json');
+  const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  delete settings.rest_days;
+  fs.writeFileSync(settingsFile, JSON.stringify(settings));
+  const patch = path.join(root, 'milestone.json');
+  fs.writeFileSync(patch, JSON.stringify({ worth_celebrating: 'A private milestone' }));
+  hostAction(root, 'card', { id: ada, patch, expectedRevision: privateData(root, ada).revision });
+  const start = privateData(root, ada).joined_at;
+  hostAction(root, 'ask', { id: ada, question: 'First question?', now: start });
+  hostAction(root, 'due', { now: future(start, 8) });
+  hostAction(root, 'ask', { id: ada, question: 'Second question?', now: future(start, 8) });
+  const rested = future(start, 16);
+  hostAction(root, 'due', { now: rested });
+  assert.equal(privateData(root, ada).status, 'paused');
+  assert.equal(privateData(root, ada).rest_until, future(rested, 21));
+  assert.doesNotMatch(hostAction(root, 'room', { now: rested }).text, /rest|paused|private milestone/i);
+  assert.equal(hostAction(root, 'due', { now: future(rested, 20) }).some((entry) => entry.id === ada), false);
+  assert.equal(hostAction(root, 'due', { now: future(rested, 21) }).some((entry) => entry.id === ada), true);
+  assert.equal(privateData(root, ada).unanswered_count, 0);
+  assert.equal(privateData(root, ada).rest_until, null);
+  hostAction(root, 'pause', { id: ada, now: future(rested, 21) });
+  hostAction(root, 'due', { now: future(rested, 100) });
+  assert.equal(privateData(root, ada).status, 'paused');
+  assert.equal(privateData(root, ada).rest_until, null);
+});
+
 test('an introduction saved before followup fields existed still loads and gains them on write', (t) => {
   const root = workspace(t);
   const [ada, , cora] = people(root);
