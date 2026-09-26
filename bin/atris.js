@@ -3289,6 +3289,8 @@ if (command === 'guide') {
       .then(() => process.exit(0))
       .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
   }
+} else if (command === 'host') {
+  require('../commands/host').hostCommand();
 } else if (command === 'social') {
   require('../commands/social').socialCommand()
     .then(() => process.exit(0))

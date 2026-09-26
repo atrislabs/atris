@@ -60,6 +60,7 @@ test/fleet.test.js
 test/front-doors.test.js
 test/golden-path-help.test.js
 test/html-render.test.js
+test/host.test.js
 test/import-integrity.test.js
 test/improve.test.js
 test/init-for-agents.test.js

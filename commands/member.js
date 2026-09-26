@@ -4316,7 +4316,25 @@ function memberInstall(slug) {
   const memberDir = path.join(process.cwd(), 'atris', 'team', slug);
   const already = memberBundlePresent(memberDir);
   fs.mkdirSync(path.join(memberDir, 'logs'), { recursive: true });
-  if (already) {
+  const templateDir = path.join(__dirname, '..', 'templates', 'members', slug);
+  const copied = [];
+  if (fs.existsSync(templateDir)) {
+    const copyMissing = (source, relative = '') => {
+      for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+        const rel = path.join(relative, entry.name);
+        const target = path.join(memberDir, rel);
+        if (entry.isDirectory()) {
+          fs.mkdirSync(target, { recursive: true });
+          copyMissing(path.join(source, entry.name), rel);
+        } else if (entry.isFile() && !fs.existsSync(target)) {
+          fs.writeFileSync(target, fs.readFileSync(path.join(source, entry.name)), { flag: 'wx' });
+          copied.push(rel);
+        }
+      }
+    };
+    copyMissing(templateDir);
+  }
+  if (already && copied.length === 0) {
     console.log(`MEMBER already installed for ${slug}`);
     return;
   }
@@ -4325,7 +4343,7 @@ function memberInstall(slug) {
     name: slug,
     source: 'install',
   });
-  for (const rel of created) {
+  for (const rel of [...copied, ...created]) {
     console.log(`atris/team/${slug}/${rel.split(path.sep).join('/')}`);
   }
   console.log(`MEMBER installed for ${slug}.`);
