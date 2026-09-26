@@ -75,6 +75,23 @@ test('questions, event dedupe, expiry, and a quiet pause', (t) => {
   assert.equal(outbox(root).filter((message) => message.to === ben).length, 0);
 });
 
+test('question answers and standalone replies are each saved once', (t) => {
+  const root = workspace(t);
+  const [ada] = people(root);
+  hostAction(root, 'ask', { id: ada, question: 'What made you smile?' });
+  assert.equal(hostAction(root, 'receive', { eventId: 'once-answer', from: ada, text: 'A sunrise coffee walk.' }).kind, 'answer');
+  let body = fs.readFileSync(privateFile(root, ada), 'utf8');
+  assert.match(body, /Q: What made you smile\?\n\nA: A sunrise coffee walk\./);
+  assert.equal(body.split('A sunrise coffee walk.').length - 1, 1);
+  assert.doesNotMatch(body, /Note: A sunrise coffee walk\./);
+  assert.equal(hostAction(root, 'receive', { eventId: 'once-note', from: ada, text: 'The team picnic.' }).kind, 'note');
+  body = fs.readFileSync(privateFile(root, ada), 'utf8');
+  assert.match(body, /Note: The team picnic\./);
+  assert.equal(body.split('The team picnic.').length - 1, 1);
+  assert.equal(hostAction(root, 'receive', { eventId: 'once-answer', from: ada, text: 'Different' }).duplicate, true);
+  assert.equal(fs.readFileSync(privateFile(root, ada), 'utf8'), body);
+});
+
 test('an unclear intro reply is saved as a question answer or a note', (t) => {
   const root = workspace(t);
   const [ada, ben, cora, dev] = people(root);
@@ -99,7 +116,7 @@ test('without reply-to a pending question takes a bare yes or no when no intro i
     assert.equal(hostAction(root, 'receive', { eventId: `late-${reply}`, from: id, text: reply }).kind, 'answer');
     assert.notEqual(privateData(root, id).pending_question_id, pending);
     assert.equal(privateData(root, id).pending_question_id, null);
-    assert.match(fs.readFileSync(privateFile(root, id), 'utf8'), new RegExp(`Note: ${reply}`));
+    assert.match(fs.readFileSync(privateFile(root, id), 'utf8'), new RegExp(`A: ${reply}`));
   }
 });
 
@@ -112,7 +129,7 @@ test('reply-to routes a fun answer to its question while an intro ask is open', 
   assert.equal(reply.kind, 'answer');
   assert.equal(privateData(root, ada).pending_question_id, null);
   assert.equal(introData(root).a_said, null);
-  assert.match(fs.readFileSync(privateFile(root, ada), 'utf8'), /Note: A tiny concert\./);
+  assert.match(fs.readFileSync(privateFile(root, ada), 'utf8'), /A: A tiny concert\./);
 });
 
 test('an unknown reply-to stays a note instead of answering another open prompt', (t) => {
@@ -178,6 +195,44 @@ test('people exposes only published cards and introduction availability', (t) =>
   assert.match(run(root, 'host', 'people'), /can be introduced: no/);
 });
 
+test('newcomers can have three sequential introductions while older people keep one', (t) => {
+  const root = workspace(t);
+  const [ada, , cora, dev, eli, fern, gio] = people(root);
+  const settingsFile = path.join(root, 'atris', 'team', 'host', 'private', 'config.json');
+  const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  delete settings.newcomer_intros_first_30d;
+  fs.writeFileSync(settingsFile, JSON.stringify(settings));
+  const available = (id) => hostAction(root, 'people').find((entry) => entry.id === id).can_be_introduced;
+  const finish = (a, b, label) => {
+    hostAction(root, 'receive', { eventId: `${label}-a`, from: a, text: 'yes' });
+    hostAction(root, 'receive', { eventId: `${label}-b`, from: b, text: 'yes' });
+  };
+  propose(root, ada, cora);
+  assert.equal(available(ada), false);
+  assert.throws(() => propose(root, ada, dev), /person already has an introduction in flight/);
+  finish(ada, cora, 'welcome-1');
+  assert.equal(available(ada), true);
+  propose(root, ada, dev);
+  finish(ada, dev, 'welcome-2');
+  settings.newcomer_intros_first_30d = 2;
+  fs.writeFileSync(settingsFile, JSON.stringify(settings));
+  assert.equal(available(ada), false);
+  assert.throws(() => propose(root, ada, eli), /cadence reached/);
+  delete settings.newcomer_intros_first_30d;
+  fs.writeFileSync(settingsFile, JSON.stringify(settings));
+  assert.equal(available(ada), true);
+  propose(root, ada, eli);
+  finish(ada, eli, 'welcome-3');
+  assert.equal(available(ada), false);
+  assert.throws(() => propose(root, ada, fern), /cadence reached/);
+  const older = 'slack:older';
+  hostAction(root, 'join', { id: older, name: 'Older', now: future(privateData(root, ada).joined_at, -31) });
+  propose(root, older, fern);
+  finish(older, fern, 'older-1');
+  assert.equal(available(older), false);
+  assert.throws(() => propose(root, older, gio), /cadence reached/);
+});
+
 test('cards reject operations and stale model work; views hide other answers', (t) => {
   const root = workspace(t);
   const [ada, , cora] = people(root);
@@ -204,7 +259,7 @@ test('links, manager relationship, two yeses, and one private no', (t) => {
   assert.throws(() => propose(root, ids[0], ids[2]), /already linked/);
   const first = propose(root, ids[0], ids[3]);
   assert.equal(first.state, 'pending');
-  assert.throws(() => propose(root, ids[0], ids[4]), /cadence reached/);
+  assert.throws(() => propose(root, ids[0], ids[4]), /person already has an introduction in flight/);
   assert.equal(hostAction(root, 'receive', { eventId: 'intro-yes-1', from: ids[0], text: 'yeah' }).kind, 'intro_yes');
   assert.equal(outbox(root).filter((message) => message.kind === 'intro').length, 0);
   assert.equal(hostAction(root, 'receive', { eventId: 'intro-yes-2', from: ids[3], text: 'sure' }).kind, 'introduced');
