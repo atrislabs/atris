@@ -102,6 +102,16 @@ test('matchIntent finds everyday requests by token overlap', () => {
     ['have someone else take this work', 'hand_off_work'],
     ['where does this live', 'find_or_explain'],
     ['we are trying to reduce support time', 'set_goal'],
+    ['who does what', 'show_roster'],
+    ['show me the roster', 'show_roster'],
+    ['which model builds', 'show_roster'],
+    ['what model does review', 'show_roster'],
+    ['show the lineup', 'show_roster'],
+    ['show me the team', 'show_or_set_up_team'],
+    ['use codex for review', 'change_roster'],
+    ['change the builder', 'change_roster'],
+    ['switch the reviewer', 'change_roster'],
+    ['make codex review', 'change_roster'],
   ];
   cases.forEach(([phrase, expected]) => {
     assert.equal(matchIntent(phrase).intent?.id, expected, phrase);
@@ -118,6 +128,16 @@ test('guide output stays lowercase and plain', () => {
     const letters = line.replace(/[^a-zA-Z]/g, '');
     assert.ok(!letters || letters !== letters.toUpperCase(), `all caps line: ${line}`);
   });
+});
+
+test('the roster intents point at the engine roster, and changing it asks first', () => {
+  const show = INTENTS.find((intent) => intent.id === 'show_roster');
+  const change = INTENTS.find((intent) => intent.id === 'change_roster');
+  assert.equal(show.do, 'atris engine roster');
+  assert.ok(!show.confirm);
+  assert.match(change.do, /^atris engine assign /);
+  assert.equal(change.confirm, true);
+  assert.equal(INTENTS.find((intent) => intent.id === 'show_or_set_up_team').do, 'atris team');
 });
 
 test('guide marks keep-going work as asking first', () => {

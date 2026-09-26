@@ -201,3 +201,117 @@ test('long now.md focus is not truncated in roster data', () => {
   assert.equal(roster[0].now, longFocus);
   assert.equal(roster[0].focus, longFocus);
 });
+
+// --- the lineup: which job, tool, and model each member runs ---------------
+
+const LINEUP_ENV = ['ATRIS_MACHINE_ROSTER_PATH', 'ATRIS_MACHINE_ROSTER_MD_PATH', 'ATRIS_ROSTER_SESSION', 'ATRIS_ROSTER_SESSIONS_DIR', 'ATRIS_CODEX_CONFIG_PATH', 'ATRIS_ROUTER_EXPLAIN', 'ATRIS_RUNNER_MODEL'];
+
+// A scratch project with a scratch home, so the real ~/.atris is never read.
+function withLineupRoom(fn) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'team-lineup-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'team-lineup-home-'));
+  const saved = new Map(LINEUP_ENV.map((key) => [key, process.env[key]]));
+  for (const key of LINEUP_ENV) delete process.env[key];
+  process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
+  process.env.ATRIS_ROUTER_EXPLAIN = '0';
+  try {
+    fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), [
+      '# roster',
+      '## build',
+      '- claude code, model: opus 5.5',
+      '## review',
+      '- codex, model: gpt-6-astra, effort: medium',
+      '## search',
+      '- claude code, model: haiku 4.5',
+      '## team',
+      '- researcher: claude code, model: opus 5.5',
+      '',
+    ].join('\n'));
+    const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
+    readEngineRegistry(root);
+    for (const name of ['claude', 'codex']) setEngineHealth(name, 'ready', root);
+    for (const [name, role] of [['coder', 'builder'], ['alpha-judge', 'judge'], ['navigator', 'navigator'], ['researcher', 'deep researcher']]) {
+      fs.mkdirSync(path.join(root, 'atris', 'team', name), { recursive: true });
+      fs.writeFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), `---\nname: ${name}\nrole: ${role}\n---\n`);
+    }
+    return fn(root);
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+function lineupMembers() {
+  return ['coder', 'alpha-judge', 'navigator', 'researcher'].map((name) => ({ name, role: 'test' }));
+}
+
+test('atris team shows who does each job and each member with its job, tool, and model', () => withLineupRoom((root) => {
+  let out = '';
+  const code = teamCommand([], rosterDeps({ root, members: lineupMembers(), termWidth: 80, write: (s) => { out += s; } }));
+  assert.equal(code, 0);
+  const lines = out.split('\n');
+  const jobsAt = lines.indexOf('who does each job:');
+  const membersAt = lines.indexOf('who is on each job:');
+  assert.ok(jobsAt >= 0 && membersAt > jobsAt, out);
+  assert.ok(lines.indexOf('active team:') > membersAt, 'the lineup comes before the active list');
+  assert.match(out, /^  build +claude \(opus 5\.5\)$/m);
+  assert.match(out, /^  review +codex \(gpt-6-astra, medium\)$/m);
+  assert.match(out, /^  search +claude \(haiku 4\.5\)$/m);
+  assert.match(out, /^  build +coder$/m);
+  assert.match(out, /^  review +alpha-judge$/m);
+  // researcher's team line puts it on a different model than its job.
+  assert.match(out, /^  search +navigator, researcher on claude \(opus 5\.5\)$/m);
+  assert.match(out, /rest of the team:/);
+  lines.forEach((line) => assert.ok(line.length <= 80, `too wide: ${line}`));
+  assert.ok(!out.includes('—'));
+}));
+
+test('atris team --json carries job, engine, model, and source per member', () => withLineupRoom((root) => {
+  let out = '';
+  const code = teamCommand(['--json'], rosterDeps({ root, members: lineupMembers(), write: (s) => { out += s; } }));
+  assert.equal(code, 0);
+  const parsed = JSON.parse(out);
+  const by = Object.fromEntries(parsed.map((entry) => [entry.name, entry]));
+  assert.deepEqual(by.coder.lineup, { job: 'build', engine: 'claude', model: 'claude-opus-5-5', effort: null, source: 'automatic', file: null });
+  assert.equal(by['alpha-judge'].lineup.job, 'review');
+  assert.equal(by['alpha-judge'].lineup.engine, 'codex');
+  assert.equal(by['alpha-judge'].lineup.model, 'gpt-6-astra');
+  assert.equal(by.researcher.lineup.job, 'search');
+  assert.equal(by.researcher.lineup.model, 'claude-opus-5-5');
+  assert.equal(by.researcher.lineup.source, 'roster');
+  assert.ok('active' in by.coder, 'today\'s fields stay');
+}));
+
+test('a lineup that cannot be read still prints today\'s team plus one plain line', () => {
+  let out = '';
+  const code = teamCommand([], rosterDeps({ lineup: { ok: false, error: 'boom', jobs: [], team: [] }, write: (s) => { out += s; } }));
+  assert.equal(code, 0);
+  assert.match(out, /active team:/);
+  assert.match(out, /rest of the team:/);
+  const lines = out.trim().split('\n');
+  assert.equal(lines[lines.length - 1], 'could not read who does each job, so tools and models are not shown. try: atris engine roster');
+  assert.equal(lines.filter((line) => line.includes('could not read')).length, 1);
+
+  let json = '';
+  teamCommand(['--json'], rosterDeps({ lineup: { ok: false, error: 'boom', jobs: [], team: [] }, write: (s) => { json += s; } }));
+  assert.equal(JSON.parse(json)[0].lineup, null);
+});
+
+test('a throwing roster reader is caught by readLineupSafe', () => {
+  const lineup = require('../lib/team-lineup');
+  const engine = require('../commands/engine');
+  const original = engine.rosterReport;
+  engine.rosterReport = () => { throw new Error('bad roster'); };
+  try {
+    const read = lineup.readLineupSafe('/fake/root');
+    assert.equal(read.ok, false);
+    assert.match(read.error, /bad roster/);
+  } finally {
+    engine.rosterReport = original;
+  }
+});

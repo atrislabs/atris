@@ -2133,6 +2133,8 @@ module.exports = {
   canonicalEngineName,
   readSavedEngine,
   roster,
+  rosterReport,
+  jobRosterView,
   engineRegistryFile,
   readEngineRegistry,
   resolveEngineForRole,

@@ -1850,6 +1850,16 @@ function showWelcomeVisualization() {
     console.log(row('goal', endgameState.horizon || endgameState.slug));
   }
 
+  // Every new chat sees which tool and model does each job, from the same
+  // resolver as atris engine roster. A roster that cannot be read drops the
+  // line; it never stops the boot.
+  try {
+    const teamLine = require('../lib/team-lineup').bootTeamLine(cwd, { width: 80 - 11 });
+    if (teamLine) console.log(row('team', teamLine));
+  } catch {
+    // Silent: the lineup is a hint, not a gate.
+  }
+
   const hasNoTasks = glance.active === 0
     && glance.review === 0
     && glance.reviewCertified === 0;
