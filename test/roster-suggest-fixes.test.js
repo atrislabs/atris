@@ -226,3 +226,58 @@ test('the suggested command promotes the challenger line without rewriting any w
     assert.deepEqual(workerLines(root), before, 'a refused promote writes nothing');
   }, { roster: WORKER_ROSTER, registry: true });
 });
+
+function writeDispatchReceipt(root, name, results) {
+  const dir = path.join(root, 'atris', 'runs');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `dispatch-${name}.json`), `${JSON.stringify({
+    schema: 'atris.dispatch_receipt.v1',
+    results,
+  })}\n`, 'utf8');
+}
+
+test('a landed dispatch counts once when its receipt and run record share the task', async () => {
+  const { loadRouterHistory, rankEnginesDetailed } = require('../lib/router-brain');
+  await withRoom(({ root }) => {
+    // One dispatch writes both rows: the receipt stamps the moment the run
+    // ended, the run record the moment it started. Same engine, same task.
+    writeDispatchReceipt(root, 'one', [{
+      task: 'CLI-1', engine: 'cursor', task_type: 'executor', verified_passed: true,
+      duration_ms: 120000, at: '2026-09-27T11:00:00.000Z', exitCode: 0,
+    }]);
+    appendRosterRun(root, {
+      at: '2026-09-27T10:58:00.000Z', job: 'build', engine: 'cursor', outcome: 'landed',
+      task: 'CLI-1', source: 'dispatch', seconds: 120,
+    });
+    let history = loadRouterHistory(root, { now: NOW });
+    assert.equal(history.length, 1, 'the receipt and the run record are one run');
+    assert.equal(history[0].verified_passed, true);
+
+    writeDispatchReceipt(root, 'two', [{
+      task: 'CLI-2', engine: 'cursor', task_type: 'executor', verified_passed: true,
+      duration_ms: 60000, at: '2026-09-27T11:10:00.000Z', exitCode: 0,
+    }]);
+    appendRosterRun(root, {
+      at: '2026-09-27T11:09:00.000Z', job: 'build', engine: 'cursor', outcome: 'landed',
+      task: 'CLI-2', source: 'dispatch', seconds: 60,
+    });
+    history = loadRouterHistory(root, { now: NOW });
+    assert.equal(history.length, 2);
+    const candidates = [{ id: 'cursor', fallback_order: 30 }, { id: 'codex', fallback_order: 10 }];
+    const ranked = rankEnginesDetailed(candidates, { root, taskType: 'executor', now: NOW });
+    assert.equal(ranked.used_track_record, false, 'two real runs stay under the three-receipt minimum');
+
+    // A run for another task counts on its own, and so does a much older
+    // run for the same task: only the receipt describing it dedupes it.
+    appendRosterRun(root, {
+      at: '2026-09-27T11:20:00.000Z', job: 'build', engine: 'cursor', outcome: 'failed',
+      task: 'CLI-3', source: 'dispatch', seconds: 90,
+    });
+    appendRosterRun(root, {
+      at: '2026-09-26T10:00:00.000Z', job: 'build', engine: 'cursor', outcome: 'landed',
+      task: 'CLI-1', source: 'dispatch', seconds: 300,
+    });
+    history = loadRouterHistory(root, { now: NOW });
+    assert.equal(history.length, 4);
+  });
+});
