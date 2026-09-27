@@ -70,6 +70,7 @@ const {
   requireEngineBin,
   engineDoctorReport,
   engineFailureHealthStatus,
+  coolingView,
   setEngineOverrides,
   setEngineHealth,
 } = require('../lib/engine-registry');
@@ -954,6 +955,7 @@ function printRoster(root, { scope = 'workspace' } = {}) {
     console.log(`  ${mark} ${engine.id.padEnd(12)} ${state.padEnd(13)} ${engine.tier.padEnd(4)} ${roles}`);
     const details = [`models: ${engine.models.join(', ')}`];
     if (engine.duty) details.push(`duty: ${engine.duty}`);
+    if (engine.health.status === 'cooling') details.push(coolingView(engine).text);
     console.log(`      ${details.join('   ')}`);
   }
   if (scope !== 'global' && list.length > scoped.length) {
@@ -1001,7 +1003,9 @@ function workerRow(step, index, leadIndex) {
   const { worker } = step;
   const runs = worker.error ? null : engineRunsView(worker.engine, { model: worker.model || '', effort: worker.effort || '' });
   const status = index === leadIndex ? 'leads' : step.skip ? 'skipped' : 'backup';
-  const why = step.skip === 'bad line' ? `bad line: ${worker.error}` : step.skip ? WORKER_SKIP_WORDS[step.skip] : '';
+  const why = step.skip === 'bad line' ? `bad line: ${worker.error}`
+    : step.skip === 'cooling' && step.cooling ? step.cooling.text
+      : step.skip ? WORKER_SKIP_WORDS[step.skip] : '';
   return {
     engine: worker.engine || null,
     model: worker.model || null,
@@ -1012,6 +1016,7 @@ function workerRow(step, index, leadIndex) {
     ...(worker.error ? { text: worker.text || '' } : {}),
     status,
     why,
+    ...(step.cooling ? { cooling_until: step.cooling.until, cooling_reason: step.cooling.reason } : {}),
     runs,
   };
 }
@@ -1039,7 +1044,8 @@ function jobRosterRow(job, role, root, state, registry, now, key = role) {
   const status = !pick ? 'router'
     : first && first.step.skip === 'expired' ? 'expired'
       : first && leadIndex === first.index ? 'picked'
-        : 'not ready';
+        : first && first.step.skip === 'cooling' ? 'cooling'
+          : 'not ready';
   const lead = leadIndex === -1 ? 'none'
     : first && leadIndex === first.index ? 'first'
       : good[1] && leadIndex === good[1].index ? 'backup'
@@ -1072,6 +1078,7 @@ function jobRosterRow(job, role, root, state, registry, now, key = role) {
     workers: walk.map((step, index) => workerRow(step, index, leadIndex)),
     lead,
     status,
+    ...(status === 'cooling' ? { cooling: first.step.cooling.text } : {}),
     reason: resolved.reason,
   };
 }
@@ -1148,8 +1155,9 @@ function renderJobRoster(rows) {
     const date = untilText(row.pick);
     const fallback = row.lead === 'backup' ? 'using backup' : row.lead === 'later' ? `using ${nowText}` : fallsTo;
     const status = row.status === 'expired' ? `expired, ${fallback}`
-      : row.status === 'not ready' ? `not ready, ${fallback}`
-        : date;
+      : row.status === 'cooling' ? `${row.cooling}, ${fallback}`
+        : row.status === 'not ready' ? `not ready, ${fallback}`
+          : date;
     const where = row.file ? `${row.from} (${row.file})` : row.from;
     const head = `${label} ${owner} ${backup.padEnd(backupWidth)} ${cap}${status}, ${where}`.trimEnd();
     return [head, ...renderWorkerLines(row)].join('\n');
