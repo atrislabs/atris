@@ -239,6 +239,27 @@ test('pairing never counts more observations than runs', () => {
   }
 });
 
+test('overlapping long runs still pair one to one', () => {
+  const root = makeRoot();
+  try {
+    const at = (minutes) => new Date(NOW + minutes * 60000).toISOString();
+    // Two runs start together and last 20 and 30 minutes; receipts land at
+    // 0 and 20. Giving the first receipt the shorter run strands the second
+    // receipt, so only an exact matching counts two observations here.
+    for (const [name, minutes] of [['first', 0], ['second', 20]]) {
+      writeDispatchReceipt(root, name, [{
+        task: 'CLI-2', engine: 'cursor', task_type: 'executor', verified_passed: true,
+        duration_ms: 60000, at: at(minutes), exitCode: 0,
+      }]);
+    }
+    appendRosterRun(root, { at: at(0), job: 'build', engine: 'cursor', outcome: 'landed', task: 'CLI-2', seconds: 1200 });
+    appendRosterRun(root, { at: at(0), job: 'build', engine: 'cursor', outcome: 'landed', task: 'CLI-2', seconds: 1800 });
+    assert.equal(loadRouterHistory(root, { now: NOW + 40 * 60000 }).length, 2);
+  } finally {
+    cleanup(root);
+  }
+});
+
 test('one receipt between two runs pairs once and the other run still counts', () => {
   const root = makeRoot();
   try {
