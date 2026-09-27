@@ -37,8 +37,8 @@ test('engine roster lists every profile with detection state', () => {
     assert.deepEqual(codex.models, ['codex']);
     assert.equal(codex.fallback_order, 10);
     assert.ok(codex.health);
-    assert.deepEqual(parsed.engines.find((e) => e.id === 'claude').models, ['opus 5.5', 'opus 5', 'opus 4.8', 'fable', 'haiku']);
-    assert.deepEqual(parsed.engines.find((e) => e.id === 'fable').models, ['opus 5.5', 'opus 5', 'opus 4.8', 'fable', 'haiku']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'claude').models, ['opus 5.5', 'opus 5', 'fable', 'haiku']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'fable').models, ['opus 5.5', 'opus 5', 'fable', 'haiku']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'cursor').models, ['composer 2.5', 'grok 4.6', 'kimi 3']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'composer').models, ['composer 2.5']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'grok').models, ['grok 4.7 fast', 'grok 4.7']);
@@ -202,7 +202,9 @@ test('saved engine models override the seed without code edits', () => {
     assert.equal(initial.status, 0, initial.stderr || initial.stdout);
     const registryFile = path.join(dir, '.atris', 'state', 'engines.json');
     const registry = JSON.parse(fs.readFileSync(registryFile, 'utf8'));
-    registry.engines.find((entry) => entry.id === 'cursor').models = ['composer 3'];
+    const cursorEntry = registry.engines.find((entry) => entry.id === 'cursor');
+    cursorEntry.models = ['composer 3'];
+    cursorEntry.models_set_by_owner = true;
     fs.writeFileSync(registryFile, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');
 
     const swapped = runCli(['engine', 'list', '--json', '--global'], dir, { PATH: CLEAN_PATH });
@@ -279,7 +281,7 @@ test('engines list renders models and errand duty', () => {
   try {
     const res = runCli(['engines', '--global'], dir, { PATH: CLEAN_PATH });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /models: opus 5\.5, opus 5, opus 4\.8, fable, haiku/);
+    assert.match(res.stdout, /models: opus 5\.5, opus 5, fable, haiku/);
     assert.match(res.stdout, /models: composer 2\.5, grok 4\.6, kimi 3/);
     assert.match(res.stdout, /models: built-in router\s+duty: errands/);
     assert.doesNotMatch(res.stdout, /—/);
