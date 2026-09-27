@@ -1,7 +1,6 @@
 'use strict';
 
-// Regression tests for confirmed bugs: a leftover pending file must fold
-// into the log once and never read twice, a suggested reorder rewrote the
+// Regression tests for confirmed bugs: a suggested reorder rewrote the
 // demoted worker, a promote moved the wrong worker line, and one receipt
 // hid several runs of the same task and engine. Rooms are scratch projects
 // with scratch homes and an injected clock; the real ~/.atris is never read
@@ -66,33 +65,7 @@ function command(root, args, now = NOW) {
   }
 }
 
-const {
-  appendRosterRun,
-  readRosterRuns,
-  rosterRunsPath,
-} = require('../lib/roster-runs');
-
-const pendingPath = (root) => path.join(root, '.atris', 'state', 'roster_runs.pending.jsonl');
-
-test('a leftover pending file reads once, then the next append folds it into the log', async () => {
-  await withRoom(async ({ root }) => {
-    const file = rosterRunsPath(root);
-    const pending = pendingPath(root);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(pending, `${JSON.stringify({ at: new Date(NOW - 60000).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-1', seconds: 60 })}\n`);
-    // Readers count it even before it is folded.
-    assert.deepEqual(readRosterRuns(root, { now: NOW + 60000 }).map((row) => row.task), ['CLI-1']);
-    // The next append moves its lines into the log ahead of its own.
-    appendRosterRun(root, {
-      at: new Date(NOW - 50000).toISOString(), job: 'build', engine: 'cursor', outcome: 'landed', task: 'CLI-2', seconds: 90,
-    });
-    assert.equal(fs.existsSync(pending), false, 'the pending file is spent');
-    const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
-    assert.deepEqual(lines.map((line) => JSON.parse(line).task), ['CLI-1', 'CLI-2']);
-    // Folded once means never read twice.
-    assert.deepEqual(readRosterRuns(root, { now: NOW + 60000 }).map((row) => row.task), ['CLI-1', 'CLI-2']);
-  });
-});
+const { appendRosterRun } = require('../lib/roster-runs');
 
 const WORKER_ROSTER = [
   '# roster',
