@@ -490,3 +490,121 @@ test('a fleet build on the build lead honors its prep line', async () => {
     assert.equal(runs(root)[0].job, 'search');
   }, { roster: PREP_ROSTER });
 });
+
+test('a reviewer past a credit wall reuses the brief when the next reviewer also preps', async () => {
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { stdout: BRIEF });
+    const fleet = require('../lib/fleet');
+    const prompts = [];
+    const flight = await fleet.runDispatchFlight({
+      root,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      reviewOnly: true,
+      verifierCommand: 'node --test test/widget.test.js',
+      receiptContext: { source: 'one_lap', objective: 'Fix the widget' },
+      ownCli: ownCli(wt),
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'built the widget' }),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+      validatorEngines: ['codex', 'devin'],
+      validatorModels: {
+        codex: { model: '', effort: 'high', max_seconds: 0, prep: 'search' },
+        devin: { model: '', effort: '', max_seconds: 0, prep: 'search' },
+      },
+      validatorDispatcher: ({ engine, prompt }) => {
+        prompts.push(prompt);
+        if (engine === 'codex') return Promise.resolve({ exitCode: 1, stderr: 'usage limit reached' });
+        return Promise.resolve({ exitCode: 0, report: 'read the diff\nSIGNOFF: widget renders once' });
+      },
+      validatorStateInspector: () => ({ ok: true, head: 'abc', digest: 'clean-state' }),
+      changeInspector: () => ({ has_change: true, base: 'a', head: 'b', commit: 'b', dirty: false }),
+      scoutAsk: false,
+      clock: stepClock(),
+      log: () => {},
+    });
+    assert.equal(flight.ready.length, 1);
+    assert.equal(prompts.length, 2);
+    for (const prompt of prompts) assert.match(prompt, /## brief from the prep pass \(search, claude\)/);
+    assert.deepEqual(calls(bin), ['claude'], 'the prep pass runs once for the task');
+    const rows = runs(root);
+    assert.deepEqual(rows.map((row) => [row.job, row.engine, row.prep || '']), [
+      ['search', 'claude', ''],
+      ['review', 'codex', 'prepped by search'],
+      ['review', 'devin', 'prepped by search'],
+      ['build', 'cursor', ''],
+    ]);
+  }, { roster: '# roster\n\n## search\n- claude, model: haiku\n' });
+});
+
+test('an append that lands while the record is being trimmed is kept', async () => {
+  await withRoom(async ({ root }) => {
+    const runs = require('../lib/roster-runs');
+    const file = runs.rosterRunsPath(root);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const line = (i) => `${JSON.stringify({ at: new Date(NOW).toISOString(), job: 'build', engine: 'cursor', outcome: 'landed', task: `CLI-${i}`, detail: 'x'.repeat(200) })}\n`;
+    const lines = [];
+    let bytes = 0;
+    for (let i = 0; bytes <= runs.RUNS_ROTATE_BYTES; i += 1) {
+      lines.push(line(i));
+      bytes += Buffer.byteLength(lines[lines.length - 1]);
+    }
+    fs.writeFileSync(file, lines.join(''));
+    const marker = path.join(root, 'other-writer.done');
+    const script = [
+      `const runs = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'roster-runs'))});`,
+      `runs.appendRosterRun(${JSON.stringify(root)}, { at: ${JSON.stringify(new Date(NOW).toISOString())}, job: 'build', engine: 'grok', outcome: 'landed', task: 'CLI-OTHER' });`,
+      `require('fs').writeFileSync(${JSON.stringify(marker)}, 'done');`,
+    ].join('\n');
+    // A second process appends while this one sits between reading the
+    // tail and renaming the trimmed copy over the log.
+    const originalRename = fs.renameSync;
+    let child = null;
+    fs.renameSync = (from, to) => {
+      if (to === file && !child) {
+        const { spawn } = require('node:child_process');
+        child = spawn(process.execPath, ['-e', script], { stdio: 'ignore' });
+        const until = Date.now() + 500;
+        const pause = new Int32Array(new SharedArrayBuffer(4));
+        while (!fs.existsSync(marker) && Date.now() < until) Atomics.wait(pause, 0, 0, 10);
+      }
+      return originalRename(from, to);
+    };
+    try {
+      runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-LAST' });
+    } finally {
+      fs.renameSync = originalRename;
+    }
+    assert.ok(child, 'the trim reached its rename');
+    await new Promise((resolve) => (child.exitCode !== null ? resolve() : child.on('exit', resolve)));
+    const tasks = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((row) => JSON.parse(row).task);
+    assert.ok(tasks.includes('CLI-LAST'));
+    assert.ok(tasks.includes('CLI-OTHER'), 'the other writer\'s line survived the trim');
+    assert.ok(Buffer.byteLength(fs.readFileSync(file)) < runs.RUNS_ROTATE_BYTES);
+    assert.equal(fs.existsSync(`${file}.lock`), false, 'the lock is released');
+  });
+});
+
+test('a lock left behind by a crashed writer is taken back, and a held lock never blocks recording', async () => {
+  await withRoom(async ({ root }) => {
+    const runs = require('../lib/roster-runs');
+    const file = runs.rosterRunsPath(root);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const lock = `${file}.lock`;
+    // Stale: older than the stale window, so the next writer removes it.
+    fs.writeFileSync(lock, '99999');
+    const old = new Date(Date.now() - runs.RUNS_LOCK_STALE_MS - 1000);
+    fs.utimesSync(lock, old, old);
+    assert.ok(runs.appendRosterRun(root, { job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-1' }));
+    assert.equal(fs.existsSync(lock), false);
+    // Fresh: held by someone else, so the append waits briefly, writes anyway,
+    // and leaves the other writer's lock alone.
+    fs.writeFileSync(lock, '99999');
+    const started = Date.now();
+    assert.ok(runs.appendRosterRun(root, { job: 'build', engine: 'grok', outcome: 'landed', task: 'CLI-2' }));
+    assert.ok(Date.now() - started < runs.RUNS_LOCK_WAIT_MS + 1000);
+    assert.equal(fs.existsSync(lock), true);
+    const tasks = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((row) => JSON.parse(row).task);
+    assert.deepEqual(tasks, ['CLI-1', 'CLI-2']);
+  });
+});
