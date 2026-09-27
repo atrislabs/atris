@@ -202,7 +202,7 @@ test('dispatchToEngine appends engine chunks to its live log before the engine e
   let closed = false;
   const childClosed = new Promise((resolve) => child.once('close', (code) => { closed = true; resolve(code); }));
   try {
-    await waitUntil(() => fs.existsSync(liveLogPath) && fs.readFileSync(liveLogPath, 'utf8').includes('first dispatch chunk'));
+    await waitUntil(() => fs.existsSync(liveLogPath) && fs.readFileSync(liveLogPath, 'utf8').includes('first dispatch chunk'), 5000);
     assert.equal(closed, false, 'the engine must still be running when the first chunk is readable');
     assert.equal(await childClosed, 0);
     assert.match(fs.readFileSync(liveLogPath, 'utf8'), /first dispatch chunk[\s\S]*second dispatch chunk/);

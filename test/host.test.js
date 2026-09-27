@@ -648,6 +648,77 @@ test('unanswered questions cause a timed rest while an explicit pause stays paus
   assert.equal(privateData(root, ada).rest_until, null);
 });
 
+test('a late reply wakes a resting person while a self-paused reply stays a note', (t) => {
+  const root = workspace(t);
+  const now = '2026-09-27T12:00:00.000Z';
+  for (const id of ['ada', 'ben', 'cora']) hostAction(root, 'join', { id, name: id, now });
+  hostAction(root, 'ask', { id: 'ada', question: 'What made you smile?', now });
+  const file = privateFile(root, 'ada');
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8')
+    .replace(/^status: .*$/m, 'status: "paused"')
+    .replace(/^unanswered_count: .*$/m, 'unanswered_count: 2')
+    .replace(/^rest_until: .*$/m, `rest_until: "${future(now, 21)}"`));
+  const repliedAt = future(now, 1);
+  assert.equal(hostAction(root, 'receive', { eventId: 'late-answer', from: 'ada', text: 'A sunrise walk.', now: repliedAt }).kind, 'answer');
+  const awake = privateData(root, 'ada');
+  assert.equal(awake.status, 'active');
+  assert.equal(awake.unanswered_count, 0);
+  assert.equal(awake.rest_until, null);
+  assert.equal(awake.next_question_at, repliedAt);
+  assert.match(fs.readFileSync(file, 'utf8'), /Q: What made you smile\?\n\nA: A sunrise walk\./);
+  assert.equal(hostAction(root, 'receive', { eventId: 'late-answer', from: 'ada', text: 'Different', now: repliedAt }).duplicate, true);
+
+  hostAction(root, 'ask', { id: 'ben', question: 'What made you smile?', now });
+  hostAction(root, 'pause', { id: 'ben', now });
+  assert.equal(hostAction(root, 'receive', { eventId: 'paused-note', from: 'ben', text: 'The team picnic.', now: repliedAt }).kind, 'note');
+  assert.equal(privateData(root, 'ben').status, 'paused');
+  assert.equal(privateData(root, 'ben').rest_until, null);
+  assert.ok(privateData(root, 'ben').pending_question_id);
+  assert.match(fs.readFileSync(privateFile(root, 'ben'), 'utf8'), /Note: The team picnic\./);
+
+  hostAction(root, 'leave', { id: 'cora', now });
+  assert.throws(() => hostAction(root, 'receive', { eventId: 'left-reply', from: 'cora', text: 'Hello.', now: repliedAt }), /person is not active/);
+  assert.doesNotMatch(fs.readFileSync(privateFile(root, 'cora'), 'utf8'), /Hello\./);
+});
+
+test('old sent messages archive once per UTC day while recent and queued messages stay', (t) => {
+  const root = workspace(t);
+  const start = '2026-07-01T12:00:00.000Z';
+  const now = '2026-09-27T12:00:00.000Z';
+  hostAction(root, 'join', { id: 'ada', name: 'Ada', now: start });
+  const dir = path.join(root, 'atris', 'team', 'host', 'private', 'outbox');
+  const write = (suffix, created, state) => {
+    const id = `00000000-0000-4000-8000-${suffix}`;
+    const file = path.join(dir, `${id}.json`);
+    fs.writeFileSync(file, JSON.stringify({ id, to: 'ada', door: 'ada', kind: 'question', text: 'Hello?', created_at: created, state }));
+    return { id, file };
+  };
+  const july = write('000000000001', start, 'sent');
+  const august = write('000000000002', '2026-08-01T12:00:00.000Z', 'sent');
+  const recent = write('000000000003', '2026-09-01T12:00:00.000Z', 'sent');
+  const queued = write('000000000004', start, 'queued');
+  hostAction(root, 'outbox', { now });
+  const archive = path.join(dir, 'archive');
+  const readArchive = (month) => fs.readFileSync(path.join(archive, `${month}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(readArchive('2026-07').map((message) => message.id), [july.id]);
+  assert.deepEqual(readArchive('2026-08').map((message) => message.id), [august.id]);
+  assert.equal(fs.existsSync(july.file), false);
+  assert.equal(fs.existsSync(august.file), false);
+  assert.equal(fs.existsSync(recent.file), true);
+  assert.equal(fs.existsSync(queued.file), true);
+  const marker = path.join(root, 'atris', 'team', 'host', 'private', 'outbox-archived-on');
+  assert.equal(fs.readFileSync(marker, 'utf8'), '2026-09-27\n');
+  assert.equal(hostAction(root, 'receive', { eventId: 'archived-reply', from: 'ada', text: 'Hello.', replyTo: july.id, now }).kind, 'note');
+  const late = write('000000000005', start, 'sent');
+  hostAction(root, 'outbox', { now });
+  assert.equal(fs.existsSync(late.file), true);
+  assert.deepEqual(readArchive('2026-07').map((message) => message.id), [july.id]);
+  assert.equal(fs.readFileSync(marker, 'utf8'), '2026-09-27\n');
+  hostAction(root, 'outbox', { now: future(now, 1) });
+  assert.equal(fs.existsSync(late.file), false);
+  assert.deepEqual(readArchive('2026-07').map((message) => message.id), [july.id, late.id]);
+});
+
 test('an introduction saved before followup fields existed still loads and gains them on write', (t) => {
   const root = workspace(t);
   const [ada, , cora] = people(root);
