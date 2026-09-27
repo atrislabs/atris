@@ -423,6 +423,33 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
   };
 }
 
+// One landing board per process per repo. Boot, stream, and the team view
+// each ask for the board more than once in a single command; the first call
+// pays for git, later calls within BOARD_MEMO_MAX_AGE_MS share the result.
+// A full board also answers light requests (light is a subset). Long-lived
+// callers (stream follow) clear the memo before each poll.
+const BOARD_MEMO_MAX_AGE_MS = 10000;
+const boardMemo = new Map();
+
+function boardMemoKey(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base = '' } = {}) {
+  return JSON.stringify([canonicalPath(root), ttlDays, staleHours, base]);
+}
+
+function sharedBoard(root, opts = {}) {
+  const key = boardMemoKey(root, opts);
+  const light = Boolean(opts.light);
+  const nowMs = Date.now();
+  const hit = boardMemo.get(key);
+  if (hit && nowMs - hit.at < BOARD_MEMO_MAX_AGE_MS && (light || !hit.light)) return hit.board;
+  const board = collectBoard(root, { ...opts, light });
+  boardMemo.set(key, { board, light, at: Date.now() });
+  return board;
+}
+
+function clearBoardMemo() {
+  boardMemo.clear();
+}
+
 // Counts for the boot banner and digest. This intentionally pays the same
 // classification cost as the landing board so "in the air" never includes
 // merged branch residue.
@@ -430,7 +457,7 @@ function landSummary(cwd = process.cwd(), ttlDays = DEFAULT_TTL_DAYS) {
   const root = repoRoot(cwd);
   if (!root || !hasCommits(root)) return null;
   try {
-    const board = collectBoard(root, { ttlDays, light: true });
+    const board = sharedBoard(root, { ttlDays, light: true });
     return {
       branches: board.summary.active + board.summary.due,
       due: board.summary.due,
@@ -1008,9 +1035,11 @@ function landCommand(args = []) {
 }
 
 module.exports = {
+  clearBoardMemo,
   collectBoard,
   countLabel,
   landCommand,
   landSummary,
   reap,
+  sharedBoard,
 };

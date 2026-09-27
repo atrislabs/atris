@@ -6,7 +6,7 @@ const { hasFlag, readFlag } = require('../lib/arg-parser');
 const { isNonInteractive } = require('../lib/noninteractive');
 const escapeRegExp = require('../lib/escape-regexp');
 const { runGit: spawnGit } = require('../lib/git-spawn');
-const { collectBoard } = require('./land');
+const { clearBoardMemo, sharedBoard } = require('./land');
 const { listWorktrees } = require('./worktree');
 
 const DEFAULT_INTERVAL_MS = 3000;
@@ -584,7 +584,7 @@ function collectWorktreeActivityEvents(root, deps, events) {
 
 function collectLandingStateEvent(root, deps, events, nowMs) {
   try {
-    const board = collectBoard(root);
+    const board = sharedBoard(root);
     const summary = board && board.summary || {};
     const active = Number(summary.active || 0);
     const due = Number(summary.due || 0);
@@ -610,7 +610,7 @@ function collectLandingStateEvent(root, deps, events, nowMs) {
   }
 }
 
-function collectStreamEvents({ root = process.cwd(), sinceMs = 0, agent = '', nowMs = Date.now(), deps = defaultDeps() } = {}) {
+function collectStreamEvents({ root = process.cwd(), sinceMs = 0, agent = '', nowMs = Date.now(), deps = defaultDeps(), skipLanding = false } = {}) {
   const allDeps = { ...defaultDeps(), ...deps };
   const events = [];
   const roots = collectWorkspaceRoots(root, allDeps);
@@ -622,7 +622,7 @@ function collectStreamEvents({ root = process.cwd(), sinceMs = 0, agent = '', no
     collectScorecardEvents(item.root, allDeps, events);
   }
   collectWorktreeActivityEvents(root, allDeps, events);
-  collectLandingStateEvent(root, allDeps, events, nowMs);
+  if (!skipLanding) collectLandingStateEvent(root, allDeps, events, nowMs);
   const wantedAgent = agent ? sanitizeAgent(agent).toLowerCase() : '';
   const byKey = new Map();
   for (const event of events) {
@@ -648,7 +648,9 @@ function waitingOnOperator(tasks) {
   });
 }
 
-function collectSnapshot({ root = process.cwd(), deps = defaultDeps() } = {}) {
+// skipLanding: callers that never show the landing wait (the team roster)
+// skip the landing board, the most expensive git work here.
+function collectSnapshot({ root = process.cwd(), deps = defaultDeps(), skipLanding = false } = {}) {
   const allDeps = { ...defaultDeps(), ...deps };
   const active = new Map();
   const waiting = [];
@@ -668,10 +670,13 @@ function collectSnapshot({ root = process.cwd(), deps = defaultDeps() } = {}) {
     if (owner) active.set(sanitizeAgent(owner), clip(worktreeTask(item.root, allDeps) || 'worktree changes', 90));
   }
   let landingWait = 0;
-  try {
-    const board = collectBoard(root);
-    landingWait = Number(board?.summary?.due || 0);
-  } catch {}
+  if (!skipLanding) {
+    try {
+      // Same options as the landing-state event so both share one board.
+      const board = sharedBoard(root);
+      landingWait = Number(board?.summary?.due || 0);
+    } catch {}
+  }
   const activeRows = [...active.entries()];
   const lines = [];
   lines.push(`Team stream: ${activeRows.length} active agent${activeRows.length === 1 ? '' : 's'}.`);
@@ -838,6 +843,7 @@ function streamCommand(args = [], deps = defaultDeps()) {
     if (closed || polling) return;
     polling = true;
     try {
+      clearBoardMemo();
       const fresh = pollStreamOnce(state, { root, sinceMs: opts.sinceMs || (nowMs - 24 * 60 * 60 * 1000), agent: opts.agent, deps: allDeps, nowMs: allDeps.now() });
       if (fresh.length) console.log(renderRecords(fresh, opts));
     } finally {

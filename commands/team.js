@@ -34,12 +34,14 @@ function collectTeamPresence(deps = {}) {
   const root = deps.root || repoRoot(deps.cwd || process.cwd());
   const nowMs = typeof deps.now === 'function' ? deps.now() : Date.now();
   const freshnessWindowMs = deps.freshnessWindowMs || DEFAULT_FRESHNESS_WINDOW_MS;
-  const stream = deps.stream || collectSnapshot({ root, deps: deps.streamDeps });
+  const skipLanding = Boolean(deps.skipLanding);
+  const stream = deps.stream || collectSnapshot({ root, deps: deps.streamDeps, skipLanding });
   const streamEvents = deps.streamEvents || collectStreamEvents({
     root,
     sinceMs: nowMs - freshnessWindowMs,
     nowMs,
     deps: deps.streamDeps,
+    skipLanding,
   });
   return buildTeamPresence({
     nowMs,
@@ -174,7 +176,9 @@ function escapeHtml(text) {
 
 function collectTeamRoster(deps = {}) {
   const root = deps.root || repoRoot(deps.cwd || process.cwd());
-  const presence = deps.presence || collectTeamPresence(deps);
+  // The roster only reads who is awake, never the landing wait, so it skips
+  // the landing board entirely.
+  const presence = deps.presence || collectTeamPresence({ ...deps, skipLanding: true });
   const awake = new Set(presence.members.map((member) => String(member.name || '').trim().toLowerCase()));
   const engineRoster = deps.engineRoster || readEngineRegistry(root, { persist: false }).engines;
   const engineByOwner = new Map();

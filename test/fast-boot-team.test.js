@@ -140,3 +140,44 @@ test('cherry cache: repos without .atris get no cache file', (t) => {
   land.collectBoard(repo, { light: true });
   assert.equal(fs.existsSync(path.join(repo, '.atris')), false);
 });
+
+test('landing board is computed once per process for stream snapshot plus events', (t) => {
+  const { base, repo } = makeRepo();
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  commitOnBranch(repo, 'feature-a', 'a.txt');
+  const stream = require('../commands/stream');
+  land.clearBoardMemo();
+  const run = countGit(() => {
+    const snapshot = stream.collectSnapshot({ root: repo });
+    const events = stream.collectStreamEvents({ root: repo });
+    return { snapshot, events };
+  });
+  assert.equal(run.counts['for-each-ref'], 1, 'one branch listing means one board');
+  assert.equal(run.value.events.filter((e) => e.event === 'landing_state').length, 1);
+  // Boot's light summary is answered by the same full board.
+  const again = countGit(() => land.landSummary(repo));
+  assert.equal(again.counts['for-each-ref'] || 0, 0);
+  assert.equal(again.value.branches, 1);
+  land.clearBoardMemo();
+  const fresh = countGit(() => land.sharedBoard(repo));
+  assert.equal(fresh.counts['for-each-ref'], 1, 'clearing the memo recomputes');
+});
+
+test('team roster skips the landing board; team presence still reads it', (t) => {
+  const { base, repo } = makeRepo();
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  commitOnBranch(repo, 'feature-a', 'a.txt');
+  const team = require('../commands/team');
+  land.clearBoardMemo();
+  const deps = { root: repo, members: [{ name: 'scout', role: 'scout' }], missions: [], tasks: [] };
+  const roster = countGit(() => team.collectTeamRoster(deps));
+  assert.equal(roster.counts['for-each-ref'] || 0, 0);
+  assert.equal(roster.value.length, 1);
+
+  land.clearBoardMemo();
+  const out = [];
+  const presence = countGit(() => team.teamCommand(['presence'], { ...deps, write: (text) => out.push(text) }));
+  assert.equal(presence.value, 0);
+  assert.equal(presence.counts['for-each-ref'], 1);
+  assert.match(out.join(''), /landing wait: 0/);
+});
