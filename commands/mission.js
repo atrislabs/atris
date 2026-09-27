@@ -32,6 +32,7 @@ const {
 const {
   resolveEngineForRoleWithPreference,
   engineFailureHealthStatus,
+  recordEngineRunHealth,
   setEngineHealth,
 } = require('../lib/engine-registry');
 const {
@@ -445,10 +446,13 @@ function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
   };
 }
 
+// A stalled tick benches its engine for the cooldown, so the next tick's
+// roster pick is the backup; no retry inside the tick is needed.
 function recordMissionEngineTickOutcome(engineId, result, root = process.cwd()) {
   if (!engineId) return null;
-  const status = result && result.status === 'ran' ? 'ready' : engineFailureHealthStatus(result);
-  return status ? setEngineHealth(engineId, status, root) : null;
+  if (result && result.status === 'ran') return setEngineHealth(engineId, 'ready', root);
+  if (!engineFailureHealthStatus(result)) return null;
+  return recordEngineRunHealth(engineId, result, root);
 }
 
 function runnerModelPatch(runner, model) {

@@ -521,7 +521,7 @@ function buildPhaseRunner(phase, promptFile, cwd = process.cwd(), allowedTools =
       ...(picked.engine.roster_effort ? { effort: picked.engine.roster_effort } : {}),
     });
     const maxSeconds = Number(picked.engine.roster_max_seconds) || 0;
-    return { command, timeoutMs: maxSeconds > 0 ? maxSeconds * 1000 : null };
+    return { command, timeoutMs: maxSeconds > 0 ? maxSeconds * 1000 : null, engineId: picked.engine.id, maxSeconds };
   } finally {
     if (previous === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
     else process.env.ATRIS_RUNNER_PROFILE = previous;
@@ -543,10 +543,12 @@ function executePhaseDetailed(phase, context, options = {}) {
   const tmpFile = path.join(process.cwd(), '.autopilot-prompt.tmp');
   fs.writeFileSync(tmpFile, prompt);
 
+  let rosterRunner = null;
   try {
     let cmd = options.cmdOverride;
     if (!cmd) {
       const runner = buildPhaseRunner(phase, tmpFile);
+      if (runner.engineId) rosterRunner = runner;
       cmd = runner.command;
       // A roster time cap stops the phase at that time.
       if (runner.timeoutMs) timeout = runner.timeoutMs;
@@ -567,6 +569,13 @@ function executePhaseDetailed(phase, context, options = {}) {
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
     if (isPhaseTimeoutError(err)) {
+      // A roster worker that stalls sits out the cooldown, so the next
+      // phase run goes to the job's backup.
+      if (rosterRunner) {
+        try {
+          require('../lib/engine-registry').recordEngineRunHealth(rosterRunner.engineId, { timed_out: true, max_seconds: rosterRunner.maxSeconds }, process.cwd());
+        } catch { /* best effort */ }
+      }
       throw new Error(`${phase} phase timed out after ${timeout / 1000}s (configured runner hit the wall; any work it committed survives, reconcile from pre-tick HEADs)`);
     }
     if (isPhaseKillError(err)) {

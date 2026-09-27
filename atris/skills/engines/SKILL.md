@@ -42,6 +42,8 @@ The roster is a markdown file the owner can edit any time: `atris/ROSTER.md` for
 
 The first worker that is ready and not expired leads; the rest are its backups, in order. Tools take engine ids or `claude code`, `atris fast`, and `gemini`. The older one-line shape (`build: claude opus 5.5, backup codex`) still reads the same, and the first `atris engine assign` rewrites the file into sections. `assign <job> <tool>` sets the lead and keeps the rest; `--add` puts a worker at the end, `--remove <tool>` drops one, `--clear` drops the job, and `--everywhere` writes the machine file. `atris engine roster --available` lists the tools and models on this machine.
 
+A worker that stalls (hits its max, times out, or loses its connection) is benched for 30 minutes and the next worker takes the job; a dispatched build hands the same brief to the next ready worker right away, and `atris engine roster` shows the benched worker as "cooling until 14:32 (stalled)". A run that fails for a real reason, like failing tests, is not handed over.
+
 A job's list is also its team. When a task splits into parallel parts, give the parts to that job's workers in order, first worker first, instead of piling them all on the lead. Heavy models like astra and fable should only judge: have the search lead write them a trimmed brief first.
 
 Changes for one shell only go in a session file above both rosters. Set `ATRIS_ROSTER_SESSION=<name>` (agent shells have no terminal, so they must), then `atris engine assign <job> <tool> --session`. A session job replaces that job's whole list for this shell; `atris engine roster session` shows the changes and `atris engine roster session clear` drops them. A session nobody used for a day is dropped on its own.
