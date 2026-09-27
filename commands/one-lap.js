@@ -13,6 +13,7 @@ const {
   resolveEngineForRoleRanked,
   resolveRegisteredEngine,
   rosterPinFor,
+  ROSTER_PIN_FIELDS,
   rosterDecided,
 } = require('../lib/engine-registry');
 const { parseVerifyCommand } = require('../lib/auto-accept-certified');
@@ -179,7 +180,7 @@ function readyValidators(root, preferred = '', exclude = '') {
     ? rosterRanked.ranked.map((engine) => engine.id)
     : [];
   const pinned = fromRoster && rosterRanked.engine
-    && (rosterRanked.engine.roster_model || rosterRanked.engine.roster_effort || rosterRanked.engine.roster_max_seconds)
+    && (rosterRanked.engine.roster_model || rosterRanked.engine.roster_effort || rosterRanked.engine.roster_max_seconds || rosterRanked.engine.roster_prep)
     ? rosterRanked.engine
     : null;
   // A roster pick can name an engine that reviews only when picked (codex),
@@ -208,24 +209,25 @@ function readyValidators(root, preferred = '', exclude = '') {
 
 function pinFields(engine) {
   const pin = {};
-  for (const field of ['roster_model', 'roster_effort', 'roster_max_seconds']) {
+  for (const field of ROSTER_PIN_FIELDS) {
     if (engine && engine[field]) pin[field] = engine[field];
   }
   return pin;
 }
 
-// The roster's pins ride into the flight: the builder's model, effort, and
-// time cap for the builder, and each reviewer's for that reviewer only. A
-// reviewer with only a model keeps the plain model string.
+// The roster's pins ride into the flight: the builder's model, effort, time
+// cap, and prep job for the builder, and each reviewer's for that reviewer
+// only. A reviewer with only a model keeps the plain model string.
 function lapModelPins(executor, validators = []) {
   const validatorModels = {};
   for (const engine of validators) {
     if (!engine) continue;
-    if (engine.roster_effort || engine.roster_max_seconds) {
+    if (engine.roster_effort || engine.roster_max_seconds || engine.roster_prep) {
       validatorModels[engine.id] = {
         model: engine.roster_model || '',
         effort: engine.roster_effort || '',
         max_seconds: engine.roster_max_seconds || 0,
+        ...(engine.roster_prep ? { prep: engine.roster_prep } : {}),
       };
     } else if (engine.roster_model) {
       validatorModels[engine.id] = engine.roster_model;
@@ -235,6 +237,7 @@ function lapModelPins(executor, validators = []) {
     model: executor && executor.roster_model || '',
     ...(executor && executor.roster_effort ? { effort: executor.roster_effort } : {}),
     ...(executor && executor.roster_max_seconds ? { maxSeconds: executor.roster_max_seconds } : {}),
+    ...(executor && executor.roster_prep ? { prep: executor.roster_prep } : {}),
     validatorModels: Object.keys(validatorModels).length ? validatorModels : null,
   };
 }

@@ -11,7 +11,7 @@
 //   atris engine roster confirm  renew every dated worker for 30 days
 //   atris engine roster session [clear]  this shell's own changes
 //   atris engine roster --available  tools and models on this machine
-//   atris engine assign <job> <tool> [--like <kind>] [--model <m>] [--effort <level>] [--max "20 min"] [--backup "<tool> [model]"] [--days <n>] [--add] [--session | --everywhere]
+//   atris engine assign <job> <tool> [--like <kind>] [--model <m>] [--effort <level>] [--max "20 min"] [--prep <job>] [--backup "<tool> [model]"] [--days <n>] [--add] [--session | --everywhere]
 //   atris engine assign <job> --remove <tool> | --clear [--session | --everywhere]
 //   jobs are open-ended: search, build, review, or your own ("small build")
 //   atris engine cursor     make cursor the default engine here
@@ -1013,6 +1013,7 @@ function workerRow(step, index, leadIndex) {
     model: worker.model || null,
     effort: worker.effort || null,
     max_seconds: Number(worker.max_seconds) > 0 ? Number(worker.max_seconds) : null,
+    prep: worker.prep ? rosterJobLabel(worker.prep) : null,
     until: worker.until || null,
     line: worker.line || null,
     ...(worker.error ? { text: worker.text || '' } : {}),
@@ -1074,6 +1075,8 @@ function jobRosterRow(job, role, root, state, registry, now, key = role) {
     model: resolved.engine && resolved.engine.roster_model ? resolved.engine.roster_model : null,
     effort: resolved.engine && resolved.engine.roster_effort ? resolved.engine.roster_effort : null,
     max_seconds: pick && Number(pick.max_seconds) > 0 ? Number(pick.max_seconds) : null,
+    prep: first && first.step.worker.prep ? rosterJobLabel(first.step.worker.prep) : null,
+    backup_prep: good[1] && good[1].step.worker.prep ? rosterJobLabel(good[1].step.worker.prep) : null,
     runs: runs || nowRuns,
     backup_runs: runsOf(good[1]),
     now_runs: nowRuns,
@@ -1136,7 +1139,7 @@ function renderWorkerLines(row) {
   const width = Math.max(...row.workers.map((worker) => (worker.runs ? worker.runs.text : worker.text || '').length));
   return row.workers.map((worker, index) => {
     const what = (worker.runs ? worker.runs.text : worker.text || '').padEnd(width);
-    const extras = [worker.max_seconds ? rosterMaxText(worker.max_seconds) : '', worker.until ? `until ${worker.until}` : ''].filter(Boolean);
+    const extras = [worker.max_seconds ? rosterMaxText(worker.max_seconds) : '', worker.prep ? `prepped by ${worker.prep}` : '', worker.until ? `until ${worker.until}` : ''].filter(Boolean);
     const state = worker.status === 'leads' ? 'leads now' : worker.status === 'backup' ? 'backup' : `skipped, ${worker.why}`;
     return `  ${index + 1}. ${what} ${[state, ...extras].join(', ')}`.trimEnd();
   });
@@ -1159,8 +1162,8 @@ function renderJobRoster(rows) {
     const fallsTo = `${row.like ? `falls back to ${row.like}` : 'router decides'}: ${nowText}`;
     if (!row.pick) return `${label} no pick, ${fallsTo}`;
     const owner = row.runs.text.padEnd(ownerWidth);
-    const backup = row.backup_runs ? `backup ${row.backup_runs.text}` : 'no backup';
-    const cap = row.max_seconds ? `${rosterMaxText(row.max_seconds)}, ` : '';
+    const backup = row.backup_runs ? `backup ${row.backup_runs.text}${row.backup_prep ? ` prepped by ${row.backup_prep}` : ''}` : 'no backup';
+    const cap = `${row.max_seconds ? `${rosterMaxText(row.max_seconds)}, ` : ''}${row.prep ? `prepped by ${row.prep}, ` : ''}`;
     const date = untilText(row.pick);
     const fallback = row.lead === 'backup' ? 'using backup' : row.lead === 'later' ? `using ${nowText}` : fallsTo;
     const status = row.status === 'expired' ? `expired, ${fallback}`
@@ -1319,7 +1322,7 @@ function runRosterCommand(args, root, now = new Date()) {
   return 0;
 }
 
-const ASSIGN_USAGE = 'usage: atris engine assign <job> <tool> [--model <m>] [--effort low|medium|high|xhigh|max] [--max "20 min"] [--days <n>] [--add] [--backup "<tool> [model]"] [--like search|build|review] [--session | --everywhere], or atris engine assign <job> --remove <tool> | --clear. jobs live in atris/ROSTER.md (~/.atris/ROSTER.md with --everywhere, this shell only with --session) and you can edit that file any time';
+const ASSIGN_USAGE = 'usage: atris engine assign <job> <tool> [--model <m>] [--effort low|medium|high|xhigh|max] [--max "20 min"] [--prep <job>] [--days <n>] [--add] [--backup "<tool> [model]"] [--like search|build|review] [--session | --everywhere], or atris engine assign <job> --remove <tool> | --clear. jobs live in atris/ROSTER.md (~/.atris/ROSTER.md with --everywhere, this shell only with --session) and you can edit that file any time';
 
 function runAssignCommand(args, root, now = new Date()) {
   const job = args[0] && !String(args[0]).startsWith('--') ? args[0] : '';
@@ -1344,7 +1347,7 @@ function runAssignCommand(args, root, now = new Date()) {
   const flags = {};
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i];
-    if (!['--model', '--backup', '--days', '--like', '--effort', '--max', '--remove'].includes(arg) || !rest[i + 1] || rest[i + 1].startsWith('--')) {
+    if (!['--model', '--backup', '--days', '--like', '--effort', '--max', '--prep', '--remove'].includes(arg) || !rest[i + 1] || rest[i + 1].startsWith('--')) {
       console.error(`invalid assign option "${arg}"`);
       return 2;
     }
@@ -2003,8 +2006,8 @@ function runDispatchCommand(args, root) {
       : `engine dispatch: ${err.message}`);
     return 2;
   }
-  // The build line's model, effort, and time cap ride along when the roster
-  // picks this same engine for build.
+  // The build line's model, effort, time cap, and prep job ride along when
+  // the roster picks this same engine for build.
   const pin = rosterPinFor('executor', canonical, root);
   return runDispatchFlight({
     root,
@@ -2016,6 +2019,7 @@ function runDispatchCommand(args, root) {
     ...(pin.roster_model ? { model: pin.roster_model } : {}),
     ...(pin.roster_effort ? { effort: pin.roster_effort } : {}),
     ...(pin.roster_max_seconds ? { maxSeconds: pin.roster_max_seconds } : {}),
+    ...(pin.roster_prep ? { prep: pin.roster_prep } : {}),
   }).then((flight) => {
     if (json) console.log(JSON.stringify(flight, null, 2));
     return flight.paused.length ? 1 : 0;
@@ -2146,7 +2150,7 @@ function engineCommand(args = [], deps = {}) {
     if (sub === 'help' || args.includes('--help') || args.includes('-h')) {
       console.log('\n  atris engine watch [<id>|latest] [--no-follow]\n                           follow one live transcript or list running engine work');
       console.log('\n  long read-only asks: atris engine ask "..." --engine agy --timeout <seconds>\n                           quick asks default to 120 seconds; explicit jobs allow up to 3600\n                           follow live work with atris engine watch latest');
-      console.log('\n  atris engine            roster + current default\n  atris engine roster [--json] show every job and its workers in order: search, build, review, and your own\n  atris engine roster confirm renew every dated worker for 30 days\n  atris engine roster session [clear]\n                           show or drop the roster changes for this shell only\n  atris engine roster --available\n                           tools on this machine and the models each one offers\n  atris engine roster --runs [job]\n                           the last 20 runs, newest first, with tool, model, time, and outcome\n  atris engine assign <job> <tool> [--like <kind>] [--model <m>] [--effort <level>] [--max "20 min"] [--backup "<tool> [model]"] [--days <n>] [--add] [--session | --everywhere]\n  atris engine assign <job> --remove <tool> | --clear [--session | --everywhere]\n                           sets the lead worker of the job; --add puts one more at the end; jobs: search, build, review,\n                           or your own like "small build" (--like search|build|review when the name does not say);\n                           --everywhere is for all projects; --session is this shell only (set ATRIS_ROSTER_SESSION=<name>)\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json [--all] full registry: default + engines with tier, roles, fallback, health (--all includes hidden engines)\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> or <job> [--json]\n                           choose the best ready engine for navigator|executor|validator or a roster job\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine bench [names...] [--runs N]\n                           ranked latency scoreboard of engine passes\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine validate <receipt-path|latest> [--engine <name>]\n                           check ask answers with a different read-only referee\n  atris engine validate scoreboard\n                           show pass rates by worker engine\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+      console.log('\n  atris engine            roster + current default\n  atris engine roster [--json] show every job and its workers in order: search, build, review, and your own\n  atris engine roster confirm renew every dated worker for 30 days\n  atris engine roster session [clear]\n                           show or drop the roster changes for this shell only\n  atris engine roster --available\n                           tools on this machine and the models each one offers\n  atris engine roster --runs [job]\n                           the last 20 runs, newest first, with tool, model, time, and outcome\n  atris engine assign <job> <tool> [--like <kind>] [--model <m>] [--effort <level>] [--max "20 min"] [--prep <job>] [--backup "<tool> [model]"] [--days <n>] [--add] [--session | --everywhere]\n  atris engine assign <job> --remove <tool> | --clear [--session | --everywhere]\n                           sets the lead worker of the job; --add puts one more at the end; jobs: search, build, review,\n                           or your own like "small build" (--like search|build|review when the name does not say);\n                           --prep search has that job read the task first and hand this worker a short brief;\n                           --everywhere is for all projects; --session is this shell only (set ATRIS_ROSTER_SESSION=<name>)\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json [--all] full registry: default + engines with tier, roles, fallback, health (--all includes hidden engines)\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> or <job> [--json]\n                           choose the best ready engine for navigator|executor|validator or a roster job\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine bench [names...] [--runs N]\n                           ranked latency scoreboard of engine passes\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine validate <receipt-path|latest> [--engine <name>]\n                           check ask answers with a different read-only referee\n  atris engine validate scoreboard\n                           show pass rates by worker engine\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
       return 0;
     }
     if (isFreshWorkspace(root)) {
