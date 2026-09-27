@@ -397,3 +397,42 @@ test('an autopilot phase on a roster worker records landed with tokens, or stall
     assert.equal(rows[0].source, 'autopilot');
   }, { roster });
 });
+
+test('a one-lap review records each validator attempt, handed over past a credit wall', async () => {
+  await withRoom(async ({ root, wt }) => {
+    const cli = (args) => {
+      if (args[0] === 'task' && args[1] === 'show') return { status: 0, stdout: JSON.stringify(TASK), stderr: '' };
+      if (args[0] === 'worktree' && args[1] === 'start') return { status: 0, stdout: `next: cd ${wt}\n`, stderr: '' };
+      return { status: 0, stdout: '', stderr: '' };
+    };
+    const flight = await fleet.runDispatchFlight({
+      root,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      reviewOnly: true,
+      verifierCommand: 'node --test test/widget.test.js',
+      receiptContext: { source: 'one_lap', objective: 'Fix the widget' },
+      ownCli: cli,
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'built the widget' }),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+      validatorEngines: ['codex', 'claude'],
+      validatorDispatcher: ({ engine }) => Promise.resolve(engine === 'codex'
+        ? { exitCode: 1, stderr: 'usage limit reached' }
+        : { exitCode: 0, report: 'read the diff\nSIGNOFF: widget renders once' }),
+      validatorStateInspector: () => ({ ok: true, head: 'abc', digest: 'clean-state' }),
+      changeInspector: () => ({ has_change: true, base: 'a', head: 'b', commit: 'b', dirty: false }),
+      scoutAsk: false,
+      clock: stepClock(),
+      log: () => {},
+    });
+    assert.equal(flight.ready.length, 1);
+    const rows = runs(root);
+    assert.deepEqual(rows.map((row) => [row.job, row.engine, row.outcome, row.detail || '', row.handed_over_to || '']), [
+      ['review', 'codex', 'credit out', 'said "usage limit"', 'claude'],
+      ['review', 'claude', 'landed', 'signed off', ''],
+      ['build', 'cursor', 'landed', '', ''],
+    ]);
+    assert.ok(rows.every((row) => row.source === 'one lap'));
+  });
+});
