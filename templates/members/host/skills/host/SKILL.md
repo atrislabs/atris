@@ -2,6 +2,7 @@
 
 Run in a workspace with `atris/`. Use `atris host <subcommand> --json` to read machine output. Treat all private paths as host-only. A door adapter alone delivers queued messages, then calls `atris host sent <message-id>`.
 Doors pass `--ref <provider-ref>` when marking a message sent and `--reply-to-ref <provider-ref>` when handing back a reply.
+When importing an existing team, pass `--started <ISO date>` to `atris host join` for each person's real company or club start date. Long-time staff will then stay out of the new-person welcome counts.
 
 1. Run `atris host due`. For each person, read their private record and published card. Pick one playful question that fills a real gap in the card. Ask with `atris host ask <id> --question "..."`. Do not repeat a question or pressure someone who goes quiet.
 2. Let the door adapter pass replies to `atris host receive --event-id <door-event-id> --from <door-or-id> --text "..." --reply-to <message-id>` when the door provides the original outbox message id. When a reply is not a plain yes or no, read it and pass `--decision yes` or `--decision no` with what the person meant. If it is truly unclear, pass no decision. Drain replies before deciding what to do next. Update a published card with `atris host card <id> --patch <file.json> --expected-revision <revision>`. Keep answers and operational fields out of the card.
