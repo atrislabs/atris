@@ -574,6 +574,7 @@ function showHelpAll() {
   console.log('  who        - Show local engines and team members working, waiting, done, or stale');
   console.log('  stream     - Watch the whole team work live in one terminal');
   console.log('  team       - One team view: members, roles, engine assignments (presence for live)');
+  console.log('  host       - The Host: gets to know people, makes two-yes introductions (atris member install host)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  doctor     - Node/task/auth/workspace readiness (--json for agents)');

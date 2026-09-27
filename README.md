@@ -110,6 +110,17 @@ atris site publish dist --slug my-site --spa
 atris site publish . --slug my-next-app --profile app --build   # Next.js static export
 ```
 
+### Bring people together with the Host
+
+The Host is a team member that gets to know everyone in a room (a company, a club, your own network) through one fun question at a time, keeps a card for each person, and introduces two people only when both say yes. Then it offers to find a time and checks that it happened. It never reads anyone's messages and keeps no scores.
+
+```bash
+atris member install host
+atris host setup --room personal     # your own network: it asks you, and drafts messages for you to send
+atris host import people.jsonl       # bulk add people and who already knows whom
+atris host room                      # the host's weekly read
+```
+
 ## Chat With Atris 2
 
 `ax` is the Atris 2 chat and coding-agent CLI. It uses the hosted Atris cloud by default, streams text, shows tool activity, and keeps fresh installs away from local setup.
