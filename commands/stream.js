@@ -15,6 +15,11 @@ const MAX_SUMMARY = 180;
 const ACTIVE_MISSION_STATES = new Set(['planning', 'active', 'running', 'ready']);
 const ACTIVE_TASK_STATES = new Set(['claimed', 'do', 'doing', 'in_progress', 'review']);
 
+// One stable default runner so per-process memos can key on it.
+function defaultRunGit(root, args) {
+  return spawnGit(args, { cwd: root, check: false });
+}
+
 function defaultDeps() {
   return {
     existsSync: fs.existsSync,
@@ -22,7 +27,7 @@ function defaultDeps() {
     readdirSync: fs.readdirSync,
     statSync: fs.statSync,
     watch: fs.watch,
-    runGit: (root, args) => spawnGit(args, { cwd: root, check: false }),
+    runGit: defaultRunGit,
     now: () => Date.now(),
   };
 }
@@ -540,26 +545,48 @@ function collectWorkspaceRoots(root, deps) {
   return [...out.values()];
 }
 
+// Owner and task come from one `git config` read per root, shared for a few
+// seconds across the snapshot and the event scan of the same command.
+const WORKTREE_CONFIG_MAX_AGE_MS = 10000;
+const worktreeConfigMemo = new WeakMap();
+
+function worktreeConfig(root, deps) {
+  const key = typeof deps.runGit === 'function' ? deps.runGit : null;
+  let byRoot = key ? worktreeConfigMemo.get(key) : null;
+  if (key && !byRoot) {
+    byRoot = new Map();
+    worktreeConfigMemo.set(key, byRoot);
+  }
+  const hit = byRoot && byRoot.get(root);
+  if (hit && Date.now() - hit.at < WORKTREE_CONFIG_MAX_AGE_MS) return hit;
+  const found = { owner: '', task: '', at: Date.now() };
+  const result = runGit(root, ['config', '--get-regexp', '^branch\\..*\\.atris-(owner|task)$'], deps);
+  if (result.status === 0) {
+    for (const line of String(result.stdout || '').split(/\r?\n/).filter(Boolean)) {
+      const [name, ...rest] = line.split(/\s+/);
+      const value = rest.join(' ');
+      if (!found.owner && /\.atris-owner$/i.test(name)) found.owner = value;
+      if (!found.task && /\.atris-task$/i.test(name)) found.task = value;
+    }
+  }
+  if (byRoot) byRoot.set(root, found);
+  return found;
+}
+
+function clearWorktreeConfigMemo(deps) {
+  if (deps && typeof deps.runGit === 'function') worktreeConfigMemo.delete(deps.runGit);
+}
+
 function worktreeOwner(root, deps) {
   const sidecar = readJson(statePaths(root).sidecar, deps, null);
   if (sidecar) return sidecar.owner || sidecar.member || sidecar.agent || '';
-  const result = runGit(root, ['config', '--get-regexp', '^branch\\..*\\.atris-owner$'], deps);
-  if (result.status === 0) {
-    const line = String(result.stdout || '').split(/\r?\n/).find(Boolean);
-    if (line) return line.split(/\s+/).slice(1).join(' ');
-  }
-  return '';
+  return worktreeConfig(root, deps).owner;
 }
 
 function worktreeTask(root, deps) {
   const sidecar = readJson(statePaths(root).sidecar, deps, null);
   if (sidecar && sidecar.task) return sidecar.task;
-  const result = runGit(root, ['config', '--get-regexp', '^branch\\..*\\.atris-task$'], deps);
-  if (result.status === 0) {
-    const line = String(result.stdout || '').split(/\r?\n/).find(Boolean);
-    if (line) return line.split(/\s+/).slice(1).join(' ');
-  }
-  return '';
+  return worktreeConfig(root, deps).task;
 }
 
 function collectWorktreeActivityEvents(root, deps, events) {
@@ -844,6 +871,7 @@ function streamCommand(args = [], deps = defaultDeps()) {
     polling = true;
     try {
       clearBoardMemo();
+      clearWorktreeConfigMemo(allDeps);
       const fresh = pollStreamOnce(state, { root, sinceMs: opts.sinceMs || (nowMs - 24 * 60 * 60 * 1000), agent: opts.agent, deps: allDeps, nowMs: allDeps.now() });
       if (fresh.length) console.log(renderRecords(fresh, opts));
     } finally {

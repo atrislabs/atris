@@ -299,3 +299,27 @@ test('boot reads the task list once for the todo buckets and the status glance',
     db.prepare = originalPrepare;
   }
 });
+
+test('stream reads worktree owner and task with one git config call per root', () => {
+  const stream = require('../commands/stream');
+  const calls = [];
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-fast-owner-'));
+  try {
+    const runGit = (cwd, args) => {
+      calls.push(args.join(' '));
+      if (args[0] === 'config') {
+        return { status: 0, stdout: 'branch.a.atris-task ship the thing\nbranch.a.atris-owner codex\nbranch.b.atris-owner other\n' };
+      }
+      if (args[0] === 'rev-parse') return { status: 0, stdout: `${cwd}\n` };
+      if (args[0] === 'log') return { status: 0, stdout: '2026-09-27T12:00:00Z\tcodex\tlanded work\n' };
+      return { status: 1, stdout: '' };
+    };
+    const deps = { runGit, now: () => Date.parse('2026-09-27T12:05:00Z') };
+    const snapshot = stream.collectSnapshot({ root, deps, skipLanding: true });
+    stream.collectStreamEvents({ root, deps, skipLanding: true });
+    assert.deepEqual(snapshot.active, [['codex', 'ship the thing']]);
+    assert.equal(calls.filter((c) => c.startsWith('config')).length, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
