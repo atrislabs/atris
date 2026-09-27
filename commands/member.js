@@ -2652,7 +2652,98 @@ function renderMemberGoalsMarkdown(state) {
   return `${lines.join('\n').trimEnd()}\n`;
 }
 
+const GOAL_TERMINAL_STATUSES = new Set(['completed', 'superseded', 'retired']);
+
+function goalIsTerminal(goal) {
+  if (!goal || typeof goal !== 'object') return false;
+  if (GOAL_TERMINAL_STATUSES.has(lowerCompact(goal.status))) return true;
+  return Boolean(goal.completed_at || goal.superseded_at || goal.retired_at);
+}
+
+// The writer's own history is kept exactly as it is, never deduplicated.
+// Disk entries are added only when the writer does not already hold an
+// identical copy and they are not older than its oldest entry: older ones
+// were trimmed on purpose by the 50-entry cap, newer ones landed after load.
+function mergeGoalHistory(diskHistory, memoryHistory) {
+  const memory = Array.isArray(memoryHistory) ? memoryHistory : [];
+  const held = new Map();
+  let floor = '';
+  for (const entry of memory) {
+    const key = JSON.stringify(entry);
+    held.set(key, (held.get(key) || 0) + 1);
+    const at = String(entry?.at || '');
+    if (at && (!floor || at < floor)) floor = at;
+  }
+  const added = [];
+  for (const entry of Array.isArray(diskHistory) ? diskHistory : []) {
+    if (!entry || typeof entry !== 'object') continue;
+    const key = JSON.stringify(entry);
+    if (held.get(key)) {
+      held.set(key, held.get(key) - 1);
+      continue;
+    }
+    if (floor && String(entry.at || '') < floor) continue;
+    added.push(entry);
+  }
+  if (!added.length) return memory;
+  return [...memory, ...added].sort((x, y) => String(x?.at || '').localeCompare(String(y?.at || '')));
+}
+
+// Ids are not unique across time: makeGoalId is date plus title, so a goal
+// recreated the same day reuses a finished goal's id. created_at tells a
+// stale rewrite of the same goal from a deliberately new one.
+function memberGoalIdentity(goal) {
+  return `${goal.id}|${goal.created_at || ''}`;
+}
+
+// The in-memory state can be stale: a repair can land on goals.json between
+// loadMemberGoals and this write, and blind overwrite resurrected terminal
+// goals four times in two days (OBL-2332). Reconcile against the live file
+// before writing: a terminal status on disk beats a non-terminal status in
+// memory, histories union per goal, and goals that exist only on disk
+// survive. A terminal goal in memory still wins over a living one on disk, so
+// intentional completes and supersedes keep working.
+function reconcileMemberGoalsState(state, disk) {
+  const diskGoals = new Map();
+  for (const goal of disk.goals || []) {
+    if (goal && goal.id) diskGoals.set(memberGoalIdentity(goal), goal);
+  }
+  const seen = new Set();
+  const mergedGoals = [];
+  for (const goal of state.goals || []) {
+    const identity = goal && goal.id ? memberGoalIdentity(goal) : null;
+    const diskGoal = identity ? diskGoals.get(identity) : null;
+    if (identity) seen.add(identity);
+    if (!diskGoal) {
+      mergedGoals.push(goal);
+      continue;
+    }
+    goal.history = mergeGoalHistory(diskGoal.history, goal.history);
+    if (goalIsTerminal(diskGoal) && !goalIsTerminal(goal)) {
+      goal.history.push({
+        at: stampIso(),
+        event: 'terminal_state_preserved',
+        disk_status: diskGoal.status || null,
+        attempted_status: goal.status || null,
+      });
+      goal.status = diskGoal.status;
+      for (const key of ['completed_at', 'superseded_at', 'retired_at']) {
+        if (diskGoal[key] !== undefined) goal[key] = diskGoal[key];
+      }
+    }
+    mergedGoals.push(goal);
+  }
+  for (const goal of disk.goals || []) {
+    if (goal && goal.id && !seen.has(memberGoalIdentity(goal))) mergedGoals.push(goal);
+  }
+  return { ...state, goals: mergedGoals };
+}
+
 function writeMemberGoals(paths, state) {
+  const disk = readJson(paths.goalsJson, null);
+  if (disk && Array.isArray(disk.goals) && disk.goals.length) {
+    state = reconcileMemberGoalsState(state, disk);
+  }
   state.updated_at = stampIso();
   fs.writeFileSync(paths.goalsJson, JSON.stringify(state, null, 2) + '\n', 'utf8');
   fs.writeFileSync(paths.goalsMd, renderMemberGoalsMarkdown(state), 'utf8');
@@ -2668,10 +2759,14 @@ function displaySignalPath(filePath) {
 function seedAutonomousProblemGoal(name, paths, state, candidate, purpose) {
   const title = candidate.objective_title || candidate.title || 'Investigate discovered problem';
   const id = makeGoalId(title);
-  const existing = state.goals.find((goal) => goal.id === id || lowerCompact(goal.title) === lowerCompact(title));
+  // A terminal goal is done forever; matching it must mint a fresh goal, not
+  // resurrect it. Prefer a living goal with the same id or title for reuse.
+  const existing = state.goals.find((goal) => (
+    (goal.id === id || lowerCompact(goal.title) === lowerCompact(title)) && !goalIsTerminal(goal)
+  ));
   const sourcePath = displaySignalPath(candidate.source_path);
   const goal = existing || {
-    id,
+    id: uniqueGoalId(state, id),
     title,
     status: 'active',
     cadence: 'manual',
@@ -4822,9 +4917,13 @@ function memberGoal(name, ...args) {
 
   const state = loadMemberGoals(name, paths);
   const id = makeGoalId(title);
-  const existing = state.goals.find((goal) => goal.id === id || goal.title.toLowerCase() === title.toLowerCase());
+  // A terminal goal is done forever; matching it must mint a fresh goal, not
+  // resurrect it. Prefer a living goal with the same id or title for reuse.
+  const existing = state.goals.find((goal) => (
+    (goal.id === id || goal.title.toLowerCase() === title.toLowerCase()) && !goalIsTerminal(goal)
+  ));
   const goal = existing || {
-    id,
+    id: uniqueGoalId(state, id),
     title,
     status: 'active',
     cadence,
@@ -9524,4 +9623,7 @@ module.exports = {
   parseFrontmatter,
   wakeBootLines,
   buildMemberRunStartArgs,
+  memberPaths,
+  loadMemberGoals,
+  writeMemberGoals,
 };
