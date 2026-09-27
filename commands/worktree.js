@@ -6,6 +6,7 @@ const { spawnSync } = require('child_process');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { isConductorArtifact } = require('../lib/conductor-artifacts');
+const { fixMapDocs } = require('../lib/map-refs');
 const close = require('./close');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
@@ -641,6 +642,7 @@ function shipHelp() {
   console.log('');
   console.log('  --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('  --local         merge into the local primary checkout instead of pushing and opening a PR');
+  console.log('  --no-map-refresh  skip the automatic refresh of moved map line references');
   console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
   console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
 }
@@ -722,6 +724,35 @@ function runShipHealthCheck(workspaceRoot, options = {}) {
   } catch (error) {
     console.log(`health check skipped: ${String(error && error.message || error).toLowerCase()}. shipping still works.`);
     return { healthy: null, filed: false, error };
+  }
+}
+
+const MAP_REFRESH_COMMIT_MESSAGE = 'Refresh map references that moved';
+const MAP_REFRESH_TRAILER = 'Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>';
+
+// Rewrites map line refs whose code moved (the same fix `atris doc-health
+// --fix-refs` applies), then commits only the rewritten map files. A human-only
+// remainder or an error never blocks the ship; pass --no-map-refresh to skip.
+function refreshMovedMapRefs(root, args = []) {
+  if (hasFlag(args, '--no-map-refresh')) return { skipped: true, refreshed: 0, left: 0 };
+  try {
+    const { changes, left } = fixMapDocs(root);
+    if (changes.length) {
+      const docs = [...new Set(changes.map(change => change.doc))];
+      runGit(['add', '--', ...docs], { cwd: root });
+      runGit(['commit', '-m', MAP_REFRESH_COMMIT_MESSAGE, '-m', MAP_REFRESH_TRAILER], { cwd: root });
+      console.log(`map: refreshed ${changes.length} moved references`);
+    } else {
+      console.log('map: references current');
+    }
+    if (left.length) {
+      console.log(`map: ${left.length} references need a human; run atris doc-health --fix-refs to see them`);
+    }
+    return { skipped: false, refreshed: changes.length, left: left.length };
+  } catch (error) {
+    const message = String((error && error.message) || error).toLowerCase().replace(/\s+/g, ' ').trim();
+    console.log(`map: refresh skipped (${message}); the ship continues`);
+    return { skipped: false, refreshed: 0, left: 0, error };
   }
 }
 
@@ -814,6 +845,12 @@ function shipWorktree(args) {
   } else {
     console.log('commit: skipped (no local changes)');
     if (!dryRun && !proofTreeMatches('head')) return 3;
+  }
+
+  if (dryRun) {
+    console.log('map: skipped (dry-run)');
+  } else {
+    refreshMovedMapRefs(root, args);
   }
 
   if (verify) {
@@ -1227,6 +1264,7 @@ function help() {
   console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>] [--local]');
   console.log('    --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('    --local         merge into the local primary checkout instead of pushing and opening a PR');
+  console.log('    --no-map-refresh  skip the automatic refresh of moved map line references');
   console.log('    recommended verify: npm run test:fast && node --test <focused files>');
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
@@ -1270,6 +1308,7 @@ module.exports = {
   parseAgentFlightName,
   parseWorktrees,
   normalizeTargetRef,
+  refreshMovedMapRefs,
   slugify,
   taskTokens,
   statusCounts,
