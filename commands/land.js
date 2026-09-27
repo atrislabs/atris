@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { runGit } = require('../lib/git-spawn');
+const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
 const { listWorktrees, statusCounts } = require('./worktree');
 
@@ -8,6 +8,14 @@ const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
 const WORKTREE_REAP_GRACE_MS = 60 * 60 * 1000;
 const PROTECTED_BRANCHES = new Set(['main', 'master']);
+
+// Through the module object so tests can count git spawns with a spy.
+function runGit(args, opts) {
+  return gitSpawn.runGit(args, opts);
+}
+
+const CHERRY_CACHE_FILE = path.join('.atris', 'state', 'cherry-cache.json');
+const CHERRY_CACHE_MAX = 2000;
 
 // Pluralize a count + noun ("1 change", "2 changes").
 function countLabel(n, word) {
@@ -157,10 +165,11 @@ function checkoutKeepLine(name, bound, now) {
 function listBranches(root, base = '') {
   // With a base, ask git for ahead counts in the same single spawn
   // (%(ahead-behind:) needs git >= 2.41; on failure we retry without it and
-  // collectBoard falls back to per-branch aheadCount).
+  // collectBoard falls back to per-branch aheadCount). The branch sha comes
+  // along in the same spawn so the cherry cache needs no per-branch lookup.
   const format = base
-    ? `%(refname:short)%09%(committerdate:unix)%09%(ahead-behind:${base})`
-    : '%(refname:short)%09%(committerdate:unix)';
+    ? `%(refname:short)%09%(committerdate:unix)%09%(objectname)%09%(ahead-behind:${base})`
+    : '%(refname:short)%09%(committerdate:unix)%09%(objectname)';
   const result = runGit(['for-each-ref', 'refs/heads', `--format=${format}`], { cwd: root, check: false });
   if (result.status !== 0) {
     if (base) return listBranches(root);
@@ -170,8 +179,9 @@ function listBranches(root, base = '') {
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => {
-      const [name, date, aheadBehind] = line.split('\t');
+      const [name, date, sha, aheadBehind] = line.split('\t');
       const entry = { name, lastCommitUnix: Number(date) };
+      if (sha) entry.sha = sha;
       if (aheadBehind !== undefined) {
         const ahead = Number(aheadBehind.split(' ')[0]);
         if (Number.isFinite(ahead)) entry.ahead = ahead;
@@ -206,6 +216,80 @@ function cherryStats(root, base, ref) {
   return { landedElsewhere, unique };
 }
 
+// `git cherry <base> <ref>` depends only on the two commit shas, so its
+// counts are cached per (base sha, ref sha) under .atris/state. The cache is
+// only written where .atris already exists; a missing or corrupt file means
+// recompute. Entries for refs not seen this run are dropped on save.
+function cherryCachePath(root) {
+  return path.join(root, CHERRY_CACHE_FILE);
+}
+
+function loadCherryCache(root) {
+  const cache = { file: cherryCachePath(root), entries: {}, used: {}, dirty: false, writable: false };
+  try {
+    cache.writable = fs.statSync(path.join(root, '.atris')).isDirectory();
+  } catch {
+    cache.writable = false;
+  }
+  if (!cache.writable) return cache;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cache.file, 'utf8'));
+    if (parsed && parsed.version === 1 && parsed.entries && typeof parsed.entries === 'object') {
+      cache.entries = parsed.entries;
+    }
+  } catch {
+    cache.entries = {};
+  }
+  return cache;
+}
+
+function validCherryEntry(entry) {
+  return entry && Number.isInteger(entry.landedElsewhere) && Number.isInteger(entry.unique)
+    && entry.landedElsewhere >= 0 && entry.unique >= 0;
+}
+
+function cachedCherryStats(cache, cwd, base, baseSha, ref, refSha) {
+  if (!cache || !baseSha || !refSha) return cherryStats(cwd, base, ref);
+  const key = `${baseSha}:${refSha}`;
+  const hit = cache.entries[key];
+  if (validCherryEntry(hit)) {
+    cache.used[key] = hit;
+    return { landedElsewhere: hit.landedElsewhere, unique: hit.unique };
+  }
+  const result = runGit(['cherry', base, ref], { cwd, check: false });
+  if (result.status !== 0) return { landedElsewhere: 0, unique: 0 };
+  const stats = { landedElsewhere: 0, unique: 0 };
+  for (const line of result.stdout.split(/\r?\n/).filter(Boolean)) {
+    if (line.startsWith('- ')) stats.landedElsewhere += 1;
+    else if (line.startsWith('+ ')) stats.unique += 1;
+  }
+  cache.used[key] = { ...stats };
+  cache.dirty = true;
+  return stats;
+}
+
+function saveCherryCache(cache) {
+  if (!cache || !cache.writable) return;
+  const usedKeys = Object.keys(cache.used);
+  // Rewrite when something new was computed or something stale can go.
+  if (!cache.dirty && usedKeys.length === Object.keys(cache.entries).length) return;
+  const entries = {};
+  for (const key of usedKeys.slice(-CHERRY_CACHE_MAX)) entries[key] = cache.used[key];
+  try {
+    fs.mkdirSync(path.dirname(cache.file), { recursive: true });
+    const tmp = `${cache.file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify({ version: 1, entries })}\n`);
+    fs.renameSync(tmp, cache.file);
+  } catch {
+    // The cache is only a speedup; a failed write costs a recompute next time.
+  }
+}
+
+function resolveSha(root, ref) {
+  const result = runGit(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { cwd: root, check: false });
+  return result.status === 0 ? result.stdout.trim() : '';
+}
+
 // Board: every branch and worktree with unlanded state, classified.
 //   landed, no commits ahead of base; the branch pointer is residue
 //   active, has unlanded commits, younger than TTL
@@ -220,6 +304,8 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
 
   const branches = [];
   const lastCommitMsByBranch = new Map();
+  const cherryCache = loadCherryCache(root);
+  const baseSha = resolveSha(root, base);
   for (const branch of listBranches(root, base)) {
     if (PROTECTED_BRANCHES.has(branch.name)) continue;
     const lastCommitMs = Number(branch.lastCommitUnix) * 1000;
@@ -227,7 +313,9 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
     const ahead = branch.ahead !== undefined ? branch.ahead : aheadCount(root, base, branch.name);
     const age = ageDays(branch.lastCommitUnix, now);
     const hours = ageHours(branch.lastCommitUnix, now);
-    const cherry = ahead > 0 ? cherryStats(root, base, branch.name) : { landedElsewhere: 0, unique: 0 };
+    const cherry = ahead > 0
+      ? cachedCherryStats(cherryCache, root, base, baseSha, branch.name, branch.sha)
+      : { landedElsewhere: 0, unique: 0 };
     let state = 'active';
     if (ahead === 0 || (cherry.landedElsewhere > 0 && cherry.unique === 0)) state = 'landed';
     else if (age > ttlDays) state = 'due';
@@ -271,7 +359,7 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
       const cnt = runGit(['rev-list', '--count', `${base}..HEAD`], { cwd: wt.path, check: false });
       ahead = cnt.status === 0 ? Number(cnt.stdout.trim()) || 0 : 0;
       if (ahead > 0) {
-        unlandedCommits = cherryStats(wt.path, base, 'HEAD').unique;
+        unlandedCommits = cachedCherryStats(cherryCache, wt.path, base, baseSha, 'HEAD', wt.head).unique;
         const ts = runGit(['log', '-1', '--format=%ct', 'HEAD'], { cwd: wt.path, check: false });
         if (ts.status === 0) ageDaysVal = ageDays(Number(ts.stdout.trim()), now);
         if (!light) subjects = commitSubjects(wt.path, base, 'HEAD');
@@ -309,6 +397,8 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
     branch.stale = branch.state === 'active' && branch.activityHours >= staleHours;
   }
 
+  saveCherryCache(cherryCache);
+
   const due = branches.filter((b) => b.state === 'due');
   const landed = branches.filter((b) => b.state === 'landed');
   const active = branches.filter((b) => b.state === 'active');
@@ -333,6 +423,33 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
   };
 }
 
+// One landing board per process per repo. Boot, stream, and the team view
+// each ask for the board more than once in a single command; the first call
+// pays for git, later calls within BOARD_MEMO_MAX_AGE_MS share the result.
+// A full board also answers light requests (light is a subset). Long-lived
+// callers (stream follow) clear the memo before each poll.
+const BOARD_MEMO_MAX_AGE_MS = 10000;
+const boardMemo = new Map();
+
+function boardMemoKey(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base = '' } = {}) {
+  return JSON.stringify([canonicalPath(root), ttlDays, staleHours, base]);
+}
+
+function sharedBoard(root, opts = {}) {
+  const key = boardMemoKey(root, opts);
+  const light = Boolean(opts.light);
+  const nowMs = Date.now();
+  const hit = boardMemo.get(key);
+  if (hit && nowMs - hit.at < BOARD_MEMO_MAX_AGE_MS && (light || !hit.light)) return hit.board;
+  const board = collectBoard(root, { ...opts, light });
+  boardMemo.set(key, { board, light, at: Date.now() });
+  return board;
+}
+
+function clearBoardMemo() {
+  boardMemo.clear();
+}
+
 // Counts for the boot banner and digest. This intentionally pays the same
 // classification cost as the landing board so "in the air" never includes
 // merged branch residue.
@@ -340,7 +457,7 @@ function landSummary(cwd = process.cwd(), ttlDays = DEFAULT_TTL_DAYS) {
   const root = repoRoot(cwd);
   if (!root || !hasCommits(root)) return null;
   try {
-    const board = collectBoard(root, { ttlDays, light: true });
+    const board = sharedBoard(root, { ttlDays, light: true });
     return {
       branches: board.summary.active + board.summary.due,
       due: board.summary.due,
@@ -918,9 +1035,11 @@ function landCommand(args = []) {
 }
 
 module.exports = {
+  clearBoardMemo,
   collectBoard,
   countLabel,
   landCommand,
   landSummary,
   reap,
+  sharedBoard,
 };
