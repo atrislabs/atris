@@ -58,6 +58,23 @@ test('install copies the packaged host and preserves local edits', (t) => {
   assert.equal(fs.readFileSync(path.join(target, 'SOUL.md'), 'utf8'), 'local soul\n');
 });
 
+test('host install update refreshes the skill and leaves room files alone', (t) => {
+  const root = workspace(t);
+  const target = path.join(root, 'atris', 'team', 'host');
+  const skill = path.join(target, 'skills', 'host', 'SKILL.md');
+  run(root, 'member', 'install', 'host');
+  fs.writeFileSync(skill, 'old host judgment\n');
+  fs.writeFileSync(path.join(target, 'SOUL.md'), 'room soul\n');
+  fs.rmSync(path.join(target, 'MISSION.md'));
+
+  const first = run(root, 'member', 'install', 'host', '--update');
+  assert.equal(first, 'atris/team/host/skills/host/SKILL.md\n');
+  assert.equal(fs.readFileSync(skill, 'utf8'), fs.readFileSync(path.join(__dirname, '..', 'templates', 'members', 'host', 'skills', 'host', 'SKILL.md'), 'utf8'));
+  assert.equal(fs.readFileSync(path.join(target, 'SOUL.md'), 'utf8'), 'room soul\n');
+  assert.equal(fs.existsSync(path.join(target, 'MISSION.md')), false);
+  assert.equal(run(root, 'member', 'install', 'host', '--update'), 'MEMBER host already up to date\n');
+});
+
 test('joining creates an ignore file inside the private folder', (t) => {
   const root = workspace(t);
   hostAction(root, 'join', { id: 'A1', name: 'Ann' });

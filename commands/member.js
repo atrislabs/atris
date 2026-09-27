@@ -11,7 +11,7 @@ const { defaultObjectiveRunner } = require('../lib/default-runner');
 const { readJson, writeJson } = require('../lib/json-file');
 const { sleepSync } = require('../lib/sleep-sync');
 const { hasFlag, readFlag, readNumberFlag } = require('../lib/arg-parser');
-const { ensureMemberBundle, memberBundlePresent } = require('../lib/member-scaffold');
+const { ensureMemberBundle, memberBundlePresent, updateMemberSkills } = require('../lib/member-scaffold');
 const { memberProcessPrompt, MEMBER_PROCESS_PATH } = require('../lib/member-context');
 
 function findWorkspaceBusinessId(startDir = process.cwd()) {
@@ -4296,10 +4296,10 @@ tools: []
 }
 
 function printMemberInstallUsage(stream = console.log) {
-  stream('Usage: atris member install <slug>');
+  stream('Usage: atris member install <slug> [--update]');
 }
 
-function memberInstall(slug) {
+function memberInstall(slug, update = false) {
   if (slug === '--help' || slug === '-h') {
     printMemberInstallUsage();
     return;
@@ -4314,9 +4314,22 @@ function memberInstall(slug) {
   }
 
   const memberDir = path.join(process.cwd(), 'atris', 'team', slug);
+  const templateDir = path.join(__dirname, '..', 'templates', 'members', slug);
+  if (update) {
+    if (!fs.existsSync(templateDir)) {
+      console.error(`No member template for ${slug}.`);
+      process.exit(1);
+    }
+    const updated = updateMemberSkills(templateDir, memberDir);
+    if (updated.length === 0) {
+      console.log(`MEMBER ${slug} already up to date`);
+    } else {
+      for (const rel of updated) console.log(`atris/team/${slug}/${rel.split(path.sep).join('/')}`);
+    }
+    return;
+  }
   const already = memberBundlePresent(memberDir);
   fs.mkdirSync(path.join(memberDir, 'logs'), { recursive: true });
-  const templateDir = path.join(__dirname, '..', 'templates', 'members', slug);
   const copied = [];
   if (fs.existsSync(templateDir)) {
     const copyMissing = (source, relative = '') => {
@@ -9332,7 +9345,7 @@ async function memberCommand(subcommand, ...args) {
     case 'new':
       return memberCreate(args[0], ...args.slice(1));
     case 'install':
-      return memberInstall(args[0]);
+      return memberInstall(args[0], args.includes('--update'));
     case 'activate':
       return memberActivate(args[0]);
     case 'upgrade':
@@ -9394,7 +9407,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('');
       console.log('Subcommands:');
       console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
-      console.log('  install <slug>      Install the full MEMBER bundle if missing; never overwrite');
+      console.log('  install <slug> [--update]  Install missing files, or refresh template skills');
       console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
       console.log('  list [--json]       Show all team members');
       console.log('  activate <name>     Symlink member skills, show context and permissions');
