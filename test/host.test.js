@@ -684,3 +684,27 @@ test('host activity reads naturally mid-sentence', () => {
   const ask = hostAction(root, 'outbox', { now: '2026-10-01T00:00:00.000Z' }).find((message) => message.kind === 'intro_ask');
   assert.match(ask.text, /enjoy a 30-minute coffee on the roof\. Both want it\./);
 });
+
+test('housekeeping and room share each private record read', (t) => {
+  const root = workspace(t);
+  const now = '2026-10-01T09:00:00.000Z';
+  hostAction(root, 'join', { id: 'A1', name: 'Ann', now });
+  hostAction(root, 'join', { id: 'B1', name: 'Bo', now });
+  hostAction(root, 'link', { a: 'A1', b: 'B1', source: 'card', evidence: 'Both like coffee', now });
+  hostAction(root, 'propose', { a: 'A1', b: 'B1', reason: 'Both like coffee.', activity: 'coffee', text: 'Meet!', now });
+  hostAction(root, 'ask', { id: 'A1', question: 'Coffee?', now });
+  const reads = new Map(), writes = [];
+  const originalRead = fs.readFileSync, originalRename = fs.renameSync;
+  fs.readFileSync = function (file, ...args) {
+    if (typeof file === 'string' && file.startsWith(path.join(root, 'atris', 'team', 'host', 'private'))) reads.set(file, (reads.get(file) || 0) + 1);
+    return originalRead.call(this, file, ...args);
+  };
+  fs.renameSync = function (from, to) { writes.push(to); return originalRename.call(this, from, to); };
+  try { hostAction(root, 'room', { now: future(now, 8) }); }
+  finally { fs.readFileSync = originalRead; fs.renameSync = originalRename; }
+  assert.ok([...reads.keys()].some((file) => file.endsWith('links.jsonl')));
+  assert.ok([...reads.keys()].some((file) => file.includes('/intros/')));
+  assert.ok([...reads.keys()].some((file) => file.includes('/outbox/')));
+  assert.ok([...reads.keys()].every((file) => reads.get(file) === 1), [...reads].filter(([, count]) => count > 1));
+  assert.equal(writes.includes(privateFile(root, 'B1')), false);
+});
