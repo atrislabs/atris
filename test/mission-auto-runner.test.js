@@ -13,6 +13,7 @@ const {
   resolveMissionTickRunner,
   recordMissionEngineTickOutcome,
 } = require('../commands/mission');
+const { setEngineHealth, resolveEngineForRoleWithPreference } = require('../lib/engine-registry');
 
 function makeWorkspace() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-auto-'));
@@ -153,40 +154,36 @@ test('a failed auto tick records health and the next tick skips that engine', ()
   }
 });
 
-// Regression: a tick that errors with a generic reason (e.g. a hard 401,
-// surfaced as status "errored" / reason "claude-error") used to fall through
-// engineFailureHealthStatus's credit_out/not_installed regexes and return
-// null, so recordMissionEngineTickOutcome never called setEngineHealth and
-// engines.json kept showing the engine as "ready" even though the last tick
-// hard-failed. Any errored tick with a resolved engine_id must now persist
-// some non-ready health for that engine.
-test('an errored tick with a generic reason (401 / claude-error) still marks the engine unhealthy', () => {
+// An errored tick with a generic reason (a hard 401 surfaced as status
+// "errored" / reason "claude-error") is a real run failure, not an
+// engine-level signal. Health writes only cover credit_out, not_installed,
+// and stalls, so the engine stays ready and keeps routing: one failed tick
+// must not bench a working engine.
+test('an errored tick with a generic reason (401 / claude-error) leaves engine health alone', () => {
   const dir = makeWorkspace();
   try {
+    setEngineHealth('codex', 'ready', dir);
     const health = recordMissionEngineTickOutcome('codex', {
       status: 'errored',
       reason: 'claude-error',
       claude: { stderr: '401 Unauthorized', summary: 'request failed with status 401' },
     }, dir);
-    assert.ok(health, 'expected a health record to be returned');
-    assert.equal(health.health.status, 'error');
+    assert.equal(health, null);
 
     const registry = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'engines.json'), 'utf8'));
     const codex = registry.engines.find((engine) => engine.id === 'codex');
-    assert.equal(codex.health.status, 'error');
-    assert.ok(codex.health.last_failure_ts);
+    assert.equal(codex.health.status, 'ready');
+    assert.equal(codex.health.last_failure_ts, undefined);
 
-    // Health status of "error" must survive a registry reseed (the same
-    // read path resolveEngineForRole uses), not just the raw file write.
-    const { resolveEngineForRole } = require('../lib/engine-registry');
-    const executor = resolveEngineForRole('executor', dir);
-    assert.notEqual(executor && executor.id, 'codex', 'a sick engine must not be selected as the ready executor');
+    const picked = resolveEngineForRoleWithPreference('executor', dir, 'codex');
+    assert.equal(picked.engine && picked.engine.id, 'codex', 'a real run failure must not bench the engine');
+    assert.equal(picked.engine_fallback_reason, null);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('CLI: a tick that errors with a hard 401 persists engine health to engines.json in that workspace', () => {
+test('CLI: a tick that errors with a hard 401 leaves engines.json untouched in that workspace', () => {
   const dir = makeWorkspace();
   try {
     const pathValue = executorPath(
@@ -211,10 +208,10 @@ test('CLI: a tick that errors with a hard 401 persists engine health to engines.
     const firstPayload = JSON.parse(firstRun.stdout);
     assert.equal(firstPayload.ticks[0].engine_id, 'codex');
     assert.equal(firstPayload.ticks[0].status, 'errored');
-    assert.equal(firstPayload.ticks[0].engine_health.status, 'error');
+    assert.equal(firstPayload.ticks[0].engine_health, undefined);
 
     const registry = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'engines.json'), 'utf8'));
-    assert.equal(registry.engines.find((engine) => engine.id === 'codex').health.status, 'error');
+    assert.equal(registry.engines.find((engine) => engine.id === 'codex').health.status, 'ready');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

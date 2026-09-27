@@ -7,6 +7,7 @@ const { spawnSync } = require('child_process');
 const { freezeMissionVerifier, listMissions, markMissionReviewReady } = require('./mission');
 const { readWishes } = require('../lib/wish-store');
 const {
+  engineReadyAt,
   engineRegistryView,
   resolveEngineForRole,
   resolveEngineForRoleRanked,
@@ -156,7 +157,7 @@ function readyExecutor(root, preferred = '') {
   if (preferred) {
     const selected = resolveRegisteredEngine(preferred, root);
     if (!selected.roles.includes('executor')) throw new Error(`engine ${selected.id} is not an executor`);
-    if (!selected.health || selected.health.status !== 'ready') throw new Error(`engine ${selected.id} is not ready`);
+    if (!engineReadyAt(selected)) throw new Error(`engine ${selected.id} is not ready`);
     if (!fleet.FLEET_CAPABLE.includes(selected.id)) throw new Error(`engine ${selected.id} cannot build headlessly`);
     const pin = rosterPinFor('executor', selected.id, root);
     return Object.keys(pin).length ? { ...selected, ...pin } : selected;
@@ -165,7 +166,7 @@ function readyExecutor(root, preferred = '') {
   if (routed && fleet.FLEET_CAPABLE.includes(routed.id)) return routed;
   return engineRegistryView(root)
     .filter((engine) => engine.roles.includes('executor'))
-    .filter((engine) => engine.health && engine.health.status === 'ready')
+    .filter((engine) => engineReadyAt(engine))
     .filter((engine) => fleet.FLEET_CAPABLE.includes(engine.id))
     .sort((a, b) => Number(a.fallback_order) - Number(b.fallback_order))[0] || null;
 }
@@ -196,7 +197,7 @@ function readyValidators(root, preferred = '', exclude = '') {
         || String(a.id).localeCompare(String(b.id));
     })
     .map((engine) => (pinned && engine.id === pinned.id ? { ...engine, ...pinFields(pinned) } : engine));
-  const ready = candidates.filter((engine) => engine.health && engine.health.status === 'ready');
+  const ready = candidates.filter((engine) => engineReadyAt(engine));
   // Route-time determinism: which validator binaries exist on this machine
   // must not change the lap's route. When none are ready, dispatch with the
   // policy-ordered distinct validators; the flight still enforces judge !=
@@ -710,7 +711,7 @@ async function runOneLap(ask, options = {}) {
       ...lapModelPins(executor, validators),
       actor: mission.owner || 'mission-lead',
       installedEngines: engineRegistryView(root)
-        .filter((entry) => entry.health && entry.health.status === 'ready')
+        .filter((entry) => engineReadyAt(entry))
         .filter((entry) => fleet.FLEET_CAPABLE.includes(entry.id))
         .map((entry) => entry.id),
       ownCli: runCli,

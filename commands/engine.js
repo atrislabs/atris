@@ -70,6 +70,7 @@ const {
   requireEngineBin,
   engineDoctorReport,
   engineFailureHealthStatus,
+  engineReadyAt,
   coolingView,
   setEngineOverrides,
   setEngineHealth,
@@ -145,7 +146,7 @@ function resolveDefaultEngine(root = process.cwd()) {
   if (saved) return { name: saved, source: 'saved' };
   const ready = new Set(
     engineRegistryView(root)
-      .filter((engine) => engine.health && engine.health.status === 'ready')
+      .filter((engine) => engineReadyAt(engine))
       .map((engine) => engine.id)
   );
   if (ready.has(HOUSE_ENGINE)) return { name: HOUSE_ENGINE, source: 'house' };

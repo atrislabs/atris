@@ -234,7 +234,7 @@ test('an engine benched at error routes again once the window passes, and with n
     stampHealth(root, 'devin', { status: 'error', last_failure_ts: fresh });
     const team = resolveJobTeam('build', root);
     assert.equal(team.lead.id, 'grok', 'a fresh error still sits out the window');
-    assert.equal(team.walk[0].skip, 'not ready');
+    assert.match(team.reason, /is not ready, using backup: grok/);
 
     process.env.ATRIS_ENGINE_COOLDOWN_MINUTES = '5';
     stampHealth(root, 'devin', { status: 'error', last_failure_ts: new Date(now - 10 * 60000).toISOString() });

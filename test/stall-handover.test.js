@@ -191,7 +191,7 @@ test('the cooldown length comes from ATRIS_ENGINE_COOLDOWN_MINUTES', async () =>
   });
 });
 
-test('a transient error cools; a real task failure does not', async () => {
+test('a transient error cools; a real task failure changes nothing', async () => {
   await withRoom(async (root) => {
     const now = new Date('2026-09-27T12:00:00.000Z');
     const dropped = recordEngineRunHealth('devin', { exitCode: 1, stderr: 'Error: read ECONNRESET' }, root, { now });
@@ -200,8 +200,8 @@ test('a transient error cools; a real task failure does not', async () => {
     const spawnTimeout = recordEngineRunHealth('cursor', { exitCode: 1, stderr: 'spawn ETIMEDOUT' }, root, { now });
     assert.equal(spawnTimeout.health.status, 'cooling');
     const failed = recordEngineRunHealth('grok', { exitCode: 1, report: 'not ok 3 - widget renders once\n2 tests failed' }, root, { now });
-    assert.equal(failed.health.status, 'error');
-    assert.equal(failed.health.cooling_until, undefined);
+    assert.equal(failed, null);
+    assert.equal(health(root, 'grok', now).status, 'ready');
   });
 });
 
@@ -292,7 +292,7 @@ test('a real task failure is not handed over', async () => {
     assert.equal(flight.results[0].engine, 'devin');
     assert.equal(flight.results[0].handover, undefined);
     assert.equal(flight.paused[0].stage, 'build');
-    assert.equal(health(root, 'devin').status, 'error');
+    assert.equal(health(root, 'devin').status, 'ready');
   });
 });
 
@@ -315,7 +315,8 @@ test('a mission tick after a stall picks the backup', async () => {
       reason: 'wall-exceeded-during-tick',
       claude: { timed_out: true },
     }, root);
-    assert.equal(wall.health.status, 'error');
+    assert.equal(wall, null);
+    assert.equal(health(root, 'grok').status, 'ready');
   });
 });
 
