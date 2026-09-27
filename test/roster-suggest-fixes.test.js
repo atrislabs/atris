@@ -130,3 +130,52 @@ test('a stale lock that cannot be removed stops waiting instead of spinning fore
     assert.deepEqual(rows.map((row) => row.engine), ['devin']);
   });
 });
+
+const pendingPath = (root) => path.join(root, '.atris', 'state', 'roster_runs.pending.jsonl');
+
+test('a line written while the lock is held lands in the pending file, stays visible, and folds into the log', async () => {
+  await withRoom(async ({ root }) => {
+    const file = rosterRunsPath(root);
+    const pending = pendingPath(root);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const lock = heldLock(file);
+    const first = await appendInWorker(root, {
+      at: new Date(NOW - 3600000).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-1', seconds: 60,
+    }, RUNS_LOCK_WAIT_MS + 8000);
+    assert.ok(first, 'recording never throws');
+    // The line waited out the lock and went to the side file, not the log.
+    assert.ok(fs.existsSync(pending), 'the append lands in the pending file');
+    assert.equal(fs.readFileSync(pending, 'utf8').trim().split('\n').length, 1);
+    const logText = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+    assert.doesNotMatch(logText, /CLI-1/, 'nothing is written past the lock into the log');
+    // The reader sees it anyway, so the run is never hidden.
+    assert.deepEqual(readRosterRuns(root, { now: NOW + 60000 }).map((row) => row.engine), ['devin']);
+
+    // The next locked append folds pending lines into the log ahead of its own.
+    fs.rmSync(lock);
+    appendRosterRun(root, {
+      at: new Date(NOW - 3500000).toISOString(), job: 'build', engine: 'cursor', outcome: 'landed', task: 'CLI-2', seconds: 90,
+    });
+    assert.equal(fs.existsSync(pending), false, 'the pending file is spent');
+    const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
+    assert.deepEqual(lines.map((line) => JSON.parse(line).task), ['CLI-1', 'CLI-2']);
+    assert.deepEqual(readRosterRuns(root, { now: NOW + 60000 }).map((row) => row.task), ['CLI-1', 'CLI-2']);
+
+    // A trim can run right after: the pending line is inside the log first,
+    // so it survives where the unlocked append used to lose it.
+    heldLock(file);
+    await appendInWorker(root, {
+      at: new Date(NOW - 3400000).toISOString(), job: 'build', engine: 'grok', outcome: 'failed', task: 'CLI-3', seconds: 30,
+    }, RUNS_LOCK_WAIT_MS + 8000);
+    fs.rmSync(`${file}.lock`);
+    const pad = `"${'pad'.repeat(40000)}"\n`;
+    fs.appendFileSync(file, pad.repeat(Math.ceil((RUNS_ROTATE_BYTES + 65536) / pad.length)), 'utf8');
+    assert.ok(fs.statSync(file).size > RUNS_ROTATE_BYTES);
+    appendRosterRun(root, {
+      at: new Date(NOW - 3300000).toISOString(), job: 'build', engine: 'claude', outcome: 'landed', task: 'CLI-4', seconds: 45,
+    });
+    const tasks = readRosterRuns(root, { now: NOW + 60000 }).map((row) => row.task);
+    assert.ok(tasks.includes('CLI-3'), 'the pending line survived the trim');
+    assert.ok(tasks.includes('CLI-4'), 'the locked line landed too');
+  });
+});
